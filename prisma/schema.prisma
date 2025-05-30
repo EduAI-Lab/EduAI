@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
   output   = "../app/generated/prisma"
@@ -12,4 +6,171 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  PROFESSOR
+  TA
+  STUDENT
+}
+
+enum DocumentStatus {
+  UPLOADING
+  PROCESSING
+  READY
+  FAILED
+}
+
+enum DocumentType {
+  PDF
+  TEXT
+  DOCX
+  MARKDOWN
+  OTHER
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  firstName String
+  lastName  String
+  role      UserRole
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Course relationships
+  taughtCourses     Course[]           @relation("ProfessorCourses")
+  assistedCourses   CourseTA[]
+  enrolledCourses   CourseEnrollment[]
+
+  // Document uploads (only for admin, professor, ta)
+  uploadedDocuments Document[]
+
+  // AI interactions
+  aiInteractions    AIInteraction[]
+
+  @@map("users")
+}
+
+model Course {
+  id          String    @id @default(cuid())
+  code        String    @unique // e.g., "CS101"
+  name        String
+  description String?
+  term        String    // e.g., "Fall", "Spring", "Summer"
+  year        Int
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relationships
+  professor   User      @relation("ProfessorCourses", fields: [professorId], references: [id])
+  professorId String
+
+  tas         CourseTA[]
+  enrollments CourseEnrollment[]
+  documents   Document[]
+
+  // AI usage tracking
+  aiInteractions AIInteraction[]
+
+  @@map("courses")
+}
+
+model CourseTA {
+  id       String @id @default(cuid())
+  courseId String
+  userId   String
+
+  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([courseId, userId])
+  @@map("course_tas")
+}
+
+model CourseEnrollment {
+  id         String   @id @default(cuid())
+  courseId   String
+  studentId  String
+  enrolledAt DateTime @default(now())
+  isActive   Boolean  @default(true)
+
+  course  Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  student User   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, studentId])
+  @@map("course_enrollments")
+}
+
+model Document {
+  id           String         @id @default(cuid())
+  filename     String
+  originalName String
+  fileSize     Int            // in bytes
+  mimeType     String
+  type         DocumentType
+  status       DocumentStatus @default(UPLOADING)
+
+  // Storage information
+  storageKey   String         @unique // S3 key or file path
+
+  // Metadata
+  description  String?
+  tags         String[]       // Array of tags for categorization
+
+  // Relationships
+  uploaderId   String
+  uploader     User           @relation(fields: [uploaderId], references: [id])
+
+  courseId     String
+  course       Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  // Timestamps
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  processedAt  DateTime?      // When document processing completed
+
+  @@map("documents")
+}
+
+model AIInteraction {
+  id        String   @id @default(cuid())
+  userId    String
+  courseId  String?
+
+  // Interaction details
+  query     String
+  response  String
+  context   Json?    // RAG context, retrieved documents, etc.
+
+  // Metadata
+  modelUsed String   // e.g., "gpt-4", "claude-3"
+  tokenUsed Int?     // Token consumption tracking
+
+  // Timestamps
+  createdAt DateTime @default(now())
+
+  // Relationships
+  user      User     @relation(fields: [userId], references: [id])
+  course    Course?  @relation(fields: [courseId], references: [id])
+
+  @@map("ai_interactions")
+}
+
+// System configuration and settings
+model SystemConfig {
+  id    String @id @default(cuid())
+  key   String @unique
+  value String
+
+  description String?
+  updatedAt   DateTime @updatedAt
+  updatedBy   String   // User ID who made the change
+
+  @@map("system_config")
 }
