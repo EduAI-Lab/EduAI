@@ -6,3 +6,4 @@
 /build/
 
 .env
+/app/generated/prisma
