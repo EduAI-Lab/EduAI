@@ -210,8 +210,8 @@ model AIInteraction {
   createdAt DateTime @default(now())
 
   // Relationships
-  user      User     @relation(fields: [userId], references: [id])
-  course    Course?  @relation(fields: [courseId], references: [id])
+  user      User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  course    Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
 
   @@map("ai_interactions")
 }
