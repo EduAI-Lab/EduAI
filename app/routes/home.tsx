@@ -1,5 +1,5 @@
 import type { Route } from "./+types/home";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { useSession, signOut } from "~/lib/auth";
 
 export function meta({}: Route.MetaArgs) {
@@ -11,10 +11,11 @@ export function meta({}: Route.MetaArgs) {
 
 export default function Home() {
   const { data: session, isPending } = useSession();
+  const navigate = useNavigate();
 
   const handleSignOut = async () => {
     await signOut();
-    window.location.href = "/";
+    navigate("/");
   };
 
   if (isPending) {
