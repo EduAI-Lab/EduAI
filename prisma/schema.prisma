@@ -1,6 +1,5 @@
 generator client {
   provider = "prisma-client-js"
-  output   = "../app/generated/prisma"
 }
 
 datasource db {
@@ -33,12 +32,20 @@ enum DocumentType {
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
-  firstName String
-  lastName  String
+  emailVerified Boolean @default(false)
+
+  // Better Auth required fields
+  name      String
+  image     String?
+
   role      UserRole
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // Better Auth relationships
+  accounts  Account[]
+  sessions  Session[]
 
   // Course relationships
   taughtCourses     Course[]           @relation("ProfessorCourses")
@@ -51,7 +58,54 @@ model User {
   // AI interactions
   aiInteractions    AIInteraction[]
 
-  @@map("users")
+  @@map("user")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User @relation(references: [id], fields: [userId], onDelete: Cascade)
+
+  @@map("session")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  accountId         String
+  providerId        String
+  userId            String
+  accessToken       String?
+  refreshToken      String?
+  idToken           String?
+  accessTokenExpiresAt DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope             String?
+  password          String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user User @relation(references: [id], fields: [userId], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@map("account")
+}
+
+model Verification {
+  id        String   @id @default(cuid())
+  identifier String
+  value     String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([identifier, value])
+  @@map("verification")
 }
 
 model Course {
