@@ -11,7 +11,6 @@ export default function SignUp() {
     email: "",
     password: "",
     confirmPassword: "",
-    role: "STUDENT",
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");

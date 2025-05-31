@@ -2,10 +2,12 @@ import { useState } from "react";
 import { Form, Link } from "react-router";
 import { signIn } from "~/lib/auth";
 import { signInSchema, type SignInInput } from "~/lib/auth";
+import { useNavigate } from "react-router";
 
 type FieldErrors = Partial<Record<keyof SignInInput, string>>;
 
 export default function SignIn() {
+  const navigate = useNavigate();
   const [formData, setFormData] = useState<SignInInput>({
     email: "",
     password: "",
@@ -50,8 +52,6 @@ export default function SignIn() {
       return;
     }
 
-    setIsLoading(true);
-
     await signIn.email(
       {
         email: formData.email,
@@ -62,7 +62,7 @@ export default function SignIn() {
           setIsLoading(true);
         },
         onSuccess: () => {
-          window.location.href = "/";
+          navigate("/");
         },
         onError: (ctx) => {
           setError(ctx.error.message || "Sign in failed");
