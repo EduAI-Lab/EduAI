@@ -1,79 +1,48 @@
-import { useState } from "react";
-import { Form, Link } from "react-router";
+import { Form, Link, useActionData, redirect } from "react-router";
 import { signUp } from "~/lib/auth";
 import { signUpSchema, type SignUpInput } from "~/lib/auth";
+import type { ActionFunctionArgs } from "react-router";
 
-type FieldErrors = Partial<Record<keyof SignUpInput, string>>;
+export async function action({ request }: ActionFunctionArgs) {
+  const formData = Object.fromEntries(await request.formData());
+  const input = {
+    name: String(formData.name || ""),
+    email: String(formData.email || ""),
+    password: String(formData.password || ""),
+    confirmPassword: String(formData.confirmPassword || ""),
+  };
+  const result = signUpSchema.safeParse(input);
+  if (!result.success) {
+    const fieldErrors: Partial<Record<keyof SignUpInput, string>> = {};
+    result.error.issues.forEach((issue) => {
+      const field = issue.path[0] as keyof SignUpInput;
+      if (field && !fieldErrors[field]) {
+        fieldErrors[field] = issue.message;
+      }
+    });
+    return { fieldErrors };
+  }
+  try {
+    await signUp.email({
+      email: input.email,
+      password: input.password,
+      name: input.name,
+    });
+    return redirect("/");
+  } catch (err: unknown) {
+    let message = "Sign up failed";
+    if (typeof err === "object" && err && "message" in err) {
+      message = String((err as { message?: string }).message ?? message);
+    }
+    return { formError: message };
+  }
+}
 
 export default function SignUp() {
-  const [formData, setFormData] = useState<SignUpInput>({
-    name: "",
-    email: "",
-    password: "",
-    confirmPassword: "",
-  });
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
-
-  const handleInputChange = (field: keyof SignUpInput, value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
-
-    // Clear field error when user starts typing
-    if (fieldErrors[field]) {
-      setFieldErrors((prev) => ({ ...prev, [field]: undefined }));
-    }
-  };
-
-  const validateForm = (): boolean => {
-    const result = signUpSchema.safeParse(formData);
-
-    if (!result.success) {
-      const errors: FieldErrors = {};
-      result.error.issues.forEach((issue) => {
-        const field = issue.path[0] as keyof SignUpInput;
-        if (field && !errors[field]) {
-          errors[field] = issue.message;
-        }
-      });
-      setFieldErrors(errors);
-      return false;
-    }
-
-    setFieldErrors({});
-    return true;
-  };
-
-  const handleSignUp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-
-    if (!validateForm()) {
-      return;
-    }
-
-    setIsLoading(true);
-
-    await signUp.email(
-      {
-        email: formData.email,
-        password: formData.password,
-        name: formData.name,
-      },
-      {
-        onRequest: () => {
-          setIsLoading(true);
-        },
-        onSuccess: () => {
-          window.location.href = "/";
-        },
-        onError: (ctx) => {
-          setError(ctx.error.message || "Sign up failed");
-          setIsLoading(false);
-        },
-      },
-    );
-  };
+  const actionData = useActionData() as {
+    fieldErrors?: Partial<Record<keyof SignUpInput, string>>;
+    formError?: string;
+  } | undefined;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
@@ -83,13 +52,12 @@ export default function SignUp() {
             Create your account
           </h2>
         </div>
-        <Form className="mt-8 space-y-6" onSubmit={handleSignUp}>
-          {error && (
+        <Form className="mt-8 space-y-6" method="post">
+          {actionData?.formError && (
             <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-              {error}
+              {actionData.formError}
             </div>
           )}
-
           <div className="space-y-4">
             <div>
               <label htmlFor="name" className="block text-sm font-medium text-gray-700">
@@ -100,22 +68,20 @@ export default function SignUp() {
                 name="name"
                 type="text"
                 required
-                value={formData.name}
-                onChange={(e) => handleInputChange("name", e.target.value)}
                 className={`mt-1 appearance-none relative block w-full px-3 py-2 border placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm ${
-                  fieldErrors.name
+                  actionData?.fieldErrors?.name
                     ? "border-red-300 focus:border-red-500 focus:ring-red-500"
                     : "border-gray-300"
                 }`}
                 placeholder="Enter your full name"
+                autoComplete="name"
               />
-              {fieldErrors.name && (
+              {actionData?.fieldErrors?.name && (
                 <p className="mt-1 text-sm text-red-600">
-                  {fieldErrors.name}
+                  {actionData.fieldErrors.name}
                 </p>
               )}
             </div>
-
             <div>
               <label htmlFor="email-address" className="block text-sm font-medium text-gray-700">
                 Email Address
@@ -126,22 +92,19 @@ export default function SignUp() {
                 type="email"
                 autoComplete="email"
                 required
-                value={formData.email}
-                onChange={(e) => handleInputChange("email", e.target.value)}
                 className={`mt-1 appearance-none relative block w-full px-3 py-2 border placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm ${
-                  fieldErrors.email
+                  actionData?.fieldErrors?.email
                     ? "border-red-300 focus:border-red-500 focus:ring-red-500"
                     : "border-gray-300"
                 }`}
                 placeholder="Email address"
               />
-              {fieldErrors.email && (
+              {actionData?.fieldErrors?.email && (
                 <p className="mt-1 text-sm text-red-600">
-                  {fieldErrors.email}
+                  {actionData.fieldErrors.email}
                 </p>
               )}
             </div>
-
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-gray-700">
                 Password
@@ -152,25 +115,22 @@ export default function SignUp() {
                 type="password"
                 autoComplete="new-password"
                 required
-                value={formData.password}
-                onChange={(e) => handleInputChange("password", e.target.value)}
                 className={`mt-1 appearance-none relative block w-full px-3 py-2 border placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm ${
-                  fieldErrors.password
+                  actionData?.fieldErrors?.password
                     ? "border-red-300 focus:border-red-500 focus:ring-red-500"
                     : "border-gray-300"
                 }`}
                 placeholder="Password"
               />
-              {fieldErrors.password && (
+              {actionData?.fieldErrors?.password && (
                 <p className="mt-1 text-sm text-red-600">
-                  {fieldErrors.password}
+                  {actionData.fieldErrors.password}
                 </p>
               )}
               <p className="mt-1 text-xs text-gray-500">
                 Must be at least 8 characters
               </p>
             </div>
-
             <div>
               <label htmlFor="confirm-password" className="block text-sm font-medium text-gray-700">
                 Confirm Password
@@ -181,33 +141,28 @@ export default function SignUp() {
                 type="password"
                 autoComplete="new-password"
                 required
-                value={formData.confirmPassword}
-                onChange={(e) => handleInputChange("confirmPassword", e.target.value)}
                 className={`mt-1 appearance-none relative block w-full px-3 py-2 border placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm ${
-                  fieldErrors.confirmPassword
+                  actionData?.fieldErrors?.confirmPassword
                     ? "border-red-300 focus:border-red-500 focus:ring-red-500"
                     : "border-gray-300"
                 }`}
                 placeholder="Confirm password"
               />
-              {fieldErrors.confirmPassword && (
+              {actionData?.fieldErrors?.confirmPassword && (
                 <p className="mt-1 text-sm text-red-600">
-                  {fieldErrors.confirmPassword}
+                  {actionData.fieldErrors.confirmPassword}
                 </p>
               )}
             </div>
           </div>
-
           <div>
             <button
               type="submit"
-              disabled={isLoading}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
             >
-              {isLoading ? "Creating account..." : "Create account"}
+              Create account
             </button>
           </div>
-
           <div className="text-center">
             <Link
               to="/auth/signin"
