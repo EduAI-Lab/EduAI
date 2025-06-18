@@ -113,6 +113,7 @@ model Course {
   code        String    @unique // e.g., "CS101"
   name        String
   description String?
+  aiInstructions String //Optional instructions for AI prompt customization
   term        String    // e.g., "Fall", "Spring", "Summer"
   year        Int
   isActive    Boolean   @default(true)

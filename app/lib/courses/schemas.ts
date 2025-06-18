@@ -7,9 +7,12 @@ import { z } from "zod";
  */
 
 export const CreateCourseSchema = z.object({
-  name: z.string().min(2, "Course name must be at least 2 characters long"),
+  name: z.string().min(2),
+  aiInstructions: z.string().optional(),
 });
 
 export const UpdateCourseSchema = z.object({
   name: z.string().min(2).optional(),
+  aiInstructions: z.string().optional(),
 });
+
