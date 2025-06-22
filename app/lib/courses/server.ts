@@ -42,10 +42,14 @@ export async function handleCourseRequest(request: Request) {
 
   // Create new course
   const course = await prisma.course.create({
-    data: {
-      name: result.data.name,
-    },
-  });
+  data: {
+    name: result.data.name,
+    code: result.data.code,
+    term: result.data.term,
+    year: result.data.year,
+    professorId: session.user.id, // assumes logged in admin is the professor
+  },
+});
 
   return new Response(JSON.stringify(course), {
     status: 201,

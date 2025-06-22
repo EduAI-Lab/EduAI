@@ -7,8 +7,10 @@ import { z } from "zod";
  */
 
 export const CreateCourseSchema = z.object({
-  name: z.string().min(2),
-  aiInstructions: z.string().optional(),
+  name: z.string().min(1),
+  code: z.string().min(1),
+  term: z.string().min(1),
+  year: z.number().int(),
 });
 
 export const UpdateCourseSchema = z.object({
