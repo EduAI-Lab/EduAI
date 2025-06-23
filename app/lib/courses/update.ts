@@ -4,8 +4,6 @@ import { UpdateCourseSchema } from "./schemas";
 
 // TODO: This function is ready to be wired into a Vite-compatible API handler.
 // Next steps:
-// - Create a PATCH route for /api/courses/:id
-// - Use this updateCourse(request, courseId) inside that route
 // - Add frontend UI to allow course edits by admins and professors
 
 export async function updateCourse(request: Request, courseId: string) {
