@@ -11,10 +11,14 @@ export const CreateCourseSchema = z.object({
   code: z.string().min(1),
   term: z.string().min(1),
   year: z.number().int(),
+  aiInstructions: z.string().optional().default(""),
 });
 
 export const UpdateCourseSchema = z.object({
-  name: z.string().min(2).optional(),
+  name: z.string().min(1).optional(),
+  code: z.string().min(1).optional(),
+  term: z.string().optional(),
+  year: z.number().int().optional(),
   aiInstructions: z.string().optional(),
 });
 
