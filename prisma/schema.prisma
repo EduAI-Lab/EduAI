@@ -85,7 +85,7 @@ model Course {
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
   professorId    String
-  aiInstructions String
+  aiInstructions String             @default("")
   aiInteractions AIInteraction[]
   enrollments    CourseEnrollment[]
   tas            CourseTA[]
@@ -152,7 +152,7 @@ model AIInteraction {
   modelUsed String
   tokenUsed Int?
   createdAt DateTime @default(now())
-  course    Course?  @relation(fields: [courseId], references: [id])
+  course    Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
   user      User     @relation(fields: [userId], references: [id])
 
   @@map("ai_interactions")
