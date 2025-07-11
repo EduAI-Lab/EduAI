@@ -1,6 +1,5 @@
-import { updateCourse } from "~/lib/courses/update";
+import { handleCourseRequest } from "~/lib/courses/server";
 
-export async function action({ request, params }: { request: Request, params: { id: string } }) {
-  const courseId = params.id;
-  return updateCourse(request, courseId);
+export async function action({ request }: { request: Request }) {
+  return handleCourseRequest(request);
 }
