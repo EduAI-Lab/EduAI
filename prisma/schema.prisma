@@ -8,22 +8,23 @@ datasource db {
 }
 
 model User {
-  id                String             @id @default(cuid())
-  email             String             @unique
+  id                String                 @id @default(cuid())
+  email             String                 @unique
   name              String
   image             String?
   role              UserRole
-  isActive          Boolean            @default(true)
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
-  emailVerified     Boolean            @default(false)
+  isActive          Boolean                @default(true)
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  emailVerified     Boolean                @default(false)
   accounts          Account[]
   aiInteractions    AIInteraction[]
   enrolledCourses   CourseEnrollment[]
   assistedCourses   CourseTA[]
-  taughtCourses     Course[]           @relation("ProfessorCourses")
+  taughtCourses     Course[]               @relation("ProfessorCourses")
   uploadedDocuments Document[]
   sessions          Session[]
+  providerSettings  UserProviderSettings[]
 
   @@map("user")
 }
@@ -146,14 +147,16 @@ model AIInteraction {
   id        String   @id @default(cuid())
   userId    String
   courseId  String?
+  modelId   String?
   query     String
   response  String
   context   Json?
-  modelUsed String
+  modelUsed String   // Legacy field - keeping for backwards compatibility
   tokenUsed Int?
   createdAt DateTime @default(now())
   course    Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
   user      User     @relation(fields: [userId], references: [id])
+  model     AIModel? @relation(fields: [modelId], references: [id], onDelete: SetNull)
 
   @@map("ai_interactions")
 }
@@ -167,6 +170,62 @@ model SystemConfig {
   updatedBy   String
 
   @@map("system_config")
+}
+
+model AIProvider {
+  id               String                 @id @default(cuid())
+  name             String                 @unique
+  displayName      String
+  description      String
+  requiresApiKey   Boolean                @default(true)
+  defaultBaseUrl   String?
+  envVarName       String?
+  isActive         Boolean                @default(true)
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  models           AIModel[]
+  userSettings     UserProviderSettings[]
+
+  @@map("ai_providers")
+}
+
+model AIModel {
+  id                String       @id @default(cuid())
+  modelId           String       // The actual model ID used by the provider (e.g., "gpt-4o", "claude-3-5-sonnet-20241022")
+  name              String       // Display name
+  description       String
+  type              AIModelType
+  maxTokens         Int?
+  supportsImages    Boolean      @default(false)
+  supportsTools     Boolean      @default(false)
+  supportsStreaming Boolean      @default(true)
+  inputPricing      Float?       // Price per 1M input tokens
+  outputPricing     Float?       // Price per 1M output tokens
+  isActive          Boolean      @default(true)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  providerId        String
+  provider          AIProvider   @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  interactions      AIInteraction[]
+
+  @@unique([providerId, modelId])
+  @@map("ai_models")
+}
+
+model UserProviderSettings {
+  id         String     @id @default(cuid())
+  userId     String
+  providerId String
+  apiKey     String?    // Encrypted API key
+  baseUrl    String?    // Custom base URL (for providers like Ollama)
+  isEnabled  Boolean    @default(false)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider   AIProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, providerId])
+  @@map("user_provider_settings")
 }
 
 enum UserRole {
@@ -189,4 +248,13 @@ enum DocumentType {
   DOCX
   MARKDOWN
   OTHER
+}
+
+enum AIModelType {
+  CHAT
+  COMPLETION
+  EMBEDDING
+  IMAGE
+  AUDIO
+  VIDEO
 }
