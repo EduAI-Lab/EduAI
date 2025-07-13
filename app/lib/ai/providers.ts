@@ -1,0 +1,146 @@
+/**
+ * AI Provider Registry for EduAI
+ * Dynamic provider management with user-provided API keys
+ */
+
+import { createProviderRegistry } from 'ai';
+import { createOpenAI } from '@ai-sdk/openai';
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
+
+// Supported provider types
+export type SupportedProvider = 'openai' | 'google';
+
+// User provider settings interface
+export interface UserProviderSettings {
+  [key: string]: {
+    apiKey?: string;
+    isEnabled: boolean;
+    baseUrl?: string;
+  };
+}
+
+// Provider configuration interface
+export interface ProviderConfig {
+  id: SupportedProvider;
+  name: string;
+  description: string;
+  requiresApiKey: boolean;
+  defaultBaseUrl?: string;
+  envVarName?: string;
+}
+
+// Provider configurations (static metadata only)
+export const PROVIDER_CONFIGS: Record<SupportedProvider, ProviderConfig> = {
+  openai: {
+    id: 'openai',
+    name: 'OpenAI',
+    description: 'Advanced AI models including GPT-4, GPT-4o, and o1',
+    requiresApiKey: true,
+    envVarName: 'OPENAI_API_KEY'
+  },
+  google: {
+    id: 'google',
+    name: 'Google AI',
+    description: 'Gemini models for multimodal AI applications',
+    requiresApiKey: true,
+    envVarName: 'GOOGLE_GENERATIVE_AI_API_KEY'
+  }
+};
+
+/**
+ * Creates a dynamic provider registry with user-provided settings
+ */
+export function createAIProviderRegistry(userSettings: UserProviderSettings) {
+  const providers: Record<string, any> = {};
+
+  // OpenAI
+  if (userSettings.openai?.isEnabled && userSettings.openai?.apiKey) {
+    providers.openai = createOpenAI({
+      apiKey: userSettings.openai.apiKey,
+    });
+  }
+
+  // Google AI
+  if (userSettings.google?.isEnabled && userSettings.google?.apiKey) {
+    providers.google = createGoogleGenerativeAI({
+      apiKey: userSettings.google.apiKey,
+    });
+  }
+
+  // Create and return the registry
+  return createProviderRegistry(providers, { separator: ':' });
+}
+
+/**
+ * Validates provider configuration
+ */
+export function validateProviderConfig(
+  providerId: SupportedProvider,
+  settings: { apiKey?: string; baseUrl?: string }
+): { isValid: boolean; error?: string } {
+  const config = PROVIDER_CONFIGS[providerId];
+
+  if (!config) {
+    return { isValid: false, error: 'Unsupported provider' };
+  }
+
+  if (config.requiresApiKey && !settings.apiKey) {
+    return { isValid: false, error: 'API key is required for this provider' };
+  }
+
+  return { isValid: true };
+}
+
+/**
+ * Get available provider configurations
+ */
+export function getAvailableProviders(): ProviderConfig[] {
+  return Object.values(PROVIDER_CONFIGS);
+}
+
+/**
+ * Get provider configuration by ID
+ */
+export function getProviderConfig(providerId: SupportedProvider): ProviderConfig | null {
+  return PROVIDER_CONFIGS[providerId] || null;
+}
+
+/**
+ * Check if provider is configured in user settings
+ */
+export function isProviderConfigured(
+  providerId: SupportedProvider,
+  userSettings: UserProviderSettings
+): boolean {
+  const userConfig = userSettings[providerId];
+  const providerConfig = PROVIDER_CONFIGS[providerId];
+
+  if (!userConfig?.isEnabled) return false;
+
+  // For providers that require API key, check if it's provided
+  if (providerConfig?.requiresApiKey && !userConfig.apiKey) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Get model identifier for registry usage (provider:model format)
+ */
+export function getModelIdentifier(providerId: SupportedProvider, modelId: string): string {
+  return `${providerId}:${modelId}`;
+}
+
+/**
+ * Parse model identifier to extract provider and model IDs
+ */
+export function parseModelIdentifier(identifier: string): { providerId: SupportedProvider; modelId: string } | null {
+  const parts = identifier.split(':');
+  if (parts.length !== 2) return null;
+
+  const [providerId, modelId] = parts;
+  if (!Object.keys(PROVIDER_CONFIGS).includes(providerId)) return null;
+
+  return { providerId: providerId as SupportedProvider, modelId };
+}
