@@ -32,6 +32,7 @@ export const auth = betterAuth({
     crossSubDomainCookies: {
       enabled: true,
     },
+    baseURL: import.meta.env.VITE_BETTER_AUTH_URL || "http://localhost:5173",
   },
   // Add rate limiting for security
   rateLimit: {
