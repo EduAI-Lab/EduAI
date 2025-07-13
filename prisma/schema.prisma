@@ -7,6 +7,168 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model User {
+  id                String             @id @default(cuid())
+  email             String             @unique
+  name              String
+  image             String?
+  role              UserRole
+  isActive          Boolean            @default(true)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  emailVerified     Boolean            @default(false)
+  accounts          Account[]
+  aiInteractions    AIInteraction[]
+  enrolledCourses   CourseEnrollment[]
+  assistedCourses   CourseTA[]
+  taughtCourses     Course[]           @relation("ProfessorCourses")
+  uploadedDocuments Document[]
+  sessions          Session[]
+
+  @@map("user")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  accountId             String
+  providerId            String
+  userId                String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([identifier, value])
+  @@map("verification")
+}
+
+model Course {
+  id             String             @id @default(cuid())
+  code           String             @unique
+  name           String
+  description    String?
+  term           String
+  year           Int
+  isActive       Boolean            @default(true)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  professorId    String
+  aiInstructions String             @default("")
+  aiInteractions AIInteraction[]
+  enrollments    CourseEnrollment[]
+  tas            CourseTA[]
+  professor      User               @relation("ProfessorCourses", fields: [professorId], references: [id])
+  documents      Document[]
+
+  @@map("courses")
+}
+
+model CourseTA {
+  id        String   @id @default(cuid())
+  courseId  String
+  userId    String
+  createdAt DateTime @default(now())
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, userId])
+  @@map("course_tas")
+}
+
+model CourseEnrollment {
+  id         String   @id @default(cuid())
+  courseId   String
+  studentId  String
+  enrolledAt DateTime @default(now())
+  isActive   Boolean  @default(true)
+  course     Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  student    User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, studentId])
+  @@map("course_enrollments")
+}
+
+model Document {
+  id           String         @id @default(cuid())
+  filename     String
+  originalName String
+  fileSize     Int
+  mimeType     String
+  type         DocumentType
+  status       DocumentStatus @default(UPLOADING)
+  storageKey   String         @unique
+  description  String?
+  tags         String[]
+  uploaderId   String
+  courseId     String
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  processedAt  DateTime?
+  course       Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  uploader     User           @relation(fields: [uploaderId], references: [id])
+
+  @@map("documents")
+}
+
+model AIInteraction {
+  id        String   @id @default(cuid())
+  userId    String
+  courseId  String?
+  query     String
+  response  String
+  context   Json?
+  modelUsed String
+  tokenUsed Int?
+  createdAt DateTime @default(now())
+  course    Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@map("ai_interactions")
+}
+
+model SystemConfig {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String
+  description String?
+  updatedAt   DateTime @updatedAt
+  updatedBy   String
+
+  @@map("system_config")
+}
+
 enum UserRole {
   ADMIN
   PROFESSOR
@@ -27,204 +189,4 @@ enum DocumentType {
   DOCX
   MARKDOWN
   OTHER
-}
-
-model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  emailVerified Boolean @default(false)
-
-  // Better Auth required fields
-  name      String
-  image     String?
-
-  role      UserRole
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Better Auth relationships
-  accounts  Account[]
-  sessions  Session[]
-
-  // Course relationships
-  taughtCourses     Course[]           @relation("ProfessorCourses")
-  assistedCourses   CourseTA[]
-  enrolledCourses   CourseEnrollment[]
-
-  // Document uploads (only for admin, professor, ta)
-  uploadedDocuments Document[]
-
-  // AI interactions
-  aiInteractions    AIInteraction[]
-
-  @@map("user")
-}
-
-model Session {
-  id        String   @id @default(cuid())
-  expiresAt DateTime
-  token     String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  ipAddress String?
-  userAgent String?
-  userId    String
-  user      User @relation(references: [id], fields: [userId], onDelete: Cascade)
-
-  @@map("session")
-}
-
-model Account {
-  id                String  @id @default(cuid())
-  accountId         String
-  providerId        String
-  userId            String
-  accessToken       String?
-  refreshToken      String?
-  idToken           String?
-  accessTokenExpiresAt DateTime?
-  refreshTokenExpiresAt DateTime?
-  scope             String?
-  password          String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  user User @relation(references: [id], fields: [userId], onDelete: Cascade)
-
-  @@unique([providerId, accountId])
-  @@map("account")
-}
-
-model Verification {
-  id        String   @id @default(cuid())
-  identifier String
-  value     String
-  expiresAt DateTime
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([identifier, value])
-  @@map("verification")
-}
-
-model Course {
-  id          String    @id @default(cuid())
-  code        String    @unique // e.g., "CS101"
-  name        String
-  description String?
-  term        String    // e.g., "Fall", "Spring", "Summer"
-  year        Int
-  isActive    Boolean   @default(true)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-
-  // Relationships
-  professor   User      @relation("ProfessorCourses", fields: [professorId], references: [id])
-  professorId String
-
-  tas         CourseTA[]
-  enrollments CourseEnrollment[]
-  documents   Document[]
-
-  // AI usage tracking
-  aiInteractions AIInteraction[]
-
-  @@map("courses")
-}
-
-model CourseTA {
-  id       String @id @default(cuid())
-  courseId String
-  userId   String
-
-  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-
-  @@unique([courseId, userId])
-  @@map("course_tas")
-}
-
-model CourseEnrollment {
-  id         String   @id @default(cuid())
-  courseId   String
-  studentId  String
-  enrolledAt DateTime @default(now())
-  isActive   Boolean  @default(true)
-
-  course  Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  student User   @relation(fields: [studentId], references: [id], onDelete: Cascade)
-
-  @@unique([courseId, studentId])
-  @@map("course_enrollments")
-}
-
-model Document {
-  id           String         @id @default(cuid())
-  filename     String
-  originalName String
-  fileSize     Int            // in bytes
-  mimeType     String
-  type         DocumentType
-  status       DocumentStatus @default(UPLOADING)
-
-  // Storage information
-  storageKey   String         @unique // S3 key or file path
-
-  // Metadata
-  description  String?
-  tags         String[]       // Array of tags for categorization
-
-  // Relationships
-  uploaderId   String
-  uploader     User           @relation(fields: [uploaderId], references: [id])
-
-  courseId     String
-  course       Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
-
-  // Timestamps
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
-  processedAt  DateTime?      // When document processing completed
-
-  @@map("documents")
-}
-
-model AIInteraction {
-  id        String   @id @default(cuid())
-  userId    String
-  courseId  String?
-
-  // Interaction details
-  query     String
-  response  String
-  context   Json?    // RAG context, retrieved documents, etc.
-
-  // Metadata
-  modelUsed String   // e.g., "gpt-4", "claude-3"
-  tokenUsed Int?     // Token consumption tracking
-
-  // Timestamps
-  createdAt DateTime @default(now())
-
-  // Relationships
-  user      User     @relation(fields: [userId], references: [id], onDelete: Restrict)
-  course    Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
-
-  @@map("ai_interactions")
-}
-
-// System configuration and settings
-model SystemConfig {
-  id    String @id @default(cuid())
-  key   String @unique
-  value String
-
-  description String?
-  updatedAt   DateTime @updatedAt
-  updatedBy   String   // User ID who made the change
-
-  @@map("system_config")
 }
