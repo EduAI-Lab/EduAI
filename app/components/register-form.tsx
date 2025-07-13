@@ -2,28 +2,43 @@ import { cn } from "~/lib/utils"
 import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
 import { Label } from "~/components/ui/label"
-import type { SignInInput } from "~/lib/auth"
+import type { SignUpInput } from "~/lib/auth"
 
-interface LoginFormProps extends React.ComponentProps<"div"> {
-  fieldErrors?: Partial<Record<keyof SignInInput, string>>;
+interface RegisterFormProps extends React.ComponentProps<"div"> {
+  fieldErrors?: Partial<Record<keyof SignUpInput, string>>;
   isLoading?: boolean;
 }
 
-export function LoginForm({
+export function RegisterForm({
   className,
   fieldErrors,
   isLoading = false,
   ...props
-}: LoginFormProps) {
+}: RegisterFormProps) {
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>
       <div className="flex flex-col items-center gap-2 text-center">
-        <h1 className="text-2xl font-bold">Login to your account</h1>
+        <h1 className="text-2xl font-bold">Create an account</h1>
         <p className="text-muted-foreground text-sm text-balance">
-          Enter your email below to login to your account
+          Enter your details below to create your account
         </p>
       </div>
-      <div className="grid gap-6">
+      <div className="grid gap-4">
+        <div className="grid gap-3">
+          <Label htmlFor="name">Name</Label>
+          <Input
+            id="name"
+            name="name"
+            type="text"
+            placeholder="Your name"
+            required
+            disabled={isLoading}
+            className={fieldErrors?.name ? "border-red-300 focus:border-red-500 focus:ring-red-500" : ""}
+          />
+          {fieldErrors?.name && (
+            <p className="text-sm text-red-600">{fieldErrors.name}</p>
+          )}
+        </div>
         <div className="grid gap-3">
           <Label htmlFor="email">Email</Label>
           <Input
@@ -40,15 +55,7 @@ export function LoginForm({
           )}
         </div>
         <div className="grid gap-3">
-          <div className="flex items-center">
-            <Label htmlFor="password">Password</Label>
-            <a
-              href="#"
-              className="ml-auto text-sm underline-offset-4 hover:underline"
-            >
-              Forgot your password?
-            </a>
-          </div>
+          <Label htmlFor="password">Password</Label>
           <Input
             id="password"
             name="password"
@@ -61,8 +68,22 @@ export function LoginForm({
             <p className="text-sm text-red-600">{fieldErrors.password}</p>
           )}
         </div>
+        <div className="grid gap-3">
+          <Label htmlFor="confirm-password">Confirm Password</Label>
+          <Input
+            id="confirm-password"
+            name="confirmPassword"
+            type="password"
+            required
+            disabled={isLoading}
+            className={fieldErrors?.confirmPassword ? "border-red-300 focus:border-red-500 focus:ring-red-500" : ""}
+          />
+          {fieldErrors?.confirmPassword && (
+            <p className="text-sm text-red-600">{fieldErrors.confirmPassword}</p>
+          )}
+        </div>
         <Button type="submit" className="w-full" disabled={isLoading}>
-          {isLoading ? "Signing in..." : "Login"}
+          {isLoading ? "Creating account..." : "Register"}
         </Button>
         <div className="after:border-border relative text-center text-sm after:absolute after:inset-0 after:top-1/2 after:z-0 after:flex after:items-center after:border-t">
           <span className="bg-background text-muted-foreground relative z-10 px-2">
@@ -76,13 +97,13 @@ export function LoginForm({
               fill="currentColor"
             />
           </svg>
-          Login with GitHub
+          Register with GitHub
         </Button>
       </div>
       <div className="text-center text-sm">
-        Don&apos;t have an account?{" "}
-        <a href="/auth/register" className="underline underline-offset-4">
-          Sign up
+        Already have an account?{" "}
+        <a href="/auth/login" className="underline underline-offset-4">
+          Login
         </a>
       </div>
     </div>

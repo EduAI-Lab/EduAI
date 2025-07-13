@@ -4,7 +4,9 @@ export default [
   index("routes/home.tsx"),
   route("/api/auth/*", "routes/api/auth.$.ts"),
   route("/api/courses", "routes/api/courses.$.ts"),
-  route("/signin", "routes/auth/login.tsx"),
+  route("/auth/login", "routes/auth/login.tsx"),
+  route("/auth/register", "routes/auth/register.tsx"),
+  route("/dashboard", "routes/dashboard.tsx"),
   route("/courses", "routes/courses.tsx"),
   route("/api/courses/:id", "routes/api/courses.id.ts"),
 ] satisfies RouteConfig;

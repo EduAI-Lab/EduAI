@@ -10,7 +10,7 @@ import {
   IconFolder,
   IconHelp,
   IconInnerShadowTop,
-  IconListDetails,
+  IconBooks,
   IconReport,
   IconSearch,
   IconSettings,
@@ -30,13 +30,9 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "~/components/ui/sidebar"
+import type { User } from "~/lib/auth/types"
 
 const data = {
-  user: {
-    name: "shadcn",
-    email: "m@example.com",
-    avatar: "/avatars/shadcn.jpg",
-  },
   navMain: [
     {
       title: "Dashboard",
@@ -44,35 +40,43 @@ const data = {
       icon: IconDashboard,
     },
     {
-      title: "Lifecycle",
-      url: "#",
-      icon: IconListDetails,
+      title: "Courses",
+      url: "/courses",
+      icon: IconBooks,
     },
     {
-      title: "Analytics",
+      title: "Database",
+      url: "#",
+      icon: IconDatabase,
+    },
+    {
+      title: "Chart",
       url: "#",
       icon: IconChartBar,
     },
     {
-      title: "Projects",
+      title: "Analytics",
       url: "#",
-      icon: IconFolder,
+      icon: IconCamera,
     },
     {
-      title: "Team",
+      title: "Reports",
       url: "#",
-      icon: IconUsers,
+      icon: IconReport,
     },
   ],
-  navClouds: [
+  navDocs: [
     {
-      title: "Capture",
-      icon: IconCamera,
-      isActive: true,
+      title: "Documents",
+      icon: IconFileDescription,
       url: "#",
       items: [
         {
-          title: "Active Proposals",
+          title: "Recent",
+          url: "#",
+        },
+        {
+          title: "Shared",
           url: "#",
         },
         {
@@ -82,16 +86,35 @@ const data = {
       ],
     },
     {
-      title: "Proposal",
-      icon: IconFileDescription,
+      title: "Users",
+      icon: IconUsers,
       url: "#",
       items: [
         {
-          title: "Active Proposals",
+          title: "All Users",
           url: "#",
         },
         {
-          title: "Archived",
+          title: "Roles",
+          url: "#",
+        },
+        {
+          title: "Permissions",
+          url: "#",
+        },
+      ],
+    },
+    {
+      title: "Projects",
+      icon: IconFolder,
+      url: "#",
+      items: [
+        {
+          title: "Active",
+          url: "#",
+        },
+        {
+          title: "Completed",
           url: "#",
         },
       ],
@@ -148,7 +171,12 @@ const data = {
   ],
 }
 
-export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+export function AppSidebar({
+  user,
+  ...props
+}: {
+  user: User
+} & React.ComponentProps<typeof Sidebar>) {
   return (
     <Sidebar collapsible="offcanvas" {...props}>
       <SidebarHeader>
@@ -160,7 +188,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             >
               <a href="#">
                 <IconInnerShadowTop className="!size-5" />
-                <span className="text-base font-semibold">Acme Inc.</span>
+                <span className="text-base font-semibold">EduAI</span>
               </a>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -168,11 +196,11 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={data.navMain} />
-        <NavDocuments items={data.documents} />
+        {/* <NavDocuments items={data.documents} /> */}
         <NavSecondary items={data.navSecondary} className="mt-auto" />
       </SidebarContent>
       <SidebarFooter>
-        <NavUser user={data.user} />
+        <NavUser user={user} />
       </SidebarFooter>
     </Sidebar>
   )
