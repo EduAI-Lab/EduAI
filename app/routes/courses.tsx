@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useSession } from "~/lib/auth";
-import { Form, Link, useNavigate } from "react-router-dom";
+import { Form } from "react-router";
 
 type Course = {
   id: string;
