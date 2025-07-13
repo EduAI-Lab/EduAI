@@ -1,9 +1,10 @@
 import { Form, useActionData, redirect } from "react-router"
-import { SquareLibrary } from "lucide-react"
+import { GalleryVerticalEnd } from "lucide-react"
+import { useState } from "react"
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router"
 
-import { LoginForm } from "~/components/login-form"
-import { signInSchema, type SignInInput } from "~/lib/auth"
+import { RegisterForm } from "~/components/register-form"
+import { signUpSchema, type SignUpInput } from "~/lib/auth"
 import { auth } from "~/lib/auth/server"
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -19,15 +20,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
 export async function action({ request }: ActionFunctionArgs) {
   const formData = Object.fromEntries(await request.formData());
   const input = {
+    name: String(formData.name || ""),
     email: String(formData.email || ""),
     password: String(formData.password || ""),
+    confirmPassword: String(formData.confirmPassword || ""),
   };
-
-  const result = signInSchema.safeParse(input);
+  const result = signUpSchema.safeParse(input);
   if (!result.success) {
-    const fieldErrors: Partial<Record<keyof SignInInput, string>> = {};
+    const fieldErrors: Partial<Record<keyof SignUpInput, string>> = {};
     result.error.issues.forEach((issue) => {
-      const field = issue.path[0] as keyof SignInInput;
+      const field = issue.path[0] as keyof SignUpInput;
       if (field && !fieldErrors[field]) {
         fieldErrors[field] = issue.message;
       }
@@ -36,14 +38,15 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   try {
-    // Create a new request to the better-auth sign-in endpoint
-    const url = new URL("/api/auth/sign-in/email", request.url);
+    // Create a new request to the better-auth sign-up endpoint
+    const url = new URL("/api/auth/sign-up/email", request.url);
     const authRequest = new Request(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
+        name: input.name,
         email: input.email,
         password: input.password,
       }),
@@ -54,7 +57,7 @@ export async function action({ request }: ActionFunctionArgs) {
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       return {
-        formError: errorData.message || "Sign in failed"
+        formError: errorData.message || "Sign up failed"
       };
     }
 
@@ -67,7 +70,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
     return redirect("/dashboard", { headers });
   } catch (err: unknown) {
-    let message = "Sign in failed";
+    let message = "Sign up failed";
     if (typeof err === "object" && err && "message" in err) {
       message = String((err as { message?: string }).message ?? message);
     }
@@ -75,9 +78,10 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 }
 
-export default function LoginPage() {
+export default function RegisterPage() {
+  const [isLoading, setIsLoading] = useState(false);
   const actionData = useActionData() as {
-    fieldErrors?: Partial<Record<keyof SignInInput, string>>;
+    fieldErrors?: Partial<Record<keyof SignUpInput, string>>;
     formError?: string;
   } | undefined;
 
@@ -87,7 +91,7 @@ export default function LoginPage() {
         <div className="flex justify-center gap-2 md:justify-start">
           <a href="#" className="flex items-center gap-2 font-medium">
             <div className="bg-primary text-primary-foreground flex size-6 items-center justify-center rounded-md">
-              <SquareLibrary className="size-4" />
+              <GalleryVerticalEnd className="size-4" />
             </div>
             EduAI
           </a>
@@ -100,9 +104,9 @@ export default function LoginPage() {
                   {actionData.formError}
                 </div>
               )}
-              <LoginForm
+              <RegisterForm
                 fieldErrors={actionData?.fieldErrors}
-                isLoading={false}
+                isLoading={isLoading}
               />
             </Form>
           </div>
