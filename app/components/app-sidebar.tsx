@@ -15,6 +15,8 @@ import {
   IconSearch,
   IconSettings,
   IconUsers,
+  IconMessageCircle,
+  IconRobot,
 } from "@tabler/icons-react"
 
 import { NavDocuments } from "~/components/nav-documents"
@@ -50,9 +52,9 @@ const data = {
       icon: IconDatabase,
     },
     {
-      title: "Chart",
-      url: "#",
-      icon: IconChartBar,
+      title: "Chatbot",
+      url: "/chat",
+      icon: IconRobot,
     },
     {
       title: "Analytics",
