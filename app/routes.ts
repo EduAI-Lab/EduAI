@@ -11,4 +11,7 @@ export default [
   route("/api/chat", "routes/api/chat.ts"),
   route("/courses", "routes/courses.tsx"),
   route("/api/courses/:id", "routes/api/courses.id.ts"),
+  route("/admin/ai-models", "routes/admin.ai-models.tsx"),
+  route("/api/ai-providers/*", "routes/api/ai-providers.$.ts"),
+  route("/api/ai-models/*", "routes/api/ai-models.$.ts"),
 ] satisfies RouteConfig;
