@@ -17,6 +17,7 @@ import {
   IconUsers,
   IconMessageCircle,
   IconRobot,
+  IconBrain,
 } from "@tabler/icons-react"
 
 import { NavDocuments } from "~/components/nav-documents"
@@ -45,6 +46,11 @@ const data = {
       title: "Courses",
       url: "/courses",
       icon: IconBooks,
+    },
+    {
+      title: "AI Management",
+      url: "/admin/ai-models",
+      icon: IconBrain,
     },
     {
       title: "Database",
@@ -197,7 +203,9 @@ export function AppSidebar({
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        <NavMain items={data.navMain} />
+        <NavMain items={data.navMain.filter(item =>
+          item.title !== "AI Management" || user.role === "ADMIN"
+        )} />
         {/* <NavDocuments items={data.documents} /> */}
         <NavSecondary items={data.navSecondary} className="mt-auto" />
       </SidebarContent>
