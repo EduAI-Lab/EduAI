@@ -2,8 +2,8 @@ import * as React from "react"
 import {
   IconCamera,
   IconChartBar,
-  IconDashboard,
   IconDatabase,
+  IconDashboard,
   IconFileAi,
   IconFileDescription,
   IconFileWord,
@@ -53,9 +53,9 @@ const data = {
       icon: IconBrain,
     },
     {
-      title: "Database",
-      url: "#",
-      icon: IconDatabase,
+      title: "User Management",
+      url: "/admin/users",
+      icon: IconUsers,
     },
     {
       title: "Chatbot",
@@ -204,7 +204,7 @@ export function AppSidebar({
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={data.navMain.filter(item =>
-          item.title !== "AI Management" || user.role === "ADMIN"
+          (item.title !== "AI Management" && item.title !== "User Management") || user.role === "ADMIN"
         )} />
         {/* <NavDocuments items={data.documents} /> */}
         <NavSecondary items={data.navSecondary} className="mt-auto" />
