@@ -89,6 +89,7 @@ model Course {
   aiInstructions String             @default("")
   aiInteractions AIInteraction[]
   enrollments    CourseEnrollment[]
+  materials      CourseMaterial[]
   tas            CourseTA[]
   professor      User               @relation("ProfessorCourses", fields: [professorId], references: [id])
   documents      Document[]
@@ -147,16 +148,16 @@ model AIInteraction {
   id        String   @id @default(cuid())
   userId    String
   courseId  String?
-  modelId   String?
   query     String
   response  String
   context   Json?
-  modelUsed String   // Legacy field - keeping for backwards compatibility
+  modelUsed String
   tokenUsed Int?
   createdAt DateTime @default(now())
-  course    Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  modelId   String?
+  course    Course?  @relation(fields: [courseId], references: [id])
+  model     AIModel? @relation(fields: [modelId], references: [id])
   user      User     @relation(fields: [userId], references: [id])
-  model     AIModel? @relation(fields: [modelId], references: [id], onDelete: SetNull)
 
   @@map("ai_interactions")
 }
@@ -173,40 +174,40 @@ model SystemConfig {
 }
 
 model AIProvider {
-  id               String                 @id @default(cuid())
-  name             String                 @unique
-  displayName      String
-  description      String
-  requiresApiKey   Boolean                @default(true)
-  defaultBaseUrl   String?
-  envVarName       String?
-  isActive         Boolean                @default(true)
-  createdAt        DateTime               @default(now())
-  updatedAt        DateTime               @updatedAt
-  models           AIModel[]
-  userSettings     UserProviderSettings[]
+  id             String                 @id @default(cuid())
+  name           String                 @unique
+  displayName    String
+  description    String
+  requiresApiKey Boolean                @default(true)
+  defaultBaseUrl String?
+  envVarName     String?
+  isActive       Boolean                @default(true)
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  models         AIModel[]
+  userSettings   UserProviderSettings[]
 
   @@map("ai_providers")
 }
 
 model AIModel {
-  id                String       @id @default(cuid())
-  modelId           String       // The actual model ID used by the provider (e.g., "gpt-4o", "claude-3-5-sonnet-20241022")
-  name              String       // Display name
+  id                String          @id @default(cuid())
+  modelId           String
+  name              String
   description       String
   type              AIModelType
   maxTokens         Int?
-  supportsImages    Boolean      @default(false)
-  supportsTools     Boolean      @default(false)
-  supportsStreaming Boolean      @default(true)
-  inputPricing      Float?       // Price per 1M input tokens
-  outputPricing     Float?       // Price per 1M output tokens
-  isActive          Boolean      @default(true)
-  createdAt         DateTime     @default(now())
-  updatedAt         DateTime     @updatedAt
+  supportsImages    Boolean         @default(false)
+  supportsTools     Boolean         @default(false)
+  supportsStreaming Boolean         @default(true)
+  inputPricing      Float?
+  outputPricing     Float?
+  isActive          Boolean         @default(true)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
   providerId        String
-  provider          AIProvider   @relation(fields: [providerId], references: [id], onDelete: Cascade)
   interactions      AIInteraction[]
+  provider          AIProvider      @relation(fields: [providerId], references: [id], onDelete: Cascade)
 
   @@unique([providerId, modelId])
   @@map("ai_models")
@@ -216,16 +217,57 @@ model UserProviderSettings {
   id         String     @id @default(cuid())
   userId     String
   providerId String
-  apiKey     String?    // Encrypted API key
-  baseUrl    String?    // Custom base URL (for providers like Ollama)
+  apiKey     String?
+  baseUrl    String?
   isEnabled  Boolean    @default(false)
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
-  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   provider   AIProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, providerId])
   @@map("user_provider_settings")
+}
+
+model CourseMaterial {
+  id          String          @id @default(cuid())
+  courseId    String
+  title       String
+  mimeType    String
+  fileSize    Int
+  checksum    String          @unique
+  rawText     String?
+  status      MaterialStatus  @default(PROCESSING)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  processedAt DateTime?
+  course      Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  chunks      MaterialChunk[]
+
+  @@map("course_materials")
+}
+
+model MaterialChunk {
+  id         String             @id @default(cuid())
+  materialId String
+  index      Int
+  content    String
+  createdAt  DateTime           @default(now())
+  material   CourseMaterial     @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  embedding  MaterialEmbedding?
+
+  @@unique([materialId, index])
+  @@map("material_chunks")
+}
+
+model MaterialEmbedding {
+  id        String                @id @default(cuid())
+  chunkId   String                @unique
+  embedding Unsupported("vector(3072)")
+  createdAt DateTime              @default(now())
+  chunk     MaterialChunk         @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+
+  @@map("material_embeddings")
 }
 
 enum UserRole {
@@ -257,4 +299,10 @@ enum AIModelType {
   IMAGE
   AUDIO
   VIDEO
+}
+
+enum MaterialStatus {
+  PROCESSING
+  READY
+  FAILED
 }
