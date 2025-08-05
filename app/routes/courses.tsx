@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { useLoaderData, Form, redirect } from "react-router"
+import { useLoaderData, Form, redirect, Link } from "react-router"
 import type { LoaderFunctionArgs } from "react-router"
 import {
   IconPlus,
@@ -139,7 +139,7 @@ export default function CoursesPage() {
   const getRoleBasedActions = (course: Course) => {
     if (isAdmin) {
       return (
-        <div className="flex gap-2">
+        <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
           <Button
             variant="outline"
             size="sm"
@@ -159,23 +159,27 @@ export default function CoursesPage() {
 
     if (isProfessor && course.professorId === user.id) {
       return (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            setEditingCourse(course)
-            setEditDialogOpen(true)
-          }}
-        >
-          <IconEdit className="w-4 h-4" />
-        </Button>
+        <div onClick={(e) => e.stopPropagation()}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setEditingCourse(course)
+              setEditDialogOpen(true)
+            }}
+          >
+            <IconEdit className="w-4 h-4" />
+          </Button>
+        </div>
       )
     }
 
     return (
-      <Button variant="outline" size="sm">
-        <IconEye className="w-4 h-4" />
-      </Button>
+      <div onClick={(e) => e.stopPropagation()}>
+        <Button variant="outline" size="sm">
+          <IconEye className="w-4 h-4" />
+        </Button>
+      </div>
     )
   }
 
@@ -315,6 +319,7 @@ export default function CoursesPage() {
                   <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                     {filteredCourses.map((course) => (
                       <Card key={course.id} className="hover:shadow-md transition-shadow">
+                        <Link to={`/courses/${course.id}`} className="block">
                         <CardHeader className="pb-3">
                           <div className="flex items-start justify-between">
                             <div className="flex-1">
@@ -351,6 +356,7 @@ export default function CoursesPage() {
                             </div>
                           )}
                         </CardContent>
+                        </Link>
                       </Card>
                     ))}
                   </div>
