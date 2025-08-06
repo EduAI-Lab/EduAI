@@ -1,11 +1,7 @@
 import { streamText, tool, smoothStream } from "ai";
 import { createAIProviderRegistry } from "~/lib/ai/providers";
-import {
-  findRelevantContent,
-  processMaterialEmbeddings,
-} from "~/lib/ai/embedding";
+import { findRelevantContent } from "~/lib/ai/embedding";
 import { auth } from "~/lib/auth/server";
-import prisma from "~/lib/prisma";
 import type { ActionFunctionArgs } from "react-router";
 import { z } from "zod";
 
@@ -67,58 +63,6 @@ export async function action({ request }: ActionFunctionArgs) {
           }
         },
       }),
-
-      addResource: tool({
-        description:
-          "Add a new resource or note to the course materials. Use this when the user provides new information that should be stored.",
-        parameters: z.object({
-          content: z
-            .string()
-            .describe("The content or resource to add to the course materials"),
-          title: z.string().describe("A brief title for this resource"),
-        }),
-        execute: async ({ content, title }) => {
-          if (!courseId) {
-            return { error: "No course selected for adding resources" };
-          }
-
-          try {
-            // Create a simple text material
-            const material = await prisma.courseMaterial.create({
-              data: {
-                courseId,
-                title,
-                mimeType: "text/plain",
-                fileSize: content.length,
-                checksum: `manual-${Date.now()}`,
-                rawText: content,
-                status: "PROCESSING",
-              },
-            });
-
-            // Process embeddings
-            await processMaterialEmbeddings(material.id, content);
-
-            // Update status
-            await prisma.courseMaterial.update({
-              where: { id: material.id },
-              data: {
-                status: "READY",
-                processedAt: new Date(),
-              },
-            });
-
-            return {
-              success: true,
-              materialId: material.id,
-              message: "Resource added successfully",
-            };
-          } catch (error) {
-            console.error("Error adding resource:", error);
-            return { error: "Failed to add resource" };
-          }
-        },
-      }),
     };
 
     // Stream the response with tools and multi-step calls
@@ -133,8 +77,6 @@ export async function action({ request }: ActionFunctionArgs) {
       system: `You are EduAI, a helpful AI assistant for course content.
 
 When users ask questions about course materials, use the getInformation tool to search through the uploaded course materials and provide accurate answers based on that content.
-
-If users provide new information or notes that should be stored for future reference, use the addResource tool to save it to the course materials.
 
 Always be helpful and accurate. If you don't have relevant information from the course materials, say so clearly.`,
 
