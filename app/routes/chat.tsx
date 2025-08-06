@@ -2,7 +2,6 @@ import { useChat } from '@ai-sdk/react';
 import { useState, useEffect } from "react";
 import { redirect, useLoaderData } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
-import { ScrollArea } from "~/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "~/components/ui/select";
 import { ChatWelcome } from "~/components/chat/chat-welcome";
 import { ChatMessage } from "~/components/chat/chat-message";
@@ -12,6 +11,7 @@ import { useApiKeys } from "~/hooks/use-api-keys";
 import { AppSidebar } from "~/components/app-sidebar";
 import { SiteHeader } from "~/components/site-header";
 import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
+
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma";
 
@@ -124,75 +124,57 @@ export default function Chat() {
       <AppSidebar variant="inset" user={user} />
       <SidebarInset>
         <SiteHeader user={user} />
-                 <div className="flex flex-col h-[calc(100vh-var(--header-height))] bg-gradient-to-br from-background via-background to-muted/20">
-           {/* Simple selectors at top */}
-           <div className="flex-shrink-0 px-6 py-4">
-             <div className="container max-w-4xl mx-auto flex items-center gap-4">
-               <Select value={selectedCourseId || "none"} onValueChange={(value) => setSelectedCourseId(value === "none" ? null : value)}>
-                 <SelectTrigger className="w-[140px]">
-                   {selectedCourseId ? availableCourses.find(c => c.id === selectedCourseId)?.code || 'Selected' : 'No Course'}
-                 </SelectTrigger>
-                 <SelectContent>
-                   <SelectItem value="none">No Course Selected</SelectItem>
-                   {availableCourses.map((course) => (
-                     <SelectItem key={course.id} value={course.id}>
-                       {course.code}
-                     </SelectItem>
-                   ))}
-                 </SelectContent>
-               </Select>
+        <div className="flex flex-col h-[calc(100vh-var(--header-height))] bg-gradient-to-br from-background via-background to-muted/20">
+          {/* Main content area */}
+          <div className="flex-1 flex flex-col min-h-0 relative">
+            <div className="h-full overflow-y-auto">
+              <div className="px-4 py-6">
+                <div className="max-w-4xl mx-auto space-y-6">
+                  {messages.length === 0 ? (
+                    <ChatWelcome
+                      selectedModelInfo={selectedModelInfo}
+                      onSelectPrompt={handlePromptSelect}
+                    />
+                  ) : (
+                    <>
+                      {messages.map((message, index) => {
+                        // Check if this is the last message and we're still loading
+                        const isLastMessage = index === messages.length - 1;
+                        const isStreamingMessage = isLastMessage && isLoading;
 
-               <Select value={selectedModel} onValueChange={setSelectedModel}>
-                 <SelectTrigger className="w-[180px]">
-                   {selectedModelInfo?.name}
-                 </SelectTrigger>
-                 <SelectContent>
-                   {chatModels.map((model) => (
-                     <SelectItem key={model.id} value={model.id}>
-                       {model.name}
-                     </SelectItem>
-                   ))}
-                 </SelectContent>
-               </Select>
-             </div>
-           </div>
+                        return (
+                          <ChatMessage
+                            key={message.id}
+                            message={message}
+                            isStreaming={isStreamingMessage}
+                          />
+                        );
+                      })}
 
-           {/* Main content area with proper flex layout */}
-           <div className="flex-1 flex flex-col min-h-0">
-             {/* Messages area that can scroll */}
-             <div className="flex-1 overflow-hidden">
-               <ScrollArea className="h-full">
-                 <div className="max-w-4xl mx-auto px-4 py-6">
-                   {messages.length === 0 ? (
-                     <ChatWelcome
-                       selectedModelInfo={selectedModelInfo}
-                       onSelectPrompt={handlePromptSelect}
-                     />
-                   ) : (
-                     <div className="space-y-8 pb-8">
-                       {messages.map((message) => (
-                         <ChatMessage key={message.id} message={message} />
-                       ))}
+                      {isLoading && <ChatTypingIndicator />}
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
 
-                       {isLoading && <ChatTypingIndicator />}
-                     </div>
-                   )}
-                 </div>
-               </ScrollArea>
-             </div>
-
-             {/* Sticky input at bottom */}
-             <div className="flex-shrink-0">
-               <ChatInput
-                 input={input}
-                 isLoading={isLoading}
-                 onInputChange={handleInputChange}
-                 onSubmit={handleSubmit}
-                 onStop={stop}
-               />
-             </div>
-           </div>
-         </div>
+          {/* Sticky input at bottom with integrated selectors */}
+          <ChatInput
+            input={input}
+            isLoading={isLoading}
+            onInputChange={handleInputChange}
+            onSubmit={handleSubmit}
+            onStop={stop}
+            selectedCourseId={selectedCourseId}
+            setSelectedCourseId={setSelectedCourseId}
+            availableCourses={availableCourses}
+            selectedModel={selectedModel}
+            setSelectedModel={setSelectedModel}
+            chatModels={chatModels}
+            selectedModelInfo={selectedModelInfo}
+          />
+        </div>
       </SidebarInset>
     </SidebarProvider>
   );
