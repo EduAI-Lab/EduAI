@@ -1,4 +1,4 @@
-import { streamText, tool } from "ai";
+import { streamText, tool, smoothStream } from "ai";
 import { createAIProviderRegistry } from "~/lib/ai/providers";
 import {
   findRelevantContent,
@@ -125,11 +125,12 @@ export async function action({ request }: ActionFunctionArgs) {
     const result = await streamText({
       model: aiModel,
       messages,
+      experimental_transform: smoothStream(),
       temperature: 0.6,
       maxTokens: 32000,
       maxSteps: 5, // Allow up to 5 tool calls
       tools,
-      system: `You are a helpful AI assistant for course content.
+      system: `You are EduAI, a helpful AI assistant for course content.
 
 When users ask questions about course materials, use the getInformation tool to search through the uploaded course materials and provide accurate answers based on that content.
 
