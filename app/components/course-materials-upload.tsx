@@ -125,7 +125,7 @@ export function CourseMaterialsUpload({ courseId, apiKeys }: CourseMaterialsUplo
             Upload Course Materials
           </CardTitle>
           <CardDescription>
-            Upload documents to make them available for AI chat. Supported formats: TXT, MD
+            Upload documents to make them available for AI chat. Supported formats: PDF, DOCX, PPTX, TXT, MD
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -135,7 +135,7 @@ export function CourseMaterialsUpload({ courseId, apiKeys }: CourseMaterialsUplo
               <Input
                 id="file-upload"
                 type="file"
-                accept=".txt,.md,text/plain,text/markdown"
+                accept=".pdf,.docx,.pptx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain,text/markdown"
                 onChange={handleFileUpload}
                 disabled={uploading}
                 className="mt-2"
