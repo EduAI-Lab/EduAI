@@ -73,7 +73,7 @@ export default function CoursesPage() {
         const response = await fetch("/api/courses")
         if (response.ok) {
           const data = await response.json()
-          setCourses(data)
+          setCourses(data.courses)
         }
       } catch (error) {
         console.error("Failed to fetch courses:", error)
