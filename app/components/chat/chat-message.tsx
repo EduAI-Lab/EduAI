@@ -10,7 +10,6 @@ import {
   MessageAction
 } from "~/components/ui/message";
 import { Tool } from "~/components/ui/tool";
-import { ResponseStream } from "~/components/ui/response-stream";
 
 interface ChatMessageProps {
   message: Message;
@@ -125,23 +124,12 @@ export function ChatMessage({ message, isStreaming = false }: ChatMessageProps) 
           />
 
           <div className="flex flex-col gap-2 flex-1 max-w-[80%]">
-            {isStreaming ? (
-              <div className="rounded-lg px-4 py-3 bg-muted/50 text-foreground">
-                <ResponseStream
-                  textStream={textContent}
-                  mode="typewriter"
-                  speed={50}
-                  className="prose prose-sm max-w-none dark:prose-invert"
-                />
-              </div>
-            ) : (
-              <MessageContent
-                markdown={true}
-                className="rounded-lg px-4 py-3 bg-muted/50 text-foreground"
-              >
-                {textContent}
-              </MessageContent>
-            )}
+            <MessageContent
+              markdown={true}
+              className="rounded-lg px-4 py-3 bg-muted/50 text-foreground"
+            >
+              {textContent}
+            </MessageContent>
 
             <MessageActions className="opacity-0 group-hover:opacity-100 transition-opacity">
               <MessageAction tooltip="Copy message">
