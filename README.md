@@ -85,3 +85,142 @@ This template comes with [Tailwind CSS](https://tailwindcss.com/) already config
 ---
 
 Built with ❤️ using React Router.
+
+## Chat API
+
+Use EduAI via HTTP.
+
+- Endpoint: `POST /api/chat`
+- Auth: Better Auth session cookie
+- Request body:
+  - `messages`: array of `{ role: "user" | "assistant" | "system", content: string }`
+  - `model`: `provider:model` (e.g. `openai:gpt-4o-mini`, `google:gemini-2.5-flash`)
+  - `apiKeys`: provider configs containing your key(s)
+  - `courseId` (optional): enable RAG over uploaded course materials
+- Response: streaming data (AI SDK data stream)
+
+### 1) Sign in (store cookies)
+
+**PowerShell:**
+```powershell
+curl -i -X POST "http://localhost:5173/api/auth/sign-in/email" `
+  -H "Content-Type: application/json" `
+  -d '{"email":"you@example.com","password":"your-password"}' `
+  -c cookies.txt
+```
+
+**Bash/Unix:**
+```bash
+curl -i -X POST "http://localhost:5173/api/auth/sign-in/email" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"you@example.com","password":"your-password"}' \
+  -c cookies.txt
+```
+
+### 2) Chat (OpenAI)
+
+**PowerShell:**
+```powershell
+curl -N -X POST "http://localhost:5173/api/chat" `
+  -H "Content-Type: application/json" `
+  -b cookies.txt `
+  -d '{
+    "messages": [
+      { "role": "user", "content": "Explain backpropagation in simple terms." }
+    ],
+    "model": "openai:gpt-4o-mini",
+    "apiKeys": {
+      "openai": { "apiKey": "sk-your-openai-key", "isEnabled": true }
+    }
+  }'
+```
+
+**Bash/Unix:**
+```bash
+curl -N -X POST "http://localhost:5173/api/chat" \
+  -H "Content-Type: application/json" \
+  -b cookies.txt \
+  -d '{
+    "messages": [
+      { "role": "user", "content": "Explain backpropagation in simple terms." }
+    ],
+    "model": "openai:gpt-4o-mini",
+    "apiKeys": {
+      "openai": { "apiKey": "sk-your-openai-key", "isEnabled": true }
+    }
+  }'
+```
+
+### 3) Chat (Google Gemini)
+
+**PowerShell:**
+```powershell
+curl -N -X POST "http://localhost:5173/api/chat" `
+  -H "Content-Type: application/json" `
+  -b cookies.txt `
+  -d '{
+    "messages": [
+      { "role": "user", "content": "Give me 3 study tips for calculus." }
+    ],
+    "model": "google:gemini-2.5-flash",
+    "apiKeys": {
+      "google": { "apiKey": "your-gemini-key", "isEnabled": true }
+    }
+  }'
+```
+
+**Bash/Unix:**
+```bash
+curl -N -X POST "http://localhost:5173/api/chat" \
+  -H "Content-Type: application/json" \
+  -b cookies.txt \
+  -d '{
+    "messages": [
+      { "role": "user", "content": "Give me 3 study tips for calculus." }
+    ],
+    "model": "google:gemini-2.5-flash",
+    "apiKeys": {
+      "google": { "apiKey": "your-gemini-key", "isEnabled": true }
+    }
+  }'
+```
+
+### 4) Include course RAG
+
+**PowerShell:**
+```powershell
+curl -N -X POST "http://localhost:5173/api/chat" `
+  -H "Content-Type: application/json" `
+  -b cookies.txt `
+  -d '{
+    "messages": [
+      { "role": "user", "content": "Summarize lecture 3 key ideas." }
+    ],
+    "model": "openai:gpt-4o-mini",
+    "apiKeys": {
+      "openai": { "apiKey": "sk-your-openai-key", "isEnabled": true }
+    },
+    "courseId": "YOUR_COURSE_ID"
+  }'
+```
+
+**Bash/Unix:**
+```bash
+curl -N -X POST "http://localhost:5173/api/chat" \
+  -H "Content-Type: application/json" \
+  -b cookies.txt \
+  -d '{
+    "messages": [
+      { "role": "user", "content": "Summarize lecture 3 key ideas." }
+    ],
+    "model": "openai:gpt-4o-mini",
+    "apiKeys": {
+      "openai": { "apiKey": "sk-your-openai-key", "isEnabled": true }
+    },
+    "courseId": "YOUR_COURSE_ID"
+  }'
+```
+
+Notes:
+- Replace `http://localhost:5173` if deployed elsewhere.
+- `curl -N` shows streamed tokens as they arrive.

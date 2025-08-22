@@ -7,3 +7,5 @@
 
 .env
 /app/generated/prisma
+
+cookies.txt
