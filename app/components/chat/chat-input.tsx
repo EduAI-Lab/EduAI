@@ -59,14 +59,7 @@ export function ChatInput({
     onSubmit(formEvent);
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      if (input.trim() && !isLoading) {
-        handleSubmit();
-      }
-    }
-  };
+
 
   return (
     <>
@@ -82,7 +75,6 @@ export function ChatInput({
             <PromptInputTextarea
               placeholder="Message EduAI..."
               disabled={isLoading}
-              onKeyDown={handleKeyDown}
               className="min-h-[60px] max-h-[200px] resize-none border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 text-base placeholder:text-muted-foreground/60"
             />
             <div className="flex items-center gap-2 pt-2">
@@ -146,7 +138,8 @@ export function ChatInput({
                     tooltip="Send message"
                   >
                     <Button
-                      type="submit"
+                      type="button"
+                      onClick={handleSubmit}
                       disabled={isLoading || !input.trim()}
                       size="sm"
                       className="h-10 w-10 rounded-full shadow-sm disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 transition-all duration-200 bg-gradient-to-r from-primary to-primary/90"
