@@ -18,18 +18,25 @@ export function ApiKeySettings({ open, onOpenChange }: ApiKeySettingsProps) {
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
   const [tempKeys, setTempKeys] = useState<Record<string, string>>({});
 
-  const handleSaveKey = (provider: 'openai' | 'google') => {
-    const key = tempKeys[provider]?.trim();
-    if (key) {
+  const handleSaveKey = (provider: 'openai' | 'google' | 'ollama') => {
+    if (provider === 'ollama') {
+      // Ollama doesn't need an API key, just enable it
       updateProviderSettings(provider, {
-        apiKey: key,
         isEnabled: true
       });
-      setTempKeys(prev => ({ ...prev, [provider]: '' }));
+    } else {
+      const key = tempKeys[provider]?.trim();
+      if (key) {
+        updateProviderSettings(provider, {
+          apiKey: key,
+          isEnabled: true
+        });
+        setTempKeys(prev => ({ ...prev, [provider]: '' }));
+      }
     }
   };
 
-  const handleRemoveKey = (provider: 'openai' | 'google') => {
+  const handleRemoveKey = (provider: 'openai' | 'google' | 'ollama') => {
     removeProviderSettings(provider);
     setTempKeys(prev => ({ ...prev, [provider]: '' }));
   };
@@ -220,6 +227,69 @@ const maskKey = (key: string) => {
                   className="text-primary hover:underline inline-flex items-center gap-1"
                 >
                   Google AI Studio
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* Ollama Configuration */}
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-sm font-medium">Ollama (Local)</CardTitle>
+                  <CardDescription className="text-xs">
+                    For local models running on Ollama
+                  </CardDescription>
+                </div>
+                {isProviderConfigured('ollama') && (
+                  <Badge variant="secondary" className="text-xs">
+                    <Shield className="h-3 w-3 mr-1" />
+                    Active
+                  </Badge>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {isProviderConfigured('ollama') ? (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">
+                      Ollama provider is enabled
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleRemoveKey('ollama')}
+                      className="px-3 text-red-600 hover:text-red-700"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => handleSaveKey('ollama')}
+                    className="w-full"
+                  >
+                    Enable Ollama
+                  </Button>
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground">
+                No API key required. Base URL configured via OLLAMA_BASE_URL environment variable.{" "}
+                <a
+                  href="https://ollama.com/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline inline-flex items-center gap-1"
+                >
+                  Learn more
                   <ExternalLink className="h-3 w-3" />
                 </a>
               </p>

@@ -18,4 +18,5 @@ export default [
   route("/api/ai-providers/*", "routes/api/ai-providers.$.ts"),
   route("/api/ai-models/*", "routes/api/ai-models.$.ts"),
   route("/api/users/*", "routes/api/users.$.ts"),
+  route("/api/ollama-models", "routes/api/ollama-models.ts"),
 ] satisfies RouteConfig;

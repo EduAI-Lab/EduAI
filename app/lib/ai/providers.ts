@@ -6,9 +6,10 @@
 import { createProviderRegistry } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import { createOllama } from 'ollama-ai-provider';
 
 // Supported provider types
-export type SupportedProvider = 'openai' | 'google';
+export type SupportedProvider = 'openai' | 'google' | 'ollama';
 
 // User provider settings interface
 export interface UserProviderSettings {
@@ -44,6 +45,14 @@ export const PROVIDER_CONFIGS: Record<SupportedProvider, ProviderConfig> = {
     description: 'Gemini models for multimodal AI applications',
     requiresApiKey: true,
     envVarName: 'GOOGLE_GENERATIVE_AI_API_KEY'
+  },
+  ollama: {
+    id: 'ollama',
+    name: 'Ollama',
+    description: 'Local AI models running on Ollama',
+    requiresApiKey: false,
+    defaultBaseUrl: 'http://localhost:11434/api',
+    envVarName: 'OLLAMA_BASE_URL'
   }
 };
 
@@ -64,6 +73,22 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
   if (userSettings.google?.isEnabled && userSettings.google?.apiKey) {
     providers.google = createGoogleGenerativeAI({
       apiKey: userSettings.google.apiKey,
+    });
+  }
+
+  // Ollama
+  if (userSettings.ollama?.isEnabled) {
+    let baseURL = userSettings.ollama?.baseUrl ||
+                  process.env.OLLAMA_BASE_URL ||
+                  'http://localhost:11434';
+
+    // Ensure the URL ends with /api for Ollama compatibility
+    if (!baseURL.endsWith('/api')) {
+      baseURL = baseURL.replace(/\/$/, '') + '/api';
+    }
+
+    providers.ollama = createOllama({
+      baseURL,
     });
   }
 
