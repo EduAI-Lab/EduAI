@@ -34,6 +34,20 @@ async function main() {
     },
   });
 
+  const ollamaProvider = await prisma.aIProvider.upsert({
+    where: { name: 'ollama' },
+    update: {},
+    create: {
+      name: 'ollama',
+      displayName: 'Ollama',
+      description: 'Local AI models running on Ollama',
+      requiresApiKey: false,
+      defaultBaseUrl: 'http://localhost:11434/api',
+      envVarName: 'OLLAMA_BASE_URL',
+      isActive: true,
+    },
+  });
+
   console.log('✅ AI Providers seeded successfully');
 
   // Seed AI Models

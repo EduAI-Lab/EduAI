@@ -55,13 +55,21 @@ export function useApiKeys() {
     saveApiKeys(rest);
   }, [apiKeys, saveApiKeys]);
 
-  // Get valid API keys for providers that are enabled and have keys
+  // Get valid API keys for providers that are enabled and have keys (or don't require keys)
   const getValidApiKeys = useCallback(() => {
     const validKeys: UserProviderSettings = {};
 
     Object.entries(apiKeys).forEach(([providerId, settings]) => {
-      if (settings.isEnabled && settings.apiKey) {
-        validKeys[providerId] = settings;
+      // Ollama doesn't require an API key, just needs to be enabled
+      if (providerId === 'ollama') {
+        if (settings.isEnabled) {
+          validKeys[providerId] = settings;
+        }
+      } else {
+        // Other providers need both enabled and API key
+        if (settings.isEnabled && settings.apiKey) {
+          validKeys[providerId] = settings;
+        }
       }
     });
 
@@ -70,6 +78,10 @@ export function useApiKeys() {
 
   // Check if a provider is configured
   const isProviderConfigured = useCallback((providerId: string) => {
+    // Ollama doesn't require an API key, just needs to be enabled
+    if (providerId === 'ollama') {
+      return !!(apiKeys[providerId]?.isEnabled);
+    }
     return !!(apiKeys[providerId]?.isEnabled && apiKeys[providerId]?.apiKey);
   }, [apiKeys]);
 

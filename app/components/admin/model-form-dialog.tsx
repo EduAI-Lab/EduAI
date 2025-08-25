@@ -6,6 +6,8 @@ import { Label } from "~/components/ui/label";
 import { Textarea } from "~/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import { Switch } from "~/components/ui/switch";
+import { Alert, AlertDescription } from "~/components/ui/alert";
+import { Loader } from "~/components/ui/loader";
 
 type AIProvider = {
   id: string;
@@ -51,6 +53,15 @@ interface ModelFormDialogProps {
   onSubmit: (data: any) => void;
 }
 
+type OllamaModel = {
+  name: string;
+  model: string;
+  size: number;
+  digest: string;
+  modified_at: string;
+  details: any;
+};
+
 export function ModelFormDialog({ open, onOpenChange, model, providers, onSubmit }: ModelFormDialogProps) {
   const [formData, setFormData] = useState<{
     modelId: string;
@@ -79,6 +90,12 @@ export function ModelFormDialog({ open, onOpenChange, model, providers, onSubmit
     isActive: true,
     providerId: "",
   });
+
+  // Ollama-specific state
+  const [ollamaModels, setOllamaModels] = useState<OllamaModel[]>([]);
+  const [fetchingOllamaModels, setFetchingOllamaModels] = useState(false);
+  const [ollamaError, setOllamaError] = useState<string | null>(null);
+  const [selectedOllamaModel, setSelectedOllamaModel] = useState<string>("");
 
   useEffect(() => {
     if (model) {
@@ -113,6 +130,62 @@ export function ModelFormDialog({ open, onOpenChange, model, providers, onSubmit
       });
     }
   }, [model, open]);
+
+  // Reset Ollama state when provider changes
+  useEffect(() => {
+    setOllamaModels([]);
+    setOllamaError(null);
+    setSelectedOllamaModel("");
+  }, [formData.providerId]);
+
+  // Check if current provider is Ollama
+  const selectedProvider = providers.find(p => p.id === formData.providerId);
+  const isOllamaProvider = selectedProvider?.name === 'ollama';
+
+  // Fetch Ollama models
+  const fetchOllamaModels = async () => {
+    setFetchingOllamaModels(true);
+    setOllamaError(null);
+
+    try {
+      const response = await fetch('/api/ollama-models');
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to fetch Ollama models');
+      }
+
+      setOllamaModels(data.models || []);
+    } catch (error: any) {
+      setOllamaError(error.message || 'Failed to fetch Ollama models');
+      setOllamaModels([]);
+    } finally {
+      setFetchingOllamaModels(false);
+    }
+  };
+
+  // Handle Ollama model selection
+  const handleOllamaModelSelect = (modelName: string) => {
+    setSelectedOllamaModel(modelName);
+    const selectedModel = ollamaModels.find(m => m.name === modelName);
+
+    if (selectedModel) {
+      // Auto-populate form fields based on Ollama model
+      setFormData(prev => ({
+        ...prev,
+        modelId: selectedModel.name,
+        name: selectedModel.name.charAt(0).toUpperCase() + selectedModel.name.slice(1),
+        description: `Local Ollama model: ${selectedModel.name}`,
+        type: "CHAT", // Most Ollama models are chat models
+        maxTokens: "", // Ollama doesn't provide max tokens info
+        supportsImages: selectedModel.name.toLowerCase().includes('vision') || selectedModel.name.toLowerCase().includes('llava'),
+        supportsTools: true, // Most modern Ollama models support tools
+        supportsStreaming: true,
+        inputPricing: "0", // Local models are free
+        outputPricing: "0", // Local models are free
+      }));
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -180,6 +253,65 @@ export function ModelFormDialog({ open, onOpenChange, model, providers, onSubmit
               </Select>
             </div>
           </div>
+
+          {/* Ollama Model Fetching Section */}
+          {isOllamaProvider && (
+            <div className="space-y-4 p-4 border rounded-lg bg-muted/50">
+              <div className="flex items-center justify-between">
+                <Label>Available Ollama Models</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={fetchOllamaModels}
+                  disabled={fetchingOllamaModels}
+                >
+                  {fetchingOllamaModels ? (
+                    <>
+                      <Loader className="w-4 h-4 mr-2" />
+                      Fetching...
+                    </>
+                  ) : (
+                    'Fetch Models'
+                  )}
+                </Button>
+              </div>
+
+              {ollamaError && (
+                <Alert variant="destructive">
+                  <AlertDescription>
+                    {ollamaError}
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {ollamaModels.length > 0 && (
+                <div className="space-y-2">
+                  <Label htmlFor="ollamaModelSelect">Select Model</Label>
+                  <Select
+                    value={selectedOllamaModel}
+                    onValueChange={handleOllamaModelSelect}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Choose an Ollama model" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ollamaModels.map((model) => (
+                        <SelectItem key={model.name} value={model.name}>
+                          <div className="flex flex-col">
+                            <span>{model.name}</span>
+                            <span className="text-xs text-muted-foreground">
+                              Size: {Math.round(model.size / 1024 / 1024 / 1024 * 100) / 100} GB
+                            </span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
