@@ -1,4 +1,4 @@
-import prisma from "~/lib/prisma";
+import prisma from "~/lib/prisma.server";
 import { auth } from "~/lib/auth/server";
 import { CreateAIProviderSchema, UpdateAIProviderSchema } from "~/lib/ai/schemas";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";

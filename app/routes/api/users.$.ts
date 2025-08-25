@@ -1,4 +1,4 @@
-import prisma from "~/lib/prisma";
+import prisma from "~/lib/prisma.server";
 import { auth } from "~/lib/auth/server";
 import { createUserSchema, updateUserSchema } from "~/lib/auth/schemas";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";

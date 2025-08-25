@@ -13,7 +13,7 @@ import { SiteHeader } from "~/components/site-header";
 import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
 
 import { auth } from "~/lib/auth/server";
-import prisma from "~/lib/prisma";
+import prisma from "~/lib/prisma.server";
 
 interface ChatModel {
   id: string;
