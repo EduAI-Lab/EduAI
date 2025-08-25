@@ -103,4 +103,4 @@ echo "Deployment complete: $(date)"
 
 # Restart Apache
 echo "Restarting Apache Server (need sudo access - press escape to skip)"
-sudo systemctl restart httpd
+sudo systemctl restart apache2
