@@ -1,7 +1,7 @@
 import { embed, embedMany } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
-import prisma from '../prisma';
+import prisma from '../prisma.server';
 import { randomUUID } from 'crypto';
 
 // Default embedding model - using OpenAI's text-embedding-3-small for cost efficiency

@@ -13,7 +13,7 @@ import { SiteHeader } from "~/components/site-header"
 import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar"
 import { CourseMaterialsUpload } from "~/components/course-materials-upload"
 import { useApiKeys } from "~/hooks/use-api-keys"
-import prisma from "~/lib/prisma"
+import prisma from "~/lib/prisma.server"
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request)

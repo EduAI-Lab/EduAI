@@ -1,7 +1,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router';
 import { processMaterialEmbeddings } from '~/lib/ai/embedding';
 import { processUploadedFile } from '~/lib/ai/file-processing';
-import prisma from '~/lib/prisma';
+import prisma from '~/lib/prisma.server';
 import { auth } from '~/lib/auth/server';
 
 export async function action({ request, params }: ActionFunctionArgs) {
