@@ -161,10 +161,16 @@ export function getModelIdentifier(providerId: SupportedProvider, modelId: strin
  * Parse model identifier to extract provider and model IDs
  */
 export function parseModelIdentifier(identifier: string): { providerId: SupportedProvider; modelId: string } | null {
-  const parts = identifier.split(':');
-  if (parts.length !== 2) return null;
+  if (!identifier || typeof identifier !== 'string') return null;
 
-  const [providerId, modelId] = parts;
+  // Allow additional colons in modelId (e.g., "ollama:gpt-oss:120b") by splitting on the first colon only
+  const firstColonIndex = identifier.indexOf(':');
+  if (firstColonIndex === -1) return null;
+
+  const providerId = identifier.slice(0, firstColonIndex);
+  const modelId = identifier.slice(firstColonIndex + 1);
+
+  if (!providerId || !modelId) return null;
   if (!Object.keys(PROVIDER_CONFIGS).includes(providerId)) return null;
 
   return { providerId: providerId as SupportedProvider, modelId };
