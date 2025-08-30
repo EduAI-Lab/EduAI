@@ -181,7 +181,10 @@ export async function modelSupportsTools(modelIdentifier: string): Promise<boole
     const { default: prisma } = await import('../prisma.server');
 
     const parsed = parseModelIdentifier(modelIdentifier);
-    if (!parsed) return false;
+    if (!parsed) {
+      console.log(`Invalid model identifier: ${modelIdentifier}`);
+      return false;
+    }
 
     const model = await prisma.aIModel.findFirst({
       where: {
@@ -192,11 +195,14 @@ export async function modelSupportsTools(modelIdentifier: string): Promise<boole
         isActive: true
       },
       select: {
-        supportsTools: true
+        supportsTools: true,
+        name: true
       }
     });
 
-    return model?.supportsTools ?? false;
+    const supportsTools = model?.supportsTools ?? false;
+    console.log(`Model ${modelIdentifier} (${model?.name || 'unknown'}) supports tools: ${supportsTools}`);
+    return supportsTools;
   } catch (error) {
     console.error('Error checking model tool support:', error);
     return false;
