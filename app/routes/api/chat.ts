@@ -1,5 +1,5 @@
 import { streamText, tool } from "ai";
-import { createAIProviderRegistry } from "~/lib/ai/providers";
+import { createAIProviderRegistry, modelSupportsTools } from "~/lib/ai/providers";
 import { findRelevantContent } from "~/lib/ai/embedding";
 import { auth } from "~/lib/auth/server";
 import type { ActionFunctionArgs } from "react-router";
@@ -65,14 +65,14 @@ export async function action({ request }: ActionFunctionArgs) {
       }),
     };
 
-                            // Check if model is Ollama - many models don't support tool calling reliably
-    const isOllamaModel = model.startsWith('ollama:');
+    // Check if the model supports tool calling
+    const supportsTools = await modelSupportsTools(model);
 
     let streamConfig;
 
-    if (isOllamaModel) {
-      // OLLAMA MODELS: Use hybrid RAG approach due to tool calling compatibility issues
-      // Research shows most Ollama models struggle with tool calling + streaming
+    if (!supportsTools) {
+      // MODELS WITHOUT TOOL SUPPORT: Use hybrid RAG approach
+      // These models need manual context injection instead of tool calling
 
       // Get the last user message to check if RAG might be needed
       const lastMessage = messages[messages.length - 1];
@@ -122,7 +122,7 @@ Based on this information, provide a comprehensive answer to the user's question
 Always be helpful, accurate, and cite the course materials when using them in your response.`,
           };
         } catch (error) {
-          console.error('Error finding relevant content for Ollama:', error);
+          console.error('Error finding relevant content for model without tool support:', error);
           streamConfig = {
             model: aiModel,
             messages,
@@ -142,7 +142,7 @@ Always be helpful, accurate, and cite the course materials when using them in yo
         };
       }
     } else {
-      // CLOUD MODELS: Use full tool calling functionality
+      // MODELS WITH TOOL SUPPORT: Use full tool calling functionality
       streamConfig = {
         model: aiModel,
         messages,
@@ -150,7 +150,7 @@ Always be helpful, accurate, and cite the course materials when using them in yo
         maxTokens: 32000,
         maxSteps: 5,
         tools,
-        toolCallStreaming: true, // Works reliably with cloud models
+        toolCallStreaming: true,
         system: `You are EduAI, a helpful AI assistant for course content.
 
 When users ask questions about course materials, use the getInformation tool to search through the uploaded course materials and provide accurate answers based on that content.
@@ -160,7 +160,7 @@ Always be helpful and accurate. If you don't have relevant information from the 
     }
 
     // Stream the response
-    console.log(`Using ${isOllamaModel ? 'hybrid RAG' : 'tool calling'} approach for model: ${model}`);
+    console.log(`Using ${supportsTools ? 'tool calling' : 'hybrid RAG'} approach for model: ${model}`);
     const result = await streamText(streamConfig);
 
     return result.toDataStreamResponse({

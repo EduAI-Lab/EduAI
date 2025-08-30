@@ -169,3 +169,36 @@ export function parseModelIdentifier(identifier: string): { providerId: Supporte
 
   return { providerId: providerId as SupportedProvider, modelId };
 }
+
+/**
+ * Check if a model supports tool calling
+ * @param modelIdentifier - The model identifier in format "provider:modelId"
+ * @returns Promise<boolean> - Whether the model supports tool calling
+ */
+export async function modelSupportsTools(modelIdentifier: string): Promise<boolean> {
+  try {
+    // Import prisma here to avoid circular dependencies
+    const { default: prisma } = await import('../prisma.server');
+
+    const parsed = parseModelIdentifier(modelIdentifier);
+    if (!parsed) return false;
+
+    const model = await prisma.aIModel.findFirst({
+      where: {
+        modelId: parsed.modelId,
+        provider: {
+          name: parsed.providerId
+        },
+        isActive: true
+      },
+      select: {
+        supportsTools: true
+      }
+    });
+
+    return model?.supportsTools ?? false;
+  } catch (error) {
+    console.error('Error checking model tool support:', error);
+    return false;
+  }
+}
