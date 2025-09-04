@@ -1,11 +1,11 @@
 import { cn } from "~/lib/utils"
 import { marked } from "marked"
-import { memo, useId, useMemo } from "react"
-import ReactMarkdown from "react-markdown"
+import { memo, useId, useMemo, lazy, Suspense } from "react"
 import type { Components } from "react-markdown"
-import remarkBreaks from "remark-breaks"
-import remarkGfm from "remark-gfm"
 import { CodeBlock, CodeBlockCode } from "./code-block"
+
+// Lazy load Streamdown to avoid SSR issues with KaTeX CSS
+const Streamdown = lazy(() => import('streamdown').then(module => ({ default: module.Streamdown })))
 
 export type MarkdownProps = {
   children: string
@@ -25,54 +25,22 @@ function extractLanguage(className?: string): string {
   return match ? match[1] : "plaintext"
 }
 
-const INITIAL_COMPONENTS: Partial<Components> = {
-  code: function CodeComponent({ className, children, ...props }) {
-    const isInline =
-      !props.node?.position?.start.line ||
-      props.node?.position?.start.line === props.node?.position?.end.line
-
-    if (isInline) {
-      return (
-        <span
-          className={cn(
-            "bg-primary-foreground rounded-sm px-1 font-mono text-sm",
-            className
-          )}
-          {...props}
-        >
-          {children}
-        </span>
-      )
-    }
-
-    const language = extractLanguage(className)
-
-    return (
-      <CodeBlock className={className}>
-        <CodeBlockCode code={children as string} language={language} />
-      </CodeBlock>
-    )
-  },
-  pre: function PreComponent({ children }) {
-    return <>{children}</>
-  },
-}
-
 const MemoizedMarkdownBlock = memo(
   function MarkdownBlock({
     content,
-    components = INITIAL_COMPONENTS,
   }: {
     content: string
-    components?: Partial<Components>
   }) {
     return (
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkBreaks]}
-        components={components}
-      >
-        {content}
-      </ReactMarkdown>
+      <Suspense fallback={<div className="animate-pulse">{content}</div>}>
+        <Streamdown
+          parseIncompleteMarkdown={true}
+          shikiTheme={["github-light", "github-dark"]}
+          className="streamdown-content"
+        >
+          {content}
+        </Streamdown>
+      </Suspense>
     )
   },
   function propsAreEqual(prevProps, nextProps) {
@@ -86,7 +54,6 @@ function MarkdownComponent({
   children,
   id,
   className,
-  components = INITIAL_COMPONENTS,
 }: MarkdownProps) {
   const generatedId = useId()
   const blockId = id ?? generatedId
@@ -98,7 +65,6 @@ function MarkdownComponent({
         <MemoizedMarkdownBlock
           key={`${blockId}-block-${index}`}
           content={block}
-          components={components}
         />
       ))}
     </div>
