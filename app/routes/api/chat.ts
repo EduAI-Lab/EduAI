@@ -132,7 +132,7 @@ ${contextText}
 
 Based on this information, provide a comprehensive answer to the user's question. If the provided content doesn't fully answer their question, mention what you can answer based on the available materials and suggest what additional information might be helpful.` : 'I don\'t have access to specific course materials for this question, but I can provide general educational assistance.'}
 
-Always be helpful, accurate, and cite the course materials when using them in your response.`,
+Always be helpful, accurate, and cite the course materials when using them in your response. Always use markdown to well format your response.`,
           };
         } catch (error) {
           console.error('Error finding relevant content for model without tool support:', error);
@@ -168,7 +168,7 @@ Always be helpful, accurate, and cite the course materials when using them in yo
 
 When users ask questions about course materials, use the getInformation tool to search through the uploaded course materials and provide accurate answers based on that content.
 
-Always be helpful and accurate. If you don't have relevant information from the course materials, say so clearly.`,
+Always be helpful and accurate. If you don't have relevant information from the course materials, say so clearly. Always use markdown to well format your response.`,
       };
     }
 
