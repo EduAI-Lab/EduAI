@@ -127,7 +127,7 @@ export default function Chat() {
         <div className="flex flex-col h-[calc(100vh-var(--header-height))] bg-gradient-to-br from-background via-background to-muted/20">
           {/* Main content area */}
           <div className="flex-1 flex flex-col min-h-0 relative">
-            <div className="h-full overflow-y-auto">
+            <div className="h-full overflow-y-auto scrollbar-hover">
               <div className="px-4 py-6">
                 <div className="max-w-4xl mx-auto space-y-6">
                   {messages.length === 0 ? (

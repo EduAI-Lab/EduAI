@@ -207,3 +207,40 @@ body {
     letter-spacing: var(--tracking-normal);
   }
 }
+
+/* Custom scrollbar styling - make scrollbars transparent/invisible */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 3px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* For better UX, show scrollbar on hover for interactive elements */
+.scrollbar-hover:hover::-webkit-scrollbar-thumb {
+  background: oklch(0.5 0 0 / 0.2);
+}
+
+.scrollbar-hover:hover::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.5 0 0 / 0.3);
+}
