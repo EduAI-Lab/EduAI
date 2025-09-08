@@ -15,7 +15,20 @@ export async function action({ request }: ActionFunctionArgs) {
       });
     }
 
-    const { messages, model, apiKeys, courseId } = await request.json();
+    const { messages, model, apiKeys, courseId, courseCode } = await request.json();
+
+    // If courseCode is provided, resolve to internal course id
+    let resolvedCourseId: string | null = null;
+    if (courseCode && typeof courseCode === 'string') {
+      try {
+        const { default: prisma } = await import('~/lib/prisma.server');
+        const course = await prisma.course.findUnique({ where: { code: courseCode } });
+        resolvedCourseId = course?.id || null;
+      } catch (e) {
+        console.error('Failed to resolve course by code', e);
+      }
+    }
+    const effectiveCourseId = resolvedCourseId || courseId || null;
 
     if (!messages || !model || !apiKeys) {
       return new Response(
@@ -44,14 +57,14 @@ export async function action({ request }: ActionFunctionArgs) {
             .describe("The user's question about course content"),
         }),
         execute: async ({ question }) => {
-          if (!courseId) {
+          if (!effectiveCourseId) {
             return { error: "No course selected for RAG search" };
           }
 
           try {
             const relevantContent = await findRelevantContent(
               question,
-              courseId
+              effectiveCourseId
             );
             return {
               relevantContent,
@@ -81,7 +94,7 @@ export async function action({ request }: ActionFunctionArgs) {
         : '';
 
       // Detect if user is asking about course content
-      const isRAGQuery = courseId && (
+      const isRAGQuery = effectiveCourseId && (
         messageContent.includes('course') ||
         messageContent.includes('material') ||
         messageContent.includes('document') ||
@@ -99,7 +112,7 @@ export async function action({ request }: ActionFunctionArgs) {
       if (isRAGQuery) {
         // Manually search course materials and inject context into system prompt
         try {
-          const relevantContent = await findRelevantContent(messageContent, courseId);
+          const relevantContent = await findRelevantContent(messageContent, effectiveCourseId);
           const contextText = relevantContent.length > 0
             ? relevantContent.map(item =>
                 `**Source**: ${item.materialTitle || 'Course Material'}\n${item.content}`

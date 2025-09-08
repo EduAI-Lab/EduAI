@@ -10,7 +10,9 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
-    "db:reset": "prisma migrate reset"
+    "db:reset": "prisma migrate reset",
+    "auth:migrate": "npx @better-auth/cli migrate",
+    "auth:generate": "npx @better-auth/cli generate"
   },
   "dependencies": {
     "@ai-sdk/google": "^1.2.22",

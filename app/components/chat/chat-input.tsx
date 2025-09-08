@@ -95,12 +95,12 @@ export function ChatInput({
               </PromptInputActions>
               <Select value={selectedCourseId || "none"} onValueChange={(value) => setSelectedCourseId(value === "none" ? null : value)}>
                 <SelectTrigger className="w-[120px] h-8 text-xs">
-                  {selectedCourseId ? availableCourses.find(c => c.id === selectedCourseId)?.code || 'No Course' : 'No Course'}
+                  {selectedCourseId ? (availableCourses.find(c => c.code === selectedCourseId)?.code || 'No Course') : 'No Course'}
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">No Course Selected</SelectItem>
                   {availableCourses.map((course) => (
-                    <SelectItem key={course.id} value={course.id}>
+                    <SelectItem key={course.code} value={course.code}>
                       {course.code}
                     </SelectItem>
                   ))}

@@ -25,6 +25,7 @@ model User {
   uploadedDocuments Document[]
   sessions          Session[]
   providerSettings  UserProviderSettings[]
+  apiKeys           apikey[]
 
   @@map("user")
 }
@@ -268,6 +269,34 @@ model MaterialEmbedding {
   chunk     MaterialChunk         @relation(fields: [chunkId], references: [id], onDelete: Cascade)
 
   @@map("material_embeddings")
+}
+
+model apikey {
+  id                  String    @id @default(cuid())
+  name                String?
+  start               String?
+  prefix              String?
+  key                 String
+  userId              String
+  refillInterval      Int?
+  refillAmount        Int?
+  lastRefillAt        DateTime?
+  enabled             Boolean   @default(true)
+  rateLimitEnabled    Boolean   @default(false)
+  rateLimitTimeWindow Int?
+  rateLimitMax        Int?
+  requestCount        Int       @default(0)
+  remaining           Int?
+  lastRequest         DateTime?
+  expiresAt           DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  permissions         Json?
+  metadata            Json?
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("apiKey")
 }
 
 enum UserRole {
