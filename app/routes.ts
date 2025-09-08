@@ -9,6 +9,7 @@ export default [
   route("/auth/register", "routes/auth/register.tsx"),
   route("/dashboard", "routes/dashboard.tsx"),
   route("/chat", "routes/chat.tsx"),
+  route("/settings", "routes/settings.tsx"),
   route("/api/chat", "routes/api/chat.ts"),
   route("/courses", "routes/courses.tsx"),
   route("/courses/:courseId", "routes/courses.$courseId.tsx"),

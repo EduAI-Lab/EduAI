@@ -64,7 +64,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 export default function Chat() {
   const { chatModels, user } = useLoaderData<typeof loader>();
   const [selectedModel, setSelectedModel] = useState(chatModels.length > 0 ? chatModels[0].id : '');
-  const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
+  const [selectedCourseCode, setSelectedCourseCode] = useState<string | null>(null);
   const [availableCourses, setAvailableCourses] = useState<Array<{ id: string; name: string; code: string }>>([]);
   const { apiKeys, getValidApiKeys } = useApiKeys();
 
@@ -87,7 +87,7 @@ export default function Chat() {
     body: {
       model: selectedModel,
       apiKeys: getValidApiKeys(),
-      courseId: selectedCourseId,
+      courseCode: selectedCourseCode || undefined,
     },
   });
 
@@ -166,8 +166,8 @@ export default function Chat() {
             onInputChange={handleInputChange}
             onSubmit={handleSubmit}
             onStop={stop}
-            selectedCourseId={selectedCourseId}
-            setSelectedCourseId={setSelectedCourseId}
+            selectedCourseId={selectedCourseCode}
+            setSelectedCourseId={setSelectedCourseCode}
             availableCourses={availableCourses}
             selectedModel={selectedModel}
             setSelectedModel={setSelectedModel}
