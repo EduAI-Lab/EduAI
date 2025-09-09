@@ -8,22 +8,24 @@ datasource db {
 }
 
 model User {
-  id                String             @id @default(cuid())
-  email             String             @unique
+  id                String                 @id @default(cuid())
+  email             String                 @unique
   name              String
   image             String?
   role              UserRole
-  isActive          Boolean            @default(true)
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
-  emailVerified     Boolean            @default(false)
+  isActive          Boolean                @default(true)
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  emailVerified     Boolean                @default(false)
   accounts          Account[]
   aiInteractions    AIInteraction[]
   enrolledCourses   CourseEnrollment[]
   assistedCourses   CourseTA[]
-  taughtCourses     Course[]           @relation("ProfessorCourses")
+  taughtCourses     Course[]               @relation("ProfessorCourses")
   uploadedDocuments Document[]
   sessions          Session[]
+  providerSettings  UserProviderSettings[]
+  apiKeys           apikey[]
 
   @@map("user")
 }
@@ -88,6 +90,7 @@ model Course {
   aiInstructions String             @default("")
   aiInteractions AIInteraction[]
   enrollments    CourseEnrollment[]
+  materials      CourseMaterial[]
   tas            CourseTA[]
   professor      User               @relation("ProfessorCourses", fields: [professorId], references: [id])
   documents      Document[]
@@ -152,7 +155,9 @@ model AIInteraction {
   modelUsed String
   tokenUsed Int?
   createdAt DateTime @default(now())
-  course    Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  modelId   String?
+  course    Course?  @relation(fields: [courseId], references: [id])
+  model     AIModel? @relation(fields: [modelId], references: [id])
   user      User     @relation(fields: [userId], references: [id])
 
   @@map("ai_interactions")
@@ -167,6 +172,131 @@ model SystemConfig {
   updatedBy   String
 
   @@map("system_config")
+}
+
+model AIProvider {
+  id             String                 @id @default(cuid())
+  name           String                 @unique
+  displayName    String
+  description    String
+  requiresApiKey Boolean                @default(true)
+  defaultBaseUrl String?
+  envVarName     String?
+  isActive       Boolean                @default(true)
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  models         AIModel[]
+  userSettings   UserProviderSettings[]
+
+  @@map("ai_providers")
+}
+
+model AIModel {
+  id                String          @id @default(cuid())
+  modelId           String
+  name              String
+  description       String
+  type              AIModelType
+  maxTokens         Int?
+  supportsImages    Boolean         @default(false)
+  supportsTools     Boolean         @default(false)
+  supportsStreaming Boolean         @default(true)
+  inputPricing      Float?
+  outputPricing     Float?
+  isActive          Boolean         @default(true)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  providerId        String
+  interactions      AIInteraction[]
+  provider          AIProvider      @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, modelId])
+  @@map("ai_models")
+}
+
+model UserProviderSettings {
+  id         String     @id @default(cuid())
+  userId     String
+  providerId String
+  apiKey     String?
+  baseUrl    String?
+  isEnabled  Boolean    @default(false)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  provider   AIProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, providerId])
+  @@map("user_provider_settings")
+}
+
+model CourseMaterial {
+  id          String          @id @default(cuid())
+  courseId    String
+  title       String
+  mimeType    String
+  fileSize    Int
+  checksum    String          @unique
+  rawText     String?
+  status      MaterialStatus  @default(PROCESSING)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  processedAt DateTime?
+  course      Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  chunks      MaterialChunk[]
+
+  @@map("course_materials")
+}
+
+model MaterialChunk {
+  id         String             @id @default(cuid())
+  materialId String
+  index      Int
+  content    String
+  createdAt  DateTime           @default(now())
+  material   CourseMaterial     @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  embedding  MaterialEmbedding?
+
+  @@unique([materialId, index])
+  @@map("material_chunks")
+}
+
+model MaterialEmbedding {
+  id        String                @id @default(cuid())
+  chunkId   String                @unique
+  embedding Unsupported("vector(3072)")
+  createdAt DateTime              @default(now())
+  chunk     MaterialChunk         @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+
+  @@map("material_embeddings")
+}
+
+model apikey {
+  id                  String    @id @default(cuid())
+  name                String?
+  start               String?
+  prefix              String?
+  key                 String
+  userId              String
+  refillInterval      Int?
+  refillAmount        Int?
+  lastRefillAt        DateTime?
+  enabled             Boolean   @default(true)
+  rateLimitEnabled    Boolean   @default(false)
+  rateLimitTimeWindow Int?
+  rateLimitMax        Int?
+  requestCount        Int       @default(0)
+  remaining           Int?
+  lastRequest         DateTime?
+  expiresAt           DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  permissions         Json?
+  metadata            Json?
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("apiKey")
 }
 
 enum UserRole {
@@ -189,4 +319,19 @@ enum DocumentType {
   DOCX
   MARKDOWN
   OTHER
+}
+
+enum AIModelType {
+  CHAT
+  COMPLETION
+  EMBEDDING
+  IMAGE
+  AUDIO
+  VIDEO
+}
+
+enum MaterialStatus {
+  PROCESSING
+  READY
+  FAILED
 }

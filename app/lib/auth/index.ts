@@ -1,6 +1,3 @@
-// Server-side exports
-export { auth } from "./server";
-
 // Client-side exports
 export {
   authClient,

@@ -49,3 +49,24 @@ export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
+
+// User management schemas for admin operations
+export const createUserSchema = z.object({
+  name: z.string().min(2, "Name must be at least 2 characters"),
+  email: z.string().email("Please enter a valid email address"),
+  role: z.enum(["ADMIN", "PROFESSOR", "TA", "STUDENT"], {
+    required_error: "Please select a role",
+  }),
+  isActive: z.boolean().default(true),
+});
+
+export const updateUserSchema = z.object({
+  name: z.string().min(2, "Name must be at least 2 characters").optional(),
+  email: z.string().email("Please enter a valid email address").optional(),
+  role: z.enum(["ADMIN", "PROFESSOR", "TA", "STUDENT"]).optional(),
+  isActive: z.boolean().optional(),
+  emailVerified: z.boolean().optional(),
+});
+
+export type CreateUserInput = z.infer<typeof createUserSchema>;
+export type UpdateUserInput = z.infer<typeof updateUserSchema>;
