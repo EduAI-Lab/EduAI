@@ -1,4 +1,4 @@
-import prisma from "~/lib/prisma";
+import prisma from "~/lib/prisma.server";
 import { auth } from "~/lib/auth/server";
 import { CreateCourseSchema, UpdateCourseSchema } from "./schemas";
 
@@ -13,7 +13,7 @@ export async function handleCourseRequest(request: Request) {
   switch (request.method) {
     case "GET": {
       const courses = await prisma.course.findMany();
-      return new Response(JSON.stringify(courses), {
+      return new Response(JSON.stringify({ courses }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });

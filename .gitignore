@@ -7,3 +7,6 @@
 
 .env
 /app/generated/prisma
+
+cookies.txt
+ecosystem.config.cjs
