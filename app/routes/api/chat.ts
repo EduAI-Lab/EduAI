@@ -15,7 +15,7 @@ export async function action({ request }: ActionFunctionArgs) {
       });
     }
 
-    const { messages, model, apiKeys, courseId, courseCode } = await request.json();
+    const { messages, model, apiKeys, courseId, courseCode, streaming = true } = await request.json();
 
     // If courseCode is provided, resolve to internal course id
     let resolvedCourseId: string | null = null;
@@ -163,7 +163,8 @@ Always be helpful, accurate, and cite the course materials when using them in yo
         maxTokens: 32000,
         maxSteps: 5,
         tools,
-        toolCallStreaming: true,
+        // Disable tool call streaming for non-streaming responses
+        toolCallStreaming: streaming,
         system: `You are EduAI, a helpful AI assistant for course content.
 
 When users ask questions about course materials, use the getInformation tool to search through the uploaded course materials and provide accurate answers based on that content.
@@ -176,13 +177,59 @@ Always be helpful and accurate. If you don't have relevant information from the 
     console.log(`Using ${supportsTools ? 'tool calling' : 'hybrid RAG'} approach for model: ${model}`);
     const result = await streamText(streamConfig);
 
-    return result.toDataStreamResponse({
-      headers: {
-        'Content-Encoding': 'none',
-        'Transfer-Encoding': 'chunked',
-        'Connection': 'keep-alive'
+    if (streaming) {
+      return result.toDataStreamResponse({
+        headers: {
+          'Content-Encoding': 'none',
+          'Transfer-Encoding': 'chunked',
+          'Connection': 'keep-alive'
+        }
+      });
+    } else {
+      // Return a regular JSON response instead of streaming
+      try {
+        // Ensure all streaming/tool steps complete
+        await result.consumeStream();
+
+        const [text, usage, finishReason, sources, reasoning, response] = await Promise.all([
+          result.text,
+          result.usage,
+          result.finishReason,
+          result.sources,
+          result.reasoning,
+          result.response,
+        ]);
+
+        return new Response(
+          JSON.stringify({
+            content: text,
+            model: model,
+            usage: usage,
+            finishReason: finishReason,
+            sources: sources || [],
+            reasoning: reasoning,
+            responseId: response?.id,
+            courseCode: courseCode,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }
+        );
+      } catch (error) {
+        console.error('Error in non-streaming response:', error);
+        return new Response(
+          JSON.stringify({
+            error: "Failed to generate non-streaming response",
+            details: error instanceof Error ? error.message : "Unknown error",
+          }),
+          {
+            status: 500,
+            headers: { "Content-Type": "application/json" },
+          }
+        );
       }
-    });
+    }
   } catch (error) {
     console.error("Chat API error:", error);
     return new Response(JSON.stringify({ error: "Internal server error" }), {
