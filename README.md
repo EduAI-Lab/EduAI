@@ -1,267 +1,201 @@
-# Welcome to React Router!
+# EduAI
 
-A modern, production-ready template for building full-stack React applications using React Router.
+A production-ready chat platform with Retrieval-Augmented Generation (RAG) capabilities designed for plug-and-play usage. Seamlessly integrate course-aware Q&A functionality with support for multiple AI providers including Ollama, Google Gemini, and OpenAI.
 
-[![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/remix-run/react-router-templates/tree/main/default)
+## Table of Contents
+
+- [Features](#features)
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Usage](#usage)
+- [API Documentation](#api-documentation)
+- [Contributing](#contributing)
 
 ## Features
 
-- 🚀 Server-side rendering
-- ⚡️ Hot Module Replacement (HMR)
-- 📦 Asset bundling and optimization
-- 🔄 Data loading and mutations
-- 🔒 TypeScript by default
-- 🎉 TailwindCSS for styling
-- 📖 [React Router docs](https://reactrouter.com/)
+- **Multi-Provider AI Support**: Switch between Ollama (local), Google Gemini, and OpenAI with a single configuration change
+- **Retrieval-Augmented Generation**: Ground responses in course materials with source citations to minimize hallucinations
+- **Tool Calling**: Enhanced information retrieval through integrated RAG tools
+- **Real-time Streaming**: Server-sent events for responsive chat experiences
+- **Course Isolation**: Separate vector indexes and metadata per course for optimal relevance
+- **Simple Integration**: Clean REST API endpoints for easy integration
+- **Vector Storage**: PGVector-powered embeddings on PostgreSQL for efficient similarity search
+- **Role-based Access**: Support for students, professors, and administrators
 
-## Getting Started
+## Prerequisites
 
-### Installation
+- Node.js 18+
+- PostgreSQL with PGVector extension
+- Docker (optional, for containerized database)
 
-Install the dependencies:
+## Installation
 
-```bash
-npm install
+### Local Development Setup
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/mostafama/EduAICoreLearning.git
+   cd EduAICoreLearning
+   ```
+
+2. **Install dependencies**
+   ```bash
+   npm install
+   ```
+
+3. **Database Setup**
+   - Ensure PostgreSQL is running with PGVector extension enabled
+   - Copy environment configuration:
+     ```bash
+     cp .env.example .env
+     ```
+
+4. **Database Migration**
+   ```bash
+   npm run db:migrate
+   ```
+
+5. **Seed Database**
+   ```bash
+   npm run db:seed
+   ```
+
+6. **Start Development Server**
+   ```bash
+   npm run dev
+   ```
+
+## Configuration
+
+Configure the following environment variables in your `.env` file:
+
+```env
+NODE_ENV="development"
+
+DATABASE_URL="postgresql://USER:PASSWORD@HOST:PORT/DATABASE?schema=public"
+
+# Better Auth Config
+BETTER_AUTH_SECRET="" # REQUIRED: Generate a strong random secret (e.g., `openssl rand -base64 32`)
+BETTER_AUTH_URL="http://localhost:5173" # Base URL of your app
+
+GOOGLE_GENERATIVE_AI_API_KEY="" # For Embeddings
+OLLAMA_BASE_URL="http://localhost:11434/"
 ```
 
-### Development
+## Usage
 
-Start the development server with HMR:
+### Web Interface
 
-```bash
-npm run dev
-```
+1. Navigate to the application in your browser
+2. Create an account (default role: student)
+3. Sign in to access the dashboard
+4. Upload course materials or select existing courses
+5. Start chatting with course-aware AI assistance
 
-Your application will be available at `http://localhost:5173`.
+### Programmatic Access
 
-## Building for Production
+Create API keys through the web interface under Settings > API Keys for programmatic access to the chat functionality.
 
-Create a production build:
+## API Documentation
 
-```bash
-npm run build
-```
+### Chat Endpoint
 
-## Deployment
+Send chat messages with course context for grounded responses.
 
-### Docker Deployment
+#### Request
 
-To build and run using Docker:
+**Endpoint**: `POST /api/chat`
 
-```bash
-docker build -t my-app .
+**Headers**:
+- `Content-Type: application/json`
+- `x-api-key: YOUR_API_KEY`
 
-# Run the container
-docker run -p 3000:3000 my-app
-```
+**Body Parameters**:
+- `messages` (array): Chat message history
+- `model` (string): AI model identifier
+- `apiKeys` (object): Provider-specific API keys
+- `courseCode` (string): Target course identifier
+- `streaming` (boolean): Enable response streaming
 
-The containerized application can be deployed to any platform that supports Docker, including:
+#### Examples
 
-- AWS ECS
-- Google Cloud Run
-- Azure Container Apps
-- Digital Ocean App Platform
-- Fly.io
-- Railway
-
-### DIY Deployment
-
-If you're familiar with deploying Node applications, the built-in app server is production-ready.
-
-Make sure to deploy the output of `npm run build`
-
-```
-├── package.json
-├── package-lock.json (or pnpm-lock.yaml, or bun.lockb)
-├── build/
-│   ├── client/    # Static assets
-│   └── server/    # Server-side code
-```
-
-## Styling
-
-This template comes with [Tailwind CSS](https://tailwindcss.com/) already configured for a simple default starting experience. You can use whatever CSS framework you prefer.
-
----
-
-Built with ❤️ using React Router.
-
-## Chat API
-
-Use EduAI via HTTP.
-
-- Endpoint: `POST /api/chat`
-- Auth: x-api-key header (Better Auth API Key plugin) or session cookie
-- Request body:
-  - `messages`: array of `{ role: "user" | "assistant" | "system", content: string }`
-  - `model`: `provider:model` (e.g. `openai:gpt-4o-mini`, `google:gemini-2.5-flash`)
-  - `apiKeys`: provider configs containing your key(s)
-  - `courseCode` (preferred): course code for RAG over uploaded materials
-  - `courseId` (legacy): id-based RAG
-- Response: streaming data (AI SDK data stream)
-
-### 1) Create an API Key (via UI)
-
-Go to Settings → API Keys in the app and create a key. Copy it once; it won't be shown again. Keys are managed by Better Auth's API Key plugin (see docs: https://www.better-auth.com/docs/plugins/api-key#how-does-it-work).
-
-Or sign in and use session cookies.
-
-### 2) Optional: Sign in (store cookies)
-
-**PowerShell:**
+##### Windows (PowerShell)
 ```powershell
-curl -i -X POST "http://localhost:5173/api/auth/sign-in/email" `
-  -H "Content-Type: application/json" `
-  -d '{"email":"you@example.com","password":"your-password"}' `
-  -c cookies.txt
-```
-
-**Bash/Unix:**
-```bash
-curl -i -X POST "http://localhost:5173/api/auth/sign-in/email" \
-  -H "Content-Type: application/json" \
-  -d '{"email":"you@example.com","password":"your-password"}' \
-  -c cookies.txt
-```
-
-### 3) Chat (OpenAI)
-
-**PowerShell:**
-```powershell
-curl -N -X POST "http://localhost:5173/api/chat" `
+curl -X POST "https://eduai.ok.ubc.ca/api/chat" `
   -H "Content-Type: application/json" `
   -H "x-api-key: YOUR_API_KEY" `
   -d '{
     "messages": [
-      { "role": "user", "content": "Explain backpropagation in simple terms." }
-    ],
-    "model": "openai:gpt-4o-mini",
-    "apiKeys": {
-      "openai": { "apiKey": "sk-your-openai-key", "isEnabled": true }
-    }
-  }'
-```
-
-**Bash/Unix:**
-```bash
-curl -N -X POST "http://localhost:5173/api/chat" \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: YOUR_API_KEY" \
-  -d '{
-    "messages": [
-      { "role": "user", "content": "Explain backpropagation in simple terms." }
-    ],
-    "model": "openai:gpt-4o-mini",
-    "apiKeys": {
-      "openai": { "apiKey": "sk-your-openai-key", "isEnabled": true }
-    }
-  }'
-```
-
-### 4) Chat (Google Gemini)
-
-**PowerShell:**
-```powershell
-curl -N -X POST "http://localhost:5173/api/chat" `
-  -H "Content-Type: application/json" `
-  -H "x-api-key: YOUR_API_KEY" `
-  -d '{
-    "messages": [
-      { "role": "user", "content": "Give me 3 study tips for calculus." }
+      {
+        "role": "user",
+        "content": "What are the key concepts?"
+      }
     ],
     "model": "google:gemini-2.5-flash",
     "apiKeys": {
-      "google": { "apiKey": "your-gemini-key", "isEnabled": true }
-    }
+      "google": {
+        "apiKey": "YOUR_GOOGLE_API_KEY",
+        "isEnabled": true
+      }
+    },
+    "courseCode": "DATA 301",
+    "streaming": false
   }'
 ```
 
-**Bash/Unix:**
+##### Linux/macOS (Bash)
 ```bash
-curl -N -X POST "http://localhost:5173/api/chat" \
+curl -X POST "https://eduai.ok.ubc.ca/api/chat" \
   -H "Content-Type: application/json" \
   -H "x-api-key: YOUR_API_KEY" \
   -d '{
     "messages": [
-      { "role": "user", "content": "Give me 3 study tips for calculus." }
+      {
+        "role": "user",
+        "content": "What are the key concepts?"
+      }
     ],
     "model": "google:gemini-2.5-flash",
     "apiKeys": {
-      "google": { "apiKey": "your-gemini-key", "isEnabled": true }
-    }
-  }'
-```
-
-### 5) Include course RAG (by courseCode)
-
-**PowerShell:**
-```powershell
-curl -N -X POST "http://localhost:5173/api/chat" `
-  -H "Content-Type: application/json" `
-  -H "x-api-key: YOUR_API_KEY" `
-  -d '{
-    "messages": [
-      { "role": "user", "content": "Summarize lecture 3 key ideas." }
-    ],
-    "model": "openai:gpt-4o-mini",
-    "apiKeys": {
-      "openai": { "apiKey": "sk-your-openai-key", "isEnabled": true }
+      "google": {
+        "apiKey": "YOUR_GOOGLE_API_KEY",
+        "isEnabled": true
+      }
     },
-    "courseCode": "CS101"
+    "courseCode": "DATA 301",
+    "streaming": false
   }'
 ```
 
-**Bash/Unix:**
+##### Ollama Example (Linux/macOS)
 ```bash
-curl -N -X POST "http://localhost:5173/api/chat" \
+curl -X POST "https://eduai.ok.ubc.ca/api/chat" \
   -H "Content-Type: application/json" \
   -H "x-api-key: YOUR_API_KEY" \
   -d '{
     "messages": [
-      { "role": "user", "content": "Summarize lecture 3 key ideas." }
+      {
+        "role": "user",
+        "content": "What are the key concepts?"
+      }
     ],
-    "model": "openai:gpt-4o-mini",
+    "model": "ollama:gpt-oss:120b",
     "apiKeys": {
-      "openai": { "apiKey": "sk-your-openai-key", "isEnabled": true }
+      "ollama": {
+        "isEnabled": true
+      }
     },
-    "courseCode": "CS101"
-
-### 6) Chat with Ollama (local)
-
-PowerShell:
-```powershell
-curl -N -X POST "http://localhost:5173/api/chat" `
-  -H "Content-Type: application/json" `
-  -H "x-api-key: YOUR_API_KEY" `
-  -d '{
-    "messages": [
-      { "role": "user", "content": "What is gradient descent?" }
-    ],
-    "model": "ollama:llama3.1",
-    "apiKeys": {
-      "ollama": { "isEnabled": true }
-    }
+    "courseCode": "DATA 301",
+    "streaming": true
   }'
 ```
 
-Bash/Unix:
-```bash
-curl -N -X POST "http://localhost:5173/api/chat" \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: YOUR_API_KEY" \
-  -d '{
-    "messages": [
-      { "role": "user", "content": "What is gradient descent?" }
-    ],
-    "model": "ollama:llama3.1",
-    "apiKeys": {
-      "ollama": { "isEnabled": true }
-    }
-  }'
-```
-  }'
-```
 
-Notes:
-- Replace `http://localhost:5173` if deployed elsewhere.
-- `curl -N` shows streamed tokens as they arrive.
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/your-feature-name`
+3. Make your changes
+4. Submit a pull request
