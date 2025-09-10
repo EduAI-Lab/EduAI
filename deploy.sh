@@ -12,7 +12,7 @@
 # 	If --force is passed, deployment will continue even with no new commit.
 
 # Variables
-GIT_BRANCH="dev/v1"  		# !!(1)!! Change if deploying a different branch
+GIT_BRANCH="main"  		# !!(1)!! Change if deploying a different branch
 REPO_DIR="/srv/www/eduai.ok.ubc.ca"	#!!(2)!! change as needed
 DOCKER_COMPOSE_FILE="docker-compose.yml"
 LAST_COMMIT_FILE="$REPO_DIR/.last_commit"
