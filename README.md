@@ -81,6 +81,7 @@ BETTER_AUTH_URL="http://localhost:5173" # Base URL of your app
 
 GOOGLE_GENERATIVE_AI_API_KEY="" # For Embeddings
 OLLAMA_BASE_URL="http://localhost:11434/"
+FIRECRAWL_API_KEY="" # Required for Firecrawl web search tool. If not set, web search is unavailable.
 ```
 
 ## Usage
