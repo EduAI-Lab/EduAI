@@ -1,6 +1,13 @@
 import prisma from "~/lib/prisma.server";
 import { auth } from "~/lib/auth/server";
-import { CreateCourseSchema, UpdateCourseSchema } from "./schemas";
+import {
+  CreateCourseSchema,
+  UpdateCourseSchema,
+  CreateCourseTopicSchema,
+  DeleteCourseTopicSchema,
+  type CreateCourseTopicInput,
+  type DeleteCourseTopicInput,
+} from "./schemas";
 
 /**
  * Handles GET, POST for /api/courses
@@ -124,4 +131,75 @@ export async function handleCourseRequest(request: Request) {
     default:
       return new Response("Method not allowed", { status: 405 });
   }
+}
+
+export async function getCourseTopics(courseId: string) {
+  return prisma.courseTopic.findMany({
+    where: { courseId },
+    orderBy: { name: "asc" },
+  });
+}
+
+export async function createCourseTopic(
+  courseId: string,
+  payload: CreateCourseTopicInput,
+) {
+  const parsed = CreateCourseTopicSchema.safeParse(payload);
+
+  if (!parsed.success) {
+    return {
+      error: "Invalid input",
+      details: parsed.error.flatten(),
+    } as const;
+  }
+
+  try {
+    const topic = await prisma.courseTopic.create({
+      data: {
+        courseId,
+        name: parsed.data.name.trim(),
+      },
+    });
+
+    return { topic } as const;
+  } catch (error: any) {
+    if (error?.code === "P2002") {
+      return {
+        error: "Topic already exists for this course",
+      } as const;
+    }
+    throw error;
+  }
+}
+
+export async function deleteCourseTopic(
+  courseId: string,
+  payload: DeleteCourseTopicInput,
+) {
+  const parsed = DeleteCourseTopicSchema.safeParse(payload);
+
+  if (!parsed.success) {
+    return {
+      error: "Invalid input",
+      details: parsed.error.flatten(),
+    } as const;
+  }
+
+  const { topicId, name } = parsed.data;
+
+  const deleteResult = await prisma.courseTopic.deleteMany({
+    where: {
+      courseId,
+      ...(topicId ? { id: topicId } : {}),
+      ...(name ? { name } : {}),
+    },
+  });
+
+  if (deleteResult.count === 0) {
+    return {
+      error: "Topic not found",
+    } as const;
+  }
+
+  return { success: true } as const;
 }

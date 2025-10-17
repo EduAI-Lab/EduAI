@@ -173,6 +173,99 @@ async function main() {
   console.log(`🎉 Seed completed successfully!`);
   console.log(`   📡 ${providerCount} providers created`);
   console.log(`   🤖 ${modelCount} models created`);
+
+  // Seed sample users, courses, and topics for testing
+  console.log('👤 Seeding sample admin user...');
+
+  const adminUser = await prisma.user.upsert({
+    where: { email: 'admin@eduai.local' },
+    update: {
+      name: 'EduAI Admin',
+      role: 'ADMIN',
+      isActive: true,
+      emailVerified: true,
+    },
+    create: {
+      email: 'admin@eduai.local',
+      name: 'EduAI Admin',
+      role: 'ADMIN',
+      isActive: true,
+      emailVerified: true,
+    },
+  });
+
+  console.log('📚 Seeding sample courses and topics...');
+
+  const coursesToSeed = [
+    {
+      code: 'CS101',
+      name: 'Introduction to Computer Science',
+      term: 'Fall',
+      year: 2024,
+      aiInstructions:
+        'Provide supportive explanations for programming fundamentals and algorithmic thinking.',
+      topics: ['Programming Basics', 'Algorithms', 'Data Structures'],
+    },
+    {
+      code: 'MATH201',
+      name: 'Linear Algebra',
+      term: 'Spring',
+      year: 2025,
+      aiInstructions:
+        'Emphasize intuition behind vector spaces and practical matrix applications.',
+      topics: ['Matrices', 'Vector Spaces', 'Eigenvalues & Eigenvectors'],
+    },
+    {
+      code: 'HIST210',
+      name: 'World History: 1500 to Present',
+      term: 'Winter',
+      year: 2025,
+      aiInstructions:
+        'Highlight cause-and-effect relationships and encourage critical analysis of sources.',
+      topics: ['Age of Exploration', 'Industrial Revolution', 'World Wars', 'Globalization'],
+    },
+  ] as const;
+
+  for (const courseData of coursesToSeed) {
+    const course = await prisma.course.upsert({
+      where: { code: courseData.code },
+      update: {
+        name: courseData.name,
+        term: courseData.term,
+        year: courseData.year,
+        aiInstructions: courseData.aiInstructions,
+        professorId: adminUser.id,
+      },
+      create: {
+        code: courseData.code,
+        name: courseData.name,
+        term: courseData.term,
+        year: courseData.year,
+        aiInstructions: courseData.aiInstructions,
+        professorId: adminUser.id,
+        topics: {
+          create: courseData.topics.map((topic) => ({ name: topic })),
+        },
+      },
+      include: { topics: true },
+    });
+
+    // Refresh topics to match the seed data exactly on repeated runs
+    await prisma.courseTopic.deleteMany({ where: { courseId: course.id } });
+    await prisma.courseTopic.createMany({
+      data: courseData.topics.map((topic) => ({
+        courseId: course.id,
+        name: topic,
+      })),
+      skipDuplicates: true,
+    });
+
+    console.log(
+      `   • ${courseData.code} (${courseData.term} ${courseData.year}) with ${courseData.topics.length} topics`,
+    );
+  }
+
+  console.log('✅ Course topics seeded successfully');
 }
 
 main()
