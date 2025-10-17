@@ -21,3 +21,20 @@ export const UpdateCourseSchema = z.object({
   aiInstructions: z.string().optional(),
 });
 
+export const CreateCourseTopicSchema = z.object({
+  name: z.string().min(1, "Topic name is required"),
+});
+
+export const DeleteCourseTopicSchema = z
+  .object({
+    topicId: z.string().min(1).optional(),
+    name: z.string().min(1).optional(),
+  })
+  .refine((data) => data.topicId || data.name, {
+    message: "Provide topicId or name",
+    path: ["topicId"],
+  });
+
+export type CreateCourseTopicInput = z.infer<typeof CreateCourseTopicSchema>;
+export type DeleteCourseTopicInput = z.infer<typeof DeleteCourseTopicSchema>;
+
