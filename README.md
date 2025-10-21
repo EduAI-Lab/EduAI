@@ -192,7 +192,87 @@ curl -X POST "https://eduai.ok.ubc.ca/api/chat" \
   }'
 ```
 
+### Course Topics Endpoint
 
+Manage topics for a specific course. Admin role required for creating and deleting topics.
+
+#### Request
+
+**Endpoints**: 
+- `GET /api/courses/:courseId/topics` - List all topics
+- `POST /api/courses/:courseId/topics` - Create a topic (admin only)
+- `DELETE /api/courses/:courseId/topics` - Delete a topic (admin only)
+
+**Headers**:
+- `Content-Type: application/json`
+- `x-api-key: YOUR_API_KEY`
+
+**URL Parameters**:
+- `courseId` (string): Course identifier
+
+**Body Parameters** (POST):
+- `name` (string): Topic name
+
+**Body Parameters** (DELETE):
+- `topicId` (string, optional): Topic identifier
+- `name` (string, optional): Topic name
+- *Note: Either `topicId` or `name` must be provided*
+
+#### Examples
+
+##### Get Course Topics (Windows - PowerShell)
+```powershell
+curl -X GET "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" `
+  -H "Content-Type: application/json" `
+  -H "x-api-key: YOUR_API_KEY"
+```
+
+##### Get Course Topics (Linux/macOS)
+```bash
+curl -X GET "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: YOUR_API_KEY"
+```
+
+##### Create Course Topic (Windows - PowerShell)
+```powershell
+curl -X POST "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" `
+  -H "Content-Type: application/json" `
+  -H "x-api-key: YOUR_API_KEY" `
+  -d '{
+    "name": "Introduction to Machine Learning"
+  }'
+```
+
+##### Create Course Topic (Linux/macOS)
+```bash
+curl -X POST "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: YOUR_API_KEY" \
+  -d '{
+    "name": "Introduction to Machine Learning"
+  }'
+```
+
+##### Delete Course Topic (Windows - PowerShell)
+```powershell
+curl -X DELETE "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" `
+  -H "Content-Type: application/json" `
+  -H "x-api-key: YOUR_API_KEY" `
+  -d '{
+    "topicId": "TOPIC_ID"
+  }'
+```
+
+##### Delete Course Topic (Linux/macOS)
+```bash
+curl -X DELETE "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: YOUR_API_KEY" \
+  -d '{
+    "topicId": "TOPIC_ID"
+  }'
+```
 
 ## Contributing
 
