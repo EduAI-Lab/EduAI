@@ -25,6 +25,7 @@ export async function action({ request }: ActionFunctionArgs) {
     password: String(formData.password || ""),
     confirmPassword: String(formData.confirmPassword || ""),
   };
+
   const result = signUpSchema.safeParse(input);
   if (!result.success) {
     const fieldErrors: Partial<Record<keyof SignUpInput, string>> = {};
@@ -59,6 +60,25 @@ export async function action({ request }: ActionFunctionArgs) {
       return {
         formError: errorData.message || "Sign up failed"
       };
+    }
+
+    // Update user role for specific test emails
+    if (input.email === "admin@test.com" || input.email === "professor@test.com" || input.email === "temp@admin.com") {
+      try {
+        const { PrismaClient } = await import("@prisma/client");
+        const prisma = new PrismaClient();
+        
+        const role = input.email === "admin@test.com" || input.email === "temp@admin.com" ? "ADMIN" : "PROFESSOR";
+        
+        await prisma.user.update({
+          where: { email: input.email },
+          data: { role }
+        });
+        
+        await prisma.$disconnect();
+      } catch (error) {
+        console.error("Failed to update user role:", error);
+      }
     }
 
     // Get the session cookie from the response
