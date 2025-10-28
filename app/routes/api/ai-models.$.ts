@@ -1,5 +1,6 @@
 import prisma from "~/lib/prisma.server";
 import { auth } from "~/lib/auth/server";
+import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { CreateAIModelSchema, UpdateAIModelSchema } from "~/lib/ai/schemas";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 
@@ -13,6 +14,10 @@ export async function action({ request }: ActionFunctionArgs) {
 
 async function handleRequest(request: Request) {
   const url = new URL(request.url);
+
+  // If an API key is provided, only ADMIN users may proceed
+  const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
+  if (apiKeyGuard) return apiKeyGuard;
 
   switch (request.method) {
     case "GET": {
@@ -29,7 +34,7 @@ async function handleRequest(request: Request) {
     }
 
     case "POST": {
-      const session = await auth.api.getSession(request);
+      const session = apiKeySession ?? await auth.api.getSession(request);
       if (!session?.user || session.user.role !== "ADMIN") {
         return new Response("Forbidden: Admins only", { status: 403 });
       }
@@ -84,7 +89,7 @@ async function handleRequest(request: Request) {
         return new Response("Missing model ID", { status: 400 });
       }
 
-      const session = await auth.api.getSession(request);
+      const session = apiKeySession ?? await auth.api.getSession(request);
       if (!session?.user || session.user.role !== "ADMIN") {
         return new Response("Forbidden: Admins only", { status: 403 });
       }
@@ -143,7 +148,7 @@ async function handleRequest(request: Request) {
         return new Response("Missing model ID", { status: 400 });
       }
 
-      const session = await auth.api.getSession(request);
+      const session = apiKeySession ?? await auth.api.getSession(request);
       if (!session?.user || session.user.role !== "ADMIN") {
         return new Response("Forbidden: Admins only", { status: 403 });
       }
