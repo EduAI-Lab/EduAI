@@ -96,9 +96,21 @@ FIRECRAWL_API_KEY="" # Required for Firecrawl web search tool. If not set, web s
 
 ### Programmatic Access
 
-Create API keys through the web interface under Settings > API Keys for programmatic access to the chat functionality.
+API key usage is restricted to admins. Create API keys through the web interface under Settings > API Keys. Requests that include `x-api-key` require the authenticated user to have role `ADMIN` across `/api/*`. Non-admin users should access features via the web UI with their session cookies.
 
 ## API Documentation
+
+Note on authentication: Using `x-api-key` is restricted to ADMIN users across all `/api/*` endpoints. Non-admin users should access functionality via the web UI with their session cookies. Any request that includes `x-api-key` from a non-admin user returns 403.
+
+### Testing Admin-Only x-api-key
+
+- Admin key, expect success (200/201/… depending on route):
+  - `curl -i -X GET "https://eduai.ok.ubc.ca/api/ai-providers" -H "x-api-key: ADMIN_API_KEY"`
+- Non-admin key, expect 403 Forbidden:
+  - `curl -i -X GET "https://eduai.ok.ubc.ca/api/ai-providers" -H "x-api-key: STUDENT_API_KEY"`
+- Chat via curl (admin only with key):
+  - `curl -i -X POST "https://eduai.ok.ubc.ca/api/chat" -H "Content-Type: application/json" -H "x-api-key: ADMIN_API_KEY" -d '{"messages":[{"role":"user","content":"hello"}],"model":"google:gemini-2.5-flash","apiKeys":{"google":{"apiKey":"YOUR_GOOGLE_API_KEY","isEnabled":true}},"streaming":false}'`
+- Chat via UI (students): use browser at `/chat`; no `x-api-key` sent; should work as before.
 
 ### Chat Endpoint
 

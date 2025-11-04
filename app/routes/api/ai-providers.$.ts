@@ -1,5 +1,6 @@
 import prisma from "~/lib/prisma.server";
 import { auth } from "~/lib/auth/server";
+import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { CreateAIProviderSchema, UpdateAIProviderSchema } from "~/lib/ai/schemas";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 
@@ -13,6 +14,10 @@ export async function action({ request }: ActionFunctionArgs) {
 
 async function handleRequest(request: Request) {
   const url = new URL(request.url);
+
+  // If an API key is provided, only ADMIN users may proceed
+  const apiKeyGuard = await enforceAdminIfApiKey(request);
+  if (apiKeyGuard) return apiKeyGuard;
 
   switch (request.method) {
     case "GET": {

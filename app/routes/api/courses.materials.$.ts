@@ -3,8 +3,13 @@ import { processMaterialEmbeddings } from '~/lib/ai/embedding';
 import { processUploadedFile } from '~/lib/ai/file-processing';
 import prisma from '~/lib/prisma.server';
 import { auth } from '~/lib/auth/server';
+import { enforceAdminIfApiKey } from '~/lib/auth/guards.server';
 
 export async function action({ request, params }: ActionFunctionArgs) {
+  // If an API key is provided, only ADMIN users may proceed
+  const apiKeyGuard = await enforceAdminIfApiKey(request);
+  if (apiKeyGuard) return apiKeyGuard;
+
   const session = await auth.api.getSession(request);
   if (!session?.user) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
@@ -133,6 +138,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
 }
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
+  // If an API key is provided, only ADMIN users may proceed
+  const apiKeyGuard = await enforceAdminIfApiKey(request);
+  if (apiKeyGuard) return apiKeyGuard;
+
   const session = await auth.api.getSession(request);
   if (!session?.user) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
