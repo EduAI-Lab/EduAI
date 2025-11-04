@@ -1,6 +1,7 @@
 import { streamText, tool } from "ai";
 import { createAIProviderRegistry, modelSupportsTools } from "~/lib/ai/providers";
 import { findRelevantContent } from "~/lib/ai/embedding";
+import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { auth } from "~/lib/auth/server";
 import type { ActionFunctionArgs } from "react-router";
 import { z } from "zod";
@@ -8,25 +9,15 @@ import { webSearch, fetchPage } from "~/lib/ai/tools";
 
 export async function action({ request }: ActionFunctionArgs) {
   try {
-    const session = await auth.api.getSession(request);
+    const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
+    if (apiKeyGuard) return apiKeyGuard;
+
+    const session = apiKeySession ?? await auth.api.getSession(request);
     if (!session?.user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
         headers: { "Content-Type": "application/json" },
       });
-    }
-
-    // If an API key header is present, only allow ADMIN users to access this endpoint via key-based auth.
-    // UI requests use session cookies and should not send x-api-key.
-    const apiKeyHeader = request.headers.get('x-api-key');
-    if (apiKeyHeader && session.user.role !== 'ADMIN') {
-      return new Response(
-        JSON.stringify({ error: "Forbidden: x-api-key access restricted to admin users" }),
-        {
-          status: 403,
-          headers: { "Content-Type": "application/json" },
-        }
-      );
     }
 
     const { messages, model, apiKeys, courseId, courseCode, streaming = true } = await request.json();
