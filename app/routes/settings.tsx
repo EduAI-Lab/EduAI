@@ -206,7 +206,7 @@ export default function SettingsPage() {
               <Card>
                 <CardHeader>
                   <CardTitle>How to use API Keys</CardTitle>
-                  <CardDescription>Send your key in the x-api-key header when calling /api/* endpoints.</CardDescription>
+                  <CardDescription>Send your key in the x-api-key header when calling /api/* endpoints. Note: /api/chat accepts x-api-key only for ADMIN users; students should use the web UI.</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <pre className="text-xs bg-muted p-3 rounded-md overflow-auto whitespace-pre-wrap break-words">{`curl -N -X POST "http://localhost:5173/api/chat" \
@@ -279,5 +279,4 @@ export default function SettingsPage() {
     </SidebarProvider>
   )
 }
-
 
