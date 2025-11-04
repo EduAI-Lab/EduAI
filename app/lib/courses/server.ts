@@ -19,7 +19,7 @@ export async function handleCourseRequest(request: Request) {
   const url = new URL(request.url);
 
   // If an API key is provided, only ADMIN users may proceed
-  const apiKeyGuard = await enforceAdminIfApiKey(request);
+  const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
   if (apiKeyGuard) return apiKeyGuard;
 
   switch (request.method) {
@@ -32,7 +32,7 @@ export async function handleCourseRequest(request: Request) {
     }
 
     case "POST": {
-      const session = await auth.api.getSession(request);
+      const session = apiKeySession ?? await auth.api.getSession(request);
       if (!session?.user || session.user.role !== "ADMIN") {
         return new Response("Forbidden: Admins only", { status: 403 });
       }
@@ -84,7 +84,7 @@ export async function handleCourseRequest(request: Request) {
         return new Response("Missing course ID", { status: 400 });
       }
 
-      const session = await auth.api.getSession(request);
+      const session = apiKeySession ?? await auth.api.getSession(request);
       if (!session?.user) {
         return new Response("Unauthorized", { status: 401 });
       }
