@@ -16,6 +16,19 @@ export async function action({ request }: ActionFunctionArgs) {
       });
     }
 
+    // If an API key header is present, only allow ADMIN users to access this endpoint via key-based auth.
+    // UI requests use session cookies and should not send x-api-key.
+    const apiKeyHeader = request.headers.get('x-api-key');
+    if (apiKeyHeader && session.user.role !== 'ADMIN') {
+      return new Response(
+        JSON.stringify({ error: "Forbidden: x-api-key access restricted to admin users" }),
+        {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
     const { messages, model, apiKeys, courseId, courseCode, streaming = true } = await request.json();
 
     // If courseCode is provided, resolve to internal course id
