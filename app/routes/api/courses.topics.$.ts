@@ -1,6 +1,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
 import { auth } from "~/lib/auth/server";
+import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import {
   createCourseTopic,
   deleteCourseTopic,
@@ -8,6 +9,10 @@ import {
 } from "~/lib/courses/server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
+  // If an API key is provided, only ADMIN users may proceed
+  const apiKeyGuard = await enforceAdminIfApiKey(request);
+  if (apiKeyGuard) return apiKeyGuard;
+
   const session = await auth.api.getSession(request);
 
   if (!session?.user) {
@@ -43,6 +48,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
       headers: { "Content-Type": "application/json" },
     });
   }
+
+  // If an API key is provided, only ADMIN users may proceed
+  const apiKeyGuard = await enforceAdminIfApiKey(request);
+  if (apiKeyGuard) return apiKeyGuard;
 
   const session = await auth.api.getSession(request);
 

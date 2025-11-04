@@ -1,5 +1,6 @@
 import prisma from "~/lib/prisma.server";
 import { auth } from "~/lib/auth/server";
+import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import {
   CreateCourseSchema,
   UpdateCourseSchema,
@@ -16,6 +17,10 @@ import {
 
 export async function handleCourseRequest(request: Request) {
   const url = new URL(request.url);
+
+  // If an API key is provided, only ADMIN users may proceed
+  const apiKeyGuard = await enforceAdminIfApiKey(request);
+  if (apiKeyGuard) return apiKeyGuard;
 
   switch (request.method) {
     case "GET": {
