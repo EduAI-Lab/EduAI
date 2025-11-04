@@ -65,9 +65,17 @@ type Topic = {
   name: string
   description: string | null
   order: number
-  courseId: string
   createdAt: string
   updatedAt: string
+  categoryId : string 
+}
+// I added a coure category type here.
+type CourseCategory = {
+  id : string 
+  name : string
+  description: string | null
+  courseId: string
+  topics: Topic[] 
 }
 
 type Course = {
@@ -82,7 +90,7 @@ type Course = {
   professorId: string
   createdAt: string
   updatedAt: string
-  topics: Topic[]
+  categories: CourseCategory[]
 }
 
 export default function CourseDetailPage() {

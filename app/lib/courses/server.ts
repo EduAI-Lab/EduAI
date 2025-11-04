@@ -24,12 +24,15 @@ export async function handleCourseRequest(request: Request) {
 
   switch (request.method) {
     case "GET": {
-      const courses = await prisma.course.findMany();
+      const courses = await prisma.course.findMany({
+        include: { topics: true }, // include topics directly
+      });
       return new Response(JSON.stringify({ courses }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
     }
+
 
     case "POST": {
       const session = apiKeySession ?? await auth.api.getSession(request);
@@ -139,7 +142,7 @@ export async function handleCourseRequest(request: Request) {
 }
 
 export async function getCourseTopics(courseId: string) {
-  return prisma.courseTopic.findMany({
+  return prisma.topic.findMany({ // changed from courseTopic to topic
     where: { courseId },
     orderBy: { name: "asc" },
   });
@@ -159,7 +162,7 @@ export async function createCourseTopic(
   }
 
   try {
-    const topic = await prisma.courseTopic.create({
+    const topic = await prisma.topic.create({
       data: {
         courseId,
         name: parsed.data.name.trim(),
@@ -192,7 +195,7 @@ export async function deleteCourseTopic(
 
   const { topicId, name } = parsed.data;
 
-  const deleteResult = await prisma.courseTopic.deleteMany({
+  const deleteResult = await prisma.topic.deleteMany({
     where: {
       courseId,
       ...(topicId ? { id: topicId } : {}),

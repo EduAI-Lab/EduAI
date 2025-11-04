@@ -18,7 +18,7 @@ export interface TeamMember {
 export const teamMembers: TeamMember[] = [
   {
     id: 1,
-    name: "Dr. Abdallah Mohamed",
+    name: "Dr.Abdallah Mohamed",
     image: "/AbdullahMoh.jpeg",
     biography: "Professor Abdallah Mohamed’s expertise spans software engineering, decision support systems, and creative higher education. His research integrates optimization techniques, expert systems, and component-based software development to enhance decision-making in complex, uncertain, and dynamic environments. Beyond technical research, he is committed to advancing innovation in teaching and learning, developing new methodologies to foster creativity, engagement, and personalized learning experiences.",
     contribution:"Directs AI research, managing model selection and experiments with students to optimize LLM and RAG performance for EduAI.",
@@ -27,7 +27,7 @@ export const teamMembers: TeamMember[] = [
   },
   {
     id: 2,
-    name: "Dr. Mostafa Mohamed",
+    name: "Dr.Mostafa Mohamed",
     image: "/MohMustafa.jpeg",
     biography:" Professor Mostafa Mohamed, previously an Assistant Professor of Biomedical Engineering and now a Computer Science professor at UBCO , advances research in AI, machine learning, and medical imaging. His notable contributions include white blood cell segmentation, leukemia detection, deep learning–based scene analysis, and human cell classification. With 500+ citations and more than a dozen publications at IEEE, he integrates hardware acceleration, parallel computing, and cloud systems to enhance healthcare diagnostics.",
     contribution:"Leads backend development and guides students in building scalable AI infrastructure using LLMs and RAG pipelines for EduAI.",
@@ -38,7 +38,7 @@ export const teamMembers: TeamMember[] = [
   },
   {
     id: 3,
-    name: "Dr. Fatemeh Fard",
+    name: "Dr.Fatemeh Fard",
     image: "/Fatemah.jpeg",
     biography: "Assistant Professor in Computer Science and Data Science at UBC Okanagan, leading the FARD Lab (Foundational AIware Research and Development). Her research focuses on AI-driven software engineering, large language models for code, and NLP applications in low-resource programming languages.",
     contribution: "Leads research on adapter-based fine-tuning for low-resource programming languages, exploring transfer learning techniques to improve code intelligence. She has published extensively on code summarization, code clone detection, and the intersection of AI and software development.",
@@ -47,7 +47,7 @@ export const teamMembers: TeamMember[] = [
   },
   {
     id: 4,
-    name: "Dr. Ramon Lawrence",
+    name: "Dr.Ramon Lawrence",
     image: "/Ramon_Law.jpeg",
     biography: "Professor and Department Head of Computer Science and Data Science at UBC Okanagan. His research spans database systems, data integration, and sensor/IoT data management. He is also the founder of Unity Data Inc., the developer of UnityJDBC—a system that enables SQL queries across heterogeneous data sources.",
     contribution: "Directed the Distributed Database Lab, advanced query optimization algorithms, and developed the UnityJDBC driver integrating relational and NoSQL data. His work bridges academic research and industry by providing scalable database solutions and mentoring numerous software engineering students.",

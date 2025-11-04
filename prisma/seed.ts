@@ -243,21 +243,23 @@ async function main() {
         year: courseData.year,
         aiInstructions: courseData.aiInstructions,
         professorId: adminUser.id,
-        topics: {
-          create: courseData.topics.map((topic) => ({ name: topic })),
-        },
       },
-      include: { topics: true },
     });
 
     // Refresh topics to match the seed data exactly on repeated runs
-    await prisma.courseTopic.deleteMany({ where: { courseId: course.id } });
-    await prisma.courseTopic.createMany({
-      data: courseData.topics.map((topic) => ({
+    await prisma.courseCategory.deleteMany({ where: { courseId: course.id } });
+    const category = await prisma.courseCategory.create({
+      data: {
+        name: `${course.name} - Default Category`,
+        description: `Auto-generated category for ${course.name}`,
         courseId: course.id,
-        name: topic,
-      })),
-      skipDuplicates: true,
+        topics: {
+          create: courseData.topics.map((topic) => ({
+            name: topic,
+          })),
+        },
+      },
+      include: { topics: true },
     });
 
     console.log(

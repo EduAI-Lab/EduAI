@@ -94,23 +94,36 @@ model Course {
   enrollments    CourseEnrollment[]
   materials      CourseMaterial[]
   tas            CourseTA[]
-  topics         CourseTopic[]
   professor      User               @relation("ProfessorCourses", fields: [professorId], references: [id])
   documents      Document[]
-  topics         Topic[]
+  categories     CourseCategory[] // one course --> many categories, the square brackets represent the many relationships
 
   @@map("courses")
 }
 
-model Topic {
-  id          String   @id @default(cuid())
+model CourseCategory {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
   courseId    String
+
+  course Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  topics Topic[] // one category --> many topics.
+
+  @@map("course_categories")
+}
+
+model Topic {
+  id          String   @id @default(cuid()) // @id tells prisma that this field is the primary key of the table. default cuid() stands for “Collision-Resistant Unique ID” . It automatically generates a unique string ID.
+  // removed courseId from here , as it is redundant.
   name        String
   description String?
   order       Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-  course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  categoryId  String // foreign key to CourseCategory
+
+  category CourseCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade) // the foreign key in Topic, is the fields:  categoryId ,  which corresponds to the primary key in CourseCategory , is references: [id]. if the parents ( category ) is deleted, then the topic is also deleted, hence cascade. 
 
   @@map("topics")
 }
@@ -263,18 +276,6 @@ model CourseMaterial {
   chunks      MaterialChunk[]
 
   @@map("course_materials")
-}
-
-model CourseTopic {
-  id        String   @id @default(cuid())
-  courseId  String
-  name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
-
-  @@unique([courseId, name])
-  @@map("course_topics")
 }
 
 model MaterialChunk {
