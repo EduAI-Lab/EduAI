@@ -110,7 +110,7 @@ Send chat messages with course context for grounded responses.
 
 **Headers**:
 - `Content-Type: application/json`
-- `x-api-key: YOUR_API_KEY` # TODO: Eduai UI to restrict access to only admin users only. 
+- `x-api-key: YOUR_API_KEY` (admin only; requests with this header require an ADMIN user)
 
 **Body Parameters**:
 - `messages` (array): Chat message history
