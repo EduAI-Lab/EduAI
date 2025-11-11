@@ -94,7 +94,7 @@ model Course {
   tas            CourseTA[]
   professor      User               @relation("ProfessorCourses", fields: [professorId], references: [id])
   documents      Document[]
-  categories     CourseCategory[] // one course --> many categories, the square brackets represent the many relationships
+  categories     CourseCategory[]   @relation("CourseToCategory") // one course has many categories
 
   @@map("courses")
 }
@@ -102,18 +102,18 @@ model Course {
 model CourseCategory {
   id          String  @id @default(cuid())
   name        String
-  description String?
-  courseId    String
+  description String? // ? means optional
+  courseId    String // foreign key that links each category to a specific course and its also indexed for faster lookups , basically a shortcut.
 
-  course Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  topics Topic[] // one category --> many topics.
+  course Course  @relation("CourseToCategory", fields: [courseId], references: [id], onDelete: Cascade) // a category belongs to one course 
+  topics Topic[] @relation("CategoryToTopic") // one category has many topics, the square brackets represent the many relationships
 
+  @@index([courseId]) //ensures that topics are fetched via their categoryId and not the courseId 
   @@map("course_categories")
 }
 
 model Topic {
   id          String   @id @default(cuid()) // @id tells prisma that this field is the primary key of the table. default cuid() stands for “Collision-Resistant Unique ID” . It automatically generates a unique string ID.
-  // removed courseId from here , as it is redundant.
   name        String
   description String?
   order       Int      @default(0)
@@ -121,8 +121,9 @@ model Topic {
   updatedAt   DateTime @updatedAt
   categoryId  String // foreign key to CourseCategory
 
-  category CourseCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade) // the foreign key in Topic, is the fields:  categoryId ,  which corresponds to the primary key in CourseCategory , is references: [id]. if the parents ( category ) is deleted, then the topic is also deleted, hence cascade. 
+  category CourseCategory @relation("CategoryToTopic", fields: [categoryId], references: [id], onDelete: Cascade) // topics belong to a single category which hangs off a course
 
+  @@index([categoryId])
   @@map("topics")
 }
 
@@ -363,3 +364,6 @@ enum MaterialStatus {
   READY
   FAILED
 }
+
+
+
