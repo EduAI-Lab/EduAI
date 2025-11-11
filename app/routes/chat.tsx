@@ -7,6 +7,7 @@ import { ChatWelcome } from "~/components/chat/chat-welcome";
 import { ChatMessage } from "~/components/chat/chat-message";
 import { ChatInput } from "~/components/chat/chat-input";
 import { ChatTypingIndicator } from "~/components/chat/chat-typing-indicator";
+import { SystemPromptSettings } from "~/components/chat/system-prompt-settings";
 import { useApiKeys } from "~/hooks/use-api-keys";
 import { AppSidebar } from "~/components/app-sidebar";
 import { SiteHeader } from "~/components/site-header";
@@ -66,6 +67,8 @@ export default function Chat() {
   const [selectedModel, setSelectedModel] = useState(chatModels.length > 0 ? chatModels[0].id : '');
   const [selectedCourseCode, setSelectedCourseCode] = useState<string | null>(null);
   const [availableCourses, setAvailableCourses] = useState<Array<{ id: string; name: string; code: string }>>([]);
+  const [chatId, setChatId] = useState<string | null>(null);
+  const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
   const { apiKeys, getValidApiKeys } = useApiKeys();
 
   // Fetch available courses
@@ -82,16 +85,68 @@ export default function Chat() {
     fetchCourses();
   }, []);
 
+  // Load system prompt when chatId is set
+  useEffect(() => {
+    if (chatId && !systemPrompt) {
+      fetch(`/api/chats/${chatId}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.systemPrompt) {
+            setSystemPrompt(data.systemPrompt);
+          }
+        })
+        .catch(console.error);
+    }
+  }, [chatId]);
+
   const { messages, input, handleInputChange, handleSubmit, isLoading, stop } = useChat({
     api: "/api/chat",
     body: {
       model: selectedModel,
       apiKeys: getValidApiKeys(),
       courseCode: selectedCourseCode || undefined,
+      chatId: chatId || undefined,
+      systemPrompt: systemPrompt || undefined,
+    },
+    onResponse: async (response) => {
+      // Extract chatId from response headers
+      const chatIdHeader = response.headers.get('X-Chat-Id');
+      if (chatIdHeader && !chatId) {
+        setChatId(chatIdHeader);
+      }
+    },
+    onFinish: async (message) => {
+      // chatId is already captured from headers in onResponse
     },
   });
 
   const selectedModelInfo = chatModels.find((model: any) => model.id === selectedModel);
+
+  const handleSystemPromptSave = async (prompt: string | null) => {
+    setSystemPrompt(prompt);
+
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chatId: chatId || undefined,
+          systemPrompt: prompt,
+          messages: messages.length > 0 ? messages : [],
+          model: selectedModel,
+          apiKeys: getValidApiKeys(),
+          courseCode: selectedCourseCode || undefined,
+          streaming: false,
+        }),
+      });
+      const data = await response.json();
+      if (data.chatId && !chatId) {
+        setChatId(data.chatId);
+      }
+    } catch (error) {
+      console.error('Failed to save system prompt:', error);
+    }
+  };
 
   const handlePromptSelect = (prompt: string) => {
     // Create proper synthetic events
@@ -130,6 +185,13 @@ export default function Chat() {
             <div className="h-full overflow-y-auto scrollbar-hover">
               <div className="px-4 py-6">
                 <div className="max-w-4xl mx-auto space-y-6">
+                  <div className="flex justify-end">
+                    <SystemPromptSettings
+                      systemPrompt={systemPrompt}
+                      onSave={handleSystemPromptSave}
+                    />
+                  </div>
+
                   {messages.length === 0 ? (
                     <ChatWelcome
                       selectedModelInfo={selectedModelInfo}
@@ -138,7 +200,6 @@ export default function Chat() {
                   ) : (
                     <>
                       {messages.map((message, index) => {
-                        // Check if this is the last message and we're still loading
                         const isLastMessage = index === messages.length - 1;
                         const isStreamingMessage = isLastMessage && isLoading;
 
