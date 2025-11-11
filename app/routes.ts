@@ -14,7 +14,7 @@ export default [
   route("/courses", "routes/courses.tsx"),
   route("/courses/:courseId", "routes/courses.$courseId.tsx"),
   route("/api/courses/:courseId/materials", "routes/api/courses.materials.$.ts"),
-  route("/api/courses/:courseId/topics", "routes/api/courses.topics.$.ts"),
+  route("/api/categories/:categoryId/topics", "routes/api/categories.topics.$.ts"), // Changed from courses.topics.$.ts to categories.topics.$.ts and the file name aswell.
   route("/api/courses/:id", "routes/api/courses.id.ts"),
   route("/admin/ai-models", "routes/admin.ai-models.tsx"),
   route("/admin/users", "routes/admin.users.tsx"),
