@@ -23,6 +23,7 @@ export const UpdateCourseSchema = z.object({
 
 export const CreateCourseTopicSchema = z.object({
   name: z.string().min(1, "Topic name is required"),
+  categoryId: z.string().min(1, "Category ID is required"),
 });
 
 export const DeleteCourseTopicSchema = z
