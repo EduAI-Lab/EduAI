@@ -6,6 +6,7 @@ import { auth } from "~/lib/auth/server";
 import type { ActionFunctionArgs } from "react-router";
 import { z } from "zod";
 import { webSearch, fetchPage } from "~/lib/ai/tools";
+import prisma from "~/lib/prisma.server";
 
 export async function action({ request }: ActionFunctionArgs) {
   try {
@@ -20,22 +21,109 @@ export async function action({ request }: ActionFunctionArgs) {
       });
     }
 
-    const { messages, model, apiKeys, courseId, courseCode, streaming = true } = await request.json();
+    const body = await request.json();
+    const rawMessages = Array.isArray(body.messages) ? body.messages : [];
+    const model = typeof body.model === "string" ? body.model : undefined;
+    const apiKeys = body.apiKeys as unknown;
+    const courseId = typeof body.courseId === "string" ? body.courseId : undefined;
+    const courseCode = typeof body.courseCode === "string" ? body.courseCode : undefined;
+    const streaming = body.streaming === undefined ? true : Boolean(body.streaming);
+    const chatId = typeof body.chatId === "string" ? body.chatId : undefined;
+
+    const hasSystemPromptField = Object.prototype.hasOwnProperty.call(body, "systemPrompt");
+    let trimmedSystemPrompt: string | null = null;
+    if (typeof body.systemPrompt === "string") {
+      const candidate = body.systemPrompt.trim();
+      trimmedSystemPrompt = candidate.length > 0 ? candidate : null;
+    } else if (body.systemPrompt === null) {
+      trimmedSystemPrompt = null;
+    }
 
     // If courseCode is provided, resolve to internal course id
     let resolvedCourseId: string | null = null;
-    if (courseCode && typeof courseCode === 'string') {
+    if (courseCode && typeof courseCode === "string") {
       try {
-        const { default: prisma } = await import('~/lib/prisma.server');
+        const { default: prisma } = await import("~/lib/prisma.server");
         const course = await prisma.course.findUnique({ where: { code: courseCode } });
         resolvedCourseId = course?.id || null;
       } catch (e) {
-        console.error('Failed to resolve course by code', e);
+        console.error("Failed to resolve course by code", e);
       }
     }
     const effectiveCourseId = resolvedCourseId || courseId || null;
 
-    if (!messages || !model || !apiKeys) {
+    // Handle chat persistence and system prompt resolution
+    let chat = null;
+    if (chatId) {
+      chat = await prisma.chat.findFirst({
+        where: { id: chatId, userId: session.user.id },
+      });
+    } else if (trimmedSystemPrompt) {
+      chat = await prisma.chat.findFirst({
+        where: {
+          userId: session.user.id,
+          systemPrompt: trimmedSystemPrompt,
+        },
+        orderBy: { createdAt: "desc" },
+      });
+    }
+
+    if (hasSystemPromptField) {
+      if (chat) {
+        if (chat.systemPrompt !== trimmedSystemPrompt) {
+          chat = await prisma.chat.update({
+            where: { id: chat.id },
+            data: { systemPrompt: trimmedSystemPrompt },
+          });
+        }
+      } else if (trimmedSystemPrompt) {
+        chat = await prisma.chat.create({
+          data: {
+            userId: session.user.id,
+            systemPrompt: trimmedSystemPrompt,
+          },
+        });
+      }
+    }
+
+    // Trim messages to last N messages to control context size
+    // Keep last 20 messages (10 user + 10 assistant pairs) to avoid token bloat
+    const MAX_MESSAGES = 20;
+    const trimmedMessages =
+      rawMessages.length > MAX_MESSAGES ? rawMessages.slice(-MAX_MESSAGES) : rawMessages;
+
+    if (trimmedMessages.length === 0) {
+      if (!chat && trimmedSystemPrompt) {
+        chat = await prisma.chat.create({
+          data: {
+            userId: session.user.id,
+            systemPrompt: trimmedSystemPrompt,
+          },
+        });
+      }
+
+      return new Response(
+        JSON.stringify({
+          chatId: chat?.id ?? null,
+          systemPrompt: trimmedSystemPrompt ?? chat?.systemPrompt ?? null,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    if (!chat) {
+      chat = await prisma.chat.create({
+        data: {
+          userId: session.user.id,
+          systemPrompt: trimmedSystemPrompt,
+        },
+      });
+    }
+
+    if (!model || typeof apiKeys !== "object" || apiKeys === null) {
       return new Response(
         JSON.stringify({ error: "Missing required fields" }),
         {
@@ -46,7 +134,7 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     // Create AI provider registry with user's API keys
-    const registry = createAIProviderRegistry(apiKeys);
+    const registry = createAIProviderRegistry(apiKeys as any);
 
     // Get the AI model from registry
     const aiModel = registry.languageModel(model);
@@ -90,30 +178,32 @@ export async function action({ request }: ActionFunctionArgs) {
 
     let streamConfig;
 
+    const resolvedSystemPrompt = trimmedSystemPrompt ?? chat.systemPrompt ?? null;
+
     if (!supportsTools) {
       // MODELS WITHOUT TOOL SUPPORT: Use hybrid RAG approach
       // These models need manual context injection instead of tool calling
 
       // Get the last user message to check if RAG might be needed
-      const lastMessage = messages[messages.length - 1];
-      const messageContent = typeof lastMessage?.content === 'string'
+      const lastMessage = trimmedMessages[trimmedMessages.length - 1];
+      const messageContent = typeof lastMessage?.content === "string"
         ? lastMessage.content.toLowerCase()
-        : '';
+        : "";
 
       // Detect if user is asking about course content
       const isRAGQuery = effectiveCourseId && (
-        messageContent.includes('course') ||
-        messageContent.includes('material') ||
-        messageContent.includes('document') ||
-        messageContent.includes('chapter') ||
-        messageContent.includes('lecture') ||
-        messageContent.includes('assignment') ||
-        messageContent.includes('explain') ||
-        messageContent.includes('what is') ||
-        messageContent.includes('summarize') ||
-        messageContent.includes('summary') ||
-        messageContent.includes('content') ||
-        messageContent.includes('about')
+        messageContent.includes("course") ||
+        messageContent.includes("material") ||
+        messageContent.includes("document") ||
+        messageContent.includes("chapter") ||
+        messageContent.includes("lecture") ||
+        messageContent.includes("assignment") ||
+        messageContent.includes("explain") ||
+        messageContent.includes("what is") ||
+        messageContent.includes("summarize") ||
+        messageContent.includes("summary") ||
+        messageContent.includes("content") ||
+        messageContent.includes("about")
       );
 
       if (isRAGQuery) {
@@ -126,63 +216,65 @@ export async function action({ request }: ActionFunctionArgs) {
               ).join('\n\n---\n\n')
             : '';
 
-          streamConfig = {
-            model: aiModel,
-            messages,
-            temperature: 0.6,
-            maxTokens: 8192,
-            system: `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
+          // Build system prompt: custom > default with RAG context
+          const baseSystemPrompt = resolvedSystemPrompt || `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
 
 ${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ``}
+
+Always be helpful, accurate, and cite the course materials when using them in your response. Use markdown for formatting.`;
+
+          const systemWithRAG = contextText
+            ? `${baseSystemPrompt}
 
 ${contextText ? `Here are relevant excerpts from the course materials to help answer the user's question:
 
 ${contextText}
 
-Based on this information, provide a comprehensive answer to the user's question. If the provided content doesn't fully answer their question, mention what you can answer based on the available materials and suggest what additional information might be helpful.` : 'I don\'t have access to specific course materials for this question, but I can provide general educational assistance.'}
+Based on this information, provide a comprehensive answer to the user's question. If the provided content doesn't fully answer their question, mention what you can answer based on the available materials and suggest what additional information might be helpful.` : 'I don\'t have access to specific course materials for this question, but I can provide general educational assistance.'}`
+            : baseSystemPrompt;
 
-Always be helpful, accurate, and cite the course materials when using them in your response. Use markdown for formatting.`,
-          };
-        } catch (error) {
-          console.error('Error finding relevant content for model without tool support:', error);
           streamConfig = {
             model: aiModel,
-            messages,
+            messages: trimmedMessages,
             temperature: 0.6,
             maxTokens: 8192,
-            system: `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
+            system: systemWithRAG,
+          };
+        } catch (error) {
+          console.error("Error finding relevant content for model without tool support:", error);
+          const defaultSystemPrompt = resolvedSystemPrompt || `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
 
 ${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ''}
 
-Be helpful, conversational, and accurate. Use markdown for formatting.`,
+Be helpful, conversational, and accurate. Use markdown for formatting.`;
+
+          streamConfig = {
+            model: aiModel,
+            messages: trimmedMessages,
+            temperature: 0.6,
+            maxTokens: 8192,
+            system: defaultSystemPrompt,
           };
         }
       } else {
         // General conversation without RAG
-        streamConfig = {
-          model: aiModel,
-          messages,
-          temperature: 0.6,
-          maxTokens: 8192,
-          system: `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
+        const defaultSystemPrompt = resolvedSystemPrompt || `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
 
 ${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ''}
 
-Be helpful, conversational, and accurate. Use markdown for formatting.`,
+Be helpful, conversational, and accurate. Use markdown for formatting.`;
+
+        streamConfig = {
+          model: aiModel,
+          messages: trimmedMessages,
+          temperature: 0.6,
+          maxTokens: 8192,
+          system: defaultSystemPrompt,
         };
       }
     } else {
       // MODELS WITH TOOL SUPPORT: Use full tool calling functionality
-      streamConfig = {
-        model: aiModel,
-        messages,
-        temperature: 0.6,
-        maxTokens: 32000,
-        maxSteps: 12,
-        tools,
-        // Disable tool call streaming for non-streaming responses
-        toolCallStreaming: streaming,
-        system: `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
+      const defaultSystemPrompt = resolvedSystemPrompt || `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
 
 You have access to two tools:
 - getInformation: searches uploaded course materials (syllabi, lectures, assignments, etc.)
@@ -198,7 +290,18 @@ When answering questions:
 
 ${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ''}
 
-Be helpful, conversational, and accurate. Use markdown for formatting.`,
+Be helpful, conversational, and accurate. Use markdown for formatting.`;
+
+      streamConfig = {
+        model: aiModel,
+        messages: trimmedMessages,
+        temperature: 0.6,
+        maxTokens: 32000,
+        maxSteps: 12,
+        tools,
+        // Disable tool call streaming for non-streaming responses
+        toolCallStreaming: streaming,
+        system: defaultSystemPrompt,
       };
     }
 
@@ -207,13 +310,15 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`,
     const result = await streamText(streamConfig);
 
     if (streaming) {
-      return result.toDataStreamResponse({
-        headers: {
-          'Content-Encoding': 'none',
-          'Transfer-Encoding': 'chunked',
-          'Connection': 'keep-alive'
-        }
-      });
+      const headers: Record<string, string> = {
+        'Content-Encoding': 'none',
+        'Transfer-Encoding': 'chunked',
+        'Connection': 'keep-alive'
+      };
+      if (chat?.id) {
+        headers['X-Chat-Id'] = chat.id;
+      }
+      return result.toDataStreamResponse({ headers });
     } else {
       // Return a regular JSON response instead of streaming
       try {
@@ -239,6 +344,7 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`,
             reasoning: reasoning,
             responseId: response?.id,
             courseCode: courseCode,
+            chatId: chat?.id,
           }),
           {
             status: 200,
