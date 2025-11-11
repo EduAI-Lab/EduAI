@@ -22,16 +22,16 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
   }
 
-  const courseId = params.courseId;
+  const categoryId = params.categoryId;
 
-  if (!courseId) {
+  if (!categoryId) {
     return new Response(JSON.stringify({ error: "Course ID is required" }), {
       status: 400,
       headers: { "Content-Type": "application/json" },
     });
   }
 
-  const topics = await getCourseTopics(courseId);
+  const topics = await getCourseTopics(categoryId);
 
   return new Response(JSON.stringify({ topics }), {
     status: 200,
@@ -40,10 +40,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
-  const courseId = params.courseId;
+  const categoryId = params.categoryId;
 
-  if (!courseId) {
-    return new Response(JSON.stringify({ error: "Course ID is required" }), {
+  if (!categoryId) {
+    return new Response(JSON.stringify({ error: "category ID is required" }), {
       status: 400,
       headers: { "Content-Type": "application/json" },
     });
@@ -72,7 +72,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       }
 
       const body = await request.json();
-      const result = await createCourseTopic(courseId, body);
+      const result = await createCourseTopic(categoryId, body);
 
       if ("error" in result) {
         const status = result.error === "Topic already exists for this course" ? 409 : 400;
@@ -97,7 +97,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       }
 
       const body = await request.json();
-      const result = await deleteCourseTopic(courseId, body);
+      const result = await deleteCourseTopic(categoryId, body);
 
       if ("error" in result) {
         const status = result.error === "Topic not found" ? 404 : 400;
