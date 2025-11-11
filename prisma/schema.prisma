@@ -26,6 +26,7 @@ model User {
   sessions          Session[]
   providerSettings  UserProviderSettings[]
   apiKeys           apikey[]
+  chats             Chat[]
 
   @@map("user")
 }
@@ -275,11 +276,11 @@ model MaterialChunk {
 }
 
 model MaterialEmbedding {
-  id        String                @id @default(cuid())
-  chunkId   String                @unique
+  id        String                      @id @default(cuid())
+  chunkId   String                      @unique
   embedding Unsupported("vector(3072)")
-  createdAt DateTime              @default(now())
-  chunk     MaterialChunk         @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+  createdAt DateTime                    @default(now())
+  chunk     MaterialChunk               @relation(fields: [chunkId], references: [id], onDelete: Cascade)
 
   @@map("material_embeddings")
 }
@@ -310,6 +311,19 @@ model apikey {
 
   @@index([userId])
   @@map("apiKey")
+}
+
+model Chat {
+  id           String   @id @default(cuid())
+  userId       String
+  systemPrompt String?
+  title        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("chats")
 }
 
 enum UserRole {
