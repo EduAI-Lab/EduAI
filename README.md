@@ -204,6 +204,38 @@ curl -X POST "https://eduai.ok.ubc.ca/api/chat" \
   }'
 ```
 
+### AI Models Endpoint
+
+Retrieve the catalog of configured AI models.
+
+#### Request
+
+**Endpoint**: `GET /api/ai-models`
+
+**Headers**:
+- `Content-Type: application/json`
+- `x-api-key: YOUR_API_KEY`
+
+#### Response
+
+Returns an array of AI model objects, each including its associated provider metadata (`provider.name`, `providerId`, etc.).
+
+#### Examples
+
+##### Get AI Models (Windows - PowerShell)
+```powershell
+curl -X GET "https://eduai.ok.ubc.ca/api/ai-models" `
+  -H "Content-Type: application/json" `
+  -H "x-api-key: YOUR_API_KEY"
+```
+
+##### Get AI Models (Linux/macOS)
+```bash
+curl -X GET "https://eduai.ok.ubc.ca/api/ai-models" \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: YOUR_API_KEY"
+```
+
 ### Course Topics Endpoint
 
 Manage topics for a specific course. Admin role required for creating and deleting topics.
