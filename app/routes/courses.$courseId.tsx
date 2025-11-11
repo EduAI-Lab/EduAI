@@ -40,25 +40,28 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
             email: true
           }
         },
-        topics: {
-          orderBy: { order: 'asc' }
-        }
-      } as any
+        categories:{
+          include: {
+            topics: { orderBy: { order: 'asc' } }
+        }}
+      }
     })
 
     if (!course) {
       return redirect("/courses")
     }
-
+  console.log("Fetched course:", JSON.stringify(course, null, 2))
     return {
       course,
       user: session.user
     }
+
   } catch (error) {
     console.error("Failed to fetch course:", error)
     return redirect("/courses")
   }
 }
+
 
 type Topic = {
   id: string

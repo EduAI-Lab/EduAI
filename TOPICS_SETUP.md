@@ -24,20 +24,20 @@ This document explains how to set up the topics feature for course management.
 ### Backend
 - **Topic Model**: Added to Prisma schema with fields:
   - `id`: Unique identifier
-  - `courseId`: Foreign key to course
+  - `categoryId`: Foreign key to category
   - `name`: Topic name (required)
   - `description`: Optional description
   - `order`: Order for sorting (default: 0)
   - `createdAt`/`updatedAt`: Timestamps
 
 - **API Endpoints**:
-  - `GET /api/topics?courseId=<id>`: Get all topics for a course
-  - `POST /api/topics`: Create a new topic
+  - `GET /api/topics?categoryId=<id>`: Get all topics for a category
+  - `POST /api/categories/:categoryId/topics`: Create a new topic
   - `PATCH /api/topics/<id>`: Update a topic
   - `DELETE /api/topics/<id>`: Delete a topic
 
 - **Validation**: Using Zod schemas for input validation
-- **Authorization**: Only admins and course professors can manage topics
+- **Authorization**: Only admins and **category maintainers or instructors** can manage topics
 
 ### Frontend
 - **Topics Tab**: Added to course detail page
