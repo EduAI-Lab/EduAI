@@ -15,14 +15,14 @@ export async function handleTopicRequest(request: Request) {
   switch (request.method) {
     case "GET": {
       // Get topics for a specific course
-      const courseId = url.searchParams.get('courseId');
+      const categoryId = url.searchParams.get('categoryId');
       
-      if (!courseId) {
-        return new Response("Course ID is required", { status: 400 });
+      if (!categoryId) {
+        return new Response("category ID is required", { status: 400 });
       }
 
       const topics = await prisma.topic.findMany({
-        where: { courseId },
+        where: { categoryId },
         orderBy: { order: 'asc' }
       });
 
@@ -53,17 +53,19 @@ export async function handleTopicRequest(request: Request) {
       }
 
       // Check if user has access to this course
-      const course = await prisma.course.findUnique({
-        where: { id: result.data.courseId },
-        select: { professorId: true }
+      const category = await prisma.courseCategory.findUnique({
+        where: { id: result.data.categoryId },
+        include: {
+          course: { select: { professorId: true } },
+        },
       });
 
-      if (!course) {
+      if (!category) {
         return new Response("Course not found", { status: 404 });
       }
 
       const isAdmin = user.role === "ADMIN";
-      const isProfessor = user.role === "PROFESSOR" && user.id === course.professorId;
+      const isProfessor = user.role === "PROFESSOR" && user.id === category.course.professorId;
 
       if (!isAdmin && !isProfessor) {
         return new Response("Forbidden", { status: 403 });
@@ -106,7 +108,7 @@ export async function handleTopicRequest(request: Request) {
       // Check if user has access to this topic's course
       const topic = await prisma.topic.findUnique({
         where: { id: topicId },
-        include: { course: { select: { professorId: true } } }
+        include: { category: { select: { course: { select: { professorId: true } } } } }
       });
 
       if (!topic) {
@@ -114,7 +116,7 @@ export async function handleTopicRequest(request: Request) {
       }
 
       const isAdmin = user.role === "ADMIN";
-      const isProfessor = user.role === "PROFESSOR" && user.id === topic.course.professorId;
+      const isProfessor = user.role === "PROFESSOR" && user.id === topic.category.course.professorId;
 
       if (!isAdmin && !isProfessor) {
         return new Response("Forbidden", { status: 403 });
@@ -146,7 +148,7 @@ export async function handleTopicRequest(request: Request) {
       // Check if user has access to this topic's course
       const topic = await prisma.topic.findUnique({
         where: { id: topicId },
-        include: { course: { select: { professorId: true } } }
+        include: { category: { select: { course: { select: { professorId: true } } } } }
       });
 
       if (!topic) {
@@ -154,7 +156,7 @@ export async function handleTopicRequest(request: Request) {
       }
 
       const isAdmin = user.role === "ADMIN";
-      const isProfessor = user.role === "PROFESSOR" && user.id === topic.course.professorId;
+      const isProfessor = user.role === "PROFESSOR" && user.id === topic.category.course.professorId;
 
       if (!isAdmin && !isProfessor) {
         return new Response("Forbidden", { status: 403 });
