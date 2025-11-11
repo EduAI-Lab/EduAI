@@ -192,23 +192,23 @@ curl -X POST "https://eduai.ok.ubc.ca/api/chat" \
   }'
 ```
 
-### Course Topics Endpoint
+### Category Topics Endpoint
 
-Manage topics for a specific course. Admin role required for creating and deleting topics.
+Manage topics for a specific category. Admin role required for creating and deleting topics.
 
 #### Request
 
 **Endpoints**: 
-- `GET /api/courses/:courseId/topics` - List all topics
-- `POST /api/courses/:courseId/topics` - Create a topic (admin only)
-- `DELETE /api/courses/:courseId/topics` - Delete a topic (admin only)
+- `GET /api/categories/:categoryId/topics` - List all topics
+- `POST /api/categories/:categoryId/topics` - Create a topic (admin only)
+- `DELETE /api/categories/:categoryId/topics` - Delete a topic (admin only)
 
 **Headers**:
 - `Content-Type: application/json`
 - `x-api-key: YOUR_API_KEY`
 
 **URL Parameters**:
-- `courseId` (string): Course identifier
+- `categoryId` (string): Category identifier
 
 **Body Parameters** (POST):
 - `name` (string): Topic name
@@ -220,23 +220,23 @@ Manage topics for a specific course. Admin role required for creating and deleti
 
 #### Examples
 
-##### Get Course Topics (Windows - PowerShell)
+##### Get Category Topics (Windows - PowerShell)
 ```powershell
-curl -X GET "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" `
+curl -X GET "https://eduai.ok.ubc.ca/api/categories/CATEGORY_ID/topics" `
   -H "Content-Type: application/json" `
   -H "x-api-key: YOUR_API_KEY"
 ```
 
-##### Get Course Topics (Linux/macOS)
+##### Get Category Topics (Linux/macOS)
 ```bash
-curl -X GET "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" \
+curl -X GET "https://eduai.ok.ubc.ca/api/categories/CATEGORY_ID/topics" \
   -H "Content-Type: application/json" \
   -H "x-api-key: YOUR_API_KEY"
-```
 
-##### Create Course Topic (Windows - PowerShell)
+
+##### Create Category Topic (Windows - PowerShell)
 ```powershell
-curl -X POST "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" `
+curl -X POST "https://eduai.ok.ubc.ca/api/categories/CATEGORY_ID/topics" `
   -H "Content-Type: application/json" `
   -H "x-api-key: YOUR_API_KEY" `
   -d '{
@@ -244,34 +244,37 @@ curl -X POST "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" `
   }'
 ```
 
-##### Create Course Topic (Linux/macOS)
+##### Create Category Topic (Linux/macOS)
 ```bash
-curl -X POST "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" \
+curl -X POST "https://eduai.ok.ubc.ca/api/categories/CATEGORY_ID/topics" \
   -H "Content-Type: application/json" \
   -H "x-api-key: YOUR_API_KEY" \
   -d '{
     "name": "Introduction to Machine Learning"
   }'
+
 ```
 
-##### Delete Course Topic (Windows - PowerShell)
+##### Delete Category Topic (Windows - PowerShell)
 ```powershell
-curl -X DELETE "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" `
+curl -X DELETE "https://eduai.ok.ubc.ca/api/categories/CATEGORY_ID/topics" `
   -H "Content-Type: application/json" `
   -H "x-api-key: YOUR_API_KEY" `
   -d '{
     "topicId": "TOPIC_ID"
   }'
+
 ```
 
-##### Delete Course Topic (Linux/macOS)
+##### Delete Category Topic (Linux/macOS)
 ```bash
-curl -X DELETE "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" \
+curl -X DELETE "https://eduai.ok.ubc.ca/api/categories/CATEGORY_ID/topics" \
   -H "Content-Type: application/json" \
   -H "x-api-key: YOUR_API_KEY" \
   -d '{
     "topicId": "TOPIC_ID"
   }'
+
 ```
 
 ## Contributing
