@@ -27,6 +27,7 @@ model User {
   providerSettings  UserProviderSettings[]
   apiKeys           apikey[]
   chats             Chat[]
+  externalUsers     ExternalUser[]
 
   @@map("user")
 }
@@ -321,9 +322,42 @@ model Chat {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages     ChatMessage[]
 
   @@index([userId])
   @@map("chats")
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  chatId    String
+  messageId String
+  role      String
+  content   Json
+  /// Auto-increment keeps message ordering monotonic even with concurrent writers.
+  position  Int      @default(autoincrement())
+  createdAt DateTime @default(now())
+  chat      Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@unique([chatId, messageId])
+  @@index([chatId, position])
+  @@map("chat_messages")
+}
+
+model ExternalUser {
+  id             String   @id @default(cuid())
+  provider       String
+  externalUserId String
+  userId         String
+  /// Stores the upstream email for reference; User.email remains canonical.
+  email          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, externalUserId])
+  @@index([userId])
+  @@map("external_users")
 }
 
 enum UserRole {
