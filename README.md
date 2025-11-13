@@ -130,6 +130,7 @@ Send chat messages with course context for grounded responses.
 - `apiKeys` (object): Provider-specific API keys
 - `courseCode` (string): Target course identifier
 - `streaming` (boolean): Enable response streaming
+- `proxyUser` (object, optional): Only for admin `x-api-key` calls. Allows services like Aitutor to act on behalf of a user; see [Proxy Delegation (`proxyUser`)](#proxy-delegation-proxyuser).
 
 #### Examples
 
@@ -203,6 +204,32 @@ curl -X POST "https://eduai.ok.ubc.ca/api/chat" \
     "streaming": true
   }'
 ```
+
+#### Proxy Delegation (`proxyUser`)
+
+Third-party services (e.g., Aitutor) that call `/api/chat` with an admin `x-api-key` can add a `proxyUser` block:
+
+```json
+{
+  "proxyUser": {
+    "provider": "aitutor",
+    "id": "aitutor-user-123",
+    "email": "student123@example.com"
+  }
+}
+```
+
+EduAI auto-provisions (or reuses) an internal `User` keyed by `(provider, id)` and stores all chat history under that account. The provided email is treated as metadata for the `ExternalUser` record; the canonical EduAI login email remains whatever was set when the user was created.
+
+#### Chat History & Message Persistence
+
+- The backend now stores every chat turn in the `chat_messages` table. Clients only need to send the newest user message plus the `chatId`; the API reconstructs context from the database and trims to the most recent 20 messages for inference.
+- Message deduplication is based on the Vercel AI SDK `message.id`. Resubmitting the same `id` (e.g., after network retries) is a no-op.
+- If a client references a `chatId` that no longer exists for that user, the API returns `410 Gone` with `{ "chatDeleted": true }`. Callers should drop the stale ID and start a new chat.
+
+#### ExternalUser Email Semantics
+
+`ExternalUser.email` captures the upstream provider’s latest email for diagnostics, but `User.email` remains the primary login/contact field inside EduAI. We do **not** overwrite the user’s canonical email automatically when proxy requests send new values; update the `User` record directly if you need to promote an alias.
 
 ### AI Models Endpoint
 
