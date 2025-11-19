@@ -224,7 +224,8 @@ EduAI auto-provisions (or reuses) an internal `User` keyed by `(provider, id)` a
 #### Chat History & Message Persistence
 
 - The backend now stores every chat turn in the `chat_messages` table. Clients only need to send the newest user message plus the `chatId`; the API reconstructs context from the database and trims to the most recent 20 messages for inference.
-- Message deduplication is based on the Vercel AI SDK `message.id`. Resubmitting the same `id` (e.g., after network retries) is a no-op.
+- **Chat IDs**: The `chatId` is strictly server-generated (CUID). Clients should not attempt to generate their own chat IDs.
+- **Message IDs**: Clients **SHOULD** generate a UUID v4 for every message (`message.id`) before sending it. This enables optimistic UI updates and allows the server to deduplicate retries safely.
 - If a client references a `chatId` that no longer exists for that user, the API returns `410 Gone` with `{ "chatDeleted": true }`. Callers should drop the stale ID and start a new chat.
 
 #### ExternalUser Email Semantics
