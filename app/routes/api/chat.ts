@@ -342,14 +342,6 @@ export async function action({ request }: ActionFunctionArgs) {
           },
         );
       }
-    } else if (trimmedSystemPrompt) {
-      chat = await prisma.chat.findFirst({
-        where: {
-          userId: actingUser.id,
-          systemPrompt: trimmedSystemPrompt,
-        },
-        orderBy: { createdAt: "desc" },
-      });
     }
 
     if (hasSystemPromptField) {
@@ -658,7 +650,7 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
     }
 
     console.log(`Using ${supportsTools ? "tool calling" : "hybrid RAG"} approach for model: ${model}`);
-    console.log(`System prompt: ${streamConfig.system?.substring(0, 200)}...`);
+    console.log('Full system prompt:', streamConfig.system);
     console.log(`Sending ${trimmedMessages.length} messages to LLM:`, JSON.stringify(trimmedMessages, null, 2));
     const result = await streamText(streamConfig);
 
