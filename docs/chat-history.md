@@ -48,6 +48,8 @@ This document explains the recent changes to `/api/chat`, why they were made, an
 
 ## Client Expectations
 
+- **Chat IDs**: The `chatId` is strictly server-generated (CUID). Clients should not attempt to generate their own chat IDs.
+- **Message IDs**: Clients **SHOULD** generate a UUID v4 for every message (`message.id`) before sending it. This enables optimistic UI updates and allows the server to deduplicate retries safely.
 - **Send only the newest user message** plus `chatId`; the API reconstructs the rest of the context internally.
 - **Unique message IDs**: Reuse the same `message.id` when retrying a failed call so the server can safely ignore duplicates.
 - **Handle 410**: If you receive `410 Gone` with `chatDeleted`, discard the stored `chatId` and start a new chat.
