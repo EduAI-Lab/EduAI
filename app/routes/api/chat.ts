@@ -34,6 +34,10 @@ const isNonEmptyString = (value: unknown): value is string =>
  * Normalizes arbitrary incoming message payloads so downstream code can rely on
  * `id` and `role` being present. If a client omits `id`, we stamp one here so
  * the message can still be persisted and deduplicated.
+ *
+ * NOTE: Clients SHOULD generate a UUID v4 for every message (`message.id`) before
+ * sending it. This enables optimistic UI updates and allows the server to
+ * deduplicate retries safely.
  */
 function normalizeMessage(message: unknown): GenericMessage | null {
   if (!message || typeof message !== "object") {
@@ -235,6 +239,10 @@ async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
  * applies proxy delegation, and returns either a streaming response or a
  * regular JSON payload. Message persistence happens automatically so clients no
  * longer need to resend the full transcript.
+ *
+ * NOTE:
+ * - Chat IDs are strictly server-generated (CUID).
+ * - Message IDs should be client-generated (UUID v4) for best results.
  */
 export async function action({ request }: ActionFunctionArgs) {
   try {
