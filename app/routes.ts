@@ -14,19 +14,31 @@ export default [
   route("/courses", "routes/courses.tsx"),
   route("/courses/:courseId", "routes/courses.$courseId.tsx"),
   route("/api/courses/:courseId/materials", "routes/api/courses.materials.$.ts"),
-<<<<<<< HEAD
-  route("/api/categories/:categoryId/topics", "routes/api/categories.topics.$.ts"), // Changed from courses.topics.$.ts to categories.topics.$.ts and the file name aswell.
-=======
-  route("/api/courses/:courseId/topics", "routes/api/courses.topics.$.ts"),
-  route("/api/courses/:courseId/topics/:topicId", "routes/api/courses.topic-id.$.ts"),
->>>>>>> Fix category/topic API routes + server refactor
+
+  // ✅ Category + Topic routes (new structure)
+  route(
+    "/api/categories/:categoryId/topics",
+    "routes/api/categories.topics.$.ts"
+  ),
+  route(
+    "/api/categories/:categoryId/topic/:topicId",
+    "routes/api/categories.$categoryId.topic.$topicId.ts"
+  ),
+
+  // Course routes
   route("/api/courses/:id", "routes/api/courses.id.ts"),
+
+  // Admin routes
   route("/admin/ai-models", "routes/admin.ai-models.tsx"),
   route("/admin/users", "routes/admin.users.tsx"),
+
+  // API routes
   route("/api/ai-providers/*", "routes/api/ai-providers.$.ts"),
   route("/api/ai-models/*", "routes/api/ai-models.$.ts"),
   route("/api/users/*", "routes/api/users.$.ts"),
-  route("/api/topics/*", "routes/api/topics.$.ts"),
-  route("/api/courses/:courseId/topics/:topicId", "routes/api/courses.topic-id.$.ts"),
+
+  // ❌ Removed /api/topics/:topicId (no such file)
+  // ❌ Removed duplicate category route
+
   route("/api/ollama-models", "routes/api/ollama-models.ts"),
 ] satisfies RouteConfig;
