@@ -224,9 +224,10 @@ export async function createCategoryTopic(
 
 export async function deleteCategoryTopic(
   categoryId: string,
-  payload: DeleteCourseTopicInput,
+  payload: string
 ) {
-  const parsed = DeleteCourseTopicSchema.safeParse(payload);
+  // Convert string payload → expected object form
+  const parsed = DeleteCourseTopicSchema.safeParse({ topicId: payload });
 
   if (!parsed.success) {
     return {
@@ -253,3 +254,4 @@ export async function deleteCategoryTopic(
 
   return { success: true } as const;
 }
+
