@@ -135,12 +135,13 @@ export default function CourseDetailPage() {
   const handleAddTopic = async () => {
     if (!newTopicName.trim()) return
 
-    const response = await fetch('/api/topics', {
+    /// changed the POST endpoint to api/courses/:courseId/topics
+    const response = await fetch(`/api/courses/${courseId}/topics`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: newTopicName.trim(),
-        courseId: courseId
+        courseId: courseId,
       })
     })
 
@@ -158,8 +159,8 @@ export default function CourseDetailPage() {
 
   const handleUpdateTopic = async () => {
     if (!editingTopic || !editingName.trim()) return
-
-    const response = await fetch(`/api/topics/${editingTopic.id}`, {
+    /// changed the PATCH endpoint to api/courses/:courseId/topics/:topicId
+    const response = await fetch(`/api/courses/${courseId}/topics/${editingTopic.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -177,8 +178,8 @@ export default function CourseDetailPage() {
 
   const handleDeleteTopic = async (topicId: string) => {
     if (!confirm('Are you sure you want to delete this topic?')) return
-
-    const response = await fetch(`/api/topics/${topicId}`, {
+    /// changed the DELETE endpoint to api/courses/:courseId/topics/:topicId
+    const response = await fetch(`/api/courses/${courseId}/topics/${topicId}`, {
       method: 'DELETE'
     })
 

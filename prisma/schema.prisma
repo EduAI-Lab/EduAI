@@ -124,6 +124,10 @@ model Topic {
   category CourseCategory @relation("CategoryToTopic", fields: [categoryId], references: [id], onDelete: Cascade) // topics belong to a single category which hangs off a course
 
   @@index([categoryId])
+<<<<<<< HEAD
+=======
+  @@unique([id, categoryId])
+>>>>>>> Fix category/topic API routes + server refactor
   @@map("topics")
 }
 
@@ -364,3 +368,6 @@ enum MaterialStatus {
   READY
   FAILED
 }
+
+
+

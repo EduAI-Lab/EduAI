@@ -8,3 +8,4 @@ export async function loader({ request }: LoaderFunctionArgs) {
 export async function action({ request }: ActionFunctionArgs) {
   return handleTopicRequest(request);
 }
+  

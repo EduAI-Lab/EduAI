@@ -18,7 +18,7 @@ export async function handleTopicRequest(request: Request) {
       const categoryId = url.searchParams.get('categoryId');
       
       if (!categoryId) {
-        return new Response("category ID is required", { status: 400 });
+        return new Response("Category ID is required", { status: 400 });
       }
 
       const topics = await prisma.topic.findMany({
@@ -53,20 +53,19 @@ export async function handleTopicRequest(request: Request) {
       }
 
       // Check if user has access to this course
-      const category = await prisma.courseCategory.findUnique({
+       const category = await prisma.courseCategory.findUnique({
         where: { id: result.data.categoryId },
         include: {
-          course: { select: { professorId: true } },
-        },
+          course: { select: { professorId: true } }
+        }
       });
 
       if (!category) {
-        return new Response("Course not found", { status: 404 });
+        return new Response("Category not found", { status: 404 });
       }
 
       const isAdmin = user.role === "ADMIN";
       const isProfessor = user.role === "PROFESSOR" && user.id === category.course.professorId;
-
       if (!isAdmin && !isProfessor) {
         return new Response("Forbidden", { status: 403 });
       }
@@ -108,7 +107,13 @@ export async function handleTopicRequest(request: Request) {
       // Check if user has access to this topic's course
       const topic = await prisma.topic.findUnique({
         where: { id: topicId },
-        include: { category: { select: { course: { select: { professorId: true } } } } }
+        include: {
+          category: {
+            include: {
+              course: { select: { professorId: true } }
+            }
+          }
+        }
       });
 
       if (!topic) {
@@ -148,7 +153,13 @@ export async function handleTopicRequest(request: Request) {
       // Check if user has access to this topic's course
       const topic = await prisma.topic.findUnique({
         where: { id: topicId },
-        include: { category: { select: { course: { select: { professorId: true } } } } }
+        include: { 
+          category:{
+            include: {
+              course: { select: { professorId: true } }
+            }
+          }
+         }
       });
 
       if (!topic) {

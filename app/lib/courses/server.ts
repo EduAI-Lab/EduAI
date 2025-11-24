@@ -20,9 +20,13 @@ export async function handleCourseRequest(request: Request) {
   switch (request.method) {
     case "GET": {
       const courses = await prisma.course.findMany({
-        include: {  
-          categories: { include: { topics: true } },
-        }, // include topics directly
+        include: {
+          categories: {
+            include: {
+              topics: true,
+            },
+          },
+        },
       });
       return new Response(JSON.stringify({ courses }), {
         status: 200,
@@ -137,15 +141,50 @@ export async function handleCourseRequest(request: Request) {
       return new Response("Method not allowed", { status: 405 });
   }
 }
+/// added an updateCategoryTopic function below , used inside of app/routes/api/categories.$categoryId.topic.$topicId.ts
+export async function updateCategoryTopic(
+  categoryId: string,
+  topicId: string,
+  data: { name?: string }
+) {
+  try {
+    if (!data.name || !data.name.trim()) {
+      return { error: "Name is required" } as const;
+    }
 
-export async function getCourseTopics(categoryId: string) {
+   const updated = await prisma.topic.update({
+    where: {
+      id_categoryId: {
+        id: topicId,
+        categoryId: categoryId,
+      },
+    },
+    data: {
+      name: data.name.trim(),
+    },
+  });
+
+
+    return { topic: updated } as const;
+  } catch (error: any) {
+    if (error.code === "P2025") {
+      return { error: "Topic not found" } as const;
+    }
+
+    throw error; 
+  }
+}
+
+
+
+export async function getCategoryTopics(categoryId: string) {
   return prisma.topic.findMany({ // changed from courseTopic to topic
-      where: { categoryId },
+    where: { categoryId },  // changed from courseId to categoryId
     orderBy: { name: "asc" },
   });
 }
 
-export async function createCourseTopic(
+export async function createCategoryTopic(
   categoryId: string,
   payload: CreateCourseTopicInput,
 ) {
@@ -161,23 +200,24 @@ export async function createCourseTopic(
   try {
     const topic = await prisma.topic.create({
       data: {
-        categoryId,
+        categoryId, // changed from courseId to categoryId
         name: parsed.data.name.trim(),
       },
     });
 
     return { topic } as const;
+
   } catch (error: any) {
     if (error?.code === "P2002") {
       return {
-        error: "Topic already exists for this course",
+        error: "Topic already exists in this category",
       } as const;
     }
     throw error;
   }
 }
 
-export async function deleteCourseTopic(
+export async function deleteCategoryTopic(
   categoryId: string,
   payload: DeleteCourseTopicInput,
 ) {
