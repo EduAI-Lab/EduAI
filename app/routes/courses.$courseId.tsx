@@ -15,6 +15,7 @@ import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar"
 import { CourseMaterialsUpload } from "~/components/course-materials-upload"
 import { useApiKeys } from "~/hooks/use-api-keys"
 import prisma from "~/lib/prisma.server"
+import { date } from "zod"
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request)
@@ -68,8 +69,8 @@ type Topic = {
   name: string
   description: string | null
   order: number
-  createdAt: string
-  updatedAt: string
+  createdAt: string | Date
+  updatedAt: string | Date 
   categoryId : string 
 }
 // I added a coure category type here.
@@ -101,7 +102,10 @@ export default function CourseDetailPage() {
   const { courseId } = useParams()
   const { getValidApiKeys } = useApiKeys()
   const [activeTab, setActiveTab] = useState("overview")
-  const [topics, setTopics] = useState<Topic[]>((course as any).topics || [])
+  // Flatten topics from all categories for easier management
+  const initialTopics = course.categories.flatMap(c => c.topics)
+  const [topics, setTopics] = useState<Topic[]>(initialTopics)
+
   const [newTopicName, setNewTopicName] = useState("")
   const [editingTopic, setEditingTopic] = useState<Topic | null>(null)
   const [editingName, setEditingName] = useState("")
@@ -131,17 +135,19 @@ export default function CourseDetailPage() {
 
   const canManageMaterials = isAdmin || (isProfessor && course.professorId === user.id)
   const canManageTopics = isAdmin || (isProfessor && course.professorId === user.id)
+  // testing purposes, assuming first category for now:
+  const categoryId = course.categories[0]?.id
+
 
   const handleAddTopic = async () => {
-    if (!newTopicName.trim()) return
-
-    /// changed the POST endpoint to api/courses/:courseId/topics
-    const response = await fetch(`/api/courses/${courseId}/topics`, {
+    if (!newTopicName.trim() || !categoryId) return
+    /// changed endpoint here..
+    const response = await fetch(`/api/categories/${categoryId}/topics`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: newTopicName.trim(),
-        courseId: courseId,
+        categoryId,
       })
     })
 
@@ -159,8 +165,8 @@ export default function CourseDetailPage() {
 
   const handleUpdateTopic = async () => {
     if (!editingTopic || !editingName.trim()) return
-    /// changed the PATCH endpoint to api/courses/:courseId/topics/:topicId
-    const response = await fetch(`/api/courses/${courseId}/topics/${editingTopic.id}`, {
+// changed endpoint...
+      const response = await fetch(`/api/categories/${editingTopic.categoryId}/topics/${editingTopic.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -170,16 +176,19 @@ export default function CourseDetailPage() {
 
     if (response.ok) {
       const updatedTopic = await response.json()
-      setTopics(topics.map(t => t.id === editingTopic.id ? updatedTopic : t))
+      setTopics(topics.map(t => (t.id === editingTopic.id ? updatedTopic : t)));
       setEditingTopic(null)
       setEditingName("")
     }
   }
-
+// I added a handleDeleteTopic function here. fetches DELETE api/categories/:categoryId/topics/:topicId
   const handleDeleteTopic = async (topicId: string) => {
-    if (!confirm('Are you sure you want to delete this topic?')) return
-    /// changed the DELETE endpoint to api/courses/:courseId/topics/:topicId
-    const response = await fetch(`/api/courses/${courseId}/topics/${topicId}`, {
+    const topic = topics.find(t => t.id === topicId);
+    if (!topic) return;
+
+    if (!confirm('Are you sure you want to delete this topic?')) return;
+
+    const response = await fetch(`/api/categories/${topic.categoryId}/topics/${topicId}`, {
       method: 'DELETE'
     })
 
@@ -304,9 +313,14 @@ export default function CourseDetailPage() {
                               </div>
 
                               {/* Topics List */}
+                           {/* Topics List */}
                               <div className="grid gap-2">
                                 {topics.map((topic) => (
-                                  <div key={topic.id} className="flex items-center justify-between p-3 border rounded-lg">
+                                  <div
+                                    key={topic.id}
+                                    className="flex items-center justify-between p-3 border rounded-lg cursor-default"
+                                    onClick={(e) => e.preventDefault()}  // stops navigating into the topic
+                                  >
                                     {editingTopic?.id === topic.id ? (
                                       <div className="flex items-center gap-2 flex-1">
                                         <Input
@@ -315,12 +329,10 @@ export default function CourseDetailPage() {
                                           onKeyPress={(e) => e.key === 'Enter' && handleUpdateTopic()}
                                           className="flex-1"
                                         />
-                                        <Button size="sm" onClick={handleUpdateTopic}>
-                                          Save
-                                        </Button>
-                                        <Button 
-                                          size="sm" 
-                                          variant="outline" 
+                                        <Button size="sm" onClick={handleUpdateTopic}>Save</Button>
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
                                           onClick={() => {
                                             setEditingTopic(null)
                                             setEditingName("")
@@ -334,21 +346,31 @@ export default function CourseDetailPage() {
                                         <div className="flex-1">
                                           <h4 className="font-medium">{topic.name}</h4>
                                           {topic.description && (
-                                            <p className="text-sm text-muted-foreground">{topic.description}</p>
+                                            <p className="text-sm text-muted-foreground">
+                                              {topic.description}
+                                            </p>
                                           )}
                                         </div>
+
                                         <div className="flex gap-2">
                                           <Button
                                             size="sm"
                                             variant="outline"
-                                            onClick={() => handleEditTopic(topic)}
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              handleEditTopic(topic)
+                                            }}
                                           >
                                             <IconEdit className="w-4 h-4" />
                                           </Button>
+
                                           <Button
                                             size="sm"
                                             variant="outline"
-                                            onClick={() => handleDeleteTopic(topic.id)}
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              handleDeleteTopic(topic.id)
+                                            }}
                                             className="text-red-600 hover:text-red-700"
                                           >
                                             <IconTrash className="w-4 h-4" />
@@ -358,6 +380,7 @@ export default function CourseDetailPage() {
                                     )}
                                   </div>
                                 ))}
+
                                 {topics.length === 0 && (
                                   <p className="text-muted-foreground text-center py-8">
                                     No topics added yet. Add your first topic above.
