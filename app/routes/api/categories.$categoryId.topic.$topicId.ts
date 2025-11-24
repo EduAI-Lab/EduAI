@@ -4,8 +4,9 @@ import {
     deleteCategoryTopic, updateCategoryTopic
 } from "~/lib/courses/server";
 
-export async function action({ request, params }: ActionFunctionArgs) {
+export async function action({ request, params }:  ActionFunctionArgs) {
   const { categoryId, topicId } = params;
+
 
   if (!categoryId || !topicId) {
     return new Response(JSON.stringify({ error: "Missing parameters" }), {
@@ -41,7 +42,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     }
 
     case "DELETE": {
-      const result = await deleteCategoryTopic(categoryId, {topicId});
+      const result = await deleteCategoryTopic(categoryId, topicId);
 
       if ("error" in result) {
         return new Response(JSON.stringify(result), {
