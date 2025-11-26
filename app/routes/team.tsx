@@ -65,6 +65,15 @@ export const teamMembers: TeamMember[] = [
   },
   {
     id: 6,
+    name: "Stavan Shah ",
+    image: " ",
+    biography: "",
+    contribution: "" ,
+    techStack: [],
+    codeSnippet: ""
+  },
+  {
+    id: 7,
     name: "Ahab Masud Siddiqui",
     image: "/AA.JPG",
     biography: "As a sophomore in Computer Science at UBC and a software engineering intern , I've accumulated strong skills in software development. I have experience in building full-stack web applications and AI/ML projects. I've worked under the supervision of multiple professors in developing an mobile application for a Hospital Wayfinding App aswell using Swift and Flutter. I'm eager to contribute to EduAI and collaborate with a passionate research team.",
@@ -73,7 +82,7 @@ export const teamMembers: TeamMember[] = [
     codeSnippet: "Software Engineering Intern, Directed Studies presenter, Top 5 finalist in UBC Hackathon.",
   },
   {
-    id: 7,
+    id: 8,
     name: "Necmi Kaan Sapoglu",
     image: "/kaan.png",
     biography:"An undergraduate from Turkey with a great interest for AI used in education, as well as a personal interest in video game development. In the EduAI project, he helps develop the backend infrastructure, developing the database, and handling API calls.",
@@ -82,7 +91,7 @@ export const teamMembers: TeamMember[] = [
     codeSnippet: " if (working == true){take a break; }else { take a break;}",
   },
   {
-    id: 8,
+    id: 9,
     name: "Ribhav Sharma ",
     image: "/rib.jpeg",
     biography: "Ribhav Sharma is a 4th-year Computer Science student who has demonstrated a strong aptitude for AI and software development. He contributed to the EduAI project, focusing on enhancing the platform’s learning capabilities and user-interaction framework. Ribhav brings a blend of academic rigor and hands-on development experience, making him an asset in building innovative tech solutions.",
@@ -91,7 +100,7 @@ export const teamMembers: TeamMember[] = [
     codeSnippet : "while( internship_game == up ) {chills} "
   },
   {
-    id: 9,
+    id: 10,
     name: "Leila Saparbek ",
     image: "/Leila.jpg",
     biography: "Fourth-year Computer Science and Data Science student at UBC Okanagan. Interested in backend development, data pipelines, and applying machine learning to solve real-world problems.",
@@ -100,7 +109,7 @@ export const teamMembers: TeamMember[] = [
     codeSnippet: " while self.at(UBC): self.study() self.code() self.drink(RedBull) "
   },
   {
-    id: 10,
+    id: 11,
     name: "Mohamed Gamal Sakr ",
     image: "/sakr.jpg",
     biography: "Mohamed Gamal Sakr is an honours Computer Science student at UBC Okanagan specializing in agentic AI and machine learning. He has industry experience from a software engineering internship at Allianz and currently develops LLM-based code vulnerability tools at UBCO. As a student leader and former president-elect of the Computer Science Course Union, he has earned the Dean’s List (2025) and UBC’s Outstanding International Student Award (2022). His project excellence was recognized with the Database Web Development Badge (2024). He also holds professional certifications from Stanford and Harvard, focusing on applying advanced AI research to practical, real-world systems. ",
