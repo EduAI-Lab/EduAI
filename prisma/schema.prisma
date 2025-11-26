@@ -99,7 +99,7 @@ model Course {
   @@map("courses")
 }
 
-model TopicCategory { // changed course cateogries to topic category
+model CourseCategory { // changed course cateogries to topic category
   id          String  @id @default(cuid())
   name        String
   description String? // ? means optional
