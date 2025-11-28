@@ -43,4 +43,44 @@ Send only the new user message. Server loads last 20 messages from DB, merges, d
 - **Context limit**: Last 20 messages sent to LLM
 - **Deduplication**: Same `messageId` on retry is safely ignored
 - **410 Gone**: Chat deleted or wrong user → discard `chatId`, start fresh
-- **Proxy users**: Admin API key can include `proxyUser` to act on behalf of external users
+
+## Proxy Users
+
+External services (e.g., AITutor) can make requests on behalf of their users without requiring them to have EduAI accounts.
+
+### Requirements
+
+- Admin API key via `x-api-key` header
+- `proxyUser` object in request body
+
+### Example Request
+
+```json
+POST /api/chat
+Headers: { "x-api-key": "admin-api-key" }
+
+{
+  "proxyUser": {
+    "provider": "aitutor",
+    "id": "external-user-123",
+    "email": "student@example.com"
+  },
+  "messages": [{ "id": "uuid-v4", "role": "user", "content": "Hello" }],
+  "model": "gpt-4",
+  "apiKeys": { ... }
+}
+```
+
+### How It Works
+
+1. EduAI looks up `(provider, id)` in `ExternalUser` table
+2. If not found, creates a new `User` + `ExternalUser` mapping
+3. Request runs as that user (chat history scoped to them)
+
+### Fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `provider` | No | Service name (defaults to `"aitutor"`) |
+| `id` | Yes | User's ID in external system |
+| `email` | No | User's email (used for new account creation, falls back to `{id}@{provider}.local`) |
