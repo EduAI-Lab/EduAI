@@ -43,6 +43,12 @@ Send only the new user message. Server loads last 20 messages from DB, merges, d
 - **Context limit**: Last 20 messages sent to LLM
 - **Deduplication**: Same `messageId` on retry is safely ignored
 - **410 Gone**: Chat deleted or wrong user → discard `chatId`, start fresh
+- **Streaming limitation**: Assistant message persistence only works for non-streaming (`"streaming": false`). Streaming responses persist user messages but not assistant replies.
+
+## Authentication
+
+- **With API key**: `x-api-key` header required, must be admin user. Can use `proxyUser`.
+- **Without API key**: Falls back to session-based auth (cookies). Used by frontend UI.
 
 ## Proxy Users
 
