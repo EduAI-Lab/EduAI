@@ -57,26 +57,38 @@ export const PROVIDER_CONFIGS: Record<SupportedProvider, ProviderConfig> = {
 };
 
 /**
- * Creates a dynamic provider registry with user-provided settings
+ * Creates a dynamic provider registry with user-provided settings.
+ * Server env keys take priority over user-provided keys.
+ * When server key exists, provider is always enabled (no user action needed).
  */
 export function createAIProviderRegistry(userSettings: UserProviderSettings) {
   const providers: Record<string, any> = {};
 
-  // OpenAI
-  if (userSettings.openai?.isEnabled && userSettings.openai?.apiKey) {
+  // OpenAI - server key takes priority and auto-enables, fallback to user key
+  const serverOpenaiKey = process.env.OPENAI_API_KEY;
+  const userOpenaiKey = userSettings.openai?.apiKey;
+  const openaiKey = serverOpenaiKey || userOpenaiKey;
+  const openaiEnabled = serverOpenaiKey ? true : userSettings.openai?.isEnabled;
+  
+  if (openaiEnabled && openaiKey) {
     providers.openai = createOpenAI({
-      apiKey: userSettings.openai.apiKey,
+      apiKey: openaiKey,
     });
   }
 
-  // Google AI
-  if (userSettings.google?.isEnabled && userSettings.google?.apiKey) {
+  // Google AI - server key takes priority and auto-enables, fallback to user key
+  const serverGoogleKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+  const userGoogleKey = userSettings.google?.apiKey;
+  const googleKey = serverGoogleKey || userGoogleKey;
+  const googleEnabled = serverGoogleKey ? true : userSettings.google?.isEnabled;
+  
+  if (googleEnabled && googleKey) {
     providers.google = createGoogleGenerativeAI({
-      apiKey: userSettings.google.apiKey,
+      apiKey: googleKey,
     });
   }
 
-  // Ollama
+  // Ollama - always available if enabled (no API key required)
   if (userSettings.ollama?.isEnabled) {
     let baseURL = userSettings.ollama?.baseUrl ||
                   process.env.OLLAMA_BASE_URL ||
@@ -94,6 +106,18 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
 
   // Create and return the registry
   return createProviderRegistry(providers, { separator: ':' });
+}
+
+/**
+ * Returns which providers have server-side API keys configured.
+ * Used by frontend to hide API key input when server key is available.
+ */
+export function getServerConfiguredProviders(): Record<SupportedProvider, boolean> {
+  return {
+    openai: Boolean(process.env.OPENAI_API_KEY),
+    google: Boolean(process.env.GOOGLE_GENERATIVE_AI_API_KEY),
+    ollama: true, // Ollama doesn't require API key
+  };
 }
 
 /**
