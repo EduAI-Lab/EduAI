@@ -1,38 +1,86 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
-import { Label } from "~/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "~/components/ui/dialog";
 import { Badge } from "~/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
-import { Key, Eye, EyeOff, ExternalLink, Shield, Trash2 } from "lucide-react";
+import { Key, Eye, EyeOff, ExternalLink, Shield, Trash2, Loader2, CheckCircle, Server } from "lucide-react";
 import { useApiKeys } from "~/hooks/use-api-keys";
+import { toast } from "sonner";
 
 interface ApiKeySettingsProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
+type ServerProviders = {
+  openai: boolean;
+  google: boolean;
+  ollama: boolean;
+};
+
 export function ApiKeySettings({ open, onOpenChange }: ApiKeySettingsProps) {
   const { apiKeys, updateProviderSettings, removeProviderSettings, isProviderConfigured } = useApiKeys();
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
   const [tempKeys, setTempKeys] = useState<Record<string, string>>({});
+  const [validating, setValidating] = useState<Record<string, boolean>>({});
+  const [serverProviders, setServerProviders] = useState<ServerProviders | null>(null);
 
-  const handleSaveKey = (provider: 'openai' | 'google' | 'ollama') => {
+  // Fetch server-configured providers on mount
+  useEffect(() => {
+    async function fetchServerProviders() {
+      try {
+        const response = await fetch("/api/validate-api-key");
+        if (response.ok) {
+          const data = await response.json();
+          setServerProviders(data.serverProviders);
+        }
+      } catch (error) {
+        console.error("Failed to fetch server providers:", error);
+      }
+    }
+    if (open) {
+      fetchServerProviders();
+    }
+  }, [open]);
+
+  const handleSaveKey = async (provider: 'openai' | 'google' | 'ollama') => {
     if (provider === 'ollama') {
-      // Ollama doesn't need an API key, just enable it
       updateProviderSettings(provider, {
         isEnabled: true
       });
-    } else {
-      const key = tempKeys[provider]?.trim();
-      if (key) {
+      toast.success("Ollama enabled");
+      return;
+    }
+
+    const key = tempKeys[provider]?.trim();
+    if (!key) return;
+
+    // Validate the API key before saving
+    setValidating(prev => ({ ...prev, [provider]: true }));
+    try {
+      const response = await fetch("/api/validate-api-key", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider, apiKey: key }),
+      });
+
+      const result = await response.json();
+
+      if (result.valid) {
         updateProviderSettings(provider, {
           apiKey: key,
           isEnabled: true
         });
         setTempKeys(prev => ({ ...prev, [provider]: '' }));
+        toast.success(`${provider === 'openai' ? 'OpenAI' : 'Google'} API key saved`);
+      } else {
+        toast.error(result.error || "Invalid API key");
       }
+    } catch (error) {
+      toast.error("Failed to validate API key");
+    } finally {
+      setValidating(prev => ({ ...prev, [provider]: false }));
     }
   };
 
@@ -67,171 +115,235 @@ const maskKey = (key: string) => {
         </DialogHeader>
 
         <div className="space-y-4">
-          {/* OpenAI API Key */}
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="text-sm font-medium">OpenAI API Key</CardTitle>
-                  <CardDescription className="text-xs">
-                    For GPT models and other OpenAI services
-                  </CardDescription>
-                </div>
-                {isProviderConfigured('openai') && (
+          {/* OpenAI API Key - hidden if server has key */}
+          {serverProviders?.openai ? (
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="text-sm font-medium">OpenAI API Key</CardTitle>
+                    <CardDescription className="text-xs">
+                      For GPT models and other OpenAI services
+                    </CardDescription>
+                  </div>
                   <Badge variant="secondary" className="text-xs">
-                    <Shield className="h-3 w-3 mr-1" />
-                    Active
+                    <Server className="h-3 w-3 mr-1" />
+                    Server Configured
                   </Badge>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {isProviderConfigured('openai') ? (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
+                </div>
+              </CardHeader>
+              <CardContent>
+                <p className="text-xs text-muted-foreground">
+                  <CheckCircle className="h-3 w-3 inline mr-1 text-green-600" />
+                  OpenAI is configured by the server. No API key needed.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="text-sm font-medium">OpenAI API Key</CardTitle>
+                    <CardDescription className="text-xs">
+                      For GPT models and other OpenAI services
+                    </CardDescription>
+                  </div>
+                  {isProviderConfigured('openai') && (
+                    <Badge variant="secondary" className="text-xs">
+                      <Shield className="h-3 w-3 mr-1" />
+                      Active
+                    </Badge>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {isProviderConfigured('openai') ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type={showKeys.openai ? "text" : "password"}
+                        value={showKeys.openai ? apiKeys.openai?.apiKey || '' : maskKey(apiKeys.openai?.apiKey || '')}
+                        readOnly
+                        className="text-sm"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => toggleShowKey('openai')}
+                        className="px-3"
+                      >
+                        {showKeys.openai ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleRemoveKey('openai')}
+                        className="px-3 text-red-600 hover:text-red-700"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
                     <Input
-                      type={showKeys.openai ? "text" : "password"}
-                      value={showKeys.openai ? apiKeys.openai?.apiKey || '' : maskKey(apiKeys.openai?.apiKey || '')}
-                      readOnly
+                      type="password"
+                      placeholder="sk-..."
+                      value={tempKeys.openai || ''}
+                      onChange={(e) => setTempKeys(prev => ({ ...prev, openai: e.target.value }))}
                       className="text-sm"
                     />
                     <Button
                       type="button"
-                      variant="outline"
                       size="sm"
-                      onClick={() => toggleShowKey('openai')}
-                      className="px-3"
+                      onClick={() => handleSaveKey('openai')}
+                      disabled={!tempKeys.openai?.trim() || validating.openai}
+                      className="w-full"
                     >
-                      {showKeys.openai ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleRemoveKey('openai')}
-                      className="px-3 text-red-600 hover:text-red-700"
-                    >
-                      <Trash2 className="h-4 w-4" />
+                      {validating.openai ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Validating...
+                        </>
+                      ) : (
+                        "Save OpenAI Key"
+                      )}
                     </Button>
                   </div>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <Input
-                    type="password"
-                    placeholder="sk-..."
-                    value={tempKeys.openai || ''}
-                    onChange={(e) => setTempKeys(prev => ({ ...prev, openai: e.target.value }))}
-                    className="text-sm"
-                  />
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={() => handleSaveKey('openai')}
-                    disabled={!tempKeys.openai?.trim()}
-                    className="w-full"
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Get your API key from{" "}
+                  <a
+                    href="https://platform.openai.com/api-keys"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline inline-flex items-center gap-1"
                   >
-                    Save OpenAI Key
-                  </Button>
-                </div>
-              )}
-              <p className="text-xs text-muted-foreground">
-                Get your API key from{" "}
-                <a
-                  href="https://platform.openai.com/api-keys"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-primary hover:underline inline-flex items-center gap-1"
-                >
-                  OpenAI Platform
-                  <ExternalLink className="h-3 w-3" />
-                </a>
-              </p>
-            </CardContent>
-          </Card>
+                    OpenAI Platform
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                </p>
+              </CardContent>
+            </Card>
+          )}
 
-          {/* Google API Key */}
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="text-sm font-medium">Google AI API Key</CardTitle>
-                  <CardDescription className="text-xs">
-                    For Gemini models and Google AI services
-                  </CardDescription>
-                </div>
-                {isProviderConfigured('google') && (
+          {/* Google API Key - hidden if server has key */}
+          {serverProviders?.google ? (
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="text-sm font-medium">Google AI API Key</CardTitle>
+                    <CardDescription className="text-xs">
+                      For Gemini models and Google AI services
+                    </CardDescription>
+                  </div>
                   <Badge variant="secondary" className="text-xs">
-                    <Shield className="h-3 w-3 mr-1" />
-                    Active
+                    <Server className="h-3 w-3 mr-1" />
+                    Server Configured
                   </Badge>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {isProviderConfigured('google') ? (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
+                </div>
+              </CardHeader>
+              <CardContent>
+                <p className="text-xs text-muted-foreground">
+                  <CheckCircle className="h-3 w-3 inline mr-1 text-green-600" />
+                  Google AI is configured by the server. No API key needed.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="text-sm font-medium">Google AI API Key</CardTitle>
+                    <CardDescription className="text-xs">
+                      For Gemini models and Google AI services
+                    </CardDescription>
+                  </div>
+                  {isProviderConfigured('google') && (
+                    <Badge variant="secondary" className="text-xs">
+                      <Shield className="h-3 w-3 mr-1" />
+                      Active
+                    </Badge>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {isProviderConfigured('google') ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type={showKeys.google ? "text" : "password"}
+                        value={showKeys.google ? apiKeys.google?.apiKey || '' : maskKey(apiKeys.google?.apiKey || '')}
+                        readOnly
+                        className="text-sm"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => toggleShowKey('google')}
+                        className="px-3"
+                      >
+                        {showKeys.google ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleRemoveKey('google')}
+                        className="px-3 text-red-600 hover:text-red-700"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
                     <Input
-                      type={showKeys.google ? "text" : "password"}
-                      value={showKeys.google ? apiKeys.google?.apiKey || '' : maskKey(apiKeys.google?.apiKey || '')}
-                      readOnly
+                      type="password"
+                      placeholder="AIza..."
+                      value={tempKeys.google || ''}
+                      onChange={(e) => setTempKeys(prev => ({ ...prev, google: e.target.value }))}
                       className="text-sm"
                     />
                     <Button
                       type="button"
-                      variant="outline"
                       size="sm"
-                      onClick={() => toggleShowKey('google')}
-                      className="px-3"
+                      onClick={() => handleSaveKey('google')}
+                      disabled={!tempKeys.google?.trim() || validating.google}
+                      className="w-full"
                     >
-                      {showKeys.google ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleRemoveKey('google')}
-                      className="px-3 text-red-600 hover:text-red-700"
-                    >
-                      <Trash2 className="h-4 w-4" />
+                      {validating.google ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Validating...
+                        </>
+                      ) : (
+                        "Save Google Key"
+                      )}
                     </Button>
                   </div>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <Input
-                    type="password"
-                    placeholder="AIza..."
-                    value={tempKeys.google || ''}
-                    onChange={(e) => setTempKeys(prev => ({ ...prev, google: e.target.value }))}
-                    className="text-sm"
-                  />
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={() => handleSaveKey('google')}
-                    disabled={!tempKeys.google?.trim()}
-                    className="w-full"
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Get your API key from{" "}
+                  <a
+                    href="https://aistudio.google.com/app/apikey"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline inline-flex items-center gap-1"
                   >
-                    Save Google Key
-                  </Button>
-                </div>
-              )}
-              <p className="text-xs text-muted-foreground">
-                Get your API key from{" "}
-                <a
-                  href="https://aistudio.google.com/app/apikey"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-primary hover:underline inline-flex items-center gap-1"
-                >
-                  Google AI Studio
-                  <ExternalLink className="h-3 w-3" />
-                </a>
-              </p>
-            </CardContent>
-          </Card>
+                    Google AI Studio
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                </p>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Ollama Configuration */}
           <Card>
