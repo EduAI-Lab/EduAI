@@ -414,5 +414,3 @@ enum MaterialStatus {
   FAILED
 }
 
-
-
