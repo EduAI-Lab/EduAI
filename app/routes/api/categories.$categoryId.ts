@@ -6,8 +6,21 @@ import {
   deleteCategoryTopic,
   getCategoryTopics,
 } from "~/lib/courses/server";
+import CoursesPage from "../courses";
+
+  function getParam(request: Request, indexFromEnd: number) {
+  const url = new URL(request.url);
+  const parts = url.pathname.split("/").filter(Boolean);
+  return parts[parts.length - indexFromEnd];
+}
+
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
+  console.log("---- DEBUG GET TOPICS ----");
+  console.log("request.url:", request.url);
+  const categoryId = getParam(request,1);
+  console.log("Extracted categoryId:", categoryId);
+
   const session = await auth.api.getSession(request);
 
   if (!session?.user) {
@@ -17,8 +30,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
   }
 
-  const categoryId = params.categoryId;
-
   if (!categoryId) {
     return new Response(JSON.stringify({ error: "Category ID is required" }), {
       status: 400,
@@ -27,6 +38,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }
 
   const topics = await getCategoryTopics(categoryId);
+  console.log("topics returned from DB:", topics);
 
   return new Response(JSON.stringify({ topics }), {
     status: 200,
@@ -35,7 +47,12 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
-  const categoryId = params.categoryId;
+  //  made this function to extract categoryId from URL so that param can get the value correctly
+  console.log("---- DEBUG CATEGORY ACTION ----");
+  console.log("request.url:", request.url);
+  const categoryId = getParam(request,1);
+  console.log("Extracted categoryId (action) :", categoryId);
+
 
   if (!categoryId) {
     return new Response(JSON.stringify({ error: "Category ID is required" }), {
@@ -61,14 +78,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
           headers: { "Content-Type": "application/json" },
         });
       }
-      const categoryId = params.categoryId;
-      if (!categoryId){
-        return new Response(JSON.stringify({ error: "Category ID is required" }), {
-          status: 400,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
+    
       const body = await request.json(); 
+      console.log("post body:", body);
       const result = await createCategoryTopic(categoryId, body);
 
       if ("error" in result) {
