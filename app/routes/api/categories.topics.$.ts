@@ -1,4 +1,4 @@
-import { get } from "http";
+
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
@@ -7,6 +7,13 @@ import {
   deleteCategoryTopic,
   getCategoryTopics,
 } from "~/lib/courses/server";
+
+function getParam(request: Request, indexFromEnd: number) {
+  const url = new URL(request.url);
+  const parts = url.pathname.split("/").filter(Boolean);
+  return parts[parts.length - indexFromEnd];
+}
+
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   // If an API key is provided, only ADMIN users may proceed
@@ -21,8 +28,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       headers: { "Content-Type": "application/json" },
     });
   }
-
-  const categoryId = params.categoryId;
 
   if (!categoryId) {
     return new Response(JSON.stringify({ error: "Category ID is required" }), {
@@ -40,8 +45,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
-  const categoryId = params.categoryId;
-
+  const categoryId = getParam(request,2);
+  console.log("EXTRACTED categoryId (action):", categoryId);
   if (!categoryId) {
     return new Response(JSON.stringify({ error: "Category ID is required" }), {
       status: 400,
@@ -70,13 +75,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
           headers: { "Content-Type": "application/json" },
         });
       }
-      const categoryId = params.categoryId;
-      if (!categoryId){
-        return new Response(JSON.stringify({ error: "Category ID is required" }), {
-          status: 400,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
+      
       const body = await request.json(); 
       const result = await createCategoryTopic(categoryId, body);
 
