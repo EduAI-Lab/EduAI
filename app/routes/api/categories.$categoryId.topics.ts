@@ -7,6 +7,7 @@ import {
   deleteCategoryTopic,
   getCategoryTopics,
 } from "~/lib/courses/server";
+import { ca } from "date-fns/locale";
 
 function getParam(request: Request, indexFromEnd: number) {
   const url = new URL(request.url);
@@ -16,11 +17,11 @@ function getParam(request: Request, indexFromEnd: number) {
 
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  // If an API key is provided, only ADMIN users may proceed
-  const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
-  if (apiKeyGuard) return apiKeyGuard;
+  const categoryId = getParam(request,2);
+  console.log("EXTRACTED categoryId:", categoryId);
+  console.log("request.url:", request.url);
 
-  const session = apiKeySession ?? await auth.api.getSession(request);
+  const session = await auth.api.getSession(request);
 
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -28,6 +29,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       headers: { "Content-Type": "application/json" },
     });
   }
+
 
   if (!categoryId) {
     return new Response(JSON.stringify({ error: "Category ID is required" }), {
