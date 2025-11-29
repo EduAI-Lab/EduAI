@@ -16,15 +16,9 @@ export default [
   route("/courses/:courseId", "routes/courses.$courseId.tsx"),
   route("/api/courses/:courseId/materials", "routes/api/courses.materials.$.ts"),
 
-  // ✅ Category + Topic routes (new structure)
-  route(
-    "/api/categories/:categoryId/topics",
-    "routes/api/categories.topics.$.ts"
-  ),
-  route(
-    "/api/categories/:categoryId/topic/:topicId",
-    "routes/api/categories.$categoryId.topic.$topicId.ts"
-  ),
+  //  Category + Topic routes (new structure)
+  route("/api/categories/:categoryId/topics","routes/api/categories.$categoryId.topics.ts"),
+  route("/api/categories/:categoryId/topics/:topicId","routes/api/categories.$categoryId.topics.$topicId.ts"),
 
   // Course routes
   route("/api/courses/:id", "routes/api/courses.id.ts"),
@@ -38,8 +32,8 @@ export default [
   route("/api/ai-models/*", "routes/api/ai-models.$.ts"),
   route("/api/users/*", "routes/api/users.$.ts"),
 
-  // ❌ Removed /api/topics/:topicId (no such file)
-  // ❌ Removed duplicate category route
+  //  Removed /api/topics/:topicId (no such file)
+  //  Removed duplicate category route
 
   route("/api/ollama-models", "routes/api/ollama-models.ts"),
 ] satisfies RouteConfig;

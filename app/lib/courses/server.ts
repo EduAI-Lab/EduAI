@@ -150,38 +150,49 @@ export async function handleCourseRequest(request: Request) {
 export async function updateCategoryTopic(
   categoryId: string,
   topicId: string,
-  data: { name?: string }
+  data: {
+    name?: string;
+    description?: string | null;
+    order?: number;
+  }
 ) {
   try {
-    if (!data.name || !data.name.trim()) {
-      return { error: "Name is required" } as const;
+    const updateData: any = {};
+// ensure that it updates all fields properly.
+    if (data.name !== undefined) {
+      if (!data.name.trim()) {
+        return { error: "Name cannot be empty" };
+      }
+      updateData.name = data.name.trim();
     }
 
-   const updated = await prisma.topic.update({
-    where: {
-      id_categoryId: {
-        id: topicId,
-        categoryId: categoryId,
+  
+    if (data.description !== undefined) {
+      updateData.description = data.description;
+    }
+
+    if (data.order !== undefined) {
+      updateData.order = data.order;
+    }
+
+    const updated = await prisma.topic.update({
+      where: {
+        id_categoryId: {
+          id: topicId,
+          categoryId: categoryId,
+        },
       },
-    },
-    data: {
-      name: data.name.trim(),
-    },
-  });
+      data: updateData,
+    });
 
-
-    return { topic: updated } as const;
-  } catch (error: any) {
-    if (error.code === "P2025") {
-      return { error: "Topic not found" } as const;
-    }
-
-    throw error; 
+    return { topic: updated };
+  } catch (e) {
+    console.error(e);
+    return { error: "Failed to update topic" };
   }
 }
 
-
-
+// This get function lists all topics for a given category
 export async function getCategoryTopics(categoryId: string) {
   return prisma.topic.findMany({ // changed from courseTopic to topic
     where: { categoryId },  // changed from courseId to categoryId

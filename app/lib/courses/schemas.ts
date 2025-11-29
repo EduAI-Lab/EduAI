@@ -23,7 +23,7 @@ export const UpdateCourseSchema = z.object({
 
 export const CreateCourseTopicSchema = z.object({
   name: z.string().min(1, "Topic name is required"),
-  categoryId: z.string().min(1, "Category ID is required"),
+  description: z.string().optional(), // removed categoryid from here since it was duplicated as the action function already has it extracted from the URL
 });
 
 export const DeleteCourseTopicSchema = z
