@@ -10,6 +10,8 @@ import {
   type DeleteCourseTopicInput,
 } from "./schemas";
 
+
+
 /**
  * Handles GET, POST for /api/courses
  * and PATCH for /api/courses/:id
@@ -17,6 +19,23 @@ import {
 
 export async function handleCourseRequest(request: Request) {
   const url = new URL(request.url);
+  // add GET /api/courses/:courseId/topics , flattened the topics inside of courses in the GET /api/courses response above
+  if(request.method === "GET" && url.pathname.match(/\/api\/courses\/([^/]+)\/topics/)) {
+    const courseId = url.pathname.split("/")[3];
+    const topics = await prisma.topic.findMany({
+      where:{
+        category: {
+          courseId,
+      } },
+      orderBy: { name: "asc" },
+    });
+    return new Response(JSON.stringify({ topics }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } 
+
+
 
   // If an API key is provided, only ADMIN users may proceed
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
@@ -75,6 +94,13 @@ export async function handleCourseRequest(request: Request) {
           year: result.data.year,
           professorId: session.user.id,
           aiInstructions: result.data.aiInstructions,
+        },
+      });
+      // Create a default category for the new course
+      await prisma.courseCategory.create({
+        data: {
+          courseId: course.id,
+          name: "Default",
         },
       });
 

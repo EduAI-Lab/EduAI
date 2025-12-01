@@ -22,7 +22,10 @@ export default [
 
   // Course routes
   route("/api/courses/:id", "routes/api/courses.id.ts"),
-
+  route("/api/courses/:courseId/categories", "routes/api/courses.$courseId.categories.ts"),
+  route("/api/courses/:courseId/categories/:categoryId", "routes/api/courses.$courseId.categories.$categoryId.ts"),  
+  route("/api/courses/:courseId/categories/:categoryId/topics", "routes/api/courses.$courseId.categories.$categoryId.topics.ts"),
+  route("/api/courses/:courseId/categories/:categoryId/topics/:topicId", "routes/api/courses.$courseId.categories.$categoryId.topics.$topicId.ts"),
   // Admin routes
   route("/admin/ai-models", "routes/admin.ai-models.tsx"),
   route("/admin/users", "routes/admin.users.tsx"),
