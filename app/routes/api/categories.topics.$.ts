@@ -28,7 +28,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       headers: { "Content-Type": "application/json" },
     });
   }
-
+  const categoryId = getParam(request,2);
   if (!categoryId) {
     return new Response(JSON.stringify({ error: "Category ID is required" }), {
       status: 400,

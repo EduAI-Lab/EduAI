@@ -1,0 +1,268 @@
+import prisma from "~/lib/prisma.server";
+import { auth } from "~/lib/auth/server";
+import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
+import {
+  CreateCourseSchema,
+  UpdateCourseSchema,
+  CreateCourseTopicSchema,
+  DeleteCourseTopicSchema,
+  type CreateCourseTopicInput,
+  type DeleteCourseTopicInput,
+} from "./schemas";
+
+/**
+ * Handles GET, POST for /api/courses
+ * and PATCH for /api/courses/:id
+ */
+
+export async function handleCourseRequest(request: Request) {
+  const url = new URL(request.url);
+
+  // If an API key is provided, only ADMIN users may proceed
+  const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
+  if (apiKeyGuard) return apiKeyGuard;
+
+  switch (request.method) {
+    case "GET": {
+      const courses = await prisma.course.findMany({
+        include: {
+          categories: {
+            include: {
+              topics: true,
+            },
+          },
+        },
+      });
+      return new Response(JSON.stringify({ courses }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+
+    case "POST": {
+      const session = apiKeySession ?? await auth.api.getSession(request);
+      if (!session?.user || session.user.role !== "ADMIN") {
+        return new Response("Forbidden: Admins only", { status: 403 });
+      }
+
+      const formData = await request.formData();
+      const data = {
+        name: formData.get("name"),
+        code: formData.get("code"),
+        term: formData.get("term"),
+        year: Number(formData.get("year")),
+        aiInstructions: formData.get("aiInstructions") || "",
+      };
+
+      const result = CreateCourseSchema.safeParse(data);
+
+      if (!result.success) {
+        return new Response(
+          JSON.stringify({
+            error: "Invalid input",
+            details: result.error.flatten(),
+          }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      const course = await prisma.course.create({
+        data: {
+          name: result.data.name,
+          code: result.data.code,
+          term: result.data.term,
+          year: result.data.year,
+          professorId: session.user.id,
+          aiInstructions: result.data.aiInstructions,
+        },
+      });
+
+      return new Response(JSON.stringify(course), {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    case "PATCH": {
+      // Extract ID from /api/courses/:id
+      const idMatch = url.pathname.match(/\/api\/courses\/([^/]+)/);
+      const courseId = idMatch?.[1];
+
+      if (!courseId) {
+        return new Response("Missing course ID", { status: 400 });
+      }
+
+      const session = apiKeySession ?? await auth.api.getSession(request);
+      if (!session?.user) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      const user = session.user;
+
+      const body = await request.json();
+      const result = UpdateCourseSchema.safeParse(body);
+
+      if (!result.success) {
+        return new Response(
+          JSON.stringify({
+            error: "Invalid input",
+            details: result.error.flatten(),
+          }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      // Check ownership or admin role
+      const course = await prisma.course.findUnique({
+        where: { id: courseId },
+        select: { professorId: true },
+      });
+
+      if (!course) {
+        return new Response("Course not found", { status: 404 });
+      }
+
+      const isAdmin = user.role === "ADMIN";
+      const isProfessor =
+        user.role === "PROFESSOR" && user.id === course.professorId;
+
+      if (!isAdmin && !isProfessor) {
+        return new Response("Forbidden", { status: 403 });
+      }
+
+      const updated = await prisma.course.update({
+        where: { id: courseId },
+        data: result.data,
+      });
+
+      return new Response(JSON.stringify(updated), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    default:
+      return new Response("Method not allowed", { status: 405 });
+  }
+}
+/// added an updateCategoryTopic function below , used inside of app/routes/api/categories.$categoryId.topic.$topicId.ts
+export async function updateCategoryTopic(
+  categoryId: string,
+  topicId: string,
+  data: {
+    name?: string;
+    description?: string | null;
+    order?: number;
+  }
+) {
+  try {
+    const updateData: any = {};
+// ensure that it updates all fields properly.
+    if (data.name !== undefined) {
+      if (!data.name.trim()) {
+        return { error: "Name cannot be empty" };
+      }
+      updateData.name = data.name.trim();
+    }
+
+  
+    if (data.description !== undefined) {
+      updateData.description = data.description;
+    }
+
+    if (data.order !== undefined) {
+      updateData.order = data.order;
+    }
+
+    const updated = await prisma.topic.update({
+      where: {
+        id_categoryId: {
+          id: topicId,
+          categoryId: categoryId,
+        },
+      },
+      data: updateData,
+    });
+
+    return { topic: updated };
+  } catch (e) {
+    console.error(e);
+    return { error: "Failed to update topic" };
+  }
+}
+
+// This get function lists all topics for a given category
+export async function getCategoryTopics(categoryId: string) {
+  return prisma.topic.findMany({ // changed from courseTopic to topic
+    where: { categoryId },  // changed from courseId to categoryId
+    orderBy: { name: "asc" },
+  });
+}
+
+export async function createCategoryTopic(
+  categoryId: string,
+  payload: CreateCourseTopicInput,
+) {
+  const parsed = CreateCourseTopicSchema.safeParse(payload);
+
+  if (!parsed.success) {
+    return {
+      error: "Invalid input",
+      details: parsed.error.flatten(),
+    } as const;
+  }
+
+  try {
+    const topic = await prisma.topic.create({
+      data: {
+        categoryId, // changed from courseId to categoryId
+        name: parsed.data.name.trim(),
+      },
+    });
+
+    return { topic } as const;
+
+  } catch (error: any) {
+    if (error?.code === "P2002") {
+      return {
+        error: "Topic already exists in this category",
+      } as const;
+    }
+    throw error;
+  }
+}
+
+export async function deleteCategoryTopic(
+  categoryId: string,
+  payload: string
+) {
+  // Convert string payload → expected object form
+  const parsed = DeleteCourseTopicSchema.safeParse({ topicId: payload });
+
+  if (!parsed.success) {
+    return {
+      error: "Invalid input",
+      details: parsed.error.flatten(),
+    } as const;
+  }
+
+  const { topicId, name } = parsed.data;
+
+  const deleteResult = await prisma.topic.deleteMany({
+    where: {
+      categoryId,
+      ...(topicId ? { id: topicId } : {}),
+      ...(name ? { name } : {}),
+    },
+  });
+
+  if (deleteResult.count === 0) {
+    return {
+      error: "Topic not found",
+    } as const;
+  }
+
+  return { success: true } as const;
+}
+
