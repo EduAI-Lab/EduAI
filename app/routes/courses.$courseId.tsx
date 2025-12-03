@@ -29,7 +29,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     return redirect("/courses")
   }
 
-  // Fetch course details directly from database
   try {
     const course = await prisma.course.findUnique({
       where: { id: courseId },
@@ -73,7 +72,6 @@ type Topic = {
   updatedAt: string | Date 
   categoryId : string 
 }
-// I added a coure category type here.
 type CourseCategory = {
   id : string 
   name : string
@@ -102,7 +100,6 @@ export default function CourseDetailPage() {
   const { courseId } = useParams()
   const { getValidApiKeys } = useApiKeys()
   const [activeTab, setActiveTab] = useState("overview")
-  // Flatten topics from all categories for easier management
   const initialTopics = course.categories.flatMap(c => c.topics)
   const [topics, setTopics] = useState<Topic[]>(initialTopics)
 

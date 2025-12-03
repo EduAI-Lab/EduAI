@@ -19,24 +19,7 @@ import {
 
 export async function handleCourseRequest(request: Request) {
   const url = new URL(request.url);
-  // add GET /api/courses/:courseId/topics , flattened the topics inside of courses in the GET /api/courses response above
-  if(request.method === "GET" && url.pathname.match(/\/api\/courses\/([^/]+)\/topics/)) {
-    const courseId = url.pathname.split("/")[3];
-    const topics = await prisma.topic.findMany({
-      where:{
-        category: {
-          courseId,
-      } },
-      orderBy: { name: "asc" },
-    });
-    return new Response(JSON.stringify({ topics }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
-  } 
-
-
-
+ 
   // If an API key is provided, only ADMIN users may proceed
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
   if (apiKeyGuard) return apiKeyGuard;
@@ -242,7 +225,7 @@ export async function createCategoryTopic(
   try {
     const topic = await prisma.topic.create({
       data: {
-        categoryId, // changed from courseId to categoryId
+        categoryId,
         name: parsed.data.name.trim(),
       },
     });

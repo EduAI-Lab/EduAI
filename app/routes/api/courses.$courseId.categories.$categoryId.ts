@@ -9,8 +9,7 @@ async function validateCategory(courseId: string, categoryId: string) {
 }
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-    console.log("Params:", params);
-
+  
     const courseId = params.courseId?.trim();
     const categoryId = params.categoryId?.trim();
 

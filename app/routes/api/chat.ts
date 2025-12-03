@@ -663,7 +663,7 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
       if (chat?.id) {
         headers["X-Chat-Id"] = chat.id;
       }
-      return result.toDataStreamResponse({ headers });
+      return result.toDataStreamResponse({ headers }); // there needs to be a closing bracket here.
     } else {
       try {
         await result.consumeStream();
