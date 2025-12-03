@@ -24,12 +24,9 @@ export default [
   route("/api/courses/:courseId/categories/:categoryId", "routes/api/courses.$courseId.categories.$categoryId.ts"),  
   route("/api/courses/:courseId/categories/:categoryId/topics", "routes/api/courses.$courseId.categories.$categoryId.topics.ts"),
   route("/api/courses/:courseId/categories/:categoryId/topics/:topicId", "routes/api/courses.$courseId.categories.$categoryId.topics.$topicId.ts"),
-<<<<<<< HEAD
+
   route("/api/courses/:courseId/topics", "routes/api/courses.$courseId.topics.ts"),
 
-=======
-  // Admin routes
->>>>>>> feature: full nested category/topic REST API
   route("/admin/ai-models", "routes/admin.ai-models.tsx"),
   route("/admin/users", "routes/admin.users.tsx"),
 
