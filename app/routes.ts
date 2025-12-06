@@ -15,21 +15,10 @@ export default [
   route("/courses", "routes/courses.tsx"),
   route("/courses/:courseId", "routes/courses.$courseId.tsx"),
   route("/api/courses/:courseId/materials", "routes/api/courses.materials.$.ts"),
-
-  route("/api/categories/:categoryId/topics","routes/api/categories.$categoryId.topics.ts"),
-  route("/api/categories/:categoryId/topics/:topicId","routes/api/categories.$categoryId.topics.$topicId.ts"),
-
+  route("/api/courses/:courseId/topics", "routes/api/courses.topics.$.ts"),
   route("/api/courses/:id", "routes/api/courses.id.ts"),
-  route("/api/courses/:courseId/categories", "routes/api/courses.$courseId.categories.ts"),
-  route("/api/courses/:courseId/categories/:categoryId", "routes/api/courses.$courseId.categories.$categoryId.ts"),  
-  route("/api/courses/:courseId/categories/:categoryId/topics", "routes/api/courses.$courseId.categories.$categoryId.topics.ts"),
-  route("/api/courses/:courseId/categories/:categoryId/topics/:topicId", "routes/api/courses.$courseId.categories.$categoryId.topics.$topicId.ts"),
-
-  route("/api/courses/:courseId/topics", "routes/api/courses.$courseId.topics.ts"),
-
   route("/admin/ai-models", "routes/admin.ai-models.tsx"),
   route("/admin/users", "routes/admin.users.tsx"),
-
   route("/api/ai-providers/*", "routes/api/ai-providers.$.ts"),
   route("/api/ai-models/*", "routes/api/ai-models.$.ts"),
   route("/api/users/*", "routes/api/users.$.ts"),
