@@ -7,20 +7,13 @@ import {
   deleteCategoryTopic,
   getCategoryTopics,
 } from "~/lib/courses/server";
-import { ca } from "date-fns/locale";
-
-function getParam(request: Request, indexFromEnd: number) {
-  const url = new URL(request.url);
-  const parts = url.pathname.split("/").filter(Boolean);
-  return parts[parts.length - indexFromEnd];
-}
 
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  const categoryId = getParam(request,2);
-  console.log("EXTRACTED categoryId:", categoryId);
-  console.log("request.url:", request.url);
+  const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
+  if (apiKeyGuard) return apiKeyGuard;
 
+  const categoryId = params.categoryId;
   const session = await auth.api.getSession(request);
 
   if (!session?.user) {
@@ -47,8 +40,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
-  const categoryId = getParam(request,2);
-  console.log("EXTRACTED categoryId (action):", categoryId);
+  const categoryId = params.categoryId;
   if (!categoryId) {
     return new Response(JSON.stringify({ error: "Category ID is required" }), {
       status: 400,
