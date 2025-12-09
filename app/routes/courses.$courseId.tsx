@@ -1,21 +1,20 @@
 import { useState } from "react"
-import { useLoaderData, useParams, redirect, useFetcher } from "react-router"
+import { useLoaderData, useParams, redirect } from "react-router"
 import type { LoaderFunctionArgs } from "react-router"
-import { IconBook, IconUpload, IconUsers, IconCalendar, IconSettings, IconPlus, IconEdit, IconTrash } from "@tabler/icons-react"
+import { IconBook, IconSettings, IconUsers } from "@tabler/icons-react"
 
 import { auth } from "~/lib/auth/server"
 import { Button } from "~/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card"
 import { Badge } from "~/components/ui/badge"
-import { Input } from "~/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs"
 import { AppSidebar } from "~/components/app-sidebar"
 import { SiteHeader } from "~/components/site-header"
 import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar"
+import { CourseTopicsByCategory } from "~/components/course-topics-by-category"
 import { CourseMaterialsUpload } from "~/components/course-materials-upload"
 import { useApiKeys } from "~/hooks/use-api-keys"
 import prisma from "~/lib/prisma.server"
-import { date } from "zod"
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request)
@@ -100,14 +99,11 @@ export default function CourseDetailPage() {
   const { courseId } = useParams()
   const { getValidApiKeys } = useApiKeys()
   const [activeTab, setActiveTab] = useState("overview")
-  const initialTopics = course.categories.flatMap(c => c.topics)
-  const [topics, setTopics] = useState<Topic[]>(initialTopics)
-
-  const [newTopicName, setNewTopicName] = useState("")
+  const [categories, setCategories] = useState<CourseCategory[]>(course.categories || [])
+  const [newCategoryName, setNewCategoryName] = useState("")
+  const [newTopicNames, setNewTopicNames] = useState<Record<string, string>>({})
   const [editingTopic, setEditingTopic] = useState<Topic | null>(null)
   const [editingName, setEditingName] = useState("")
-  const fetcher = useFetcher()
-
   const isAdmin = user.role === "ADMIN"
   const isProfessor = user.role === "PROFESSOR"
   const isTA = user.role === "TA"
@@ -132,26 +128,49 @@ export default function CourseDetailPage() {
 
   const canManageMaterials = isAdmin || (isProfessor && course.professorId === user.id)
   const canManageTopics = isAdmin || (isProfessor && course.professorId === user.id)
-  // testing purposes, assuming first category for now:
-  const categoryId = course.categories[0]?.id
+  const canManageCategories = isAdmin
 
+  const handleAddCategory = async () => {
+    if (!newCategoryName.trim() || !courseId) return
 
-  const handleAddTopic = async () => {
-    if (!newTopicName.trim() || !categoryId) return
-    /// changed endpoint here..
-    const response = await fetch(`/api/categories/${categoryId}/topics`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    const response = await fetch(`/api/courses/${courseId}/categories`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: newTopicName.trim(),
+        name: newCategoryName.trim(),
+      })
+    })
+
+    if (response.ok) {
+      const category = await response.json()
+      setCategories([...categories, { ...category, topics: [] }])
+      setNewCategoryName("")
+    }
+  }
+
+  const handleAddTopic = async (categoryId: string) => {
+    const name = (newTopicNames[categoryId] ?? "").trim()
+    if (!name) return
+
+    const response = await fetch(`/api/categories/${categoryId}/topics`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name,
         categoryId,
       })
     })
 
     if (response.ok) {
       const newTopic = await response.json()
-      setTopics([...topics, newTopic])
-      setNewTopicName("")
+      setCategories((prev) =>
+        prev.map((category) =>
+          category.id === categoryId
+            ? { ...category, topics: [...category.topics, newTopic] }
+            : category
+        )
+      )
+      setNewTopicNames((prev) => ({ ...prev, [categoryId]: "" }))
     }
   }
 
@@ -162,10 +181,10 @@ export default function CourseDetailPage() {
 
   const handleUpdateTopic = async () => {
     if (!editingTopic || !editingName.trim()) return
-// changed endpoint...
-      const response = await fetch(`/api/categories/${editingTopic.categoryId}/topics/${editingTopic.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+
+    const response = await fetch(`/api/categories/${editingTopic.categoryId}/topics/${editingTopic.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: editingName.trim()
       })
@@ -173,14 +192,26 @@ export default function CourseDetailPage() {
 
     if (response.ok) {
       const updatedTopic = await response.json()
-      setTopics(topics.map(t => (t.id === editingTopic.id ? updatedTopic : t)));
+      setCategories((prev) =>
+        prev.map((category) =>
+          category.id === updatedTopic.categoryId
+            ? {
+                ...category,
+                topics: category.topics.map((topic) =>
+                  topic.id === updatedTopic.id ? updatedTopic : topic
+                )
+              }
+            : category
+        )
+      )
       setEditingTopic(null)
       setEditingName("")
     }
   }
-// I added a handleDeleteTopic function here. fetches DELETE api/categories/:categoryId/topics/:topicId
+
   const handleDeleteTopic = async (topicId: string) => {
-    const topic = topics.find(t => t.id === topicId);
+    const category = categories.find((cat) => cat.topics.some((t) => t.id === topicId))
+    const topic = category?.topics.find((t) => t.id === topicId)
     if (!topic) return;
 
     if (!confirm('Are you sure you want to delete this topic?')) return;
@@ -190,7 +221,13 @@ export default function CourseDetailPage() {
     })
 
     if (response.ok) {
-      setTopics(topics.filter(t => t.id !== topicId))
+      setCategories((prev) =>
+        prev.map((cat) =>
+          cat.id === topic.categoryId
+            ? { ...cat, topics: cat.topics.filter((t) => t.id !== topicId) }
+            : cat
+        )
+      )
     }
   }
 
@@ -293,98 +330,29 @@ export default function CourseDetailPage() {
                         </CardHeader>
                         <CardContent>
                           {canManageTopics ? (
-                            <div className="space-y-4">
-                              {/* Add New Topic */}
-                              <div className="flex gap-2">
-                                <Input
-                                  placeholder="New topic name..."
-                                  value={newTopicName}
-                                  onChange={(e) => setNewTopicName(e.target.value)}
-                                  onKeyPress={(e) => e.key === 'Enter' && handleAddTopic()}
-                                  className="flex-1"
-                                />
-                                <Button onClick={handleAddTopic} disabled={!newTopicName.trim()}>
-                                  <IconPlus className="w-4 h-4 mr-2" />
-                                  Add Topic
-                                </Button>
-                              </div>
-
-                              {/* Topics List */}
-                           {/* Topics List */}
-                              <div className="grid gap-2">
-                                {topics.map((topic) => (
-                                  <div
-                                    key={topic.id}
-                                    className="flex items-center justify-between p-3 border rounded-lg cursor-default"
-                                    onClick={(e) => e.preventDefault()}  // stops navigating into the topic
-                                  >
-                                    {editingTopic?.id === topic.id ? (
-                                      <div className="flex items-center gap-2 flex-1">
-                                        <Input
-                                          value={editingName}
-                                          onChange={(e) => setEditingName(e.target.value)}
-                                          onKeyPress={(e) => e.key === 'Enter' && handleUpdateTopic()}
-                                          className="flex-1"
-                                        />
-                                        <Button size="sm" onClick={handleUpdateTopic}>Save</Button>
-                                        <Button
-                                          size="sm"
-                                          variant="outline"
-                                          onClick={() => {
-                                            setEditingTopic(null)
-                                            setEditingName("")
-                                          }}
-                                        >
-                                          Cancel
-                                        </Button>
-                                      </div>
-                                    ) : (
-                                      <>
-                                        <div className="flex-1">
-                                          <h4 className="font-medium">{topic.name}</h4>
-                                          {topic.description && (
-                                            <p className="text-sm text-muted-foreground">
-                                              {topic.description}
-                                            </p>
-                                          )}
-                                        </div>
-
-                                        <div className="flex gap-2">
-                                          <Button
-                                            size="sm"
-                                            variant="outline"
-                                            onClick={(e) => {
-                                              e.stopPropagation()
-                                              handleEditTopic(topic)
-                                            }}
-                                          >
-                                            <IconEdit className="w-4 h-4" />
-                                          </Button>
-
-                                          <Button
-                                            size="sm"
-                                            variant="outline"
-                                            onClick={(e) => {
-                                              e.stopPropagation()
-                                              handleDeleteTopic(topic.id)
-                                            }}
-                                            className="text-red-600 hover:text-red-700"
-                                          >
-                                            <IconTrash className="w-4 h-4" />
-                                          </Button>
-                                        </div>
-                                      </>
-                                    )}
-                                  </div>
-                                ))}
-
-                                {topics.length === 0 && (
-                                  <p className="text-muted-foreground text-center py-8">
-                                    No topics added yet. Add your first topic above.
-                                  </p>
-                                )}
-                              </div>
-                            </div>
+                            <CourseTopicsByCategory
+                              categories={categories}
+                              canManageTopics={canManageTopics}
+                              canManageCategories={canManageCategories}
+                              newCategoryName={newCategoryName}
+                              onNewCategoryNameChange={setNewCategoryName}
+                              onAddCategory={handleAddCategory}
+                              newTopicNames={newTopicNames}
+                              onTopicNameChange={(categoryId, value) =>
+                                setNewTopicNames((prev) => ({ ...prev, [categoryId]: value }))
+                              }
+                              onAddTopic={handleAddTopic}
+                              editingTopic={editingTopic}
+                              editingName={editingName}
+                              onEditTopic={handleEditTopic}
+                              onEditingNameChange={setEditingName}
+                              onSaveTopic={handleUpdateTopic}
+                              onCancelEdit={() => {
+                                setEditingTopic(null)
+                                setEditingName("")
+                              }}
+                              onDeleteTopic={handleDeleteTopic}
+                            />
                           ) : (
                             <div className="flex flex-col items-center justify-center py-8">
                               <IconBook className="w-12 h-12 text-muted-foreground mb-4" />
