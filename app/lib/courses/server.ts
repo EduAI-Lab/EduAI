@@ -11,18 +11,9 @@ import {
 } from "./schemas";
 
 
-
-
-
-/**
- * Handles GET, POST for /api/courses
- * and PATCH for /api/courses/:id
- */
-
 export async function handleCourseRequest(request: Request) {
   const url = new URL(request.url);
- 
-  // If an API key is provided, only ADMIN users may proceed
+const pathname = url.pathname;
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
   if (apiKeyGuard) return apiKeyGuard;
 
@@ -157,7 +148,6 @@ export async function handleCourseRequest(request: Request) {
       return new Response("Method not allowed", { status: 405 });
   }
 }
-/// added an updateCategoryTopic function below , used inside of app/routes/api/categories.$categoryId.topic.$topicId.ts
 export async function updateCategoryTopic(
   categoryId: string,
   topicId: string,
@@ -168,8 +158,12 @@ export async function updateCategoryTopic(
   }
 ) {
   try {
-    const updateData: any = {};
-// ensure that it updates all fields properly.
+  const updateData: {
+    name?: string;
+    description?: string | null;
+    order?: number;
+  } = {};
+
     if (data.name !== undefined) {
       if (!data.name.trim()) {
         return { error: "Name cannot be empty" };
@@ -203,10 +197,9 @@ export async function updateCategoryTopic(
   }
 }
 
-// This get function lists all topics for a given category
 export async function getCategoryTopics(categoryId: string) {
-  return prisma.topic.findMany({ // changed from courseTopic to topic
-    where: { categoryId },  // changed from courseId to categoryId
+  return prisma.topic.findMany({ 
+    where: { categoryId },
     orderBy: { name: "asc" },
   });
 }
@@ -246,10 +239,9 @@ export async function createCategoryTopic(
 
 export async function deleteCategoryTopic(
   categoryId: string,
-  payload: string
+  payload: DeleteCourseTopicInput
 ) {
-  // Convert string payload → expected object form
-  const parsed = DeleteCourseTopicSchema.safeParse({ topicId: payload });
+  const parsed = DeleteCourseTopicSchema.safeParse(payload);
 
   if (!parsed.success) {
     return {

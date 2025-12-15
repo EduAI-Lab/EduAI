@@ -1,4 +1,4 @@
-import { get } from "http";
+
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { auth } from "~/lib/auth/server";
 import {
@@ -6,29 +6,18 @@ import {
   deleteCategoryTopic,
   getCategoryTopics,
 } from "~/lib/courses/server";
-import CoursesPage from "../courses";
-
-  function getParam(request: Request, indexFromEnd: number) {
-  const url = new URL(request.url);
-  const parts = url.pathname.split("/").filter(Boolean);
-  return parts[parts.length - indexFromEnd];
-}
 
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  console.log("---- DEBUG GET TOPICS ----");
-  console.log("request.url:", request.url);
-  const categoryId = getParam(request,1);
-  console.log("Extracted categoryId:", categoryId);
+  const { categoryId } = params;
 
   const session = await auth.api.getSession(request);
-
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
       headers: { "Content-Type": "application/json" },
     });
-  }
+  } 
 
   if (!categoryId) {
     return new Response(JSON.stringify({ error: "Category ID is required" }), {
@@ -37,8 +26,16 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
   }
 
-  const topics = await getCategoryTopics(categoryId);
-  console.log("topics returned from DB:", topics);
+  let topics; 
+  try {
+    const result = await getCategoryTopics(categoryId);
+    topics = result;
+  } catch (error) {
+    return new Response(JSON.stringify({ error: "Database error while fetching topics" }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
 
   return new Response(JSON.stringify({ topics }), {
     status: 200,
@@ -47,13 +44,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
-  //  made this function to extract categoryId from URL so that param can get the value correctly
-  console.log("---- DEBUG CATEGORY ACTION ----");
-  console.log("request.url:", request.url);
-  const categoryId = getParam(request,1);
-  console.log("Extracted categoryId (action) :", categoryId);
-
-
+  const { categoryId } = params;
   if (!categoryId) {
     return new Response(JSON.stringify({ error: "Category ID is required" }), {
       status: 400,
@@ -79,22 +70,29 @@ export async function action({ request, params }: ActionFunctionArgs) {
         });
       }
     
-      const body = await request.json(); 
-      console.log("post body:", body);
-      const result = await createCategoryTopic(categoryId, body);
+      try {
+        const body = await request.json(); 
+        const result = await createCategoryTopic(categoryId, body);
 
-      if ("error" in result) {
-        const status = result.error === "Topic already exists in this category" ? 409 : 400;
-        return new Response(JSON.stringify(result), {
-          status,
+        if ("error" in result) {
+          const status = result.error === "Topic already exists in this category" ? 409 : 400;
+          return new Response(JSON.stringify({ error: result.error }), {
+            status,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+
+        return new Response(JSON.stringify(result.topic), {
+          status: 201,
+          headers: { "Content-Type": "application/json" },
+        });
+      } catch (error) {
+        console.error("Error creating category topic:", error);
+        return new Response(JSON.stringify({ error: "Unable to create topic" }), {
+          status: 500,
           headers: { "Content-Type": "application/json" },
         });
       }
-
-      return new Response(JSON.stringify(result.topic), {
-        status: 201,
-        headers: { "Content-Type": "application/json" },
-      });
     }
 
     case "DELETE": {
@@ -105,18 +103,26 @@ export async function action({ request, params }: ActionFunctionArgs) {
         });
       }
 
-      const body = await request.json();
-      const result = await deleteCategoryTopic(categoryId, body);
+      try {
+        const body = await request.json();
+        const result = await deleteCategoryTopic(categoryId, body);
 
-      if ("error" in result) {
-        const status = result.error === "Topic not found" ? 404 : 400;
-        return new Response(JSON.stringify(result), {
-          status,
+        if ("error" in result) {
+          const status = result.error === "Topic not found" ? 404 : 400;
+          return new Response(JSON.stringify({ error: result.error }), {
+            status,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+
+        return new Response(null, { status: 204 });
+      } catch (error) {
+        console.error("Error deleting category topic:", error);
+        return new Response(JSON.stringify({ error: "Unable to delete topic" }), {
+          status: 500,
           headers: { "Content-Type": "application/json" },
         });
       }
-
-      return new Response(null, { status: 204 });
     }
 
     default:

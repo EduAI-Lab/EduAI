@@ -7,10 +7,20 @@ import { CreateTopicSchema, UpdateTopicSchema } from "./topic-schemas";
  * and PATCH, DELETE for /api/topics/:id
  */
 
+function handleJsonError(error: unknown): Response {
+  return new Response(
+    JSON.stringify({
+      error: "Invalid JSON",
+      details: error instanceof Error ? error.message : "Malformed request body",
+    }),
+    { status: 400, headers: { "Content-Type": "application/json" } }
+  );
+}
+
 export async function handleTopicRequest(request: Request) {
   const url = new URL(request.url);
   const pathSegments = url.pathname.split('/').filter(Boolean);
-  const topicId = pathSegments[pathSegments.length - 1];
+  const topicId = pathSegments.length > 1 ? pathSegments[pathSegments.length - 1] : null;
 
   switch (request.method) {
     case "GET": {

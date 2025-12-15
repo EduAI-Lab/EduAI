@@ -1,4 +1,4 @@
-import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
+import type { ActionFunctionArgs } from "react-router";
 import { auth } from "~/lib/auth/server";
 import {
     deleteCategoryTopic, updateCategoryTopic
@@ -6,15 +6,7 @@ import {
 
 export async function action({ request, params }:  ActionFunctionArgs) {
   const { categoryId, topicId } = params;
-
-
-  if (!categoryId || !topicId) {
-    return new Response(JSON.stringify({ error: "Missing parameters" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" }
-    });
-  }
-
+  
   const session = await auth.api.getSession(request);
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -23,30 +15,54 @@ export async function action({ request, params }:  ActionFunctionArgs) {
     });
   }
 
+  if (session.user.role !== "admin") {
+    return new Response(JSON.stringify({ error: "Forbidden: Admin access required" }), {
+      status: 403,
+      headers: { "Content-Type": "application/json" }
+    });
+  }
+
+  if (!categoryId || !topicId) {
+    return new Response(JSON.stringify({ error: "Missing parameters" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" }
+    });
+  }
+
   switch (request.method) {
     case "PATCH": {
-      const body = await request.json();
-      const result = await updateCategoryTopic(categoryId, topicId, body);
+      let body;
+      try{
+        body = await request.json();
+      }
+      catch (error){
+        return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      
 
-      if ("error" in result) {
-        return new Response(JSON.stringify(result), {
+      if ("error" in body) {
+        return new Response(JSON.stringify(body), {
           status: 400,
           headers: { "Content-Type": "application/json" }
         });
       }
 
-      return new Response(JSON.stringify(result.topic), {
+      return new Response(JSON.stringify(body.topic), {
         status: 200,
         headers: { "Content-Type": "application/json" }
       });
     }
 
     case "DELETE": {
-      const result = await deleteCategoryTopic(categoryId, topicId);
+      const result = await deleteCategoryTopic(categoryId, { topicId });
 
-      if ("error" in result) {
+      if (result.error) {
+        const statusCode = result.error === "Topic not found" ? 404 : 400;
         return new Response(JSON.stringify(result), {
-          status: result.error === "Topic not found" ? 404 : 400,
+          status: statusCode,
           headers: { "Content-Type": "application/json" }
         });
       }
