@@ -42,7 +42,7 @@ export const teamMembers: TeamMember[] = [
     image: "/Fatemah.jpeg",
     biography: "Assistant Professor in Computer Science and Data Science at UBC Okanagan, leading the FARD Lab (Foundational AIware Research and Development). Her research focuses on AI-driven software engineering, large language models for code, and NLP applications in low-resource programming languages.",
     contribution: "Leads research on adapter-based fine-tuning for low-resource programming languages, exploring transfer learning techniques to improve code intelligence. She has published extensively on code summarization, code clone detection, and the intersection of AI and software development.",
-    techStack: ["Python", "PyTorch", "Transformers", "HuggingFace", "NLP", "LLMs", "Data Visualization"],  
+    techStack: ["Python", "PyTorch", "Transformers", "HuggingFace", "NLP", "LLMs", "Data Visualization"],
     codeSnippet: "from transformers import AutoModel, AutoTokenizer; model = AutoModel.from_pretrained('microsoft/codebert-base'); tokenizer = AutoTokenizer.from_pretrained('microsoft/codebert-base'); inputs = tokenizer('def example(): return True', return_tensors='pt'); outputs = model(**inputs)",
   },
   {
@@ -51,24 +51,24 @@ export const teamMembers: TeamMember[] = [
     image: "/Ramon_Law.jpeg",
     biography: "Professor and Department Head of Computer Science and Data Science at UBC Okanagan. His research spans database systems, data integration, and sensor/IoT data management. He is also the founder of Unity Data Inc., the developer of UnityJDBC—a system that enables SQL queries across heterogeneous data sources.",
     contribution: "Directed the Distributed Database Lab, advanced query optimization algorithms, and developed the UnityJDBC driver integrating relational and NoSQL data. His work bridges academic research and industry by providing scalable database solutions and mentoring numerous software engineering students.",
-    techStack: [ "PostgreSQL", "MySQL", "MongoDB", "Java", "JDBC", "C/C++", "SQL Optimization"],  
+    techStack: [ "PostgreSQL", "MySQL", "MongoDB", "Java", "JDBC", "C/C++", "SQL Optimization"],
     codeSnippet: "try (Connection conn = DriverManager.getConnection(url, user, pass)) { Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery('SELECT * FROM students'); while (rs.next()) { System.out.println(rs.getString('name')); } }"
   },
   {
-    id: 5,  
+    id: 5,
     name: "Ronit Buti ",
-    image: "/ron.jpeg",
-    biography: "",
-    contribution: "" ,
-    techStack: ["React", "TypeScript", "JavaScript", "HTML", "CSS"],  
-    codeSnippet: ""
+    image: "/ronit.jpg",
+    biography: "Ronit is an Honors Computer Science student who built EduAI, including a provider-agnostic model registry and a pgvector-backed retrieval layer that grounds answers in uploaded course materials.",
+    contribution: "Led full-stack development of the platform including auth, UI, backend, and RAG pipeline, while architecting extensible tool interfaces for web search and document retrieval." ,
+    techStack: ["React", "TypeScript", "Next.js", "Prisma", "AI SDK"],
+    codeSnippet: "generateText({ model: 'openai/gpt-5.2', prompt: 'You are a helpful assistant.' })"
   },
  {
     id: 6,
     name: "Stavan Shah",
     image: "/Stavan.jpeg",
     biography: "Stavan is an Honours Computer Science student specializing in AI-driven software engineering and RAG systems.He previously worked on Courseplanner which is a course advising chatbot for UBC and an automated configuration agent. His current research focuses on 'Supervisory AI' architectures, designing multi-agent systems where a secondary model validates pedagogical feedback to ensure accuracy and educational value.",
-    contribution: "Manages the backend API and database architecture. He ensures that all server-side operations are secure, scalable, and properly integrated with the application's data models.",    
+    contribution: "Manages the backend API and database architecture. He ensures that all server-side operations are secure, scalable, and properly integrated with the application's data models.",
     techStack: ["React", "TypeScript", "Go", "Django", "Angular", "PostgreSQL"],
     codeSnippet: "rm -rf node_modules && npm install && pray"
   },
@@ -105,7 +105,7 @@ export const teamMembers: TeamMember[] = [
     image: "/Leila.jpg",
     biography: "Fourth-year Computer Science and Data Science student at UBC Okanagan. Interested in backend development, data pipelines, and applying machine learning to solve real-world problems.",
     contribution: "Volunteer Research Assistant contributing to backend infrastructure development and data architecture design. Responsible for implementing API endpoints and database integration, with a focus on designing efficient data pipelines that ensure seamless information flow throughout the system using React Router 7 and PostgreSQL." ,
-    techStack: ["Python","SQL", "Node.js", "APIs", "React Router 7", "PostgreSQL"],  
+    techStack: ["Python","SQL", "Node.js", "APIs", "React Router 7", "PostgreSQL"],
     codeSnippet: " while self.at(UBC): self.study() self.code() self.drink(RedBull) "
   },
   {
