@@ -63,14 +63,14 @@ export const teamMembers: TeamMember[] = [
     techStack: ["React", "TypeScript", "JavaScript", "HTML", "CSS"],  
     codeSnippet: ""
   },
-  {
+ {
     id: 6,
-    name: "Stavan Shah ",
-    image: "",
-    biography: "",
-    contribution: "",
-    techStack: ["React", "TypeScript", "JavaScript", "HTML", "CSS"],  
-    codeSnippet: ""
+    name: "Stavan Shah",
+    image: "/Stavan.jpeg",
+    biography: "Stavan is an Honours Computer Science student specializing in AI-driven software engineering and RAG systems.He previously worked on Courseplanner which is a course advising chatbot for UBC and an automated configuration agent. His current research focuses on 'Supervisory AI' architectures, designing multi-agent systems where a secondary model validates pedagogical feedback to ensure accuracy and educational value.",
+    contribution: "Manages the backend API and database architecture. He ensures that all server-side operations are secure, scalable, and properly integrated with the application's data models.",    
+    techStack: ["React", "TypeScript", "Go", "Django", "Angular", "PostgreSQL"],
+    codeSnippet: "rm -rf node_modules && npm install && pray"
   },
   {
     id: 7,
