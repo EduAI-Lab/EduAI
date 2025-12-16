@@ -2,46 +2,34 @@ import { IconEdit, IconPlus, IconTrash } from "@tabler/icons-react"
 
 import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
-
-type Topic = {
-  id: string
-  name: string
-  description: string | null
-  order: number
-  createdAt: string | Date
-  updatedAt: string | Date
-  categoryId: string
-}
-
-type CourseCategory = {
-  id: string
-  name: string
-  description: string | null
-  courseId: string
-  topics: Topic[]
-}
+import { CategoryRow } from "~/components/ui/CategoryRow";
+import type { CourseCategory, Topic } from "~/types/course";
 
 type Props = {
-  categories: CourseCategory[]
-  canManageTopics: boolean
-  canManageCategories: boolean
-  newCategoryName: string
-  onNewCategoryNameChange: (value: string) => void
-  onAddCategory: () => void
-  newTopicNames: Record<string, string>
-  onTopicNameChange: (categoryId: string, value: string) => void
-  onAddTopic: (categoryId: string) => void
-  editingTopic: Topic | null
-  editingName: string
-  onEditTopic: (topic: Topic) => void
-  onEditingNameChange: (value: string) => void
-  onSaveTopic: () => void
-  onCancelEdit: () => void
-  onDeleteTopic: (topicId: string) => void
+  categories: CourseCategory[];
+  setCategories: React.Dispatch<React.SetStateAction<CourseCategory[]>>;
+  courseId: string; 
+  canManageTopics: boolean;
+  canManageCategories: boolean;
+  newCategoryName: string;
+  onNewCategoryNameChange: (value: string) => void;
+  onAddCategory: () => void;
+  newTopicNames: Record<string, string>;
+  onTopicNameChange: (categoryId: string, value: string) => void;
+  onAddTopic: (categoryId: string) => void;
+  editingTopic: Topic | null;
+  editingName: string;
+  onEditTopic: (topic: Topic) => void;
+  onEditingNameChange: (value: string) => void;
+  onSaveTopic: () => void;
+  onCancelEdit: () => void;
+  onDeleteTopic: (topicId: string) => void;
 }
 
 export function CourseTopicsByCategory({
   categories,
+  setCategories,
+  courseId,              
   canManageTopics,
   canManageCategories,
   newCategoryName,
@@ -81,17 +69,12 @@ export function CourseTopicsByCategory({
       <div className="grid gap-4">
         {categories.map((category) => (
           <div key={category.id} className="space-y-3 rounded-lg border p-4 shadow-sm">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-xs uppercase text-muted-foreground">Course Category</p>
-                <h3 className="text-lg font-semibold leading-tight">
-                  {category.name || "Untitled Category"}
-                </h3>
-                {category.description && (
-                  <p className="text-sm text-muted-foreground">{category.description}</p>
-                )}
-              </div>
-            </div>
+              <CategoryRow
+              category={category}
+              courseId={courseId}
+              setCategories={setCategories}
+              canManageCategories={canManageCategories}
+            />
 
             {canManageTopics && (
               <div className="flex gap-2">

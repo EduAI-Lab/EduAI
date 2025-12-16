@@ -2,7 +2,6 @@ import { useState } from "react"
 import { useLoaderData, useParams, redirect } from "react-router"
 import type { LoaderFunctionArgs } from "react-router"
 import { IconBook, IconSettings, IconUsers } from "@tabler/icons-react"
-
 import { auth } from "~/lib/auth/server"
 import { Button } from "~/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card"
@@ -15,6 +14,7 @@ import { CourseTopicsByCategory } from "~/components/course-topics-by-category"
 import { CourseMaterialsUpload } from "~/components/course-materials-upload"
 import { useApiKeys } from "~/hooks/use-api-keys"
 import prisma from "~/lib/prisma.server"
+import type { CourseCategory , Topic} from "~/types/course";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request)
@@ -61,23 +61,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }
 }
 
-
-type Topic = {
-  id: string
-  name: string
-  description: string | null
-  order: number
-  createdAt: string | Date
-  updatedAt: string | Date 
-  categoryId : string 
-}
-type CourseCategory = {
-  id : string 
-  name : string
-  description: string | null
-  courseId: string
-  topics: Topic[] 
-}
 
 type Course = {
   id: string
@@ -220,15 +203,19 @@ export default function CourseDetailPage() {
       method: 'DELETE'
     })
 
-    if (response.ok) {
-      setCategories((prev) =>
-        prev.map((cat) =>
-          cat.id === topic.categoryId
-            ? { ...cat, topics: cat.topics.filter((t) => t.id !== topicId) }
-            : cat
-        )
-      )
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      alert(data.error ?? "Failed to delete topic");
+      return;
     }
+
+    setCategories((prev) =>
+      prev.map((cat) =>
+        cat.id === topic.categoryId
+          ? { ...cat, topics: cat.topics.filter((t) => t.id !== topicId) }
+          : cat
+      )
+    );
   }
 
   return (
@@ -332,6 +319,8 @@ export default function CourseDetailPage() {
                           {canManageTopics ? (
                             <CourseTopicsByCategory
                               categories={categories}
+                              setCategories={setCategories}
+                              courseId={courseId!}        
                               canManageTopics={canManageTopics}
                               canManageCategories={canManageCategories}
                               newCategoryName={newCategoryName}

@@ -9,6 +9,7 @@ import {
   type CreateCourseTopicInput,
   type DeleteCourseTopicInput,
 } from "./schemas";
+import { Prisma } from "@prisma/client";
 
 
 export async function handleCourseRequest(request: Request) {
@@ -271,3 +272,64 @@ export async function deleteCategoryTopic(
   return { success: true } as const;
 }
 
+
+export async function renameCategory(categoryId: string, newName: string) {
+  const trimmedName = newName.trim();
+
+  if (!trimmedName) {
+    return { error: "EMPTY_NAME" };
+  }
+
+  try {
+    const updatedCategory = await prisma.courseCategory.update({
+      where: { id: categoryId },
+      data: { name: trimmedName },
+    });
+
+    return { category: updatedCategory };
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (error.code === "P2025") {
+        return { error: "NOT_FOUND" };
+      }
+
+      if (error.code === "P2002") {
+        return { error: "DUPLICATE" };
+      }
+    }
+
+    console.error("Error renaming category:", error);
+    return { error: "UNKNOWN" };
+  }
+}
+
+
+export async function deleteCategoryIfEmpty(categoryId: string) {
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const topicCount = await tx.topic.count({
+        where: { categoryId },
+      });
+
+      if (topicCount > 0) {
+        return { error: "HAS_TOPICS" };
+      }
+
+      await tx.courseCategory.delete({
+        where: { id: categoryId },
+      });
+
+      return { success: true };
+    });
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2025"
+    ) {
+      return { error: "NOT_FOUND" };
+    }
+
+    console.error("Error deleting category:", error);
+    return { error: "UNKNOWN" };
+  }
+}
