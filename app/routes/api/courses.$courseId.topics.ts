@@ -2,8 +2,6 @@ import type { LoaderFunctionArgs } from "react-router";
 import prisma from "~/lib/prisma.server";
 import { auth } from "~/lib/auth/server";
 
-// add GET /api/courses/:courseId/topics , flattened the topics inside of courses in the GET /api/courses response above
-// this feature was implemented in the server.ts file in the last PR but now has been moved to its own route file for better organization. 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const { courseId } = params;
 

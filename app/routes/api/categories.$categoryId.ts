@@ -6,7 +6,7 @@ import {
   deleteCategoryTopic,
   getCategoryTopics,
 } from "~/lib/courses/server";
-
+import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const { categoryId } = params;
@@ -52,24 +52,13 @@ export async function action({ request, params }: ActionFunctionArgs) {
     });
   }
 
-  const session = await auth.api.getSession(request);
-
-  if (!session?.user) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
+  const guardResponse = await enforceAdminIfApiKey(request);
+  if(guardResponse.response){
+    return guardResponse.response;
   }
 
   switch (request.method) {
     case "POST": {
-      if (session.user.role !== "ADMIN") {
-        return new Response(JSON.stringify({ error: "Forbidden" }), {
-          status: 403,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-    
       try {
         const body = await request.json(); 
         const result = await createCategoryTopic(categoryId, body);
@@ -96,13 +85,6 @@ export async function action({ request, params }: ActionFunctionArgs) {
     }
 
     case "DELETE": {
-      if (session.user.role !== "ADMIN") {
-        return new Response(JSON.stringify({ error: "Forbidden" }), {
-          status: 403,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-
       try {
         const body = await request.json();
         const result = await deleteCategoryTopic(categoryId, body);

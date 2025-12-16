@@ -5,6 +5,7 @@ import {
   createCategoryTopic,
   getCategoryTopics
 } from "~/lib/courses/server";
+import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 
 async function validateCategory(courseId: string, categoryId: string) {
   return prisma.courseCategory.findFirst({
@@ -29,11 +30,11 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
 export async function action({ request, params }: ActionFunctionArgs) {
   const { courseId, categoryId } = params;
-  const session = await auth.api.getSession(request);
 
-  if (!session?.user || session.user.role !== "ADMIN")
-    return new Response("Forbidden", { status: 403 });
-
+  const guardResponse = await enforceAdminIfApiKey(request);
+  if(guardResponse.response){
+    return guardResponse.response;
+  }
   const category = await validateCategory(courseId!, categoryId!);
   if (!category) return new Response("Invalid category", { status: 404 });
 

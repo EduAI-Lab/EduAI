@@ -16,7 +16,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request);
   if (!session?.user) return new Response("Unauthorized", { status: 401 });
 
-  const category = await validateCategory(courseId!, categoryId!);
+   if (!courseId || !categoryId) {  
+        return new Response("Missing course or category ID", { status: 400 });  
+    }  
+  const category = await validateCategory(courseId, categoryId);
   if (!category) return new Response("Invalid category", { status: 404 });
 
   return new Response(JSON.stringify(category), {
@@ -37,21 +40,33 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   switch (request.method) {
     case "PATCH": {
+      try{
       const body = await request.json();
-
+      
+      if (!body.name || typeof body.name !== "string" || !body.name.trim()) {
+        return new Response(JSON.stringify({ error: "Name is required and must be a non-empty string" }), {
+          status: 400, headers: { "Content-Type": "application/json" }
+        });
+      }
+      
       const updated = await prisma.courseCategory.update({
         where: { id: categoryId },
         data: {
-          name: body.name?.trim(),
+          name: body.name.trim(),
           description: body.description ?? null
         }
       });
-
       return new Response(JSON.stringify(updated), {
         status: 200, headers: { "Content-Type": "application/json" }
       });
+    
+    } catch (error){
+      console.error("Error updating category:", error);
+      return new Response(JSON.stringify({ error: "Unable to update category" }), {
+        status: 400, headers: { "Content-Type": "application/json" }
+      });
     }
-
+  }
     case "DELETE": {
       await prisma.courseCategory.delete({ where: { id: categoryId }});
       return new Response(null, { status: 204 });

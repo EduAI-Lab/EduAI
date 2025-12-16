@@ -1,9 +1,9 @@
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import prisma from "~/lib/prisma.server";
 import { auth } from "~/lib/auth/server";
+import {enforceAdminIfApiKey} from "~/lib/auth/guards.server";
 
-   ///GET /api/courses/:courseId/categories . it returns all categories for a given course
-   /// the loader ensures that data is fetched (GET) before a route renders so we define the GET method here. used for READ operations
+  
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const { courseId } = params;
 
@@ -17,7 +17,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }
 
   const categories = await prisma.courseCategory.findMany({
-    
     where: { courseId },
     orderBy: { name: "asc" },
   });
@@ -29,8 +28,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 }
 
 
-   ///POST /api/courses/:courseId/categories. Creates a new category under the course
-/// the action handles all the router requests so we define the POST method here . used for Write operations
 export async function action({ request, params }: ActionFunctionArgs) {
   const { courseId } = params;
 
@@ -38,9 +35,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
     return new Response("Missing courseId", { status: 400 });
   }
 
-  const session = await auth.api.getSession(request);
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return new Response("Forbidden", { status: 403 });
+  const guardResponse = await enforceAdminIfApiKey(request);
+  if (guardResponse.response) {
+    return guardResponse.response;
   }
 
   if (request.method !== "POST") {
@@ -68,7 +65,6 @@ export async function action({ request, params }: ActionFunctionArgs) {
     );
   }
 
-  // Create the new category
   const category = await prisma.courseCategory.create({
     data: {
       courseId,

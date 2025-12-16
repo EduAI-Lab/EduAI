@@ -1,30 +1,41 @@
 import type { ActionFunctionArgs } from "react-router";
 import prisma from "~/lib/prisma.server";
-import { auth } from "~/lib/auth/server";
 import {
   updateCategoryTopic,
   deleteCategoryTopic
 } from "~/lib/courses/server";
+import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 
 async function validateCategory(courseId: string, categoryId: string) {
-  return prisma.courseCategory.findFirst({
-    where: { id: categoryId, courseId }
-  });
+  try {
+    return await prisma.courseCategory.findFirst({
+      where: { id: categoryId, courseId }
+    });
+  } catch (error) {
+    console.error("Error validating category:", error);
+    throw new Error("Failed to validate category");
+  }
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
   const { courseId, categoryId, topicId } = params;
 
-  if (!categoryId || !topicId)
+  if (!courseId || !categoryId || !topicId)
     return new Response("Missing parameters", { status: 400 });
 
-  const session = await auth.api.getSession(request);
-  if (!session?.user) return new Response("Unauthorized", { status: 401 });
+  const guardResponse = await enforceAdminIfApiKey(request);
+  if(guardResponse.response){
+    return guardResponse.response;
+  }
 
-  if (session.user.role !== "ADMIN")
-    return new Response("Forbidden", { status: 403 });
-
-  const category = await validateCategory(courseId!, categoryId);
+  let category;
+  try{
+    category = await validateCategory(courseId, categoryId);
+  } catch(error){
+  return new Response(JSON.stringify({ error: "Database error" }), {
+    status: 500, headers: { "Content-Type": "application/json" }
+  });
+  }
   if (!category) return new Response("Invalid category", { status: 404 });
 
   switch (request.method) {
@@ -42,15 +53,28 @@ export async function action({ request, params }: ActionFunctionArgs) {
       });
     }
 
-    case "DELETE": {
-      const result = await deleteCategoryTopic(categoryId, topicId);
+   case "DELETE":{
+      try {
+        const result = await deleteCategoryTopic(categoryId, { topicId });
 
-      if ("error" in result)
-        return new Response(JSON.stringify(result), {
-          status: 404, headers: { "Content-Type": "application/json" }
+        if ("error" in result) {
+          const status =
+            result.error === "Topic not found" ? 404 : 400;
+
+          return new Response(JSON.stringify(result), {
+            status,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        return new Response(null, { status: 204 });
+      } catch (error) {
+        console.error("Error deleting category topic:", error);
+        return new Response(JSON.stringify({ error: "Unable to delete topic" }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" }
         });
-
-      return new Response(null, { status: 204 });
+      }
     }
 
     default:

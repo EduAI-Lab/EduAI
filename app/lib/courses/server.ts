@@ -222,6 +222,8 @@ export async function createCategoryTopic(
       data: {
         categoryId,
         name: parsed.data.name.trim(),
+        description: parsed.data.description?.trim() || null,
+        order: parsed.data.order,
       },
     });
 

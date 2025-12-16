@@ -264,79 +264,80 @@ curl -X GET "https://eduai.ok.ubc.ca/api/ai-models" \
   -H "x-api-key: YOUR_API_KEY"
 ```
 
-### Category Topics Endpoint ( Not all up to date yet )
+### Course Category Topics Endpoint (Updated)
 
-Manage topics for a specific category. Admin role required for creating and deleting topics.
+Topics are managed within a hierarchical structure where a course contains multiple categories, and each category contains multiple topics (Course → Category → Topic); creating and deleting topics requires an admin role.
 
 #### Request
 
 **Endpoints**: 
-- `GET /api/categories/:categoryId/topics` - List all topics
-- `POST /api/categories/:categoryId/topics` - Create a topic (admin only)
-- `PATCH /api/categories/:categoryId/topics/:topicId` — Update a topic ( admin only - up to date) 
-- `DELETE /api/categories/:categoryId/topics` - Delete a topic (admin only)
+- `GET /api/courses/:courseId/categories/:categoryId/topics` — List all topics for a category
+- `POST /api/courses/:courseId/categories/:categoryId/topics` — Create a topic (**admin only**)
+- `PATCH /api/courses/:courseId/categories/:categoryId/topics/:topicId` — Update a topic
+- `DELETE /api/courses/:courseId/categories/:categoryId/topics/:topicId` — Delete a topic (**admin only**)
 
 **Headers**:
 - `Content-Type: application/json`
 - ⁠`Cookie: better-auth.session_token=YOUR_SESSION_TOKEN ⁠`
-or
-- `x-api-key: YOUR_API_KEY`(admin only)
 
 **URL Parameters**:
+- `courseId` (string): Course identifier
 - `categoryId` (string): Category identifier
-- `topicId`⁠ (string): Topic identifier (PATCH, DELETE only)
+- `topicId` (string): Topic identifier (PATCH, DELETE only)
 
 **Body Parameters** (POST):
 - `name` (string): Topic name
-- `description` (string): Updated description
-- `order` (number): Updated topic order
+- `description` (string,optional): Topic description
+- `order` (number, optional): Initial Topic order
 
 **Body Parameters** (DELETE ):
-- `topicId` (string, optional): Topic identifier
-- `name` (string, optional): Topic name
-- *Note: Either `topicId` or `name` must be provided*
+- _No body required_
 
-#### Examples
+#### Examples 
 
 ##### Get Category Topics (Windows - PowerShell)
 ```powershell
-curl -X GET "https://eduai.ok.ubc.ca/api/categories/CATEGORY_ID/topics" `
+curl -X GET "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/categories/CATEGORY_ID/topics" `
   -H "Content-Type: application/json" `
-  -H "x-api-key: YOUR_API_KEY"
-```
+  -H "Cookie: better-auth.session_token=YOUR_SESSION_TOKEN"
 
 ##### Get Category Topics (Linux/macOS)
 ```bash
-curl -X GET "https://eduai.ok.ubc.ca/api/categories/CATEGORY_ID/topics" \
+curl -X GET "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/categories/CATEGORY_ID/topics" \
   -H "Content-Type: application/json" \
-  -H "x-api-key: YOUR_API_KEY"
+  -H "Cookie: better-auth.session_token=YOUR_SESSION_TOKEN"
+
 
 
 ##### Create Category Topic (Windows - PowerShell)
 ```powershell
-curl -X POST "https://eduai.ok.ubc.ca/api/categories/CATEGORY_ID/topics" `
+curl -X POST "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/categories/CATEGORY_ID/topics" `
   -H "Content-Type: application/json" `
-  -H "x-api-key: YOUR_API_KEY" `
+  -H "Cookie: better-auth.session_token=YOUR_SESSION_TOKEN" `
   -d '{
-    "name": "Introduction to Machine Learning"
+    "name": "Introduction to Machine Learning",
+    "description": "new topics for a specific Category",
+    "order": 2
   }'
 ```
 
 ##### Create Category Topic (Linux/macOS)
 ```bash
-curl -X POST "https://eduai.ok.ubc.ca/api/categories/CATEGORY_ID/topics" \
+curl -X POST "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/categories/CATEGORY_ID/topics" \
   -H "Content-Type: application/json" \
-  -H "x-api-key: YOUR_API_KEY" \
+  -H "Cookie: better-auth.session_token=YOUR_SESSION_TOKEN" \
   -d '{
-    "name": "Introduction to Machine Learning"
+    "name": "Introduction to Machine Learning",
+    "description": "new topics for a specific Category",
+    "order": 2
   }'
 
 ```
 #### Update Category Topic (Windows - PowerShell)
 ```powershell
-curl -X PATCH "https://eduai.ok.ubc.ca/api/categories/CATEGORY_ID/topics/TOPIC_ID" `
+curl -X PATCH "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/categories/CATEGORY_ID/topics/TOPIC_ID" `
   -H "Content-Type: application/json" `
-  -H "x-api-key: YOUR_API_KEY" `
+  -H "Cookie: better-auth.session_token=YOUR_SESSION_TOKEN" `
   -d '{
     "name": "Updated Topic Title",
     "description": "Updated description",
@@ -347,36 +348,29 @@ curl -X PATCH "https://eduai.ok.ubc.ca/api/categories/CATEGORY_ID/topics/TOPIC_I
 
 ##### Update Topic (Linux/macOS – Bash)
 ```bash
-curl -X PATCH "https://eduai.ok.ubc.ca/api/categories/CATEGORY_ID/topics/TOPIC_ID" \
+curl -X PATCH "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/categories/CATEGORY_ID/topics/TOPIC_ID" \
   -H "Content-Type: application/json" \
-  -H "x-api-key: YOUR_API_KEY" \
+  -H "Cookie: better-auth.session_token=YOUR_SESSION_TOKEN" \
   -d '{
     "name": "Updated Topic Title",
     "description": "Updated description",
     "order": 1
   }'
+
 ```
 
 ##### Delete Category Topic (Windows - PowerShell)
 ```powershell
-curl -X DELETE "https://eduai.ok.ubc.ca/api/categories/CATEGORY_ID/topics" `
+curl -X DELETE "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/categories/CATEGORY_ID/topics/TOPIC_ID" `
   -H "Content-Type: application/json" `
-  -H "x-api-key: YOUR_API_KEY" `
-  -d '{
-    "topicId": "TOPIC_ID"
-  }'
-
+  -H "Cookie: better-auth.session_token=YOUR_SESSION_TOKEN"
 ```
 
 ##### Delete Category Topic (Linux/macOS)
 ```bash
-curl -X DELETE "https://eduai.ok.ubc.ca/api/categories/CATEGORY_ID/topics" \
+curl -X DELETE "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/categories/CATEGORY_ID/topics/TOPIC_ID" \
   -H "Content-Type: application/json" \
-  -H "x-api-key: YOUR_API_KEY" \
-  -d '{
-    "topicId": "TOPIC_ID"
-  }'
-
+  -H "Cookie: better-auth.session_token=YOUR_SESSION_TOKEN"
 ```
 
 ## Contributing
