@@ -290,8 +290,12 @@ Topics are managed within a hierarchical structure where a course contains multi
 - `description` (string,optional): Topic description
 - `order` (number, optional): Initial Topic order
 
-**Body Parameters** (DELETE ):
+**Body Parameters** (DELETE):
 - _No body required_
+- `topicId` (string, optional): Topic identifier
+- `name` (string, optional): Topic name
+- *Note: Either `topicId` or `name` must be provided*
+
 
 #### Examples 
 
