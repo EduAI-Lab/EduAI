@@ -14,6 +14,7 @@ export const auth = betterAuth({
   plugins: [
     apiKey({
       apiKeyHeaders: ["x-api-key"],
+      enableSessionForAPIKeys: true,
     }),
   ],
   user: {
