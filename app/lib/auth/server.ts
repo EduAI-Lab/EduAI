@@ -1,9 +1,54 @@
-import { betterAuth } from "better-auth";
-import { apiKey } from "better-auth/plugins";
 import { prismaAdapter } from "better-auth/adapters/prisma";
+import { betterAuth } from "better-auth";
+import { jwt } from "better-auth/plugins";
+import { apiKey } from "@better-auth/api-key";
+import { oauthProvider } from "@better-auth/oauth-provider";
+
 import prisma from "../prisma.server";
 
+const authBaseURL =
+  process.env.BETTER_AUTH_URL ??
+  import.meta.env.BETTER_AUTH_URL ??
+  "http://localhost:5173";
+
+const authSecret =
+  process.env.BETTER_AUTH_SECRET ??
+  import.meta.env.BETTER_AUTH_SECRET ??
+  (process.env.NODE_ENV === "production"
+    ? undefined
+    : "dev-only-better-auth-secret-change-me");
+
+if (!authSecret) {
+  throw new Error(
+    "BETTER_AUTH_SECRET is required in production for stable Better Auth JWT signing.",
+  );
+}
+
+const trustedOrigins = Array.from(
+  new Set<string>(
+    (process.env.BETTER_AUTH_TRUSTED_ORIGINS ??
+      import.meta.env.BETTER_AUTH_TRUSTED_ORIGINS ??
+      "")
+      .split(",")
+      .map((origin: string) => origin.trim())
+      .filter((origin: string) => origin.length > 0),
+  ),
+);
+
+function getOidcClaims(user?: Record<string, unknown> | null) {
+  return {
+    "https://eduai.app/role":
+      typeof user?.role === "string" ? user.role : "STUDENT",
+    "https://eduai.app/is_active":
+      typeof user?.isActive === "boolean" ? user.isActive : true,
+  };
+}
+
 export const auth = betterAuth({
+  secret: authSecret,
+  baseURL: authBaseURL,
+  basePath: "/api/auth",
+  trustedOrigins,
   database: prismaAdapter(prisma, {
     provider: "postgresql",
   }),
@@ -12,8 +57,30 @@ export const auth = betterAuth({
     autoSignIn: true,
   },
   plugins: [
+    jwt({
+      disableSettingJwtHeader: true,
+      jwt: {
+        issuer: authBaseURL,
+      },
+    }),
     apiKey({
       apiKeyHeaders: ["x-api-key"],
+    }),
+    oauthProvider({
+      loginPage: "/auth/login",
+      consentPage: "/auth/consent",
+      scopes: ["openid", "profile", "email"],
+      grantTypes: ["authorization_code"],
+      allowDynamicClientRegistration: false,
+      advertisedMetadata: {
+        claims_supported: [
+          "https://eduai.app/role",
+          "https://eduai.app/is_active",
+        ],
+      },
+      customIdTokenClaims: ({ user }) => getOidcClaims(user),
+      customUserInfoClaims: ({ user }) => getOidcClaims(user),
+      customAccessTokenClaims: ({ user }) => getOidcClaims(user),
     }),
   ],
   user: {
@@ -31,20 +98,18 @@ export const auth = betterAuth({
     },
   },
   session: {
-    expiresIn: 60 * 60 * 24 * 7, // 7 days
-    updateAge: 60 * 60 * 24, // 1 day
+    expiresIn: 60 * 60 * 24 * 7,
+    updateAge: 60 * 60 * 24,
   },
   advanced: {
     crossSubDomainCookies: {
-      enabled: true,
+      enabled: false,
     },
-    baseURL: import.meta.env.BETTER_AUTH_URL || "http://localhost:5173",
   },
-  // Add rate limiting for security
   rateLimit: {
     enabled: true,
-    window: 60, // 1 minute
-    max: 100, // 100 requests per minute
+    window: 60,
+    max: 100,
   },
 });
 
