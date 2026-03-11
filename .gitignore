@@ -6,6 +6,7 @@
 /build/
 
 .env
+.env.local
 /app/generated/prisma
 
 cookies.txt
