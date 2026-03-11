@@ -84,6 +84,18 @@ model Verification {
   @@map("verification")
 }
 
+model jwks {
+  id         String   @id @default(cuid())
+  publicKey  String
+  privateKey String
+  createdAt  DateTime @default(now())
+  expiresAt  DateTime?
+  alg        String?
+  crv        String?
+
+  @@map("jwks")
+}
+
 model Course {
   id             String             @id @default(cuid())
   code           String             @unique

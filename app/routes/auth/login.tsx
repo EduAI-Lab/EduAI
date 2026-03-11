@@ -4,13 +4,19 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router"
 
 import { LoginForm } from "~/components/login-form"
 import { signInSchema, type SignInInput } from "~/lib/auth"
+import { getOAuthContinuePath, getOAuthQueryPayload } from "~/lib/auth/oauth-flow.server"
 import { auth } from "~/lib/auth/server"
+
+function isSuccessfulAuthResponse(response: Response) {
+  return response.ok || (response.status >= 300 && response.status < 400);
+}
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request);
+  const oauthContinuePath = getOAuthContinuePath(request.url);
 
   if (session?.user) {
-    return redirect("/dashboard");
+    return redirect(oauthContinuePath ?? "/dashboard");
   }
 
   return {};
@@ -18,6 +24,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 export async function action({ request }: ActionFunctionArgs) {
   const formData = Object.fromEntries(await request.formData());
+  const oauthQuery = getOAuthQueryPayload(request.url);
+  const oauthContinuePath = getOAuthContinuePath(request.url);
   const input = {
     email: String(formData.email || ""),
     password: String(formData.password || ""),
@@ -38,20 +46,24 @@ export async function action({ request }: ActionFunctionArgs) {
   try {
     // Create a new request to the better-auth sign-in endpoint
     const url = new URL("/api/auth/sign-in/email", request.url);
+    const origin = new URL(request.url).origin;
     const authRequest = new Request(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        cookie: request.headers.get("cookie") ?? "",
+        origin,
       },
       body: JSON.stringify({
         email: input.email,
         password: input.password,
+        oauth_query: oauthQuery,
       }),
     });
 
     const response = await auth.handler(authRequest);
 
-    if (!response.ok) {
+    if (!isSuccessfulAuthResponse(response)) {
       const errorData = await response.json().catch(() => ({}));
       return {
         formError: errorData.message || "Sign in failed"
@@ -65,7 +77,7 @@ export async function action({ request }: ActionFunctionArgs) {
       headers.set("Set-Cookie", setCookie);
     }
 
-    return redirect("/dashboard", { headers });
+    return redirect(oauthContinuePath ?? "/dashboard", { headers });
   } catch (err: unknown) {
     let message = "Sign in failed";
     if (typeof err === "object" && err && "message" in err) {

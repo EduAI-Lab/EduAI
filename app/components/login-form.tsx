@@ -2,6 +2,7 @@ import { cn } from "~/lib/utils"
 import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
 import { Label } from "~/components/ui/label"
+import { useLocation } from "react-router"
 import type { SignInInput } from "~/lib/auth"
 
 interface LoginFormProps extends React.ComponentProps<"div"> {
@@ -15,6 +16,9 @@ export function LoginForm({
   isLoading = false,
   ...props
 }: LoginFormProps) {
+  const { search } = useLocation();
+  const registerHref = search ? `/auth/register${search}` : "/auth/register";
+
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>
       <div className="flex flex-col items-center gap-2 text-center">
@@ -81,7 +85,7 @@ export function LoginForm({
       </div>
       <div className="text-center text-sm">
         Don&apos;t have an account?{" "}
-        <a href="/auth/register" className="underline underline-offset-4">
+        <a href={registerHref} className="underline underline-offset-4">
           Sign up
         </a>
       </div>
