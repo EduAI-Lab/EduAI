@@ -6,7 +6,16 @@ import { auth } from "./server";
 const SISTER_APP_TYPE = "sister-app";
 const SISTER_APP_REFERENCE_ID = "eduai-sister-app-clients";
 
-const clientMetadataSchema = z.record(z.string(), z.unknown()).optional();
+const clientMetadataSchema = z
+  .object({
+    appType: z.string().optional(),
+    appSlug: z.string().optional(),
+    displayName: z.string().optional(),
+    homeUrl: z.string().url().optional(),
+    logoUrl: z.string().url().optional(),
+  })
+  .catchall(z.unknown())
+  .optional();
 
 export const createOAuthClientSchema = z.object({
   redirect_uris: z.array(z.string().url()).min(1),
@@ -61,6 +70,17 @@ function getClientMetadata(client: unknown) {
     "metadata" in client
       ? (client as Record<string, unknown>).metadata
       : client;
+
+  if (typeof metadata === "string") {
+    try {
+      const parsed = JSON.parse(metadata);
+      return parsed && typeof parsed === "object"
+        ? (parsed as Record<string, unknown>)
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  }
 
   return metadata && typeof metadata === "object"
     ? (metadata as Record<string, unknown>)

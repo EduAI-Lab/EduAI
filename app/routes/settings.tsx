@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react"
 import { redirect, useLoaderData } from "react-router"
 import type { LoaderFunctionArgs } from "react-router"
-import { Key, Plus, Shield, Trash2, Copy, CheckCircle2, Globe } from "lucide-react"
+import { Globe, Key, Plus, Shield, Trash2, Copy, CheckCircle2, AppWindow } from "lucide-react"
 
 import { auth } from "~/lib/auth/server"
-// prisma not needed here
 import { AppSidebar } from "~/components/app-sidebar"
+import { SisterAppsPanel } from "~/components/settings/sister-apps-panel"
 import { SiteHeader } from "~/components/site-header"
 import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs"
@@ -23,10 +23,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return redirect("/auth/login")
   }
 
-  // List user's API keys via Better Auth session cookie
-  // Better Auth exposes apiKey endpoints under /api-key/* automatically
-  // We call through auth.handler route: /api/auth/*; but client SDK provides methods as well.
-  return { user: session.user }
+  return {
+    user: session.user,
+    isAdmin: session.user.role === "ADMIN",
+  }
 }
 
 type ServerApiKey = {
@@ -34,7 +34,7 @@ type ServerApiKey = {
   name?: string | null
   start?: string | null
   prefix?: string | null
-  userId: string
+  userId?: string
   enabled: boolean
   rateLimitEnabled: boolean
   rateLimitTimeWindow?: number | null
@@ -53,8 +53,8 @@ type ServerApiKey = {
 }
 
 export default function SettingsPage() {
-  const { user } = useLoaderData<typeof loader>()
-  const { apiKeys, updateProviderSettings, removeProviderSettings, isProviderConfigured } = useApiKeys()
+  const { user, isAdmin } = useLoaderData<typeof loader>()
+  const { updateProviderSettings, removeProviderSettings, isProviderConfigured } = useApiKeys()
   const [activeTab, setActiveTab] = useState("api-keys")
   const [serverKeys, setServerKeys] = useState<ServerApiKey[]>([])
   const [creating, setCreating] = useState(false)
@@ -132,11 +132,14 @@ export default function SettingsPage() {
         <SiteHeader user={user} />
         <div className="px-4 py-6 max-w-4xl mx-auto w-full">
           <h1 className="text-2xl font-bold mb-2">Settings</h1>
-          <p className="text-sm text-muted-foreground mb-4">Manage server API keys and local model provider configuration.</p>
+          <p className="text-sm text-muted-foreground mb-4">Manage server API keys, model providers, and admin app registrations.</p>
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList>
               <TabsTrigger value="api-keys"><Key className="h-4 w-4" /> API Keys</TabsTrigger>
               <TabsTrigger value="providers"><Globe className="h-4 w-4" /> Providers</TabsTrigger>
+              {isAdmin ? (
+                <TabsTrigger value="apps"><AppWindow className="h-4 w-4" /> Apps</TabsTrigger>
+              ) : null}
             </TabsList>
 
             <TabsContent value="api-keys" className="mt-6 space-y-6">
@@ -273,6 +276,12 @@ export default function SettingsPage() {
                 </Card>
               </div>
             </TabsContent>
+
+            {isAdmin ? (
+              <TabsContent value="apps" className="mt-6">
+                <SisterAppsPanel />
+              </TabsContent>
+            ) : null}
           </Tabs>
         </div>
       </SidebarInset>
