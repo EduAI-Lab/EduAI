@@ -28,10 +28,10 @@ model User {
   apiKeys            apikey[]
   chats              Chat[]
   externalUsers      ExternalUser[]
-  oauthClients       OAuthClient[]
-  oauthConsents      OAuthConsent[]
-  oauthAccessTokens  OAuthAccessToken[]
-  oauthRefreshTokens OAuthRefreshToken[]
+  oauthClients       oauthClient[]
+  oauthConsents      oauthConsent[]
+  oauthAccessTokens  oauthAccessToken[]
+  oauthRefreshTokens oauthRefreshToken[]
 
   @@map("user")
 }
@@ -46,8 +46,8 @@ model Session {
   userAgent          String?
   userId             String
   user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  oauthAccessTokens  OAuthAccessToken[]
-  oauthRefreshTokens OAuthRefreshToken[]
+  oauthAccessTokens  oauthAccessToken[]
+  oauthRefreshTokens oauthRefreshToken[]
 
   @@map("session")
 }
@@ -366,45 +366,46 @@ model ExternalUser {
   @@map("external_users")
 }
 
-model OAuthClient {
+model oauthClient {
   id                      String              @id @default(cuid())
   clientId                String              @unique
   clientSecret            String?
   disabled                Boolean             @default(false)
   skipConsent             Boolean?
   enableEndSession        Boolean?
-  scopes                  String[]
+  scopes                  String[]            @default([])
   userId                  String?
   createdAt               DateTime            @default(now())
   updatedAt               DateTime            @updatedAt
   name                    String?
   uri                     String?
   icon                    String?
-  contacts                String[]
+  contacts                String[]            @default([])
   tos                     String?
   policy                  String?
   softwareId              String?
   softwareVersion         String?
   softwareStatement       String?
   redirectUris            String[]
-  postLogoutRedirectUris  String[]
+  postLogoutRedirectUris  String[]            @default([])
   tokenEndpointAuthMethod String?
-  grantTypes              String[]
-  responseTypes           String[]
+  grantTypes              String[]            @default([])
+  responseTypes           String[]            @default([])
   public                  Boolean?
   type                    String?
   requirePKCE             Boolean?
   referenceId             String?
   metadata                Json?
   user                    User?               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  accessTokens            OAuthAccessToken[]
-  consents                OAuthConsent[]
-  refreshTokens           OAuthRefreshToken[]
+  accessTokens            oauthAccessToken[]
+  consents                oauthConsent[]
+  refreshTokens           oauthRefreshToken[]
 
+  @@index([userId])
   @@map("oauthClient")
 }
 
-model OAuthRefreshToken {
+model oauthRefreshToken {
   id           String             @id @default(cuid())
   token        String
   clientId     String
@@ -416,15 +417,17 @@ model OAuthRefreshToken {
   revoked      DateTime?
   authTime     DateTime?
   scopes       String[]
-  client       OAuthClient        @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
+  client       oauthClient        @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
   session      Session?           @relation(fields: [sessionId], references: [id], onDelete: SetNull)
   user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  accessTokens OAuthAccessToken[]
+  accessTokens oauthAccessToken[]
 
+  @@index([clientId])
+  @@index([userId])
   @@map("oauthRefreshToken")
 }
 
-model OAuthAccessToken {
+model oauthAccessToken {
   id           String             @id @default(cuid())
   token        String             @unique
   clientId     String
@@ -435,15 +438,17 @@ model OAuthAccessToken {
   expiresAt    DateTime
   createdAt    DateTime           @default(now())
   scopes       String[]
-  client       OAuthClient        @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
+  client       oauthClient        @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
   session      Session?           @relation(fields: [sessionId], references: [id], onDelete: SetNull)
   user         User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  refreshToken OAuthRefreshToken? @relation(fields: [refreshId], references: [id], onDelete: Cascade)
+  refreshToken oauthRefreshToken? @relation(fields: [refreshId], references: [id], onDelete: Cascade)
 
+  @@index([clientId])
+  @@index([userId])
   @@map("oauthAccessToken")
 }
 
-model OAuthConsent {
+model oauthConsent {
   id          String      @id @default(cuid())
   clientId    String
   userId      String?
@@ -451,9 +456,11 @@ model OAuthConsent {
   scopes      String[]
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
-  client      OAuthClient @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
+  client      oauthClient @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
   user        User?       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([clientId])
+  @@index([userId])
   @@map("oauthConsent")
 }
 
