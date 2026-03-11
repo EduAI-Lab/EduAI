@@ -8,40 +8,46 @@ datasource db {
 }
 
 model User {
-  id                String                 @id @default(cuid())
-  email             String                 @unique
-  name              String
-  image             String?
-  role              UserRole
-  isActive          Boolean                @default(true)
-  createdAt         DateTime               @default(now())
-  updatedAt         DateTime               @updatedAt
-  emailVerified     Boolean                @default(false)
-  accounts          Account[]
-  aiInteractions    AIInteraction[]
-  enrolledCourses   CourseEnrollment[]
-  assistedCourses   CourseTA[]
-  taughtCourses     Course[]               @relation("ProfessorCourses")
-  uploadedDocuments Document[]
-  sessions          Session[]
-  providerSettings  UserProviderSettings[]
-  apiKeys           apikey[]
-  chats             Chat[]
-  externalUsers     ExternalUser[]
+  id                 String                 @id @default(cuid())
+  email              String                 @unique
+  name               String
+  image              String?
+  role               UserRole
+  isActive           Boolean                @default(true)
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  emailVerified      Boolean                @default(false)
+  accounts           Account[]
+  aiInteractions     AIInteraction[]
+  enrolledCourses    CourseEnrollment[]
+  assistedCourses    CourseTA[]
+  taughtCourses      Course[]               @relation("ProfessorCourses")
+  uploadedDocuments  Document[]
+  sessions           Session[]
+  providerSettings   UserProviderSettings[]
+  apiKeys            apikey[]
+  chats              Chat[]
+  externalUsers      ExternalUser[]
+  oauthClients       OAuthClient[]
+  oauthConsents      OAuthConsent[]
+  oauthAccessTokens  OAuthAccessToken[]
+  oauthRefreshTokens OAuthRefreshToken[]
 
   @@map("user")
 }
 
 model Session {
-  id        String   @id @default(cuid())
-  expiresAt DateTime
-  token     String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  ipAddress String?
-  userAgent String?
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                 String              @id @default(cuid())
+  expiresAt          DateTime
+  token              String              @unique
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  ipAddress          String?
+  userAgent          String?
+  userId             String
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  oauthAccessTokens  OAuthAccessToken[]
+  oauthRefreshTokens OAuthRefreshToken[]
 
   @@map("session")
 }
@@ -315,13 +321,13 @@ model apikey {
 }
 
 model Chat {
-  id           String   @id @default(cuid())
+  id           String        @id @default(cuid())
   userId       String
   systemPrompt String?
   title        String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages     ChatMessage[]
 
   @@index([userId])
@@ -358,6 +364,97 @@ model ExternalUser {
   @@unique([provider, externalUserId])
   @@index([userId])
   @@map("external_users")
+}
+
+model OAuthClient {
+  id                      String              @id @default(cuid())
+  clientId                String              @unique
+  clientSecret            String?
+  disabled                Boolean             @default(false)
+  skipConsent             Boolean?
+  enableEndSession        Boolean?
+  scopes                  String[]
+  userId                  String?
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+  name                    String?
+  uri                     String?
+  icon                    String?
+  contacts                String[]
+  tos                     String?
+  policy                  String?
+  softwareId              String?
+  softwareVersion         String?
+  softwareStatement       String?
+  redirectUris            String[]
+  postLogoutRedirectUris  String[]
+  tokenEndpointAuthMethod String?
+  grantTypes              String[]
+  responseTypes           String[]
+  public                  Boolean?
+  type                    String?
+  requirePKCE             Boolean?
+  referenceId             String?
+  metadata                Json?
+  user                    User?               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessTokens            OAuthAccessToken[]
+  consents                OAuthConsent[]
+  refreshTokens           OAuthRefreshToken[]
+
+  @@map("oauthClient")
+}
+
+model OAuthRefreshToken {
+  id           String             @id @default(cuid())
+  token        String
+  clientId     String
+  sessionId    String?
+  userId       String
+  referenceId  String?
+  expiresAt    DateTime
+  createdAt    DateTime           @default(now())
+  revoked      DateTime?
+  authTime     DateTime?
+  scopes       String[]
+  client       OAuthClient        @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
+  session      Session?           @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessTokens OAuthAccessToken[]
+
+  @@map("oauthRefreshToken")
+}
+
+model OAuthAccessToken {
+  id           String             @id @default(cuid())
+  token        String             @unique
+  clientId     String
+  sessionId    String?
+  userId       String?
+  referenceId  String?
+  refreshId    String?
+  expiresAt    DateTime
+  createdAt    DateTime           @default(now())
+  scopes       String[]
+  client       OAuthClient        @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
+  session      Session?           @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  user         User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshToken OAuthRefreshToken? @relation(fields: [refreshId], references: [id], onDelete: Cascade)
+
+  @@map("oauthAccessToken")
+}
+
+model OAuthConsent {
+  id          String      @id @default(cuid())
+  clientId    String
+  userId      String?
+  referenceId String?
+  scopes      String[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  client      OAuthClient @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
+  user        User?       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("oauthConsent")
 }
 
 enum UserRole {

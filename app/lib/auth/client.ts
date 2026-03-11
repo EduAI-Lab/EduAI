@@ -1,4 +1,6 @@
-import { inferAdditionalFields, apiKeyClient } from "better-auth/client/plugins";
+import { apiKeyClient } from "@better-auth/api-key/client";
+import { oauthProviderClient } from "@better-auth/oauth-provider/client";
+import { inferAdditionalFields } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
 
 export const authClient = createAuthClient({
@@ -6,20 +8,21 @@ export const authClient = createAuthClient({
     inferAdditionalFields({
       user: {
         role: {
-        type: "string",
-        defaultValue: "STUDENT",
-        required: false,
-        returned: true,
-      },
-      isActive: {
-        type: "boolean",
-        defaultValue: true,
-        required: false,
-        returned: true,
-      },
+          type: "string",
+          defaultValue: "STUDENT",
+          required: false,
+          returned: true,
+        },
+        isActive: {
+          type: "boolean",
+          defaultValue: true,
+          required: false,
+          returned: true,
+        },
       },
     }),
-    apiKeyClient()
+    apiKeyClient(),
+    oauthProviderClient(),
   ],
   baseURL: typeof window !== "undefined" ? window.location.origin : undefined,
 });

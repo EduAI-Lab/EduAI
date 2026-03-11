@@ -182,8 +182,6 @@ export async function updateSisterAppClient(
         ...input,
         skip_consent: true,
         enable_end_session: false,
-        token_endpoint_auth_method: "client_secret_post",
-        require_pkce: true,
         metadata: input.metadata
           ? {
               ...(existingMetadata || {}),

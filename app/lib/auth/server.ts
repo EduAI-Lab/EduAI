@@ -26,9 +26,11 @@ if (!authSecret) {
 
 const trustedOrigins = Array.from(
   new Set<string>(
-    (process.env.BETTER_AUTH_TRUSTED_ORIGINS ??
+    (
+      process.env.BETTER_AUTH_TRUSTED_ORIGINS ??
       import.meta.env.BETTER_AUTH_TRUSTED_ORIGINS ??
-      "")
+      "http://localhost:5173,http://localhost:4000,https://eduai.ok.ubc.ca,https://aitutor.ok.ubc.ca"
+    )
       .split(",")
       .map((origin: string) => origin.trim())
       .filter((origin: string) => origin.length > 0),
