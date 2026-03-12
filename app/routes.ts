@@ -2,10 +2,10 @@ import { type RouteConfig, index, route } from "@react-router/dev/routes";
 
 export default [
   index("routes/home.tsx"),
-  route("/.well-known/openid-configuration", "routes/well-known.openid-configuration.ts"),
   route("/.well-known/oauth-authorization-server/api/auth", "routes/well-known.oauth-authorization-server.api.auth.ts"),
   route("/team", "routes/team.tsx"),
   route("/api/auth/*", "routes/api/auth.$.ts"),
+  route("/api/auth/.well-known/openid-configuration", "routes/api.auth.openid-configuration.ts"),
   route("/api/admin/oauth-clients", "routes/api.admin.oauth-clients.ts"),
   route("/api/admin/oauth-clients/:clientId", "routes/api.admin.oauth-clients.$clientId.ts"),
   route("/api/admin/oauth-clients/:clientId/rotate-secret", "routes/api.admin.oauth-clients.$clientId.rotate-secret.ts"),
