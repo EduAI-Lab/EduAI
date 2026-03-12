@@ -8,6 +8,8 @@
 .env
 .env.local
 /app/generated/prisma
+/app/lib/prisma.server.js
+/app/lib/auth/*.server.js
 
 cookies.txt
 ecosystem.config.cjs

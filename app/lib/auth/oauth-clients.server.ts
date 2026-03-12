@@ -1,8 +1,10 @@
 import { z } from "zod";
 
+import prisma from "../prisma.server";
 import { auth } from "./server";
 
 const SISTER_APP_TYPE = "sister-app";
+const SISTER_APP_REFERENCE_ID = "eduai-sister-app-clients";
 
 const clientMetadataSchema = z.record(z.string(), z.unknown()).optional();
 
@@ -84,6 +86,60 @@ function normalizeOAuthClients(payload: unknown) {
   return [];
 }
 
+async function promoteSisterAppClientToSharedScope(clientId: string) {
+  await prisma.oauthClient.update({
+    where: {
+      clientId,
+    },
+    data: {
+      userId: null,
+      referenceId: SISTER_APP_REFERENCE_ID,
+    },
+  });
+}
+
+async function promoteLegacySisterAppClients() {
+  const legacyClients = await prisma.oauthClient.findMany({
+    where: {
+      metadata: {
+        path: ["appType"],
+        equals: SISTER_APP_TYPE,
+      },
+      OR: [
+        {
+          userId: {
+            not: null,
+          },
+        },
+        {
+          referenceId: {
+            not: SISTER_APP_REFERENCE_ID,
+          },
+        },
+      ],
+    },
+    select: {
+      clientId: true,
+    },
+  });
+
+  if (legacyClients.length === 0) {
+    return;
+  }
+
+  await prisma.oauthClient.updateMany({
+    where: {
+      clientId: {
+        in: legacyClients.map((client) => client.clientId),
+      },
+    },
+    data: {
+      userId: null,
+      referenceId: SISTER_APP_REFERENCE_ID,
+    },
+  });
+}
+
 export function json(data: unknown, init?: ResponseInit) {
   return new Response(JSON.stringify(data), {
     ...init,
@@ -117,6 +173,8 @@ export function isSisterAppClient(clientOrMetadata: unknown) {
 }
 
 async function getOAuthClients(request: Request) {
+  await promoteLegacySisterAppClients();
+
   const clients = await auth.api.getOAuthClients({
     headers: request.headers,
   });
@@ -145,10 +203,17 @@ export async function createSisterAppClient(
   request: Request,
   input: z.infer<typeof createOAuthClientSchema>,
 ) {
-  return auth.api.adminCreateOAuthClient({
+  const client = await auth.api.adminCreateOAuthClient({
     headers: request.headers,
     body: {
-      ...input,
+      redirect_uris: input.redirect_uris,
+      client_name: input.client_name,
+      client_uri: input.client_uri,
+      logo_uri: input.logo_uri,
+      contacts: input.contacts,
+      tos_uri: input.tos_uri,
+      policy_uri: input.policy_uri,
+      post_logout_redirect_uris: input.post_logout_redirect_uris,
       skip_consent: true,
       enable_end_session: false,
       scope: "openid profile email",
@@ -164,6 +229,13 @@ export async function createSisterAppClient(
       },
     },
   });
+
+  const clientId = getClientId(client);
+  if (clientId) {
+    await promoteSisterAppClientToSharedScope(clientId);
+  }
+
+  return client;
 }
 
 export async function updateSisterAppClient(

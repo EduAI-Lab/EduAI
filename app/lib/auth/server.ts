@@ -6,6 +6,8 @@ import { oauthProvider } from "@better-auth/oauth-provider";
 
 import prisma from "../prisma.server";
 
+const SISTER_APP_REFERENCE_ID = "eduai-sister-app-clients";
+
 const authBaseURL =
   process.env.BETTER_AUTH_URL ??
   import.meta.env.BETTER_AUTH_URL ??
@@ -74,6 +76,8 @@ export const auth = betterAuth({
       scopes: ["openid", "profile", "email"],
       grantTypes: ["authorization_code"],
       allowDynamicClientRegistration: false,
+      clientReference: ({ user }) =>
+        user?.role === "ADMIN" ? SISTER_APP_REFERENCE_ID : undefined,
       advertisedMetadata: {
         claims_supported: [
           "https://eduai.app/role",
