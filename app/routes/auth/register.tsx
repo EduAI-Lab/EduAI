@@ -1,4 +1,4 @@
-import { Form, useActionData, redirect } from "react-router"
+import { Form, useActionData, redirect, redirectDocument } from "react-router"
 import { GalleryVerticalEnd } from "lucide-react"
 import { useState } from "react"
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router"
@@ -17,7 +17,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const oauthContinuePath = getOAuthContinuePath(request.url);
 
   if (session?.user) {
-    return redirect(oauthContinuePath ?? "/dashboard");
+    if (oauthContinuePath) {
+      return redirectDocument(oauthContinuePath);
+    }
+
+    return redirect("/dashboard");
   }
 
   return {};
@@ -80,7 +84,11 @@ export async function action({ request }: ActionFunctionArgs) {
       headers.set("Set-Cookie", setCookie);
     }
 
-    return redirect(oauthContinuePath ?? "/dashboard", { headers });
+    if (oauthContinuePath) {
+      return redirectDocument(oauthContinuePath, { headers });
+    }
+
+    return redirect("/dashboard", { headers });
   } catch (err: unknown) {
     let message = "Sign up failed";
     if (typeof err === "object" && err && "message" in err) {
