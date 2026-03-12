@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { hashPassword } from 'better-auth/crypto';
 
 const prisma = new PrismaClient();
 
@@ -175,7 +176,7 @@ async function main() {
   console.log(`   🤖 ${modelCount} models created`);
 
   // Seed sample users, courses, and topics for testing
-  console.log('👤 Seeding sample admin user...');
+  console.log('👤 Seeding sample users...');
 
   const adminUser = await prisma.user.upsert({
     where: { email: 'admin@eduai.local' },
@@ -193,6 +194,60 @@ async function main() {
       emailVerified: true,
     },
   });
+
+  const seedCredentialUsers = [
+    {
+      email: 'instructor@eduai.local',
+      name: 'Sample Instructor',
+      role: 'PROFESSOR' as const,
+      password: 'instructor123',
+    },
+    {
+      email: 'student@eduai.local',
+      name: 'Sample Student',
+      role: 'STUDENT' as const,
+      password: 'student123',
+    },
+  ];
+
+  for (const seedUser of seedCredentialUsers) {
+    const user = await prisma.user.upsert({
+      where: { email: seedUser.email },
+      update: {
+        name: seedUser.name,
+        role: seedUser.role,
+        isActive: true,
+        emailVerified: true,
+      },
+      create: {
+        email: seedUser.email,
+        name: seedUser.name,
+        role: seedUser.role,
+        isActive: true,
+        emailVerified: true,
+      },
+    });
+
+    const passwordHash = await hashPassword(seedUser.password);
+
+    await prisma.account.upsert({
+      where: {
+        providerId_accountId: {
+          providerId: 'credential',
+          accountId: user.id,
+        },
+      },
+      update: {
+        password: passwordHash,
+      },
+      create: {
+        providerId: 'credential',
+        accountId: user.id,
+        userId: user.id,
+        password: passwordHash,
+      },
+    });
+  }
 
   console.log('📚 Seeding sample courses and topics...');
 
