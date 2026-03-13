@@ -1,10 +1,15 @@
-import { auth } from "~/lib/auth/server";
+import { enforceAdminIfApiKey, resolveRequestAuth } from "~/lib/auth/guards.server";
 import prisma from "~/lib/prisma.server";
 import type { LoaderFunctionArgs } from "react-router";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   try {
-    const session = await auth.api.getSession(request);
+    const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
+    if (apiKeyGuard) return apiKeyGuard;
+
+    const { session } = await resolveRequestAuth(request, {
+      preloadedSession: apiKeySession,
+    });
     if (!session?.user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
@@ -50,4 +55,3 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
   }
 }
-

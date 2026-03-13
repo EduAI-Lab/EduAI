@@ -1,9 +1,15 @@
-import { auth } from "~/lib/auth/server";
+import { enforceAdminIfApiKey, resolveRequestAuth } from "~/lib/auth/guards.server";
 import type { LoaderFunctionArgs } from "react-router";
 
 export async function loader({ request }: LoaderFunctionArgs) {
+  const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
+  if (apiKeyGuard) return apiKeyGuard;
+
+  const { session } = await resolveRequestAuth(request, {
+    preloadedSession: apiKeySession,
+  });
+
   // Check admin authorization
-  const session = await auth.api.getSession(request);
   if (!session?.user || session.user.role !== "ADMIN") {
     return new Response("Forbidden: Admins only", { status: 403 });
   }

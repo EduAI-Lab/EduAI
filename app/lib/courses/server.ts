@@ -1,6 +1,5 @@
 import prisma from "~/lib/prisma.server";
-import { auth } from "~/lib/auth/server";
-import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
+import { enforceAdminIfApiKey, resolveRequestAuth } from "~/lib/auth/guards.server";
 import {
   CreateCourseSchema,
   UpdateCourseSchema,
@@ -32,7 +31,9 @@ export async function handleCourseRequest(request: Request) {
     }
 
     case "POST": {
-      const session = apiKeySession ?? await auth.api.getSession(request);
+      const { session } = await resolveRequestAuth(request, {
+        preloadedSession: apiKeySession,
+      });
       if (!session?.user || session.user.role !== "ADMIN") {
         return new Response("Forbidden: Admins only", { status: 403 });
       }
@@ -84,7 +85,9 @@ export async function handleCourseRequest(request: Request) {
         return new Response("Missing course ID", { status: 400 });
       }
 
-      const session = apiKeySession ?? await auth.api.getSession(request);
+      const { session } = await resolveRequestAuth(request, {
+        preloadedSession: apiKeySession,
+      });
       if (!session?.user) {
         return new Response("Unauthorized", { status: 401 });
       }

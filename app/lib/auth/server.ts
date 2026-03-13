@@ -7,6 +7,11 @@ import { oauthProvider } from "@better-auth/oauth-provider";
 import prisma from "../prisma.server";
 
 const SISTER_APP_REFERENCE_ID = "eduai-sister-app-clients";
+const SISTER_APP_TYPE = "sister-app";
+const SISTER_APP_DEFAULT_SCOPES = ["openid", "profile", "email", "offline_access"];
+const SISTER_APP_DEFAULT_GRANT_TYPES = ["authorization_code", "refresh_token"];
+const SISTER_APP_DEFAULT_RESPONSE_TYPES = ["code"];
+const SISTER_APP_DEFAULT_TOKEN_AUTH_METHOD = "client_secret_post";
 
 const authBaseURL =
   process.env.BETTER_AUTH_URL ??
@@ -48,6 +53,67 @@ function getOidcClaims(user?: Record<string, unknown> | null) {
   };
 }
 
+function parseClientMetadata(metadata: unknown) {
+  if (!metadata || typeof metadata !== "object") {
+    if (typeof metadata === "string") {
+      try {
+        const parsed = JSON.parse(metadata);
+        return parsed && typeof parsed === "object"
+          ? (parsed as Record<string, unknown>)
+          : undefined;
+      } catch {
+        return undefined;
+      }
+    }
+
+    return undefined;
+  }
+
+  return metadata as Record<string, unknown>;
+}
+
+async function normalizeLegacySisterAppClients() {
+  const clients = await (prisma as any).oauthClient.findMany({
+    select: {
+      clientId: true,
+      metadata: true,
+      referenceId: true,
+    },
+  });
+
+  const sisterAppClientIds = clients
+    .filter((client: { metadata?: unknown; referenceId?: string | null }) => {
+      const metadata = parseClientMetadata(client.metadata);
+      return metadata?.appType === SISTER_APP_TYPE || client.referenceId === SISTER_APP_REFERENCE_ID;
+    })
+    .map((client: { clientId: string }) => client.clientId);
+
+  if (sisterAppClientIds.length === 0) {
+    return;
+  }
+
+  await (prisma as any).oauthClient.updateMany({
+    where: {
+      clientId: {
+        in: sisterAppClientIds,
+      },
+    },
+    data: {
+      userId: null,
+      referenceId: SISTER_APP_REFERENCE_ID,
+      scopes: SISTER_APP_DEFAULT_SCOPES,
+      grantTypes: SISTER_APP_DEFAULT_GRANT_TYPES,
+      responseTypes: SISTER_APP_DEFAULT_RESPONSE_TYPES,
+      tokenEndpointAuthMethod: SISTER_APP_DEFAULT_TOKEN_AUTH_METHOD,
+      requirePKCE: true,
+      skipConsent: true,
+      enableEndSession: false,
+    },
+  });
+}
+
+await normalizeLegacySisterAppClients();
+
 export const auth = betterAuth({
   secret: authSecret,
   baseURL: authBaseURL,
@@ -81,8 +147,8 @@ export const auth = betterAuth({
     oauthProvider({
       loginPage: "/auth/login",
       consentPage: "/auth/consent",
-      scopes: ["openid", "profile", "email"],
-      grantTypes: ["authorization_code"],
+      scopes: ["openid", "profile", "email", "offline_access"],
+      grantTypes: ["authorization_code", "refresh_token"],
       allowDynamicClientRegistration: false,
       clientReference: ({ user }) =>
         user?.role === "ADMIN" ? SISTER_APP_REFERENCE_ID : undefined,
