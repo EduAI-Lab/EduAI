@@ -5,6 +5,11 @@ import { auth } from "./server";
 
 const SISTER_APP_TYPE = "sister-app";
 const SISTER_APP_REFERENCE_ID = "eduai-sister-app-clients";
+const SISTER_APP_DEFAULT_SCOPES = ["openid", "profile", "email", "offline_access"] as const;
+const SISTER_APP_DEFAULT_SCOPE = SISTER_APP_DEFAULT_SCOPES.join(" ");
+const SISTER_APP_DEFAULT_GRANT_TYPES = ["authorization_code", "refresh_token"] as const;
+const SISTER_APP_DEFAULT_RESPONSE_TYPES = ["code"] as const;
+const SISTER_APP_DEFAULT_TOKEN_AUTH_METHOD = "client_secret_post";
 
 const clientMetadataSchema = z.record(z.string(), z.unknown()).optional();
 
@@ -99,28 +104,19 @@ async function promoteSisterAppClientToSharedScope(clientId: string) {
 }
 
 async function promoteLegacySisterAppClients() {
-  const legacyClients = await prisma.oauthClient.findMany({
-    where: {
-      metadata: {
-        path: ["appType"],
-        equals: SISTER_APP_TYPE,
-      },
-      OR: [
-        {
-          userId: {
-            not: null,
-          },
-        },
-        {
-          referenceId: {
-            not: SISTER_APP_REFERENCE_ID,
-          },
-        },
-      ],
-    },
+  const legacyClients = (await prisma.oauthClient.findMany({
     select: {
       clientId: true,
+      metadata: true,
+      userId: true,
+      referenceId: true,
     },
+  })).filter((client) => {
+    if (!isSisterAppClient(client) && client.referenceId !== SISTER_APP_REFERENCE_ID) {
+      return false;
+    }
+
+    return client.userId !== null || client.referenceId !== SISTER_APP_REFERENCE_ID;
   });
 
   if (legacyClients.length === 0) {
@@ -136,6 +132,43 @@ async function promoteLegacySisterAppClients() {
     data: {
       userId: null,
       referenceId: SISTER_APP_REFERENCE_ID,
+    },
+  });
+
+  await ensureSisterAppClientDefaults();
+}
+
+async function ensureSisterAppClientDefaults(clientId?: string) {
+  const targetClientIds = clientId
+    ? [clientId]
+    : (await prisma.oauthClient.findMany({
+        select: {
+          clientId: true,
+          metadata: true,
+          referenceId: true,
+        },
+      }))
+        .filter((client) => isSisterAppClient(client) || client.referenceId === SISTER_APP_REFERENCE_ID)
+        .map((client) => client.clientId);
+
+  if (targetClientIds.length === 0) {
+    return;
+  }
+
+  await prisma.oauthClient.updateMany({
+    where: {
+      clientId: {
+        in: targetClientIds,
+      },
+    },
+    data: {
+      scopes: [...SISTER_APP_DEFAULT_SCOPES],
+      grantTypes: [...SISTER_APP_DEFAULT_GRANT_TYPES],
+      responseTypes: [...SISTER_APP_DEFAULT_RESPONSE_TYPES],
+      tokenEndpointAuthMethod: SISTER_APP_DEFAULT_TOKEN_AUTH_METHOD,
+      requirePKCE: true,
+      skipConsent: true,
+      enableEndSession: false,
     },
   });
 }
@@ -174,6 +207,7 @@ export function isSisterAppClient(clientOrMetadata: unknown) {
 
 async function getOAuthClients(request: Request) {
   await promoteLegacySisterAppClients();
+  await ensureSisterAppClientDefaults();
 
   const clients = await auth.api.getOAuthClients({
     headers: request.headers,
@@ -216,10 +250,10 @@ export async function createSisterAppClient(
       post_logout_redirect_uris: input.post_logout_redirect_uris,
       skip_consent: true,
       enable_end_session: false,
-      scope: "openid profile email",
-      grant_types: ["authorization_code"],
-      response_types: ["code"],
-      token_endpoint_auth_method: "client_secret_post",
+      scope: SISTER_APP_DEFAULT_SCOPE,
+      grant_types: [...SISTER_APP_DEFAULT_GRANT_TYPES],
+      response_types: [...SISTER_APP_DEFAULT_RESPONSE_TYPES],
+      token_endpoint_auth_method: SISTER_APP_DEFAULT_TOKEN_AUTH_METHOD,
       client_secret_expires_at: 0,
       require_pkce: true,
       type: "web",
@@ -233,6 +267,7 @@ export async function createSisterAppClient(
   const clientId = getClientId(client);
   if (clientId) {
     await promoteSisterAppClientToSharedScope(clientId);
+    await ensureSisterAppClientDefaults(clientId);
   }
 
   return client;
@@ -246,7 +281,7 @@ export async function updateSisterAppClient(
   const existingClient = await requireSisterAppClient(request, clientId);
   const existingMetadata = getClientMetadata(existingClient);
 
-  return auth.api.adminUpdateOAuthClient({
+  const updatedClient = await auth.api.adminUpdateOAuthClient({
     headers: request.headers,
     body: {
       client_id: clientId,
@@ -267,6 +302,10 @@ export async function updateSisterAppClient(
       },
     },
   });
+
+  await ensureSisterAppClientDefaults(clientId);
+
+  return updatedClient;
 }
 
 export async function rotateSisterAppClientSecret(request: Request, clientId: string) {

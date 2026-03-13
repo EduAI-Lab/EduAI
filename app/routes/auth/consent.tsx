@@ -73,6 +73,8 @@ export async function action({ request }: ActionFunctionArgs) {
     headers: {
       "Content-Type": "application/json",
       cookie: request.headers.get("cookie") ?? "",
+      origin: request.headers.get("origin") ?? new URL(request.url).origin,
+      referer: request.headers.get("referer") ?? request.url,
     },
     body: JSON.stringify({
       accept,

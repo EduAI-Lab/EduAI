@@ -2,15 +2,16 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router';
 import { processMaterialEmbeddings } from '~/lib/ai/embedding';
 import { processUploadedFile } from '~/lib/ai/file-processing';
 import prisma from '~/lib/prisma.server';
-import { auth } from '~/lib/auth/server';
-import { enforceAdminIfApiKey } from '~/lib/auth/guards.server';
+import { enforceAdminIfApiKey, resolveRequestAuth } from '~/lib/auth/guards.server';
 
 export async function action({ request, params }: ActionFunctionArgs) {
   // If an API key is provided, only ADMIN users may proceed
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
   if (apiKeyGuard) return apiKeyGuard;
 
-  const session = apiKeySession ?? await auth.api.getSession(request);
+  const { session } = await resolveRequestAuth(request, {
+    preloadedSession: apiKeySession,
+  });
   if (!session?.user) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
@@ -142,7 +143,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
   if (apiKeyGuard) return apiKeyGuard;
 
-  const session = apiKeySession ?? await auth.api.getSession(request);
+  const { session } = await resolveRequestAuth(request, {
+    preloadedSession: apiKeySession,
+  });
   if (!session?.user) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
