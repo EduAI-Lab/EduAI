@@ -306,6 +306,7 @@ model MaterialEmbedding {
 
 model apikey {
   id                  String    @id @default(cuid())
+  configId            String    @default("default")
   name                String?
   start               String?
   prefix              String?
@@ -328,6 +329,7 @@ model apikey {
   metadata            Json?
   user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([configId])
   @@index([userId])
   @@map("apiKey")
 }

@@ -68,7 +68,7 @@ export default function SettingsPage() {
     try {
       const res = await authClient.apiKey.list()
       if (res.error) throw new Error(res.error.message)
-      setServerKeys(res.data || [])
+      setServerKeys(res.data?.apiKeys || [])
     } catch (e) {
       console.error("Failed to list API keys", e)
     }

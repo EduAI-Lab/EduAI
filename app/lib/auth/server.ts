@@ -69,6 +69,14 @@ export const auth = betterAuth({
     }),
     apiKey({
       apiKeyHeaders: ["x-api-key"],
+      schema: {
+        apikey: {
+          fields: {
+            referenceId: "userId",
+            configId: "configId",
+          },
+        },
+      },
     }),
     oauthProvider({
       loginPage: "/auth/login",
