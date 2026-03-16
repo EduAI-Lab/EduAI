@@ -1,0 +1,2 @@
+-- Historical no-op migration to reconcile a previously applied migration entry
+-- that exists in some local databases under this timestamped name.
