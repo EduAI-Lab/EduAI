@@ -4,6 +4,7 @@ A production-ready chat platform with Retrieval-Augmented Generation (RAG) capab
 
 ## Table of Contents
 
+- [Architecture guide](docs/architecture.md) — Core vs. hosted, AI SDK, keys, diagrams (export to PDF from there)
 - [Features](#features)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
