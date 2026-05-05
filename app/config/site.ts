@@ -6,7 +6,7 @@ export const projectInfo = {
 };
 
 export const siteConfig = {
-  name: "EduAI Map",
+  name: "EduAI Lap",
   description: "AI-powered learning platform for personalized education",
   navigation: {
     home: "/",
