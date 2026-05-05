@@ -17,4 +17,3 @@ export const siteConfig = {
   },
 };
 
-// remove the meet our research team button 
