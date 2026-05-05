@@ -54,14 +54,6 @@ export default function HomePage() {
               </span>
             </h1>
 
-            <div className="mb-8">
-              <p className="text-xl lg:text-2xl text-slate-200 mb-4 leading-relaxed">{projectInfo.subtitle}</p>
-              <div className="flex justify-center items-center space-x-4 text-slate-400 font-mono text-sm">
-                <Terminal className="h-4 w-4" />
-                <span>{"> python train_model.py --task=education --model=transformer"}</span>
-              </div>
-            </div>
-
             <p className="text-lg text-slate-300 mb-12 max-w-3xl mx-auto">{projectInfo.description}</p>
 
             <Link
