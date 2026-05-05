@@ -1,16 +1,18 @@
 # EduAI — Architecture guide
 
-This document explains **what runs inside this repo (Core)** versus **what lives outside it (hosted services & integrations)**, how **AI providers and keys** work (including **`GOOGLE_GENERATIVE_AI_API_KEY` for embeddings**), and how the **codebase fits together**. Use it as the single place to orient yourself; export to PDF when you want a printable copy (see [Saving as PDF](#saving-as-pdf)).
+This document explains **what runs inside this repo (Core)** versus **what lives outside it (hosted services & integrations)**, how **AI providers and keys** work (including `**GOOGLE_GENERATIVE_AI_API_KEY` for embeddings**), and how the **codebase fits together**. Use it as the single place to orient yourself; export to PDF when you want a printable copy (see [Saving as PDF](#saving-as-pdf)).
 
 ---
 
 ## 1. Simple terms: Core vs. hosted
 
-| Term in this doc | Meaning |
-|------------------|---------|
-| **Core (owned)** | The EduAI application in *this repository*: the web UI, all `/api/*` routes, PostgreSQL data, auth, RAG (chunking + vectors + search), chat persistence. You deploy and operate it. |
-| **Hosted / external** | Services you call over the network but do *not* ship as part of this repo: Google AI, OpenAI, Ollama, optional Firecrawl, etc. They hold the actual language/embedding models. |
-| **Extensions (integrators)** | Other products (e.g. a campus “tutor” app) that **call EduAI’s HTTP API** with an admin API key and optional `proxyUser`. They are clients of Core, not code inside Core. |
+
+| Term in this doc             |  Meaning                                                                                                                                                                             |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Core (owned)**             | The EduAI application in *this repository*: the web UI, all `/api/`* routes, PostgreSQL data, auth, RAG (chunking + vectors + search), chat persistence. You deploy and operate it. |
+| **Hosted / external**        | Services you call over the network but do *not* ship as part of this repo: Google AI, OpenAI, Ollama, optional Firecrawl, etc. They hold the actual language/embedding models.      |
+| **Extensions (integrators)** | Other products (e.g. a campus “tutor” app) that **call EduAI’s HTTP API** with an admin API key and optional `proxyUser`. They are clients of Core, not code inside Core.           |
+
 
 ```mermaid
 flowchart LR
@@ -34,14 +36,16 @@ flowchart LR
   Ext[Extension apps e.g. AITutor] -->|HTTPS + API key| API
 ```
 
+
+
 ---
 
 ## 2. What is the “Vercel AI SDK” here?
 
 In this project you will see npm packages:
 
-- **`ai`** — the main Vercel AI SDK runtime. It gives unified helpers such as **`streamText`**, **`generateText`**, **`embed`**, and **`embedMany`** so application code talks to models in a consistent way.
-- **`@ai-sdk/google`**, **`@ai-sdk/openai`**, **`ollama-ai-provider`** — **provider adapters**. Each one knows how to format requests/responses for that vendor’s HTTP API.
+- `**ai**` — the main Vercel AI SDK runtime. It gives unified helpers such as `**streamText**`, `**generateText**`, `**embed**`, and `**embedMany**` so application code talks to models in a consistent way.
+- `**@ai-sdk/google**`, `**@ai-sdk/openai**`, `**ollama-ai-provider**` — **provider adapters**. Each one knows how to format requests/responses for that vendor’s HTTP API.
 
 Think of it as two layers:
 
@@ -75,19 +79,21 @@ flowchart TD
   SDK --> Vendor[Google / OpenAI / Ollama APIs]
 ```
 
-Model IDs look like **`google:gemini-2.5-flash`** or **`ollama:gpt-oss:120b`** — provider name, colon, then model id (`parseModelIdentifier` in `providers.ts`).
+
+
+Model IDs look like `**google:gemini-2.5-flash**` or `**ollama:gpt-oss:120b**` — provider name, colon, then model id (`parseModelIdentifier` in `providers.ts`).
 
 ### B) Embeddings for RAG (course materials)
 
-**Purpose:** Turn each **chunk of course text** into a **3072-dimensional vector** stored in Postgres (`material_embeddings`), and embed **user queries** at search time for similarity search.
+**Purpose:** Turn each **chunk of course text** into a  **3072-dimensional vector** stored in Postgres (`material_embeddings`), and embed **user queries** at search time for similarity search.
 
-**Where configured:** `app/lib/ai/embedding.ts` — **`getEmbeddingModel()`**.
+**Where configured:** `app/lib/ai/embedding.ts` — `**getEmbeddingModel()`**.
 
-- If **`GOOGLE_GENERATIVE_AI_API_KEY`** is set in the **server environment**, embeddings use **Google** with model **`gemini-embedding-001`**.
-- Else if **`OPENAI_API_KEY`** is set, embeddings use **`text-embedding-3-small`**.
+- If `**GOOGLE_GENERATIVE_AI_API_KEY**` is set in the **server environment**, embeddings use **Google** with model `**gemini-embedding-001`**.
+- Else if `**OPENAI_API_KEY**` is set, embeddings use `**text-embedding-3-small**`.
 - If neither is set, ingestion/search that needs embeddings **throws an error**.
 
-**Important:** Embedding calls **do not** use the `apiKeys` object from the chat request. They **only** read **`process.env`**. So `.env.example` labels Google as “For Embeddings” because **that env var is what backs RAG vector generation** when Google is chosen.
+**Important:** Embedding calls **do not** use the `apiKeys` object from the chat request. They **only** read `**process.env`**. So `.env.example` labels Google as “For Embeddings” because **that env var is what backs RAG vector generation** when Google is chosen.
 
 ```mermaid
 flowchart TD
@@ -107,18 +113,22 @@ flowchart TD
   Many --> PG
 ```
 
+
+
 ---
 
 ## 4. Key cheat sheet
 
-| Key / variable | Used for | Comes from |
-|----------------|----------|------------|
-| **`GOOGLE_GENERATIVE_AI_API_KEY`** | **Embeddings** (RAG ingest + query vectors) when set on server | Server `.env` only (`embedding.ts`) |
-| **`OPENAI_API_KEY`** | Embeddings fallback if Google env not set | Server `.env` only |
-| **`apiKeys.google.apiKey`** (and similar) in **`/api/chat`** body | **Chat** completions for that request | Client/request (often admin/API); merged with UI session settings in app code paths |
-| **`OLLAMA_BASE_URL`** | Local Ollama base URL for **chat** registry | Env + optional override in user settings |
-| **`BETTER_AUTH_*`** | Sessions and API keys for EduAI accounts | Env |
-| **`FIRECRAWL_API_KEY`** | Optional web search tool | Env (see README) |
+
+| Key / variable                                                    | Used for                                                       | Comes from                                                                          |
+| ----------------------------------------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `**GOOGLE_GENERATIVE_AI_API_KEY**`                                | **Embeddings** (RAG ingest + query vectors) when set on server | Server `.env` only (`embedding.ts`)                                                 |
+| `**OPENAI_API_KEY`**                                              | Embeddings fallback if Google env not set                      | Server `.env` only                                                                  |
+| `**apiKeys.google.apiKey**` (and similar) in `**/api/chat**` body | **Chat** completions for that request                          | Client/request (often admin/API); merged with UI session settings in app code paths |
+| `**OLLAMA_BASE_URL`**                                             | Local Ollama base URL for **chat** registry                    | Env + optional override in user settings                                            |
+| `**BETTER_AUTH_*`**                                               | Sessions and API keys for EduAI accounts                       | Env                                                                                 |
+| `**FIRECRAWL_API_KEY**`                                           | Optional web search tool                                       | Env (see README)                                                                    |
+
 
 Same Google account key *could* theoretically work for both embeddings and chat if you pass it in both places — but **the code paths are separate**: embeddings **will not** pick up chat body keys.
 
@@ -142,6 +152,8 @@ sequenceDiagram
   EduAI->>Browser: HTML / JSON / SSE stream
 ```
 
+
+
 ### 5.2 RAG material upload → vectors
 
 ```mermaid
@@ -154,6 +166,8 @@ flowchart LR
   EMB[embedMany + INSERT vectors]
   U --> M --> FP --> CM --> PE --> EMB
 ```
+
+
 
 Main files: `app/routes/api/courses.materials.$.ts`, `app/lib/ai/file-processing.ts`, `app/lib/ai/embedding.ts`.
 
@@ -174,6 +188,8 @@ flowchart TD
   LLM --> Save
 ```
 
+
+
 Main file: `app/routes/api/chat.ts`.
 
 ### 5.4 Extension calling Core (`proxyUser`)
@@ -189,6 +205,8 @@ sequenceDiagram
   API->>DB: Chat under that User id
   API->>Ext: Stream / JSON response
 ```
+
+
 
 Docs also in `docs/chat-history.md`.
 
@@ -224,15 +242,17 @@ docs/
 
 Defined in `app/routes.ts`:
 
-| Pattern | Role |
-|---------|------|
-| `/api/auth/*` | Better Auth |
-| `/api/chat` | Main chat + RAG tools |
-| `/api/chats/:chatId` | Chat metadata |
-| `/api/courses`, `/api/courses/:id`, topics, materials | Courses & RAG upload |
-| `/api/ai-providers/*`, `/api/ai-models/*` | Catalog admin |
-| `/api/users/*` | Admin users |
-| `/dashboard`, `/chat`, `/courses`, `/settings`, `/admin/*` | UI |
+
+| Pattern                                                    | Role                  |
+| ---------------------------------------------------------- | --------------------- |
+| `/api/auth/*`                                              | Better Auth           |
+| `/api/chat`                                                | Main chat + RAG tools |
+| `/api/chats/:chatId`                                       | Chat metadata         |
+| `/api/courses`, `/api/courses/:id`, topics, materials      | Courses & RAG upload  |
+| `/api/ai-providers/*`, `/api/ai-models/*`                  | Catalog admin         |
+| `/api/users/*`                                             | Admin users           |
+| `/dashboard`, `/chat`, `/courses`, `/settings`, `/admin/*` | UI                    |
+
 
 ### Database (unified schema)
 
@@ -246,8 +266,8 @@ This file is Markdown so it stays diff-friendly in git. To get a **PDF**:
 
 1. **VS Code / Cursor:** Install a “Markdown PDF” style extension and export `docs/architecture.md`, **or**
 2. Open the preview / GitHub-rendered view and use **Print → Save as PDF**, **or**
-3. **Pandoc** (if installed):  
-   `pandoc docs/architecture.md -o EduAI-architecture.pdf`
+3. **Pandoc** (if installed):
+  `pandoc docs/architecture.md -o EduAI-architecture.pdf`
 
 Mermaid diagrams render in GitHub and many Markdown previews; some PDF tools need a Mermaid-capable renderer — if diagrams are missing in PDF, use a browser print from a viewer that supports Mermaid (e.g. GitHub page).
 
