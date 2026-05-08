@@ -6,8 +6,39 @@ This guide covers deploying EduAI Core on a shared Linux host (for example `dev.
 
 - SSH access to the dev host
 - Write access to the site tree (for example `/srv/www/dev.eduai.ok.ubc.ca`) — IT may need to `chown`/`chgrp` or set ACLs
-- PostgreSQL credentials (host, port, database, user, password) from IT
+- PostgreSQL credentials (host, port, database, user, password) from IT — **or** a local Postgres+pgvector container (see below)
 - Optional: **Docker** on the host (`docker` group membership) to build/run without fighting host compilers
+
+## Managed PostgreSQL without pgvector (UBC `rcpgdb`)
+
+Some shared PostgreSQL instances run an older major version and **do not include the `vector` extension** (pgvector). EduAI migrations expect pgvector (`CREATE EXTENSION vector` / `vector(3072)` embeddings). If migrations fail with:
+
+`could not open extension control file ".../vector.control"`
+
+then the server cannot run this app’s schema until pgvector exists there. IT may recommend (and this repo supports) running **Postgres+pgvector in Docker** on the dev host for now, and moving to a **dedicated managed Postgres with pgvector** before production.
+
+### Docker Postgres + pgvector (dev)
+
+From the repo root on the machine that runs the app (your laptop or `dev.eduai` host):
+
+```bash
+docker compose -f docker-compose.postgres.yml up -d
+```
+
+Point `.env` at the container (port **5433** is published only on `127.0.0.1` by default):
+
+```env
+DATABASE_URL="postgresql://eduai:eduai_dev_change_me@127.0.0.1:5433/deveduaidb?schema=public"
+```
+
+Change `POSTGRES_PASSWORD` in `docker-compose.postgres.yml` and the same value in `DATABASE_URL` for anything beyond local throwaway dev. Then:
+
+```bash
+npx prisma migrate deploy
+npm run db:seed
+```
+
+**Shared server note:** Only users on that host can reach `127.0.0.1:5433`. The app process must run on the same machine (or use a private Docker network you control), not from another host pointing at this port without extra networking.
 - UBC VPN or campus network if required for DB or SSH
 
 ## Why Docker helps on RHEL-style hosts
