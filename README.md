@@ -102,7 +102,7 @@ API key usage is restricted to admins. Create API keys through the web interface
 
 ## Inspecting the Database
 
-EduAI uses a single PostgreSQL database with 22 tables covering users, courses, materials, embeddings, chats, AI providers, and API keys. To visually browse the schema, relationships, and live data, use **Prisma Studio**:
+EduAI uses a single PostgreSQL database covering users, courses, materials, embeddings, chats, AI providers, and API keys. To visually browse the schema, relationships, and live data, use **Prisma Studio**:
 
 ```bash
 npx prisma studio
