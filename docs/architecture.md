@@ -1,6 +1,6 @@
 # EduAI — Architecture guide
 
-This document explains **what runs inside this repo (Core)** versus **what lives outside it (hosted services & integrations)**, how **AI providers and keys** work (including `**GOOGLE_GENERATIVE_AI_API_KEY` for embeddings**), and how the **codebase fits together**. Use it as the single place to orient yourself; export to PDF when you want a printable copy (see [Saving as PDF](#saving-as-pdf)).
+This document explains **what runs inside this repo (Core)** versus **what lives outside it (hosted services & integrations)**, how **AI providers and keys** work (including `**GOOGLE_GENERATIVE_AI_API_KEY` for embeddings**), and how the **codebase fits together**. Use it as the single place to orient yourself; export to PDF when you want a printable copy (see [Saving as PDF](#7-saving-as-pdf)).
 
 ---
 
