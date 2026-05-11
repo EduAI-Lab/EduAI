@@ -21,7 +21,7 @@
 - [9. Out of Scope for This Epic](#9-out-of-scope-for-this-epic)
 - [10. File Reference](#10-file-reference)
 - [11. Known Challenges](#11-known-challenges)
-- [12. Considerations](#12-considerations)
+- [12. Monorepo](#12-monorepo)
 
 ---
 
@@ -643,32 +643,83 @@ As EduAI Core's API evolves, extension teams must be notified of breaking change
 
 ---
 
-## 12. Considerations
+## 12. Monorepo
 
-### Monorepo
+EduAI Core, AI Tutor, and Question Maker will be consolidated into a single repository managed by **Turborepo** with separate package manager workspaces. This decision resolves several of the structural friction points described in §11 and sets the foundation for the shared infrastructure this epic depends on.
 
-Right now EduAI Core, AI Tutor, and Question Maker live in three separate repositories. It is worth asking whether they should be consolidated into a single monorepo — one repository containing all three services as separate packages or workspaces.
+---
 
-This is not a decision that needs to be made today, but it is relevant enough to this epic that it should at least be raised. If the team is open to it, it could be elevated to a formal decision.
+### Why This Addresses Our Current Pain Points
 
-**What a monorepo would improve**
+Several problems described elsewhere in this document are structural — they stem from operating three separate repositories, not from code quality or process issues. The monorepo directly resolves:
 
-Several of the friction points described in section 11 are structural problems that a monorepo directly solves:
+- **Auth + course data sync complexity (§11):** Cross-service environment variable coordination, diverging `.env` files, and silent misconfiguration failures go away when all services share a root configuration.
+- **No shared local startup (§11):** A single `docker-compose.yml` at the monorepo root starts the full stack with one command.
+- **API contract drift (§11):** Shared TypeScript types for `Course`, `User`, `Enrollment`, and API response shapes live in an internal package imported by all three services — no more manually keeping definitions in sync across repos.
+- **Dependency hell:** Synchronized versions of `react-router`, `better-auth`, and `prisma` are managed at the root level. The current situation — where Core and AI Tutor use Prisma while Question Maker uses Sequelize, and auth spans both `better-auth` and JWT — is a direct consequence of three repos diverging independently.
+- **UI inconsistency:** Changes to shared components (Button, Dialog, etc.) in Core currently don't propagate to Tutor or Question Maker. A shared UI package fixes this structurally.
+- **Code duplication:** Project information, marketing copy, and foundational components are currently duplicated across repos. Fixing a typo today requires two PRs and two deployment pipelines.
 
-- A single `docker-compose.yml` at the root could start all three services with one command, eliminating the fragmented local dev setup.
-- Shared TypeScript types and interfaces (e.g., the shape of a Course, User, or API response) could live in a shared package imported by all three services, removing the need to manually keep type definitions in sync across repos.
-- Cross-service changes — for example, adding a new field to the `GET /api/courses` response and updating both AI Tutor and Question Maker to use it — could be done in a single pull request rather than three coordinated PRs across three repos.
-- CI pipelines could run integration tests across the whole stack together, rather than per-service in isolation.
-- The API contract definitions and stubs from Week 1 would have a natural home as a shared internal package.
+---
 
-**What a monorepo would not change**
+### What the Monorepo Is (and Is Not)
 
-A monorepo does not mean the services become a monolith. Each extension would still be a separately deployable application with its own server, database, and build process. The project plan's principle of separation is fully compatible with a monorepo — tools like npm workspaces, Turborepo, or nx are designed exactly for this pattern.
+A monorepo does **not** mean the services become a monolith. Each extension remains a separately deployable application with its own server, database, and build process. Turborepo is designed exactly for this pattern — isolated applications that consume shared internal packages, with per-app build and deploy pipelines.
 
-**The tradeoff**
+---
 
-The cost is the upfront migration: moving three repos into one, setting up a workspace structure, and updating CI pipelines. Done mid-project during a summer with a hard September deadline, that migration carries real risk if it takes longer than expected or breaks existing workflows.
+### Target Repository Structure
 
-One middle-ground option is to not immediately migrate the existing repos, but first create a lightweight root-level `docker-compose.yml` and a shared package for API types — capturing most of the day-to-day benefit without a full repo restructure. Further migrations could be made as we see fit and as time permits.
+```
+EduAI/
+├── apps/
+│   ├── core/            # EduAI Core (migrated from EduAI-Core)
+│   ├── extensions/
+│   ├──── tutor/           # AI Tutor (migrated from AI-Tutor)
+│   └──── question-maker/  # Question Maker (migrated from Question-Maker)
+└── packages/
+    ├── config/          # Shared tsconfig, ESLint, Prettier
+    ├── db/              # Shared Prisma schema and client
+    ├── auth/            # Centralized auth implementation
+    └── ui/              # Shared Tailwind component library
+```
 
-A proposal for a multi-stage migration process can be found in the [monorepo proposal document](https://github.com/EduAI-Lab/EduAICore/blob/docs/architecture-plans/docs/monorepo-proposal.md). 
+**`packages/db`** is the single source of truth for the Prisma schema and generated client. All three apps query against the same database definitions with guaranteed TypeScript type safety — no more schema drift between services.
+
+**`packages/auth`** consolidates the current split between `better-auth` (Core, AI Tutor) and JWT (Question Maker) into a single implementation. This is a direct prerequisite for §5 Phase 1 (Auth Centralization).
+
+**`packages/ui`** extracts shared Tailwind/React components so a change to Button or Dialog is built once and propagates everywhere — resolving the UI inconsistency described in §3.4.
+
+**`packages/config`** manages ESLint, Prettier, and TypeScript configurations at the root level, with all apps extending shared configs via atomic, non-breaking PRs.
+
+Each app-level project **can** (but not necessarily will) have its own database schemas and components.
+
+---
+
+### Migration Phases
+
+The migration is executed incrementally so the team is never blocked from feature work. Each phase is independently deployable and non-breaking.
+
+#### Phase 1: Lift and Shift
+Initialize the `EduAI` shell using Turborepo and move the three existing repositories directly into `apps/` — no logic changes. Apps retain their individual `package.json` files and build processes. The team immediately switches to pushing code to the new repository.
+
+This phase is intentionally fast. We allocate a small, fixed window of time to complete it, minimizing disruption to ongoing work.
+
+#### Phase 2: Unify Tooling
+Create `packages/config` and extract the root `tsconfig.json`, Prettier, and ESLint configurations. Update all three apps to extend the shared configs via atomic PRs. No functional changes.
+
+#### Phase 3: Core Infrastructure Extraction
+- Create `packages/db` and migrate `schema.prisma` from EduAI Core. This is the enabler for the shared Prisma client that all apps will consume.
+- Create `packages/auth` and centralize the auth implementation. This directly supports §5 Phase 1 — the Question Maker auth migration depends on this package existing.
+- Refactor apps one-by-one to drop local DB/auth logic and import the shared internal packages.
+
+#### Phase 4: Shared UI Library
+Create `packages/ui` and incrementally move common UI wrappers and Tailwind elements out of `apps/core/components` into the shared library. Update app imports to use the unified design system. This resolves the component drift described in §3.4.
+
+---
+
+### Relationship to This Epic's Timeline
+
+The Lift and Shift (Phase 1) should happen **before Week 2 work begins** — it has no dependencies and unblocks everything else by giving the team a single place to push code. Phases 2 and 3 run in parallel with the auth and course data centralization work in §5, with `packages/auth` and `packages/db` being the direct enablers for those migrations. Phase 4 (UI library) is lower priority and can follow the integration sprint.
+
+The `docker-compose.yml` and shared API type package described in §11 have a natural home in this structure and should be created during Phase 1 as part of the shell setup — capturing the local dev benefit immediately without waiting for the full infrastructure extraction.
