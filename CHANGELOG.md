@@ -6,6 +6,15 @@ All notable changes across the EduAICore monorepo (AI Tutor, Question Maker, Edu
 
 ---
 
+## [Week 2 — May 11–15, 2026]
+
+### Changed
+- docs: Merge monorepo report information into platform centralization document. Changed section 12 to be a description of the monorepo architecture. (#107, @evanbones, 2026-05-11)
+
+### Removed
+
+- docs: Removed old monorepo report since the information is now included in the centralization docs. (#107, @evanbones, 2026-05-11)
+
 ## [Week 1 — May 4–8, 2026]
 
 ### Added
