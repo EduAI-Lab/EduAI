@@ -30,8 +30,8 @@ When opening a new sprint, copy this block to the top of the changelog (just und
 ## [Unreleased — Foundation Sprint, May 2026]
 
 ### Added
-- docs: Add platform centralization architecture plan for Epic #58 covering current state of all three extensions, gap analysis, API contracts, migration plan, key decisions, and known challenges. (#PR, @ariqmuldi, 2026-05-10)
-- docs: Add user management and roles architecture plan for Epic #60 covering role hierarchy, Unit concept, current permissions per role, gaps, naming decisions, and Canvas role reference. (#PR, @ariqmuldi, 2026-05-10)
+- docs: Add platform centralization architecture plan for Epic #58 covering current state of all three extensions, gap analysis, API contracts, migration plan, key decisions, and known challenges. (#96, @ariqmuldi, 2026-05-10)
+- docs: Add user management and roles architecture plan for Epic #60 covering role hierarchy, Unit concept, current permissions per role, gaps, naming decisions, and Canvas role reference. (#96, @ariqmuldi, 2026-05-10)
 
 ---
 
