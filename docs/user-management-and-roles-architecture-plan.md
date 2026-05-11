@@ -229,7 +229,7 @@ For each role, this section covers:
 | # | Gap | Severity |
 |---|-----|----------|
 | G-1 | **Unit concept does not exist** — No `Unit` model, no unit-to-course-code mapping, no Unit Admin role. | High |
-| G-2 | **No enrollment management endpoints** — There is no API to enroll or unenroll students. The database supports it but no external endpoint exists. | High |
+| G-2 | **No enrollment management endpoints** — `GET /api/courses/:courseId/enrollments` is in progress on `feature/enrollment-api`. POST and DELETE (enroll/unenroll) still need to be built. | High |
 | G-3 | **No TA assignment endpoints** — There is no API to assign or remove TAs from a course. | High |
 | G-4 | **Professors cannot create courses** — Course creation is ADMIN-only. | Medium |
 | G-5 | **Students can upload course materials** — Almost certainly unintended. | Medium |
