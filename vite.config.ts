@@ -11,4 +11,8 @@ export default defineConfig({
       '@tabler/icons-react': '@tabler/icons-react/dist/esm/icons/index.mjs',
     },
   },
+  server: {
+    // Allow requests when Apache proxies with Host: dev.eduai.ok.ubc.ca (Vite blocks unknown hosts by default).
+    allowedHosts: ["dev.eduai.ok.ubc.ca", "localhost", "127.0.0.1"],
+  },
 });
