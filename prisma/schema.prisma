@@ -1,5 +1,8 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // "native" auto-detects the local OS; "rhel-openssl-1.1.x" is needed
+  // when running on RHEL 8 hosts (e.g. dev.eduai.ok.ubc.ca / s378).
+  binaryTargets = ["native", "rhel-openssl-1.1.x"]
 }
 
 datasource db {
