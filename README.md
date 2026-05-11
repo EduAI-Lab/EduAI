@@ -1,14 +1,16 @@
-# EduAI
+# EduAI Lab
 
 A production-ready chat platform with Retrieval-Augmented Generation (RAG) capabilities designed for plug-and-play usage. Seamlessly integrate course-aware Q&A functionality with support for multiple AI providers including Ollama, Google Gemini, and OpenAI.
 
 ## Table of Contents
 
+- [Architecture guide](docs/architecture.md) — Core vs. hosted, AI SDK, keys, diagrams (export to PDF from there)
 - [Features](#features)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [Configuration](#configuration)
 - [Usage](#usage)
+- [Inspecting the Database](#inspecting-the-database)
 - [API Documentation](#api-documentation)
 - [Contributing](#contributing)
 
@@ -97,6 +99,23 @@ FIRECRAWL_API_KEY="" # Required for Firecrawl web search tool. If not set, web s
 ### Programmatic Access
 
 API key usage is restricted to admins. Create API keys through the web interface under Settings > API Keys. Requests that include `x-api-key` require the authenticated user to have role `ADMIN` across `/api/*`. Non-admin users should access features via the web UI with their session cookies.
+
+## Inspecting the Database
+
+EduAI uses a single PostgreSQL database covering users, courses, materials, embeddings, chats, AI providers, and API keys. To visually browse the schema, relationships, and live data, use **Prisma Studio**:
+
+```bash
+npx prisma studio
+```
+
+This opens a browser UI at **http://localhost:5555** where you can:
+
+- Browse every table and its columns
+- See one-to-many relationships (e.g. a `Course` has many `course_materials`, each with many `material_chunks`, each with a `material_embedding` vector)
+- Filter, sort, and edit rows directly — useful for testing without writing SQL
+- Inspect foreign key links between records (e.g. which `User` owns which `chats`, which `AiModel` belongs to which `AiProvider`)
+
+> Prisma Studio is a local development tool only — do not expose port 5555 publicly.
 
 ## API Documentation
 
