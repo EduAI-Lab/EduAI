@@ -1,12 +1,44 @@
+# AI / editor tool dirs
+.misc/
+.claude/
+.cursor/
+.opencode/
+.gemini/
+.factory/
+.entire/
+.codex/
+
+# OS
 .DS_Store
-/node_modules/
+Thumbs.db
 
-# React Router
-/.react-router/
-/build/
+# Dependencies
+node_modules/
 
+# Environment files
 .env
-/app/generated/prisma
+.env.local
+.env.production
+.env.development
 
-cookies.txt
-ecosystem.config.cjs
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build outputs
+build/
+dist/
+.next/
+.react-router/
+
+# Database
+*.db
+*.sqlite

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://unpkg.com/knip@latest/schema.json",
+  "entry": ["app/routes/*.tsx"],
+  "project": ["app/**/*.{ts,tsx}"],
+  "ignore": ["server/**", "shared/**", ".react-router/**", "build/**"],
+  "ignoreDependencies": ["tw-animate-css", "baseline-browser-mapping", "@typescript/native-preview"],
+  "ignoreExportsUsedInFile": true,
+  "paths": {
+    "~/*": ["./app/*"]
+  }
+}

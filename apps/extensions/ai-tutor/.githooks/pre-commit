@@ -1,0 +1,57 @@
+#!/bin/sh
+# Pre-commit hook: lint, format, typecheck, and test ONLY what staged changes touch.
+# Skip with: git commit --no-verify
+
+set -e
+
+# Collect staged files (added/modified, not deleted)
+STAGED=$(git diff --cached --name-only --diff-filter=d)
+
+if [ -z "$STAGED" ]; then
+  echo "No staged files — skipping checks."
+  exit 0
+fi
+
+# Categorize staged files
+FE_FILES=$(echo "$STAGED" | grep -E '^(app|shared)/' || true)
+BE_FILES=$(echo "$STAGED" | grep -E '^server/(src|test)/' || true)
+ALL_SRC=$(echo "$STAGED" | grep -E '\.(ts|tsx|js|jsx)$' || true)
+TS_FILES=$(echo "$STAGED" | grep -E '\.(ts|tsx)$' || true)
+
+# ── Format check (only staged source files) ──────────────────────────
+if [ -n "$ALL_SRC" ]; then
+  echo "Checking formatting on $(echo "$ALL_SRC" | wc -l | tr -d ' ') staged files..."
+  echo "$ALL_SRC" | xargs npx oxfmt --check --no-error-on-unmatched-pattern 2>&1
+fi
+
+# ── Lint (only staged source files) ──────────────────────────────────
+if [ -n "$ALL_SRC" ]; then
+  echo "Linting $(echo "$ALL_SRC" | wc -l | tr -d ' ') staged files..."
+  echo "$ALL_SRC" | xargs npx oxlint --quiet 2>&1
+fi
+
+# ── Type check (runs tsgo when any .ts/.tsx file is staged) ──────────
+# tsgo is project-wide but at ~0.7s it's faster than most lint runs
+if [ -n "$TS_FILES" ]; then
+  echo "Type-checking with tsgo..."
+  npx tsgo --noEmit 2>&1
+fi
+
+# ── Backend tests (only if server/ files changed) ────────────────────
+if [ -n "$BE_FILES" ]; then
+  echo "Running backend tests affected by changes..."
+  cd server && npx vitest run --changed HEAD --reporter=dot 2>&1
+  cd ..
+else
+  echo "No backend changes — skipping backend tests."
+fi
+
+# ── Frontend tests (only if app/ files changed) ──────────────────────
+if [ -n "$FE_FILES" ]; then
+  echo "Running frontend tests affected by changes..."
+  npx vitest run --changed HEAD --reporter=dot 2>&1
+else
+  echo "No frontend changes — skipping frontend tests."
+fi
+
+echo "All checks passed."
