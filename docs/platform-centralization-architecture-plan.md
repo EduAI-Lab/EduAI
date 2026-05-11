@@ -172,14 +172,14 @@ EduAI Core needs these new or updated endpoints for extensions to depend on:
 |----|----------|--------|---------------|
 | EC-1 | `GET /api/courses` | Partial | Currently **admin-only**. Must filter by role: professors see their own courses, students see enrolled courses. |
 | EC-2 | `GET /api/courses/:id` | Partial | Needs role-based access: professors own, students enrolled. |
-| EC-3 | `GET /api/courses/:id/enrollments` | Missing | AI Tutor calls this, but **the endpoint does not exist**. Must be built. |
+| EC-3 | `GET /api/courses/:id/enrollments` | In Progress — `feature/enrollment-api` | Being built in the `feature/enrollment-api` branch. AI Tutor needs this for enrollment sync. |
 | EC-4 | `POST /api/courses/:id/enrollments` | Missing | Programmatic enrollment management (for Canvas sync + admin use). |
 | EC-5 | `DELETE /api/courses/:id/enrollments/:userId` | Missing | Unenrollment |
 | EC-6 | `GET /api/me` | Exists | Returns authenticated user profile. Works for extension OAuth sessions. |
 | EC-7 | `GET /api/courses/:id/topics` | Exists | Already used by AI Tutor. |
 | EC-8 | `POST /api/courses/:id/topics` | Exists | Topic management. |
 | EC-9 | `GET /api/ai-models` | Exists | AI Tutor already uses this. |
-| EC-10 | OAuth/OIDC Discovery | Exists | AI Tutor uses it. Question Maker must be registered as a new client. |
+| EC-10 | OAuth/OIDC for sister apps | In Progress — PRs #48, #49, #51, #50 | OAuth provider foundation (#48), Better Auth API key schema fix (#49), OAuth bearer auth for sister app API access (#51), Admin sister app registration UI (#50). These open PRs cover the EduAI Core side of auth. Question Maker still needs to be registered as a client once they land. |
 | EC-11 | Canvas credential management | Missing | Centralized Canvas connection per user — needed once Decision #4 is resolved. |
 
 ---
@@ -291,8 +291,9 @@ Response:
 **Goal:** Every extension authenticates users through EduAI Core. No more standalone accounts in Question Maker.
 
 **EduAI Core tasks:**
-- [ ] Register Question Maker as a new OAuth client (add `client_id`/`client_secret` to config alongside AI Tutor's)
-- [ ] Verify OIDC discovery returns correct metadata for both clients
+> Note: PRs #48, #49, #51, and #50 are open and cover the OAuth provider foundation, API key schema, bearer auth for sister apps, and admin registration UI. The EduAI Core side of auth is largely being handled by these. Monitor their merge order before starting Question Maker integration.
+- [ ] Once PRs #48–#51 land, register Question Maker as a new OAuth client
+- [ ] Verify OIDC discovery returns correct metadata for Question Maker's client
 - [ ] Verify `/api/auth/oauth2/userinfo` returns the role claim correctly
 
 **Question Maker tasks (mirror AI Tutor's pattern):**
@@ -316,7 +317,7 @@ Response:
 
 **EduAI Core tasks:**
 - [ ] Update `GET /api/courses` and `GET /api/courses/:id` with role-based filtering (EC-1, EC-2)
-- [ ] Build `GET /api/courses/:id/enrollments` endpoint (EC-3) — **this endpoint is missing**
+- [ ] Build `GET /api/courses/:id/enrollments` endpoint (EC-3) — in progress on `feature/enrollment-api`, track and test once merged
 - [ ] Build `POST /api/courses/:id/enrollments` and `DELETE` (EC-4, EC-5)
 - [ ] Ensure topics endpoints are accessible by non-admin authenticated users
 
@@ -424,9 +425,10 @@ Canvas credentials and operations should go through EduAI Core. The question is 
 
 ### Week 2 (May 11–14): Foundation
 
-- [ ] **EduAI Core:** Register Question Maker as OAuth client; verify OIDC flow end-to-end
+- [ ] **EduAI Core:** Monitor PRs #48, #49, #51, #50 (OAuth foundation) — these must land before Question Maker auth integration starts
+- [ ] **EduAI Core:** Once PRs #48–#51 are merged, register Question Maker as an OAuth client
 - [ ] **EduAI Core:** Audit `GET /api/courses` — confirm role-based filtering is needed, spec the change
-- [ ] **EduAI Core:** Design `GET /api/courses/:id/enrollments` endpoint (schema + response shape)
+- [ ] **EduAI Core:** Track `feature/enrollment-api` (`GET /api/courses/:courseId/enrollments`) — review and test once merged
 - [ ] **Group 5 (Testing):** Write API contract test suites for Contracts 1–4 above
 - [ ] **Question Maker:** Begin Better Auth + EduAI OIDC setup (mirror AI Tutor pattern)
 - [ ] **Team Leads:** Decisions 1–4 resolved in this meeting — you are here
