@@ -435,6 +435,8 @@ Canvas credentials and operations should go through EduAI Core. The question is 
 
 ### Weeks 3–4 (May 15–28): Auth Centralization
 
+- [ ] **Question Maker:** Role naming decisions (Section 5 of the User Management doc) must 
+be made before auth migration begins — this feeds directly into Contract 1, as QM will implement against it
 - [ ] **Question Maker:** Complete OAuth migration; remove local auth endpoints
 - [ ] **Question Maker:** Remove local `users` table; derive user from OAuth session
 - [ ] **EduAI Core:** Verify Question Maker OAuth client working end-to-end
@@ -560,7 +562,21 @@ Currently each service has its own Docker or npm run dev setup. There is no sing
 
 Testing a cross-service flow — for example, a user logging into Question Maker via EduAI Core then generating a question — requires all three services running and correctly configured. This is harder to set up in CI than a single-service test.
 
-Unit tests for services that call EduAI Core's API will need stubs or mocks. The API contract test suites written in Week 1 serve this purpose: they define the expected shape of every response so extension teams can mock against a known contract rather than guessing. But this only works if the stubs are kept in sync with the real API as it evolves.
+**EduAI Core currently has no tests.** This is the most urgent blocker for the 
+centralization work. Extensions are about to depend on Core's API surface, and without 
+tests, a breaking change to any endpoint will have no automated signal — the failure only 
+surfaces when someone manually tests the full stack together. Writing contract tests for 
+Contracts 1–4 must be the first task completed in Week 2, before any other integration 
+work begins.
+
+**This project follows a test-first approach.** Contract tests are a gate on extension 
+integration work, not a parallel track. No extension team should write integration code 
+against an endpoint until that endpoint's contract test exists and passes. This applies 
+directly to work already in progress: `feature/enrollment-api` (EC-3) must have a passing 
+contract test before AI Tutor or Question Maker write any code that calls it. The OAuth 
+endpoints in PRs #48–#51 must be verified against Contract 1 before Question Maker begins 
+its auth migration.
+
 
 Testing OAuth flows is also harder to automate. Most approaches either bypass the full flow in test mode (e.g., a test-only endpoint that issues a session directly) or run a real OAuth server in the test environment. The team should agree on which approach to use before writing auth-dependent tests.
 
