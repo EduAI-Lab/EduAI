@@ -1,0 +1,16 @@
+[Unit]
+Description=Question Maker Auto-Deploy Service
+After=network.target
+
+[Service]
+Type=oneshot
+User=ssaada08
+Group=questionmaker
+WorkingDirectory=/srv/www/questionmaker.ok.ubc.ca
+ExecStart=/srv/www/questionmaker.ok.ubc.ca/pull-and-deploy.sh
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+

@@ -1,0 +1,5 @@
+# App-specific: generated Prisma client
+/app/generated/prisma
+
+cookies.txt
+ecosystem.config.cjs
