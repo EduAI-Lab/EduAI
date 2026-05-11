@@ -9,7 +9,7 @@ This document explains **what runs inside this repo (Core)** versus **what lives
 
 | Term in this doc             |  Meaning                                                                                                                                                                             |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Core (owned)**             | The EduAI application in *this repository*: the web UI, all `/api/`* routes, PostgreSQL data, auth, RAG (chunking + vectors + search), chat persistence. You deploy and operate it. |
+| **Core (owned)**             | The EduAI application in *this repository*: the web UI, all `/api/*` routes, PostgreSQL data, auth, RAG (chunking + vectors + search), chat persistence. You deploy and operate it. |
 | **Hosted / external**        | Services you call over the network but do *not* ship as part of this repo: Google AI, OpenAI, Ollama, optional Firecrawl, etc. They hold the actual language/embedding models.      |
 | **Extensions (integrators)** | Other products (e.g. a campus “tutor” app) that **call EduAI’s HTTP API** with an admin API key and optional `proxyUser`. They are clients of Core, not code inside Core.           |
 
