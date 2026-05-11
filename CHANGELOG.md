@@ -27,6 +27,14 @@ When opening a new sprint, copy this block to the top of the changelog (just und
 
 ---
 
+## [Unreleased — Foundation Sprint, May 2026]
+
+### Added
+- docs: Add platform centralization architecture plan for Epic #58 covering current state of all three extensions, gap analysis, API contracts, migration plan, key decisions, and known challenges. (#PR, @ariqmuldi, 2026-05-10)
+- docs: Add user management and roles architecture plan for Epic #60 covering role hierarchy, Unit concept, current permissions per role, gaps, naming decisions, and Canvas role reference. (#PR, @ariqmuldi, 2026-05-10)
+
+---
+
 ## How to use this changelog
 
 **Every PR that changes user-visible behavior, public APIs, the database schema, the build, or developer workflow must add an entry here before it is merged.** Trivial changes (typo fixes, internal refactors with no observable effect, comment-only edits) may be skipped — when in doubt, add an entry.
