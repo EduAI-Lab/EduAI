@@ -1,0 +1,17 @@
+[Unit]
+Description=Question Maker Auto-Deploy Timer
+Requires=question-maker-deploy.service
+
+[Timer]
+# Run daily at midnight
+OnCalendar=daily
+# Run immediately if timer was missed (e.g., server was down)
+Persistent=true
+# Add some randomization to avoid thundering herd (up to 1 hour)
+RandomizedDelaySec=3600
+
+[Install]
+WantedBy=timers.target
+
+
+

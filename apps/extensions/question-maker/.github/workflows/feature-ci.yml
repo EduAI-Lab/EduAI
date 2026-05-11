@@ -1,0 +1,113 @@
+name: Feature Branch CI
+
+on:
+  push:
+    branches: [ 'feature/*' ]
+  pull_request:
+    branches: [ dev ]
+
+env:
+  NODE_VERSION: '20.x'
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js ${{ env.NODE_VERSION }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        
+    - name: Cache backend dependencies
+      uses: actions/cache@v3
+      with:
+        path: app/backend/node_modules
+        key: ${{ runner.os }}-node-${{ env.NODE_VERSION }}-backend-${{ hashFiles('app/backend/package-lock.json') }}
+        
+    - name: Cache frontend dependencies
+      uses: actions/cache@v3
+      with:
+        path: app/frontend/node_modules
+        key: ${{ runner.os }}-node-${{ env.NODE_VERSION }}-frontend-${{ hashFiles('app/frontend/package-lock.json') }}
+        
+    - name: Install backend dependencies
+      run: |
+        cd app/backend
+        npm ci
+        
+    - name: Install frontend dependencies
+      run: |
+        cd app/frontend
+        npm ci
+        
+    - name: Lint Backend (if configured)
+      run: |
+        cd app/backend
+        node -e "const p=require('./package.json');process.exit(p.scripts&&p.scripts.lint?0:1)" && npm run lint || echo "No backend lint script; skipping"
+        
+    - name: Lint Frontend (if configured)
+      run: |
+        cd app/frontend
+        node -e "const p=require('./package.json');process.exit(p.scripts&&p.scripts.lint?0:1)" && npm run lint || echo "No frontend lint script; skipping"
+        
+    - name: Run Backend Tests
+      run: |
+        cd app/backend
+        npm test
+        
+    - name: Run Frontend Tests
+      run: |
+        cd app/frontend
+        npm test
+        
+    # Security audits removed per project scope
+
+  build-and-test-docker:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Create .env for Compose (CI only)
+      run: |
+        echo "POSTGRES_PASSWORD_PRODUCTION=${POSTGRES_PASSWORD_PRODUCTION:-dummy_password}" > .env
+        echo "Created .env with POSTGRES_PASSWORD_PRODUCTION set for CI"
+      env:
+        POSTGRES_PASSWORD_PRODUCTION: ${{ secrets.POSTGRES_PASSWORD_PRODUCTION }}
+
+    - name: Build Backend Docker image
+      run: |
+        cd app/backend
+        docker build -t question-maker-backend:test .
+        
+    - name: Build Frontend Docker image
+      run: |
+        cd app/frontend
+        docker build -t question-maker-frontend:test .
+        
+    - name: Test Docker Compose
+      run: |
+        docker compose -f docker-compose.dev.yml config
+        docker compose config
+        
+    - name: Test Docker Compose Build
+      run: |
+        docker compose -f docker-compose.dev.yml build
+        docker compose build
+        
+    - name: Test Docker Compose Up (Development)
+      run: |
+        docker compose -f docker-compose.dev.yml up -d
+        sleep 30
+        docker compose -f docker-compose.dev.yml ps
+        docker compose -f docker-compose.dev.yml logs --tail=50
+        docker compose -f docker-compose.dev.yml down
