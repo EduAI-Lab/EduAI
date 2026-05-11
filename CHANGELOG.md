@@ -27,7 +27,7 @@ When opening a new sprint, copy this block to the top of the changelog (just und
 
 ---
 
-## [Unreleased — Foundation Sprint, May 2026]
+## [Week 1 — May 1–7, 2026]
 
 ### Added
 - docs: Add platform centralization architecture plan for Epic #58 covering current state of all three extensions, gap analysis, API contracts, migration plan, key decisions, and known challenges. (#96, @ariqmuldi, 2026-05-10)
