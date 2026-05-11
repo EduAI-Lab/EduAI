@@ -669,4 +669,6 @@ A monorepo does not mean the services become a monolith. Each extension would st
 
 The cost is the upfront migration: moving three repos into one, setting up a workspace structure, and updating CI pipelines. Done mid-project during a summer with a hard September deadline, that migration carries real risk if it takes longer than expected or breaks existing workflows.
 
-One middle-ground option is to not migrate the existing repos but create a lightweight root-level `docker-compose.yml` and a shared package for API types — capturing most of the day-to-day benefit without a full repo restructure.
+One middle-ground option is to not immediately migrate the existing repos, but first create a lightweight root-level `docker-compose.yml` and a shared package for API types — capturing most of the day-to-day benefit without a full repo restructure. Further migrations could be made as we see fit and as time permits.
+
+A proposal for a multi-stage migration process can be found in the [monorepo proposal document](https://github.com/EduAI-Lab/EduAICore/blob/docs/architecture-plans/docs/monorepo-proposal.md). 
