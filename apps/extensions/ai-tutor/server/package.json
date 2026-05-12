@@ -8,9 +8,9 @@
     "test:watch": "vitest",
     "test:unit": "vitest run test/unit/",
     "test:integration": "vitest run test/integration/",
-    "start": "bunx prisma generate && node src/index.js",
-    "dev": "bunx prisma generate && nodemon src/index.js",
-    "seed": "prisma generate && bun prisma/seed.ts"
+    "start": "npx prisma generate && node src/index.js",
+    "dev": "npx prisma generate && nodemon src/index.js",
+    "seed": "npx prisma generate && npx tsx prisma/seed.ts"
   },
   "keywords": [],
   "author": "",

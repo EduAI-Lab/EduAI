@@ -3,13 +3,6 @@
   "version": "1.0.0",
   "description": "AI-powered question generation platform",
   "scripts": {
-    "dev:up": "docker-compose -f docker-compose.dev.yml up",
-    "dev:down": "docker-compose -f docker-compose.dev.yml down",
-    "dev:restart": "docker-compose -f docker-compose.dev.yml down && docker-compose -f docker-compose.dev.yml up",
-    "dev:logs": "docker-compose -f docker-compose.dev.yml logs -f",
-    "dev:build": "docker-compose -f docker-compose.dev.yml up --build",
-    "prod:up": "docker-compose up -d",
-    "prod:down": "docker-compose down",
     "setup": "./setup.sh",
     "populate": "node scripts/populateDatabase.js",
     "populate:backend": "cd app/backend && npm run populate",
