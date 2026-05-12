@@ -1,0 +1,190 @@
+# Full development stack — run with: npm run docker:dev
+#
+# Starts all three databases + all app services with hot reload via volume mounts.
+# One command to go from zero to a running ecosystem: docker compose -f docker-compose.dev.yml up
+#
+# For a lighter setup (databases only, apps run natively):
+#   docker compose -f docker-compose.dev.yml up core-db tutor-db qm-db
+
+services:
+  # ╔═══════════════════════════════════════════════════════════════════╗
+  # ║  Databases                                                       ║
+  # ╚═══════════════════════════════════════════════════════════════════╝
+
+  core-db:
+    image: pgvector/pgvector:pg16
+    container_name: eduai-core-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: eduai
+    ports:
+      - "${CORE_DB_PORT:-5432}:5432"
+    volumes:
+      - core_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  tutor-db:
+    image: postgres:16-alpine
+    container_name: eduai-tutor-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: aitutor
+    ports:
+      - "${TUTOR_DB_PORT:-54321}:5432"
+    volumes:
+      - tutor_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  qm-db:
+    image: postgres:15-alpine
+    container_name: eduai-qm-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: eduquery
+    ports:
+      - "${QM_DB_PORT:-55432}:5432"
+    volumes:
+      - qm_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ╔═══════════════════════════════════════════════════════════════════╗
+  # ║  EduAI Core (React Router v7, SSR, Prisma)                      ║
+  # ╚═══════════════════════════════════════════════════════════════════╝
+
+  core:
+    image: node:20-alpine
+    container_name: eduai-core-dev
+    working_dir: /app
+    volumes:
+      - ./apps/core:/app
+      - core_node_modules:/app/node_modules
+    ports:
+      - "${CORE_PORT:-5174}:5173"
+    env_file:
+      - path: ./apps/core/.env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@core-db:5432/eduai?schema=public
+    depends_on:
+      core-db:
+        condition: service_healthy
+    command: sh -c "npm install && npx prisma generate && npm run dev -- --host 0.0.0.0"
+    restart: unless-stopped
+
+  # ╔═══════════════════════════════════════════════════════════════════╗
+  # ║  AI Tutor — Frontend (React Router v7, SPA)                     ║
+  # ╚═══════════════════════════════════════════════════════════════════╝
+
+  tutor-frontend:
+    image: node:20-alpine
+    container_name: eduai-tutor-fe-dev
+    working_dir: /app
+    volumes:
+      - ./apps/extensions/ai-tutor:/app
+      - tutor_fe_node_modules:/app/node_modules
+    ports:
+      - "${TUTOR_FE_PORT:-5173}:5173"
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    restart: unless-stopped
+
+  # ╔═══════════════════════════════════════════════════════════════════╗
+  # ║  AI Tutor — Backend (Express 5, Prisma)                         ║
+  # ╚═══════════════════════════════════════════════════════════════════╝
+
+  tutor-backend:
+    image: node:20-alpine
+    container_name: eduai-tutor-be-dev
+    working_dir: /app
+    volumes:
+      - ./apps/extensions/ai-tutor/server:/app
+      - tutor_be_node_modules:/app/node_modules
+    ports:
+      - "${TUTOR_BE_PORT:-4000}:4000"
+    env_file:
+      - path: ./apps/extensions/ai-tutor/server/.env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@tutor-db:5432/aitutor?schema=public
+      PORT: 4000
+    depends_on:
+      tutor-db:
+        condition: service_healthy
+    command: sh -c "npm install && npx prisma generate && npx nodemon src/index.js"
+    restart: unless-stopped
+
+  # ╔═══════════════════════════════════════════════════════════════════╗
+  # ║  Question Maker — Backend (Express 4, Sequelize)                 ║
+  # ╚═══════════════════════════════════════════════════════════════════╝
+
+  qm-backend:
+    build:
+      context: ./apps/extensions/question-maker/app/backend
+      dockerfile: Dockerfile.dev
+    container_name: eduai-qm-be-dev
+    env_file:
+      - path: ./apps/extensions/question-maker/.env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@qm-db:5432/eduquery
+      PORT: 8000
+      LOG_LEVEL: debug
+    ports:
+      - "${QM_BE_PORT:-8000}:8000"
+    volumes:
+      - ./apps/extensions/question-maker/app/backend:/app
+      - /app/node_modules
+    depends_on:
+      qm-db:
+        condition: service_healthy
+    command: npm run dev
+    restart: unless-stopped
+
+  # ╔═══════════════════════════════════════════════════════════════════╗
+  # ║  Question Maker — Frontend (Vite + React SPA)                    ║
+  # ╚═══════════════════════════════════════════════════════════════════╝
+
+  qm-frontend:
+    build:
+      context: ./apps/extensions/question-maker/app/frontend
+      dockerfile: Dockerfile.dev
+    container_name: eduai-qm-fe-dev
+    env_file:
+      - path: ./apps/extensions/question-maker/.env
+        required: false
+    ports:
+      - "${QM_FE_PORT:-5176}:5173"
+    volumes:
+      - ./apps/extensions/question-maker/app/frontend:/app
+      - /app/node_modules
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    restart: unless-stopped
+
+volumes:
+  core_db_data:
+  tutor_db_data:
+  qm_db_data:
+  core_node_modules:
+  tutor_fe_node_modules:
+  tutor_be_node_modules:
+
+networks:
+  default:
+    name: eduai-dev

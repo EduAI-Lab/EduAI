@@ -1,20 +1,50 @@
 {
-  "name": "eduaicore",
+  "name": "eduai",
   "private": true,
+  "description": "EduAI Platform — EduAI Core, AI Tutor, and Question Maker",
   "scripts": {
+    "docker:dev": "docker compose -f docker-compose.dev.yml up",
+    "docker:dev:build": "docker compose -f docker-compose.dev.yml up --build",
+    "docker:dev:down": "docker compose -f docker-compose.dev.yml down",
+    "docker:dev:logs": "docker compose -f docker-compose.dev.yml logs -f",
+    "docker:dev:db": "docker compose -f docker-compose.dev.yml up -d core-db tutor-db qm-db",
+    "docker:dev:db:down": "docker compose -f docker-compose.dev.yml down",
+
+    "docker:prod": "docker compose -f docker-compose.prod.yml up -d --build",
+    "docker:prod:down": "docker compose -f docker-compose.prod.yml down",
+    "docker:prod:logs": "docker compose -f docker-compose.prod.yml logs -f",
+    "docker:prod:restart": "docker compose -f docker-compose.prod.yml restart",
+
+    "dev:core": "npm run dev --prefix apps/core",
+    "dev:tutor": "concurrently -k -n tutor-fe,tutor-be -c blue,green \"npm run dev --prefix apps/extensions/ai-tutor\" \"npm run dev --prefix apps/extensions/ai-tutor/server\"",
+    "dev:qm": "concurrently -k -n qm-fe,qm-be -c magenta,yellow \"npm run dev --prefix apps/extensions/question-maker/app/frontend\" \"npm run dev --prefix apps/extensions/question-maker/app/backend\"",
+    "dev": "concurrently -k -n core,tutor-fe,tutor-be,qm-fe,qm-be -c cyan,blue,green,magenta,yellow \"npm run dev:core\" \"npm run dev --prefix apps/extensions/ai-tutor\" \"npm run dev --prefix apps/extensions/ai-tutor/server\" \"npm run dev --prefix apps/extensions/question-maker/app/frontend\" \"npm run dev --prefix apps/extensions/question-maker/app/backend\"",
+
+    "build:core": "npm run build --prefix apps/core",
+    "build:tutor": "npm run build --prefix apps/extensions/ai-tutor",
+    "build:qm": "npm run build --prefix apps/extensions/question-maker/app/frontend",
+
+    "start:core": "npm run start --prefix apps/core",
+    "start:tutor": "concurrently -k -n tutor-fe,tutor-be -c blue,green \"npm run start --prefix apps/extensions/ai-tutor\" \"npm run start --prefix apps/extensions/ai-tutor/server\"",
+    "start:qm": "concurrently -k -n qm-fe,qm-be -c magenta,yellow \"npm run start --prefix apps/extensions/question-maker/app/backend\"",
+
+    "db:migrate:core": "npm run db:migrate --prefix apps/core",
+    "db:migrate:tutor": "npx --prefix apps/extensions/ai-tutor/server prisma migrate deploy",
+    "db:seed:core": "npm run db:seed --prefix apps/core",
+
     "test": "npm run test:core && npm run test:ai-tutor && npm run test:question-maker",
     "test:all": "npm run test:core && npm run test:ai-tutor && npm run test:question-maker:all",
-
     "test:core": "npm --prefix apps/core run test",
-
     "test:ai-tutor": "npm run test:ai-tutor:frontend && npm run test:ai-tutor:server",
     "test:ai-tutor:frontend": "bun run --cwd apps/extensions/ai-tutor test",
     "test:ai-tutor:server": "bun run --cwd apps/extensions/ai-tutor/server test",
-
     "test:question-maker": "npm run test:question-maker:backend && npm run test:question-maker:frontend",
     "test:question-maker:all": "npm run test:question-maker:backend:all && npm run test:question-maker:frontend",
     "test:question-maker:backend": "npm --prefix apps/extensions/question-maker/app/backend run test",
     "test:question-maker:backend:all": "npm --prefix apps/extensions/question-maker/app/backend run test:all",
     "test:question-maker:frontend": "npm --prefix apps/extensions/question-maker/app/frontend run test"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
   }
 }

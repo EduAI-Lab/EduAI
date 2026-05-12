@@ -1,0 +1,163 @@
+# Production stack — run with: npm run docker:prod
+#
+# Databases are NOT included here. Production uses managed PostgreSQL.
+# Set DATABASE_URL in each app's env_file to point at the managed instance.
+#
+# Ports are exposed to the host for the reverse proxy (Apache) to forward to.
+
+services:
+  # ── EduAI Core ────────────────────────────────────────────────────────
+  # React Router v7, SSR, Prisma, pgvector RAG, AI chat
+  core:
+    build:
+      context: ./apps/core
+      dockerfile: Dockerfile
+    container_name: eduai-core
+    env_file:
+      - path: ./apps/core/.env
+        required: false
+    environment:
+      NODE_ENV: production
+    ports:
+      - "${CORE_PORT:-3000}:3000"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1G
+        reservations:
+          cpus: "0.5"
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  # ── AI Tutor — Frontend (SPA served by nginx) ────────────────────────
+  tutor-frontend:
+    build:
+      context: ./apps/extensions/ai-tutor
+      dockerfile: Dockerfile
+    container_name: eduai-tutor-frontend
+    ports:
+      - "${TUTOR_FE_PORT:-3001}:3001"
+    restart: unless-stopped
+    depends_on:
+      tutor-backend:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+        reservations:
+          cpus: "0.1"
+          memory: 64M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── AI Tutor — Backend (Express 5, Prisma) ───────────────────────────
+  tutor-backend:
+    build:
+      context: ./apps/extensions/ai-tutor/server
+      dockerfile: Dockerfile
+    container_name: eduai-tutor-backend
+    env_file:
+      - path: ./apps/extensions/ai-tutor/server/.env
+        required: false
+    environment:
+      NODE_ENV: production
+    ports:
+      - "${TUTOR_BE_PORT:-4000}:4000"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 128M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/api/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ── Question Maker — Backend (Express 4, Sequelize) ──────────────────
+  qm-backend:
+    build:
+      context: ./apps/extensions/question-maker/app/backend
+      dockerfile: Dockerfile
+    container_name: eduai-qm-backend
+    env_file:
+      - path: ./apps/extensions/question-maker/.env
+        required: false
+    environment:
+      NODE_ENV: production
+    ports:
+      - "${QM_BE_PORT:-8000}:8000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 128M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ── Question Maker — Frontend (Vite SPA served by nginx) ─────────────
+  qm-frontend:
+    build:
+      context: ./apps/extensions/question-maker/app/frontend
+      dockerfile: Dockerfile
+    container_name: eduai-qm-frontend
+    env_file:
+      - path: ./apps/extensions/question-maker/.env
+        required: false
+    ports:
+      - "${QM_FE_PORT:-3005}:80"
+    depends_on:
+      qm-backend:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+        reservations:
+          cpus: "0.1"
+          memory: 64M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  default:
+    name: eduai-prod
