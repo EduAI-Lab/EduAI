@@ -38,6 +38,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "driver.js": "^1.4.0",
+    "eduai": "file:../../..",
     "html2canvas": "^1.4.1",
     "isbot": "^5.1.27",
     "lucide-react": "^0.554.0",

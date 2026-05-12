@@ -61,7 +61,7 @@ The `.githooks/pre-commit` hook runs scoped checks on staged files:
 
 - Client reads `VITE_API_URL` (default `http://localhost:4000`).
 - Server uses `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `COOKIE_DOMAIN`, EduAI OAuth vars (`EDUAI_DISCOVERY_URL`, `EDUAI_CLIENT_ID`, `EDUAI_CLIENT_SECRET`, `EDUAI_USERINFO_URL`), `EDUAI_BASE_URL`, `EDUAI_API_KEY`, `EDUAI_MODEL` in `server/.env`.
-- `BETTER_AUTH_URL` defaults to `http://localhost:4000/api/auth` and `EDUAI_BASE_URL` defaults to `http://localhost:5174/api` when unset.
+- `BETTER_AUTH_URL` defaults to `http://localhost:4000/api/auth` and `EDUAI_BASE_URL` defaults to `http://localhost:5173/api` when unset.
 - Ensure Postgres is running before migrations or seeds.
 - After modifying Tailwind, routing, or the Prisma schema, rerun `bun run typecheck` and refresh seeds to keep generated artifacts aligned.
 - Auth is EduAI OAuth (OIDC + PKCE), not email/password. No JWT or bearer tokens.

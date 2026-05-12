@@ -169,7 +169,7 @@ Source of truth: `server/.env.example`.
 | `EDUAI_CLIENT_ID` | Yes | - | OAuth client ID |
 | `EDUAI_CLIENT_SECRET` | Yes | - | OAuth client secret |
 | `EDUAI_USERINFO_URL` | Yes | - | EduAI user info endpoint |
-| `EDUAI_BASE_URL` | No | `http://localhost:5174/api` | EduAI API base URL |
+| `EDUAI_BASE_URL` | No | `http://localhost:5173/api` | EduAI API base URL |
 | `EDUAI_API_KEY` | Recommended | - | Default EduAI API key |
 | `EDUAI_MODEL` | No | `google:gemini-2.5-flash` | Default tutor model |
 
