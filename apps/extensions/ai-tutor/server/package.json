@@ -8,9 +8,9 @@
     "test:watch": "vitest",
     "test:unit": "vitest run test/unit/",
     "test:integration": "vitest run test/integration/",
-    "start": "bunx prisma generate && node src/index.js",
-    "dev": "bunx prisma generate && nodemon src/index.js",
-    "seed": "prisma generate && bun prisma/seed.ts"
+    "start": "prisma generate && node src/index.js",
+    "dev": "prisma generate && nodemon src/index.js",
+    "seed": "prisma generate && ts-node prisma/seed.ts"
   },
   "keywords": [],
   "author": "",
@@ -30,6 +30,8 @@
     "oxlint": "^1.56.0",
     "prisma": "^6.16.1",
     "supertest": "^7.2.2",
-    "vitest": "^4.1.0"
+    "vitest": "^4.1.0",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.8.3"
   }
 }
