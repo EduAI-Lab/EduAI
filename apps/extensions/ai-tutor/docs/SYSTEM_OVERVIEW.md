@@ -57,7 +57,7 @@ For readers with a technical background, the core technology stack includes:
 | Layer | Technology |
 |-------|-----------|
 | Frontend | React 19, React Router v7, TypeScript, Tailwind CSS v4 |
-| Backend | Express 5, Node.js (via Bun runtime) |
+| Backend | Express 5, Node.js |
 | Database | PostgreSQL with Prisma ORM |
 | Authentication | Better Auth (session cookies), EDU AI OAuth |
 | AI Integration | EDU AI Chat API (supports Google Gemini, OpenAI, and others) |
@@ -792,8 +792,8 @@ When schema changes are made, create a migration and refresh generated Prisma ar
 
 ```bash
 cd server
-bunx prisma migrate dev --name description_of_change
-bun run seed
+npx prisma migrate dev --name description_of_change
+npm run seed
 ```
 
 The seed is destructive and clears existing rows before inserting demo data.
@@ -832,8 +832,8 @@ supervisor before it reaches the student. See
 Install dependencies:
 
 ```bash
-bun install
-cd server && bun install
+npm install
+cd server && npm install
 ```
 
 Start PostgreSQL:
@@ -846,29 +846,29 @@ Apply migrations and seed demo data:
 
 ```bash
 cd server
-bunx prisma migrate deploy
-bun run seed
+npx prisma migrate deploy
+npm run seed
 ```
 
 Run the app in two terminals:
 
 ```bash
 # Terminal 1: backend API
-cd server && bun run dev
+cd server && npm run dev
 
 # Terminal 2: frontend SPA
-bun run dev
+npm run dev
 ```
 
 Useful verification commands:
 
 ```bash
-bun run typecheck
-bun run typecheck:fast
-bun run lint
-bun run format:check
-bun run test
-cd server && bun run test
+npm run typecheck
+npm run typecheck:fast
+npm run lint
+npm run format:check
+npm run test
+cd server && npm run test
 ```
 
 ### Recommended Reading Order
