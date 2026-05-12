@@ -17,6 +17,7 @@
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "docx": "^9.6.1",
+    "eduai": "file:../../../../..",
     "html2canvas": "^1.4.1",
     "pdfjs-dist": "^4.6.82",
     "react": "^19.2.3",

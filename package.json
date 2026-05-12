@@ -29,13 +29,21 @@
     "start:qm": "concurrently -k -n qm-fe,qm-be -c magenta,yellow \"npm run preview --prefix apps/extensions/question-maker/app/frontend\" \"npm run start --prefix apps/extensions/question-maker/app/backend\"",
 
     "db:migrate:core": "npm run db:migrate --prefix apps/core",
-    "db:migrate:tutor": "npx --prefix apps/extensions/ai-tutor/server prisma migrate deploy",
+    "db:migrate:tutor": "npm --prefix apps/extensions/ai-tutor/server exec prisma migrate deploy",
     "db:seed:core": "npm run db:seed --prefix apps/core",
 
     "install:core": "npm install --prefix apps/core",
-    "install:tutor": "npm install --prefix apps/extensions/ai-tutor && npm install --prefix apps/extensions/ai-tutor/server",
+    "install:tutor": "npm install --legacy-peer-deps --prefix apps/extensions/ai-tutor && npm install --legacy-peer-deps --prefix apps/extensions/ai-tutor/server",
     "install:qm": "npm install --prefix apps/extensions/question-maker/app/frontend && npm install --prefix apps/extensions/question-maker/app/backend",
-    "install:all": "npm install && npm run install:core && npm run install:tutor && npm run install:qm"
+    "install:all": "npm install && npm run install:core && npm run install:tutor && npm run install:qm",
+
+    "test:tutor": "npm run test --prefix apps/extensions/ai-tutor",
+    "test:tutor:be": "npm run test --prefix apps/extensions/ai-tutor/server",
+    "test:tutor:unit": "npm run test:unit --prefix apps/extensions/ai-tutor/server",
+    "test:tutor:integration": "npm run test:integration --prefix apps/extensions/ai-tutor/server",
+    "test:qm:fe": "npm run test --prefix apps/extensions/question-maker/app/frontend",
+    "test:qm:be": "npm run test --prefix apps/extensions/question-maker/app/backend",
+    "test:qm:be:integration": "npm run test:integration --prefix apps/extensions/question-maker/app/backend"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

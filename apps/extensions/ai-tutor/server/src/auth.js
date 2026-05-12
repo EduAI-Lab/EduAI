@@ -8,11 +8,11 @@ const baseURL = process.env.BETTER_AUTH_URL || 'http://localhost:4000/api/auth';
 const cookieDomain = process.env.COOKIE_DOMAIN || 'localhost';
 const eduAiDiscoveryUrl =
   process.env.EDUAI_DISCOVERY_URL ||
-  'http://localhost:5174/api/auth/.well-known/openid-configuration';
+  'http://localhost:5173/api/auth/.well-known/openid-configuration';
 const eduAiClientId = process.env.EDUAI_CLIENT_ID || 'aitutor-local';
 const eduAiClientSecret = process.env.EDUAI_CLIENT_SECRET || 'aitutor-local-secret';
 const eduAiUserInfoUrl =
-  process.env.EDUAI_USERINFO_URL || 'http://localhost:5174/api/auth/oauth2/userinfo';
+  process.env.EDUAI_USERINFO_URL || 'http://localhost:5173/api/auth/oauth2/userinfo';
 const authSecret =
   process.env.BETTER_AUTH_SECRET ||
   process.env.JWT_SECRET ||
@@ -43,7 +43,7 @@ export const auth = betterAuth({
   baseURL,
 
   // Allow the frontend dev origin to call auth endpoints
-  trustedOrigins: ['http://localhost:5173', 'https://aitutor.ok.ubc.ca'],
+  trustedOrigins: ['http://localhost:5174', 'https://aitutor.ok.ubc.ca'],
 
   // Use Prisma as the database adapter (PostgreSQL in this repo)
   database: prismaAdapter(prisma, {

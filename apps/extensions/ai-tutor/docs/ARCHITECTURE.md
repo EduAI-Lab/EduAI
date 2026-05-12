@@ -140,8 +140,8 @@ discovery URL ([`server/src/auth.js:72-109`](../server/src/auth.js)).
 
 | Setting | Source | Default |
 |---------|--------|---------|
-| Discovery URL | `EDUAI_DISCOVERY_URL` | `http://localhost:5174/api/auth/.well-known/openid-configuration` |
-| Userinfo URL  | `EDUAI_USERINFO_URL`  | `http://localhost:5174/api/auth/oauth2/userinfo` |
+| Discovery URL | `EDUAI_DISCOVERY_URL` | `http://localhost:5173/api/auth/.well-known/openid-configuration` |
+| Userinfo URL  | `EDUAI_USERINFO_URL`  | `http://localhost:5173/api/auth/oauth2/userinfo` |
 | Client ID     | `EDUAI_CLIENT_ID`     | `aitutor-local` |
 | Client secret | `EDUAI_CLIENT_SECRET` | `aitutor-local-secret` |
 | Scopes        | (hardcoded)           | `openid profile email offline_access` |

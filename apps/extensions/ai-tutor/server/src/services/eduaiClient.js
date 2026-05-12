@@ -1,5 +1,5 @@
 import { EduAiCourseListSchema, EduAiTopicListSchema, EduAiEnrollmentListSchema } from '../schemas/eduai.js';
-const DEFAULT_BASE_URL = 'http://localhost:5174/api';
+const DEFAULT_BASE_URL = 'http://localhost:5173/api';
 
 function normalizeBaseUrl(rawUrl) {
   if (!rawUrl) return DEFAULT_BASE_URL;

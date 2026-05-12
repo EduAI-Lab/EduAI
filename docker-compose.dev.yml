@@ -77,7 +77,7 @@ services:
       - ./apps/core:/app
       - core_node_modules:/app/node_modules
     ports:
-      - "${CORE_PORT:-5174}:5173"
+      - "${CORE_PORT:-5173}:5173"
     env_file:
       - path: ./apps/core/.env
         required: false
@@ -101,7 +101,7 @@ services:
       - ./apps/extensions/ai-tutor:/app
       - tutor_fe_node_modules:/app/node_modules
     ports:
-      - "${TUTOR_FE_PORT:-5173}:5173"
+      - "${TUTOR_FE_PORT:-5174}:5174"
     command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
     restart: unless-stopped
 

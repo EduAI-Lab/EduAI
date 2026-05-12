@@ -5,7 +5,7 @@ set -euo pipefail
 #
 # Requirements:
 # - AiTutor server running at http://localhost:4000
-# - EduAI server running at http://localhost:5174
+# - EduAI server running at http://localhost:5173
 # - Seeded EduAI users:
 #   - instructor@eduai.local / instructor123
 #   - student@eduai.local / student123
@@ -19,7 +19,7 @@ set -euo pipefail
 #   user API key is supplied in the request payload.
 
 BASE="http://localhost:4000"
-EDUAI="http://localhost:5174"
+EDUAI="http://localhost:5173"
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 AITUTOR_SERVER="$REPO_ROOT/server"
 EDUAI_ROOT="$(cd "$REPO_ROOT/../EduAICoreLearning" && pwd)"

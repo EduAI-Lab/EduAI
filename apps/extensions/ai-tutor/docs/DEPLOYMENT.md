@@ -178,7 +178,7 @@ All values default to local-dev sane values; production must override the secret
 | `BETTER_AUTH_SECRET` | dev placeholder; **required in prod** | HMAC secret for Better Auth sessions. The auth.js bootstrap throws if unset and `NODE_ENV=production`. |
 | `BETTER_AUTH_URL` | `http://localhost:4000/api/auth` | Public URL of the Better Auth handler. |
 | `COOKIE_DOMAIN` | `localhost` | Session-cookie scope. Set to `aitutor.ok.ubc.ca` in production. |
-| `EDUAI_BASE_URL` | `http://localhost:5174/api` | Base URL for EduAI's chat endpoint (used by `eduaiClient.js`). |
+| `EDUAI_BASE_URL` | `http://localhost:5173/api` | Base URL for EduAI's chat endpoint (used by `eduaiClient.js`). |
 | `EDUAI_API_KEY` | (none) | Optional server-wide fallback API key. Overridden at runtime by the `EDUAI_API_KEY` row in `SystemSetting` if set via the admin UI. |
 | `EDUAI_MODEL` | `google:gemini-2.5-flash` | Default model id passed to EduAI when the request body omits one. |
 | `AI_SUPERVISOR_ENABLED` | (env example only) | Documentation hint. Runtime behavior is currently driven by the `AI_MODEL_POLICY` row, not this variable. |
@@ -187,8 +187,8 @@ EduAI OAuth values (used by `genericOAuth` in `auth.js`) — also live in `serve
 
 | Variable | Default |
 |----------|---------|
-| `EDUAI_DISCOVERY_URL` | `http://localhost:5174/api/auth/.well-known/openid-configuration` |
-| `EDUAI_USERINFO_URL`  | `http://localhost:5174/api/auth/oauth2/userinfo` |
+| `EDUAI_DISCOVERY_URL` | `http://localhost:5173/api/auth/.well-known/openid-configuration` |
+| `EDUAI_USERINFO_URL`  | `http://localhost:5173/api/auth/oauth2/userinfo` |
 | `EDUAI_CLIENT_ID`     | `aitutor-local` |
 | `EDUAI_CLIENT_SECRET` | `aitutor-local-secret` |
 
