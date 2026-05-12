@@ -8,6 +8,12 @@ All notable changes across the EduAICore monorepo (AI Tutor, Question Maker, Edu
 
 ## [Week 2 — May 11–15, 2026]
 
+### Added
+- [monorepo] infra: Add dev server deployment guide (`docs/deployment-dev-server.md`) covering SSH access, tmux, branch switching, when to use the dev server vs local dev, and Ollama connectivity. (#110, @superbolt08, 2026-05-12)
+- [monorepo] infra: Add `docker-compose.postgres.yml` for running Postgres + pgvector on the dev host (UBC managed Postgres is too old for pgvector). (#110, @superbolt08, 2026-05-12)
+- [core] infra: Add `rhel-openssl-1.1.x` to Prisma `binaryTargets` so the query engine works on RHEL 8 hosts (e.g. `dev.eduai.ok.ubc.ca`). (#110, @superbolt08, 2026-05-12)
+- [core] infra: Add `dev.eduai.ok.ubc.ca` to Vite `server.allowedHosts` so Apache reverse proxy requests are not blocked. (#110, @superbolt08, 2026-05-12)
+
 ### Changed
 - docs: Merge monorepo report information into platform centralization document. Changed section 12 to be a description of the monorepo architecture. (#107, @evanbones, 2026-05-11)
 
