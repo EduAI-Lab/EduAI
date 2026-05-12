@@ -62,6 +62,7 @@ cd apps/core && npm install
 
 # AI Tutor
 cd apps/extensions/ai-tutor && bun install
+cd apps/extensions/ai-tutor/server && bun install
 
 # Question Maker
 cd apps/extensions/question-maker/app/backend && npm install
