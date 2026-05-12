@@ -8,8 +8,8 @@
     "test:core": "npm --prefix apps/core run test",
 
     "test:ai-tutor": "npm run test:ai-tutor:frontend && npm run test:ai-tutor:server",
-    "test:ai-tutor:frontend": "bun run --cwd apps/extensions/ai-tutor test",
-    "test:ai-tutor:server": "bun run --cwd apps/extensions/ai-tutor/server test",
+    "test:ai-tutor:frontend": "npm run --prefix apps/extensions/ai-tutor test",
+    "test:ai-tutor:server": "npm run --prefix apps/extensions/ai-tutor/server test",
 
     "test:question-maker": "npm run test:question-maker:backend && npm run test:question-maker:frontend",
     "test:question-maker:all": "npm run test:question-maker:backend:all && npm run test:question-maker:frontend",
