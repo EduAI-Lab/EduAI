@@ -1,29 +1,8 @@
 # Changelog
 
-All notable changes to this project are documented in this file. This format is shared across all EduAI Lab repositories (AI Tutor, Question Maker, EduAI Core, EduAI Website) so contributors see the same conventions everywhere.
+All notable changes across the EduAICore monorepo (AI Tutor, Question Maker, EduAI Core) are documented in this file.
 
----
-### Sprint section template
-When opening a new sprint, copy this block to the top of the changelog (just under the `# Changelog` header and intro):
----
-
-### Added
--
-
-### Changed
--
-
-### Deprecated
--
-
-### Removed
--
-
-### Fixed
--
-
-### Security
--
+> See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
 ---
 
@@ -39,14 +18,13 @@ When opening a new sprint, copy this block to the top of the changelog (just und
 ## [Week 1 — May 4–8, 2026]
 
 ### Added
-- docs: Add platform centralization architecture plan for Epic #58 covering current state of all three extensions, gap analysis, API contracts, migration plan, key decisions, and known challenges. (#96, @ariqmuldi, 2026-05-10)
-- docs: Add user management and roles architecture plan for Epic #60 covering role hierarchy, Unit concept, current permissions per role, gaps, naming decisions, and Canvas role reference. (#96, @ariqmuldi, 2026-05-10)
+- [monorepo] docs: Add platform centralization architecture plan for Epic #58 covering current state of all three extensions, gap analysis, API contracts, migration plan, key decisions, and known challenges. (#96, @ariqmuldi, 2026-05-10)
+- [monorepo] docs: Add user management and roles architecture plan for Epic #60 covering role hierarchy, Unit concept, current permissions per role, gaps, naming decisions, and Canvas role reference. (#96, @ariqmuldi, 2026-05-10)
 
 ### Changed
-- docs: Update platform centralization plan to reflect open PRs — EC-3 enrollment endpoint now in progress on `feature/enrollment-api`; EC-10 OAuth/OIDC sister-app auth covered by PRs #48, #49, #51, #50; Phase 1 and Week 2 checklist updated accordingly. (#96, @ariqmuldi, 2026-05-10)
-- docs: Update user management and roles plan to reflect enrollment endpoint progress on `feature/enrollment-api`. (#96, @ariqmuldi, 2026-05-10)
-- docs: Expand platform centralization plan with additional gaps, decisions, and corrections — corrected QM AI Chat status (question generation still calls providers directly; OCR extraction and variant generation already centralized), added gaps QM-7/QM-8/AT-3/EC-12, added within-extension cleanup section, added Decisions 5–7 (bug reporting consolidation, subdomain/cookie strategy, QM ORM), added open question on shared question bank visibility control, added out-of-scope items for unified dashboard and user navigation flow, and updated Week 2 checklist. (@abdullahmoh21, 2026-05-10)
-- docs: Add report on the feasibility of moving our architecture to a monorepo. Clarified migration plan, and linked to monorepo report from the platform centralization plan. (#96, @evanbones, 2026-05-10)
+- [monorepo] docs: Update platform centralization plan to reflect open PRs — EC-3 enrollment endpoint now in progress on `feature/enrollment-api`; EC-10 OAuth/OIDC sister-app auth covered by PRs #48, #49, #51, #50; Phase 1 and Week 2 checklist updated accordingly. (#96, @ariqmuldi, 2026-05-10)
+- [monorepo] docs: Update user management and roles plan to reflect enrollment endpoint progress on `feature/enrollment-api`. (#96, @ariqmuldi, 2026-05-10)
+- [monorepo] docs: Expand platform centralization plan with additional gaps, decisions, and corrections — corrected QM AI Chat status (question generation still calls providers directly; OCR extraction and variant generation already centralized), added gaps QM-7/QM-8/AT-3/EC-12, added within-extension cleanup section, added Decisions 5–7 (bug reporting consolidation, subdomain/cookie strategy, QM ORM), added open question on shared question bank visibility control, added out-of-scope items for unified dashboard and user navigation flow, and updated Week 2 checklist. (@abdullahmoh21, 2026-05-10)
 
 ---
 
@@ -65,6 +43,32 @@ When opening a new sprint, copy this block to the top of the changelog (just und
 
 When a sprint / milestone closes, the maintainer renames the section header from `[Unreleased – Sprint N]` to the final sprint name and date range, and opens a new `[Unreleased]` block at the top.
 
+### Sprint section template
+
+When opening a new sprint, copy this block just below the intro section:
+
+```markdown
+## [Unreleased — Sprint N]
+
+### Added
+-
+
+### Changed
+-
+
+### Deprecated
+-
+
+### Removed
+-
+
+### Fixed
+-
+
+### Security
+-
+```
+
 ### Categories
 
 Use these category headings (from Keep a Changelog) — keep them in this order, and omit any that have no entries for the sprint:
@@ -81,18 +85,17 @@ Use these category headings (from Keep a Changelog) — keep them in this order,
 ### Entry format
 
 ```
-- Short, imperative description in sentence case. (#PR, @author, YYYY-MM-DD)
+- [app] scope: Short, imperative description in sentence case. (#PR, @author, YYYY-MM-DD)
 ```
 
+- **App tag** is required. Use one of: `[core]`, `[ai-tutor]`, `[question-maker]`, `[monorepo]` (for root-level changes that affect the repo as a whole).
+- **Scope** (optional but encouraged) — prefix after the app tag to help readers scan. Common ones: `frontend:`, `api:`, `db:`, `auth:`, `infra:`, `docs:`, `model:`, `ui:`, `content:`.
 - **Imperative voice:** "Add team page route" — not "Added team page route" or "Adds team page route". The category heading already supplies the tense.
 - **PR number** is required. If the change was pushed without a PR (rare — emergency hotfix only), use the commit short SHA instead: `(commit a1b2c3d, @author, YYYY-MM-DD)`.
 - **Author** is the GitHub handle of the person who wrote the code, not the reviewer.
 - **Date** is the merge date in `YYYY-MM-DD` (ISO 8601).
-- **Affected area** (optional but encouraged) — prefix with a scope tag when it helps readers scan. Each repo can define its own; common ones across our projects include `frontend:`, `api:`, `db:`, `auth:`, `infra:`, `docs:`, `model:`, `ui:`, `content:`.
-- **Breaking changes** — prefix with `**BREAKING:**` and follow with an indented migration note:
+- **Breaking changes** — prefix with `**BREAKING:**` after the app tag and follow with an indented migration note:
   ```
-  - **BREAKING:** Rename `/api/users/me` to `/api/auth/session`. (#123, @ayyhab, 2026-05-07)
+  - [core] **BREAKING:** Rename `/api/users/me` to `/api/auth/session`. (#123, @ayyhab, 2026-05-07)
     - Migration: update all client calls; old route returns 410 Gone for one sprint, then is removed.
   ```
-
-
