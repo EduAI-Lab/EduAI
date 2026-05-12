@@ -61,8 +61,8 @@ Each app is independently runnable. Navigate to the app directory and follow its
 cd apps/core && npm install
 
 # AI Tutor
-cd apps/extensions/ai-tutor && bun install
-cd apps/extensions/ai-tutor/server && bun install
+cd apps/extensions/ai-tutor && npm install
+cd apps/extensions/ai-tutor/server && npm install
 
 # Question Maker
 cd apps/extensions/question-maker/app/backend && npm install
@@ -99,7 +99,7 @@ From the monorepo root `EduAICore/`:
 
 Some tests require a running PostgreSQL instance and will fail without one:
 
-- **AI Tutor server** — `npm run test:ai-tutor:server` runs both unit and integration tests. Connection details are configured in `apps/extensions/ai-tutor/server/.env.test`. The test database (`aitutor_test`) is created automatically on first run. To skip the database and run unit tests only: `bun run --cwd apps/extensions/ai-tutor/server test:unit`
+- **AI Tutor server** — `npm run test:ai-tutor:server` runs both unit and integration tests. Connection details are configured in `apps/extensions/ai-tutor/server/.env.test`. The test database (`aitutor_test`) is created automatically on first run. To skip the database and run unit tests only: `npm run --prefix apps/extensions/ai-tutor/server test:unit`
 - **Question Maker backend** — `npm run test:question-maker:backend` runs unit tests only. Integration tests are opt-in via `npm run test:question-maker:backend:all` and also require PostgreSQL.
 
 ### Test runners by app
