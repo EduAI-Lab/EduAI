@@ -1,0 +1,70 @@
+# Local development databases only — apps run on the host (e.g. `turbo run dev`).
+#
+#   npm run docker:dev:db
+#
+# Override host ports via root `.env` (see `.env.example`). Use each app’s
+# `DATABASE_URL` pointing at `localhost` and the matching port.
+
+services:
+  core-db:
+    image: pgvector/pgvector:pg16
+    container_name: eduai-core-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: eduai
+    ports:
+      - "${CORE_DB_PORT:-5432}:5432"
+    volumes:
+      - core_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  tutor-db:
+    image: postgres:16-alpine
+    container_name: eduai-tutor-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: aitutor
+    ports:
+      - "${TUTOR_DB_PORT:-54321}:5432"
+    volumes:
+      - tutor_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  qm-db:
+    image: postgres:15-alpine
+    container_name: eduai-qm-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: eduquery
+    ports:
+      - "${QM_DB_PORT:-55432}:5432"
+    volumes:
+      - qm_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  core_db_data:
+  tutor_db_data:
+  qm_db_data:
+
+networks:
+  default:
+    name: eduai-dev

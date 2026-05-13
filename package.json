@@ -9,6 +9,12 @@
     "apps/extensions/question-maker/app/*"
   ],
   "scripts": {
+    "docker:dev:db": "docker compose -f docker-compose.dev.yml up -d --wait core-db tutor-db qm-db",
+    "docker:dev:db:core": "docker compose -f docker-compose.dev.yml up -d --wait core-db",
+    "docker:dev:db:tutor": "docker compose -f docker-compose.dev.yml up -d --wait tutor-db",
+    "docker:dev:db:qm": "docker compose -f docker-compose.dev.yml up -d --wait qm-db",
+    "docker:dev:db:down": "docker compose -f docker-compose.dev.yml down",
+    "docker:dev:db:logs": "docker compose -f docker-compose.dev.yml logs -f",
     "build": "turbo run build",
     "dev": "turbo run dev",
     "lint": "turbo run lint",

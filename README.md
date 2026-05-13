@@ -70,6 +70,30 @@ npm run test
 
 *Note: You can still execute tasks for a specific app using Turborepo's filter flag. For example, `npm run dev --filter=ai-tutor` will only start the AI Tutor extension.*
 
+## Databases (Docker)
+
+PostgreSQL for local development is defined in [`docker-compose.dev.yml`](docker-compose.dev.yml) at the repo root. Apps still run on the host via Turborepo; Compose only starts the databases.
+
+1. Copy [`.env.example`](.env.example) to `.env` at the root if you need custom **host** ports (defaults: Core `5432`, Tutor `54321`, Question Maker `55432`).
+2. Start the databases you need:
+
+| Command | Services |
+| --- | --- |
+| `npm run docker:dev:db` | All three databases |
+| `npm run docker:dev:db:core` | Core only (pgvector, DB `eduai`) |
+| `npm run docker:dev:db:tutor` | AI Tutor DB only (`aitutor`) |
+| `npm run docker:dev:db:qm` | Question Maker DB only (`eduquery`) |
+| `npm run docker:dev:db:down` | Stop and remove Compose services (data volumes are kept) |
+| `npm run docker:dev:db:logs` | Follow database logs |
+
+3. Point each app’s `DATABASE_URL` at `localhost` (see that app’s `.env.example`):
+
+- **Core:** `postgresql://postgres:postgres@localhost:5432/eduai?schema=public`
+- **AI Tutor server:** `postgresql://postgres:postgres@localhost:54321/aitutor?schema=public`
+- **Question Maker:** `postgresql://postgres:password@localhost:55432/eduquery` (password matches the QM extension convention)
+
+`docker compose up --wait` needs Docker Compose v2 with healthchecks.
+
 ## Testing
 
 With Turborepo, testing is orchestrated from the monorepo root. Each app uses its own test runner and is invoked in isolation, with results heavily cached to speed up development.
