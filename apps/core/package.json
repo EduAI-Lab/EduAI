@@ -12,6 +12,7 @@
     "typecheck": "react-router typegen && tsc",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
     "db:reset": "prisma migrate reset",
     "auth:migrate": "npx @better-auth/cli migrate",
