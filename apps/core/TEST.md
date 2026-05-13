@@ -4,7 +4,9 @@ Planned test cases for `apps/core`. All tests live under `app/__tests__/` and ar
 
 ---
 
-## `lib/utils.test.ts`
+## Assigned to: Ye
+
+### `lib/utils.test.ts`
 
 **`cn()`**
 - Merges multiple class name strings into one
@@ -15,8 +17,7 @@ Planned test cases for `apps/core`. All tests live under `app/__tests__/` and ar
 
 ---
 
-
-## `lib/ai/providers.test.ts`
+### `lib/ai/providers.test.ts`
 
 **`PROVIDER_CONFIGS`**
 - Contains exactly three entries: `openai`, `google`, `ollama`
@@ -59,7 +60,9 @@ Planned test cases for `apps/core`. All tests live under `app/__tests__/` and ar
 
 ---
 
-## `lib/ai/file-processing.test.ts`
+## Assigned to: Ehsan
+
+### `lib/ai/file-processing.test.ts`
 
 **`sanitizeTextContent()`**
 - Removes null bytes (`\0`)
@@ -98,7 +101,7 @@ Planned test cases for `apps/core`. All tests live under `app/__tests__/` and ar
 
 ---
 
-## `lib/ai/embedding.test.ts`
+### `lib/ai/embedding.test.ts`
 
 **`generateChunks()`**
 - Returns an empty array for an empty string
@@ -110,7 +113,7 @@ Planned test cases for `apps/core`. All tests live under `app/__tests__/` and ar
 
 ---
 
-## `lib/courses/schemas.test.ts`
+### `lib/courses/schemas.test.ts`
 
 **`CreateCourseSchema`**
 - Passes for a fully valid object with `name`, `code`, `term`, `year`, and `aiInstructions`
@@ -136,7 +139,9 @@ Planned test cases for `apps/core`. All tests live under `app/__tests__/` and ar
 
 ---
 
-## `lib/ai/schemas.test.ts`
+## Assigned to: Al-Ameen
+
+### `lib/ai/schemas.test.ts`
 
 **`CreateAIProviderSchema`**
 - Passes for a fully valid object
@@ -161,7 +166,7 @@ Planned test cases for `apps/core`. All tests live under `app/__tests__/` and ar
 
 ---
 
-## `components/LoginForm.test.tsx`
+### `components/LoginForm.test.tsx`
 
 **Rendering**
 - Renders an email input with `type="email"`
@@ -183,7 +188,7 @@ Planned test cases for `apps/core`. All tests live under `app/__tests__/` and ar
 
 ---
 
-## `components/RegisterForm.test.tsx`
+### `components/RegisterForm.test.tsx`
 
 **Rendering**
 - Renders name, email, password, and confirm-password inputs
