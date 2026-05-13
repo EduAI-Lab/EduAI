@@ -59,6 +59,10 @@ All notable changes across apps are recorded in [`CHANGELOG.md`](CHANGELOG.md) a
 This project uses [Turborepo](https://turbo.build/) to orchestrate tasks across all apps and packages. You only need to run installations and scripts from the monorepo root.
 
 ```bash
+# Setting up local dev
+npm install
+npm run dev
+
 # Build all applications (Turborepo caches the outputs)
 npm run build
 
