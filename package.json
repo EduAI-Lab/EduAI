@@ -5,7 +5,8 @@
   "packageManager": "npm@11.12.1",
   "workspaces": [
     "apps/*",
-    "apps/extensions/*"
+    "apps/extensions/*",
+    "apps/extensions/question-maker/app/*"
   ],
   "scripts": {
     "build": "turbo run build",

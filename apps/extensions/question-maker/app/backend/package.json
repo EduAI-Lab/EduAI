@@ -1,5 +1,5 @@
 {
-  "name": "eduquery-backend",
+  "name": "question-maker-backend",
   "version": "1.0.0",
   "description": "EduQuery.ai Backend API",
   "main": "src/index.js",
