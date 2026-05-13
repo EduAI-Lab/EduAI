@@ -1,8 +1,9 @@
 {
-  "name": "question-generator-frontend",
+  "name": "question-maker-frontend",
   "version": "1.0.0",
   "private": true,
   "dependencies": {
+    "question-maker-backend": "*",
     "@radix-ui/react-alert-dialog": "^1.0.5",
     "@radix-ui/react-dialog": "^1.0.5",
     "@radix-ui/react-label": "^2.0.2",
