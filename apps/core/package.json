@@ -6,6 +6,8 @@
     "build": "react-router build",
     "dev": "react-router dev",
     "start": "react-router-serve ./build/server/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "typecheck": "react-router typegen && tsc",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
@@ -99,6 +101,10 @@
     "tw-animate-css": "^1.3.5",
     "typescript": "^5.8.3",
     "vite": "^6.3.3",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "jsdom": "^29.0.0",
+    "vitest": "^4.1.0",
     "vite-tsconfig-paths": "^5.1.4"
   }
 }
