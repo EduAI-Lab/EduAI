@@ -33,6 +33,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Eval run outputs (raw transcripts — not for publication without ethics approval)
+eval-runs/
+
 # Build outputs
 build/
 dist/
