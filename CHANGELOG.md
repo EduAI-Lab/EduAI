@@ -16,6 +16,9 @@ All notable changes across the EduAICore monorepo (AI Tutor, Question Maker, Edu
 ### Changed
 - [monorepo] docs: Add Testing section to root README covering install prerequisites, all root-level test commands, integration test database requirements, and a per-app runner reference table. (#119, @yta3216, 2026-05-12)
 - [ai-tutor] chore: Migrate package manager from Bun to npm — updated all scripts, dependencies, hooks, deploy tooling, and documentation to use npm throughout. (#118, @abdullahmoh21, 2026-05-12)
+
+### Fixed
+- [ai-tutor] fix: Replace ts-node with tsx in the server seed script — ts-node does not support ESM TypeScript (`"type": "module"`) without extra flags; tsx runs `.ts` files natively under Node ESM. Added TypeScript types to previously untyped seed helper functions. (#118, @abdullahmoh21, 2026-05-12)
 - docs: Merge monorepo report information into platform centralization document. Changed section 12 to be a description of the monorepo architecture. (#107, @evanbones, 2026-05-11)
 
 ### Removed
