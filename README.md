@@ -59,12 +59,6 @@ All notable changes across apps are recorded in [`CHANGELOG.md`](CHANGELOG.md) a
 This project uses [Turborepo](https://turbo.build/) to orchestrate tasks across all apps and packages. You only need to run installations and scripts from the monorepo root.
 
 ```bash
-# Install dependencies for all apps and packages
-npm install
-
-# Start development servers for all apps simultaneously
-npm run dev
-
 # Build all applications (Turborepo caches the outputs)
 npm run build
 
@@ -75,6 +69,43 @@ npm run test
 ```
 
 *Note: You can still execute tasks for a specific app using Turborepo's filter flag. For example, `npm run dev --filter=ai-tutor` will only start the AI Tutor extension.*
+
+## Testing
+
+With Turborepo, testing is orchestrated from the monorepo root. Each app uses its own test runner and is invoked in isolation, with results heavily cached to speed up development.
+
+### Prerequisites
+
+Before running tests for the first time, ensure dependencies are installed via `npm install` at the monorepo root.
+
+### Running tests
+
+From the monorepo root `EduAICore/`:
+
+| Command | What runs |
+| --- | --- |
+| `npm run test` | All unit tests across every app simultaneously |
+| `npm run test:all` | Everything above, plus Question Maker backend integration tests |
+| `npm run test --filter=core` | EduAI Core tests only |
+| `npm run test --filter=ai-tutor...` | AI Tutor frontend and server tests |
+| `npm run test --filter=question-maker...` | Question Maker frontend and backend tests |
+
+### Integration tests
+
+Some tests require a running PostgreSQL instance and will fail without one:
+
+* **AI Tutor server** — Turborepo runs both unit and integration tests. Connection details are configured in `apps/extensions/ai-tutor/server/.env.test`. The test database (`aitutor_test`) is created automatically on the first run.
+* **Question Maker backend** — The standard `npm run test` runs unit tests only. Integration tests are opt-in via `npm run test:all` and also require PostgreSQL.
+
+### Test runners by app
+
+| App | Runner | Config |
+| --- | --- | --- |
+| EduAI Core | Vitest | `apps/core/vitest.config.ts` |
+| AI Tutor frontend | Vitest | `apps/extensions/ai-tutor/vitest.config.ts` |
+| AI Tutor server | Vitest | `apps/extensions/ai-tutor/server/vitest.config.js` |
+| Question Maker backend | Jest | `apps/extensions/question-maker/app/backend/jest.config.js` |
+| Question Maker frontend | Vitest | `apps/extensions/question-maker/app/frontend/vite.config.ts` |
 
 ## Git hooks
 
