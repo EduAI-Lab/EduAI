@@ -21,6 +21,12 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 5176,
       host: '0.0.0.0',
+      proxy: {
+        '/api': {
+          target: 'http://localhost:8000',
+          changeOrigin: true,
+        },
+      },
     },
     test: {
       clearMocks: true,

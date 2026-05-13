@@ -9,8 +9,10 @@
     "test:unit": "vitest run test/unit/",
     "test:integration": "vitest run test/integration/",
     "start": "npx prisma generate && node src/index.js",
-    "dev": "npx prisma generate && nodemon src/index.js",
-    "seed": "npx prisma generate && npx tsx prisma/seed.ts"
+    "dev": "nodemon src/index.js",
+    "seed": "npx prisma generate && npx tsx prisma/seed.ts",
+    "db:migrate": "prisma migrate deploy",
+    "db:generate": "prisma generate"
   },
   "keywords": [],
   "author": "",

@@ -8,19 +8,19 @@ import { AuthResponse, LoginCredentials, RegisterCredentials, User } from '../ty
 export const authService = {
   /** Calls login API and returns auth payload. */
   async login(credentials: LoginCredentials): Promise<AuthResponse> {
-    const response = await api.post('/api/auth/login', credentials);
+    const response = await api.post('/auth/login', credentials);
     return response.data;
   },
 
   /** Registers a new user account and returns auth payload. */
   async register(credentials: RegisterCredentials): Promise<AuthResponse> {
-    const response = await api.post('/api/auth/register', credentials);
+    const response = await api.post('/auth/register', credentials);
     return response.data;
   },
 
   /** Fetches the current user profile using stored credentials. */
   async getCurrentUser(): Promise<User> {
-    const response = await api.get('/api/auth/me');
+    const response = await api.get('/auth/me');
     return response.data.data;
   },
 

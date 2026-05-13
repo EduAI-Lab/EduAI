@@ -10,8 +10,8 @@
 ## Build, Test, and Development Commands
 
 - Use Bun for all scripts locally (`bun install`, `bun run`, and `bunx`).
-- `bun run dev` — Vite dev server at `http://localhost:5173` with hot reload.
-- `cd server && bun run dev` — Express API with nodemon on port 4000.
+- `bun run dev` — Vite dev server at `http://localhost:5174` with hot reload.
+- `cd server && bun run dev` — Express API with nodemon on port 4000 (run `npm run db:generate` in `server/` after Prisma schema changes if you are not using the monorepo `npm run dev:tutor` flow).
 - `cd server && bunx prisma migrate deploy` — apply migrations.
 - `cd server && bun run seed` — reset and seed demo data after schema updates (destructive).
 - `bun run build` — build SPA assets into `build/client`.

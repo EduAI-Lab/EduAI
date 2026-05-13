@@ -7,7 +7,10 @@
     "docker:dev:build": "docker compose -f docker-compose.dev.yml up --build",
     "docker:dev:down": "docker compose -f docker-compose.dev.yml down",
     "docker:dev:logs": "docker compose -f docker-compose.dev.yml logs -f",
-    "docker:dev:db": "docker compose -f docker-compose.dev.yml up -d core-db tutor-db qm-db",
+    "docker:dev:db": "docker compose -f docker-compose.dev.yml up -d --wait core-db tutor-db qm-db",
+    "docker:dev:db:core": "docker compose -f docker-compose.dev.yml up -d --wait core-db",
+    "docker:dev:db:tutor": "docker compose -f docker-compose.dev.yml up -d --wait core-db tutor-db",
+    "docker:dev:db:qm": "docker compose -f docker-compose.dev.yml up -d --wait qm-db",
     "docker:dev:db:down": "docker compose -f docker-compose.dev.yml down",
 
     "docker:prod": "docker compose -f docker-compose.prod.yml up -d --build",
@@ -15,10 +18,18 @@
     "docker:prod:logs": "docker compose -f docker-compose.prod.yml logs -f",
     "docker:prod:restart": "docker compose -f docker-compose.prod.yml restart",
 
-    "dev:core": "npm run dev --prefix apps/core",
-    "dev:tutor": "concurrently -k -n tutor-fe,tutor-be -c blue,green \"npm run dev --prefix apps/extensions/ai-tutor\" \"npm run dev --prefix apps/extensions/ai-tutor/server\"",
-    "dev:qm": "concurrently -k -n qm-fe,qm-be -c magenta,yellow \"npm run dev --prefix apps/extensions/question-maker/app/frontend\" \"npm run dev --prefix apps/extensions/question-maker/app/backend\"",
-    "dev": "concurrently -k -n core,tutor-fe,tutor-be,qm-fe,qm-be -c cyan,blue,green,magenta,yellow \"npm run dev:core\" \"npm run dev --prefix apps/extensions/ai-tutor\" \"npm run dev --prefix apps/extensions/ai-tutor/server\" \"npm run dev --prefix apps/extensions/question-maker/app/frontend\" \"npm run dev --prefix apps/extensions/question-maker/app/backend\"",
+    "dev:core:db": "npm run docker:dev:db:core",
+    "dev:core:app": "npm run dev --prefix apps/core",
+    "dev:core": "npm run dev:core:db && npm run db:migrate:core && npm run dev:core:app",
+    "dev:tutor:db": "npm run docker:dev:db:tutor",
+    "dev:tutor:app": "concurrently -k -n core,tutor-fe,tutor-be -c cyan,blue,green \"npm run dev:core:app\" \"npm run dev --prefix apps/extensions/ai-tutor\" \"npm run dev --prefix apps/extensions/ai-tutor/server\"",
+    "db:deploy:core": "npm run db:migrate:deploy --prefix apps/core",
+    "db:deploy:tutor": "npm run db:migrate --prefix apps/extensions/ai-tutor/server",
+    "dev:tutor": "npm run dev:tutor:db && npm run db:deploy:core && npm run db:deploy:tutor && npm run dev:tutor:app",
+    "dev:qm:db": "npm run docker:dev:db:qm",
+    "dev:qm:app": "concurrently -k -n qm-fe,qm-be -c magenta,yellow \"npm run dev --prefix apps/extensions/question-maker/app/frontend\" \"npm run dev --prefix apps/extensions/question-maker/app/backend\"",
+    "dev:qm": "npm run dev:qm:db && npm run dev:qm:app",
+    "dev": "docker compose -f docker-compose.dev.yml up -d --wait core-db tutor-db qm-db && npm run db:deploy:core && npm run db:deploy:tutor && concurrently -k -n core,tutor-fe,tutor-be,qm-fe,qm-be -c cyan,blue,green,magenta,yellow \"npm run dev:core:app\" \"npm run dev --prefix apps/extensions/ai-tutor\" \"npm run dev --prefix apps/extensions/ai-tutor/server\" \"npm run dev --prefix apps/extensions/question-maker/app/frontend\" \"npm run dev --prefix apps/extensions/question-maker/app/backend\"",
 
     "build:core": "npm run build --prefix apps/core",
     "build:tutor": "npm run build --prefix apps/extensions/ai-tutor",
@@ -29,7 +40,7 @@
     "start:qm": "concurrently -k -n qm-fe,qm-be -c magenta,yellow \"npm run preview --prefix apps/extensions/question-maker/app/frontend\" \"npm run start --prefix apps/extensions/question-maker/app/backend\"",
 
     "db:migrate:core": "npm run db:migrate --prefix apps/core",
-    "db:migrate:tutor": "npm --prefix apps/extensions/ai-tutor/server exec prisma migrate deploy",
+    "db:migrate:tutor": "npm run db:migrate --prefix apps/extensions/ai-tutor/server",
     "db:seed:core": "npm run db:seed --prefix apps/core",
 
     "install:core": "npm install --prefix apps/core",
