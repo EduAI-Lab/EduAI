@@ -8,6 +8,9 @@ All notable changes across the EduAICore monorepo (AI Tutor, Question Maker, Edu
 
 ## [Week 2 — May 11–15, 2026]
 
+### Added
+- [monorepo] infra: Set up Turborepo to orchestrate monorepo build, dev, test, and lint scripts across all workspace applications. (#133, @evanbones, 2026-05-12)
+
 ### Changed
 - docs: Merge monorepo report information into platform centralization document. Changed section 12 to be a description of the monorepo architecture. (#107, @evanbones, 2026-05-11)
 
