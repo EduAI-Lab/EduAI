@@ -15,11 +15,11 @@ All notable changes across the EduAICore monorepo (AI Tutor, Question Maker, Edu
 
 ### Changed
 - [monorepo] docs: Add Testing section to root README covering install prerequisites, all root-level test commands, integration test database requirements, and a per-app runner reference table. (#119, @yta3216, 2026-05-12)
-- docs: Merge monorepo report information into platform centralization document. Changed section 12 to be a description of the monorepo architecture. (#107, @evanbones, 2026-05-11)
+- [monorepo] docs: Merge monorepo report information into platform centralization document. Changed section 12 to be a description of the monorepo architecture. (#107, @evanbones, 2026-05-11)
 
 ### Removed
 
-- docs: Removed old monorepo report since the information is now included in the centralization docs. (#107, @evanbones, 2026-05-11)
+- [monorepo] docs: Remove old monorepo report since the information is now included in the centralization docs. (#107, @evanbones, 2026-05-11)
 
 ## [Week 1 — May 4–8, 2026]
 
@@ -42,9 +42,9 @@ All notable changes across the EduAICore monorepo (AI Tutor, Question Maker, Edu
 2. Add your entry under the correct **category** (see "Categories" below).
 3. Use the entry format:
    ```
-   - Short, imperative description. (#PR-number, @github-handle, YYYY-MM-DD)
+   - [app] scope: Short, imperative description in sentence case. (#PR-number, @github-handle, YYYY-MM-DD)
    ```
-4. If the change is **breaking**, prefix the description with `**BREAKING:**` and add a short migration note on the next line.
+4. If the change is **breaking**, prefix with `**BREAKING:**` after the app tag and add a short migration note on the next line.
 5. Commit the changelog update **as part of the same PR** — do not open a separate "update changelog" PR.
 
 When a sprint / milestone closes, the maintainer renames the section header from `[Unreleased – Sprint N]` to the final sprint name and date range, and opens a new `[Unreleased]` block at the top.
