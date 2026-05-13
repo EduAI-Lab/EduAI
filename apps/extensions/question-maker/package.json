@@ -4,7 +4,6 @@
   "private": true,
   "scripts": {
     "build": "turbo run build --filter=question-maker-*",
-    "dev": "turbo run dev --filter=question-maker-*",
     "lint": "turbo run lint --filter=question-maker-*",
     "test": "turbo run test --filter=question-maker-*"
   }

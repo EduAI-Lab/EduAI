@@ -15,7 +15,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: eduai
     ports:
-      - "${CORE_DB_PORT:-5432}:5432"
+      - "${CORE_DB_PORT:-54320}:5432"
     volumes:
       - core_db_data:/var/lib/postgresql/data
     healthcheck:

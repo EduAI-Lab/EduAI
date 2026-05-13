@@ -8,8 +8,8 @@
     "test:watch": "vitest",
     "test:unit": "vitest run test/unit/",
     "test:integration": "vitest run test/integration/",
-    "start": "bunx prisma generate && node src/index.js",
-    "dev": "bunx prisma generate && nodemon src/index.js",
+    "start": "npx prisma generate && node src/index.js",
+    "dev": "npx prisma generate && nodemon src/index.js",
     "seed": "prisma generate && bun prisma/seed.ts"
   },
   "keywords": [],
@@ -18,7 +18,7 @@
   "type": "module",
   "dependencies": {
     "@better-auth/oauth-provider": "1.5.4",
-    "@prisma/client": "^6.16.1",
+    "@prisma/client": "^6.19.3",
     "better-auth": "1.5.4",
     "cors": "^2.8.5",
     "dotenv": "^17.2.2",
