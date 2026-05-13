@@ -4,7 +4,7 @@ Monorepo for the EduAI platform — a suite of AI-powered educational tools buil
 
 ## Repository structure
 
-```
+```text
 EduAICore/
 ├── apps/
 │   ├── core/                        # EduAI Core — RAG chat platform and central API
@@ -17,8 +17,10 @@ EduAICore/
 │   ├── ui/
 │   └── util/
 ├── docs/                            # System-wide architecture and planning docs
+├── turbo.json                       # Turborepo task pipeline configuration
 ├── CHANGELOG.md                     # Unified changelog across all apps
 └── .gitignore
+
 ```
 
 ## Apps
@@ -54,20 +56,25 @@ All notable changes across apps are recorded in [`CHANGELOG.md`](CHANGELOG.md) a
 
 ## Getting started
 
-Each app is independently runnable. Navigate to the app directory and follow its own README:
+This project uses [Turborepo](https://turbo.build/) to orchestrate tasks across all apps and packages. You only need to run installations and scripts from the monorepo root.
 
 ```bash
-# EduAI Core
-cd apps/core && npm install
+# Install dependencies for all apps and packages
+npm install
 
-# AI Tutor
-cd apps/extensions/ai-tutor && bun install
+# Start development servers for all apps simultaneously
+npm run dev
 
-# Question Maker
-cd apps/extensions/question-maker/app/backend && npm install
-cd apps/extensions/question-maker/app/frontend && npm install
-# or use Docker Compose from the question-maker root
+# Build all applications (Turborepo caches the outputs)
+npm run build
+
+# Run formatting, linting, and tests across the workspace
+npm run lint
+npm run test
+
 ```
+
+*Note: You can still execute tasks for a specific app using Turborepo's filter flag. For example, `npm run dev --filter=ai-tutor` will only start the AI Tutor extension.*
 
 ## Git hooks
 
