@@ -22,7 +22,7 @@
   - [3.5 Student](#35-student)
 - [4. Gaps Between Current State and Target](#4-gaps-between-current-state-and-target)
 - [5. Naming Decisions](#5-naming-decisions)
-- [6. Dependency: Platform Centralization](#6-dependency-platform-centralization)
+- [6. Dependency: Canvas Integration and Platform Centralization](#6-dependency-canvas-integration-and-platform-centralization)
 - [7. Canvas Roles — Reference](#7-canvas-roles--reference)
 - [8. File Reference](#8-file-reference)
 
