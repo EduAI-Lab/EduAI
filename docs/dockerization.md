@@ -13,6 +13,41 @@ Adds Docker Compose configurations and root-level npm scripts to orchestrate all
 - **Consistent `.env` architecture** — each app has its own `.env` at the path it expects, with audited `.env.example` templates
 - **No port conflicts** — each frontend has a unique dev port
 
+## Required: create your `.env` files (every developer)
+
+Real `.env` files are **gitignored** and are not created for you. Copy each audited template to the **exact path** where that app or Compose already looks for variables, then edit values (API keys, secrets, URLs) to match your machine.
+
+| Location | Action |
+| -------- | ------ |
+| Monorepo root | Copy [`.env.example`](../.env.example) → `.env` — mainly Docker Compose port overrides when using `docker:*` scripts. |
+| Core | Copy [`apps/core/.env.example`](../apps/core/.env.example) → `apps/core/.env` |
+| AI Tutor (API) | Copy [`apps/extensions/ai-tutor/server/.env.example`](../apps/extensions/ai-tutor/server/.env.example) → `apps/extensions/ai-tutor/server/.env` |
+| Question Maker | Copy [`apps/extensions/question-maker/.env.example`](../apps/extensions/question-maker/.env.example) → `apps/extensions/question-maker/.env` |
+
+From the repo root (PowerShell) — skips destinations that already exist:
+
+```powershell
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+if (-not (Test-Path apps/core/.env)) { Copy-Item apps/core/.env.example apps/core/.env }
+if (-not (Test-Path apps/extensions/ai-tutor/server/.env)) { Copy-Item apps/extensions/ai-tutor/server/.env.example apps/extensions/ai-tutor/server/.env }
+if (-not (Test-Path apps/extensions/question-maker/.env)) { Copy-Item apps/extensions/question-maker/.env.example apps/extensions/question-maker/.env }
+```
+
+From the repo root (bash):
+
+```bash
+test -f .env || cp .env.example .env
+test -f apps/core/.env || cp apps/core/.env.example apps/core/.env
+test -f apps/extensions/ai-tutor/server/.env || cp apps/extensions/ai-tutor/server/.env.example apps/extensions/ai-tutor/server/.env
+test -f apps/extensions/question-maker/.env || cp apps/extensions/question-maker/.env.example apps/extensions/question-maker/.env
+```
+
+If a `.env` already exists, **do not overwrite it**; merge any new keys from the matching `.env.example` by hand.
+
+### Why three application `.env` files instead of one?
+
+We intentionally use **separate env files for Core, AI Tutor server, and Question Maker** (plus an optional small **root** `.env` for Compose-only values). **One monorepo-wide `.env` would fight how the apps are written today:** each stack resolves env relative to its own process/working directory, and each app expects its own `DATABASE_URL` against a **different** database. Collapsing everything into a single file would either duplicate ambiguous variable names or force renames and code changes across Prisma, Vite, and server bootstrap paths. **Multiple scoped files** match those boundaries, keep unrelated secrets out of the same file, and make onboarding and production deploys clearer: you only touch the env file for the service you are running.
+
 ## Port assignments
 
 
@@ -101,7 +136,7 @@ Additional `.env.example` fixes:
 
 ## Environment architecture
 
-```
+Step-by-step copies from `.env.example` are documented in **Required: create your `.env` files (every developer)** above. Paths summarized:
 .env                                    → Docker Compose port overrides only
 apps/core/.env                          → Core config (DATABASE_URL, BETTER_AUTH_*, OLLAMA_*, etc.)
 apps/extensions/ai-tutor/server/.env    → Tutor server config (DATABASE_URL, EDUAI_*, BETTER_AUTH_*, etc.)
