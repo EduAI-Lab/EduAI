@@ -18,6 +18,7 @@ EduAICore/
 │   └── util/
 ├── docs/                            # System-wide architecture and planning docs
 ├── CHANGELOG.md                     # Unified changelog across all apps
+├── TESTS.md                         # Canonical test inventory across all apps
 └── .gitignore
 ```
 
