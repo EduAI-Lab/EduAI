@@ -191,6 +191,7 @@ function llmPromptSizeHints(system: unknown, messages: GenericMessage[]) {
 }
 
 function serializeMessage(message: GenericMessage): Prisma.JsonValue {
+  // TODO fix: JSON.parse(JSON.stringify(...)) clones whole message twice — costly for large multimodal payloads; prefer structured serialization or Prisma.JsonNull-aware assignment.
   return JSON.parse(JSON.stringify(message)) as Prisma.JsonValue;
 }
 
@@ -309,7 +310,7 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     const body = await request.json();
-    const rawMessages = Array.isArray(body.messages) ? body.messages : [];
+    const rawMessages: unknown[] = Array.isArray(body.messages) ? body.messages : [];
     const model = typeof body.model === "string" ? body.model : undefined;
     const apiKeys = body.apiKeys as unknown;
     const courseId = typeof body.courseId === "string" ? body.courseId : undefined;
@@ -359,8 +360,8 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     const normalizedIncomingMessages = rawMessages
-      .map(normalizeMessage)
-      .filter((message): message is GenericMessage => Boolean(message));
+      .map((m) => normalizeMessage(m))
+      .filter((m): m is GenericMessage => m !== null);
 
     // Resolve course code to internal ID when needed
     let resolvedCourseId: string | null = null;
@@ -444,6 +445,7 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     // Fetch only the slice of history we plan to send back to the LLM.
+    // TODO fix: always hits DB for up to MAX_CONTEXT_MESSAGES per request — consider trusting client transcript + version cursor, or cache, if latency matters.
     const recentMessageRecords = await prisma.chatMessage.findMany({
       where: { chatId: chat.id },
       orderBy: { position: "desc" },
@@ -458,6 +460,7 @@ export async function action({ request }: ActionFunctionArgs) {
       }),
     );
 
+    // TODO fix: console.log on hot path — use structured logger + debug level, or gate behind NODE_ENV, to avoid sync I/O under load.
     console.log(`Retrieved ${storedMessages.length} messages from DB for chat ${chat.id}`);
     console.log(`Incoming ${normalizedIncomingMessages.length} new messages`);
 
@@ -467,6 +470,7 @@ export async function action({ request }: ActionFunctionArgs) {
         ? mergedMessages.slice(-MAX_CONTEXT_MESSAGES)
         : mergedMessages;
 
+    // TODO fix: hot-path console (same as above).
     console.log(`After merge: ${mergedMessages.length} messages, after trim: ${trimmedMessages.length} messages`);
 
     if (mergedMessages.length === 0) {
@@ -511,7 +515,7 @@ export async function action({ request }: ActionFunctionArgs) {
           chatId: chat!.id,
           messageId: message.id,
           role: message.role,
-          content: serializeMessage(message),
+          content: serializeMessage(message) as Prisma.InputJsonValue,
         });
 
         existingMessageIds.add(message.id);
@@ -526,11 +530,13 @@ export async function action({ request }: ActionFunctionArgs) {
     };
 
     // Create AI provider registry with user's API keys
+    // TODO fix: `as any` hides invalid apiKeys shapes at compile time — validate with zod or shared schema before registry construction.
     const registry = createAIProviderRegistry(apiKeys as any);
 
     // Get the AI model from registry
     const aiModel = registry.languageModel(model);
 
+    // TODO fix: persisting incoming messages before streamText means failed LLM calls still leave user rows in DB — defer write until after successful first token / full completion, or add compensating delete.
     await appendMessages(normalizedIncomingMessages);
 
     // Define tools for RAG functionality and external web search
@@ -554,6 +560,7 @@ export async function action({ request }: ActionFunctionArgs) {
               effectiveCourseId,
               HYBRID_RAG_MAX_CHUNKS,
             );
+            // TODO fix: tool returns full relevantContent arrays — can dwarf hybrid caps and bloat the next model step; cap/summarize tool payload same as buildCappedRagContextText.
             return {
               relevantContent,
               count: relevantContent.length,
@@ -581,6 +588,7 @@ export async function action({ request }: ActionFunctionArgs) {
       const userQuestion = extractTextFromMessage(lastUserMessage);
       const messageContentLower = userQuestion.toLowerCase();
 
+      // TODO fix: substring keyword gate misses many real course questions and fires on generic prompts — replace with embed-based intent, always-RAG-when-course-selected, or a small classifier.
       const isRAGQuery =
         Boolean(effectiveCourseId) &&
         (
@@ -600,6 +608,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
       if (isRAGQuery) {
         try {
+          // TODO fix: blocks entire stream until embed API + DB complete — no TTFT until RAG finishes; consider streaming without RAG first or parallelizing.
           const relevantContent = await findRelevantContent(
             userQuestion || messageContentLower,
             effectiveCourseId!,
@@ -695,6 +704,7 @@ ${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the use
 
 Be helpful, conversational, and accurate. Use markdown for formatting.`;
 
+      // TODO fix: maxSteps 12 + maxTokens 32000 is heavy for local Ollama — tune per provider/model or env (especially maxSteps for tool loops).
       streamConfig = {
         model: aiModel,
         messages: trimmedMessages,
@@ -707,12 +717,13 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
       };
     }
 
+    // TODO fix: still sync console on hot path — prefer logger + debug flag (see earlier console.log TODO).
     console.log("Starting LLM stream", {
       model,
       approach: supportsTools ? "tool_calling" : "hybrid_rag",
       ...llmPromptSizeHints(streamConfig.system, trimmedMessages),
     });
-    const result = await streamText(streamConfig);
+    const result = await streamText(streamConfig as Parameters<typeof streamText>[0]);
 
     if (streaming) {
       const headers: Record<string, string> = {
