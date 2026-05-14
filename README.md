@@ -88,8 +88,8 @@ npm run test:all     # Unit + integration tests
 To run tasks for a single app, use Turborepo’s filter flag directly:
 
 ```bash
-npx turbo run dev --filter=aitutor          # AI Tutor only
-npx turbo run dev --filter=question-maker-* # Question Maker frontend + backend only
+npx turbo run dev --filter=aitutor --filter=server   # AI Tutor frontend + server
+npx turbo run dev --filter=’question-maker-*’         # Question Maker frontend + backend
 ```
 
 ## Databases (Docker)
@@ -133,9 +133,9 @@ From the monorepo root `EduAICore/`:
 | --- | --- |
 | `npm run test` | All unit tests across every app simultaneously |
 | `npm run test:all` | Everything above, plus Question Maker backend integration tests |
-| `npm run test --filter=core` | EduAI Core tests only |
-| `npm run test --filter=ai-tutor...` | AI Tutor frontend and server tests |
-| `npm run test --filter=question-maker...` | Question Maker frontend and backend tests |
+| `npx turbo run test --filter=edu-ai-core-learning` | EduAI Core tests only |
+| `npx turbo run test --filter=aitutor --filter=server` | AI Tutor frontend and server tests |
+| `npx turbo run test --filter='question-maker-*'` | Question Maker frontend and backend tests |
 
 ### Integration tests
 

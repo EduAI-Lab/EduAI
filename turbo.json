@@ -7,11 +7,35 @@
     },
     "test": {
       "dependsOn": ["build"],
-      "inputs": ["src/**/*.tsx", "src/**/*.ts", "test/**/*.ts"]
+      "inputs": [
+        "src/**",
+        "app/**",
+        "server/**",
+        "shared/**",
+        "test/**",
+        "vitest.config.*",
+        "jest.config.*",
+        "jest.integration.config.*",
+        "package.json",
+        "prisma/**",
+        "tsconfig*.json"
+      ]
     },
     "test:all": {
       "dependsOn": ["build"],
-      "inputs": ["src/**/*.tsx", "src/**/*.ts", "test/**/*.ts"]
+      "inputs": [
+        "src/**",
+        "app/**",
+        "server/**",
+        "shared/**",
+        "test/**",
+        "vitest.config.*",
+        "jest.config.*",
+        "jest.integration.config.*",
+        "package.json",
+        "prisma/**",
+        "tsconfig*.json"
+      ]
     },
     "lint": {
       "outputs": []
