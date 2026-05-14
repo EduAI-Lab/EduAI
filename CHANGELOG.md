@@ -9,14 +9,17 @@ All notable changes across the EduAICore monorepo (AI Tutor, Question Maker, Edu
 ## [Week 2 — May 11–15, 2026]
 
 ### Added
+
 - [core] docs: Add `TEST.md` cataloguing all planned test cases for `lib/utils`, `lib/ai/providers`, `lib/ai/file-processing`, `lib/ai/embedding`, `lib/courses/schemas`, `lib/ai/schemas`, and form components (`LoginForm`, `RegisterForm`); assign test files across three contributors. (#134, @glowyblack, 2026-05-13)
-- [core] infra: Add unit tests for all functions in `lib/form-utils.ts` (`getFieldErrors`, `getFieldError`, `getFormErrorMessage`, `validateField`); set `pool: vmThreads` in `vitest.config.ts` to fix worker startup timeout on Windows. (#134, @glowyblack, 2026-05-13)
+- [core] infra: Add unit tests for all functions in `lib/form-utils.ts` (`getFieldErrors`, `getFieldError`, `getFormErrorMessage`, `validateField`); set `pool: vmThreads` in `vitest.config.ts` to fix worker startup timeout on Windows. Test file lives at `app/tests/unit/form-utils.test.ts`. (#134, @glowyblack, 2026-05-13)
 - [monorepo] infra: Add root `package.json` with unified test runner. `npm test` at the root directory runs all unit tests across every app. (#119, @yta3216, 2026-05-12)
-- [core] infra: Set up Vitest test infrastructure: add `vitest.config.ts`, `app/__tests__/setup.ts`, and `test`/`test:watch` scripts to `package.json`. No tests written yet; scaffolding only. (#119, @yta3216, 2026-05-12)
+- [core] infra: Set up Vitest test infrastructure: add `vitest.config.ts`, `app/tests/setup.ts`, and `test`/`test:watch` scripts to `package.json`. No tests written yet; scaffolding only. (#119, @yta3216, 2026-05-12)
 - [core] docs: Add `TESTS.md` with planned test cases for lib utilities, AI providers, file processing, Zod schemas, and form components. (#119, @yta3216, 2026-05-12)
 
 ### Changed
+
 - [monorepo] docs: Move `TEST.md` from `apps/core/` to the monorepo root so it is visible alongside `CHANGELOG.md` and other top-level docs. (#134, @glowyblack, 2026-05-13)
+- [core] infra: Rename test folder from `app/__tests__/` to `app/tests/` and reorganise test files into `app/tests/unit/`; update `vitest.config.ts` `include` and `setupFiles` paths accordingly. (#134, @glowyblack, 2026-05-13)
 - [monorepo] docs: Add Testing section to root README covering install prerequisites, all root-level test commands, integration test database requirements, and a per-app runner reference table. (#119, @yta3216, 2026-05-12)
 - docs: Merge monorepo report information into platform centralization document. Changed section 12 to be a description of the monorepo architecture. (#107, @evanbones, 2026-05-11)
 
@@ -27,10 +30,12 @@ All notable changes across the EduAICore monorepo (AI Tutor, Question Maker, Edu
 ## [Week 1 — May 4–8, 2026]
 
 ### Added
+
 - [monorepo] docs: Add platform centralization architecture plan for Epic #58 covering current state of all three extensions, gap analysis, API contracts, migration plan, key decisions, and known challenges. (#96, @ariqmuldi, 2026-05-10)
 - [monorepo] docs: Add user management and roles architecture plan for Epic #60 covering role hierarchy, Unit concept, current permissions per role, gaps, naming decisions, and Canvas role reference. (#96, @ariqmuldi, 2026-05-10)
 
 ### Changed
+
 - [monorepo] docs: Update platform centralization plan to reflect open PRs — EC-3 enrollment endpoint now in progress on `feature/enrollment-api`; EC-10 OAuth/OIDC sister-app auth covered by PRs #48, #49, #51, #50; Phase 1 and Week 2 checklist updated accordingly. (#96, @ariqmuldi, 2026-05-10)
 - [monorepo] docs: Update user management and roles plan to reflect enrollment endpoint progress on `feature/enrollment-api`. (#96, @ariqmuldi, 2026-05-10)
 - [monorepo] docs: Expand platform centralization plan with additional gaps, decisions, and corrections — corrected QM AI Chat status (question generation still calls providers directly; OCR extraction and variant generation already centralized), added gaps QM-7/QM-8/AT-3/EC-12, added within-extension cleanup section, added Decisions 5–7 (bug reporting consolidation, subdomain/cookie strategy, QM ORM), added open question on shared question bank visibility control, added out-of-scope items for unified dashboard and user navigation flow, and updated Week 2 checklist. (@abdullahmoh21, 2026-05-10)
@@ -60,21 +65,27 @@ When opening a new sprint, copy this block just below the intro section:
 ## [Unreleased — Sprint N]
 
 ### Added
+
 -
 
 ### Changed
+
 -
 
 ### Deprecated
+
 -
 
 ### Removed
+
 -
 
 ### Fixed
+
 -
 
 ### Security
+
 -
 ```
 
@@ -82,14 +93,14 @@ When opening a new sprint, copy this block just below the intro section:
 
 Use these category headings (from Keep a Changelog) — keep them in this order, and omit any that have no entries for the sprint:
 
-| Category        | Use for                                                              |
-| --------------- | -------------------------------------------------------------------- |
-| **Added**       | New features, endpoints, components, pages, scripts, or env vars.    |
-| **Changed**     | Updates to existing behavior, refactors with observable effects, dependency upgrades that affect runtime. |
-| **Deprecated**  | Features still present but scheduled for removal. Note the removal target. |
-| **Removed**     | Features, files, branches, endpoints, or env vars that have been deleted. |
-| **Fixed**       | Bug fixes.                                                           |
-| **Security**    | Vulnerability fixes, auth/permissions changes, secret-handling fixes. |
+| Category       | Use for                                                                                                   |
+| -------------- | --------------------------------------------------------------------------------------------------------- |
+| **Added**      | New features, endpoints, components, pages, scripts, or env vars.                                         |
+| **Changed**    | Updates to existing behavior, refactors with observable effects, dependency upgrades that affect runtime. |
+| **Deprecated** | Features still present but scheduled for removal. Note the removal target.                                |
+| **Removed**    | Features, files, branches, endpoints, or env vars that have been deleted.                                 |
+| **Fixed**      | Bug fixes.                                                                                                |
+| **Security**   | Vulnerability fixes, auth/permissions changes, secret-handling fixes.                                     |
 
 ### Entry format
 
