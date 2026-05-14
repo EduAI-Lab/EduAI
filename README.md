@@ -48,10 +48,22 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 |----------|-------------|
 | [`platform-centralization-architecture-plan.md`](docs/platform-centralization-architecture-plan.md) | How Core, AI Tutor, and Question Maker are being centralized under a single API and auth layer |
 | [`user-management-and-roles-architecture-plan.md`](docs/user-management-and-roles-architecture-plan.md) | Role hierarchy, permissions, and naming decisions across the platform — **on hold pending Canvas integration** |
+| [`chat-rag-pipeline.md`](docs/chat-rag-pipeline.md) | Chat API and RAG pipeline — reference when profiling slow chat or retrieval |
 
 ## Changelog
 
 All notable changes across apps are recorded in [`CHANGELOG.md`](CHANGELOG.md) at the monorepo root.
+
+## Chat latency benchmarking (EduAI Core)
+
+For scripted non-streaming `POST /api/chat` latency runs (for example against a dev deployment), use:
+
+```bash
+cd apps/core
+node ./scripts/chat-latency-bench.mjs
+```
+
+Required environment variables and auth options (`CHAT_BENCH_URL`, `CHAT_BENCH_MODEL`, `CHAT_BENCH_API_KEYS`, cookies or API key) are documented in the script header in [`apps/core/scripts/chat-latency-bench.mjs`](apps/core/scripts/chat-latency-bench.mjs).
 
 ## Getting started
 
