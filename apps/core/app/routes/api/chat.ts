@@ -13,7 +13,43 @@ import prisma from "~/lib/prisma.server";
 
 const MAX_CONTEXT_MESSAGES = 20;
 
+/** Hybrid RAG + tool `getInformation`: pgvector row cap (default was 6). */
+const HYBRID_RAG_MAX_CHUNKS = 4;
+/** Max characters from excerpts injected into hybrid `system` (non-tool models). */
+const HYBRID_RAG_MAX_CONTEXT_CHARS = 14_000;
+
 type GenericMessage = Record<string, any>;
+
+type HybridRagHit = { content: string; similarity: number; materialTitle: string };
+
+/** Top-similarity first; stops at chunk count and char budget for local LLM prefill. */
+function buildCappedRagContextText(hits: HybridRagHit[], maxChunks: number, maxChars: number): string {
+  const slice = hits.slice(0, maxChunks);
+  const sep = "\n\n---\n\n";
+  const parts: string[] = [];
+  let total = 0;
+
+  for (const item of slice) {
+    const header = `**Source**: ${item.materialTitle || "Course Material"}\n`;
+    const body = item.content;
+    const overhead = parts.length === 0 ? 0 : sep.length;
+    const fullLen = header.length + body.length;
+
+    if (total + overhead + fullLen <= maxChars) {
+      parts.push(header + body);
+      total += overhead + fullLen;
+      continue;
+    }
+
+    const room = maxChars - total - overhead - header.length;
+    if (room > 120) {
+      parts.push(`${header}${body.slice(0, room)}…`);
+    }
+    break;
+  }
+
+  return parts.join(sep);
+}
 
 type StoredMessageRecord = {
   messageId: string;
@@ -138,6 +174,20 @@ function extractTextFromMessage(message?: GenericMessage): string {
   }
 
   return message ? JSON.stringify(message.content ?? "") : "";
+}
+
+/** Cheap metrics for logs — do not print full `system` / messages (RAG can be huge). */
+function llmPromptSizeHints(system: unknown, messages: GenericMessage[]) {
+  const systemChars = typeof system === "string" ? system.length : 0;
+  let messageTextChars = 0;
+  for (const m of messages) {
+    messageTextChars += extractTextFromMessage(m).length;
+  }
+  return {
+    systemChars,
+    messageCount: messages.length,
+    messageTextChars,
+  };
 }
 
 function serializeMessage(message: GenericMessage): Prisma.JsonValue {
@@ -499,7 +549,11 @@ export async function action({ request }: ActionFunctionArgs) {
           }
 
           try {
-            const relevantContent = await findRelevantContent(question, effectiveCourseId);
+            const relevantContent = await findRelevantContent(
+              question,
+              effectiveCourseId,
+              HYBRID_RAG_MAX_CHUNKS,
+            );
             return {
               relevantContent,
               count: relevantContent.length,
@@ -549,12 +603,16 @@ export async function action({ request }: ActionFunctionArgs) {
           const relevantContent = await findRelevantContent(
             userQuestion || messageContentLower,
             effectiveCourseId!,
+            HYBRID_RAG_MAX_CHUNKS,
           );
-          const contextText = relevantContent.length > 0
-            ? relevantContent
-                .map((item) => `**Source**: ${item.materialTitle || "Course Material"}\n${item.content}`)
-                .join("\n\n---\n\n")
-            : "";
+          const contextText =
+            relevantContent.length > 0
+              ? buildCappedRagContextText(
+                  relevantContent,
+                  HYBRID_RAG_MAX_CHUNKS,
+                  HYBRID_RAG_MAX_CONTEXT_CHARS,
+                )
+              : "";
 
           const baseSystemPrompt = resolvedSystemPrompt || `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
 
@@ -649,9 +707,11 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
       };
     }
 
-    console.log(`Using ${supportsTools ? "tool calling" : "hybrid RAG"} approach for model: ${model}`);
-    console.log('Full system prompt:', streamConfig.system);
-    console.log(`Sending ${trimmedMessages.length} messages to LLM:`, JSON.stringify(trimmedMessages, null, 2));
+    console.log("Starting LLM stream", {
+      model,
+      approach: supportsTools ? "tool_calling" : "hybrid_rag",
+      ...llmPromptSizeHints(streamConfig.system, trimmedMessages),
+    });
     const result = await streamText(streamConfig);
 
     if (streaming) {
