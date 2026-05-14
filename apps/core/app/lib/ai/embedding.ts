@@ -47,6 +47,7 @@ export function generateChunks(input: string, maxChunkSize: number = 800, overla
  * Get embedding model - default to Gemini
  */
 function getEmbeddingModel() {
+  // TODO fix: chat can be Ollama-only but RAG still requires Google/OpenAI here — add Ollama embedding provider or document hard dependency; fail fast at startup for clearer ops.
   // Try Google Gemini first (new default)
   const googleApiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
   if (googleApiKey) {
@@ -74,6 +75,7 @@ export async function generateEmbeddings(
 ): Promise<Array<{ embedding: number[]; content: string }>> {
   if (chunks.length === 0) return [];
 
+  // TODO fix: single embedMany call is good, but very large materials could exceed provider batch limits — chunk batching with backoff if needed.
   const embeddingModel = getEmbeddingModel();
 
   const { embeddings } = await embedMany({
@@ -93,6 +95,7 @@ export async function generateEmbeddings(
 export async function generateEmbedding(
   query: string,
 ): Promise<number[]> {
+  // TODO fix: no cache — identical/near-identical queries re-hit remote embed API every time (latency + cost).
   const embeddingModel = getEmbeddingModel();
 
   const { embedding } = await embed({
@@ -105,6 +108,8 @@ export async function generateEmbedding(
 
 /**
  * Find relevant content using cosine similarity search
+ *
+ * TODO fix: `similarityThreshold` default (0.5) is global — consider per-course or env tuning for empty/noisy retrieval.
  */
 export async function findRelevantContent(
   userQuery: string,
@@ -158,6 +163,7 @@ export async function processMaterialEmbeddings(
   const embeddings = await generateEmbeddings(chunks);
 
   // Store chunks and embeddings in database
+  // TODO fix: N sequential create + executeRaw per chunk — batch inserts / transaction to cut round-trips on large materials.
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i];
     const embedding = embeddings[i];
