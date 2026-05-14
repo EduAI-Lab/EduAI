@@ -634,6 +634,7 @@ export async function action({ request }: ActionFunctionArgs) {
       const messageContentLower = userQuestion.toLowerCase();
 
       // Check if hybrid RAG should always be used with course
+      // regex method might not be the best method to determine if RAG is needed. Consider using a small LLM or alternatives #
       const hybridRagAlwaysWithCourse = process.env.CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE === "1";
       const isRAGQuery =
         Boolean(effectiveCourseId) &&
