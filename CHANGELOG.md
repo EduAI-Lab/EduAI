@@ -13,11 +13,20 @@ All notable changes across the EduAICore monorepo (AI Tutor, Question Maker, Edu
 - [core] infra: Set up Vitest test infrastructure: add `vitest.config.ts`, `app/__tests__/setup.ts`, and `test`/`test:watch` scripts to `package.json`. No tests written yet; scaffolding only. (#119, @yta3216, 2026-05-12)
 - [core] docs: Add `TESTS.md` with planned test cases for lib utilities, AI providers, file processing, Zod schemas, and form components. (#119, @yta3216, 2026-05-12)
 - [monorepo] docs: Add root `TESTS.md` as the canonical test inventory — defines structure, policy, and per-section table format for tracking all test files across the monorepo. (#140, @ariqmuldi, 2026-05-13)
+- [core] docs: Add `docs/chat-rag-pipeline.md` documenting the `POST /api/chat` flow, hybrid RAG, and embedding behavior for latency profiling. (#144, @superbolt08, 2026-05-14)
+- [core] infra: Add `scripts/chat-latency-bench.mjs` for non-streaming `POST /api/chat` latency measurement. (#144, @superbolt08, 2026-05-14)
 
 ### Changed
 - [monorepo] docs: Add Testing section to root README covering install prerequisites, all root-level test commands, integration test database requirements, and a per-app runner reference table. (#119, @yta3216, 2026-05-12)
 - docs: Merge monorepo report information into platform centralization document. Changed section 12 to be a description of the monorepo architecture. (#107, @evanbones, 2026-05-11)
 - [monorepo] docs: Mark user management and roles plan as on hold pending Canvas integration — current roles frozen, Canvas identified as source of truth for course structure, enrollments, and role assignments; rest of document preserved as original draft. (#115, @ariqmuldi, 2026-05-11)
+- [core] perf: Cap hybrid RAG context and bound retrieved chunks in chat; trim verbose debug logging on the chat API path. (#144, @superbolt08, 2026-05-14)
+- [core] model: Improve embedding generation with caching, batch processing, and clearer error handling. (#144, @superbolt08, 2026-05-14)
+- [core] infra: Allow any host in Vite dev server configuration (including `dev.eduai.ok.ubc.ca`) for remote development against the chat API. (#144, @superbolt08, 2026-05-14)
+
+### Fixed
+
+- [core] deps: Resolve dependency alignment issues uncovered during chat latency investigation. (#144, @superbolt08, 2026-05-14)
 
 ### Removed
 
