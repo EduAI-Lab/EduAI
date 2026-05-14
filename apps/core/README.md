@@ -370,25 +370,28 @@ npm test
 npm run test:watch
 
 # Run a specific file
-npx vitest run app/__tests__/lib/form-utils.test.ts
+npx vitest run app/tests/unit/form-utils.test.ts
 ```
 
 ### Folder structure
 
-All tests live under `app/__tests__/`, mirroring the source layout:
+All tests live under `app/tests/`:
 
 ```
-app/__tests__/
+app/tests/
 ├── setup.ts          # Global test setup (jest-dom matchers, browser API mocks)
-└── lib/
-    └── form-utils.test.ts
+└── unit/             # Unit tests, mirroring the source layout
+    ├── form-utils.test.ts
+    └── ...
 ```
+
+See [`TESTS.md`](../../TESTS.md) at the monorepo root for the full list of planned test cases and contributor assignments.
 
 ### Notes
 
 - The Vitest config (`vitest.config.ts`) uses `pool: vmThreads`. This is required on Windows to avoid a worker startup timeout with the default `forks` pool.
 - The test environment is `jsdom`. Tests that need real browser APIs (e.g. `ResizeObserver`) have mocks defined in `setup.ts`.
-- Tests must be placed inside `app/__tests__/` and named `*.test.ts` or `*.test.tsx` to be picked up automatically.
+- Tests must be placed inside `app/tests/` and named `*.test.ts` or `*.test.tsx` to be picked up automatically.
 
 ## Contributing
 
