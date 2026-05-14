@@ -1,0 +1,20 @@
+{
+  "name": "eduaicore",
+  "private": true,
+  "scripts": {
+    "test": "npm run test:core && npm run test:ai-tutor && npm run test:question-maker",
+    "test:all": "npm run test:core && npm run test:ai-tutor && npm run test:question-maker:all",
+
+    "test:core": "npm --prefix apps/core run test",
+
+    "test:ai-tutor": "npm run test:ai-tutor:frontend && npm run test:ai-tutor:server",
+    "test:ai-tutor:frontend": "bun run --cwd apps/extensions/ai-tutor test",
+    "test:ai-tutor:server": "bun run --cwd apps/extensions/ai-tutor/server test",
+
+    "test:question-maker": "npm run test:question-maker:backend && npm run test:question-maker:frontend",
+    "test:question-maker:all": "npm run test:question-maker:backend:all && npm run test:question-maker:frontend",
+    "test:question-maker:backend": "npm --prefix apps/extensions/question-maker/app/backend run test",
+    "test:question-maker:backend:all": "npm --prefix apps/extensions/question-maker/app/backend run test:all",
+    "test:question-maker:frontend": "npm --prefix apps/extensions/question-maker/app/frontend run test"
+  }
+}
