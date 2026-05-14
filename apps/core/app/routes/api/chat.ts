@@ -10,6 +10,8 @@ import type { ActionFunctionArgs } from "react-router";
 import { z } from "zod";
 import { webSearch, fetchPage } from "~/lib/ai/tools";
 import prisma from "~/lib/prisma.server";
+import { chatApiDebug } from "~/lib/chat-api-log";
+import { clientApiKeysBodySchema, toUserProviderSettings } from "~/lib/chat-api-keys.schema";
 
 const MAX_CONTEXT_MESSAGES = 20;
 
@@ -17,6 +19,18 @@ const MAX_CONTEXT_MESSAGES = 20;
 const HYBRID_RAG_MAX_CHUNKS = 4;
 /** Max characters from excerpts injected into hybrid `system` (non-tool models). */
 const HYBRID_RAG_MAX_CONTEXT_CHARS = 14_000;
+
+/** Max characters per chunk returned to the model from `getInformation` (tool path). */
+const TOOL_RAG_MAX_CHARS_PER_CHUNK = 6000;
+
+const TOOL_MAX_STEPS = Math.min(
+  32,
+  Math.max(1, Number(process.env.CHAT_TOOL_MAX_STEPS) || 12),
+);
+const TOOL_MAX_TOKENS = Math.min(
+  128_000,
+  Math.max(1024, Number(process.env.CHAT_TOOL_MAX_OUTPUT_TOKENS) || 32_000),
+);
 
 type GenericMessage = Record<string, any>;
 
@@ -49,6 +63,17 @@ function buildCappedRagContextText(hits: HybridRagHit[], maxChunks: number, maxC
   }
 
   return parts.join(sep);
+}
+
+/** Shrink tool payloads so a single `getInformation` call cannot flood the next model step. */
+function capRagHitsForTool(hits: HybridRagHit[]): HybridRagHit[] {
+  return hits.slice(0, HYBRID_RAG_MAX_CHUNKS).map((h) => ({
+    ...h,
+    content:
+      h.content.length > TOOL_RAG_MAX_CHARS_PER_CHUNK
+        ? `${h.content.slice(0, TOOL_RAG_MAX_CHARS_PER_CHUNK)}…`
+        : h.content,
+  }));
 }
 
 type StoredMessageRecord = {
@@ -190,9 +215,13 @@ function llmPromptSizeHints(system: unknown, messages: GenericMessage[]) {
   };
 }
 
+/** Serializes a message object to JSON, handling circular references. */
 function serializeMessage(message: GenericMessage): Prisma.JsonValue {
-  // TODO fix: JSON.parse(JSON.stringify(...)) clones whole message twice — costly for large multimodal payloads; prefer structured serialization or Prisma.JsonNull-aware assignment.
-  return JSON.parse(JSON.stringify(message)) as Prisma.JsonValue;
+  try {
+    return structuredClone(message) as Prisma.JsonValue;
+  } catch {
+    return JSON.parse(JSON.stringify(message)) as Prisma.JsonValue;
+  }
 }
 
 /**
@@ -445,7 +474,6 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     // Fetch only the slice of history we plan to send back to the LLM.
-    // TODO fix: always hits DB for up to MAX_CONTEXT_MESSAGES per request — consider trusting client transcript + version cursor, or cache, if latency matters.
     const recentMessageRecords = await prisma.chatMessage.findMany({
       where: { chatId: chat.id },
       orderBy: { position: "desc" },
@@ -460,9 +488,11 @@ export async function action({ request }: ActionFunctionArgs) {
       }),
     );
 
-    // TODO fix: console.log on hot path — use structured logger + debug level, or gate behind NODE_ENV, to avoid sync I/O under load.
-    console.log(`Retrieved ${storedMessages.length} messages from DB for chat ${chat.id}`);
-    console.log(`Incoming ${normalizedIncomingMessages.length} new messages`);
+    chatApiDebug("chat history loaded", {
+      chatId: chat.id,
+      storedCount: storedMessages.length,
+      incomingCount: normalizedIncomingMessages.length,
+    });
 
     const mergedMessages = mergeMessages(storedMessages, normalizedIncomingMessages);
     const trimmedMessages =
@@ -470,8 +500,10 @@ export async function action({ request }: ActionFunctionArgs) {
         ? mergedMessages.slice(-MAX_CONTEXT_MESSAGES)
         : mergedMessages;
 
-    // TODO fix: hot-path console (same as above).
-    console.log(`After merge: ${mergedMessages.length} messages, after trim: ${trimmedMessages.length} messages`);
+    chatApiDebug("chat history merged", {
+      mergedCount: mergedMessages.length,
+      trimmedCount: trimmedMessages.length,
+    });
 
     if (mergedMessages.length === 0) {
       return new Response(
@@ -495,6 +527,22 @@ export async function action({ request }: ActionFunctionArgs) {
         },
       );
     }
+
+    // Validate API keys
+    const apiKeysParsed = clientApiKeysBodySchema.safeParse(apiKeys);
+    if (!apiKeysParsed.success) {
+      return new Response(
+        JSON.stringify({
+          error: "Invalid apiKeys",
+          details: apiKeysParsed.error.flatten(),
+        }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+    const validatedApiKeys = toUserProviderSettings(apiKeysParsed.data);
 
     const existingMessageIds = new Set(storedMessages.map((message) => message.id).filter(isNonEmptyString));
     const appendMessages = async (messages: GenericMessage[]) => {
@@ -529,14 +577,11 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     };
 
-    // Create AI provider registry with user's API keys
-    // TODO fix: `as any` hides invalid apiKeys shapes at compile time — validate with zod or shared schema before registry construction.
-    const registry = createAIProviderRegistry(apiKeys as any);
+    const registry = createAIProviderRegistry(validatedApiKeys);
 
     // Get the AI model from registry
     const aiModel = registry.languageModel(model);
 
-    // TODO fix: persisting incoming messages before streamText means failed LLM calls still leave user rows in DB — defer write until after successful first token / full completion, or add compensating delete.
     await appendMessages(normalizedIncomingMessages);
 
     // Define tools for RAG functionality and external web search
@@ -560,10 +605,10 @@ export async function action({ request }: ActionFunctionArgs) {
               effectiveCourseId,
               HYBRID_RAG_MAX_CHUNKS,
             );
-            // TODO fix: tool returns full relevantContent arrays — can dwarf hybrid caps and bloat the next model step; cap/summarize tool payload same as buildCappedRagContextText.
+            const capped = capRagHitsForTool(relevantContent);
             return {
-              relevantContent,
-              count: relevantContent.length,
+              relevantContent: capped,
+              count: capped.length,
             };
           } catch (error) {
             console.error("Error finding relevant content:", error);
@@ -588,10 +633,11 @@ export async function action({ request }: ActionFunctionArgs) {
       const userQuestion = extractTextFromMessage(lastUserMessage);
       const messageContentLower = userQuestion.toLowerCase();
 
-      // TODO fix: substring keyword gate misses many real course questions and fires on generic prompts — replace with embed-based intent, always-RAG-when-course-selected, or a small classifier.
+      // Check if hybrid RAG should always be used with course
+      const hybridRagAlwaysWithCourse = process.env.CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE === "1";
       const isRAGQuery =
         Boolean(effectiveCourseId) &&
-        (
+        (hybridRagAlwaysWithCourse ||
           messageContentLower.includes("course") ||
           messageContentLower.includes("material") ||
           messageContentLower.includes("document") ||
@@ -603,12 +649,10 @@ export async function action({ request }: ActionFunctionArgs) {
           messageContentLower.includes("summarize") ||
           messageContentLower.includes("summary") ||
           messageContentLower.includes("content") ||
-          messageContentLower.includes("about")
-        );
+          messageContentLower.includes("about"));
 
       if (isRAGQuery) {
         try {
-          // TODO fix: blocks entire stream until embed API + DB complete — no TTFT until RAG finishes; consider streaming without RAG first or parallelizing.
           const relevantContent = await findRelevantContent(
             userQuestion || messageContentLower,
             effectiveCourseId!,
@@ -704,21 +748,20 @@ ${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the use
 
 Be helpful, conversational, and accurate. Use markdown for formatting.`;
 
-      // TODO fix: maxSteps 12 + maxTokens 32000 is heavy for local Ollama — tune per provider/model or env (especially maxSteps for tool loops).
       streamConfig = {
         model: aiModel,
         messages: trimmedMessages,
         temperature: 0.6,
-        maxTokens: 32000,
-        maxSteps: 12,
+        maxTokens: TOOL_MAX_TOKENS,
+        maxSteps: TOOL_MAX_STEPS,
         tools,
         toolCallStreaming: streaming,
         system: defaultSystemPrompt,
       };
     }
 
-    // TODO fix: still sync console on hot path — prefer logger + debug flag (see earlier console.log TODO).
-    console.log("Starting LLM stream", {
+    // Log the LLM stream configuration
+    chatApiDebug("Starting LLM stream", {
       model,
       approach: supportsTools ? "tool_calling" : "hybrid_rag",
       ...llmPromptSizeHints(streamConfig.system, trimmedMessages),
