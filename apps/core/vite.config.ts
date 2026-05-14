@@ -12,7 +12,9 @@ export default defineConfig({
     },
   },
   server: {
-    // Allow requests when Apache proxies with Host: dev.eduai.ok.ubc.ca (Vite blocks unknown hosts by default).
-    allowedHosts: ["dev.eduai.ok.ubc.ca", "localhost", "127.0.0.1"],
+    // Apache reverse proxy sends Host: dev.eduai.ok.ubc.ca; Vite 6+ rejects unknown hosts by default.
+    host: true,
+    // Dev-only: allow any Host (avoids rebinding checks fighting the proxy). Prefer a closed list in vite preview/production.
+    allowedHosts: true,
   },
 });
