@@ -1,5 +1,5 @@
 {
-  "name": "eduaicore-monorepo",
+  "name": "eduai-monorepo",
   "version": "1.0.0",
   "private": true,
   "packageManager": "npm@11.12.1",

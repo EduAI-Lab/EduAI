@@ -8,7 +8,7 @@
 services:
   core-db:
     image: pgvector/pgvector:pg16
-    container_name: eduai-core-db
+    container_name: eduai-db
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
@@ -26,12 +26,12 @@ services:
 
   tutor-db:
     image: postgres:16-alpine
-    container_name: eduai-tutor-db
+    container_name: eduai-ai-tutor-db
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: aitutor
+      POSTGRES_DB: ai-tutor
     ports:
       - "${TUTOR_DB_PORT:-54321}:5432"
     volumes:
@@ -44,12 +44,12 @@ services:
 
   qm-db:
     image: postgres:15-alpine
-    container_name: eduai-qm-db
+    container_name: eduai-question-maker-db
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
-      POSTGRES_DB: eduquery
+      POSTGRES_DB: question-maker
     ports:
       - "${QM_DB_PORT:-55432}:5432"
     volumes:
