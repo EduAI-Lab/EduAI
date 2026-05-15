@@ -4,24 +4,23 @@ This guide covers deploying and using the **EduAI dev server** on a shared Linux
 
 ## TL;DR — When and why to use the dev server
 
-| Scenario | Use dev server? | Why |
-| -------- | --------------- | --- |
-| UI / frontend changes only | No — local `npm run dev` is fine | No AI calls needed |
-| Backend logic that doesn't call AI | No — local dev works | DB can run in Docker locally |
-| **Testing changes that talk to AI (Ollama)** | **Yes** | Ollama runs on `cmps01`, which is **not reachable** from personal laptops due to UBC network restrictions |
+
+| Scenario                                     | Use dev server?                  | Why                                                                                                       |
+| -------------------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| UI / frontend changes only                   | No — local `npm run dev` is fine | No AI calls needed                                                                                        |
+| Backend logic that doesn't call AI           | No — local dev works             | DB can run in Docker locally                                                                              |
+| **Testing changes that talk to AI (Ollama)** | **Yes**                          | Ollama runs on `cmps01`, which is **not reachable** from personal laptops due to UBC network restrictions |
+
 
 **Key constraint:** `cmps01.ok.ubc.ca:11434` (Ollama) is only reachable from other UBC servers on the same network (like `s378`). Your laptop cannot reach it directly, even on VPN.
 
 ### Workarounds for AI access from a laptop
 
 1. **SSH tunnel** (requires access to `cmps01`, which most devs don't have):
-
-   ```bash
+  ```bash
    ssh -N -L 11435:127.0.0.1:11434 ssaada08@cmps01.ok.ubc.ca
-   ```
-
+  ```
    Then set `OLLAMA_BASE_URL="http://127.0.0.1:11435"` in your local `apps/core/.env`.
-
 2. **Use the dev server directly** (recommended for most AI testing) — see below.
 
 ## Current access
@@ -33,12 +32,14 @@ This guide covers deploying and using the **EduAI dev server** on a shared Linux
 
 The repo is a **Turborepo** monorepo. Install and run commands from the **repository root**, not only `apps/core`.
 
-| What | Where |
-| ---- | ----- |
-| Clone path | `/srv/www/dev.eduai.ok.ubc.ca/EduAICore` |
-| App env | `apps/core/.env` (not committed) |
-| Docker DBs | `docker-compose.dev.yml` at repo root |
+
+| What           | Where                                              |
+| -------------- | -------------------------------------------------- |
+| Clone path     | `/srv/www/dev.eduai.ok.ubc.ca/EduAICore`           |
+| App env        | `apps/core/.env` (not committed)                   |
+| Docker DBs     | `docker-compose.dev.yml` at repo root              |
 | EduAI dev port | **3000** (Apache proxies HTTPS → `127.0.0.1:3000`) |
+
 
 On the shared host we usually run **EduAI only**:
 
@@ -90,13 +91,15 @@ npx turbo run dev --filter=edu-ai
 
 Detach: `Ctrl+B`, then `D`. Reattach: `tmux attach -t eduai`.
 
-| Command | What it does |
-| ------- | ------------ |
-| `tmux ls` | List active sessions |
-| `tmux attach -t eduai` | Reattach to the `eduai` session |
+
+| Command                      | What it does                         |
+| ---------------------------- | ------------------------------------ |
+| `tmux ls`                    | List active sessions                 |
+| `tmux attach -t eduai`       | Reattach to the `eduai` session      |
 | `tmux kill-session -t eduai` | Kill the session and stop the server |
-| `Ctrl+B` then `D` | Detach (server keeps running) |
-| `Ctrl+C` (inside tmux) | Stop the dev process |
+| `Ctrl+B` then `D`            | Detach (server keeps running)        |
+| `Ctrl+C` (inside tmux)       | Stop the dev process                 |
+
 
 Apache proxies `https://dev.eduai.ok.ubc.ca` → `http://127.0.0.1:3000`.
 
@@ -160,11 +163,13 @@ npm run docker:dev:db:eduai
 npm run docker:dev:db
 ```
 
-| Database | Container | Default host port | DB name | User / password |
-| -------- | ----------- | ----------------- | ------- | --------------- |
-| EduAI (pgvector) | `eduai-db` | `54320` | `eduai` | `postgres` / `postgres` |
-| AI Tutor | `eduai-ai-tutor-db` | `54321` | `ai-tutor` | `postgres` / `postgres` |
-| Question Maker | `eduai-question-maker-db` | `55432` | `question-maker` | `postgres` / `password` |
+
+| Database         | Container                 | Default host port | DB name          | User / password         |
+| ---------------- | ------------------------- | ----------------- | ---------------- | ----------------------- |
+| EduAI (pgvector) | `eduai-db`                | `54320`           | `eduai`          | `postgres` / `postgres` |
+| AI Tutor         | `eduai-ai-tutor-db`       | `54321`           | `ai-tutor`       | `postgres` / `postgres` |
+| Question Maker   | `eduai-question-maker-db` | `55432`           | `question-maker` | `postgres` / `password` |
+
 
 Override ports via root `.env` (copy from `.env.example`: `CORE_DB_PORT`, etc.).
 
@@ -182,8 +187,6 @@ docker volume rm eduai_db_data   # confirm name with: docker volume ls | grep ed
 npm run docker:dev:db:eduai
 cd apps/core && npx prisma migrate deploy && npm run db:seed
 ```
-
-**Legacy:** `docker-compose.postgres.yml` (single DB on port `5433`) is kept for older setups. New deployments should use `docker-compose.dev.yml`.
 
 ### Apache reverse proxy
 
@@ -221,13 +224,11 @@ cd apps/core && npx prisma generate
 - SSH access to the dev host
 - Write access to `/srv/www/dev.eduai.ok.ubc.ca`
 - **Node 20** via [Volta](https://volta.sh) (system Node on RHEL 8 is often too new or breaks native addons):
-
   ```bash
   curl https://get.volta.sh | bash
   source ~/.bashrc
   volta install node@20
   ```
-
 - Docker group membership (`id` should show `docker` group)
 - UBC VPN or campus network
 
@@ -254,16 +255,18 @@ cd apps/core && npx prisma generate
 
 Prisma expects a single URI. **URL-encode** special characters in the password:
 
+
 | Character | Encoded |
 | --------- | ------- |
-| `$` | `%24` |
-| `&` | `%26` |
-| `@` | `%40` |
-| `:` | `%3A` |
-| `/` | `%2F` |
-| `#` | `%23` |
-| `?` | `%3F` |
-| space | `%20` |
+| `$`       | `%24`   |
+| `&`       | `%26`   |
+| `@`       | `%40`   |
+| `:`       | `%3A`   |
+| `/`       | `%2F`   |
+| `#`       | `%23`   |
+| `?`       | `%3F`   |
+| space     | `%20`   |
+
 
 Example:
 
@@ -292,10 +295,11 @@ Avoid mixing old and new layouts when hopping branches:
 3. `npm install` (root)
 4. `npm run docker:dev:db:eduai`
 5. `cd apps/core && npx prisma migrate deploy`
-6. Confirm `apps/core/.env` still matches this doc (port **54320**, auth URL **https://dev.eduai.ok.ubc.ca**)
+6. Confirm `apps/core/.env` still matches this doc (port **54320**, auth URL **[https://dev.eduai.ok.ubc.ca](https://dev.eduai.ok.ubc.ca)**)
 7. Restart `npx turbo run dev --filter=edu-ai`
 
 ## Related
 
 - [Root README](../README.md) — local Turborepo workflow, all app ports, database commands
 - [Production restart notes](./production-restart.md) — PM2 + Apache patterns used on some UBCO hosts
+
