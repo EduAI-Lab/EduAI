@@ -89,7 +89,7 @@ npm run test:all     # Unit + integration tests
 To run tasks for a single app, use Turborepo's filter flag directly:
 
 ```bash
-npx turbo run dev --filter=aitutor --filter=server   # AI Tutor frontend + server
+npx turbo run dev --filter=ai-tutor --filter=ai-tutor-server   # AI Tutor frontend + server
 npx turbo run dev --filter='question-maker-*'         # Question Maker frontend + backend
 ```
 
@@ -110,9 +110,9 @@ Individual database commands:
 | Command | Services |
 | --- | --- |
 | `npm run docker:dev:db` | All three databases |
-| `npm run docker:dev:db:core` | EduAI DB only |
-| `npm run docker:dev:db:tutor` | AI Tutor DB only |
-| `npm run docker:dev:db:qm` | Question Maker DB only |
+| `npm run docker:dev:db:eduai` | EduAI DB only |
+| `npm run docker:dev:db:ai-tutor` | AI Tutor DB only |
+| `npm run docker:dev:db:question-maker` | Question Maker DB only |
 | `npm run docker:dev:db:down` | Stop and remove Compose services (data volumes are kept) |
 | `npm run docker:dev:db:logs` | Follow database logs |
 
@@ -178,7 +178,7 @@ From the monorepo root `EduAICore/`:
 | `npm run test` | All unit tests across every app simultaneously |
 | `npm run test:all` | Everything above, plus Question Maker backend integration tests |
 | `npx turbo run test --filter=edu-ai-core-learning` | EduAI tests only |
-| `npx turbo run test --filter=aitutor --filter=server` | AI Tutor frontend and server tests |
+| `npx turbo run test --filter=ai-tutor --filter=ai-tutor-server` | AI Tutor frontend and server tests |
 | `npx turbo run test --filter='question-maker-*'` | Question Maker frontend and backend tests |
 
 ### Integration tests
