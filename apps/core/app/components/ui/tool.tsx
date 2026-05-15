@@ -176,7 +176,7 @@ const Tool = ({ toolPart, defaultOpen = false, className }: ToolProps) => {
                 instead of the raw output blob; the blob would just be noise
                 because it is the same envelope ({error, code}) that produced
                 the error text. */}
-            {state === "output-error" && toolPart.errorText ? (
+            {state === "output-error" && toolPart.errorText !== undefined ? (
               <div>
                 <h4 className="mb-2 text-sm font-medium text-red-500">Error</h4>
                 <div className="bg-background rounded border border-red-200 p-2 text-sm dark:border-red-950 dark:bg-red-900/20">
