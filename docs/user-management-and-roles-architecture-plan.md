@@ -1,9 +1,11 @@
-# User Management and Roles — Architecture Plan
+﻿# User Management and Roles — Architecture Plan
 
 > **This is a living document.** It is a work in progress and should be treated as a starting point, not a final answer. Any section can be revised, restructured, or replaced entirely as the team learns more and makes decisions together.
 
 **Epic:** EduAICore #60  
-**Last Updated:** May 10, 2026
+**Last Updated:** May 11, 2026
+
+> **Status: On Hold — Current roles are frozen until further notice.** The role structure in this document represents a target state, not an active implementation plan. The current four roles (`ADMIN`, `PROFESSOR`, `TA`, `STUDENT`) will remain unchanged. The primary driver for most of the changes described here — particularly around how users are identified, how courses are scoped, and what role a given user holds — is the **Canvas LMS integration**. Until that integration is in place, we do not have a reliable source of truth for who is an instructor, what courses exist, or how enrollments are structured. Designing and building role changes before Canvas is integrated would be building on top of incomplete information.
 
 ---
 
@@ -20,7 +22,7 @@
   - [3.5 Student](#35-student)
 - [4. Gaps Between Current State and Target](#4-gaps-between-current-state-and-target)
 - [5. Naming Decisions](#5-naming-decisions)
-- [6. Dependency: Platform Centralization](#6-dependency-platform-centralization)
+- [6. Dependency: Canvas Integration and Platform Centralization](#6-dependency-canvas-integration-and-platform-centralization)
 - [7. Canvas Roles — Reference](#7-canvas-roles--reference)
 - [8. File Reference](#8-file-reference)
 
@@ -28,11 +30,20 @@
 
 ## 0. TL;DR
 
-EduAI Core currently has four roles: `ADMIN`, `PROFESSOR`, `TA`, and `STUDENT`. The target model has five, with a new intermediate layer between system-level admin and professors: **Unit Admin**.
+EduAI currently has four roles: `ADMIN`, `PROFESSOR`, `TA`, and `STUDENT`. **These roles are staying exactly as they are until further notice.**
 
-A Unit Admin is scoped to a unit — a grouping of related course codes (e.g., a Science unit containing all COSC, MATH, DATA, CHEM courses). They manage courses and users within that unit but have no access outside it.
+The target model described in this document has five roles, with a new intermediate layer between system-level admin and professors: **Unit Admin**. However, this target state is aspirational and should not be treated as an active work item.
 
-This document outlines the intended role hierarchy, what each role currently has, open questions about what each role should have, and naming decisions that need to be made.
+A large part of what this document describes is work that will naturally follow from the **Canvas LMS integration**. Canvas is our source of truth for course listings, enrollments, and user roles. Once Canvas is integrated:
+
+- We will know what courses exist and how they are structured — we don't need to manually manage this in EduAI Core.
+- We will know who is an instructor, who is a TA, and who is a student in a given course — Canvas carries this information.
+- Enrollment management (G-2) largely becomes a Canvas sync problem rather than something we build from scratch.
+- The Unit Admin concept may map to Canvas sub-accounts, which Canvas already models.
+
+Until the Canvas integration is in place, we are working with incomplete information about how users, courses, and roles relate to each other. Designing and building role infrastructure before that integration would risk building the wrong thing. **The four current roles are therefore intentionally left unchanged.**
+
+The rest of this document is the original plan from when we thought we needed to add a new Unit Admin role and expand the role model ourselves. It is preserved here as context and reference, not as active scope. Treat everything below the TL;DR as an initial draft written before Canvas integration was identified as the right foundation for these decisions.
 
 ---
 
@@ -110,7 +121,7 @@ For each role, this section covers:
 - Should System Admin be able to assign Unit Admins? (Almost certainly yes.)
 - Should there be more than one System Admin? If so, can one System Admin modify another?
 - Are there any actions that should be restricted even for System Admin (e.g., reading student chat content)?
-- Does System Admin need to be able to impersonate users across all extensions, or only within EduAI Core?
+- Does System Admin need to be able to impersonate users across all extensions, or only within EduAI?
 
 ---
 
@@ -268,16 +279,30 @@ This role does not exist yet so there is no migration cost either way.
 The current codebase uses `PROFESSOR`.
 
 - `PROFESSOR` — already in use, accurate for UBC context, no migration cost
-- `INSTRUCTOR` — aligns with project plan language, more general (not all course instructors hold the title of professor), but requires updating EduAI Core, AI Tutor's `normalizeEduAiRole`, and future Question Maker auth migration
+- `INSTRUCTOR` — aligns with project plan language, more general (not all course instructors hold the title of professor), but requires updating EduAI, AI Tutor's `normalizeEduAiRole`, and future Question Maker auth migration
 
 ---
 
-## 6. Dependency: Platform Centralization
+## 6. Dependency: Canvas Integration and Platform Centralization
 
-This epic and Platform Centralization (Epic #58) are tightly coupled. The decisions made here directly affect how extensions handle user identity.
+This epic has two upstream dependencies that must land before it can move forward.
+
+### Canvas Integration (primary blocker)
+
+Canvas is the source of truth for course structure and user roles at UBC. Until Canvas is integrated, EduAI does not have a reliable way to know:
+
+- What courses exist and how they are organized (the Unit concept, for example, may map directly to Canvas sub-accounts).
+- Who holds what role in a course — whether a user is an instructor, TA, or student is determined by their Canvas enrollment, not something we should re-model independently.
+- How enrollments are managed — rather than building our own enroll/unenroll endpoints from scratch, the right answer may be to sync enrollment state from Canvas.
+
+Designing role infrastructure, enrollment endpoints, or the Unit Admin concept before the Canvas integration is in place risks building the wrong abstraction. **The current four roles stay as-is until Canvas integration provides the grounding needed to make these decisions well.**
+
+### Platform Centralization (Epic #58)
+
+This epic and Platform Centralization (Epic #58) are tightly coupled once it is time to act on this document.
 
 - The OAuth token claim `"https://eduai.app/role"` is what AI Tutor and Question Maker receive at login. If role names change or new roles are added, both extensions must update their role mapping logic.
-- The enrollment management endpoints (G-2) and TA assignment endpoints (G-3) are gaps in both epics. They should be built once by one team and owned by EduAI Core.
+- The enrollment management endpoints (G-2) and TA assignment endpoints (G-3) are gaps in both epics. They should be built once by one team and owned by EduAI — but likely after Canvas integration clarifies the right shape.
 - **The role enum and naming must be finalized before Question Maker's auth migration begins.** A name change after that point requires a second migration across multiple repos.
 
 ---
