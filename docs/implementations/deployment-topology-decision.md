@@ -67,11 +67,3 @@ Subdomains give each app a clean, stable identity while keeping auth unified thr
 The path-prefix approach trades a one-time CORS config for permanent base-path complexity in every app, plus a shared operational failure point. That is the wrong trade for a system designed around independent deployability.
 
 ---
-
-## Decision Required
-
-- Confirm root domain (currently `*.ok.ubc.ca` or a new domain?)
-- Confirm subdomain naming convention per app
-- Confirm whether local dev mirrors prod topology (local proxy) or stays on `localhost:PORT` per app
-
-Once decided, the following need to be aligned across all environments: `COOKIE_DOMAIN`, `BETTER_AUTH_URL`, `EDUAI_BASE_URL`, and OAuth redirect URI registrations in Core.
