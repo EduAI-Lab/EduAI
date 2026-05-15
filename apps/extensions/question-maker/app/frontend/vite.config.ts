@@ -5,7 +5,7 @@ import { resolve } from 'path'
 
 export default defineConfig(({ mode }) => {
   // Load env file from project root (2 levels up from frontend)
-  const env = loadEnv(mode, process.cwd() + '/../..', '')
+  const env = loadEnv(mode, resolve(__dirname, '../..'), '')
 
   return {
     plugins: [react()],
@@ -14,8 +14,11 @@ export default defineConfig(({ mode }) => {
         '@': resolve(__dirname, './src'),
       },
     },
+    // Load VITE_* vars from apps/extensions/question-maker/.env so they appear
+    // in import.meta.env (used by api.ts). The loadEnv + define below keeps
+    // process.env.* working for legacy code (e.g. process.env.NODE_ENV in App.tsx).
+    envDir: resolve(__dirname, '../..'),
     define: {
-      // Make environment variables available to the app
       'process.env': env,
     },
     server: {
