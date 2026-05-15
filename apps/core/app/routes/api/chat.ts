@@ -74,66 +74,6 @@ const TOOL_RAG_MAX_CHARS_PER_CHUNK = Math.min(
   Math.max(500, Number(process.env.CHAT_TOOL_RAG_MAX_CHARS_PER_CHUNK) || 10_000),
 );
 
-type RagHit = {
-  content: string;
-  similarity: number;
-  materialTitle: string;
-};
-
-/** Top-similarity first; stops at chunk count and char budget for hybrid system prefill. */
-function buildCappedRagContextText(hits: RagHit[], maxChunks: number, maxChars: number): string {
-  const slice = hits.slice(0, maxChunks);
-  const sep = "\n\n---\n\n";
-  const parts: string[] = [];
-  let total = 0;
-
-  for (const item of slice) {
-    const header = `**Source**: ${item.materialTitle || "Course Material"}\n`;
-    const body = item.content;
-    const overhead = parts.length === 0 ? 0 : sep.length;
-    const fullLen = header.length + body.length;
-
-    if (total + overhead + fullLen <= maxChars) {
-      parts.push(header + body);
-      total += overhead + fullLen;
-      continue;
-    }
-
-    const room = maxChars - total - overhead - header.length;
-    if (room > 120) {
-      parts.push(`${header}${body.slice(0, room)}…`);
-    }
-    break;
-  }
-
-  return parts.join(sep);
-}
-
-function capRagHitsForTool(hits: RagHit[]): RagHit[] {
-  const out: RagHit[] = [];
-  let totalChars = 0;
-  for (const hit of hits) {
-    let content = hit.content;
-    if (content.length > TOOL_RAG_MAX_CHARS_PER_CHUNK) {
-      content = `${content.slice(0, TOOL_RAG_MAX_CHARS_PER_CHUNK)}…`;
-    }
-    if (totalChars + content.length > HYBRID_RAG_MAX_CONTEXT_CHARS) {
-      break;
-    }
-    out.push({ ...hit, content });
-    totalChars += content.length;
-  }
-  return out;
-}
-
-function llmPromptSizeHints(system: string | undefined, messages: GenericMessage[]) {
-  return {
-    systemChars: system?.length ?? 0,
-    messageCount: messages.length,
-    messagesCharsApprox: messages.reduce((acc, m) => acc + JSON.stringify(m).length, 0),
-  };
-}
-
 /**
  * Max LLM round-trips per user turn for tool-capable models.
  *
@@ -168,7 +108,65 @@ const CHAT_LLM_MAX_RETRIES = (() => {
   if (!Number.isFinite(n)) return 2;
   return Math.min(4, Math.max(0, Math.floor(n)));
 })();
+
 type GenericMessage = Record<string, any>;
+
+function llmPromptSizeHints(system: string | undefined, messages: GenericMessage[]) {
+  return {
+    systemChars: system?.length ?? 0,
+    messageCount: messages.length,
+    messagesCharsApprox: messages.reduce((acc, m) => acc + JSON.stringify(m).length, 0),
+  };
+}
+
+type HybridRagHit = { content: string; similarity: number; materialTitle: string };
+
+/** Top-similarity first; stops at chunk count and char budget for local LLM prefill. */
+function buildCappedRagContextText(hits: HybridRagHit[], maxChunks: number, maxChars: number): string {
+  const slice = hits.slice(0, maxChunks);
+  const sep = "\n\n---\n\n";
+  const parts: string[] = [];
+  let total = 0;
+
+  for (const item of slice) {
+    const header = `**Source**: ${item.materialTitle || "Course Material"}\n`;
+    const body = item.content;
+    const overhead = parts.length === 0 ? 0 : sep.length;
+    const fullLen = header.length + body.length;
+
+    if (total + overhead + fullLen <= maxChars) {
+      parts.push(header + body);
+      total += overhead + fullLen;
+      continue;
+    }
+
+    const room = maxChars - total - overhead - header.length;
+    if (room > 120) {
+      parts.push(`${header}${body.slice(0, room)}…`);
+    }
+    break;
+  }
+
+  return parts.join(sep);
+}
+
+/** Shrink tool payloads so a single `getInformation` call cannot flood the next model step. */
+function capRagHitsForTool(hits: HybridRagHit[]): HybridRagHit[] {
+  const out: HybridRagHit[] = [];
+  let totalChars = 0;
+  for (const hit of hits) {
+    let content = hit.content;
+    if (content.length > TOOL_RAG_MAX_CHARS_PER_CHUNK) {
+      content = `${content.slice(0, TOOL_RAG_MAX_CHARS_PER_CHUNK)}…`;
+    }
+    if (totalChars + content.length > HYBRID_RAG_MAX_CONTEXT_CHARS) {
+      break;
+    }
+    out.push({ ...hit, content });
+    totalChars += content.length;
+  }
+  return out;
+}
 
 type StoredMessageRecord = {
   messageId: string;
@@ -465,7 +463,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
     const normalizedIncomingMessages = rawMessages
       .map((m) => normalizeMessage(m))
-      .filter((message): message is GenericMessage => Boolean(message));
+      .filter((m): m is GenericMessage => m !== null);
 
     // Resolve course code -> internal id, and look up the chat, in parallel.
     // These are independent reads; serialising them was costing ~30-150 ms of
@@ -877,6 +875,7 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
       };
     }
 
+    // Log the LLM stream configuration
     chatApiDebug("Starting LLM stream", {
       model,
       approach: supportsTools ? "tool_calling" : "hybrid_rag",
