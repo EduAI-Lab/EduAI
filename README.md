@@ -195,7 +195,7 @@ Some tests require a running PostgreSQL instance and will fail without one:
 | EduAI | Vitest | `apps/core/vitest.config.ts` |
 | AI Tutor frontend | Vitest | `apps/extensions/ai-tutor/vitest.config.ts` |
 | AI Tutor server | Vitest | `apps/extensions/ai-tutor/server/vitest.config.js` |
-| Question Maker backend | Jest | `apps/extensions/question-maker/app/backend/jest.config.js` |
+| Question Maker backend | Vitest | `apps/extensions/question-maker/app/backend/vitest.config.js` |
 | Question Maker frontend | Vitest | `apps/extensions/question-maker/app/frontend/vite.config.ts` |
 
 ## Git hooks

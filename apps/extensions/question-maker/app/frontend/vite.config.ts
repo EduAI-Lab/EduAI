@@ -13,6 +13,7 @@ export default defineConfig(({ mode }) => {
       alias: {
         '@': resolve(__dirname, './src'),
       },
+      dedupe: ['react', 'react-dom'],
     },
     // Load VITE_* vars from apps/extensions/question-maker/.env so they appear
     // in import.meta.env (used by api.ts). The loadEnv + define below keeps
