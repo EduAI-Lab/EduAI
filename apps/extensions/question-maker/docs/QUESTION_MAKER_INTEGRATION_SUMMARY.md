@@ -1,9 +1,9 @@
-## Question Maker Codebase Summary
+﻿## Question Maker Codebase Summary
 
 Full-stack assessment and question-authoring product with AI-assisted generation, OCR extraction, Canvas LMS import/export, and structured variant assembly workflows.
 
 Question Maker can remain in a **separate repository** and **separate stack** (Express.js + React).  
-Integration is expected to be **API-first** through EduAI Core's centralized contracts, not a forced monorepo or full route-level rewrite.
+Integration is expected to be **API-first** through EduAI's centralized contracts, not a forced monorepo or full route-level rewrite.
 
 ### High-Level Stats
 
@@ -14,7 +14,7 @@ Integration is expected to be **API-first** through EduAI Core's centralized con
 
 ### Architecture At A Glance
 
-**Integration position:** Question Maker and EduAI Core can safely use different tech stacks (Docker/no-Docker, React app structure, ORM choice).  
+**Integration position:** Question Maker and EduAI can safely use different tech stacks (Docker/no-Docker, React app structure, ORM choice).  
 For this project, the primary success factor is robust communication between repos: stable API contracts, consistent auth/roles, and strong cross-repo testing.
 
 
@@ -81,13 +81,13 @@ This section focuses on the highest-risk technical workstreams and what must be 
 
 | **Area**                                                  | **Decision**                      | **Owner / Source of Truth**                     | **Notes**                                                                          |
 | --------------------------------------------------------- | --------------------------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------- |
-| **1. User identity and roles**                            | Core-owned                        | EduAI Core                                      | Question Maker consumes identity/role via centralized auth/API.                    |
-| **2. Courses, enrollment, membership**                    | Core-owned                        | EduAI Core                                      | Course shells, ownership, enrollment, and role mapping come from Core.             |
+| **1. User identity and roles**                            | Core-owned                        | EduAI                                      | Question Maker consumes identity/role via centralized auth/API.                    |
+| **2. Courses, enrollment, membership**                    | Core-owned                        | EduAI                                      | Course shells, ownership, enrollment, and role mapping come from Core.             |
 | **3. Question bank data**                                 | Question Maker-owned              | Question Maker                                  | Core may read through API, but write authority stays in Question Maker.            |
 | **4. Assessment artifacts (sections/variants/workflows)** | Question Maker-owned              | Question Maker                                  | Includes assembly metadata and variant workflow state.                             |
 | **5. Canvas integration ownership**                       | TBD (likely Question Maker-owned) | TBD                                             | Working assumption: Question Maker-owned unless Core team requires centralization. |
-| **6. Model/generation orchestration policy**              | Core policy, extension as client  | EduAI Core policy + Question Maker client calls | Question Maker should call Core-managed model selection/generation APIs.           |
-| **8. Conflict resolution**                                | Core wins for shared entities     | EduAI Core                                      | Target state should avoid dual-writes to minimize conflict occurrence.             |
+| **6. Model/generation orchestration policy**              | Core policy, extension as client  | EduAI policy + Question Maker client calls | Question Maker should call Core-managed model selection/generation APIs.           |
+| **8. Conflict resolution**                                | Core wins for shared entities     | EduAI                                      | Target state should avoid dual-writes to minimize conflict occurrence.             |
 | **9. Core API outage behavior**                           | Already implemented               | Question Maker                                  | Existing degraded/fallback behavior remains valid.                                 |
 | **10. Existing Question Maker data migration**            | DB can be reset                   | Greenfield cutover recommended                  | No legacy user data constraints.                                                   |
 
