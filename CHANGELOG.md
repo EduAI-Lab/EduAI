@@ -9,6 +9,7 @@ All notable changes across the EduAICore monorepo (AI Tutor, Question Maker, Edu
 ## [Week 2 — May 11–15, 2026]
 
 ### Added
+- [monorepo] docs: Add deployment topology decision document covering subdomain, path-prefix, and separate-domain approaches with tradeoffs and a recommendation — pending team decision. (#, @mochi_21, 2026-05-15)
 - [monorepo] infra: Add root `package.json` with unified test runner. `npm test` at the root directory runs all unit tests across every app. (#119, @yta3216, 2026-05-12)
 - [core] infra: Set up Vitest test infrastructure: add `vitest.config.ts`, `app/__tests__/setup.ts`, and `test`/`test:watch` scripts to `package.json`. No tests written yet; scaffolding only. (#119, @yta3216, 2026-05-12)
 - [core] docs: Add `TESTS.md` with planned test cases for lib utilities, AI providers, file processing, Zod schemas, and form components. (#119, @yta3216, 2026-05-12)
