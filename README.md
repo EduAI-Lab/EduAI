@@ -1,382 +1,203 @@
-# EduAI Lab
+# EduAI
 
-A production-ready chat platform with Retrieval-Augmented Generation (RAG) capabilities designed for plug-and-play usage. Seamlessly integrate course-aware Q&A functionality with support for multiple AI providers including Ollama, Google Gemini, and OpenAI.
+Monorepo for the EduAI platform — a suite of AI-powered educational tools built for UBC course delivery.
 
-## Table of Contents
+## Repository structure
 
-- [Architecture guide](docs/architecture.md) — Core vs. hosted, AI SDK, keys, diagrams (export to PDF from there)
-- [Features](#features)
-- [Prerequisites](#prerequisites)
-- [Installation](#installation)
-- [Configuration](#configuration)
-- [Usage](#usage)
-- [Inspecting the Database](#inspecting-the-database)
-- [API Documentation](#api-documentation)
-- [Contributing](#contributing)
-
-## Features
-
-- **Multi-Provider AI Support**: Switch between Ollama (local), Google Gemini, and OpenAI with a single configuration change
-- **Retrieval-Augmented Generation**: Ground responses in course materials with source citations to minimize hallucinations
-- **Tool Calling**: Enhanced information retrieval through integrated RAG tools
-- **Real-time Streaming**: Server-sent events for responsive chat experiences
-- **Course Isolation**: Separate vector indexes and metadata per course for optimal relevance
-- **Simple Integration**: Clean REST API endpoints for easy integration
-- **Vector Storage**: PGVector-powered embeddings on PostgreSQL for efficient similarity search
-- **Role-based Access**: Support for students, professors, and administrators
-
-## Prerequisites
-
-- Node.js 18+
-- PostgreSQL with PGVector extension
-- Docker (optional, for containerized database)
-
-## Installation
-
-### Local Development Setup
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/mostafama/EduAICoreLearning.git
-   cd EduAICoreLearning
-   ```
-
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
-
-3. **Database Setup**
-   - Ensure PostgreSQL is running with PGVector extension enabled
-   - Copy environment configuration:
-     ```bash
-     cp .env.example .env
-     ```
-
-4. **Database Migration**
-   ```bash
-   npm run db:migrate
-   ```
-
-5. **Seed Database**
-   ```bash
-   npm run db:seed
-   ```
-
-6. **Start Development Server**
-   ```bash
-   npm run dev
-   ```
-
-## Configuration
-
-Configure the following environment variables in your `.env` file:
-
-```env
-NODE_ENV="development"
-
-DATABASE_URL="postgresql://USER:PASSWORD@HOST:PORT/DATABASE?schema=public"
-
-# Better Auth Config
-BETTER_AUTH_SECRET="" # REQUIRED: Generate a strong random secret (e.g., `openssl rand -base64 32`)
-BETTER_AUTH_URL="http://localhost:5173" # Base URL of your app
-
-GOOGLE_GENERATIVE_AI_API_KEY="" # For Embeddings
-OLLAMA_BASE_URL="http://localhost:11434/"
-FIRECRAWL_API_KEY="" # Required for Firecrawl web search tool. If not set, web search is unavailable.
+```text
+EduAICore/
+├── apps/
+│   ├── core/                        # EduAI — RAG chat platform and central API
+│   └── extensions/
+│       ├── ai-tutor/                # AI Tutor — two-agent tutoring with hierarchical course content
+│       │   └── server/              # AI Tutor Express/Prisma backend (Better Auth OAuth provider)
+│       └── question-maker/          # Question Maker — question bank authoring, Canvas integration
+│           └── app/
+│               ├── backend/         # Question Maker Express/Sequelize API
+│               └── frontend/        # Question Maker Vite/React frontend
+├── scripts/                         # Repo-level setup and dev utilities
+├── docs/                            # System-wide architecture and planning docs
+├── turbo.json                       # Turborepo task pipeline configuration
+├── docker-compose.dev.yml           # Dev-only Postgres containers (apps run on the host)
+├── CHANGELOG.md                     # Unified changelog across all apps
+├── TESTS.md                         # Canonical test inventory across all apps
+└── .gitignore
 ```
 
-## Usage
+## Apps
 
-### Web Interface
+### [EduAI](apps/core/)
 
-1. Navigate to the application in your browser
-2. Create an account (default role: student)
-3. Sign in to access the dashboard
-4. Upload course materials or select existing courses
-5. Start chatting with course-aware AI assistance
+RAG-powered chat platform and the central API layer for the EduAI ecosystem. Handles AI provider routing, course-aware retrieval, auth, and exposes the API that AI Tutor and Question Maker integrate with.
 
-### Programmatic Access
+### [AI Tutor](apps/extensions/ai-tutor/)
 
-API key usage is restricted to admins. Create API keys through the web interface under Settings > API Keys. Requests that include `x-api-key` require the authenticated user to have role `ADMIN` across `/api/*`. Non-admin users should access features via the web UI with their session cookies.
+AI tutoring platform with a two-agent supervisor system (primary tutor + pedagogical reviewer). Manages course hierarchies (CourseOffering → Module → Lesson → Activity) and student/professor/TA roles.
 
-## Inspecting the Database
+### [Question Maker](apps/extensions/question-maker/)
 
-EduAI uses a single PostgreSQL database covering users, courses, materials, embeddings, chats, AI providers, and API keys. To visually browse the schema, relationships, and live data, use **Prisma Studio**:
+Full-stack tool for building course question banks and assessments. Supports AI-assisted question authoring, OCR upload, Canvas import/export, and assessment variant workflows.
+
+## Docs
+
+System-wide architecture and planning documents live in [`docs/`](docs/). App-specific docs live alongside each app under their own `docs/` directory.
+
+| Document | Description |
+|----------|-------------|
+| [`platform-centralization-architecture-plan.md`](docs/platform-centralization-architecture-plan.md) | How EduAI, AI Tutor, and Question Maker are being centralized under a single API and auth layer |
+| [`user-management-and-roles-architecture-plan.md`](docs/user-management-and-roles-architecture-plan.md) | Role hierarchy, permissions, and naming decisions across the platform — **on hold pending Canvas integration**  |
+
+## Changelog
+
+All notable changes across apps are recorded in [`CHANGELOG.md`](CHANGELOG.md) at the monorepo root.
+
+## Getting started
+
+This project uses [Turborepo](https://turbo.build/) to orchestrate tasks across all apps and packages. You only need to run from the monorepo root.
 
 ```bash
-npx prisma studio
+# 1. Install all workspace dependencies and auto-create per-app .env files from examples
+npm install
+
+# 2. Start Docker databases + all dev servers in one command
+npm run dev
 ```
 
-This opens a browser UI at **http://localhost:5555** where you can:
+`npm run dev` automatically starts the Docker databases before spinning up all apps via Turborepo. If Docker Desktop is not running you will get a daemon error — start Docker first, then re-run.
 
-- Browse every table and its columns
-- See one-to-many relationships (e.g. a `Course` has many `course_materials`, each with many `material_chunks`, each with a `material_embedding` vector)
-- Filter, sort, and edit rows directly — useful for testing without writing SQL
-- Inspect foreign key links between records (e.g. which `User` owns which `chats`, which `AiModel` belongs to which `AiProvider`)
+After `npm install`, each app gets a `.env` copied from its `.env.example` (only if one doesn't already exist). Fill in any secrets (auth keys, API keys) before the relevant features will work. See each app's `.env.example` for what is required.
 
-> Prisma Studio is a local development tool only — do not expose port 5555 publicly.
+**Dev server ports**
 
-## API Documentation
+| App | URL |
+| --- | --- |
+| EduAI | http://localhost:3000 |
+| AI Tutor frontend | http://localhost:3001 |
+| AI Tutor server (API) | http://localhost:4000 |
+| Question Maker frontend | http://localhost:5173 |
+| Question Maker backend (API) | http://localhost:8000 |
 
-Note on authentication: Using `x-api-key` is restricted to ADMIN users across all `/api/*` endpoints. Non-admin users should access functionality via the web UI with their session cookies. Any request that includes `x-api-key` from a non-admin user returns 403.
+**Other root scripts**
 
-### Testing Admin-Only x-api-key
-
-- Admin key, expect success (200/201/… depending on route):
-  - `curl -i -X GET "https://eduai.ok.ubc.ca/api/ai-providers" -H "x-api-key: ADMIN_API_KEY"`
-- Non-admin key, expect 403 Forbidden:
-  - `curl -i -X GET "https://eduai.ok.ubc.ca/api/ai-providers" -H "x-api-key: STUDENT_API_KEY"`
-- Chat via curl (admin only with key):
-  - `curl -i -X POST "https://eduai.ok.ubc.ca/api/chat" -H "Content-Type: application/json" -H "x-api-key: ADMIN_API_KEY" -d '{"messages":[{"role":"user","content":"hello"}],"model":"google:gemini-2.5-flash","apiKeys":{"google":{"apiKey":"YOUR_GOOGLE_API_KEY","isEnabled":true}},"streaming":false}'`
-- Chat via UI (students): use browser at `/chat`; no `x-api-key` sent; should work as before.
-
-### Chat Endpoint
-
-Send chat messages with course context for grounded responses.
-
-#### Request
-
-**Endpoint**: `POST /api/chat`
-
-**Headers**:
-- `Content-Type: application/json`
-- `x-api-key: YOUR_API_KEY` (admin only; requests with this header require an ADMIN user)
-
-**Body Parameters**:
-- `messages` (array): Chat message history
-- `model` (string): AI model identifier
-- `apiKeys` (object): Provider-specific API keys
-- `courseCode` (string): Target course identifier
-- `streaming` (boolean): Enable response streaming
-- `proxyUser` (object, optional): Only for admin `x-api-key` calls. Allows services like Aitutor to act on behalf of a user; see [Proxy Delegation (`proxyUser`)](#proxy-delegation-proxyuser).
-
-#### Examples
-
-##### Windows (PowerShell)
-```powershell
-curl -X POST "https://eduai.ok.ubc.ca/api/chat" `
-  -H "Content-Type: application/json" `
-  -H "x-api-key: YOUR_API_KEY" `
-  -d '{
-    "messages": [
-      {
-        "role": "user",
-        "content": "What are the key concepts?"
-      }
-    ],
-    "model": "google:gemini-2.5-flash",
-    "apiKeys": {
-      "google": {
-        "apiKey": "YOUR_GOOGLE_API_KEY",
-        "isEnabled": true
-      }
-    },
-    "courseCode": "DATA 301",
-    "streaming": false
-  }'
-```
-
-##### Linux/macOS (Bash)
 ```bash
-curl -X POST "https://eduai.ok.ubc.ca/api/chat" \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: YOUR_API_KEY" \
-  -d '{
-    "messages": [
-      {
-        "role": "user",
-        "content": "What are the key concepts?"
-      }
-    ],
-    "model": "google:gemini-2.5-flash",
-    "apiKeys": {
-      "google": {
-        "apiKey": "YOUR_GOOGLE_API_KEY",
-        "isEnabled": true
-      }
-    },
-    "courseCode": "DATA 301",
-    "streaming": false
-  }'
+npm run build        # Build all apps (Turborepo caches outputs)
+npm run lint         # Lint all apps
+npm run test         # Unit tests across all apps
+npm run test:all     # Unit + integration tests
 ```
 
-##### Ollama Example (Linux/macOS)
+To run tasks for a single app, use Turborepo's filter flag directly:
+
 ```bash
-curl -X POST "https://eduai.ok.ubc.ca/api/chat" \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: YOUR_API_KEY" \
-  -d '{
-    "messages": [
-      {
-        "role": "user",
-        "content": "What are the key concepts?"
-      }
-    ],
-    "model": "ollama:gpt-oss:120b",
-    "apiKeys": {
-      "ollama": {
-        "isEnabled": true
-      }
-    },
-    "courseCode": "DATA 301",
-    "streaming": true
-  }'
+npx turbo run dev --filter=ai-tutor --filter=ai-tutor-server   # AI Tutor frontend + server
+npx turbo run dev --filter='question-maker-*'         # Question Maker frontend + backend
 ```
 
-#### Proxy Delegation (`proxyUser`)
+## Databases (Docker)
 
-Third-party services (e.g., Aitutor) that call `/api/chat` with an admin `x-api-key` can add a `proxyUser` block:
+PostgreSQL for local development is defined in [`docker-compose.dev.yml`](docker-compose.dev.yml) at the repo root. Apps still run on the host via Turborepo; Compose only starts the databases.
 
-```json
-{
-  "proxyUser": {
-    "provider": "aitutor",
-    "id": "aitutor-user-123",
-    "email": "student123@example.com"
-  }
-}
-```
+Default host ports (override via root `.env` — copy from [`.env.example`](.env.example)):
 
-EduAI auto-provisions (or reuses) an internal `User` keyed by `(provider, id)` and stores all chat history under that account. The provided email is treated as metadata for the `ExternalUser` record; the canonical EduAI login email remains whatever was set when the user was created.
+| Database | Container name | Default port | DB name | User / password |
+| --- | --- | --- | --- | --- |
+| EduAI (pgvector) | `eduai-db` | `54320` | `eduai` | `postgres` / `postgres` |
+| AI Tutor | `eduai-ai-tutor-db` | `54321` | `ai-tutor` | `postgres` / `postgres` |
+| Question Maker | `eduai-question-maker-db` | `55432` | `question-maker` | `postgres` / `password` |
 
-#### Chat History & Message Persistence
+Individual database commands:
 
-- The backend now stores every chat turn in the `chat_messages` table. Clients only need to send the newest user message plus the `chatId`; the API reconstructs context from the database and trims to the most recent 20 messages for inference.
-- **Chat IDs**: The `chatId` is strictly server-generated (CUID). Clients should not attempt to generate their own chat IDs.
-- **Message IDs**: Clients **SHOULD** generate a UUID v4 for every message (`message.id`) before sending it. This enables optimistic UI updates and allows the server to deduplicate retries safely.
-- If a client references a `chatId` that no longer exists for that user, the API returns `410 Gone` with `{ "chatDeleted": true }`. Callers should drop the stale ID and start a new chat.
+| Command | Services |
+| --- | --- |
+| `npm run docker:dev:db` | All three databases |
+| `npm run docker:dev:db:eduai` | EduAI DB only |
+| `npm run docker:dev:db:ai-tutor` | AI Tutor DB only |
+| `npm run docker:dev:db:question-maker` | Question Maker DB only |
+| `npm run docker:dev:db:down` | Stop and remove Compose services (data volumes are kept) |
+| `npm run docker:dev:db:logs` | Follow database logs |
 
-#### ExternalUser Email Semantics
+`docker compose up --wait` requires Docker Compose v2 with healthcheck support.
 
-`ExternalUser.email` captures the upstream provider’s latest email for diagnostics, but `User.email` remains the primary login/contact field inside EduAI. We do **not** overwrite the user’s canonical email automatically when proxy requests send new values; update the `User` record directly if you need to promote an alias.
+### Inspecting the database
 
-### AI Models Endpoint
+**Recommended: use a GUI client** such as [DBeaver](https://dbeaver.io/) (free, cross-platform) or [pgAdmin](https://www.pgadmin.org/). Connect with the credentials from the table above and `localhost` as the host. The GUI lets you browse tables, run queries, and inspect data without memorising psql commands.
 
-Retrieve the catalog of configured AI models.
+**Terminal access via psql** (if you prefer the CLI):
 
-#### Request
-
-**Endpoint**: `GET /api/ai-models`
-
-**Headers**:
-- `Content-Type: application/json`
-- `x-api-key: YOUR_API_KEY`
-
-#### Response
-
-Returns an array of AI model objects, each including its associated provider metadata (`provider.name`, `providerId`, etc.).
-
-#### Examples
-
-##### Get AI Models (Windows - PowerShell)
-```powershell
-curl -X GET "https://eduai.ok.ubc.ca/api/ai-models" `
-  -H "Content-Type: application/json" `
-  -H "x-api-key: YOUR_API_KEY"
-```
-
-##### Get AI Models (Linux/macOS)
 ```bash
-curl -X GET "https://eduai.ok.ubc.ca/api/ai-models" \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: YOUR_API_KEY"
+# 1. Open a shell inside the container you want to inspect
+docker exec -it eduai-db bash                # EduAI DB
+docker exec -it eduai-ai-tutor-db bash       # AI Tutor DB
+docker exec -it eduai-question-maker-db bash # Question Maker DB
+
+# 2. Inside the container, launch psql as the postgres user
+psql -U postgres
+
+# 3. Connect to the database you want
+\c eduai          # or ai-tutor, question-maker
+
+# 4. List all tables in the current schema
+\dt
+
+# 5. Query a table (example — adjust table name as needed)
+SELECT * FROM "user";
+
+# 6. Exit psql and the container
+\q
+exit
 ```
 
-### Course Topics Endpoint
+> **Tip:** Table names are case-sensitive in Postgres when quoted. Use double quotes around mixed-case names (e.g. `SELECT * FROM "CourseOffering";`).
 
-Manage topics for a specific course. Admin role required for creating and deleting topics.
+**Connecting with DBeaver / pgAdmin:**
 
-#### Request
+1. Open DBeaver and choose **New Connection → PostgreSQL**.
+2. Set the fields:
+   - **Host:** `localhost`
+   - **Port:** use the port from the table above (`54320`, `54321`, or `55432`)
+   - **Database:** `eduai`, `ai-tutor`, or `question-maker`
+   - **Username:** `postgres`
+   - **Password:** `postgres` (or `password` for Question Maker)
+3. Click **Test Connection** — if Docker is running the DB container you should see a success message.
+4. Click **Finish** to save the connection.
 
-**Endpoints**: 
-- `GET /api/courses/:courseId/topics` - List all topics
-- `POST /api/courses/:courseId/topics` - Create a topic (admin only)
-- `DELETE /api/courses/:courseId/topics` - Delete a topic (admin only)
+## Testing
 
-**Headers**:
-- `Content-Type: application/json`
-- `x-api-key: YOUR_API_KEY`
+With Turborepo, testing is orchestrated from the monorepo root. Each app uses its own test runner and is invoked in isolation, with results heavily cached to speed up development.
 
-**URL Parameters**:
-- `courseId` (string): Course identifier
+### Prerequisites
 
-**Body Parameters** (POST):
-- `name` (string): Topic name
+Before running tests for the first time, ensure dependencies are installed via `npm install` at the monorepo root.
 
-**Body Parameters** (DELETE):
-- `topicId` (string, optional): Topic identifier
-- `name` (string, optional): Topic name
-- *Note: Either `topicId` or `name` must be provided*
+### Running tests
 
-#### Examples
+From the monorepo root `EduAICore/`:
 
-##### Get Course Topics (Windows - PowerShell)
-```powershell
-curl -X GET "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" `
-  -H "Content-Type: application/json" `
-  -H "x-api-key: YOUR_API_KEY"
-```
+| Command | What runs |
+| --- | --- |
+| `npm run test` | All unit tests across every app simultaneously |
+| `npm run test:all` | Everything above, plus Question Maker backend integration tests |
+| `npx turbo run test --filter=edu-ai` | EduAI tests only |
+| `npx turbo run test --filter=ai-tutor --filter=ai-tutor-server` | AI Tutor frontend and server tests |
+| `npx turbo run test --filter='question-maker-*'` | Question Maker frontend and backend tests |
 
-##### Get Course Topics (Linux/macOS)
-```bash
-curl -X GET "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: YOUR_API_KEY"
-```
+### Integration tests
 
-##### Create Course Topic (Windows - PowerShell)
-```powershell
-curl -X POST "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" `
-  -H "Content-Type: application/json" `
-  -H "x-api-key: YOUR_API_KEY" `
-  -d '{
-    "name": "Introduction to Machine Learning"
-  }'
-```
+Some tests require a running PostgreSQL instance and will fail without one:
 
-##### Create Course Topic (Linux/macOS)
-```bash
-curl -X POST "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: YOUR_API_KEY" \
-  -d '{
-    "name": "Introduction to Machine Learning"
-  }'
-```
+* **AI Tutor server** — Turborepo runs both unit and integration tests. Connection details are configured in `apps/extensions/ai-tutor/server/.env.test`. The test database (`ai-tutor_test`) is created automatically on the first run.
+* **Question Maker backend** — The standard `npm run test` runs unit tests only. Integration tests are opt-in via `npm run test:all` and also require PostgreSQL.
 
-##### Delete Course Topic (Windows - PowerShell)
-```powershell
-curl -X DELETE "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" `
-  -H "Content-Type: application/json" `
-  -H "x-api-key: YOUR_API_KEY" `
-  -d '{
-    "topicId": "TOPIC_ID"
-  }'
-```
+### Test runners by app
 
-##### Delete Course Topic (Linux/macOS)
-```bash
-curl -X DELETE "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: YOUR_API_KEY" \
-  -d '{
-    "topicId": "TOPIC_ID"
-  }'
-```
+| App | Runner | Config |
+| --- | --- | --- |
+| EduAI | Vitest | `apps/core/vitest.config.ts` |
+| AI Tutor frontend | Vitest | `apps/extensions/ai-tutor/vitest.config.ts` |
+| AI Tutor server | Vitest | `apps/extensions/ai-tutor/server/vitest.config.js` |
+| Question Maker backend | Jest | `apps/extensions/question-maker/app/backend/jest.config.js` |
+| Question Maker frontend | Vitest | `apps/extensions/question-maker/app/frontend/vite.config.ts` |
 
-## Architecture Documentation
+## Git hooks
 
-Planning documents for the EduAI Summer 2026 project live in [`docs/`](docs/). These are living documents that evolve as decisions are made.
-
-| Document | Epic | Description |
-|----------|------|-------------|
-| [`platform-centralization-architecture-plan.md`](docs/platform-centralization-architecture-plan.md) | #58 | How EduAI Core, AI Tutor, and Question Maker are being centralized under a single API and auth layer |
-| [`user-management-and-roles-architecture-plan.md`](docs/user-management-and-roles-architecture-plan.md) | #60 | Role hierarchy (System Admin, Unit Admin, Professor, TA, Student), current permissions, gaps, and naming decisions |
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/your-feature-name`
-3. Make your changes
-4. Submit a pull request
+> **WIP:** Git hooks (currently in `apps/extensions/ai-tutor/.githooks/`) are being migrated to the monorepo root. Hook strategy is not yet finalized.

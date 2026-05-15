@@ -1,4 +1,4 @@
-# User Management and Roles — Architecture Plan
+﻿# User Management and Roles — Architecture Plan
 
 > **This is a living document.** It is a work in progress and should be treated as a starting point, not a final answer. Any section can be revised, restructured, or replaced entirely as the team learns more and makes decisions together.
 
@@ -30,7 +30,7 @@
 
 ## 0. TL;DR
 
-EduAI Core currently has four roles: `ADMIN`, `PROFESSOR`, `TA`, and `STUDENT`. **These roles are staying exactly as they are until further notice.**
+EduAI currently has four roles: `ADMIN`, `PROFESSOR`, `TA`, and `STUDENT`. **These roles are staying exactly as they are until further notice.**
 
 The target model described in this document has five roles, with a new intermediate layer between system-level admin and professors: **Unit Admin**. However, this target state is aspirational and should not be treated as an active work item.
 
@@ -121,7 +121,7 @@ For each role, this section covers:
 - Should System Admin be able to assign Unit Admins? (Almost certainly yes.)
 - Should there be more than one System Admin? If so, can one System Admin modify another?
 - Are there any actions that should be restricted even for System Admin (e.g., reading student chat content)?
-- Does System Admin need to be able to impersonate users across all extensions, or only within EduAI Core?
+- Does System Admin need to be able to impersonate users across all extensions, or only within EduAI?
 
 ---
 
@@ -279,7 +279,7 @@ This role does not exist yet so there is no migration cost either way.
 The current codebase uses `PROFESSOR`.
 
 - `PROFESSOR` — already in use, accurate for UBC context, no migration cost
-- `INSTRUCTOR` — aligns with project plan language, more general (not all course instructors hold the title of professor), but requires updating EduAI Core, AI Tutor's `normalizeEduAiRole`, and future Question Maker auth migration
+- `INSTRUCTOR` — aligns with project plan language, more general (not all course instructors hold the title of professor), but requires updating EduAI, AI Tutor's `normalizeEduAiRole`, and future Question Maker auth migration
 
 ---
 
@@ -289,7 +289,7 @@ This epic has two upstream dependencies that must land before it can move forwar
 
 ### Canvas Integration (primary blocker)
 
-Canvas is the source of truth for course structure and user roles at UBC. Until Canvas is integrated, EduAI Core does not have a reliable way to know:
+Canvas is the source of truth for course structure and user roles at UBC. Until Canvas is integrated, EduAI does not have a reliable way to know:
 
 - What courses exist and how they are organized (the Unit concept, for example, may map directly to Canvas sub-accounts).
 - Who holds what role in a course — whether a user is an instructor, TA, or student is determined by their Canvas enrollment, not something we should re-model independently.
@@ -302,7 +302,7 @@ Designing role infrastructure, enrollment endpoints, or the Unit Admin concept b
 This epic and Platform Centralization (Epic #58) are tightly coupled once it is time to act on this document.
 
 - The OAuth token claim `"https://eduai.app/role"` is what AI Tutor and Question Maker receive at login. If role names change or new roles are added, both extensions must update their role mapping logic.
-- The enrollment management endpoints (G-2) and TA assignment endpoints (G-3) are gaps in both epics. They should be built once by one team and owned by EduAI Core — but likely after Canvas integration clarifies the right shape.
+- The enrollment management endpoints (G-2) and TA assignment endpoints (G-3) are gaps in both epics. They should be built once by one team and owned by EduAI — but likely after Canvas integration clarifies the right shape.
 - **The role enum and naming must be finalized before Question Maker's auth migration begins.** A name change after that point requires a second migration across multiple repos.
 
 ---
