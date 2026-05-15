@@ -177,7 +177,7 @@ From the monorepo root `EduAICore/`:
 | --- | --- |
 | `npm run test` | All unit tests across every app simultaneously |
 | `npm run test:all` | Everything above, plus Question Maker backend integration tests |
-| `npx turbo run test --filter=edu-ai-core-learning` | EduAI tests only |
+| `npx turbo run test --filter=edu-ai` | EduAI tests only |
 | `npx turbo run test --filter=ai-tutor --filter=ai-tutor-server` | AI Tutor frontend and server tests |
 | `npx turbo run test --filter='question-maker-*'` | Question Maker frontend and backend tests |
 
