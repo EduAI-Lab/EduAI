@@ -198,7 +198,7 @@ export const TopicSelect = ({
       excluded: 'Topics to avoid completely.',
     };
 
-    const styles = categoryStyles[category] || categoryStyles.primary;
+    const styles = categoryStyles[category as keyof typeof categoryStyles] ?? categoryStyles.primary;
 
     return (
       <div
@@ -213,7 +213,7 @@ export const TopicSelect = ({
         `}
       >
         <div className="mb-2">
-          <Tooltip content={tooltipContent[category]} side="top">
+          <Tooltip content={tooltipContent[category as keyof typeof tooltipContent]} side="top">
             <Label className="text-sm font-semibold cursor-help inline-block">
               {label}
               {required && <span className="text-red-500 ml-1">*</span>}
