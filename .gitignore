@@ -45,3 +45,4 @@ dist/
 # Database
 *.db
 *.sqlite
+.turbo/
