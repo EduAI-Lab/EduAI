@@ -707,7 +707,7 @@ export const Homepage = () => {
 
       const hasDrafts = assessment.sections?.some((section) =>
         section.sectionVariants?.some(
-          (link) => link.variant?.questionMetadata?.isDraft === true
+          (link) => link.variant?.isDraft === true
         )
       );
 
@@ -766,7 +766,7 @@ export const Homepage = () => {
 
       const hasDrafts = assessment.sections?.some((section) =>
         section.sectionVariants?.some(
-          (link) => link.variant?.questionMetadata?.isDraft === true
+          (link) => link.variant?.isDraft === true
         )
       );
 
