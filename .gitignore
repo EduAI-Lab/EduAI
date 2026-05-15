@@ -43,3 +43,6 @@ dist/
 # Database
 *.db
 *.sqlite
+
+# Turborepo
+.turbo
