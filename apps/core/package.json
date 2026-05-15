@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "build": "prisma generate && react-router build",
-    "dev": "prisma generate && react-router dev",
+    "dev": "prisma migrate deploy && prisma generate && react-router dev",
     "start": "react-router-serve ./build/server/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
