@@ -172,26 +172,30 @@ const Tool = ({ toolPart, defaultOpen = false, className }: ToolProps) => {
               </div>
             )}
 
-            {output && (
-              <div>
-                <h4 className="text-muted-foreground mb-2 text-sm font-medium">
-                  Output
-                </h4>
-                <div className="bg-background max-h-60 overflow-auto rounded border p-2 font-mono text-sm">
-                  <pre className="whitespace-pre-wrap">
-                    {formatValue(output)}
-                  </pre>
-                </div>
-              </div>
-            )}
-
-            {state === "output-error" && toolPart.errorText && (
+            {/* In the error state we render the human-readable error message
+                instead of the raw output blob; the blob would just be noise
+                because it is the same envelope ({error, code}) that produced
+                the error text. */}
+            {state === "output-error" && toolPart.errorText ? (
               <div>
                 <h4 className="mb-2 text-sm font-medium text-red-500">Error</h4>
                 <div className="bg-background rounded border border-red-200 p-2 text-sm dark:border-red-950 dark:bg-red-900/20">
                   {toolPart.errorText}
                 </div>
               </div>
+            ) : (
+              output && (
+                <div>
+                  <h4 className="text-muted-foreground mb-2 text-sm font-medium">
+                    Output
+                  </h4>
+                  <div className="bg-background max-h-60 overflow-auto rounded border p-2 font-mono text-sm">
+                    <pre className="whitespace-pre-wrap">
+                      {formatValue(output)}
+                    </pre>
+                  </div>
+                </div>
+              )
             )}
 
             {state === "input-streaming" && (

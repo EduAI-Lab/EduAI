@@ -177,11 +177,35 @@ export function parseModelIdentifier(identifier: string): { providerId: Supporte
 }
 
 /**
+ * In-process cache for `modelSupportsTools` so we do not hit the DB on every
+ * `/api/chat` request just to read a static boolean. The model catalogue
+ * changes rarely (admin-only writes), so a short TTL is a good trade-off.
+ *
+ * Invalidate with `invalidateModelSupportsToolsCache(id?)` after admin writes
+ * if you need the change to be visible immediately.
+ */
+const MODEL_SUPPORTS_TOOLS_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const modelSupportsToolsCache = new Map<string, { value: boolean; expiresAt: number }>();
+
+export function invalidateModelSupportsToolsCache(modelIdentifier?: string): void {
+  if (modelIdentifier) {
+    modelSupportsToolsCache.delete(modelIdentifier);
+  } else {
+    modelSupportsToolsCache.clear();
+  }
+}
+
+/**
  * Check if a model supports tool calling
  * @param modelIdentifier - The model identifier in format "provider:modelId"
  * @returns Promise<boolean> - Whether the model supports tool calling
  */
 export async function modelSupportsTools(modelIdentifier: string): Promise<boolean> {
+  const cached = modelSupportsToolsCache.get(modelIdentifier);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value;
+  }
+
   try {
     // Import prisma here to avoid circular dependencies
     const { default: prisma } = await import('../prisma.server');
@@ -207,7 +231,10 @@ export async function modelSupportsTools(modelIdentifier: string): Promise<boole
     });
 
     const supportsTools = model?.supportsTools ?? false;
-    console.log(`Model ${modelIdentifier} (${model?.name || 'unknown'}) supports tools: ${supportsTools}`);
+    modelSupportsToolsCache.set(modelIdentifier, {
+      value: supportsTools,
+      expiresAt: Date.now() + MODEL_SUPPORTS_TOOLS_TTL_MS,
+    });
     return supportsTools;
   } catch (error) {
     console.error('Error checking model tool support:', error);

@@ -1,18 +1,173 @@
 import type { Prisma, User } from "@prisma/client";
 import { UserRole } from "@prisma/client";
 import { randomUUID } from "crypto";
-import { streamText, tool } from "ai";
+import { APICallError, streamText, tool } from "ai";
 import { createAIProviderRegistry, modelSupportsTools } from "~/lib/ai/providers";
 import { findRelevantContent } from "~/lib/ai/embedding";
+import { runTool, toolError } from "~/lib/ai/tool-result";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { auth } from "~/lib/auth/server";
 import type { ActionFunctionArgs } from "react-router";
 import { z } from "zod";
 import { webSearch, fetchPage } from "~/lib/ai/tools";
 import prisma from "~/lib/prisma.server";
+// Side-effect import: kicks off provider HTTPS keepalive warmup at module load
+// so the first user message does not pay the cold TCP + TLS handshake cost.
+import "~/lib/ai/warmup.server";
 
 const MAX_CONTEXT_MESSAGES = 20;
 
+function chatApiDebug(message: string, payload?: Record<string, unknown>): void {
+  if (process.env.CHAT_API_DEBUG !== "1") return;
+  if (payload === undefined) {
+    console.debug(`[chat-api] ${message}`);
+  } else {
+    console.debug(`[chat-api] ${message}`, payload);
+  }
+}
+
+/** Max chars of upstream error body embedded in the data-stream error frame for the UI. */
+const MAX_STREAM_ERROR_CLIENT_CHARS = 900;
+
+function formatChatStreamError(error: unknown): string {
+  if (APICallError.isInstance(error)) {
+    const parts: string[] = [error.message];
+    if (error.statusCode != null) {
+      parts.push(`HTTP ${error.statusCode}`);
+    }
+    const body = error.responseBody?.trim();
+    if (body) {
+      const slice =
+        body.length > MAX_STREAM_ERROR_CLIENT_CHARS
+          ? `${body.slice(0, MAX_STREAM_ERROR_CLIENT_CHARS)}…`
+          : body;
+      parts.push(slice);
+    }
+    return parts.join(" — ");
+  }
+  if (error instanceof Error) {
+    return error.message.length > MAX_STREAM_ERROR_CLIENT_CHARS
+      ? `${error.message.slice(0, MAX_STREAM_ERROR_CLIENT_CHARS)}…`
+      : error.message;
+  }
+  return "Unknown error";
+}
+
+/**
+ * Hybrid RAG + `getInformation` excerpt limits. Defaults favour richer course
+ * context for multi-turn student use; override via env if you hit token limits.
+ *
+ * - `CHAT_HYBRID_RAG_MAX_CHUNKS` — max vector hits merged into context (1–24).
+ * - `CHAT_HYBRID_RAG_MAX_CONTEXT_CHARS` — total char budget for hybrid system injection.
+ * - `CHAT_TOOL_RAG_MAX_CHARS_PER_CHUNK` — per-chunk cap on the tool payload.
+ */
+const HYBRID_RAG_MAX_CHUNKS = Math.min(
+  24,
+  Math.max(1, Number(process.env.CHAT_HYBRID_RAG_MAX_CHUNKS) || 8),
+);
+const HYBRID_RAG_MAX_CONTEXT_CHARS = Math.min(
+  100_000,
+  Math.max(2_000, Number(process.env.CHAT_HYBRID_RAG_MAX_CONTEXT_CHARS) || 28_000),
+);
+const TOOL_RAG_MAX_CHARS_PER_CHUNK = Math.min(
+  50_000,
+  Math.max(500, Number(process.env.CHAT_TOOL_RAG_MAX_CHARS_PER_CHUNK) || 10_000),
+);
+
+type RagHit = {
+  content: string;
+  similarity: number;
+  materialTitle: string;
+};
+
+/** Top-similarity first; stops at chunk count and char budget for hybrid system prefill. */
+function buildCappedRagContextText(hits: RagHit[], maxChunks: number, maxChars: number): string {
+  const slice = hits.slice(0, maxChunks);
+  const sep = "\n\n---\n\n";
+  const parts: string[] = [];
+  let total = 0;
+
+  for (const item of slice) {
+    const header = `**Source**: ${item.materialTitle || "Course Material"}\n`;
+    const body = item.content;
+    const overhead = parts.length === 0 ? 0 : sep.length;
+    const fullLen = header.length + body.length;
+
+    if (total + overhead + fullLen <= maxChars) {
+      parts.push(header + body);
+      total += overhead + fullLen;
+      continue;
+    }
+
+    const room = maxChars - total - overhead - header.length;
+    if (room > 120) {
+      parts.push(`${header}${body.slice(0, room)}…`);
+    }
+    break;
+  }
+
+  return parts.join(sep);
+}
+
+function capRagHitsForTool(hits: RagHit[]): RagHit[] {
+  const out: RagHit[] = [];
+  let totalChars = 0;
+  for (const hit of hits) {
+    let content = hit.content;
+    if (content.length > TOOL_RAG_MAX_CHARS_PER_CHUNK) {
+      content = `${content.slice(0, TOOL_RAG_MAX_CHARS_PER_CHUNK)}…`;
+    }
+    if (totalChars + content.length > HYBRID_RAG_MAX_CONTEXT_CHARS) {
+      break;
+    }
+    out.push({ ...hit, content });
+    totalChars += content.length;
+  }
+  return out;
+}
+
+function llmPromptSizeHints(system: string | undefined, messages: GenericMessage[]) {
+  return {
+    systemChars: system?.length ?? 0,
+    messageCount: messages.length,
+    messagesCharsApprox: messages.reduce((acc, m) => acc + JSON.stringify(m).length, 0),
+  };
+}
+
+/**
+ * Max LLM round-trips per user turn for tool-capable models.
+ *
+ * Each step is either a tool call or a final-text generation. Higher caps let
+ * the model speculatively pre-roll tool calls (RAG -> webSearch -> fetchPage ->
+ * fetchPage -> ...) before any user-visible text, which is the dominant source
+ * of first-message silence (~6-9 s of "EduAI is thinking..."). 3 is enough for
+ * one RAG hop + one optional web hop + the answer.
+ *
+ * Override via `CHAT_TOOL_MAX_STEPS` env var if needed.
+ */
+const TOOL_MAX_STEPS = Math.min(
+  32,
+  Math.max(1, Number(process.env.CHAT_TOOL_MAX_STEPS) || 3),
+);
+const TOOL_MAX_TOKENS = Math.min(
+  128_000,
+  Math.max(1024, Number(process.env.CHAT_TOOL_MAX_OUTPUT_TOKENS) || 32_000),
+);
+
+/**
+ * HTTP-level retries inside `streamText` for transient provider errors.
+ * AI SDK default is 2 → up to **3** outbound `generateContent` attempts per user send.
+ * On Gemini **free tier**, quota errors (429) are not fixed by retrying — each attempt
+ * still counts against `generate_content_free_tier_requests`. Set `CHAT_LLM_MAX_RETRIES=0`
+ * in `.env` during local dev to avoid burning 3× quota per click. Production often keeps 1–2.
+ */
+const CHAT_LLM_MAX_RETRIES = (() => {
+  const raw = process.env.CHAT_LLM_MAX_RETRIES;
+  if (raw === undefined || raw === "") return 2;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return 2;
+  return Math.min(4, Math.max(0, Math.floor(n)));
+})();
 type GenericMessage = Record<string, any>;
 
 type StoredMessageRecord = {
@@ -259,7 +414,7 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     const body = await request.json();
-    const rawMessages = Array.isArray(body.messages) ? body.messages : [];
+    const rawMessages: unknown[] = Array.isArray(body.messages) ? body.messages : [];
     const model = typeof body.model === "string" ? body.model : undefined;
     const apiKeys = body.apiKeys as unknown;
     const courseId = typeof body.courseId === "string" ? body.courseId : undefined;
@@ -309,39 +464,48 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     const normalizedIncomingMessages = rawMessages
-      .map(normalizeMessage)
+      .map((m) => normalizeMessage(m))
       .filter((message): message is GenericMessage => Boolean(message));
 
-    // Resolve course code to internal ID when needed
-    let resolvedCourseId: string | null = null;
-    if (courseCode && typeof courseCode === "string") {
-      try {
-        const course = await prisma.course.findUnique({ where: { code: courseCode } });
-        resolvedCourseId = course?.id || null;
-      } catch (e) {
-        console.error("Failed to resolve course by code", e);
-      }
-    }
+    // Resolve course code -> internal id, and look up the chat, in parallel.
+    // These are independent reads; serialising them was costing ~30-150 ms of
+    // TTFT on every cold first message.
+    const courseLookupPromise: Promise<{ id: string } | null> =
+      courseCode && typeof courseCode === "string"
+        ? prisma.course
+            .findUnique({ where: { code: courseCode }, select: { id: true } })
+            .catch((e) => {
+              console.error("Failed to resolve course by code", e);
+              return null;
+            })
+        : Promise.resolve(null);
+
+    const chatLookupPromise = chatId
+      ? prisma.chat.findFirst({
+          where: { id: chatId, userId: actingUser.id },
+        })
+      : Promise.resolve(null);
+
+    const [resolvedCourse, lookedUpChat] = await Promise.all([
+      courseLookupPromise,
+      chatLookupPromise,
+    ]);
+
+    const resolvedCourseId: string | null = resolvedCourse?.id ?? null;
     const effectiveCourseId = resolvedCourseId || courseId || null;
 
-    // Handle chat lookup and system prompt persistence
-    let chat = null;
-    if (chatId) {
-      chat = await prisma.chat.findFirst({
-        where: { id: chatId, userId: actingUser.id },
-      });
-      if (!chat) {
-        return new Response(
-          JSON.stringify({
-            error: "Chat not found",
-            chatDeleted: true,
-          }),
-          {
-            status: 410,
-            headers: { "Content-Type": "application/json" },
-          },
-        );
-      }
+    let chat = lookedUpChat;
+    if (chatId && !chat) {
+      return new Response(
+        JSON.stringify({
+          error: "Chat not found",
+          chatDeleted: true,
+        }),
+        {
+          status: 410,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
     }
 
     if (hasSystemPromptField) {
@@ -461,7 +625,7 @@ export async function action({ request }: ActionFunctionArgs) {
           chatId: chat!.id,
           messageId: message.id,
           role: message.role,
-          content: serializeMessage(message),
+          content: serializeMessage(message) as Prisma.InputJsonValue,
         });
 
         existingMessageIds.add(message.id);
@@ -481,35 +645,80 @@ export async function action({ request }: ActionFunctionArgs) {
     // Get the AI model from registry
     const aiModel = registry.languageModel(model);
 
-    await appendMessages(normalizedIncomingMessages);
-
-    // Define tools for RAG functionality and external web search
-    const tools = {
-      getInformation: tool({
-        description:
-          "Search uploaded course materials to answer questions about course content. Use this FIRST for course-related queries.",
-        parameters: z.object({
-          question: z
-            .string()
-            .describe("The user's question about course content"),
+    // Persist user turn(s) before streaming so a failed write never runs the LLM
+    // on a message that was not saved (Canvas-scale durability over ~20–80 ms TTFT).
+    try {
+      await appendMessages(normalizedIncomingMessages);
+    } catch (error) {
+      console.error("Failed to persist incoming user message(s):", error);
+      return new Response(
+        JSON.stringify({
+          error: "Failed to save your message. Please try again.",
+          details: error instanceof Error ? error.message : "Unknown error",
         }),
-        execute: async ({ question }) => {
-          if (!effectiveCourseId) {
-            return { error: "No course selected for RAG search" };
-          }
+        { status: 503, headers: { "Content-Type": "application/json" } },
+      );
+    }
 
+    // Tools are ALWAYS registered. Their availability is reported per-call
+    // through the structured ToolError envelope (see `lib/ai/tool-result.ts`)
+    // rather than by hiding the tool from the model. Rationale:
+    //
+    //   - Per-tenant / per-deployment availability (Canvas integration) is a
+    //     runtime concern, not a registration concern.
+    //   - Upstream failures (rate-limit, timeout, outage) happen at scale and
+    //     must produce a graceful follow-up, not a stuck UI.
+    //   - The model is taught the envelope shape in the system prompt below.
+    //
+    // `getInformation` returns MISSING_CONFIG when no course is selected. The
+    // model surfaces this to the user in plain language ("select a course
+    // first") instead of silently failing or chaining tool calls.
+    const getInformationTool = tool({
+      description:
+        "Search the user's currently-selected course materials (syllabi, lectures, assignments). " +
+        "Returns a structured error if no course is selected in this session.",
+      parameters: z.object({
+        question: z
+          .string()
+          .describe("The user's question about course content"),
+      }),
+      execute: async ({ question }) =>
+        runTool("getInformation", async () => {
+          if (!effectiveCourseId) {
+            return toolError(
+              "MISSING_CONFIG",
+              "No course is selected. Ask the user to pick a course from the dropdown above so I can search its materials.",
+            );
+          }
           try {
-            const relevantContent = await findRelevantContent(question, effectiveCourseId);
+            const relevantContent = await findRelevantContent(
+              question,
+              effectiveCourseId,
+              HYBRID_RAG_MAX_CHUNKS,
+            );
+            const capped = capRagHitsForTool(relevantContent);
+            if (capped.length === 0) {
+              return toolError(
+                "NO_RESULTS",
+                "No relevant excerpts were found in the course materials for that question. Rephrase or be more specific.",
+              );
+            }
             return {
-              relevantContent,
-              count: relevantContent.length,
+              relevantContent: capped,
+              count: capped.length,
             };
           } catch (error) {
             console.error("Error finding relevant content:", error);
-            return { error: "Failed to search course materials" };
+            return toolError(
+              "UNKNOWN",
+              "Failed to search course materials. Try again in a moment.",
+            );
           }
-        },
-      }),
+        }),
+    });
+
+    const tools = {
+      getInformation: getInformationTool,
       webSearch,
       fetchPage,
     };
@@ -549,12 +758,16 @@ export async function action({ request }: ActionFunctionArgs) {
           const relevantContent = await findRelevantContent(
             userQuestion || messageContentLower,
             effectiveCourseId!,
+            HYBRID_RAG_MAX_CHUNKS,
           );
-          const contextText = relevantContent.length > 0
-            ? relevantContent
-                .map((item) => `**Source**: ${item.materialTitle || "Course Material"}\n${item.content}`)
-                .join("\n\n---\n\n")
-            : "";
+          const contextText =
+            relevantContent.length > 0
+              ? buildCappedRagContextText(
+                  relevantContent,
+                  HYBRID_RAG_MAX_CHUNKS,
+                  HYBRID_RAG_MAX_CONTEXT_CHARS,
+                )
+              : "";
 
           const baseSystemPrompt = resolvedSystemPrompt || `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
 
@@ -621,17 +834,32 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
 
 IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.
 
-You have access to two tools:
-- getInformation: searches uploaded course materials (syllabi, lectures, assignments, etc.)
-- webSearch: searches the web for current information, reviews, discussions, news, etc.
-- fetchPage: opens a URL and returns the main page content as markdown for deeper reading. If a page fails to load, try other sources. Try and give a correct response to the user's query even if the page fails to load.
+You have access to the following tools, but most questions do NOT need them. Default to answering directly from your own knowledge and the conversation history.
 
-When answering questions:
-1. For course content questions, call getInformation first to retrieve relevant materials.
-2. If the user asks for reviews, opinions, recent updates, or external information (e.g., "what do students say about this course?" or "latest developments"), call webSearch after checking course materials. Prefer queries that include "UBCO" with the course code/name and the professor name when known.
-3. After webSearch, call fetchPage on promising sources (e.g., RateMyProfessors, Reddit threads, official pages) to read the page content before answering. If the page fails to load, try other sources. Try and give a correct response to the user's query even if the page fails to load.
-4. You may call tools multiple times in sequence if needed to give a complete answer.
-5. Always cite your sources: mention course material titles for RAG results and include URLs for web results.
+Tools:
+- getInformation: searches uploaded course materials (syllabi, lectures, assignments). Use ONLY when the user asks about the current course's materials.
+- webSearch: searches the web. Use ONLY when the user explicitly asks for current events, recent reviews/opinions, or information you do not already know.
+- fetchPage: opens a single URL the user already gave you (or one returned by webSearch). Use sparingly; at most one fetchPage per turn.
+
+Tool-use rules:
+1. Do NOT call any tool for greetings, definitions, conceptual explanations, summarisation of the conversation, or short clarifications. Answer directly.
+2. Prefer ZERO tool calls. If a tool is genuinely needed, prefer ONE call total before answering.
+3. Never chain tools speculatively. If a single tool result is insufficient, answer with what you have and tell the user what additional information would help.
+4. When you DO use a tool, cite the source: course material title for getInformation; URL for webSearch / fetchPage.
+
+HANDLING TOOL RESULTS:
+Tools may return either a normal result OR a structured error of the form { "error": "<message>", "code": "<CODE>" }. When you see a tool result with an "error" field:
+- DO NOT retry the same tool with the same inputs.
+- Acknowledge the situation to the user in 1-2 plain-language sentences and offer a practical next step.
+- Never pretend the tool does not exist; explain that it failed or is currently unavailable.
+
+Common error codes:
+- MISSING_CONFIG: the tool is not set up for this session (e.g. no course selected, or web access not enabled on this server). Tell the user concisely and suggest the obvious fix (e.g. "select a course from the dropdown" or "paste the content directly").
+- RATE_LIMITED: temporarily over quota. Suggest trying again shortly; proceed with what you already know.
+- NETWORK_ERROR / UPSTREAM_ERROR: the upstream service is unreachable. Suggest trying again later or a different source.
+- NO_RESULTS: the search returned nothing useful. Answer from your own knowledge or ask the user to rephrase.
+- INVALID_INPUT: the input you sent was unusable. Do not retry without different inputs.
+- UNKNOWN: an unexpected failure. Apologise briefly and proceed with what you know.
 
 ${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ""}
 
@@ -641,18 +869,33 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
         model: aiModel,
         messages: trimmedMessages,
         temperature: 0.6,
-        maxTokens: 32000,
-        maxSteps: 12,
+        maxTokens: TOOL_MAX_TOKENS,
+        maxSteps: TOOL_MAX_STEPS,
         tools,
         toolCallStreaming: streaming,
         system: defaultSystemPrompt,
       };
     }
 
-    console.log(`Using ${supportsTools ? "tool calling" : "hybrid RAG"} approach for model: ${model}`);
-    console.log('Full system prompt:', streamConfig.system);
-    console.log(`Sending ${trimmedMessages.length} messages to LLM:`, JSON.stringify(trimmedMessages, null, 2));
-    const result = await streamText(streamConfig);
+    chatApiDebug("Starting LLM stream", {
+      model,
+      approach: supportsTools ? "tool_calling" : "hybrid_rag",
+      ...llmPromptSizeHints(streamConfig.system, trimmedMessages),
+    });
+    const result = await streamText({
+      ...(streamConfig as Parameters<typeof streamText>[0]),
+      maxRetries: CHAT_LLM_MAX_RETRIES,
+      onError: ({ error }) => {
+        console.error("[chat] streamText error:", error);
+        if (APICallError.isInstance(error)) {
+          console.error("[chat] upstream APICallError:", {
+            statusCode: error.statusCode,
+            url: error.url,
+            responseBody: error.responseBody?.slice(0, 4000),
+          });
+        }
+      },
+    });
 
     if (streaming) {
       const headers: Record<string, string> = {
@@ -663,7 +906,10 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
       if (chat?.id) {
         headers["X-Chat-Id"] = chat.id;
       }
-      return result.toDataStreamResponse({ headers });
+      return result.toDataStreamResponse({
+        headers,
+        getErrorMessage: formatChatStreamError,
+      });
     } else {
       try {
         await result.consumeStream();

@@ -9,7 +9,8 @@ import {
   MessageActions,
   MessageAction
 } from "~/components/ui/message";
-import { Tool } from "~/components/ui/tool";
+import { Tool, type ToolPart } from "~/components/ui/tool";
+import { isToolError } from "~/lib/ai/tool-result";
 
 interface ChatMessageProps {
   message: Message;
@@ -43,30 +44,56 @@ export function ChatMessage({ message, isStreaming = false }: ChatMessageProps) 
   const hasTextContent = textParts.length > 0 || message.content;
   const textContent = textParts.map(part => part.text).join("\n") || message.content || "";
 
-  // Convert tool parts to the format expected by Tool component
-  const convertToolPart = (part: any) => {
+  /**
+   * Convert an AI SDK message part into the {@link ToolPart} shape consumed
+   * by the `Tool` UI component.
+   *
+   * Critical behaviour: when a tool returned a structured error envelope
+   * (`{ error, code }` — see `lib/ai/tool-result.ts`), surface it as the
+   * `output-error` state so the UI shows the human-readable failure inline
+   * instead of a misleading "Completed" badge with a JSON blob.
+   *
+   * Two AI SDK formats are handled:
+   *   1. Legacy `tool-invocation` parts (state flips to `"result"` on success).
+   *   2. Newer `tool-*` parts (state is one of input-streaming, input-available,
+   *      output-available, output-error).
+   */
+  const convertToolPart = (part: any): ToolPart | null => {
     if (part.type === "tool-invocation") {
+      const inv = part.toolInvocation;
+      const hasResult = inv.state === "result";
+      const output = hasResult ? (inv as any).result : undefined;
+      const isErrorResult = hasResult && isToolError(output);
+
       return {
-        type: part.toolInvocation.toolName,
-        state: part.toolInvocation.state === "result" ? "output-available" : "input-available",
-        input: part.toolInvocation.args,
-        output: part.toolInvocation.state === "result"
-          ? (part.toolInvocation as any).result
-          : undefined,
-        toolCallId: part.toolInvocation.toolCallId,
-        errorText: undefined
+        type: inv.toolName,
+        state: hasResult
+          ? isErrorResult
+            ? "output-error"
+            : "output-available"
+          : "input-available",
+        input: inv.args,
+        output: hasResult ? output : undefined,
+        toolCallId: inv.toolCallId,
+        errorText: isErrorResult ? (output as { error: string }).error : undefined,
       };
     }
 
-    // Handle dynamic tool parts from AI SDK v5+ format
+    // AI SDK v5+ format: dynamic `tool-<name>` parts.
     if (part.type.startsWith("tool-")) {
+      const baseState: ToolPart["state"] = part.state || "input-available";
+      const isResultState = baseState === "output-available";
+      const isErrorResult = isResultState && isToolError(part.output);
+
       return {
         type: part.toolName || part.type.replace("tool-", ""),
-        state: part.state || "input-available",
+        state: isErrorResult ? "output-error" : baseState,
         input: part.input,
         output: part.output,
         toolCallId: part.toolCallId,
-        errorText: part.errorText
+        errorText: isErrorResult
+          ? (part.output as { error: string }).error
+          : part.errorText,
       };
     }
 
