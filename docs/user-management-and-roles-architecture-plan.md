@@ -1,4 +1,4 @@
-# User Management and Roles — Architecture Plan
+﻿# User Management and Roles — Architecture Plan
 
 > **This is a living document.** It is a work in progress and should be treated as a starting point, not a final answer. Any section can be revised, restructured, or replaced entirely as the team learns more and makes decisions together.
 
@@ -28,7 +28,7 @@
 
 ## 0. TL;DR
 
-EduAI Core currently has four roles: `ADMIN`, `PROFESSOR`, `TA`, and `STUDENT`. The target model has five, with a new intermediate layer between system-level admin and professors: **Unit Admin**.
+EduAI currently has four roles: `ADMIN`, `PROFESSOR`, `TA`, and `STUDENT`. The target model has five, with a new intermediate layer between system-level admin and professors: **Unit Admin**.
 
 A Unit Admin is scoped to a unit — a grouping of related course codes (e.g., a Science unit containing all COSC, MATH, DATA, CHEM courses). They manage courses and users within that unit but have no access outside it.
 
@@ -110,7 +110,7 @@ For each role, this section covers:
 - Should System Admin be able to assign Unit Admins? (Almost certainly yes.)
 - Should there be more than one System Admin? If so, can one System Admin modify another?
 - Are there any actions that should be restricted even for System Admin (e.g., reading student chat content)?
-- Does System Admin need to be able to impersonate users across all extensions, or only within EduAI Core?
+- Does System Admin need to be able to impersonate users across all extensions, or only within EduAI?
 
 ---
 
@@ -268,7 +268,7 @@ This role does not exist yet so there is no migration cost either way.
 The current codebase uses `PROFESSOR`.
 
 - `PROFESSOR` — already in use, accurate for UBC context, no migration cost
-- `INSTRUCTOR` — aligns with project plan language, more general (not all course instructors hold the title of professor), but requires updating EduAI Core, AI Tutor's `normalizeEduAiRole`, and future Question Maker auth migration
+- `INSTRUCTOR` — aligns with project plan language, more general (not all course instructors hold the title of professor), but requires updating EduAI, AI Tutor's `normalizeEduAiRole`, and future Question Maker auth migration
 
 ---
 
@@ -277,7 +277,7 @@ The current codebase uses `PROFESSOR`.
 This epic and Platform Centralization (Epic #58) are tightly coupled. The decisions made here directly affect how extensions handle user identity.
 
 - The OAuth token claim `"https://eduai.app/role"` is what AI Tutor and Question Maker receive at login. If role names change or new roles are added, both extensions must update their role mapping logic.
-- The enrollment management endpoints (G-2) and TA assignment endpoints (G-3) are gaps in both epics. They should be built once by one team and owned by EduAI Core.
+- The enrollment management endpoints (G-2) and TA assignment endpoints (G-3) are gaps in both epics. They should be built once by one team and owned by EduAI.
 - **The role enum and naming must be finalized before Question Maker's auth migration begins.** A name change after that point requires a second migration across multiple repos.
 
 ---
