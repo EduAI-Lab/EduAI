@@ -12,9 +12,9 @@ import {
   AssessmentGenerationParams
 } from './question';
 
-export { 
-  Assessment, 
-  AssessmentType, 
+export type {
+  Assessment,
+  AssessmentType,
   QuestionVariant,
   ReasoningProfile,
   ReasoningDataState,
