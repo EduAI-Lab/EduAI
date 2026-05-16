@@ -9,21 +9,21 @@
 
 ## Build, Test, and Development Commands
 
-- Use Bun for all scripts locally (`bun install`, `bun run`, and `bunx`).
-- `bun run dev` — Vite dev server at `http://localhost:5173` with hot reload.
-- `cd server && bun run dev` — Express API with nodemon on port 4000.
-- `cd server && bunx prisma migrate deploy` — apply migrations.
-- `cd server && bun run seed` — reset and seed demo data after schema updates (destructive).
-- `bun run build` — build SPA assets into `build/client`.
-- `bun run start` — preview the built SPA with `vite preview --outDir build/client`.
-- `bun run typecheck` — regenerate React Router types and run `tsc`.
-- `bun run typecheck:fast` — regenerate types and run `tsgo` (~10x faster).
-- `bun run lint` / `bun run lint:fix` — lint with oxlint.
-- `bun run format` / `bun run format:check` — format with oxfmt.
-- `bun run knip` — dead code detection.
-- `bun run test` — frontend tests (Vitest with jsdom).
-- `cd server && bun run test` — backend tests (Vitest with supertest).
-- `cd server && bun run test:unit` / `bun run test:integration` — scoped test runs.
+- Use npm for all scripts locally (`npm install`, `npm run`, and `npx`).
+- `npm run dev` — Vite dev server at `http://localhost:5173` with hot reload.
+- `cd server && npm run dev` — Express API with nodemon on port 4000.
+- `cd server && npx prisma migrate deploy` — apply migrations.
+- `cd server && npm run seed` — reset and seed demo data after schema updates (destructive).
+- `npm run build` — build SPA assets into `build/client`.
+- `npm run start` — preview the built SPA with `vite preview --outDir build/client`.
+- `npm run typecheck` — regenerate React Router types and run `tsc`.
+- `npm run typecheck:fast` — regenerate types and run `tsgo` (~10x faster).
+- `npm run lint` / `npm run lint:fix` — lint with oxlint.
+- `npm run format` / `npm run format:check` — format with oxfmt.
+- `npm run knip` — dead code detection.
+- `npm run test` — frontend tests (Vitest with jsdom).
+- `cd server && npm run test` — backend tests (Vitest with supertest).
+- `cd server && npm run test:unit` / `npm run test:integration` — scoped test runs.
 
 ## Coding Style and Naming Conventions
 
@@ -37,9 +37,9 @@
 
 ## Testing Guidelines
 
-- Frontend: `bun run test` runs Vitest with jsdom. Tests in `app/__tests__/` and co-located (e.g., `tour-engine.test.ts`).
-- Backend: `cd server && bun run test` runs Vitest with supertest. Tests in `server/test/unit/` and `server/test/integration/`. Uses mock auth via `createApp({ mockUser })`.
-- Current verification baseline: `bun run typecheck`, `bun run test`, `cd server && bun run test`.
+- Frontend: `npm run test` runs Vitest with jsdom. Tests in `app/__tests__/` and co-located (e.g., `tour-engine.test.ts`).
+- Backend: `cd server && npm run test` runs Vitest with supertest. Tests in `server/test/unit/` and `server/test/integration/`. Uses mock auth via `createApp({ mockUser })`.
+- Current verification baseline: `npm run typecheck`, `npm run test`, `cd server && npm run test`.
 - Add regression tests when changing auth, role gating, cloning, or AI guidance logic.
 - Test API endpoints with both authorized and unauthorized users.
 
@@ -63,5 +63,5 @@ The `.githooks/pre-commit` hook runs scoped checks on staged files:
 - Server uses `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `COOKIE_DOMAIN`, EduAI OAuth vars (`EDUAI_DISCOVERY_URL`, `EDUAI_CLIENT_ID`, `EDUAI_CLIENT_SECRET`, `EDUAI_USERINFO_URL`), `EDUAI_BASE_URL`, `EDUAI_API_KEY`, `EDUAI_MODEL` in `server/.env`.
 - `BETTER_AUTH_URL` defaults to `http://localhost:4000/api/auth` and `EDUAI_BASE_URL` defaults to `http://localhost:5174/api` when unset.
 - Ensure Postgres is running before migrations or seeds.
-- After modifying Tailwind, routing, or the Prisma schema, rerun `bun run typecheck` and refresh seeds to keep generated artifacts aligned.
+- After modifying Tailwind, routing, or the Prisma schema, rerun `npm run typecheck` and refresh seeds to keep generated artifacts aligned.
 - Auth is EduAI OAuth (OIDC + PKCE), not email/password. No JWT or bearer tokens.
