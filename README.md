@@ -44,8 +44,8 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 
 | Document | Description |
 |----------|-------------|
-| [`platform-centralization-architecture-plan.md`](docs/platform-centralization-architecture-plan.md) | How EduAI, AI Tutor, and Question Maker are being centralized under a single API and auth layer |
-| [`user-management-and-roles-architecture-plan.md`](docs/user-management-and-roles-architecture-plan.md) | Role hierarchy, permissions, and naming decisions across the platform — **on hold pending Canvas integration**  |
+| [`platform-centralization-architecture-plan.md`](docs/platform-centralization-architecture-plan.md) | How Core, AI Tutor, and Question Maker are being centralized under a single API and auth layer |
+| [`user-management-and-roles-architecture-plan.md`](docs/user-management-and-roles-architecture-plan.md) | Role hierarchy, permissions, and naming decisions across the platform |
 
 ## Changelog
 
@@ -195,7 +195,7 @@ Some tests require a running PostgreSQL instance and will fail without one:
 | EduAI | Vitest | `apps/core/vitest.config.ts` |
 | AI Tutor frontend | Vitest | `apps/extensions/ai-tutor/vitest.config.ts` |
 | AI Tutor server | Vitest | `apps/extensions/ai-tutor/server/vitest.config.js` |
-| Question Maker backend | Jest | `apps/extensions/question-maker/app/backend/jest.config.js` |
+| Question Maker backend | Vitest | `apps/extensions/question-maker/app/backend/vitest.config.js` |
 | Question Maker frontend | Vitest | `apps/extensions/question-maker/app/frontend/vite.config.ts` |
 
 ## Git hooks
