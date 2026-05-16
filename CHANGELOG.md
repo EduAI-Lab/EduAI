@@ -44,6 +44,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [ai-tutor] frontend: Fix `aitutor#test` — replace invalid `resolve.tsconfigPaths: true` with `tsconfigPaths()` plugin in `vitest.config.ts` so the `~/*` path alias resolves correctly; all 6 test files (29 tests) now pass. (#133, @evanbones, 2026-05-14)
 - [monorepo] infra: Fix duplicate React installation that broke question-maker-frontend tests — loosen exact React pin in `ai-tutor` (`19.2.1` → `^19.2.1`) and bump React constraint in `edu-ai` (`^19.2.1` → `^19.2.3`) so npm deduplicates to a single React 19.2.6 at the workspace root; eliminates the two-React-instance problem that caused hook failures in jsdom tests. (#137, @evanbones @abdullahmoh21, 2026-05-15)
 - [core] infra: Add `passWithNoTests: true` to `apps/core/vitest.config.ts` so `edu-ai#test` exits cleanly when no test files exist yet rather than failing the root `npm run test`. (#137, @evanbones, 2026-05-15)
+- [question-maker] frontend: Remove invalid `vitest: true` ESLint env from `.eslintrc.cjs` — `vitest` is not a recognised built-in ESLint environment and caused a hard error on `npm run lint`; test files import `vi` explicitly from `vitest` so no globals env is needed. (#137, @ariqmuldi, 2026-05-15)
 
 ## [Week 1 — May 4–8, 2026]
 
