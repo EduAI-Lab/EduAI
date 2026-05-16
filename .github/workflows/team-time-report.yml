@@ -77,6 +77,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.REPORTS_TOKEN || secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'pull_request' && github.sha || 'development' }}
 
       - name: Set up Node.js
         if: steps.schedule_gate.outputs.should_run == 'true'
@@ -212,13 +214,35 @@ jobs:
       - name: Commit reports
         if: ${{ steps.schedule_gate.outputs.should_run == 'true' && github.event_name != 'pull_request' && vars.COMMIT_REPORTS != 'false' }}
         shell: bash
+        env:
+          REPORT_COMMIT_BRANCH: ${{ vars.REPORT_COMMIT_BRANCH }}
         run: |
+          set -euo pipefail
+          REPORT_BRANCH="${REPORT_COMMIT_BRANCH:-eduai-summer-2026}"
+
           if git diff --quiet -- reports/team-time-report.csv reports/team-time-report.md; then
             echo "No report changes to commit."
             exit 0
           fi
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          mkdir -p /tmp/team-time-report-commit
+          cp reports/team-time-report.csv reports/team-time-report.md /tmp/team-time-report-commit/
+          git restore reports/team-time-report.csv reports/team-time-report.md
+
+          git fetch origin "$REPORT_BRANCH" 2>/dev/null || true
+          if git rev-parse --verify "refs/remotes/origin/${REPORT_BRANCH}" >/dev/null 2>&1; then
+            git checkout -B "$REPORT_BRANCH" "origin/${REPORT_BRANCH}"
+          else
+            git checkout -b "$REPORT_BRANCH"
+          fi
+
+          mkdir -p reports
+          cp /tmp/team-time-report-commit/team-time-report.csv reports/
+          cp /tmp/team-time-report-commit/team-time-report.md reports/
+
           git add reports/team-time-report.csv reports/team-time-report.md
           git commit -m "chore: update weekly team time report"
-          git push
+          git push -u origin "$REPORT_BRANCH"
