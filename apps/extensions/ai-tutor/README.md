@@ -11,11 +11,11 @@ An AI-powered educational platform with a two-agent supervisor system that ensur
 | Auth     | Better Auth (session-based)                                   |
 | AI       | Two-agent supervisor system via EduAI API                     |
 | Testing  | Vitest, Supertest                                             |
-| Tooling  | Bun, oxlint, oxfmt, tsgo, knip                                |
+| Tooling  | Node.js/npm, oxlint, oxfmt, tsgo, knip                       |
 
 ## Prerequisites
 
-- [Bun](https://bun.sh) (v1.2+)
+- Node.js 20+ with npm (or pnpm / yarn)
 - [Docker](https://docs.docker.com/get-docker/) (for PostgreSQL)
 - Node.js 20+ (Vite/Vitest runtime)
 
@@ -23,8 +23,8 @@ An AI-powered educational platform with a two-agent supervisor system that ensur
 
 ```bash
 # 1. Clone and install
-bun install
-cd server && bun install && cd ..
+npm install
+cd server && npm install && cd ..
 
 # 2. Start PostgreSQL (If using docker, if using a DB server change the DATABASE_URL env instead. )
 docker compose up -d db
@@ -35,8 +35,8 @@ cp server/.env.example server/.env
 
 # 4. Run migrations and seed demo data
 cd server
-bunx prisma migrate deploy
-bun run seed
+npx prisma migrate deploy
+npm run seed
 cd ..
 ```
 
@@ -46,10 +46,10 @@ Run frontend and backend in separate terminals:
 
 ```bash
 # Terminal 1 — API server (http://localhost:4000)
-cd server && bun run dev
+cd server && npm run dev
 
 # Terminal 2 — Frontend dev server (http://localhost:5173)
-bun run dev
+npm run dev
 ```
 
 The frontend expects the API at `http://localhost:4000`. Override with the `VITE_API_URL` env var.
@@ -141,26 +141,26 @@ Frontend env var:
 
 | Command                  | Description                                 |
 | ------------------------ | ------------------------------------------- |
-| `bun run dev`            | Start Vite dev server                       |
-| `bun run build`          | Production build                            |
-| `bun run typecheck`      | React Router typegen + `tsc`                |
-| `bun run typecheck:fast` | React Router typegen + `tsgo` (~10x faster) |
-| `bun run lint`           | Run oxlint on all source files              |
-| `bun run format`         | Format with oxfmt                           |
-| `bun run knip`           | Detect dead code/exports                    |
-| `bun run test`           | Run frontend tests                          |
+| `npm run dev`            | Start Vite dev server                       |
+| `npm run build`          | Production build                            |
+| `npm run typecheck`      | React Router typegen + `tsc`                |
+| `npm run typecheck:fast` | React Router typegen + `tsgo` (~10x faster) |
+| `npm run lint`           | Run oxlint on all source files              |
+| `npm run format`         | Format with oxfmt                           |
+| `npm run knip`           | Detect dead code/exports                    |
+| `npm run test`           | Run frontend tests                          |
 
 ### Server
 
 | Command                    | Description                                  |
 | -------------------------- | -------------------------------------------- |
-| `bun run dev`              | Start API with nodemon (auto-reload)         |
-| `bun run start`            | Production start                             |
-| `bun run seed`             | Seed database with demo data                 |
-| `bun run test`             | Run all tests (unit + integration)           |
-| `bun run test:unit`        | Unit tests only (no DB required)             |
-| `bun run test:integration` | Integration tests only (requires PostgreSQL) |
-| `bun run test:watch`       | Watch mode                                   |
+| `npm run dev`              | Start API with nodemon (auto-reload)         |
+| `npm run start`            | Production start                             |
+| `npm run seed`             | Seed database with demo data                 |
+| `npm run test`             | Run all tests (unit + integration)           |
+| `npm run test:unit`        | Unit tests only (no DB required)             |
+| `npm run test:integration` | Integration tests only (requires PostgreSQL) |
+| `npm run test:watch`       | Watch mode                                   |
 
 ## Testing
 
@@ -171,10 +171,10 @@ Frontend env var:
 
 ```bash
 # Run all server tests
-cd server && bun run test
+cd server && npm run test
 
 # Run only unit tests (fast, no DB)
-cd server && bun run test:unit
+cd server && npm run test:unit
 ```
 
 The test database (`aitutor_test`) is created automatically on first run by `globalSetup.js`. Tests inject a mock user via `createApp({ mockUser })` to bypass auth.
@@ -191,26 +191,26 @@ Reset or reseed at any time:
 cd server
 
 # Apply pending migrations
-bunx prisma migrate deploy
+npx prisma migrate deploy
 
 # Reseed demo data
-bun run seed
+npm run seed
 
 # Open Prisma Studio (visual DB browser)
-bunx prisma studio
+npx prisma studio
 ```
 
 ## Production Build
 
 ```bash
-bun run build
-bun run start       # Serves built frontend via Vite preview
+npm run build
+npm run start       # Serves built frontend via Vite preview
 ```
 
 For the API server:
 
 ```bash
-cd server && bun run start
+cd server && npm run start
 ```
 
 ### Docker
