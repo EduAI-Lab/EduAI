@@ -175,7 +175,6 @@ export const ProfileCoursesDialog = ({
 
             const createdCourse = await courseService.createCourse({
                 name: testCourseName,
-                subject: testCourseName,
                 courseCode: testCourseCode
             });
 
@@ -245,7 +244,6 @@ export const ProfileCoursesDialog = ({
 
                 const createdCourse = await courseService.createCourse({
                     name: option.name,
-                    subject: option.name,
                     courseCode: option.code
                 });
 
