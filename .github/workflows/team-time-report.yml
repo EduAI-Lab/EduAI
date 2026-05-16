@@ -231,7 +231,8 @@ jobs:
 
           mkdir -p /tmp/team-time-report-commit
           cp reports/team-time-report.csv reports/team-time-report.md /tmp/team-time-report-commit/
-          git restore reports/team-time-report.csv reports/team-time-report.md
+          rm -f reports/team-time-report.csv reports/team-time-report.md
+          git checkout HEAD -- reports/team-time-report.csv reports/team-time-report.md 2>/dev/null || true
 
           git fetch origin "$REPORT_BRANCH" 2>/dev/null || true
           if git rev-parse --verify "refs/remotes/origin/${REPORT_BRANCH}" >/dev/null 2>&1; then
