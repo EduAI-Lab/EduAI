@@ -11,7 +11,7 @@ Full-stack app for building course question banks and assessments, with AI-assis
 | Backend      | Node.js, Express (ESM), Sequelize, PostgreSQL                                |
 | Auth         | JWT + bcrypt                                                                 |
 | Integrations | EduAI API, Canvas (per-user API keys from the app UI)                        |
-| Testing      | Jest (unit + integration), Vitest (frontend)                                 |
+| Testing      | Vitest (unit + integration + frontend)                                       |
 
 
 ## Prerequisites

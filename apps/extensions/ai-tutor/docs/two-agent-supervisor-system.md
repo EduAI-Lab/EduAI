@@ -276,7 +276,7 @@ Every AI interaction (whether single-pass or supervised) is logged to the `AiInt
 
 1. Run database seed to add supervisor prompt:
    ```bash
-   cd server && bun run seed
+   cd server && npm run seed
    ```
 
 2. The supervisor is automatically active for all chat modes (teach, guide, custom)

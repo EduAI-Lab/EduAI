@@ -199,16 +199,16 @@ See `server/prisma/schema.prisma` for the full schema.
 
 ```bash
 # Apply migrations
-cd server && bunx prisma migrate deploy
+cd server && npx prisma migrate deploy
 
 # Create a new migration after schema changes
-cd server && bunx prisma migrate dev --name description_of_change
+cd server && npx prisma migrate dev --name description_of_change
 ```
 
 ### Seed Data
 
 ```bash
-cd server && bun run seed
+cd server && npm run seed
 ```
 
 > **Warning:** The seed script is destructive. It calls `clearDatabase()` and deletes all existing rows before inserting demo data.
@@ -232,10 +232,10 @@ Seed creates:
 
 ```bash
 cd server
-bun run test              # All tests
-bun run test:unit         # Unit tests only
-bun run test:integration  # Integration tests only
-bun run test:watch        # Watch mode
+npm run test              # All tests
+npm run test:unit         # Unit tests only
+npm run test:integration  # Integration tests only
+npm run test:watch        # Watch mode
 ```
 
 ### Test Structure
