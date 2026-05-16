@@ -190,9 +190,31 @@ cd apps/core && npx prisma migrate deploy && npm run db:seed
 
 ### Apache reverse proxy
 
-Config lives at `/etc/httpd/conf.d/dev.eduai.ok.ubc.ca.conf` (edit with `sudo`).
+Apache terminates HTTPS and forwards traffic to the Vite dev server on the host. The vhost file is:
 
-The `*:443` block should proxy to **port 3000**:
+`/etc/httpd/conf.d/dev.eduai.ok.ubc.ca.conf`
+
+That path is a **configuration file**, not a command. Do **not** run `sudo /etc/httpd/conf.d/dev.eduai.ok.ubc.ca.conf` — that will fail with `command not found`.
+
+#### View the current config
+
+```bash
+sudo cat /etc/httpd/conf.d/dev.eduai.ok.ubc.ca.conf
+```
+
+Look for `ProxyPass` / `ProxyPassReverse` inside the `<VirtualHost *:443>` block (or equivalent SSL vhost).
+
+#### Edit the config
+
+Use an editor with `sudo` (you need root to write under `/etc/httpd/`):
+
+```bash
+sudo nano /etc/httpd/conf.d/dev.eduai.ok.ubc.ca.conf
+```
+
+(`sudo vi /etc/httpd/conf.d/dev.eduai.ok.ubc.ca.conf` works too.)
+
+In the HTTPS vhost block, set the upstream to **port 3000** (EduAI on the Turborepo `development` branch). If you still see **5173**, that is the old port — change both lines:
 
 ```apache
 ProxyPreserveHost On
@@ -200,12 +222,31 @@ ProxyPass / http://127.0.0.1:3000/
 ProxyPassReverse / http://127.0.0.1:3000/
 ```
 
-Apache must allow WebSocket upgrades for Vite HMR (if using hot reload through the proxy). After editing:
+Save and exit (`nano`: `Ctrl+O`, Enter, `Ctrl+X`).
+
+Apache must allow WebSocket upgrades for Vite HMR if you use hot reload through the proxy. If HMR still fails after fixing the port, ask IT or check whether `mod_proxy_wstunnel` is enabled and that nothing else in the vhost blocks `Upgrade` headers.
+
+#### Validate and apply
+
+Always test syntax before reload:
 
 ```bash
 sudo httpd -t
+```
+
+If you see `Syntax OK`, reload Apache (no full restart needed for proxy changes):
+
+```bash
 sudo systemctl reload httpd
 ```
+
+Confirm the dev app is listening before testing in a browser:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3000/
+```
+
+You should get a response (often `200`) while `npx turbo run dev --filter=edu-ai` is running in tmux.
 
 ### Prisma on RHEL 8
 
