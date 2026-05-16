@@ -2,32 +2,32 @@
  * exportAssessmentToCanvas with mocked axios (Canvas API), schema models, and getAssessmentById.
  * No real HTTP or database.
  */
-import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const axiosRequest = jest.fn();
-const getAssessmentById = jest.fn();
-const integrationFindOne = jest.fn();
-const mappingFindOne = jest.fn();
-const mappingCreate = jest.fn();
+const axiosRequest = vi.fn();
+const getAssessmentById = vi.fn();
+const integrationFindOne = vi.fn();
+const mappingFindOne = vi.fn();
+const mappingCreate = vi.fn();
 
-await jest.unstable_mockModule('axios', () => ({
+vi.mock('axios', () => ({
   default: axiosRequest,
 }));
 
-await jest.unstable_mockModule('../src/services/assessmentService.js', () => ({
+vi.mock('../src/services/assessmentService.js', () => ({
   getAssessmentById,
-  createAssessment: jest.fn(),
+  createAssessment: vi.fn(),
 }));
 
-await jest.unstable_mockModule('../src/services/questionService.js', () => ({
-  createQuestion: jest.fn(),
+vi.mock('../src/services/questionService.js', () => ({
+  createQuestion: vi.fn(),
 }));
 
-await jest.unstable_mockModule('../src/services/assessmentSectionService.js', () => ({
-  createAssessmentSection: jest.fn(),
+vi.mock('../src/services/assessmentSectionService.js', () => ({
+  createAssessmentSection: vi.fn(),
 }));
 
-await jest.unstable_mockModule('../src/schema/index.js', () => ({
+vi.mock('../src/schema/index.js', () => ({
   CanvasIntegration: { findOne: integrationFindOne },
   CanvasCourseMapping: { findOne: mappingFindOne, create: mappingCreate },
   Question_Metadata: {},
@@ -68,7 +68,7 @@ const sampleAssessment = () => ({
 
 describe('exportAssessmentToCanvas (Canvas API mocked via axios)', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     integrationFindOne.mockResolvedValue({
       isTestMode: false,
       canvasUrl: 'https://canvas.example.edu',
