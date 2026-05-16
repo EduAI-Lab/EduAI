@@ -18,6 +18,7 @@ EduAICore/
 │   └── util/
 ├── docs/                            # System-wide architecture and planning docs
 ├── CHANGELOG.md                     # Unified changelog across all apps
+├── TESTS.md                         # Canonical test inventory across all apps
 └── .gitignore
 ```
 
@@ -46,7 +47,7 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 | Document | Description |
 |----------|-------------|
 | [`platform-centralization-architecture-plan.md`](docs/platform-centralization-architecture-plan.md) | How Core, AI Tutor, and Question Maker are being centralized under a single API and auth layer |
-| [`user-management-and-roles-architecture-plan.md`](docs/user-management-and-roles-architecture-plan.md) | Role hierarchy, permissions, and naming decisions across the platform |
+| [`user-management-and-roles-architecture-plan.md`](docs/user-management-and-roles-architecture-plan.md) | Role hierarchy, permissions, and naming decisions across the platform — **on hold pending Canvas integration** |
 
 ## Changelog
 
