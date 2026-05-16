@@ -14,6 +14,21 @@ const monorepoRoot = path.resolve(coreDir, "../..");
 // also installs better-auth 1.5+ for ai-tutor; without pinning resolution here,
 // Vite SSR can pick apps/core/node_modules/better-auth@1.6.x which has no apiKey export.
 const betterAuthRoot = path.join(monorepoRoot, "node_modules", "better-auth");
+// Vite matches import specifiers exactly; aliasing only "better-auth" does not rewrite
+// subpath imports like "better-auth/plugins", which was still resolving to 1.6.x.
+const betterAuthAliases = {
+  "better-auth": betterAuthRoot,
+  "better-auth/plugins": path.join(betterAuthRoot, "dist/plugins/index.mjs"),
+  "better-auth/adapters/prisma": path.join(
+    betterAuthRoot,
+    "dist/adapters/prisma-adapter/index.mjs",
+  ),
+  "better-auth/client/plugins": path.join(
+    betterAuthRoot,
+    "dist/client/plugins/index.mjs",
+  ),
+  "better-auth/react": path.join(betterAuthRoot, "dist/client/react/index.mjs"),
+};
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, coreDir, "");
@@ -29,7 +44,7 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         "@tabler/icons-react": "@tabler/icons-react/dist/esm/icons/index.mjs",
-        "better-auth": betterAuthRoot,
+        ...betterAuthAliases,
       },
       dedupe: ["better-auth"],
     },
