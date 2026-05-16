@@ -1,6 +1,25 @@
-# Team Time Reporting Automation
+# EduAI Summer 2026 — Team Time Reporting
 
-This implementation generates a weekly EduAI team time report from GitHub Issues, GitHub Projects, Pull Requests, and PR Analytics.
+**Last Updated:** May 16, 2026
+
+---
+
+## Table of Contents
+
+- [Weekly Flow](#weekly-flow)
+- [Team Rules To Avoid Missing Data](#team-rules-to-avoid-missing-data)
+- [Issue Time Format](#issue-time-format)
+- [Base Time](#base-time)
+- [PR Linking](#pr-linking)
+- [Report Calculations](#report-calculations)
+- [Project Integration](#project-integration)
+- [Workflows](#workflows)
+- [Current GitHub Configuration](#current-github-configuration)
+- [Data Quality Warnings](#data-quality-warnings)
+
+---
+
+This guide documents the weekly EduAI team time reporting automation. The system generates a team time report from GitHub Issues, GitHub Projects, Pull Requests, and PR Analytics.
 
 ## Weekly Flow
 
