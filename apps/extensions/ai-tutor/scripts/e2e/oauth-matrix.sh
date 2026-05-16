@@ -10,7 +10,7 @@ set -euo pipefail
 #   - instructor@eduai.local / instructor123
 #   - student@eduai.local / student123
 #   - admin@eduai.local / admin123
-# - Local tools: curl, jq, python3, bun
+# - Local tools: curl, jq, python3, node
 #
 # Notes:
 # - This validates the AiTutor <-> EduAI auth and role flows.
@@ -42,7 +42,7 @@ need_cmd() {
 cleanup_db() {
   (
     cd "$AITUTOR_SERVER"
-    bun -e '
+    node --input-type=module >/dev/null 2>&1 <<'JSEOF'
     import { PrismaClient } from "@prisma/client";
     const prisma = new PrismaClient();
     const runId = process.env.RUN_ID;
@@ -117,13 +117,13 @@ cleanup_db() {
     });
 
     await prisma.$disconnect();
-  ' >/dev/null 2>&1
+    JSEOF
   ) || true
 
   if [[ -d "$EDUAI_ROOT" ]]; then
     (
       cd "$EDUAI_ROOT"
-      bun -e '
+      node --input-type=module >/dev/null 2>&1 <<'JSEOF'
       import { PrismaClient } from "@prisma/client";
       const prisma = new PrismaClient();
       const code = process.env.EDUAI_FIXTURE_CODE;
@@ -139,7 +139,7 @@ cleanup_db() {
         await prisma.$disconnect();
       };
       run();
-    ' >/dev/null 2>&1
+      JSEOF
     ) || true
   fi
 }
@@ -257,7 +257,7 @@ expect_status() {
 need_cmd curl
 need_cmd jq
 need_cmd python3
-need_cmd bun
+need_cmd node
 
 curl -fsS "$BASE/api/health" >/dev/null
 curl -fsS "$EDUAI/api/ai-models" >/dev/null
@@ -283,7 +283,7 @@ EXTERNAL_COURSE_ID=$(jq -r '.id' "$TMPDIR/eduai-fixture-course.json")
 # so that the professor's OAuth token can discover and import the fixture.
 (
   cd "$EDUAI_ROOT"
-  EXTERNAL_COURSE_ID="$EXTERNAL_COURSE_ID" bun -e '
+  EXTERNAL_COURSE_ID="$EXTERNAL_COURSE_ID" node --input-type=module <<'JSEOF'
   import { PrismaClient } from "@prisma/client";
   const prisma = new PrismaClient();
   const courseId = process.env.EXTERNAL_COURSE_ID;
@@ -291,7 +291,7 @@ EXTERNAL_COURSE_ID=$(jq -r '.id' "$TMPDIR/eduai-fixture-course.json")
   if (!instructor) { console.error("instructor@eduai.local not found"); process.exit(1); }
   await prisma.course.update({ where: { id: courseId }, data: { professorId: instructor.id } });
   await prisma.$disconnect();
-  '
+  JSEOF
 )
 log "INFO reassigned fixture course to instructor@eduai.local"
 
