@@ -2,7 +2,7 @@ import { redirect } from "react-router";
 import type { Route } from "./+types/home";
 import { Link } from "react-router";
 import { auth } from "~/lib/auth/server";
-import { Brain, BookOpen, Users, Lightbulb, ArrowRight, Terminal, Cpu } from "lucide-react";
+import { Brain, BookOpen, Users, Lightbulb, ArrowRight, Code, Terminal, Cpu } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent } from "~/components/ui/card";
 import { AnimatedBackground } from "~/components/animated-background";
@@ -54,8 +54,24 @@ export default function HomePage() {
               </span>
             </h1>
 
+            <div className="mb-8">
+              <p className="text-xl lg:text-2xl text-slate-200 mb-4 leading-relaxed">{projectInfo.subtitle}</p>
+              <div className="flex justify-center items-center space-x-4 text-slate-400 font-mono text-sm">
+                <Terminal className="h-4 w-4" />
+                <span>{"> python train_model.py --task=education --model=transformer"}</span>
+              </div>
+            </div>
+
             <p className="text-lg text-slate-300 mb-12 max-w-3xl mx-auto">{projectInfo.description}</p>
 
+            <Link
+              to={siteConfig.navigation.team}
+              className="bg-gradient-to-r from-green-500 to-blue-600 hover:from-green-600 hover:to-blue-700 text-white px-8 py-4 text-lg rounded-full shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 border-0 inline-flex items-center"
+            >
+              <Code className="mr-2 h-5 w-5" />
+              Meet Our Research Team
+              <ArrowRight className="ml-2 h-5 w-5" />
+            </Link>
           </div>
         </div>
       </section>
