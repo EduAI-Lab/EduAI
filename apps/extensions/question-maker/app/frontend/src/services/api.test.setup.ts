@@ -22,7 +22,7 @@ function makeLocation(initialPath: string) {
 
 const storage: Record<string, string> = {};
 
-if (typeof globalThis.localStorage === 'undefined') {
+if (typeof globalThis.localStorage === 'undefined' || typeof globalThis.localStorage.clear !== 'function') {
   Object.defineProperty(globalThis, 'localStorage', {
     value: {
       getItem: (key: string) => storage[key] ?? null,
@@ -44,6 +44,6 @@ if (typeof globalThis.localStorage === 'undefined') {
   });
 }
 
-const w = globalThis as typeof globalThis & { window: typeof globalThis; location: Location };
+const w = globalThis as typeof globalThis & { window: unknown; location: Location };
 w.window = globalThis;
 w.location = makeLocation('/dashboard');
