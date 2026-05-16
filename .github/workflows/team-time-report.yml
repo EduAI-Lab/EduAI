@@ -220,7 +220,8 @@ jobs:
           set -euo pipefail
           REPORT_BRANCH="${REPORT_COMMIT_BRANCH:-eduai-summer-2026}"
 
-          if git diff --quiet -- reports/team-time-report.csv reports/team-time-report.md; then
+          if ! git status --porcelain --ignore-submodules -- \
+            reports/team-time-report.csv reports/team-time-report.md | grep -q .; then
             echo "No report changes to commit."
             exit 0
           fi
