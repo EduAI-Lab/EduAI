@@ -15,11 +15,11 @@ This document maps product features to automated tests, defines layers and prior
 
 | Area | Command | Config |
 |------|---------|--------|
-| Backend | `cd app/backend && npm test` | Jest, ESM (`--experimental-vm-modules`) — [jest.config.js](../app/backend/jest.config.js) |
+| Backend | `cd app/backend && npm test` | Vitest — [vitest.config.js](../app/backend/vitest.config.js) |
 | Backend coverage | `npm run test:coverage` | Same |
 | Frontend | `cd app/frontend && npm test` | `vitest run` — [package.json](../app/frontend/package.json); local watch: `npm run test:watch`. [vite.config.ts](../app/frontend/vite.config.ts) uses `jsdom` + [vitest.setup.ts](../app/frontend/src/test/vitest.setup.ts); [api.test.ts](../app/frontend/src/services/api.test.ts) uses `@vitest-environment node` for a local HTTP stub. |
-| Test env | `app/backend/test/setup.js` | Loads root `.env` (optional); if `TEST_DATABASE_URL` is set, it becomes `DATABASE_URL`. If still unset (e.g. GitHub Actions with no file), a **local stub** `postgres://jest@127.0.0.1:5432/jest_unit_stub` is set so imports succeed — unit tests do not need a real server. You can also set `DATABASE_URL` in the workflow env. `JWT_SECRET` / `ENCRYPTION_KEY` get defaults if missing. |
-| DB integration | `cd app/backend && npm run test:integration` | [jest.integration.config.js](../app/backend/jest.integration.config.js) — only `*.integration.test.js`, `maxWorkers: 1` to avoid clobbering a shared test DB. |
+| Test env | `app/backend/test/setup.js` | Loads root `.env` (optional); if `TEST_DATABASE_URL` is set, it becomes `DATABASE_URL`. If still unset (e.g. GitHub Actions with no file), a **local stub** `postgresql://vitest:vitest@127.0.0.1:5432/vitest_unit_stub` is set so imports succeed — unit tests do not need a real server. You can also set `DATABASE_URL` in the workflow env. `JWT_SECRET` / `ENCRYPTION_KEY` get defaults if missing. |
+| DB integration | `cd app/backend && npm run test:integration` | [vitest.integration.config.js](../app/backend/vitest.integration.config.js) — only `*.integration.test.js`, `singleFork: true` to avoid clobbering a shared test DB. |
 | Full backend | `npm run test:all` | Unit suite then integration suite. |
 
 **PostgreSQL is required** for `test:integration`. In project root `.env` add, for example:
@@ -30,7 +30,7 @@ Create the empty database once (`CREATE DATABASE eduquery_test;`). The app will 
 
 ## 3. Current baseline (inventory)
 
-### Backend — unit (Jest, no real DB)
+### Backend — unit (Vitest, no real DB)
 
 - [extraction.test.js](../app/backend/test/extraction.test.js) — `extractionUtils` (question blocks, chunking, dedupe).
 - [health.test.js](../app/backend/test/health.test.js) — public HTTP surface (`/`, `/healthz`, 404).
@@ -50,7 +50,7 @@ Create the empty database once (`CREATE DATABASE eduquery_test;`). The app will 
 
 **Express split:** [app.js](../app/backend/src/app.js) exports the app for supertest; [index.js](../app/backend/src/index.js) only listens and connects the DB.
 
-### Backend — integration (Jest, `TEST_DATABASE_URL` required)
+### Backend — integration (Vitest, `TEST_DATABASE_URL` required)
 
 Skipped when unset (exit 0). [testDb.js](../app/backend/test/helpers/testDb.js) — connect + `TRUNCATE`.
 
