@@ -8,13 +8,14 @@
 4. [How to Run Tests](#how-to-run-tests)
 5. [Populating TESTS.md](#populating-testsmd)
 6. [EduAI Full Platform End-to-End Tests](#eduai-full-platform-end-to-end-tests)
-7. [EduAI Unit Tests](#eduai-unit-tests)
-8. [EduAI Integration Tests](#eduai-integration-tests)
-9. [AI Tutor Unit Tests](#ai-tutor-unit-tests)
-10. [AI Tutor Integration Tests](#ai-tutor-integration-tests)
-11. [Question Maker Unit Tests](#question-maker-unit-tests)
-12. [Question Maker Integration Tests](#question-maker-integration-tests)
-13. [Extending This Document](#extending-this-document)
+7. [Monorepo Automation Tests](#monorepo-automation-tests)
+8. [EduAI Unit Tests](#eduai-unit-tests)
+9. [EduAI Integration Tests](#eduai-integration-tests)
+10. [AI Tutor Unit Tests](#ai-tutor-unit-tests)
+11. [AI Tutor Integration Tests](#ai-tutor-integration-tests)
+12. [Question Maker Unit Tests](#question-maker-unit-tests)
+13. [Question Maker Integration Tests](#question-maker-integration-tests)
+14. [Extending This Document](#extending-this-document)
 
 ---
 
@@ -105,6 +106,16 @@ Each section should use this format:
 **Path:** `tests/e2e/`
 
 > _To be populated._
+
+---
+
+## Monorepo Automation Tests
+
+**Path:** `test/`
+
+| Test file | What it tests |
+|-----------|---------------|
+| [`team-time-report.test.js`](test/team-time-report.test.js) | Verifies weekly time-report parsing rules, base-time duplicate handling, issue/PR reference extraction, PR analytics metric extraction, and the rule that PR process time is reported separately from total tracked hours. |
 
 ---
 
