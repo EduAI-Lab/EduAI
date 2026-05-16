@@ -1,4 +1,4 @@
-# EduAI
+﻿# EduAI
 
 A production-ready chat platform with Retrieval-Augmented Generation (RAG) capabilities designed for plug-and-play usage. Seamlessly integrate course-aware Q&A functionality with support for multiple AI providers including Ollama, Google Gemini, and OpenAI.
 
@@ -10,6 +10,7 @@ A production-ready chat platform with Retrieval-Augmented Generation (RAG) capab
 - [Configuration](#configuration)
 - [Usage](#usage)
 - [API Documentation](#api-documentation)
+- [Testing](#testing)
 - [Contributing](#contributing)
 
 ## Features
@@ -352,8 +353,45 @@ Planning documents for the EduAI Summer 2026 project live in [`docs/`](../../doc
 
 | Document | Epic | Description |
 |----------|------|-------------|
-| [`platform-centralization-architecture-plan.md`](../../docs/platform-centralization-architecture-plan.md) | #58 | How EduAI Core, AI Tutor, and Question Maker are being centralized under a single API and auth layer |
+| [`platform-centralization-architecture-plan.md`](../../docs/platform-centralization-architecture-plan.md) | #58 | How EduAI, AI Tutor, and Question Maker are being centralized under a single API and auth layer |
 | [`user-management-and-roles-architecture-plan.md`](../../docs/user-management-and-roles-architecture-plan.md) | #60 | Role hierarchy (System Admin, Unit Admin, Professor, TA, Student), current permissions, gaps, and naming decisions |
+
+## Testing
+
+Unit tests are written with [Vitest](https://vitest.dev/) and [Testing Library](https://testing-library.com/).
+
+### Running tests
+
+```bash
+# Run all tests once
+npm test
+
+# Run in watch mode
+npm run test:watch
+
+# Run a specific file
+npx vitest run app/tests/unit/form-utils.test.ts
+```
+
+### Folder structure
+
+All tests live under `app/tests/`:
+
+```
+app/tests/
+├── setup.ts          # Global test setup (jest-dom matchers, browser API mocks)
+└── unit/             # Unit tests, mirroring the source layout
+    ├── form-utils.test.ts
+    └── ...
+```
+
+See [`TESTS.md`](../../TESTS.md) at the monorepo root for the full list of planned test cases and contributor assignments.
+
+### Notes
+
+- The Vitest config (`vitest.config.ts`) uses `pool: vmThreads`. This is required on Windows to avoid a worker startup timeout with the default `forks` pool.
+- The test environment is `jsdom`. Tests that need real browser APIs (e.g. `ResizeObserver`) have mocks defined in `setup.ts`.
+- Tests must be placed inside `app/tests/` and named `*.test.ts` or `*.test.tsx` to be picked up automatically.
 
 ## Contributing
 

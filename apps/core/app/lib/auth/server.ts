@@ -1,5 +1,4 @@
 import { betterAuth } from "better-auth";
-import { apiKey } from "better-auth/plugins";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import prisma from "../prisma.server";
 
