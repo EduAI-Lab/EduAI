@@ -10,6 +10,10 @@ import tsconfigPaths from "vite-tsconfig-paths";
 // Without this, /@fs/… requests into root node_modules hit "outside of Vite serving allow list".
 const coreDir = path.dirname(fileURLToPath(import.meta.url));
 const monorepoRoot = path.resolve(coreDir, "../..");
+// Core auth code imports apiKey from better-auth/plugins (1.2.x API). The monorepo
+// also installs better-auth 1.5+ for ai-tutor; without pinning resolution here,
+// Vite SSR can pick apps/core/node_modules/better-auth@1.6.x which has no apiKey export.
+const betterAuthRoot = path.join(monorepoRoot, "node_modules", "better-auth");
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, coreDir, "");
@@ -25,7 +29,9 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         "@tabler/icons-react": "@tabler/icons-react/dist/esm/icons/index.mjs",
+        "better-auth": betterAuthRoot,
       },
+      dedupe: ["better-auth"],
     },
     server: {
       port: 3000,
