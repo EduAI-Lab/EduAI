@@ -1,0 +1,224 @@
+name: Team Time Report
+
+on:
+  workflow_dispatch:
+    inputs:
+      owner:
+        description: "Repository owner. Defaults to the current repository owner."
+        required: false
+      repo:
+        description: "Repository name. Defaults to the current repository name."
+        required: false
+      project_owner:
+        description: "GitHub Project owner."
+        required: false
+        default: "EduAI-Lab"
+      project_number:
+        description: "GitHub Project number."
+        required: true
+      report_start_date:
+        description: "Report start date, YYYY-MM-DD."
+        required: false
+      report_end_date:
+        description: "Report end date, YYYY-MM-DD."
+        required: false
+      base_time_file:
+        description: "Path to base time CSV."
+        required: false
+        default: "base-time.csv"
+  workflow_run:
+    workflows: ["PR Analytics"]
+    types: [completed]
+    branches: [development, main]
+  schedule:
+    - cron: "10 6 * * 1"
+    - cron: "10 7 * * 1"
+  pull_request:
+    branches: [development, main]
+
+permissions:
+  actions: read
+  contents: write
+  issues: read
+  pull-requests: read
+  repository-projects: write
+
+jobs:
+  generate-report:
+    name: Generate weekly team report
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check scheduled local time
+        id: schedule_gate
+        shell: bash
+        run: |
+          node <<'NODE' >> "$GITHUB_OUTPUT"
+          const eventName = process.env.GITHUB_EVENT_NAME;
+          if (eventName !== "schedule") {
+            console.log("should_run=true");
+            process.exit(0);
+          }
+          const parts = Object.fromEntries(
+            new Intl.DateTimeFormat("en-CA", {
+              timeZone: "America/Edmonton",
+              weekday: "short",
+              hour: "2-digit",
+              minute: "2-digit",
+              hour12: false,
+            }).formatToParts(new Date()).map((part) => [part.type, part.value]),
+          );
+          console.log(`should_run=${parts.weekday === "Mon" && parts.hour === "00" && parts.minute === "10"}`);
+          NODE
+
+      - name: Check out repository
+        if: steps.schedule_gate.outputs.should_run == 'true'
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.REPORTS_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Set up Node.js
+        if: steps.schedule_gate.outputs.should_run == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Resolve report inputs
+        if: ${{ steps.schedule_gate.outputs.should_run == 'true' && github.event_name != 'pull_request' }}
+        id: inputs
+        shell: bash
+        env:
+          INPUT_OWNER: ${{ inputs.owner }}
+          INPUT_REPO: ${{ inputs.repo }}
+          INPUT_PROJECT_OWNER: ${{ inputs.project_owner }}
+          INPUT_PROJECT_NUMBER: ${{ inputs.project_number }}
+          INPUT_START: ${{ inputs.report_start_date }}
+          INPUT_END: ${{ inputs.report_end_date }}
+          INPUT_BASE_TIME_FILE: ${{ inputs.base_time_file }}
+          VAR_PROJECT_OWNER: ${{ vars.PROJECT_OWNER }}
+          VAR_PROJECT_NUMBER: ${{ vars.PROJECT_NUMBER }}
+          VAR_BASE_TIME_FILE: ${{ vars.BASE_TIME_FILE }}
+        run: |
+          node <<'NODE' >> "$GITHUB_OUTPUT"
+          const repo = process.env.GITHUB_REPOSITORY.split("/");
+          const now = new Date();
+          const edmontonParts = Object.fromEntries(
+            new Intl.DateTimeFormat("en-CA", {
+              timeZone: "America/Edmonton",
+              year: "numeric",
+              month: "2-digit",
+              day: "2-digit",
+              weekday: "short",
+            }).formatToParts(now).map((part) => [part.type, part.value]),
+          );
+          const weekdayMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+          const todayUtc = new Date(`${edmontonParts.year}-${edmontonParts.month}-${edmontonParts.day}T12:00:00Z`);
+          const weekday = weekdayMap[edmontonParts.weekday];
+          const previousSunday = new Date(todayUtc);
+          previousSunday.setUTCDate(previousSunday.getUTCDate() - weekday);
+          const previousMonday = new Date(previousSunday);
+          previousMonday.setUTCDate(previousMonday.getUTCDate() - 6);
+          const iso = (date) => date.toISOString().slice(0, 10);
+          console.log(`owner=${process.env.INPUT_OWNER || repo[0]}`);
+          console.log(`repo=${process.env.INPUT_REPO || repo[1]}`);
+          console.log(`project_owner=${process.env.INPUT_PROJECT_OWNER || process.env.VAR_PROJECT_OWNER || "EduAI-Lab"}`);
+          console.log(`project_number=${process.env.INPUT_PROJECT_NUMBER || process.env.VAR_PROJECT_NUMBER || ""}`);
+          console.log(`report_start_date=${process.env.INPUT_START || iso(previousMonday)}`);
+          console.log(`report_end_date=${process.env.INPUT_END || iso(previousSunday)}`);
+          console.log(`base_time_file=${process.env.INPUT_BASE_TIME_FILE || process.env.VAR_BASE_TIME_FILE || "base-time.csv"}`);
+          NODE
+
+      - name: Download PR analytics artifact from triggering workflow
+        if: ${{ steps.schedule_gate.outputs.should_run == 'true' && github.event_name == 'workflow_run' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: pr-analytics-json
+          path: pr-analytics
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Download latest PR analytics artifact
+        if: ${{ steps.schedule_gate.outputs.should_run == 'true' && github.event_name != 'workflow_run' && github.event_name != 'pull_request' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          run_id="$(gh run list --workflow pr-analytics.yml --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
+          if [ -z "$run_id" ] || [ "$run_id" = "null" ]; then
+            echo "No successful PR Analytics workflow run was found." >&2
+            exit 1
+          fi
+          mkdir -p pr-analytics
+          gh run download "$run_id" --name pr-analytics-json --dir pr-analytics
+          test -s pr-analytics/pr-analytics.json
+
+      - name: Load weekly base time override
+        if: ${{ steps.schedule_gate.outputs.should_run == 'true' && github.event_name != 'pull_request' && vars.BASE_TIME_ISSUE_NUMBER != '' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.PROJECTS_TOKEN || secrets.REPORTS_TOKEN || secrets.GITHUB_TOKEN }}
+          BASE_TIME_ISSUE_NUMBER: ${{ vars.BASE_TIME_ISSUE_NUMBER }}
+          BASE_TIME_FILE: ${{ steps.inputs.outputs.base_time_file }}
+        run: |
+          set -euo pipefail
+          body="$(gh issue view "$BASE_TIME_ISSUE_NUMBER" --json body --jq '.body')"
+          BODY="$body" node <<'NODE' > "$BASE_TIME_FILE"
+          const body = process.env.BODY || "";
+          const fence = body.match(/```(?:csv)?\s*([\s\S]*?)```/i);
+          const csv = (fence ? fence[1] : body).trim();
+          if (!csv.startsWith("github_username,base_hours,notes")) {
+            throw new Error("Weekly base-time issue must contain a CSV block starting with github_username,base_hours,notes");
+          }
+          process.stdout.write(`${csv}\n`);
+          NODE
+
+      - name: Run report tests
+        if: ${{ steps.schedule_gate.outputs.should_run == 'true' && github.event_name == 'pull_request' }}
+        run: npm run test:time-report
+
+      - name: Generate CSV and Markdown report
+        if: ${{ steps.schedule_gate.outputs.should_run == 'true' && github.event_name != 'pull_request' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.PROJECTS_TOKEN || secrets.REPORTS_TOKEN || secrets.GITHUB_TOKEN }}
+          OWNER: ${{ steps.inputs.outputs.owner }}
+          REPO: ${{ steps.inputs.outputs.repo }}
+          PROJECT_OWNER: ${{ steps.inputs.outputs.project_owner }}
+          PROJECT_NUMBER: ${{ steps.inputs.outputs.project_number }}
+          REPORT_START_DATE: ${{ steps.inputs.outputs.report_start_date }}
+          REPORT_END_DATE: ${{ steps.inputs.outputs.report_end_date }}
+          BASE_TIME_FILE: ${{ steps.inputs.outputs.base_time_file }}
+          PR_ANALYTICS_JSON: pr-analytics/pr-analytics.json
+          UPDATE_PROJECT_FIELDS: ${{ vars.UPDATE_PROJECT_FIELDS }}
+        run: |
+          if [ -z "$PROJECT_NUMBER" ]; then
+            echo "PROJECT_NUMBER is required. Set it as a workflow input or repository variable." >&2
+            exit 1
+          fi
+          node scripts/generate-team-time-report.js
+
+      - name: Upload team reports
+        if: ${{ steps.schedule_gate.outputs.should_run == 'true' && github.event_name != 'pull_request' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: team-time-report
+          path: |
+            reports/team-time-report.csv
+            reports/team-time-report.md
+          if-no-files-found: error
+
+      - name: Commit reports
+        if: ${{ steps.schedule_gate.outputs.should_run == 'true' && github.event_name != 'pull_request' && vars.COMMIT_REPORTS != 'false' }}
+        shell: bash
+        run: |
+          if git diff --quiet -- reports/team-time-report.csv reports/team-time-report.md; then
+            echo "No report changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add reports/team-time-report.csv reports/team-time-report.md
+          git commit -m "chore: update weekly team time report"
+          git push
