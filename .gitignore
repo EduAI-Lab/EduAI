@@ -1,5 +1,4 @@
 # AI / editor tool dirs
-.misc/
 .claude/
 .cursor/
 .opencode/
@@ -7,6 +6,10 @@
 .factory/
 .entire/
 .codex/
+CLAUDE.md
+
+# please put any notes, to-dos or personal documents you have over here instead of adding new folders to the .gitignore
+misc/
 
 # OS
 .DS_Store
