@@ -1,21 +1,21 @@
 /**
  * extractQuestionsFromText with mocked Course/Topics and EduAI — no real DB or network.
- * Uses ESM `jest.unstable_mockModule` so `aiService` sees the fakes.
+ * Uses ESM `vi.mock` so `aiService` sees the fakes.
  */
-import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const generateQuestions = jest.fn();
-const findByPk = jest.fn();
-const findAll = jest.fn();
+const generateQuestions = vi.fn();
+const findByPk = vi.fn();
+const findAll = vi.fn();
 
-await jest.unstable_mockModule('../src/services/eduaiService.js', () => ({
+vi.mock('../src/services/eduaiService.js', () => ({
   default: {
     isConfigured: () => true,
     generateQuestions,
   },
 }));
 
-await jest.unstable_mockModule('../src/schema/index.js', () => ({
+vi.mock('../src/schema/index.js', () => ({
   Question_Metadata: {},
   Course: { findByPk },
   Topics: { findAll },
