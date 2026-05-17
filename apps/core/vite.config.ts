@@ -26,6 +26,8 @@ export default defineConfig(({ mode }) => {
       alias: {
         "@tabler/icons-react": "@tabler/icons-react/dist/esm/icons/index.mjs",
       },
+      // Monorepo hoists better-auth 1.2.x for core and 1.5+ for ai-tutor; dedupe to root 1.2.8.
+      dedupe: ["better-auth"],
     },
     server: {
       port: 3000,
