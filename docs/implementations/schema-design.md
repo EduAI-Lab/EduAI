@@ -74,6 +74,7 @@ erDiagram
         string department
         string aiInstructions
         string professorId FK
+        DateTime deletedAt "null = active"
     }
     ENROLLMENT {
         string id PK
@@ -88,25 +89,21 @@ erDiagram
         string id PK
         string courseId FK
         string name
+        DateTime deletedAt "null = active"
     }
     QUESTION {
         string id PK
         string courseId FK
+        string topicId FK
         string createdBy FK
-        string content
+        string content "question text / prompt"
         QuestionType type "MCQ | SA | LA"
+        QuestionDifficulty difficulty "EASY | MEDIUM | HARD"
+        ReasoningLevel reasoningLevel "FACTUAL | ANALYTICAL | APPLICATION"
+        Json choices "MCQ only: [{letter, text}]"
+        string answer "answer key; null until set"
         boolean testable
-    }
-    DOCUMENT {
-        string id PK
-        string courseId FK
-        string uploaderId FK
-        string filename
-        DocumentType type
-        DocumentStatus status
-        string storageKey
-        string externalId "LMS file ID"
-        string externalSource "canvas | null"
+        DateTime deletedAt "null = active"
     }
     COURSE_MATERIAL {
         string id PK
@@ -115,6 +112,8 @@ erDiagram
         string mimeType
         MaterialStatus status
         string checksum
+        string externalId "LMS file ID"
+        string externalSource "canvas | null"
     }
     MATERIAL_CHUNK {
         string id PK
@@ -137,10 +136,10 @@ erDiagram
         string id PK
         string userId FK
         BugReportSource source "CORE | AI_TUTOR | QUESTION_MAKER"
-        string status
+        BugReportStatus status "UNHANDLED | IN_PROGRESS | RESOLVED"
+        boolean isAnonymous
         string description
         Json context
-        boolean isAnonymous
     }
 
     USER ||--o{ SESSION : "has"
@@ -151,7 +150,6 @@ erDiagram
     USER ||--o{ COURSE : "teaches"
     USER ||--o{ ENROLLMENT : "in"
     USER ||--o{ QUESTION : "creates"
-    USER ||--o{ DOCUMENT : "uploads"
     USER ||--o{ AI_INTERACTION : "makes"
     USER ||--o{ CHAT : "has"
     USER ||--o{ BUG_REPORT : "files"
@@ -159,9 +157,10 @@ erDiagram
     COURSE ||--o{ ENROLLMENT : "has"
     COURSE ||--o{ COURSE_TOPIC : "has"
     COURSE ||--o{ QUESTION : "owns"
-    COURSE ||--o{ DOCUMENT : "has"
     COURSE ||--o{ COURSE_MATERIAL : "has"
     COURSE ||--o{ AI_INTERACTION : "context"
+
+    COURSE_TOPIC ||--o{ QUESTION : "categorises"
 
     COURSE_MATERIAL ||--o{ MATERIAL_CHUNK : "chunked into"
     MATERIAL_CHUNK ||--o| MATERIAL_EMBEDDING : "embedded as"
@@ -221,6 +220,10 @@ QM and AI Tutor both maintain a `bug_reports` table with the same fields. **Deci
 
 We can think of consolidating these into core once canvas integration gets approved (if it does)
 
+### `Document` — dead schema, superseded by `CourseMaterial`
+
+Core's `Document` model (`storageKey`, `originalName`, `tags`, `description`, `uploaderId`) was added speculatively and is never written to — no route or service in the current codebase calls `prisma.document`. All active file handling runs through `CourseMaterial`, which carries the full RAG pipeline (text extraction, chunking, PGVector embeddings, checksum dedup). **Decision: drop `Document` entirely.** The LMS file sync columns (`externalId`, `externalSource`) originally planned for `Document` are added to `CourseMaterial` instead, so Canvas-synced files enter the same processing pipeline as manually uploaded ones.
+
 ---
 
 ## 3. Unified Schema — Core (target state)
@@ -248,16 +251,46 @@ enum UserRole {
 
 enum EnrollmentRole { STUDENT  TA }       // [NEW]
 enum QuestionType   { MCQ  SA  LA }       // [NEW]
+
+enum QuestionDifficulty {                 // [NEW]
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum ReasoningLevel {                     // [NEW]
+  FACTUAL
+  ANALYTICAL
+  APPLICATION
+}
+
 enum BugReportSource {                    // [NEW]
   CORE
   AI_TUTOR
   QUESTION_MAKER
 }
+
+enum BugReportStatus {                    // [NEW]
+  UNHANDLED
+  IN_PROGRESS
+  RESOLVED
+}
 ```
 
 ### `DEPARTMENT_ADMIN` role
 
-A `DEPARTMENT_ADMIN` can create and edit courses scoped to their department (`Course.department` string match). Their privileges are limited to course management within their department. They have no access to system-level features: system prompts, bug report triage, AI model config, or any admin-only API. Only `ADMIN` users have those privileges. `department` is a plain `String?` on `Course` — no separate `Department` model.
+A `DEPARTMENT_ADMIN` can create and edit courses scoped to their department. Their privileges are limited to course management within their department. They have no access to system-level features: system prompts, bug report triage, AI model config, or any admin-only API. Only `ADMIN` users have those privileges.
+
+**Scoping mechanism:** A new `department String?` column is added to the `User` model. It is set by an `ADMIN` when the `DEPARTMENT_ADMIN` account is created or promoted. For all other roles (`PROFESSOR`, `TA`, `STUDENT`) this field is null and ignored. No separate `Department` model — authorization middleware checks `user.department === course.department`.
+
+Authorization rules for `DEPARTMENT_ADMIN`:
+- May create a course only if `Course.department` matches `User.department`
+- May not set `Course.department` to any value other than their own `User.department`
+- May not modify courses in other departments, even if `Course.department` is null
+
+`department` is a plain `String?` on both `User` and `Course`.
+
+**Known limitation:** `department` is a free-form string with no normalization or registry. Authorization middleware does a case-sensitive equality check (`user.department === course.department`). An admin typo at account-creation time silently scopes a `DEPARTMENT_ADMIN` into a ghost department. Route handlers that write this field must enforce a canonical casing convention (e.g. always `toLowerCase()` on write) until a proper department registry is introduced.
 
 ### `courses` — new columns
 
@@ -269,8 +302,15 @@ A `DEPARTMENT_ADMIN` can create and edit courses scoped to their department (`Co
 | `externalSource` | `String?` | `"canvas"` or null (null = manually created) |
 | `lastSyncedAt` | `DateTime?` | null = manual or never synced |
 | `department` | `String?` | used for DEPARTMENT_ADMIN scoping |
+| `deletedAt` | `DateTime?` | null = active; soft-delete for cross-DB integrity (see [Cross-DB deletion](#cross-db-deletion--soft-delete-strategy)) |
 
 Index: `@@index([externalSource, externalId])` for LMS sync lookups.
+
+**Multi-term uniqueness:** the existing `@@unique([code])` constraint on `courses` is relaxed to `@@unique([code, term, year])`. This allows the same course code (e.g. `"CPSC 110"`) to exist in multiple terms without conflict.
+
+**`term` normalization:** the `@@unique([code, term, year])` constraint is case-sensitive. Route validation must normalize `term` to a canonical casing (e.g. `"Fall"`, `"Winter"`, `"Summer"`) on write, otherwise the same real-world term can appear twice under different capitalizations.
+
+**Single instructor:** `Course.professorId` remains a single FK — one primary instructor per course. Co-instructors are not modelled for the pilot. An assistant instructor role on `Enrollment` may be added post-pilot if needed.
 
 **Source-of-truth policy:** when `externalSource` is set, the LMS is authoritative for `code`, `name`, `startDate`, `endDate`. Core-owned fields (`aiInstructions`, `isPublished`) are never overwritten by a sync.
 
@@ -283,9 +323,12 @@ model Enrollment {
   userId         String
   role           EnrollmentRole
   enrolledAt     DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
   isActive       Boolean        @default(true)
   externalId     String?        // LMS enrollment ID
   externalSource String?        // "canvas" | null
+  course         Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([courseId, userId])
   @@index([userId])
@@ -294,27 +337,51 @@ model Enrollment {
 }
 ```
 
-`course_enrollments` and `course_tas` are dropped; `enrollments` replaces both.
+`course_enrollments` and `course_tas` are dropped; `enrollments` replaces both. The `@@unique([courseId, userId])` constraint means a user holds exactly one role per course — a TA cannot simultaneously be enrolled as a student in the same course.
+
+**Role promotion:** because of the unique constraint, promoting a student to TA is an `UPDATE` (`role = TA`), not an `INSERT`. Route handlers must use `upsert` or an explicit `UPDATE WHERE (courseId, userId)` — attempting an `INSERT` will conflict and 409.
 
 ### `Question` — new shared question bank
 
+Core stores the canonical question record. QM is the authoring UI — each QM `Variant` that has been approved (non-draft) is pushed to Core as its own `Question` row; `Variant.core_question_id` stores the returned CUID. `Question_Metadata` is a QM-internal authoring container that Core never sees. AI Tutor reads questions directly from Core.
+
 ```prisma
 model Question {
-  id        String       @id @default(cuid())
-  courseId  String
-  createdBy String
-  content   String
-  type      QuestionType
-  testable  Boolean      @default(false)  // true = visible to AI Tutor
+  id             String             @id @default(cuid())
+  courseId       String
+  topicId        String             // CourseTopic.id — required; every question belongs to a topic
+  createdBy      String
+  content        String             // question text / prompt
+  type           QuestionType
+  difficulty     QuestionDifficulty @default(MEDIUM)
+  reasoningLevel ReasoningLevel     @default(FACTUAL)
+  choices        Json?              // [{letter: "A", text: "..."}] for MCQ; null for SA/LA
+  answer         String?            // answer key; null until set by instructor
+  testable       Boolean            @default(false)  // true = visible to AI Tutor
+  deletedAt      DateTime?          // null = active; soft-delete for cross-DB integrity
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  course         Course             @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  topic          CourseTopic        @relation(fields: [topicId], references: [id])
+  creator        User               @relation(fields: [createdBy], references: [id])
 
-  @@index([courseId, testable])
+  @@index([courseId, topicId, testable])
+  @@index([createdBy])
   @@map("questions")
 }
 ```
 
-QM is the authoring UI; AI Tutor reads via `GET /api/questions?courseId=:id&testable=true`. QM retains all derived data (variants, assessments) keyed by `coreQuestionId`. Neither extension calls the other.
+AI Tutor's **server** reads via `GET /api/questions?courseId=:id&topicId=:topicId&testable=true` and receives the full question record including `choices` and `answer`; this is a server-to-server call authenticated with `EDUAI_API_KEY` — students never call this endpoint directly. Neither extension calls the other. When a course is deleted, all its questions cascade-delete.
 
-### `Document` — new columns
+**`testable` provenance:** the flag is set by the professor from within QM. Only non-draft variants are eligible — when a professor approves a QM Variant (`isDraft = false`) they may also toggle `testable` on the corresponding Core Question via `PATCH /api/questions/:id`. Core never auto-sets `testable`; it is always an explicit instructor decision.
+
+### `Document` — dropped
+
+`Document` is dead schema — no route or service in Core calls `prisma.document`. All file handling runs through `CourseMaterial`. `Document` is removed from the Prisma schema entirely.
+
+### `CourseMaterial` — new columns
+
+The LMS sync columns originally planned for `Document` are added to `CourseMaterial` instead, so Canvas-synced files enter the same RAG pipeline as manually uploaded ones:
 
 | Column | Type | Notes |
 |---|---|---|
@@ -328,14 +395,14 @@ model BugReport {
   id          String          @id @default(cuid())
   source      BugReportSource
   userId      String
+  isAnonymous Boolean         @default(false)  // when true, admin UI masks name/email in the reporter column
   description String          @db.VarChar(2000)
-  status      String          @default("unhandled")  // unhandled | in_progress | resolved
+  status      BugReportStatus @default(UNHANDLED)
   consoleLogs String?
   networkLogs String?
   screenshot  String?
   pageUrl     String?
   userAgent   String?
-  isAnonymous Boolean         @default(false)
   context     Json?           // AI Tutor sends {courseOfferingId, moduleId, lessonId, activityId}
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
@@ -348,11 +415,24 @@ model BugReport {
 }
 ```
 
-Extensions POST to `POST /api/bug-reports` with their `source` value. The `context` JSON absorbs AI Tutor's hierarchical context without Core needing to model that hierarchy. QM bug reports leave `context` null.
+Extensions POST to `POST /api/bug-reports` with their `source` value. The `context` JSON absorbs AI Tutor's hierarchical context without Core needing to model that hierarchy. QM bug reports leave `context` null. `userId` is always required — bug reports are always tied to an authenticated user.
+
+### Cross-DB deletion — soft-delete strategy
+
+Extensions hold `core_*_id` references as nullable columns pointing into Core's database. No DB-level FK can enforce integrity across service boundaries, so Core uses soft deletes on the three entity types that extensions reference:
+
+**Affected models:** `Course`, `CourseTopic`, `Question` — each gains a `deletedAt DateTime?` column (`null` = active). Core never hard-deletes these rows while references may exist in extensions. A delete action sets `deletedAt = now()`. All extension-facing API endpoints (`GET /api/courses`, `GET /api/questions`, `GET /api/courses/:id/topics`) filter `WHERE deletedAt IS NULL` automatically.
+
+**Extension-side handling — two trigger points only, never on every read:**
+
+- **Cron reconciliation (daily):** each extension runs a background job that iterates its local `core_*_id` references and calls Core. Any reference that returns a 404 gets its local `core_*_id` nullified (soft-deleted records are already filtered from all extension-facing endpoints, so they surface as 404s). Normal reads are entirely local — no Core HTTP call on the request path.
+- **On write:** when an extension attempts to POST/PATCH a Core entity and receives a 404, it nullifies its local reference and surfaces an error to the user.
+
+Extensions tolerate a stale-reference window of at most one cron cycle (one day). This is acceptable — deletions are infrequent instructor actions, not high-frequency events.
 
 ### Unchanged
 
-`course_topics`, `course_materials`, `material_chunks`, `material_embeddings`, `ai_providers`, `ai_models`, `user_provider_settings`, `ai_interactions`, `system_config`, `chats`, `chat_messages`.
+`course_topics` (gains `deletedAt` only), `material_chunks`, `material_embeddings`, `ai_providers`, `ai_models`, `user_provider_settings`, `ai_interactions`, `system_config`, `chats`, `chat_messages`.
 
 ---
 
@@ -370,17 +450,27 @@ All `userId` columns already store CUIDs — no change needed.
 
 ### Schema changes
 
-**`Topic` — one new nullable column:**
+**`Topic` — PK type change + one new nullable column:**
+
+Since AI Tutor is greenfield, `Topic.id` is changed from `Int @id @default(autoincrement())` to `String @id @default(cuid())`. This brings topic IDs onto the same CUID type used everywhere else and avoids integer-to-string translation at the API boundary.
+
+Cascading ID type changes within AI Tutor:
+- `Activity.mainTopicId` → `String`
+- `ActivitySecondaryTopic.topicId` → `String`
+
+One new nullable column is also added:
 
 ```prisma
 coreTopicId String? @unique  // Core CourseTopic.id; null = not yet synced
 ```
 
+`coreTopicId` links the AI Tutor topic to Core's `CourseTopic` across the database boundary. The AI Tutor topic retains its own CUID; `coreTopicId` is a separate reference to the corresponding Core record.
+
 **`CourseOffering`** — `externalId` + `externalSource` already exist and are set to `externalSource='core'` from the start. No migration needed.
 
-### Co-instructor handling
+### Instructor handling
 
-AI Tutor has `CourseInstructor.role = LEAD | ASSISTANT`; Core's `EnrollmentRole` only has `STUDENT | TA`. Decision: treat all instructors as `PROFESSOR` in Core. `CourseInstructor` is dropped — the LEAD/ASSISTANT distinction is not modelled for the pilot. Revisit post-pilot if co-instructor display matters.
+Core supports one primary instructor per course (`Course.professorId`, single FK). `CourseInstructor` is dropped — LEAD/ASSISTANT distinctions are not modelled for the pilot.
 
 ### Unchanged
 
@@ -407,17 +497,27 @@ All QM tables that previously held an integer `user_id` FK now hold a `VARCHAR` 
 
 QM creates a local `users` row the first time a Core user is seen (on login). The row exists only for FK integrity within QM — all identity and auth decisions go through Core.
 
+### `topics` table — PK redesigned to VARCHAR
+
+Since QM is greenfield, `topics.id` is changed from `INTEGER autoincrement` to `VARCHAR` (CUID). This aligns topic IDs with the CUID type used across Core and AI Tutor, eliminating integer-to-string translation at the API boundary.
+
+Cascading type changes within QM:
+- `question_metadata.primary_topic_id` → `VARCHAR`
+- `variants.secondary_topics_id` → `VARCHAR[]` (array of CUID strings, was `INTEGER[]`)
+
 ### New reference columns
 
 | Table | New column | Type | Notes |
 |---|---|---|---|
 | `courses` | `core_course_id` | `VARCHAR unique` | Core Course CUID; null until linked |
 | `topics` | `core_topic_id` | `VARCHAR unique` | Core CourseTopic CUID; null until synced |
-| `question_metadata` | `core_question_id` | `VARCHAR unique` | Core Question CUID; null until pushed |
+| `variants` | `core_question_id` | `VARCHAR unique` | Core Question CUID; null until variant is approved and pushed |
+
+`core_question_id` lives on `variants`, not on `question_metadata`. Each approved (non-draft) QM Variant is pushed to Core as its own `Question` row; multiple variants from the same `question_metadata` shell each get an independent Core Question entry. `question_metadata` is a QM-internal authoring container — Core never sees it.
 
 ### Unchanged
 
-`variants`, `assessments`, `assessment_sections`, `section_variants`, `variant_selection_cursors`, `canvas_integrations`, `canvas_course_mappings`.
+`question_metadata`, `assessments`, `assessment_sections`, `section_variants`, `variant_selection_cursors`, `canvas_integrations`, `canvas_course_mappings`.
 
 ---
 
@@ -425,20 +525,82 @@ QM creates a local `users` row the first time a Core user is seen (on login). Th
 
 No existing production data. No data migration scripts needed — reference columns (`core_course_id`, `core_topic_id`, etc.) are populated at runtime as courses and topics are created going forward.
 
-### Phase 1 — Core schema
+**Key constraint:** extension tables must not be dropped until the Core replacement APIs are live and verified. Dropping AI Tutor's auth tables before Core's session endpoint exists leaves AI Tutor with no working auth path. Each phase below is independently runnable — no phase creates a broken intermediate state.
 
-- Add new `courses` columns: `isPublished`, `startDate`, `endDate`, `externalId`, `externalSource`, `lastSyncedAt`, `department`
-- Create `enrollments` table (replacing `course_enrollments` and `course_tas`)
-- Create `questions` table
-- Add `externalId` / `externalSource` to `documents`
-- Create `bug_reports` table
+---
+
+### Phase 1 — Core schema migrations
+
+Core continues to run standalone throughout this phase. Extensions are untouched.
+
+- Add `department String?` to `User` model (DEPARTMENT_ADMIN scoping)
+- Add new `courses` columns: `isPublished`, `startDate`, `endDate`, `externalId`, `externalSource`, `lastSyncedAt`, `department`, `deletedAt`
+- Relax `@@unique([code])` on `courses` to `@@unique([code, term, year])`
+- Create `enrollments` table (replacing `course_enrollments` and `course_tas`); update all Core route handlers that currently reference `CourseEnrollment` / `CourseTA`
+- Create `questions` table (with `topicId`, `choices`, `answer`, `difficulty`, `reasoningLevel`, `deletedAt`)
+- Add `externalId` / `externalSource` to `course_materials`; drop the unused `documents` table
+- Create `bug_reports` table (with `isAnonymous`)
+- Add `deletedAt DateTime?` to `course_topics`
 - Update `UserRole` enum (add `DEPARTMENT_ADMIN`)
+- Add `QuestionDifficulty`, `ReasoningLevel`, `BugReportStatus` enums
 
-### Phase 2 — Extension schemas
+**Test:** `npm run db:migrate && npm run typecheck` in `apps/core`. Manually exercise course creation, enrollment, document upload, and chat. Seed the new tables.
 
-- **AI Tutor:** add `Topic.coreTopicId`; remove `User`, `Session`, `Account`, `Verification`, `CourseInstructor`, `CourseEnrollment`, `BugReport` tables; update route middleware to call Core's enrollment API
-- **QM:** redesign `users` table (CUID string PK, no `password_hash`); change `user_id` columns in `courses`, `canvas_integrations`, `canvas_course_mappings` to `VARCHAR`; add `core_course_id`, `core_topic_id`, `core_question_id` reference columns; drop `bug_reports` table
+---
+
+### Phase 1.5 — Core cross-app API surface
+
+Still Core-only work, but this phase must complete before any extension tables are dropped. These endpoints are the replacement for the functionality extensions currently handle locally.
+
+- `POST /api/sessions/validate` — accepts a session token, returns the authenticated user; used by AI Tutor middleware in place of its local better-auth session lookup
+- `GET /api/courses/:id/enrollments` — returns enrolled users and their roles; used by AI Tutor route middleware
+- `POST /api/bug-reports` — accepts `{ source, description, consoleLogs, networkLogs, screenshot, pageUrl, userAgent, context }`; used by both extensions
+- `POST /api/questions` — QM pushes a canonical question record; returns the Core CUID
+- `GET /api/questions?courseId=:id&topicId=:topicId&testable=true` — AI Tutor reads testable questions for a course, optionally filtered by topic
+- `GET /api/courses/:id/topics` — extensions pull the topic list for a course
+- `POST /api/courses/:id/topics` — QM pushes a new topic into Core; returns the Core CUID stored in `core_topic_id`
+
+**Test:** hit each endpoint directly (curl / REST client) with valid Core session tokens before proceeding.
+
+---
+
+### Phase 2a — Wire extensions to Core APIs (old tables kept)
+
+Extensions call the new Core endpoints but retain their existing local tables. This is a dual-read period — no data is lost and rollback is trivial.
+
+- **AI Tutor:** update session middleware to call `POST /api/sessions/validate` on Core instead of querying its local `Session` table; update enrollment checks to call `GET /api/courses/:id/enrollments`; wire bug report submission to `POST /api/bug-reports` on Core
+- **QM:** wire bug report submission to `POST /api/bug-reports` on Core; wire question push to `POST /api/questions` on Core (populating `core_question_id`)
+
+**Test:** run Core + AI Tutor + QM simultaneously in dev. Step through the full auth flow (login → Core session → AI Tutor middleware). Submit a bug report from each extension and confirm it appears in Core's `bug_reports` table.
+
+---
+
+### Phase 2b — Extension schema cleanup (drop replaced tables)
+
+Only run after Phase 2a is verified. Each drop is a one-way migration.
+
+- **AI Tutor:**
+  - Change `Topic.id` to `String @id @default(cuid())`; update `Activity.mainTopicId` and `ActivitySecondaryTopic.topicId` to `String`; add `Topic.coreTopicId String? @unique`
+  - Drop `User`, `Session`, `Account`, `Verification` tables
+  - Drop `CourseInstructor`, `CourseEnrollment` tables
+  - Drop `BugReport` table
+- **QM:**
+  - Redesign `users` table (CUID string PK, no `password_hash`)
+  - Change `topics.id` to `VARCHAR` CUID; update `question_metadata.primary_topic_id` and `variants.secondary_topics_id` to `VARCHAR` / `VARCHAR[]`
+  - Change `user_id` columns in `courses`, `canvas_integrations`, `canvas_course_mappings` to `VARCHAR`
+  - Add `core_course_id` to `courses`, `core_topic_id` to `topics`, `core_question_id` to `variants` (not `question_metadata`)
+  - Drop `bug_reports` table
+
+**Test:** `npm run typecheck` in both extensions. Run each app's full test suite (`npm run test:integration` in AI Tutor server; `npm test` in QM backend).
+
+---
 
 ### Phase 3 — Integration testing
 
-Verify end-to-end: Core auth → AI Tutor session validation → QM user provisioning → cross-app question flow (`QM → POST /api/questions → Core → AI Tutor GET`).
+With all tables dropped and APIs wired, verify end-to-end across all three apps:
+
+- Core auth → AI Tutor session validation → AI Tutor course load (enrollment from Core)
+- QM question push (`POST /api/questions`) → Core stores record → AI Tutor `GET /api/questions` returns it
+- Bug report submission from AI Tutor and QM → appears in Core with correct `source` tag
+- Topic sync: Core `CourseTopic` created → extension pulls via `GET /api/courses/:id/topics` → `coreTopicId` / `core_topic_id` populated
+- Course deletion cascade: delete a course in Core → enrollments, questions, and course materials cascade-delete; extensions that hold `core_course_id` references have the reference nullified on the next cron reconciliation (or immediately on any failed write attempt)
