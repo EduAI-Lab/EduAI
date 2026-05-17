@@ -1,17 +1,19 @@
 import { useChat } from '@ai-sdk/react';
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { redirect, useLoaderData } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
+import type { Message } from "ai";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "~/components/ui/select";
 import { ChatWelcome } from "~/components/chat/chat-welcome";
 import { ChatMessage } from "~/components/chat/chat-message";
 import { ChatInput } from "~/components/chat/chat-input";
-import { ChatTypingIndicator } from "~/components/chat/chat-typing-indicator";
+import { ChatTypingIndicator, type TypingPhase } from "~/components/chat/chat-typing-indicator";
 import { SystemPromptSettings } from "~/components/chat/system-prompt-settings";
 import { useApiKeys } from "~/hooks/use-api-keys";
 import { AppSidebar } from "~/components/app-sidebar";
 import { SiteHeader } from "~/components/site-header";
 import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
+import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
@@ -24,6 +26,99 @@ interface ChatModel {
   maxTokens?: number;
   supportsImages?: boolean;
   supportsTools?: boolean;
+}
+
+type InflightStatus =
+  | { phase: TypingPhase; toolName?: string; toolInput?: unknown }
+  | null;
+
+/**
+ * Mirror of `@ai-sdk/ui-utils` `getMessageParts`: during streaming, `useChat`
+ * sometimes updates the assistant row before `parts` is populated, leaving only
+ * `toolInvocations` / `content`. Without this, `getInflightStatus` never sees
+ * tool calls and the typing line stays stuck on "EduAI is thinking".
+ */
+function getEffectiveParts(message: Message): Array<Record<string, unknown>> {
+  const m = message as Message & {
+    parts?: Array<Record<string, unknown>>;
+    toolInvocations?: Array<Record<string, unknown>>;
+  };
+  if (m.parts && m.parts.length > 0) {
+    return m.parts;
+  }
+  const out: Array<Record<string, unknown>> = [];
+  if (Array.isArray(m.toolInvocations)) {
+    for (const inv of m.toolInvocations) {
+      out.push({ type: "tool-invocation", toolInvocation: inv });
+    }
+  }
+  const content = typeof message.content === "string" ? message.content : "";
+  if (content) {
+    out.push({ type: "text", text: content });
+  }
+  return out;
+}
+
+/**
+ * Inspect the last message in the chat to figure out what phase the assistant
+ * is currently in, so the typing indicator can show meaningful progress instead
+ * of a static "thinking..." for the whole tool-call window.
+ *
+ * Returns `null` when nothing should be shown (request is idle, or visible
+ * text has already started streaming so the bubble itself is the signal).
+ */
+function getInflightStatus(messages: Message[], isLoading: boolean): InflightStatus {
+  if (!isLoading) return null;
+
+  const lastMessage = messages[messages.length - 1];
+  if (!lastMessage || lastMessage.role !== "assistant") {
+    return { phase: "thinking" };
+  }
+
+  const parts = getEffectiveParts(lastMessage);
+
+  const hasVisibleText = parts.some(
+    (p) => p.type === "text" && typeof p.text === "string" && p.text.length > 0,
+  );
+  if (hasVisibleText) return null;
+
+  const toolParts = parts.filter(
+    (p) => p.type === "tool-invocation" || (typeof p.type === "string" && p.type.startsWith("tool-")),
+  );
+
+  const inProgressStates = new Set([
+    "input-streaming",
+    "input-available",
+    "partial-call",
+    "call",
+  ]);
+
+  const activeTool = [...toolParts].reverse().find((p) => {
+    const state = (p as { toolInvocation?: { state?: string }; state?: string }).toolInvocation
+      ?.state ?? (p as { state?: string }).state;
+    return state && inProgressStates.has(state);
+  });
+
+  if (activeTool) {
+    const at = activeTool as {
+      toolInvocation?: { toolName?: string; args?: unknown };
+      toolName?: string;
+      type?: string;
+      input?: unknown;
+    };
+    const toolName: string | undefined =
+      at.toolInvocation?.toolName ??
+      at.toolName ??
+      (typeof at.type === "string" ? at.type.replace(/^tool-/, "") : undefined);
+    const toolInput: unknown = at.toolInvocation?.args ?? at.input;
+    return { phase: "tool", toolName, toolInput };
+  }
+
+  if (toolParts.length > 0) {
+    return { phase: "writing" };
+  }
+
+  return { phase: "thinking" };
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -99,7 +194,9 @@ export default function Chat() {
     }
   }, [chatId]);
 
-  const { messages, input, handleInputChange, handleSubmit, isLoading, stop } = useChat({
+  const [chatError, setChatError] = useState<string | null>(null);
+
+  const { messages, input, handleInputChange, handleSubmit, isLoading, stop, error } = useChat({
     api: "/api/chat",
     body: {
       model: selectedModel,
@@ -109,16 +206,36 @@ export default function Chat() {
       systemPrompt: systemPrompt || undefined,
     },
     onResponse: async (response) => {
-      // Extract chatId from response headers
+      setChatError(null);
+      if (!response.ok) {
+        const text = await response.text().catch(() => "");
+        setChatError(
+          text || `Request failed (${response.status}). Check the Network tab for the /api/chat response.`,
+        );
+      }
       const chatIdHeader = response.headers.get('X-Chat-Id');
       if (chatIdHeader && !chatId) {
         setChatId(chatIdHeader);
       }
     },
-    onFinish: async (message) => {
-      // chatId is already captured from headers in onResponse
+    onFinish: async () => {
+      setChatError(null);
+    },
+    onError: (err) => {
+      console.error("Chat stream error:", err);
+      setChatError(err.message || "Something went wrong while streaming the reply.");
     },
   });
+
+  const displayError = chatError ?? error?.message ?? null;
+
+  const guardedSubmit = useCallback(
+    (e: React.FormEvent<HTMLFormElement>) => {
+      if (isLoading) return;
+      handleSubmit(e);
+    },
+    [handleSubmit, isLoading],
+  );
 
   const selectedModelInfo = chatModels.find((model: any) => model.id === selectedModel);
 
@@ -163,7 +280,7 @@ export default function Chat() {
         preventDefault: () => {},
         currentTarget: {} as HTMLFormElement
       } as React.FormEvent<HTMLFormElement>;
-      handleSubmit(formEvent);
+      guardedSubmit(formEvent);
     });
   };
 
@@ -192,6 +309,21 @@ export default function Chat() {
                     />
                   </div>
 
+                  {displayError && !isLoading && (
+                    <Alert variant="destructive" className="mb-4">
+                      <AlertTitle>Couldn&apos;t complete the reply</AlertTitle>
+                      <AlertDescription className="space-y-2">
+                        <p>{displayError}</p>
+                        <p className="text-xs opacity-90">
+                          If the model stopped mid-thread, the last request may have hit a provider
+                          limit or returned a non-200. Open DevTools → Network → select the failed{" "}
+                          <code className="rounded bg-muted px-1">chat</code> request and read the
+                          response body.
+                        </p>
+                      </AlertDescription>
+                    </Alert>
+                  )}
+
                   {messages.length === 0 ? (
                     <ChatWelcome
                       selectedModelInfo={selectedModelInfo}
@@ -212,7 +344,17 @@ export default function Chat() {
                         );
                       })}
 
-                      {isLoading && <ChatTypingIndicator />}
+                      {(() => {
+                        const status = getInflightStatus(messages, isLoading);
+                        if (!status) return null;
+                        return (
+                          <ChatTypingIndicator
+                            phase={status.phase}
+                            toolName={status.toolName}
+                            toolInput={status.toolInput}
+                          />
+                        );
+                      })()}
                     </>
                   )}
                 </div>
@@ -225,7 +367,7 @@ export default function Chat() {
             input={input}
             isLoading={isLoading}
             onInputChange={handleInputChange}
-            onSubmit={handleSubmit}
+            onSubmit={guardedSubmit}
             onStop={stop}
             selectedCourseId={selectedCourseCode}
             setSelectedCourseId={setSelectedCourseCode}

@@ -5,6 +5,28 @@ import prisma from '~/lib/prisma.server';
 import { auth } from '~/lib/auth/server';
 import { enforceAdminIfApiKey } from '~/lib/auth/guards.server';
 
+type SessionUser = { id: string; role?: string | null };
+
+/**
+ * Course materials API must match `courses.$courseId.tsx`: admins may manage
+ * materials for any course; others only if professor, TA, or actively enrolled.
+ */
+async function resolveCourseForMaterialsAccess(user: SessionUser, courseId: string) {
+  if (user.role === 'ADMIN') {
+    return prisma.course.findUnique({ where: { id: courseId } });
+  }
+  return prisma.course.findFirst({
+    where: {
+      id: courseId,
+      OR: [
+        { professorId: user.id },
+        { tas: { some: { userId: user.id } } },
+        { enrollments: { some: { studentId: user.id, isActive: true } } },
+      ],
+    },
+  });
+}
+
 export async function action({ request, params }: ActionFunctionArgs) {
   // If an API key is provided, only ADMIN users may proceed
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
@@ -27,17 +49,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     });
   }
 
-  // Check if user has access to this course
-  const course = await prisma.course.findFirst({
-    where: {
-      id: courseId,
-      OR: [
-        { professorId: user.id },
-        { tas: { some: { userId: user.id } } },
-        { enrollments: { some: { studentId: user.id, isActive: true } } }
-      ]
-    }
-  });
+  const course = await resolveCourseForMaterialsAccess(user, courseId);
 
   if (!course) {
     return new Response(JSON.stringify({ error: 'Course not found or access denied' }), {
@@ -159,17 +171,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
   }
 
-  // Check if user has access to this course
-  const course = await prisma.course.findFirst({
-    where: {
-      id: courseId,
-      OR: [
-        { professorId: user.id },
-        { tas: { some: { userId: user.id } } },
-        { enrollments: { some: { studentId: user.id, isActive: true } } }
-      ]
-    }
-  });
+  const course = await resolveCourseForMaterialsAccess(user, courseId);
 
   if (!course) {
     return new Response(JSON.stringify({ error: 'Course not found or access denied' }), {

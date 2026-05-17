@@ -27,5 +27,9 @@
   },
   "devDependencies": {
     "turbo": "latest"
+  },
+  "overrides": {
+    "better-auth": "1.2.8",
+    "@better-auth/cli": "1.2.8"
   }
 }

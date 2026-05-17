@@ -1,4 +1,5 @@
 import { betterAuth } from "better-auth";
+import { apiKey } from "better-auth/plugins";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import prisma from "../prisma.server";
 
@@ -10,6 +11,11 @@ export const auth = betterAuth({
     enabled: true,
     autoSignIn: true,
   },
+  plugins: [
+    apiKey({
+      apiKeyHeaders: ["x-api-key"],
+    }),
+  ],
   user: {
     additionalFields: {
       role: {
@@ -32,7 +38,7 @@ export const auth = betterAuth({
     crossSubDomainCookies: {
       enabled: true,
     },
-    baseURL: import.meta.env.BETTER_AUTH_URL || "http://localhost:5173",
+    baseURL: import.meta.env.BETTER_AUTH_URL || "http://localhost:3000",
   },
   // Add rate limiting for security
   rateLimit: {

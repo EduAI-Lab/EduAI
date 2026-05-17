@@ -1,6 +1,6 @@
 import { Button } from "~/components/ui/button";
 import { Settings } from "lucide-react";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { ApiKeySettings } from "./api-key-settings";
 import {
   PromptInput,
@@ -40,6 +40,13 @@ export function ChatInput({
   selectedModelInfo
 }: ChatInputProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const submitLockRef = useRef(false);
+
+  useEffect(() => {
+    if (!isLoading) {
+      submitLockRef.current = false;
+    }
+  }, [isLoading]);
 
   const handleValueChange = (value: string) => {
     // Create a synthetic event to maintain compatibility
@@ -51,7 +58,10 @@ export function ChatInput({
   };
 
   const handleSubmit = () => {
-    // Create a synthetic form event
+    if (isLoading || !input.trim() || submitLockRef.current) {
+      return;
+    }
+    submitLockRef.current = true;
     const formEvent = {
       preventDefault: () => {},
       currentTarget: {} as HTMLFormElement
