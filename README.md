@@ -46,6 +46,7 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 |----------|-------------|
 | [`platform-centralization-architecture-plan.md`](docs/platform-centralization-architecture-plan.md) | How Core, AI Tutor, and Question Maker are being centralized under a single API and auth layer |
 | [`user-management-and-roles-architecture-plan.md`](docs/user-management-and-roles-architecture-plan.md) | Role hierarchy, permissions, and naming decisions across the platform |
+| [`implementations/schema-design.md`](docs/implementations/schema-design.md) | Unified database schema design — ERD, conflict analysis, and migration strategy across all three apps; decisions finalized, ready for implementation |
 
 ## Changelog
 
