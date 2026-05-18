@@ -10,7 +10,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 - [monorepo] docs: Add `schema-design.md` in `docs/implementations/` — fully validated unified schema design (#177, @abdullahmoh21, 2026-05-16)
-- [monorepo] docs: Added deployment.md in docs/implementation based on team decision (#, @abdullahmoh21, 2026-05-15)
+- [monorepo] docs: Added deployment.md in docs/implementation based on team decision (#177, @abdullahmoh21, 2026-05-15)
 - [monorepo] docs: Add deployment topology decision document covering subdomain, path-prefix, and separate-domain approaches with tradeoffs and a recommendation — pending team decision. (#, @abdullahmoh21, 2026-05-15)
 - [core] docs: Add `TEST.md` cataloguing all planned test cases for `lib/utils`, `lib/ai/providers`, `lib/ai/file-processing`, `lib/ai/embedding`, `lib/courses/schemas`, `lib/ai/schemas`, and form components (`LoginForm`, `RegisterForm`); assign test files across three contributors. (#134, @glowyblack, 2026-05-13)
 - [core] infra: Add unit tests for all functions in `lib/form-utils.ts` (`getFieldErrors`, `getFieldError`, `getFormErrorMessage`, `validateField`); set `pool: vmThreads` in `vitest.config.ts` to fix worker startup timeout on Windows. Test file lives at `app/tests/unit/form-utils.test.ts`. (#134, @glowyblack, 2026-05-13)
