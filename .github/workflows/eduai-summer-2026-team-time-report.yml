@@ -25,7 +25,7 @@ on:
       base_time_file:
         description: "Path to base time CSV."
         required: false
-        default: "base-time.csv"
+        default: "eduai-summer-2026/base-time.csv"
   workflow_run:
     workflows: ["PR Analytics"]
     types: [completed]
@@ -128,7 +128,7 @@ jobs:
           console.log(`project_number=${process.env.INPUT_PROJECT_NUMBER || process.env.VAR_PROJECT_NUMBER || ""}`);
           console.log(`report_start_date=${process.env.INPUT_START || iso(previousMonday)}`);
           console.log(`report_end_date=${process.env.INPUT_END || iso(previousSunday)}`);
-          console.log(`base_time_file=${process.env.INPUT_BASE_TIME_FILE || process.env.VAR_BASE_TIME_FILE || "base-time.csv"}`);
+          console.log(`base_time_file=${process.env.INPUT_BASE_TIME_FILE || process.env.VAR_BASE_TIME_FILE || "eduai-summer-2026/base-time.csv"}`);
           NODE
 
       - name: Download PR analytics artifact from triggering workflow
@@ -147,7 +147,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          run_id="$(gh run list --workflow pr-analytics.yml --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
+          run_id="$(gh run list --workflow eduai-summer-2026-pr-analytics.yml --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
           if [ -z "$run_id" ] || [ "$run_id" = "null" ]; then
             echo "No successful PR Analytics workflow run was found." >&2
             exit 1
@@ -192,6 +192,7 @@ jobs:
           REPORT_START_DATE: ${{ steps.inputs.outputs.report_start_date }}
           REPORT_END_DATE: ${{ steps.inputs.outputs.report_end_date }}
           BASE_TIME_FILE: ${{ steps.inputs.outputs.base_time_file }}
+          OUTPUT_DIR: eduai-summer-2026/reports
           PR_ANALYTICS_JSON: pr-analytics/pr-analytics.json
           UPDATE_PROJECT_FIELDS: ${{ vars.UPDATE_PROJECT_FIELDS }}
         run: |
@@ -199,7 +200,7 @@ jobs:
             echo "PROJECT_NUMBER is required. Set it as a workflow input or repository variable." >&2
             exit 1
           fi
-          node scripts/generate-team-time-report.js
+          node eduai-summer-2026/scripts/generate-team-time-report.js
 
       - name: Upload team reports
         if: ${{ steps.schedule_gate.outputs.should_run == 'true' && github.event_name != 'pull_request' }}
@@ -207,8 +208,8 @@ jobs:
         with:
           name: team-time-report
           path: |
-            reports/team-time-report.csv
-            reports/team-time-report.md
+            eduai-summer-2026/reports/team-time-report.csv
+            eduai-summer-2026/reports/team-time-report.md
           if-no-files-found: error
 
       - name: Commit reports
@@ -221,7 +222,7 @@ jobs:
           REPORT_BRANCH="${REPORT_COMMIT_BRANCH:-eduai-summer-2026}"
 
           if ! git status --porcelain --ignore-submodules -- \
-            reports/team-time-report.csv reports/team-time-report.md | grep -q .; then
+            eduai-summer-2026/reports/team-time-report.csv eduai-summer-2026/reports/team-time-report.md | grep -q .; then
             echo "No report changes to commit."
             exit 0
           fi
@@ -230,9 +231,9 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           mkdir -p /tmp/team-time-report-commit
-          cp reports/team-time-report.csv reports/team-time-report.md /tmp/team-time-report-commit/
-          rm -f reports/team-time-report.csv reports/team-time-report.md
-          git checkout HEAD -- reports/team-time-report.csv reports/team-time-report.md 2>/dev/null || true
+          cp eduai-summer-2026/reports/team-time-report.csv eduai-summer-2026/reports/team-time-report.md /tmp/team-time-report-commit/
+          rm -f eduai-summer-2026/reports/team-time-report.csv eduai-summer-2026/reports/team-time-report.md
+          git checkout HEAD -- eduai-summer-2026/reports/team-time-report.csv eduai-summer-2026/reports/team-time-report.md 2>/dev/null || true
 
           git fetch origin "$REPORT_BRANCH" 2>/dev/null || true
           if git rev-parse --verify "refs/remotes/origin/${REPORT_BRANCH}" >/dev/null 2>&1; then
@@ -241,10 +242,10 @@ jobs:
             git checkout -b "$REPORT_BRANCH"
           fi
 
-          mkdir -p reports
-          cp /tmp/team-time-report-commit/team-time-report.csv reports/
-          cp /tmp/team-time-report-commit/team-time-report.md reports/
+          mkdir -p eduai-summer-2026/reports
+          cp /tmp/team-time-report-commit/team-time-report.csv eduai-summer-2026/reports/
+          cp /tmp/team-time-report-commit/team-time-report.md eduai-summer-2026/reports/
 
-          git add reports/team-time-report.csv reports/team-time-report.md
+          git add eduai-summer-2026/reports/team-time-report.csv eduai-summer-2026/reports/team-time-report.md
           git commit -m "chore: update weekly team time report"
           git push -u origin "$REPORT_BRANCH"
