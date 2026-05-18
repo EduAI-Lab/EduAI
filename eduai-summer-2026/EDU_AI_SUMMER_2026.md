@@ -1,6 +1,6 @@
 # EduAI Summer 2026 — Team Time Reporting
 
-**Last Updated:** May 16, 2026
+**Last Updated:** May 18, 2026
 
 ---
 
@@ -30,8 +30,8 @@ This guide documents the weekly EduAI team time reporting automation. The system
 5. The workflow generates:
 
 ```text
-reports/team-time-report.csv
-reports/team-time-report.md
+eduai-summer-2026/reports/team-time-report.csv
+eduai-summer-2026/reports/team-time-report.md
 ```
 
 The CSV is intended for Excel. The Markdown report is intended for GitHub review.
@@ -84,7 +84,7 @@ The script flags duplicate person rows on the same issue instead of summing them
 
 ## Base Time
 
-`base-time.csv` is committed as the default fallback:
+`eduai-summer-2026/base-time.csv` is committed as the default fallback:
 
 ```csv
 github_username,base_hours,notes
@@ -106,7 +106,7 @@ evanbones,0,
 ```
 ````
 
-This avoids opening a weekly PR just to change base hours. If the issue override is unavailable, the workflow falls back to the committed `base-time.csv`.
+This avoids opening a weekly PR just to change base hours. If the issue override is unavailable, the workflow falls back to the committed `eduai-summer-2026/base-time.csv`.
 
 ## PR Linking
 
@@ -168,9 +168,9 @@ Optional project fields can be updated when `UPDATE_PROJECT_FIELDS=true`:
 
 ## Workflows
 
-`pr-analytics.yml` runs manually or weekly. It uses `AlexSim93/pull-request-analytics-action@v4`, `America/Edmonton`, JSON collection output, Markdown output, and the configured PR Analytics report issue.
+`.github/workflows/eduai-summer-2026-pr-analytics.yml` runs manually or weekly. It uses `AlexSim93/pull-request-analytics-action@v4`, `America/Edmonton`, JSON collection output, Markdown output, and the configured PR Analytics report issue.
 
-`team-time-report.yml` runs:
+`.github/workflows/eduai-summer-2026-team-time-report.yml` runs:
 
 - manually
 - after PR Analytics completes
@@ -186,7 +186,7 @@ The repo is configured with:
 ```text
 PROJECT_OWNER=EduAI-Lab
 PROJECT_NUMBER=8
-BASE_TIME_FILE=base-time.csv
+BASE_TIME_FILE=eduai-summer-2026/base-time.csv
 BASE_TIME_ISSUE_NUMBER=178
 COMMIT_REPORTS=true
 UPDATE_PROJECT_FIELDS=true

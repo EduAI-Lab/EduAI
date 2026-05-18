@@ -479,8 +479,11 @@ async function buildReport(options) {
   const repo = options.repo || process.env.REPO || repository.repo;
   const projectOwner = options.projectOwner || process.env.PROJECT_OWNER || owner;
   const projectNumber = options.projectNumber || process.env.PROJECT_NUMBER;
-  const outputDir = options.outputDir || process.env.OUTPUT_DIR || "reports";
-  const baseTimeFile = options.baseTimeFile || process.env.BASE_TIME_FILE || "base-time.csv";
+  const summerRoot = path.resolve(__dirname, "..");
+  const outputDir =
+    options.outputDir || process.env.OUTPUT_DIR || path.join(summerRoot, "reports");
+  const baseTimeFile =
+    options.baseTimeFile || process.env.BASE_TIME_FILE || path.join(summerRoot, "base-time.csv");
   const prAnalyticsJsonPath = options.prAnalyticsJson || process.env.PR_ANALYTICS_JSON || "";
   const defaultRange = defaultReportRange();
   const startDate = toDate(options.reportStartDate || process.env.REPORT_START_DATE) || defaultRange.start;
