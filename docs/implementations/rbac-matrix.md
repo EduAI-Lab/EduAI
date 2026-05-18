@@ -235,11 +235,11 @@ Questions are authored in Question Maker and stored canonically in Core. The mat
 | Start a chat session | ✓ | ✓ | C | C | C (published course, active enrollment) |
 | View own chat history | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Delete own chat | ✓ | ✓ | ✓ | ✓ | ✓ |
-| View all chat sessions in a course | ✓ | D | C | — | — |
+| View all chat sessions (content) in a course | ✓ | — | — | — | — |
+| View chat metrics for a course (count, frequency) | ✓ | D | C | — | — |
 
 **Notes:**
-- TAs cannot read other users' chat sessions. Chat history is private to the user except for the course professor and admins.
-- `DEPARTMENT_ADMIN` can view all chat sessions across courses in their department.
+- Only `ADMIN` can read other users' chat content. Professors and department admins see aggregate metrics only (e.g. number of sessions, activity frequency) — not message content.
 - A student whose enrollment becomes inactive retains access to their own past chat history (`O`) but cannot start new sessions in that course.
 
 ---
@@ -445,7 +445,7 @@ A `STUDENT` enrollment only grants access when `Course.isPublished = true` AND `
 Any user can always read and delete their own resources (own chat sessions, own submitted bug reports, own API keys, own provider settings) regardless of course enrollment or role, as long as the resource belongs to them (`userId` or `createdBy === user.id`).
 
 **No cross-user chat visibility**  
-No role below `PROFESSOR` (within their own course) and `ADMIN` (globally) can read another user's chat messages. TAs are explicitly excluded from course-wide chat views despite having elevated access in other areas. This is a deliberate privacy decision.
+Only `ADMIN` can read another user's chat messages. Professors and department admins receive aggregate metrics (session count, frequency) but never message content. This is a deliberate privacy decision — chat sessions are treated as private to the user regardless of course role.
 
 **`DEPARTMENT_ADMIN` department lock**  
 A `DEPARTMENT_ADMIN` cannot act on a course where `Course.department !== User.department`, even if `Course.department` is null. A null department is not a wildcard — it means the course has no department affiliation and is only manageable by `ADMIN` or the owning professor. Authorization middleware must treat `user.department === null` as a match failure, never a pass.
