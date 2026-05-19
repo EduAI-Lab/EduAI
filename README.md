@@ -63,7 +63,7 @@ npm install
 npm run dev
 ```
 
-`npm run dev` automatically starts the Docker databases before spinning up all apps via Turborepo. If Docker Desktop is not running you will get a daemon error — start Docker first, then re-run.
+`npm run dev` automatically starts the Docker databases before spinning up all apps via Turborepo. On macOS, Docker Desktop is started automatically if it is not already running. On other platforms, start Docker manually before running `npm run dev`.
 
 After `npm install`, each app gets a `.env` copied from its `.env.example` (only if one doesn't already exist). Fill in any secrets (auth keys, API keys) before the relevant features will work. See each app's `.env.example` for what is required.
 
