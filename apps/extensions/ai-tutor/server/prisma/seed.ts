@@ -1,5 +1,47 @@
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient, type PromptTemplate } from '@prisma/client';
 import { hashPassword } from 'better-auth/crypto';
+
+type SeedAnswer = { correctIndex?: number; text?: string } | null;
+
+interface SeedActivity {
+  title?: string;
+  instructionsMd?: string;
+  position?: number;
+  promptTemplateId?: number | null;
+  config: Prisma.InputJsonObject;
+  mainTopic: string;
+  secondaryTopics?: string[];
+}
+
+interface SeedLesson {
+  title: string;
+  contentMd?: string;
+  position?: number;
+  activities?: SeedActivity[];
+}
+
+interface SeedModule {
+  title: string;
+  description?: string;
+  position?: number;
+  lessons?: SeedLesson[];
+}
+
+interface SeedCourse {
+  title: string;
+  description?: string;
+  startDate?: Date;
+  endDate?: Date;
+  isPublished?: boolean;
+}
+
+interface PromptDefaults {
+  knowledgePrompt: PromptTemplate;
+  debuggingPrompt: PromptTemplate;
+  learningPrompt: PromptTemplate;
+  exercisePrompt: PromptTemplate;
+  supervisorPrompt: PromptTemplate;
+}
 
 const prisma = new PrismaClient();
 
@@ -226,7 +268,19 @@ OR
   };
 }
 
-function knowledgeCheckConfig({ question, type, options, answer, hints }) {
+function knowledgeCheckConfig({
+  question,
+  type,
+  options,
+  answer,
+  hints,
+}: {
+  question: string;
+  type?: string;
+  options?: string[] | null;
+  answer?: SeedAnswer;
+  hints?: string[];
+}) {
   return {
     question,
     questionType: type ?? 'MCQ',
@@ -236,7 +290,17 @@ function knowledgeCheckConfig({ question, type, options, answer, hints }) {
   };
 }
 
-function debuggingConfig({ question, context, answer, hints }) {
+function debuggingConfig({
+  question,
+  context,
+  answer,
+  hints,
+}: {
+  question: string;
+  context: string;
+  answer?: SeedAnswer;
+  hints?: string[];
+}) {
   return {
     question,
     debugContext: context,
@@ -246,7 +310,7 @@ function debuggingConfig({ question, context, answer, hints }) {
   };
 }
 
-async function createCourseWithContent(course, modules, defaults, topics = []) {
+async function createCourseWithContent(course: SeedCourse, modules: SeedModule[], defaults: PromptDefaults, topics: string[] = []) {
   const offering = await prisma.courseOffering.create({
     data: {
       title: course.title,
@@ -357,7 +421,7 @@ async function createCourseWithContent(course, modules, defaults, topics = []) {
   return offering;
 }
 
-async function ensureTopicForCourse(courseOfferingId, name) {
+async function ensureTopicForCourse(courseOfferingId: number, name: string) {
   const trimmed = name.trim();
   if (!trimmed) throw new Error('Topic name must be provided');
 
@@ -382,7 +446,7 @@ async function ensureTopicForCourse(courseOfferingId, name) {
   return created.id;
 }
 
-async function copyLessonsBetweenOfferings(lessonIds, targetModuleId) {
+async function copyLessonsBetweenOfferings(lessonIds: number[], targetModuleId: number) {
   const targetModule = await prisma.module.findUnique({
     where: { id: targetModuleId },
     select: { courseOfferingId: true },
@@ -421,7 +485,7 @@ async function copyLessonsBetweenOfferings(lessonIds, targetModuleId) {
   const targetTopicsByName = new Map(existingTargetTopics.map((topic) => [topic.name, topic]));
   const topicIdMap = new Map();
 
-  const resolveTopicId = async (sourceTopicId) => {
+  const resolveTopicId = async (sourceTopicId: number | null | undefined) => {
     if (!sourceTopicId) return null;
     if (topicIdMap.has(sourceTopicId)) {
       return topicIdMap.get(sourceTopicId);
@@ -482,7 +546,7 @@ async function copyLessonsBetweenOfferings(lessonIds, targetModuleId) {
           position: activity.position,
           lesson: { connect: { id: createdLesson.id } },
           promptTemplate: activity.promptTemplateId ? { connect: { id: activity.promptTemplateId } } : undefined,
-          config: activity.config,
+          config: activity.config ?? Prisma.JsonNull,
           mainTopic: { connect: { id: mainTopicId } },
           secondaryTopics:
             secondaryTopics.length > 0
@@ -496,7 +560,7 @@ async function copyLessonsBetweenOfferings(lessonIds, targetModuleId) {
   }
 }
 
-async function createSampleSubmissions(algorithmsOfferingId, linearOfferingId, studentIds) {
+async function createSampleSubmissions(algorithmsOfferingId: number, linearOfferingId: number, studentIds: string[]) {
   const [studentOneId, studentTwoId] = studentIds;
 
   const sortingActivity = await prisma.activity.findFirst({

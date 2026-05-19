@@ -6,17 +6,6 @@ Planned test cases for `apps/core`. All tests live under `app/__tests__/` and ar
 
 ## Assigned to: Ye
 
-### `lib/utils.test.ts`
-
-**`cn()`**
-- Merges multiple class name strings into one
-- Resolves Tailwind conflicts — last conflicting class wins (e.g. `bg-red-500 bg-blue-500` → `bg-blue-500`)
-- Ignores falsy values (`undefined`, `null`, `false`, `0`)
-- Handles conditional classes via object syntax (`{ 'text-red-500': true, 'text-blue-500': false }`)
-- Returns an empty string when called with no arguments
-
----
-
 ### `lib/ai/providers.test.ts`
 
 **`PROVIDER_CONFIGS`**
