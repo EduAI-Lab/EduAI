@@ -1,20 +1,31 @@
 {
-  "name": "eduaicore",
+  "name": "eduai-monorepo",
+  "version": "1.0.0",
   "private": true,
+  "packageManager": "npm@11.12.1",
+  "workspaces": [
+    "apps/*",
+    "apps/extensions/*",
+    "apps/extensions/ai-tutor/*",
+    "apps/extensions/question-maker/app/*"
+  ],
   "scripts": {
-    "test": "npm run test:core && npm run test:ai-tutor && npm run test:question-maker",
-    "test:all": "npm run test:core && npm run test:ai-tutor && npm run test:question-maker:all",
-
-    "test:core": "npm --prefix apps/core run test",
-
-    "test:ai-tutor": "npm run test:ai-tutor:frontend && npm run test:ai-tutor:server",
-    "test:ai-tutor:frontend": "bun run --cwd apps/extensions/ai-tutor test",
-    "test:ai-tutor:server": "bun run --cwd apps/extensions/ai-tutor/server test",
-
-    "test:question-maker": "npm run test:question-maker:backend && npm run test:question-maker:frontend",
-    "test:question-maker:all": "npm run test:question-maker:backend:all && npm run test:question-maker:frontend",
-    "test:question-maker:backend": "npm --prefix apps/extensions/question-maker/app/backend run test",
-    "test:question-maker:backend:all": "npm --prefix apps/extensions/question-maker/app/backend run test:all",
-    "test:question-maker:frontend": "npm --prefix apps/extensions/question-maker/app/frontend run test"
+    "postinstall": "node scripts/setup-env.js",
+    "docker:dev:db": "docker compose -f docker-compose.dev.yml up -d --wait eduai-db ai-tutor-db question-maker-db",
+    "docker:dev:db:eduai": "docker compose -f docker-compose.dev.yml up -d --wait eduai-db",
+    "docker:dev:db:ai-tutor": "docker compose -f docker-compose.dev.yml up -d --wait ai-tutor-db",
+    "docker:dev:db:question-maker": "docker compose -f docker-compose.dev.yml up -d --wait question-maker-db",
+    "docker:dev:db:down": "docker compose -f docker-compose.dev.yml down",
+    "docker:dev:db:logs": "docker compose -f docker-compose.dev.yml logs -f",
+    "build": "turbo run build",
+    "predev": "npm run docker:dev:db",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "test:all": "turbo run test:all",
+    "clean": "turbo run clean && rm -rf node_modules"
+  },
+  "devDependencies": {
+    "turbo": "latest"
   }
 }

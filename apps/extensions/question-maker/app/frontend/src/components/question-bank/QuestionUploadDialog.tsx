@@ -4,7 +4,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Tesseract from 'tesseract.js';
-import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist/legacy/build/pdf';
+import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist';
 import pdfWorkerSrc from 'pdfjs-dist/build/pdf.worker?url';
 import { UploadCloud, FileText, Loader2, Trash2, Copy as CopyIcon, RefreshCcw, ChevronDown, ChevronUp, History } from 'lucide-react';
 
@@ -415,7 +415,7 @@ export const QuestionUploadDialog = ({
         for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
             const page = await pdf.getPage(pageNumber);
             const content = await page.getTextContent();
-            const pageText = pdfItemsToTextWithLineBreaks(content.items);
+            const pageText = pdfItemsToTextWithLineBreaks(content.items as PdfTextItem[]);
             pageTexts.push(pageText);
             onProgress(Math.round((pageNumber / pdf.numPages) * 70));
         }
@@ -817,7 +817,7 @@ export const QuestionUploadDialog = ({
             answer: draft.answer?.trim() || null,
             type: draft.type,
             summary: draft.summary.trim(),
-            primaryTopicId: draft.primaryTopicId ?? undefined,
+            primaryTopicId: draft.primaryTopicId ?? null,
             secondaryTopicIds: draft.secondaryTopicIds,
             ...(draft.type === 'MCQ' && draft.choices && draft.choices.length >= 2 && {
                 choices: draft.choices.filter((c) => c.text.trim().length > 0)
