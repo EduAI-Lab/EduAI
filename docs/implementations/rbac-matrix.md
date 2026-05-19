@@ -27,6 +27,7 @@
 17. [Question Maker — Assessments](#17-question-maker--assessments)
 18. [Question Maker — Canvas Integration](#18-question-maker--canvas-integration)
 19. [Cross-Cutting Rules](#19-cross-cutting-rules)
+20. [Current Implementation State](#20-current-implementation-state)
 
 ---
 
@@ -464,3 +465,215 @@ Once a QM `Variant` is approved (`isDraft=false`), it is immutable. A professor 
 
 **Soft-delete transparency**  
 All extension-facing API endpoints (`GET /api/courses`, `GET /api/questions`, `GET /api/courses/:id/topics`) automatically filter `WHERE deletedAt IS NULL`. Soft-deleted records are invisible to all roles via the API and are accessible only via direct database queries by an `ADMIN`.
+
+---
+
+## 20. Current Implementation State
+
+This section documents what is **actually enforced in code today**, as audited against the target matrices above. Gaps between the current state and the target are noted per section.
+
+### 20.1 Role Model — Current State
+
+**`apps/core` (`app/lib/auth/server.ts`, `app/lib/auth/schemas.ts`)**
+
+The role enum in the schema is `ADMIN | PROFESSOR | TA | STUDENT`. Default on registration: `STUDENT`.
+
+**Critical gap:** `DEPARTMENT_ADMIN` does not exist anywhere in the codebase. Every place the target matrix assigns `D` (department-scoped) behaviour is entirely unimplemented. There is no `User.department` field, no department-scoped middleware, and no `DEPARTMENT_ADMIN` role check anywhere across all three apps.
+
+**`EnrollmentRole` (`TA | STUDENT`):** Not implemented. Core has a `CourseEnrollment` table (`course_enrollments`) but it covers enrolled students only and has no `role` field — TAs are tracked via a separate `CourseTA` table (`course_tas`). Neither table constitutes the unified `EnrollmentRole` concept from the target design. The `TA` value exists in the `UserRole` enum as a platform-level role, not a course-level one — the opposite of the target design.
+
+---
+
+### 20.2 Core — User & Identity Management
+
+| Operation | Target: ADMIN | Target: Others | Current | Notes |
+|---|---|---|---|---|
+| List all users | ✓ | — | ✓ ADMIN only | `GET /api/users` — inline `role !== 'ADMIN'` check |
+| View any user profile | ✓ | — | ✓ ADMIN only | Same route handler |
+| Create user | ✓ | — | ✓ ADMIN only | `POST /api/users` |
+| Edit any user | ✓ | — | ✓ ADMIN only | `PATCH /api/users` |
+| Assign / change `UserRole` | ✓ | — | ✓ ADMIN only | Handled within the PATCH handler |
+| Deactivate / reactivate | ✓ (not self) | — | ✓ ADMIN only; self-lock guard present | Guard explicitly rejects self-deactivation (`isActive === false` on own ID). No guard prevents an admin from changing their own role — self-role-change is possible. |
+| Hard-delete user | Not in target | — | **Present** | `DELETE /api/users/:id` permanently deletes the user row (not a soft-delete). Not covered by the target matrix; a hard-delete that bypasses any deactivation workflow. |
+| View own profile | ✓ | ✓ all | Partial — no dedicated own-profile GET route for non-admins | Authenticated users get session but no separate `/api/me` in Core |
+| Edit own profile | ✓ | ✓ all | Not implemented | No self-edit endpoint for non-admin users in Core |
+| Assign `department` | ✓ | — | **Not implemented** | `DEPARTMENT_ADMIN` role and `User.department` field do not exist |
+
+---
+
+### 20.3 Core — Course Management
+
+Enforcement lives in `app/lib/courses/server.ts` (action handler) and `app/routes/api/courses.topics.$.ts`.
+
+| Operation | Target | Current | Notes |
+|---|---|---|---|
+| Create course | ADMIN, DEPT_ADMIN(D) | **ADMIN only** | `DEPARTMENT_ADMIN` role not implemented; professors cannot create. **Bug:** `professorId` is hardcoded to the creating admin's own ID — there is no field to specify a different professor at creation time, contradicting the target which says ADMIN sets any user as `Course.professorId` |
+| List courses | All roles with scoping | **Public** — no auth required | `GET /api/courses` returns all courses to any caller |
+| View course details | All roles with scoping | **Not enforced** | No per-course detail gate exists |
+| Edit course | ADMIN, DEPT_ADMIN(D), PROFESSOR(C) | ADMIN or course professor (`professorId === user.id`) | `DEPARTMENT_ADMIN` path missing; `C` scoping correct for PROFESSOR |
+| Publish / unpublish | ADMIN, DEPT_ADMIN(D), PROFESSOR(C) | ADMIN or course professor | Same as edit — `DEPT_ADMIN` gap |
+| Assign professor | ADMIN, DEPT_ADMIN(D) | ADMIN only | `DEPT_ADMIN` path missing |
+| Soft-delete course | ADMIN, DEPT_ADMIN(D), PROFESSOR(C) | **Not implemented** | No soft-delete endpoint exists in Core today |
+| Set AI instructions | ADMIN, DEPT_ADMIN(D), PROFESSOR(C) | **Not audited separately** | Likely bundled into the PATCH course handler |
+
+---
+
+### 20.4 Core — Course Topics
+
+Enforcement in `app/routes/api/courses.topics.$.ts`.
+
+| Operation | Target | Current | Notes |
+|---|---|---|---|
+| View topics | ADMIN, DEPT_ADMIN(D), PROFESSOR(C), TA(C), STUDENT(C, published) | **Any authenticated user** | `GET` only requires a valid session; no role or enrollment check |
+| Create topic | ADMIN, DEPT_ADMIN(D), PROFESSOR(C) | **ADMIN only** | Professors cannot create topics in Core; `role !== 'ADMIN'` gate |
+| Edit topic | ADMIN, DEPT_ADMIN(D), PROFESSOR(C) | **Not implemented** | No PATCH /topics route |
+| Soft-delete topic | ADMIN, DEPT_ADMIN(D), PROFESSOR(C) | **ADMIN only** | `DELETE` requires ADMIN |
+
+---
+
+### 20.5 Core — Course Materials
+
+Enforcement in `app/routes/api/courses.materials.$.ts`.
+
+| Operation | Target | Current | Notes |
+|---|---|---|---|
+| Upload material | ADMIN, DEPT_ADMIN(D), PROFESSOR(C), TA(C) | Professor OR TA OR enrolled student | **Students can upload** — target says `—` for students |
+| View / download material | ADMIN, DEPT_ADMIN(D), PROFESSOR(C), TA(C), STUDENT(C, published + active) | Same as upload | No published-course gate checked |
+| Delete material | ADMIN, DEPT_ADMIN(D), PROFESSOR(C), TA(O) | **Not implemented as a separate delete route** | No DELETE /materials endpoint found |
+
+---
+
+### 20.6 Core — AI Providers & System Config
+
+Enforcement in `app/routes/api/ai-providers.$.ts`, `app/routes/api/ai-models.$.ts`, `app/routes/api/ollama-models.ts`.
+
+| Operation | Target | Current | Notes |
+|---|---|---|---|
+| View available AI providers and models | ADMIN only | **Public** — no auth required | `GET /api/ai-providers` and `GET /api/ai-models` have no auth gate |
+| Create / edit / delete AI provider | ADMIN only | ✓ ADMIN only | Inline check on POST/PATCH/DELETE |
+| Create / edit / delete AI model | ADMIN only | ✓ ADMIN only | Same pattern |
+| Query Ollama for available models | ADMIN only | ✓ ADMIN only | `GET /api/ollama-models` |
+| Edit system config | ADMIN only | **Not found** | No system config endpoint located |
+| Configure own provider settings | All roles | **Not found in Core** | No `UserProviderSettings` CRUD endpoint located in Core routes |
+
+---
+
+### 20.6b Core — AI Chat & Chat History
+
+Enforcement in `app/routes/api/chat.ts` and `app/routes/api/chats.$chatId.ts`. Not previously audited.
+
+| Operation | Target | Current | Notes |
+|---|---|---|---|
+| Start a chat session | All roles (C scoping for STUDENT) | **Any authenticated user** | `POST /api/chat` — requires session, no course enrollment or publish check; any authenticated user can start a chat in any course context |
+| View own chat history | All roles | ✓ Own only | `GET /api/chats/:chatId` queries `WHERE userId = session.user.id` — own-resource scoped |
+| Delete own chat | All roles | **Not implemented** | No DELETE /chats/:chatId endpoint found |
+| View all chat sessions in a course | ADMIN only | **Not implemented** | No cross-user chat listing endpoint |
+| View chat metrics | ADMIN, DEPT_ADMIN(D), PROFESSOR(C) | **Not implemented** | No aggregate metrics endpoint |
+
+---
+
+### 20.7 Core — API Key Guard
+
+`app/lib/auth/guards.server.ts` — `enforceAdminIfApiKey()`.
+
+Any request carrying an `x-api-key` header must belong to an `ADMIN` session; otherwise 403. This matches the target's intent for service-to-service keys but is broader than specified — target says extension-to-Core keys bypass RBAC entirely, while the current guard ties key usage to an admin user session (not a standalone key). The shape of the API key auth layer is not yet finalized per the matrix spec, and current code reflects an interim approach.
+
+---
+
+### 20.8 AI Tutor — Role Architecture
+
+Auth middleware: `server/src/middleware/auth.js` — `requireAuth`, `requireRole(role)`, `requireRoles([...])`.
+
+**App-level admin isolation** (`server/src/app.js`): ADMIN users are fenced to `/me`, `/admin/*`, `/ai-models`, `/ai-models/*` only. Any ADMIN attempt to hit a course/content route returns 403.
+
+**Roles in use:** `ADMIN`, `PROFESSOR`, `STUDENT`. `TA` is defined in the role enum but has **zero route assignments** — no AI Tutor route accepts or distinguishes a TA caller.
+
+**`DEPARTMENT_ADMIN`:** Does not exist in AI Tutor at all.
+
+---
+
+### 20.9 AI Tutor — Content Hierarchy (Modules, Lessons, Activities)
+
+| Operation | Target | Current | Notes |
+|---|---|---|---|
+| Create module / lesson / activity | ADMIN(✓), DEPT_ADMIN(D), PROFESSOR(C) | **PROFESSOR only** | `requireRole('PROFESSOR')` on POST routes — ADMIN is fenced out by the app-level isolation middleware; `DEPT_ADMIN` not implemented |
+| View module / lesson / activity | All roles with publish gating | PROFESSOR (all), STUDENT (published + enrolled) | GET routes have **no `requireRole` gate** — any authenticated non-admin user can attempt to fetch; publish-gate logic inside handlers restricts what students see. TA cannot view due to zero TA route assignments. |
+| Edit module / lesson | ADMIN(✓), DEPT_ADMIN(D), PROFESSOR(C) | **PROFESSOR only (module only)** | Module has PATCH `/modules/:id` with `requireRole('PROFESSOR')`; **no PATCH route exists for lessons** |
+| Delete module / lesson | ADMIN(✓), DEPT_ADMIN(D), PROFESSOR(C) | **Not implemented** | **No DELETE route exists for modules or lessons** — only activities have a DELETE endpoint |
+| Edit / delete activity | ADMIN(✓), DEPT_ADMIN(D), PROFESSOR(C) | **PROFESSOR only** | `PATCH /activities/:id` and `DELETE /activities/:id` both require PROFESSOR |
+| Publish / unpublish module | ADMIN(✓), DEPT_ADMIN(D), PROFESSOR(C) | **PROFESSOR only** | `PATCH /modules/:id/publish` and `/unpublish` — `requireRole('PROFESSOR')` |
+| Publish / unpublish lesson | ADMIN(✓), DEPT_ADMIN(D), PROFESSOR(C) | **PROFESSOR only** | `PATCH /lessons/:id/publish` and `/unpublish` — `requireRole('PROFESSOR')` |
+
+---
+
+### 20.10 AI Tutor — Enrollments & Admin Operations
+
+All under `requireRole('ADMIN')`.
+
+| Operation | Target | Current | Notes |
+|---|---|---|---|
+| List enrolled users | ADMIN, DEPT_ADMIN(D), PROFESSOR(C), TA(C) | **ADMIN only** | `GET /admin/courses/:courseId/enrollments` |
+| Enroll a student | ADMIN, DEPT_ADMIN(D), PROFESSOR(C) | **ADMIN only** | `POST /admin/courses/:courseId/enrollments` |
+| Remove a student | ADMIN, DEPT_ADMIN(D), PROFESSOR(C) | **ADMIN only** | `DELETE /admin/courses/:courseId/enrollments/:id` |
+| Assign / remove TA | ADMIN, DEPT_ADMIN(D), PROFESSOR(C) | **Not implemented** | No TA assignment route; TA is not a usable role in AI Tutor |
+
+---
+
+### 20.11 AI Tutor — Bug Reports
+
+| Operation | Target | Current | Notes |
+|---|---|---|---|
+| Submit bug report | All roles | `requireRoles(['STUDENT', 'PROFESSOR'])` | **TA and ADMIN excluded** — TA is not in the allowlist; ADMIN is blocked upstream by the app-level admin isolation fence before reaching this route |
+| View own reports | All roles | **Not implemented** | No own-report view endpoint |
+| View all reports | ADMIN only | ✓ `requireRole('ADMIN')` on `GET /admin/bug-reports` | Correct |
+| Triage (change status) | ADMIN only | ✓ `requireRole('ADMIN')` on `PATCH /admin/bug-reports/:id` | Correct |
+
+---
+
+### 20.11b AI Tutor — Student Work & AI Interactions
+
+Not previously audited. Enforcement in `server/src/routes/activities.js`.
+
+| Operation | Target | Current | Notes |
+|---|---|---|---|
+| Submit answer (attempt activity) | STUDENT only, active enrollment + published | **Any authenticated non-admin user** | `POST /questions/:id/answer` — no `requireRole` gate; any PROFESSOR or STUDENT can submit |
+| AI tutoring (teach / guide / custom) | STUDENT, active enrollment | **Any authenticated non-admin user** | `POST /activities/:activityId/teach\|guide\|custom` — no role gate; any non-admin user can call |
+| Record activity feedback | STUDENT | **Any authenticated non-admin user** | `POST /activities/:activityId/feedback` — no role gate |
+| View submissions / metrics in course | PROFESSOR(C), TA(C), ADMIN | **Not implemented** | No instructor-facing endpoint to list all submissions or per-student metrics for a course |
+
+**Note:** `POST /activities/:activityId/teach|guide|custom` are also blocked for ADMIN by the app-level fence. For PROFESSOR and STUDENT users the only gate is session authentication — no enrollment or publish-state check is enforced at the route level.
+
+---
+
+### 20.12 Question Maker — Role Architecture
+
+Question Maker uses **JWT authentication only** (`app/backend/src/middleware/auth.js`). There is **no role-based access control** — authorization is ownership-based (`req.user.id === resource.userId`). No role enum (`ADMIN`, `PROFESSOR`, `TA`, `STUDENT`) exists or is checked anywhere in Question Maker.
+
+Bug report admin access is gated by a hardcoded email allowlist (`BUG_REPORT_ADMIN_EMAILS` env var), not by role.
+
+**All target matrices for Question Maker (Sections 16–18) are entirely unimplemented** from a role-permission standpoint. Current behavior: any authenticated user can perform any operation on any resource they own. Role distinctions (professor-only approval, TA own-resource restriction, etc.) are not enforced.
+
+---
+
+### 20.13 Consolidated Gap Summary
+
+| Gap | Affected Apps | Severity |
+|---|---|---|
+| `DEPARTMENT_ADMIN` role does not exist | All three apps | High — entire `D` column of the target is dead code |
+| `EnrollmentRole` (TA/STUDENT per course) not implemented | Core, AI Tutor | High — course-scoped TA access is entirely missing |
+| `TA` role has no route assignments in AI Tutor | AI Tutor | High — TA users get 403 on all content routes |
+| Course list / detail has no auth gate in Core | Core | Medium — all courses visible to anonymous callers |
+| AI provider / model GET endpoints are public | Core | Medium — model metadata visible without auth |
+| Students can upload course materials | Core | Medium — contradicts target (`—` for students) |
+| Professors cannot create topics in Core | Core | Medium — only ADMIN can; target allows PROFESSOR(C) |
+| Question Maker has no RBAC at all | Question Maker | High — all Sections 16–18 are unimplemented |
+| Core chat endpoint has no course enrollment or publish check | Core | Medium — any authenticated user can start a chat in any course |
+| AI Tutor student submission routes have no role or enrollment gate | AI Tutor | Medium — any non-admin user can submit answers and invoke AI tutoring |
+| Module and lesson DELETE not implemented in AI Tutor | AI Tutor | Medium — professors cannot delete modules or lessons; only activities can be deleted |
+| Core course creation hardcodes admin as professor | Core | Medium — `POST /api/courses` sets `professorId = session.user.id`; cannot assign a different professor at creation |
+| ADMIN excluded from bug report submission in AI Tutor | AI Tutor | Low — ADMIN fence blocks `/bug-reports`; target grants ADMIN ✓ for submit |
+| TA excluded from bug report submission in AI Tutor | AI Tutor | Low — TA not in `requireRoles` allowlist; target says ✓ |
+| No own-profile edit endpoint for non-admin users in Core | Core | Low — target says all roles can edit own profile |
+| Soft-delete not implemented for courses in Core | Core | Low — no `DELETE /api/courses/:id` route |
+| No self-role-change guard on ADMIN in Core | Core | Low — PATCH /api/users can change admin's own role; target says admins cannot change their own role |
+| Core AI Chat missing delete-own-chat and chat-metrics endpoints | Core | Low — no DELETE /chats/:chatId; no aggregate metrics endpoint |
