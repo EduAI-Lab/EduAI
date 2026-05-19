@@ -112,7 +112,10 @@ Each section should use this format:
 
 **Path:** `apps/core/app/tests/unit/`
 
-> _To be populated._
+| Test file | What it tests |
+|-----------|---------------|
+| `form-utils.test.ts` | Tests form validation errors surface per field, merge into one message, and correctly flag fields as valid or invalid. |
+
 
 ---
 

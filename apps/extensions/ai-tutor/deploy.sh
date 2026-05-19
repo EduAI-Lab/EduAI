@@ -5,7 +5,7 @@
 # Prereqs:
 #    git repo was previously pulled to /srv/www/AiTutor
 #    docker is installed — docker-compose.yml runs PostgreSQL
-#    pm2 and bun are installed
+#    pm2 and node/npm are installed
 # Usage:
 #    ./deploy.sh [--force]
 #    If --force is passed, deployment will continue even with no new commit.
@@ -73,10 +73,10 @@ chmod +x deploy.sh
 
 # ---- Dependencies ----
 echo "Installing frontend dependencies..."
-bun install || { echo "bun install (frontend) failed. Exiting."; exit 1; }
+npm install || { echo "npm install (frontend) failed. Exiting."; exit 1; }
 
 echo "Installing server dependencies..."
-cd server && bun install || { echo "bun install (server) failed. Exiting."; exit 1; }
+cd server && npm install || { echo "npm install (server) failed. Exiting."; exit 1; }
 cd "$REPO_DIR"
 
 # ---- Docker (PostgreSQL) ----
@@ -86,13 +86,13 @@ sudo docker compose up -d || { echo "Docker compose failed. Exiting."; exit 1; }
 # ---- Database migrations ----
 echo "Running database migrations..."
 cd server
-bunx prisma generate || { echo "Prisma generate failed. Exiting."; exit 1; }
-bunx prisma migrate deploy || { echo "Prisma migrate failed. Exiting."; exit 1; }
+npx prisma generate || { echo "Prisma generate failed. Exiting."; exit 1; }
+npx prisma migrate deploy || { echo "Prisma migrate failed. Exiting."; exit 1; }
 cd "$REPO_DIR"
 
 # ---- Build frontend ----
 echo "Building frontend application..."
-bun run build || { echo "Build failed. Exiting."; exit 1; }
+npm run build || { echo "Build failed. Exiting."; exit 1; }
 
 # ---- Restart backend with PM2 ----
 echo "Restarting application with PM2..."
