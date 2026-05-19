@@ -23,6 +23,7 @@ node_modules/
 .env.local
 .env.production
 .env.development
+.env.test
 
 # IDE
 .vscode/
