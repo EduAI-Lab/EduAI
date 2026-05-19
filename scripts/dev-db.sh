@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -e
 
 if ! docker info > /dev/null 2>&1; then
@@ -21,4 +21,15 @@ if ! docker info > /dev/null 2>&1; then
   echo " ready."
 fi
 
-docker compose -f docker-compose.dev.yml up -d --wait core-db tutor-db qm-db
+docker compose -f docker-compose.dev.yml down --remove-orphans 2>/dev/null || true
+for port in "${CORE_DB_PORT:-54320}" "${TUTOR_DB_PORT:-54321}" "${QM_DB_PORT:-55432}"; do
+  ids=$(docker ps -q --filter "publish=$port")
+  if [ -n "$ids" ]; then
+    echo "Removing container(s) still bound to port $port..."
+    docker rm -f $ids
+  fi
+done
+
+docker network rm eduai-dev 2>/dev/null || true
+
+docker compose -f docker-compose.dev.yml up -d --wait eduai-db ai-tutor-db question-maker-db
