@@ -105,6 +105,10 @@ erDiagram
         boolean testable
         DateTime deletedAt "null = active"
     }
+    QUESTION_SECONDARY_TOPIC {
+        string questionId FK
+        string topicId FK
+    }
     COURSE_MATERIAL {
         string id PK
         string courseId FK
@@ -161,6 +165,8 @@ erDiagram
     COURSE ||--o{ AI_INTERACTION : "context"
 
     COURSE_TOPIC ||--o{ QUESTION : "categorises"
+    QUESTION ||--o{ QUESTION_SECONDARY_TOPIC : "tagged with"
+    COURSE_TOPIC ||--o{ QUESTION_SECONDARY_TOPIC : "secondary for"
 
     COURSE_MATERIAL ||--o{ MATERIAL_CHUNK : "chunked into"
     MATERIAL_CHUNK ||--o| MATERIAL_EMBEDDING : "embedded as"
@@ -369,7 +375,22 @@ model Question {
   @@index([createdBy])
   @@map("questions")
 }
+
+model QuestionSecondaryTopic {
+  questionId String
+  topicId    String
+  question   Question    @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  topic      CourseTopic @relation(fields: [topicId], references: [id])
+
+  @@id([questionId, topicId])
+  @@index([topicId])
+  @@map("question_secondary_topics")
+}
 ```
+
+`topicId` on `Question` remains the single canonical (primary) topic. Secondary topics are additional categorisations stored as rows in `question_secondary_topics`. A write-time validation must reject a secondary topic ID equal to the primary `topicId`.
+
+**Why not a `String[]` array column like QM's `secondary_topics_id`?** QM uses Sequelize on PostgreSQL and stores the array in a plain `VARCHAR[]` column — there is no FK enforcement, so a deleted or soft-deleted `CourseTopic` can silently remain in the array. Core uses Prisma, which has no native array-of-FK support: Prisma does not let you declare a `String[]` field as a foreign key or attach an `onDelete` behaviour to it. A plain `String[]` would therefore bypass the soft-delete integrity story entirely — `GET /api/questions` filters `WHERE deletedAt IS NULL` on topics, but stale IDs in a raw array would never be caught. The join table gives each reference a proper `onDelete: Cascade` (question deleted → its secondary-topic rows go with it) and makes it straightforward to query "all questions that touch topic X" with a standard join rather than an array-contains scan.
 
 AI Tutor's **server** reads via `GET /api/questions?courseId=:id&topicId=:topicId&testable=true` and receives the full question record including `choices` and `answer`; this is a server-to-server call authenticated with `EDUAI_API_KEY` — students never call this endpoint directly. Neither extension calls the other. When a course is deleted, all its questions cascade-delete.
 
@@ -430,9 +451,35 @@ Extensions hold `core_*_id` references as nullable columns pointing into Core's 
 
 Extensions tolerate a stale-reference window of at most one cron cycle (one day). This is acceptable — deletions are infrequent instructor actions, not high-frequency events.
 
+### Intra-Core tables with courseId — soft-delete filtering
+
+Two Core-internal tables reference `courses` without an `onDelete` clause and are not in the affected-models list. Each requires explicit handling:
+
+**`ai_interactions`** has `courseId String?` → `courses` with no `onDelete`. Because interaction records are an audit trail, they are **retained** after a course is soft-deleted — not cascaded. However, any route that surfaces interaction history (e.g. usage dashboards, per-course analytics) must join `courses` and add `WHERE courses.deletedAt IS NULL` explicitly. The record is preserved; it simply stops appearing in course-scoped views. No `deletedAt` column is added to `ai_interactions`.
+
+**`Question.topicId` and `QuestionSecondaryTopic.topicId`** both reference `course_topics`, which gains `deletedAt`. Because a question must always have a primary topic and the topic row is never hard-deleted, the topic FK remains valid at the DB level even after a soft-delete. Route behaviour:
+
+- `GET /api/questions` returns questions regardless of whether their `topicId` points to a soft-deleted topic. The topic join is a read-through — the topic name and ID are still returned to the caller even if `topic.deletedAt` is set, so existing questions remain fully usable.
+- `POST /api/questions` and `PATCH /api/questions/:id` must reject a `topicId` or secondary topic ID whose `deletedAt` is not null (422 — topic is deleted).
+- Topic soft-deletion is **not blocked** by existing question references. The topic disappears from the topic list (`GET /api/courses/:id/topics` filters `WHERE deletedAt IS NULL`) but questions that already reference it continue to work.
+
+### AI Tutor — course reconciliation column
+
+AI Tutor links to Core courses via `CourseOffering.externalId` + `externalSource = 'core'`, not via a `core_course_id` column. The cron reconciliation strategy described above (iterating `core_*_id` columns) does not directly apply. To align with the same pattern, **`CourseOffering` gains one new nullable column:**
+
+```prisma
+coreOfferingId String? @unique  // Core Course.id; null = not yet linked or link lost
+```
+
+This column is set alongside `externalId` when a Core course is imported. The daily cron iterates rows where `coreOfferingId IS NOT NULL`, calls `GET /api/courses/:coreOfferingId`, and nullifies `coreOfferingId` on 404. `externalId` and `externalSource` are left intact (they may still be useful for re-linking). `CourseOffering` itself is never deleted by the cron — the local offering and all its content (modules, lessons, activities) remain.
+
+### AI Tutor — Topic post-nullification behaviour
+
+When the cron nullifies `Topic.coreTopicId`, **the local AI Tutor topic record is not deleted**. Every `Activity` with `mainTopicId` pointing to that topic continues to work exactly as before — the topic just loses its Core link. The topic will no longer appear in topic-sync operations until an instructor manually re-links it. No cascade to activities or submissions is triggered.
+
 ### Unchanged
 
-`course_topics` (gains `deletedAt` only), `material_chunks`, `material_embeddings`, `ai_providers`, `ai_models`, `user_provider_settings`, `ai_interactions`, `system_config`, `chats`, `chat_messages`.
+`course_topics` (gains `deletedAt` only), `material_chunks`, `material_embeddings`, `ai_providers`, `ai_models`, `user_provider_settings`, `system_config`, `chats`, `chat_messages`.
 
 ---
 
@@ -443,7 +490,7 @@ Extensions tolerate a stale-reference window of at most one cron cycle (one day)
 | Table | Reason |
 |---|---|
 | `User`, `Session`, `Account`, `Verification` | Core owns identity; AI Tutor validates via Core session API |
-| `CourseInstructor`, `CourseEnrollment` | Core owns enrollment; route middleware calls `GET /api/courses/:id/enrollments` directly |
+| `CourseInstructor`, `CourseEnrollment` | Core owns enrollment; route middleware calls `GET /api/courses/:id/enrollments` directly. `enrollmentSync.js` is deleted — enrollment data is never written by extensions |
 | `BugReport` | Replaced by `POST /api/bug-reports` on Core |
 
 All `userId` columns already store CUIDs — no change needed.
@@ -466,7 +513,11 @@ coreTopicId String? @unique  // Core CourseTopic.id; null = not yet synced
 
 `coreTopicId` links the AI Tutor topic to Core's `CourseTopic` across the database boundary. The AI Tutor topic retains its own CUID; `coreTopicId` is a separate reference to the corresponding Core record.
 
-**`CourseOffering`** — `externalId` + `externalSource` already exist and are set to `externalSource='core'` from the start. No migration needed.
+**`CourseOffering`** — `externalId` + `externalSource` already exist and are set to `externalSource='core'` from the start. One new nullable column is added for soft-delete reconciliation (see [Cross-DB deletion](#cross-db-deletion--soft-delete-strategy)):
+
+```prisma
+coreOfferingId String? @unique  // Core Course.id; null = not yet linked or link lost
+```
 
 ### Instructor handling
 
@@ -513,6 +564,8 @@ Cascading type changes within QM:
 | `topics` | `core_topic_id` | `VARCHAR unique` | Core CourseTopic CUID; null until synced |
 | `variants` | `core_question_id` | `VARCHAR unique` | Core Question CUID; null until variant is approved and pushed |
 
+When pushing a variant to Core, the server translates `secondary_topics_id` (array of Core topic CUIDs stored in `variants`) into `QuestionSecondaryTopic` rows on the Core side. Each element in the array becomes one row; the push fails with a 422 if any ID in the array matches the variant's primary `topicId`.
+
 `core_question_id` lives on `variants`, not on `question_metadata`. Each approved (non-draft) QM Variant is pushed to Core as its own `Question` row; multiple variants from the same `question_metadata` shell each get an independent Core Question entry. `question_metadata` is a QM-internal authoring container — Core never sees it.
 
 ### Unchanged
@@ -538,11 +591,14 @@ Core continues to run standalone throughout this phase. Extensions are untouched
 - Relax `@@unique([code])` on `courses` to `@@unique([code, term, year])`
 - Create `enrollments` table (replacing `course_enrollments` and `course_tas`); update all Core route handlers that currently reference `CourseEnrollment` / `CourseTA`
 - Create `questions` table (with `topicId`, `choices`, `answer`, `difficulty`, `reasoningLevel`, `deletedAt`)
+- Create `question_secondary_topics` join table (`@@id([questionId, topicId])`)
 - Add `externalId` / `externalSource` to `course_materials`; drop the unused `documents` table
 - Create `bug_reports` table (with `isAnonymous`)
 - Add `deletedAt DateTime?` to `course_topics`
 - Update `UserRole` enum (add `DEPARTMENT_ADMIN`)
 - Add `QuestionDifficulty`, `ReasoningLevel`, `BugReportStatus` enums
+- Audit all route handlers that query `ai_interactions` with a `courseId` filter and add an explicit `WHERE courses.deletedAt IS NULL` join (records are retained; course-scoped views must filter)
+- Audit `POST /api/questions` and `PATCH /api/questions/:id` handlers to reject a `topicId` or secondary topic ID whose `deletedAt IS NOT NULL` (422 — topic is deleted)
 
 **Test:** `npm run db:migrate && npm run typecheck` in `apps/core`. Manually exercise course creation, enrollment, document upload, and chat. Seed the new tables.
 
@@ -555,7 +611,7 @@ Still Core-only work, but this phase must complete before any extension tables a
 - `POST /api/sessions/validate` — accepts a session token, returns the authenticated user; used by AI Tutor middleware in place of its local better-auth session lookup
 - `GET /api/courses/:id/enrollments` — returns enrolled users and their roles; used by AI Tutor route middleware
 - `POST /api/bug-reports` — accepts `{ source, description, consoleLogs, networkLogs, screenshot, pageUrl, userAgent, context }`; used by both extensions
-- `POST /api/questions` — QM pushes a canonical question record; returns the Core CUID
+- `POST /api/questions` — QM pushes a canonical question record (body includes `secondaryTopicIds: string[]`); returns the Core CUID; server writes `question_secondary_topics` rows transactionally
 - `GET /api/questions?courseId=:id&topicId=:topicId&testable=true` — AI Tutor reads testable questions for a course, optionally filtered by topic
 - `GET /api/courses/:id/topics` — extensions pull the topic list for a course
 - `POST /api/courses/:id/topics` — QM pushes a new topic into Core; returns the Core CUID stored in `core_topic_id`
@@ -581,8 +637,9 @@ Only run after Phase 2a is verified. Each drop is a one-way migration.
 
 - **AI Tutor:**
   - Change `Topic.id` to `String @id @default(cuid())`; update `Activity.mainTopicId` and `ActivitySecondaryTopic.topicId` to `String`; add `Topic.coreTopicId String? @unique`
+  - Add `CourseOffering.coreOfferingId String? @unique`; populate it alongside `externalId` when linking to Core
   - Drop `User`, `Session`, `Account`, `Verification` tables
-  - Drop `CourseInstructor`, `CourseEnrollment` tables
+  - Drop `CourseInstructor`, `CourseEnrollment` tables; delete `enrollmentSync.js` (enrollment is Core-owned — extensions read, never write)
   - Drop `BugReport` table
 - **QM:**
   - Redesign `users` table (CUID string PK, no `password_hash`)
@@ -603,4 +660,5 @@ With all tables dropped and APIs wired, verify end-to-end across all three apps:
 - QM question push (`POST /api/questions`) → Core stores record → AI Tutor `GET /api/questions` returns it
 - Bug report submission from AI Tutor and QM → appears in Core with correct `source` tag
 - Topic sync: Core `CourseTopic` created → extension pulls via `GET /api/courses/:id/topics` → `coreTopicId` / `core_topic_id` populated
-- Course deletion cascade: delete a course in Core → enrollments, questions, and course materials cascade-delete; extensions that hold `core_course_id` references have the reference nullified on the next cron reconciliation (or immediately on any failed write attempt)
+- Course deletion cascade: delete a course in Core → enrollments, questions, and course materials cascade-delete; QM rows with `core_course_id` and AI Tutor rows with `coreOfferingId` are nullified on the next cron reconciliation (or immediately on any failed write attempt); `ai_interactions` for that course are retained but filtered from course-scoped views
+- Topic soft-delete: soft-delete a `CourseTopic` in Core → `GET /api/courses/:id/topics` stops returning it; existing questions that reference it remain fully readable; AI Tutor's `Topic.coreTopicId` is nullified by the daily cron, local topic and its activities are unaffected; new question writes with that `topicId` are rejected with 422
