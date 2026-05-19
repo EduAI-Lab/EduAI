@@ -12,9 +12,11 @@
 8. [EduAI Integration Tests](#eduai-integration-tests)
 9. [AI Tutor Unit Tests](#ai-tutor-unit-tests)
 10. [AI Tutor Integration Tests](#ai-tutor-integration-tests)
-11. [Question Maker Unit Tests](#question-maker-unit-tests)
-12. [Question Maker Integration Tests](#question-maker-integration-tests)
-13. [Extending This Document](#extending-this-document)
+11. [AI Tutor Server Unit Tests](#ai-tutor-server-unit-tests)
+12. [AI Tutor Server Integration Tests](#ai-tutor-server-integration-tests)
+13. [Question Maker Unit Tests](#question-maker-unit-tests)
+14. [Question Maker Integration Tests](#question-maker-integration-tests)
+15. [Extending This Document](#extending-this-document)
 
 ---
 
@@ -114,8 +116,7 @@ Each section should use this format:
 
 | Test file | What it tests |
 |-----------|---------------|
-| `form-utils.test.ts` | Tests form validation errors surface per field, merge into one message, and correctly flag fields as valid or invalid. |
-
+| `form-utils.test.ts` | Form validation errors are reported per field, combined into one message when multiple fields fail, and fields signal valid/invalid correctly |
 
 ---
 
@@ -133,13 +134,12 @@ Each section should use this format:
 
 | Test file | What it tests |
 |-----------|---------------|
-| `useLocalUser.test.ts` | Auth context exposes the current user, allows login and logout, and throws when accessed outside its provider |
-| `api.test.ts` | API calls reach the correct endpoints, return parsed responses, redirect to login on 401, and throw on server errors |
-| `BugReportProvider.test.tsx` | Bug report context tracks the current page location and forwards screenshot and log capture helpers to consumers |
-| `BugReportDialog.test.tsx`| Bug report form validates minimum description length, captures a screenshot on open, and submits the full diagnostic payload including context and anonymous flag |
-| `BugReportsTab.test.tsx`| Admins can view, update status, and copy bug reports; anonymous submissions hide reporter identity in the copied output |
+| `api.test.ts` | Unauthorized requests redirect to the login page, server errors surface as exceptions, and successful requests return parsed data |
+| `BugReportDialog.test.tsx` | The bug report form rejects descriptions that are too short, takes a screenshot on open, and submits diagnostic data including the reporter's anonymous preference |
+| `BugReportProvider.test.tsx` | Page location and diagnostic capture tools are available to any component that needs to file a bug report |
+| `BugReportsTab.test.tsx` | Admins can view, update status, and copy bug reports; anonymous submissions hide reporter identity in the copied output |
 | `Nav.test.tsx` | The Report Bug button is visible to students and professors but hidden from admins |
-| > _Keep adding from here._ | |
+| `useLocalUser.test.tsx` | Users can log in, log out, and have their session available across the app; accessing the session outside its provider throws an error |
 
 ---
 
@@ -153,7 +153,7 @@ Each section should use this format:
 
 ## AI Tutor Server Unit Tests
 
-**Path:** `apps/extensions/ai-tutor/server/tests/integration/`
+**Path:** `apps/extensions/ai-tutor/server/tests/unit/`
 
 | Test file | What it tests |
 |-----------|---------------|
@@ -162,10 +162,6 @@ Each section should use this format:
 | `aiGuidance.test.js` | Tutor prompts include the right question, options, and student answer for each question type; topic and knowledge-level placeholders are replaced correctly; and supervisor verdicts normalize missing or malformed fields to safe defaults |
 | `aiModelPolicy.test.js` | Only models that are actually available can be selected, defaults fall back gracefully when the preferred model is missing, and the number of supervisor loop iterations is kept within a safe range |
 | `mappers.test.js` | Sensitive fields like passwords are stripped before data leaves the server, IDs resolve correctly whether stored flat or nested, and missing optional fields default to safe values |
-| > _Keep adding from here._ | |
-
-
-> _To be populated._
 
 ---
 
@@ -178,7 +174,7 @@ Each section should use this format:
 | `activities.test.js` | Students see completion status on activities while professors do not, answers are graded correctly, feedback requires a prior submission, and non-members and unenrolled users are blocked |
 | `admin.test.js` | Admins can list users and courses, enroll and unenroll students, and view enrollment status; all admin endpoints reject non-admin users |
 | `auth.test.js` | The current user is returned without their password, and admins are blocked from non-admin endpoints while retaining access to their own profile |
-| `bugReport.test.js` | Students and professors can submit bug reports with or without page context, reports are rejected when the user has no access to the referenced course, anonymous reports hide the reporter's identity in admin responses, and admins can update report status |
+| `bugReports.test.js` | Students and professors can submit bug reports with or without page context, reports are rejected when the user has no access to the referenced course, anonymous reports hide the reporter's identity in admin responses, and admins can update report status |
 | `courseCloning.test.js` | Cloning a course copies all modules, lessons, and activities in order, maps topics by name to the target course creating them when missing, and reuses existing topics on name collision |
 | `courses.test.js` | Professors and students see the correct courses for their role, courses can be created and edited, and unpublishing a course cascades to its modules and lessons |
 | `lessons.test.js` | Professors see all lessons including drafts while students only see published ones, lessons can be created and published, and publishing is blocked when the parent module is unpublished |
@@ -186,24 +182,48 @@ Each section should use this format:
 | `progressCalculation.test.js` | A student's progress at course, module, and lesson level counts only correct answers against published content, and the latest attempt takes precedence over earlier ones |
 | `smoke.test.js` | The server is reachable and the health endpoint returns a healthy response |
 | `topics.test.js` | Topics can be listed and created for authorized members, duplicate names and empty values are rejected, students cannot create topics, and activities can be remapped from one topic to another |
-| > _Keep adding from here._ | |
-
 
 ---
 
 ## Question Maker Unit Tests
 
-**Path:** `apps/extensions/question-maker/app/tests/unit/`
+**Path:** `apps/extensions/question-maker/app/backend/test/`
+> _potentially fix to proper path_
 
-> _To be populated._
+| Test file | What it tests |
+|-----------|---------------|
+| `aiExtract.test.js` | The AI extraction service returns an empty result immediately when the input text is blank or whitespace, without calling any external service |
+| `aiExtractEduaiMocked.test.js` | Questions are extracted and structured correctly from text when the AI service and database are replaced with fakes |
+| `assessmentVariantMetadataScoring.test.js` | Questions are scored for how well their metadata matches a slot's requirements, with each matching attribute contributing the correct weight |
+| `authService.test.js` | Valid tokens grant access, expired tokens are rejected, and tampered tokens are detected |
+| `canvasExport.test.js` | MCQ answer choices are parsed correctly from text, and question payloads are built in the format Canvas expects |
+| `canvasExportMocked.test.js` | Assessments are exported to Canvas correctly when the Canvas API, database, and integration lookup are replaced with fakes |
+| `encryption.test.js` | Encrypted values round-trip back to the original string, and edge cases like empty input are handled without errors |
+| `extraction.test.js` | Question text is split into individual blocks at numbered boundaries and chunked so multipart questions are never split across chunks |
 
 ---
 
 ## Question Maker Integration Tests
 
-**Path:** `apps/extensions/question-maker/app/tests/integration/`
+**Path:** `apps/extensions/question-maker/app/backend/test/`
+> _potentially fix to proper path_
 
-> _To be populated._
+| Test file | What it tests |
+|-----------|---------------|
+| `assessmentVariantAuth.test.js` | All assessment variant routes reject unauthenticated requests |
+| `assessmentVariantHttp.integration.test.js` | Assessment variant routes reject requests with missing or invalid required fields |
+| `assessmentsAuth.test.js` | All assessment routes reject unauthenticated requests |
+| `auth.integration.test.js` | Users can register, log in, and retrieve their profile; duplicate emails and wrong passwords are rejected |
+| `bugReports.integration.test.js` | Authenticated users can submit bug reports, only admins can list and update them, and unauthenticated requests are blocked |
+| `canvasAuth.test.js` | All Canvas integration routes reject unauthenticated requests |
+| `courseAuth.test.js` | All course and topic routes reject unauthenticated requests |
+| `eduaiAuth.test.js` | All EduAI proxy routes reject unauthenticated requests |
+| `eduaiHttpValidation.integration.test.js` | EduAI chat and question-generation routes reject requests with missing required fields |
+| `health.test.js` | The health and root endpoints respond correctly when the server is running |
+| `planCoverage.integration.test.js` | Users cannot access another user's courses, saved questions persist correctly, and variant assembly rotates picks fairly across runs without repeating the baseline |
+| `questionAssessments.integration.test.js` | Questions and assessments can be created and retrieved, invalid inputs are rejected, and variants can be added to questions |
+| `questionsAuth.test.js` | All question and extraction routes reject unauthenticated requests |
+| `questionsExtractValidation.integration.test.js` | The question extraction and save endpoints reject requests with missing or invalid text, courseId, or question list |
 
 ---
 
