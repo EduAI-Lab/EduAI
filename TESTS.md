@@ -131,7 +131,15 @@ Each section should use this format:
 
 **Path:** `apps/extensions/ai-tutor/app/tests/unit/`
 
-> _To be populated._
+| Test file | What it tests |
+|-----------|---------------|
+| `useLocalUser.test.ts` | Auth context exposes the current user, allows login and logout, and throws when accessed outside its provider |
+| `api.test.ts` | API calls reach the correct endpoints, return parsed responses, redirect to login on 401, and throw on server errors |
+| `BugReportProvider.test.tsx` | Bug report context tracks the current page location and forwards screenshot and log capture helpers to consumers |
+| `BugReportDialog.test.tsx`| Bug report form validates minimum description length, captures a screenshot on open, and submits the full diagnostic payload including context and anonymous flag |
+| `BugReportsTab.test.tsx`| Admins can view, update status, and copy bug reports; anonymous submissions hide reporter identity in the copied output |
+| `Nav.test.tsx` | The Report Bug button is visible to students and professors but hidden from admins |
+| > _Keep adding from here._ | |
 
 ---
 
