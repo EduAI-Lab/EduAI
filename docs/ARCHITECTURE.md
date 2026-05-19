@@ -1,6 +1,21 @@
 # EduAI — Architecture guide
 
+**Last updated:** 2026-05-18
+
 This document explains **what runs inside this repo (Core)** versus **what lives outside it (hosted services & integrations)**, how **AI providers and keys** work (including `GOOGLE_GENERATIVE_AI_API_KEY` for embeddings), and how the **codebase fits together**. Use it as the single place to orient yourself; export to PDF when you want a printable copy (see [Saving as PDF](#7-saving-as-pdf)).
+
+---
+
+## Table of Contents
+
+1. [Simple terms: Core vs. hosted](#1-simple-terms-core-vs-hosted)
+2. [What is the "Vercel AI SDK" here?](#2-what-is-the-vercel-ai-sdk-here)
+3. [Provider config (two different paths)](#3-provider-config-two-different-paths)
+4. [Key cheat sheet](#4-key-cheat-sheet)
+5. [End-to-end flows (diagrams)](#5-end-to-end-flows-diagrams)
+6. [Codebase walkthrough (where to look)](#6-codebase-walkthrough-where-to-look)
+7. [Saving as PDF](#7-saving-as-pdf)
+8. [One-page mental model](#8-one-page-mental-model)
 
 ---
 
@@ -11,7 +26,7 @@ This document explains **what runs inside this repo (Core)** versus **what lives
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Core (owned)**             | The EduAI application in *this repository*: the web UI, all `/api/*` routes, PostgreSQL data, auth, RAG (chunking + vectors + search), chat persistence. You deploy and operate it. |
 | **Hosted / external**        | Services you call over the network but do *not* ship as part of this repo: Google AI, OpenAI, Ollama, optional Firecrawl, etc. They hold the actual language/embedding models.      |
-| **Extensions (integrators)** | Other products (e.g. a campus “tutor” app) that **call EduAI’s HTTP API** with an admin API key and optional `proxyUser`. They are clients of Core, not code inside Core.           |
+| **Extensions (integrators)** | Other products (e.g. a campus "tutor" app) that **call EduAI's HTTP API** with an admin API key and optional `proxyUser`. They are clients of Core, not code inside Core.           |
 
 
 ```mermaid
@@ -40,19 +55,19 @@ flowchart LR
 
 ---
 
-## 2. What is the “Vercel AI SDK” here?
+## 2. What is the "Vercel AI SDK" here?
 
 In this project you will see npm packages:
 
 - `ai` — the main Vercel AI SDK runtime. It gives unified helpers such as `streamText`, `generateText`, `embed`, and `embedMany` so application code talks to models in a consistent way.
-- `@ai-sdk/google`, `@ai-sdk/openai`, `ollama-ai-provider` — **provider adapters**. Each one knows how to format requests/responses for that vendor’s HTTP API.
+- `@ai-sdk/google`, `@ai-sdk/openai`, `ollama-ai-provider` — **provider adapters**. Each one knows how to format requests/responses for that vendor's HTTP API.
 
 Think of it as two layers:
 
-1. **SDK (`ai`)** — “run this model with these messages” or “turn these strings into embedding vectors.”
-2. **Provider (`@ai-sdk/...`)** — “when the SDK needs Google, call Google’s endpoints with this API key.”
+1. **SDK (`ai`)** — "run this model with these messages" or "turn these strings into embedding vectors."
+2. **Provider (`@ai-sdk/...`)** — "when the SDK needs Google, call Google's endpoints with this API key."
 
-You do **not** deploy “Vercel” yourself; these are **libraries** published by Vercel that run inside **your Node server**.
+You do **not** deploy "Vercel" yourself; these are **libraries** published by Vercel that run inside **your Node server**.
 
 ---
 
@@ -64,7 +79,7 @@ There are **two separate uses** of AI in this codebase. They use keys differentl
 
 **Purpose:** Answer the user with streaming or JSON responses, optionally with tools (RAG).
 
-**Where configured:** `app/lib/ai/providers.ts` builds a **provider registry** from **per-request settings** (`apiKeys` in the JSON body for `/api/chat`, or equivalent from the logged-in user’s saved settings in the UI). Only providers that are **enabled** and have a **key** (when required) get wired into the registry.
+**Where configured:** `app/lib/ai/providers.ts` builds a **provider registry** from **per-request settings** (`apiKeys` in the JSON body for `/api/chat`, or equivalent from the logged-in user's saved settings in the UI). Only providers that are **enabled** and have a **key** (when required) get wired into the registry.
 
 ```mermaid
 flowchart TD
@@ -93,7 +108,7 @@ Model IDs look like `google:gemini-2.5-flash` or `ollama:gpt-oss:120b` — provi
 - Else if `OPENAI_API_KEY` is set, embeddings use `text-embedding-3-small`.
 - If neither is set, ingestion/search that needs embeddings **throws an error**.
 
-**Important:** Embedding calls **do not** use the `apiKeys` object from the chat request. They **only** read `process.env`. So `.env.example` labels Google as “For Embeddings” because **that env var is what backs RAG vector generation** when Google is chosen.
+**Important:** Embedding calls **do not** use the `apiKeys` object from the chat request. They **only** read `process.env`. So `.env.example` labels Google as "For Embeddings" because **that env var is what backs RAG vector generation** when Google is chosen.
 
 ```mermaid
 flowchart TD
@@ -206,10 +221,6 @@ sequenceDiagram
   API->>Ext: Stream / JSON response
 ```
 
-
-
-Docs also in `docs/chat-history.md`.
-
 ---
 
 ## 6. Codebase walkthrough (where to look)
@@ -229,13 +240,9 @@ app/
       file-processing.ts → Extract text from PDFs/docs
     prisma.server.ts     → DB client
     courses/             → Course API helpers + Zod schemas
-prisma/
-  schema.prisma          → Unified DB schema
-  migrations/            → SQL history
-  seed.ts                → Default AIProvider / AIModel rows
 docs/
-  architecture.md        → This file
-  chat-history.md        → Chat persistence + proxy users
+  ARCHITECTURE.md        → This file
+  ...                    → Other Documents  
 ```
 
 ### Routes worth memorizing
@@ -256,7 +263,7 @@ Defined in `app/routes.ts`:
 
 ### Database (unified schema)
 
-Single Postgres database; Prisma models include users/sessions, courses, materials/chunks/embeddings, chats/messages, AI catalog, API keys, `ExternalUser` for proxy delegation. See `prisma/schema.prisma`.
+Single Postgres database; Prisma models include users/sessions, courses, materials/chunks/embeddings, chats/messages, AI catalog, API keys, `ExternalUser` for proxy delegation.
 
 ---
 
@@ -264,10 +271,10 @@ Single Postgres database; Prisma models include users/sessions, courses, materia
 
 This file is Markdown so it stays diff-friendly in git. To get a **PDF**:
 
-1. **VS Code / Cursor:** Install a “Markdown PDF” style extension and export `docs/architecture.md`, **or**
+1. **VS Code / Cursor:** Install a "Markdown PDF" style extension and export `docs/ARCHITECTURE.md`, **or**
 2. Open the preview / GitHub-rendered view and use **Print → Save as PDF**, **or**
 3. **Pandoc** (if installed):
-  `pandoc docs/architecture.md -o EduAI-architecture.pdf`
+  `pandoc docs/ARCHITECTURE.md -o EduAI-architecture.pdf`
 
 Mermaid diagrams render in GitHub and many Markdown previews; some PDF tools need a Mermaid-capable renderer — if diagrams are missing in PDF, use a browser print from a viewer that supports Mermaid (e.g. GitHub page).
 
