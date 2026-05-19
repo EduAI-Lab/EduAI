@@ -173,4 +173,4 @@ Tours use `data-tour` attributes on elements for targeting and `data-tour-route`
 - **Runner**: Vitest 4 with jsdom environment
 - **Config**: `vitest.config.ts` (root), includes `app/__tests__/**/*.test.{ts,tsx}`
 - **Utilities**: `@testing-library/react`, `@testing-library/jest-dom`
-- **Run**: `bun run test` (all) or `bun run test:watch` (watch mode)
+- **Run**: `npm run test` (all) or `npm run test:watch` (watch mode)
