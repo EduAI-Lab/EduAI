@@ -6,7 +6,7 @@ import tailwindcss from "@tailwindcss/vite";
 import { defineConfig, loadEnv } from "vite";
 import tsconfigPaths from "vite-tsconfig-paths";
 
-// Dependencies are hoisted to the monorepo root (…/EduAICore/node_modules) while Vite root is apps/core.
+// Dependencies are hoisted to the monorepo root while Vite root is apps/core.
 // Without this, /@fs/… requests into root node_modules hit "outside of Vite serving allow list".
 const coreDir = path.dirname(fileURLToPath(import.meta.url));
 const monorepoRoot = path.resolve(coreDir, "../..");
@@ -24,23 +24,19 @@ export default defineConfig(({ mode }) => {
     plugins: [tailwindcss(), reactRouter(), tsconfigPaths()],
     resolve: {
       alias: {
-        // /esm/icons/index.mjs only exports the icons statically, so no separate chunks are created
         "@tabler/icons-react": "@tabler/icons-react/dist/esm/icons/index.mjs",
       },
+      // Monorepo hoists better-auth 1.2.x for core and 1.5+ for ai-tutor; dedupe to root 1.2.8.
+      dedupe: ["better-auth"],
     },
     server: {
       port: 3000,
       // Apache reverse proxy sends Host: dev.eduai.ok.ubc.ca; Vite 6+ rejects unknown hosts by default.
       host: true,
-      // Dev-only: allow any Host (avoids rebinding checks fighting the proxy). Prefer a closed list in vite preview/production.
       allowedHosts: true,
       fs: {
         allow: [monorepoRoot],
       },
-      // Browser hits https://PUBLIC_HOST/ while Vite listens on localhost. Without this, HMR tries
-      // wss://PUBLIC_HOST (wrong port/path) or ws://localhost:5173 (cross-origin / blocked).
-      // Apache (or any front proxy) must forward WebSocket upgrades to this Vite port — see
-      // https://vite.dev/config/server-options.html#server-hmr
       ...(hmrPublicHost
         ? {
             hmr: {
