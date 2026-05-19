@@ -1,5 +1,7 @@
 # Chat API and RAG pipeline
 
+**Maintenance:** Living reference — update this doc when you change chat routing, hybrid RAG caps, or embedding/retrieval behavior (not a one-off PR note).
+
 This document describes how a user prompt flows through **`POST /api/chat`** (`apps/core/app/routes/api/chat.ts`) and how retrieval-augmented generation (RAG) is triggered relative to **`findRelevantContent`** (`apps/core/app/lib/ai/embedding.ts`).
 
 ## Diagram
