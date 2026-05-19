@@ -16,7 +16,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [monorepo] infra: Add root `package.json` with unified test runner. `npm test` at the root directory runs all unit tests across every app. (#119, @yta3216, 2026-05-12)
 - [core] infra: Set up Vitest test infrastructure: add `vitest.config.ts`, `app/tests/setup.ts`, and `test`/`test:watch` scripts to `package.json`. No tests written yet; scaffolding only. (#119, @yta3216, 2026-05-12)
 - [core] docs: Add `TESTS.md` with planned test cases for lib utilities, AI providers, file processing, Zod schemas, and form components. (#119, @yta3216, 2026-05-12)
-- [core] docs: Add `docs/chat-rag-pipeline.md` documenting the `POST /api/chat` flow, hybrid RAG, and embedding behavior for latency profiling. (#144, @superbolt08, 2026-05-14)
+- [core] docs: Add `docs/RAG-AI/chat-rag-pipeline.md` documenting the `POST /api/chat` flow, hybrid RAG, and embedding behavior for latency profiling. (#144, @superbolt08, 2026-05-14)
 - [core] infra: Add `scripts/chat-latency-bench.mjs` for non-streaming `POST /api/chat` latency measurement. (#144, @superbolt08, 2026-05-14)
 
 ### Changed
