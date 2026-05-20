@@ -1,0 +1,141 @@
+name: PR Analytics
+
+on:
+  workflow_dispatch:
+    inputs:
+      report_date_start:
+        description: "Report date start, d/MM/yyyy. Defaults to the previous Monday in America/Edmonton."
+        required: false
+      report_date_end:
+        description: "Report date end, d/MM/yyyy. Defaults to the previous Sunday in America/Edmonton."
+        required: false
+      pr_analytics_issue_number:
+        description: "Optional existing issue number to update for the PR Analytics Report."
+        required: false
+  schedule:
+    - cron: "59 5 * * 1"
+    - cron: "59 6 * * 1"
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  create-report:
+    name: Create PR analytics report
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check scheduled local time
+        id: schedule_gate
+        shell: bash
+        run: |
+          node <<'NODE' >> "$GITHUB_OUTPUT"
+          const eventName = process.env.GITHUB_EVENT_NAME;
+          if (eventName !== "schedule") {
+            console.log("should_run=true");
+            process.exit(0);
+          }
+          const parts = Object.fromEntries(
+            new Intl.DateTimeFormat("en-CA", {
+              timeZone: "America/Edmonton",
+              weekday: "short",
+              hour: "2-digit",
+              minute: "2-digit",
+              hour12: false,
+            }).formatToParts(new Date()).map((part) => [part.type, part.value]),
+          );
+          console.log(`should_run=${parts.weekday === "Sun" && parts.hour === "23" && parts.minute === "59"}`);
+          NODE
+
+      - name: Resolve report dates
+        if: steps.schedule_gate.outputs.should_run == 'true'
+        id: dates
+        shell: bash
+        env:
+          INPUT_START: ${{ inputs.report_date_start }}
+          INPUT_END: ${{ inputs.report_date_end }}
+          INPUT_ISSUE_NUMBER: ${{ inputs.pr_analytics_issue_number }}
+          VAR_ISSUE_NUMBER: ${{ vars.PR_ANALYTICS_ISSUE_NUMBER }}
+        run: |
+          node <<'NODE' >> "$GITHUB_OUTPUT"
+          const format = new Intl.DateTimeFormat("en-GB", {
+            timeZone: "America/Edmonton",
+            day: "numeric",
+            month: "2-digit",
+            year: "numeric",
+          });
+          const now = new Date();
+          const edmontonParts = Object.fromEntries(
+            new Intl.DateTimeFormat("en-CA", {
+              timeZone: "America/Edmonton",
+              year: "numeric",
+              month: "2-digit",
+              day: "2-digit",
+              weekday: "short",
+            }).formatToParts(now).map((part) => [part.type, part.value]),
+          );
+          const weekdayMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+          const todayUtc = new Date(`${edmontonParts.year}-${edmontonParts.month}-${edmontonParts.day}T12:00:00Z`);
+          const weekday = weekdayMap[edmontonParts.weekday];
+          const daysSinceSunday = weekday;
+          const previousSunday = new Date(todayUtc);
+          previousSunday.setUTCDate(previousSunday.getUTCDate() - daysSinceSunday);
+          const previousMonday = new Date(previousSunday);
+          previousMonday.setUTCDate(previousMonday.getUTCDate() - 6);
+          const start = process.env.INPUT_START || format.format(previousMonday);
+          const end = process.env.INPUT_END || format.format(previousSunday);
+          const issueNumber = process.env.INPUT_ISSUE_NUMBER || process.env.VAR_ISSUE_NUMBER || "";
+          const outcome = issueNumber ? "existing-issue,markdown,collection" : "markdown,collection";
+          console.log(`report_date_start=${start}`);
+          console.log(`report_date_end=${end}`);
+          console.log(`issue_number=${issueNumber}`);
+          console.log(`execution_outcome=${outcome}`);
+          NODE
+
+      - name: Run Pull Request Analytics
+        if: steps.schedule_gate.outputs.should_run == 'true'
+        id: analytics
+        uses: AlexSim93/pull-request-analytics-action@v4
+        with:
+          GITHUB_TOKEN: ${{ secrets.PR_ANALYTICS_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_OWNER_FOR_ISSUE: ${{ github.repository_owner }}
+          GITHUB_REPO_FOR_ISSUE: ${{ github.event.repository.name }}
+          GITHUB_OWNERS_REPOS: ${{ github.repository }}
+          TIMEZONE: "America/Edmonton"
+          WEEKENDS: ""
+          REPORT_DATE_START: ${{ steps.dates.outputs.report_date_start }}
+          REPORT_DATE_END: ${{ steps.dates.outputs.report_date_end }}
+          REQUIRED_APPROVALS: "1"
+          ISSUE_TITLE: "PR Analytics Report"
+          ISSUE_NUMBER: ${{ steps.dates.outputs.issue_number }}
+          EXECUTION_OUTCOME: ${{ steps.dates.outputs.execution_outcome }}
+          ALLOW_ANALYTICS: "false"
+
+      - name: Save PR analytics outputs
+        if: steps.schedule_gate.outputs.should_run == 'true'
+        shell: bash
+        env:
+          JSON_COLLECTION: ${{ steps.analytics.outputs.JSON_COLLECTION }}
+          MARKDOWN_REPORT: ${{ steps.analytics.outputs.MARKDOWN }}
+        run: |
+          mkdir -p pr-analytics-output
+          printf '%s' "$JSON_COLLECTION" > pr-analytics-output/pr-analytics.json
+          printf '%s' "$MARKDOWN_REPORT" > pr-analytics-output/pr-analytics.md
+
+      - name: Upload PR analytics JSON
+        if: steps.schedule_gate.outputs.should_run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-analytics-json
+          path: pr-analytics-output/pr-analytics.json
+          if-no-files-found: error
+
+      - name: Upload PR analytics Markdown
+        if: steps.schedule_gate.outputs.should_run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-analytics-markdown
+          path: pr-analytics-output/pr-analytics.md
+          if-no-files-found: error

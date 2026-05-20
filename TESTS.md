@@ -112,6 +112,16 @@ Each section should use this format:
 
 ---
 
+## Monorepo Automation Tests
+
+**Path:** `eduai-summer-2026/tests/`
+
+| Test file | What it tests |
+|-----------|---------------|
+| [`team-time-report.test.js`](eduai-summer-2026/tests/team-time-report.test.js) | Verifies weekly time-report parsing rules, base-time duplicate handling, issue/PR reference extraction, PR analytics metric extraction, and the rule that PR process time is reported separately from total tracked hours. |
+
+---
+
 ## EduAI Unit Tests
 
 **Path:** `apps/core/app/tests/unit/`
