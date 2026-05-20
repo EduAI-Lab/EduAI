@@ -8,14 +8,14 @@ const generateQuestions = vi.fn();
 const findByPk = vi.fn();
 const findAll = vi.fn();
 
-vi.mock('../src/services/eduaiService.js', () => ({
+vi.mock('../../src/services/eduaiService.js', () => ({
   default: {
     isConfigured: () => true,
     generateQuestions,
   },
 }));
 
-vi.mock('../src/schema/index.js', () => ({
+vi.mock('../../src/schema/index.js', () => ({
   Question_Metadata: {},
   Course: { findByPk },
   Topics: { findAll },
