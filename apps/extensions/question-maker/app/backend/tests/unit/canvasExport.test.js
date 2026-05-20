@@ -1,7 +1,7 @@
 /**
  * Unit tests for Canvas export payload building (no HTTP, no Canvas API).
  */
-import { convertVariantToCanvasQuestion, parseMCQOptions } from '../src/services/canvasService.js';
+import { convertVariantToCanvasQuestion, parseMCQOptions } from '../../src/services/canvasService.js';
 
 describe('parseMCQOptions', () => {
   it('extracts A–D options from line format', () => {

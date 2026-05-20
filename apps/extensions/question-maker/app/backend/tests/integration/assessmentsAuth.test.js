@@ -2,7 +2,7 @@
  * Ensures assessment routes require authentication (no DB).
  */
 import request from 'supertest';
-import app from '../src/app.js';
+import app from '../../src/app.js';
 
 const expect401 = (res) => {
   expect(res.status).toBe(401);

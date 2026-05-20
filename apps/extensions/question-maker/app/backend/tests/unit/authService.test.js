@@ -2,8 +2,8 @@
  * Unit tests for JWT verification in authService (no database).
  */
 import jwt from 'jsonwebtoken';
-import { verifyToken } from '../src/services/authService.js';
-import { config } from '../src/config/settings.js';
+import { verifyToken } from '../../src/services/authService.js';
+import { config } from '../../src/config/settings.js';
 
 describe('verifyToken', () => {
   it('returns payload for a valid token', () => {

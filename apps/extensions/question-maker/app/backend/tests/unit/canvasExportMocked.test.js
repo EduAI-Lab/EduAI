@@ -37,7 +37,7 @@ vi.mock('../src/schema/index.js', () => ({
   Course: {},
 }));
 
-const { exportAssessmentToCanvas } = await import('../src/services/canvasService.js');
+const { exportAssessmentToCanvas } = await import('../../src/services/canvasService.js');
 
 const sampleAssessment = () => ({
   id: 100,
