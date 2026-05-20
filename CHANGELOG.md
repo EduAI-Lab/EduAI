@@ -9,10 +9,12 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ## [Week 3 — May 18–22, 2026]
 
 ### Added
-- [monorepo] docs: Add [`docs/implementations/RAG-AI/`](docs/implementations/RAG-AI/README.md) — index and team docs for EduAI chat/RAG (`chat-rag-pipeline.md`), shared dev server (`how-to-use-dev-server.md`), HelpMe gap analysis, **latency** sprint guides and measurement ledger ([#203](https://github.com/EduAI-Lab/EduAI/issues/203)), and **routing** Phase 0–1 guides ([#197](https://github.com/EduAI-Lab/EduAICore/issues/197)).
+- [monorepo] docs: Add [`docs/RAG-AI/`](docs/RAG-AI/README.md) — index and team docs for EduAI chat/RAG (`chat-rag-pipeline.md`), shared dev server (`how-to-use-dev-server.md`), HelpMe gap analysis, **latency** sprint guides and measurement ledger ([#203](https://github.com/EduAI-Lab/EduAI/issues/203)), and **routing** Phase 0–1 guides ([#197](https://github.com/EduAI-Lab/EduAICore/issues/197)).
 
 ### Changed
-- [monorepo] docs: Extend root README Docs table with links to `implementations/RAG-AI/` and `implementations/schema-design.md`.
+- [monorepo] docs: Move RAG-AI team docs from `docs/implementations/RAG-AI/` to [`docs/RAG-AI/`](docs/RAG-AI/README.md); update root README and cross-links.
+- [monorepo] docs: Add chat/RAG pipeline section to [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) linking to [`chat-rag-pipeline.md`](docs/RAG-AI/chat-rag-pipeline.md).
+- [monorepo] docs: Extend root README Docs table with links to `docs/RAG-AI/` and `implementations/schema-design.md`.
 
 ---
 
