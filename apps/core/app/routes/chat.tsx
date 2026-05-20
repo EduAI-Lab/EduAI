@@ -8,6 +8,8 @@ import { ChatMessage } from "~/components/chat/chat-message";
 import { ChatInput } from "~/components/chat/chat-input";
 import { ChatTypingIndicator } from "~/components/chat/chat-typing-indicator";
 import { SystemPromptSettings } from "~/components/chat/system-prompt-settings";
+import { Switch } from "~/components/ui/switch";
+import { Label } from "~/components/ui/label";
 import { useApiKeys } from "~/hooks/use-api-keys";
 import { AppSidebar } from "~/components/app-sidebar";
 import { SiteHeader } from "~/components/site-header";
@@ -69,6 +71,7 @@ export default function Chat() {
   const [availableCourses, setAvailableCourses] = useState<Array<{ id: string; name: string; code: string }>>([]);
   const [chatId, setChatId] = useState<string | null>(null);
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
+  const [adhdAssist, setAdhdAssist] = useState(false);
   const { apiKeys, getValidApiKeys } = useApiKeys();
 
   // Fetch available courses
@@ -94,6 +97,7 @@ export default function Chat() {
           if (data.systemPrompt) {
             setSystemPrompt(data.systemPrompt);
           }
+          setAdhdAssist(Boolean(data.adhdAssist));
         })
         .catch(console.error);
     }
@@ -107,6 +111,7 @@ export default function Chat() {
       courseCode: selectedCourseCode || undefined,
       chatId: chatId || undefined,
       systemPrompt: systemPrompt || undefined,
+      adhdAssist,
     },
     onResponse: async (response) => {
       // Extract chatId from response headers
@@ -136,6 +141,7 @@ export default function Chat() {
           model: selectedModel,
           apiKeys: getValidApiKeys(),
           courseCode: selectedCourseCode || undefined,
+          adhdAssist,
           streaming: false,
         }),
       });
@@ -185,7 +191,18 @@ export default function Chat() {
             <div className="h-full overflow-y-auto scrollbar-hover">
               <div className="px-4 py-6">
                 <div className="max-w-4xl mx-auto space-y-6">
-                  <div className="flex justify-end">
+                  <div className="flex items-center justify-end gap-4">
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        id="adhd-assist"
+                        checked={adhdAssist}
+                        onCheckedChange={(checked) => setAdhdAssist(Boolean(checked))}
+                        aria-label="ADHD Assist"
+                      />
+                      <Label htmlFor="adhd-assist" className="text-sm">
+                        ADHD Assist {adhdAssist ? "On" : "Off"}
+                      </Label>
+                    </div>
                     <SystemPromptSettings
                       systemPrompt={systemPrompt}
                       onSave={handleSystemPromptSave}
