@@ -187,8 +187,7 @@ Each section should use this format:
 
 ## Question Maker Unit Tests
 
-**Path:** `apps/extensions/question-maker/app/backend/test/`
-> _potentially fix to proper path_
+**Path:** `apps/extensions/question-maker/app/backend/tests/`
 
 | Test file | What it tests |
 |-----------|---------------|
@@ -205,8 +204,7 @@ Each section should use this format:
 
 ## Question Maker Integration Tests
 
-**Path:** `apps/extensions/question-maker/app/backend/test/`
-> _potentially fix to proper path_
+**Path:** `apps/extensions/question-maker/app/backend/tests/`
 
 | Test file | What it tests |
 |-----------|---------------|
