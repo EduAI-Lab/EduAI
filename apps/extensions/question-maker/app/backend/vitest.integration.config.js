@@ -4,8 +4,8 @@ export default defineConfig({
   test: {
     environment: 'node',
     globals: true,
-    include: ['test/**/*.integration.test.js'],
-    setupFiles: ['test/setup.js'],
+    include: ['tests/**/*.integration.test.js'],
+    setupFiles: ['tests/setup.js'],
     pool: 'forks',
     poolOptions: {
       forks: { singleFork: true },
