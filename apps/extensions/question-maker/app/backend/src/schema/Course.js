@@ -37,6 +37,7 @@ export const Course = sequelize.define(
     coreCourseId: {
       type: DataTypes.STRING,
       allowNull: true,
+      unique: true,
       field: "core_course_id",
       comment: "Core Course CUID; null until linked to Core",
     },
