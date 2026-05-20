@@ -140,7 +140,6 @@ Each section should use this format:
 | `BugReportsTab.test.tsx` | Admins can view, update status, and copy bug reports; anonymous submissions hide reporter identity in the copied output |
 | `Nav.test.tsx` | The Report Bug button is visible to students and professors but hidden from admins |
 | `useLocalUser.test.tsx` | Users can log in, log out, and have their session available across the app; accessing the session outside its provider throws an error |
-| > _Keep adding from here._ | |
 
 ---
 
