@@ -14,20 +14,20 @@ vi.mock('axios', () => ({
   default: axiosRequest,
 }));
 
-vi.mock('../src/services/assessmentService.js', () => ({
+vi.mock('../../src/services/assessmentService.js', () => ({
   getAssessmentById,
   createAssessment: vi.fn(),
 }));
 
-vi.mock('../src/services/questionService.js', () => ({
+vi.mock('../../src/services/questionService.js', () => ({
   createQuestion: vi.fn(),
 }));
 
-vi.mock('../src/services/assessmentSectionService.js', () => ({
+vi.mock('../../src/services/assessmentSectionService.js', () => ({
   createAssessmentSection: vi.fn(),
 }));
 
-vi.mock('../src/schema/index.js', () => ({
+vi.mock('../../src/schema/index.js', () => ({
   CanvasIntegration: { findOne: integrationFindOne },
   CanvasCourseMapping: { findOne: mappingFindOne, create: mappingCreate },
   Question_Metadata: {},
