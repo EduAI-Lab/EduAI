@@ -82,8 +82,7 @@ After `npm install`, each app gets a `.env` copied from its `.env.example` (only
 ```bash
 npm run build        # Build all apps (Turborepo caches outputs)
 npm run lint         # Lint all apps
-npm run test         # Unit tests across all apps
-npm run test:all     # Unit + integration tests
+npm run test         # All tests across all apps (unit + integration)
 ```
 
 To run tasks for a single app, use Turborepo's filter flag directly:
@@ -175,8 +174,7 @@ From the monorepo root `EduAICore/`:
 
 | Command | What runs |
 | --- | --- |
-| `npm run test` | All unit tests across every app simultaneously |
-| `npm run test:all` | Everything above, plus Question Maker backend integration tests |
+| `npm run test` | All tests across every app (unit + integration) |
 | `npx turbo run test --filter=edu-ai` | EduAI tests only |
 | `npx turbo run test --filter=ai-tutor --filter=ai-tutor-server` | AI Tutor frontend and server tests |
 | `npx turbo run test --filter='question-maker-*'` | Question Maker frontend and backend tests |
@@ -185,8 +183,8 @@ From the monorepo root `EduAICore/`:
 
 Some tests require a running PostgreSQL instance and will fail without one:
 
-* **AI Tutor server** — Turborepo runs both unit and integration tests. Connection details are configured in `apps/extensions/ai-tutor/server/.env.test`. The test database (`ai-tutor_test`) is created automatically on the first run.
-* **Question Maker backend** — The standard `npm run test` runs unit tests only. Integration tests are opt-in via `npm run test:all` and also require PostgreSQL.
+* **AI Tutor server** — both unit and integration tests run automatically. Connection details are configured in `apps/extensions/ai-tutor/server/.env.test`. The test database (`ai-tutor_test`) is created automatically on the first run.
+* **Question Maker backend** — both unit and integration tests run automatically via `npm run test`. Set `TEST_DATABASE_URL` to a dedicated PostgreSQL database before running (integration tests are skipped gracefully if it is not set).
 
 ### Test runners by app
 
