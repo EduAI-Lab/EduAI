@@ -1,6 +1,8 @@
 /**
  * Sequelize model for individual question variants (question text, difficulty, answer, review status).
  * Links back to `Question_Metadata`, optional assessments/sections, and tracks AI/draft flags.
+ * `secondaryTopicsId` stores UUIDs matching topics.id (changed from INTEGER[] in schema-unification).
+ * `coreQuestionId` stores the Core Question CUID once this variant is approved and pushed.
  */
 import { DataTypes } from 'sequelize';
 import { sequelize } from '../config/database.js';
@@ -49,10 +51,11 @@ export const Variants = sequelize.define('Variants', {
     }
   },
   secondaryTopicsId: {
-    type: DataTypes.ARRAY(DataTypes.INTEGER),
+    type: DataTypes.ARRAY(DataTypes.STRING),
     allowNull: true,
     defaultValue: [],
-    field: 'secondary_topics_id'
+    field: 'secondary_topics_id',
+    comment: 'Array of topics.id UUIDs for secondary topic tags'
   },
   referenceId: {
     type: DataTypes.INTEGER,
@@ -87,6 +90,13 @@ export const Variants = sequelize.define('Variants', {
     defaultValue: null,
     field: 'choices',
     comment: 'Array of choice objects for MCQ questions: [{letter: "A", text: "Option A"}, ...]'
+  },
+  coreQuestionId: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    unique: true,
+    field: 'core_question_id',
+    comment: 'Core Question CUID; null until variant is approved and pushed to Core'
   },
   createdAt: {
     type: DataTypes.DATE,

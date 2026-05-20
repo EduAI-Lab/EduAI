@@ -1,15 +1,15 @@
 /**
- * Sequelize model describing application users and their hashed credentials.
- * Users own courses, questions, and integration records across the app.
+ * Thin local user record keyed on Core's CUID. Exists only for FK integrity
+ * within QM — all identity and auth decisions go through Core.
+ * Created on first login when Core authenticates the user.
  */
 import { DataTypes } from 'sequelize';
 import { sequelize } from '../config/database.js';
 
 export const User = sequelize.define('User', {
   id: {
-    type: DataTypes.INTEGER,
+    type: DataTypes.STRING,
     primaryKey: true,
-    autoIncrement: true
   },
   email: {
     type: DataTypes.STRING,
@@ -19,10 +19,9 @@ export const User = sequelize.define('User', {
       isEmail: true
     }
   },
-  passwordHash: {
+  name: {
     type: DataTypes.STRING,
-    allowNull: false,
-    field: 'password_hash'
+    allowNull: true
   },
   createdAt: {
     type: DataTypes.DATE,

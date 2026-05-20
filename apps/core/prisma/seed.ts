@@ -3,10 +3,9 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('🌱 Starting database seed...');
+  console.log('Starting database seed...');
 
-  // Seed AI Providers
-  console.log('📡 Seeding AI Providers...');
+  console.log('Seeding AI Providers...');
 
   const openaiProvider = await prisma.aIProvider.upsert({
     where: { name: 'openai' },
@@ -34,7 +33,7 @@ async function main() {
     },
   });
 
-  const ollamaProvider = await prisma.aIProvider.upsert({
+  await prisma.aIProvider.upsert({
     where: { name: 'ollama' },
     update: {},
     create: {
@@ -48,12 +47,10 @@ async function main() {
     },
   });
 
-  console.log('✅ AI Providers seeded successfully');
+  console.log('AI Providers seeded');
 
-  // Seed AI Models
-  console.log('🤖 Seeding AI Models...');
+  console.log('Seeding AI Models...');
 
-  // OpenAI Models
   const openaiModels = [
     {
       modelId: 'gpt-4.1',
@@ -121,7 +118,6 @@ async function main() {
     });
   }
 
-  // Google Models
   const googleModels = [
     {
       modelId: 'gemini-2.5-pro',
@@ -165,17 +161,9 @@ async function main() {
     });
   }
 
-  console.log('✅ AI Models seeded successfully');
+  console.log('AI Models seeded');
 
-  const providerCount = await prisma.aIProvider.count();
-  const modelCount = await prisma.aIModel.count();
-
-  console.log(`🎉 Seed completed successfully!`);
-  console.log(`   📡 ${providerCount} providers created`);
-  console.log(`   🤖 ${modelCount} models created`);
-
-  // Seed sample users, courses, and topics for testing
-  console.log('👤 Seeding sample admin user...');
+  console.log('Seeding users...');
 
   const adminUser = await prisma.user.upsert({
     where: { email: 'admin@eduai.local' },
@@ -191,35 +179,62 @@ async function main() {
       role: 'ADMIN',
       isActive: true,
       emailVerified: true,
+      authorizedUnits: [],
     },
   });
 
-  console.log('📚 Seeding sample courses and topics...');
+  const instructorUser = await prisma.user.upsert({
+    where: { email: 'instructor@eduai.local' },
+    update: {
+      name: 'Sample Instructor',
+      role: 'INSTRUCTOR',
+      isActive: true,
+      emailVerified: true,
+    },
+    create: {
+      email: 'instructor@eduai.local',
+      name: 'Sample Instructor',
+      role: 'INSTRUCTOR',
+      isActive: true,
+      emailVerified: true,
+      authorizedUnits: [],
+    },
+  });
+
+  console.log('Users seeded');
+
+  console.log('Seeding courses and topics...');
 
   const coursesToSeed = [
     {
-      code: 'CS101',
+      code: 'COSC_O 101',
+      section: '001',
       name: 'Introduction to Computer Science',
       term: 'Fall',
       year: 2024,
+      startDate: new Date('2024-09-03'),
       aiInstructions:
         'Provide supportive explanations for programming fundamentals and algorithmic thinking.',
       topics: ['Programming Basics', 'Algorithms', 'Data Structures'],
     },
     {
-      code: 'MATH201',
+      code: 'MATH_O 200',
+      section: '001',
       name: 'Linear Algebra',
       term: 'Spring',
       year: 2025,
+      startDate: new Date('2025-01-06'),
       aiInstructions:
         'Emphasize intuition behind vector spaces and practical matrix applications.',
       topics: ['Matrices', 'Vector Spaces', 'Eigenvalues & Eigenvectors'],
     },
     {
-      code: 'HIST210',
+      code: 'HIST_O 210',
+      section: '001',
       name: 'World History: 1500 to Present',
       term: 'Winter',
       year: 2025,
+      startDate: new Date('2025-01-06'),
       aiInstructions:
         'Highlight cause-and-effect relationships and encourage critical analysis of sources.',
       topics: ['Age of Exploration', 'Industrial Revolution', 'World Wars', 'Globalization'],
@@ -228,44 +243,58 @@ async function main() {
 
   for (const courseData of coursesToSeed) {
     const course = await prisma.course.upsert({
-      where: { code: courseData.code },
+      where: {
+        code_startDate_section: {
+          code: courseData.code,
+          startDate: courseData.startDate,
+          section: courseData.section,
+        },
+      },
       update: {
         name: courseData.name,
         term: courseData.term,
         year: courseData.year,
         aiInstructions: courseData.aiInstructions,
-        professorId: adminUser.id,
       },
       create: {
         code: courseData.code,
+        section: courseData.section,
         name: courseData.name,
         term: courseData.term,
         year: courseData.year,
+        startDate: courseData.startDate,
         aiInstructions: courseData.aiInstructions,
-        professorId: adminUser.id,
-        topics: {
-          create: courseData.topics.map((topic) => ({ name: topic })),
-        },
       },
-      include: { topics: true },
     });
 
-    // Refresh topics to match the seed data exactly on repeated runs
     await prisma.courseTopic.deleteMany({ where: { courseId: course.id } });
     await prisma.courseTopic.createMany({
-      data: courseData.topics.map((topic) => ({
+      data: courseData.topics.map((name) => ({ courseId: course.id, name })),
+    });
+
+    await prisma.enrollment.upsert({
+      where: { courseId_userId: { courseId: course.id, userId: instructorUser.id } },
+      update: { role: 'INSTRUCTOR', isActive: true },
+      create: {
         courseId: course.id,
-        name: topic,
-      })),
-      skipDuplicates: true,
+        userId: instructorUser.id,
+        role: 'INSTRUCTOR',
+        isActive: true,
+      },
     });
 
     console.log(
-      `   • ${courseData.code} (${courseData.term} ${courseData.year}) with ${courseData.topics.length} topics`,
+      `  ${courseData.code}-${courseData.section} (${courseData.term} ${courseData.year}) — ${courseData.topics.length} topics`,
     );
   }
 
-  console.log('✅ Course topics seeded successfully');
+  console.log('Courses seeded');
+
+  const providerCount = await prisma.aIProvider.count();
+  const modelCount = await prisma.aIModel.count();
+  const courseCount = await prisma.course.count();
+
+  console.log(`Seed complete — ${providerCount} providers, ${modelCount} models, ${courseCount} courses`);
 }
 
 main()
@@ -273,7 +302,7 @@ main()
     await prisma.$disconnect();
   })
   .catch(async (e) => {
-    console.error('❌ Seed failed:', e);
+    console.error('Seed failed:', e);
     await prisma.$disconnect();
     process.exit(1);
   });
