@@ -131,6 +131,7 @@ Send chat messages with course context for grounded responses.
 - `apiKeys` (object): Provider-specific API keys
 - `courseCode` (string): Target course identifier
 - `streaming` (boolean): Enable response streaming
+- `adhdAssist` (boolean, optional): Opt-in flag persisted on `Chat.adhdAssist` (default `false`). Phase 1 has no behavioural effect; Phase 2 will gate ADHD-friendly response shaping (concise, structured, progressively disclosed) on this. UI toggle lives at the top of the chat header on `/chat`.
 - `proxyUser` (object, optional): Only for admin `x-api-key` calls. Allows services like Aitutor to act on behalf of a user; see [Proxy Delegation (`proxyUser`)](#proxy-delegation-proxyuser).
 
 #### Examples
