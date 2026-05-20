@@ -1,8 +1,10 @@
 # Chat API and RAG pipeline
 
+**See also:** [EduAI architecture guide](../ARCHITECTURE.md) (Core vs hosted, embedding keys, high-level flows).
+
 **Maintenance:** Living reference — update this doc when you change chat routing, hybrid RAG, or embedding/retrieval behavior (not a one-off PR note).
 
-This document describes how a user prompt flows through **`POST /api/chat`** ([`apps/core/app/routes/api/chat.ts`](../../../apps/core/app/routes/api/chat.ts)) and how retrieval-augmented generation (RAG) is triggered relative to **`findRelevantContent`** ([`apps/core/app/lib/ai/embedding.ts`](../../../apps/core/app/lib/ai/embedding.ts)).
+This document describes how a user prompt flows through **`POST /api/chat`** ([`apps/core/app/routes/api/chat.ts`](../../apps/core/app/routes/api/chat.ts)) and how retrieval-augmented generation (RAG) is triggered relative to **`findRelevantContent`** ([`apps/core/app/lib/ai/embedding.ts`](../../apps/core/app/lib/ai/embedding.ts)).
 
 ## Diagram
 
@@ -90,10 +92,10 @@ flowchart TB
 
 | Area | Path |
 | ---- | ---- |
-| Route handler | [`apps/core/app/routes/api/chat.ts`](../../../apps/core/app/routes/api/chat.ts) |
-| Vector search + embed API | [`apps/core/app/lib/ai/embedding.ts`](../../../apps/core/app/lib/ai/embedding.ts) |
-| Web tools | [`apps/core/app/lib/ai/tools/`](../../../apps/core/app/lib/ai/tools/) |
-| Provider registry | [`apps/core/app/lib/ai/providers.ts`](../../../apps/core/app/lib/ai/providers.ts) |
+| Route handler | [`apps/core/app/routes/api/chat.ts`](../../apps/core/app/routes/api/chat.ts) |
+| Vector search + embed API | [`apps/core/app/lib/ai/embedding.ts`](../../apps/core/app/lib/ai/embedding.ts) |
+| Web tools | [`apps/core/app/lib/ai/tools/`](../../apps/core/app/lib/ai/tools/) |
+| Provider registry | [`apps/core/app/lib/ai/providers.ts`](../../apps/core/app/lib/ai/providers.ts) |
 
 ---
 
@@ -111,7 +113,7 @@ The React chat client calls `POST /api/chat` with a JSON body that typically inc
 | `chatId` | Optional; ties to persisted `Chat` |
 | `systemPrompt` | Optional override / persistence |
 
-The handler is the `action` in [`chat.ts`](../../../apps/core/app/routes/api/chat.ts) (React Router resource route).
+The handler is the `action` in [`chat.ts`](../../apps/core/app/routes/api/chat.ts) (React Router resource route).
 
 ## 2. Before any LLM call
 
@@ -148,7 +150,7 @@ RAG is **not** one pipeline. It branches on `modelSupportsTools(model)` (from th
 
 ## 4. `findRelevantContent` (shared)
 
-Defined in [`embedding.ts`](../../../apps/core/app/lib/ai/embedding.ts):
+Defined in [`embedding.ts`](../../apps/core/app/lib/ai/embedding.ts):
 
 1. **`generateEmbedding(userQuery)`** — `embed()` via Gemini `gemini-embedding-001` (if `GOOGLE_GENERATIVE_AI_API_KEY`) or OpenAI `text-embedding-3-small` (if `OPENAI_API_KEY`). Server env only.
 2. **Pgvector SQL** — `material_embeddings` → `material_chunks` → `course_materials`, filtered by `courseId`, similarity `1 - (embedding <=> query)`, threshold **> 0.5**, `ORDER BY similarity DESC`, `LIMIT` (default **6**).
