@@ -39,6 +39,8 @@ It serves two purposes:
 
 Tests are organized into three locations across the monorepo:
 
+- There may be some differences because of how some apps are structured, look at the path information to see where tests are stored
+
 ```
 EduAI/
 ├── tests/
