@@ -6,6 +6,13 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ---
 
+## [Week 3 — May 18–22, 2026]
+
+### Added
+- [core] feat: Add user-facing ADHD Assist toggle on `/chat` (Phase 1 plumbing only). New `Chat.adhdAssist Boolean @default(false)` column + migration `adhd_assist_toggle`; toggle persists per chat and restores on reload via `/api/chats/:chatId`. `adhdAssist` is parsed and stored by `POST /api/chat` but does not alter prompt, model, RAG, or tools — Phase 1 is the IV control before Phase 2 introduces the policy prepend. (#151, @Ayyhab, 2026-05-20)
+
+---
+
 ## [Week 2 — May 11–15, 2026]
 
 ### Added
