@@ -23,9 +23,9 @@ This document explains **what runs inside this repo (Core)** versus **what lives
 ## 1. Simple terms: Core vs. hosted
 
 
-| Term in this doc             |  Meaning                                                                                                                                                                             |
+| Term in this doc             | Meaning                                                                                                                                                                             |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Core (owned)**             | The EduAI application in *this repository*: the web UI, all `/api/*` routes, PostgreSQL data, auth, RAG (chunking + vectors + search), chat persistence. You deploy and operate it. |
+| **Core (owned)**             | The EduAI application in *this repository*: the web UI, all `/api/`* routes, PostgreSQL data, auth, RAG (chunking + vectors + search), chat persistence. You deploy and operate it. |
 | **Hosted / external**        | Services you call over the network but do *not* ship as part of this repo: Google AI, OpenAI, Ollama, optional Firecrawl, etc. They hold the actual language/embedding models.      |
 | **Extensions (integrators)** | Other products (e.g. a campus "tutor" app) that **call EduAI's HTTP API** with an admin API key and optional `proxyUser`. They are clients of Core, not code inside Core.           |
 
@@ -136,14 +136,14 @@ flowchart TD
 ## 4. Key cheat sheet
 
 
-| Key / variable                                                    | Used for                                                       | Comes from                                                                          |
-| ----------------------------------------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `GOOGLE_GENERATIVE_AI_API_KEY`                                | **Embeddings** (RAG ingest + query vectors) when set on server | Server `.env` only (`embedding.ts`)                                                 |
-| `OPENAI_API_KEY`                                              | Embeddings fallback if Google env not set                      | Server `.env` only                                                                  |
-| `apiKeys.google.apiKey` (and similar) in `/api/chat` body     | **Chat** completions for that request                          | Client/request (often admin/API); merged with UI session settings in app code paths |
-| `OLLAMA_BASE_URL`                                             | Local Ollama base URL for **chat** registry                    | Env + optional override in user settings                                            |
-| `BETTER_AUTH_*`                                               | Sessions and API keys for EduAI accounts                       | Env                                                                                 |
-| `FIRECRAWL_API_KEY`                                           | Optional web search tool                                       | Env (see README)                                                                    |
+| Key / variable                                            | Used for                                                       | Comes from                                                                          |
+| --------------------------------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `GOOGLE_GENERATIVE_AI_API_KEY`                            | **Embeddings** (RAG ingest + query vectors) when set on server | Server `.env` only (`embedding.ts`)                                                 |
+| `OPENAI_API_KEY`                                          | Embeddings fallback if Google env not set                      | Server `.env` only                                                                  |
+| `apiKeys.google.apiKey` (and similar) in `/api/chat` body | **Chat** completions for that request                          | Client/request (often admin/API); merged with UI session settings in app code paths |
+| `OLLAMA_BASE_URL`                                         | Local Ollama base URL for **chat** registry                    | Env + optional override in user settings                                            |
+| `BETTER_AUTH_`*                                           | Sessions and API keys for EduAI accounts                       | Env                                                                                 |
+| `FIRECRAWL_API_KEY`                                       | Optional web search tool                                       | Env (see README)                                                                    |
 
 
 Same Google account key *could* theoretically work for both embeddings and chat if you pass it in both places — but **the code paths are separate**: embeddings **will not** pick up chat body keys.
@@ -222,22 +222,28 @@ sequenceDiagram
   API->>Ext: Stream / JSON response
 ```
 
+
+
 ---
 
 ## 6. Chat & RAG pipeline (detailed)
 
-Section [5.3](#53-chat-with-course-context) shows the high-level chat path. **`POST /api/chat`** actually runs **two different RAG strategies**, chosen from the `AIModel.supportsTools` flag in the database (via `modelSupportsTools` in `providers.ts`):
+Section [5.3](#53-chat-with-course-context) shows the high-level chat path. `**POST /api/chat**` actually runs **two different RAG strategies**, chosen from the `AIModel.supportsTools` flag in the database (via `modelSupportsTools` in `providers.ts`):
 
-| Path | When | How course context is retrieved |
-| ---- | ---- | ------------------------------- |
-| **Hybrid RAG** | `supportsTools === false` (e.g. some local/Ollama models) | If a course is selected **and** the last user message matches keyword heuristics (`course`, `chapter`, `explain`, …), `findRelevantContent` runs **once before** `streamText` and excerpts are injected into the **`system`** prompt. No tool loop. |
-| **Tool calling** | `supportsTools === true` (typical cloud models) | `streamText` registers `getInformation`, `webSearch`, and `fetchPage`. Course RAG runs **only when the model calls `getInformation`**, which executes `findRelevantContent` and returns chunks as **tool output** (up to `maxSteps` internal round-trips per turn). |
 
-Retrieval itself is always the same function: **`findRelevantContent`** in `embedding.ts` (server env embeddings + pgvector over `material_embeddings`). That is independent of which chat provider the user picked in the UI.
+| Path             | When                                                      | How course context is retrieved                                                                                                                                                                                                                                     |
+| ---------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Hybrid RAG**   | `supportsTools === false` (e.g. some local/Ollama models) | If a course is selected **and** the last user message matches keyword heuristics (`course`, `chapter`, `explain`, …), `findRelevantContent` runs **once before** `streamText` and excerpts are injected into the `**system`** prompt. No tool loop.                 |
+| **Tool calling** | `supportsTools === true` (typical cloud models)           | `streamText` registers `getInformation`, `webSearch`, and `fetchPage`. Course RAG runs **only when the model calls `getInformation`**, which executes `findRelevantContent` and returns chunks as **tool output** (up to `maxSteps` internal round-trips per turn). |
 
-**Full flowchart, code map, and maintenance notes:** [`docs/RAG-AI/chat-rag-pipeline.md`](RAG-AI/chat-rag-pipeline.md)
 
-Related team docs (latency, routing, dev server): [`docs/RAG-AI/README.md`](RAG-AI/README.md).
+Retrieval itself is always the same function: `**findRelevantContent`** in `embedding.ts` (server env embeddings + pgvector over `material_embeddings`). That is independent of which chat provider the user picked in the UI.
+
+**Full flowchart, code map, and maintenance notes:** `[docs/RAG-AI/chat-rag-pipeline.md](RAG-AI/chat-rag-pipeline.md)`
+
+Related team docs (latency, routing, dev server): `[docs/RAG-AI/README.md](RAG-AI/README.md)`.
+
+AI models are hosted on [cmps01.ok.ubc.ca](http://cmps01.ok.ubc.ca). EduAI (hosted on [my.eduai.ok.ubc.ca](http://my.eduai.ok.ubc.ca)) and its respective dev app ([dev.eduai.ok.ubc.ca](http://dev.eduai.ok.ubc.ca)) both connect to cmps01 ollama port to send and recieve AI prompts and responses respectively.
 
 ---
 
