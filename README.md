@@ -49,6 +49,8 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 | [`user-management-and-roles-architecture-plan.md`](docs/user-management-and-roles-architecture-plan.md) | Role hierarchy, permissions, and naming decisions across the platform |
 | [`implementations/RAG-AI/README.md`](docs/implementations/RAG-AI/README.md) | EduAI chat/RAG pipeline, latency sprint (#203), model routing (#197), dev server runbook — index of team implementation docs |
 | [`implementations/schema-design.md`](docs/implementations/schema-design.md) | Unified schema design across apps |
+| [`DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Instructions on how to deploy the system (production and development) |
+| [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Architectural breakdown of the system |
 
 ## Changelog
 
