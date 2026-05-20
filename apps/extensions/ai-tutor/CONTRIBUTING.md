@@ -110,7 +110,7 @@ npm run test:frontend     # Frontend only
 
 - **Runner**: Vitest with jsdom environment
 - **Libraries**: `@testing-library/react`, `@testing-library/jest-dom`
-- **Location**: `app/__tests__/` (mirrors `app/` structure)
+- **Location**: `app/tests/` (mirrors `app/` structure)
 - **Co-located tests**: Some test files live next to source (e.g., `tour-engine.test.ts`)
 
 ### Backend Tests
@@ -123,7 +123,7 @@ npm run test:integration  # Integration tests only
 ```
 
 - **Runner**: Vitest with supertest for HTTP assertions
-- **Location**: `server/test/unit/` and `server/test/integration/`
+- **Location**: `server/tests/unit/` and `server/tests/integration/`
 - **Test DB**: Uses `.env.test` (database `aitutor_test`, port 4001)
 - **Mock auth**: `createApp({ mockUser })` bypasses Better Auth
 
@@ -275,14 +275,14 @@ Include:
 | `app/lib/` | API client, auth utilities, type definitions |
 | `app/lib/tours/` | Guided tour engine and definitions |
 | `app/components/ui/` | shadcn/ui primitives |
-| `app/__tests__/` | Frontend test files |
+| `app/tests/` | Frontend test files |
 | `server/src/routes/` | Express route handlers |
 | `server/src/services/` | Business logic (AI, analytics, cloning, sync) |
 | `server/src/middleware/` | Auth and session middleware |
 | `server/src/utils/` | Response mappers |
 | `server/src/config/` | Database client, admin bootstrap |
 | `server/prisma/` | Schema, migrations, seed |
-| `server/test/` | Backend test files |
+| `server/tests/` | Backend test files |
 | `shared/schemas/` | Zod validation schemas (used by both) |
 | `docs/` | Design documents |
 | `scripts/` | E2E and automation scripts |

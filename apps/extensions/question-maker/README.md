@@ -59,7 +59,7 @@ question-maker/
 │   │   │   ├── schema/
 │   │   │   ├── services/
 │   │   │   └── utils/
-│   │   └── test/
+│   │   └── tests/
 │   └── frontend/
 │       ├── src/components/
 │       ├── src/contexts/
