@@ -1,8 +1,8 @@
 # EduAI — Architecture guide
 
-**Last updated:** 2026-05-18
+**Last updated:** 2026-05-20
 
-This document explains **what runs inside this repo (Core)** versus **what lives outside it (hosted services & integrations)**, how **AI providers and keys** work (including `GOOGLE_GENERATIVE_AI_API_KEY` for embeddings), and how the **codebase fits together**. Use it as the single place to orient yourself; export to PDF when you want a printable copy (see [Saving as PDF](#7-saving-as-pdf)).
+This document explains **what runs inside this repo (Core)** versus **what lives outside it (hosted services & integrations)**, how **AI providers and keys** work (including `GOOGLE_GENERATIVE_AI_API_KEY` for embeddings), and how the **codebase fits together**. Use it as the single place to orient yourself; export to PDF when you want a printable copy (see [Saving as PDF](#8-saving-as-pdf)).
 
 ---
 
@@ -13,9 +13,10 @@ This document explains **what runs inside this repo (Core)** versus **what lives
 3. [Provider config (two different paths)](#3-provider-config-two-different-paths)
 4. [Key cheat sheet](#4-key-cheat-sheet)
 5. [End-to-end flows (diagrams)](#5-end-to-end-flows-diagrams)
-6. [Codebase walkthrough (where to look)](#6-codebase-walkthrough-where-to-look)
-7. [Saving as PDF](#7-saving-as-pdf)
-8. [One-page mental model](#8-one-page-mental-model)
+6. [Chat & RAG pipeline (detailed)](#6-chat--rag-pipeline-detailed)
+7. [Codebase walkthrough (where to look)](#7-codebase-walkthrough-where-to-look)
+8. [Saving as PDF](#8-saving-as-pdf)
+9. [One-page mental model](#9-one-page-mental-model)
 
 ---
 
@@ -205,7 +206,7 @@ flowchart TD
 
 
 
-Main file: `app/routes/api/chat.ts`.
+Main file: `app/routes/api/chat.ts`. For branch-level detail (hybrid vs tools, `modelSupportsTools`, keyword gating), see [§6](#6-chat--rag-pipeline-detailed).
 
 ### 5.4 Extension calling Core (`proxyUser`)
 
@@ -223,7 +224,24 @@ sequenceDiagram
 
 ---
 
-## 6. Codebase walkthrough (where to look)
+## 6. Chat & RAG pipeline (detailed)
+
+Section [5.3](#53-chat-with-course-context) shows the high-level chat path. **`POST /api/chat`** actually runs **two different RAG strategies**, chosen from the `AIModel.supportsTools` flag in the database (via `modelSupportsTools` in `providers.ts`):
+
+| Path | When | How course context is retrieved |
+| ---- | ---- | ------------------------------- |
+| **Hybrid RAG** | `supportsTools === false` (e.g. some local/Ollama models) | If a course is selected **and** the last user message matches keyword heuristics (`course`, `chapter`, `explain`, …), `findRelevantContent` runs **once before** `streamText` and excerpts are injected into the **`system`** prompt. No tool loop. |
+| **Tool calling** | `supportsTools === true` (typical cloud models) | `streamText` registers `getInformation`, `webSearch`, and `fetchPage`. Course RAG runs **only when the model calls `getInformation`**, which executes `findRelevantContent` and returns chunks as **tool output** (up to `maxSteps` internal round-trips per turn). |
+
+Retrieval itself is always the same function: **`findRelevantContent`** in `embedding.ts` (server env embeddings + pgvector over `material_embeddings`). That is independent of which chat provider the user picked in the UI.
+
+**Full flowchart, code map, and maintenance notes:** [`docs/RAG-AI/chat-rag-pipeline.md`](RAG-AI/chat-rag-pipeline.md)
+
+Related team docs (latency, routing, dev server): [`docs/RAG-AI/README.md`](RAG-AI/README.md).
+
+---
+
+## 7. Codebase walkthrough (where to look)
 
 High-level layout:
 
@@ -242,7 +260,10 @@ app/
     courses/             → Course API helpers + Zod schemas
 docs/
   ARCHITECTURE.md        → This file
-  ...                    → Other Documents  
+  RAG-AI/
+    chat-rag-pipeline.md → POST /api/chat + hybrid vs tool RAG (detailed)
+    README.md            → Index of RAG, latency, and routing team docs
+  ...                    → Other documents
 ```
 
 ### Routes worth memorizing
@@ -267,7 +288,7 @@ Single Postgres database; Prisma models include users/sessions, courses, materia
 
 ---
 
-## 7. Saving as PDF
+## 8. Saving as PDF
 
 This file is Markdown so it stays diff-friendly in git. To get a **PDF**:
 
@@ -280,6 +301,6 @@ Mermaid diagrams render in GitHub and many Markdown previews; some PDF tools nee
 
 ---
 
-## 8. One-page mental model
+## 9. One-page mental model
 
 **Core** is one app + one DB. **Hosted APIs** supply brains (chat + embeddings). **Embeddings for RAG** always use **server env** (`GOOGLE_GENERATIVE_AI_API_KEY` preferred). **Chat** uses the **AI SDK + provider registry** with keys from **request/UI settings**. **Extensions** call your APIs; they are not inside this repo.
