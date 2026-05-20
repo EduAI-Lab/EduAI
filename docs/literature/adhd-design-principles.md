@@ -133,6 +133,8 @@ These are guardrails, mostly drawn from the CHI'26 expert interviews, that we ke
 
 ## 5. Which of the 7 papers each principle leans on
 
+Full paper → pillar → policy clause index (all 8 Literature_Review PDFs + § 3 line numbers): [`paper-pillar-policy-traceability.md`](./paper-pillar-policy-traceability.md).
+
 For citation accuracy in Form A, here is the honest map:
 
 

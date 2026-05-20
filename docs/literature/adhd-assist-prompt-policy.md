@@ -2,7 +2,7 @@
 
 This is the executable spec for the `ADHD Assist` interaction mode. It defines the behavioural deltas vs. baseline EduAI, the system-prompt text, the response schema the model must follow, and the pass/fail rules the second-pass oversight uses.
 
-> **Companion docs.** [`literature/adhd-design-principles.md`](./literature/adhd-design-principles.md) explains the *why* (CLT, W3C COGA, CHI'26 GenAI-for-ADHD). [`adhd-assist-architecture-phases.md`](./adhd-assist-architecture-phases.md) explains *when* and *how* to wire it into the codebase. Pre-implementation: [`pre-coding-checklist.md`](./pre-coding-checklist.md); manual eval logging: [`system-prompt-evaluation-runbook.md`](./system-prompt-evaluation-runbook.md).
+> **Companion docs.** [`literature/adhd-assist-design-pillars.md`](./literature/adhd-assist-design-pillars.md) is the BREB pillar source-of-truth. [`literature/paper-pillar-policy-traceability.md`](./literature/paper-pillar-policy-traceability.md) maps each Literature_Review paper → pillar → policy clause (§ 3 line numbers). [`literature/adhd-design-principles.md`](./literature/adhd-design-principles.md) explains the *why* (CLT, W3C COGA, CHI'26 GenAI-for-ADHD). [`adhd-assist-architecture-phases.md`](./adhd-assist-architecture-phases.md) explains *when* and *how* to wire it into the codebase. Pre-implementation: [`pre-coding-checklist.md`](./pre-coding-checklist.md); manual eval logging: [`system-prompt-evaluation-runbook.md`](./system-prompt-evaluation-runbook.md).
 
 ## 1. Two modes, one minimal delta
 
