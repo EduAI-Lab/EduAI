@@ -35,7 +35,7 @@ export default defineConfig(({ mode }) => {
       port: 3000,
       // Apache reverse proxy sends Host: dev.eduai.ok.ubc.ca; Vite 6+ rejects unknown hosts by default.
       host: true,
-      allowedHosts: true,
+      allowedHosts: ["dev.eduai.ok.ubc.ca", "localhost", "127.0.0.1"],
       fs: {
         allow: [monorepoRoot],
       },
