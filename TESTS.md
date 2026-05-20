@@ -214,8 +214,8 @@ Each section should use this format:
 | Test file | What it tests |
 |-----------|---------------|
 | `assessmentVariantAuth.test.js` | All assessment variant routes reject unauthenticated requests |
-| `assessmentVariantHttp.integration.test.js` | Assessment variant routes reject requests with missing or invalid required fields |
 | `assessmentsAuth.test.js` | All assessment routes reject unauthenticated requests |
+| `assessmentVariantHttp.integration.test.js` | Assessment variant routes reject requests with missing or invalid required fields |
 | `auth.integration.test.js` | Users can register, log in, and retrieve their profile; duplicate emails and wrong passwords are rejected |
 | `bugReports.integration.test.js` | Authenticated users can submit bug reports, only admins can list and update them, and unauthenticated requests are blocked |
 | `canvasAuth.test.js` | All Canvas integration routes reject unauthenticated requests |

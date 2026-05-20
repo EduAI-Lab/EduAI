@@ -1,7 +1,7 @@
 /**
  * Unit tests for pure metadata scoring used in assessment variant assembly.
  */
-import { scoreMetadataMatch } from '../src/services/assessmentVariantMetadataScoring.js';
+import { scoreMetadataMatch } from '../../src/services/assessmentVariantMetadataScoring.js';
 
 describe('scoreMetadataMatch', () => {
   it('returns 0 when nothing matches', () => {

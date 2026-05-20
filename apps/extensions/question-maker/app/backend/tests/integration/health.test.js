@@ -2,7 +2,7 @@
  * HTTP smoke tests for routes that do not require a database.
  */
 import request from 'supertest';
-import app from '../src/app.js';
+import app from '../../src/app.js';
 
 describe('GET /healthz', () => {
   it('returns 200 ok', async () => {

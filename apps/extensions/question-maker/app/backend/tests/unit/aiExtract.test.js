@@ -1,7 +1,7 @@
 /**
  * Unit tests for extractQuestionsFromText early exits (no EduAI, no DB when input is empty).
  */
-import { extractQuestionsFromText } from '../src/services/aiService.js';
+import { extractQuestionsFromText } from '../../src/services/aiService.js';
 
 describe('extractQuestionsFromText', () => {
   it('returns empty array when raw text is empty', async () => {

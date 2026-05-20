@@ -21,7 +21,7 @@ vi.mock('../src/schema/index.js', () => ({
   Topics: { findAll },
 }));
 
-const { extractQuestionsFromText } = await import('../src/services/aiService.js');
+const { extractQuestionsFromText } = await import('../../src/services/aiService.js');
 
 describe('extractQuestionsFromText (EduAI mocked)', () => {
   beforeEach(() => {
