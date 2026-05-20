@@ -13,7 +13,7 @@ export const CanvasIntegration = sequelize.define('CanvasIntegration', {
     autoIncrement: true
   },
   userId: {
-    type: DataTypes.INTEGER,
+    type: DataTypes.STRING,
     allowNull: false,
     field: 'user_id',
     references: {
