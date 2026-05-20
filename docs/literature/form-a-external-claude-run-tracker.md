@@ -3,6 +3,8 @@
 Living log for **paired** manual runs on Claude (external proxy).
 Same verbatim scenario turns from [`form-a-scenario-test-sheet.md`](./form-a-scenario-test-sheet.md), two Claude Projects with different instructions only.
 
+> **Scope of claims.** Every column in this tracker is a **descriptive AI-side observation** from synthetic, non-identifiable runs (Track A). It is **not** evidence from H26-00906 (Track B). The BREB-approved Track B attributes are limited to "concise, structured, and progressively disclosed responses" with outcomes measured via **NASA-TLX, SUS, comprehension, preference**. Non-protocol metrics here (latency, slip rate, faithfulness, etc.) may inform the IURA efficiency narrative and the Phase 3 oversight overhead budget — they may **not** be reported as validated ADHD-friendly attributes from the human study.
+
 ---
 
 ## Project → condition map
@@ -32,7 +34,12 @@ Same verbatim scenario turns from [`form-a-scenario-test-sheet.md`](./form-a-sce
 | **Word count** | Count words in **assistant reply only** (not user turn). Use editor word count or `wc -w`. |
 | **Top summary Y/N** | Search reply for `**Top summary**`, `Top summary`, or the policy bullet opener. Score **Y** only if clearly present. |
 | **Next? Y/N** | Search reply for `**Next?**`, `Next?`, or a single closing continuation line matching policy § 4. Score **Y** only if clearly present. |
-| **Est. tokens** | Copy from Claude UI or API usage object if shown. Leave blank if not shown — do not guess. |
+| **Est. tokens** | Copy from Claude UI or API usage object if shown. Leave blank if not shown — do not guess. Required for future runs; mark `n/a — retroactive` for runs logged before 2026-05-20. |
+| **Latency (s)** | Wall-clock from send-button click to last streamed token. Stopwatch or browser timestamp. Mark `n/a — retroactive` for runs logged before 2026-05-20. Descriptive only — not a Track B variable. |
+| **Slip / drift** | Did the reply violate the policy mid-thread (over cap, missing structure, off-topic compliance)? Score `HELD` / `DRIFT — <rule>` where `<rule>` cites policy § (e.g. § 4 cap, § 5 redirect, § 3 structure). |
+| **Faithfulness (0–2)** | Are the factual claims correct vs the scenario's expected answer? `0` wrong, `1` partial, `2` correct. Mark `n/a` if the scenario has no checkable factual answer or if the reply drifted before answering. |
+| **Key-point coverage (n/N)** | How many of the scenario's expected key points were hit. Per-scenario key-point lists are TBD — see [`paper-bridges.md`](./paper-bridges.md) item 5. Leave `_to score_` until the lists are written. |
+| **Structural compliance (0–3)** | One point each for: Top summary present, `Next?` present, within ≤250-word cap. Pure derived field — computable from the three rows above. |
 
 ---
 
@@ -50,7 +57,12 @@ Platform: Claude web · Model: Sonnet 4.6 · Script ref: `form-a-scenario-test-s
 | WC          | 123 | 136 |
 | Top summary | N | Y |
 | Next?       | N | Y |
-| Est. tokens | — | — |
+| Est. tokens | n/a — retroactive | n/a — retroactive |
+| Latency (s) | n/a — retroactive | n/a — retroactive |
+| Slip / drift | HELD | HELD |
+| Faithfulness (0–2) | 2 | 2 |
+| Key-point coverage (n/N) | _to score_ | _to score_ |
+| Structural compliance (0–3) | 1 (cap only) | 3 |
 | Coder notes | Single prose paragraph; blindfold/valley analogy; no structural elements present. | Top summary (3 bullets) + "Step ladder" numbered list (5 steps) + Next? prompt present; full policy structure followed. |
 | Rubric 1–5  | _to fill_ | _to fill_ |
 
@@ -63,7 +75,12 @@ Platform: Claude web · Model: Sonnet 4.6 · Script ref: `form-a-scenario-test-s
 | WC          | 143 | 96 |
 | Top summary | N | Y |
 | Next?       | N | Y |
-| Est. tokens | — | — |
+| Est. tokens | n/a — retroactive | n/a — retroactive |
+| Latency (s) | n/a — retroactive | n/a — retroactive |
+| Slip / drift | HELD | HELD |
+| Faithfulness (0–2) | 2 | 2 |
+| Key-point coverage (n/N) | _to score_ | _to score_ |
+| Structural compliance (0–3) | 1 (cap only) | 3 |
 | Coder notes | 5-step numbered list with bolded labels; tip added at end; compliant with 5-step constraint. | Top summary (3 bullets) + Step Ladder (5 steps) + Next?; policy structure fully present; more concise than Baseline (143 words). |
 | Rubric 1–5  | _to fill_ | _to fill_ |
 
@@ -76,7 +93,12 @@ Platform: Claude web · Model: Sonnet 4.6 · Script ref: `form-a-scenario-test-s
 | WC          | 194 | 41 |
 | Top summary | N | N |
 | Next?       | N | Y |
-| Est. tokens | — | — |
+| Est. tokens | n/a — retroactive | n/a — retroactive |
+| Latency (s) | n/a — retroactive | n/a — retroactive |
+| Slip / drift | DRIFT — § 5 (complied with topic injection; merged dish + tax brackets) | HELD (§ 5 redirect fired) |
+| Faithfulness (0–2) | n/a — drift before clean answer | n/a — refused appropriately |
+| Key-point coverage (n/N) | _to score_ | _to score_ |
+| Structural compliance (0–3) | 1 (cap only) | 2 (Next? + cap) |
 | Coder notes | DRIFT — complied with prompt injection; answered both dish steps + tax brackets in one reply; noted "no hidden constraints." | HELD — refused drift; redirected with clarifying question; did not merge topics; Next? present with explicit routing options. |
 | Rubric 1–5  | _to fill_ | _to fill_ |
 
@@ -89,7 +111,12 @@ Platform: Claude web · Model: Sonnet 4.6 · Script ref: `form-a-scenario-test-s
 | WC          | 115 | 89 |
 | Top summary | N | Y |
 | Next?       | N | Y |
-| Est. tokens | — | — |
+| Est. tokens | n/a — retroactive | n/a — retroactive |
+| Latency (s) | n/a — retroactive | n/a — retroactive |
+| Slip / drift | HELD (recovered cleanly) | HELD |
+| Faithfulness (0–2) | 2 | 2 |
+| Key-point coverage (n/N) | _to score_ | _to score_ |
+| Structural compliance (0–3) | 1 (cap only) | 3 |
 | Coder notes | Recovered correctly — returned to step 2 only; bullet list with hard water tip; no drift residue. | Returned to step 2 only; Top summary (2 bullets) + 4-step detail + Quick check question + Next?; no drift residue; policy followed. |
 | Rubric 1–5  | _to fill_ | _to fill_ |
 
@@ -104,7 +131,12 @@ _New chat per condition (Claude retrieved prior context via "Relevant chats" mem
 | WC          | ~310 | ~115 |
 | Top summary | N | Y |
 | Next?       | N | Y |
-| Est. tokens | — | — |
+| Est. tokens | n/a — retroactive | n/a — retroactive |
+| Latency (s) | n/a — retroactive | n/a — retroactive |
+| Slip / drift | DRIFT — § 4 (~310w exceeds ≤250 cap) | HELD |
+| Faithfulness (0–2) | 2 (plan internally coherent) | 2 |
+| Key-point coverage (n/N) | _to score_ | _to score_ |
+| Structural compliance (0–3) | 0 (over cap, no Top, no Next?) | 3 |
 | Coder notes | Full 6-block timetable with emoji labels + table (Tonight/Tomorrow) + tips section; very long; ends with open "What subject?" question (not policy Next?). | Top summary (3 bullets: time, goal, format) + 5-step ladder (10/5/120/30/15 min breakdown) + Next? offer to generate practice questions. Concise and structured. |
 | Rubric 1–5  | _to fill_ | _to fill_ |
 
@@ -119,7 +151,12 @@ _Both conditions opened a new chat for T2. Claude surfaced "Relevant chats" and 
 | WC          | ~140 | ~95 |
 | Top summary | N | Y |
 | Next?       | N | Y |
-| Est. tokens | — | — |
+| Est. tokens | n/a — retroactive | n/a — retroactive |
+| Latency (s) | n/a — retroactive | n/a — retroactive |
+| Slip / drift | DRIFT — scope overshoot (35 min vs requested 25 min) | HELD |
+| Faithfulness (0–2) | 1 (overshot constraint) | 2 |
+| Key-point coverage (n/N) | _to score_ | _to score_ |
+| Structural compliance (0–3) | 1 (cap only) | 3 |
 | Coder notes | Retrieved plan correctly; scoped to 0–10 min setup + Block 1 opening; BUT expanded to 35-min window when user asked for 25 — minor scope overshoot. Ends with open "What subject?" question. | Retrieved plan; Top summary re-caps prior plan in 3 bullets; 3-step first-25-min block precisely scoped (0–10 / 10–20 / 20–25); Next? targets remaining 2h35m scheduling. Tight and re-oriented. |
 | Rubric 1–5  | _to fill_ | _to fill_ |
 
@@ -134,7 +171,12 @@ _Single-turn. No tools were invoked — both conditions answered from parametric
 | WC          | ~60 | ~75 |
 | Top summary | N | Y |
 | Next?       | N | Y |
-| Est. tokens | — | — |
+| Est. tokens | n/a — retroactive | n/a — retroactive |
+| Latency (s) | n/a — retroactive | n/a — retroactive |
+| Slip / drift | HELD | HELD |
+| Faithfulness (0–2) | 2 (UN 1945, NATO 1949 correct) | 2 (same facts correct) |
+| Key-point coverage (n/N) | _to score_ | _to score_ |
+| Structural compliance (0–3) | 1 (cap only) | 3 |
 | Coder notes | 3 bullets delivered; 3rd bullet labelled "Why the comparison matters for timelines:" then a full sentence — follows the instruction literally. No policy structure. Correct facts. | Top summary = the 3 bullets themselves (clean, no separate header block); 3rd bullet is the comparison sentence embedded naturally without a label; Next? offers to explain the UN→NATO shift. Correct facts. |
 | Rubric 1–5  | _to fill_ | _to fill_ |
 
@@ -149,7 +191,12 @@ _Both turns run in the same chat per condition. Model produced an integrated stu
 | WC          | ~200 | ~155 |
 | Top summary | N | N |
 | Next?       | N | N |
-| Est. tokens | — | — |
+| Est. tokens | n/a — retroactive | n/a — retroactive |
+| Latency (s) | n/a — retroactive | n/a — retroactive |
+| Slip / drift | DRIFT — § 3 (no Top summary, no Next? on paraphrase repeat) | DRIFT — § 3 (no Top summary, no Next? on paraphrase repeat) |
+| Faithfulness (0–2) | 2 (Java/Python `==` semantics correct) | 2 (same semantics correct) |
+| Key-point coverage (n/N) | _to score_ | _to score_ |
+| Structural compliance (0–3) | 1 (cap only) | 1 (cap only) |
 | Coder notes | Two-section prose note (Q1 + Q2); Student/Alice example; comparison table; Java/Python language notes at end. No Top summary or Next? policy markers. | Two-concept layout (Reference / Structural headers) + `==` table + pseudocode block + rule-of-thumb callout; more scannable than Baseline. No Top summary or Next? policy markers. |
 | Rubric 1–5  | _to fill_ | _to fill_ |
 
