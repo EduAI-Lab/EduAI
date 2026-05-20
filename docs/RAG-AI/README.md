@@ -4,6 +4,8 @@ Team documentation for **course-aware retrieval**, the **`POST /api/chat`** pipe
 
 **Current team focus:** [GitHub #203 — Chat latency & smart grounding sprint](https://github.com/EduAI-Lab/EduAI/issues/203) → start in [`latency/TEAM_CHAT_LATENCY_SPRINT_GUIDE.md`](./latency/TEAM_CHAT_LATENCY_SPRINT_GUIDE.md).
 
+
+AI models are hosted on cmps01.ok.ubc.ca. EduAI (hosted on my.eduai.ok.ubc.ca) and its respective dev app (dev.eduai.ok.ubc.ca) both connect to cmps01 ollama port to send and recieve AI prompts and responses respectively. 
 ---
 
 ## Where to start
