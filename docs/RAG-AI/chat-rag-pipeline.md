@@ -186,7 +186,7 @@ So: tool path = RAG on demand inside streamText steps; hybrid path = RAG once up
 Defined in apps/core/app/lib/ai/embedding.ts:
 
 generateEmbedding(userQuery) — one call to the Vercel AI SDK embed() using either Gemini gemini-embedding-001 (if GOOGLE_GENERATIVE_AI_API_KEY) or OpenAI text-embedding-3-small (if OPENAI_API_KEY). Server env, not the user’s chat API keys.
-Pgvector query — raw SQL over material_embeddings joined to material_chunks and course_materials, filtered to courseId, similarity 1 - (embedding <=> query::vector), threshold > 0.5, ORDER BY similarity DESC, LIMIT (your hybrid/tool paths pass the capped chunk count).
+Pgvector query — raw SQL over material_embeddings joined to material_chunks and course_materials, filtered to courseId, similarity 1 - (embedding <=> query::vector), threshold from `similarityThreshold` arg or env `RAG_SIMILARITY_THRESHOLD` (default 0.5), ORDER BY similarity DESC, LIMIT (hybrid/tool paths pass the capped chunk count).
 Returns { content, similarity, materialTitle }[] per row.
 
 embedding.ts
@@ -195,8 +195,9 @@ export async function findRelevantContent(
   userQuery: string,
   courseId: string,
   limit: number = 6,
-  similarityThreshold: number = 0.5
+  similarityThreshold?: number,
 ): Promise<Array<{ content: string; similarity: number; materialTitle: string }>> {
+  const threshold = similarityThreshold ?? getDefaultRagSimilarityThreshold(); // env RAG_SIMILARITY_THRESHOLD, default 0.5
   const queryEmbedding = await generateEmbedding(userQuery);
   const results = await prisma.$queryRaw<Array<{
     content: string;
@@ -211,7 +212,7 @@ export async function findRelevantContent(
     JOIN material_chunks mc ON me."chunkId" = mc.id
     JOIN course_materials cm ON mc."materialId" = cm.id
     WHERE cm."courseId" = ${courseId}
-      AND 1 - (me.embedding <=> ${queryEmbedding}::vector) > ${similarityThreshold}
+      AND 1 - (me.embedding <=> ${queryEmbedding}::vector) > ${threshold}
     ORDER BY similarity DESC
     LIMIT ${Number(limit)}
   `;
