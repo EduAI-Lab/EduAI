@@ -223,7 +223,7 @@ model CourseMaterial {
   title          String
   mimeType       String
   fileSize       Int
-  checksum       String
+  checksum       String          @unique
   rawText        String?
   status         MaterialStatus  @default(PROCESSING)
   externalId     String?
