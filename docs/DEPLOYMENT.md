@@ -7,6 +7,22 @@ This document describes how EduAI is deployed. It covers both development and pr
 
 ---
 
+## Table of Contents
+
+1. [Topology](#topology)
+2. [Development Deployment](#development-deployment)
+3. [Production Deployment](#production-deployment)
+4. [Domain Layout](#domain-layout)
+5. [Server Topology](#server-topology)
+6. [Reverse Proxy](#reverse-proxy)
+7. [TLS Certificates](#tls-certificates)
+8. [CORS](#cors)
+9. [Cookies](#cookies)
+10. [OAuth Redirect URIs](#oauth-redirect-uris)
+11. [Adding a New Extension](#adding-a-new-extension)
+
+---
+
 ## Topology
 
 EduAI uses a shared root domain with per-app subdomains. Each app (Core, AI Tutor, Question Maker, and any future extension) lives on its own subdomain under `eduai.ok.ubc.ca`. Core issues a wildcard session cookie scoped to the root, which all subdomains can read. This keeps auth unified while letting each app deploy independently.
