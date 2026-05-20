@@ -9,26 +9,33 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ## [Week 3 — May 18–22, 2026]
 
 ### Added
+- [monorepo] docs: Populated `TESTS.md` with all integration and unit tests (#199, @GlowyBlack, 2026-05-18)
 - [monorepo] infra: Add GitHub Actions CI workflow (`.github/workflows/ci.yml`) — triggers on pull requests targeting `development` or `main`; spins up a PostgreSQL 16 service on port 54321; runs `npm run test` (Turborepo) to build and test all packages across the monorepo; `aitutor_test` database is created automatically by the existing `globalSetup.js`; `TEST_DATABASE_URL` is set at job level so question-maker backend integration tests run as part of the single test command. (#236, @evanbones, 2026-05-20)
 - [question-maker] infra: Make `npm run test` run the full test suite — chain `vitest run --config vitest.integration.config.js` after the unit run so integration tests are no longer opt-in; `test:all` is kept as an alias. (#236, @evanbones, 2026-05-20)
+
+### Changed
+- [ai-tutor] infra: Renamed the `test/` `__test__` to `tests/` and added the tests within the `app/tests/` to the `TESTS.md` file and created a `.env.test.example` file. Added `.env.test` to gitignore (#199, @glowyblack, 2026-05-18)
+
+### Removed
 
 ### Fixed
 - [monorepo] infra: Fix `npm run dev` failing on restart — Docker orphaned containers from previous service renames (`eduai-core-db`, `eduai-tutor-db`, `eduai-qm-db`) held ports 54320–55432 and were not removed by `docker compose down`; overhaul `scripts/dev-db.sh` to force-remove any container bound to those ports and delete the stale `eduai-dev` network before starting fresh; add `--remove-orphans` to `docker:dev:db:down`. (#236, @evanbones, 2026-05-19)
 
----
-
 ## [Week 2 — May 11–15, 2026]
 
 ### Added
+- [monorepo] automation: Add GitHub-native weekly team time tracking and PR analytics reporting workflows, including issue-hours parsing, committed base-time fallback, editable weekly base-time issue override, Project timestamp filtering, Project item/PR linking, CSV/Markdown report generation, implementation documentation, and focused Node tests for the reporting scripts. (#176, @Whiteknight07, 2026-05-16)
+- [monorepo] docs: Add `schema-design.md` in `docs/implementations/` — unified schema design (#177, @abdullahmoh21, 2026-05-16)
+- [monorepo] docs: Added DEPLOYMENT.md in docs based on team decision (#157, @abdullahmoh21, 2026-05-15)
+- [core] infra: Add unit tests for all functions in `lib/form-utils.ts` (`getFieldErrors`, `getFieldError`, `getFormErrorMessage`, `validateField`); set `pool: vmThreads` in `vitest.config.ts` to fix worker startup timeout on Windows. (#134, @glowyblack, 2026-05-13)
 - [core] docs: Add `TEST.md` cataloguing all planned test cases for `lib/utils`, `lib/ai/providers`, `lib/ai/file-processing`, `lib/ai/embedding`, `lib/courses/schemas`, `lib/ai/schemas`, and form components (`LoginForm`, `RegisterForm`); assign test files across three contributors. (#134, @glowyblack, 2026-05-13)
-- [core] infra: Add unit tests for all functions in `lib/form-utils.ts` (`getFieldErrors`, `getFieldError`, `getFormErrorMessage`, `validateField`); set `pool: vmThreads` in `vitest.config.ts` to fix worker startup timeout on Windows. Test file lives at `app/tests/unit/form-utils.test.ts`. (#134, @glowyblack, 2026-05-13)
 - [monorepo] infra: Set up Turborepo to orchestrate build, dev, test, and lint across all workspace apps; add `apps/extensions/ai-tutor/server` to npm workspaces; configure distinct dev-server ports (core: 3000, ai-tutor: 3001, qm-frontend: 5173, qm-backend: 8000, ai-tutor server: 4000); add `predev` hook that auto-starts Docker Compose databases before Turborepo; add `postinstall` hook that copies each app's `.env.example` to `.env` on a clean clone; add `.npmrc` (`legacy-peer-deps=true`) to resolve cross-package peer dependency conflicts; change core-db default host port from 5432 to 54320 to avoid collision with locally installed Postgres. (#133, @evanbones, 2026-05-13)
 - [monorepo] docs: Add root `TESTS.md` as the canonical test inventory — defines structure, policy, and per-section table format for tracking all test files across the monorepo. (#140, @ariqmuldi, 2026-05-13)
 - [monorepo] infra: Add root `package.json` with unified test runner. `npm test` at the root directory runs all unit tests across every app. (#119, @yta3216, 2026-05-12)
-- [core] infra: Set up Vitest test infrastructure: add `vitest.config.ts`, `app/tests/setup.ts`, and `test`/`test:watch` scripts to `package.json`. No tests written yet; scaffolding only. (#119, @yta3216, 2026-05-12)
-- [core] docs: Add `TESTS.md` with planned test cases for lib utilities, AI providers, file processing, Zod schemas, and form components. (#119, @yta3216, 2026-05-12)
+- [core] infra: Set up Vitest test infrastructure: add `vitest.config.ts`, `app/__tests__/setup.ts`, and `test`/`test:watch` scripts to `package.json`. No tests written yet; scaffolding only. (#119, @yta3216, 2026-05-12)- [core] docs: Add `TESTS.md` with planned test cases for lib utilities, AI providers, file processing, Zod schemas, and form components. (#119, @yta3216, 2026-05-12)
 
 ### Changed
+- [monorepo] automation: Move summer 2026 team time reporting scripts, tests, base-time CSVs, generated reports, and documentation under `eduai-summer-2026/`; keep workflow entrypoints as prefixed files in `.github/workflows/` for GitHub Actions autodiscovery. (#176, @Whiteknight07, 2026-05-18)
 - [core] docs: Renamed the planned test file for core from `TEST.md` to `planned-core-tests.md` and moved to docs to reflect the `README.md` and fix the conflict with the new `TEST.md` file that describes structure for all new tests. (#134, @glowyblack, 2026-05-14)
 - [monorepo] docs: Move `TEST.md` from `apps/core/` to the monorepo root so it is visible alongside `CHANGELOG.md` and other top-level docs. (#134, @glowyblack, 2026-05-13)
 - [core] infra: Rename test folder from `app/__tests__/` to `app/tests/` and reorganise test files into `app/tests/unit/`; update `vitest.config.ts` `include` and `setupFiles` paths accordingly. (#134, @glowyblack, 2026-05-13)
