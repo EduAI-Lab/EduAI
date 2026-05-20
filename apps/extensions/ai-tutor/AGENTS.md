@@ -37,8 +37,8 @@
 
 ## Testing Guidelines
 
-- Frontend: `npm run test` runs Vitest with jsdom. Tests in `app/__tests__/` and co-located (e.g., `tour-engine.test.ts`).
-- Backend: `cd server && npm run test` runs Vitest with supertest. Tests in `server/test/unit/` and `server/test/integration/`. Uses mock auth via `createApp({ mockUser })`.
+- Frontend: `npm run test` runs Vitest with jsdom. Tests in `app/tests/` and co-located (e.g., `tour-engine.test.ts`).
+- Backend: `cd server && npm run test` runs Vitest with supertest. Tests in `server/tests/unit/` and `server/tests/integration/`. Uses mock auth via `createApp({ mockUser })`.
 - Current verification baseline: `npm run typecheck`, `npm run test`, `cd server && npm run test`.
 - Add regression tests when changing auth, role gating, cloning, or AI guidance logic.
 - Test API endpoints with both authorized and unauthorized users.
