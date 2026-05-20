@@ -62,6 +62,7 @@ erDiagram
         string id PK "CUID"
         string code
         string name
+        string section "regex validated"
         string term
         int year
         boolean isActive
@@ -73,14 +74,13 @@ erDiagram
         DateTime lastSyncedAt
         string department
         string aiInstructions
-        string professorId FK
         DateTime deletedAt "null = active"
     }
     ENROLLMENT {
         string id PK
         string courseId FK
         string userId FK
-        EnrollmentRole role "STUDENT | TA"
+        EnrollmentRole role "STUDENT | TA | INSTRUCTOR"
         boolean isActive
         string externalId "LMS enrollment ID"
         string externalSource "canvas | null"
@@ -151,7 +151,6 @@ erDiagram
     USER ||--o{ EXTERNAL_USER : "proxied as"
     USER ||--o{ API_KEY : "holds"
     USER ||--o{ USER_PROVIDER_SETTINGS : "configures"
-    USER ||--o{ COURSE : "teaches"
     USER ||--o{ ENROLLMENT : "in"
     USER ||--o{ QUESTION : "creates"
     USER ||--o{ AI_INTERACTION : "makes"
@@ -201,7 +200,7 @@ Full schemas are in each repo's `prisma/schema.prisma` or Sequelize models. Key 
 
 ### Users — three incompatible implementations
 
-Core and AI Tutor both use better-auth with CUID user IDs and the same four roles (`ADMIN | PROFESSOR | TA | STUDENT`). QM uses integer IDs, no roles, and no SSO. All three converge on Core for identity.
+Core and AI Tutor both use better-auth with CUID user IDs and the same four roles (`ADMIN | INSTRUCTOR | TA | STUDENT`). QM uses integer IDs, no roles, and no SSO. All three converge on Core for identity.
 
 ### Courses — two autonomous systems, one with no LMS link
 
@@ -249,13 +248,13 @@ Adding CWL is a better-auth SSO plugin config change only (`auth.ts`) — no Pri
 ```prisma
 enum UserRole {
   ADMIN
-  PROFESSOR
+  INSTRUCTOR
   TA
   STUDENT
-  DEPARTMENT_ADMIN  // [NEW]
+  UNIT_ADMIN  // [NEW]
 }
 
-enum EnrollmentRole { STUDENT  TA }       // [NEW]
+enum EnrollmentRole { STUDENT  TA  INSTRUCTOR }       // [NEW]
 enum QuestionType   { MCQ  SA  LA }       // [NEW]
 
 enum QuestionDifficulty {                 // [NEW]
@@ -283,40 +282,44 @@ enum BugReportStatus {                    // [NEW]
 }
 ```
 
-### `DEPARTMENT_ADMIN` role
+### `UNIT_ADMIN` role
 
-A `DEPARTMENT_ADMIN` can create and edit courses scoped to their department. Their privileges are limited to course management within their department. They have no access to system-level features: system prompts, bug report triage, AI model config, or any admin-only API. Only `ADMIN` users have those privileges.
+A `UNIT_ADMIN` can create and edit courses in any subject they are authorized for. Their privileges are limited to course management within those subjects. They have no access to system-level features: system prompts, bug report triage, AI model config, or any admin-only API. Only `ADMIN` users have those privileges.
 
-**Scoping mechanism:** A new `department String?` column is added to the `User` model. It is set by an `ADMIN` when the `DEPARTMENT_ADMIN` account is created or promoted. For all other roles (`PROFESSOR`, `TA`, `STUDENT`) this field is null and ignored. No separate `Department` model — authorization middleware checks `user.department === course.department`.
+**Scoping mechanism:** A new `authorizedUnits String[]` column is added to the `User` model. It is set by an `ADMIN` when the `UNIT_ADMIN` account is created or promoted, and may be updated at any time to expand or restrict scope. For all other roles (`INSTRUCTOR`, `TA`, `STUDENT`) this field is an empty array and is never checked. No separate model is needed — authorization middleware checks `user.authorizedUnits.includes(course.department)`.
 
-Authorization rules for `DEPARTMENT_ADMIN`:
-- May create a course only if `Course.department` matches `User.department`
-- May not set `Course.department` to any value other than their own `User.department`
-- May not modify courses in other departments, even if `Course.department` is null
+`authorizedUnits` is stored on `User` (not a separate table) because the scope is per-admin and not shared between admins. This means auth middleware can evaluate the check from `req.user.authorizedUnits` with no additional join.
 
-`department` is a plain `String?` on both `User` and `Course`.
+Valid subject values are defined by a Zod enum (`DepartmentSchema`) in a shared constants file (`apps/core/app/lib/departments.ts`). This is an application-layer enum — not a Postgres enum — so adding or renaming a subject requires only a code change and a data migration, with no DB schema migration.
 
-**Known limitation:** `department` is a free-form string with no normalization or registry. Authorization middleware does a case-sensitive equality check (`user.department === course.department`). An admin typo at account-creation time silently scopes a `DEPARTMENT_ADMIN` into a ghost department. Route handlers that write this field must enforce a canonical casing convention (e.g. always `toLowerCase()` on write) until a proper department registry is introduced.
+Authorization rules for `UNIT_ADMIN`:
+- May create or edit a course only if `course.department` is in `user.authorizedUnits`
+- May not set `course.department` to a value outside `user.authorizedUnits`
+- May not act on courses whose `course.department` is not in their array, even if that field is null
+- Must specify an instructor (`userId` of a user with role `INSTRUCTOR`) at course creation time; that user is enrolled with `EnrollmentRole.INSTRUCTOR`. The `UNIT_ADMIN` is never auto-enrolled into the course they create.
+
+**Known limitation:** if a subject code is renamed (e.g. `"COSC"` → `"CS"`), all `User.authorizedUnits` arrays and all `Course.department` values containing the old code must be updated in a data migration. Because values are controlled by `DepartmentSchema` (no free-form user entry), renames are infrequent and the affected rows are easily identified with an array-contains query.
 
 ### `courses` — new columns
 
 | Column | Type | Notes |
 |---|---|---|
+| `section` | `String` | identifies the section within a course offering (e.g. `"001"`, `"L2A"`); regex-validated on write |
 | `isPublished` | `Boolean @default(false)` | gates student visibility |
 | `startDate` / `endDate` | `DateTime?` | optional; sourced from LMS or set manually |
 | `externalId` | `String?` | LMS course ID |
 | `externalSource` | `String?` | `"canvas"` or null (null = manually created) |
 | `lastSyncedAt` | `DateTime?` | null = manual or never synced |
-| `department` | `String?` | used for DEPARTMENT_ADMIN scoping |
+| `department` | `String?` | used for UNIT_ADMIN scoping |
 | `deletedAt` | `DateTime?` | null = active; soft-delete for cross-DB integrity (see [Cross-DB deletion](#cross-db-deletion--soft-delete-strategy)) |
 
 Index: `@@index([externalSource, externalId])` for LMS sync lookups.
 
-**Multi-term uniqueness:** the existing `@@unique([code])` constraint on `courses` is relaxed to `@@unique([code, term, year])`. This allows the same course code (e.g. `"CPSC 110"`) to exist in multiple terms without conflict.
+**Multi-section uniqueness:** the existing `@@unique([code])` constraint on `courses` is relaxed to `@@unique([code, startDate, section])`. This allows the same course code (e.g. `"CPSC 110"`) to have multiple sections starting on the same date, and to recur across terms, without conflict.
 
-**`term` normalization:** the `@@unique([code, term, year])` constraint is case-sensitive. Route validation must normalize `term` to a canonical casing (e.g. `"Fall"`, `"Winter"`, `"Summer"`) on write, otherwise the same real-world term can appear twice under different capitalizations.
+**`section` validation:** route handlers must validate `section` against a regex on write (e.g. `^[A-Z0-9]{1,10}$` — exact pattern TBD). The `@@unique([code, startDate, section])` constraint is case-sensitive; enforcing an uppercase convention at the validation layer prevents duplicate sections from appearing under different casings.
 
-**Single instructor:** `Course.professorId` remains a single FK — one primary instructor per course. Co-instructors are not modelled for the pilot. An assistant instructor role on `Enrollment` may be added post-pilot if needed.
+**Instructors via enrollment:** there is no `instructorId` FK on `Course`. Instructors are modelled entirely through `Enrollment` with `role = INSTRUCTOR`, allowing multiple instructors per course. At creation time at least one `INSTRUCTOR` enrollment must exist — either the creating user enrolls themselves, or a `UNIT_ADMIN` specifies an instructor to enroll on their behalf.
 
 **Source-of-truth policy:** when `externalSource` is set, the LMS is authoritative for `code`, `name`, `startDate`, `endDate`. Core-owned fields (`aiInstructions`, `isPublished`) are never overwritten by a sync.
 
@@ -394,7 +397,7 @@ model QuestionSecondaryTopic {
 
 AI Tutor's **server** reads via `GET /api/questions?courseId=:id&topicId=:topicId&testable=true` and receives the full question record including `choices` and `answer`; this is a server-to-server call authenticated with `EDUAI_API_KEY` — students never call this endpoint directly. Neither extension calls the other. When a course is deleted, all its questions cascade-delete.
 
-**`testable` provenance:** the flag is set by the professor from within QM. Only non-draft variants are eligible — when a professor approves a QM Variant (`isDraft = false`) they may also toggle `testable` on the corresponding Core Question via `PATCH /api/questions/:id`. Core never auto-sets `testable`; it is always an explicit instructor decision.
+**`testable` provenance:** the flag is set by the instructor from within QM. Only non-draft variants are eligible — when an instructor approves a QM Variant (`isDraft = false`) they may also toggle `testable` on the corresponding Core Question via `PATCH /api/questions/:id`. Core never auto-sets `testable`; it is always an explicit instructor decision.
 
 ### `Document` — dropped
 
@@ -521,7 +524,7 @@ coreOfferingId String? @unique  // Core Course.id; null = not yet linked or link
 
 ### Instructor handling
 
-Core supports one primary instructor per course (`Course.professorId`, single FK). `CourseInstructor` is dropped — LEAD/ASSISTANT distinctions are not modelled for the pilot.
+Instructors are modelled via `EnrollmentRole.INSTRUCTOR` — multiple instructors per course are supported. `CourseInstructor` is dropped; the enrollment table covers this entirely.
 
 ### Unchanged
 
@@ -586,16 +589,16 @@ No existing production data. No data migration scripts needed — reference colu
 
 Core continues to run standalone throughout this phase. Extensions are untouched.
 
-- Add `department String?` to `User` model (DEPARTMENT_ADMIN scoping)
-- Add new `courses` columns: `isPublished`, `startDate`, `endDate`, `externalId`, `externalSource`, `lastSyncedAt`, `department`, `deletedAt`
-- Relax `@@unique([code])` on `courses` to `@@unique([code, term, year])`
+- Add `authorizedUnits String[]` to `User` model (UNIT_ADMIN scoping); default `[]`
+- Add new `courses` columns: `section`, `isPublished`, `startDate`, `endDate`, `externalId`, `externalSource`, `lastSyncedAt`, `department`, `deletedAt`
+- Relax `@@unique([code])` on `courses` to `@@unique([code, startDate, section])`
 - Create `enrollments` table (replacing `course_enrollments` and `course_tas`); update all Core route handlers that currently reference `CourseEnrollment` / `CourseTA`
 - Create `questions` table (with `topicId`, `choices`, `answer`, `difficulty`, `reasoningLevel`, `deletedAt`)
 - Create `question_secondary_topics` join table (`@@id([questionId, topicId])`)
 - Add `externalId` / `externalSource` to `course_materials`; drop the unused `documents` table
 - Create `bug_reports` table (with `isAnonymous`)
 - Add `deletedAt DateTime?` to `course_topics`
-- Update `UserRole` enum (add `DEPARTMENT_ADMIN`)
+- Update `UserRole` enum (add `UNIT_ADMIN`)
 - Add `QuestionDifficulty`, `ReasoningLevel`, `BugReportStatus` enums
 - Audit all route handlers that query `ai_interactions` with a `courseId` filter and add an explicit `WHERE courses.deletedAt IS NULL` join (records are retained; course-scoped views must filter)
 - Audit `POST /api/questions` and `PATCH /api/questions/:id` handlers to reject a `topicId` or secondary topic ID whose `deletedAt IS NOT NULL` (422 — topic is deleted)
