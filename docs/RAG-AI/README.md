@@ -21,7 +21,7 @@ AI models are hosted on cmps01.ok.ubc.ca. EduAI (hosted on my.eduai.ok.ubc.ca) a
 
 ---
 
-## Root (`docs/implementations/RAG-AI/`)
+## Root (`docs/RAG-AI/`)
 
 | File | Brief description |
 | ---- | ----------------- |
@@ -54,16 +54,17 @@ AI models are hosted on cmps01.ok.ubc.ca. EduAI (hosted on my.eduai.ok.ubc.ca) a
 
 | Topic | Location |
 | ----- | -------- |
-| Unified DB schema | [`../schema-design.md`](../schema-design.md) |
-| Platform architecture | [`../../platform-centralization-architecture-plan.md`](../../platform-centralization-architecture-plan.md) |
-| Core app code | [`apps/core/app/routes/api/chat.ts`](../../../apps/core/app/routes/api/chat.ts), [`apps/core/app/lib/ai/embedding.ts`](../../../apps/core/app/lib/ai/embedding.ts) |
+| Unified DB schema | [`../implementations/schema-design.md`](../implementations/schema-design.md) |
+| Platform architecture | [`../platform-centralization-architecture-plan.md`](../platform-centralization-architecture-plan.md) |
+| EduAI architecture guide | [`../ARCHITECTURE.md`](../ARCHITECTURE.md) |
+| Core app code | [`apps/core/app/routes/api/chat.ts`](../../apps/core/app/routes/api/chat.ts), [`apps/core/app/lib/ai/embedding.ts`](../../apps/core/app/lib/ai/embedding.ts) |
 
 ---
 
 ## Folder layout
 
 ```text
-docs/implementations/RAG-AI/
+docs/RAG-AI/
 ├── README.md                          ← this index
 ├── chat-rag-pipeline.md
 ├── how-to-use-dev-server.md
