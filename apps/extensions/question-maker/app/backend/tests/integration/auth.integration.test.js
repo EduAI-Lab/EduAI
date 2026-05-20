@@ -17,8 +17,8 @@ describeDb('Auth API (integration)', () => {
     if (!hasTestDb) {
       return;
     }
-    const { default: appMod } = await import('../src/app.js');
-    const testDb = await import('./helpers/testDb.js');
+    const { default: appMod } = await import('../../src/app.js');
+    const testDb = await import('../helpers/testDb.js');
     app = appMod;
     connectTestDatabase = testDb.connectTestDatabase;
     truncateTestDatabase = testDb.truncateTestDatabase;

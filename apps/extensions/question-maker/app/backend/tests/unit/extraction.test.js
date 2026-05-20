@@ -7,7 +7,7 @@ import {
   chunkByQuestionBlocks,
   extractedQuestionDedupeKey,
   deduplicateExtractedQuestions,
-} from '../src/services/extractionUtils.js';
+} from '../../src/services/extractionUtils.js';
 
 describe('splitIntoQuestionBlocks', () => {
   it('returns single block when no question boundaries found', () => {

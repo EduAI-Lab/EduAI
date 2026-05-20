@@ -1,7 +1,7 @@
 /**
  * Unit tests for AES-256-GCM helpers used for Canvas API keys.
  */
-import { encrypt, decrypt } from '../src/utils/encryption.js';
+import { encrypt, decrypt } from '../../src/utils/encryption.js';
 
 describe('encrypt / decrypt', () => {
   it('round-trips a secret string', () => {
