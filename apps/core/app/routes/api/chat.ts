@@ -22,6 +22,8 @@ const HYBRID_RAG_MAX_CONTEXT_CHARS = 14_000;
 
 /** Max characters per chunk returned to the model from `getInformation` (tool path). */
 const TOOL_RAG_MAX_CHARS_PER_CHUNK = 6000;
+/** Minimum remaining chars before truncating the last hybrid RAG excerpt. */
+const HYBRID_RAG_MIN_TRUNCATE_CHARS = 120;
 
 const TOOL_MAX_STEPS = Math.min(
   32,
@@ -56,7 +58,7 @@ function buildCappedRagContextText(hits: HybridRagHit[], maxChunks: number, maxC
     }
 
     const room = maxChars - total - overhead - header.length;
-    if (room > 120) {
+    if (room > HYBRID_RAG_MIN_TRUNCATE_CHARS) {
       parts.push(`${header}${body.slice(0, room)}…`);
     }
     break;
@@ -634,7 +636,7 @@ export async function action({ request }: ActionFunctionArgs) {
       const messageContentLower = userQuestion.toLowerCase();
 
       // Check if hybrid RAG should always be used with course
-      // regex method might not be the best method to determine if RAG is needed. Consider using a small LLM or alternatives #
+      // regex method might not be the best method to determine if RAG is needed. Consider using a small LLM or alternatives.
       const hybridRagAlwaysWithCourse = process.env.CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE === "1";
       const isRAGQuery =
         Boolean(effectiveCourseId) &&
