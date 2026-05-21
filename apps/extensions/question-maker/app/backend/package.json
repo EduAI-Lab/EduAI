@@ -14,10 +14,12 @@
     "test:coverage": "vitest run --coverage",
     "lint": "eslint . --max-warnings=0",
     "populate": "node scripts/populateDatabase.js",
+    "seed": "node scripts/seedUnified.js",
     "seed:production": "node scripts/seedProductionQuestions.js",
     "test:ocr": "node scripts/testOcrExtraction.js"
   },
   "dependencies": {
+    "@paralleldrive/cuid2": "^2.2.2",
     "axios": "^1.6.0",
     "bcryptjs": "^2.4.3",
     "compression": "^1.7.4",
