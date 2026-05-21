@@ -10,6 +10,7 @@ import tsconfigPaths from "vite-tsconfig-paths";
 // Without this, /@fs/… requests into root node_modules hit "outside of Vite serving allow list".
 const coreDir = path.dirname(fileURLToPath(import.meta.url));
 const monorepoRoot = path.resolve(coreDir, "../..");
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, coreDir, "");
   const hmrPublicHost =
@@ -24,10 +25,10 @@ export default defineConfig(({ mode }) => {
     resolve: {
       // Pin one copy for core (1.2.8 via root overrides). Do not alias the package root — that
       // breaks subpath exports such as better-auth/client/plugins.
-      dedupe: ["better-auth"],
       alias: {
         "@tabler/icons-react": "@tabler/icons-react/dist/esm/icons/index.mjs",
       },
+      dedupe: ["better-auth"],
     },
     server: {
       port: 3000,
