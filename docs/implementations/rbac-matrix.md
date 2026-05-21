@@ -38,7 +38,7 @@
 | Role | Description |
 |---|---|
 | `ADMIN` | Full platform control. No scope restrictions. |
-| `DEPARTMENT_ADMIN` | Administrative control over all courses within their assigned department. Scoped by `User.department === Course.department`. No access to system-level config. |
+| `UNIT_ADMIN` | Administrative control over all courses within their authorized units (subject codes such as `COSC`, `MATH`, `CHEM`). Scoped by `course.department` being in `user.authorizedUnits`. No access to system-level config. Only an `ADMIN` can create a `UNIT_ADMIN` or modify their `authorizedUnits`. |
 | `PROFESSOR` | Owns and manages their own courses (linked via `Course.professorId`). No access outside their courses. |
 | `STUDENT` | Base platform access tier. Covers all non-instructor users including grad TAs. Course-level role is determined entirely by `EnrollmentRole`. |
 
@@ -60,7 +60,7 @@ For any course-scoped operation, a user is authorized if **any** of the followin
 | Check | Condition |
 |---|---|
 | Global admin | `user.role === 'ADMIN'` |
-| Department admin | `user.role === 'DEPARTMENT_ADMIN' && user.department === course.department` |
+| Unit admin | `user.role === 'UNIT_ADMIN' && course.department !== null && user.authorizedUnits.includes(course.department)` |
 | Course professor | `user.role === 'PROFESSOR' && course.professorId === user.id` |
 | Enrolled TA | enrollment row: `userId === user.id && courseId === course.id && role === 'TA'` |
 | Enrolled student | enrollment row: `userId === user.id && courseId === course.id && role === 'STUDENT'` |
@@ -78,7 +78,7 @@ Calls made between extensions and Core using `EDUAI_API_KEY` (e.g. AI Tutor read
 | Symbol | Meaning |
 |---|---|
 | `✓` | Permitted, no scope restriction (global) |
-| `D` | Permitted within own department only (`User.department === Course.department`) |
+| `D` | Permitted within authorized units only (`course.department` in `user.authorizedUnits`) |
 | `C` | Permitted within own courses only (professor: `Course.professorId`; TA/student: via enrollment) |
 | `O` | Own resources only (rows where `createdBy` or `userId === user.id`) |
 | `—` | Not permitted |
@@ -94,9 +94,9 @@ Every route handler that touches a course-scoped resource should resolve access 
 **Pseudo-code:**
 
 ```ts
-async function resolveCourseAccess(user, course): 'admin' | 'department' | 'professor' | 'ta' | 'student' | null {
+async function resolveCourseAccess(user, course): 'admin' | 'unit' | 'professor' | 'ta' | 'student' | null {
   if (user.role === 'ADMIN') return 'admin'
-  if (user.role === 'DEPARTMENT_ADMIN' && user.department === course.department) return 'department'
+  if (user.role === 'UNIT_ADMIN' && course.department !== null && user.authorizedUnits.includes(course.department)) return 'unit'
   if (user.role === 'PROFESSOR' && course.professorId === user.id) return 'professor'
   const enrollment = await db.enrollment.findUnique({
     where: { courseId_userId: { courseId: course.id, userId: user.id } }
@@ -115,13 +115,13 @@ if (!access) throw forbidden()
 if (access === 'student' && !course.isPublished) throw forbidden()
 ```
 
-`DEPARTMENT_ADMIN` is treated as equivalent to `professor` for all course content operations — they manage courses in their department as if they were the course owner. The distinction only matters for course creation and professor assignment, where explicit `department` checks apply.
+`UNIT_ADMIN` is treated as equivalent to `professor` for all course content operations — they manage courses in their authorized units as if they were the course owner. The distinction only matters for course creation and professor assignment, where explicit unit authorization checks apply.
 
 ---
 
 ## 4. User & Identity Management
 
-| Operation | ADMIN | DEPT_ADMIN | PROFESSOR | TA | STUDENT |
+| Operation | ADMIN | UNIT_ADMIN | PROFESSOR | TA | STUDENT |
 |---|---|---|---|---|---|
 | View own profile | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Edit own profile | ✓ | ✓ | ✓ | ✓ | ✓ |
@@ -130,21 +130,21 @@ if (access === 'student' && !course.isPublished) throw forbidden()
 | Create user account | ✓ | — | — | — | — |
 | Edit any user's profile | ✓ | — | — | — | — |
 | Assign / change `UserRole` | ✓ | — | — | — | — |
-| Assign `department` to a `DEPARTMENT_ADMIN` | ✓ | — | — | — | — |
+| Assign `authorizedUnits` to a `UNIT_ADMIN` | ✓ | — | — | — | — |
 | Deactivate / reactivate user | ✓ | — | — | — | — |
 
 **Notes:**
 - An `ADMIN` cannot deactivate or change their own role (guard against self-lockout).
-- `DEPARTMENT_ADMIN` cannot promote a user within their department — all role changes go through `ADMIN`.
+- `UNIT_ADMIN` cannot promote a user within their units — all role changes go through `ADMIN`.
 
 ---
 
 ## 5. Course Management
 
-| Operation | ADMIN | DEPT_ADMIN | PROFESSOR | TA | STUDENT |
+| Operation | ADMIN | UNIT_ADMIN | PROFESSOR | TA | STUDENT |
 |---|---|---|---|---|---|
 | Create course | ✓ | D | — | — | — |
-| List courses | ✓ | D (all in dept) | C (own) | C (enrolled) | C (enrolled, published only) |
+| List courses | ✓ | D (all in unit) | C (own) | C (enrolled) | C (enrolled, published only) |
 | View course details | ✓ | D | C | C | C (published only) |
 | Edit course (name, code, term, year) | ✓ | D | C | — | — |
 | Set AI instructions | ✓ | D | C | — | — |
@@ -153,9 +153,9 @@ if (access === 'student' && !course.isPublished) throw forbidden()
 | Soft-delete course | ✓ | D | C | — | — |
 
 **Course creation flow:**
-- Only `ADMIN` and `DEPARTMENT_ADMIN` can create courses. Professors cannot create their own course shells.
+- Only `ADMIN` and `UNIT_ADMIN` can create courses. Professors cannot create their own course shells.
 - `ADMIN` creates → sets any user as `Course.professorId`.
-- `DEPARTMENT_ADMIN` creates → must assign a `PROFESSOR` via `Course.professorId`. `Course.department` is automatically set to `User.department` on create and cannot be changed to a different department by the `DEPARTMENT_ADMIN`.
+- `UNIT_ADMIN` creates → must assign a `PROFESSOR` via `Course.professorId`. `Course.department` must be one of the `UNIT_ADMIN`'s `authorizedUnits` and cannot be changed to a unit outside their authorized units.
 
 **`isPublished` gate:** Students can only access a course when `Course.isPublished = true`. TAs and professors see the course regardless of publish state.
 
@@ -163,7 +163,7 @@ if (access === 'student' && !course.isPublished) throw forbidden()
 
 ## 6. Enrollment Management
 
-| Operation | ADMIN | DEPT_ADMIN | PROFESSOR | TA | STUDENT |
+| Operation | ADMIN | UNIT_ADMIN | PROFESSOR | TA | STUDENT |
 |---|---|---|---|---|---|
 | View enrolled users in a course | ✓ | D | C | C | — |
 | Enroll a student in a course | ✓ | D | C | — | — |
@@ -181,7 +181,7 @@ if (access === 'student' && !course.isPublished) throw forbidden()
 
 ## 7. Course Materials
 
-| Operation | ADMIN | DEPT_ADMIN | PROFESSOR | TA | STUDENT |
+| Operation | ADMIN | UNIT_ADMIN | PROFESSOR | TA | STUDENT |
 |---|---|---|---|---|---|
 | Upload material | ✓ | D | C | C | — |
 | View / download material | ✓ | D | C | C | C (published course, active enrollment) |
@@ -195,7 +195,7 @@ if (access === 'student' && !course.isPublished) throw forbidden()
 
 ## 8. Course Topics
 
-| Operation | ADMIN | DEPT_ADMIN | PROFESSOR | TA | STUDENT |
+| Operation | ADMIN | UNIT_ADMIN | PROFESSOR | TA | STUDENT |
 |---|---|---|---|---|---|
 | View topics | ✓ | D | C | C | C (published course, active enrollment) |
 | Create topic | ✓ | D | C | — | — |
@@ -212,7 +212,7 @@ if (access === 'student' && !course.isPublished) throw forbidden()
 
 Questions are authored in Question Maker and stored canonically in Core. The matrix below covers both the Core API (`POST /api/questions`, `PATCH /api/questions/:id`) and the QM authoring UI. QM-specific authoring operations (`question_metadata`, `Variant`) are covered in [Section 16](#16-question-maker--question-authoring).
 
-| Operation | ADMIN | DEPT_ADMIN | PROFESSOR | TA | STUDENT |
+| Operation | ADMIN | UNIT_ADMIN | PROFESSOR | TA | STUDENT |
 |---|---|---|---|---|---|
 | Create question (submit as draft via QM) | ✓ | D | C | C | — |
 | View question content (no answer) | ✓ | D | C | C | — |
@@ -231,7 +231,7 @@ Questions are authored in Question Maker and stored canonically in Core. The mat
 
 ## 10. AI Chat & Interactions
 
-| Operation | ADMIN | DEPT_ADMIN | PROFESSOR | TA | STUDENT |
+| Operation | ADMIN | UNIT_ADMIN | PROFESSOR | TA | STUDENT |
 |---|---|---|---|---|---|
 | Start a chat session | ✓ | ✓ | C | C | C (published course, active enrollment) |
 | View own chat history | ✓ | ✓ | ✓ | ✓ | ✓ |
@@ -240,14 +240,14 @@ Questions are authored in Question Maker and stored canonically in Core. The mat
 | View chat metrics for a course (count, frequency) | ✓ | D | C | — | — |
 
 **Notes:**
-- Only `ADMIN` can read other users' chat content. Professors and department admins see aggregate metrics only (e.g. number of sessions, activity frequency) — not message content.
+- Only `ADMIN` can read other users' chat content. Professors and unit admins see aggregate metrics only (e.g. number of sessions, activity frequency) — not message content.
 - A student whose enrollment becomes inactive retains access to their own past chat history (`O`) but cannot start new sessions in that course.
 
 ---
 
 ## 11. Bug Reports
 
-| Operation | ADMIN | DEPT_ADMIN | PROFESSOR | TA | STUDENT |
+| Operation | ADMIN | UNIT_ADMIN | PROFESSOR | TA | STUDENT |
 |---|---|---|---|---|---|
 | Submit bug report | ✓ | ✓ | ✓ | ✓ | ✓ |
 | View own submitted reports | ✓ | ✓ | ✓ | ✓ | ✓ |
@@ -263,7 +263,7 @@ Questions are authored in Question Maker and stored canonically in Core. The mat
 
 ## 12. API Keys
 
-| Operation | ADMIN | DEPT_ADMIN | PROFESSOR | TA | STUDENT |
+| Operation | ADMIN | UNIT_ADMIN | PROFESSOR | TA | STUDENT |
 |---|---|---|---|---|---|
 | Create own API key | ✓ | ✓ | ✓ | ✓ | ✓ |
 | View own API keys | ✓ | ✓ | ✓ | ✓ | ✓ |
@@ -275,7 +275,7 @@ Questions are authored in Question Maker and stored canonically in Core. The mat
 
 ## 13. AI Providers & System Config
 
-| Operation | ADMIN | DEPT_ADMIN | PROFESSOR | TA | STUDENT |
+| Operation | ADMIN | UNIT_ADMIN | PROFESSOR | TA | STUDENT |
 |---|---|---|---|---|---|
 | Configure own provider settings (`UserProviderSettings`) | ✓ | ✓ | ✓ | ✓ | ✓ |
 | View available AI providers and models | ✓ | — | — | — | — |
@@ -296,7 +296,7 @@ AI Tutor's content is structured as `CourseOffering → Module → Lesson → Ac
 
 ### Module
 
-| Operation | ADMIN | DEPT_ADMIN | PROFESSOR | TA | STUDENT |
+| Operation | ADMIN | UNIT_ADMIN | PROFESSOR | TA | STUDENT |
 |---|---|---|---|---|---|
 | Create module | ✓ | D | C | — | — |
 | View module | ✓ | D | C | C | C (course published, module published) |
@@ -306,7 +306,7 @@ AI Tutor's content is structured as `CourseOffering → Module → Lesson → Ac
 
 ### Lesson
 
-| Operation | ADMIN | DEPT_ADMIN | PROFESSOR | TA | STUDENT |
+| Operation | ADMIN | UNIT_ADMIN | PROFESSOR | TA | STUDENT |
 |---|---|---|---|---|---|
 | Create lesson | ✓ | D | C | — | — |
 | View lesson | ✓ | D | C | C | C (course + parent module published) |
@@ -316,7 +316,7 @@ AI Tutor's content is structured as `CourseOffering → Module → Lesson → Ac
 
 ### Activity
 
-| Operation | ADMIN | DEPT_ADMIN | PROFESSOR | TA | STUDENT |
+| Operation | ADMIN | UNIT_ADMIN | PROFESSOR | TA | STUDENT |
 |---|---|---|---|---|---|
 | Create activity | ✓ | D | C | — | — |
 | View activity | ✓ | D | C | C | C (course + module + lesson all published) |
@@ -334,7 +334,7 @@ AI Tutor's content is structured as `CourseOffering → Module → Lesson → Ac
 
 ### Submission
 
-| Operation | ADMIN | DEPT_ADMIN | PROFESSOR | TA | STUDENT |
+| Operation | ADMIN | UNIT_ADMIN | PROFESSOR | TA | STUDENT |
 |---|---|---|---|---|---|
 | Create submission (attempt an activity) | — | — | — | — | C (active enrollment, activity published) |
 | View own submissions | ✓ | ✓ | ✓ | ✓ | O |
@@ -342,21 +342,21 @@ AI Tutor's content is structured as `CourseOffering → Module → Lesson → Ac
 
 ### ActivityFeedback (AI-generated feedback on a submission)
 
-| Operation | ADMIN | DEPT_ADMIN | PROFESSOR | TA | STUDENT |
+| Operation | ADMIN | UNIT_ADMIN | PROFESSOR | TA | STUDENT |
 |---|---|---|---|---|---|
 | View own feedback | ✓ | ✓ | ✓ | ✓ | O |
 | View all feedback in a course | ✓ | D | C | C | — |
 
 ### ActivityStudentMetric (per-student performance data)
 
-| Operation | ADMIN | DEPT_ADMIN | PROFESSOR | TA | STUDENT |
+| Operation | ADMIN | UNIT_ADMIN | PROFESSOR | TA | STUDENT |
 |---|---|---|---|---|---|
 | View own metrics | ✓ | ✓ | ✓ | ✓ | O |
 | View all student metrics in a course | ✓ | D | C | — | — |
 
 ### ActivityAnalytics (aggregate course-level analytics)
 
-| Operation | ADMIN | DEPT_ADMIN | PROFESSOR | TA | STUDENT |
+| Operation | ADMIN | UNIT_ADMIN | PROFESSOR | TA | STUDENT |
 |---|---|---|---|---|---|
 | View aggregate analytics for a course | ✓ | D | C | — | — |
 
@@ -372,7 +372,7 @@ QM's authoring model: `question_metadata` is an internal container that groups r
 
 ### question_metadata (authoring container)
 
-| Operation | ADMIN | DEPT_ADMIN | PROFESSOR | TA | STUDENT |
+| Operation | ADMIN | UNIT_ADMIN | PROFESSOR | TA | STUDENT |
 |---|---|---|---|---|---|
 | Create question_metadata shell | ✓ | D | C | C | — |
 | View question_metadata | ✓ | D | C | C | — |
@@ -381,7 +381,7 @@ QM's authoring model: `question_metadata` is an internal container that groups r
 
 ### Variant
 
-| Operation | ADMIN | DEPT_ADMIN | PROFESSOR | TA | STUDENT |
+| Operation | ADMIN | UNIT_ADMIN | PROFESSOR | TA | STUDENT |
 |---|---|---|---|---|---|
 | Create variant (draft) | ✓ | D | C | C | — |
 | View variant | ✓ | D | C | C | — |
@@ -401,7 +401,7 @@ QM's authoring model: `question_metadata` is an internal container that groups r
 
 An `Assessment` assembles a set of approved variants into a deliverable (A/B/C variants for exam security). `assessment_sections` and `section_variants` are the structural joins within an assessment.
 
-| Operation | ADMIN | DEPT_ADMIN | PROFESSOR | TA | STUDENT |
+| Operation | ADMIN | UNIT_ADMIN | PROFESSOR | TA | STUDENT |
 |---|---|---|---|---|---|
 | Create assessment | ✓ | D | C | — | — |
 | View assessment | ✓ | D | C | C | — |
@@ -419,7 +419,7 @@ An `Assessment` assembles a set of approved variants into a deliverable (A/B/C v
 
 Canvas credentials (`canvas_integrations`) are per-user and store encrypted Canvas API tokens. `canvas_course_mappings` links a QM course to a Canvas course for export targeting.
 
-| Operation | ADMIN | DEPT_ADMIN | PROFESSOR | TA | STUDENT |
+| Operation | ADMIN | UNIT_ADMIN | PROFESSOR | TA | STUDENT |
 |---|---|---|---|---|---|
 | Create / update own Canvas integration | ✓ | O | O | — | — |
 | View own Canvas integration | ✓ | O | O | — | — |
@@ -430,8 +430,8 @@ Canvas credentials (`canvas_integrations`) are per-user and store encrypted Canv
 | Delete course mapping | ✓ | D | C | — | — |
 
 **Notes:**
-- Canvas credentials are personal (tied to a specific Canvas user account). Only professors and department admins are expected to hold Canvas credentials.
-- `DEPARTMENT_ADMIN` manages their own Canvas account connection (`O`) but has department-scoped access to course mappings within their department (`D`).
+- Canvas credentials are personal (tied to a specific Canvas user account). Only professors and unit admins are expected to hold Canvas credentials.
+- `UNIT_ADMIN` manages their own Canvas account connection (`O`) but has unit-scoped access to course mappings within their authorized units (`D`).
 
 ---
 
@@ -446,13 +446,13 @@ A `STUDENT` enrollment only grants access when `Course.isPublished = true` AND `
 Any user can always read and delete their own resources (own chat sessions, own submitted bug reports, own API keys, own provider settings) regardless of course enrollment or role, as long as the resource belongs to them (`userId` or `createdBy === user.id`).
 
 **No cross-user chat visibility**  
-Only `ADMIN` can read another user's chat messages. Professors and department admins receive aggregate metrics (session count, frequency) but never message content. This is a deliberate privacy decision — chat sessions are treated as private to the user regardless of course role.
+Only `ADMIN` can read another user's chat messages. Professors and unit admins receive aggregate metrics (session count, frequency) but never message content. This is a deliberate privacy decision — chat sessions are treated as private to the user regardless of course role.
 
-**`DEPARTMENT_ADMIN` department lock**  
-A `DEPARTMENT_ADMIN` cannot act on a course where `Course.department !== User.department`, even if `Course.department` is null. A null department is not a wildcard — it means the course has no department affiliation and is only manageable by `ADMIN` or the owning professor. Authorization middleware must treat `user.department === null` as a match failure, never a pass.
+**`UNIT_ADMIN` unit lock**  
+A `UNIT_ADMIN` cannot act on a course where `course.department` is not in `user.authorizedUnits`, including when `course.department` is null. A null department is not a wildcard — it means the course has no unit affiliation and is only manageable by `ADMIN` or the owning professor. Authorization middleware must treat a null `course.department` as a match failure for `UNIT_ADMIN`, never a pass.
 
-**Department string case sensitivity**  
-`User.department` and `Course.department` are free-form strings compared with case-sensitive equality. Route handlers that write either field must normalize to a canonical casing (e.g. always `toLowerCase()`) on write. A typo or casing mismatch at account-creation time silently scopes a `DEPARTMENT_ADMIN` into a ghost department with no visible courses.
+**Unit subject code casing**  
+`Course.department` values are subject codes controlled by `DepartmentSchema` (an application-layer enum in `apps/core/app/lib/departments.ts`). Route handlers that write `Course.department` must validate the value against this enum on write. Because valid codes are enumerated, a casing mismatch is caught at validation time rather than silently scoping a `UNIT_ADMIN` into a ghost unit. `user.authorizedUnits` stores the same canonical codes set by an `ADMIN`.
 
 **TA own-resource restriction**  
 In operations marked `O` for TA (delete material, edit/delete question, edit/delete variant, edit/delete question_metadata), "own" means `resource.createdBy === user.id` AND the resource belongs to a course where the user holds `EnrollmentRole=TA`. A TA cannot edit a resource from a course where they are only enrolled as a `STUDENT`.
@@ -478,7 +478,7 @@ This section documents what is **actually enforced in code today**, as audited a
 
 The role enum in the schema is `ADMIN | PROFESSOR | TA | STUDENT`. Default on registration: `STUDENT`.
 
-**Critical gap:** `DEPARTMENT_ADMIN` does not exist anywhere in the codebase. Every place the target matrix assigns `D` (department-scoped) behaviour is entirely unimplemented. There is no `User.department` field, no department-scoped middleware, and no `DEPARTMENT_ADMIN` role check anywhere across all three apps.
+**Critical gap:** `UNIT_ADMIN` does not exist anywhere in the codebase. Every place the target matrix assigns `D` (unit-scoped) behaviour is entirely unimplemented. There is no `User.authorizedUnits` field, no unit-scoped middleware, and no `UNIT_ADMIN` role check anywhere across all three apps.
 
 **`EnrollmentRole` (`TA | STUDENT`):** Not implemented. Core has a `CourseEnrollment` table (`course_enrollments`) but it covers enrolled students only and has no `role` field — TAs are tracked via a separate `CourseTA` table (`course_tas`). Neither table constitutes the unified `EnrollmentRole` concept from the target design. The `TA` value exists in the `UserRole` enum as a platform-level role, not a course-level one — the opposite of the target design.
 
@@ -486,18 +486,18 @@ The role enum in the schema is `ADMIN | PROFESSOR | TA | STUDENT`. Default on re
 
 ### 20.2 Core — User & Identity Management
 
-| Operation | Target: ADMIN | Target: Others | Current | Notes |
-|---|---|---|---|---|
-| List all users | ✓ | — | ✓ ADMIN only | `GET /api/users` — inline `role !== 'ADMIN'` check |
-| View any user profile | ✓ | — | ✓ ADMIN only | Same route handler |
-| Create user | ✓ | — | ✓ ADMIN only | `POST /api/users` |
-| Edit any user | ✓ | — | ✓ ADMIN only | `PATCH /api/users` |
-| Assign / change `UserRole` | ✓ | — | ✓ ADMIN only | Handled within the PATCH handler |
-| Deactivate / reactivate | ✓ (not self) | — | ✓ ADMIN only; self-lock guard present | Guard explicitly rejects self-deactivation (`isActive === false` on own ID). No guard prevents an admin from changing their own role — self-role-change is possible. |
-| Hard-delete user | Not in target | — | **Present** | `DELETE /api/users/:id` permanently deletes the user row (not a soft-delete). Not covered by the target matrix; a hard-delete that bypasses any deactivation workflow. |
-| View own profile | ✓ | ✓ all | Partial — no dedicated own-profile GET route for non-admins | Authenticated users get session but no separate `/api/me` in Core |
-| Edit own profile | ✓ | ✓ all | Not implemented | No self-edit endpoint for non-admin users in Core |
-| Assign `department` | ✓ | — | **Not implemented** | `DEPARTMENT_ADMIN` role and `User.department` field do not exist |
+| Operation | Target | Current | Notes |
+|---|---|---|---|
+| List all users | ADMIN only | ✓ ADMIN only | `GET /api/users` — inline `role !== 'ADMIN'` check |
+| View any user profile | ADMIN only | ✓ ADMIN only | Same route handler |
+| Create user | ADMIN only | ✓ ADMIN only | `POST /api/users` |
+| Edit any user | ADMIN only | ✓ ADMIN only | `PATCH /api/users` |
+| Assign / change `UserRole` | ADMIN only | ✓ ADMIN only | Handled within the PATCH handler |
+| Deactivate / reactivate | ADMIN only (not self) | ✓ ADMIN only; self-lock guard present | Guard explicitly rejects self-deactivation (`isActive === false` on own ID). No guard prevents an admin from changing their own role — self-role-change is possible. |
+| Hard-delete user | — (not in target) | **Present** | `DELETE /api/users/:id` permanently deletes the user row (not a soft-delete). Not covered by the target matrix; a hard-delete that bypasses any deactivation workflow. |
+| View own profile | All roles | Partial — no dedicated own-profile GET route for non-admins | Authenticated users get session but no separate `/api/me` in Core |
+| Edit own profile | All roles | Not implemented | No self-edit endpoint for non-admin users in Core |
+| Assign `authorizedUnits` to a `UNIT_ADMIN` | ADMIN only | **Not implemented** | `UNIT_ADMIN` role and `User.authorizedUnits` field do not exist |
 
 ---
 
@@ -507,14 +507,14 @@ Enforcement lives in `app/lib/courses/server.ts` (action handler) and `app/route
 
 | Operation | Target | Current | Notes |
 |---|---|---|---|
-| Create course | ADMIN, DEPT_ADMIN(D) | **ADMIN only** | `DEPARTMENT_ADMIN` role not implemented; professors cannot create. **Bug:** `professorId` is hardcoded to the creating admin's own ID — there is no field to specify a different professor at creation time, contradicting the target which says ADMIN sets any user as `Course.professorId` |
+| Create course | ADMIN, UNIT_ADMIN(D) | **ADMIN only** | `UNIT_ADMIN` role not implemented; professors cannot create. **Bug:** `professorId` is hardcoded to the creating admin's own ID — there is no field to specify a different professor at creation time, contradicting the target which says ADMIN sets any user as `Course.professorId` |
 | List courses | All roles with scoping | **Public** — no auth required | `GET /api/courses` returns all courses to any caller |
 | View course details | All roles with scoping | **Not enforced** | No per-course detail gate exists |
-| Edit course | ADMIN, DEPT_ADMIN(D), PROFESSOR(C) | ADMIN or course professor (`professorId === user.id`) | `DEPARTMENT_ADMIN` path missing; `C` scoping correct for PROFESSOR |
-| Publish / unpublish | ADMIN, DEPT_ADMIN(D), PROFESSOR(C) | ADMIN or course professor | Same as edit — `DEPT_ADMIN` gap |
-| Assign professor | ADMIN, DEPT_ADMIN(D) | ADMIN only | `DEPT_ADMIN` path missing |
-| Soft-delete course | ADMIN, DEPT_ADMIN(D), PROFESSOR(C) | **Not implemented** | No soft-delete endpoint exists in Core today |
-| Set AI instructions | ADMIN, DEPT_ADMIN(D), PROFESSOR(C) | **Not audited separately** | Likely bundled into the PATCH course handler |
+| Edit course | ADMIN, UNIT_ADMIN(D), PROFESSOR(C) | ADMIN or course professor (`professorId === user.id`) | `UNIT_ADMIN` path missing; `C` scoping correct for PROFESSOR |
+| Publish / unpublish | ADMIN, UNIT_ADMIN(D), PROFESSOR(C) | ADMIN or course professor | Same as edit — `UNIT_ADMIN` gap |
+| Assign professor | ADMIN, UNIT_ADMIN(D) | ADMIN only | `UNIT_ADMIN` path missing |
+| Soft-delete course | ADMIN, UNIT_ADMIN(D), PROFESSOR(C) | **Not implemented** | No soft-delete endpoint exists in Core today |
+| Set AI instructions | ADMIN, UNIT_ADMIN(D), PROFESSOR(C) | **Not audited separately** | Likely bundled into the PATCH course handler |
 
 ---
 
@@ -524,10 +524,10 @@ Enforcement in `app/routes/api/courses.topics.$.ts`.
 
 | Operation | Target | Current | Notes |
 |---|---|---|---|
-| View topics | ADMIN, DEPT_ADMIN(D), PROFESSOR(C), TA(C), STUDENT(C, published) | **Any authenticated user** | `GET` only requires a valid session; no role or enrollment check |
-| Create topic | ADMIN, DEPT_ADMIN(D), PROFESSOR(C) | **ADMIN only** | Professors cannot create topics in Core; `role !== 'ADMIN'` gate |
-| Edit topic | ADMIN, DEPT_ADMIN(D), PROFESSOR(C) | **Not implemented** | No PATCH /topics route |
-| Soft-delete topic | ADMIN, DEPT_ADMIN(D), PROFESSOR(C) | **ADMIN only** | `DELETE` requires ADMIN |
+| View topics | ADMIN, UNIT_ADMIN(D), PROFESSOR(C), TA(C), STUDENT(C, published) | **Any authenticated user** | `GET` only requires a valid session; no role or enrollment check |
+| Create topic | ADMIN, UNIT_ADMIN(D), PROFESSOR(C) | **ADMIN only** | Professors cannot create topics in Core; `role !== 'ADMIN'` gate |
+| Edit topic | ADMIN, UNIT_ADMIN(D), PROFESSOR(C) | **Not implemented** | No PATCH /topics route |
+| Soft-delete topic | ADMIN, UNIT_ADMIN(D), PROFESSOR(C) | **ADMIN only** | `DELETE` requires ADMIN |
 
 ---
 
@@ -537,9 +537,9 @@ Enforcement in `app/routes/api/courses.materials.$.ts`.
 
 | Operation | Target | Current | Notes |
 |---|---|---|---|
-| Upload material | ADMIN, DEPT_ADMIN(D), PROFESSOR(C), TA(C) | Professor OR TA OR enrolled student | **Students can upload** — target says `—` for students |
-| View / download material | ADMIN, DEPT_ADMIN(D), PROFESSOR(C), TA(C), STUDENT(C, published + active) | Same as upload | No published-course gate checked |
-| Delete material | ADMIN, DEPT_ADMIN(D), PROFESSOR(C), TA(O) | **Not implemented as a separate delete route** | No DELETE /materials endpoint found |
+| Upload material | ADMIN, UNIT_ADMIN(D), PROFESSOR(C), TA(C) | Professor OR TA OR enrolled student | **Students can upload** — target says `—` for students |
+| View / download material | ADMIN, UNIT_ADMIN(D), PROFESSOR(C), TA(C), STUDENT(C, published + active) | Same as upload | No published-course gate checked |
+| Delete material | ADMIN, UNIT_ADMIN(D), PROFESSOR(C), TA(O) | **Not implemented as a separate delete route** | No DELETE /materials endpoint found |
 
 ---
 
@@ -568,7 +568,7 @@ Enforcement in `app/routes/api/chat.ts` and `app/routes/api/chats.$chatId.ts`. N
 | View own chat history | All roles | ✓ Own only | `GET /api/chats/:chatId` queries `WHERE userId = session.user.id` — own-resource scoped |
 | Delete own chat | All roles | **Not implemented** | No DELETE /chats/:chatId endpoint found |
 | View all chat sessions in a course | ADMIN only | **Not implemented** | No cross-user chat listing endpoint |
-| View chat metrics | ADMIN, DEPT_ADMIN(D), PROFESSOR(C) | **Not implemented** | No aggregate metrics endpoint |
+| View chat metrics | ADMIN, UNIT_ADMIN(D), PROFESSOR(C) | **Not implemented** | No aggregate metrics endpoint |
 
 ---
 
@@ -588,7 +588,7 @@ Auth middleware: `server/src/middleware/auth.js` — `requireAuth`, `requireRole
 
 **Roles in use:** `ADMIN`, `PROFESSOR`, `STUDENT`. `TA` is defined in the role enum but has **zero route assignments** — no AI Tutor route accepts or distinguishes a TA caller.
 
-**`DEPARTMENT_ADMIN`:** Does not exist in AI Tutor at all.
+**`UNIT_ADMIN`:** Does not exist in AI Tutor at all.
 
 ---
 
@@ -596,13 +596,13 @@ Auth middleware: `server/src/middleware/auth.js` — `requireAuth`, `requireRole
 
 | Operation | Target | Current | Notes |
 |---|---|---|---|
-| Create module / lesson / activity | ADMIN(✓), DEPT_ADMIN(D), PROFESSOR(C) | **PROFESSOR only** | `requireRole('PROFESSOR')` on POST routes — ADMIN is fenced out by the app-level isolation middleware; `DEPT_ADMIN` not implemented |
+| Create module / lesson / activity | ADMIN(✓), UNIT_ADMIN(D), PROFESSOR(C) | **PROFESSOR only** | `requireRole('PROFESSOR')` on POST routes — ADMIN is fenced out by the app-level isolation middleware; `UNIT_ADMIN` not implemented |
 | View module / lesson / activity | All roles with publish gating | PROFESSOR (all), STUDENT (published + enrolled) | GET routes have **no `requireRole` gate** — any authenticated non-admin user can attempt to fetch; publish-gate logic inside handlers restricts what students see. TA cannot view due to zero TA route assignments. |
-| Edit module / lesson | ADMIN(✓), DEPT_ADMIN(D), PROFESSOR(C) | **PROFESSOR only (module only)** | Module has PATCH `/modules/:id` with `requireRole('PROFESSOR')`; **no PATCH route exists for lessons** |
-| Delete module / lesson | ADMIN(✓), DEPT_ADMIN(D), PROFESSOR(C) | **Not implemented** | **No DELETE route exists for modules or lessons** — only activities have a DELETE endpoint |
-| Edit / delete activity | ADMIN(✓), DEPT_ADMIN(D), PROFESSOR(C) | **PROFESSOR only** | `PATCH /activities/:id` and `DELETE /activities/:id` both require PROFESSOR |
-| Publish / unpublish module | ADMIN(✓), DEPT_ADMIN(D), PROFESSOR(C) | **PROFESSOR only** | `PATCH /modules/:id/publish` and `/unpublish` — `requireRole('PROFESSOR')` |
-| Publish / unpublish lesson | ADMIN(✓), DEPT_ADMIN(D), PROFESSOR(C) | **PROFESSOR only** | `PATCH /lessons/:id/publish` and `/unpublish` — `requireRole('PROFESSOR')` |
+| Edit module / lesson | ADMIN(✓), UNIT_ADMIN(D), PROFESSOR(C) | **PROFESSOR only (module only)** | Module has PATCH `/modules/:id` with `requireRole('PROFESSOR')`; **no PATCH route exists for lessons** |
+| Delete module / lesson | ADMIN(✓), UNIT_ADMIN(D), PROFESSOR(C) | **Not implemented** | **No DELETE route exists for modules or lessons** — only activities have a DELETE endpoint |
+| Edit / delete activity | ADMIN(✓), UNIT_ADMIN(D), PROFESSOR(C) | **PROFESSOR only** | `PATCH /activities/:id` and `DELETE /activities/:id` both require PROFESSOR |
+| Publish / unpublish module | ADMIN(✓), UNIT_ADMIN(D), PROFESSOR(C) | **PROFESSOR only** | `PATCH /modules/:id/publish` and `/unpublish` — `requireRole('PROFESSOR')` |
+| Publish / unpublish lesson | ADMIN(✓), UNIT_ADMIN(D), PROFESSOR(C) | **PROFESSOR only** | `PATCH /lessons/:id/publish` and `/unpublish` — `requireRole('PROFESSOR')` |
 
 ---
 
@@ -612,10 +612,10 @@ All under `requireRole('ADMIN')`.
 
 | Operation | Target | Current | Notes |
 |---|---|---|---|
-| List enrolled users | ADMIN, DEPT_ADMIN(D), PROFESSOR(C), TA(C) | **ADMIN only** | `GET /admin/courses/:courseId/enrollments` |
-| Enroll a student | ADMIN, DEPT_ADMIN(D), PROFESSOR(C) | **ADMIN only** | `POST /admin/courses/:courseId/enrollments` |
-| Remove a student | ADMIN, DEPT_ADMIN(D), PROFESSOR(C) | **ADMIN only** | `DELETE /admin/courses/:courseId/enrollments/:id` |
-| Assign / remove TA | ADMIN, DEPT_ADMIN(D), PROFESSOR(C) | **Not implemented** | No TA assignment route; TA is not a usable role in AI Tutor |
+| List enrolled users | ADMIN, UNIT_ADMIN(D), PROFESSOR(C), TA(C) | **ADMIN only** | `GET /admin/courses/:courseId/enrollments` |
+| Enroll a student | ADMIN, UNIT_ADMIN(D), PROFESSOR(C) | **ADMIN only** | `POST /admin/courses/:courseId/enrollments` |
+| Remove a student | ADMIN, UNIT_ADMIN(D), PROFESSOR(C) | **ADMIN only** | `DELETE /admin/courses/:courseId/enrollments/:id` |
+| Assign / remove TA | ADMIN, UNIT_ADMIN(D), PROFESSOR(C) | **Not implemented** | No TA assignment route; TA is not a usable role in AI Tutor |
 
 ---
 
@@ -659,7 +659,7 @@ Bug report admin access is gated by a hardcoded email allowlist (`BUG_REPORT_ADM
 
 | Gap | Affected Apps | Severity |
 |---|---|---|
-| `DEPARTMENT_ADMIN` role does not exist | All three apps | High — entire `D` column of the target is dead code |
+| `UNIT_ADMIN` role does not exist | All three apps | High — entire `D` column of the target is dead code |
 | `EnrollmentRole` (TA/STUDENT per course) not implemented | Core, AI Tutor | High — course-scoped TA access is entirely missing |
 | `TA` role has no route assignments in AI Tutor | AI Tutor | High — TA users get 403 on all content routes |
 | Course list / detail has no auth gate in Core | Core | Medium — all courses visible to anonymous callers |
