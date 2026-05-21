@@ -26,7 +26,7 @@ for port in "${CORE_DB_PORT:-54320}" "${TUTOR_DB_PORT:-54321}" "${QM_DB_PORT:-55
   ids=$(docker ps -q --filter "publish=$port")
   if [ -n "$ids" ]; then
     echo "Removing container(s) still bound to port $port..."
-    docker rm -f $ids
+    docker rm -f "$ids"
   fi
 done
 
