@@ -22,10 +22,15 @@
     "dev": "turbo run dev",
     "lint": "turbo run lint",
     "test": "turbo run test",
+    "test:time-report": "node --test eduai-summer-2026/tests/team-time-report.test.js",
     "test:all": "turbo run test:all",
     "clean": "turbo run clean && rm -rf node_modules"
   },
   "devDependencies": {
     "turbo": "latest"
+  },
+  "overrides": {
+    "better-auth": "1.2.8",
+    "@better-auth/cli": "1.2.8"
   }
 }
