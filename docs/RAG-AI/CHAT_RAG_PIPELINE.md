@@ -172,4 +172,4 @@ Defined in [`embedding.ts`](../../apps/core/app/lib/ai/embedding.ts):
 | Hybrid retrieval | **Keyword-gated**, not embedding-based intent detection |
 | Latency on RAG turns | One embedding API call + one DB query before first token (hybrid), or inside a tool step (tool path) |
 | Credentials | Retrieval embeddings use server Google/OpenAI keys; chat model may be Ollama-only — two paths |
-| Auto routing | Not on this branch; client sends `model` as-is. See [`TEAM_ROUTING_LAYER_PLAN.md`](./TEAM_ROUTING_LAYER_PLAN.md) for planned `resolveRoutedModel` |
+| Auto routing | Not on this branch; client sends `model` as-is. See [`TEAM_ROUTING_LAYER_PLAN.md`](./routing/eduai-summer-2026/TEAM_ROUTING_LAYER_PLAN.md) for planned `resolveRoutedModel` |

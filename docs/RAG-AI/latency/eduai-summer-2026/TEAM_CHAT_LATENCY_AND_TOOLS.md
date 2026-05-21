@@ -3,7 +3,7 @@
 **Audience:** Full EduAI dev team + research lead  
 **Status:** Open problems — **not** solved; needs design before shipping toggles that disable course/web grounding  
 **Teammates — start here for tasks:** [`TEAM_CHAT_LATENCY_SPRINT_GUIDE.md`](./TEAM_CHAT_LATENCY_SPRINT_GUIDE.md) (this week’s delegatable steps)  
-**Lead context:** Documented from local dev on **AI enhancement branch** (Gemma ~31B, DeepSeek via Ollama); targets and cloud numbers in [`model-latency-tracker.md`](./model-latency-tracker.md)
+**Lead context:** Documented from local dev on **AI enhancement branch** (Gemma ~31B, DeepSeek via Ollama); targets and cloud numbers in [`MODEL_LATENCY_TRACKER.md`](../MODEL_LATENCY_TRACKER.md)
 
 ---
 
@@ -79,7 +79,7 @@ Use this table in kickoff; pick 1–2 spikes for the next sprint.
 
 ## Metrics (use the same ledger as research)
 
-Every spike PR should add rows to [`model-latency-tracker.md`](./model-latency-tracker.md):
+Every spike PR should add rows to [`MODEL_LATENCY_TRACKER.md`](../MODEL_LATENCY_TRACKER.md):
 
 | Probe | Model | Course | Tools path | TTFT | Total | Notes |
 | ----- | ----- | ------ | ---------- | ---- | ----- | ----- |
@@ -107,9 +107,9 @@ Every spike PR should add rows to [`model-latency-tracker.md`](./model-latency-t
 
 | Doc | Role |
 | --- | ---- |
-| [`model-latency-tracker.md`](./model-latency-tracker.md) | Measured TTFT/Total, tool fixes, Gemini quota notes |
+| [`MODEL_LATENCY_TRACKER.md`](../MODEL_LATENCY_TRACKER.md) | Measured TTFT/Total, tool fixes, Gemini quota notes |
 | `TEAM_ADHD_ASSIST_PLAN.md` *(planned — ask lead)* | ADHD Assist feature (orthogonal IV) |
-| [`TEAM_PHASE_0_AND_1_GUIDE.md`](./TEAM_PHASE_0_AND_1_GUIDE.md) | Routing Phase 0 & 1 (current team guide) |
+| [`TEAM_PHASE_0_AND_1_GUIDE.md`](../../routing/eduai-summer-2026/TEAM_PHASE_0_AND_1_GUIDE.md) | Routing Phase 0 & 1 (current team guide) |
 | [`adhd-assist-architecture-phases.md`](../../literature/adhd-assist-architecture-phases.md) | Phase 2.5 efficiency, Phase 3 latency trade-off *(literature doc not in repo yet)* |
 
 ---
