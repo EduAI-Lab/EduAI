@@ -226,9 +226,13 @@ sequenceDiagram
 
 ---
 
-## 6. Chat & RAG pipeline (detailed)
+## 6. Chat & RAG pipeline 
 
-Section [5.3](#53-chat-with-course-context) shows the high-level chat path. `**POST /api/chat**` actually runs **two different RAG strategies**, chosen from the `AIModel.supportsTools` flag in the database (via `modelSupportsTools` in `providers.ts`):
+**Full flowchart, code map, and maintenance notes:** [`docs/rag-ai/CHAT_RAG_PIPELINE.md`](rag-ai/CHAT_RAG_PIPELINE.md)
+
+Related team docs (latency, routing, dev server): [`docs/rag-ai/README.md`](rag-ai/README.md).
+
+Section [5.3](#53-chat-with-course-context) shows the high-level chat path. `**POST /api/chat`** actually runs **two different RAG strategies**, chosen from the `AIModel.supportsTools` flag in the database (via `modelSupportsTools` in `providers.ts`):
 
 
 | Path             | When                                                      | How course context is retrieved                                                                                                                                                                                                                                     |
@@ -238,10 +242,6 @@ Section [5.3](#53-chat-with-course-context) shows the high-level chat path. `**P
 
 
 Retrieval itself is always the same function: `**findRelevantContent`** in `embedding.ts` (server env embeddings + pgvector over `material_embeddings`). That is independent of which chat provider the user picked in the UI.
-
-**Full flowchart, code map, and maintenance notes:** `[docs/RAG-AI/chat-rag-pipeline.md](RAG-AI/chat-rag-pipeline.md)`
-
-Related team docs (latency, routing, dev server): `[docs/RAG-AI/README.md](RAG-AI/README.md)`.
 
 AI models are hosted on [cmps01.ok.ubc.ca](http://cmps01.ok.ubc.ca). EduAI (hosted on [my.eduai.ok.ubc.ca](http://my.eduai.ok.ubc.ca)) and its respective dev app ([dev.eduai.ok.ubc.ca](http://dev.eduai.ok.ubc.ca)) both connect to cmps01 ollama port to send and recieve AI prompts and responses respectively.
 
@@ -266,8 +266,8 @@ app/
     courses/             → Course API helpers + Zod schemas
 docs/
   ARCHITECTURE.md        → This file
-  RAG-AI/
-    chat-rag-pipeline.md → POST /api/chat + hybrid vs tool RAG (detailed)
+  rag-ai/
+    CHAT_RAG_PIPELINE.md → POST /api/chat + hybrid vs tool RAG (detailed)
     README.md            → Index of RAG, latency, and routing team docs
   ...                    → Other documents
 ```

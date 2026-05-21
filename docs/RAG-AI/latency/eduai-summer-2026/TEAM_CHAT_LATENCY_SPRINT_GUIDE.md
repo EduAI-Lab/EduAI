@@ -4,7 +4,7 @@
 **Parent issue:** [#203 — Chat latency & smart grounding sprint](https://github.com/EduAI-Lab/EduAI/issues/203)  
 **Related:** [#195](https://github.com/EduAI-Lab/EduAI/issues/195) (small-model tools), [#196](https://github.com/EduAI-Lab/EduAI/issues/196) (TTFB investigation)  
 **Discussion / context:** [`TEAM_CHAT_LATENCY_AND_TOOLS.md`](./TEAM_CHAT_LATENCY_AND_TOOLS.md)  
-**Measurement ledger:** [`model-latency-tracker.md`](./model-latency-tracker.md)  
+**Measurement ledger:** [`MODEL_LATENCY_TRACKER.md`](../MODEL_LATENCY_TRACKER.md)  
 **Base branch:** `feat/local-models-and-ai-enhancement` (merged work from `AI-enhancement`) — **build on top of this**, do not restart from scratch unless PI says so  
 **Target branch for PRs:** `feat/chat-latency-week` (create from base above)  
 **Product goal:** Typical turns feel **~3–4 s** where possible; **first visible token** early; course + web still work **without** magic phrases like “search the web”
@@ -35,7 +35,7 @@ Most of this landed in commit **`c158023`** (`feat(chat): tool error envelopes, 
 | **`apps/core/app/routes/chat.tsx`** | `getEffectiveParts` + typing phases (“Searching…”) | UX during tool latency |
 | **`apps/core/app/components/chat/chat-input.tsx`** | Submit lock + disable while loading | Fewer duplicate sends |
 | | Error `Alert` on failed stream | |
-| [`model-latency-tracker.md`](./model-latency-tracker.md) | Live probe table + FAQ | Operational record |
+| [`MODEL_LATENCY_TRACKER.md`](../MODEL_LATENCY_TRACKER.md) | Live probe table + FAQ | Operational record |
 
 ### Measured results (cloud — May 2026, see ledger)
 
@@ -163,7 +163,7 @@ We need before/after on the **same** prompts and models.
 
 ### Task
 
-Run and append rows to [`model-latency-tracker.md`](./model-latency-tracker.md):
+Run and append rows to [`MODEL_LATENCY_TRACKER.md`](../MODEL_LATENCY_TRACKER.md):
 
 | Probe ID | Prompt (short) | Model | Course | supportsTools path |
 | -------- | -------------- | ----- | ------ | ------------------- |
@@ -172,7 +172,7 @@ Run and append rows to [`model-latency-tracker.md`](./model-latency-tracker.md):
 | **C1** | What did chapter 3 say about X? | same local | **selected** | tool_calling |
 | **W1** | Find recent papers on gradient descent | same local | none | tool_calling |
 
-Capture **TTFT** (stopwatch or Network) and **Total** per [`model-latency-tracker.md`](./model-latency-tracker.md).
+Capture **TTFT** (stopwatch or Network) and **Total** per [`MODEL_LATENCY_TRACKER.md`](../MODEL_LATENCY_TRACKER.md).
 
 ### Done when
 
@@ -368,7 +368,7 @@ Checklist on parent issue:
 | Doc | Who uses it |
 | --- | ----------- |
 | `TEAM_ADHD_ASSIST_PLAN.md` *(planned — ask lead)* | Lead only (this week) |
-| [`TEAM_PHASE_0_AND_1_GUIDE.md`](./TEAM_PHASE_0_AND_1_GUIDE.md) | Routing Phase 0 & 1 (lead reference) |
+| [`TEAM_PHASE_0_AND_1_GUIDE.md`](../../routing/eduai-summer-2026/TEAM_PHASE_0_AND_1_GUIDE.md) | Routing Phase 0 & 1 (lead reference) |
 | **This file** | **Teammates — latency sprint** |
 | [`TEAM_CHAT_LATENCY_AND_TOOLS.md`](./TEAM_CHAT_LATENCY_AND_TOOLS.md) | Background + open decisions L1–L5 |
 
