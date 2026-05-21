@@ -9,11 +9,20 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ## [Week 3 — May 18-22, 2026]
 
 ### Added
+- [monorepo] docs: Add [`docs/rag-ai/`](docs/rag-ai/README.md) — index and team docs for EduAI chat/RAG ([`CHAT_RAG_PIPELINE.md`](docs/rag-ai/CHAT_RAG_PIPELINE.md)), shared dev server ([`HOW_TO_USE_DEV_SERVER.md`](docs/rag-ai/HOW_TO_USE_DEV_SERVER.md)), HelpMe gap analysis, **latency** sprint guides and measurement ledger ([#203](https://github.com/EduAI-Lab/EduAI/issues/203)), and **routing** Phase 0–1 guides ([#197](https://github.com/EduAI-Lab/EduAICore/issues/197)).
 - [monorepo] docs: Populated `TESTS.md` with all integration and unit tests (#199, @GlowyBlack, 2026-05-18)
+
+### Changed
+- [monorepo] docs: Move RAG-AI team docs from `docs/implementations/RAG-AI/` to [`docs/rag-ai/`](docs/rag-ai/README.md); normalize folder name and filenames (`CHAT_RAG_PIPELINE.md`, `HOW_TO_USE_DEV_SERVER.md`, summer-2026 subfolders); update root README, [`ARCHITECTURE.md`](docs/ARCHITECTURE.md), and cross-links.
+- [monorepo] docs: Add chat/RAG pipeline section to [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) linking to [`CHAT_RAG_PIPELINE.md`](docs/rag-ai/CHAT_RAG_PIPELINE.md).
+- [monorepo] docs: Extend root README Docs table with links to `docs/rag-ai/` and `implementations/schema-design.md`.
+- [ai-tutor] infra: Renamed the `test/` `__test__` to `tests/` and added the tests within the `app/tests/` to the `TESTS.md` file and created a `.env.test.example` file. Added `.env.test` to gitignore (#199, @glowyblack, 2026-05-18)
+
+
+### Added
 
 
 ### Changed
-- [ai-tutor] infra: Renamed the `test/` `__test__` to `tests/` and added the tests within the `app/tests/` to the `TESTS.md` file and created a `.env.test.example` file. Added `.env.test` to gitignore (#199, @glowyblack, 2026-05-18)
 
 
 ### Removed
@@ -22,6 +31,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 - [question-maker] infra: Fix `vitest.integration.config.js` using wrong `test/` path instead of `tests/` — integration tests were never discovered and `test:all` always exited with code 1 (@ariqmuldi, 2026-05-20)
+
 
 ## [Week 2 — May 11–15, 2026]
 
