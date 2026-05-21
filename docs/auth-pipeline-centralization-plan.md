@@ -155,7 +155,7 @@ One new endpoint is needed. Everything else (cross-subdomain cookies, session ma
 | ID | Gap | Status | Blocking |
 |---|---|---|---|
 | C-1 | `POST /api/sessions/validate` — accepts session cookie, returns authenticated user | Not started | Both extension migrations |
-| C-2 | Login page supports `?redirect=<url>` param — redirects back to extension after login | Needs verification | Extension login redirect flow |
+| C-2 | Login page supports `?redirect=<url>` param — must validate the redirect URL is under `.eduai.ok.ubc.ca` (prod) or `localhost:` (dev) before redirecting; strip or reject other origins to prevent open redirect. Default to `/dashboard` if URL is absent or invalid. | Not started | Extension login redirect flow |
 
 **Open PRs superseded by this approach:**
 
@@ -206,7 +206,8 @@ AI Tutor's session middleware needs to be rewritten and its Better Auth tables d
 
 **Tasks:**
 - [ ] Implement `POST /api/sessions/validate` — reads the session cookie from the request, validates it via Better Auth's session store, and returns `{ user: { id, email, name, role, image } }` or `401`
-- [ ] Verify Core's login page supports `?redirect=<url>` — after a successful login, Core redirects to the provided URL
+- [ ] Implement `?redirect=<url>` support on Core's login page with open-redirect protection: validate that the redirect URL's origin is under `.eduai.ok.ubc.ca` (production) or `localhost:` (development) before redirecting. Strip or reject all other origins and fall back to `/dashboard`
+- [ ] Add rate limiting to `POST /api/sessions/validate`: Better Auth's built-in rate limiter does not cover custom routes. This endpoint will receive one call per authenticated request from both extensions, so it should have its own IP-based rate limit (e.g. 300 req/min per IP, tunable) to prevent abuse
 - [ ] Write a contract test: POST with a valid session cookie → 200 + user object; POST with no cookie or expired cookie → 401
 - [ ] Smoke-test manually: log in on Core, copy the session cookie, call `POST /api/sessions/validate` from curl — confirm the user object comes back with the correct role
 
@@ -250,7 +251,7 @@ AI Tutor's session middleware needs to be rewritten and its Better Auth tables d
 - [ ] Log in on Core
 - [ ] Navigate to AI Tutor — confirm same identity and role, no re-auth prompt
 - [ ] Navigate to Question Maker — confirm same identity and role, no re-auth prompt
-- [ ] Log out on Core — confirm both extensions require re-authentication
+- [ ] Log out on Core — confirm both extensions require re-authentication immediately on the next request
 - [ ] Change a user's role in Core admin → confirm the change takes effect in both extensions on the next request (session re-validation picks up the updated role)
 - [ ] Confirm `POST /api/auth/register` and `POST /api/auth/login` return 404 on Question Maker
 
@@ -298,7 +299,7 @@ Both extensions implement the same middleware. QM writes it from scratch; AI Tut
 
 For API routes (called by the frontend with `fetch`, not browser navigation), return 401 instead of redirecting.
 
-**Performance note:** this adds one Core HTTP round-trip per authenticated request. If this becomes a latency concern, a short-lived in-memory cache keyed on the session token (TTL ~30s) can reduce Core calls significantly without meaningful staleness risk for role changes.
+**Performance note:** this adds one Core HTTP round-trip per authenticated request. For the initial implementation, call Core on every request. This gives instant logout propagation and keeps the middleware simple. See [§7](#7-key-decisions) for the session validation cache decision.
 
 ---
 
@@ -311,6 +312,14 @@ For API routes (called by the frontend with `fetch`, not browser navigation), re
 Core's `crossSubDomainCookies` is enabled for `*.eduai.ok.ubc.ca` in production. Locally, the equivalent is setting `COOKIE_DOMAIN=localhost` in each service's `.env`. All modern browsers (Chrome, Firefox, Edge) handle `Domain=localhost` cookies correctly across ports when `SameSite=Lax` is set, which is Better Auth's default in non-HTTPS environments. No host file edits are required.
 
 All three services must be running simultaneously for the auth flow to work locally. If a developer encounters cookie issues, the first thing to verify is that `COOKIE_DOMAIN=localhost` is set and the Core dev server is running. This must be documented in the local dev setup guide before Phase 2 work begins.
+
+### Session validation cache
+
+**Deferred — do not implement in Phase 1 or 2.**
+
+The no-cache baseline (one Core HTTP call per authenticated request) is the correct starting point. At the expected scale of this platform, the added latency is negligible (~5–10ms intra-datacenter) and instant logout propagation comes for free.
+
+If latency on authenticated routes becomes measurable in production, a short-lived in-memory cache keyed on the session token can be added at that point. The trade-off to document at that time: logout from Core will not propagate to extensions until the cache TTL expires. That staleness window must be an explicit team decision, not an implementation detail.
 
 ---
 
