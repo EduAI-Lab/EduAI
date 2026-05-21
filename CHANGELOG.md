@@ -9,6 +9,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ## [Week 3 — May 18-22, 2026]
 
 ### Added
+- [core] tests: Finished implementing all the tests inside of the `planned-core-tests.md`
 - [monorepo] docs: Populated `TESTS.md` with all integration and unit tests (#199, @GlowyBlack, 2026-05-18)
 
 
