@@ -13,6 +13,7 @@ AI models are hosted on cmps01.ok.ubc.ca. EduAI (hosted on my.eduai.ok.ubc.ca) a
 | If you are… | Read first |
 | ----------- | ---------- |
 | New to EduAI chat/RAG | [`CHAT_RAG_PIPELINE.md`](./CHAT_RAG_PIPELINE.md) |
+| How embeddings, API keys, and pgvector fit together | [`EMBEDDINGS.md`](./EMBEDDINGS.md) |
 | Picking up latency work (#203) | [`latency/eduai-summer-2026/TEAM_CHAT_LATENCY_SPRINT_GUIDE.md`](./latency/eduai-summer-2026/TEAM_CHAT_LATENCY_SPRINT_GUIDE.md) |
 | Discussing tools vs speed trade-offs | [`latency/eduai-summer-2026/TEAM_CHAT_LATENCY_AND_TOOLS.md`](./latency/eduai-summer-2026/TEAM_CHAT_LATENCY_AND_TOOLS.md) |
 | Logging probe timings | [`latency/MODEL_LATENCY_TRACKER.md`](./latency/MODEL_LATENCY_TRACKER.md) |
@@ -26,6 +27,7 @@ AI models are hosted on cmps01.ok.ubc.ca. EduAI (hosted on my.eduai.ok.ubc.ca) a
 | File | Brief description |
 | ---- | ----------------- |
 | [`CHAT_RAG_PIPELINE.md`](./CHAT_RAG_PIPELINE.md) | **Architecture reference** — Mermaid flow of `/api/chat`, hybrid vs tool-calling RAG, `findRelevantContent`, and response paths. Match to `apps/core` on merge. |
+| [`EMBEDDINGS.md`](./EMBEDDINGS.md) | **Embeddings & storage** — index vs query lifecycle, server vs chat API keys, pgvector tables, hosting, failures, env vars. |
 | [`HOW_TO_USE_DEV_SERVER.md`](./HOW_TO_USE_DEV_SERVER.md) | **Ops runbook** — VPN, SSH, branch checkout, `tmux`, Docker DB, and Turbo dev on the shared UBCO host (`dev.eduai.ok.ubc.ca`). |
 | [`eduai-summer-2026/EDUAI_HELPME_ANALYSIS.md`](./eduai-summer-2026/EDUAI_HELPME_ANALYSIS.md) | **Research / borrow list** — What to port from the legacy HelpMe chatbot (caching, chunking, local embeds) vs what stays in EduAI’s stack. Related to #195–#196. |
 
@@ -67,6 +69,7 @@ AI models are hosted on cmps01.ok.ubc.ca. EduAI (hosted on my.eduai.ok.ubc.ca) a
 docs/rag-ai/
 ├── README.md                          ← this index
 ├── CHAT_RAG_PIPELINE.md
+├── EMBEDDINGS.md
 ├── HOW_TO_USE_DEV_SERVER.md
 ├── eduai-summer-2026/
 │   └── EDUAI_HELPME_ANALYSIS.md
