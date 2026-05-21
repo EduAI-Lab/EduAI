@@ -11,9 +11,6 @@ import type { ActionFunctionArgs } from "react-router";
 import { z } from "zod";
 import { webSearch, fetchPage } from "~/lib/ai/tools";
 import prisma from "~/lib/prisma.server";
-// Side-effect import: kicks off provider HTTPS keepalive warmup at module load
-// so the first user message does not pay the cold TCP + TLS handshake cost.
-import "~/lib/ai/warmup.server";
 
 const MAX_CONTEXT_MESSAGES = 20;
 
@@ -398,6 +395,11 @@ async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
  * - Message IDs should be client-generated (UUID v4) for best results.
  */
 export async function action({ request }: ActionFunctionArgs) {
+  // Fire-and-forget: warms up provider TCP+TLS on the first request.
+  // Dynamic import keeps this .server module out of the client bundle.
+  // Node module cache ensures it runs only once.
+  import("~/lib/ai/warmup.server").catch(() => {});
+
   try {
     const apiKeyHeader = request.headers.get("x-api-key");
     const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
