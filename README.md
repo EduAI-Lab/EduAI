@@ -17,7 +17,7 @@ EduAICore/
 │               └── frontend/        # Question Maker Vite/React frontend
 ├── scripts/                         # Repo-level setup and dev utilities
 ├── docs/                            # System-wide architecture and planning docs
-│   ├── RAG-AI/                      # EduAI chat, RAG, latency (#203), routing (#197)
+│   ├── rag-ai/                      # EduAI chat, RAG, latency (#203), routing (#197)
 │   └── implementations/           # schema-design, planned-core-tests, …
 ├── turbo.json                       # Turborepo task pipeline configuration
 ├── docker-compose.dev.yml           # Dev-only Postgres containers (apps run on the host)
@@ -48,7 +48,7 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 |----------|-------------|
 | [`platform-centralization-architecture-plan.md`](docs/platform-centralization-architecture-plan.md) | How Core, AI Tutor, and Question Maker are being centralized under a single API and auth layer |
 | [`user-management-and-roles-architecture-plan.md`](docs/user-management-and-roles-architecture-plan.md) | Role hierarchy, permissions, and naming decisions across the platform |
-| [`RAG-AI/README.md`](docs/RAG-AI/README.md) | EduAI chat/RAG pipeline, latency sprint (#203), model routing (#197), dev server runbook — index of team docs |
+| [`rag-ai/README.md`](docs/rag-ai/README.md) | EduAI chat/RAG pipeline, latency sprint (#203), model routing (#197), dev server runbook — index of team docs |
 | [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Core vs hosted services, provider keys, embeddings, and high-level flows |
 | [`implementations/schema-design.md`](docs/implementations/schema-design.md) | Unified schema design across apps |
 | [`DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Instructions on how to deploy the system (production and development) |
