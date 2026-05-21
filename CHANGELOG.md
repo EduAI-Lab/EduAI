@@ -1,30 +1,31 @@
 # Changelog
 
-All notable changes across the EduAICore monorepo (AI Tutor, Question Maker, EduAI Core) are documented in this file.
+All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) are documented in this file.
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
 ---
+
 ## [Week 3 — May 18–22, 2026]
 
 ### Added
-- [monorepo] docs: Added rbac-matrix doc defining role based access control patterns. (#198, #@abdullahmoh21, 2026-05-10)
+- [monorepo] docs: Added docs/implementations/rbac-matrix.md (#198, @abdullahmoh21, 2026-05-21)
+- [monorepo] docs: Add [`docs/rag-ai/`](docs/rag-ai/README.md) — index and team docs for EduAI chat/RAG ([`CHAT_RAG_PIPELINE.md`](docs/rag-ai/CHAT_RAG_PIPELINE.md)), shared dev server ([`HOW_TO_USE_DEV_SERVER.md`](docs/rag-ai/HOW_TO_USE_DEV_SERVER.md)), HelpMe gap analysis, **latency** sprint guides and measurement ledger ([#203](https://github.com/EduAI-Lab/EduAI/issues/203)), and **routing** Phase 0–1 guides ([#197](https://github.com/EduAI-Lab/EduAICore/issues/197)).
+- [monorepo] docs: Populated `TESTS.md` with all integration and unit tests (#199, @GlowyBlack, 2026-05-18)
+- [monorepo] infra: Add GitHub Actions CI workflow (`.github/workflows/pr-tests.yml`) — triggers on pull requests targeting `development` or `main`; spins up a PostgreSQL 16 service on port 54321; runs `npm run test` (Turborepo) to build and test all packages across the monorepo; `aitutor_test` database is created automatically by the existing `globalSetup.js`; `TEST_DATABASE_URL` is set at job level so question-maker backend integration tests run as part of the single test command. (#236, @evanbones, 2026-05-20)
+- [question-maker] infra: Make `npm run test` run the full test suite — chain `vitest run --config vitest.integration.config.js` after the unit run so integration tests are no longer opt-in; `test:all` is kept as an alias. (#236, @evanbones, 2026-05-20)
 
 ### Changed
+- [monorepo] docs: Move RAG-AI team docs from `docs/implementations/RAG-AI/` to [`docs/rag-ai/`](docs/rag-ai/README.md); normalize folder name and filenames (`CHAT_RAG_PIPELINE.md`, `HOW_TO_USE_DEV_SERVER.md`, summer-2026 subfolders); update root README, [`ARCHITECTURE.md`](docs/ARCHITECTURE.md), and cross-links.
+- [monorepo] docs: Add chat/RAG pipeline section to [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) linking to [`CHAT_RAG_PIPELINE.md`](docs/rag-ai/CHAT_RAG_PIPELINE.md).
+- [monorepo] docs: Extend root README Docs table with links to `docs/rag-ai/` and `implementations/schema-design.md`.
+- [ai-tutor] infra: Renamed the `test/` `__test__` to `tests/` and added the tests within the `app/tests/` to the `TESTS.md` file and created a `.env.test.example` file. Added `.env.test` to gitignore (#199, @glowyblack, 2026-05-18)
 
-### Removed
-
-
-
-
-## [Week 3 — May 18-22, 2026]
 
 ### Added
-- [monorepo] docs: Populated `TESTS.md` with all integration and unit tests (#199, @GlowyBlack, 2026-05-18)
 
 
 ### Changed
-- [ai-tutor] infra: Renamed the `test/` `__test__` to `tests/` and added the tests within the `app/tests/` to the `TESTS.md` file and created a `.env.test.example` file. Added `.env.test` to gitignore (#199, @glowyblack, 2026-05-18)
 
 
 ### Removed
@@ -32,7 +33,9 @@ All notable changes across the EduAICore monorepo (AI Tutor, Question Maker, Edu
 
 
 ### Fixed
+- [monorepo] infra: Fix `npm run dev` failing on restart — Docker orphaned containers from previous service renames (`eduai-core-db`, `eduai-tutor-db`, `eduai-qm-db`) held ports 54320–55432 and were not removed by `docker compose down`; overhaul `scripts/dev-db.sh` to force-remove any container bound to those ports and delete the stale `eduai-dev` network before starting fresh; add `--remove-orphans` to `docker:dev:db:down`. (#236, @evanbones, 2026-05-19)
 - [question-maker] infra: Fix `vitest.integration.config.js` using wrong `test/` path instead of `tests/` — integration tests were never discovered and `test:all` always exited with code 1 (@ariqmuldi, 2026-05-20)
+
 
 ## [Week 2 — May 11–15, 2026]
 
@@ -61,20 +64,43 @@ All notable changes across the EduAICore monorepo (AI Tutor, Question Maker, Edu
 - [monorepo] infra: Broaden Turbo test task `inputs` to cover `app/**`, `server/**`, `shared/**`, `test/**`, `vitest.config.*`, `jest.config.*`, `jest.integration.config.*`, `package.json`, `prisma/**`, and `tsconfig*.json` — previously narrow inputs caused stale cache hits after real test-affecting changes. (#133, @evanbones, 2026-05-14)
 - [monorepo] docs: Update root README `npx turbo run` filter examples to use correct package names (`aitutor --filter=server`, quoted `'question-maker-*'` for zsh compatibility) and `npx turbo run test` syntax in the testing table. (#133, @evanbones, 2026-05-14)
 - [monorepo] docs: Add Testing section to root README covering install prerequisites, all root-level test commands, integration test database requirements, and a per-app runner reference table. (#119, @yta3216, 2026-05-12)
+- [ai-tutor] chore: Migrate package manager from Bun to npm — updated all scripts, dependencies, hooks, deploy tooling, and documentation to use npm throughout. (#118, @abdullahmoh21, 2026-05-12)
+
+### Fixed
+- [ai-tutor] fix: Replace ts-node with tsx in the server seed script — ts-node does not support ESM TypeScript (`"type": "module"`) without extra flags; tsx runs `.ts` files natively under Node ESM. Added TypeScript types to previously untyped seed helper functions. (#118, @abdullahmoh21, 2026-05-12)
 - docs: Merge monorepo report information into platform centralization document. Changed section 12 to be a description of the monorepo architecture. (#107, @evanbones, 2026-05-11)
+- [monorepo] infra: Rename Docker container names — `eduai-core-db` → `eduai-db`, `eduai-tutor-db` → `eduai-ai-tutor-db`, `eduai-qm-db` → `eduai-question-maker-db`; rename Postgres database names — `aitutor` → `ai-tutor`, `eduquery` → `question-maker`; update all `.env`, `.env.example`, and `.env.test` files accordingly. (#133, @evanbones, 2026-05-14)
+- [monorepo] docs: Rename "EduAI Core" to "EduAI" across root README, CHANGELOG, apps/core README, and all docs — platform-centralization-architecture-plan.md, user-management-and-roles-architecture-plan.md, QUESTION_MAKER_INTEGRATION_SUMMARY.md. (#133, @evanbones, 2026-05-14)
+- [monorepo] docs: Add database inspection section to root README — `docker exec` + psql workflow (`\c`, `\dt`, `SELECT * FROM`) and step-by-step DBeaver/pgAdmin connection guide for all three databases. (#133, @evanbones, 2026-05-14)
+- [monorepo] infra: Rename root npm workspace package from `eduaicore-monorepo` to `eduai-monorepo`. (#133, @evanbones, 2026-05-14)
 - [monorepo] docs: Mark user management and roles plan as on hold pending Canvas integration — current roles frozen, Canvas identified as source of truth for course structure, enrollments, and role assignments; rest of document preserved as original draft. (#115, @ariqmuldi, 2026-05-11)
 
 ### Removed
-
+- [monorepo] infra: Remove duplicate Turbo task delegation from `apps/extensions/question-maker/package.json` — the parent workspace package was re-invoking turbo for `question-maker-frontend` and `question-maker-backend`, causing build and test tasks to run twice. (#133, @evanbones, 2026-05-14)
 - docs: Removed old monorepo report since the information is now included in the centralization docs. (#107, @evanbones, 2026-05-11)
+
+### Fixed
+- [monorepo] infra: Run `prisma migrate deploy` automatically on dev start for `edu-ai` and `ai-tutor-server` — databases had no tables on a fresh clone because migrations were never applied before the dev server started. (commit 83bb75c + 1be5058, @ariqmuldi, 2026-05-14)
+- [core] auth: Remove `apiKey` plugin from `app/lib/auth/server.ts` — not exported by `better-auth@1.2.8`, causing a runtime crash on every page load. (commit e797e15, @ariqmuldi, 2026-05-14)
+- [question-maker] backend: Fix `DATABASE_URL` in `.env.example` — was pointing to non-existent database `question-maker` but Docker Compose created it as `eduquery`; corrected to match the compose config. (commit 523c7e2, @ariqmuldi, 2026-05-14)
+- [question-maker] frontend: Fix `question-maker-frontend#build` — add missing `tsconfig.json` and `tsconfig.node.json`; resolve all TypeScript errors from the React 19 / `moduleResolution: "bundler"` type mismatch (`React.ElementRef` → `React.ComponentRef` across all shadcn UI components, bump `@types/react` and `@types/react-dom` to v19, fix pdfjs-dist v4 import path, correct `isDraft` access path on `QuestionVariant`, and exclude stale archive and mock data files from compilation). (#133, @evanbones, 2026-05-14)
+- [question-maker] backend: Fix `question-maker-backend#test` — replace hardcoded `node_modules/jest/bin/jest.js` path with a `scripts/run-jest.cjs` helper that resolves Jest via `require.resolve`, compatible with npm workspace hoisting. (#133, @evanbones, 2026-05-14)
+- [ai-tutor] server: Fix `server#test` Prisma binary resolution in `test/globalSetup.js` — walk up the directory tree to find the hoisted `prisma` binary, run `prisma generate` before `prisma migrate deploy`, and handle Windows by resolving the `.cmd` wrapper and invoking via `cmd.exe /c`. (#133, @evanbones, 2026-05-14)
+- [core] auth: Fix `edu-ai-core-learning#build` — remove `apiKeyClient` import from `app/lib/auth/client.ts`; not exported by `better-auth@1.2.8/client/plugins`. (#133, @evanbones, 2026-05-14)
+- [ai-tutor] frontend: Fix `aitutor#test` — replace invalid `resolve.tsconfigPaths: true` with `tsconfigPaths()` plugin in `vitest.config.ts` so the `~/*` path alias resolves correctly; all 6 test files (29 tests) now pass. (#133, @evanbones, 2026-05-14)
+- [monorepo] infra: Fix duplicate React installation that broke question-maker-frontend tests — loosen exact React pin in `ai-tutor` (`19.2.1` → `^19.2.1`) and bump React constraint in `edu-ai` (`^19.2.1` → `^19.2.3`) so npm deduplicates to a single React 19.2.6 at the workspace root; eliminates the two-React-instance problem that caused hook failures in jsdom tests. (#137, @evanbones @abdullahmoh21, 2026-05-15)
+- [core] infra: Add `passWithNoTests: true` to `apps/core/vitest.config.ts` so `edu-ai#test` exits cleanly when no test files exist yet rather than failing the root `npm run test`. (#137, @evanbones, 2026-05-15)
+- [question-maker] frontend: Remove invalid `vitest: true` ESLint env from `.eslintrc.cjs` — `vitest` is not a recognised built-in ESLint environment and caused a hard error on `npm run lint`; test files import `vi` explicitly from `vitest` so no globals env is needed. (#137, @ariqmuldi, 2026-05-15)
 
 ## [Week 1 — May 4–8, 2026]
 
 ### Added
+
 - [monorepo] docs: Add platform centralization architecture plan for Epic #58 covering current state of all three extensions, gap analysis, API contracts, migration plan, key decisions, and known challenges. (#96, @ariqmuldi, 2026-05-10)
 - [monorepo] docs: Add user management and roles architecture plan for Epic #60 covering role hierarchy, Unit concept, current permissions per role, gaps, naming decisions, and Canvas role reference. (#96, @ariqmuldi, 2026-05-10)
 
 ### Changed
+
 - [monorepo] docs: Update platform centralization plan to reflect open PRs — EC-3 enrollment endpoint now in progress on `feature/enrollment-api`; EC-10 OAuth/OIDC sister-app auth covered by PRs #48, #49, #51, #50; Phase 1 and Week 2 checklist updated accordingly. (#96, @ariqmuldi, 2026-05-10)
 - [monorepo] docs: Update user management and roles plan to reflect enrollment endpoint progress on `feature/enrollment-api`. (#96, @ariqmuldi, 2026-05-10)
 - [monorepo] docs: Expand platform centralization plan with additional gaps, decisions, and corrections — corrected QM AI Chat status (question generation still calls providers directly; OCR extraction and variant generation already centralized), added gaps QM-7/QM-8/AT-3/EC-12, added within-extension cleanup section, added Decisions 5–7 (bug reporting consolidation, subdomain/cookie strategy, QM ORM), added open question on shared question bank visibility control, added out-of-scope items for unified dashboard and user navigation flow, and updated Week 2 checklist. (@abdullahmoh21, 2026-05-10)
@@ -104,21 +130,27 @@ When opening a new sprint, copy this block just below the intro section:
 ## [Unreleased — Sprint N]
 
 ### Added
+
 -
 
 ### Changed
+
 -
 
 ### Deprecated
+
 -
 
 ### Removed
+
 -
 
 ### Fixed
+
 -
 
 ### Security
+
 -
 ```
 
@@ -126,14 +158,14 @@ When opening a new sprint, copy this block just below the intro section:
 
 Use these category headings (from Keep a Changelog) — keep them in this order, and omit any that have no entries for the sprint:
 
-| Category        | Use for                                                              |
-| --------------- | -------------------------------------------------------------------- |
-| **Added**       | New features, endpoints, components, pages, scripts, or env vars.    |
-| **Changed**     | Updates to existing behavior, refactors with observable effects, dependency upgrades that affect runtime. |
-| **Deprecated**  | Features still present but scheduled for removal. Note the removal target. |
-| **Removed**     | Features, files, branches, endpoints, or env vars that have been deleted. |
-| **Fixed**       | Bug fixes.                                                           |
-| **Security**    | Vulnerability fixes, auth/permissions changes, secret-handling fixes. |
+| Category       | Use for                                                                                                   |
+| -------------- | --------------------------------------------------------------------------------------------------------- |
+| **Added**      | New features, endpoints, components, pages, scripts, or env vars.                                         |
+| **Changed**    | Updates to existing behavior, refactors with observable effects, dependency upgrades that affect runtime. |
+| **Deprecated** | Features still present but scheduled for removal. Note the removal target.                                |
+| **Removed**    | Features, files, branches, endpoints, or env vars that have been deleted.                                 |
+| **Fixed**      | Bug fixes.                                                                                                |
+| **Security**   | Vulnerability fixes, auth/permissions changes, secret-handling fixes.                                     |
 
 ### Entry format
 
