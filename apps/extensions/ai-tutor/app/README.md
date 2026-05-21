@@ -72,7 +72,7 @@ app/
       tour-utils.ts                 #   waitForElement, route resolution
       tour-engine.test.ts           #   Unit tests
 
-  __tests__/                        # Test files (Vitest + jsdom)
+  tests/                            # Test files (Vitest + jsdom)
     setup.ts                        # jest-dom matchers, ResizeObserver mock
     components/Nav.test.tsx
     components/admin/BugReportsTab.test.tsx
@@ -171,6 +171,6 @@ Tours use `data-tour` attributes on elements for targeting and `data-tour-route`
 ## Testing
 
 - **Runner**: Vitest 4 with jsdom environment
-- **Config**: `vitest.config.ts` (root), includes `app/__tests__/**/*.test.{ts,tsx}`
+- **Config**: `vitest.config.ts` (root), includes `app/tests/**/*.test.{ts,tsx}`
 - **Utilities**: `@testing-library/react`, `@testing-library/jest-dom`
 - **Run**: `npm run test` (all) or `npm run test:watch` (watch mode)
