@@ -1,4 +1,4 @@
-name: CI Tests
+name: PR Tests
 
 on:
   pull_request:
@@ -27,7 +27,7 @@ jobs:
           --health-retries 5
 
     env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:54321/eduai_ci
+      DATABASE_URL: postgresql://postgres:postgres@localhost:54321/aitutor_test
       BETTER_AUTH_SECRET: ci-test-secret-not-for-production
       BETTER_AUTH_URL: http://localhost:3000
       TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:54321/question_maker_test
@@ -52,7 +52,6 @@ jobs:
 
       - name: Create CI databases
         run: |
-          PGPASSWORD=postgres psql -h localhost -p 54321 -U postgres -c "CREATE DATABASE eduai_ci;"
           PGPASSWORD=postgres psql -h localhost -p 54321 -U postgres -c "CREATE DATABASE question_maker_test;"
 
       - name: Run all tests
