@@ -223,7 +223,7 @@ model CourseMaterial {
   title          String
   mimeType       String
   fileSize       Int
-  checksum       String          @unique
+  checksum       String
   rawText        String?
   status         MaterialStatus  @default(PROCESSING)
   externalId     String?
@@ -234,6 +234,8 @@ model CourseMaterial {
   course         Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
   chunks         MaterialChunk[]
 
+  @@unique([courseId, checksum])
+  @@index([externalSource, externalId])
   @@map("course_materials")
 }
 
@@ -291,7 +293,7 @@ model QuestionSecondaryTopic {
 model BugReport {
   id          String          @id @default(cuid())
   source      BugReportSource
-  userId      String
+  userId      String?
   isAnonymous Boolean         @default(false)
   description String          @db.VarChar(2000)
   status      BugReportStatus @default(UNHANDLED)
@@ -303,7 +305,7 @@ model BugReport {
   context     Json?
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
-  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([status, createdAt])
   @@index([userId])
