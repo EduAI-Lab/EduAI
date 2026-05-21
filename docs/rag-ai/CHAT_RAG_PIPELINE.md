@@ -1,6 +1,6 @@
 # Chat API and RAG pipeline
 
-**See also:** [EduAI architecture guide](../ARCHITECTURE.md) (Core vs hosted, embedding keys, high-level flows).
+**See also:** [EduAI architecture guide](../ARCHITECTURE.md) (Core vs hosted, embedding keys, high-level flows), [Embeddings in EduAI](./EMBEDDINGS.md) (indexing, pgvector, API keys, hosting).
 
 **Maintenance:** Living reference — update this doc when you change chat routing, hybrid RAG, or embedding/retrieval behavior (not a one-off PR note).
 
