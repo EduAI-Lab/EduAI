@@ -7,17 +7,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-/// Application-level role enum. STUDENT/INSTRUCTOR/TA participate in courses;
-/// ADMIN is a tooling persona confined to /api/admin/* and /api/ai-models*
-/// by the admin-isolation gate in app.js. Adding a value here also requires
-/// updating `normalizeEduAiRole` in `auth.js`, otherwise EduAI will silently
-/// downgrade unrecognized roles to STUDENT.
-enum Role {
-  STUDENT
-  INSTRUCTOR
-  TA
-  ADMIN
-}
 
 /// Reusable system-prompt definitions for AI tutor modes.
 ///
