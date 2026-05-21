@@ -274,7 +274,7 @@ CREATE TABLE "question_secondary_topics" (
 CREATE TABLE "bug_reports" (
     "id" TEXT NOT NULL,
     "source" "BugReportSource" NOT NULL,
-    "userId" TEXT NOT NULL,
+    "userId" TEXT,
     "isAnonymous" BOOLEAN NOT NULL DEFAULT false,
     "description" VARCHAR(2000) NOT NULL,
     "status" "BugReportStatus" NOT NULL DEFAULT 'UNHANDLED',
@@ -416,7 +416,10 @@ CREATE UNIQUE INDEX "ai_models_providerId_modelId_key" ON "ai_models"("providerI
 CREATE UNIQUE INDEX "user_provider_settings_userId_providerId_key" ON "user_provider_settings"("userId", "providerId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "course_materials_checksum_key" ON "course_materials"("checksum");
+CREATE INDEX "course_materials_externalSource_externalId_idx" ON "course_materials"("externalSource", "externalId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "course_materials_courseId_checksum_key" ON "course_materials"("courseId", "checksum");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "course_topics_courseId_name_key" ON "course_topics"("courseId", "name");
@@ -515,7 +518,7 @@ ALTER TABLE "question_secondary_topics" ADD CONSTRAINT "question_secondary_topic
 ALTER TABLE "question_secondary_topics" ADD CONSTRAINT "question_secondary_topics_topicId_fkey" FOREIGN KEY ("topicId") REFERENCES "course_topics"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "bug_reports" ADD CONSTRAINT "bug_reports_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "bug_reports" ADD CONSTRAINT "bug_reports_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "material_chunks" ADD CONSTRAINT "material_chunks_materialId_fkey" FOREIGN KEY ("materialId") REFERENCES "course_materials"("id") ON DELETE CASCADE ON UPDATE CASCADE;
