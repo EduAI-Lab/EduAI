@@ -13,6 +13,7 @@ This document explains **what runs inside this repo (Core)** versus **what lives
 3. [Provider config (two different paths)](#3-provider-config-two-different-paths)
 4. [Key cheat sheet](#4-key-cheat-sheet)
 5. [End-to-end flows (diagrams)](#5-end-to-end-flows-diagrams)
+   - [5.3 Chat with course context](#sec-53-chat-with-course-context)
 6. [Chat & RAG pipeline (detailed)](#6-chat--rag-pipeline-detailed)
 7. [Codebase walkthrough (where to look)](#7-codebase-walkthrough-where-to-look)
 8. [Saving as PDF](#8-saving-as-pdf)
@@ -111,6 +112,8 @@ Model IDs look like `google:gemini-2.5-flash` or `ollama:gpt-oss:120b` — provi
 
 **Important:** Embedding calls **do not** use the `apiKeys` object from the chat request. They **only** read `process.env`. So `.env.example` labels Google as "For Embeddings" because **that env var is what backs RAG vector generation** when Google is chosen.
 
+**Team guide (indexing, hosting, failures):** [docs/rag-ai/EMBEDDINGS.md](rag-ai/EMBEDDINGS.md).
+
 ```mermaid
 flowchart TD
   Upload[Upload course file]
@@ -187,6 +190,8 @@ flowchart LR
 
 Main files: `app/routes/api/courses.materials.$.ts`, `app/lib/ai/file-processing.ts`, `app/lib/ai/embedding.ts`.
 
+<a id="sec-53-chat-with-course-context"></a>
+
 ### 5.3 Chat with course context
 
 ```mermaid
@@ -206,7 +211,7 @@ flowchart TD
 
 
 
-Main file: `app/routes/api/chat.ts`. For branch-level detail (hybrid vs tools, `modelSupportsTools`, keyword gating), see [§6](#6-chat--rag-pipeline-detailed).
+Main file: `app/routes/api/chat.ts`. For branch-level detail (hybrid vs tools, `modelSupportsTools`, keyword gating).
 
 ### 5.4 Extension calling Core (`proxyUser`)
 
@@ -226,22 +231,22 @@ sequenceDiagram
 
 ---
 
-## 6. Chat & RAG pipeline 
+## 6. Chat & RAG pipeline
 
-**Full flowchart, code map, and maintenance notes:** [`docs/rag-ai/CHAT_RAG_PIPELINE.md`](rag-ai/CHAT_RAG_PIPELINE.md)
+**Full flowchart, code map, and maintenance notes:** [docs/rag-ai/CHAT_RAG_PIPELINE.md](rag-ai/CHAT_RAG_PIPELINE.md)
 
-Related team docs (latency, routing, dev server): [`docs/rag-ai/README.md`](rag-ai/README.md).
+Related team docs (latency, routing, dev server): [docs/rag-ai/README.md](rag-ai/README.md).
 
-Section [5.3](#53-chat-with-course-context) shows the high-level chat path. `**POST /api/chat`** actually runs **two different RAG strategies**, chosen from the `AIModel.supportsTools` flag in the database (via `modelSupportsTools` in `providers.ts`):
+Section [5.3](#sec-53-chat-with-course-context) shows the high-level chat path. **POST /api/chat** actually runs **two different RAG strategies**, chosen from the `AIModel.supportsTools` flag in the database (via `modelSupportsTools` in `providers.ts`):
 
 
 | Path             | When                                                      | How course context is retrieved                                                                                                                                                                                                                                     |
 | ---------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Hybrid RAG**   | `supportsTools === false` (e.g. some local/Ollama models) | If a course is selected **and** the last user message matches keyword heuristics (`course`, `chapter`, `explain`, …), `findRelevantContent` runs **once before** `streamText` and excerpts are injected into the `**system`** prompt. No tool loop.                 |
+| **Hybrid RAG**   | `supportsTools === false` (e.g. some local/Ollama models) | If a course is selected **and** the last user message matches keyword heuristics (`course`, `chapter`, `explain`, …), `findRelevantContent` runs **once before** `streamText` and excerpts are injected into the **system** prompt. No tool loop.                 |
 | **Tool calling** | `supportsTools === true` (typical cloud models)           | `streamText` registers `getInformation`, `webSearch`, and `fetchPage`. Course RAG runs **only when the model calls `getInformation`**, which executes `findRelevantContent` and returns chunks as **tool output** (up to `maxSteps` internal round-trips per turn). |
 
 
-Retrieval itself is always the same function: `**findRelevantContent`** in `embedding.ts` (server env embeddings + pgvector over `material_embeddings`). That is independent of which chat provider the user picked in the UI.
+Retrieval itself is always the same function: **`findRelevantContent`** in `embedding.ts` (server env embeddings + pgvector over `material_embeddings`). That is independent of which chat provider the user picked in the UI.
 
 AI models are hosted on [cmps01.ok.ubc.ca](http://cmps01.ok.ubc.ca). EduAI (hosted on [my.eduai.ok.ubc.ca](http://my.eduai.ok.ubc.ca)) and its respective dev app ([dev.eduai.ok.ubc.ca](http://dev.eduai.ok.ubc.ca)) both connect to cmps01 ollama port to send and recieve AI prompts and responses respectively.
 
@@ -268,6 +273,7 @@ docs/
   ARCHITECTURE.md        → This file
   rag-ai/
     CHAT_RAG_PIPELINE.md → POST /api/chat + hybrid vs tool RAG (detailed)
+    EMBEDDINGS.md        → Vectors in Postgres vs cloud embed API, keys, debugging
     README.md            → Index of RAG, latency, and routing team docs
   ...                    → Other documents
 ```
