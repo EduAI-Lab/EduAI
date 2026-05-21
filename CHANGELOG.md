@@ -6,20 +6,44 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ---
 
+## [Week 3 — May 18-22, 2026]
+
+### Added
+- [monorepo] docs: Populated `TESTS.md` with all integration and unit tests (#199, @GlowyBlack, 2026-05-18)
+
+
+### Changed
+- [ai-tutor] infra: Renamed the `test/` `__test__` to `tests/` and added the tests within the `app/tests/` to the `TESTS.md` file and created a `.env.test.example` file. Added `.env.test` to gitignore (#199, @glowyblack, 2026-05-18)
+
+
+### Removed
+- [monorepo] infra: Remove nested `package-lock.json` files from npm workspace packages (`ai-tutor`, `ai-tutor/server`, `question-maker/app/backend`) - holdovers from before the monorepo workspace setup that were not read by npm or Turborepo on root installs; add `apps/**/package-lock.json` to `.gitignore` to prevent accidental regeneration. (#268, @yta3216, 2026-05-20)
+
+
+### Fixed
+- [question-maker] infra: Fix `vitest.integration.config.js` using wrong `test/` path instead of `tests/` — integration tests were never discovered and `test:all` always exited with code 1 (@ariqmuldi, 2026-05-20)
+
 ## [Week 2 — May 11–15, 2026]
 
 ### Added
+- [monorepo] automation: Add GitHub-native weekly team time tracking and PR analytics reporting workflows, including issue-hours parsing, committed base-time fallback, editable weekly base-time issue override, Project timestamp filtering, Project item/PR linking, CSV/Markdown report generation, implementation documentation, and focused Node tests for the reporting scripts. (#176, @Whiteknight07, 2026-05-16)
+- [monorepo] docs: Add `schema-design.md` in `docs/implementations/` — unified schema design (#177, @abdullahmoh21, 2026-05-16)
+- [monorepo] docs: Added DEPLOYMENT.md in docs based on team decision (#157, @abdullahmoh21, 2026-05-15)
+- [core] infra: Add unit tests for all functions in `lib/form-utils.ts` (`getFieldErrors`, `getFieldError`, `getFormErrorMessage`, `validateField`); set `pool: vmThreads` in `vitest.config.ts` to fix worker startup timeout on Windows. (#134, @glowyblack, 2026-05-13)
 - [core] docs: Add `TEST.md` cataloguing all planned test cases for `lib/utils`, `lib/ai/providers`, `lib/ai/file-processing`, `lib/ai/embedding`, `lib/courses/schemas`, `lib/ai/schemas`, and form components (`LoginForm`, `RegisterForm`); assign test files across three contributors. (#134, @glowyblack, 2026-05-13)
-- [core] infra: Add unit tests for all functions in `lib/form-utils.ts` (`getFieldErrors`, `getFieldError`, `getFormErrorMessage`, `validateField`); set `pool: vmThreads` in `vitest.config.ts` to fix worker startup timeout on Windows. Test file lives at `app/tests/unit/form-utils.test.ts`. (#134, @glowyblack, 2026-05-13)
 - [monorepo] infra: Set up Turborepo to orchestrate build, dev, test, and lint across all workspace apps; add `apps/extensions/ai-tutor/server` to npm workspaces; configure distinct dev-server ports (core: 3000, ai-tutor: 3001, qm-frontend: 5173, qm-backend: 8000, ai-tutor server: 4000); add `predev` hook that auto-starts Docker Compose databases before Turborepo; add `postinstall` hook that copies each app's `.env.example` to `.env` on a clean clone; add `.npmrc` (`legacy-peer-deps=true`) to resolve cross-package peer dependency conflicts; change core-db default host port from 5432 to 54320 to avoid collision with locally installed Postgres. (#133, @evanbones, 2026-05-13)
+- [monorepo] docs: Add `docs/DEPLOYMENT.md` with production topology and a Development Deployment guide for `dev.eduai.ok.ubc.ca` (SSH, tmux, branch switching, when to use the dev server vs local dev, Ollama). (#110, @superbolt08, 2026-05-12)
+- [core] infra: Add `rhel-openssl-1.1.x` to Prisma `binaryTargets` so the query engine works on RHEL 8 hosts (e.g. `dev.eduai.ok.ubc.ca`). (#110, @superbolt08, 2026-05-12)
+- [core] infra: Configure Vite for monorepo hoisting, Apache reverse proxy (`allowedHosts`, `fs.allow`), optional HMR over HTTPS (`DEV_SERVER_HMR_*`), and `better-auth` dedupe on the dev host. (#110, @superbolt08, 2026-05-12)
 - [monorepo] docs: Add root `TESTS.md` as the canonical test inventory — defines structure, policy, and per-section table format for tracking all test files across the monorepo. (#140, @ariqmuldi, 2026-05-13)
 - [monorepo] infra: Add root `package.json` with unified test runner. `npm test` at the root directory runs all unit tests across every app. (#119, @yta3216, 2026-05-12)
 - [core] infra: Set up Vitest test infrastructure: add `vitest.config.ts`, `app/tests/setup.ts`, and `test`/`test:watch` scripts to `package.json`. No tests written yet; scaffolding only. (#119, @yta3216, 2026-05-12)
 - [core] docs: Add `TESTS.md` with planned test cases for lib utilities, AI providers, file processing, Zod schemas, and form components. (#119, @yta3216, 2026-05-12)
-- [core] docs: Add `docs/RAG-AI/chat-rag-pipeline.md` documenting the `POST /api/chat` flow, hybrid RAG, and embedding behavior for latency profiling. (#144, @superbolt08, 2026-05-14)
+- [core] docs: Add `docs/RAG-AI/CHAT_RAG_PIPELINE.md` documenting the `POST /api/chat` flow, hybrid RAG, and embedding behavior for latency profiling. (#144, @superbolt08, 2026-05-14)
 - [core] infra: Add `scripts/chat-latency-bench.mjs` for non-streaming `POST /api/chat` latency measurement. (#144, @superbolt08, 2026-05-14)
 
 ### Changed
+- [monorepo] automation: Move summer 2026 team time reporting scripts, tests, base-time CSVs, generated reports, and documentation under `eduai-summer-2026/`; keep workflow entrypoints as prefixed files in `.github/workflows/` for GitHub Actions autodiscovery. (#176, @Whiteknight07, 2026-05-18)
 - [core] docs: Renamed the planned test file for core from `TEST.md` to `planned-core-tests.md` and moved to docs to reflect the `README.md` and fix the conflict with the new `TEST.md` file that describes structure for all new tests. (#134, @glowyblack, 2026-05-14)
 - [monorepo] docs: Move `TEST.md` from `apps/core/` to the monorepo root so it is visible alongside `CHANGELOG.md` and other top-level docs. (#134, @glowyblack, 2026-05-13)
 - [core] infra: Rename test folder from `app/__tests__/` to `app/tests/` and reorganise test files into `app/tests/unit/`; update `vitest.config.ts` `include` and `setupFiles` paths accordingly. (#134, @glowyblack, 2026-05-13)
@@ -41,7 +65,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [monorepo] docs: Mark user management and roles plan as on hold pending Canvas integration — current roles frozen, Canvas identified as source of truth for course structure, enrollments, and role assignments; rest of document preserved as original draft. (#115, @ariqmuldi, 2026-05-11)
 - [core] perf: Cap hybrid RAG context and bound retrieved chunks in chat; trim verbose debug logging on the chat API path. (#144, @superbolt08, 2026-05-14)
 - [core] model: Improve embedding generation with caching, batch processing, and clearer error handling. (#144, @superbolt08, 2026-05-14)
-- [core] infra: Allow any host in Vite dev server configuration (including `dev.eduai.ok.ubc.ca`) for remote development against the chat API. (#144, @superbolt08, 2026-05-14)
+- [core] infra: Restrict Vite `allowedHosts` to `dev.eduai.ok.ubc.ca`, `localhost`, and `127.0.0.1` for remote development behind the Apache reverse proxy without opening the dev server to arbitrary Host headers. (#144, @superbolt08, 2026-05-14)
 
 ### Fixed
 
