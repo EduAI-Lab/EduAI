@@ -1,16 +1,17 @@
 /**
  * Sequelize model for course topics used to classify questions and variants.
- * `id` is a VARCHAR UUID (changed from INTEGER autoincrement in schema-unification).
+ * `id` is a CUID string (changed from INTEGER autoincrement in schema-unification).
  * `coreTopicId` links to Core's CourseTopic.id; null until synced with Core.
  */
 import { DataTypes } from 'sequelize';
 import { sequelize } from '../config/database.js';
+import { createId } from '@paralleldrive/cuid2';
 
 export const Topics = sequelize.define('Topics', {
   id: {
-    type: DataTypes.UUID,
+    type: DataTypes.STRING,
     primaryKey: true,
-    defaultValue: DataTypes.UUIDV4
+    defaultValue: () => createId()
   },
   name: {
     type: DataTypes.STRING,
@@ -50,5 +51,11 @@ export const Topics = sequelize.define('Topics', {
 }, {
   tableName: 'topics',
   timestamps: true,
-  underscored: true
+  underscored: true,
+  indexes: [
+    {
+      unique: true,
+      fields: ['course_id', 'name']
+    }
+  ]
 });
