@@ -46,7 +46,7 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 |----------|-------------|
 | [`platform-centralization-architecture-plan.md`](docs/platform-centralization-architecture-plan.md) | How Core, AI Tutor, and Question Maker are being centralized under a single API and auth layer |
 | [`user-management-and-roles-architecture-plan.md`](docs/user-management-and-roles-architecture-plan.md) | Role hierarchy, permissions, and naming decisions across the platform — **on hold pending Canvas integration** |
-| [`chat-rag-pipeline.md`](docs/RAG-AI/chat-rag-pipeline.md) | Chat API and RAG pipeline — reference when profiling slow chat or retrieval |
+| [`CHAT_RAG_PIPELINE.md`](docs/RAG-AI/CHAT_RAG_PIPELINE.md) | Chat API and RAG pipeline — reference when profiling slow chat or retrieval |
 
 ## Changelog
 
