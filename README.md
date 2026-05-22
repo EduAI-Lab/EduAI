@@ -5,7 +5,7 @@ Monorepo for the EduAI platform — a suite of AI-powered educational tools buil
 ## Repository structure
 
 ```text
-EduAICore/
+EduAI/
 ├── apps/
 │   ├── core/                        # EduAI — RAG chat platform and central API
 │   └── extensions/
@@ -179,7 +179,7 @@ Before running tests for the first time, ensure dependencies are installed via `
 
 ### Running tests
 
-From the monorepo root `EduAICore/`:
+From the monorepo root:
 
 | Command | What runs |
 | --- | --- |
