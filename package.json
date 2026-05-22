@@ -20,6 +20,7 @@
     "build": "turbo run build",
     "predev": "npm run docker:dev:db",
     "dev": "turbo run dev",
+    "dbseed": "npm run db:seed -w edu-ai && npm run seed -w ai-tutor-server && npm run seed -w question-maker-backend",
     "lint": "turbo run lint",
     "test": "turbo run test",
     "test:time-report": "node --test eduai-summer-2026/tests/team-time-report.test.js",
