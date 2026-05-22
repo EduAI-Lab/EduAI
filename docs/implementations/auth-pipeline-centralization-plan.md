@@ -295,9 +295,34 @@ The `role` field in the session response maps directly onto Core's `UserRole` en
 
 ## 6. Session Validation Middleware Pattern
 
-Both extensions implement the same middleware. QM writes it from scratch; AI Tutor replaces its existing Better Auth middleware.
+Both extensions implement the same middleware. QM writes it from scratch; AI Tutor replaces its existing Better Auth middleware. Some example pseudocode:
 
-For API routes (called by the frontend with `fetch`, not browser navigation), return 401 instead of redirecting.
+```js
+// requireAuth(req, res, next)
+// Drop-in replacement for any existing auth middleware.
+async function requireAuth(req, res, next) {
+  const response = await fetch(`${process.env.CORE_URL}/api/sessions/validate`, {
+    method: 'POST',
+    headers: { cookie: req.headers.cookie ?? '' }, // forward the raw Cookie header verbatim
+  })
+
+  if (!response.ok) {
+    // API routes (called by fetch, not browser navigation) → return 401, let the client handle it
+    if (req.path.startsWith('/api/')) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+    // Browser routes → redirect to Core login, return here after auth
+    const returnUrl = encodeURIComponent(`${process.env.EXTENSION_URL}${req.originalUrl}`)
+    return res.redirect(`${process.env.CORE_URL}/login?redirect=${returnUrl}`)
+  }
+
+  const { user } = await response.json()
+  req.user = user // { id, email, name, image, role }
+  next()
+}
+```
+
+`req.user` is populated with the shape from the [auth contract](#5-auth-contract). Unknown roles default to `STUDENT` at the point of use (least-privilege).
 
 **Performance note:** this adds one Core HTTP round-trip per authenticated request. For the initial implementation, call Core on every request. This gives instant logout propagation and keeps the middleware simple. See [§7](#7-key-decisions) for the session validation cache decision.
 
@@ -336,3 +361,27 @@ If latency on authenticated routes becomes measurable in production, a short-liv
 | `apps/extensions/question-maker/app/backend/src/schema/User.js` | QM's local User model — **being redesigned (QM-E)** |
 | `apps/extensions/question-maker/app/backend/src/services/authService.js` | QM's local auth service — **being replaced with `findOrCreateUser` (QM-E)** |
 | `apps/extensions/question-maker/app/backend/src/services/eduaiService.js` | QM's Core API client — update to use session cookie forwarding, not admin API key, for user-scoped calls |
+
+### `eduaiService.js` — cookie forwarding vs. API key
+
+Two kinds of calls go from QM to Core. The distinction matters for auth:
+
+```js
+// User-scoped call: the action is on behalf of a specific user.
+// Forward their session cookie so Core can identify and authorize them.
+async function getUserCourses(req) {
+  return fetch(`${process.env.CORE_URL}/api/courses`, {
+    headers: { cookie: req.headers.cookie ?? '' },
+  })
+}
+
+// Service-level call: no user context, QM is acting as a trusted service.
+// Use the shared API key instead of a user cookie.
+async function getInternalConfig() {
+  return fetch(`${process.env.CORE_URL}/api/internal/config`, {
+    headers: { 'x-api-key': process.env.EDUAI_API_KEY },
+  })
+}
+```
+
+The rule of thumb: if the call result depends on who the user is, forward the cookie. If it's infrastructure or admin data that any service can access, use `EDUAI_API_KEY`.
