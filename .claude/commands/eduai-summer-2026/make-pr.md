@@ -9,7 +9,7 @@ Then run these commands to understand the current state:
 - `git status --short` — any uncommitted changes
 - `git log --oneline -10` — recent commits
 - `git diff origin/development...HEAD --name-only 2>/dev/null || git diff origin/main...HEAD --name-only` — files changed on this branch
-- `gh pr list --head $(git branch --show-current) --repo EduAI-Lab/EduAICore 2>/dev/null` — check if a PR already exists for this branch
+- `gh pr list --head $(git branch --show-current) --repo EduAI-Lab/EduAI 2>/dev/null` — check if a PR already exists for this branch
 
 **Before starting the checklist, flag any of these blocking issues and ask the user to resolve them first:**
 - **Uncommitted changes exist** — `git status` shows modified or untracked files that should be part of this PR. Ask the user to commit them first. Remind them to commit in **logical groups with meaningful messages** — do not `git add .` and dump everything into one commit. Each commit should represent one coherent change (e.g. "feat: add user auth endpoint" and "test: add auth endpoint tests" as separate commits, not combined). Confirm they are done before continuing.
