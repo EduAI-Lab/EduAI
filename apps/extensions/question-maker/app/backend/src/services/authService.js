@@ -7,7 +7,6 @@ import jwt from 'jsonwebtoken';
 import { User } from '../schema/index.js';
 import { config } from '../config/settings.js';
 import { seedCoursesForNewUser } from './seedNewUserService.js';
-import { isBugReportAdminEmail } from './bugReportService.js';
 
 /** Shape returned to clients from login/register/me (no secrets). */
 function toPublicUser(user) {
@@ -15,7 +14,6 @@ function toPublicUser(user) {
     id: user.id,
     email: user.email,
     createdDate: user.createdDate ?? user.createdAt,
-    isBugReportAdmin: isBugReportAdminEmail(user.email)
   };
 }
 
