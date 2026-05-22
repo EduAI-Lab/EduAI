@@ -269,6 +269,9 @@ export async function action({ request }: ActionFunctionArgs) {
     const proxyUserPayload =
       body.proxyUser && typeof body.proxyUser === "object" ? (body.proxyUser as ProxyUserPayload) : null;
 
+    const hasAdhdAssistField = Object.prototype.hasOwnProperty.call(body, "adhdAssist");
+    const adhdAssist = body.adhdAssist === true;
+
     const hasSystemPromptField = Object.prototype.hasOwnProperty.call(body, "systemPrompt");
     let trimmedSystemPrompt: string | null = null;
     if (typeof body.systemPrompt === "string") {
@@ -357,9 +360,17 @@ export async function action({ request }: ActionFunctionArgs) {
           data: {
             userId: actingUser.id,
             systemPrompt: trimmedSystemPrompt,
+            adhdAssist,
           },
         });
       }
+    }
+
+    if (hasAdhdAssistField && chat && chat.adhdAssist !== adhdAssist) {
+      chat = await prisma.chat.update({
+        where: { id: chat.id },
+        data: { adhdAssist },
+      });
     }
 
     const shouldCreateChat = normalizedIncomingMessages.length > 0 || Boolean(trimmedSystemPrompt);
@@ -369,6 +380,7 @@ export async function action({ request }: ActionFunctionArgs) {
         JSON.stringify({
           chatId: null,
           systemPrompt: trimmedSystemPrompt ?? null,
+          adhdAssist,
         }),
         {
           status: 200,
@@ -382,8 +394,13 @@ export async function action({ request }: ActionFunctionArgs) {
         data: {
           userId: actingUser.id,
           systemPrompt: trimmedSystemPrompt,
+          adhdAssist,
         },
       });
+    }
+
+    if (process.env.CHAT_API_DEBUG === "1") {
+      console.log("[chat-api] adhdAssist", { adhdAssist, chatId: chat?.id });
     }
 
     if (!chat) {
@@ -424,6 +441,7 @@ export async function action({ request }: ActionFunctionArgs) {
         JSON.stringify({
           chatId: chat?.id ?? null,
           systemPrompt: trimmedSystemPrompt ?? chat?.systemPrompt ?? null,
+          adhdAssist: chat?.adhdAssist ?? adhdAssist,
         }),
         {
           status: 200,

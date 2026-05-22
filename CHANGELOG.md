@@ -9,6 +9,9 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ## [Week 3 — May 18–22, 2026]
 
 ### Added
+- [core] feat: Add user-facing ADHD Assist toggle on `/chat` (Phase 1 plumbing only). New `Chat.adhdAssist Boolean @default(false)` column + migration `adhd_assist_toggle`; toggle persists per chat and restores on reload via `/api/chats/:chatId`. `adhdAssist` is parsed and stored by `POST /api/chat` but does not alter prompt, model, RAG, or tools — Phase 1 is the IV control before Phase 2 introduces the policy prepend. (#151, @Ayyhab, 2026-05-20)
+
+---
 - [monorepo] docs: Add `auth-pipeline-centralization-plan.md` — detailed plan for centralizing all extension auth through Core's OAuth/OIDC provider; covers current state audit (AI Tutor centralized, Question Maker standalone JWT), gap analysis, phased migration plan, auth contract, and AI Tutor as the reference implementation for QM. (#250, @evanbones, 2026-05-20)
 - [monorepo] docs/tooling: Add `eduai-summer-2026/CONVENTIONS.md` — consolidated reference for issue format, git workflow, and PR checklist readable by any AI agent; add `.claude/commands/eduai-summer-2026/make-pr.md` — Claude Code `/project:eduai-summer-2026:make-pr` slash command that walks contributors through the PR checklist interactively; un-ignore `.claude/` in `.gitignore` so commands are team-shared. (#289, @ariqmuldi, 2026-05-21)
 - [core] tests: Finished implementing all the tests inside of the `planned-core-tests.md`
