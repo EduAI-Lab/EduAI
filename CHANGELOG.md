@@ -80,6 +80,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [question-maker] infra: Make `npm run test` run the full test suite — chain `vitest run --config vitest.integration.config.js` after the unit run so integration tests are no longer opt-in; `test:all` is kept as an alias. (#236, @evanbones, 2026-05-20)
 - [monorepo] docs: added new .md file updating the schema based on LTI implementation. (#330, @frostbitcactus, 2026-05-22)
 - [monorepo] docs: Add [`docs/rag-ai/EMBEDDINGS.md`](docs/rag-ai/EMBEDDINGS.md) — embeddings and pgvector storage, server vs chat API keys, index/retrieval lifecycle, hosting, failures, and env vars (@superbolt08, 2026-05-21)
+- [core] prisma: Extend `AIInteraction` with routing, timing, token, cost, and energy/carbon telemetry fields; add `EnergyMeasurementSource` enum; extend `AIModel` with `routerTier`, `estEnergyJoulesPerToken`, and `averageCarbonGramsPerToken` (nullable columns for Phase 0 routing). (#320, @superbolt08, 2026-05-22)
 
 ### Changed
 - [core] docs: Update [`docs/rag-ai/CHAT_RAG_PIPELINE.md`](docs/rag-ai/CHAT_RAG_PIPELINE.md) for capped hybrid/tool RAG, env vars, and optional `similarityThreshold` on `findRelevantContent`; merge with `development` rag-ai index. (#144, @superbolt08, 2026-05-22)
@@ -90,6 +91,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [monorepo] docs: Extend root README Docs table with links to `docs/rag-ai/` and `implementations/schema-design.md`.
 - [ai-tutor] infra: Renamed the `test/` `__test__` to `tests/` and added the tests within the `app/tests/` to the `TESTS.md` file and created a `.env.test.example` file. Added `.env.test` to gitignore (#199, @glowyblack, 2026-05-18)
 - [monorepo] docs: Update [`docs/rag-ai/README.md`](docs/rag-ai/README.md) index and folder layout for `EMBEDDINGS.md`; cross-link [`CHAT_RAG_PIPELINE.md`](docs/rag-ai/CHAT_RAG_PIPELINE.md) and [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) to the embeddings guide; extend root README Docs table (@superbolt08, 2026-05-21)
+- [core] prisma: Rename `AIModel.tier` to `routerTier` in schema and unified migration SQL to clarify auto-router pool vs. other tier concepts. (#320, @superbolt08, 2026-05-22)
 
 ### Removed
 - [monorepo] infra: Remove nested `package-lock.json` files from npm workspace packages (`ai-tutor`, `ai-tutor/server`, `question-maker/app/backend`) - holdovers from before the monorepo workspace setup that were not read by npm or Turborepo on root installs; add `apps/**/package-lock.json` to `.gitignore` to prevent accidental regeneration. (#268, @yta3216, 2026-05-20)
