@@ -17,6 +17,8 @@ EduAICore/
 │               └── frontend/        # Question Maker Vite/React frontend
 ├── scripts/                         # Repo-level setup and dev utilities
 ├── docs/                            # System-wide architecture and planning docs
+│   ├── rag-ai/                      # EduAI chat, RAG, latency (#203), routing (#197)
+│   └── implementations/           # schema-design, planned-core-tests, …
 ├── turbo.json                       # Turborepo task pipeline configuration
 ├── docker-compose.dev.yml           # Dev-only Postgres containers (apps run on the host)
 ├── CHANGELOG.md                     # Unified changelog across all apps
@@ -45,9 +47,14 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 | Document | Description |
 |----------|-------------|
 | [`platform-centralization-architecture-plan.md`](docs/platform-centralization-architecture-plan.md) | How Core, AI Tutor, and Question Maker are being centralized under a single API and auth layer |
+| [`auth-pipeline-centralization-plan.md`](docs/implementations/auth-pipeline-centralization-plan.md) | Auth pipeline centralization — migrating all extensions to Core as the sole OAuth/OIDC provider |
 | [`user-management-and-roles-architecture-plan.md`](docs/user-management-and-roles-architecture-plan.md) | Role hierarchy, permissions, and naming decisions across the platform |
+| [`rag-ai/README.md`](docs/rag-ai/README.md) | Index for EduAI chat/RAG docs — pipeline, embeddings, latency sprint (#203), routing (#197), dev server runbook |
+| [`rag-ai/EMBEDDINGS.md`](docs/rag-ai/EMBEDDINGS.md) | How embeddings work — pgvector storage, server vs chat API keys, index/retrieval lifecycle, hosting |
+| [`rag-ai/CHAT_RAG_PIPELINE.md`](docs/rag-ai/CHAT_RAG_PIPELINE.md) | `POST /api/chat` flow — hybrid vs tool-calling RAG, `findRelevantContent`, Mermaid diagram |
+| [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Core vs hosted services, provider keys, embeddings overview, and high-level flows |
+| [`implementations/schema-design.md`](docs/implementations/schema-design.md) | Unified schema design across apps |
 | [`DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Instructions on how to deploy the system (production and development) |
-| [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Architectural breakdown of the system |
 
 ## Changelog
 
@@ -65,7 +72,7 @@ npm install
 npm run dev
 ```
 
-`npm run dev` automatically starts the Docker databases before spinning up all apps via Turborepo. If Docker Desktop is not running you will get a daemon error — start Docker first, then re-run.
+`npm run dev` automatically starts the Docker databases before spinning up all apps via Turborepo. On macOS, Docker Desktop is started automatically if it is not already running. On other platforms, start Docker manually before running `npm run dev`.
 
 After `npm install`, each app gets a `.env` copied from its `.env.example` (only if one doesn't already exist). Fill in any secrets (auth keys, API keys) before the relevant features will work. See each app's `.env.example` for what is required.
 
@@ -84,8 +91,7 @@ After `npm install`, each app gets a `.env` copied from its `.env.example` (only
 ```bash
 npm run build        # Build all apps (Turborepo caches outputs)
 npm run lint         # Lint all apps
-npm run test         # Unit tests across all apps
-npm run test:all     # Unit + integration tests
+npm run test         # All tests across all apps (unit + integration)
 ```
 
 To run tasks for a single app, use Turborepo's filter flag directly:
@@ -177,8 +183,7 @@ From the monorepo root `EduAICore/`:
 
 | Command | What runs |
 | --- | --- |
-| `npm run test` | All unit tests across every app simultaneously |
-| `npm run test:all` | Everything above, plus Question Maker backend integration tests |
+| `npm run test` | All tests across every app (unit + integration) |
 | `npx turbo run test --filter=edu-ai` | EduAI tests only |
 | `npx turbo run test --filter=ai-tutor --filter=ai-tutor-server` | AI Tutor frontend and server tests |
 | `npx turbo run test --filter='question-maker-*'` | Question Maker frontend and backend tests |
@@ -187,8 +192,8 @@ From the monorepo root `EduAICore/`:
 
 Some tests require a running PostgreSQL instance and will fail without one:
 
-* **AI Tutor server** — Turborepo runs both unit and integration tests. Connection details are configured in `apps/extensions/ai-tutor/server/.env.test`. The test database (`ai-tutor_test`) is created automatically on the first run.
-* **Question Maker backend** — The standard `npm run test` runs unit tests only. Integration tests are opt-in via `npm run test:all` and also require PostgreSQL.
+* **AI Tutor server** — both unit and integration tests run automatically. Connection details are configured in `apps/extensions/ai-tutor/server/.env.test`. The test database (`ai-tutor_test`) is created automatically on the first run.
+* **Question Maker backend** — both unit and integration tests run automatically via `npm run test`. Set `TEST_DATABASE_URL` to a dedicated PostgreSQL database before running (integration tests are skipped gracefully if it is not set).
 
 ### Test runners by app
 

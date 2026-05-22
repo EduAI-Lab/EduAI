@@ -1,5 +1,5 @@
 # AI / editor tool dirs
-.claude/
+.claude/settings.local.json
 .cursor/
 .opencode/
 .gemini/
@@ -49,3 +49,6 @@ dist/
 
 # Turborepo
 .turbo
+
+# workspace packages must not have their own lock files
+apps/**/package-lock.json
