@@ -4,6 +4,11 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## [Week 3 — May 18–21, 2026]
+
+### Added
+- [core] test: Created the setup for running integration tests on core, as well as a `planned-core-integration-test.md` listing the tests still needed for the test
+
 ---
 
 

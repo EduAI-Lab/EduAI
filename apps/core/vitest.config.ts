@@ -5,9 +5,10 @@ export default defineConfig({
   plugins: [tsconfigPaths()],
   test: {
     globals: true,
-    environment: 'jsdom',
-    pool: 'vmThreads',
     include: ['app/tests/**/*.test.{ts,tsx}'],
-    setupFiles: ['./app/tests/setup.ts'],
+    globalSetup: ['./app/tests/globalSetup.ts'],
+    environment: 'jsdom',
+    fileParallelism: false,
+    setupFiles: ['./app/tests/setup.ts', './app/tests/setup.integration.ts'],
   },
 });
