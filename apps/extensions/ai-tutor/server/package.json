@@ -9,8 +9,9 @@
     "test:unit": "vitest run tests/unit/",
     "test:integration": "vitest run tests/integration/",
     "start": "npx prisma generate && node src/index.js",
-    "dev": "npx prisma migrate deploy && npx prisma generate && nodemon src/index.js",
+    "dev": "npx prisma migrate deploy && npx prisma generate && npm run seed:if-empty && nodemon src/index.js",
     "seed": "prisma generate && tsx prisma/seed.ts",
+    "seed:if-empty": "tsx prisma/seed-if-empty.ts",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [],

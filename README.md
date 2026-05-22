@@ -85,6 +85,8 @@ npm run dev
 
 `npm run dev` automatically starts the Docker databases before spinning up all apps via Turborepo. On macOS, Docker Desktop is started automatically if it is not already running. On other platforms, start Docker manually before running `npm run dev`.
 
+On first run (or after a database wipe), the Core and AI Tutor databases are seeded automatically with development data — users, courses, topics, questions, and AI Tutor prompt templates. Subsequent dev restarts detect existing data and skip the seed, so normal restarts are not slowed down.
+
 After `npm install`, each app gets a `.env` copied from its `.env.example` (only if one doesn't already exist). Fill in any secrets (auth keys, API keys) before the relevant features will work. See each app's `.env.example` for what is required.
 
 **Dev server ports**
@@ -103,6 +105,8 @@ After `npm install`, each app gets a `.env` copied from its `.env.example` (only
 npm run build        # Build all apps (Turborepo caches outputs)
 npm run lint         # Lint all apps
 npm run test         # All tests across all apps (unit + integration)
+npm run test:all     # Unit + integration tests
+npm run dbseed       # Force-seed all three databases (Core → AI Tutor → Question Maker)
 ```
 
 To run tasks for a single app, use Turborepo's filter flag directly:
