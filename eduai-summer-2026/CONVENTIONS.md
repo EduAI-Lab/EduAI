@@ -8,6 +8,10 @@ Source issues: [Making Pull Requests #67](https://github.com/EduAI-Lab/EduAI/iss
 
 ## 1. Making Issues
 
+### Assignees and Labels
+
+When creating issues, **assign everyone working on the issue** (one or more people; do not leave unassigned). Also, **you must add the week label matching the week in the title** (e.g. `Week 4`, `Week 5`). An issue can also have more than one week label.
+
 ### Title Format
 
 ```
@@ -35,7 +39,7 @@ Size: Week N - Task
    EPIC: <link-to-epic>
    ```
 
-> Every task, no matter how small, must have an issue. No issue = no record of the work.
+> Every task, no matter how small, must have an issue. No issue = no record of the work. Every issue must have at least one assignee and a week label.
 
 ---
 
