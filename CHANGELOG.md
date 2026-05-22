@@ -32,7 +32,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ### Fixed
 - [monorepo] infra: Fix `npm run dev` failing on restart — Docker orphaned containers from previous service renames (`eduai-core-db`, `eduai-tutor-db`, `eduai-qm-db`) held ports 54320–55432 and were not removed by `docker compose down`; overhaul `scripts/dev-db.sh` to force-remove any container bound to those ports and delete the stale `eduai-dev` network before starting fresh; add `--remove-orphans` to `docker:dev:db:down`. (#236, @evanbones, 2026-05-19)
 - [question-maker] infra: Fix `vitest.integration.config.js` using wrong `test/` path instead of `tests/` — integration tests were never discovered and `test:all` always exited with code 1 (@ariqmuldi, 2026-05-20)
-- [monorepo] docs: Corrected README paths, CHANGELOG structure, and removed redundant TESTS.md placeholder. (#3, @evanbones, 2026-05-22)
+- [monorepo] docs: Corrected README paths, CHANGELOG structure, and removed redundant TESTS.md placeholder. (#329, @evanbones, 2026-05-22)
 
 ## [Week 2 — May 11–15, 2026]
 
