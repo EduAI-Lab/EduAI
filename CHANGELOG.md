@@ -36,6 +36,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 
 ### Fixed
+- [monorepo] docs: Remove stale `professorId` references from `docs/implementations/rbac-matrix.md` — the field no longer exists in the schema; rephrase the §1 instructor-linkage note and the §20 gap entries to refer to `Enrollment.role=INSTRUCTOR` instead. (@abdullahmoh21, 2026-05-22)
 - [monorepo] infra: Fix `npm run dev` failing on restart — Docker orphaned containers from previous service renames (`eduai-core-db`, `eduai-tutor-db`, `eduai-qm-db`) held ports 54320–55432 and were not removed by `docker compose down`; overhaul `scripts/dev-db.sh` to force-remove any container bound to those ports and delete the stale `eduai-dev` network before starting fresh; add `--remove-orphans` to `docker:dev:db:down`. (#236, @evanbones, 2026-05-19)
 - [question-maker] infra: Fix `vitest.integration.config.js` using wrong `test/` path instead of `tests/` — integration tests were never discovered and `test:all` always exited with code 1 (@ariqmuldi, 2026-05-20)
 
