@@ -32,7 +32,6 @@ export const Topics = sequelize.define('Topics', {
   coreTopicId: {
     type: DataTypes.STRING,
     allowNull: true,
-    unique: true,
     field: 'core_topic_id',
     comment: 'Core CourseTopic CUID; null until synced with Core'
   },
@@ -53,9 +52,7 @@ export const Topics = sequelize.define('Topics', {
   timestamps: true,
   underscored: true,
   indexes: [
-    {
-      unique: true,
-      fields: ['course_id', 'name']
-    }
+    { unique: true, fields: ['course_id', 'name'] },
+    { unique: true, fields: ['core_topic_id'] }
   ]
 });

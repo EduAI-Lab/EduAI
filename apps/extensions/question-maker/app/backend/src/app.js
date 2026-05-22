@@ -18,7 +18,6 @@ import variantRoutes from './routes/variants.js';
 import eduaiRoutes from './routes/eduai.js';
 import canvasRoutes from './routes/canvas.js';
 import assessmentVariantRoutes from './routes/assessmentVariant.js';
-import bugReportRoutes from './routes/bugReports.js';
 import { config } from './config/settings.js';
 import { logger } from './utils/logger.js';
 import './schema/index.js';
@@ -104,7 +103,6 @@ app.use('/api/assessments', assessmentRoutes);
 app.use('/api/eduai', eduaiRoutes);
 app.use('/api/canvas', canvasRoutes);
 app.use('/api/assessment-variant', assessmentVariantRoutes);
-app.use('/api/bug-reports', bugReportRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

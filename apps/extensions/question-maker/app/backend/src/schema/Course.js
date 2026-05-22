@@ -37,9 +37,8 @@ export const Course = sequelize.define(
     coreCourseId: {
       type: DataTypes.STRING,
       allowNull: true,
-      unique: true,
       field: "core_course_id",
-      comment: "Core Course CUID; null until linked to Core',",
+      comment: "Core Course CUID; null until linked to Core",
     },
     createdAt: {
       type: DataTypes.DATE,
@@ -58,5 +57,6 @@ export const Course = sequelize.define(
     tableName: "courses",
     timestamps: true,
     underscored: true,
+    indexes: [{ unique: true, fields: ["core_course_id"] }],
   }
 );
