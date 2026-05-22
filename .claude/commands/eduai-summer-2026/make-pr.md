@@ -35,13 +35,15 @@ Work through each item in order. For each item:
   - **Title** following the format `Size: Week N - Task` (determine size S/M/L and current week from the scope of changes)
   - **Body** with: a brief description of what was done and why, hours worked (ask the user how many people are working on it — if multiple, format is `Hours to complete (Week m): n hours [person name]` per person), and the epic link (ask the user)
   - Print the title and body clearly so the user can copy-paste it into https://github.com/EduAI-Lab/EduAI/issues/new
-  - Remind them to assign all correct assignees on the issue (everyone working on it, not just themselves)
+  - Remind them to assign all correct assignees on the issue (one or more people; do not leave unassigned)
+  - Remind them to add the week label matching the week in the title (e.g. `Week 4`, `Week 5`); an issue can have more than one week label
   - Remind them to add the issue to the project board at https://github.com/orgs/EduAI-Lab/projects/8
   - Wait for them to create the issue and give you the issue number(s) before continuing
 - If they have one, confirm each issue exists using `gh issue view <number> --repo EduAI-Lab/EduAI` and check:
   - The issue is **open** (not closed — if it's closed, flag it and ask the user to confirm this is the right issue)
   - The issue body contains an `EPIC:` link (if missing, remind the user to add it)
-  - The issue has assignees set (if none, remind the user to assign the people working on it)
+  - The issue has assignees set (if none, remind the user to assign everyone working on it — one or more people)
+  - The issue has at least one week label (e.g. `Week 4`, `Week 5`) matching the week in the title; multiple week labels are allowed (if missing entirely, remind the user to add one)
 - Remind the user: every issue must be on the project board at https://github.com/orgs/EduAI-Lab/projects/8 and linked to an epic
 
 ### Item 2 — Tests (most important)
