@@ -1,6 +1,9 @@
 /**
  * Sequelize model for individual question variants (question text, difficulty, answer, review status).
  * Links back to `Question_Metadata`, optional assessments/sections, and tracks AI/draft flags.
+ * `secondaryTopicsId` stores local topics.id CUIDs (QM-internal references, not Core IDs).
+ *   At push time the server translates each ID to its topics.coreTopicId for the Core API call.
+ * `coreQuestionId` stores the Core Question CUID once this variant is approved and pushed.
  */
 import { DataTypes } from 'sequelize';
 import { sequelize } from '../config/database.js';
@@ -20,14 +23,14 @@ export const Variants = sequelize.define('Variants', {
     }
   },
   difficulty: {
-    type: DataTypes.ENUM('easy', 'medium', 'hard'),
+    type: DataTypes.ENUM('EASY', 'MEDIUM', 'HARD'),
     allowNull: false,
-    defaultValue: 'medium'
+    defaultValue: 'MEDIUM'
   },
   reasoningLevel: {
-    type: DataTypes.ENUM('factual', 'analytical', 'application'),
+    type: DataTypes.ENUM('FACTUAL', 'ANALYTICAL', 'APPLICATION'),
     allowNull: false,
-    defaultValue: 'factual',
+    defaultValue: 'FACTUAL',
     field: 'reasoning_level'
   },
   questionMetadataId: {
@@ -49,10 +52,11 @@ export const Variants = sequelize.define('Variants', {
     }
   },
   secondaryTopicsId: {
-    type: DataTypes.ARRAY(DataTypes.INTEGER),
+    type: DataTypes.ARRAY(DataTypes.STRING),
     allowNull: true,
     defaultValue: [],
-    field: 'secondary_topics_id'
+    field: 'secondary_topics_id',
+    comment: 'Array of local topics.id CUIDs; translated to coreTopicId at push time'
   },
   referenceId: {
     type: DataTypes.INTEGER,
@@ -87,6 +91,13 @@ export const Variants = sequelize.define('Variants', {
     defaultValue: null,
     field: 'choices',
     comment: 'Array of choice objects for MCQ questions: [{letter: "A", text: "Option A"}, ...]'
+  },
+  coreQuestionId: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    unique: true,
+    field: 'core_question_id',
+    comment: 'Core Question CUID; null until variant is approved and pushed to Core'
   },
   createdAt: {
     type: DataTypes.DATE,

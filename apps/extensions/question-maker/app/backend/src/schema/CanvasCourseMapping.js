@@ -12,7 +12,7 @@ export const CanvasCourseMapping = sequelize.define('CanvasCourseMapping', {
     autoIncrement: true
   },
   userId: {
-    type: DataTypes.INTEGER,
+    type: DataTypes.STRING,
     allowNull: false,
     field: 'user_id',
     references: {

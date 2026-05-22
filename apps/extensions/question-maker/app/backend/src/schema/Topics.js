@@ -1,15 +1,17 @@
 /**
  * Sequelize model for course topics used to classify questions and variants.
- * Each topic belongs to exactly one course and can be referenced as a primary or secondary tag.
+ * `id` is a CUID string (changed from INTEGER autoincrement in schema-unification).
+ * `coreTopicId` links to Core's CourseTopic.id; null until synced with Core.
  */
 import { DataTypes } from 'sequelize';
 import { sequelize } from '../config/database.js';
+import { createId } from '@paralleldrive/cuid2';
 
 export const Topics = sequelize.define('Topics', {
   id: {
-    type: DataTypes.INTEGER,
+    type: DataTypes.STRING,
     primaryKey: true,
-    autoIncrement: true
+    defaultValue: () => createId()
   },
   name: {
     type: DataTypes.STRING,
@@ -27,6 +29,13 @@ export const Topics = sequelize.define('Topics', {
       key: 'id'
     }
   },
+  coreTopicId: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    unique: true,
+    field: 'core_topic_id',
+    comment: 'Core CourseTopic CUID; null until synced with Core'
+  },
   createdAt: {
     type: DataTypes.DATE,
     allowNull: false,
@@ -42,5 +51,11 @@ export const Topics = sequelize.define('Topics', {
 }, {
   tableName: 'topics',
   timestamps: true,
-  underscored: true
+  underscored: true,
+  indexes: [
+    {
+      unique: true,
+      fields: ['course_id', 'name']
+    }
+  ]
 });
