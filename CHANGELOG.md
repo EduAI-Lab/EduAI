@@ -23,7 +23,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [monorepo] docs: Add [`docs/rag-ai/EMBEDDINGS.md`](docs/rag-ai/EMBEDDINGS.md) — embeddings and pgvector storage, server vs chat API keys, index/retrieval lifecycle, hosting, failures, and env vars (@superbolt08, 2026-05-21)
 
 ### Changed
-- [monorepo] docs/tooling: Update `eduai-summer-2026/CONVENTIONS.md` and `.claude/commands/eduai-summer-2026/make-pr.md` — add assignee and week-label requirements to issue conventions; expand test conventions to cover unit, integration, and end-to-end tests; update make-pr skill to verify week labels on linked issues and determine applicable test types. (#PR, @ariqmuldi, 2026-05-22)
+- [monorepo] docs/tooling: Update `eduai-summer-2026/CONVENTIONS.md` and `.claude/commands/eduai-summer-2026/make-pr.md` — add assignee and week-label requirements to issue conventions; expand test conventions to cover unit, integration, and end-to-end tests; update make-pr skill to verify week labels on linked issues and determine applicable test types. (#318, @ariqmuldi, 2026-05-22)
 - [monorepo] docs: Move RAG-AI team docs from `docs/implementations/RAG-AI/` to [`docs/rag-ai/`](docs/rag-ai/README.md); normalize folder name and filenames (`CHAT_RAG_PIPELINE.md`, `HOW_TO_USE_DEV_SERVER.md`, summer-2026 subfolders); update root README, [`ARCHITECTURE.md`](docs/ARCHITECTURE.md), and cross-links.
 - [monorepo] docs: Add chat/RAG pipeline section to [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) linking to [`CHAT_RAG_PIPELINE.md`](docs/rag-ai/CHAT_RAG_PIPELINE.md).
 - [monorepo] docs: Extend root README Docs table with links to `docs/rag-ai/` and `implementations/schema-design.md`.
