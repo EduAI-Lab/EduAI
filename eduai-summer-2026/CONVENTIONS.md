@@ -83,7 +83,8 @@ See also: [Git Workflow Issue #120](https://github.com/EduAI-Lab/EduAI/issues/12
    - `TESTS.md` — if any tests were added or changed, add a row for each test file: the filename (linked to its path) and a plain-English description of what it tests
    - `CHANGELOG.md` — add an entry with today's date (the date the PR is opened, not merged), the PR link, and bullet points describing what was implemented
    - `README.md` — update for every implementation, including changes made after PR review
-8. **Assign two reviewers** — one from dev team, one from project leads
+8. **Assign yourself (and all contributors) as PR assignees** — everyone working on the PR should be assigned to it
+9. **Assign two reviewers** — one from dev team, one from project leads
 
 ### CHANGELOG.md Entry Format
 
