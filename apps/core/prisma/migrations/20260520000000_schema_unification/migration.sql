@@ -208,7 +208,7 @@ CREATE TABLE "ai_models" (
     "supportsStreaming" BOOLEAN NOT NULL DEFAULT true,
     "inputPricing" DOUBLE PRECISION,
     "outputPricing" DOUBLE PRECISION,
-    "tier" INTEGER,
+    "routerTier" INTEGER,
     "estEnergyJoulesPerToken" DOUBLE PRECISION,
     "averageCarbonGramsPerToken" DOUBLE PRECISION,
     "isActive" BOOLEAN NOT NULL DEFAULT true,

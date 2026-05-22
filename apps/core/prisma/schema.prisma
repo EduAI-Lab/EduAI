@@ -206,7 +206,7 @@ model AIModel {
   supportsStreaming          Boolean         @default(true)
   inputPricing               Float?
   outputPricing              Float?
-  tier                       Int?
+  routerTier                 Int?
   estEnergyJoulesPerToken    Float?
   averageCarbonGramsPerToken Float?
   isActive                   Boolean         @default(true)
