@@ -1,5 +1,5 @@
 # AI / editor tool dirs
-.claude/
+.claude/settings.local.json
 .cursor/
 .opencode/
 .gemini/

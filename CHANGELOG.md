@@ -9,6 +9,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ## [Week 3 — May 18–22, 2026]
 
 ### Added
+- [monorepo] docs/tooling: Add `eduai-summer-2026/CONVENTIONS.md` — consolidated reference for issue format, git workflow, and PR checklist readable by any AI agent; add `.claude/commands/eduai-summer-2026/make-pr.md` — Claude Code `/project:eduai-summer-2026:make-pr` slash command that walks contributors through the PR checklist interactively; un-ignore `.claude/` in `.gitignore` so commands are team-shared. (#289, @ariqmuldi, 2026-05-21)
 - [core] tests: Finished implementing all the tests inside of the `planned-core-tests.md`
 - [monorepo] docs: Added docs/implementations/rbac-matrix.md (#198, @abdullahmoh21, 2026-05-21)
 - [monorepo] docs: Add [`docs/rag-ai/`](docs/rag-ai/README.md) — index and team docs for EduAI chat/RAG ([`CHAT_RAG_PIPELINE.md`](docs/rag-ai/CHAT_RAG_PIPELINE.md)), shared dev server ([`HOW_TO_USE_DEV_SERVER.md`](docs/rag-ai/HOW_TO_USE_DEV_SERVER.md)), HelpMe gap analysis, **latency** sprint guides and measurement ledger ([#203](https://github.com/EduAI-Lab/EduAI/issues/203)), and **routing** Phase 0–1 guides ([#197](https://github.com/EduAI-Lab/EduAICore/issues/197)).
