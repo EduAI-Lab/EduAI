@@ -200,7 +200,7 @@ export default function Chat() {
                         aria-label="ADHD Assist"
                       />
                       <Label htmlFor="adhd-assist" className="text-sm">
-                        ADHD Assist {adhdAssist ? "On" : "Off"}
+                        Assistive mode {adhdAssist ? "On" : "Off"}
                       </Label>
                     </div>
                     <SystemPromptSettings
