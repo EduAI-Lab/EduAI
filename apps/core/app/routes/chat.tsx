@@ -197,7 +197,7 @@ export default function Chat() {
                         id="adhd-assist"
                         checked={adhdAssist}
                         onCheckedChange={(checked) => setAdhdAssist(Boolean(checked))}
-                        aria-label="ADHD Assist"
+                        aria-label="Assistive mode"
                       />
                       <Label htmlFor="adhd-assist" className="text-sm">
                         Assistive mode {adhdAssist ? "On" : "Off"}
