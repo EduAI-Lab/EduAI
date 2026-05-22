@@ -48,9 +48,10 @@ Work through each item in order. For each item:
 
 ### Item 2 — Tests (most important)
 - Look at the changed files and identify what logic was added or modified
-- Check if corresponding test files exist for the changes
-- Ask the user to confirm: "Have you run the full test suite (including Playwright if applicable) and all tests pass with no skipped tests that shouldn't be skipped?"
-- If there are untested changes, flag them explicitly
+- Determine whether the changes warrant unit tests, integration tests, end-to-end tests (Playwright), or none — and explain your reasoning
+- Check if corresponding test files exist for each applicable test type
+- Ask the user to confirm: "Have you run the full test suite (unit, integration, and end-to-end where applicable) and all tests pass with no skipped tests that shouldn't be skipped?"
+- If there are untested changes across any test type, flag them explicitly
 
 ### Item 3 — TESTS.md
 - Read `TESTS.md`

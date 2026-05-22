@@ -73,7 +73,7 @@ See also: [Git Workflow Issue #120](https://github.com/EduAI-Lab/EduAI/issues/12
 ### PR Checklist (complete in order)
 
 1. **Implement the feature** — complete the feature or fix as scoped in the linked issue
-2. **Tests** — write tests before implementing. **This is the most important step.** Before requesting review, run all tests again (including Playwright if applicable) to confirm nothing is broken.
+2. **Tests** — write tests before implementing. **This is the most important step.** Consider all three levels: unit tests, integration tests, and end-to-end tests (Playwright). Before requesting review, run the full test suite across all applicable levels to confirm nothing is broken.
 3. **PR title and description** — write a clear title and description explaining *what* you implemented and *why*, not just what files changed
 4. **Meaningful code comments** — add comments only where the reasoning is non-obvious; do not comment every line
 5. **Logical folder structure** — group new files with related files; do not dump files in the root or unrelated folders
