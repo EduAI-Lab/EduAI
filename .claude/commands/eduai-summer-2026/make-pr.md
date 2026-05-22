@@ -125,5 +125,6 @@ Once all 7 items are confirmed, do the following:
 6. **Create the PR** using `gh pr create` with the approved title, body, and base branch. Add `--draft` if the user chose draft mode. Do not add a `Co-Authored-By` line anywhere in the commit message or PR body.
 
 7. After creation, remind the user:
+   - **Assign yourself (and anyone else working on it) as the PR assignee** — everyone contributing to the PR should be assigned to it.
    - **Assign two reviewers** — one from the dev team, one from the project leads. They must be from different groups (two dev team members does not count). The PR cannot be merged until both approve.
    - **Update the CHANGELOG** `#PR` placeholder with the real PR number/URL if it was left as a placeholder.
