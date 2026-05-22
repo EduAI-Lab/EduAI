@@ -3,13 +3,13 @@
 **Audience:** Full EduAI dev team + research lead  
 **Status:** Open problems — **not** solved; needs design before shipping toggles that disable course/web grounding  
 **Teammates — start here for tasks:** [`TEAM_CHAT_LATENCY_SPRINT_GUIDE.md`](./TEAM_CHAT_LATENCY_SPRINT_GUIDE.md) (this week’s delegatable steps)  
-**Lead context:** Documented from local dev on **AI enhancement branch** (Gemma ~31B, DeepSeek via Ollama); targets and cloud numbers in [`MODEL_LATENCY_TRACKER.md`](../MODEL_LATENCY_TRACKER.md)
+**Lead context:** Documented from local dev on **AI enhancement branch** (Gemma ~31B, DeepSeek via Ollama); targets and cloud numbers in [`../MODEL_LATENCY_TRACKER.md`](../MODEL_LATENCY_TRACKER.md)
 
 ---
 
 ## The problem in one paragraph
 
-EduAI must stay **course-aware** (RAG / `getInformation`) and able to use the **web** when appropriate — that is the product promise. Today, when tool calling is fully enabled (`supportsTools: true` on the model), turns are **slow** (lead observed **40–50 s** end-to-end on local Ollama). When tools are effectively off (`supportsTools: false` → `hybrid_rag` or no-tool path in [`apps/core/app/routes/api/chat.ts`](../../../apps/core/app/routes/api/chat.ts) on `feat/local-models-and-ai-enhancement`), replies are **fast** but students must phrase requests like *“search the web for…”* or *“check the course materials for…”* or the model answers from weights only. A **“web search always on”** UI toggle was considered but rejected as a bad default (users leave it on). **Disabling tools globally is not an acceptable product fix.**
+EduAI must stay **course-aware** (RAG / `getInformation`) — that is the product promise. **Web search is out of scope for this sprint**; the only grounding tool we care about is course-material RAG. Today, when tool calling is fully enabled (`supportsTools: true` on the model), turns are **slow** (lead observed **40–50 s** end-to-end on local Ollama). When tools are effectively off (`supportsTools: false` → `hybrid_rag` path in [`apps/core/app/routes/api/chat.ts`](../../apps/core/app/routes/api/chat.ts)), replies are **fast** but students must phrase requests like *“check the course materials for…”* or the model answers from weights only. **Disabling tools globally is not an acceptable product fix.**
 
 **Target (product):** ~**3–4 s** perceived for typical tutoring turns where possible; streaming should show the **first token early**, not after the full server pipeline finishes.
 
@@ -24,9 +24,8 @@ EduAI must stay **course-aware** (RAG / `getInformation`) and able to use the **
 | **40–50 s total** | Unacceptable for students; most time felt like **waiting for server** before anything appears |
 | **Pre-display wait** | Felt like the app waited to **download / finish server work** before showing streamed text (poor TTFT / buffering) |
 | **Fast path** | When the chat API takes the **no tool-calling** branch (`!supportsTools`), responses are much faster |
-| **Slow path** | Full **tool_calling** path: `getInformation`, `webSearch`, `fetchPage`, `maxSteps`, RAG merge — required for real EduAI behaviour |
+| **Slow path** | Full **tool_calling** path: `getInformation`, `maxSteps`, RAG merge — required for real EduAI behaviour. Web tools (`webSearch`, `fetchPage`) are **out of scope** for this sprint. |
 | **Prompt workaround** | System prompt tightened to call tools **only when user explicitly asks** → faster, but **breaks** “just ask about my course” UX (~90% of student needs) |
-| **Toggle idea** | Permanent “web search on” toggle → users never turn it off → not a real solution |
 
 ---
 
@@ -39,9 +38,11 @@ supportsTools = await modelSupportsTools(model)   // from DB AIModel.supportsToo
 
 if (!supportsTools) {
   → "hybrid_rag" path: keyword/heuristic isRAGQuery → findRelevantContent inline
-  → NO webSearch / fetchPage / getInformation tools
+  → No tools registered
 } else {
   → "tool_calling" path: streamText + tools + maxSteps (default 3)
+  → Only `getInformation` (course RAG) is in scope for this sprint
+  → Web tools (`webSearch`, `fetchPage`) remain in the codebase but are not the focus
   → System prompt says: prefer ZERO tool calls; only when explicitly needed
 }
 ```
@@ -55,7 +56,7 @@ if (!supportsTools) {
 | Toggle | Purpose | Must NOT |
 | ------ | ------- | -------- |
 | **`adhdAssist`** (research IV) | Prepend ADHD policy block; optional Phase 3 oversight | Change whether tools/RAG run |
-| **Tool / grounding strategy** (product — TBD) | When to call `getInformation` / `webSearch` without magic phrases | Be confused with ADHD Assist; be “always on” with no guardrails |
+| **Course-RAG grounding strategy** (product — TBD) | When to call `getInformation` without magic phrases | Be confused with ADHD Assist; bring web tools back into scope this sprint |
 
 ---
 
@@ -65,27 +66,26 @@ Use this table in kickoff; pick 1–2 spikes for the next sprint.
 
 | Option | Idea | Pros | Cons |
 | ------ | ---- | ---- | ---- |
-| **A. Course-selected → auto RAG** | If `courseCode` set, always run `findRelevantContent` **before** LLM (like hybrid path) even on tool-capable models; tools only for web | Matches “course-aware” without “check course materials” phrasing | Extra embedding latency every turn; need cap (Phase 2.5) |
-| **B. Intent router (lightweight)** | Small rules or classifier: `needs_web` / `needs_course` / `chat_only` → register subset of tools | Fewer tool round-trips; predictable | Wrong routing = wrong answer; needs tests |
-| **C. Model routing (sibling project)** | Friend’s **Auto** tier: cheap model for chat-only, tier 2+ when tools/images needed | Sustainability + speed for simple Qs | Separate track; must not break course default |
+| **A. Course-selected → auto RAG** | If `courseCode` set, always run `findRelevantContent` **before** LLM (like hybrid path) even on tool-capable models | Matches “course-aware” without “check course materials” phrasing | Extra embedding latency every turn; need cap (Phase 2.5) |
+| **B. Intent router (lightweight)** | Small rules or classifier: `needs_course` / `chat_only` → decide whether to inject course context | Fewer wasted RAG calls; predictable | Wrong routing = wrong answer; needs tests |
+| **C. Per-turn model-tier routing** (**now in scope — L10**) | Default to a **small model with `supportsTools: false`** that answers chat-only questions from weights; **escalate per turn** to a bigger `supportsTools: true` model when `needsCourseRag` fires. Web tools stay out of scope. Pairs with admin-UI fix [#264](https://github.com/EduAI-Lab/EduAI/issues/264) (hide toggle for small models). | Best of both: fast for ~chat-only, correct for course-RAG; no “always-on tools” foot-gun | Misrouting on borderline prompts; need a clear escalation default (correctness > speed) |
 | **D. Keep tools, shrink work** | Lower `CHAT_TOOL_MAX_STEPS`, cap RAG chunks/chars (partially done), summarize tool JSON before model | Already helped cloud (~11 s → ~3 s on Gemini per latency doc) | Local 31B still dominated by inference + load |
-| **E. Local dev defaults** | Default dev to smaller warm model; document `ollama run` keep-alive; measure TTFT separately from Total | Honest 3–4 s target for **local** | Production may still use cloud |
+| **E. Dev-server defaults** | Default dev server to smaller warm model; document keep-alive; measure TTFT separately from Total | Honest 3–4 s target for **dev** | Production may still use cloud |
 | **F. Streaming UX** | Ensure first chunk reaches UI immediately; show phase labels (“Searching course…”) | Fixes “nothing happening for 40 s” perception | Does not remove backend seconds |
-| **G. User “Research mode”** | Explicit mode that enables web+tools; default course mode auto-RAG only | Clear consent | Still risks “always on” if default wrong |
 
-**Lead recommendation for discussion:** Combine **A + D + F** for a near-term spike (auto-RAG when course selected + keep existing tool caps + streaming/typing indicator). Park **B/C** for a follow-up epic. Do **not** ship ADHD Assist Phase 3 oversight until baseline TTFT/Total on the eval model are logged (oversight adds ~1–3 s per architecture doc).
+**Lead recommendation for discussion:** Combine **A + C + D + F** for the sprint — auto-RAG when course selected, per-turn tier routing (small `supportsTools: false` default → escalate to tool-capable on course-RAG turns), existing tool caps, and streaming/typing indicator. **B** (intent router) is the input to **C**; both land together via L04 + L10. Do **not** ship ADHD Assist Phase 3 oversight until baseline TTFT/Total on the eval model are logged (oversight adds ~1–3 s per architecture doc).
 
 ---
 
 ## Metrics (use the same ledger as research)
 
-Every spike PR should add rows to [`MODEL_LATENCY_TRACKER.md`](../MODEL_LATENCY_TRACKER.md):
+Every spike PR should add rows to [`../MODEL_LATENCY_TRACKER.md`](../MODEL_LATENCY_TRACKER.md):
 
 | Probe | Model | Course | Tools path | TTFT | Total | Notes |
 | ----- | ----- | ------ | ---------- | ---- | ----- | ----- |
 | S1 “What is gradient descent?” | | none | | | | No tools expected |
-| “What did chapter 3 say?” | | selected | | | | Course grounding |
-| “Find recent papers on this” | | none | | | | Web tool expected |
+| C1 “What did chapter 3 say?” | | selected | | | | Course-RAG grounding |
+| C2 “Summarise the lecture notes for week 4” | | selected | | | | Course-RAG, longer context |
 
 **Regression rule:** ADHD Assist PRs must not worsen **warm** Total on the S1 probe by more than **15%** vs `main` at the same model (unless PR is explicitly labeled “latency trade-off accepted”).
 
@@ -95,11 +95,10 @@ Every spike PR should add rows to [`MODEL_LATENCY_TRACKER.md`](../MODEL_LATENCY_
 
 | ID | Question | Owner | Decision |
 | -- | -------- | ----- | -------- |
-| L1 | Is 3–4 s a hard SLA for **local Ollama** or only cloud/demo? | Lead + PI | |
+| L1 | Is 3–4 s a hard SLA for the **dev server local-model** path or only cloud/demo? | Lead + PI | |
 | L2 | Default when course selected: auto-RAG, tool `getInformation`, or both? | Team | |
-| L3 | Separate “web search” product toggle — yes/no/default? | Team | |
-| L4 | AI enhancement branch: merge, rebase, or cherry-pick? | Lead | |
-| L5 | Does Phase 2.5 block ADHD Assist eval, or document SHA without §3b? | Lead + PI | |
+| L3 | AI enhancement branch: merge, rebase, or cherry-pick? | Lead | |
+| L4 | Does Phase 2.5 block ADHD Assist eval, or document SHA without §3b? | Lead + PI | |
 
 ---
 
@@ -107,10 +106,10 @@ Every spike PR should add rows to [`MODEL_LATENCY_TRACKER.md`](../MODEL_LATENCY_
 
 | Doc | Role |
 | --- | ---- |
-| [`MODEL_LATENCY_TRACKER.md`](../MODEL_LATENCY_TRACKER.md) | Measured TTFT/Total, tool fixes, Gemini quota notes |
-| `TEAM_ADHD_ASSIST_PLAN.md` *(planned — ask lead)* | ADHD Assist feature (orthogonal IV) |
-| [`TEAM_PHASE_0_AND_1_GUIDE.md`](../../routing/eduai-summer-2026/TEAM_PHASE_0_AND_1_GUIDE.md) | Routing Phase 0 & 1 (current team guide) |
-| [`adhd-assist-architecture-phases.md`](../../literature/adhd-assist-architecture-phases.md) | Phase 2.5 efficiency, Phase 3 latency trade-off *(literature doc not in repo yet)* |
+| [`../MODEL_LATENCY_TRACKER.md`](../MODEL_LATENCY_TRACKER.md) | Measured TTFT/Total, tool fixes, Gemini quota notes |
+| [`TEAM_ADHD_ASSIST_PLAN.md`](./TEAM_ADHD_ASSIST_PLAN.md) | ADHD Assist feature (orthogonal IV) |
+| [`TEAM_PHASE_1_2_3_GUIDE.md`](./TEAM_PHASE_1_2_3_GUIDE.md) | Junior implementation steps |
+| [`../literature/adhd-assist-architecture-phases.md`](../literature/adhd-assist-architecture-phases.md) | Phase 2.5 efficiency, Phase 3 latency trade-off |
 
 ---
 
