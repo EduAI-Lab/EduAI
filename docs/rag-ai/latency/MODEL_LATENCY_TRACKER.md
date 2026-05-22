@@ -123,6 +123,27 @@ Recorded before the changes in [`apps/core/app/routes/api/chat.ts`](../../../app
 - **No speculative tool calls.** `2026-05-14-009` and `2026-05-14-010` are pure knowledge questions and stayed pure — the tightened system prompt is holding.
 - **Adaptive tool parameters.** `2026-05-14-008` picked `limit=1` because the user asked for "the top result." The model is reading the schema and the wording, not blindly defaulting.
 
+### Session 2026-05-22 — L02 baselines (sprint #206, `feat/chat-latency-week`)
+
+- **Git SHA:** `443972f`
+- **Branch:** `feat/chat-latency-week`
+- **Tester:** Ehsan
+- **Purpose:** Sprint L02 — before/after floor for S1, S1-local, C1, W1. No latency-fix code in this session.
+- **Local model:** `ollama:deepseek-r1:8b` (`supportsTools: false` → `hybrid_rag` path)
+- **Cloud model:** `google:gemini-2.5-flash` (`tool_calling` path)
+- **ADHD Assist toggle:** n/a
+
+| Run ID | Probe | Prompt used | Model | Course | Cold/warm | Tools called | TTFT | Total | Words | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `2026-05-22-S1` | S1 | What is gradient descent? | gemini-2.5-flash | none | warm | none | **1.35 s** | **2.61 s** | ~285 | Cloud baseline; matches May 2026-05-14 session (~2.63 s). |
+| `2026-05-22-S1-local` | S1-local | What is gradient descent? | ollama:deepseek-r1:8b | none | warm | none | **~2.3 min** | **~9.1 min** | — | Local pain-point probe; first load + long generation on 8B. |
+| `2026-05-22-C1` | C1 | What did chapter 3 say about X? | ollama:deepseek-r1:8b | CS101 | warm | none | **31.59 s** | **~2.4 min** | — | Course selected; seed DB has no uploaded materials → model asked for clarification; no `getInformation`. Documents product gap L03 targets. |
+| `2026-05-22-W1` | W1 | Find recent papers on gradient descent | ollama:deepseek-r1:8b | none | warm | none | **55.45 s** | **~7.1 min** | — | Hybrid path (no web tools on local 8B); model listed papers from weights, not Firecrawl. W1 web behaviour needs tool-capable path or L04 intent routing. |
+
+**Summary.** Cloud S1 ~3 s vs local S1-local ~9 min — local dominated by Ollama inference. C1/W1 on hybrid path show course/web UX gaps without tools, not just raw seconds.
+
+---
+
 ### Session 2026-05-14D — chat UX hardening + RAG defaults + durable user persist
 
 - **Changes:** (1) Typing indicator reads `toolInvocations` when `parts` is not yet filled (`getEffectiveParts` in `chat.tsx`). (2) Double-submit guard in `chat-input.tsx` + guarded submit in `chat.tsx`. (3) Non-200 / stream `onError` surfaced as a destructive `Alert`. (4) Incoming user messages are **`await appendMessages(...)`** before `streamText` (503 if DB write fails). (5) Higher default RAG caps with env overrides (`CHAT_HYBRID_RAG_*`, `CHAT_TOOL_RAG_MAX_CHARS_PER_CHUNK`).
