@@ -47,6 +47,7 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 | Document | Description |
 |----------|-------------|
 | [`platform-centralization-architecture-plan.md`](docs/platform-centralization-architecture-plan.md) | How Core, AI Tutor, and Question Maker are being centralized under a single API and auth layer |
+| [`auth-pipeline-centralization-plan.md`](docs/implementations/auth-pipeline-centralization-plan.md) | Auth pipeline centralization — migrating all extensions to Core as the sole OAuth/OIDC provider |
 | [`user-management-and-roles-architecture-plan.md`](docs/user-management-and-roles-architecture-plan.md) | Role hierarchy, permissions, and naming decisions across the platform |
 | [`rag-ai/README.md`](docs/rag-ai/README.md) | EduAI chat/RAG pipeline, latency sprint (#203), model routing (#197), dev server runbook — index of team docs |
 | [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Core vs hosted services, provider keys, embeddings, and high-level flows |
