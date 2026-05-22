@@ -116,6 +116,16 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ---
 
+## [Week 3 — May 18–22, 2026]
+
+### Added
+
+- [monorepo] infra: Add `npm run dbseed` root script that seeds Core, AI Tutor, and Question Maker databases in order (Core → AI Tutor → QM); safe to run at any time — Core and AI Tutor seeds are fully idempotent via upserts. (#NNN, @evanbones, 2026-05-22)
+- [core] infra: Auto-seed the Core database on `npm run dev` when the database is empty — new `db:seed:if-empty` script checks user count and skips seeding if data already exists, so normal dev restarts are unaffected. (#NNN, @evanbones, 2026-05-22)
+- [ai-tutor] infra: Auto-seed the AI Tutor database on `npm run dev` when the database is empty — new `seed:if-empty` script checks prompt template count (required for runtime) and skips if data exists. (#NNN, @evanbones, 2026-05-22)
+
+---
+
 ## [Week 2 — May 11–15, 2026]
 
 ### Added
