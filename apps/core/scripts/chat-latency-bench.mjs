@@ -114,6 +114,23 @@ async function main() {
   if (xApiKey) headers["x-api-key"] = xApiKey;
   if (cookie) headers["Cookie"] = cookie;
 
+  const label = args.label || "(no label)";
+  const authMode = xApiKey ? "x-api-key" : "cookie";
+  const totalRuns = prompts.length + (warmup ? 1 : 0);
+
+  console.log("=== chat latency bench (starting) ===");
+  console.log("label:", label);
+  console.log("url:", url);
+  console.log("model:", model);
+  console.log("courseCode:", courseCode || "(none)");
+  console.log("auth:", authMode);
+  console.log("warmup:", warmup ? "yes (not counted)" : "no");
+  console.log("requests:", prompts.length, warmup ? `(+1 warmup → ${totalRuns} HTTP calls)` : "");
+  console.log("sleep_ms:", sleepMs);
+  console.log("");
+  console.log("Running non-streaming POST /api/chat — this can take a while per request (especially Ollama).");
+  console.log("");
+
   let chatId = null;
   const timingsMs = [];
   const rows = [];
@@ -154,20 +171,26 @@ async function main() {
   }
 
   if (warmup) {
-    await oneRequest("Warmup: reply with the word ping.");
+    console.log("[warmup] Sending warmup request…");
+    const w = await oneRequest("Warmup: reply with the word ping.");
+    console.log(`[warmup] Done — ${Math.round(w.ms)} ms, HTTP ${w.status}\n`);
   }
 
   for (let i = 0; i < prompts.length; i++) {
     const prompt = prompts[i];
+    const preview = prompt.length > 60 ? `${prompt.slice(0, 57)}…` : prompt;
+    console.log(`[${i + 1}/${prompts.length}] POST ${url}`);
+    console.log(`  prompt: ${preview}`);
     const { ms, status, json } = await oneRequest(prompt);
     timingsMs.push(ms);
     const err = json?.error || (status >= 400 ? json?.details || textSnippet(json) : "");
     rows.push({ i: i + 1, ms: Math.round(ms), status, err: err ? String(err).slice(0, 120) : "" });
+    const note = err ? ` — ${String(err).slice(0, 80)}` : "";
+    console.log(`  done: ${Math.round(ms)} ms, HTTP ${status}${note}\n`);
     if (sleepMs) await sleep(sleepMs);
   }
 
-  const label = args.label || "(no label)";
-  console.log("\n=== chat latency bench ===");
+  console.log("\n=== chat latency bench (results) ===");
   console.log("label:", label);
   console.log("url:", url);
   console.log("model:", model);
