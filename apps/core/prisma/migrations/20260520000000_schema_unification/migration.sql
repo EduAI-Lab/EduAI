@@ -31,9 +31,6 @@ CREATE TYPE "AIModelType" AS ENUM ('CHAT', 'COMPLETION', 'EMBEDDING', 'IMAGE', '
 -- CreateEnum
 CREATE TYPE "MaterialStatus" AS ENUM ('PROCESSING', 'READY', 'FAILED');
 
--- CreateEnum
-CREATE TYPE "EnergyMeasurementSource" AS ENUM ('RAPL_CPU', 'NVML_GPU', 'OLLAMA_METRICS', 'ESTIMATED_FROM_TOKENS', 'ESTIMATED_FROM_DURATION');
-
 -- CreateTable
 CREATE TABLE "user" (
     "id" TEXT NOT NULL,
@@ -147,22 +144,6 @@ CREATE TABLE "ai_interactions" (
     "tokenUsed" INTEGER,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "modelId" TEXT,
-    "routedByAuto" BOOLEAN NOT NULL DEFAULT false,
-    "routerVersion" TEXT,
-    "routerFeatures" JSONB,
-    "routerConfidence" DOUBLE PRECISION,
-    "routerChosenTier" INTEGER,
-    "ttftMs" INTEGER,
-    "durationMs" INTEGER,
-    "promptTokens" INTEGER,
-    "completionTokens" INTEGER,
-    "estInputCostUsd" DOUBLE PRECISION,
-    "estOutputCostUsd" DOUBLE PRECISION,
-    "energyJoules" DOUBLE PRECISION,
-    "energySource" "EnergyMeasurementSource",
-    "carbonGramsCO2" DOUBLE PRECISION,
-    "userFeedback" INTEGER,
-    "finishReason" TEXT,
 
     CONSTRAINT "ai_interactions_pkey" PRIMARY KEY ("id")
 );
@@ -208,9 +189,6 @@ CREATE TABLE "ai_models" (
     "supportsStreaming" BOOLEAN NOT NULL DEFAULT true,
     "inputPricing" DOUBLE PRECISION,
     "outputPricing" DOUBLE PRECISION,
-    "routerTier" INTEGER,
-    "estEnergyJoulesPerToken" DOUBLE PRECISION,
-    "averageCarbonGramsPerToken" DOUBLE PRECISION,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
