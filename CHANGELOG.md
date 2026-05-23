@@ -9,10 +9,11 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ## [Week 3 — May 18–22, 2026]
 
 ### Added
-- [core] prisma: Extend `AIInteraction` with routing, timing, token, cost, and energy/carbon telemetry fields; add `EnergyMeasurementSource` enum; extend `AIModel` with `routerTier`, `estEnergyJoulesPerToken`, and `averageCarbonGramsPerToken` (nullable columns for Phase 0 routing). (#320, @superbolt08, 2026-05-22)
+- [core] prisma: Add `routing_telemetry_mvp` migration — extend `AIInteraction` with routing, timing, split token counts (`promptTokens`, `completionTokens`), cost, and energy/carbon fields; add `RouterTier` and `EnergyMeasurementSource` enums; extend `AIModel` with `routerTier`, `estEnergyJoulesPerToken`, and `averageCarbonGramsPerToken` (nullable, Phase 0 routing). (#320, @superbolt08, 2026-05-22)
 
 ### Changed
-- [core] prisma: Rename `AIModel.tier` to `routerTier` in schema and unified migration SQL to clarify auto-router pool vs. other tier concepts. (#320, @superbolt08, 2026-05-22)
+- [core] prisma: Drop legacy `AIInteraction.tokenUsed` in favor of `promptTokens` + `completionTokens` to avoid conflicting token totals. (#320, @superbolt08, 2026-05-22)
+- [core] prisma: Restore `schema_unification` migration to original SQL; routing/energy columns live only in `routing_telemetry_mvp` so existing local DBs can migrate cleanly. (#320, @superbolt08, 2026-05-22)
 
 ## [Week 2 — May 11–15, 2026]
 

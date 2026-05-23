@@ -137,14 +137,13 @@ model AIInteraction {
   response         String
   context          Json?
   modelUsed        String
-  tokenUsed        Int?
   createdAt        DateTime                 @default(now())
   modelId          String?
   routedByAuto     Boolean                  @default(false)
   routerVersion    String?
   routerFeatures   Json?
   routerConfidence Float?
-  routerChosenTier Int?
+  routerChosenTier RouterTier?
   ttftMs           Int?
   durationMs       Int?
   promptTokens     Int?
@@ -154,7 +153,6 @@ model AIInteraction {
   energyJoules     Float?
   energySource     EnergyMeasurementSource?
   carbonGramsCO2   Float?
-  userFeedback     Int?
   finishReason     String?
   course           Course?                  @relation(fields: [courseId], references: [id])
   model            AIModel?                 @relation(fields: [modelId], references: [id])
@@ -203,7 +201,7 @@ model AIModel {
   supportsStreaming          Boolean         @default(true)
   inputPricing               Float?
   outputPricing              Float?
-  routerTier                 Int?
+  routerTier                 RouterTier?
   estEnergyJoulesPerToken    Float?
   averageCarbonGramsPerToken Float?
   isActive                   Boolean         @default(true)
@@ -477,6 +475,12 @@ enum AIModelType {
   IMAGE
   AUDIO
   VIDEO
+}
+
+enum RouterTier {
+  TIER_1
+  TIER_2
+  TIER_3
 }
 
 enum EnergyMeasurementSource {
