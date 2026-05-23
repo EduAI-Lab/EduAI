@@ -248,7 +248,7 @@ Section [5.3](#sec-53-chat-with-course-context) shows the high-level chat path. 
 
 Retrieval itself is always the same function: **`findRelevantContent`** in `embedding.ts` (server env embeddings + pgvector over `material_embeddings`). That is independent of which chat provider the user picked in the UI.
 
-AI models are hosted on [cmps01.ok.ubc.ca](http://cmps01.ok.ubc.ca). EduAI (hosted on [my.eduai.ok.ubc.ca](http://my.eduai.ok.ubc.ca)) and its respective dev app ([dev.eduai.ok.ubc.ca](http://dev.eduai.ok.ubc.ca)) both connect to cmps01 ollama port to send and recieve AI prompts and responses respectively.
+AI models are hosted on [cmps01.ok.ubc.ca](http://cmps01.ok.ubc.ca). EduAI (hosted on [my.eduai.ok.ubc.ca](http://my.eduai.ok.ubc.ca)) and its respective dev app ([dev.eduai.ok.ubc.ca](http://dev.eduai.ok.ubc.ca)) both connect to cmps01 ollama port to send and receive AI prompts and responses respectively.
 
 ---
 
