@@ -1,11 +1,53 @@
-import { embed, embedMany } from 'ai';
-import { createOpenAI } from '@ai-sdk/openai';
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
-import prisma from '../prisma.server';
-import { randomUUID } from 'crypto';
+import { embed, embedMany } from "ai";
+import { createOpenAI } from "@ai-sdk/openai";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import prisma from "../prisma.server";
+import { randomUUID } from "crypto";
 
 // Default embedding model - using OpenAI's text-embedding-3-small for cost efficiency
-const DEFAULT_EMBEDDING_MODEL = 'text-embedding-3-small';
+const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small";
+
+/** Max inputs per `embedMany` batch (provider limits vary; stay conservative). */
+const EMBED_MANY_BATCH_SIZE = Math.min(
+  128,
+  Math.max(8, Number(process.env.EMBED_MANY_BATCH_SIZE) || 64),
+);
+
+const queryEmbedCache = new Map<string, { embedding: number[]; expiresAt: number }>();
+const QUERY_EMBED_CACHE_TTL_MS = Math.min(
+  600_000,
+  Math.max(5_000, Number(process.env.QUERY_EMBED_CACHE_TTL_MS) || 90_000),
+);
+const QUERY_EMBED_CACHE_MAX = Math.min(
+  2000,
+  Math.max(50, Number(process.env.QUERY_EMBED_CACHE_MAX) || 300),
+);
+
+function normalizeQueryForCache(query: string): string {
+  return query.trim().replace(/\s+/g, " ").slice(0, 12_000);
+}
+
+/** Prunes expired entries from the query embedding cache. */
+function pruneQueryEmbedCache(): void {
+  const now = Date.now();
+  for (const [k, v] of queryEmbedCache) {
+    if (v.expiresAt <= now) queryEmbedCache.delete(k);
+  }
+  while (queryEmbedCache.size > QUERY_EMBED_CACHE_MAX) {
+    const first = queryEmbedCache.keys().next().value;
+    if (first === undefined) break;
+    queryEmbedCache.delete(first);
+  }
+}
+
+/** Default similarity threshold for RAG (0–1). */
+function getDefaultRagSimilarityThreshold(): number {
+  const raw = process.env.RAG_SIMILARITY_THRESHOLD;
+  if (raw === undefined || raw === "") return 0.5;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0 || n >= 1) return 0.5;
+  return n;
+}
 
 /**
  * Generate chunks from text content
@@ -15,27 +57,24 @@ export function generateChunks(input: string, maxChunkSize: number = 800, overla
   const sentences = input
     .trim()
     .split(/[.!?]+/)
-    .filter(sentence => sentence.trim().length > 0)
-    .map(sentence => sentence.trim() + '.');
+    .filter((sentence) => sentence.trim().length > 0)
+    .map((sentence) => sentence.trim() + ".");
 
   const chunks: string[] = [];
-  let currentChunk = '';
+  let currentChunk = "";
 
   for (const sentence of sentences) {
-    // If adding this sentence would exceed maxChunkSize, start a new chunk
     if (currentChunk.length + sentence.length > maxChunkSize && currentChunk.length > 0) {
       chunks.push(currentChunk.trim());
 
-      // Start new chunk with overlap from previous chunk
-      const words = currentChunk.split(' ');
-      const overlapWords = words.slice(-Math.floor(overlap / 5)); // Rough word count for overlap
-      currentChunk = overlapWords.join(' ') + ' ' + sentence;
+      const words = currentChunk.split(" ");
+      const overlapWords = words.slice(-Math.floor(overlap / 5));
+      currentChunk = overlapWords.join(" ") + " " + sentence;
     } else {
-      currentChunk += ' ' + sentence;
+      currentChunk += " " + sentence;
     }
   }
 
-  // Add the last chunk if it has content
   if (currentChunk.trim()) {
     chunks.push(currentChunk.trim());
   }
@@ -44,18 +83,17 @@ export function generateChunks(input: string, maxChunkSize: number = 800, overla
 }
 
 /**
- * Get embedding model - default to Gemini
+ * Get embedding model - default to Gemini, then OpenAI.
+ * RAG requires at least one of these unless you add a local embed path later.
  */
 function getEmbeddingModel() {
-  // Try Google Gemini first (new default)
   const googleApiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
   if (googleApiKey) {
     return createGoogleGenerativeAI({
       apiKey: googleApiKey,
-    }).embedding('gemini-embedding-001');
+    }).embedding("gemini-embedding-001");
   }
 
-  // Fallback to OpenAI
   const openaiApiKey = process.env.OPENAI_API_KEY;
   if (openaiApiKey) {
     return createOpenAI({
@@ -63,36 +101,48 @@ function getEmbeddingModel() {
     }).embedding(DEFAULT_EMBEDDING_MODEL);
   }
 
-  throw new Error('No embedding provider configured. Please set GOOGLE_GENERATIVE_AI_API_KEY or OPENAI_API_KEY environment variable.');
+  throw new Error(
+    "No embedding provider configured. Set GOOGLE_GENERATIVE_AI_API_KEY or OPENAI_API_KEY (RAG and material indexing require embeddings).",
+  );
 }
 
 /**
- * Generate embeddings for multiple chunks
+ * Generate embeddings for multiple chunks (batched for large materials).
  */
 export async function generateEmbeddings(
-  chunks: string[]
+  chunks: string[],
 ): Promise<Array<{ embedding: number[]; content: string }>> {
   if (chunks.length === 0) return [];
 
   const embeddingModel = getEmbeddingModel();
+  const out: Array<{ embedding: number[]; content: string }> = [];
 
-  const { embeddings } = await embedMany({
-    model: embeddingModel,
-    values: chunks,
-  });
+  for (let i = 0; i < chunks.length; i += EMBED_MANY_BATCH_SIZE) {
+    const batch = chunks.slice(i, i + EMBED_MANY_BATCH_SIZE);
+    const { embeddings } = await embedMany({
+      model: embeddingModel,
+      values: batch,
+    });
+    for (let j = 0; j < embeddings.length; j++) {
+      out.push({ embedding: embeddings[j], content: batch[j] });
+    }
+  }
 
-  return embeddings.map((embedding, i) => ({
-    content: chunks[i],
-    embedding: embedding,
-  }));
+  return out;
 }
 
 /**
- * Generate a single embedding for a query
+ * Generate a single embedding for a query (LRU-ish in-memory cache by normalized text).
  */
-export async function generateEmbedding(
-  query: string,
-): Promise<number[]> {
+export async function generateEmbedding(query: string): Promise<number[]> {
+  const cacheKey = normalizeQueryForCache(query);
+  const now = Date.now();
+  pruneQueryEmbedCache();
+  const hit = queryEmbedCache.get(cacheKey);
+  if (hit && hit.expiresAt > now) {
+    return hit.embedding;
+  }
+
   const embeddingModel = getEmbeddingModel();
 
   const { embedding } = await embed({
@@ -100,26 +150,35 @@ export async function generateEmbedding(
     value: query,
   });
 
+  queryEmbedCache.set(cacheKey, {
+    embedding,
+    expiresAt: now + QUERY_EMBED_CACHE_TTL_MS,
+  });
+  pruneQueryEmbedCache();
+
   return embedding;
 }
 
 /**
- * Find relevant content using cosine similarity search
+ * Find relevant content using cosine similarity search.
+ * `similarityThreshold` defaults from env `RAG_SIMILARITY_THRESHOLD` (0–1) when omitted.
  */
 export async function findRelevantContent(
   userQuery: string,
   courseId: string,
   limit: number = 6,
-  similarityThreshold: number = 0.5
+  similarityThreshold?: number,
 ): Promise<Array<{ content: string; similarity: number; materialTitle: string }>> {
+  const threshold = similarityThreshold ?? getDefaultRagSimilarityThreshold();
   const queryEmbedding = await generateEmbedding(userQuery);
 
-  // Use raw SQL for pgvector similarity search with proper parameter handling
-  const results = await prisma.$queryRaw<Array<{
-    content: string;
-    similarity: number;
-    material_title: string;
-  }>>`
+  const results = await prisma.$queryRaw<
+    Array<{
+      content: string;
+      similarity: number;
+      material_title: string;
+    }>
+  >`
     SELECT
       mc.content,
       1 - (me.embedding <=> ${queryEmbedding}::vector) AS similarity,
@@ -128,12 +187,12 @@ export async function findRelevantContent(
     JOIN material_chunks mc ON me."chunkId" = mc.id
     JOIN course_materials cm ON mc."materialId" = cm.id
     WHERE cm."courseId" = ${courseId}
-      AND 1 - (me.embedding <=> ${queryEmbedding}::vector) > ${similarityThreshold}
+      AND 1 - (me.embedding <=> ${queryEmbedding}::vector) > ${threshold}
     ORDER BY similarity DESC
     LIMIT ${Number(limit)}
   `;
 
-  return results.map(result => ({
+  return results.map((result) => ({
     content: result.content,
     similarity: result.similarity,
     materialTitle: result.material_title,
@@ -141,40 +200,30 @@ export async function findRelevantContent(
 }
 
 /**
- * Process and store embeddings for a course material
+ * Process and store embeddings for a course material (single transaction).
  */
-export async function processMaterialEmbeddings(
-  materialId: string,
-  content: string,
-): Promise<void> {
-  // Generate chunks
+export async function processMaterialEmbeddings(materialId: string, content: string): Promise<void> {
   const chunks = generateChunks(content);
 
   if (chunks.length === 0) {
-    throw new Error('No content chunks generated');
+    throw new Error("No content chunks generated");
   }
 
-  // Generate embeddings
   const embeddings = await generateEmbeddings(chunks);
 
-  // Store chunks and embeddings in database
-  for (let i = 0; i < chunks.length; i++) {
-    const chunk = chunks[i];
-    const embedding = embeddings[i];
-
-    // Create chunk
-    const createdChunk = await prisma.materialChunk.create({
-      data: {
-        materialId,
-        index: i,
-        content: chunk,
-      },
-    });
-
-    // Store embedding using raw SQL since Prisma doesn't support vector type
-    await prisma.$executeRaw`
-      INSERT INTO material_embeddings (id, "chunkId", embedding, "createdAt")
-      VALUES (${randomUUID()}, ${createdChunk.id}, ${embedding.embedding}::vector, NOW())
-    `;
-  }
+  await prisma.$transaction(async (tx) => {
+    for (let i = 0; i < chunks.length; i++) {
+      const createdChunk = await tx.materialChunk.create({
+        data: {
+          materialId,
+          index: i,
+          content: chunks[i],
+        },
+      });
+      await tx.$executeRaw`
+        INSERT INTO material_embeddings (id, "chunkId", embedding, "createdAt")
+        VALUES (${randomUUID()}, ${createdChunk.id}, ${embeddings[i].embedding}::vector, NOW())
+      `;
+    }
+  });
 }
