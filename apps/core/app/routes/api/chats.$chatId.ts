@@ -26,6 +26,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         id: true,
         systemPrompt: true,
         title: true,
+        adhdAssist: true,
         createdAt: true,
         updatedAt: true,
       },

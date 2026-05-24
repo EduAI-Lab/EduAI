@@ -5,7 +5,7 @@ Monorepo for the EduAI platform — a suite of AI-powered educational tools buil
 ## Repository structure
 
 ```text
-EduAICore/
+EduAI/
 ├── apps/
 │   ├── core/                        # EduAI — RAG chat platform and central API
 │   └── extensions/
@@ -47,9 +47,12 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 | Document | Description |
 |----------|-------------|
 | [`platform-centralization-architecture-plan.md`](docs/platform-centralization-architecture-plan.md) | How Core, AI Tutor, and Question Maker are being centralized under a single API and auth layer |
+| [`auth-pipeline-centralization-plan.md`](docs/implementations/auth-pipeline-centralization-plan.md) | Auth pipeline centralization — migrating all extensions to Core as the sole OAuth/OIDC provider |
 | [`user-management-and-roles-architecture-plan.md`](docs/user-management-and-roles-architecture-plan.md) | Role hierarchy, permissions, and naming decisions across the platform |
-| [`rag-ai/README.md`](docs/rag-ai/README.md) | EduAI chat/RAG pipeline, latency sprint (#203), model routing (#197), dev server runbook — index of team docs |
-| [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Core vs hosted services, provider keys, embeddings, and high-level flows |
+| [`rag-ai/README.md`](docs/rag-ai/README.md) | Index for EduAI chat/RAG docs — pipeline, embeddings, latency sprint (#203), routing (#197), dev server runbook |
+| [`rag-ai/EMBEDDINGS.md`](docs/rag-ai/EMBEDDINGS.md) | How embeddings work — pgvector storage, server vs chat API keys, index/retrieval lifecycle, hosting |
+| [`rag-ai/CHAT_RAG_PIPELINE.md`](docs/rag-ai/CHAT_RAG_PIPELINE.md) | `POST /api/chat` flow — hybrid vs tool-calling RAG, `findRelevantContent`, Mermaid diagram |
+| [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Core vs hosted services, provider keys, embeddings overview, and high-level flows |
 | [`implementations/schema-design.md`](docs/implementations/schema-design.md) | Unified schema design across apps |
 | [`DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Instructions on how to deploy the system (production and development) |
 
@@ -176,7 +179,7 @@ Before running tests for the first time, ensure dependencies are installed via `
 
 ### Running tests
 
-From the monorepo root `EduAICore/`:
+From the monorepo root:
 
 | Command | What runs |
 | --- | --- |
