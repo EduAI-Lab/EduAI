@@ -127,6 +127,9 @@ Each section should use this format:
 |-----------|---------------|
 | `form-utils.test.ts` | Tests form validation errors surface per field, merge into one message, and correctly flag fields as valid or invalid. |
 | `guards.server.test.ts` | `requireServiceKey`: 401 on missing header, 401 on non-Bearer scheme, 403 on wrong token, 403 on unconfigured env var, null on correct token, 403 on prefix/suffix length-variant tokens. |
+| `courses.server.test.ts` | `getCourse`, `getCourseTopics`, `getCourseTopic`, and `deleteCourseTopic` — verifies `deletedAt: null` queries and soft-delete updates. |
+| `courses.id.test.ts` | `courses.id` loader: 400, 404 `COURSE_NOT_FOUND`, and 200 flat course (mocked `getCourse`). |
+| `courses.topics.test.ts` | Topics `loader` and `action` unit tests: GET list/by-id and POST/DELETE auth, status codes, and error bodies (mocked server + auth). |
 
 
 ---
@@ -137,6 +140,9 @@ Each section should use this format:
 
 | Test file | What it tests |
 |-----------|---------------|
+| `courses.integration.test.ts` | `GET /api/courses` against the test DB: returns 200 with a courses array, includes the seeded course, and allows unauthenticated access. |
+| `courses.id.integration.test.ts` | `GET /api/courses/:id` against the test DB: flat course on 200, `COURSE_NOT_FOUND` for missing and soft-deleted courses. |
+| `courses-topic.integration.test.ts` | Topics list/get-by-id/create/delete on the test DB (session + service key): status codes, `TOPIC_ALREADY_EXISTS`, soft-delete filtering, and soft-delete on DELETE. |
 | `service-key.integration.test.ts` | Verifies that `requireServiceKey` correctly rejects (403) wrong-key Bearer requests and never calls downstream DB logic, accepts (200) correct-key requests and calls `getCourseTopics`, and that requests with no Authorization header fall through to session auth (401 Unauthorized) — all tested through the real `GET /api/courses/:id/topics` loader with DB and session layers mocked. |
 
 ---

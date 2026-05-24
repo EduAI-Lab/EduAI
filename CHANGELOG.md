@@ -7,7 +7,9 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ## [Week 3 — May 18–21, 2026]
 
 ### Added
-- [core] test: Created the setup for running integration tests on core, as well as a `planned-core-integration-test.md` listing the tests still needed for the test
+- [monorepo] docs: created a `broken-routes.md` file listing everything that will no longer work with the unified schema (#338, @glowyblack, 2026-05-24)
+- [core] test: Created the setup for running integration tests on core, as well as a `planned-core-integration-test.md` listing the tests still needed for the test. (#338, @glowyblack, 2026-05-24)
+- [core] api: Implement `api-wiring.md` course/topic endpoints and tests — `GET /api/courses/:id` loader (flat course, `COURSE_NOT_FOUND`); new `GET /api/courses/:courseId/topics/:topicId` (flat topic, `TOPIC_NOT_FOUND`); topics GET/POST/DELETE accept `requireServiceKey` (`Bearer EDUAI_API_KEY`) or session; POST returns `409 TOPIC_ALREADY_EXISTS` with `existingId`; server helpers filter `deletedAt: null` and soft-delete on topic DELETE; integration tests (`courses`, `courses.id`, `courses-topic`, `service-key`) and unit tests (`courses.server`, `courses.id.loader`, `courses.topics`); `TESTS.md` updated. (#338, @glowyblack, 2026-05-24)
 
 ---
 

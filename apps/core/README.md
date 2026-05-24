@@ -379,8 +379,13 @@ All tests live under `app/tests/`:
 
 ```
 app/tests/
-├── setup.ts          # Global test setup (jest-dom matchers, browser API mocks)
-└── unit/             # Unit tests, mirroring the source layout
+├── setup.ts                    # Global setup (jest-dom matchers, browser API mocks)
+├── setup.integration.ts        # Integration-test env (e.g. DATABASE_URL)
+├── globalSetup.ts              # DB migrate/seed before integration suite
+├── integration/                # Route + DB tests (@vitest-environment node)
+│   ├── courses.integration.test.ts
+│   └── ...
+└── unit/                       # Handler and lib tests (mocked deps)
     ├── form-utils.test.ts
     └── ...
 ```
