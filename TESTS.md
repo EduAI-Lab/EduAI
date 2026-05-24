@@ -62,12 +62,6 @@ EduAI/
 
 ---
 
-## How to Run Tests
-
-> _To be populated._
-
----
-
 ## Populating TESTS.md
 
 Each section below corresponds to a test directory. When you add, change, or remove tests in that directory, update the matching section here.
