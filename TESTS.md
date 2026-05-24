@@ -126,6 +126,7 @@ Each section should use this format:
 | Test file | What it tests |
 |-----------|---------------|
 | `form-utils.test.ts` | Tests form validation errors surface per field, merge into one message, and correctly flag fields as valid or invalid. |
+| `guards.server.test.ts` | `requireServiceKey`: 401 on missing header, 401 on non-Bearer scheme, 403 on wrong token, 403 on unconfigured env var, null on correct token, 403 on prefix/suffix length-variant tokens. |
 
 
 ---
@@ -134,7 +135,9 @@ Each section should use this format:
 
 **Path:** `apps/core/app/tests/integration/`
 
-> _To be populated._
+| Test file | What it tests |
+|-----------|---------------|
+| `service-key.integration.test.ts` | Verifies that `requireServiceKey` correctly rejects (403) wrong-key Bearer requests and never calls downstream DB logic, accepts (200) correct-key requests and calls `getCourseTopics`, and that requests with no Authorization header fall through to session auth (401 Unauthorized) — all tested through the real `GET /api/courses/:id/topics` loader with DB and session layers mocked. |
 
 ---
 
