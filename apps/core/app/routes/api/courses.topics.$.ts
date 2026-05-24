@@ -1,7 +1,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
 import { auth } from "~/lib/auth/server";
-import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
+import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import {
   createCourseTopic,
   deleteCourseTopic,
@@ -9,7 +9,25 @@ import {
 } from "~/lib/courses/server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  // If an API key is provided, only ADMIN users may proceed
+  const courseId = params.courseId;
+
+  if (!courseId) {
+    return new Response(JSON.stringify({ error: "Course ID is required" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  if (request.headers.get("Authorization")?.startsWith("Bearer ")) {
+    const serviceKeyGuard = await requireServiceKey(request);
+    if (serviceKeyGuard) return serviceKeyGuard;
+    const topics = await getCourseTopics(courseId);
+    return new Response(JSON.stringify({ topics }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
   if (apiKeyGuard) return apiKeyGuard;
 
@@ -18,15 +36,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
-  const courseId = params.courseId;
-
-  if (!courseId) {
-    return new Response(JSON.stringify({ error: "Course ID is required" }), {
-      status: 400,
       headers: { "Content-Type": "application/json" },
     });
   }
@@ -49,7 +58,6 @@ export async function action({ request, params }: ActionFunctionArgs) {
     });
   }
 
-  // If an API key is provided, only ADMIN users may proceed
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
   if (apiKeyGuard) return apiKeyGuard;
 
