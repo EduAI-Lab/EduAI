@@ -20,6 +20,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [monorepo] docs: Populated `TESTS.md` with all integration and unit tests (#199, @GlowyBlack, 2026-05-18)
 - [monorepo] infra: Add GitHub Actions CI workflow (`.github/workflows/pr-tests.yml`) — triggers on pull requests targeting `development` or `main`; spins up a PostgreSQL 16 service on port 54321; runs `npm run test` (Turborepo) to build and test all packages across the monorepo; `aitutor_test` database is created automatically by the existing `globalSetup.js`; `TEST_DATABASE_URL` is set at job level so question-maker backend integration tests run as part of the single test command. (#236, @evanbones, 2026-05-20)
 - [question-maker] infra: Make `npm run test` run the full test suite — chain `vitest run --config vitest.integration.config.js` after the unit run so integration tests are no longer opt-in; `test:all` is kept as an alias. (#236, @evanbones, 2026-05-20)
+- [monorepo] docs: added new .md file updating the schema based on LTI implementation. (#330, @frostbitcactus, 2026-05-22)
 - [monorepo] docs: Add [`docs/rag-ai/EMBEDDINGS.md`](docs/rag-ai/EMBEDDINGS.md) — embeddings and pgvector storage, server vs chat API keys, index/retrieval lifecycle, hosting, failures, and env vars (@superbolt08, 2026-05-21)
 
 ### Changed
@@ -28,6 +29,13 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [monorepo] docs: Add chat/RAG pipeline section to [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) linking to [`CHAT_RAG_PIPELINE.md`](docs/rag-ai/CHAT_RAG_PIPELINE.md).
 - [monorepo] docs: Extend root README Docs table with links to `docs/rag-ai/` and `implementations/schema-design.md`.
 - [ai-tutor] infra: Renamed the `test/` `__test__` to `tests/` and added the tests within the `app/tests/` to the `TESTS.md` file and created a `.env.test.example` file. Added `.env.test` to gitignore (#199, @glowyblack, 2026-05-18)
+
+
+### Added
+
+
+### Changed
+
 - [monorepo] docs: Update [`docs/rag-ai/README.md`](docs/rag-ai/README.md) index and folder layout for `EMBEDDINGS.md`; cross-link [`CHAT_RAG_PIPELINE.md`](docs/rag-ai/CHAT_RAG_PIPELINE.md) and [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) to the embeddings guide; extend root README Docs table (@superbolt08, 2026-05-21)
 
 ### Removed
