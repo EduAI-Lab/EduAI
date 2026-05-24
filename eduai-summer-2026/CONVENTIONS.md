@@ -8,6 +8,10 @@ Source issues: [Making Pull Requests #67](https://github.com/EduAI-Lab/EduAI/iss
 
 ## 1. Making Issues
 
+### Assignees and Labels
+
+When creating issues, **assign everyone working on the issue** (one or more people; do not leave unassigned). Also, **you must add the week label matching the week in the title** (e.g. `Week 4`, `Week 5`). An issue can also have more than one week label.
+
 ### Title Format
 
 ```
@@ -35,7 +39,7 @@ Size: Week N - Task
    EPIC: <link-to-epic>
    ```
 
-> Every task, no matter how small, must have an issue. No issue = no record of the work.
+> Every task, no matter how small, must have an issue. No issue = no record of the work. Every issue must have at least one assignee and a week label.
 
 ---
 
@@ -69,7 +73,7 @@ See also: [Git Workflow Issue #120](https://github.com/EduAI-Lab/EduAI/issues/12
 ### PR Checklist (complete in order)
 
 1. **Implement the feature** — complete the feature or fix as scoped in the linked issue
-2. **Tests** — write tests before implementing. **This is the most important step.** Before requesting review, run all tests again (including Playwright if applicable) to confirm nothing is broken.
+2. **Tests** — write tests before implementing. **This is the most important step.** Consider all applicable levels: unit tests, integration tests, end-to-end tests (Playwright), and mutation tests. Before requesting review, run the full test suite across all applicable levels to confirm nothing is broken.
 3. **PR title and description** — write a clear title and description explaining *what* you implemented and *why*, not just what files changed
 4. **Meaningful code comments** — add comments only where the reasoning is non-obvious; do not comment every line
 5. **Logical folder structure** — group new files with related files; do not dump files in the root or unrelated folders
@@ -79,7 +83,8 @@ See also: [Git Workflow Issue #120](https://github.com/EduAI-Lab/EduAI/issues/12
    - `TESTS.md` — if any tests were added or changed, add a row for each test file: the filename (linked to its path) and a plain-English description of what it tests
    - `CHANGELOG.md` — add an entry with today's date (the date the PR is opened, not merged), the PR link, and bullet points describing what was implemented
    - `README.md` — update for every implementation, including changes made after PR review
-8. **Assign two reviewers** — one from dev team, one from project leads
+8. **Assign yourself (and all contributors) as PR assignees** — everyone working on the PR should be assigned to it
+9. **Assign two reviewers** — one from dev team, one from project leads
 
 ### CHANGELOG.md Entry Format
 
