@@ -13,6 +13,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] auth: Add `validateRedirectUrl` to `guards.server.ts` — validates the `?redirect=<url>` param on the login page; allows relative paths (`/...`) and absolute URLs under `localhost` (dev) or `*.eduai.ok.ubc.ca` (prod); rejects everything else and falls back to `/dashboard` to prevent open-redirect attacks. (#NNN, @evanbones, 2026-05-25)
 - [core] auth: Wire `?redirect=<url>` support into Core login page (`/auth/login`) — loader validates and threads the return URL through a hidden form field; action uses the validated URL in the post-login redirect; already-authenticated users landing on the login page are forwarded to the return URL directly. (#NNN, @evanbones, 2026-05-25)
 - [core] tests: Add 8 integration contract tests for `POST /api/sessions/validate` — covers valid session → 200 + correct user shape, missing/expired session → 401, rate-limited IP → 429, non-POST method → 405, `x-forwarded-for` IP extraction, and `role` defaulting to `STUDENT` when undefined. (#NNN, @evanbones, 2026-05-25)
+- [core] tests: Add 13 unit tests for `validateRedirectUrl` in `guards.server.test.ts` — covers null/empty inputs, valid relative paths, protocol-relative URL rejection, localhost and 127.0.0.1 passthrough, production apex and subdomain passthrough, external domain rejection, suffix-spoofing rejection, non-URL strings, and `javascript:` URIs. (#NNN, @evanbones, 2026-05-25)
+- [core] tests: Add 6 unit tests for `isRateLimited` in `rate-limit.server.test.ts` — covers under-limit passthrough, limit-exceeded rejection, per-IP independence, window expiry via fake timers, and `SESSION_VALIDATE_RATE_LIMIT` env var reading. (#NNN, @evanbones, 2026-05-25)
 
 ---
 
