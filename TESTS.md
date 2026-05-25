@@ -138,7 +138,8 @@ Each section should use this format:
 | `use-api-keys.test.ts` | Tests that the useApiKeys hook hydrates from localStorage, persists and removes provider settings, and correctly identifies which providers are fully configured. |
 | `use-mobile.test.ts` | Tests that useIsMobile returns the correct breakpoint state on mount, updates when the viewport changes, and removes its listener on unmount. |
 | `utils.test.ts` | Tests that the cn() utility merges conflicting Tailwind classes, drops falsy values, and handles conditional objects and nested arrays. |
-| `guards.server.test.ts` | `requireServiceKey`: 401 on missing header, 401 on non-Bearer scheme, 403 on wrong token, 403 on unconfigured env var, null on correct token, 403 on prefix/suffix length-variant tokens. |
+| `guards.server.test.ts` | `requireServiceKey`: 401 on missing header, 401 on non-Bearer scheme, 403 on wrong token, 403 on unconfigured env var, null on correct token, 403 on prefix/suffix length-variant tokens. `validateRedirectUrl`: returns /dashboard for null/empty/non-path inputs, passes through valid relative paths, allows localhost and production subdomains, and rejects external domains, protocol-relative URLs, and javascript: URIs. |
+| `rate-limit.server.test.ts` | `isRateLimited`: returns false under the limit, true once exceeded, tracks IPs independently, expires hits outside the time window, and reads the default limit from `SESSION_VALIDATE_RATE_LIMIT`. |
 
 ---
 
@@ -149,6 +150,7 @@ Each section should use this format:
 | Test file | What it tests |
 |-----------|---------------|
 | `service-key.integration.test.ts` | Verifies that `requireServiceKey` correctly rejects (403) wrong-key Bearer requests and never calls downstream DB logic, accepts (200) correct-key requests and calls `getCourseTopics`, and that requests with no Authorization header fall through to session auth (401 Unauthorized) — all tested through the real `GET /api/courses/:id/topics` loader with DB and session layers mocked. |
+| `sessions-validate.integration.test.ts` | `POST /api/sessions/validate` contract: valid session cookie → 200 with correct user shape; missing or expired session → 401; rate-limited IP → 429; non-POST method → 405; `x-forwarded-for` IP extraction; `role` field defaults to `STUDENT` when absent from the session. |
 
 ---
 
