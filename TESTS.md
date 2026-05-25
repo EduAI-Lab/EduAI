@@ -131,7 +131,7 @@ Each section should use this format:
 | `chat-rag.test.ts` | Tests `buildCappedRagContextText` and `capRagHitsForTool` chunk/char caps for hybrid and tool RAG paths. |
 | `courses-schemas.test.ts`| Tests that course schemas require non-empty fields, reject fractional years, and enforce that topic deletion specifies at least one identifier. |
 | `courses.server.test.ts` | `getCourse`, `getCourseTopics`, `getCourseTopic`, and `deleteCourseTopic` — verifies `deletedAt: null` queries and soft-delete updates. |
-| `courses.id.test.ts` | `courses.id` loader: 400, 404 `COURSE_NOT_FOUND`, and 200 flat course (mocked `getCourse`). |
+| `courses.id.test.ts` | `courses.id` loader: 400/401/403, service-key and session auth, 404 `COURSE_NOT_FOUND`, 200 flat course. |
 | `courses.topics.test.ts` | Topics `loader` and `action` unit tests: GET list/by-id and POST/DELETE auth, status codes, and error bodies (mocked server + auth). |
 | `embedding.test.ts` | Tests that chunk generation returns no chunks for empty input, keeps short content as one chunk, never produces chunks that exceed the size limit, applies word overlap between adjacent chunks, and handles punctuation-free input without throwing. |
 | `file-processing.test.ts` | Tests that text sanitization removes invalid characters and normalises whitespace, checksums are stable and unique, file validation enforces allowed types and the 50 MB limit, semantic chunking splits content at logical boundaries without producing empty or oversized chunks, and file extraction strips the extension and computes the checksum from sanitized content. |
@@ -153,7 +153,7 @@ Each section should use this format:
 | Test file | What it tests |
 |-----------|---------------|
 | `courses.integration.test.ts` | `GET /api/courses` against the test DB: returns 200 with a courses array, includes the seeded course, and allows unauthenticated access. |
-| `courses.id.integration.test.ts` | `GET /api/courses/:id` against the test DB: flat course on 200, `COURSE_NOT_FOUND` for missing and soft-deleted courses. |
+| `courses.id.integration.test.ts` | `GET /api/courses/:id` on the test DB: 401 without auth, 200 via session or service key, `COURSE_NOT_FOUND` for missing and soft-deleted courses. |
 | `courses-topic.integration.test.ts` | Topics list/get-by-id/create/delete on the test DB (session + service key): status codes, `TOPIC_ALREADY_EXISTS`, soft-delete filtering, and soft-delete on DELETE. |
 | `service-key.integration.test.ts` | Verifies that `requireServiceKey` correctly rejects (403) wrong-key Bearer requests and never calls downstream DB logic, accepts (200) correct-key requests and calls `getCourseTopics`, and that requests with no Authorization header fall through to session auth (401 Unauthorized) — all tested through the real `GET /api/courses/:id/topics` loader with DB and session layers mocked. |
 | `sessions-validate.integration.test.ts` | `POST /api/sessions/validate` contract: valid session cookie → 200 with correct user shape; missing or expired session → 401; rate-limited IP → 429; non-POST method → 405; `x-forwarded-for` IP extraction; `role` field defaults to `STUDENT` when absent from the session. |
