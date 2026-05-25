@@ -6,6 +6,16 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ---
 
+## [Week 4 — May 25–29, 2026]
+
+### Added
+- [core] auth: Implement `POST /api/sessions/validate` — accepts a forwarded session cookie from extension middleware, validates it via Better Auth, and returns `{ user: { id, email, name, image, role } }` or `401 Unauthorized`; add IP-based sliding-window rate limiter (`rate-limit.server.ts`, 300 req/min default, tunable via `SESSION_VALIDATE_RATE_LIMIT`). Phase 1 of auth pipeline centralization (blocks both extension migrations). (#NNN, @evanbones, 2026-05-25)
+- [core] auth: Add `validateRedirectUrl` to `guards.server.ts` — validates the `?redirect=<url>` param on the login page; allows relative paths (`/...`) and absolute URLs under `localhost` (dev) or `*.eduai.ok.ubc.ca` (prod); rejects everything else and falls back to `/dashboard` to prevent open-redirect attacks. (#NNN, @evanbones, 2026-05-25)
+- [core] auth: Wire `?redirect=<url>` support into Core login page (`/auth/login`) — loader validates and threads the return URL through a hidden form field; action uses the validated URL in the post-login redirect; already-authenticated users landing on the login page are forwarded to the return URL directly. (#NNN, @evanbones, 2026-05-25)
+- [core] tests: Add 8 integration contract tests for `POST /api/sessions/validate` — covers valid session → 200 + correct user shape, missing/expired session → 401, rate-limited IP → 429, non-POST method → 405, `x-forwarded-for` IP extraction, and `role` defaulting to `STUDENT` when undefined. (#NNN, @evanbones, 2026-05-25)
+
+---
+
 ## [Week 3 — May 18–22, 2026]
 
 ### Added
