@@ -1,0 +1,92 @@
+# EduAICore — containerised test suite
+#
+# Runs all tests without any local dependencies beyond Docker.
+#
+# Run everything:
+#   docker compose -f docker-compose.test.yml up --build
+#
+# Run a single suite (databases start automatically via depends_on):
+#   docker compose -f docker-compose.test.yml up --build core-tests
+#   docker compose -f docker-compose.test.yml up --build ai-tutor-tests
+#   docker compose -f docker-compose.test.yml up --build ai-tutor-server-tests
+#   docker compose -f docker-compose.test.yml up --build question-maker-tests
+#
+# Run all suites with proper exit-code propagation:
+#   bash scripts/test-in-docker.sh
+
+name: eduai-test
+
+services:
+  ai-tutor-test-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  question-maker-test-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: question_maker_test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  core-tests:
+    build:
+      context: .
+      dockerfile: docker/test/Dockerfile.core
+    # Unit-only suite (schemas, utilities, React components).
+    # No database connection required.
+
+  ai-tutor-tests:
+    build:
+      context: .
+      dockerfile: docker/test/Dockerfile.ai-tutor
+    # Frontend unit suite (hooks, components, API utilities).
+    # No database connection required.
+
+  ai-tutor-server-tests:
+    build:
+      context: .
+      dockerfile: docker/test/Dockerfile.ai-tutor-server
+    environment:
+      # Picked up by the entrypoint, which writes .env.test and pre-creates
+      # the aitutor_test database so globalSetup.js's Prisma migration succeeds.
+      DATABASE_URL: postgresql://postgres:postgres@ai-tutor-test-db:5432/aitutor_test
+      DB_HOST: ai-tutor-test-db
+      DB_PORT: "5432"
+      BETTER_AUTH_SECRET: test-secret-not-for-production
+      BETTER_AUTH_URL: http://localhost:4001/api/auth
+      COOKIE_DOMAIN: localhost
+      PORT: "4001"
+    depends_on:
+      ai-tutor-test-db:
+        condition: service_healthy
+
+  question-maker-tests:
+    build:
+      context: .
+      dockerfile: docker/test/Dockerfile.question-maker
+    environment:
+      # setup.js copies TEST_DATABASE_URL → DATABASE_URL before any test
+      # module is imported, so both unit and integration suites point at the
+      # same test database. Unit tests never call connectDatabase(), so the
+      # real URL is harmless there.
+      TEST_DATABASE_URL: postgresql://postgres:password@question-maker-test-db:5432/question_maker_test
+      DATABASE_URL: postgresql://postgres:password@question-maker-test-db:5432/question_maker_test
+      JWT_SECRET: test-jwt-secret-for-docker
+      ENCRYPTION_KEY: test-encryption-key-32bytes!!
+      NODE_ENV: test
+    depends_on:
+      question-maker-test-db:
+        condition: service_healthy
