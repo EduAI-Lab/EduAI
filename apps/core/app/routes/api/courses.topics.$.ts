@@ -116,6 +116,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
             { status: 409, headers: { "Content-Type": "application/json" } }
           );
         }
+        if (result.error === "COURSE_NOT_FOUND") {
+          return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
+            status: 404,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
         return new Response(JSON.stringify(result), {
           status: 400,
           headers: { "Content-Type": "application/json" },

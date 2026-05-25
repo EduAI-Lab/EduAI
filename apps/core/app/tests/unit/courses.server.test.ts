@@ -7,6 +7,7 @@ const prismaMock = vi.hoisted(() => ({
   courseTopic: {
     findMany: vi.fn(),
     findFirst: vi.fn(),
+    create: vi.fn(),
     updateMany: vi.fn(),
   },
 }));
@@ -27,6 +28,7 @@ import {
   getCourse,
   getCourseTopics,
   getCourseTopic,
+  createCourseTopic,
   deleteCourseTopic,
 } from "~/lib/courses/server";
 
@@ -64,6 +66,30 @@ describe("getCourseTopic", () => {
     expect(prismaMock.courseTopic.findFirst).toHaveBeenCalledWith({
       where: { id: "t1", courseId: "c1", deletedAt: null },
     });
+  });
+});
+
+describe("createCourseTopic", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("returns COURSE_NOT_FOUND when course is missing or soft-deleted", async () => {
+    prismaMock.course.findFirst.mockResolvedValue(null);
+    const result = await createCourseTopic("missing-course", { name: "Heaps" });
+    expect(result).toEqual({ error: "COURSE_NOT_FOUND" });
+    expect(prismaMock.courseTopic.create).not.toHaveBeenCalled();
+  });
+
+  it("creates topic when course exists", async () => {
+    prismaMock.course.findFirst.mockResolvedValue({ id: "c1" });
+    prismaMock.courseTopic.create.mockResolvedValue({
+      id: "t1",
+      courseId: "c1",
+      name: "Heaps",
+      deletedAt: null,
+    });
+    const result = await createCourseTopic("c1", { name: "Heaps" });
+    expect(result).toHaveProperty("topic");
+    expect(prismaMock.courseTopic.create).toHaveBeenCalled();
   });
 });
 
