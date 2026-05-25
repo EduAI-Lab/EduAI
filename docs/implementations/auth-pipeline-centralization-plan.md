@@ -3,7 +3,7 @@
 > **This is a living document.** It is a work in progress and should be treated as a starting point, not a final answer. Any section can be revised, restructured, or replaced entirely as the team learns more and makes decisions together.
 
 **Epic:** EduAICore #58 (sub-track of Phase 1)  
-**Last Updated:** May 20, 2026
+**Last Updated:** May 25, 2026
 
 ---
 
@@ -25,8 +25,9 @@
   - [Phase 3: End-to-End Verification](#phase-3-end-to-end-verification)
 - [5. Auth Contract](#5-auth-contract)
 - [6. Session Validation Middleware Pattern](#6-session-validation-middleware-pattern)
-- [7. Key Decisions](#7-key-decisions)
-- [8. File Reference](#8-file-reference)
+- [7. Role Enforcement Pattern](#7-role-enforcement-pattern)
+- [8. Key Decisions](#8-key-decisions)
+- [9. File Reference](#9-file-reference)
 
 ---
 
@@ -322,13 +323,70 @@ async function requireAuth(req, res, next) {
 }
 ```
 
-`req.user` is populated with the shape from the [auth contract](#5-auth-contract). Unknown roles default to `STUDENT` at the point of use (least-privilege).
+`req.user` is populated with the shape from the [auth contract](#5-auth-contract). Unknown roles are normalised to `STUDENT` inside `requireAuth` before `next()` is called — see [§7](#7-role-enforcement-pattern) for the pattern.
 
-**Performance note:** this adds one Core HTTP round-trip per authenticated request. For the initial implementation, call Core on every request. This gives instant logout propagation and keeps the middleware simple. See [§7](#7-key-decisions) for the session validation cache decision.
+**Performance note:** this adds one Core HTTP round-trip per authenticated request. For the initial implementation, call Core on every request. This gives instant logout propagation and keeps the middleware simple. See [§8](#8-key-decisions) for the session validation cache decision.
 
 ---
 
-## 7. Key Decisions
+## 7. Role Enforcement Pattern
+
+`POST /api/sessions/validate` returns `role` as a plain string (`STUDENT | PROFESSOR | TA | ADMIN | UNIT_ADMIN`). Once `req.user` is set by `requireAuth`, downstream handlers have everything they need to enforce roles locally — no additional call to Core is needed.
+
+### `requireRole` middleware
+
+Both extensions should implement a `requireRole` factory alongside `requireAuth`:
+
+```js
+const VALID_ROLES = new Set(['STUDENT', 'PROFESSOR', 'TA', 'ADMIN', 'UNIT_ADMIN'])
+
+// Normalise at the point req.user is set — not at the point of use.
+// Unknown values (typos, future roles not yet in this extension) default to STUDENT (least-privilege).
+function normalizeRole(role) {
+  return VALID_ROLES.has(role) ? role : 'STUDENT'
+}
+
+// Factory: requireRole(['ADMIN', 'PROFESSOR'])
+// Returns a middleware that rejects requests whose role is not in the allowed list.
+function requireRole(allowed) {
+  return (req, res, next) => {
+    if (!allowed.includes(req.user?.role)) {
+      return res.status(403).json({ error: 'Forbidden' })
+    }
+    next()
+  }
+}
+```
+
+Apply `normalizeRole` inside `requireAuth` when assigning `req.user`, so role is always a known value by the time any route handler sees it:
+
+```js
+const { user } = await response.json()
+req.user = { ...user, role: normalizeRole(user.role) }
+next()
+```
+
+Then protect routes:
+
+```js
+router.delete('/courses/:id', requireAuth, requireRole(['ADMIN', 'PROFESSOR']), handler)
+```
+
+### Role reference
+
+The RBAC matrix in [`docs/implementations/rbac-matrix.md`](../rbac-matrix.md) documents which roles may access which resources in each extension. Use it as the source of truth when deciding what to pass to `requireRole`.
+
+### What not to build
+
+Do not add a Core HTTP endpoint for role checking — the role is already in `req.user` after session validation, so checking it locally is free and avoids an extra round-trip. Do not create a shared npm package between Core and the extensions for `requireRole`; each extension owns a small, identical copy of `normalizeRole` and `requireRole`. The duplication is intentional: it keeps each extension self-contained and avoids coupling them through a shared dependency.
+
+### When to build this
+
+Implement `requireRole` as part of Phase 2 — alongside `requireAuth` in AI Tutor (AT-A) and Question Maker (QM-A). It is not needed for Phase 1.
+
+---
+
+## 8. Key Decisions
 
 ### Cookie domain during local development
 
@@ -348,7 +406,7 @@ If latency on authenticated routes becomes measurable in production, a short-liv
 
 ---
 
-## 8. File Reference
+## 9. File Reference
 
 | File | Purpose |
 |---|---|
