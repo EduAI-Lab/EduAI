@@ -1,4 +1,7 @@
 import type { LoaderFunctionArgs } from "react-router";
+
+import { auth } from "~/lib/auth/server";
+import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { getCourse, handleCourseRequest } from "~/lib/courses/server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
@@ -9,6 +12,24 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       headers: { "Content-Type": "application/json" },
     });
   }
+
+  if (request.headers.get("Authorization")?.startsWith("Bearer ")) {
+    const serviceKeyGuard = await requireServiceKey(request);
+    if (serviceKeyGuard) return serviceKeyGuard;
+  } else {
+    const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
+    if (apiKeyGuard) return apiKeyGuard;
+
+    const session = apiKeySession ?? (await auth.api.getSession(request));
+
+    if (!session?.user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  }
+
   const course = await getCourse(courseId);
   if (!course) {
     return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {

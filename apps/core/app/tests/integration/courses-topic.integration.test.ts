@@ -314,6 +314,15 @@ describe("POST /api/courses/:courseId/topics", () => {
     expect(res.status).toBe(400);
   });
 
+  it("returns 404 COURSE_NOT_FOUND for unknown courseId", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(ADMIN_SESSION as never);
+    const res = await action(
+      makeActionArgs("POST", "nonexistent-course-id", { name: "Orphan Topic" }),
+    );
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "COURSE_NOT_FOUND" });
+  });
+
   it("returns 201 with the created topic when an admin posts a valid body", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(ADMIN_SESSION as never);
     const res = await action(makeActionArgs("POST", courseId, { name: "Dynamic Programming" }));

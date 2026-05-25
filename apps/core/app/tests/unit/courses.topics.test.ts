@@ -188,6 +188,16 @@ describe("courses.topics action — POST", () => {
     expect(await res.json()).toEqual({ error: "Forbidden" });
   });
 
+  it("returns 404 COURSE_NOT_FOUND when course does not exist", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "ADMIN" },
+    } as never);
+    vi.mocked(createCourseTopic).mockResolvedValue({ error: "COURSE_NOT_FOUND" });
+    const res = await action(makePost({ name: "Heaps" }));
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "COURSE_NOT_FOUND" });
+  });
+
   it("returns 409 TOPIC_ALREADY_EXISTS with existingId", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "u1", role: "ADMIN" },

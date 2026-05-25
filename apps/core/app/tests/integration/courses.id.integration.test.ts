@@ -1,13 +1,38 @@
 // @vitest-environment node
 
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from "vitest";
 import prisma from "~/lib/prisma.server";
+
+vi.mock("~/lib/auth/server", () => ({
+  auth: { api: { getSession: vi.fn() } },
+}));
+
 import { loader } from "~/routes/api/courses.id";
+import { auth } from "~/lib/auth/server";
+
+const VALID_SERVICE_KEY = "courses-id-integration-service-key";
+const ADMIN_SESSION = {
+  user: { id: "", role: "ADMIN", email: "admin-courses-id@test.com", name: "Admin" },
+};
 
 let courseId: string;
 let deletedCourseId: string;
+let adminId: string;
 
 beforeAll(async () => {
+  vi.stubEnv("EDUAI_API_KEY", VALID_SERVICE_KEY);
+
+  const admin = await prisma.user.create({
+    data: {
+      email: "admin-courses-id@test.com",
+      name: "Admin Courses Id",
+      role: "ADMIN",
+      emailVerified: false,
+    },
+  });
+  adminId = admin.id;
+  ADMIN_SESSION.user.id = adminId;
+
   const course = await prisma.course.create({
     data: {
       name: "GET By Id Course",
@@ -38,19 +63,35 @@ afterAll(async () => {
   await prisma.course.deleteMany({
     where: { id: { in: [courseId, deletedCourseId] } },
   });
+  await prisma.user.deleteMany({ where: { id: adminId } });
+  vi.unstubAllEnvs();
   await prisma.$disconnect();
 });
 
-function makeArgs(id: string) {
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(auth.api.getSession).mockResolvedValue(null);
+});
+
+function makeArgs(id: string, authorization?: string) {
+  const headers = new Headers();
+  if (authorization) headers.set("Authorization", authorization);
   return {
-    request: new Request(`http://localhost/api/courses/${id}`),
+    request: new Request(`http://localhost/api/courses/${id}`, { headers }),
     params: { id },
     context: {} as never,
   };
 }
 
 describe("GET /api/courses/:id", () => {
-  it("returns 200 with flat course object for active course", async () => {
+  it("returns 401 when no session is present", async () => {
+    const res = await loader(makeArgs(courseId));
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: "Unauthorized" });
+  });
+
+  it("returns 200 with flat course object for active course (session)", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(ADMIN_SESSION as never);
     const res = await loader(makeArgs(courseId));
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -59,13 +100,23 @@ describe("GET /api/courses/:id", () => {
     expect(body.deletedAt).toBeNull();
   });
 
+  it("returns 200 with flat course object via service key", async () => {
+    const res = await loader(makeArgs(courseId, `Bearer ${VALID_SERVICE_KEY}`));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.id).toBe(courseId);
+    expect(vi.mocked(auth.api.getSession)).not.toHaveBeenCalled();
+  });
+
   it("returns 404 COURSE_NOT_FOUND for unknown id", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(ADMIN_SESSION as never);
     const res = await loader(makeArgs("nonexistent-course-id"));
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: "COURSE_NOT_FOUND" });
   });
 
   it("returns 404 COURSE_NOT_FOUND for soft-deleted course", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(ADMIN_SESSION as never);
     const res = await loader(makeArgs(deletedCourseId));
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: "COURSE_NOT_FOUND" });
