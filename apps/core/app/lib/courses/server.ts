@@ -170,6 +170,14 @@ export async function createCourseTopic(
     } as const;
   }
 
+  const course = await prisma.course.findFirst({
+    where: { id: courseId, deletedAt: null },
+    select: { id: true },
+  });
+  if (!course) {
+    return { error: "COURSE_NOT_FOUND" } as const;
+  }
+
   try {
     const topic = await prisma.courseTopic.create({
       data: {
