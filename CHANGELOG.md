@@ -80,6 +80,9 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [monorepo] docs: added new .md file updating the schema based on LTI implementation. (#330, @frostbitcactus, 2026-05-22)
 - [monorepo] docs: Add [`docs/rag-ai/EMBEDDINGS.md`](docs/rag-ai/EMBEDDINGS.md) — embeddings and pgvector storage, server vs chat API keys, index/retrieval lifecycle, hosting, failures, and env vars (@superbolt08, 2026-05-21)
 - [core] prisma: Add `routing_telemetry_mvp` migration — extend `AIInteraction` with routing, timing, split token counts (`promptTokens`, `completionTokens`), cost, and energy/carbon fields; add `RouterTier` and `EnergyMeasurementSource` enums; extend `AIModel` with `routerTier`, `estEnergyJoulesPerToken`, and `averageCarbonGramsPerToken` (nullable, Phase 0 routing). (#320, @superbolt08, 2026-05-22)
+- [monorepo] docs: created a `broken-routes.md` file listing everything that will no longer work with the unified schema (#338, @glowyblack, 2026-05-24)
+- [core] test: Created the setup for running integration tests on core, as well as a `planned-core-integration-test.md` listing the tests still needed for the test. (#338, @glowyblack, 2026-05-24)
+- [core] api: Implement `api-wiring.md` course/topic endpoints and tests — `GET /api/courses/:id` loader (flat course, `COURSE_NOT_FOUND`); new `GET /api/courses/:courseId/topics/:topicId` (flat topic, `TOPIC_NOT_FOUND`); topics GET/POST/DELETE accept `requireServiceKey` (`Bearer EDUAI_API_KEY`) or session; POST returns `409 TOPIC_ALREADY_EXISTS` with `existingId`; server helpers filter `deletedAt: null` and soft-delete on topic DELETE; integration tests (`courses`, `courses.id`, `courses-topic`, `service-key`) and unit tests (`courses.server`, `courses.id.loader`, `courses.topics`); `TESTS.md` updated. (#338, @glowyblack, 2026-05-24)
 
 ### Changed
 - [core] docs: Update [`docs/rag-ai/CHAT_RAG_PIPELINE.md`](docs/rag-ai/CHAT_RAG_PIPELINE.md) for capped hybrid/tool RAG, env vars, and optional `similarityThreshold` on `findRelevantContent`; merge with `development` rag-ai index. (#144, @superbolt08, 2026-05-22)
@@ -102,21 +105,6 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [monorepo] infra: Fix `npm run dev` failing on restart — Docker orphaned containers from previous service renames (`eduai-core-db`, `eduai-tutor-db`, `eduai-qm-db`) held ports 54320–55432 and were not removed by `docker compose down`; overhaul `scripts/dev-db.sh` to force-remove any container bound to those ports and delete the stale `eduai-dev` network before starting fresh; add `--remove-orphans` to `docker:dev:db:down`. (#236, @evanbones, 2026-05-19)
 - [question-maker] infra: Fix `vitest.integration.config.js` using wrong `test/` path instead of `tests/` — integration tests were never discovered and `test:all` always exited with code 1 (@ariqmuldi, 2026-05-20)
 - [monorepo] docs: Corrected README paths, CHANGELOG structure, and removed redundant TESTS.md placeholder. (#329, @evanbones, 2026-05-22)
-- [core] auth: Add `requireServiceKey` guard (`Authorization: Bearer <EDUAI_API_KEY>`, `crypto.timingSafeEqual`); wire into `GET /api/courses/:id/topics` as service-key auth path. (#NNN, @yta3216, 2026-05-23)
-- [core] auth: Add `requireServiceKey` guard (`Authorization: Bearer <EDUAI_API_KEY>`, `crypto.timingSafeEqual`); wire into `GET /api/courses/:id/topics` as service-key auth path. (#337, @yta3216, 2026-05-23)
-- [monorepo] infra: Add `npm run dbseed` root script that seeds Core, AI Tutor, and Question Maker databases in order (Core → AI Tutor → QM); safe to run at any time — Core and AI Tutor seeds are fully idempotent via upserts. (#NNN, @evanbones, 2026-05-22)
-- [core] infra: Auto-seed the Core database on `npm run dev` when the database is empty — new `db:seed:if-empty` script checks user count and skips seeding if data already exists, so normal dev restarts are unaffected. (#NNN, @evanbones, 2026-05-22)
-- [ai-tutor] infra: Auto-seed the AI Tutor database on `npm run dev` when the database is empty — new `seed:if-empty` script checks prompt template count (required for runtime) and skips if data exists. (#NNN, @evanbones, 2026-05-22)
-
----
-
-## [Week 3 — May 18–22, 2026]
-
-### Added
-
-- [monorepo] docs: created a `broken-routes.md` file listing everything that will no longer work with the unified schema (#338, @glowyblack, 2026-05-24)
-- [core] test: Created the setup for running integration tests on core, as well as a `planned-core-integration-test.md` listing the tests still needed for the test. (#338, @glowyblack, 2026-05-24)
-- [core] api: Implement `api-wiring.md` course/topic endpoints and tests — `GET /api/courses/:id` loader (flat course, `COURSE_NOT_FOUND`); new `GET /api/courses/:courseId/topics/:topicId` (flat topic, `TOPIC_NOT_FOUND`); topics GET/POST/DELETE accept `requireServiceKey` (`Bearer EDUAI_API_KEY`) or session; POST returns `409 TOPIC_ALREADY_EXISTS` with `existingId`; server helpers filter `deletedAt: null` and soft-delete on topic DELETE; integration tests (`courses`, `courses.id`, `courses-topic`, `service-key`) and unit tests (`courses.server`, `courses.id.loader`, `courses.topics`); `TESTS.md` updated. (#338, @glowyblack, 2026-05-24)
 - [core] auth: Add `requireServiceKey` guard (`Authorization: Bearer <EDUAI_API_KEY>`, `crypto.timingSafeEqual`); wire into `GET /api/courses/:id/topics` as service-key auth path. (#337, @yta3216, 2026-05-23)
 - [monorepo] infra: Add `npm run dbseed` root script that seeds Core, AI Tutor, and Question Maker databases in order (Core → AI Tutor → QM); safe to run at any time — Core and AI Tutor seeds are fully idempotent via upserts. (#NNN, @evanbones, 2026-05-22)
 - [core] infra: Auto-seed the Core database on `npm run dev` when the database is empty — new `db:seed:if-empty` script checks user count and skips seeding if data already exists, so normal dev restarts are unaffected. (#NNN, @evanbones, 2026-05-22)
