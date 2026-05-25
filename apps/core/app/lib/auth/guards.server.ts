@@ -2,6 +2,28 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import type { Session } from "./server";
 import { auth } from "./server";
 
+const ALLOWED_PROD_SUFFIX = ".eduai.ok.ubc.ca";
+const ALLOWED_PROD_APEX = "eduai.ok.ubc.ca";
+
+/**
+ * Validates a redirect URL from the `?redirect=` query param.
+ * Accepts relative paths (starting with /) and absolute URLs whose origin is
+ * localhost (dev) or under .eduai.ok.ubc.ca (prod). All other values fall back
+ * to /dashboard to prevent open-redirect attacks.
+ */
+export function validateRedirectUrl(url: string | null): string {
+  if (!url) return "/dashboard";
+  if (url.startsWith("/") && !url.startsWith("//")) return url;
+  try {
+    const { hostname } = new URL(url);
+    if (hostname === "localhost" || hostname === "127.0.0.1") return url;
+    if (hostname === ALLOWED_PROD_APEX || hostname.endsWith(ALLOWED_PROD_SUFFIX)) return url;
+  } catch {
+    // unparseable — fall through
+  }
+  return "/dashboard";
+}
+
 type GuardResult = {
   response: Response | null;
   session: Session | null;
