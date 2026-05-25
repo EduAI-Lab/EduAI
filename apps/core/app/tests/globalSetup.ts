@@ -34,21 +34,24 @@ export async function setup() {
   config({ path: resolve(appRoot, '.env.test'), override: true });
 
   const dbUrl = process.env.DATABASE_URL ?? '';
-
-  // Extract DB name from the URL (last path segment before any '?')
-  const dbName = new URL(dbUrl).pathname.replace(/^\//, '').split('?')[0];
+  const parsedUrl = new URL(dbUrl);
+  const dbName = parsedUrl.pathname.replace(/^\//, '').split('?')[0];
+  const dbUser = decodeURIComponent(parsedUrl.username);
+  const dbPassword = decodeURIComponent(parsedUrl.password);
+  const dbHost = parsedUrl.hostname || 'localhost';
+  const pgEnv = { ...process.env, PGPASSWORD: dbPassword };
 
   // Ensure the test database exists
   try {
     execSync(
-      `psql -h localhost -U eduai -tc "SELECT 1 FROM pg_database WHERE datname = '${dbName}'" | grep -q 1 || psql -h localhost -U eduai -c "CREATE DATABASE \\"${dbName}\\""`,
-      { env: { ...process.env, PGPASSWORD: 'eduai_password' }, stdio: 'pipe' },
+      `psql -h ${dbHost} -U ${dbUser} -tc "SELECT 1 FROM pg_database WHERE datname = '${dbName}'" | grep -q 1 || psql -h ${dbHost} -U ${dbUser} -c "CREATE DATABASE \\"${dbName}\\""`,
+      { env: pgEnv, stdio: 'pipe' },
     );
   } catch {
     // psql not on PATH or DB already exists — try createdb as fallback
     try {
-      execSync(`createdb -h localhost -U eduai "${dbName}"`, {
-        env: { ...process.env, PGPASSWORD: 'eduai_password' },
+      execSync(`createdb -h ${dbHost} -U ${dbUser} "${dbName}"`, {
+        env: pgEnv,
         stdio: 'pipe',
       });
     } catch {
@@ -58,8 +61,8 @@ export async function setup() {
 
   // Enable pgvector extension (idempotent)
   try {
-    execSync(`psql -h localhost -U eduai -d "${dbName}" -c "CREATE EXTENSION IF NOT EXISTS vector;"`, {
-      env: { ...process.env, PGPASSWORD: 'eduai_password' },
+    execSync(`psql -h ${dbHost} -U ${dbUser} -d "${dbName}" -c "CREATE EXTENSION IF NOT EXISTS vector;"`, {
+      env: pgEnv,
       stdio: 'pipe',
     });
   } catch {
