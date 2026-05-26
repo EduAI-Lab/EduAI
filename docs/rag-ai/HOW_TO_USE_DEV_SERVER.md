@@ -3,6 +3,7 @@
 ## Prerequisites
 - UBC VPN (or campus network)
 - SSH: `ssh YOUR_CWL@dev.eduai.ok.ubc.ca`
+- RAG embeddings: set **`OPENROUTER_API_KEY`** (recommended) or **`GOOGLE_GENERATIVE_AI_API_KEY`** in `apps/core/.env` on the server. Verify with `npm run test:embedding` from `apps/core`. See [`EMBEDDINGS.md`](./EMBEDDINGS.md).
 
 ## Use the app
 Open https://dev.eduai.ok.ubc.ca
