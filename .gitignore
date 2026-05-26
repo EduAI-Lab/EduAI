@@ -15,6 +15,9 @@ misc/
 .DS_Store
 Thumbs.db
 
+# ADHD Assist evaluation outputs (research artifacts; not for git)
+eval-runs/
+
 # Dependencies
 node_modules/
 
