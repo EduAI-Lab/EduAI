@@ -176,7 +176,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile.qm-server
       target: test
-    command: ["npx", "vitest", "run"]
+    command: ["sh", "-c", "./node_modules/.bin/vitest run tests/unit"]
 
   qm-server-integration-tests:
     build:
@@ -189,7 +189,7 @@ services:
       JWT_SECRET: test-jwt-secret-for-docker
       ENCRYPTION_KEY: test-encryption-key-32bytes!!
       NODE_ENV: test
-    command: ["npx", "vitest", "run", "--config", "vitest.integration.config.js"]
+    command: ["sh", "-c", "./node_modules/.bin/vitest run --config vitest.integration.config.js"]
     depends_on:
       question-maker-test-db:
         condition: service_healthy

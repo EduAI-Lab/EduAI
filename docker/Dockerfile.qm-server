@@ -18,7 +18,9 @@ COPY apps/extensions/question-maker/package.json              ./apps/extensions/
 COPY apps/extensions/question-maker/app/backend/package.json  ./apps/extensions/question-maker/app/backend/
 COPY apps/extensions/question-maker/app/frontend/package.json ./apps/extensions/question-maker/app/frontend/
 
-RUN npm ci --ignore-scripts
+RUN npm ci --ignore-scripts \
+     && cd apps/extensions/question-maker/app/backend \
+     && npm install --ignore-scripts --no-package-lock --workspaces=false
 
 # ── Target: test ───────────────────────────────────────────────────────────
 FROM node:20-alpine AS test
@@ -35,7 +37,7 @@ COPY apps/extensions/question-maker/app/backend/vitest.config.js             ./a
 COPY apps/extensions/question-maker/app/backend/vitest.integration.config.js ./apps/extensions/question-maker/app/backend/
 COPY apps/extensions/question-maker/app/backend/package.json                 ./apps/extensions/question-maker/app/backend/
 
-ENV PATH="/app/node_modules/.bin:${PATH}"
+ENV PATH="/app/apps/extensions/question-maker/app/backend/node_modules/.bin:/app/node_modules/.bin:${PATH}"
 
 WORKDIR /app/apps/extensions/question-maker/app/backend
 CMD ["npm", "test"]
