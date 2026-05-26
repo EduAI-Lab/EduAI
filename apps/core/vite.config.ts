@@ -23,17 +23,18 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [tailwindcss(), reactRouter(), tsconfigPaths()],
     resolve: {
+      // Pin one copy for core (1.2.8 via root overrides). Do not alias the package root — that
+      // breaks subpath exports such as better-auth/client/plugins.
       alias: {
         "@tabler/icons-react": "@tabler/icons-react/dist/esm/icons/index.mjs",
       },
-      // Monorepo hoists better-auth 1.2.x for core and 1.5+ for ai-tutor; dedupe to root 1.2.8.
       dedupe: ["better-auth"],
     },
     server: {
       port: 3000,
       // Apache reverse proxy sends Host: dev.eduai.ok.ubc.ca; Vite 6+ rejects unknown hosts by default.
       host: true,
-      allowedHosts: true,
+      allowedHosts: ["dev.eduai.ok.ubc.ca", "localhost", "127.0.0.1"],
       fs: {
         allow: [monorepoRoot],
       },

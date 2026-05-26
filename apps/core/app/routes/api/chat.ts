@@ -10,8 +10,25 @@ import type { ActionFunctionArgs } from "react-router";
 import { z } from "zod";
 import { webSearch, fetchPage } from "~/lib/ai/tools";
 import prisma from "~/lib/prisma.server";
+import { chatApiDebug } from "~/lib/chat-api-log";
+import { clientApiKeysBodySchema, toUserProviderSettings } from "~/lib/chat-api-keys.schema";
+import {
+  buildCappedRagContextText,
+  capRagHitsForTool,
+  HYBRID_RAG_MAX_CHUNKS,
+  HYBRID_RAG_MAX_CONTEXT_CHARS,
+} from "~/lib/chat-rag";
 
 const MAX_CONTEXT_MESSAGES = 20;
+
+const TOOL_MAX_STEPS = Math.min(
+  32,
+  Math.max(1, Number(process.env.CHAT_TOOL_MAX_STEPS) || 12),
+);
+const TOOL_MAX_TOKENS = Math.min(
+  128_000,
+  Math.max(1024, Number(process.env.CHAT_TOOL_MAX_OUTPUT_TOKENS) || 32_000),
+);
 
 type GenericMessage = Record<string, any>;
 
@@ -140,8 +157,27 @@ function extractTextFromMessage(message?: GenericMessage): string {
   return message ? JSON.stringify(message.content ?? "") : "";
 }
 
+/** Cheap metrics for logs — do not print full `system` / messages (RAG can be huge). */
+function llmPromptSizeHints(system: unknown, messages: GenericMessage[]) {
+  const systemChars = typeof system === "string" ? system.length : 0;
+  let messageTextChars = 0;
+  for (const m of messages) {
+    messageTextChars += extractTextFromMessage(m).length;
+  }
+  return {
+    systemChars,
+    messageCount: messages.length,
+    messageTextChars,
+  };
+}
+
+/** Serializes a message object to JSON, handling circular references. */
 function serializeMessage(message: GenericMessage): Prisma.JsonValue {
-  return JSON.parse(JSON.stringify(message)) as Prisma.JsonValue;
+  try {
+    return structuredClone(message) as Prisma.JsonValue;
+  } catch {
+    return JSON.parse(JSON.stringify(message)) as Prisma.JsonValue;
+  }
 }
 
 /**
@@ -259,7 +295,7 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     const body = await request.json();
-    const rawMessages = Array.isArray(body.messages) ? body.messages : [];
+    const rawMessages: unknown[] = Array.isArray(body.messages) ? body.messages : [];
     const model = typeof body.model === "string" ? body.model : undefined;
     const apiKeys = body.apiKeys as unknown;
     const courseId = typeof body.courseId === "string" ? body.courseId : undefined;
@@ -268,6 +304,9 @@ export async function action({ request }: ActionFunctionArgs) {
     const chatId = typeof body.chatId === "string" ? body.chatId : undefined;
     const proxyUserPayload =
       body.proxyUser && typeof body.proxyUser === "object" ? (body.proxyUser as ProxyUserPayload) : null;
+
+    const hasAdhdAssistField = Object.prototype.hasOwnProperty.call(body, "adhdAssist");
+    const adhdAssist = body.adhdAssist === true;
 
     const hasSystemPromptField = Object.prototype.hasOwnProperty.call(body, "systemPrompt");
     let trimmedSystemPrompt: string | null = null;
@@ -309,8 +348,8 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     const normalizedIncomingMessages = rawMessages
-      .map(normalizeMessage)
-      .filter((message): message is GenericMessage => Boolean(message));
+      .map((m) => normalizeMessage(m))
+      .filter((m): m is GenericMessage => m !== null);
 
     // Resolve course code to internal ID when needed
     let resolvedCourseId: string | null = null;
@@ -357,9 +396,17 @@ export async function action({ request }: ActionFunctionArgs) {
           data: {
             userId: actingUser.id,
             systemPrompt: trimmedSystemPrompt,
+            adhdAssist,
           },
         });
       }
+    }
+
+    if (hasAdhdAssistField && chat && chat.adhdAssist !== adhdAssist) {
+      chat = await prisma.chat.update({
+        where: { id: chat.id },
+        data: { adhdAssist },
+      });
     }
 
     const shouldCreateChat = normalizedIncomingMessages.length > 0 || Boolean(trimmedSystemPrompt);
@@ -369,6 +416,7 @@ export async function action({ request }: ActionFunctionArgs) {
         JSON.stringify({
           chatId: null,
           systemPrompt: trimmedSystemPrompt ?? null,
+          adhdAssist,
         }),
         {
           status: 200,
@@ -382,8 +430,13 @@ export async function action({ request }: ActionFunctionArgs) {
         data: {
           userId: actingUser.id,
           systemPrompt: trimmedSystemPrompt,
+          adhdAssist,
         },
       });
+    }
+
+    if (process.env.CHAT_API_DEBUG === "1") {
+      console.log("[chat-api] adhdAssist", { adhdAssist, chatId: chat?.id });
     }
 
     if (!chat) {
@@ -408,8 +461,11 @@ export async function action({ request }: ActionFunctionArgs) {
       }),
     );
 
-    console.log(`Retrieved ${storedMessages.length} messages from DB for chat ${chat.id}`);
-    console.log(`Incoming ${normalizedIncomingMessages.length} new messages`);
+    chatApiDebug("chat history loaded", {
+      chatId: chat.id,
+      storedCount: storedMessages.length,
+      incomingCount: normalizedIncomingMessages.length,
+    });
 
     const mergedMessages = mergeMessages(storedMessages, normalizedIncomingMessages);
     const trimmedMessages =
@@ -417,13 +473,17 @@ export async function action({ request }: ActionFunctionArgs) {
         ? mergedMessages.slice(-MAX_CONTEXT_MESSAGES)
         : mergedMessages;
 
-    console.log(`After merge: ${mergedMessages.length} messages, after trim: ${trimmedMessages.length} messages`);
+    chatApiDebug("chat history merged", {
+      mergedCount: mergedMessages.length,
+      trimmedCount: trimmedMessages.length,
+    });
 
     if (mergedMessages.length === 0) {
       return new Response(
         JSON.stringify({
           chatId: chat?.id ?? null,
           systemPrompt: trimmedSystemPrompt ?? chat?.systemPrompt ?? null,
+          adhdAssist: chat?.adhdAssist ?? adhdAssist,
         }),
         {
           status: 200,
@@ -441,6 +501,22 @@ export async function action({ request }: ActionFunctionArgs) {
         },
       );
     }
+
+    // Validate API keys
+    const apiKeysParsed = clientApiKeysBodySchema.safeParse(apiKeys);
+    if (!apiKeysParsed.success) {
+      return new Response(
+        JSON.stringify({
+          error: "Invalid apiKeys",
+          details: apiKeysParsed.error.flatten(),
+        }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+    const validatedApiKeys = toUserProviderSettings(apiKeysParsed.data);
 
     const existingMessageIds = new Set(storedMessages.map((message) => message.id).filter(isNonEmptyString));
     const appendMessages = async (messages: GenericMessage[]) => {
@@ -461,7 +537,7 @@ export async function action({ request }: ActionFunctionArgs) {
           chatId: chat!.id,
           messageId: message.id,
           role: message.role,
-          content: serializeMessage(message),
+          content: serializeMessage(message) as Prisma.InputJsonValue,
         });
 
         existingMessageIds.add(message.id);
@@ -475,8 +551,7 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     };
 
-    // Create AI provider registry with user's API keys
-    const registry = createAIProviderRegistry(apiKeys as any);
+    const registry = createAIProviderRegistry(validatedApiKeys);
 
     // Get the AI model from registry
     const aiModel = registry.languageModel(model);
@@ -499,10 +574,15 @@ export async function action({ request }: ActionFunctionArgs) {
           }
 
           try {
-            const relevantContent = await findRelevantContent(question, effectiveCourseId);
+            const relevantContent = await findRelevantContent(
+              question,
+              effectiveCourseId,
+              HYBRID_RAG_MAX_CHUNKS,
+            );
+            const capped = capRagHitsForTool(relevantContent);
             return {
-              relevantContent,
-              count: relevantContent.length,
+              relevantContent: capped,
+              count: capped.length,
             };
           } catch (error) {
             console.error("Error finding relevant content:", error);
@@ -527,9 +607,12 @@ export async function action({ request }: ActionFunctionArgs) {
       const userQuestion = extractTextFromMessage(lastUserMessage);
       const messageContentLower = userQuestion.toLowerCase();
 
+      // Check if hybrid RAG should always be used with course
+      // regex method might not be the best method to determine if RAG is needed. Consider using a small LLM or alternatives.
+      const hybridRagAlwaysWithCourse = process.env.CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE === "1";
       const isRAGQuery =
         Boolean(effectiveCourseId) &&
-        (
+        (hybridRagAlwaysWithCourse ||
           messageContentLower.includes("course") ||
           messageContentLower.includes("material") ||
           messageContentLower.includes("document") ||
@@ -541,20 +624,23 @@ export async function action({ request }: ActionFunctionArgs) {
           messageContentLower.includes("summarize") ||
           messageContentLower.includes("summary") ||
           messageContentLower.includes("content") ||
-          messageContentLower.includes("about")
-        );
+          messageContentLower.includes("about"));
 
       if (isRAGQuery) {
         try {
           const relevantContent = await findRelevantContent(
             userQuestion || messageContentLower,
             effectiveCourseId!,
+            HYBRID_RAG_MAX_CHUNKS,
           );
-          const contextText = relevantContent.length > 0
-            ? relevantContent
-                .map((item) => `**Source**: ${item.materialTitle || "Course Material"}\n${item.content}`)
-                .join("\n\n---\n\n")
-            : "";
+          const contextText =
+            relevantContent.length > 0
+              ? buildCappedRagContextText(
+                  relevantContent,
+                  HYBRID_RAG_MAX_CHUNKS,
+                  HYBRID_RAG_MAX_CONTEXT_CHARS,
+                )
+              : "";
 
           const baseSystemPrompt = resolvedSystemPrompt || `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
 
@@ -641,18 +727,21 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
         model: aiModel,
         messages: trimmedMessages,
         temperature: 0.6,
-        maxTokens: 32000,
-        maxSteps: 12,
+        maxTokens: TOOL_MAX_TOKENS,
+        maxSteps: TOOL_MAX_STEPS,
         tools,
         toolCallStreaming: streaming,
         system: defaultSystemPrompt,
       };
     }
 
-    console.log(`Using ${supportsTools ? "tool calling" : "hybrid RAG"} approach for model: ${model}`);
-    console.log('Full system prompt:', streamConfig.system);
-    console.log(`Sending ${trimmedMessages.length} messages to LLM:`, JSON.stringify(trimmedMessages, null, 2));
-    const result = await streamText(streamConfig);
+    // Log the LLM stream configuration
+    chatApiDebug("Starting LLM stream", {
+      model,
+      approach: supportsTools ? "tool_calling" : "hybrid_rag",
+      ...llmPromptSizeHints(streamConfig.system, trimmedMessages),
+    });
+    const result = await streamText(streamConfig as Parameters<typeof streamText>[0]);
 
     if (streaming) {
       const headers: Record<string, string> = {
