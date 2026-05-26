@@ -10,7 +10,6 @@ import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 
 import { errorHandler, notFound } from './middleware/errorHandler.js';
-import authRoutes from './routes/auth.js';
 import questionRoutes from './routes/questions.js';
 import courseRoutes from './routes/course.js';
 import assessmentRoutes from './routes/assessments.js';
@@ -95,7 +94,6 @@ app.get('/', (req, res) => {
   });
 });
 
-app.use('/api/auth', authRoutes);
 app.use('/api/questions', questionRoutes);
 app.use('/api/questions', variantRoutes);
 app.use('/api/course', courseRoutes);

@@ -29,25 +29,6 @@ function routeForRole(role: Role) {
   return '/admin';
 }
 
-function extractErrorMessage(error: unknown) {
-  if (!(error instanceof Error)) {
-    return 'Could not start EduAI sign-in';
-  }
-
-  try {
-    const parsed = JSON.parse(error.message);
-    if (typeof parsed?.message === 'string' && parsed.message.trim()) {
-      return parsed.message;
-    }
-    if (typeof parsed?.error === 'string' && parsed.error.trim()) {
-      return parsed.error;
-    }
-  } catch {
-    // Fall back to the raw message when the backend returns plain text.
-  }
-
-  return error.message || 'Could not start EduAI sign-in';
-}
 
 const HUB_POSITION = { x: 200, y: 200 };
 
@@ -101,20 +82,10 @@ export default function Home() {
     }
   }, []);
 
-  const onSignIn = async () => {
+  const onSignIn = () => {
     setLoading(true);
     setError('');
-
-    try {
-      await signInWithEduAi();
-    } catch (err) {
-      setError(extractErrorMessage(err));
-      setLoading(false);
-      return;
-    } finally {
-      // Full-page redirect keeps this from usually running, but it protects the button on failure.
-      setLoading(false);
-    }
+    signInWithEduAi();
   };
 
   if (isInitializing || user) {
