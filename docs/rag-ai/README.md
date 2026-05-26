@@ -37,8 +37,8 @@ AI models are hosted on cmps01.ok.ubc.ca. EduAI (hosted on my.eduai.ok.ubc.ca) a
 
 | File | Brief description |
 | ---- | ----------------- |
-| [`latency/eduai-summer-2026/TEAM_CHAT_LATENCY_SPRINT_GUIDE.md`](./latency/eduai-summer-2026/TEAM_CHAT_LATENCY_SPRINT_GUIDE.md) | **Sprint playbook** — Delegatable steps L00–L13 with parallel-safe assignment matrix (bench, baselines, auto-RAG, intent routing, Ollama warm-up, TTFT audit, model-tier routing, admin-UI guard, web-tools removal, cold-start doc). Teammate entry point. |
-| [`latency/eduai-summer-2026/TEAM_CHAT_LATENCY_AND_TOOLS.md`](./latency/eduai-summer-2026/TEAM_CHAT_LATENCY_AND_TOOLS.md) | **Discussion doc** — Problem statement, `supportsTools` invariant (after L13: course-RAG only), option table (A–G), open decisions L1–L5, regression rules. |
+| [`latency/eduai-summer-2026/TEAM_CHAT_LATENCY_SPRINT_GUIDE.md`](./latency/eduai-summer-2026/TEAM_CHAT_LATENCY_SPRINT_GUIDE.md) | **Sprint playbook** — Delegatable steps L00–L13 with parallel-safe assignment matrix (bench, baselines, auto-RAG, intent routing, Ollama warm-up, TTFT audit, model-tier routing, admin-UI guard, admin Feature Toggle for web tools, cold-start doc). Teammate entry point. |
+| [`latency/eduai-summer-2026/TEAM_CHAT_LATENCY_AND_TOOLS.md`](./latency/eduai-summer-2026/TEAM_CHAT_LATENCY_AND_TOOLS.md) | **Discussion doc** — Problem statement, `supportsTools` invariant (after L13: `getInformation` always; `webSearch` / `fetchPage` admin-gated, default OFF for research), option table, open decisions, regression rules. |
 | [`latency/MODEL_LATENCY_TRACKER.md`](./latency/MODEL_LATENCY_TRACKER.md) | **Measurement ledger** — TTFT/Total/tool-call rows per session; live probe table, Gemini quota FAQ, how to record a fresh row. |
 | [`latency/COLD_START_AND_OLLAMA_WARMUP.md`](./latency/COLD_START_AND_OLLAMA_WARMUP.md) | **Cold-start reference** — Why local turns spend 10–60 s before any tokens appear; cold vs warm vs model-switch, mitigations, investigation checklist. Background for L05/L12. |
 

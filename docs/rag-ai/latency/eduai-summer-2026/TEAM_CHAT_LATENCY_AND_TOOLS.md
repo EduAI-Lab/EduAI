@@ -9,7 +9,7 @@
 
 ## The problem in one paragraph
 
-EduAI must stay **course-aware** (RAG / `getInformation`) — that is the product promise. **Web search and page fetching are being removed from the product entirely** (sprint step **L13**); the only grounding tool we care about is course-material RAG. After L13, `supportsTools: true` means exactly one thing: `getInformation` is registered so the model can pull course material through RAG. Small models stay `supportsTools: false` (no tools at all) so simple questions are answered straight from weights on the fast path; bigger models flip to `supportsTools: true` and are escalated to only when the L04 intent classifier flags a turn as needing course grounding. Today, when tool calling is fully enabled (`supportsTools: true` on the model), turns are **slow** (lead observed **40–50 s** end-to-end on local Ollama). When tools are effectively off (`supportsTools: false` → `hybrid_rag` path in [`apps/core/app/routes/api/chat.ts`](../../apps/core/app/routes/api/chat.ts)), replies are **fast** but students must phrase requests like *“check the course materials for…”* or the model answers from weights only. **Disabling tools globally is not an acceptable product fix.**
+EduAI must stay **course-aware** (RAG / `getInformation`) — that is the product promise. **Web search and page fetching are being gated behind an admin-side Feature Toggle (default OFF) — not deleted** (sprint step **L13**, scope updated 2026-05-26 by PI direction). The grounding tool we actively rely on for the ADHD latency research is course-material RAG; web tools stay in the codebase as a switch we may flip on later if RAG alone proves insufficient. After L13, `supportsTools: true` means `getInformation` is always registered, plus `webSearch` / `fetchPage` if the admin `webToolsEnabled` toggle is ON. Small models stay `supportsTools: false` (no tools at all) so simple questions are answered straight from weights on the fast path; bigger models flip to `supportsTools: true` and are escalated to only when the L04 intent classifier flags a turn as needing course grounding. Today, when tool calling is fully enabled (`supportsTools: true` on the model), turns are **slow** (lead observed **40–50 s** end-to-end on local Ollama). When tools are effectively off (`supportsTools: false` → `hybrid_rag` path in [`apps/core/app/routes/api/chat.ts`](../../apps/core/app/routes/api/chat.ts)), replies are **fast** but students must phrase requests like *“check the course materials for…”* or the model answers from weights only. **Disabling tools globally is not an acceptable product fix.**
 
 **Target (product):** ~**3–4 s** perceived for typical tutoring turns where possible; streaming should show the **first token early**, not after the full server pipeline finishes.
 
@@ -24,7 +24,7 @@ EduAI must stay **course-aware** (RAG / `getInformation`) — that is the produc
 | **40–50 s total** | Unacceptable for students; most time felt like **waiting for server** before anything appears |
 | **Pre-display wait** | Felt like the app waited to **download / finish server work** before showing streamed text (poor TTFT / buffering) |
 | **Fast path** | When the chat API takes the **no tool-calling** branch (`!supportsTools`), responses are much faster |
-| **Slow path** | Full **tool_calling** path: `getInformation`, `maxSteps`, RAG merge — required for real EduAI behaviour. Web tools (`webSearch`, `fetchPage`) are being **deleted in L13** — after that step lands, the only tool on this branch is `getInformation`. |
+| **Slow path** | Full **tool_calling** path: `getInformation`, `maxSteps`, RAG merge — required for real EduAI behaviour. Web tools (`webSearch`, `fetchPage`) are gated behind the admin `webToolsEnabled` Feature Toggle (L13, default OFF for the research phase) — when OFF, the only tool on this branch is `getInformation`; when ON, web tools come back. |
 | **Prompt workaround** | System prompt tightened to call tools **only when user explicitly asks** → faster, but **breaks** “just ask about my course” UX (~90% of student needs) |
 
 ---
@@ -41,8 +41,8 @@ if (!supportsTools) {
   → No tools registered
 } else {
   → "tool_calling" path: streamText + tools + maxSteps (default 3)
-  → Only `getInformation` (course RAG) is registered
-  → Web tools (`webSearch`, `fetchPage`) are being deleted in L13 — do not add new callers
+  → `getInformation` (course RAG) is ALWAYS registered
+  → `webSearch` / `fetchPage` are registered ONLY when admin `webToolsEnabled` toggle is ON (L13, default OFF for research)
   → System prompt says: prefer ZERO tool calls; only when explicitly needed
 }
 ```
@@ -56,7 +56,7 @@ if (!supportsTools) {
 | Toggle | Purpose | Must NOT |
 | ------ | ------- | -------- |
 | **`adhdAssist`** (research IV) | Prepend ADHD policy block; optional Phase 3 oversight | Change whether tools/RAG run |
-| **Course-RAG grounding strategy** (product — TBD) | When to call `getInformation` without magic phrases | Be confused with ADHD Assist; bring web tools back into scope this sprint |
+| **Course-RAG grounding strategy** (product — TBD) | When to call `getInformation` without magic phrases | Be confused with ADHD Assist. Note: web tools are no longer "out of scope" — they are gated behind an admin Feature Toggle (default OFF) per L13. Research turns this sprint should run with the toggle OFF so we measure RAG-only behaviour. |
 
 ---
 

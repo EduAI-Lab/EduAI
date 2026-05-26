@@ -12,10 +12,10 @@
 **`supportsTools` invariant (after L13):**
 
 - `supportsTools = false` → **small models, no tools registered at all.** Default for simple/chat-only turns. The fastest path.
-- `supportsTools = true` → **bigger models, only `getInformation` registered.** Course-material RAG only. The router escalates here when L04 flags a turn as needing course grounding (typically bigger / more detailed questions).
-- **Web search and page fetching are removed entirely (L13).** `webSearch` / `fetchPage` are deleted from the codebase, not just flagged out-of-scope. `supportsTools = true` means course-aware RAG and nothing else.
+- `supportsTools = true` → **bigger models, `getInformation` always registered.** Course-material RAG is the always-on grounding tool. The router escalates here when L04 flags a turn as needing course grounding.
+- **Web search and page fetching are gated behind an admin-side Feature Toggle (default OFF) — not deleted (L13, updated 2026-05-26).** Per PI direction, the `webSearch` / `fetchPage` code and Firecrawl wiring stay in the codebase. They are off by default for this research phase so the team can measure RAG-only behaviour, but an admin can turn the toggle on later if RAG alone proves insufficient. `supportsTools = true` therefore means "`getInformation` is always there; web tools are conditional on the admin toggle".
 
-So the routing model the team is building is: **small (`supportsTools: false`) for simple questions → big (`supportsTools: true` = `getInformation` only) for detailed / course-aware questions.**
+So the routing model the team is building is: **small (`supportsTools: false`) for simple questions → big (`supportsTools: true` with `getInformation` always + web tools off by default) for detailed / course-aware questions.** Research starts RAG-only; the toggle is the lever for later phases.
 
 ---
 
@@ -107,7 +107,7 @@ flowchart TB
 ```mermaid
 flowchart TB
   L00[L00 Kickoff] --> L01[L01 Bench script]
-  L00 --> L13[L13 Remove webSearch + fetchPage]
+  L00 --> L13[L13 Admin web-tools toggle, default OFF]
   L01 --> L02[L02 Baselines]
   L02 --> L03[L03 Auto-RAG]
   L02 --> L04[L04 Intent router]
@@ -145,7 +145,7 @@ Each step lists its GitHub issue, size, recommended owner skill, and which earli
 | Step | Issue | Size | Owner | Blocked by | Why parallel-safe |
 | ---- | ----- | ---- | ----- | ---------- | ----------------- |
 | **L01** Latency bench script | [#205](https://github.com/EduAI-Lab/EduAI/issues/205) | S | Any backend | #204 | Adds a new script — no overlap with L13 |
-| **L13** Remove `webSearch` + `fetchPage` | [#348](https://github.com/EduAI-Lab/EduAI/issues/348) | M | Backend | #204 | Touches `chat.ts` tool registry + deletes files — independent of L01's new bench script |
+| **L13** Admin Feature Toggle for `webSearch` + `fetchPage` (default OFF) | [#348](https://github.com/EduAI-Lab/EduAI/issues/348) | M | Backend (+ admin UI slice) | #204 | Touches `chat.ts` tool registry + admin settings page — independent of L01's new bench script |
 
 ### Wave 2 — needs L01 merged
 
@@ -476,47 +476,51 @@ Smaller models (e.g. `deepseek-r1:8b`, `gemma2:9b`) do not support tool calling.
 
 ---
 
-## Step L13 — Remove `webSearch` and `fetchPage` tools (scope cut)
+## Step L13 — Gate `webSearch` and `fetchPage` behind an admin Feature Toggle (default OFF)
 
-**GitHub:** [#348](https://github.com/EduAI-Lab/EduAI/issues/348) · **Size:** M (~3h) · **Blocked by:** #204 (L00) · **Owner:** backend
+**GitHub:** [#348](https://github.com/EduAI-Lab/EduAI/issues/348) · **Size:** M (~3h) · **Blocked by:** #204 (L00) · **Owner:** backend + a small admin-UI slice (can be split)
+
+> **Scope change — 2026-05-26 PI meeting:** the original L13 plan was to *delete* `webSearch` / `fetchPage` and rip out Firecrawl. PI direction is the opposite: **keep the code, ship an admin-side Feature Toggle, default it OFF for this research phase.** Stevan and the lead agree we don't *need* web grounding for the ADHD latency study, but PI does not want to throw away working code. The toggle is the lever we'll flip later if RAG-only proves insufficient.
 
 ### Context
 
-The product no longer wants web grounding. The only grounding we care about is **course-material RAG via `getInformation`**. Keeping `webSearch` and `fetchPage` in the tool list — even when unused — costs us in three ways:
+The only grounding the ADHD latency research depends on is **course-material RAG via `getInformation`**. Web grounding (`webSearch`, `fetchPage` via Firecrawl) is not needed for the study and adds tokens / latency / failure surface to every tool-calling turn. But:
 
-1. The model sees them in the tool schema every turn → extra prefill tokens and occasional speculative tool calls we don't want.
-2. They make `supportsTools: true` ambiguous (does it mean "can hit the web" or "course-aware"?). For L10/L11 to be coherent, `supportsTools: true` must mean exactly one thing: **`getInformation` is registered and the model can pull course material through RAG**.
-3. They keep Firecrawl + web-search infra on the critical path for failures, error envelopes, and review surface area.
+- PI wants the code preserved, not deleted — "feature toggle" pattern as used on a prior system.
+- The toggle lives on the **admin side**, not the student profile. Dr. Mustafa (informal advice to lead) noted that if students see the toggle, they will leave it on by default, which defeats the research control.
+- Default state is **OFF** while we measure RAG-only behaviour. If RAG alone is not enough, an admin flips it on; we re-measure.
 
 **Target invariant after this step:**
 
-- `supportsTools = false` (small models) → no tools registered. Model answers simple questions straight from weights. Fast path, no RAG, no web. This is the default the router sends most turns to.
-- `supportsTools = true` (bigger models) → **only** `getInformation` is registered. When the L04 intent classifier flags a turn as needing course RAG, the router escalates here; the model can pull course chunks and answer with grounding. No web.
+- `supportsTools = false` (small models) → no tools registered. Model answers simple questions straight from weights. Fast path, no RAG, no web. Default the router sends most turns to.
+- `supportsTools = true` (bigger models) → `getInformation` is **always** registered; `webSearch` and `fetchPage` are registered **only when the admin `webToolsEnabled` Feature Toggle is ON**. Toggle defaults to OFF.
 
 ### Task
 
-1. In `apps/core/app/routes/api/chat.ts`, delete `webSearch` and `fetchPage` from the tool registry passed to `streamText`. `getInformation` is the only entry that remains in the tools object on the tool-calling branch.
-2. Delete the tool source files: `apps/core/app/lib/ai/tools/web-search.ts`, `apps/core/app/lib/ai/tools/fetch-page.ts`, and any sibling helpers used **only** by those two (grep before deleting).
-3. Remove Firecrawl wiring that is now unused: env vars (`FIRECRAWL_*`), `.env.example` entries, any client/provider init, and dependency from `apps/core/package.json` if nothing else imports it. Run `npm install` to refresh the lockfile.
-4. Update the system prompt in `chat.ts` to drop references to web search / "search the web" / "fetch this URL"; rewrite the tool-use guidance so it only describes `getInformation` (course material RAG).
-5. Update `app/lib/ai/tool-result.ts` / `runTool` only if it special-cases the removed tools — otherwise leave it alone (the envelope itself stays for `getInformation`).
-6. UI: in `apps/core/app/routes/chat.tsx` typing-phase copy ("Searching the web…" etc.), drop the web phrasing; "Searching course…" stays. Remove any tool-card UI specific to web results.
-7. Tests: remove or rewrite any unit/integration tests that asserted webSearch/fetchPage behaviour. Add one assertion that the tool registry on the tool-calling branch contains exactly `getInformation`.
-8. Docs: update `TEAM_CHAT_LATENCY_AND_TOOLS.md` and this sprint guide to drop "web tools remain in the codebase but out of scope" language — they no longer remain.
-9. Manual smoke: ask a question that previously would have triggered web search ("what's the latest on X?"); confirm the model now answers from weights (small model) or from course material (big model) with no web call.
+1. **Feature Toggle storage.** Add a single admin-controlled flag — recommended name `webToolsEnabled` — to the existing settings surface. If there is no admin-settings table yet, add a minimal `FeatureToggle` model (Prisma migration) keyed by toggle name with a boolean value; seed `webToolsEnabled = false`. Coordinate with whoever owns admin settings to avoid duplicating infra.
+2. **Server gate.** In `apps/core/app/routes/api/chat.ts`, read `webToolsEnabled` once per request (cache for 5 min like `modelSupportsTools`). On the tool-calling branch, always register `getInformation`; conditionally include `webSearch` / `fetchPage` in the tools object only when the toggle is ON. Do **not** delete the tool files or Firecrawl wiring.
+3. **System prompt.** Update the tool-use guidance in `chat.ts` so it conditionally mentions web tools depending on the toggle. When OFF, the prompt should only describe `getInformation` (matches what the model can actually see).
+4. **Admin UI.** Add a `webToolsEnabled` toggle to the admin settings page (label: "Allow AI to search the web and fetch URLs"; helper text: "Off by default during the ADHD latency study. Turning this on lets the chat AI use `webSearch` and `fetchPage` in addition to course material RAG."). Server must reject changes from non-admin roles.
+5. **Tool envelope / `runTool`.** Leave `app/lib/ai/tool-result.ts` and the tool source files (`web-search.ts`, `fetch-page.ts`) alone. They keep working when the toggle is ON.
+6. **UI copy.** In `apps/core/app/routes/chat.tsx`, keep the existing "Searching course…" typing phase. Only show the "Searching the web…" phase when the toggle is ON (read it from a server-passed flag; do not expose the toggle itself to students).
+7. **Tests.** Add a test that with the toggle OFF the tool registry on the tool-calling branch is exactly `["getInformation"]`; with the toggle ON it is `["getInformation", "webSearch", "fetchPage"]`. Keep existing webSearch/fetchPage tests under an "if enabled" describe block.
+8. **Docs.** Update `TEAM_CHAT_LATENCY_AND_TOOLS.md` and this sprint guide to reflect the toggle-not-delete direction (already done in the same commit as the spec rewrite). Note the default-OFF research stance.
+9. **Manual smoke.** With toggle OFF, ask "what's the latest on X?" → model answers from weights (small model) or course material (big model) with no web call. Flip toggle ON in the admin UI → same prompt now triggers `webSearch` and returns web results. Flip back OFF → web call disappears.
 
 ### Done when
 
-- `grep -ri "webSearch\|fetchPage\|firecrawl" apps/core/app` returns nothing meaningful (only stray comments to delete).
-- `getInformation` is the sole tool registered when `supportsTools: true`.
-- No new package dependency on Firecrawl / web-search SDKs remains.
-- Sprint docs no longer carry the "web tools out of scope but still present" caveat; they state the new invariant.
-- One regression-style test pins the tool list to `["getInformation"]`.
+- `webToolsEnabled` Feature Toggle exists on the admin settings page; non-admins cannot change it.
+- Default value in fresh DBs / migrations is **false**.
+- With toggle OFF, the tool registry on the tool-calling branch is exactly `["getInformation"]`; with toggle ON, `webSearch` / `fetchPage` are added back.
+- `webSearch`, `fetchPage`, and Firecrawl wiring remain in the codebase and pass their tests when the toggle is ON.
+- Sprint docs describe the toggle, the default-OFF research stance, and the path to flip it on later.
+- L10 still works: small-model fast path is unaffected by the toggle (small models never see web tools either way).
 
 ### Open questions for kickoff
 
-- Are there course pages (admin/help text) that mention web search as a feature? If so, remove or reword in the same PR.
-- Telemetry: any `AIInteraction` rows or analytics filters that group by `toolName = 'webSearch'`? Decide whether to keep historical rows or migrate the field.
+- Where does the `FeatureToggle` model live if we add one? (admin-settings package vs `apps/core/prisma/schema.prisma`)
+- Should the toggle be per-course or global? (PI: start global; revisit if a course wants RAG-only and another wants web grounding.)
+- Telemetry: tag `AIInteraction` rows with the toggle state at request time so we can later compare RAG-only vs RAG+web turns without re-running the study.
 
 ---
 
@@ -563,11 +567,11 @@ Checklist on parent issue:
 - C1 works without the “check course materials” phrase
 - C2 (long course-RAG summary) Total improved vs L02 baseline
 - No global `supportsTools: false` hack
-- `webSearch` + `fetchPage` removed (L13); only `getInformation` remains as a tool
+- `webSearch` + `fetchPage` gated behind admin `webToolsEnabled` Feature Toggle (L13, default OFF for the research phase); `getInformation` always registered when `supportsTools: true`
 - L10 tier router lands: S1-dev uses small model, C1 escalates to tool-capable model
 - L11 — [#264](https://github.com/EduAI-Lab/EduAI/issues/264) `supportsTools` toggle hidden (and server-rejected) for small models; existing DB rows backfilled
 - L12 — [`COLD_START_AND_OLLAMA_WARMUP.md`](../COLD_START_AND_OLLAMA_WARMUP.md) merged and linked from L05, ledger, and AND_TOOLS doc
-- L13 — `webSearch` + `fetchPage` deleted; tool registry on the tool-calling branch contains exactly `getInformation`; Firecrawl deps removed
+- L13 — admin `webToolsEnabled` Feature Toggle shipped (default OFF); with the toggle OFF the tool-calling branch registers exactly `getInformation`; with it ON, `webSearch` + `fetchPage` are added back. Firecrawl wiring stays in tree.
 - All PRs link sub-issues; ledger updated
 
 ### Done when
@@ -585,7 +589,7 @@ Checklist on parent issue:
 | Hybrid vs tools branch             | ~line 725 `modelSupportsTools`                                      |
 | Tool envelope                      | `apps/core/app/lib/ai/tool-result.ts`                               |
 | Course-RAG tool (`getInformation`) | defined inline in `apps/core/app/routes/api/chat.ts:674` (in scope) |
-| Web / fetch tools                  | `apps/core/app/lib/ai/tools/` (**deleted in L13** — no longer present after that step lands) |
+| Web / fetch tools                  | `apps/core/app/lib/ai/tools/` (**kept in tree**; registered only when admin `webToolsEnabled` Feature Toggle is ON — L13) |
 | Embeddings / RAG                   | `apps/core/app/lib/ai/embedding.ts`                                 |
 | Boot warmup                        | `apps/core/app/lib/ai/warmup.server.ts`                             |
 | Chat UI / TTFT perception          | `apps/core/app/routes/chat.tsx`                                     |
