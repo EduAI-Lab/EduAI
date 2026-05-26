@@ -3,6 +3,7 @@ import { UserRole } from "@prisma/client";
 import { randomUUID } from "crypto";
 import { streamText, tool } from "ai";
 import { createAIProviderRegistry, modelSupportsTools } from "~/lib/ai/providers";
+import { composeSystemPrompt } from "~/lib/ai/adhd-assist";
 import { findRelevantContent } from "~/lib/ai/embedding";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { auth } from "~/lib/auth/server";
@@ -667,10 +668,12 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
       };
     }
 
+    streamConfig.system = composeSystemPrompt(streamConfig.system ?? "", { adhdAssist });
+
     console.log(`Using ${supportsTools ? "tool calling" : "hybrid RAG"} approach for model: ${model}`);
     console.log('Full system prompt:', streamConfig.system);
     console.log(`Sending ${trimmedMessages.length} messages to LLM:`, JSON.stringify(trimmedMessages, null, 2));
-    const result = await streamText(streamConfig);
+    const result = await streamText(streamConfig as Parameters<typeof streamText>[0]);
 
     if (streaming) {
       const headers: Record<string, string> = {
