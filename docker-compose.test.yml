@@ -1,28 +1,41 @@
-# EduAICore — containerised test suite
-#
-# Runs all tests without any local dependencies beyond Docker.
-#
-# Run everything:
-#   docker compose -f docker-compose.test.yml up --build
-#
-# Run a single suite (databases start automatically via depends_on):
-#   docker compose -f docker-compose.test.yml up --build core-tests
-#   docker compose -f docker-compose.test.yml up --build ai-tutor-tests
-#   docker compose -f docker-compose.test.yml up --build ai-tutor-server-tests
-#   docker compose -f docker-compose.test.yml up --build question-maker-tests
-#
-# Run all suites with proper exit-code propagation:
-#   bash scripts/test-in-docker.sh
-
 name: eduai-test
 
 services:
+
+  # ──────────────────────────────────────────────────────────────────────
+  # Test databases
+  # ──────────────────────────────────────────────────────────────────────
+
+  eduai-test-db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: eduai_test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
   ai-tutor-test-db:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: postgres
+      POSTGRES_DB: aitutor_test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  ai-tutor-integration-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: aitutor_integration
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -41,27 +54,105 @@ services:
       timeout: 5s
       retries: 12
 
-  core-tests:
-    build:
-      context: .
-      dockerfile: docker/test/Dockerfile.core
-    # Unit-only suite (schemas, utilities, React components).
-    # No database connection required.
+  # ──────────────────────────────────────────────────────────────────────
+  # Live AI Tutor server for frontend integration tests
+  # ──────────────────────────────────────────────────────────────────────
 
-  ai-tutor-tests:
+  ai-tutor-integration-server:
     build:
       context: .
-      dockerfile: docker/test/Dockerfile.ai-tutor
-    # Frontend unit suite (hooks, components, API utilities).
-    # No database connection required.
-
-  ai-tutor-server-tests:
-    build:
-      context: .
-      dockerfile: docker/test/Dockerfile.ai-tutor-server
+      dockerfile: docker/Dockerfile.ai-tutor-server
+      target: serve
     environment:
-      # Picked up by the entrypoint, which writes .env.test and pre-creates
-      # the aitutor_test database so globalSetup.js's Prisma migration succeeds.
+      DATABASE_URL: postgresql://postgres:postgres@ai-tutor-integration-db:5432/aitutor_integration
+      BETTER_AUTH_SECRET: test-integration-secret
+      BETTER_AUTH_URL: http://ai-tutor-integration-server:4000/api/auth
+      COOKIE_DOMAIN: localhost
+      PORT: "4000"
+      EDUAI_DISCOVERY_URL: http://localhost:3000/api/auth/.well-known/openid-configuration
+      EDUAI_CLIENT_ID: test-client-id
+      EDUAI_CLIENT_SECRET: test-client-secret
+      EDUAI_BASE_URL: http://localhost:3000/api
+      AI_SUPERVISOR_ENABLED: "false"
+    depends_on:
+      ai-tutor-integration-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  # ──────────────────────────────────────────────────────────────────────
+  # Test runners
+  # ──────────────────────────────────────────────────────────────────────
+
+  eduai-unit-tests:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.eduai
+      target: test
+    command: ["npx", "vitest", "run", "app/tests/unit"]
+
+  eduai-integration-tests:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.eduai
+      target: test
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@eduai-test-db:5432/eduai_test
+      BETTER_AUTH_SECRET: test-secret-not-for-production
+      BETTER_AUTH_URL: http://localhost:3000
+      GOOGLE_GENERATIVE_AI_API_KEY: test-key-not-real
+      NODE_ENV: test
+    command:
+      - sh
+      - -c
+      - "npx prisma migrate deploy --schema=prisma/schema.prisma && npx vitest run app/tests/integration --passWithNoTests"
+    depends_on:
+      eduai-test-db:
+        condition: service_healthy
+
+  ai-tutor-app-unit-tests:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ai-tutor-app
+      target: test
+    command: ["npx", "vitest", "run", "app/tests/unit"]
+
+  ai-tutor-app-integration-tests:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ai-tutor-app
+      target: test
+    environment:
+      AI_TUTOR_SERVER_URL: http://ai-tutor-integration-server:4000
+    command: ["npx", "vitest", "run", "app/tests/integration", "--passWithNoTests"]
+    depends_on:
+      ai-tutor-integration-server:
+        condition: service_healthy
+
+  ai-tutor-server-unit-tests:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ai-tutor-server
+      target: test
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@ai-tutor-test-db:5432/aitutor_test
+      DB_HOST: ai-tutor-test-db
+      DB_PORT: "5432"
+    command: ["npm", "run", "test:unit"]
+    depends_on:
+      ai-tutor-test-db:
+        condition: service_healthy
+
+  ai-tutor-server-integration-tests:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ai-tutor-server
+      target: test
+    environment:
       DATABASE_URL: postgresql://postgres:postgres@ai-tutor-test-db:5432/aitutor_test
       DB_HOST: ai-tutor-test-db
       DB_PORT: "5432"
@@ -69,24 +160,36 @@ services:
       BETTER_AUTH_URL: http://localhost:4001/api/auth
       COOKIE_DOMAIN: localhost
       PORT: "4001"
+    command: ["npm", "run", "test:integration"]
     depends_on:
       ai-tutor-test-db:
         condition: service_healthy
 
-  question-maker-tests:
+  qm-app-unit-tests:
     build:
       context: .
-      dockerfile: docker/test/Dockerfile.question-maker
+      dockerfile: docker/Dockerfile.qm-app
+      target: test
+
+  qm-server-unit-tests:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.qm-server
+      target: test
+    command: ["npx", "vitest", "run"]
+
+  qm-server-integration-tests:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.qm-server
+      target: test
     environment:
-      # setup.js copies TEST_DATABASE_URL → DATABASE_URL before any test
-      # module is imported, so both unit and integration suites point at the
-      # same test database. Unit tests never call connectDatabase(), so the
-      # real URL is harmless there.
       TEST_DATABASE_URL: postgresql://postgres:password@question-maker-test-db:5432/question_maker_test
       DATABASE_URL: postgresql://postgres:password@question-maker-test-db:5432/question_maker_test
       JWT_SECRET: test-jwt-secret-for-docker
       ENCRYPTION_KEY: test-encryption-key-32bytes!!
       NODE_ENV: test
+    command: ["npx", "vitest", "run", "--config", "vitest.integration.config.js"]
     depends_on:
       question-maker-test-db:
         condition: service_healthy
