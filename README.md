@@ -10,7 +10,7 @@ EduAI/
 │   ├── core/                        # EduAI — RAG chat platform and central API
 │   └── extensions/
 │       ├── ai-tutor/                # AI Tutor — two-agent tutoring with hierarchical course content
-│       │   └── server/              # AI Tutor Express/Prisma backend (Better Auth OAuth provider)
+│       │   └── server/              # AI Tutor Express/Prisma backend (session validated via Core)
 │       └── question-maker/          # Question Maker — question bank authoring, Canvas integration
 │           └── app/
 │               ├── backend/         # Question Maker Express/Sequelize API
