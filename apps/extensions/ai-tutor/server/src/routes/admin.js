@@ -31,7 +31,7 @@ import {
 } from '../services/systemSettings.js';
 import { getAiModelPolicyState, setAiModelPolicy } from '../services/aiModelPolicy.js';
 import { mapAdminUser, mapCourseOffering } from '../utils/mappers.js';
-import { getEduAiAccessTokenForUser } from '../services/eduaiAuth.js';
+import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
 import { syncCourseEnrollments } from '../services/enrollmentSync.js';
 
 const router = express.Router();
@@ -225,7 +225,7 @@ router.get('/admin/settings/eduai-api-key', requireRole('ADMIN'), async (req, re
  *
  * Auth: ADMIN.
  * Side effects: writes the key into SystemSetting('EDUAI_API_KEY'); subsequent
- *   `getEduAiAccessTokenForUser` calls will use the new key.
+ *   session-cookie EduAI calls will use the new key.
  *
  * Why: stored in DB rather than env so admins can rotate without redeploying.
  */
@@ -310,10 +310,7 @@ router.post('/admin/courses/:courseId/sync-enrollments', requireRole('ADMIN'), a
       return res.status(400).json({ error: 'Course is not imported from EduAI' });
     }
 
-    const accessToken = await getEduAiAccessTokenForUser(req.user?.id);
-
-    // Pass the already-fetched course to avoid a duplicate DB lookup inside the service
-    const result = await syncCourseEnrollments(courseId, { accessToken, course });
+    const result = await syncCourseEnrollments(courseId, { course });
     res.json(result);
   } catch (error) {
     console.error('[eduai] Manual enrollment sync failed:', error);

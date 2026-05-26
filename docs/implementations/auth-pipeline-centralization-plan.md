@@ -206,11 +206,11 @@ AI Tutor's session middleware needs to be rewritten and its Better Auth tables d
 **Goal:** Core exposes `POST /api/sessions/validate`. Both extension migrations are blocked until this exists.
 
 **Tasks:**
-- [ ] Implement `POST /api/sessions/validate` — reads the session cookie from the request, validates it via Better Auth's session store, and returns `{ user: { id, email, name, role, image } }` or `401`
-- [ ] Implement `?redirect=<url>` support on Core's login page with open-redirect protection: validate that the redirect URL's origin is under `.eduai.ok.ubc.ca` (production) or `localhost:` (development) before redirecting. Strip or reject all other origins and fall back to `/dashboard`
-- [ ] Add rate limiting to `POST /api/sessions/validate`: Better Auth's built-in rate limiter does not cover custom routes. This endpoint will receive one call per authenticated request from both extensions, so it should have its own IP-based rate limit (e.g. 300 req/min per IP, tunable) to prevent abuse
-- [ ] Write a contract test: POST with a valid session cookie → 200 + user object; POST with no cookie or expired cookie → 401
-- [ ] Smoke-test manually: log in on Core, copy the session cookie, call `POST /api/sessions/validate` from curl — confirm the user object comes back with the correct role
+- [x] Implement `POST /api/sessions/validate` — reads the session cookie from the request, validates it via Better Auth's session store, and returns `{ user: { id, email, name, role, image } }` or `401`
+- [x] Implement `?redirect=<url>` support on Core's login page with open-redirect protection: validate that the redirect URL's origin is under `.eduai.ok.ubc.ca` (production) or `localhost:` (development) before redirecting. Strip or reject all other origins and fall back to `/dashboard`
+- [x] Add rate limiting to `POST /api/sessions/validate`: Better Auth's built-in rate limiter does not cover custom routes. This endpoint will receive one call per authenticated request from both extensions, so it should have its own IP-based rate limit (e.g. 300 req/min per IP, tunable) to prevent abuse
+- [x] Write a contract test: POST with a valid session cookie → 200 + user object; POST with no cookie or expired cookie → 401
+- [x] Smoke-test manually: log in on Core, copy the session cookie, call `POST /api/sessions/validate` from curl — confirm the user object comes back with the correct role
 
 **Done when:** the endpoint is live in dev, contract test passes, and a manual curl test returns the expected user shape.
 
@@ -224,22 +224,22 @@ AI Tutor's session middleware needs to be rewritten and its Better Auth tables d
 
 #### AI Tutor (Phase 2a in schema doc)
 
-- [ ] Rewrite `src/middleware/auth.js` — replace Better Auth session lookup with `POST /api/sessions/validate` call (AT-A). See [§6](#6-session-validation-middleware-pattern) for the middleware description.
-- [ ] Add login redirect to the middleware: when `POST /api/sessions/validate` returns 401, redirect to `{CORE_URL}/login?redirect={encodeURIComponent(req.originalUrl)}` (AT-B)
-- [ ] Delete `server/src/auth.js` (AT-C)
-- [ ] Run Prisma migration to drop `User`, `Session`, `Account`, `Verification` tables (AT-D)
-- [ ] Remove local `Role` enum from `schema.prisma` (AT-E)
-- [ ] Remove `better-auth` from `package.json` (AT-F)
+- [x] Rewrite `src/middleware/auth.js` — replace Better Auth session lookup with `POST /api/sessions/validate` call (AT-A). See [§6](#6-session-validation-middleware-pattern) for the middleware description.
+- [x] Add login redirect to the middleware: when `POST /api/sessions/validate` returns 401, redirect to `{CORE_URL}/login?redirect={encodeURIComponent(req.originalUrl)}` (AT-B)
+- [x] Delete `server/src/auth.js` (AT-C)
+- [x] Run Prisma migration to drop `User`, `Session`, `Account`, `Verification` tables (AT-D)
+- [x] Remove local `Role` enum from `schema.prisma` (AT-E)
+- [x] Remove `better-auth` from `package.json` (AT-F)
 
 #### Question Maker (Phase 2b in schema doc)
 
-- [ ] Write `src/middleware/auth.js` — session validation middleware (QM-A, QM-B). Replaces the existing JWT middleware entirely.
-- [ ] Delete `src/routes/auth.js`; remove auth router from `app.js` (QM-C, QM-D)
-- [ ] Write Sequelize migration: drop `users` table; create new `users` table with CUID string PK, no `password_hash` (QM-E)
-- [ ] Write Sequelize migration: change `user_id` columns in `courses`, `canvas_integrations`, `canvas_course_mappings` from `INTEGER` to `VARCHAR` (QM-F)
-- [ ] Update `src/services/authService.js` — replace register/login logic with a `findOrCreateUser(coreUser)` function that upserts a local row from the Core session payload (QM-E)
-- [ ] Update all route handlers that read `req.user` to use the new session shape (QM-G)
-- [ ] Update `.env.example`: add `CORE_URL`; remove `JWT_SECRET`, `JWT_EXPIRES_IN`, and any auth-related vars (QM-H)
+- [x] Write `src/middleware/auth.js` — session validation middleware (QM-A, QM-B). Replaces the existing JWT middleware entirely.
+- [x] Delete `src/routes/auth.js`; remove auth router from `app.js` (QM-C, QM-D)
+- [x] Write Sequelize migration: drop `users` table; create new `users` table with CUID string PK, no `password_hash` (QM-E)
+- [x] Write Sequelize migration: change `user_id` columns in `courses`, `canvas_integrations`, `canvas_course_mappings` from `INTEGER` to `VARCHAR` (QM-F)
+- [x] Update `src/services/authService.js` — replace register/login logic with a `findOrCreateUser(coreUser)` function that upserts a local row from the Core session payload (QM-E)
+- [x] Update all route handlers that read `req.user` to use the new session shape (QM-G)
+- [x] Update `.env.example`: add `CORE_URL`; remove `JWT_SECRET`, `JWT_EXPIRES_IN`, and any auth-related vars (QM-H)
 
 **Done when:** both extensions redirect to Core login when unauthenticated, return to the original URL after login, and serve protected routes without any local password or JWT logic.
 

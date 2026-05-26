@@ -22,7 +22,7 @@
 import express from 'express';
 import { prisma } from '../config/database.js';
 import { requireRole } from '../middleware/auth.js';
-import { getEduAiAccessTokenForUser } from '../services/eduaiAuth.js';
+import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
 import { syncExternalCourseTopics } from '../services/topicSync.js';
 
 const router = express.Router();
@@ -177,9 +177,9 @@ router.post('/courses/:courseId/topics/sync', requireRole('PROFESSOR'), async (r
 
     let upstreamNames = [];
     try {
-      const eduAiAccessToken = await getEduAiAccessTokenForUser(instructor.id);
+      const cookie = getEduAiCookieForRequest(req);
       const { topics: synced, upstreamNames: upstream } = await syncExternalCourseTopics(courseId, {
-        accessToken: eduAiAccessToken,
+        cookie,
       });
       upstreamNames = upstream || [];
     } catch (e) {

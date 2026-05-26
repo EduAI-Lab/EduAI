@@ -45,7 +45,7 @@ import {
   generateGuideResponse,
   generateTeachResponse,
 } from '../services/aiGuidance.js';
-import { getEduAiAccessTokenForUser } from '../services/eduaiAuth.js';
+import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
 import {
   ActivityFeedbackRequestSchema,
   CustomRequestSchema,
@@ -250,7 +250,7 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
     const { dualLoopEnabled, maxSupervisorIterations, supervisorModelId } =
       await resolveSupervisorSettings();
     const tutorModelId = await resolveTutorModelSelection(payload.modelId);
-    const eduAiAccessToken = await getEduAiAccessTokenForUser(authUser.id);
+    const cookie = getEduAiCookieForRequest(req);
     const chatId = payload.chatId || existingSession?.chatId || null;
     const messageId = payload.messageId || randomUUID();
 
@@ -260,7 +260,7 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
       supervisorModelId,
       dualLoopEnabled,
       maxSupervisorIterations,
-      eduAiAccessToken,
+      cookie,
       chatId,
       messageId,
       courseCode: getCourseCode(course),
