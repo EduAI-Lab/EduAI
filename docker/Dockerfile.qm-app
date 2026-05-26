@@ -26,8 +26,8 @@ FROM node:20-alpine AS test
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/apps/extensions/question-maker/app/frontend/node_modules \
-     ./apps/extensions/question-maker/app/frontend/node_modules
+COPY --from=deps /app/apps/extensions/question-maker/node_modules \
+     ./apps/extensions/question-maker/node_modules
 
 # Backend stub required for workspace symlink resolution
 COPY apps/extensions/question-maker/app/backend/src \
@@ -41,15 +41,17 @@ COPY apps/extensions/question-maker/app/frontend/vite.config.ts \
      ./apps/extensions/question-maker/app/frontend/
 COPY apps/extensions/question-maker/app/frontend/tsconfig.json \
      ./apps/extensions/question-maker/app/frontend/
+COPY apps/extensions/question-maker/app/frontend/tsconfig.node.json \
+     ./apps/extensions/question-maker/app/frontend/
 COPY apps/extensions/question-maker/app/frontend/index.html \
      ./apps/extensions/question-maker/app/frontend/
 COPY apps/extensions/question-maker/app/frontend/package.json \
      ./apps/extensions/question-maker/app/frontend/
 
-ENV PATH="/app/node_modules/.bin:${PATH}"
+ENV PATH="/app/apps/extensions/question-maker/node_modules/.bin:/app/node_modules/.bin:${PATH}"
 
 WORKDIR /app/apps/extensions/question-maker/app/frontend
-CMD ["npx", "vitest", "run"]
+CMD ["sh", "-c", "../../node_modules/.bin/vitest run"]
 
 # ── Build ──────────────────────────────────────────────────────────────────
 FROM node:20-alpine AS build
