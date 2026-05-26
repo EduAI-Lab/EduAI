@@ -57,8 +57,6 @@ export function makeAdmin(overrides = {}) {
 
 export async function truncateAll() {
   // Use Prisma deleteMany in FK-safe order (children before parents).
-  // This goes through Prisma's standard query pipeline and properly
-  // serializes with any other pending operations.
   await prisma.aiInteractionTrace.deleteMany();
   await prisma.aiChatSession.deleteMany();
   await prisma.activityFeedback.deleteMany();
@@ -70,45 +68,22 @@ export async function truncateAll() {
   await prisma.lesson.deleteMany();
   await prisma.module.deleteMany();
   await prisma.topic.deleteMany();
-  await prisma.courseInstructor.deleteMany();
-  await prisma.courseEnrollment.deleteMany();
   await prisma.courseOffering.deleteMany();
   await prisma.suggestedPrompt.deleteMany();
   await prisma.systemPrompt.deleteMany();
   await prisma.systemSetting.deleteMany();
   await prisma.promptTemplate.deleteMany();
-  await prisma.verification.deleteMany();
-  await prisma.account.deleteMany();
-  await prisma.session.deleteMany();
-  await prisma.user.deleteMany();
 }
 
 /**
- * Seed a minimal course structure: user -> course -> instructor assignment -> module -> lesson -> topic.
+ * Seed a minimal course structure: course -> module -> lesson -> topic.
  */
-export async function seedMinimalCourse(professorId) {
-  const user = await prisma.user.create({
-    data: {
-      id: professorId,
-      name: 'Prof Test',
-      email: `prof_${professorId}@test.com`,
-      role: 'PROFESSOR',
-    },
-  });
-
+export async function seedMinimalCourse(_professorId) {
   const course = await prisma.courseOffering.create({
     data: {
       title: 'Test Course',
       description: 'A test course',
       isPublished: true,
-    },
-  });
-
-  await prisma.courseInstructor.create({
-    data: {
-      courseOfferingId: course.id,
-      userId: professorId,
-      role: 'LEAD',
     },
   });
 
@@ -139,7 +114,7 @@ export async function seedMinimalCourse(professorId) {
     },
   });
 
-  return { user, course, module, lesson, topic };
+  return { course, module, lesson, topic };
 }
 
 export { prisma };
