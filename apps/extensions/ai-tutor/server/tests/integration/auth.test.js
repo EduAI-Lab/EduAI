@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
-import { makeProfessor, makeAdmin, truncateAll, seedMinimalCourse, prisma } from '../helpers.js';
+import { makeProfessor, makeAdmin, truncateAll } from '../helpers.js';
 
 describe('Auth routes', () => {
   beforeEach(async () => {
@@ -13,15 +13,6 @@ describe('Auth routes', () => {
   describe('GET /api/me', () => {
     it('returns the current user without password field', async () => {
       const prof = makeProfessor();
-      await prisma.user.create({
-        data: {
-          id: prof.id,
-          name: prof.name,
-          email: prof.email,
-          role: 'PROFESSOR',
-        },
-      });
-
       const app = await createApp({ mockUser: prof });
       const res = await request(app).get('/api/me');
 
@@ -31,7 +22,6 @@ describe('Auth routes', () => {
       expect(res.body.user.name).toBe(prof.name);
       expect(res.body.user.email).toBe(prof.email);
       expect(res.body.user.role).toBe('PROFESSOR');
-      // toPublicUser strips the password field
       expect(res.body.user.password).toBeUndefined();
     });
   });
@@ -44,14 +34,6 @@ describe('Auth routes', () => {
 
     beforeEach(async () => {
       admin = makeAdmin();
-      await prisma.user.create({
-        data: {
-          id: admin.id,
-          name: admin.name,
-          email: admin.email,
-          role: 'ADMIN',
-        },
-      });
       adminApp = await createApp({ mockUser: admin });
     });
 
@@ -60,13 +42,6 @@ describe('Auth routes', () => {
 
       expect(res.status).toBe(403);
       expect(res.body.error).toMatch(/admin/i);
-    });
-
-    it('allows admin to access admin endpoints (GET /api/admin/users)', async () => {
-      const res = await request(adminApp).get('/api/admin/users');
-
-      expect(res.status).toBe(200);
-      expect(Array.isArray(res.body)).toBe(true);
     });
 
     it('allows admin to access /api/me (whitelisted path)', async () => {

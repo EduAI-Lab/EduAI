@@ -11,9 +11,9 @@
  *   import `_testExports` for unit-level coverage of the pure helpers.
  * Gotchas:
  *   - Per-user provider API keys (apiKeys[provider]) are forwarded to EduAI on
- *     every request and never persisted server-side. The user's Better Auth
- *     EduAI OAuth access token is sent as a Bearer header — both must be
- *     present or `callEduAI` throws.
+ *     every request and never persisted server-side. The user's Core session
+ *     cookie is forwarded as the `Cookie` header — both must be present or
+ *     `callEduAI` throws.
  *   - Prompt templates `learning-prompt`, `exercise-prompt`, and
  *     `supervisor-prompt` MUST exist as `PromptTemplate` rows; missing rows
  *     throw and surface as a user-visible error in the catch blocks.
@@ -29,7 +29,7 @@
  *     aiModelPolicy.js); supervisor loop is short-circuited when
  *     dualLoopEnabled is false.
  * Related: `aiModelPolicy.js` (iteration/model selection), `eduaiClient.js`
- *   (chat URL + HTTP), `eduaiAuth.js` (OAuth token retrieval),
+ *   (chat URL + HTTP), `eduaiAuth.js` (cookie extraction),
  *   `routes/activities.js` (HTTP entry points).
  */
 
@@ -45,17 +45,17 @@ const FALLBACK_MESSAGE =
 /**
  * Single round-trip to the EduAI chat completion endpoint.
  *
- * Why both an OAuth token AND an apiKey: EduAI authenticates the *caller*
- * (this server, on behalf of a logged-in user) via Bearer token, but the
- * actual upstream LLM call is billed against the *user's* personal provider
- * key (OpenAI/Anthropic/Google). The provider key never lands in our DB —
- * it transits straight through to EduAI in the request body.
+ * Why both a cookie AND an apiKey: EduAI authenticates the *caller*
+ * (this server, on behalf of a logged-in user) via the session cookie, but
+ * the actual upstream LLM call is billed against the *user's* personal
+ * provider key (OpenAI/Anthropic/Google). The provider key never lands in
+ * our DB — it transits straight through to EduAI in the request body.
  */
 async function callEduAI({
   systemPrompt,
   userMessage,
   modelId = null,
-  eduAiAccessToken,
+  cookie,
   userApiKey,
   chatId = null,
   messageId = null,
@@ -64,9 +64,9 @@ async function callEduAI({
   const endpoint = getEduAiChatUrl();
   const model = modelId || process.env.EDUAI_MODEL || 'google:gemini-2.5-flash';
 
-  if (!eduAiAccessToken) {
-    console.error('[aiGuidance] Missing EduAI OAuth access token');
-    const error = new Error('EduAI OAuth access token is required');
+  if (!cookie) {
+    console.error('[aiGuidance] Missing session cookie for EduAI call');
+    const error = new Error('Session cookie is required for EduAI calls');
     error.status = 401;
     throw error;
   }
@@ -109,7 +109,7 @@ async function callEduAI({
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${eduAiAccessToken}`,
+        cookie,
       },
       body: JSON.stringify(requestBody),
     });
@@ -192,7 +192,7 @@ async function callSupervisor({
   hiddenContext,
   tutorResponse,
   supervisorModelId,
-  eduAiAccessToken,
+  cookie,
   userApiKey,
 }) {
   const template = await getPromptTemplateBySlug('supervisor-prompt');
@@ -226,7 +226,7 @@ RESPOND WITH ONLY VALID JSON.`;
       systemPrompt: template.systemPrompt,
       userMessage: buildUserMessage(parseErrorDetails),
       modelId: supervisorModelId,
-      eduAiAccessToken,
+      cookie,
       userApiKey,
     });
 
@@ -459,7 +459,7 @@ async function supervisedGenerate(generateFn, context) {
         hiddenContext: context.hiddenContext,
         tutorResponse: tutorResult.message,
         supervisorModelId: context.supervisorModelId,
-        eduAiAccessToken: context.eduAiAccessToken,
+        cookie: context.cookie,
         userApiKey: context.userApiKey,
       });
 
@@ -516,7 +516,7 @@ async function generateWithSupervisor({
   supervisorModelId,
   dualLoopEnabled,
   maxSupervisorIterations,
-  eduAiAccessToken,
+  cookie,
   apiKey,
   chatId,
   messageId,
@@ -528,7 +528,7 @@ async function generateWithSupervisor({
     hiddenContext,
     tutorModelId,
     supervisorModelId,
-    eduAiAccessToken,
+    cookie,
     userApiKey: apiKey,
     chatId,
     dualLoopEnabled,
@@ -549,7 +549,7 @@ async function generateWithSupervisor({
       systemPrompt,
       userMessage,
       modelId: tutorModelId,
-      eduAiAccessToken,
+      cookie,
       userApiKey: apiKey,
       chatId: currentChatId,
       // Each revision needs a fresh messageId so EduAI doesn't dedupe it as
@@ -576,7 +576,7 @@ export async function generateTeachResponse({
   supervisorModelId = null,
   dualLoopEnabled = true,
   maxSupervisorIterations = 3,
-  eduAiAccessToken,
+  cookie,
   apiKey,
   chatId = null,
   messageId = null,
@@ -609,7 +609,7 @@ export async function generateTeachResponse({
       supervisorModelId,
       dualLoopEnabled,
       maxSupervisorIterations,
-      eduAiAccessToken,
+      cookie,
       apiKey,
       chatId,
       messageId,
@@ -647,7 +647,7 @@ export async function generateGuideResponse({
   supervisorModelId = null,
   dualLoopEnabled = true,
   maxSupervisorIterations = 3,
-  eduAiAccessToken,
+  cookie,
   apiKey,
   chatId = null,
   messageId = null,
@@ -679,7 +679,7 @@ export async function generateGuideResponse({
       supervisorModelId,
       dualLoopEnabled,
       maxSupervisorIterations,
-      eduAiAccessToken,
+      cookie,
       apiKey,
       chatId,
       messageId,
@@ -719,7 +719,7 @@ export async function generateCustomResponse({
   supervisorModelId = null,
   dualLoopEnabled = true,
   maxSupervisorIterations = 3,
-  eduAiAccessToken,
+  cookie,
   apiKey,
   chatId = null,
   messageId = null,
@@ -751,7 +751,7 @@ export async function generateCustomResponse({
       supervisorModelId,
       dualLoopEnabled,
       maxSupervisorIterations,
-      eduAiAccessToken,
+      cookie,
       apiKey,
       chatId,
       messageId,

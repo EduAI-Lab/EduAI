@@ -12,8 +12,7 @@ export function getEduAiBaseUrl() {
 
 /**
  * AI completion endpoint. Used by `aiGuidance.js` rather than the
- * `requestEduAi` helper because chat needs custom headers (per-user
- * Authorization) and a non-trivial body shape.
+ * `requestEduAi` helper because chat needs custom headers and a non-trivial body shape.
  */
 export function getEduAiChatUrl() {
   return `${getEduAiBaseUrl()}/chat`;
@@ -23,23 +22,19 @@ export function getEduAiChatUrl() {
  * Shared fetch helper. Surfaces upstream HTTP failures as Errors with
  * `status` set so route handlers can pass them through unchanged. Returns
  * `null` on 204 No Content; otherwise parses JSON.
+ *
+ * Pass `options.cookie` (the raw Cookie header forwarded from the request)
+ * for user-scoped calls. Omit for unauthenticated endpoints.
  */
 async function requestEduAi(path, options = {}) {
-  const accessToken = typeof options.accessToken === 'string' ? options.accessToken.trim() : null;
-  const requireAuth = options.requireAuth === true;
-
-  if (requireAuth && !accessToken) {
-    const err = new Error('EduAI access token is required');
-    err.status = 401;
-    throw err;
-  }
+  const cookie = typeof options.cookie === 'string' ? options.cookie : '';
 
   const url = `${getEduAiBaseUrl()}${path}`;
   const response = await fetch(url, {
     method: options.method ?? 'GET',
     headers: {
       'Content-Type': 'application/json',
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      ...(cookie ? { cookie } : {}),
       ...options.headers,
     },
     body: options.body ? JSON.stringify(options.body) : undefined,
@@ -60,11 +55,8 @@ async function requestEduAi(path, options = {}) {
   return response.json();
 }
 
-export async function listEduAiCourses(accessToken) {
-  const data = await requestEduAi('/courses', {
-    accessToken,
-    requireAuth: true,
-  });
+export async function listEduAiCourses(cookie) {
+  const data = await requestEduAi('/courses', { cookie });
   try {
     const parsed = EduAiCourseListSchema.parse(data);
     return parsed.courses;
@@ -76,19 +68,15 @@ export async function listEduAiCourses(accessToken) {
   }
 }
 
-export async function findEduAiCourseById(courseId, accessToken) {
+export async function findEduAiCourseById(courseId, cookie) {
   if (!courseId) return null;
-  const courses = await listEduAiCourses(accessToken);
+  const courses = await listEduAiCourses(cookie);
   return courses.find((course) => course.id === courseId) ?? null;
 }
 
-// Fetch topics for a specific EduAI course by external id
-export async function listEduAiCourseTopics(externalCourseId, accessToken) {
+export async function listEduAiCourseTopics(externalCourseId, cookie) {
   if (!externalCourseId) return [];
-  const data = await requestEduAi(`/courses/${externalCourseId}/topics`, {
-    accessToken,
-    requireAuth: true,
-  });
+  const data = await requestEduAi(`/courses/${externalCourseId}/topics`, { cookie });
   try {
     const parsed = EduAiTopicListSchema.parse(data);
     return parsed.topics;
@@ -100,13 +88,9 @@ export async function listEduAiCourseTopics(externalCourseId, accessToken) {
   }
 }
 
-// Fetch enrollments for a specific EduAI course by external id
-export async function listEduAiCourseEnrollments(externalCourseId, accessToken) {
+export async function listEduAiCourseEnrollments(externalCourseId, cookie) {
   if (!externalCourseId) return [];
-  const data = await requestEduAi(`/courses/${externalCourseId}/enrollments`, {
-    accessToken,
-    requireAuth: true,
-  });
+  const data = await requestEduAi(`/courses/${externalCourseId}/enrollments`, { cookie });
   try {
     const parsed = EduAiEnrollmentListSchema.parse(data);
     return parsed.enrollments;
