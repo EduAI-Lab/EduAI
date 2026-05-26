@@ -9,7 +9,7 @@
 
 ## The problem in one paragraph
 
-EduAI must stay **course-aware** (RAG / `getInformation`) — that is the product promise. **Web search is out of scope for this sprint**; the only grounding tool we care about is course-material RAG. Today, when tool calling is fully enabled (`supportsTools: true` on the model), turns are **slow** (lead observed **40–50 s** end-to-end on local Ollama). When tools are effectively off (`supportsTools: false` → `hybrid_rag` path in [`apps/core/app/routes/api/chat.ts`](../../apps/core/app/routes/api/chat.ts)), replies are **fast** but students must phrase requests like *“check the course materials for…”* or the model answers from weights only. **Disabling tools globally is not an acceptable product fix.**
+EduAI must stay **course-aware** (RAG / `getInformation`) — that is the product promise. **Web search and page fetching are being removed from the product entirely** (sprint step **L13**); the only grounding tool we care about is course-material RAG. After L13, `supportsTools: true` means exactly one thing: `getInformation` is registered so the model can pull course material through RAG. Small models stay `supportsTools: false` (no tools at all) so simple questions are answered straight from weights on the fast path; bigger models flip to `supportsTools: true` and are escalated to only when the L04 intent classifier flags a turn as needing course grounding. Today, when tool calling is fully enabled (`supportsTools: true` on the model), turns are **slow** (lead observed **40–50 s** end-to-end on local Ollama). When tools are effectively off (`supportsTools: false` → `hybrid_rag` path in [`apps/core/app/routes/api/chat.ts`](../../apps/core/app/routes/api/chat.ts)), replies are **fast** but students must phrase requests like *“check the course materials for…”* or the model answers from weights only. **Disabling tools globally is not an acceptable product fix.**
 
 **Target (product):** ~**3–4 s** perceived for typical tutoring turns where possible; streaming should show the **first token early**, not after the full server pipeline finishes.
 
@@ -24,7 +24,7 @@ EduAI must stay **course-aware** (RAG / `getInformation`) — that is the produc
 | **40–50 s total** | Unacceptable for students; most time felt like **waiting for server** before anything appears |
 | **Pre-display wait** | Felt like the app waited to **download / finish server work** before showing streamed text (poor TTFT / buffering) |
 | **Fast path** | When the chat API takes the **no tool-calling** branch (`!supportsTools`), responses are much faster |
-| **Slow path** | Full **tool_calling** path: `getInformation`, `maxSteps`, RAG merge — required for real EduAI behaviour. Web tools (`webSearch`, `fetchPage`) are **out of scope** for this sprint. |
+| **Slow path** | Full **tool_calling** path: `getInformation`, `maxSteps`, RAG merge — required for real EduAI behaviour. Web tools (`webSearch`, `fetchPage`) are being **deleted in L13** — after that step lands, the only tool on this branch is `getInformation`. |
 | **Prompt workaround** | System prompt tightened to call tools **only when user explicitly asks** → faster, but **breaks** “just ask about my course” UX (~90% of student needs) |
 
 ---
@@ -41,8 +41,8 @@ if (!supportsTools) {
   → No tools registered
 } else {
   → "tool_calling" path: streamText + tools + maxSteps (default 3)
-  → Only `getInformation` (course RAG) is in scope for this sprint
-  → Web tools (`webSearch`, `fetchPage`) remain in the codebase but are not the focus
+  → Only `getInformation` (course RAG) is registered
+  → Web tools (`webSearch`, `fetchPage`) are being deleted in L13 — do not add new callers
   → System prompt says: prefer ZERO tool calls; only when explicitly needed
 }
 ```
@@ -68,7 +68,7 @@ Use this table in kickoff; pick 1–2 spikes for the next sprint.
 | ------ | ---- | ---- | ---- |
 | **A. Course-selected → auto RAG** | If `courseCode` set, always run `findRelevantContent` **before** LLM (like hybrid path) even on tool-capable models | Matches “course-aware” without “check course materials” phrasing | Extra embedding latency every turn; need cap (Phase 2.5) |
 | **B. Intent router (lightweight)** | Small rules or classifier: `needs_course` / `chat_only` → decide whether to inject course context | Fewer wasted RAG calls; predictable | Wrong routing = wrong answer; needs tests |
-| **C. Per-turn model-tier routing** (**now in scope — L10**) | Default to a **small model with `supportsTools: false`** that answers chat-only questions from weights; **escalate per turn** to a bigger `supportsTools: true` model when `needsCourseRag` fires. Web tools stay out of scope. Pairs with admin-UI fix [#264](https://github.com/EduAI-Lab/EduAI/issues/264) (hide toggle for small models). | Best of both: fast for ~chat-only, correct for course-RAG; no “always-on tools” foot-gun | Misrouting on borderline prompts; need a clear escalation default (correctness > speed) |
+| **C. Per-turn model-tier routing** (**now in scope — L10**) | Default to a **small model with `supportsTools: false`** that answers chat-only questions from weights; **escalate per turn** to a bigger `supportsTools: true` model when `needsCourseRag` fires. Web tools stay out of scope. Pairs with admin-UI fix [#264](https://github.com/EduAI-Lab/EduAI/issues/264) — now its own step **L11** in the sprint guide — which hides (and server-rejects) `supportsTools: true` on small models so the router can't be silently broken by a misconfigured row. | Best of both: fast for ~chat-only, correct for course-RAG; no “always-on tools” foot-gun | Misrouting on borderline prompts; need a clear escalation default (correctness > speed) |
 | **D. Keep tools, shrink work** | Lower `CHAT_TOOL_MAX_STEPS`, cap RAG chunks/chars (partially done), summarize tool JSON before model | Already helped cloud (~11 s → ~3 s on Gemini per latency doc) | Local 31B still dominated by inference + load |
 | **E. Dev-server defaults** | Default dev server to smaller warm model; document keep-alive; measure TTFT separately from Total | Honest 3–4 s target for **dev** | Production may still use cloud |
 | **F. Streaming UX** | Ensure first chunk reaches UI immediately; show phase labels (“Searching course…”) | Fixes “nothing happening for 40 s” perception | Does not remove backend seconds |
@@ -107,6 +107,7 @@ Every spike PR should add rows to [`../MODEL_LATENCY_TRACKER.md`](../MODEL_LATEN
 | Doc | Role |
 | --- | ---- |
 | [`../MODEL_LATENCY_TRACKER.md`](../MODEL_LATENCY_TRACKER.md) | Measured TTFT/Total, tool fixes, Gemini quota notes |
+| [`../COLD_START_AND_OLLAMA_WARMUP.md`](../COLD_START_AND_OLLAMA_WARMUP.md) | Why local turns spend 10–60 s on first load; cold vs warm vs model-switch (L12 / [#209](https://github.com/EduAI-Lab/EduAI/issues/209)) |
 | [`TEAM_ADHD_ASSIST_PLAN.md`](./TEAM_ADHD_ASSIST_PLAN.md) | ADHD Assist feature (orthogonal IV) |
 | [`TEAM_PHASE_1_2_3_GUIDE.md`](./TEAM_PHASE_1_2_3_GUIDE.md) | Junior implementation steps |
 | [`../literature/adhd-assist-architecture-phases.md`](../literature/adhd-assist-architecture-phases.md) | Phase 2.5 efficiency, Phase 3 latency trade-off |

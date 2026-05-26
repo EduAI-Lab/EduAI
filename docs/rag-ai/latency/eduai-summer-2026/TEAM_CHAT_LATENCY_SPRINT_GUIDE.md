@@ -7,7 +7,15 @@
 **Measurement ledger:** `[../MODEL_LATENCY_TRACKER.md](../MODEL_LATENCY_TRACKER.md)`  
 **Base branch:** `feat/local-models-and-ai-enhancement` (merged work from `AI-enhancement`) — **build on top of this**, do not restart from scratch unless PI says so  
 **Target branch for PRs:** `feat/chat-latency-week` (create from base above)  
-**Product goal:** Typical turns feel **~3–4 s** where possible; **first visible token** early; course-material RAG still works **without** magic phrases like “check the course materials”. **Web search is out of scope** for this sprint.
+**Product goal:** Typical turns feel **~3–4 s** where possible; **first visible token** early; course-material RAG still works **without** magic phrases like “check the course materials”.
+
+**`supportsTools` invariant (after L13):**
+
+- `supportsTools = false` → **small models, no tools registered at all.** Default for simple/chat-only turns. The fastest path.
+- `supportsTools = true` → **bigger models, only `getInformation` registered.** Course-material RAG only. The router escalates here when L04 flags a turn as needing course grounding (typically bigger / more detailed questions).
+- **Web search and page fetching are removed entirely (L13).** `webSearch` / `fetchPage` are deleted from the codebase, not just flagged out-of-scope. `supportsTools = true` means course-aware RAG and nothing else.
+
+So the routing model the team is building is: **small (`supportsTools: false`) for simple questions → big (`supportsTools: true` = `getInformation` only) for detailed / course-aware questions.**
 
 ---
 
@@ -110,7 +118,12 @@ flowchart TB
   L05 --> L07
   L07 --> L08[L08 Session cap]
   L04 --> L10[L10 Model-tier routing]
-  L10 --> L09[L09 End week smoke]
+  L10 --> L11[L11 Hide tools toggle for small models]
+  L05 --> L12[L12 Cold start doc]
+  L00 --> L13[L13 Remove webSearch + fetchPage]
+  L13 --> L10
+  L11 --> L09[L09 End week smoke]
+  L12 --> L09
   L07 --> L09
 ```
 
@@ -256,7 +269,7 @@ Document rules in PR; add unit tests for 10 example strings.
 
 ### Task
 
-1. Document in [`README.md`](../../../README.md) (or a new `docs/rag-ai/latency/eduai-summer-2026/` runbook when added): `ollama run <model>` keep-alive, GPU memory, first-token expectations.
+1. Document in [`README.md`](../../../README.md) (or a new `docs/rag-ai/latency/eduai-summer-2026/` runbook when added): `ollama run <model>` keep-alive, GPU memory, first-token expectations. Background / theory lives in [`../COLD_START_AND_OLLAMA_WARMUP.md`](../COLD_START_AND_OLLAMA_WARMUP.md) (L12) — link to it from the runbook rather than duplicating.
 2. Propose seed/admin default for **local dev**: e.g. `deepseek-r1:8b` for speed tests, `gemma` 31B for quality tests — separate profiles.
 3. Optional: env `OLLAMA_KEEP_ALIVE` / compose note if team uses Docker.
 4. Re-run **S1-local** after warm model; log row.
@@ -369,6 +382,107 @@ This is **not** "always-on tools" and **not** "always-off tools" — it's a per-
 
 ---
 
+## Step L11 — Hide `supportsTools` toggle for smaller models in Admin UI
+
+**GitHub:** [#264](https://github.com/EduAI-Lab/EduAI/issues/264) · **Size:** S (~1–2h) · **Blocked by:** #334 (L10) · **Owner:** frontend
+
+### Context
+
+Smaller models (e.g. `deepseek-r1:8b`, `gemma2:9b`) do not support tool calling. Today the Admin UI still shows the `supportsTools` checkbox/toggle for every model, which means an admin can flip it on for a small model and silently break the L10 tier router (it will route course-RAG turns to a model that can't call `getInformation`). This is the misconfiguration foot-gun called out in L10 step 2 — split out here so a frontend dev can own it independently.
+
+### Task
+
+1. In the admin model-config UI (model create/edit form), determine the "small / non-tool-capable" set. Options:
+  - Check a capability flag on the model row (preferred — add `toolsCapable: boolean` on `AIModel` if not already present), **or**
+  - Maintain a deny-list of provider:model slugs in a shared constant (acceptable short-term).
+2. Conditionally render the `supportsTools` toggle: **hide** (or disable with tooltip "This model does not support tool calling") when the selected model is in the non-tool-capable set.
+3. Server-side guard: reject `supportsTools: true` on save for non-tool-capable models — UI hiding alone is not enough.
+4. Backfill: write a one-shot script or migration that flips `supportsTools` to `false` for any currently-misconfigured small model in the DB.
+5. Manual test: open admin UI, switch model dropdown between a small and a large model, confirm toggle shows/hides correctly; attempt API save with toggle forced on for a small model and confirm 4xx.
+
+### Done when
+
+- Toggle is invisible (or disabled with explanation) for small models in the admin UI.
+- Server rejects `supportsTools: true` for those models.
+- Existing DB rows backfilled; no small model has `supportsTools = true` in dev.
+- [#264](https://github.com/EduAI-Lab/EduAI/issues/264) closed by this PR.
+
+---
+
+## Step L13 — Remove `webSearch` and `fetchPage` tools (scope cut)
+
+**GitHub:** [#348](https://github.com/EduAI-Lab/EduAI/issues/348) · **Size:** M (~3h) · **Blocked by:** #204 (L00) · **Owner:** backend
+
+### Context
+
+The product no longer wants web grounding. The only grounding we care about is **course-material RAG via `getInformation`**. Keeping `webSearch` and `fetchPage` in the tool list — even when unused — costs us in three ways:
+
+1. The model sees them in the tool schema every turn → extra prefill tokens and occasional speculative tool calls we don't want.
+2. They make `supportsTools: true` ambiguous (does it mean "can hit the web" or "course-aware"?). For L10/L11 to be coherent, `supportsTools: true` must mean exactly one thing: **`getInformation` is registered and the model can pull course material through RAG**.
+3. They keep Firecrawl + web-search infra on the critical path for failures, error envelopes, and review surface area.
+
+**Target invariant after this step:**
+
+- `supportsTools = false` (small models) → no tools registered. Model answers simple questions straight from weights. Fast path, no RAG, no web. This is the default the router sends most turns to.
+- `supportsTools = true` (bigger models) → **only** `getInformation` is registered. When the L04 intent classifier flags a turn as needing course RAG, the router escalates here; the model can pull course chunks and answer with grounding. No web.
+
+### Task
+
+1. In `apps/core/app/routes/api/chat.ts`, delete `webSearch` and `fetchPage` from the tool registry passed to `streamText`. `getInformation` is the only entry that remains in the tools object on the tool-calling branch.
+2. Delete the tool source files: `apps/core/app/lib/ai/tools/web-search.ts`, `apps/core/app/lib/ai/tools/fetch-page.ts`, and any sibling helpers used **only** by those two (grep before deleting).
+3. Remove Firecrawl wiring that is now unused: env vars (`FIRECRAWL_*`), `.env.example` entries, any client/provider init, and dependency from `apps/core/package.json` if nothing else imports it. Run `npm install` to refresh the lockfile.
+4. Update the system prompt in `chat.ts` to drop references to web search / "search the web" / "fetch this URL"; rewrite the tool-use guidance so it only describes `getInformation` (course material RAG).
+5. Update `app/lib/ai/tool-result.ts` / `runTool` only if it special-cases the removed tools — otherwise leave it alone (the envelope itself stays for `getInformation`).
+6. UI: in `apps/core/app/routes/chat.tsx` typing-phase copy ("Searching the web…" etc.), drop the web phrasing; "Searching course…" stays. Remove any tool-card UI specific to web results.
+7. Tests: remove or rewrite any unit/integration tests that asserted webSearch/fetchPage behaviour. Add one assertion that the tool registry on the tool-calling branch contains exactly `getInformation`.
+8. Docs: update `TEAM_CHAT_LATENCY_AND_TOOLS.md` and this sprint guide to drop "web tools remain in the codebase but out of scope" language — they no longer remain.
+9. Manual smoke: ask a question that previously would have triggered web search ("what's the latest on X?"); confirm the model now answers from weights (small model) or from course material (big model) with no web call.
+
+### Done when
+
+- `grep -ri "webSearch\|fetchPage\|firecrawl" apps/core/app` returns nothing meaningful (only stray comments to delete).
+- `getInformation` is the sole tool registered when `supportsTools: true`.
+- No new package dependency on Firecrawl / web-search SDKs remains.
+- Sprint docs no longer carry the "web tools out of scope but still present" caveat; they state the new invariant.
+- One regression-style test pins the tool list to `["getInformation"]`.
+
+### Open questions for kickoff
+
+- Are there course pages (admin/help text) that mention web search as a feature? If so, remove or reword in the same PR.
+- Telemetry: any `AIInteraction` rows or analytics filters that group by `toolName = 'webSearch'`? Decide whether to keep historical rows or migrate the field.
+
+---
+
+## Step L12 — Cold-start & Ollama warmup reference doc
+
+**GitHub:** [#209](https://github.com/EduAI-Lab/EduAI/issues/209) (shares parent with L05) · **Size:** S (~1h) · **Blocked by:** #209 (L05 runbook) · **Owner:** infra / docs
+
+### Context
+
+L05 ships the runbook for *how* to warm Ollama on cmps01, but the team keeps re-explaining *why* local turns spend 10–60 s before any tokens appear, why a routed turn that just worked is suddenly slow again, and why bench numbers swing between runs. We need a single, linkable explainer that distinguishes **cold start** (load weights → GPU), **warm** (same model still resident), and **model-switch eviction** (Auto router rotates tiers, previous weights get unloaded) — and that calls out what cold start is **not** (Postgres, embeddings, routing bugs, empty `apiKeys`). This is reference material, not a fix; it unblocks the team from misattributing latency.
+
+### Task
+
+1. Land [`docs/rag-ai/latency/COLD_START_AND_OLLAMA_WARMUP.md`](../COLD_START_AND_OLLAMA_WARMUP.md) (already drafted; commit as-is or with minor edits). It must cover:
+  - Phase breakdown of a local chat turn (RAG embed → model load → prefill → generate).
+  - Cold vs warm vs model-switch definitions, with the rule that ledger rows must be tagged `cold` / `warm`.
+  - Why cmps01 + Auto tier rotation amplifies cold loads (VRAM eviction).
+  - Mitigations: keep 1–2 models hot, `keep_alive`, tier-pool alignment with [`apps/core/prisma/seed.ts`](../../../apps/core/prisma/seed.ts), session stickiness, streaming/UX.
+  - A "checklist for investigating a slow turn" the team can paste into issues.
+2. Cross-link:
+  - From this sprint guide's **L05** step → add "Background: see [`COLD_START_AND_OLLAMA_WARMUP.md`](../COLD_START_AND_OLLAMA_WARMUP.md)".
+  - From [`../MODEL_LATENCY_TRACKER.md`](../MODEL_LATENCY_TRACKER.md) → reference the cold/warm tagging rule.
+  - From [`TEAM_CHAT_LATENCY_AND_TOOLS.md`](./TEAM_CHAT_LATENCY_AND_TOOLS.md) → add to the Related docs table.
+3. Comment on [#209](https://github.com/EduAI-Lab/EduAI/issues/209) linking the merged doc so L05 reviewers see the rationale.
+
+### Done when
+
+- File exists at `docs/rag-ai/latency/COLD_START_AND_OLLAMA_WARMUP.md` on the sprint branch.
+- L05, ledger, and AND_TOOLS docs link to it.
+- Comment on [#209](https://github.com/EduAI-Lab/EduAI/issues/209) posted.
+
+---
+
 ## Step L09 — End-of-week smoke & handoff
 
 **GitHub:** [#213](https://github.com/EduAI-Lab/EduAI/issues/213) · **Size:** S (~2h) · **Blocked by:** #207–#211 (whatever merged)
@@ -382,9 +496,11 @@ Checklist on parent issue:
 - C1 works without the “check course materials” phrase
 - C2 (long course-RAG summary) Total improved vs L02 baseline
 - No global `supportsTools: false` hack
-- No web tools were touched (out of scope)
+- `webSearch` + `fetchPage` removed (L13); only `getInformation` remains as a tool
 - L10 tier router lands: S1-dev uses small model, C1 escalates to tool-capable model
-- [#264](https://github.com/EduAI-Lab/EduAI/issues/264) — `supportsTools` toggle hidden for small models in admin UI
+- L11 — [#264](https://github.com/EduAI-Lab/EduAI/issues/264) `supportsTools` toggle hidden (and server-rejected) for small models; existing DB rows backfilled
+- L12 — [`COLD_START_AND_OLLAMA_WARMUP.md`](../COLD_START_AND_OLLAMA_WARMUP.md) merged and linked from L05, ledger, and AND_TOOLS doc
+- L13 — `webSearch` + `fetchPage` deleted; tool registry on the tool-calling branch contains exactly `getInformation`; Firecrawl deps removed
 - All PRs link sub-issues; ledger updated
 
 ### Done when
@@ -402,7 +518,7 @@ Checklist on parent issue:
 | Hybrid vs tools branch             | ~line 725 `modelSupportsTools`                                      |
 | Tool envelope                      | `apps/core/app/lib/ai/tool-result.ts`                               |
 | Course-RAG tool (`getInformation`) | defined inline in `apps/core/app/routes/api/chat.ts:674` (in scope) |
-| Web / fetch tools                  | `apps/core/app/lib/ai/tools/` (**out of scope** this sprint)        |
+| Web / fetch tools                  | `apps/core/app/lib/ai/tools/` (**deleted in L13** — no longer present after that step lands) |
 | Embeddings / RAG                   | `apps/core/app/lib/ai/embedding.ts`                                 |
 | Boot warmup                        | `apps/core/app/lib/ai/warmup.server.ts`                             |
 | Chat UI / TTFT perception          | `apps/core/app/routes/chat.tsx`                                     |
@@ -414,7 +530,7 @@ Checklist on parent issue:
 
 ## How to pick up work
 
-1. Claim **#204–#213** on parent [#203](https://github.com/EduAI-Lab/EduAI/issues/203); do **not** pick ADHD Assist issues.
+1. Claim **#204–#213, #264, #334** on parent [#203](https://github.com/EduAI-Lab/EduAI/issues/203); do **not** pick ADHD Assist issues.
 2. Branch `feat/chat-latency-week` from `feat/local-models-and-ai-enhancement`.
 3. Every PR: **Context → Task → Done when**; append latency rows.
 4. Questions on product trade-offs → lead. Ollama hardware → infra.
