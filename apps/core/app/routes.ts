@@ -5,6 +5,7 @@ export default [
   route("/team", "routes/team.tsx"),
   route("/api/auth/*", "routes/api/auth.$.ts"),
   route("/api/courses", "routes/api/courses.$.ts"),
+  route("/login", "routes/login.ts"),
   route("/auth/login", "routes/auth/login.tsx"),
   route("/auth/register", "routes/auth/register.tsx"),
   route("/dashboard", "routes/dashboard.tsx"),
@@ -28,4 +29,5 @@ export default [
   route("/api/ai-models/*", "routes/api/ai-models.$.ts"),
   route("/api/users/*", "routes/api/users.$.ts"),
   route("/api/ollama-models", "routes/api/ollama-models.ts"),
+  route("/api/sessions/validate", "routes/api/sessions.validate.ts"),
 ] satisfies RouteConfig;

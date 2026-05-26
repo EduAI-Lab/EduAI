@@ -18,7 +18,7 @@ async function topicsGetResponse(courseId: string, topicId?: string) {
         headers: { "Content-Type": "application/json" },
       });
     }
-    return new Response(JSON.stringify(topic), {
+    return new Response(JSON.stringify(topic),  {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
@@ -30,6 +30,7 @@ async function topicsGetResponse(courseId: string, topicId?: string) {
     headers: { "Content-Type": "application/json" },
   });
 }
+
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const courseId = params.courseId;
