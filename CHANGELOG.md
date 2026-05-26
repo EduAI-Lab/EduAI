@@ -6,6 +6,13 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ---
 
+## [Unreleased]
+
+### Added
+- [core] feat: OpenRouter embedding provider — `OPENROUTER_API_KEY` routes RAG indexing and query embeds through OpenRouter (`google/gemini-embedding-001`, 3072-dim) before direct Google/OpenAI fallbacks; add `npm run test:embedding` smoke script. Docs: [`EMBEDDINGS.md`](docs/rag-ai/EMBEDDINGS.md), [`ARCHITECTURE.md`](docs/ARCHITECTURE.md), dev server runbook.
+
+---
+
 ## [Week 3 — May 18–22, 2026]
 
 ### Added
