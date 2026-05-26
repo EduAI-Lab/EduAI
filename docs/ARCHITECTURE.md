@@ -1,6 +1,6 @@
 # EduAI — Architecture guide
 
-**Last updated:** 2026-05-20
+**Last updated:** 2026-05-25
 
 This document explains **what runs inside this repo (Core)** versus **what lives outside it (hosted services & integrations)**, how **AI providers and keys** work (including `OPENROUTER_API_KEY` / `GOOGLE_GENERATIVE_AI_API_KEY` for embeddings), and how the **codebase fits together**. Use it as the single place to orient yourself; export to PDF when you want a printable copy (see [Saving as PDF](#8-saving-as-pdf)).
 
@@ -16,8 +16,9 @@ This document explains **what runs inside this repo (Core)** versus **what lives
    - [5.3 Chat with course context](#sec-53-chat-with-course-context)
 6. [Chat & RAG pipeline (detailed)](#6-chat--rag-pipeline-detailed)
 7. [Codebase walkthrough (where to look)](#7-codebase-walkthrough-where-to-look)
-8. [Saving as PDF](#8-saving-as-pdf)
-9. [One-page mental model](#9-one-page-mental-model)
+8. [Extension auth pipeline](#8-extension-auth-pipeline)
+9. [Saving as PDF](#9-saving-as-pdf)
+10. [One-page mental model](#10-one-page-mental-model)
 
 ---
 
@@ -306,7 +307,63 @@ Single Postgres database; Prisma models include users/sessions, courses, materia
 
 ---
 
-## 8. Saving as PDF
+## 8. Extension auth pipeline
+
+Extensions (AI Tutor, Question Maker) do **not** maintain their own user accounts, passwords, or sessions. Core is the single identity provider.
+
+### Session validation pattern
+
+Every authenticated request to an extension is validated by forwarding the browser session cookie to Core:
+
+```
+Browser → Extension (cookie) → POST /api/sessions/validate (Core) → { user } → Extension route handler
+```
+
+Core validates the cookie against Better Auth's session store and returns `{ user: { id, email, name, image, role } }` or `401`. The extension middleware (`requireAuth`) populates `req.user` from this response and normalizes unknown roles to `STUDENT` (least privilege).
+
+### Login redirect
+
+When an unauthenticated request hits a non-API extension path, the middleware redirects to:
+
+```
+{CORE_URL}/login?redirect={encodeURIComponent(extensionUrl + req.originalUrl)}
+```
+
+Core's login page validates the `?redirect=` URL against an allow-list (localhost or `*.eduai.ok.ubc.ca`) before using it, preventing open-redirect attacks.
+
+### Role enforcement
+
+After `requireAuth` populates `req.user`, route handlers use `requireRole(allowed)` to gate access:
+
+```js
+// single role
+router.get('/admin/users', requireRole('ADMIN'), handler);
+
+// multiple roles
+router.get('/topics', requireRole(['PROFESSOR', 'TA']), handler);
+```
+
+`requireRoles` (AI Tutor) and `authenticateToken` (Question Maker) are backward-compat aliases.
+
+### Local user rows (Question Maker only)
+
+QM maintains a thin local `users` table (CUID string PK, no password) solely for FK integrity (`courses`, `canvas_integrations`, `canvas_course_mappings`). The `findOrCreateUser(coreUser)` function in `authService.js` upserts this row on every successful session validation, seeding default courses for first-time logins.
+
+### Key files
+
+| File | Role |
+|------|------|
+| `apps/core/app/api/sessions/validate/route.ts` | Core session validation endpoint |
+| `apps/core/app/lib/guards.server.ts` | `validateRedirectUrl` open-redirect protection |
+| `apps/extensions/ai-tutor/server/src/middleware/auth.js` | AT session middleware + RBAC |
+| `apps/extensions/question-maker/app/backend/src/middleware/auth.js` | QM session middleware + RBAC |
+| `apps/extensions/question-maker/app/backend/src/services/authService.js` | `findOrCreateUser` — local FK row maintenance |
+
+For the full migration plan and rationale see [`docs/implementations/auth-pipeline-centralization-plan.md`](implementations/auth-pipeline-centralization-plan.md).
+
+---
+
+## 9. Saving as PDF
 
 This file is Markdown so it stays diff-friendly in git. To get a **PDF**:
 
@@ -319,6 +376,6 @@ Mermaid diagrams render in GitHub and many Markdown previews; some PDF tools nee
 
 ---
 
-## 9. One-page mental model
+## 10. One-page mental model
 
 **Core** is one app + one DB. **Hosted APIs** supply brains (chat + embeddings). **Embeddings for RAG** always use **server env** (`OPENROUTER_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` preferred). **Chat** uses the **AI SDK + provider registry** with keys from **request/UI settings**. **Extensions** call your APIs; they are not inside this repo.

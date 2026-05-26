@@ -375,10 +375,13 @@ export const api = {
    * We also do not care about the body — best-effort POST is sufficient.
    */
   logout: async () => {
-    await fetch(`${API_BASE}/api/auth/sign-out`, {
+    // Sign out via Core (the session authority). Callers
+    // clear local state regardless of whether this request succeeds.
+    const coreUrl = import.meta.env.VITE_CORE_URL || 'http://localhost:3000';
+    await fetch(`${coreUrl}/api/auth/sign-out`, {
       method: 'POST',
       credentials: 'include',
-    });
+    }).catch(() => {});
     return { ok: true } as const;
   },
 };
