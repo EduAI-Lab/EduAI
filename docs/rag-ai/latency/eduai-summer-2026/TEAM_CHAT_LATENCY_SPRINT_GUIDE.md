@@ -107,27 +107,94 @@ flowchart TB
 ```mermaid
 flowchart TB
   L00[L00 Kickoff] --> L01[L01 Bench script]
-  L00 --> L02[L02 Baselines]
-  L01 --> L02
+  L00 --> L13[L13 Remove webSearch + fetchPage]
+  L01 --> L02[L02 Baselines]
   L02 --> L03[L03 Auto-RAG]
   L02 --> L04[L04 Intent router]
+  L02 --> L05[L05 Ollama warm]
+  L02 --> L07[L07 TTFT audit]
+  L05 --> L12[L12 Cold start doc]
   L03 --> L06[L06 Tool output cap]
   L04 --> L06
-  L02 --> L05[L05 Ollama warm]
-  L06 --> L07[L07 TTFT audit]
-  L05 --> L07
-  L07 --> L08[L08 Session cap]
   L04 --> L10[L10 Model-tier routing]
-  L10 --> L11[L11 Hide tools toggle for small models]
-  L05 --> L12[L12 Cold start doc]
-  L00 --> L13[L13 Remove webSearch + fetchPage]
   L13 --> L10
+  L10 --> L11[L11 Hide tools toggle for small models]
+  L07 --> L08[L08 Session cap]
   L11 --> L09[L09 End week smoke]
   L12 --> L09
-  L07 --> L09
+  L08 --> L09
+  L06 --> L09
 ```
 
+---
 
+## Assignment matrix — who can start when (parallel-safe)
+
+Pick a row, pick a step in that row, and you are not waiting on anyone else in the same row. Only move to the next wave once **your row's** prerequisite (left-hand column) is merged — you do **not** need to wait for siblings in other rows.
+
+Each step lists its GitHub issue, size, recommended owner skill, and which earlier issue must be merged before you can start.
+
+### Wave 0 — kickoff (everybody, ~1h)
+
+| Step | Issue | Owner | Blocked by | Notes |
+| ---- | ----- | ----- | ---------- | ----- |
+| **L00** Kickoff & branch | [#204](https://github.com/EduAI-Lab/EduAI/issues/204) | Whole team (lead drives) | — | Everyone records SHA before claiming a wave-1 step |
+
+### Wave 1 — can start the moment L00 lands (run in parallel)
+
+| Step | Issue | Size | Owner | Blocked by | Why parallel-safe |
+| ---- | ----- | ---- | ----- | ---------- | ----------------- |
+| **L01** Latency bench script | [#205](https://github.com/EduAI-Lab/EduAI/issues/205) | S | Any backend | #204 | Adds a new script — no overlap with L13 |
+| **L13** Remove `webSearch` + `fetchPage` | [#348](https://github.com/EduAI-Lab/EduAI/issues/348) | M | Backend | #204 | Touches `chat.ts` tool registry + deletes files — independent of L01's new bench script |
+
+### Wave 2 — needs L01 merged
+
+| Step | Issue | Size | Owner | Blocked by | Notes |
+| ---- | ----- | ---- | ----- | ---------- | ----- |
+| **L02** Baseline matrix (dev-server) | [#206](https://github.com/EduAI-Lab/EduAI/issues/206) | S | Any dev | #205 | Pure measurement; produces the ledger rows the rest of the sprint compares against |
+
+### Wave 3 — needs L02 merged (4 steps run fully in parallel)
+
+| Step | Issue | Size | Owner | Blocked by | Why parallel-safe |
+| ---- | ----- | ---- | ----- | ---------- | ----------------- |
+| **L03** Auto-RAG on course select | [#207](https://github.com/EduAI-Lab/EduAI/issues/207) | M | Backend A | #206 | Edits `chat.ts` tool-calling branch (system-prompt + RAG injection) |
+| **L04** Intent routing (`needsCourseRag`) | [#208](https://github.com/EduAI-Lab/EduAI/issues/208) | M | Backend B | #206 | Adds new `app/lib/ai/chat-intent.ts` and one call site — minimal overlap with L03 |
+| **L05** Ollama warm & dev defaults | [#209](https://github.com/EduAI-Lab/EduAI/issues/209) | S | Infra | #206 | Runbook + seed/admin defaults — no code-path conflict with L03/L04 |
+| **L07** TTFT / streaming audit | [#211](https://github.com/EduAI-Lab/EduAI/issues/211) | M | Frontend + backend pair | #206 | Read-only investigation + UX copy tweaks — does not touch the tool-calling branch |
+
+**Conflict-avoidance tip:** L03 and L04 both edit `apps/core/app/routes/api/chat.ts`. Coordinate in standup so the second PR rebases cleanly — but neither blocks the other's start.
+
+### Wave 4 — needs its specific Wave-3 dep
+
+| Step | Issue | Size | Owner | Blocked by | Notes |
+| ---- | ----- | ---- | ----- | ---------- | ----- |
+| **L06** Cap course-RAG payloads | [#210](https://github.com/EduAI-Lab/EduAI/issues/210) | M | Backend | #207 **or** #208 | Tunes payload cap — needs either L03 or L04 in to test against |
+| **L12** Cold-start & Ollama warmup doc | [#209](https://github.com/EduAI-Lab/EduAI/issues/209) (shares L05) | S | Infra / docs | #209 (L05) | Doc-only PR, no code; can be drafted in parallel with L05 and merged together |
+| **L08** Session context cap | [#212](https://github.com/EduAI-Lab/EduAI/issues/212) | M | Backend | #211 | Long-thread RAG — optional if week runs long |
+| **L10** Model-tier routing | [#334](https://github.com/EduAI-Lab/EduAI/issues/334) | M | Backend | #208 (L04) **and** #348 (L13) | Needs `needsCourseRag` and the cleaned tool list |
+
+### Wave 5 — needs L10 merged
+
+| Step | Issue | Size | Owner | Blocked by | Notes |
+| ---- | ----- | ---- | ----- | ---------- | ----- |
+| **L11** Hide `supportsTools` toggle (admin UI + server guard + backfill) | [#264](https://github.com/EduAI-Lab/EduAI/issues/264) | S | Frontend | #334 (L10) | Closes the misconfiguration foot-gun L10 opens |
+
+### Wave 6 — end of week
+
+| Step | Issue | Size | Owner | Blocked by | Notes |
+| ---- | ----- | ---- | ----- | ---------- | ----- |
+| **L09** End-of-week smoke & handoff | [#213](https://github.com/EduAI-Lab/EduAI/issues/213) | S | Lead | Whatever wave-4/5 merged | Sign-off; runs the L02 probes again and compares |
+
+### Quick "what can I pick up right now?" cheat sheet
+
+- **L00 not done yet** → claim L00.
+- **L00 done, you are a backend dev** → claim **L01** *or* **L13** (whichever has no owner yet).
+- **L01 done** → **L02** if it has no owner.
+- **L02 done, you are a backend dev** → **L03**, **L04**, or **L07**. You are a frontend dev? Pair with the L07 owner. Infra? Take **L05** (and optionally co-author **L12**).
+- **L04 done and L13 done** → **L10** (backend, big rock).
+- **L10 done** → **L11** (frontend).
+- **L05 done** → **L12** (1h doc-PR — good for whoever's between bigger tasks).
+- **Everything else green** → **L09**.
 
 ---
 

@@ -6,6 +6,19 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ---
 
+## [Week 4 — May 25–29, 2026]
+
+### Added
+- [monorepo] docs: Add [`docs/rag-ai/latency/COLD_START_AND_OLLAMA_WARMUP.md`](docs/rag-ai/latency/COLD_START_AND_OLLAMA_WARMUP.md) — team reference explaining cold vs warm vs model-switch eviction on cmps01 Ollama; phase breakdown of a local chat turn (embed → load → prefill → generate); mitigations (`keep_alive`, tier-pool alignment, session stickiness, streaming UX); investigation checklist. Cross-linked from L05/L12 of the latency sprint guide ([#203](https://github.com/EduAI-Lab/EduAI/issues/203), [#209](https://github.com/EduAI-Lab/EduAI/issues/209)).
+- [monorepo] docs: Add sprint step **L11** to [`TEAM_CHAT_LATENCY_SPRINT_GUIDE.md`](docs/rag-ai/latency/eduai-summer-2026/TEAM_CHAT_LATENCY_SPRINT_GUIDE.md) — hide `supportsTools` toggle in the admin UI for small models, plus server-side rejection on save and a one-shot DB backfill ([#264](https://github.com/EduAI-Lab/EduAI/issues/264)).
+- [monorepo] docs: Add sprint step **L12** — cold-start & Ollama warmup reference doc as a sibling deliverable to L05 ([#209](https://github.com/EduAI-Lab/EduAI/issues/209)).
+- [monorepo] docs: Add sprint step **L13** — remove `webSearch` + `fetchPage` tools and Firecrawl wiring so `supportsTools: true` means exactly `getInformation` (course-RAG) only ([#348](https://github.com/EduAI-Lab/EduAI/issues/348)).
+- [monorepo] docs: Add **Assignment matrix** to the sprint guide grouping L00–L13 into parallel-safe waves with per-step owner, size, and exact `Blocked by` issue — teammates can pick up work without waiting on siblings in other rows.
+
+### Changed
+- [monorepo] docs: Define the `supportsTools` invariant at the top of [`TEAM_CHAT_LATENCY_SPRINT_GUIDE.md`](docs/rag-ai/latency/eduai-summer-2026/TEAM_CHAT_LATENCY_SPRINT_GUIDE.md) and in [`TEAM_CHAT_LATENCY_AND_TOOLS.md`](docs/rag-ai/latency/eduai-summer-2026/TEAM_CHAT_LATENCY_AND_TOOLS.md) — `false` → small model, no tools, fast path for simple questions; `true` → bigger model, only `getInformation` registered, escalated when L04 intent fires on detailed / course questions. Web tools are deleted (L13), not flagged "out of scope".
+- [monorepo] docs: Update [`docs/rag-ai/README.md`](docs/rag-ai/README.md) — add cold-start reference to the `latency/` table and folder-layout tree; update sprint-guide description to reflect L00–L13 with assignment matrix.
+
 ## [Week 3 — May 18-22, 2026]
 
 ### Added
