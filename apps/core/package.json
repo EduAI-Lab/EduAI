@@ -14,7 +14,8 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:reset": "prisma migrate reset",
     "auth:migrate": "npx @better-auth/cli migrate",
-    "auth:generate": "npx @better-auth/cli generate"
+    "auth:generate": "npx @better-auth/cli generate",
+    "eval:adhd": "node scripts/eval-adhd-assist.mjs"
   },
   "dependencies": {
     "@ai-sdk/google": "^1.2.22",
