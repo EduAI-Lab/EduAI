@@ -6,6 +6,11 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ---
 
+## [Week 4 — May 25–29, 2026]
+
+### Added
+- [monorepo] tests: Introduced Docker-based test infrastructure across all components (EduAI, AI Tutor app/server, Question Maker app/server). Added multi-stage Dockerfiles with a lockfile-exact `deps` stage, restructured `docker-compose.test.yml` into a consistent `{component}-{app|server}-{unit|integration}-tests` naming scheme, added `unit`/`integration` group arguments to `test-in-docker.sh`, and added corresponding npm scripts. (#352, @yta3216, 2026-05-27)
+
 ## [Week 3 — May 18–22, 2026]
 
 ### Added
