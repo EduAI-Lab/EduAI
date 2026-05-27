@@ -61,7 +61,7 @@ services:
   ai-tutor-integration-server:
     build:
       context: .
-      dockerfile: docker/Dockerfile.ai-tutor-server
+      dockerfile: docker/tests/Dockerfile.ai-tutor-server
       target: serve
     environment:
       DATABASE_URL: postgresql://postgres:postgres@ai-tutor-integration-db:5432/aitutor_integration
@@ -91,14 +91,14 @@ services:
   eduai-unit-tests:
     build:
       context: .
-      dockerfile: docker/Dockerfile.eduai
+      dockerfile: docker/tests/Dockerfile.eduai
       target: test
     command: ["npx", "vitest", "run", "app/tests/unit"]
 
   eduai-integration-tests:
     build:
       context: .
-      dockerfile: docker/Dockerfile.eduai
+      dockerfile: docker/tests/Dockerfile.eduai
       target: test
     environment:
       DATABASE_URL: postgresql://postgres:postgres@eduai-test-db:5432/eduai_test
@@ -117,14 +117,14 @@ services:
   ai-tutor-app-unit-tests:
     build:
       context: .
-      dockerfile: docker/Dockerfile.ai-tutor-app
+      dockerfile: docker/tests/Dockerfile.ai-tutor-app
       target: test
     command: ["npx", "vitest", "run", "app/tests/unit"]
 
   ai-tutor-app-integration-tests:
     build:
       context: .
-      dockerfile: docker/Dockerfile.ai-tutor-app
+      dockerfile: docker/tests/Dockerfile.ai-tutor-app
       target: test
     environment:
       AI_TUTOR_SERVER_URL: http://ai-tutor-integration-server:4000
@@ -136,7 +136,7 @@ services:
   ai-tutor-server-unit-tests:
     build:
       context: .
-      dockerfile: docker/Dockerfile.ai-tutor-server
+      dockerfile: docker/tests/Dockerfile.ai-tutor-server
       target: test
     environment:
       DATABASE_URL: postgresql://postgres:postgres@ai-tutor-test-db:5432/aitutor_test
@@ -150,7 +150,7 @@ services:
   ai-tutor-server-integration-tests:
     build:
       context: .
-      dockerfile: docker/Dockerfile.ai-tutor-server
+      dockerfile: docker/tests/Dockerfile.ai-tutor-server
       target: test
     environment:
       DATABASE_URL: postgresql://postgres:postgres@ai-tutor-test-db:5432/aitutor_test
@@ -168,20 +168,20 @@ services:
   qm-app-unit-tests:
     build:
       context: .
-      dockerfile: docker/Dockerfile.qm-app
+      dockerfile: docker/tests/Dockerfile.qm-app
       target: test
 
   qm-server-unit-tests:
     build:
       context: .
-      dockerfile: docker/Dockerfile.qm-server
+      dockerfile: docker/tests/Dockerfile.qm-server
       target: test
     command: ["sh", "-c", "./node_modules/.bin/vitest run tests/unit"]
 
   qm-server-integration-tests:
     build:
       context: .
-      dockerfile: docker/Dockerfile.qm-server
+      dockerfile: docker/tests/Dockerfile.qm-server
       target: test
     environment:
       TEST_DATABASE_URL: postgresql://postgres:password@question-maker-test-db:5432/question_maker_test
