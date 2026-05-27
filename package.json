@@ -33,6 +33,7 @@
     "test:eduai:unit": "docker compose -f docker-compose.test.yml run --rm eduai-unit-tests",
     "test:eduai:integration": "docker compose -f docker-compose.test.yml run --rm eduai-integration-tests",
     
+    "test:ai-tutor": "npm run test:ai-tutor:app && npm run test:ai-tutor:server",
     "test:ai-tutor:app": "npm run test:ai-tutor:app:unit && npm run test:ai-tutor:app:integration",
     "test:ai-tutor:app:unit": "docker compose -f docker-compose.test.yml run --rm ai-tutor-app-unit-tests",
     "test:ai-tutor:app:integration": "docker compose -f docker-compose.test.yml run --rm ai-tutor-app-integration-tests",
