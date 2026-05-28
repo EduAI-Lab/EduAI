@@ -1,5 +1,4 @@
 # App-specific: generated Prisma client
 /app/generated/prisma
-.env.test
 cookies.txt
 ecosystem.config.cjs
