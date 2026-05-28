@@ -4,6 +4,19 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+
+## [Week 3 — May 18–22, 2026]
+
+### Added
+
+- [monorepo] docs: created a `broken-routes.md` file listing everything that will no longer work with the unified schema (#338, @glowyblack, 2026-05-24)
+- [core] test: Created the setup for running integration tests on core, as well as a `planned-core-integration-test.md` listing the tests still needed for the test. (#338, @glowyblack, 2026-05-24)
+- [core] api: Implement `api-wiring.md` course/topic endpoints and tests — `GET /api/courses/:id` loader (flat course, `COURSE_NOT_FOUND`); new `GET /api/courses/:courseId/topics/:topicId` (flat topic, `TOPIC_NOT_FOUND`); topics GET/POST/DELETE accept `requireServiceKey` (`Bearer EDUAI_API_KEY`) or session; POST returns `409 TOPIC_ALREADY_EXISTS` with `existingId`; server helpers filter `deletedAt: null` and soft-delete on topic DELETE; integration tests (`courses`, `courses.id`, `courses-topic`, `service-key`) and unit tests (`courses.server`, `courses.id.loader`, `courses.topics`); `TESTS.md` updated. (#338, @glowyblack, 2026-05-24)
+- [core] auth: Add `requireServiceKey` guard (`Authorization: Bearer <EDUAI_API_KEY>`, `crypto.timingSafeEqual`); wire into `GET /api/courses/:id/topics` as service-key auth path. (#337, @yta3216, 2026-05-23)
+- [monorepo] infra: Add `npm run dbseed` root script that seeds Core, AI Tutor, and Question Maker databases in order (Core → AI Tutor → QM); safe to run at any time — Core and AI Tutor seeds are fully idempotent via upserts. (#NNN, @evanbones, 2026-05-22)
+- [core] infra: Auto-seed the Core database on `npm run dev` when the database is empty — new `db:seed:if-empty` script checks user count and skips seeding if data already exists, so normal dev restarts are unaffected. (#NNN, @evanbones, 2026-05-22)
+- [ai-tutor] infra: Auto-seed the AI Tutor database on `npm run dev` when the database is empty — new `seed:if-empty` script checks prompt template count (required for runtime) and skips if data exists. (#NNN, @evanbones, 2026-05-22)
+
 ---
 
 ## [Week 4 — May 25–29, 2026]

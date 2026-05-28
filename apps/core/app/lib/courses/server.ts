@@ -138,10 +138,22 @@ export async function handleCourseRequest(request: Request) {
   }
 }
 
+export async function getCourse(courseId: string) {
+  return prisma.course.findFirst({
+    where: { id: courseId, deletedAt: null },
+  });
+}
+
 export async function getCourseTopics(courseId: string) {
   return prisma.courseTopic.findMany({
-    where: { courseId },
+    where: { courseId, deletedAt: null },
     orderBy: { name: "asc" },
+  });
+}
+
+export async function getCourseTopic(courseId: string, topicId: string) {
+  return prisma.courseTopic.findFirst({
+    where: { id: topicId, courseId, deletedAt: null },
   });
 }
 
@@ -158,6 +170,14 @@ export async function createCourseTopic(
     } as const;
   }
 
+  const course = await prisma.course.findFirst({
+    where: { id: courseId, deletedAt: null },
+    select: { id: true },
+  });
+  if (!course) {
+    return { error: "COURSE_NOT_FOUND" } as const;
+  }
+
   try {
     const topic = await prisma.courseTopic.create({
       data: {
@@ -169,9 +189,14 @@ export async function createCourseTopic(
     return { topic } as const;
   } catch (error: any) {
     if (error?.code === "P2002") {
+      const existing = await prisma.courseTopic.findFirst({
+        where: { courseId, name: parsed.data.name.trim(), deletedAt: null },
+        select: { id: true },
+      });
       return {
-        error: "Topic already exists for this course",
-      } as const;
+        error: "TOPIC_ALREADY_EXISTS" as const,
+        existingId: existing?.id ?? null,
+      };
     }
     throw error;
   }
@@ -192,12 +217,14 @@ export async function deleteCourseTopic(
 
   const { topicId, name } = parsed.data;
 
-  const deleteResult = await prisma.courseTopic.deleteMany({
+  const deleteResult = await prisma.courseTopic.updateMany({
     where: {
       courseId,
+      deletedAt: null,
       ...(topicId ? { id: topicId } : {}),
       ...(name ? { name } : {}),
     },
+    data: { deletedAt: new Date() },
   });
 
   if (deleteResult.count === 0) {
