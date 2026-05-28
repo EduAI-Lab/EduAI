@@ -85,6 +85,13 @@ curl -si -X POST "https://dev.eduai.ok.ubc.ca/api/auth/sign-in/email" \
 
 Do **not** set `COOKIE_DOMAIN` on the shared dev host unless you intend cross-subdomain cookies (production uses e.g. `.eduai.ok.ubc.ca`).
 
+**Can’t log in again after logout:** use **Log out** in the UI (server `POST /auth/logout`), not only client-side sign-out. Clear site cookies for `dev.eduai.ok.ubc.ca` once if a stale `__Secure-better-auth.session_token` remains. Verify sign-out clears cookies:
+
+```bash
+curl -si -X POST "https://dev.eduai.ok.ubc.ca/api/auth/sign-out" \
+  -H "Cookie: __Secure-better-auth.session_token=YOUR_TOKEN" | head -20
+```
+
 #### When you're done
 
 Switch back to `development` (or `main`) so the server is in a known state for others:

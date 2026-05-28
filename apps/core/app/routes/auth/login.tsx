@@ -4,6 +4,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router"
 
 import { LoginForm } from "~/components/login-form"
 import { signInSchema, type SignInInput } from "~/lib/auth"
+import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request"
 import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies"
 import { auth } from "~/lib/auth/server"
 
@@ -37,18 +38,19 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   try {
-    // Create a new request to the better-auth sign-in endpoint
-    const url = new URL("/api/auth/sign-in/email", request.url);
-    const authRequest = new Request(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
+    // Do not forward session cookies — stale tokens after logout break re-login.
+    const authRequest = buildAuthSubRequest(
+      "/api/auth/sign-in/email",
+      request,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: input.email,
+          password: input.password,
+        }),
       },
-      body: JSON.stringify({
-        email: input.email,
-        password: input.password,
-      }),
-    });
+    );
 
     const response = await auth.handler(authRequest);
 
