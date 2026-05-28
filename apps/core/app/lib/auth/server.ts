@@ -3,7 +3,18 @@ import { apiKey } from "better-auth/plugins";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import prisma from "../prisma.server";
 
+const authBaseURL =
+  process.env.BETTER_AUTH_URL?.trim() ||
+  import.meta.env.BETTER_AUTH_URL?.trim() ||
+  "http://localhost:3000";
+
+const cookieDomain = process.env.COOKIE_DOMAIN?.trim();
+const useSecureCookies = authBaseURL.startsWith("https://");
+
 export const auth = betterAuth({
+  baseURL: authBaseURL,
+  secret: process.env.BETTER_AUTH_SECRET,
+  trustedOrigins: [authBaseURL],
   database: prismaAdapter(prisma, {
     provider: "postgresql",
   }),
@@ -35,16 +46,17 @@ export const auth = betterAuth({
     updateAge: 60 * 60 * 24, // 1 day
   },
   advanced: {
-    crossSubDomainCookies: {
-      enabled: true,
-    },
-    baseURL: import.meta.env.BETTER_AUTH_URL || "http://localhost:3000",
+    useSecureCookies,
+    // Only enable when COOKIE_DOMAIN is set (e.g. ".eduai.ok.ubc.ca" in prod).
+    // On dev without it, cross-subdomain derivation can break session cookies.
+    crossSubDomainCookies: cookieDomain
+      ? { enabled: true, domain: cookieDomain }
+      : { enabled: false },
   },
-  // Add rate limiting for security
   rateLimit: {
     enabled: true,
-    window: 60, // 1 minute
-    max: 100, // 100 requests per minute
+    window: 60,
+    max: 100,
   },
 });
 
