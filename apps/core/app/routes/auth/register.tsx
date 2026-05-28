@@ -5,6 +5,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router"
 
 import { RegisterForm } from "~/components/register-form"
 import { signUpSchema, type SignUpInput } from "~/lib/auth"
+import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies"
 import { auth } from "~/lib/auth/server"
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -57,16 +58,15 @@ export async function action({ request }: ActionFunctionArgs) {
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       return {
-        formError: errorData.message || "Sign up failed"
+        formError:
+          (errorData as { message?: string }).message ||
+          (errorData as { error?: string }).error ||
+          `Sign up failed (${response.status})`,
       };
     }
 
-    // Get the session cookie from the response
-    const setCookie = response.headers.get("Set-Cookie");
     const headers = new Headers();
-    if (setCookie) {
-      headers.set("Set-Cookie", setCookie);
-    }
+    appendAuthSetCookies(response, headers);
 
     return redirect("/dashboard", { headers });
   } catch (err: unknown) {
