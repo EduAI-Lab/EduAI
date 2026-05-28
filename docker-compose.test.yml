@@ -18,7 +18,7 @@ services:
       timeout: 5s
       retries: 12
 
-  ai-tutor-test-db:
+  ai-tutor-server-test-db:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: postgres
@@ -30,7 +30,7 @@ services:
       timeout: 5s
       retries: 12
 
-  ai-tutor-integration-db:
+  ai-tutor-frontend-test-db:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: postgres
@@ -58,15 +58,15 @@ services:
   # Live AI Tutor server for frontend integration tests
   # ──────────────────────────────────────────────────────────────────────
 
-  ai-tutor-integration-server:
+  ai-tutor-frontend-test-server:
     build:
       context: .
       dockerfile: docker/tests/Dockerfile.ai-tutor-server
       target: serve
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@ai-tutor-integration-db:5432/aitutor_integration
+      DATABASE_URL: postgresql://postgres:postgres@ai-tutor-frontend-test-db:5432/aitutor_integration
       BETTER_AUTH_SECRET: test-integration-secret
-      BETTER_AUTH_URL: http://ai-tutor-integration-server:4000/api/auth
+      BETTER_AUTH_URL: http://ai-tutor-frontend-test-server:4000/api/auth
       COOKIE_DOMAIN: localhost
       PORT: "4000"
       EDUAI_DISCOVERY_URL: http://localhost:3000/api/auth/.well-known/openid-configuration
@@ -75,7 +75,7 @@ services:
       EDUAI_BASE_URL: http://localhost:3000/api
       AI_SUPERVISOR_ENABLED: "false"
     depends_on:
-      ai-tutor-integration-db:
+      ai-tutor-frontend-test-db:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:4000/api/health || exit 1"]
@@ -127,10 +127,10 @@ services:
       dockerfile: docker/tests/Dockerfile.ai-tutor-app
       target: test
     environment:
-      AI_TUTOR_SERVER_URL: http://ai-tutor-integration-server:4000
+      AI_TUTOR_SERVER_URL: http://ai-tutor-frontend-test-server:4000
     command: ["npx", "vitest", "run", "app/tests/integration", "--passWithNoTests"]
     depends_on:
-      ai-tutor-integration-server:
+      ai-tutor-frontend-test-server:
         condition: service_healthy
 
   ai-tutor-server-unit-tests:
@@ -139,12 +139,12 @@ services:
       dockerfile: docker/tests/Dockerfile.ai-tutor-server
       target: test
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@ai-tutor-test-db:5432/aitutor_test
-      DB_HOST: ai-tutor-test-db
+      DATABASE_URL: postgresql://postgres:postgres@ai-tutor-server-test-db:5432/aitutor_test
+      DB_HOST: ai-tutor-server-test-db
       DB_PORT: "5432"
     command: ["npm", "run", "test:unit"]
     depends_on:
-      ai-tutor-test-db:
+      ai-tutor-server-test-db:
         condition: service_healthy
 
   ai-tutor-server-integration-tests:
@@ -153,8 +153,8 @@ services:
       dockerfile: docker/tests/Dockerfile.ai-tutor-server
       target: test
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@ai-tutor-test-db:5432/aitutor_test
-      DB_HOST: ai-tutor-test-db
+      DATABASE_URL: postgresql://postgres:postgres@ai-tutor-server-test-db:5432/aitutor_test
+      DB_HOST: ai-tutor-server-test-db
       DB_PORT: "5432"
       BETTER_AUTH_SECRET: test-secret-not-for-production
       BETTER_AUTH_URL: http://localhost:4001/api/auth
@@ -162,7 +162,7 @@ services:
       PORT: "4001"
     command: ["npm", "run", "test:integration"]
     depends_on:
-      ai-tutor-test-db:
+      ai-tutor-server-test-db:
         condition: service_healthy
 
   qm-app-unit-tests:
