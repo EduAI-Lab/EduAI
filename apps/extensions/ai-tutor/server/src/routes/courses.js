@@ -31,7 +31,7 @@ import { mapCourseOffering, mapProgressData } from '../utils/mappers.js';
 import { cloneCourseContent, cloneLessonsFromOffering } from '../services/courseCloning.js';
 import { calculateCourseProgress } from '../services/progressCalculation.js';
 import { findEduAiCourseById, listEduAiCourses } from '../services/eduaiClient.js';
-import { getEduAiAccessTokenForUser } from '../services/eduaiAuth.js';
+import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
 import { syncExternalCourseTopics } from '../services/topicSync.js';
 import { syncCourseEnrollments } from '../services/enrollmentSync.js';
 
@@ -53,10 +53,10 @@ function isSupportedCourseRole(role) {
  */
 router.get('/eduai/courses', requireRole('PROFESSOR'), async (req, res) => {
   try {
-    const eduAiAccessToken = await getEduAiAccessTokenForUser(req.user?.id);
+    const cookie = getEduAiCookieForRequest(req);
 
     // Fetch available courses from EduAI
-    const courses = await listEduAiCourses(eduAiAccessToken);
+    const courses = await listEduAiCourses(cookie);
 
     // Exclude any EduAI course already imported by this instructor
     // We identify imported ones via CourseOffering.externalId (source id) scoped to the instructor
@@ -157,8 +157,8 @@ router.post('/courses/import-external', requireRole('PROFESSOR'), async (req, re
   }
 
   try {
-    const eduAiAccessToken = await getEduAiAccessTokenForUser(instructor.id);
-    const externalCourse = await findEduAiCourseById(externalCourseId, eduAiAccessToken);
+    const cookie = getEduAiCookieForRequest(req);
+    const externalCourse = await findEduAiCourseById(externalCourseId, cookie);
     if (!externalCourse) {
       return res.status(404).json({ error: 'EduAI course not found' });
     }
@@ -213,7 +213,7 @@ router.post('/courses/import-external', requireRole('PROFESSOR'), async (req, re
     });
 
     // Sync topics and enrollments from EduAI concurrently (independent operations)
-    const syncOpts = { accessToken: eduAiAccessToken };
+    const syncOpts = { cookie };
     const [topicResult, enrollmentResult] = await Promise.allSettled([
       syncExternalCourseTopics(created.id, syncOpts),
       syncCourseEnrollments(created.id, syncOpts),

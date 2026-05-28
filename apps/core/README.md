@@ -131,6 +131,7 @@ Send chat messages with course context for grounded responses.
 - `apiKeys` (object): Provider-specific API keys
 - `courseCode` (string): Target course identifier
 - `streaming` (boolean): Enable response streaming
+- `adhdAssist` (boolean, optional): Opt-in flag persisted on `Chat.adhdAssist` (default `false`). Phase 1 has no behavioural effect; Phase 2 will gate ADHD-friendly response shaping (concise, structured, progressively disclosed) on this. UI toggle lives at the top of the chat header on `/chat`.
 - `proxyUser` (object, optional): Only for admin `x-api-key` calls. Allows services like Aitutor to act on behalf of a user; see [Proxy Delegation (`proxyUser`)](#proxy-delegation-proxyuser).
 
 #### Examples
@@ -347,15 +348,6 @@ curl -X DELETE "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" \
   }'
 ```
 
-## Architecture Documentation
-
-Planning documents for the EduAI Summer 2026 project live in [`docs/`](../../docs/) at the monorepo root. These are living documents that evolve as decisions are made.
-
-| Document | Epic | Description |
-|----------|------|-------------|
-| [`platform-centralization-architecture-plan.md`](../../docs/platform-centralization-architecture-plan.md) | #58 | How EduAI, AI Tutor, and Question Maker are being centralized under a single API and auth layer |
-| [`user-management-and-roles-architecture-plan.md`](../../docs/user-management-and-roles-architecture-plan.md) | #60 | Role hierarchy (System Admin, Unit Admin, Professor, TA, Student), current permissions, gaps, and naming decisions |
-
 ## Testing
 
 Unit tests are written with [Vitest](https://vitest.dev/) and [Testing Library](https://testing-library.com/).
@@ -379,8 +371,13 @@ All tests live under `app/tests/`:
 
 ```
 app/tests/
-├── setup.ts          # Global test setup (jest-dom matchers, browser API mocks)
-└── unit/             # Unit tests, mirroring the source layout
+├── setup.ts                    # Global setup (jest-dom matchers, browser API mocks)
+├── setup.integration.ts        # Integration-test env (e.g. DATABASE_URL)
+├── globalSetup.ts              # DB migrate/seed before integration suite
+├── integration/                # Route + DB tests (@vitest-environment node)
+│   ├── courses.integration.test.ts
+│   └── ...
+└── unit/                       # Handler and lib tests (mocked deps)
     ├── form-utils.test.ts
     └── ...
 ```

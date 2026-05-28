@@ -10,7 +10,6 @@ import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 
 import { errorHandler, notFound } from './middleware/errorHandler.js';
-import authRoutes from './routes/auth.js';
 import questionRoutes from './routes/questions.js';
 import courseRoutes from './routes/course.js';
 import assessmentRoutes from './routes/assessments.js';
@@ -18,7 +17,6 @@ import variantRoutes from './routes/variants.js';
 import eduaiRoutes from './routes/eduai.js';
 import canvasRoutes from './routes/canvas.js';
 import assessmentVariantRoutes from './routes/assessmentVariant.js';
-import bugReportRoutes from './routes/bugReports.js';
 import { config } from './config/settings.js';
 import { logger } from './utils/logger.js';
 import './schema/index.js';
@@ -96,7 +94,6 @@ app.get('/', (req, res) => {
   });
 });
 
-app.use('/api/auth', authRoutes);
 app.use('/api/questions', questionRoutes);
 app.use('/api/questions', variantRoutes);
 app.use('/api/course', courseRoutes);
@@ -104,7 +101,6 @@ app.use('/api/assessments', assessmentRoutes);
 app.use('/api/eduai', eduaiRoutes);
 app.use('/api/canvas', canvasRoutes);
 app.use('/api/assessment-variant', assessmentVariantRoutes);
-app.use('/api/bug-reports', bugReportRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

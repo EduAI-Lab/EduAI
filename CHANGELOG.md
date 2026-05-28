@@ -4,12 +4,94 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+
+## [Week 3 — May 18–22, 2026]
+
+### Added
+
+- [monorepo] docs: created a `broken-routes.md` file listing everything that will no longer work with the unified schema (#338, @glowyblack, 2026-05-24)
+- [core] test: Created the setup for running integration tests on core, as well as a `planned-core-integration-test.md` listing the tests still needed for the test. (#338, @glowyblack, 2026-05-24)
+- [core] api: Implement `api-wiring.md` course/topic endpoints and tests — `GET /api/courses/:id` loader (flat course, `COURSE_NOT_FOUND`); new `GET /api/courses/:courseId/topics/:topicId` (flat topic, `TOPIC_NOT_FOUND`); topics GET/POST/DELETE accept `requireServiceKey` (`Bearer EDUAI_API_KEY`) or session; POST returns `409 TOPIC_ALREADY_EXISTS` with `existingId`; server helpers filter `deletedAt: null` and soft-delete on topic DELETE; integration tests (`courses`, `courses.id`, `courses-topic`, `service-key`) and unit tests (`courses.server`, `courses.id.loader`, `courses.topics`); `TESTS.md` updated. (#338, @glowyblack, 2026-05-24)
+- [core] auth: Add `requireServiceKey` guard (`Authorization: Bearer <EDUAI_API_KEY>`, `crypto.timingSafeEqual`); wire into `GET /api/courses/:id/topics` as service-key auth path. (#337, @yta3216, 2026-05-23)
+- [monorepo] infra: Add `npm run dbseed` root script that seeds Core, AI Tutor, and Question Maker databases in order (Core → AI Tutor → QM); safe to run at any time — Core and AI Tutor seeds are fully idempotent via upserts. (#NNN, @evanbones, 2026-05-22)
+- [core] infra: Auto-seed the Core database on `npm run dev` when the database is empty — new `db:seed:if-empty` script checks user count and skips seeding if data already exists, so normal dev restarts are unaffected. (#NNN, @evanbones, 2026-05-22)
+- [ai-tutor] infra: Auto-seed the AI Tutor database on `npm run dev` when the database is empty — new `seed:if-empty` script checks prompt template count (required for runtime) and skips if data exists. (#NNN, @evanbones, 2026-05-22)
+
+---
+
+## [Week 4 — May 25–29, 2026]
+
+### Added
+- [core] auth: Implement `POST /api/sessions/validate` — accepts a forwarded session cookie from extension middleware, validates it via Better Auth, and returns `{ user: { id, email, name, image, role } }` or `401 Unauthorized`; add IP-based sliding-window rate limiter (`rate-limit.server.ts`, 300 req/min default, tunable via `SESSION_VALIDATE_RATE_LIMIT`). Phase 1 of auth pipeline centralization (blocks both extension migrations). (#344, @evanbones, 2026-05-25)
+- [core] auth: Add `validateRedirectUrl` to `guards.server.ts` — validates the `?redirect=<url>` param on the login page; allows relative paths (`/...`) and absolute URLs under `localhost` (dev) or `*.eduai.ok.ubc.ca` (prod); rejects everything else and falls back to `/dashboard` to prevent open-redirect attacks. (#344, @evanbones, 2026-05-25)
+- [core] auth: Wire `?redirect=<url>` support into Core login page (`/auth/login`) — loader validates and threads the return URL through a hidden form field; action uses the validated URL in the post-login redirect; already-authenticated users landing on the login page are forwarded to the return URL directly. (#344, @evanbones, 2026-05-25)
+- [core] tests: Add 8 integration contract tests for `POST /api/sessions/validate` — covers valid session → 200 + correct user shape, missing/expired session → 401, rate-limited IP → 429, non-POST method → 405, `x-forwarded-for` IP extraction, and `role` defaulting to `STUDENT` when undefined. (#344, @evanbones, 2026-05-25)
+- [core] tests: Add 13 unit tests for `validateRedirectUrl` in `guards.server.test.ts` — covers null/empty inputs, valid relative paths, protocol-relative URL rejection, localhost and 127.0.0.1 passthrough, production apex and subdomain passthrough, external domain rejection, suffix-spoofing rejection, non-URL strings, and `javascript:` URIs. (#344, @evanbones, 2026-05-25)
+- [core] tests: Add 6 unit tests for `isRateLimited` in `rate-limit.server.test.ts` — covers under-limit passthrough, limit-exceeded rejection, per-IP independence, window expiry via fake timers, and `SESSION_VALIDATE_RATE_LIMIT` env var reading. (#344, @evanbones, 2026-05-25)
+- [ai-tutor] auth: Replace Better Auth + OAuth PKCE middleware with Core session cookie validation — rewrite `server/src/middleware/auth.js` to call `POST /api/sessions/validate` on Core, populate `req.user` with `{ id, email, name, image, role }`, normalize unknown roles to `STUDENT`, and redirect unauthenticated requests to `{CORE_URL}/login?redirect=<url>` (AT-A, AT-B); tombstone `server/src/auth.js` (AT-C); add Prisma migration to drop `User`, `Session`, `Account`, `Verification` tables (AT-D); remove `better-auth` package (AT-F). Phase 2a of auth pipeline centralization. (#350, @evanbones, 2026-05-25)
+- [ai-tutor] auth: Replace `getEduAiAccessTokenForUser` OAuth token lookup with `getEduAiCookieForRequest` cookie-forwarding helper — all EduAI API calls now forward the browser session cookie instead of using a separate OAuth access token; update `eduaiClient.js`, `aiGuidance.js`, `topicSync.js`, and all calling routes. (#350, @evanbones, 2026-05-25)
+- [ai-tutor] auth: Add `requireRole` / `requireRoles` RBAC factory to `middleware/auth.js` — accepts a single role string or an array; `requireRoles` is a backward-compat alias; `normalizeRole` defaults unknown roles to `STUDENT` (least privilege). Implements §7 of auth-pipeline-centralization-plan. (#350, @evanbones, 2026-05-25)
+- [ai-tutor] tests: Add 16 unit tests for `requireAuth` and `requireRole` middleware (`tests/unit/auth.middleware.test.js`) — covers valid session populates `req.user`, non-ok Core response returns 401, unreachable Core returns 401, cookie forwarding, empty-cookie fallback, role normalization to STUDENT, all five valid roles preserved, `requireRole` string/array forms, 403 on wrong role, 401 on missing user, error message content, and `requireRoles` alias identity. (#350, @evanbones, 2026-05-25)
+- [ai-tutor] tests: Update `tests/helpers.js` — remove stale `prisma.user`, `prisma.account`, `prisma.session`, `prisma.verification`, `prisma.courseInstructor`, `prisma.courseEnrollment` calls from `truncateAll()` and `seedMinimalCourse()` (these models were removed from the AT Prisma schema in the schema_unification migration; auth is now owned by Core). (#350, @evanbones, 2026-05-25)
+- [ai-tutor] tests: Update `tests/integration/auth.test.js` — remove `prisma.user.create()` calls; `mockUser` bypasses Core session validation so no local DB row is needed; drop the `GET /api/admin/users` test that called a broken route (route uses `prisma.user.findMany()` which is not in the schema). (#350, @evanbones, 2026-05-25)
+- [ai-tutor] tests: Update `tests/integration/admin.test.js` — skip enrollment and user-list tests that depend on `prisma.user` / `prisma.courseEnrollment` (not in AT Prisma schema; pre-existing breakage from schema_unification); keep and fix tests for `PATCH /api/admin/users/:id/role` (410 GONE), `GET /api/admin/courses`, and `GET /api/admin/settings/eduai-api-key`. (#350, @evanbones, 2026-05-25)
+- [question-maker] auth: Replace JWT middleware with Core session cookie validation — rewrite `src/middleware/auth.js` to call `POST /api/sessions/validate` on Core, find-or-create a local user row for FK integrity on first login, redirect unauthenticated non-API paths to Core login, return 401 JSON for API paths (QM-A, QM-B); remove `POST /api/auth/register` and `POST /api/auth/login` endpoints (QM-C, QM-D); replace `authService.js` register/login logic with `findOrCreateUser(coreUser)` (QM-E); remove `JWT_SECRET`/`JWT_EXPIRES_IN` from `.env.example`, add `CORE_URL`/`EXTENSION_URL` (QM-H). Phase 2b of auth pipeline centralization. (#350, @evanbones, 2026-05-25)
+- [question-maker] auth: Add `requireRole` RBAC factory and `authenticateToken` backward-compat alias to QM auth middleware — same pattern as AI Tutor; existing route files continue to work without changes. Implements §7 of auth-pipeline-centralization-plan for QM. (#350, @evanbones, 2026-05-25)
+- [question-maker] tests: Add 14 unit tests for QM `requireAuth`, `requireRole`, and `authenticateToken` middleware (`tests/unit/auth.middleware.test.js`) — covers valid session, `findOrCreateUser` call, 401 JSON for API paths, login redirect for non-API paths, unreachable Core, cookie forwarding, role normalization, all five valid roles, role string/array forms, 403 on wrong role, 401 on missing user, and `authenticateToken` alias identity. (#350, @evanbones, 2026-05-25)
+- [question-maker] tests: Replace `tests/unit/authService.test.js` — old tests verified JWT `verifyToken` (now removed); new tests verify `findOrCreateUser` for existing user (no seed), new user (seeds courses), null-name handling, and correct Sequelize `findOrCreate` call shape. (#350, @evanbones, 2026-05-25)
+
+---
+
+## [Week 3 — May 18–22, 2026]
+
+### Added
+- [core] perf: Cap hybrid RAG context (`buildCappedRagContextText`, `capRagHitsForTool`), bound retrieved chunks, query-embedding cache, batched `embedMany`, and env-tunable tool limits; add `chat-rag.ts`, `chat-api-keys.schema.ts`, and `chat-latency-bench.mjs`. (#144, @superbolt08, 2026-05-22)
+- [core] tests: Unit tests for `chat-rag`, `chat-api-keys.schema`, and `generateChunks` in embedding. (#144, @superbolt08, 2026-05-22)
+- [core] auth: Add Better Auth `apiKey` server plugin and matching `apiKeyClient` for Settings / bench `x-api-key` access. (#144, @superbolt08, 2026-05-22)
+- [core] feat: Add user-facing ADHD Assist toggle on `/chat` (Phase 1 plumbing only). New `Chat.adhdAssist Boolean @default(false)` column + migration `adhd_assist_toggle`; toggle persists per chat and restores on reload via `/api/chats/:chatId`. `adhdAssist` is parsed and stored by `POST /api/chat` but does not alter prompt, model, RAG, or tools — Phase 1 is the IV control before Phase 2 introduces the policy prepend. (#151, @Ayyhab, 2026-05-20)
+- [monorepo] docs: Add `auth-pipeline-centralization-plan.md` — detailed plan for centralizing all extension auth through Core's OAuth/OIDC provider; covers current state audit (AI Tutor centralized, Question Maker standalone JWT), gap analysis, phased migration plan, auth contract, and AI Tutor as the reference implementation for QM. (#250, @evanbones, 2026-05-20)
+- [monorepo] docs/tooling: Add `eduai-summer-2026/CONVENTIONS.md` — consolidated reference for issue format, git workflow, and PR checklist readable by any AI agent; add `.claude/commands/eduai-summer-2026/make-pr.md` — Claude Code `/project:eduai-summer-2026:make-pr` slash command that walks contributors through the PR checklist interactively; un-ignore `.claude/` in `.gitignore` so commands are team-shared. (#289, @ariqmuldi, 2026-05-21)
+- [core] tests: Finished implementing all the tests inside of the `planned-core-tests.md`
+- [monorepo] docs: Added docs/implementations/rbac-matrix.md (#198, @abdullahmoh21, 2026-05-21)
+- [monorepo] docs: Add [`docs/rag-ai/`](docs/rag-ai/README.md) — index and team docs for EduAI chat/RAG ([`CHAT_RAG_PIPELINE.md`](docs/rag-ai/CHAT_RAG_PIPELINE.md)), shared dev server ([`HOW_TO_USE_DEV_SERVER.md`](docs/rag-ai/HOW_TO_USE_DEV_SERVER.md)), HelpMe gap analysis, **latency** sprint guides and measurement ledger ([#203](https://github.com/EduAI-Lab/EduAI/issues/203)), and **routing** Phase 0–1 guides ([#197](https://github.com/EduAI-Lab/EduAICore/issues/197)).
+- [monorepo] docs: Populated `TESTS.md` with all integration and unit tests (#199, @GlowyBlack, 2026-05-18)
+- [monorepo] infra: Add GitHub Actions CI workflow (`.github/workflows/pr-tests.yml`) — triggers on pull requests targeting `development` or `main`; spins up a PostgreSQL 16 service on port 54321; runs `npm run test` (Turborepo) to build and test all packages across the monorepo; `aitutor_test` database is created automatically by the existing `globalSetup.js`; `TEST_DATABASE_URL` is set at job level so question-maker backend integration tests run as part of the single test command. (#236, @evanbones, 2026-05-20)
+- [question-maker] infra: Make `npm run test` run the full test suite — chain `vitest run --config vitest.integration.config.js` after the unit run so integration tests are no longer opt-in; `test:all` is kept as an alias. (#236, @evanbones, 2026-05-20)
+- [monorepo] docs: added new .md file updating the schema based on LTI implementation. (#330, @frostbitcactus, 2026-05-22)
+- [monorepo] docs: Add [`docs/rag-ai/EMBEDDINGS.md`](docs/rag-ai/EMBEDDINGS.md) — embeddings and pgvector storage, server vs chat API keys, index/retrieval lifecycle, hosting, failures, and env vars (@superbolt08, 2026-05-21)
+
+### Changed
+- [core] docs: Update [`docs/rag-ai/CHAT_RAG_PIPELINE.md`](docs/rag-ai/CHAT_RAG_PIPELINE.md) for capped hybrid/tool RAG, env vars, and optional `similarityThreshold` on `findRelevantContent`; merge with `development` rag-ai index. (#144, @superbolt08, 2026-05-22)
+- [monorepo] docs: Root README — `docs/rag-ai/` table links, chat latency bench section, and repo structure `rag-ai/` folder. (#144, @superbolt08, 2026-05-22)
+- [monorepo] docs/tooling: Update `eduai-summer-2026/CONVENTIONS.md` and `.claude/commands/eduai-summer-2026/make-pr.md` — add assignee and week-label requirements to issue conventions; expand test conventions to cover unit, integration, and end-to-end tests; update make-pr skill to verify week labels on linked issues and determine applicable test types. (#318, @ariqmuldi, 2026-05-22)
+- [monorepo] docs: Move RAG-AI team docs from `docs/implementations/RAG-AI/` to [`docs/rag-ai/`](docs/rag-ai/README.md); normalize folder name and filenames (`CHAT_RAG_PIPELINE.md`, `HOW_TO_USE_DEV_SERVER.md`, summer-2026 subfolders); update root README, [`ARCHITECTURE.md`](docs/ARCHITECTURE.md), and cross-links.
+- [monorepo] docs: Add chat/RAG pipeline section to [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) linking to [`CHAT_RAG_PIPELINE.md`](docs/rag-ai/CHAT_RAG_PIPELINE.md).
+- [monorepo] docs: Extend root README Docs table with links to `docs/rag-ai/` and `implementations/schema-design.md`.
+- [ai-tutor] infra: Renamed the `test/` `__test__` to `tests/` and added the tests within the `app/tests/` to the `TESTS.md` file and created a `.env.test.example` file. Added `.env.test` to gitignore (#199, @glowyblack, 2026-05-18)
+- [monorepo] docs: Update [`docs/rag-ai/README.md`](docs/rag-ai/README.md) index and folder layout for `EMBEDDINGS.md`; cross-link [`CHAT_RAG_PIPELINE.md`](docs/rag-ai/CHAT_RAG_PIPELINE.md) and [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) to the embeddings guide; extend root README Docs table (@superbolt08, 2026-05-21)
+
+### Removed
+- [monorepo] infra: Remove nested `package-lock.json` files from npm workspace packages (`ai-tutor`, `ai-tutor/server`, `question-maker/app/backend`) - holdovers from before the monorepo workspace setup that were not read by npm or Turborepo on root installs; add `apps/**/package-lock.json` to `.gitignore` to prevent accidental regeneration. (#268, @yta3216, 2026-05-20)
+
+### Fixed
+- [core] infra: Restrict Vite `allowedHosts` to `dev.eduai.ok.ubc.ca`, `localhost`, and `127.0.0.1`; use `resolve.dedupe` for `better-auth` instead of a package-root alias that broke subpath exports. (#144, @superbolt08, 2026-05-22)
+- [monorepo] docs: Remove stale `professorId` references from `docs/implementations/rbac-matrix.md` — the field no longer exists in the schema; rephrase the §1 instructor-linkage note and the §20 gap entries to refer to `Enrollment.role=INSTRUCTOR` instead. (@abdullahmoh21, 2026-05-22)
+- [monorepo] infra: Fix `npm run dev` failing on restart — Docker orphaned containers from previous service renames (`eduai-core-db`, `eduai-tutor-db`, `eduai-qm-db`) held ports 54320–55432 and were not removed by `docker compose down`; overhaul `scripts/dev-db.sh` to force-remove any container bound to those ports and delete the stale `eduai-dev` network before starting fresh; add `--remove-orphans` to `docker:dev:db:down`. (#236, @evanbones, 2026-05-19)
+- [question-maker] infra: Fix `vitest.integration.config.js` using wrong `test/` path instead of `tests/` — integration tests were never discovered and `test:all` always exited with code 1 (@ariqmuldi, 2026-05-20)
+- [monorepo] docs: Corrected README paths, CHANGELOG structure, and removed redundant TESTS.md placeholder. (#329, @evanbones, 2026-05-22)
+- [core] auth: Add `requireServiceKey` guard (`Authorization: Bearer <EDUAI_API_KEY>`, `crypto.timingSafeEqual`); wire into `GET /api/courses/:id/topics` as service-key auth path. (#NNN, @yta3216, 2026-05-23)
+- [core] auth: Add `requireServiceKey` guard (`Authorization: Bearer <EDUAI_API_KEY>`, `crypto.timingSafeEqual`); wire into `GET /api/courses/:id/topics` as service-key auth path. (#337, @yta3216, 2026-05-23)
+- [monorepo] infra: Add `npm run dbseed` root script that seeds Core, AI Tutor, and Question Maker databases in order (Core → AI Tutor → QM); safe to run at any time — Core and AI Tutor seeds are fully idempotent via upserts. (#NNN, @evanbones, 2026-05-22)
+- [core] infra: Auto-seed the Core database on `npm run dev` when the database is empty — new `db:seed:if-empty` script checks user count and skips seeding if data already exists, so normal dev restarts are unaffected. (#NNN, @evanbones, 2026-05-22)
+- [ai-tutor] infra: Auto-seed the AI Tutor database on `npm run dev` when the database is empty — new `seed:if-empty` script checks prompt template count (required for runtime) and skips if data exists. (#NNN, @evanbones, 2026-05-22)
+
 ---
 
 ## [Week 3 — May 18–22, 2026]
 
 ### Added
 - [core] prisma: Add `routing_telemetry_mvp` migration — extend `AIInteraction` with routing, timing, split token counts (`promptTokens`, `completionTokens`), cost, and energy/carbon fields; add `RouterTier` and `EnergyMeasurementSource` enums; extend `AIModel` with `routerTier`, `estEnergyJoulesPerToken`, and `averageCarbonGramsPerToken` (nullable, Phase 0 routing). (#320, @superbolt08, 2026-05-22)
+- [core] embeddings: Add OpenRouter embedding provider (`OPENROUTER_API_KEY`, OpenAI-compatible client, default `google/gemini-embedding-001`) and `npm run test:embedding` smoke script. (#320, @superbolt08, 2026-05-22)
 
 ### Changed
 - [core] prisma: Drop legacy `AIInteraction.tokenUsed` in favor of `promptTokens` + `completionTokens` to avoid conflicting token totals. (#320, @superbolt08, 2026-05-22)
@@ -20,13 +102,19 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ### Added
 - [monorepo] automation: Add GitHub-native weekly team time tracking and PR analytics reporting workflows, including issue-hours parsing, committed base-time fallback, editable weekly base-time issue override, Project timestamp filtering, Project item/PR linking, CSV/Markdown report generation, implementation documentation, and focused Node tests for the reporting scripts. (#176, @Whiteknight07, 2026-05-16)
 - [monorepo] docs: Add `schema-design.md` in `docs/implementations/` — unified schema design (#177, @abdullahmoh21, 2026-05-16)
+- [monorepo] docs: Added DEPLOYMENT.md in docs based on team decision (#157, @abdullahmoh21, 2026-05-15)
+- [core] infra: Add unit tests for all functions in `lib/form-utils.ts` (`getFieldErrors`, `getFieldError`, `getFormErrorMessage`, `validateField`); set `pool: vmThreads` in `vitest.config.ts` to fix worker startup timeout on Windows. (#134, @glowyblack, 2026-05-13)
 - [core] docs: Add `TEST.md` cataloguing all planned test cases for `lib/utils`, `lib/ai/providers`, `lib/ai/file-processing`, `lib/ai/embedding`, `lib/courses/schemas`, `lib/ai/schemas`, and form components (`LoginForm`, `RegisterForm`); assign test files across three contributors. (#134, @glowyblack, 2026-05-13)
-- [core] infra: Add unit tests for all functions in `lib/form-utils.ts` (`getFieldErrors`, `getFieldError`, `getFormErrorMessage`, `validateField`); set `pool: vmThreads` in `vitest.config.ts` to fix worker startup timeout on Windows. Test file lives at `app/tests/unit/form-utils.test.ts`. (#134, @glowyblack, 2026-05-13)
 - [monorepo] infra: Set up Turborepo to orchestrate build, dev, test, and lint across all workspace apps; add `apps/extensions/ai-tutor/server` to npm workspaces; configure distinct dev-server ports (core: 3000, ai-tutor: 3001, qm-frontend: 5173, qm-backend: 8000, ai-tutor server: 4000); add `predev` hook that auto-starts Docker Compose databases before Turborepo; add `postinstall` hook that copies each app's `.env.example` to `.env` on a clean clone; add `.npmrc` (`legacy-peer-deps=true`) to resolve cross-package peer dependency conflicts; change core-db default host port from 5432 to 54320 to avoid collision with locally installed Postgres. (#133, @evanbones, 2026-05-13)
+- [monorepo] docs: Add `docs/DEPLOYMENT.md` with production topology and a Development Deployment guide for `dev.eduai.ok.ubc.ca` (SSH, tmux, branch switching, when to use the dev server vs local dev, Ollama). (#110, @superbolt08, 2026-05-12)
+- [core] infra: Add `rhel-openssl-1.1.x` to Prisma `binaryTargets` so the query engine works on RHEL 8 hosts (e.g. `dev.eduai.ok.ubc.ca`). (#110, @superbolt08, 2026-05-12)
+- [core] infra: Configure Vite for monorepo hoisting, Apache reverse proxy (`allowedHosts`, `fs.allow`), optional HMR over HTTPS (`DEV_SERVER_HMR_*`), and `better-auth` dedupe on the dev host. (#110, @superbolt08, 2026-05-12)
 - [monorepo] docs: Add root `TESTS.md` as the canonical test inventory — defines structure, policy, and per-section table format for tracking all test files across the monorepo. (#140, @ariqmuldi, 2026-05-13)
 - [monorepo] infra: Add root `package.json` with unified test runner. `npm test` at the root directory runs all unit tests across every app. (#119, @yta3216, 2026-05-12)
 - [core] infra: Set up Vitest test infrastructure: add `vitest.config.ts`, `app/tests/setup.ts`, and `test`/`test:watch` scripts to `package.json`. No tests written yet; scaffolding only. (#119, @yta3216, 2026-05-12)
 - [core] docs: Add `TESTS.md` with planned test cases for lib utilities, AI providers, file processing, Zod schemas, and form components. (#119, @yta3216, 2026-05-12)
+- [core] docs: Add `docs/RAG-AI/CHAT_RAG_PIPELINE.md` documenting the `POST /api/chat` flow, hybrid RAG, and embedding behavior for latency profiling. (#144, @superbolt08, 2026-05-14)
+- [core] infra: Add `scripts/chat-latency-bench.mjs` for non-streaming `POST /api/chat` latency measurement. (#144, @superbolt08, 2026-05-14)
 
 ### Changed
 - [monorepo] automation: Move summer 2026 team time reporting scripts, tests, base-time CSVs, generated reports, and documentation under `eduai-summer-2026/`; keep workflow entrypoints as prefixed files in `.github/workflows/` for GitHub Actions autodiscovery. (#176, @Whiteknight07, 2026-05-18)
@@ -49,6 +137,13 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [monorepo] docs: Add database inspection section to root README — `docker exec` + psql workflow (`\c`, `\dt`, `SELECT * FROM`) and step-by-step DBeaver/pgAdmin connection guide for all three databases. (#133, @evanbones, 2026-05-14)
 - [monorepo] infra: Rename root npm workspace package from `eduaicore-monorepo` to `eduai-monorepo`. (#133, @evanbones, 2026-05-14)
 - [monorepo] docs: Mark user management and roles plan as on hold pending Canvas integration — current roles frozen, Canvas identified as source of truth for course structure, enrollments, and role assignments; rest of document preserved as original draft. (#115, @ariqmuldi, 2026-05-11)
+- [core] perf: Cap hybrid RAG context and bound retrieved chunks in chat; trim verbose debug logging on the chat API path. (#144, @superbolt08, 2026-05-14)
+- [core] model: Improve embedding generation with caching, batch processing, and clearer error handling. (#144, @superbolt08, 2026-05-14)
+- [core] infra: Restrict Vite `allowedHosts` to `dev.eduai.ok.ubc.ca`, `localhost`, and `127.0.0.1` for remote development behind the Apache reverse proxy without opening the dev server to arbitrary Host headers. (#144, @superbolt08, 2026-05-14)
+
+### Fixed
+
+- [core] deps: Resolve dependency alignment issues uncovered during chat latency investigation. (#144, @superbolt08, 2026-05-14)
 
 ### Removed
 - [monorepo] infra: Remove duplicate Turbo task delegation from `apps/extensions/question-maker/package.json` — the parent workspace package was re-invoking turbo for `question-maker-frontend` and `question-maker-backend`, causing build and test tasks to run twice. (#133, @evanbones, 2026-05-14)

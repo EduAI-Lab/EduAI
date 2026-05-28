@@ -95,7 +95,6 @@ export const Variants = sequelize.define('Variants', {
   coreQuestionId: {
     type: DataTypes.STRING,
     allowNull: true,
-    unique: true,
     field: 'core_question_id',
     comment: 'Core Question CUID; null until variant is approved and pushed to Core'
   },
@@ -114,5 +113,6 @@ export const Variants = sequelize.define('Variants', {
 }, {
   tableName: 'variants',
   timestamps: true,
-  underscored: true
+  underscored: true,
+  indexes: [{ unique: true, fields: ['core_question_id'] }]
 });

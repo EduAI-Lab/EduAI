@@ -6,11 +6,12 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:unit": "vitest run test/unit/",
-    "test:integration": "vitest run test/integration/",
+    "test:unit": "vitest run tests/unit/",
+    "test:integration": "vitest run tests/integration/",
     "start": "npx prisma generate && node src/index.js",
-    "dev": "npx prisma migrate deploy && npx prisma generate && nodemon src/index.js",
+    "dev": "npx prisma migrate deploy && npx prisma generate && npm run seed:if-empty && nodemon src/index.js",
     "seed": "prisma generate && tsx prisma/seed.ts",
+    "seed:if-empty": "tsx prisma/seed-if-empty.ts",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [],
@@ -18,9 +19,7 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
-    "@better-auth/oauth-provider": "1.5.4",
     "@prisma/client": "^6.19.3",
-    "better-auth": "1.5.4",
     "cors": "^2.8.5",
     "dotenv": "^17.2.2",
     "express": "^5.1.0",
