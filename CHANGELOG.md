@@ -91,7 +91,6 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 - [core] prisma: Add `routing_telemetry_mvp` migration — extend `AIInteraction` with routing, timing, split token counts (`promptTokens`, `completionTokens`), cost, and energy/carbon fields; add `RouterTier` and `EnergyMeasurementSource` enums; extend `AIModel` with `routerTier`, `estEnergyJoulesPerToken`, and `averageCarbonGramsPerToken` (nullable, Phase 0 routing). (#320, @superbolt08, 2026-05-22)
-- [core] embeddings: Add OpenRouter embedding provider (`OPENROUTER_API_KEY`, OpenAI-compatible client, default `google/gemini-embedding-001`) and `npm run test:embedding` smoke script. (#320, @superbolt08, 2026-05-22)
 
 ### Changed
 - [core] prisma: Drop legacy `AIInteraction.tokenUsed` in favor of `promptTokens` + `completionTokens` to avoid conflicting token totals. (#320, @superbolt08, 2026-05-22)

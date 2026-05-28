@@ -13,7 +13,6 @@
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
     "db:seed:if-empty": "tsx prisma/seed-if-empty.ts",
-    "test:embedding": "tsx scripts/test-embedding.ts",
     "db:reset": "prisma migrate reset",
     "auth:migrate": "npx @better-auth/cli migrate",
     "auth:generate": "npx @better-auth/cli generate",

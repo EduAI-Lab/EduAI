@@ -4,10 +4,7 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import prisma from "../prisma.server";
 import { randomUUID } from "crypto";
 
-const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
-/** Matches pgvector column vector(3072) — do not use 1536-dim models without a migration. */
-const DEFAULT_OPENROUTER_EMBEDDING_MODEL = "google/gemini-embedding-001";
-const DEFAULT_OPENAI_EMBEDDING_MODEL = "text-embedding-3-small";
+const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small";
 
 /** Max inputs per `embedMany` batch (provider limits vary; stay conservative). */
 const EMBED_MANY_BATCH_SIZE = Math.min(
@@ -84,53 +81,26 @@ export function generateChunks(input: string, maxChunkSize: number = 800, overla
   return chunks;
 }
 
-function createOpenRouterEmbeddingClient() {
-  const apiKey = process.env.OPENROUTER_API_KEY?.trim();
-  if (!apiKey) return null;
-
-  const referer =
-    process.env.OPENROUTER_HTTP_REFERER?.trim() ||
-    process.env.BETTER_AUTH_URL?.trim() ||
-    undefined;
-
-  return createOpenAI({
-    apiKey,
-    baseURL: OPENROUTER_BASE_URL,
-    headers: {
-      ...(referer ? { "HTTP-Referer": referer } : {}),
-      "X-Title": process.env.OPENROUTER_APP_TITLE?.trim() || "EduAI",
-    },
-  });
-}
-
 /**
- * Resolve embedding model. Priority: OpenRouter → Google Gemini → OpenAI direct.
+ * Get embedding model — Google Gemini first, then OpenAI direct.
  */
 function getEmbeddingModel() {
-  const openRouter = createOpenRouterEmbeddingClient();
-  if (openRouter) {
-    const modelId =
-      process.env.OPENROUTER_EMBEDDING_MODEL?.trim() ||
-      DEFAULT_OPENROUTER_EMBEDDING_MODEL;
-    return openRouter.embedding(modelId);
-  }
-
-  const googleApiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim();
+  const googleApiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
   if (googleApiKey) {
     return createGoogleGenerativeAI({
       apiKey: googleApiKey,
     }).embedding("gemini-embedding-001");
   }
 
-  const openaiApiKey = process.env.OPENAI_API_KEY?.trim();
+  const openaiApiKey = process.env.OPENAI_API_KEY;
   if (openaiApiKey) {
     return createOpenAI({
       apiKey: openaiApiKey,
-    }).embedding(DEFAULT_OPENAI_EMBEDDING_MODEL);
+    }).embedding(DEFAULT_EMBEDDING_MODEL);
   }
 
   throw new Error(
-    "No embedding provider configured. Set OPENROUTER_API_KEY, GOOGLE_GENERATIVE_AI_API_KEY, or OPENAI_API_KEY in apps/core/.env.",
+    "No embedding provider configured. Set GOOGLE_GENERATIVE_AI_API_KEY or OPENAI_API_KEY (RAG and material indexing require embeddings).",
   );
 }
 
