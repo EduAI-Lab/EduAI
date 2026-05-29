@@ -56,10 +56,35 @@ model CourseOffering {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
-  modules Module[]
-  topics  Topic[]
+  modules     Module[]
+  topics      Topic[]
+  instructors CourseInstructor[]
+  enrollments CourseEnrollment[]
 
   @@index([externalId])
+}
+
+/// Instructor assignment for a course offering.
+/// `userId` is the Core CUID of the instructor; no local FK — User table is owned by Core.
+model CourseInstructor {
+  userId           String
+  courseOfferingId Int
+  role             String         @default("LEAD")
+  createdAt        DateTime       @default(now())
+  courseOffering   CourseOffering @relation(fields: [courseOfferingId], references: [id], onDelete: Cascade)
+
+  @@id([userId, courseOfferingId])
+}
+
+/// Student enrollment for a course offering.
+/// `userId` is the Core CUID of the student; no local FK — User table is owned by Core.
+model CourseEnrollment {
+  userId           String
+  courseOfferingId Int
+  createdAt        DateTime       @default(now())
+  courseOffering   CourseOffering @relation(fields: [courseOfferingId], references: [id], onDelete: Cascade)
+
+  @@id([courseOfferingId, userId])
 }
 
 /// Topic taxonomy scoped to a single CourseOffering.
