@@ -130,7 +130,7 @@ describe('api methods', () => {
     expect(mockFetch).toHaveBeenCalledTimes(1);
 
     const [url, options] = mockFetch.mock.calls[0];
-    expect(url).toBe('http://localhost:4000/api/auth/sign-out');
+    expect(url).toBe('http://localhost:3000/api/auth/sign-out');
     expect(options.method).toBe('POST');
     expect(options.credentials).toBe('include');
     expect(result).toEqual({ ok: true });

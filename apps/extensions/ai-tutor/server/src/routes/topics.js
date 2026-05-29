@@ -221,11 +221,11 @@ router.post('/courses/:courseId/topics/remap', requireRole('PROFESSOR'), async (
 
   const mappings = Array.isArray(req.body?.mappings) ? req.body.mappings : [];
   const normalized = mappings
-    .map((m) => ({ fromTopicId: Number(m?.fromTopicId), toTopicId: Number(m?.toTopicId) }))
+    .map((m) => ({ fromTopicId: String(m?.fromTopicId ?? ''), toTopicId: String(m?.toTopicId ?? '') }))
     .filter(
       (m) =>
-        Number.isFinite(m.fromTopicId) &&
-        Number.isFinite(m.toTopicId) &&
+        m.fromTopicId.length > 0 &&
+        m.toTopicId.length > 0 &&
         m.fromTopicId !== m.toTopicId,
     );
 
