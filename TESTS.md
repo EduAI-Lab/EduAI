@@ -246,7 +246,7 @@ Each section should use this format:
 | `assessmentsAuth.test.js` | All assessment routes reject unauthenticated requests |
 | `assessmentVariantHttp.integration.test.js` | Assessment variant routes reject requests with missing or invalid required fields |
 | `auth.integration.test.js` | Users can register, log in, and retrieve their profile; duplicate emails and wrong passwords are rejected |
-| `bugReports.integration.test.js` | Authenticated users can submit bug reports, only admins can list and update them, and unauthenticated requests are blocked |
+| `bugReports.integration.test.js` | Unauthenticated requests return 401; authenticated requests proxy to Core and return 201; QUESTION_MAKER source and userId are forwarded correctly; 422 validation errors from Core pass through; 502 is returned when Core is unreachable |
 | `canvasAuth.test.js` | All Canvas integration routes reject unauthenticated requests |
 | `courseAuth.test.js` | All course and topic routes reject unauthenticated requests |
 | `eduaiAuth.test.js` | All EduAI proxy routes reject unauthenticated requests |
