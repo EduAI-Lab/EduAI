@@ -55,6 +55,50 @@ async function requestEduAi(path, options = {}) {
   return response.json();
 }
 
+/**
+ * POST a bug report to Core on behalf of the given Core user CUID.
+ * Returns null on success (Core responds 201 no body).
+ * Throws an Error with `status` set on HTTP failure.
+ */
+export async function postCoreBugReport(userId, payload) {
+  const serviceKey = process.env.EDUAI_API_KEY;
+  if (!serviceKey) {
+    throw new Error('EDUAI_API_KEY not configured');
+  }
+
+  const url = `${getEduAiBaseUrl()}/bug-reports`;
+  const body = {
+    source: 'AI_TUTOR',
+    userId,
+    description: payload.description,
+    isAnonymous: payload.isAnonymous ?? false,
+    consoleLogs: payload.consoleLogs ?? null,
+    networkLogs: payload.networkLogs ?? null,
+    screenshot: payload.screenshot ?? null,
+    pageUrl: payload.pageUrl ?? null,
+    userAgent: payload.userAgent ?? null,
+    context: payload.context ?? null,
+  };
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${serviceKey}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    const error = new Error(errorText || `Core bug report POST failed with status ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+
+  return null;
+}
+
 export async function listEduAiCourses(cookie) {
   const data = await requestEduAi('/courses', { cookie });
   try {
