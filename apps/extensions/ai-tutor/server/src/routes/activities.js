@@ -459,9 +459,9 @@ router.post('/lessons/:lessonId/activities', requireRole('PROFESSOR'), async (re
     const normalizedSecondaryIds = Array.isArray(payload.secondaryTopicIds)
       ? Array.from(
           new Set(
-            payload.secondaryTopicIds
-              .map((value) => Number(value))
-              .filter((value) => Number.isFinite(value) && value !== payload.mainTopicId),
+            payload.secondaryTopicIds.filter(
+              (value) => typeof value === 'string' && value.length > 0 && value !== payload.mainTopicId,
+            ),
           ),
         )
       : [];
@@ -699,8 +699,8 @@ router.patch('/activities/:activityId', requireRole('PROFESSOR'), async (req, re
 
     let resolvedMainTopicId = activity.mainTopicId;
     if (typeof payload.mainTopicId !== 'undefined') {
-      if (typeof payload.mainTopicId !== 'number' || !Number.isFinite(payload.mainTopicId)) {
-        return res.status(400).json({ error: 'mainTopicId must be a number' });
+      if (typeof payload.mainTopicId !== 'string' || payload.mainTopicId.length === 0) {
+        return res.status(400).json({ error: 'mainTopicId must be a string' });
       }
       const mainTopic = await prisma.topic.findUnique({ where: { id: payload.mainTopicId } });
       if (!mainTopic || mainTopic.courseOfferingId !== courseOfferingId) {
@@ -716,9 +716,9 @@ router.patch('/activities/:activityId', requireRole('PROFESSOR'), async (req, re
       }
       const normalizedSecondaryIds = Array.from(
         new Set(
-          payload.secondaryTopicIds
-            .map((value) => Number(value))
-            .filter((value) => Number.isFinite(value) && value !== resolvedMainTopicId),
+          payload.secondaryTopicIds.filter(
+            (value) => typeof value === 'string' && value.length > 0 && value !== resolvedMainTopicId,
+          ),
         ),
       );
 
