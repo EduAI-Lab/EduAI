@@ -35,20 +35,23 @@ Work through each item in order. For each item:
   - **Title** following the format `Size: Week N - Task` (determine size S/M/L and current week from the scope of changes)
   - **Body** with: a brief description of what was done and why, hours worked (ask the user how many people are working on it — if multiple, format is `Hours to complete (Week m): n hours [person name]` per person), and the epic link (ask the user)
   - Print the title and body clearly so the user can copy-paste it into https://github.com/EduAI-Lab/EduAI/issues/new
-  - Remind them to assign all correct assignees on the issue (everyone working on it, not just themselves)
+  - Remind them to assign all correct assignees on the issue (one or more people; do not leave unassigned)
+  - Remind them to add the week label matching the week in the title (e.g. `Week 4`, `Week 5`); an issue can have more than one week label
   - Remind them to add the issue to the project board at https://github.com/orgs/EduAI-Lab/projects/8
   - Wait for them to create the issue and give you the issue number(s) before continuing
 - If they have one, confirm each issue exists using `gh issue view <number> --repo EduAI-Lab/EduAI` and check:
   - The issue is **open** (not closed — if it's closed, flag it and ask the user to confirm this is the right issue)
   - The issue body contains an `EPIC:` link (if missing, remind the user to add it)
-  - The issue has assignees set (if none, remind the user to assign the people working on it)
+  - The issue has assignees set (if none, remind the user to assign everyone working on it — one or more people)
+  - The issue has at least one week label (e.g. `Week 4`, `Week 5`) matching the week in the title; multiple week labels are allowed (if missing entirely, remind the user to add one)
 - Remind the user: every issue must be on the project board at https://github.com/orgs/EduAI-Lab/projects/8 and linked to an epic
 
 ### Item 2 — Tests (most important)
 - Look at the changed files and identify what logic was added or modified
-- Check if corresponding test files exist for the changes
-- Ask the user to confirm: "Have you run the full test suite (including Playwright if applicable) and all tests pass with no skipped tests that shouldn't be skipped?"
-- If there are untested changes, flag them explicitly
+- Determine whether the changes warrant unit tests, integration tests, end-to-end tests (Playwright), mutation tests, or none — and explain your reasoning
+- Check if corresponding test files exist for each applicable test type
+- Ask the user to confirm: "Have you run the full test suite (unit, integration, end-to-end, and mutation tests where applicable) and all tests pass with no skipped tests that shouldn't be skipped?"
+- If there are untested changes across any test type, flag them explicitly
 
 ### Item 3 — TESTS.md
 - Read `TESTS.md`
@@ -122,5 +125,6 @@ Once all 7 items are confirmed, do the following:
 6. **Create the PR** using `gh pr create` with the approved title, body, and base branch. Add `--draft` if the user chose draft mode. Do not add a `Co-Authored-By` line anywhere in the commit message or PR body.
 
 7. After creation, remind the user:
+   - **Assign yourself (and anyone else working on it) as the PR assignee** — everyone contributing to the PR should be assigned to it.
    - **Assign two reviewers** — one from the dev team, one from the project leads. They must be from different groups (two dev team members does not count). The PR cannot be merged until both approve.
    - **Update the CHANGELOG** `#PR` placeholder with the real PR number/URL if it was left as a placeholder.
