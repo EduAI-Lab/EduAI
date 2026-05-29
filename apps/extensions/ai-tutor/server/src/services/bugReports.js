@@ -21,6 +21,7 @@
  */
 
 import { prisma } from '../config/database.js';
+import { postCoreBugReport } from './eduaiClient.js';
 
 export const BUG_REPORT_STATUSES = ['unhandled', 'in progress', 'resolved'];
 const BUG_REPORT_STATUS_SET = new Set(BUG_REPORT_STATUSES);
@@ -282,21 +283,15 @@ export async function createBugReport(user, payload) {
   const context = normalizeContext(payload?.context);
   const validatedContext = await validateContextAndAccess(user, context);
 
-  return prisma.bugReport.create({
-    data: {
-      description,
-      consoleLogs,
-      networkLogs,
-      screenshot,
-      pageUrl,
-      userAgent,
-      isAnonymous,
-      userId: user.id,
-      courseOfferingId: validatedContext.courseOfferingId,
-      moduleId: validatedContext.moduleId,
-      lessonId: validatedContext.lessonId,
-      activityId: validatedContext.activityId,
-    },
+  await postCoreBugReport(user.id, {
+    description,
+    consoleLogs,
+    networkLogs,
+    screenshot,
+    pageUrl,
+    userAgent,
+    isAnonymous,
+    context: validatedContext,
   });
 }
 
