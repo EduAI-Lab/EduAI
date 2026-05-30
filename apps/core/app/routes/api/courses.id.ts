@@ -1,8 +1,8 @@
-import type { LoaderFunctionArgs } from "react-router";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
 import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
-import { getCourse, handleCourseRequest } from "~/lib/courses/server";
+import { getCourse, updateCourse } from "~/lib/courses/server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const courseId = params.id;
@@ -43,6 +43,21 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   });
 }
 
-export async function action({ request }: { request: Request }) {
-  return handleCourseRequest(request);
+export async function action({ request, params }: ActionFunctionArgs) {
+  if (request.method !== "PATCH") {
+    return new Response(JSON.stringify({ error: "Method not allowed" }), {
+      status: 405,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const courseId = params.id;
+  if (!courseId) {
+    return new Response(JSON.stringify({ error: "COURSE_ID_REQUIRED" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  return updateCourse(request, courseId);
 }

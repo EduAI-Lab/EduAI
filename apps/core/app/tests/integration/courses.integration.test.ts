@@ -10,7 +10,7 @@ vi.mock("~/lib/auth/server", () => ({
   auth: { api: { getSession: vi.fn() } },
 }));
 
-import { handleCourseRequest } from "~/lib/courses/server";
+import { getCourses } from "~/lib/courses/server";
 import { auth } from "~/lib/auth/server";
 
 // ---------------------------------------------------------------------------
@@ -110,7 +110,7 @@ beforeEach(() => {
 
 describe("GET /api/courses", () => {
   it("returns 200 with a courses array", async () => {
-    const res = await handleCourseRequest(makeGetRequest());
+    const res = await getCourses(makeGetRequest());
 
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -119,7 +119,7 @@ describe("GET /api/courses", () => {
   });
 
   it("includes the seeded course in the response", async () => {
-    const res = await handleCourseRequest(makeGetRequest());
+    const res = await getCourses(makeGetRequest());
 
     const body = await res.json();
     const found = body.courses.find((c: { id: string }) => c.id === courseId);
@@ -129,8 +129,29 @@ describe("GET /api/courses", () => {
   });
 
   it("requires no session — unauthenticated callers still get 200", async () => {
-    const res = await handleCourseRequest(makeGetRequest());
+    const res = await getCourses(makeGetRequest());
     expect(res.status).toBe(200);
+  });
+
+  it("excludes soft-deleted courses", async () => {
+    const deleted = await prisma.course.create({
+      data: {
+        name: "Deleted Course",
+        code: "DEL 999",
+        section: "001",
+        term: "Fall",
+        year: 2025,
+        startDate: new Date("2025-09-01"),
+        deletedAt: new Date(),
+      },
+    });
+
+    const res = await getCourses(makeGetRequest());
+    const body = await res.json();
+    const found = body.courses.find((c: { id: string }) => c.id === deleted.id);
+    expect(found).toBeUndefined();
+
+    await prisma.course.delete({ where: { id: deleted.id } });
   });
 });
 

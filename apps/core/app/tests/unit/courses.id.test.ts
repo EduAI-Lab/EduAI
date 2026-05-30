@@ -11,7 +11,7 @@ vi.mock("~/lib/auth/guards.server", () => ({
 
 vi.mock("~/lib/courses/server", () => ({
   getCourse: vi.fn(),
-  handleCourseRequest: vi.fn(),
+  updateCourse: vi.fn(),
 }));
 
 import { loader } from "~/routes/api/courses.id";
