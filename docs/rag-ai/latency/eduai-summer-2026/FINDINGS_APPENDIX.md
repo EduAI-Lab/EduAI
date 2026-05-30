@@ -2,7 +2,7 @@
 
 Companion to [**FINDINGS.md**](./FINDINGS.md) (team summary). This doc has methodology, session evidence, confounds, tooling, and raw data links.
 
-> **Benchmark data:** Raw JSON/CSV is **not** in this branch. All artifacts below live on git branch **`troubleshoot-RAG-delay`** under [`apps/core/output/`](https://github.com/EduAI-Lab/EduAI/tree/troubleshoot-RAG-delay/apps/core/output). See [Data files](#data-files-on-troubleshoot-rag-delay).
+> **Benchmark data:** Raw JSON/CSV is **not** in this branch. All artifacts below live on git branch **`troubleshoot-RAG-delay`** under [`apps/core/output/`](https://github.com/EduAI-Lab/EduAI/tree/troubleshoot-RAG-delay/apps/core/output) ([layout README](https://github.com/EduAI-Lab/EduAI/blob/troubleshoot-RAG-delay/apps/core/output/README.md)). See [Data files](#data-files-on-troubleshoot-rag-delay).
 
 ---
 
@@ -158,7 +158,7 @@ CHAT_BENCH_COLD=1 CHAT_BENCH_WARMUP=0 node ./scripts/chat-latency-suite.mjs --se
 node ./scripts/chat-latency-suite.mjs --session=warm-deepseek
 ```
 
-Output on **`troubleshoot-RAG-delay`**: `apps/core/output/<session>/results/*`, `logs/*`, `manifest.json`.
+Output on **`troubleshoot-RAG-delay`**: `apps/core/output/<session>/` — each session has `results/*`, optional `logs/*`, and `manifest.json` ([README](https://github.com/EduAI-Lab/EduAI/blob/troubleshoot-RAG-delay/apps/core/output/README.md)).
 
 **Acceptance bar:** ≥3 repeats, residency logged, identical prompts + pinned params, model-reported timings for Ollama path.
 
@@ -182,18 +182,19 @@ git checkout troubleshoot-RAG-delay -- apps/core/output
 # or: git switch troubleshoot-RAG-delay
 ```
 
-**Browse on GitHub:** [apps/core/output/](https://github.com/EduAI-Lab/EduAI/tree/troubleshoot-RAG-delay/apps/core/output)
+**Browse on GitHub:** [apps/core/output/](https://github.com/EduAI-Lab/EduAI/tree/troubleshoot-RAG-delay/apps/core/output) · [README (layout index)](https://github.com/EduAI-Lab/EduAI/blob/troubleshoot-RAG-delay/apps/core/output/README.md)
 
 | Session | Surface | Path on `troubleshoot-RAG-delay` | Notes |
 | ------- | ------- | -------------------------------- | ----- |
-| 3 | Ollama-direct | `apps/core/output/session3-ollama-direct-deepseek.{json,csv}` | Early; `/api/generate`; buffered TTFT |
-| 4 | EduAI | `apps/core/output/session4-eduai-deepseek.{json,csv}` | Warm repeat |
+| 3 | Ollama-direct | `apps/core/output/session3-ollama-direct/results/ollama.{json,csv}` | Early; `/api/generate`; buffered TTFT |
+| 4 | EduAI | `apps/core/output/session4-eduai-deepseek/results/eduai.{json,csv}` | Warm repeat |
 | 5 | Suite | `apps/core/output/session5-warm-deepseek/` | First controlled suite; includes `logs/` |
 | 6 warm | `compare` | `apps/core/output/session6-matched-warm/` | Comparison 1 |
 | 6 cold | `ollama` / `eduai` | `apps/core/output/session6-cold-ollama/`, `session6-cold-eduai/` | Comparison 2 |
 | 7 | `compare` @ 0.6 | `apps/core/output/session7-prod-temp06/` | Production temperature |
 | 8 | `qwen2.5:7b` suite | `apps/core/output/session8-qwen-warm/` | Tool path; EduAI vs Ollama |
-| — | Probe | `apps/core/output/_probe/` | Smoke / override check |
+| 9 | maxTokens sweep | `apps/core/output/session9-maxtokens-sweep/` | `results/cap-*.json` + `comparison.json` (when run) |
+| — | Probe | `apps/core/output/session-probe/` | Smoke / residency check |
 
 Sessions 1–2: `[rag-pipeline]` server logs / terminal scrollback only (not in `output/`).
 
