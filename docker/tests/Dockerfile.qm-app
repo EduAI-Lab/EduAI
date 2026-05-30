@@ -21,8 +21,8 @@ COPY apps/extensions/question-maker/app/frontend/package.json ./apps/extensions/
 
 RUN npm ci --ignore-scripts
 
-# ── Target: test ───────────────────────────────────────────────────────────
-FROM node:20-alpine AS test
+# ── Shared test runner base ────────────────────────────────────────────────
+FROM node:20-alpine AS test-base
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
@@ -51,7 +51,14 @@ COPY apps/extensions/question-maker/app/frontend/package.json \
 ENV PATH="/app/apps/extensions/question-maker/node_modules/.bin:/app/node_modules/.bin:${PATH}"
 
 WORKDIR /app/apps/extensions/question-maker/app/frontend
-CMD ["sh", "-c", "../../node_modules/.bin/vitest run"]
+
+# ── Target: test-unit ──────────────────────────────────────────────────────
+FROM test-base AS test-unit
+CMD ["sh", "-c", "../../node_modules/.bin/vitest run --config vitest.unit.config.ts"]
+
+# ── Target: test-integration ──────────────────────────────────────────────
+FROM test-base AS test-integration
+CMD ["sh", "-c", "../../node_modules/.bin/vitest run --config vitest.integration.config.ts"]
 
 # ── Build ──────────────────────────────────────────────────────────────────
 FROM node:20-alpine AS build

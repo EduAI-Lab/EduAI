@@ -169,7 +169,13 @@ services:
     build:
       context: .
       dockerfile: docker/tests/Dockerfile.qm-app
-      target: test
+      target: test-unit
+
+  qm-app-integration-tests:
+    build:
+      context: .
+      dockerfile: docker/tests/Dockerfile.qm-app
+      target: test-integration
 
   qm-server-unit-tests:
     build:

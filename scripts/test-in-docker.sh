@@ -25,6 +25,7 @@ INTEGRATION_SUITES=(
   eduai-integration-tests
   ai-tutor-app-integration-tests
   ai-tutor-server-integration-tests
+  qm-app-integration-tests
   qm-server-integration-tests
 )
 
