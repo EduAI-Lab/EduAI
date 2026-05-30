@@ -3,7 +3,7 @@
 **Last updated:** 2026-05-29 · **Scope:** `deepseek-r1:8b` + `qwen2.5:7b` (tool path), dev → Ollama on `cmps01`  
 **Status:** Core latency investigation complete (Sessions 1–7). Session 8 documents **tool-enabled model** behaviour — EduAI slower vs bare Ollama is **expected** on that path.
 
-> **Benchmark data:** Raw JSON/CSV is **not** in this branch. Check out git branch **`troubleshoot-RAG-delay`** and see [`apps/core/output/`](https://github.com/mostafama/EduAICoreLearning/tree/troubleshoot-RAG-delay/apps/core/output). Session index: [appendix — Data files](./FINDINGS_APPENDIX.md#data-files-on-troubleshoot-rag-delay).
+> **Benchmark data:** Raw JSON/CSV is **not** in this branch. Check out git branch **`troubleshoot-RAG-delay`** and see [`apps/core/output/`](https://github.com/EduAI-Lab/EduAI/tree/troubleshoot-RAG-delay/apps/core/output). Session index: [appendix — Data files](./FINDINGS_APPENDIX.md#data-files-on-troubleshoot-rag-delay).
 
 ---
 
@@ -50,7 +50,7 @@ When the model is **warm** and the reply is **short**, chat is typically **~2–
 
 ### Session 8 — tool-enabled model (`qwen2.5:7b`) — expected asymmetry
 
-[`session8-qwen-warm/`](https://github.com/mostafama/EduAICoreLearning/tree/troubleshoot-RAG-delay/apps/core/output/session8-qwen-warm) on **`troubleshoot-RAG-delay`** compared EduAI vs Ollama-direct when warm. **EduAI was slower — and that is expected**, not a regression.
+[`session8-qwen-warm/`](https://github.com/EduAI-Lab/EduAI/tree/troubleshoot-RAG-delay/apps/core/output/session8-qwen-warm) on **`troubleshoot-RAG-delay`** compared EduAI vs Ollama-direct when warm. **EduAI was slower — and that is expected**, not a regression.
 
 | Surface | Path | TTFT median | Total median |
 | ------- | ---- | -----------: | -----------: |
