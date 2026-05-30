@@ -72,10 +72,10 @@ describe("getCourseTopic", () => {
 describe("createCourseTopic", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("returns COURSE_NOT_FOUND when course is missing or soft-deleted", async () => {
+  it("returns 404 when course is missing or soft-deleted", async () => {
     prismaMock.course.findFirst.mockResolvedValue(null);
     const result = await createCourseTopic("missing-course", { name: "Heaps" });
-    expect(result).toEqual({ error: "COURSE_NOT_FOUND" });
+    expect(result).toEqual({ status: "404" });
     expect(prismaMock.courseTopic.create).not.toHaveBeenCalled();
   });
 
@@ -88,6 +88,7 @@ describe("createCourseTopic", () => {
       deletedAt: null,
     });
     const result = await createCourseTopic("c1", { name: "Heaps" });
+    expect(result.status).toBe("201");
     expect(result).toHaveProperty("topic");
     expect(prismaMock.courseTopic.create).toHaveBeenCalled();
   });
@@ -99,7 +100,7 @@ describe("deleteCourseTopic", () => {
   it("soft-deletes active topics by setting deletedAt", async () => {
     prismaMock.courseTopic.updateMany.mockResolvedValue({ count: 1 });
     const result = await deleteCourseTopic("c1", { topicId: "t1" });
-    expect(result).toEqual({ success: true });
+    expect(result).toEqual({ status: "204" });
     expect(prismaMock.courseTopic.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { courseId: "c1", deletedAt: null, id: "t1" },
@@ -108,9 +109,9 @@ describe("deleteCourseTopic", () => {
     );
   });
 
-  it("returns Topic not found when no active row matches", async () => {
+  it("returns 404 when no active row matches", async () => {
     prismaMock.courseTopic.updateMany.mockResolvedValue({ count: 0 });
     const result = await deleteCourseTopic("c1", { name: "Missing" });
-    expect(result).toEqual({ error: "Topic not found" });
+    expect(result).toEqual({ status: "404" });
   });
 });

@@ -192,7 +192,7 @@ describe("courses.topics action — POST", () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "u1", role: "ADMIN" },
     } as never);
-    vi.mocked(createCourseTopic).mockResolvedValue({ error: "COURSE_NOT_FOUND" });
+    vi.mocked(createCourseTopic).mockResolvedValue({ status: "404" });
     const res = await action(makePost({ name: "Heaps" }));
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: "COURSE_NOT_FOUND" });
@@ -203,7 +203,7 @@ describe("courses.topics action — POST", () => {
       user: { id: "u1", role: "ADMIN" },
     } as never);
     vi.mocked(createCourseTopic).mockResolvedValue({
-      error: "TOPIC_ALREADY_EXISTS",
+      status: "409",
       existingId: "existing-id",
     });
     const res = await action(makePost({ name: "Heaps" }));
@@ -218,14 +218,14 @@ describe("courses.topics action — POST", () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "u1", role: "ADMIN" },
     } as never);
-    vi.mocked(createCourseTopic).mockResolvedValue({ topic: TOPIC });
+    vi.mocked(createCourseTopic).mockResolvedValue({ status: "201", topic: TOPIC });
     const res = await action(makePost({ name: "Heaps" }));
     expect(res.status).toBe(201);
     expect(await res.json()).toEqual(TOPIC_JSON);
   });
 
   it("returns 201 via service key without session", async () => {
-    vi.mocked(createCourseTopic).mockResolvedValue({ topic: TOPIC });
+    vi.mocked(createCourseTopic).mockResolvedValue({ status: "201", topic: TOPIC });
     const res = await action(makePost({ name: "Heaps" }, `Bearer ${VALID_KEY}`));
     expect(res.status).toBe(201);
     expect(auth.api.getSession).not.toHaveBeenCalled();
@@ -245,13 +245,13 @@ describe("courses.topics action — DELETE", () => {
   afterEach(() => vi.unstubAllEnvs());
 
   it("returns 404 when topic not found", async () => {
-    vi.mocked(deleteCourseTopic).mockResolvedValue({ error: "Topic not found" });
+    vi.mocked(deleteCourseTopic).mockResolvedValue({ status: "404" });
     const res = await action(makeDelete({ topicId: "missing" }));
     expect(res.status).toBe(404);
   });
 
   it("returns 204 on successful soft delete", async () => {
-    vi.mocked(deleteCourseTopic).mockResolvedValue({ success: true });
+    vi.mocked(deleteCourseTopic).mockResolvedValue({ status: "204" });
     const res = await action(makeDelete({ topicId: "topic-1" }));
     expect(res.status).toBe(204);
   });

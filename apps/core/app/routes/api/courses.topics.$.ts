@@ -109,23 +109,29 @@ export async function action({ request, params }: ActionFunctionArgs) {
       const body = await request.json();
       const result = await createCourseTopic(courseId, body);
 
-      if ("error" in result) {
-        if (result.error === "TOPIC_ALREADY_EXISTS") {
+      if (result.status !== "201") {
+        if (result.status === "409") {
           return new Response(
             JSON.stringify({ error: "TOPIC_ALREADY_EXISTS", existingId: result.existingId }),
-            { status: 409, headers: { "Content-Type": "application/json" } }
+            { status: 409, headers: { "Content-Type": "application/json" } },
           );
         }
-        if (result.error === "COURSE_NOT_FOUND") {
+        if (result.status === "404") {
           return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
             status: 404,
             headers: { "Content-Type": "application/json" },
           });
         }
-        return new Response(JSON.stringify(result), {
-          status: 400,
-          headers: { "Content-Type": "application/json" },
-        });
+        return new Response(
+          JSON.stringify({
+            error: "Invalid input",
+            ...(result.details ? { details: result.details } : {}),
+          }),
+          {
+            status: Number(result.status),
+            headers: { "Content-Type": "application/json" },
+          },
+        );
       }
 
       return new Response(JSON.stringify(result.topic), {
@@ -145,10 +151,16 @@ export async function action({ request, params }: ActionFunctionArgs) {
       const body = await request.json();
       const result = await deleteCourseTopic(courseId, body);
 
-      if ("error" in result) {
-        const status = result.error === "Topic not found" ? 404 : 400;
-        return new Response(JSON.stringify(result), {
-          status,
+      if (result.status !== "204") {
+        const responseBody =
+          result.status === "404"
+            ? { error: "Topic not found" }
+            : {
+                error: "Invalid input",
+                ...(result.details ? { details: result.details } : {}),
+              };
+        return new Response(JSON.stringify(responseBody), {
+          status: Number(result.status),
           headers: { "Content-Type": "application/json" },
         });
       }
