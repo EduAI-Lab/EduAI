@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { LoginPage } from './LoginPage';
+import { LoginPage } from '../../pages/LoginPage';
 
 const auth = {
   login: vi.fn(),
@@ -13,11 +13,11 @@ const auth = {
   isLoading: false,
 };
 
-vi.mock('../contexts/AuthContext', () => ({
+vi.mock('../../contexts/AuthContext', () => ({
   useAuth: () => auth,
 }));
 
-vi.mock('../components/FloatingLetters', () => ({
+vi.mock('../../components/FloatingLetters', () => ({
   FloatingLetters: () => null,
 }));
 

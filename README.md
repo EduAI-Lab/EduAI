@@ -223,9 +223,13 @@ npm run test:ai-tutor:server:integration
 
 # Question Maker
 npm run test:qm
+npm run test:qm:app
+npm run test:qm:app:unit
+npm run test:qm:app:integration
 
 # Question Maker — frontend app
 npm run test:qm:app:unit
+npm run test:qm:app:integration
 
 # Question Maker — Express server
 npm run test:qm:server
