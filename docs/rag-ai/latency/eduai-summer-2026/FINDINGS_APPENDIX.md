@@ -2,7 +2,7 @@
 
 Companion to [**FINDINGS.md**](./FINDINGS.md) (team summary). This doc has methodology, session evidence, confounds, tooling, and raw data links.
 
-> **Benchmark data:** Raw JSON/CSV is **not** in this branch. All artifacts below live on git branch **`troubleshoot-RAG-delay`** under [`apps/core/output/`](https://github.com/mostafama/EduAICoreLearning/tree/troubleshoot-RAG-delay/apps/core/output). See [Data files](#data-files-on-troubleshoot-rag-delay).
+> **Benchmark data:** Raw JSON/CSV is **not** in this branch. All artifacts below live on git branch **`troubleshoot-RAG-delay`** under [`apps/core/output/`](https://github.com/EduAI-Lab/EduAI/tree/troubleshoot-RAG-delay/apps/core/output). See [Data files](#data-files-on-troubleshoot-rag-delay).
 
 ---
 
@@ -182,7 +182,7 @@ git checkout troubleshoot-RAG-delay -- apps/core/output
 # or: git switch troubleshoot-RAG-delay
 ```
 
-**Browse on GitHub:** [apps/core/output/](https://github.com/mostafama/EduAICoreLearning/tree/troubleshoot-RAG-delay/apps/core/output)
+**Browse on GitHub:** [apps/core/output/](https://github.com/EduAI-Lab/EduAI/tree/troubleshoot-RAG-delay/apps/core/output)
 
 | Session | Surface | Path on `troubleshoot-RAG-delay` | Notes |
 | ------- | ------- | -------------------------------- | ----- |
@@ -272,7 +272,7 @@ Repeat of Comparison 1 at `temperature=0.6` both surfaces. All metrics within no
 
 ### Session 8 — Qwen tool path (`qwen2.5:7b`)
 
-Warm suite: eduai + ollama + compare. Model: `ollama:qwen2.5:7b`. Qwen has **`supportsTools: true`** in admin → EduAI uses **`tool_calling`** branch; Ollama-direct sends bare prompts only. Data: [`session8-qwen-warm/`](https://github.com/mostafama/EduAICoreLearning/tree/troubleshoot-RAG-delay/apps/core/output/session8-qwen-warm) on **`troubleshoot-RAG-delay`**.
+Warm suite: eduai + ollama + compare. Model: `ollama:qwen2.5:7b`. Qwen has **`supportsTools: true`** in admin → EduAI uses **`tool_calling`** branch; Ollama-direct sends bare prompts only. Data: [`session8-qwen-warm/`](https://github.com/EduAI-Lab/EduAI/tree/troubleshoot-RAG-delay/apps/core/output/session8-qwen-warm) on **`troubleshoot-RAG-delay`**.
 
 **Interpretation: EduAI slower than Ollama-direct is expected** — not a bug and not comparable to Sessions 6–7 (DeepSeek **hybrid** path).
 
