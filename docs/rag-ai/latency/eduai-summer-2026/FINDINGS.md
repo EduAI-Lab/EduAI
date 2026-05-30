@@ -3,7 +3,7 @@
 **Last updated:** 2026-05-29 · **Scope:** `deepseek-r1:8b` + `qwen2.5:7b` (tool path), dev → Ollama on `cmps01`  
 **Status:** Core latency investigation complete (Sessions 1–7). Session 8 documents **tool-enabled model** behaviour — EduAI slower vs bare Ollama is **expected** on that path.
 
-> **Benchmark data:** Raw JSON/CSV is **not** in this branch. Check out git branch **`troubleshoot-RAG-delay`** and see [`apps/core/output/`](https://github.com/EduAI-Lab/EduAI/tree/troubleshoot-RAG-delay/apps/core/output). Session index: [appendix — Data files](./FINDINGS_APPENDIX.md#data-files-on-troubleshoot-rag-delay).
+> **Benchmark data:** Raw JSON/CSV is **not** in this branch. Check out git branch **`troubleshoot-RAG-delay`** — layout in [`apps/core/output/README.md`](https://github.com/EduAI-Lab/EduAI/blob/troubleshoot-RAG-delay/apps/core/output/README.md), artifacts under [`apps/core/output/`](https://github.com/EduAI-Lab/EduAI/tree/troubleshoot-RAG-delay/apps/core/output). Session index: [appendix — Data files](./FINDINGS_APPENDIX.md#data-files-on-troubleshoot-rag-delay).
 
 ---
 
@@ -105,7 +105,7 @@ Not based on this data. Focus on **keep-alive**, **token limits**, and **model c
 | [Team problem statement & options](./TEAM_CHAT_LATENCY_AND_TOOLS.md) | Sprint context |
 | [Pipeline logging](../RAG_PIPELINE_LATENCY_LOGGING.md) | Enable `[rag-pipeline]` step timing |
 | [Chat RAG pipeline](../../CHAT_RAG_PIPELINE.md) | Architecture reference |
-| [Benchmark data](./FINDINGS_APPENDIX.md#data-files-on-troubleshoot-rag-delay) | On branch **`troubleshoot-RAG-delay`** → `apps/core/output/` |
+| [Benchmark data](./FINDINGS_APPENDIX.md#data-files-on-troubleshoot-rag-delay) | On **`troubleshoot-RAG-delay`** → `apps/core/output/<session>/` ([README](https://github.com/EduAI-Lab/EduAI/blob/troubleshoot-RAG-delay/apps/core/output/README.md)) |
 
 ---
 
