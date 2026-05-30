@@ -5,7 +5,7 @@
 **Last updated:** 2026-05-29 (related work added)  
 **Related:** [Findings](./FINDINGS.md) · [Routing Phase 0/1](../../routing/eduai-summer-2026/TEAM_PHASE_0_AND_1_GUIDE.md) · [Tools track](./TEAM_CHAT_LATENCY_AND_TOOLS.md) · [#197 routing](https://github.com/EduAI-Lab/EduAI/issues/197) · [#203 latency](https://github.com/EduAI-Lab/EduAI/issues/203)
 
-> **Benchmark data:** Raw JSON/CSV and bench logs are **not** in this branch. They live on git branch **`troubleshoot-RAG-delay`** at [`apps/core/output/`](https://github.com/mostafama/EduAICoreLearning/tree/troubleshoot-RAG-delay/apps/core/output). Full session index: [appendix — Data files](./FINDINGS_APPENDIX.md#data-files-on-troubleshoot-rag-delay).
+> **Benchmark data:** Raw JSON/CSV and bench logs are **not** in this branch. They live on git branch **`troubleshoot-RAG-delay`** at [`apps/core/output/`](https://github.com/EduAI-Lab/EduAI/tree/troubleshoot-RAG-delay/apps/core/output). Full session index: [appendix — Data files](./FINDINGS_APPENDIX.md#data-files-on-troubleshoot-rag-delay).
 
 ---
 
