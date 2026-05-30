@@ -8,16 +8,30 @@ import { z } from "zod";
 export const CreateCourseSchema = z.object({
   name: z.string().min(1),
   code: z.string().min(1),
+  section: z.string().min(1),
   term: z.string().min(1),
   year: z.number().int(),
+  startDate: z.coerce.date(),
+  endDate: z.coerce.date().optional(),
+  department: z.string().optional(),
+  description: z.string().optional(),
+  isPublished: z.coerce.boolean().optional().default(false),
   aiInstructions: z.string().optional().default(""),
+  instructorUserIds: z.array(z.string().min(1)).min(1),
 });
 
 export const UpdateCourseSchema = z.object({
   name: z.string().min(1).optional(),
   code: z.string().min(1).optional(),
+  section: z.string().min(1).optional(),
   term: z.string().optional(),
   year: z.number().int().optional(),
+  startDate: z.coerce.date().optional(),
+  endDate: z.coerce.date().optional().nullable(),
+  department: z.string().optional().nullable(),
+  description: z.string().optional().nullable(),
+  isPublished: z.coerce.boolean().optional(),
+  isActive: z.coerce.boolean().optional(),
   aiInstructions: z.string().optional(),
 });
 
@@ -37,4 +51,3 @@ export const DeleteCourseTopicSchema = z
 
 export type CreateCourseTopicInput = z.infer<typeof CreateCourseTopicSchema>;
 export type DeleteCourseTopicInput = z.infer<typeof DeleteCourseTopicSchema>;
-
