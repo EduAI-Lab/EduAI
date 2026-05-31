@@ -1,5 +1,7 @@
 # AI / editor tool dirs
 .claude/settings.local.json
+.claude/worktrees/
+.claude/agent-memory/
 .cursor/
 .opencode/
 .gemini/

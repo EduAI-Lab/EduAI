@@ -266,6 +266,7 @@ model Question {
   choices         Json?
   answer          String?
   testable        Boolean                  @default(false)
+  idempotencyKey  String?                  @unique
   deletedAt       DateTime?
   createdAt       DateTime                 @default(now())
   updatedAt       DateTime                 @updatedAt
