@@ -15,7 +15,7 @@ EduAI RAG uses **two separate pieces**:
 | Piece | What it is | Where it lives |
 | ----- | ---------- | -------------- |
 | **Vector library** | Chunk text + numeric vectors per course material | **Our PostgreSQL** (`material_chunks`, `material_embeddings`, pgvector) |
-| **Embedding API** | Converts text → vector (list of numbers) | **Google or OpenAI cloud** today (`apps/core/.env`) — not a database login |
+| **Embedding API** | Converts text → vector (list of numbers) | **OpenRouter, Google, or OpenAI cloud** (`apps/core/.env`) — not a database login |
 
 There is no department-wide “embeddings API” that hosts our vectors. The API key pays for **conversion** only; **we** store the results in Postgres.
 
@@ -110,8 +110,12 @@ Single reference for keys and `.env` entries (avoids duplicating the same three 
 
 | Name | Location | Role | Powers RAG embeddings? |
 | ---- | -------- | ---- | ---------------------- |
-| `GOOGLE_GENERATIVE_AI_API_KEY` | `apps/core/.env` | Preferred embed provider (Gemini `gemini-embedding-001`) | **Yes** |
-| `OPENAI_API_KEY` | `apps/core/.env` | Fallback embed (`text-embedding-3-small`) | **Yes** (if Google key unset) |
+| `OPENROUTER_API_KEY` | `apps/core/.env` | Preferred embed provider (Gemini `gemini-embedding-001` via OpenRouter) | **Yes** (first match) |
+| `GOOGLE_GENERATIVE_AI_API_KEY` | `apps/core/.env` | Direct Gemini embed (`gemini-embedding-001`) | **Yes** (if OpenRouter unset) |
+| `OPENAI_API_KEY` | `apps/core/.env` | Fallback embed (`text-embedding-3-small`, 1536-dim) | **Yes** (if neither above set) |
+| `OPENROUTER_EMBEDDING_MODEL` | `apps/core/.env` | Override OpenRouter model id (default `google/gemini-embedding-001`) | Optional |
+| `OPENROUTER_HTTP_REFERER` | `apps/core/.env` | OpenRouter ranking header; defaults to `BETTER_AUTH_URL` | Optional |
+| `OPENROUTER_APP_TITLE` | `apps/core/.env` | OpenRouter `X-Title` header (default `EduAI`) | Optional |
 | `DATABASE_URL` | `apps/core/.env` | Postgres connection; vectors live here | **No** — not an embed API; app DB access |
 | User **chat** `apiKeys` in request body | Client / chat UI | Ollama, Gemini, etc. for **conversation** | **No** |
 | Admin `x-api-key` / Better Auth API keys | Settings / API auth | Sister apps, admin | **No** |
@@ -122,17 +126,22 @@ Template: [`apps/core/.env.example`](../../apps/core/.env.example).
 
 > “We need the department’s embedding API key to access our vector database.”
 
-**Correction:** The database is **ours** (`eduai-db` in local Docker; dev/prod per `DATABASE_URL`). Any valid **server** Google or OpenAI key can **generate** vectors for dev, as long as indexing and search use the **same model family**. The key does not “unlock” stored vectors — Postgres does.
+**Correction:** The database is **ours** (`eduai-db` in local Docker; dev/prod per `DATABASE_URL`). Any valid **server** OpenRouter, Google, or OpenAI key can **generate** vectors for dev, as long as indexing and search use the **same model family**. The key does not “unlock” stored vectors — Postgres does.
 
 ### Provider selection (current code)
 
 `getEmbeddingModel()` in [`embedding.ts`](../../apps/core/app/lib/ai/embedding.ts):
 
-1. `GOOGLE_GENERATIVE_AI_API_KEY` set → **Gemini** `gemini-embedding-001`
-2. Else `OPENAI_API_KEY` set → **OpenAI** `text-embedding-3-small`
-3. Else → throws *No embedding provider configured*
+1. `OPENROUTER_API_KEY` set → **OpenRouter** `google/gemini-embedding-001` (or `OPENROUTER_EMBEDDING_MODEL`)
+2. Else `GOOGLE_GENERATIVE_AI_API_KEY` set → **Gemini** `gemini-embedding-001` (direct)
+3. Else `OPENAI_API_KEY` set → **OpenAI** `text-embedding-3-small`
+4. Else → throws *No embedding provider configured*
 
-**Do not mix providers** on existing data without re-indexing. OpenAI fallback uses **1536** dims; Gemini path uses **3072** — schema is `vector(3072)` today.
+**Recommended for devs:** use **OpenRouter** when you already have one key for chat and embeddings — same 3072-dim Gemini model as direct Google, without a separate Google AI project key.
+
+**Do not mix providers** on existing data without re-indexing. OpenAI fallback uses **1536** dims; Gemini/OpenRouter path uses **3072** — schema is `vector(3072)` today.
+
+**Smoke test:** from `apps/core`, run `npm run test:embedding` (loads `.env`, prints active provider and vector length).
 
 ---
 
@@ -166,7 +175,7 @@ pgvector enabled via migration (`CREATE EXTENSION IF NOT EXISTS vector`). Prisma
 
 | Symptom | Likely cause |
 | ------- | ------------ |
-| `No embedding provider configured` | Missing both embed keys in `apps/core/.env` on that host |
+| `No embedding provider configured` | Missing all embed keys (`OPENROUTER_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, `OPENAI_API_KEY`) in `apps/core/.env` |
 | Generic “check the university website” answers (Ollama + course) | Hybrid RAG failed embed step; fallback prompt without excerpts |
 | `getInformation` → `Failed to search course materials` | Same missing embed key on tool path |
 | RAG runs, empty results | No indexed materials, similarity below 0.5, or wrong course |
@@ -186,7 +195,7 @@ pgvector enabled via migration (`CREATE EXTENSION IF NOT EXISTS vector`). Prisma
 | `generateEmbeddings` / `generateEmbedding` | `embedding.ts` | Cloud embed API |
 | `processMaterialEmbeddings` | `embedding.ts` | Index one material |
 | `findRelevantContent` | `embedding.ts` | Similarity search |
-| `getEmbeddingModel` | `embedding.ts` | Gemini vs OpenAI |
+| `getEmbeddingModel` | `embedding.ts` | OpenRouter vs Gemini vs OpenAI |
 | Upload handler | `courses.materials.$.ts` | Triggers indexing |
 | Hybrid / tool RAG | `chat.ts` | Calls `findRelevantContent` |
 

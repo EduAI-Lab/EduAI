@@ -2,7 +2,7 @@
 
 **Last updated:** 2026-05-20
 
-This document explains **what runs inside this repo (Core)** versus **what lives outside it (hosted services & integrations)**, how **AI providers and keys** work (including `GOOGLE_GENERATIVE_AI_API_KEY` for embeddings), and how the **codebase fits together**. Use it as the single place to orient yourself; export to PDF when you want a printable copy (see [Saving as PDF](#8-saving-as-pdf)).
+This document explains **what runs inside this repo (Core)** versus **what lives outside it (hosted services & integrations)**, how **AI providers and keys** work (including `OPENROUTER_API_KEY` / `GOOGLE_GENERATIVE_AI_API_KEY` for embeddings), and how the **codebase fits together**. Use it as the single place to orient yourself; export to PDF when you want a printable copy (see [Saving as PDF](#8-saving-as-pdf)).
 
 ---
 
@@ -106,11 +106,12 @@ Model IDs look like `google:gemini-2.5-flash` or `ollama:gpt-oss:120b` — provi
 
 **Where configured:** `app/lib/ai/embedding.ts` — `getEmbeddingModel()`.
 
-- If `GOOGLE_GENERATIVE_AI_API_KEY` is set in the **server environment**, embeddings use **Google** with model `gemini-embedding-001`.
-- Else if `OPENAI_API_KEY` is set, embeddings use `text-embedding-3-small`.
-- If neither is set, ingestion/search that needs embeddings **throws an error**.
+- If `OPENROUTER_API_KEY` is set, embeddings use **OpenRouter** with model `google/gemini-embedding-001` (3072-dim, matches pgvector).
+- Else if `GOOGLE_GENERATIVE_AI_API_KEY` is set, embeddings use **Google** direct with `gemini-embedding-001`.
+- Else if `OPENAI_API_KEY` is set, embeddings use `text-embedding-3-small` (1536-dim; requires migration if used with existing 3072-dim data).
+- If none are set, ingestion/search that needs embeddings **throws an error**.
 
-**Important:** Embedding calls **do not** use the `apiKeys` object from the chat request. They **only** read `process.env`. So `.env.example` labels Google as "For Embeddings" because **that env var is what backs RAG vector generation** when Google is chosen.
+**Important:** Embedding calls **do not** use the `apiKeys` object from the chat request. They **only** read `process.env`. OpenRouter is the recommended dev path when you already use one key for multiple models.
 
 **Team guide (indexing, hosting, failures):** [docs/rag-ai/EMBEDDINGS.md](rag-ai/EMBEDDINGS.md).
 
@@ -118,15 +119,19 @@ Model IDs look like `google:gemini-2.5-flash` or `ollama:gpt-oss:120b` — provi
 flowchart TD
   Upload[Upload course file]
   Chunk[generateChunks text]
-  Env{GOOGLE_GENERATIVE_AI_API_KEY set?}
+  Env{OPENROUTER_API_KEY set?}
+  Google{Else GOOGLE_GENERATIVE_AI_API_KEY?}
   OpenAI{Else OPENAI_API_KEY?}
+  OR[OpenRouter gemini-embedding-001]
   Gem[Google gemini-embedding-001]
   Te3[OpenAI text-embedding-3-small]
   Many[embedMany from ai SDK]
   PG[(material_embeddings pgvector)]
   Upload --> Chunk --> Env
-  Env -->|yes| Gem --> Many
-  Env -->|no| OpenAI
+  Env -->|yes| OR --> Many
+  Env -->|no| Google
+  Google -->|yes| Gem --> Many
+  Google -->|no| OpenAI
   OpenAI -->|yes| Te3 --> Many
   OpenAI -->|no| Err[Error: no embedding provider]
   Many --> PG
@@ -141,8 +146,9 @@ flowchart TD
 
 | Key / variable                                            | Used for                                                       | Comes from                                                                          |
 | --------------------------------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `GOOGLE_GENERATIVE_AI_API_KEY`                            | **Embeddings** (RAG ingest + query vectors) when set on server | Server `.env` only (`embedding.ts`)                                                 |
-| `OPENAI_API_KEY`                                          | Embeddings fallback if Google env not set                      | Server `.env` only                                                                  |
+| `OPENROUTER_API_KEY`                                      | **Embeddings** via OpenRouter (preferred when set)             | Server `.env` only (`embedding.ts`)                                                 |
+| `GOOGLE_GENERATIVE_AI_API_KEY`                            | **Embeddings** direct Gemini when OpenRouter unset             | Server `.env` only (`embedding.ts`)                                                 |
+| `OPENAI_API_KEY`                                          | Embeddings fallback if neither above set                       | Server `.env` only                                                                  |
 | `apiKeys.google.apiKey` (and similar) in `/api/chat` body | **Chat** completions for that request                          | Client/request (often admin/API); merged with UI session settings in app code paths |
 | `OLLAMA_BASE_URL`                                         | Local Ollama base URL for **chat** registry                    | Env + optional override in user settings                                            |
 | `BETTER_AUTH_`*                                           | Sessions and API keys for EduAI accounts                       | Env                                                                                 |
@@ -315,4 +321,4 @@ Mermaid diagrams render in GitHub and many Markdown previews; some PDF tools nee
 
 ## 9. One-page mental model
 
-**Core** is one app + one DB. **Hosted APIs** supply brains (chat + embeddings). **Embeddings for RAG** always use **server env** (`GOOGLE_GENERATIVE_AI_API_KEY` preferred). **Chat** uses the **AI SDK + provider registry** with keys from **request/UI settings**. **Extensions** call your APIs; they are not inside this repo.
+**Core** is one app + one DB. **Hosted APIs** supply brains (chat + embeddings). **Embeddings for RAG** always use **server env** (`OPENROUTER_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` preferred). **Chat** uses the **AI SDK + provider registry** with keys from **request/UI settings**. **Extensions** call your APIs; they are not inside this repo.
