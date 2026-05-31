@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   ADHD_ASSIST_POLICY_BLOCK,
   composeSystemPrompt,
+  resolveEffectiveAdhdAssist,
 } from "~/lib/ai/adhd-assist";
 
 describe("composeSystemPrompt", () => {
@@ -35,6 +36,32 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
   it("returns the policy block when base is whitespace-only and adhdAssist is true", () => {
     const result = composeSystemPrompt("   \n  ", { adhdAssist: true });
     expect(result).toBe(ADHD_ASSIST_POLICY_BLOCK);
+  });
+});
+
+describe("resolveEffectiveAdhdAssist", () => {
+  it("uses the body value when the field is present and true", () => {
+    expect(
+      resolveEffectiveAdhdAssist({ hasField: true, bodyValue: true, chatValue: false }),
+    ).toBe(true);
+  });
+
+  it("uses the body value when the field is present and false, even if chat is true", () => {
+    expect(
+      resolveEffectiveAdhdAssist({ hasField: true, bodyValue: false, chatValue: true }),
+    ).toBe(false);
+  });
+
+  it("falls back to the persisted chat value when the field is absent and chat is true", () => {
+    expect(
+      resolveEffectiveAdhdAssist({ hasField: false, bodyValue: false, chatValue: true }),
+    ).toBe(true);
+  });
+
+  it("falls back to the persisted chat value when the field is absent and chat is false", () => {
+    expect(
+      resolveEffectiveAdhdAssist({ hasField: false, bodyValue: true, chatValue: false }),
+    ).toBe(false);
   });
 });
 
