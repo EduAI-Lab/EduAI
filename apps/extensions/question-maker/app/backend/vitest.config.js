@@ -5,7 +5,10 @@ export default defineConfig({
     environment: 'node',
     globals: true,
     include: ['tests/**/*.test.js'],
-    exclude: ['tests/**/*.integration.test.js'],
     setupFiles: ['tests/setup.js'],
+    pool: 'forks',
+    poolOptions: {
+      forks: { singleFork: true },
+    },
   },
 });
