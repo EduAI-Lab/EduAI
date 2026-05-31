@@ -84,7 +84,7 @@ flowchart TB
 
 - **Hybrid RAG** runs **`findRelevantContent` once** before `streamText` when a **course** is selected and **`isRAGQuery`** is true (keyword heuristics, or always-on when `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE=1`). Hits are formatted with **`buildCappedRagContextText`** (chunk cap **4**, total char cap **14_000**) and injected into **`system`**.
 - **Tool RAG** runs **`findRelevantContent`** only when the model invokes **`getInformation`**. Results pass through **`capRagHitsForTool`** (same chunk cap **4**, **6000** chars per chunk) before returning as tool output.
-- **Query embeddings** use an in-memory cache (`QUERY_EMBED_CACHE_TTL_MS`, `QUERY_EMBED_CACHE_MAX`). **Server** `GOOGLE_GENERATIVE_AI_API_KEY` or `OPENAI_API_KEY` — independent of the user's chat provider (e.g. Ollama).
+- **Query embeddings** use an in-memory cache (`QUERY_EMBED_CACHE_TTL_MS`, `QUERY_EMBED_CACHE_MAX`). **Server** `OPENROUTER_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, or `OPENAI_API_KEY` (first match wins) — independent of the user's chat provider (e.g. Ollama).
 - **Similarity threshold** defaults from **`RAG_SIMILARITY_THRESHOLD`** (default **0.5**) when the caller omits `similarityThreshold`.
 - **Ingestion** (`processMaterialEmbeddings`) fills the vector tables; it does not run on each chat request.
 
@@ -175,7 +175,7 @@ RAG is **not** one pipeline. It branches on `modelSupportsTools(model)` (from th
 
 Defined in [`embedding.ts`](../../apps/core/app/lib/ai/embedding.ts):
 
-1. **`generateEmbedding(userQuery)`** — `embed()` via Gemini `gemini-embedding-001` (if `GOOGLE_GENERATIVE_AI_API_KEY`) or OpenAI `text-embedding-3-small` (if `OPENAI_API_KEY`). Normalized query text is cached in-memory (`QUERY_EMBED_CACHE_TTL_MS` default 90s, `QUERY_EMBED_CACHE_MAX` default 300 entries).
+1. **`generateEmbedding(userQuery)`** — `embed()` via OpenRouter `google/gemini-embedding-001` (if `OPENROUTER_API_KEY`), else direct Gemini `gemini-embedding-001`, else OpenAI `text-embedding-3-small`. Normalized query text is cached in-memory (`QUERY_EMBED_CACHE_TTL_MS` default 90s, `QUERY_EMBED_CACHE_MAX` default 300 entries).
 2. **Pgvector SQL** — `material_embeddings` → `material_chunks` → `course_materials`, filtered by `courseId`, similarity `1 - (embedding <=> query)`, threshold from **`RAG_SIMILARITY_THRESHOLD`** when `similarityThreshold` is omitted (default **0.5**), `ORDER BY similarity DESC`, `LIMIT` from caller.
 3. **Returns** `{ content, similarity, materialTitle }[]`.
 
@@ -202,7 +202,7 @@ Resolved system prompt order: request `systemPrompt` → stored `chat.systemProm
 | `QUERY_EMBED_CACHE_TTL_MS` | 90000 | Query embedding cache TTL |
 | `QUERY_EMBED_CACHE_MAX` | 300 | Max cached query embeddings |
 | `EMBED_MANY_BATCH_SIZE` | 64 | Ingestion batch size for `embedMany` |
-| `GOOGLE_GENERATIVE_AI_API_KEY` / `OPENAI_API_KEY` | — | Embedding provider (Gemini preferred if both set) |
+| `OPENROUTER_API_KEY` / `GOOGLE_GENERATIVE_AI_API_KEY` / `OPENAI_API_KEY` | — | Embedding provider (OpenRouter → Google → OpenAI) |
 
 ## 7. Practical implications
 
