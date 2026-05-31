@@ -15,6 +15,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Changed
 - [core] docs: Update `apps/core/README.md` `POST /api/chat` body table — `adhdAssist` now describes the active Phase 2 behavior (policy-block prepend) instead of the Phase 1 "no behavioural effect" placeholder. (@Ayyhab, 2026-05-29)
+- [core] fix: `POST /api/chat` now honours the persisted `Chat.adhdAssist` when an API client omits the `adhdAssist` field, instead of silently treating the omission as `false`. New `resolveEffectiveAdhdAssist({ hasField, bodyValue, chatValue })` helper in `apps/core/app/lib/ai/adhd-assist.ts` is the single source of truth for the body-vs-persisted resolution; the same precedence already governs `resolvedSystemPrompt` at `chat.ts:603`. UI and `eval:adhd` always send the field, so no observable behavior change for those callers. (#377 review feedback from @Whiteknight07, @Ayyhab, 2026-05-31)
+- [core] tests: Add 4 unit tests for `resolveEffectiveAdhdAssist` at `apps/core/app/tests/unit/adhd-assist.test.ts` covering body-overrides-persisted (both directions) and field-absent fallback (both persisted values). (#377, @Ayyhab, 2026-05-31)
 
 ---
 
