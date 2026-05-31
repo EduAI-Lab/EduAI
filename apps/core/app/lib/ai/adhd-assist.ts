@@ -61,3 +61,11 @@ export function composeSystemPrompt(
   }
   return `${ADHD_ASSIST_POLICY_BLOCK}\n\n${base}`;
 }
+
+export function resolveEffectiveAdhdAssist(opts: {
+  hasField: boolean;
+  bodyValue: boolean;
+  chatValue: boolean;
+}): boolean {
+  return opts.hasField ? opts.bodyValue : opts.chatValue;
+}
