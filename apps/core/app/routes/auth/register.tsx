@@ -5,6 +5,8 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router"
 
 import { RegisterForm } from "~/components/register-form"
 import { signUpSchema, type SignUpInput } from "~/lib/auth"
+import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request"
+import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies"
 import { auth } from "~/lib/auth/server"
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -38,35 +40,34 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   try {
-    // Create a new request to the better-auth sign-up endpoint
-    const url = new URL("/api/auth/sign-up/email", request.url);
-    const authRequest = new Request(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
+    const authRequest = buildAuthSubRequest(
+      "/api/auth/sign-up/email",
+      request,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: input.name,
+          email: input.email,
+          password: input.password,
+        }),
       },
-      body: JSON.stringify({
-        name: input.name,
-        email: input.email,
-        password: input.password,
-      }),
-    });
+    );
 
     const response = await auth.handler(authRequest);
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       return {
-        formError: errorData.message || "Sign up failed"
+        formError:
+          (errorData as { message?: string }).message ||
+          (errorData as { error?: string }).error ||
+          `Sign up failed (${response.status})`,
       };
     }
 
-    // Get the session cookie from the response
-    const setCookie = response.headers.get("Set-Cookie");
     const headers = new Headers();
-    if (setCookie) {
-      headers.set("Set-Cookie", setCookie);
-    }
+    appendAuthSetCookies(response, headers);
 
     return redirect("/dashboard", { headers });
   } catch (err: unknown) {
