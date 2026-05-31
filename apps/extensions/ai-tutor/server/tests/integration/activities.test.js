@@ -39,14 +39,6 @@ describe('Activities routes', () => {
 
   async function enrollStudent() {
     const student = makeStudent();
-    await prisma.user.create({
-      data: {
-        id: student.id,
-        name: student.name,
-        email: student.email,
-        role: 'STUDENT',
-      },
-    });
     await prisma.courseEnrollment.create({
       data: {
         courseOfferingId: seed.course.id,

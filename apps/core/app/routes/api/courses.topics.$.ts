@@ -6,7 +6,31 @@ import {
   createCourseTopic,
   deleteCourseTopic,
   getCourseTopics,
+  getCourseTopic,
 } from "~/lib/courses/server";
+
+async function topicsGetResponse(courseId: string, topicId?: string) {
+  if (topicId) {
+    const topic = await getCourseTopic(courseId, topicId);
+    if (!topic) {
+      return new Response(JSON.stringify({ error: "TOPIC_NOT_FOUND" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return new Response(JSON.stringify(topic),  {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const topics = await getCourseTopics(courseId);
+  return new Response(JSON.stringify({ topics }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const courseId = params.courseId;
@@ -18,20 +42,18 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
   }
 
+  const topicId = params.topicId;
+
   if (request.headers.get("Authorization")?.startsWith("Bearer ")) {
     const serviceKeyGuard = await requireServiceKey(request);
     if (serviceKeyGuard) return serviceKeyGuard;
-    const topics = await getCourseTopics(courseId);
-    return new Response(JSON.stringify({ topics }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+    return topicsGetResponse(courseId, topicId);
   }
 
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
   if (apiKeyGuard) return apiKeyGuard;
 
-  const session = apiKeySession ?? await auth.api.getSession(request);
+  const session = apiKeySession ?? (await auth.api.getSession(request));
 
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -40,12 +62,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
   }
 
-  const topics = await getCourseTopics(courseId);
-
-  return new Response(JSON.stringify({ topics }), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-  });
+  return topicsGetResponse(courseId, topicId);
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
@@ -58,21 +75,32 @@ export async function action({ request, params }: ActionFunctionArgs) {
     });
   }
 
-  const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
-  if (apiKeyGuard) return apiKeyGuard;
+  
+  let serviceAuth = false;
+  if (request.headers.get("Authorization")?.startsWith("Bearer ")) {
+    const serviceKeyGuard = await requireServiceKey(request);
+    if (serviceKeyGuard) return serviceKeyGuard;
+    serviceAuth = true;
+  }
 
-  const session = apiKeySession ?? await auth.api.getSession(request);
+  let session = null;
+  if (!serviceAuth) {
+    const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
+    if (apiKeyGuard) return apiKeyGuard;
 
-  if (!session?.user) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
+    session = apiKeySession ?? await auth.api.getSession(request);
+
+    if (!session?.user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
   }
 
   switch (request.method) {
     case "POST": {
-      if (session.user.role !== "ADMIN") {
+      if (!serviceAuth && session?.user.role !== "ADMIN") {
         return new Response(JSON.stringify({ error: "Forbidden" }), {
           status: 403,
           headers: { "Content-Type": "application/json" },
@@ -82,12 +110,29 @@ export async function action({ request, params }: ActionFunctionArgs) {
       const body = await request.json();
       const result = await createCourseTopic(courseId, body);
 
-      if ("error" in result) {
-        const status = result.error === "Topic already exists for this course" ? 409 : 400;
-        return new Response(JSON.stringify(result), {
-          status,
-          headers: { "Content-Type": "application/json" },
-        });
+      if (result.status !== "201") {
+        if (result.status === "409") {
+          return new Response(
+            JSON.stringify({ error: "TOPIC_ALREADY_EXISTS", existingId: result.existingId }),
+            { status: 409, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        if (result.status === "404") {
+          return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
+            status: 404,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return new Response(
+          JSON.stringify({
+            error: "Invalid input",
+            ...(result.details ? { details: result.details } : {}),
+          }),
+          {
+            status: Number(result.status),
+            headers: { "Content-Type": "application/json" },
+          },
+        );
       }
 
       return new Response(JSON.stringify(result.topic), {
@@ -97,7 +142,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     }
 
     case "DELETE": {
-      if (session.user.role !== "ADMIN") {
+      if (!serviceAuth && (!session?.user || session.user.role !== "ADMIN")) {
         return new Response(JSON.stringify({ error: "Forbidden" }), {
           status: 403,
           headers: { "Content-Type": "application/json" },
@@ -107,10 +152,16 @@ export async function action({ request, params }: ActionFunctionArgs) {
       const body = await request.json();
       const result = await deleteCourseTopic(courseId, body);
 
-      if ("error" in result) {
-        const status = result.error === "Topic not found" ? 404 : 400;
-        return new Response(JSON.stringify(result), {
-          status,
+      if (result.status !== "204") {
+        const responseBody =
+          result.status === "404"
+            ? { error: "Topic not found" }
+            : {
+                error: "Invalid input",
+                ...(result.details ? { details: result.details } : {}),
+              };
+        return new Response(JSON.stringify(responseBody), {
+          status: Number(result.status),
           headers: { "Content-Type": "application/json" },
         });
       }

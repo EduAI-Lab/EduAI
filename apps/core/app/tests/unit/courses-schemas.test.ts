@@ -11,11 +11,17 @@ describe("CreateCourseSchema", () => {
     const r = CreateCourseSchema.safeParse({
       name: "Intro to CS",
       code: "CS101",
+      section: "001",
       term: "Fall",
       year: 2025,
+      startDate: "2025-09-01",
+      instructorUserIds: ["user-1"],
     });
     expect(r.success).toBe(true);
-    if (r.success) expect(r.data.aiInstructions).toBe("");
+    if (r.success) {
+      expect(r.data.aiInstructions).toBe("");
+      expect(r.data.isPublished).toBe(false);
+    }
   });
 
   it("rejects non-integer year", () => {
@@ -23,8 +29,11 @@ describe("CreateCourseSchema", () => {
       CreateCourseSchema.safeParse({
         name: "X",
         code: "X",
+        section: "001",
         term: "Fall",
         year: 2025.5,
+        startDate: "2025-09-01",
+        instructorUserIds: ["user-1"],
       }).success,
     ).toBe(false);
   });
@@ -34,8 +43,25 @@ describe("CreateCourseSchema", () => {
       CreateCourseSchema.safeParse({
         name: "",
         code: "",
+        section: "001",
         term: "Fall",
         year: 2025,
+        startDate: "2025-09-01",
+        instructorUserIds: ["user-1"],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("requires at least one instructorUserId", () => {
+    expect(
+      CreateCourseSchema.safeParse({
+        name: "Intro to CS",
+        code: "CS101",
+        section: "001",
+        term: "Fall",
+        year: 2025,
+        startDate: "2025-09-01",
+        instructorUserIds: [],
       }).success,
     ).toBe(false);
   });

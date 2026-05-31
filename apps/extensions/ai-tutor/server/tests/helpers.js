@@ -68,6 +68,8 @@ export async function truncateAll() {
   await prisma.lesson.deleteMany();
   await prisma.module.deleteMany();
   await prisma.topic.deleteMany();
+  await prisma.courseInstructor.deleteMany();
+  await prisma.courseEnrollment.deleteMany();
   await prisma.courseOffering.deleteMany();
   await prisma.suggestedPrompt.deleteMany();
   await prisma.systemPrompt.deleteMany();
@@ -77,8 +79,9 @@ export async function truncateAll() {
 
 /**
  * Seed a minimal course structure: course -> module -> lesson -> topic.
+ * If professorId is provided, a CourseInstructor record is created for them.
  */
-export async function seedMinimalCourse(_professorId) {
+export async function seedMinimalCourse(professorId) {
   const course = await prisma.courseOffering.create({
     data: {
       title: 'Test Course',
@@ -86,6 +89,12 @@ export async function seedMinimalCourse(_professorId) {
       isPublished: true,
     },
   });
+
+  if (professorId) {
+    await prisma.courseInstructor.create({
+      data: { courseOfferingId: course.id, userId: professorId, role: 'LEAD' },
+    });
+  }
 
   const module = await prisma.module.create({
     data: {

@@ -133,19 +133,33 @@ model Enrollment {
 }
 
 model AIInteraction {
-  id        String   @id @default(cuid())
-  userId    String
-  courseId  String?
-  query     String
-  response  String
-  context   Json?
-  modelUsed String
-  tokenUsed Int?
-  createdAt DateTime @default(now())
-  modelId   String?
-  course    Course?  @relation(fields: [courseId], references: [id])
-  model     AIModel? @relation(fields: [modelId], references: [id])
-  user      User     @relation(fields: [userId], references: [id])
+  id               String                   @id @default(cuid())
+  userId           String
+  courseId         String?
+  query            String
+  response         String
+  context          Json?
+  modelUsed        String
+  createdAt        DateTime                 @default(now())
+  modelId          String?
+  routedByAuto     Boolean                  @default(false)
+  routerVersion    String?
+  routerFeatures   Json?
+  routerConfidence Float?
+  routerChosenTier RouterTier?
+  ttftMs           Int?
+  durationMs       Int?
+  promptTokens     Int?
+  completionTokens Int?
+  estInputCostUsd  Float?
+  estOutputCostUsd Float?
+  energyJoules     Float?
+  energySource     EnergyMeasurementSource?
+  carbonGramsCO2   Float?
+  finishReason     String?
+  course           Course?                  @relation(fields: [courseId], references: [id])
+  model            AIModel?                 @relation(fields: [modelId], references: [id])
+  user             User                     @relation(fields: [userId], references: [id])
 
   @@map("ai_interactions")
 }
@@ -179,23 +193,26 @@ model AIProvider {
 }
 
 model AIModel {
-  id                String          @id @default(cuid())
-  modelId           String
-  name              String
-  description       String
-  type              AIModelType
-  maxTokens         Int?
-  supportsImages    Boolean         @default(false)
-  supportsTools     Boolean         @default(false)
-  supportsStreaming  Boolean         @default(true)
-  inputPricing      Float?
-  outputPricing     Float?
-  isActive          Boolean         @default(true)
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
-  providerId        String
-  interactions      AIInteraction[]
-  provider          AIProvider      @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  id                         String          @id @default(cuid())
+  modelId                    String
+  name                       String
+  description                String
+  type                       AIModelType
+  maxTokens                  Int?
+  supportsImages             Boolean         @default(false)
+  supportsTools              Boolean         @default(false)
+  supportsStreaming          Boolean         @default(true)
+  inputPricing               Float?
+  outputPricing              Float?
+  routerTier                 RouterTier?
+  estEnergyJoulesPerToken    Float?
+  averageCarbonGramsPerToken Float?
+  isActive                   Boolean         @default(true)
+  createdAt                  DateTime        @default(now())
+  updatedAt                  DateTime        @updatedAt
+  providerId                 String
+  interactions               AIInteraction[]
+  provider                   AIProvider      @relation(fields: [providerId], references: [id], onDelete: Cascade)
 
   @@unique([providerId, modelId])
   @@map("ai_models")
@@ -370,7 +387,7 @@ model Chat {
   userId       String
   systemPrompt String?
   title        String?
-  adhdAssist   Boolean  @default(false)
+  adhdAssist   Boolean       @default(false)
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -463,6 +480,20 @@ enum AIModelType {
   IMAGE
   AUDIO
   VIDEO
+}
+
+enum RouterTier {
+  TIER_1
+  TIER_2
+  TIER_3
+}
+
+enum EnergyMeasurementSource {
+  RAPL_CPU
+  NVML_GPU
+  OLLAMA_METRICS
+  ESTIMATED_FROM_TOKENS
+  ESTIMATED_FROM_DURATION
 }
 
 enum MaterialStatus {

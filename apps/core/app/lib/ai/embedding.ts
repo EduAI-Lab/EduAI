@@ -4,7 +4,6 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import prisma from "../prisma.server";
 import { randomUUID } from "crypto";
 
-// Default embedding model - using OpenAI's text-embedding-3-small for cost efficiency
 const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small";
 
 /** Max inputs per `embedMany` batch (provider limits vary; stay conservative). */
@@ -83,8 +82,7 @@ export function generateChunks(input: string, maxChunkSize: number = 800, overla
 }
 
 /**
- * Get embedding model - default to Gemini, then OpenAI.
- * RAG requires at least one of these unless you add a local embed path later.
+ * Get embedding model — Google Gemini first, then OpenAI direct.
  */
 function getEmbeddingModel() {
   const googleApiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
