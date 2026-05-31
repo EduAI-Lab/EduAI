@@ -5,7 +5,7 @@
  * `POST /api/sessions/validate` endpoint and populates `req.user`.
  */
 
-const VALID_ROLES = new Set(['STUDENT', 'PROFESSOR', 'TA', 'ADMIN', 'UNIT_ADMIN']);
+const VALID_ROLES = new Set(['STUDENT', 'INSTRUCTOR', 'TA', 'ADMIN', 'UNIT_ADMIN']);
 
 function normalizeRole(role) {
   return VALID_ROLES.has(role) ? role : 'STUDENT';
