@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router"
+import { Form } from "react-router"
 import {
   IconCreditCard,
   IconDotsVertical,
@@ -32,21 +32,10 @@ import {
   useSidebar,
 } from "~/components/ui/sidebar"
 import { Badge } from "~/components/ui/badge"
-import { signOut } from "~/lib/auth"
 import type { User } from "~/lib/auth/types"
 
 export function NavUser({ user }: { user: User }) {
   const { isMobile } = useSidebar()
-  const navigate = useNavigate()
-
-  const handleSignOut = async () => {
-    try {
-      await signOut()
-      navigate("/auth/login")
-    } catch (error) {
-      console.error("Sign out failed:", error)
-    }
-  }
 
   const getUserInitials = (name: string) => {
     return name
@@ -165,9 +154,13 @@ export function NavUser({ user }: { user: User }) {
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleSignOut}>
-              <IconLogout />
-              Log out
+            <DropdownMenuItem asChild>
+              <Form method="post" action="/auth/logout" replace>
+                <button type="submit" className="flex w-full cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none hover:bg-accent hover:text-accent-foreground">
+                  <IconLogout />
+                  Log out
+                </button>
+              </Form>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
