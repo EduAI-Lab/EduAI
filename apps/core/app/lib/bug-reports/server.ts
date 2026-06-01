@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 
 const VALID_SOURCES = ["AI_TUTOR", "QUESTION_MAKER"] as const;
@@ -55,8 +56,8 @@ export async function createBugReport(raw: unknown): Promise<CreateBugReportResu
       userAgent: typeof p.userAgent === "string" ? p.userAgent : null,
       context:
         p.context && typeof p.context === "object" && !Array.isArray(p.context)
-          ? (p.context as Record<string, unknown>)
-          : null,
+          ? (p.context as Prisma.InputJsonValue)
+          : Prisma.DbNull,
     },
   });
 

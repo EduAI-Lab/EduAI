@@ -15,8 +15,23 @@ import {
  * GET /api/courses — list active courses.
  */
 export async function getCourses(request: Request) {
-  const { response: apiKeyGuard } = await enforceAdminIfApiKey(request);
+  const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
   if (apiKeyGuard) return apiKeyGuard;
+
+  // TODO(RBAC #292): replace with resolveCourseAccess
+  const session = apiKeySession ?? (await auth.api.getSession(request));
+  if (!session?.user) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" } as const,
+    });
+  }
+  if (session.user.role !== "ADMIN") {
+    return new Response(JSON.stringify({ error: "Forbidden" }), {
+      status: 403,
+      headers: { "Content-Type": "application/json" } as const,
+    });
+  }
 
   const courses = await prisma.course.findMany({
     where: { deletedAt: null },
