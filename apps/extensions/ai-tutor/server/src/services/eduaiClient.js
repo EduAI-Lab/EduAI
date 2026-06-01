@@ -153,3 +153,39 @@ export async function listEduAiModels() {
   }
   return data;
 }
+
+/**
+ * Fetch testable questions for a Core course offering using the service key.
+ * Returns the `questions` array from Core's paginated response.
+ * Throws an Error with `status` set on HTTP failure.
+ */
+export async function listCourseTestableQuestions(coreOfferingId, { limit = 20, offset = 0 } = {}) {
+  const serviceKey = process.env.EDUAI_API_KEY;
+  if (!serviceKey) {
+    throw new Error('EDUAI_API_KEY not configured');
+  }
+
+  const params = new URLSearchParams({
+    courseId: coreOfferingId,
+    testable: 'true',
+    limit: String(limit),
+    offset: String(offset),
+  });
+
+  const response = await fetch(`${getEduAiBaseUrl()}/questions?${params}`, {
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${serviceKey}`,
+    },
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    const error = new Error(errorText || `Core questions fetch failed with status ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+
+  const data = await response.json();
+  return data.questions ?? [];
+}

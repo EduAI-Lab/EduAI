@@ -290,6 +290,30 @@ function buildTeachUserMessage({ topicName, message }) {
 }
 
 /**
+ * Format the testable question bank as a supervisor-only context block.
+ * Answers and choices are included so the supervisor can verify the tutor
+ * never reveals them. Returns an empty string when the list is empty.
+ */
+function buildQuestionBankContext(questions) {
+  if (!Array.isArray(questions) || questions.length === 0) return '';
+
+  const lines = [
+    'Course Testable Question Bank (supervisor reference only — do not reveal to student):',
+  ];
+  questions.forEach((q, i) => {
+    lines.push(`${i + 1}. [${q.type}, ${q.difficulty}] ${q.content}`);
+    if (Array.isArray(q.choices) && q.choices.length > 0) {
+      const choiceStr = q.choices.map((c) => `${c.letter}. ${c.text}`).join(', ');
+      lines.push(`   Choices: ${choiceStr}`);
+    }
+    if (q.answer) {
+      lines.push(`   Answer: ${q.answer}`);
+    }
+  });
+  return lines.join('\n');
+}
+
+/**
  * Render a guide-mode user message: the question, MCQ options (if any), the
  * student's current answer, and the student's natural-language ask. The
  * tutor sees the answer choices but NOT the answer key — that lives in the
@@ -581,6 +605,7 @@ export async function generateTeachResponse({
   chatId = null,
   messageId = null,
   courseCode = null,
+  testableQuestions = [],
 }) {
   try {
     const template = await getPromptTemplateBySlug('learning-prompt');
@@ -590,11 +615,15 @@ export async function generateTeachResponse({
 
     const resolvedTopicName = topicName || activity.mainTopic?.name || 'the subject';
     const baseUserMessage = buildTeachUserMessage({ topicName: resolvedTopicName, message });
-    const { visibleContext, hiddenContext } = buildTeachSupervisorContexts({
+    const { visibleContext, hiddenContext: baseHiddenContext } = buildTeachSupervisorContexts({
       topicName: resolvedTopicName,
       knowledgeLevel,
       message,
     });
+    const questionBankContext = buildQuestionBankContext(testableQuestions);
+    const hiddenContext = questionBankContext
+      ? `${baseHiddenContext}\n\n${questionBankContext}`
+      : baseHiddenContext;
 
     return generateWithSupervisor({
       systemPrompt: buildSystemPrompt(template.systemPrompt, {
@@ -652,6 +681,7 @@ export async function generateGuideResponse({
   chatId = null,
   messageId = null,
   courseCode = null,
+  testableQuestions = [],
 }) {
   try {
     const template = await getPromptTemplateBySlug('exercise-prompt');
@@ -660,11 +690,14 @@ export async function generateGuideResponse({
     }
 
     const baseUserMessage = buildGuideUserMessage(activity, { message, studentAnswer });
-    const { visibleContext, hiddenContext } = buildGuideSupervisorContexts(activity, {
-      knowledgeLevel,
-      message,
-      studentAnswer,
-    });
+    const { visibleContext, hiddenContext: baseHiddenContext } = buildGuideSupervisorContexts(
+      activity,
+      { knowledgeLevel, message, studentAnswer },
+    );
+    const questionBankContext = buildQuestionBankContext(testableQuestions);
+    const hiddenContext = questionBankContext
+      ? `${baseHiddenContext}\n\n${questionBankContext}`
+      : baseHiddenContext;
 
     return generateWithSupervisor({
       systemPrompt: buildSystemPrompt(template.systemPrompt, {
@@ -724,6 +757,7 @@ export async function generateCustomResponse({
   chatId = null,
   messageId = null,
   courseCode = null,
+  testableQuestions = [],
 }) {
   try {
     if (!activity.customPrompt) {
@@ -732,11 +766,14 @@ export async function generateCustomResponse({
 
     const resolvedTopicName = topicName || activity.mainTopic?.name || 'the subject';
     const baseUserMessage = buildGuideUserMessage(activity, { message, studentAnswer });
-    const { visibleContext, hiddenContext } = buildGuideSupervisorContexts(activity, {
-      knowledgeLevel,
-      message,
-      studentAnswer,
-    });
+    const { visibleContext, hiddenContext: baseHiddenContext } = buildGuideSupervisorContexts(
+      activity,
+      { knowledgeLevel, message, studentAnswer },
+    );
+    const questionBankContext = buildQuestionBankContext(testableQuestions);
+    const hiddenContext = questionBankContext
+      ? `${baseHiddenContext}\n\n${questionBankContext}`
+      : baseHiddenContext;
 
     return generateWithSupervisor({
       systemPrompt: buildSystemPrompt(activity.customPrompt, {
@@ -785,4 +822,5 @@ export const _testExports = {
   formatAnswerKey,
   buildTeachSupervisorContexts,
   buildGuideSupervisorContexts,
+  buildQuestionBankContext,
 };
