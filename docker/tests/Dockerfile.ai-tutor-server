@@ -1,0 +1,66 @@
+# AI Tutor backend (Express + Prisma)
+# Targets:
+#   test  — Vitest runner; entrypoint pre-creates aitutor_test and writes
+#            .env.test because globalSetup.js uses dotenv override:true
+#   serve — live Express backend for ai-tutor-integration-tests and E2E;
+#            runs prisma migrate deploy then node src/index.js
+#
+# Build context: monorepo root
+
+# ── Shared: install workspace dependencies ─────────────────────────────────
+FROM node:20-alpine AS deps
+WORKDIR /app
+
+COPY package.json package-lock.json .npmrc ./
+COPY apps/core/package.json                                   ./apps/core/
+COPY apps/extensions/ai-tutor/package.json                    ./apps/extensions/ai-tutor/
+COPY apps/extensions/ai-tutor/server/package.json             ./apps/extensions/ai-tutor/server/
+COPY apps/extensions/ai-tutor/server/.npmrc                   ./apps/extensions/ai-tutor/server/
+COPY apps/extensions/question-maker/package.json              ./apps/extensions/question-maker/
+COPY apps/extensions/question-maker/app/backend/package.json  ./apps/extensions/question-maker/app/backend/
+COPY apps/extensions/question-maker/app/frontend/package.json ./apps/extensions/question-maker/app/frontend/
+
+RUN npm ci --ignore-scripts
+
+# ── Target: test ───────────────────────────────────────────────────────────
+FROM node:20-alpine AS test
+WORKDIR /app
+
+COPY --from=deps /app/node_modules ./node_modules
+
+COPY apps/extensions/ai-tutor/server/src    ./apps/extensions/ai-tutor/server/src
+COPY apps/extensions/ai-tutor/server/tests  ./apps/extensions/ai-tutor/server/tests
+COPY apps/extensions/ai-tutor/server/prisma ./apps/extensions/ai-tutor/server/prisma
+COPY apps/extensions/ai-tutor/server/vitest.config.js ./apps/extensions/ai-tutor/server/
+COPY apps/extensions/ai-tutor/server/tsconfig.json    ./apps/extensions/ai-tutor/server/
+COPY apps/extensions/ai-tutor/server/package.json     ./apps/extensions/ai-tutor/server/
+COPY apps/extensions/ai-tutor/server/.npmrc           ./apps/extensions/ai-tutor/server/
+COPY apps/extensions/ai-tutor/shared          ./apps/extensions/ai-tutor/shared
+
+ENV PATH="/app/node_modules/.bin:${PATH}"
+
+RUN npx prisma generate --schema=apps/extensions/ai-tutor/server/prisma/schema.prisma
+
+WORKDIR /app/apps/extensions/ai-tutor/server
+
+CMD ["npx", "vitest", "run"]
+
+# ── Target: serve ──────────────────────────────────────────────────────────
+FROM node:20-alpine AS serve
+WORKDIR /app
+
+COPY --from=deps /app/node_modules ./node_modules
+
+COPY apps/extensions/ai-tutor/server/src    ./apps/extensions/ai-tutor/server/src
+COPY apps/extensions/ai-tutor/server/prisma ./apps/extensions/ai-tutor/server/prisma
+COPY apps/extensions/ai-tutor/server/package.json ./apps/extensions/ai-tutor/server/
+COPY apps/extensions/ai-tutor/server/.npmrc        ./apps/extensions/ai-tutor/server/
+COPY apps/extensions/ai-tutor/shared          ./apps/extensions/ai-tutor/shared
+
+ENV PATH="/app/node_modules/.bin:${PATH}"
+
+RUN npx prisma generate --schema=apps/extensions/ai-tutor/server/prisma/schema.prisma
+
+WORKDIR /app/apps/extensions/ai-tutor/server
+# Database is pre-created by the Postgres container via POSTGRES_DB env var
+CMD ["sh", "-c", "npx prisma migrate deploy && node src/index.js"]
