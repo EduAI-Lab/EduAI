@@ -1,0 +1,58 @@
+# Question Maker backend (Express + Sequelize)
+# Targets:
+#   test  — Vitest runner (unit and integration suites);
+#            Sequelize sync({ alter: true }) creates tables on first connect
+#   serve — live Express server for E2E; same auto-sync behaviour
+#
+# Build context: monorepo root
+
+# ── Shared: install workspace dependencies ─────────────────────────────────
+FROM node:20-alpine AS deps
+WORKDIR /app
+
+COPY package.json package-lock.json .npmrc ./
+COPY apps/core/package.json                                   ./apps/core/
+COPY apps/extensions/ai-tutor/package.json                    ./apps/extensions/ai-tutor/
+COPY apps/extensions/ai-tutor/server/package.json             ./apps/extensions/ai-tutor/server/
+COPY apps/extensions/question-maker/package.json              ./apps/extensions/question-maker/
+COPY apps/extensions/question-maker/app/backend/package.json  ./apps/extensions/question-maker/app/backend/
+COPY apps/extensions/question-maker/app/frontend/package.json ./apps/extensions/question-maker/app/frontend/
+
+RUN npm ci --ignore-scripts \
+     && cd apps/extensions/question-maker/app/backend \
+     && npm install --ignore-scripts --no-package-lock --workspaces=false
+
+# ── Target: test ───────────────────────────────────────────────────────────
+FROM node:20-alpine AS test
+WORKDIR /app
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/apps/extensions/question-maker/app/backend/node_modules \
+     ./apps/extensions/question-maker/app/backend/node_modules
+
+COPY apps/extensions/question-maker/app/backend/src   ./apps/extensions/question-maker/app/backend/src
+COPY apps/extensions/question-maker/app/backend/scripts ./apps/extensions/question-maker/app/backend/scripts
+COPY apps/extensions/question-maker/app/backend/tests ./apps/extensions/question-maker/app/backend/tests
+COPY apps/extensions/question-maker/app/backend/vitest.config.js             ./apps/extensions/question-maker/app/backend/
+COPY apps/extensions/question-maker/app/backend/vitest.integration.config.js ./apps/extensions/question-maker/app/backend/
+COPY apps/extensions/question-maker/app/backend/package.json                 ./apps/extensions/question-maker/app/backend/
+
+ENV PATH="/app/apps/extensions/question-maker/app/backend/node_modules/.bin:/app/node_modules/.bin:${PATH}"
+
+WORKDIR /app/apps/extensions/question-maker/app/backend
+CMD ["npm", "test"]
+
+# ── Target: serve ──────────────────────────────────────────────────────────
+FROM node:20-alpine AS serve
+WORKDIR /app
+
+COPY --from=deps /app/node_modules ./node_modules
+
+COPY apps/extensions/question-maker/app/backend/src     ./apps/extensions/question-maker/app/backend/src
+COPY apps/extensions/question-maker/app/backend/scripts ./apps/extensions/question-maker/app/backend/scripts
+COPY apps/extensions/question-maker/app/backend/package.json ./apps/extensions/question-maker/app/backend/
+
+ENV PATH="/app/node_modules/.bin:${PATH}"
+
+WORKDIR /app/apps/extensions/question-maker/app/backend
+CMD ["node", "src/index.js"]

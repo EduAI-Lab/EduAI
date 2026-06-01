@@ -310,7 +310,7 @@ router.post('/extract/save', authenticateToken, async (req, res, next) => {
       });
     }
 
-    const saved = await saveExtractedQuestions(req.user.id, {
+    const result = await saveExtractedQuestions(req.user.id, {
       courseId: Number(courseId),
       primaryTopicId: primaryTopicId !== undefined && primaryTopicId !== null && primaryTopicId !== ''
         ? Number(primaryTopicId)
@@ -319,6 +319,7 @@ router.post('/extract/save', authenticateToken, async (req, res, next) => {
       questions,
       assessment
     });
+    const saved = result.questions;
 
     res.status(201).json({
       success: true,
@@ -390,9 +391,9 @@ router.put('/:id/order', authenticateToken, async (req, res, next) => {
     }
 
     const question = await updateQuestionOrder(
-      req.params.id, 
-      assessmentId, 
-      orderNumber, 
+      req.params.id,
+      assessmentId,
+      orderNumber,
       req.user.id
     );
 
@@ -410,8 +411,8 @@ router.put('/:id/order', authenticateToken, async (req, res, next) => {
 router.delete('/:id/order/:assessmentId', authenticateToken, async (req, res, next) => {
   try {
     const question = await removeQuestionFromAssessment(
-      req.params.id, 
-      req.params.assessmentId, 
+      req.params.id,
+      req.params.assessmentId,
       req.user.id
     );
 
