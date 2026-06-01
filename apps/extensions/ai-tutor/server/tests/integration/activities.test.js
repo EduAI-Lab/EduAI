@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import { makeProfessor, makeStudent, truncateAll, seedMinimalCourse, prisma } from '../helpers.js';
@@ -388,5 +388,158 @@ describe('Activities routes', () => {
       expect(res.status).toBe(403);
       expect(res.body.error).toMatch(/enrolled students/i);
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tutoring-flow question consumption (teach/guide/custom)
+// ---------------------------------------------------------------------------
+describe('Tutoring-flow: question consumption via Core', () => {
+  let prof;
+  let seed;
+  let profApp;
+  let activity;
+
+  beforeEach(async () => {
+    await truncateAll();
+    prof = makeProfessor();
+    seed = await seedMinimalCourse(prof.id);
+    profApp = await createApp({ mockUser: prof });
+
+    // Provide a service key so listCourseTestableQuestions uses fetch rather than short-circuiting
+    vi.stubEnv('EDUAI_API_KEY', 'test-service-key');
+
+    // Seed the prompt templates required by generate*Response functions
+    await prisma.promptTemplate.createMany({
+      data: [
+        { slug: 'learning-prompt', name: 'Learning', systemPrompt: 'You are a tutor.' },
+        { slug: 'exercise-prompt', name: 'Exercise', systemPrompt: 'You are a guide.' },
+        { slug: 'supervisor-prompt', name: 'Supervisor', systemPrompt: 'You are a supervisor.' },
+      ],
+    });
+
+    // Link the course to a Core offering so the question-fetch path is exercised
+    await prisma.courseOffering.update({
+      where: { id: seed.course.id },
+      data: { coreOfferingId: 'cuid-core-offering' },
+    });
+
+    activity = await prisma.activity.create({
+      data: {
+        lessonId: seed.lesson.id,
+        mainTopicId: seed.topic.id,
+        instructionsMd: 'Teach me about sorting.',
+        enableTeachMode: true,
+        config: { questionType: 'MCQ', question: 'Q?', options: ['A', 'B'], answer: 0, hints: [] },
+        customPrompt: 'Custom prompt here.',
+        enableCustomMode: true,
+      },
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  it('/teach fetches testable questions from Core and injects them into supervisor hidden context', async () => {
+    const coreQuestions = [
+      {
+        id: 'cuid-q1',
+        type: 'MCQ',
+        difficulty: 'MEDIUM',
+        content: 'What is O(log n)?',
+        choices: [{ letter: 'A', text: 'Linear' }, { letter: 'B', text: 'Logarithmic' }],
+        answer: 'B',
+      },
+    ];
+
+    // Call 1: Core questions list. All subsequent calls: EduAI chat (tutor + supervisor).
+    vi.stubGlobal(
+      'fetch',
+      vi.fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ questions: coreQuestions, total: 1 }),
+          text: () => Promise.resolve(''),
+        })
+        .mockResolvedValue({
+          ok: true,
+          json: () => Promise.resolve({ content: 'AI response', chatId: 'chat-1' }),
+        }),
+    );
+
+    const res = await request(profApp)
+      .post(`/api/activities/${activity.id}/teach`)
+      .set('Cookie', 'session=test-cookie')
+      .send({ message: 'Explain sorting', knowledgeLevel: 'beginner', apiKey: 'test-key' });
+
+    expect(res.status).toBe(200);
+
+    const fetchCalls = fetch.mock.calls;
+
+    // Core questions endpoint called with correct courseId and testable=true
+    const questionsFetchCall = fetchCalls.find(
+      ([url]) =>
+        typeof url === 'string' && url.includes('/questions') && url.includes('testable=true'),
+    );
+    expect(questionsFetchCall).toBeDefined();
+    expect(questionsFetchCall[0]).toContain('courseId=cuid-core-offering');
+    expect(questionsFetchCall[1].headers.Authorization).toBe('Bearer test-service-key');
+
+    // Question bank content appears in at least one EduAI chat call (supervisor hidden context)
+    const chatCalls = fetchCalls.filter(
+      ([url, opts]) =>
+        typeof url === 'string' && url.includes('/chat') && opts?.method === 'POST',
+    );
+    const bankInjected = chatCalls.some(([, opts]) => {
+      const body = JSON.parse(opts.body);
+      return body.messages?.some((m) => m.content?.includes('What is O(log n)?'));
+    });
+    expect(bankInjected).toBe(true);
+  });
+
+  it('/teach skips question fetch when coreOfferingId is null and proceeds normally', async () => {
+    await prisma.courseOffering.update({
+      where: { id: seed.course.id },
+      data: { coreOfferingId: null },
+    });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ content: 'AI response', chatId: 'chat-1' }),
+    }));
+
+    const res = await request(profApp)
+      .post(`/api/activities/${activity.id}/teach`)
+      .set('Cookie', 'session=test-cookie')
+      .send({ message: 'Explain sorting', knowledgeLevel: 'beginner', apiKey: 'test-key' });
+
+    expect(res.status).toBe(200);
+
+    // No Core questions call should have been made
+    const questionsFetchCall = fetch.mock.calls.find(
+      ([url]) => typeof url === 'string' && url.includes('/questions'),
+    );
+    expect(questionsFetchCall).toBeUndefined();
+  });
+
+  it('/teach proceeds with empty question bank and returns 200 when Core questions fetch fails', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn()
+        .mockRejectedValueOnce(new Error('ECONNREFUSED'))
+        .mockResolvedValue({
+          ok: true,
+          json: () => Promise.resolve({ content: 'AI response', chatId: 'chat-1' }),
+        }),
+    );
+
+    const res = await request(profApp)
+      .post(`/api/activities/${activity.id}/teach`)
+      .set('Cookie', 'session=test-cookie')
+      .send({ message: 'Explain sorting', knowledgeLevel: 'beginner', apiKey: 'test-key' });
+
+    expect(res.status).toBe(200);
   });
 });

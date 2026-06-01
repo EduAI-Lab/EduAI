@@ -46,6 +46,7 @@ import {
   generateTeachResponse,
 } from '../services/aiGuidance.js';
 import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
+import { listCourseTestableQuestions } from '../services/eduaiClient.js';
 import {
   ActivityFeedbackRequestSchema,
   CustomRequestSchema,
@@ -203,6 +204,7 @@ async function loadActivityForChat(activityId) {
                   externalId: true,
                   externalSource: true,
                   externalMetadata: true,
+                  coreOfferingId: true,
                   instructors: { select: { userId: true } },
                   enrollments: { select: { userId: true } },
                 },
@@ -254,6 +256,11 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
     const chatId = payload.chatId || existingSession?.chatId || null;
     const messageId = payload.messageId || randomUUID();
 
+    // Stage 4: fetch testable questions for the linked Core course (fail-soft).
+    const testableQuestions = course.coreOfferingId
+      ? await listCourseTestableQuestions(course.coreOfferingId, { limit: 20 }).catch(() => [])
+      : [];
+
     // Stage 5: mode-specific EduAI call.
     const aiResult = await generateResponse({
       tutorModelId,
@@ -264,6 +271,7 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
       chatId,
       messageId,
       courseCode: getCourseCode(course),
+      testableQuestions,
     });
 
     // EduAI may mint a new chatId on the first reply; prefer that over the prior one.
