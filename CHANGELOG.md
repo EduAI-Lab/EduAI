@@ -4,6 +4,15 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## [Week 5 — June 1–5, 2026]
+
+### Added
+- [core] api: Build `GET /api/courses/:id/enrollments` — dual-auth endpoint (user OAuth Bearer and service key) that returns all enrollments (active and inactive) for a course; maps Prisma `Enrollment` + `User` join to the contract shape (`studentId`, `studentEmail`, `studentName`, `enrolledAt`, `isActive`, `role`); service key callers skip enrollment authorization; user OAuth callers must be enrolled in the course (else `403`); returns `404 COURSE_NOT_FOUND` for missing/soft-deleted courses. Unblocks AI Tutor's `POST /api/courses/import-external` flow. (#NNN, @ammaarm128, 2026-05-30)
+- [core] tests: Add 14 unit tests (`courses.enrollments.test.ts`) for `GET /api/courses/:id/enrollments` — covers `400` missing ID, `401` no session, `403` invalid service key, `403` user not enrolled, `404` course not found (both auth paths), `200` via service key and user OAuth (STUDENT + INSTRUCTOR), role mapping for STUDENT/TA/INSTRUCTOR, null `enrolledAt` handling, active + inactive returned together, and empty enrollment list. (#NNN, @ammaarm128, 2026-05-30)
+- [core] tests: Add integration tests (`courses.enrollments.integration.test.ts`) for `GET /api/courses/:id/enrollments` — seeds users (STUDENT, TA, INSTRUCTOR, outsider) and enrollments against a real test DB; covers `401`, `403` invalid key, `403` not enrolled, `404` nonexistent course, `200` via service key and user OAuth, role mapping, active + inactive returned, and correct field values from seeded data. (#NNN, @ammaarm128, 2026-05-30)
+
+---
+
 ## [Week 4 — May 25–29, 2026]
 
 ### Added
