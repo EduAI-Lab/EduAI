@@ -185,19 +185,19 @@ async function getSelectionCursorForUpdate({ questionMetadataId, courseId, trans
     return cursor;
   }
 
+  // Use a savepoint so that a unique-key race with a concurrent transaction does not abort the
+  // parent transaction. Without this, the failed INSERT leaves the transaction in PostgreSQL's
+  // aborted state and every subsequent query in the same transaction fails.
+  const sp = `sp_vsc_${questionMetadataId}_${courseId}`;
+  await sequelize.query(`SAVEPOINT "${sp}"`, { transaction });
   try {
     cursor = await VariantSelectionCursor.create(
-      {
-        questionMetadataId,
-        courseId,
-        nextOffset: 0,
-        lastVariantId: null
-      },
+      { questionMetadataId, courseId, nextOffset: 0, lastVariantId: null },
       { transaction }
     );
     return cursor;
   } catch (error) {
-    // Another transaction may create this row first due to unique key race.
+    await sequelize.query(`ROLLBACK TO SAVEPOINT "${sp}"`, { transaction });
     cursor = await VariantSelectionCursor.findOne({
       where: { questionMetadataId, courseId },
       transaction,

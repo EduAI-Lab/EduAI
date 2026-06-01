@@ -30,8 +30,7 @@ function execBin(bin, args, opts) {
 }
 
 export async function setup() {
-  // Load test env so DATABASE_URL points to the test database
-  config({ path: resolve(serverRoot, '.env.test'), override: true });
+  config({ path: resolve(serverRoot, '.env.test') });
 
   // Create the test database if it doesn't exist
   try {
