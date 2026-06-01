@@ -122,8 +122,11 @@ Each section should use this format:
 
 | Test file | What it tests |
 |-----------|---------------|
+| `adhd-assist.test.ts` | Tests that `composeSystemPrompt` is identity when `adhdAssist` is false, prepends the verbatim policy block when true, preserves any existing course-context line in the base prompt, returns the block alone for an empty or whitespace-only base, and that `ADHD_ASSIST_POLICY_BLOCK` retains the verbatim §3 anchors (`=== ADHD ASSIST MODE ===`, `RESPONSE SHAPE:`, `Top summary`, `Next?`, `=== END ADHD ASSIST MODE ===`). Also tests that `resolveEffectiveAdhdAssist` uses the request-body value when the `adhdAssist` field is present (overriding the persisted chat in both directions) and falls back to the persisted `chat.adhdAssist` when the field is absent (for both `true` and `false` persisted values). |
 | `ai-schemas.test.ts`| AI provider and model schemas reject missing required fields, invalid URLs, negative pricing, and unknown enum values, and apply the correct defaults when optional fields are omitted |
 | `auth-schemas.test.ts`| Tests that auth schemas validate credentials, enforce password matching, and restrict role values across sign-in, sign-up, reset, and user management flows. |
+| `auth-handler-request.test.ts` | Tests that internal Better Auth sub-requests omit session cookies on sign-in (clean re-login after logout) and forward cookies on sign-out. |
+| `forward-session-cookies.test.ts` | Tests that all `Set-Cookie` headers from a Better Auth response are forwarded (multiple cookies, single-header fallback, empty response). |
 | `chat-api-keys.schema.test.ts` | Validates `clientApiKeysBodySchema` and `toUserProviderSettings` coercion defaults for chat `apiKeys` body parsing. |
 | `chat-rag.test.ts` | Tests `buildCappedRagContextText` and `capRagHitsForTool` chunk/char caps for hybrid and tool RAG paths. |
 | `courses-schemas.test.ts`| Tests that course schemas require non-empty fields, reject fractional years, and enforce that topic deletion specifies at least one identifier. |
