@@ -17,6 +17,7 @@
     "auth:generate": "npx @better-auth/cli generate",
     "eval:adhd": "node scripts/eval-adhd-assist.mjs",
     "bench:chat": "node ./scripts/chat-latency-bench.mjs",
+    "vllm:smoke": "node ./scripts/vllm-smoke.mjs",
     "test:embedding": "tsx scripts/test-embedding.ts"
   },
   "dependencies": {
