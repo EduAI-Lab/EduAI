@@ -65,7 +65,13 @@ export const config = {
   rateLimitMax: parseInt(process.env.RATE_LIMIT_MAX) || 1000,
   
   // Logging
-  logLevel: process.env.LOG_LEVEL || 'info'
+  logLevel: process.env.LOG_LEVEL || 'info',
+
+  // Bug report admin access (emails that may access the bug-report triage UI)
+  bugReportAdminEmails: (process.env.BUG_REPORT_ADMIN_EMAILS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
 };
 
 export default config;

@@ -55,16 +55,20 @@ export async function loadUserFromRequest(request: Request): Promise<User | null
 }
 
 export async function requireUserFromRequest(request: Request, role?: Role): Promise<User> {
+  const coreUrl = process.env.VITE_CORE_URL || 'http://localhost:3000';
+  const returnUrl = encodeURIComponent(request.url);
+  const loginUrl = `${coreUrl}/login?redirect=${returnUrl}`;
+
   const response = await requestApi(request, '/api/me');
   if (response.status === 401 || response.status === 403) {
-    throw redirect('/');
+    throw redirect(loginUrl);
   }
   if (!response.ok) {
     throw response;
   }
   const data = (await response.json()) as { user: User | null };
   const user = data.user;
-  if (!user) throw redirect('/');
+  if (!user) throw redirect(loginUrl);
   if (role && user.role !== role) {
     throw redirect('/');
   }

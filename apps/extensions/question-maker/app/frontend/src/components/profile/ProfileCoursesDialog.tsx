@@ -133,13 +133,8 @@ export const ProfileCoursesDialog = ({
     };
 
     const handleLogout = () => {
-        logout();
         onClose();
-        navigate('/login');
-        toast({
-            title: 'Logged out',
-            description: 'You have been successfully logged out.'
-        });
+        logout();
     };
 
     const handleCreateTestCourse = async () => {
