@@ -21,6 +21,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] refactor: Move data fetching out of domain components into parent routes — `courses.$courseId` owns materials load/upload; `chat` owns `useApiKeys` / `ApiKeySettings`; `admin.ai-models` owns Ollama model fetch for `ModelFormDialog`. (#437, #438, 2026-06-03)
 - [core] docs: Update `apps/core/README.md` — monorepo install from root, component architecture section, and expanded component test inventory. (#385, @Ayyhab, 2026-06-03)
 - [monorepo] docs: Update root `README.md` with EduAI component skeleton overview and link to `apps/core/docs/`. (#385, @Ayyhab, 2026-06-03)
+- [core] api: Refactor course server handlers — replace `handleCourseRequest` with `getCourses`, `createCourse`, and `updateCourse`; expand create/update schemas for section, dates, department, publish flags, and `instructorUserIds`; `POST /api/courses` creates instructor enrollments in a transaction; `PATCH /api/courses/:id` takes `params.id` (admin, unit admin, or assigned instructor); `createCourseTopic` / `deleteCourseTopic` return HTTP status codes instead of string error codes; routes and unit/integration tests updated. (#392, @glowyblack, 2026-05-30)
 
 ### Fixed
 - [monorepo] infra: Replace em dash with hyphen in `scripts/dev-db.sh` Docker startup message to avoid PowerShell parse errors on Windows. (#438, @yta3216, 2026-06-03)

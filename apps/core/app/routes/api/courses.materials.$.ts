@@ -6,7 +6,6 @@ import { auth } from '~/lib/auth/server';
 import { enforceAdminIfApiKey } from '~/lib/auth/guards.server';
 
 export async function action({ request, params }: ActionFunctionArgs) {
-  // If an API key is provided, only ADMIN users may proceed
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
   if (apiKeyGuard) return apiKeyGuard;
 
@@ -14,7 +13,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   if (!session?.user) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json' },
     });
   }
   const user = session.user;
@@ -23,26 +22,22 @@ export async function action({ request, params }: ActionFunctionArgs) {
   if (!courseId) {
     return new Response(JSON.stringify({ error: 'Course ID is required' }), {
       status: 400,
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json' },
     });
   }
 
-  // Check if user has access to this course
+  const isAdmin = user.role === 'ADMIN' || user.role === 'UNIT_ADMIN';
   const course = await prisma.course.findFirst({
-    where: {
-      id: courseId,
-      OR: [
-        { professorId: user.id },
-        { tas: { some: { userId: user.id } } },
-        { enrollments: { some: { studentId: user.id, isActive: true } } }
-      ]
-    }
+    where: isAdmin
+      ? { id: courseId, deletedAt: null }
+      : { id: courseId, deletedAt: null, enrollments: { some: { userId: user.id, isActive: true } } },
+    select: { id: true },
   });
 
   if (!course) {
     return new Response(JSON.stringify({ error: 'Course not found or access denied' }), {
       status: 404,
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json' },
     });
   }
 
@@ -53,33 +48,27 @@ export async function action({ request, params }: ActionFunctionArgs) {
   if (!file) {
     return new Response(JSON.stringify({ error: 'No file provided' }), {
       status: 400,
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json' },
     });
   }
 
   try {
-    // Process the uploaded file
     const fileInfo = await processUploadedFile(file);
 
-    // Check if material with same checksum already exists for this course
     const existingMaterial = await prisma.courseMaterial.findFirst({
-      where: {
-        courseId,
-        checksum: fileInfo.checksum
-      }
+      where: { courseId, checksum: fileInfo.checksum },
     });
 
     if (existingMaterial) {
       return new Response(JSON.stringify({
         error: 'A file with identical content already exists in this course',
-        materialId: existingMaterial.id
+        materialId: existingMaterial.id,
       }), {
         status: 409,
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json' },
       });
     }
 
-    // Create the course material
     const material = await prisma.courseMaterial.create({
       data: {
         courseId,
@@ -88,57 +77,47 @@ export async function action({ request, params }: ActionFunctionArgs) {
         fileSize: fileInfo.fileSize,
         checksum: fileInfo.checksum,
         rawText: fileInfo.content,
-        status: 'PROCESSING'
-      }
+        status: 'PROCESSING',
+      },
     });
 
-    // Process embeddings in the background
     try {
       await processMaterialEmbeddings(material.id, fileInfo.content);
 
-      // Update material status to ready
       await prisma.courseMaterial.update({
         where: { id: material.id },
-        data: {
-          status: 'READY',
-          processedAt: new Date()
-        }
+        data: { status: 'READY', processedAt: new Date() },
       });
 
       return new Response(JSON.stringify({
         success: true,
         materialId: material.id,
-        message: 'Material uploaded and processed successfully'
+        message: 'Material uploaded and processed successfully',
       }), {
         status: 200,
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json' },
       });
 
     } catch (embeddingError) {
-      // Update material status to failed
       await prisma.courseMaterial.update({
         where: { id: material.id },
-        data: {
-          status: 'FAILED'
-        }
+        data: { status: 'FAILED' },
       });
-
       throw embeddingError;
     }
 
   } catch (error) {
     console.error('Error processing material upload:', error);
     return new Response(JSON.stringify({
-      error: error instanceof Error ? error.message : 'Failed to process material'
+      error: error instanceof Error ? error.message : 'Failed to process material',
     }), {
       status: 500,
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json' },
     });
   }
 }
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  // If an API key is provided, only ADMIN users may proceed
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
   if (apiKeyGuard) return apiKeyGuard;
 
@@ -146,7 +125,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   if (!session?.user) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json' },
     });
   }
   const user = session.user;
@@ -155,44 +134,37 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   if (!courseId) {
     return new Response(JSON.stringify({ error: 'Course ID is required' }), {
       status: 400,
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json' },
     });
   }
 
-  // Check if user has access to this course
+  const isAdmin = user.role === 'ADMIN' || user.role === 'UNIT_ADMIN';
   const course = await prisma.course.findFirst({
-    where: {
-      id: courseId,
-      OR: [
-        { professorId: user.id },
-        { tas: { some: { userId: user.id } } },
-        { enrollments: { some: { studentId: user.id, isActive: true } } }
-      ]
-    }
+    where: isAdmin
+      ? { id: courseId, deletedAt: null }
+      : { id: courseId, deletedAt: null, enrollments: { some: { userId: user.id, isActive: true } } },
+    select: { id: true },
   });
 
   if (!course) {
     return new Response(JSON.stringify({ error: 'Course not found or access denied' }), {
       status: 404,
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json' },
     });
   }
 
-  // Get materials for this course
   const materials = await prisma.courseMaterial.findMany({
     where: { courseId },
     include: {
       chunks: {
-        include: {
-          embedding: true
-        }
-      }
+        include: { embedding: true },
+      },
     },
-    orderBy: { createdAt: 'desc' }
+    orderBy: { createdAt: 'desc' },
   });
 
   return new Response(JSON.stringify({ materials }), {
     status: 200,
-    headers: { 'Content-Type': 'application/json' }
+    headers: { 'Content-Type': 'application/json' },
   });
 }
