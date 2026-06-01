@@ -58,9 +58,9 @@ describe('api methods', () => {
     expect(result).toEqual(mockData);
   });
 
-  it('401 response redirects to / when not already at /', async () => {
+  it('401 response redirects to Core login with a ?redirect= param', async () => {
     window.location.pathname = '/dashboard';
-    window.location.href = '/dashboard';
+    window.location.href = 'http://localhost:3001/dashboard';
 
     mockFetch.mockResolvedValue({
       ok: false,
@@ -71,7 +71,7 @@ describe('api methods', () => {
     const { api } = await import('~/lib/api');
 
     await expect(api.listCourses()).rejects.toThrow('Authentication required');
-    expect(window.location.href).toBe('/');
+    expect(window.location.href).toMatch(/^http:\/\/localhost:3000\/login\?redirect=/);
   });
 
   it('500 response throws with error text', async () => {

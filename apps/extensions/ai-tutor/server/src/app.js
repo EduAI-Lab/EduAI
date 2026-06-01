@@ -59,6 +59,7 @@ export async function createApp(options = {}) {
   } else {
     app.use('/api', (req, res, next) => {
       if (req.path === '/health') return next();
+      if (req.method === 'POST' && req.path === '/logout') return next();
       return requireAuth(req, res, next);
     });
   }
