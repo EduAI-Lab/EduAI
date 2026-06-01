@@ -32,14 +32,11 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     const course = await prisma.course.findUnique({
       where: { id: courseId },
       include: {
-        professor: {
-          select: {
-            id: true,
-            name: true,
-            email: true
-          }
-        }
-      }
+        enrollments: {
+          where: { userId: session.user.id, isActive: true },
+          select: { role: true },
+        },
+      },
     })
 
     if (!course) {
@@ -56,20 +53,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }
 }
 
-type Course = {
-  id: string
-  name: string
-  code: string
-  description: string | null
-  term: string
-  year: number
-  isActive: boolean
-  aiInstructions: string
-  professorId: string
-  createdAt: string
-  updatedAt: string
-}
-
 export default function CourseDetailPage() {
   const { course, user } = useLoaderData<typeof loader>()
   const { courseId } = useParams()
@@ -77,14 +60,12 @@ export default function CourseDetailPage() {
   const [activeTab, setActiveTab] = useState("overview")
 
   const isAdmin = user.role === "ADMIN"
-  const isProfessor = user.role === "PROFESSOR"
-  const isTA = user.role === "TA"
-  const isStudent = user.role === "STUDENT"
+  const isInstructor = course.enrollments.some((e) => e.role === "INSTRUCTOR")
+  const isTA = course.enrollments.some((e) => e.role === "TA")
+  const isStudent = course.enrollments.some((e) => e.role === "STUDENT")
 
   // Check if user has access to this course
-  const hasAccess = isAdmin ||
-    (isProfessor && course.professorId === user.id) ||
-    isTA || isStudent // For now, allowing all TAs and students
+  const hasAccess = isAdmin || isInstructor || isTA || isStudent
 
   if (!hasAccess) {
     return (
@@ -98,7 +79,7 @@ export default function CourseDetailPage() {
     )
   }
 
-  const canManageMaterials = isAdmin || (isProfessor && course.professorId === user.id)
+  const canManageMaterials = isAdmin || isInstructor
 
   return (
     <SidebarProvider
