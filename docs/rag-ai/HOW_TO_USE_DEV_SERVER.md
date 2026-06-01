@@ -3,6 +3,7 @@
 ## Prerequisites
 - UBC VPN (or campus network)
 - SSH: `ssh YOUR_CWL@dev.eduai.ok.ubc.ca`
+- RAG embeddings: set **`OPENROUTER_API_KEY`** (recommended) or **`GOOGLE_GENERATIVE_AI_API_KEY`** in `apps/core/.env` on the server. Verify with `npm run test:embedding` from `apps/core`. See [`EMBEDDINGS.md`](./EMBEDDINGS.md).
 
 ## Use the app
 Open https://dev.eduai.ok.ubc.ca
@@ -55,6 +56,41 @@ The server process **dies when your SSH session ends**. Use `tmux` so it survive
 | `Ctrl+C` (inside tmux)       | Stop the dev process                 |
 
 Apache proxies `https://dev.eduai.ok.ubc.ca` → `http://127.0.0.1:3000`.
+
+#### Auth / login troubleshooting
+
+Required in `apps/core/.env` on the server:
+
+```env
+BETTER_AUTH_URL="https://dev.eduai.ok.ubc.ca"
+BETTER_AUTH_SECRET="<openssl rand -base64 32>"
+DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:54320/eduai?schema=public"
+```
+
+After a DB reset, **register a new account** — old passwords are gone.
+
+**Silent login (page reloads, no error):** usually session cookies not stored. Check:
+
+1. Restart dev server after `.env` changes.
+2. Browser DevTools → Network → POST `/auth/login` → Response headers: expect **multiple** `Set-Cookie` with `Secure` on HTTPS.
+3. From SSH, smoke-test the auth API:
+
+```bash
+curl -si -X POST "https://dev.eduai.ok.ubc.ca/api/auth/sign-in/email" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"you@example.com","password":"yourpassword"}' | head -40
+```
+
+`401` = wrong credentials. `200` with `Set-Cookie` but browser still fails → cookie `Secure` / `Domain` mismatch (ensure `BETTER_AUTH_URL` is `https://…`, not `localhost`).
+
+Do **not** set `COOKIE_DOMAIN` on the shared dev host unless you intend cross-subdomain cookies (production uses e.g. `.eduai.ok.ubc.ca`).
+
+**Can’t log in again after logout:** use **Log out** in the UI (server `POST /auth/logout`), not only client-side sign-out. Clear site cookies for `dev.eduai.ok.ubc.ca` once if a stale `__Secure-better-auth.session_token` remains. Verify sign-out clears cookies:
+
+```bash
+curl -si -X POST "https://dev.eduai.ok.ubc.ca/api/auth/sign-out" \
+  -H "Cookie: __Secure-better-auth.session_token=YOUR_TOKEN" | head -20
+```
 
 #### When you're done
 
