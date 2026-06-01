@@ -6,6 +6,11 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ---
 
+## [Week 4 — May 25–29, 2026]
+
+### Added
+- [monorepo] docs: Add summer 2026 chat latency investigation write-ups under [`docs/rag-ai/latency/eduai-summer-2026/`](docs/rag-ai/latency/eduai-summer-2026/) — [`FINDINGS.md`](docs/rag-ai/latency/eduai-summer-2026/FINDINGS.md) (team summary), [`FINDINGS_APPENDIX.md`](docs/rag-ai/latency/eduai-summer-2026/FINDINGS_APPENDIX.md) (sessions, methodology, data index on `troubleshoot-RAG-delay`), and [`SOLUTIONS_PLAN.md`](docs/rag-ai/latency/eduai-summer-2026/SOLUTIONS_PLAN.md) (mitigations: keep-alive, routing, token caps, cold-load UX). Docs-only; benchmark JSON/CSV and bench tooling remain on branch `troubleshoot-RAG-delay`. ([#383](https://github.com/EduAI-Lab/EduAI/pull/383), @superbolt08, 2026-05-29)
+
 ## [Week 3 — May 18–22, 2026]
 
 ### Added
