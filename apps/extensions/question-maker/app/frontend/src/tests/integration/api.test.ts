@@ -5,7 +5,7 @@ import './api.test.setup';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { api } from './api';
+import { api } from '../../services/api';
 
 describe('api client (axios)', () => {
   let baseUrl: string;
