@@ -7,6 +7,7 @@ export default [
   route("/api/courses", "routes/api/courses.$.ts"),
   route("/auth/login", "routes/auth/login.tsx"),
   route("/auth/register", "routes/auth/register.tsx"),
+  route("/auth/logout", "routes/auth/logout.tsx"),
   route("/dashboard", "routes/dashboard.tsx"),
   route("/chat", "routes/chat.tsx"),
   route("/settings", "routes/settings.tsx"),
