@@ -10,7 +10,7 @@ vi.mock("~/lib/auth/server", () => ({
   auth: { api: { getSession: vi.fn() } },
 }));
 
-import { getCourses } from "~/lib/courses/server";
+import { getCourses, createCourse } from "~/lib/courses/server";
 import { auth } from "~/lib/auth/server";
 
 // ---------------------------------------------------------------------------
@@ -109,7 +109,19 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("GET /api/courses", () => {
-  it("returns 200 with a courses array", async () => {
+  it("returns 401 when unauthenticated", async () => {
+    const res = await getCourses(makeGetRequest());
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 403 when caller is not ADMIN", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(INSTRUCTOR_SESSION as any);
+    const res = await getCourses(makeGetRequest());
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 200 with a courses array for ADMIN", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(ADMIN_SESSION as any);
     const res = await getCourses(makeGetRequest());
 
     expect(res.status).toBe(200);
@@ -119,6 +131,7 @@ describe("GET /api/courses", () => {
   });
 
   it("includes the seeded course in the response", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(ADMIN_SESSION as any);
     const res = await getCourses(makeGetRequest());
 
     const body = await res.json();
@@ -128,12 +141,8 @@ describe("GET /api/courses", () => {
     expect(found.code).toBe("INT 999");
   });
 
-  it("requires no session — unauthenticated callers still get 200", async () => {
-    const res = await getCourses(makeGetRequest());
-    expect(res.status).toBe(200);
-  });
-
   it("excludes soft-deleted courses", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(ADMIN_SESSION as any);
     const deleted = await prisma.course.create({
       data: {
         name: "Deleted Course",
@@ -152,6 +161,76 @@ describe("GET /api/courses", () => {
     expect(found).toBeUndefined();
 
     await prisma.course.delete({ where: { id: deleted.id } });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/courses
+// ---------------------------------------------------------------------------
+
+describe("POST /api/courses", () => {
+  it("returns 403 when caller is not ADMIN", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(INSTRUCTOR_SESSION as any);
+    const res = await createCourse(makeFormDataPost({
+      name: "Forbidden Course",
+      code: "FB 001",
+      section: "001",
+      term: "Fall",
+      year: 2025,
+      startDate: "2025-09-01",
+      instructorUserIds: professorId,
+    }));
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 400 when required fields are missing", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(ADMIN_SESSION as any);
+    const res = await createCourse(makeFormDataPost({
+      name: "No Code Course",
+    }));
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body).toHaveProperty("error", "Invalid input");
+  });
+
+  it("returns 422 when instructorUserIds do not resolve to INSTRUCTOR users", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(ADMIN_SESSION as any);
+    const res = await createCourse(makeFormDataPost({
+      name: "Bad Instructor Course",
+      code: "BI 001",
+      section: "001",
+      term: "Fall",
+      year: 2025,
+      startDate: "2025-09-01",
+      instructorUserIds: adminId,
+    }));
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body).toHaveProperty("error", "INVALID_INSTRUCTOR");
+  });
+
+  it("creates course and INSTRUCTOR enrollment in a transaction", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(ADMIN_SESSION as any);
+    const res = await createCourse(makeFormDataPost({
+      name: "Transaction Test Course",
+      code: "TX 001",
+      section: "002",
+      term: "Winter",
+      year: 2026,
+      startDate: "2026-01-01",
+      instructorUserIds: professorId,
+    }));
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body).toHaveProperty("id");
+    expect(body.name).toBe("Transaction Test Course");
+    createdCourseIds.push(body.id);
+
+    const enrollment = await prisma.enrollment.findFirst({
+      where: { courseId: body.id, userId: professorId, role: "INSTRUCTOR", isActive: true },
+    });
+    expect(enrollment).not.toBeNull();
   });
 });
 
