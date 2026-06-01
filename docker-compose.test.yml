@@ -176,6 +176,10 @@ services:
       context: .
       dockerfile: docker/tests/Dockerfile.qm-app
       target: test-integration
+    environment:
+      DATABASE_URL: postgresql://postgres:password@question-maker-test-db:5432/question_maker_test
+      TEST_DATABASE_URL: postgresql://postgres:password@question-maker-test-db:5432/question_maker_test
+      NODE_ENV: test
 
   qm-server-unit-tests:
     build:
