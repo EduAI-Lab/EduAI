@@ -269,6 +269,21 @@ export default function SettingsPage() {
                       )}
                       <p className="text-xs text-muted-foreground">No API key required. Configure base URL via environment or provider settings.</p>
                     </div>
+
+                    <div className="space-y-2">
+                      <Label className="mb-1">vLLM (local inference)</Label>
+                      {isProviderConfigured('vllm') ? (
+                        <div className="flex items-center gap-2">
+                          <Badge variant="secondary">Enabled</Badge>
+                          <Button size="sm" variant="outline" onClick={()=>removeProviderSettings('vllm')} className="text-red-600 hover:text-red-700">Disable</Button>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <Button size="sm" onClick={()=>updateProviderSettings('vllm',{ isEnabled: true })}>Enable vLLM</Button>
+                        </div>
+                      )}
+                      <p className="text-xs text-muted-foreground">OpenAI-compatible server. Set VLLM_BASE_URL on dev (e.g. cmps01:8000).</p>
+                    </div>
                   </CardContent>
                 </Card>
               </div>

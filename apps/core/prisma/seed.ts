@@ -48,6 +48,20 @@ async function main() {
     },
   });
 
+  const vllmProvider = await prisma.aIProvider.upsert({
+    where: { name: 'vllm' },
+    update: {},
+    create: {
+      name: 'vllm',
+      displayName: 'vLLM',
+      description: 'OpenAI-compatible local inference (vLLM)',
+      requiresApiKey: false,
+      defaultBaseUrl: 'http://localhost:8000/v1',
+      envVarName: 'VLLM_BASE_URL',
+      isActive: true,
+    },
+  });
+
   console.log('✅ AI Providers seeded successfully');
 
   // Seed AI Models
@@ -161,6 +175,38 @@ async function main() {
       create: {
         ...model,
         providerId: googleProvider.id,
+      },
+    });
+  }
+
+  // vLLM — modelId must match --served-model-name on the vLLM server
+  const vllmModels = [
+    {
+      modelId: 'qwen2.5-7b-instruct',
+      name: 'Qwen 2.5 7B Instruct (vLLM)',
+      description: 'House model for vLLM spike on cmps01 — HF weights, not Ollama GGUF',
+      type: 'CHAT' as const,
+      maxTokens: 8192,
+      supportsImages: false,
+      supportsTools: true,
+      supportsStreaming: true,
+      inputPricing: 0,
+      outputPricing: 0,
+    },
+  ];
+
+  for (const model of vllmModels) {
+    await prisma.aIModel.upsert({
+      where: {
+        providerId_modelId: {
+          providerId: vllmProvider.id,
+          modelId: model.modelId,
+        },
+      },
+      update: {},
+      create: {
+        ...model,
+        providerId: vllmProvider.id,
       },
     });
   }

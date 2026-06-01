@@ -9,7 +9,10 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOllama } from 'ollama-ai-provider';
 
 // Supported provider types
-export type SupportedProvider = 'openai' | 'google' | 'ollama';
+export type SupportedProvider = 'openai' | 'google' | 'ollama' | 'vllm';
+
+/** Local inference providers that do not require a user API key. */
+export const LOCAL_INFERENCE_PROVIDERS: SupportedProvider[] = ['ollama', 'vllm'];
 
 // User provider settings interface
 export interface UserProviderSettings {
@@ -53,6 +56,14 @@ export const PROVIDER_CONFIGS: Record<SupportedProvider, ProviderConfig> = {
     requiresApiKey: false,
     defaultBaseUrl: 'http://localhost:11434/api',
     envVarName: 'OLLAMA_BASE_URL'
+  },
+  vllm: {
+    id: 'vllm',
+    name: 'vLLM',
+    description: 'Local OpenAI-compatible inference (vLLM on cmps01 or tunnel)',
+    requiresApiKey: false,
+    defaultBaseUrl: 'http://localhost:8000/v1',
+    envVarName: 'VLLM_BASE_URL'
   }
 };
 
@@ -88,6 +99,29 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
     }
 
     providers.ollama = createOllama({
+      baseURL,
+    });
+  }
+
+  // vLLM (OpenAI-compatible /v1 — see docs/rag-ai/latency/eduai-summer-2026/VLLM_CMPS01_SETUP.md)
+  if (userSettings.vllm?.isEnabled) {
+    let baseURL =
+      userSettings.vllm?.baseUrl ||
+      process.env.VLLM_BASE_URL ||
+      'http://localhost:8000';
+
+    baseURL = baseURL.replace(/\/$/, '');
+    if (!baseURL.endsWith('/v1')) {
+      baseURL = `${baseURL}/v1`;
+    }
+
+    const apiKey =
+      userSettings.vllm?.apiKey ||
+      process.env.VLLM_API_KEY ||
+      'vllm-local';
+
+    providers.vllm = createOpenAI({
+      apiKey,
       baseURL,
     });
   }
