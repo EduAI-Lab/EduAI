@@ -80,7 +80,8 @@ DATABASE_URL="postgresql://USER:PASSWORD@HOST:PORT/DATABASE?schema=public"
 BETTER_AUTH_SECRET="" # REQUIRED: Generate a strong random secret (e.g., `openssl rand -base64 32`)
 BETTER_AUTH_URL="http://localhost:5173" # Base URL of your app
 
-GOOGLE_GENERATIVE_AI_API_KEY="" # For Embeddings
+OPENROUTER_API_KEY="" # Embeddings via OpenRouter (recommended if you have one key for many models)
+GOOGLE_GENERATIVE_AI_API_KEY="" # Direct Gemini embeddings (used when OPENROUTER_API_KEY is unset)
 OLLAMA_BASE_URL="http://localhost:11434/"
 FIRECRAWL_API_KEY="" # Required for Firecrawl web search tool. If not set, web search is unavailable.
 ```
@@ -131,7 +132,7 @@ Send chat messages with course context for grounded responses.
 - `apiKeys` (object): Provider-specific API keys
 - `courseCode` (string): Target course identifier
 - `streaming` (boolean): Enable response streaming
-- `adhdAssist` (boolean, optional): Opt-in flag persisted on `Chat.adhdAssist` (default `false`). Phase 1 has no behavioural effect; Phase 2 will gate ADHD-friendly response shaping (concise, structured, progressively disclosed) on this. UI toggle lives at the top of the chat header on `/chat`.
+- `adhdAssist` (boolean, optional): Opt-in flag persisted on `Chat.adhdAssist` (default `false`). When `true`, the resolved system prompt is prepended with the verbatim ADHD Assist policy block from `docs/literature/adhd-assist-prompt-policy.md` §3 before being passed to `streamText`. Style is the only IV — model, retrieval, tools, temperature, and streaming behavior are unchanged. UI toggle lives at the top of the chat header on `/chat`. If the field is omitted from the request body, the request falls back to the persisted `Chat.adhdAssist` for the resolved chat — same precedence pattern as `systemPrompt`. If the field is present, it overrides the persisted value (and updates it).
 - `proxyUser` (object, optional): Only for admin `x-api-key` calls. Allows services like Aitutor to act on behalf of a user; see [Proxy Delegation (`proxyUser`)](#proxy-delegation-proxyuser).
 
 #### Examples
