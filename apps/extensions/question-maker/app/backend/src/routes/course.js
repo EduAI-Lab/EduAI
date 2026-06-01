@@ -5,6 +5,8 @@
 import express from 'express';
 import { Course, Question_Metadata, Topics } from '../schema/index.js';
 import { authenticateToken } from '../middleware/auth.js';
+import { getCourseTopicsFromCore, pushTopicToCore } from '../services/coreApiService.js';
+import { logger } from '../utils/logger.js';
 
 const router = express.Router();
 
@@ -228,7 +230,7 @@ router.get('/:id/topics', authenticateToken, async (req, res, next) => {
   }
 });
 
-/** POST /api/course/:id/topics – adds a topic to the course after validation and ownership checks. */
+/** POST /api/course/:id/topics – adds a topic to the course and pushes it to Core if the course is linked. */
 router.post('/:id/topics', authenticateToken, async (req, res, next) => {
   try {
     const { name } = req.body;
@@ -257,11 +259,94 @@ router.post('/:id/topics', authenticateToken, async (req, res, next) => {
       name: name.trim()
     });
 
+    if (course.coreCourseId) {
+      try {
+        const coreResult = await pushTopicToCore(course.coreCourseId, name.trim());
+        if (coreResult?.id) {
+          await topic.update({ coreTopicId: coreResult.id });
+        }
+      } catch (coreErr) {
+        logger.warn({ err: coreErr }, 'Core topic push failed; local topic created without Core link');
+      }
+    }
+
     res.status(201).json({
       success: true,
       message: 'Topic created successfully',
       data: topic
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/** PATCH /api/course/:id/link-core – stores a Core course CUID on the local course row. */
+router.patch('/:id/link-core', authenticateToken, async (req, res, next) => {
+  try {
+    const { coreCourseId } = req.body;
+
+    if (!coreCourseId || typeof coreCourseId !== 'string') {
+      return res.status(400).json({ success: false, error: 'coreCourseId is required' });
+    }
+
+    const course = await Course.findOne({
+      where: { id: req.params.id, userId: req.user.id }
+    });
+
+    if (!course) {
+      return res.status(404).json({ success: false, error: 'Course not found' });
+    }
+
+    await course.update({ coreCourseId });
+
+    res.json({ success: true, data: course });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/** POST /api/course/:id/sync-topics – pulls topics from Core and upserts them into the local topics table. */
+router.post('/:id/sync-topics', authenticateToken, async (req, res, next) => {
+  try {
+    const course = await Course.findOne({
+      where: { id: req.params.id, userId: req.user.id }
+    });
+
+    if (!course) {
+      return res.status(404).json({ success: false, error: 'Course not found' });
+    }
+
+    if (!course.coreCourseId) {
+      return res.status(400).json({ success: false, error: 'Course is not linked to Core' });
+    }
+
+    let coreTopics;
+    try {
+      const data = await getCourseTopicsFromCore(course.coreCourseId);
+      coreTopics = data.topics ?? data;
+    } catch (coreErr) {
+      return res.status(502).json({ success: false, error: coreErr.body?.error || 'Failed to fetch topics from Core' });
+    }
+
+    let synced = 0;
+    for (const ct of coreTopics) {
+      // Try to find existing local topic by Core ID
+      let existing = await Topics.findOne({ where: { coreTopicId: ct.id } });
+      if (existing) {
+        await existing.update({ name: ct.name });
+      } else {
+        // Try by name+course to avoid duplicate names
+        existing = await Topics.findOne({ where: { courseId: course.id, name: ct.name } });
+        if (existing) {
+          await existing.update({ coreTopicId: ct.id });
+        } else {
+          await Topics.create({ name: ct.name, courseId: course.id, coreTopicId: ct.id });
+        }
+        synced++;
+      }
+    }
+
+    res.json({ success: true, data: { synced } });
   } catch (error) {
     next(error);
   }
