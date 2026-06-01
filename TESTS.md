@@ -246,6 +246,26 @@ Each section should use this format:
 
 ---
 
+## Question Maker Frontend Unit Tests
+
+**Path:** `apps/extensions/question-maker/app/frontend/src/tests/unit/`
+
+| Test file | What it tests |
+|-----------|---------------|
+| `LoginPage.test.tsx` | The login page submits credentials, shows errors, switches to registration, renders loading state, and redirects authenticated users |
+
+---
+
+## Question Maker Frontend Integration Tests
+
+**Path:** `apps/extensions/question-maker/app/frontend/src/tests/integration/`
+
+| Test file | What it tests |
+|-----------|---------------|
+| `api.test.ts` | The axios client sends Authorization headers, clears auth on `401`, and redirects to `/login` without looping |
+
+---
+
 ## Extending This Document
 
 If a new extension is added to the platform or a new category of tests is introduced, update this file to match:

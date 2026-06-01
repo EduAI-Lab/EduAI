@@ -9,9 +9,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ## [Week 4 — May 25–29, 2026]
 
 ### Added
-<<<<<<< docs/ai-latency-experiment
 - [monorepo] docs: Add summer 2026 chat latency investigation write-ups under [`docs/rag-ai/latency/eduai-summer-2026/`](docs/rag-ai/latency/eduai-summer-2026/) — [`FINDINGS.md`](docs/rag-ai/latency/eduai-summer-2026/FINDINGS.md) (team summary), [`FINDINGS_APPENDIX.md`](docs/rag-ai/latency/eduai-summer-2026/FINDINGS_APPENDIX.md) (sessions, methodology, data index on `troubleshoot-RAG-delay`), and [`SOLUTIONS_PLAN.md`](docs/rag-ai/latency/eduai-summer-2026/SOLUTIONS_PLAN.md) (mitigations: keep-alive, routing, token caps, cold-load UX). Docs-only; benchmark JSON/CSV and bench tooling remain on branch `troubleshoot-RAG-delay`. ([#383](https://github.com/EduAI-Lab/EduAI/pull/383), @superbolt08, 2026-05-29)
-=======
+- [monorepo] tests: Introduced Docker-based test infrastructure across all components (EduAI, AI Tutor app/server, Question Maker app/server). Added multi-stage Dockerfiles with a lockfile-exact `deps` stage, restructured `docker-compose.test.yml` into a consistent `{component}-{app|server}-{unit|integration}-tests` naming scheme, added `unit`/`integration` group arguments to `test-in-docker.sh`, and added corresponding npm scripts. (#352, @yta3216, 2026-05-27)
 - [core] feat: ADHD Assist Phase 2 — mode-conditional system prompt. When `Chat.adhdAssist === true`, `POST /api/chat` prepends the verbatim policy block from `docs/literature/adhd-assist-prompt-policy.md` §3 to the resolved system prompt before `streamText`. Style is the only IV — model, retrieval, tools, persistence, temperature, and streaming behavior are unchanged. New `apps/core/app/lib/ai/adhd-assist.ts` exports `ADHD_ASSIST_POLICY_BLOCK` and `composeSystemPrompt(base, { adhdAssist })`. Single call site in `chat.ts` covers both the tool-supporting and no-tool RAG branches. (#255, #256, #258, @Ayyhab, 2026-05-29)
 - [core] tests: Unit tests for `composeSystemPrompt` covering identity, prepend, course-context preservation, empty/whitespace base, and verbatim policy-block anchors at `apps/core/app/tests/unit/adhd-assist.test.ts`. (#255, @Ayyhab, 2026-05-29)
 - [core] tooling: Add `apps/core/scripts/eval-adhd-assist.mjs` and `npm run eval:adhd` — pure-Node runner that drives Form A S1/S2/S3 (+ optional S5) through `POST /api/chat` twice each (Baseline vs ADHD Assist) and emits a results matrix (markdown table, per-pair transcripts, `results.csv`, `run-meta.json` with git SHA and redacted env presence booleans). Adds `eval-runs/` to root `.gitignore` so research outputs stay out of git. (#258, @Ayyhab, 2026-05-29)
@@ -27,7 +26,6 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] fix: Better Auth on HTTPS dev host — top-level `baseURL`/`secret`, `useSecureCookies`, disable cross-subdomain cookies unless `COOKIE_DOMAIN` is set; forward all session cookies on login/register redirect; server `POST /auth/logout`; omit stale cookies on sign-in. Dev runbook: [`HOW_TO_USE_DEV_SERVER.md`](docs/rag-ai/HOW_TO_USE_DEV_SERVER.md). (#PR)
 
 ---
->>>>>>> development
 
 ## [Week 3 — May 18–22, 2026]
 
