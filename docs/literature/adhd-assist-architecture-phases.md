@@ -2,7 +2,7 @@
 
 This document is the *implementation roadmap* that turns [`adhd-design-principles.md`](./adhd-design-principles.md) and [`adhd-assist-prompt-policy.md`](./adhd-assist-prompt-policy.md) into shipped code, ordered so each phase is independently demoable and ethics-compliant.
 
-> **Companion docs.** [`paper-bridges.md`](./paper-bridges.md), [`adhd-design-principles.md`](./adhd-design-principles.md), [`adhd-assist-prompt-policy.md`](./adhd-assist-prompt-policy.md), [`form-a-eval-scenarios.md`](./form-a-eval-scenarios.md), [`pre-coding-checklist.md`](./pre-coding-checklist.md), [`system-prompt-evaluation-runbook.md`](./system-prompt-evaluation-runbook.md). Existing repo architecture: [`architecture.md`](../architecture.md).
+> **Companion docs.** [`paper-bridges.md`](./paper-bridges.md), [`adhd-design-principles.md`](./adhd-design-principles.md), [`adhd-assist-prompt-policy.md`](./adhd-assist-prompt-policy.md), [`form-a-eval-scenarios.md`](./form-a-eval-scenarios.md), [`pre-coding-checklist.md`](./pre-coding-checklist.md), [`system-prompt-evaluation-runbook.md`](./system-prompt-evaluation-runbook.md), [`../testing/README.md`](../testing/README.md) (pilot sessions: reaction recording, interview runbook, participant + facilitator forms). Existing repo architecture: [`architecture.md`](../architecture.md).
 
 ## Sync before coding (mandatory)
 
@@ -109,6 +109,8 @@ The chat surface is already plumbed for our needs (verified May 8, 2026):
 **Done when**
 
 - All checkboxes in `[adhd-assist-prompt-policy.md` § 9 QA checklist](./adhd-assist-prompt-policy.md#9-qa-checklist-before-participant-runs) pass except the oversight-specific ones (**Phase 3** — required on the **Track A** spine for **Form A RQ3** as written).
+
+**Recommended gate before Phase 2.5 / 3:** Run at least one cycle of [`../testing/adhd-user-reaction-recording.md`](../testing/adhd-user-reaction-recording.md) — paired Baseline vs Assist sessions with pilot reaction scores **and** AI-side compliance (`npm run eval:adhd` on the same git SHA). Use § 8 go/no-go there before scheduling oversight or §3b efficiency work.
 
 ## Phase 2.5 — Form A §3b: efficiency-focused context handling (scheduled when coding)
 

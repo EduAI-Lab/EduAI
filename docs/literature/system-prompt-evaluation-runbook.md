@@ -9,7 +9,7 @@ Structured steps to compare **Baseline** vs **ADHD Assist** (policy block in [`a
 
 **Honesty rule:** Tables and prose must **not** imply parity between platforms or build states that did not exist. If EduAI lacks the Assist toggle or Phase 3 oversight, state **“EduAI baseline only; Assist [+ oversight] via external LLM proxy”** (or equivalent) and split rows accordingly.
 
-For verbatim copy-paste user turns (S1–S4, optional S5) and a per-run metrics template aligned to the matrix below, see [`form-a-scenario-test-sheet.md`](./form-a-scenario-test-sheet.md).
+For verbatim copy-paste user turns (S1–S4, optional S5) and a per-run metrics template aligned to the matrix below, see [`form-a-scenario-test-sheet.md`](./form-a-scenario-test-sheet.md). For **ADHD learner pilot sessions**, see [`../testing/README.md`](../testing/README.md).
 
 ## Workflow A — External LLM (e.g. Claude web or API)
 
