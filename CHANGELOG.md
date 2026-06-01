@@ -11,6 +11,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] tests: Add 14 unit tests (`courses.enrollments.test.ts`) for `GET /api/courses/:id/enrollments` — covers `400` missing ID, `401` no session, `403` invalid service key, `403` user not enrolled, `404` course not found (both auth paths), `200` via service key and user OAuth (STUDENT + INSTRUCTOR), role mapping for STUDENT/TA/INSTRUCTOR, null `enrolledAt` handling, active + inactive returned together, and empty enrollment list. (#NNN, @ammaarm128, 2026-05-30)
 - [core] tests: Add integration tests (`courses.enrollments.integration.test.ts`) for `GET /api/courses/:id/enrollments` — seeds users (STUDENT, TA, INSTRUCTOR, outsider) and enrollments against a real test DB; covers `401`, `403` invalid key, `403` not enrolled, `404` nonexistent course, `200` via service key and user OAuth, role mapping, active + inactive returned, and correct field values from seeded data. (#NNN, @ammaarm128, 2026-05-30)
 
+### Changed
+- [core] api: Refactor course server handlers — replace `handleCourseRequest` with `getCourses`, `createCourse`, and `updateCourse`; expand create/update schemas for section, dates, department, publish flags, and `instructorUserIds`; `POST /api/courses` creates instructor enrollments in a transaction; `PATCH /api/courses/:id` takes `params.id` (admin, unit admin, or assigned instructor); `createCourseTopic` / `deleteCourseTopic` return HTTP status codes instead of string error codes; routes and unit/integration tests updated. (#392, @glowyblack, 2026-05-30)
 ---
 
 ## [Week 4 — May 25–29, 2026]
