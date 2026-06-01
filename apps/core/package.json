@@ -15,6 +15,7 @@
     "db:reset": "prisma migrate reset",
     "auth:migrate": "npx @better-auth/cli migrate",
     "auth:generate": "npx @better-auth/cli generate",
+    "eval:adhd": "node scripts/eval-adhd-assist.mjs",
     "bench:chat": "node ./scripts/chat-latency-bench.mjs",
     "test:embedding": "tsx scripts/test-embedding.ts"
   },
