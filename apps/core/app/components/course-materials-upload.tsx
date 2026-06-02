@@ -1,5 +1,3 @@
-import { useState, useEffect } from 'react';
-import { Button } from '~/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
 import { Input } from '~/components/ui/input';
 import { Label } from '~/components/ui/label';
@@ -7,7 +5,7 @@ import { Badge } from '~/components/ui/badge';
 import { Upload, FileText, AlertCircle, CheckCircle, XCircle } from 'lucide-react';
 import { Alert, AlertDescription } from '~/components/ui/alert';
 
-interface CourseMaterial {
+export interface CourseMaterial {
   id: string;
   title: string;
   mimeType: string;
@@ -17,63 +15,25 @@ interface CourseMaterial {
   chunks?: Array<{ id: string; content: string }>;
 }
 
-interface CourseMaterialsUploadProps {
-  courseId: string;
-  apiKeys: any;
+export interface CourseMaterialsUploadProps {
+  materials: CourseMaterial[];
+  isUploading?: boolean;
+  error?: string | null;
+  success?: string | null;
+  onFileSelect: (file: File) => void;
 }
 
-export function CourseMaterialsUpload({ courseId, apiKeys }: CourseMaterialsUploadProps) {
-  const [materials, setMaterials] = useState<CourseMaterial[]>([]);
-  const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
-
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+export function CourseMaterialsUpload({
+  materials,
+  isUploading = false,
+  error = null,
+  success = null,
+  onFileSelect,
+}: CourseMaterialsUploadProps) {
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (!file) return;
-
-    setUploading(true);
-    setError(null);
-    setSuccess(null);
-
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('apiKeys', JSON.stringify(apiKeys));
-
-      const response = await fetch(`/api/courses/${courseId}/materials`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || 'Failed to upload material');
-      }
-
-      setSuccess('Material uploaded successfully!');
-      // Refresh materials list
-      loadMaterials();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Upload failed');
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const loadMaterials = async () => {
-    try {
-      const response = await fetch(`/api/courses/${courseId}/materials`);
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || 'Failed to load materials');
-      }
-
-      setMaterials(result.materials || []);
-    } catch (err) {
-      console.error('Failed to load materials:', err);
+    if (file) {
+      onFileSelect(file);
     }
   };
 
@@ -111,11 +71,6 @@ export function CourseMaterialsUpload({ courseId, apiKeys }: CourseMaterialsUplo
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  // Load materials on component mount
-  useEffect(() => {
-    loadMaterials();
-  }, []);
-
   return (
     <div className="space-y-6">
       <Card>
@@ -136,13 +91,13 @@ export function CourseMaterialsUpload({ courseId, apiKeys }: CourseMaterialsUplo
                 id="file-upload"
                 type="file"
                 accept=".pdf,.docx,.pptx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain,text/markdown"
-                onChange={handleFileUpload}
-                disabled={uploading}
+                onChange={handleFileChange}
+                disabled={isUploading}
                 className="mt-2"
               />
             </div>
 
-            {uploading && (
+            {isUploading && (
               <Alert>
                 <AlertCircle className="h-4 w-4" />
                 <AlertDescription>Uploading and processing material...</AlertDescription>
