@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { hashPassword } from 'better-auth/crypto';
 import { UNITS } from '../app/lib/units';
 
 const prisma = new PrismaClient();
@@ -956,6 +957,25 @@ async function seedUsers() {
   }
 }
 
+const SEED_PASSWORD = 'EduAI2026!';
+
+async function seedPasswords() {
+  const hashed = await hashPassword(SEED_PASSWORD);
+  const userIds = Object.values(SEED_IDS.users);
+  for (const userId of userIds) {
+    await prisma.account.upsert({
+      where: { providerId_accountId: { providerId: 'credential', accountId: userId } },
+      update: { password: hashed },
+      create: {
+        providerId: 'credential',
+        accountId: userId,
+        userId,
+        password: hashed,
+      },
+    });
+  }
+}
+
 async function seedCourses() {
   for (const course of COURSES) {
     await prisma.course.upsert({
@@ -1179,7 +1199,8 @@ async function main() {
   console.log('  AI providers and models seeded');
 
   await seedUsers();
-  console.log('  Users seeded (admin, 2 unit admins, 4 instructors, 2 TAs, 5 students)');
+  await seedPasswords();
+  console.log('  Users seeded (admin, 2 unit admins, 4 instructors, 2 TAs, 5 students) with default password');
 
   await seedCourses();
   console.log(`  ${COURSES.length} courses seeded with topics, enrollments, and questions`);
