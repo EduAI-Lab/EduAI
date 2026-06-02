@@ -30,6 +30,13 @@ export function formatApiError(error: unknown): { error: string; hint?: string }
   }
 
   if (error instanceof Error) {
+    if (error.message.includes("Unknown argument `embeddingProvider`")) {
+      return {
+        error: "Prisma client is out of date (course embedding fields missing from generated client).",
+        hint:
+          "On the server: cd apps/core && npx prisma generate, then restart the dev server (tmux: Ctrl+C, then npx turbo run dev --filter=edu-ai from repo root).",
+      };
+    }
     return { error: error.message };
   }
 
