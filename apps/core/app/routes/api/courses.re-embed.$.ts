@@ -2,14 +2,12 @@ import type { ActionFunctionArgs } from "react-router";
 import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { getCourseIfCanManageMaterials } from "~/lib/courses/access.server";
+import { formatApiError, jsonResponse } from "~/lib/api/json-response.server";
 import { reEmbedCourseMaterials } from "~/lib/ai/embedding";
 
 export async function action({ request, params }: ActionFunctionArgs) {
   if (request.method !== "POST") {
-    return new Response(JSON.stringify({ error: "Method not allowed" }), {
-      status: 405,
-      headers: { "Content-Type": "application/json" },
-    });
+    return jsonResponse({ error: "Method not allowed" }, 405);
   }
 
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
@@ -17,44 +15,24 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   const session = apiKeySession ?? (await auth.api.getSession(request));
   if (!session?.user) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
+    return jsonResponse({ error: "Unauthorized" }, 401);
   }
 
   const courseId = params.courseId;
   if (!courseId) {
-    return new Response(JSON.stringify({ error: "Course ID is required" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
+    return jsonResponse({ error: "Course ID is required" }, 400);
   }
 
   const course = await getCourseIfCanManageMaterials(session.user, courseId);
   if (!course) {
-    return new Response(JSON.stringify({ error: "Course not found or access denied" }), {
-      status: 404,
-      headers: { "Content-Type": "application/json" },
-    });
+    return jsonResponse({ error: "Course not found or access denied" }, 404);
   }
 
   try {
     const result = await reEmbedCourseMaterials(courseId);
-    return new Response(JSON.stringify({ success: true, ...result }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+    return jsonResponse({ success: true, ...result });
   } catch (error) {
     console.error("[re-embed] API failed:", error);
-    return new Response(
-      JSON.stringify({
-        error: error instanceof Error ? error.message : "Re-embed failed",
-      }),
-      {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      },
-    );
+    return jsonResponse(formatApiError(error), 500);
   }
 }
