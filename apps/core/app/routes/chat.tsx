@@ -2,12 +2,12 @@ import { useChat } from '@ai-sdk/react';
 import { useState, useEffect } from "react";
 import { redirect, useLoaderData } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
-import { Select, SelectContent, SelectItem, SelectTrigger } from "~/components/ui/select";
 import { ChatWelcome } from "~/components/chat/chat-welcome";
 import { ChatMessage } from "~/components/chat/chat-message";
 import { ChatInput } from "~/components/chat/chat-input";
 import { ChatTypingIndicator } from "~/components/chat/chat-typing-indicator";
 import { SystemPromptSettings } from "~/components/chat/system-prompt-settings";
+import { ApiKeySettings } from "~/components/chat/api-key-settings";
 import { Switch } from "~/components/ui/switch";
 import { Label } from "~/components/ui/label";
 import { useApiKeys } from "~/hooks/use-api-keys";
@@ -72,7 +72,8 @@ export default function Chat() {
   const [chatId, setChatId] = useState<string | null>(null);
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
   const [adhdAssist, setAdhdAssist] = useState(false);
-  const { apiKeys, getValidApiKeys } = useApiKeys();
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const { apiKeys, getValidApiKeys, updateProviderSettings, removeProviderSettings, isProviderConfigured } = useApiKeys();
 
   // Fetch available courses
   useEffect(() => {
@@ -244,6 +245,7 @@ export default function Chat() {
             onInputChange={handleInputChange}
             onSubmit={handleSubmit}
             onStop={stop}
+            onOpenSettings={() => setSettingsOpen(true)}
             selectedCourseId={selectedCourseCode}
             setSelectedCourseId={setSelectedCourseCode}
             availableCourses={availableCourses}
@@ -251,6 +253,14 @@ export default function Chat() {
             setSelectedModel={setSelectedModel}
             chatModels={chatModels}
             selectedModelInfo={selectedModelInfo}
+          />
+          <ApiKeySettings
+            open={settingsOpen}
+            onOpenChange={setSettingsOpen}
+            apiKeys={apiKeys}
+            isProviderConfigured={isProviderConfigured}
+            onUpdateProvider={updateProviderSettings}
+            onRemoveProvider={removeProviderSettings}
           />
         </div>
       </SidebarInset>
