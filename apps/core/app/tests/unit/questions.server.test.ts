@@ -150,6 +150,59 @@ describe("createQuestion", () => {
     });
   });
 
+  it("returns VALIDATION_ERROR for a malformed body (missing content, bad enum)", async () => {
+    const result = await createQuestion(
+      { ...baseBody, content: "", type: "ESSAY" },
+      CREATOR
+    );
+    expect(result).toMatchObject({ error: "VALIDATION_ERROR" });
+    const fields = (result as { fields: Record<string, string> }).fields;
+    expect(fields).toHaveProperty("content");
+    expect(fields).toHaveProperty("type");
+    // validation short-circuits before any DB access
+    expect(db.course.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("returns INVALID_TOPIC_IDS when a secondary topic id does not exist at all (no FK 500)", async () => {
+    db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
+    db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, deletedAt: null });
+    // findMany returns nothing — the requested secondary id is absent in Core
+    db.courseTopic.findMany.mockResolvedValue([]);
+    const result = await createQuestion(
+      { ...baseBody, secondaryTopicIds: ["ghost-topic"] },
+      CREATOR
+    );
+    expect(result).toEqual({
+      error: "INVALID_TOPIC_IDS",
+      deletedTopicIds: ["ghost-topic"],
+      conflictingWithPrimary: [],
+    });
+    expect(db.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("recovers from an idempotency-key race (P2002) by returning the existing id", async () => {
+    db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
+    db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, deletedAt: null });
+    // First idempotency check finds nothing; a concurrent request commits before
+    // our create, so the transaction throws P2002, then the recovery lookup hits.
+    db.question.findUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: QUESTION_ID });
+    db.$transaction.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError("unique", {
+        code: "P2002",
+        clientVersion: "5.0.0",
+      })
+    );
+
+    const result = await createQuestion(
+      { ...baseBody, idempotencyKey: "idem-race" },
+      CREATOR
+    );
+
+    expect(result).toEqual({ id: QUESTION_ID });
+  });
+
   it("does NOT call createMany when secondaryTopicIds is empty", async () => {
     db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
     db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, deletedAt: null });
@@ -293,5 +346,14 @@ describe("updateQuestionTestable", () => {
   it("re-throws non-P2025 errors", async () => {
     db.question.update.mockRejectedValue(new Error("db gone"));
     await expect(updateQuestionTestable(QUESTION_ID, true)).rejects.toThrow("db gone");
+  });
+
+  it("guards against soft-deleted questions — where clause includes deletedAt: null", async () => {
+    db.question.update.mockResolvedValue({ id: QUESTION_ID, testable: true });
+    await updateQuestionTestable(QUESTION_ID, true);
+    expect(db.question.update.mock.calls[0][0].where).toEqual({
+      id: QUESTION_ID,
+      deletedAt: null,
+    });
   });
 });
