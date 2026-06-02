@@ -1,7 +1,7 @@
 import { useChat } from '@ai-sdk/react';
-import { useState, useEffect } from "react";
-import { redirect, useLoaderData } from "react-router";
-import type { LoaderFunctionArgs } from "react-router";
+import { useState, useEffect, useCallback } from "react";
+import { redirect, useLoaderData, useFetcher } from "react-router";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "~/components/ui/select";
 import { ChatWelcome } from "~/components/chat/chat-welcome";
 import { ChatMessage } from "~/components/chat/chat-message";
@@ -58,21 +58,101 @@ export async function loader({ request }: LoaderFunctionArgs) {
     supportsTools: model.supportsTools,
   }));
 
+  const preference = await prisma.userPreference.findUnique({
+    where: { userId: session.user.id },
+  });
+
   return {
     chatModels,
-    user: session.user
+    user: session.user,
+    assistDefault: preference?.assistDefault ?? false,
+    lastCourseCode: preference?.lastCourseCode ?? null,
+  };
+}
+
+/**
+ * Persists the per-user chat preferences written from this route (Assistive-mode
+ * default + last selected course). Accepts any subset of
+ * { assistDefault?: boolean, lastCourseCode?: string | null }.
+ */
+export async function action({ request }: ActionFunctionArgs) {
+  const session = await auth.api.getSession(request);
+  if (!session?.user) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const body = await request.json().catch(() => null);
+  const payload = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+
+  const data: { assistDefault?: boolean; lastCourseCode?: string | null } = {};
+  if (typeof payload.assistDefault === "boolean") {
+    data.assistDefault = payload.assistDefault;
+  }
+  if (typeof payload.lastCourseCode === "string") {
+    const trimmed = payload.lastCourseCode.trim();
+    data.lastCourseCode = trimmed.length > 0 ? trimmed : null;
+  } else if (payload.lastCourseCode === null) {
+    data.lastCourseCode = null;
+  }
+
+  if (Object.keys(data).length === 0) {
+    return new Response(JSON.stringify({ error: "No valid preference fields provided" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const preference = await prisma.userPreference.upsert({
+    where: { userId: session.user.id },
+    create: { userId: session.user.id, ...data },
+    update: data,
+  });
+
+  return {
+    assistDefault: preference.assistDefault,
+    lastCourseCode: preference.lastCourseCode,
   };
 }
 
 export default function Chat() {
-  const { chatModels, user } = useLoaderData<typeof loader>();
+  const { chatModels, user, assistDefault, lastCourseCode } = useLoaderData<typeof loader>();
   const [selectedModel, setSelectedModel] = useState(chatModels.length > 0 ? chatModels[0].id : '');
-  const [selectedCourseCode, setSelectedCourseCode] = useState<string | null>(null);
+  const [selectedCourseCode, setSelectedCourseCode] = useState<string | null>(lastCourseCode);
   const [availableCourses, setAvailableCourses] = useState<Array<{ id: string; name: string; code: string }>>([]);
   const [chatId, setChatId] = useState<string | null>(null);
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
-  const [adhdAssist, setAdhdAssist] = useState(false);
+  const [adhdAssist, setAdhdAssist] = useState(assistDefault);
   const { apiKeys, getValidApiKeys } = useApiKeys();
+  const prefsFetcher = useFetcher();
+
+  const persistPreference = useCallback(
+    (updates: { assistDefault?: boolean; lastCourseCode?: string | null }) => {
+      prefsFetcher.submit(updates, {
+        method: "post",
+        encType: "application/json",
+      });
+    },
+    [prefsFetcher],
+  );
+
+  const handleAssistChange = useCallback(
+    (checked: boolean) => {
+      setAdhdAssist(checked);
+      persistPreference({ assistDefault: checked });
+    },
+    [persistPreference],
+  );
+
+  const handleCourseChange = useCallback(
+    (code: string | null) => {
+      setSelectedCourseCode(code);
+      persistPreference({ lastCourseCode: code });
+    },
+    [persistPreference],
+  );
 
   // Fetch available courses
   useEffect(() => {
@@ -80,7 +160,11 @@ export default function Chat() {
       try {
         const response = await fetch('/api/courses');
         const data = await response.json();
-        setAvailableCourses(data.courses || []);
+        const courses: Array<{ id: string; name: string; code: string }> = data.courses || [];
+        setAvailableCourses(courses);
+        setSelectedCourseCode((current) =>
+          current && !courses.some((c) => c.code === current) ? null : current,
+        );
       } catch (error) {
         console.error('Failed to fetch courses:', error);
       }
@@ -196,7 +280,7 @@ export default function Chat() {
                       <Switch
                         id="adhd-assist"
                         checked={adhdAssist}
-                        onCheckedChange={(checked) => setAdhdAssist(Boolean(checked))}
+                        onCheckedChange={(checked) => handleAssistChange(Boolean(checked))}
                         aria-label="Assistive mode"
                       />
                       <Label htmlFor="adhd-assist" className="text-sm">
@@ -245,7 +329,7 @@ export default function Chat() {
             onSubmit={handleSubmit}
             onStop={stop}
             selectedCourseId={selectedCourseCode}
-            setSelectedCourseId={setSelectedCourseCode}
+            setSelectedCourseId={handleCourseChange}
             availableCourses={availableCourses}
             selectedModel={selectedModel}
             setSelectedModel={setSelectedModel}
