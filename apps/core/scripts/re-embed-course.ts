@@ -1,6 +1,8 @@
 /**
  * Re-embed all course materials for a course (after dimension / provider change).
- * Run from apps/core: npm run re-embed:course -- <courseId>
+ * Run from apps/core:
+ *   npm run re-embed:course -- --list
+ *   npm run re-embed:course -- <courseId-or-code>
  *
  * See docs/rag-ai/LOCAL-EMBEDDINGS.md
  */
@@ -29,24 +31,91 @@ function loadEnvFile() {
   }
 }
 
-async function main() {
-  loadEnvFile();
+async function listCourses(): Promise<void> {
+  const courses = await prisma.course.findMany({
+    orderBy: { code: "asc" },
+    select: {
+      id: true,
+      code: true,
+      name: true,
+      _count: { select: { materials: true } },
+    },
+  });
 
-  const courseId = process.argv[2]?.trim();
-  if (!courseId) {
-    console.error("Usage: npm run re-embed:course -- <courseId>");
-    process.exit(1);
+  if (courses.length === 0) {
+    console.log("No courses in the database.");
+    return;
   }
 
-  const course = await prisma.course.findUnique({
-    where: { id: courseId },
+  console.log("Courses (use id or code with re-embed:course):\n");
+  for (const c of courses) {
+    console.log(`  ${c.code.padEnd(16)}  ${c.name}  (${c._count.materials} materials)`);
+    console.log(`    id: ${c.id}`);
+  }
+}
+
+async function resolveCourse(ref: string) {
+  const byId = await prisma.course.findUnique({
+    where: { id: ref },
+    select: { id: true, code: true, name: true },
+  });
+  if (byId) return byId;
+
+  const byCode = await prisma.course.findUnique({
+    where: { code: ref },
+    select: { id: true, code: true, name: true },
+  });
+  if (byCode) return byCode;
+
+  const needle = ref.toLowerCase();
+  const suggestions = await prisma.course.findMany({
+    where: {
+      OR: [
+        { code: { contains: ref, mode: "insensitive" } },
+        { name: { contains: ref, mode: "insensitive" } },
+      ],
+    },
+    orderBy: { code: "asc" },
+    take: 10,
     select: { id: true, code: true, name: true },
   });
 
-  if (!course) {
-    console.error(`Course not found: ${courseId}`);
+  return { notFound: true as const, ref, suggestions };
+}
+
+async function main() {
+  loadEnvFile();
+
+  const arg = process.argv[2]?.trim();
+  if (!arg || arg === "--list" || arg === "-l") {
+    if (!arg) {
+      console.error("Usage:");
+      console.error("  npm run re-embed:course -- --list");
+      console.error("  npm run re-embed:course -- <courseId-or-code>");
+      process.exit(1);
+    }
+    await listCourses();
+    return;
+  }
+
+  const resolved = await resolveCourse(arg);
+
+  if ("notFound" in resolved) {
+    console.error(`Course not found: ${resolved.ref}`);
+    console.error("(Lookup accepts the internal id or exact course code, e.g. COSC 111 — not a partial nickname.)");
+    if (resolved.suggestions.length > 0) {
+      console.error("\nDid you mean one of these?");
+      for (const c of resolved.suggestions) {
+        console.error(`  ${c.code} — ${c.name}`);
+        console.error(`    npm run re-embed:course -- ${JSON.stringify(c.code)}`);
+      }
+    } else {
+      console.error("\nRun `npm run re-embed:course -- --list` to see all courses.");
+    }
     process.exit(1);
   }
+
+  const course = resolved;
 
   console.log("[re-embed] starting", {
     courseId: course.id,
@@ -56,7 +125,7 @@ async function main() {
     dimension: process.env.EMBEDDING_DIMENSION ?? "1024",
   });
 
-  const result = await reEmbedCourseMaterials(courseId);
+  const result = await reEmbedCourseMaterials(course.id);
 
   console.log("[re-embed] done", result);
   if (result.failed.length > 0) process.exit(1);
