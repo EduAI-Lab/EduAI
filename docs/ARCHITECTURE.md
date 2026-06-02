@@ -1,6 +1,6 @@
 # EduAI — Architecture guide
 
-**Last updated:** 2026-05-20
+**Last updated:** 2026-06-02
 
 This document explains **what runs inside this repo (Core)** versus **what lives outside it (hosted services & integrations)**, how **AI providers and keys** work (including `OPENROUTER_API_KEY` / `GOOGLE_GENERATIVE_AI_API_KEY` for embeddings), and how the **codebase fits together**. Use it as the single place to orient yourself; export to PDF when you want a printable copy (see [Saving as PDF](#8-saving-as-pdf)).
 
@@ -27,7 +27,7 @@ This document explains **what runs inside this repo (Core)** versus **what lives
 | Term in this doc             | Meaning                                                                                                                                                                             |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Core (owned)**             | The EduAI application in *this repository*: the web UI, all `/api/`* routes, PostgreSQL data, auth, RAG (chunking + vectors + search), chat persistence. You deploy and operate it. |
-| **Hosted / external**        | Services you call over the network but do *not* ship as part of this repo: Google AI, OpenAI, Ollama, optional Firecrawl, etc. They hold the actual language/embedding models.      |
+| **Hosted / external**        | Services you call over the network but do *not* ship as part of this repo: Google AI, OpenAI, Ollama, vLLM (optional on cmps01), optional Firecrawl, etc. They hold the actual language/embedding models.      |
 | **Extensions (integrators)** | Other products (e.g. a campus "tutor" app) that **call EduAI's HTTP API** with an admin API key and optional `proxyUser`. They are clients of Core, not code inside Core.           |
 
 
@@ -43,12 +43,14 @@ flowchart LR
   subgraph Hosted["Hosted / external"]
     G[Google AI]
     O[OpenAI]
-    L[Ollama]
-    F[Firecrawl optional]
+    L[Ollama cmps01 :11434]
+    V[vLLM cmps01 :8001]
+    F[Firecrawl]
   end
   API --> G
   API --> O
   API --> L
+  API -.-> V
   API -.-> F
   Ext[Extension apps e.g. AITutor] -->|HTTPS + API key| API
 ```
@@ -62,7 +64,7 @@ flowchart LR
 In this project you will see npm packages:
 
 - `ai` — the main Vercel AI SDK runtime. It gives unified helpers such as `streamText`, `generateText`, `embed`, and `embedMany` so application code talks to models in a consistent way.
-- `@ai-sdk/google`, `@ai-sdk/openai`, `ollama-ai-provider` — **provider adapters**. Each one knows how to format requests/responses for that vendor's HTTP API.
+- `@ai-sdk/google`, `@ai-sdk/openai`, `ollama-ai-provider` — **provider adapters** for chat. **vLLM** uses the OpenAI adapter against a local OpenAI-compatible base URL (`/v1/chat/completions`).
 
 Think of it as two layers:
 
@@ -93,7 +95,7 @@ flowchart TD
   Req --> Reg
   Parse --> SDK
   Reg --> SDK
-  SDK --> Vendor[Google / OpenAI / Ollama APIs]
+  SDK --> Vendor[Google / OpenAI / Ollama / vLLM APIs]
 ```
 
 
@@ -150,7 +152,9 @@ flowchart TD
 | `GOOGLE_GENERATIVE_AI_API_KEY`                            | **Embeddings** direct Gemini when OpenRouter unset             | Server `.env` only (`embedding.ts`)                                                 |
 | `OPENAI_API_KEY`                                          | Embeddings fallback if neither above set                       | Server `.env` only                                                                  |
 | `apiKeys.google.apiKey` (and similar) in `/api/chat` body | **Chat** completions for that request                          | Client/request (often admin/API); merged with UI session settings in app code paths |
-| `OLLAMA_BASE_URL`                                         | Local Ollama base URL for **chat** registry                    | Env + optional override in user settings                                            |
+| `OLLAMA_BASE_URL`                                         | Ollama on **cmps01** for **chat** (`:11434`)                   | Env + optional override in user settings                                            |
+| `VLLM_BASE_URL`                                           | vLLM OpenAI-compatible API on **cmps01** (`:8001`, `VLLM_PORT`) | Env + optional override; see [cmps01 inference](#cmps01-gpu-inference-host)          |
+| `VLLM_API_KEY`                                            | Placeholder for vLLM (often `vllm-local`)                      | Env                                                                                 |
 | `BETTER_AUTH_`*                                           | Sessions and API keys for EduAI accounts                       | Env                                                                                 |
 | `FIRECRAWL_API_KEY`                                       | Optional web search tool                                       | Env (see README)                                                                    |
 
@@ -254,7 +258,41 @@ Section [5.3](#sec-53-chat-with-course-context) shows the high-level chat path. 
 
 Retrieval itself is always the same function: **`findRelevantContent`** in `embedding.ts` (server env embeddings + pgvector over `material_embeddings`). That is independent of which chat provider the user picked in the UI.
 
-AI models are hosted on [cmps01.ok.ubc.ca](http://cmps01.ok.ubc.ca). EduAI (hosted on [my.eduai.ok.ubc.ca](http://my.eduai.ok.ubc.ca)) and its respective dev app ([dev.eduai.ok.ubc.ca](http://dev.eduai.ok.ubc.ca)) both connect to cmps01 ollama port to send and recieve AI prompts and responses respectively.
+### cmps01 GPU inference host
+
+Local **chat** models run on **[cmps01.ok.ubc.ca](http://cmps01.ok.ubc.ca)** (shared UBC GPU server). EduAI app servers call cmps01 over **HTTP** — they do not run inference inside the Node process.
+
+| Service | Port (host) | Provider id in EduAI | Role |
+| ------- | ----------- | -------------------- | ---- |
+| **Ollama** | **11434** | `ollama` | Default local path; GGUF models; hybrid + tool paths per `supportsTools` |
+| **vLLM** (optional) | **8001** (`VLLM_PORT`) | `vllm` | OpenAI-compatible serving (`@ai-sdk/openai` → `/v1`); HF weights in Docker; multi-user / bench spike ([#394](https://github.com/EduAI-Lab/EduAI/issues/394)) |
+
+**Embeddings for RAG** are still **cloud** (OpenRouter / Google / OpenAI env keys) — not served from cmps01 today. See [EMBEDDINGS.md](rag-ai/EMBEDDINGS.md).
+
+```mermaid
+flowchart LR
+  subgraph Apps["EduAI app hosts"]
+    Dev[dev.eduai.ok.ubc.ca s378]
+    Prod[my.eduai.ok.ubc.ca]
+  end
+  subgraph CMPS01["cmps01.ok.ubc.ca GPU"]
+    Oll[:11434 Ollama]
+    Vll[:8001 vLLM Docker]
+  end
+  Dev -->|HTTP allowed| Oll
+  Dev -->|HTTP ticket pending| Vll
+  Prod --> Oll
+```
+
+**Network (dev → cmps01):**
+
+- **HTTP :11434** (Ollama) — allowed today from s378; laptops cannot reach cmps01 directly (use dev server or SSH tunnel from laptop to cmps01).
+- **HTTP :8001** (vLLM) — requires **network firewall** + **host firewall** on cmps01 (IT ticket). Precedent: same pattern as 11434.
+- **SSH :22** (s378 → cmps01) — **not** available (connection timed out in testing). Do **not** rely on SSH port-forward from dev to cmps01; use direct HTTP once 8001 is open.
+
+**Setup / ops:** [rag-ai/latency/eduai-summer-2026/VLLM_CMPS01_SETUP.md](rag-ai/latency/eduai-summer-2026/VLLM_CMPS01_SETUP.md) · [DEPLOYMENT.md](DEPLOYMENT.md) · [HOW_TO_USE_DEV_SERVER.md](rag-ai/HOW_TO_USE_DEV_SERVER.md)
+
+**Code:** `app/lib/ai/providers.ts` (`ollama`, `vllm`); enable vLLM in Settings → API keys on dev.
 
 ---
 
@@ -321,4 +359,4 @@ Mermaid diagrams render in GitHub and many Markdown previews; some PDF tools nee
 
 ## 9. One-page mental model
 
-**Core** is one app + one DB. **Hosted APIs** supply brains (chat + embeddings). **Embeddings for RAG** always use **server env** (`OPENROUTER_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` preferred). **Chat** uses the **AI SDK + provider registry** with keys from **request/UI settings**. **Extensions** call your APIs; they are not inside this repo.
+**Core** is one app + one DB. **Hosted APIs** supply brains (chat + embeddings). **Embeddings for RAG** always use **server env** (`OPENROUTER_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` preferred). **Chat** uses the **AI SDK + provider registry** with keys from **request/UI settings** (cloud + `ollama:` / `vllm:` on cmps01). **Extensions** call your APIs; they are not inside this repo. **cmps01** serves local chat over HTTP (**11434** Ollama, **8001** vLLM when deployed).
