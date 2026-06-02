@@ -9,6 +9,7 @@ async function resolveAuth(request: Request) {
     const guard = await requireServiceKey(request);
     return { guard, serviceKey: !guard, session: null };
   }
+  // TODO(RBAC #292): replace with resolveCourseAccess
   const session = await auth.api.getSession(request);
   return { guard: null, serviceKey: false, session };
 }
@@ -17,6 +18,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const { guard, serviceKey, session } = await resolveAuth(request);
   if (guard) return guard;
 
+  // TODO(RBAC #292): replace with resolveCourseAccess — cookie-session callers
+  // currently pass with any role (no per-course/role gate beyond "is logged in").
   if (!serviceKey && !session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -49,6 +52,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const { guard, serviceKey, session } = await resolveAuth(request);
   if (guard) return guard;
 
+  // TODO(RBAC #292): replace with resolveCourseAccess
   if (!serviceKey && !session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,

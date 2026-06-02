@@ -13,6 +13,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     const guard = await requireServiceKey(request);
     if (guard) return guard;
   } else {
+    // TODO(RBAC #292): replace with resolveCourseAccess
     const session = await auth.api.getSession(request);
     if (!session?.user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -69,6 +70,7 @@ export async function action({ request }: ActionFunctionArgs) {
     });
   }
 
+  // TODO(RBAC #292): replace with resolveCourseAccess
   const session = await auth.api.getSession(request);
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
