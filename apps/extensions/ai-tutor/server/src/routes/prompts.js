@@ -39,7 +39,7 @@ async function resolveUniquePromptSlug(name) {
   return `${baseSlug}-${suffix}`;
 }
 
-router.get('/prompts', requireRole('PROFESSOR'), async (req, res) => {
+router.get('/prompts', requireRole('INSTRUCTOR'), async (req, res) => {
   try {
     const prompts = await prisma.promptTemplate.findMany({
       orderBy: { updatedAt: 'desc' },
@@ -50,7 +50,7 @@ router.get('/prompts', requireRole('PROFESSOR'), async (req, res) => {
   }
 });
 
-router.post('/prompts', requireRole('PROFESSOR'), async (req, res) => {
+router.post('/prompts', requireRole('INSTRUCTOR'), async (req, res) => {
   const { name, systemPrompt, temperature, topP } = req.body || {};
 
   if (!name || !systemPrompt) {
