@@ -53,7 +53,7 @@ describe('requireAuth', () => {
   it('calls next and sets req.user on a valid session', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ user: { id: 'u1', email: 'a@b.com', name: 'Alice', role: 'PROFESSOR' } }),
+      json: () => Promise.resolve({ user: { id: 'u1', email: 'a@b.com', name: 'Alice', role: 'INSTRUCTOR' } }),
     }));
     const req = makeApiReq();
     const res = makeRes();
@@ -61,7 +61,7 @@ describe('requireAuth', () => {
     await requireAuth(req, res, next);
 
     expect(next).toHaveBeenCalledOnce();
-    expect(req.user).toMatchObject({ id: 'u1', email: 'a@b.com', role: 'PROFESSOR' });
+    expect(req.user).toMatchObject({ id: 'u1', email: 'a@b.com', role: 'INSTRUCTOR' });
   });
 
   it('calls findOrCreateUser to maintain the local user row', async () => {
@@ -133,7 +133,7 @@ describe('requireAuth', () => {
     expect(req.user.role).toBe('STUDENT');
   });
 
-  it.each(['STUDENT', 'PROFESSOR', 'TA', 'ADMIN', 'UNIT_ADMIN'])(
+  it.each(['STUDENT', 'INSTRUCTOR', 'TA', 'ADMIN', 'UNIT_ADMIN'])(
     'preserves valid role %s unchanged',
     async (role) => {
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
@@ -157,28 +157,28 @@ describe('requireRole', () => {
   });
 
   it('calls next when the string role matches', () => {
-    requireRole('PROFESSOR')({ user: { role: 'PROFESSOR' } }, makeRes(), next);
+    requireRole('INSTRUCTOR')({ user: { role: 'INSTRUCTOR' } }, makeRes(), next);
     expect(next).toHaveBeenCalledOnce();
   });
 
   it('calls next when the role is in the allowed array', () => {
-    requireRole(['PROFESSOR', 'TA'])({ user: { role: 'TA' } }, makeRes(), next);
+    requireRole(['INSTRUCTOR', 'TA'])({ user: { role: 'TA' } }, makeRes(), next);
     expect(next).toHaveBeenCalledOnce();
   });
 
   it('returns 403 when the role is not allowed', () => {
     const res = makeRes();
-    requireRole('PROFESSOR')({ user: { role: 'STUDENT' } }, res, next);
+    requireRole('INSTRUCTOR')({ user: { role: 'STUDENT' } }, res, next);
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(403);
     expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({ success: false, error: expect.stringContaining('PROFESSOR') }),
+      expect.objectContaining({ success: false, error: expect.stringContaining('INSTRUCTOR') }),
     );
   });
 
   it('returns 401 when req.user is absent', () => {
     const res = makeRes();
-    requireRole('PROFESSOR')({}, res, next);
+    requireRole('INSTRUCTOR')({}, res, next);
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(401);
     expect(res.json).toHaveBeenCalledWith(
