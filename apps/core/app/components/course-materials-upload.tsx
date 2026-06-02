@@ -1,11 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Button } from '~/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
 import { Input } from '~/components/ui/input';
 import { Label } from '~/components/ui/label';
 import { Badge } from '~/components/ui/badge';
-import { Upload, FileText, AlertCircle, CheckCircle, XCircle } from 'lucide-react';
+import { Upload, FileText, AlertCircle, CheckCircle, XCircle, RefreshCw, Loader2 } from 'lucide-react';
 import { Alert, AlertDescription } from '~/components/ui/alert';
+import { CourseEmbeddingSettings } from '~/components/course-embedding-settings';
 
 interface CourseMaterial {
   id: string;
@@ -25,8 +26,46 @@ interface CourseMaterialsUploadProps {
 export function CourseMaterialsUpload({ courseId, apiKeys }: CourseMaterialsUploadProps) {
   const [materials, setMaterials] = useState<CourseMaterial[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [reEmbedding, setReEmbedding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const loadMaterials = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/courses/${courseId}/materials`);
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to load materials');
+      }
+
+      setMaterials(result.materials || []);
+      return result.materials as CourseMaterial[];
+    } catch (err) {
+      console.error('Failed to load materials:', err);
+      return null;
+    }
+  }, [courseId]);
+
+  const stopPolling = () => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  };
+
+  const startPolling = () => {
+    stopPolling();
+    pollRef.current = setInterval(() => {
+      void loadMaterials();
+    }, 2000);
+  };
+
+  useEffect(() => {
+    loadMaterials();
+    return () => stopPolling();
+  }, [loadMaterials]);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -53,34 +92,51 @@ export function CourseMaterialsUpload({ courseId, apiKeys }: CourseMaterialsUplo
       }
 
       setSuccess('Material uploaded successfully!');
-      // Refresh materials list
       loadMaterials();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed');
     } finally {
       setUploading(false);
+      event.target.value = '';
     }
   };
 
-  const loadMaterials = async () => {
+  const handleReEmbed = async () => {
+    setReEmbedding(true);
+    setError(null);
+    setSuccess(null);
+    startPolling();
+
     try {
-      const response = await fetch(`/api/courses/${courseId}/materials`);
+      const response = await fetch(`/api/courses/${courseId}/re-embed`, {
+        method: 'POST',
+      });
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(result.error || 'Failed to load materials');
+        throw new Error(result.error || 'Re-index failed');
       }
 
-      setMaterials(result.materials || []);
+      await loadMaterials();
+      const failedCount = result.failed?.length ?? 0;
+      setSuccess(
+        `Re-indexed ${result.processed} material(s)` +
+          (failedCount > 0 ? `; ${failedCount} failed` : '') +
+          '.',
+      );
     } catch (err) {
-      console.error('Failed to load materials:', err);
+      setError(err instanceof Error ? err.message : 'Re-index failed');
+    } finally {
+      setReEmbedding(false);
+      stopPolling();
+      await loadMaterials();
     }
   };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'PROCESSING':
-        return <AlertCircle className="h-4 w-4 text-yellow-500" />;
+        return <Loader2 className="h-4 w-4 animate-spin text-yellow-500" />;
       case 'READY':
         return <CheckCircle className="h-4 w-4 text-green-500" />;
       case 'FAILED':
@@ -111,13 +167,17 @@ export function CourseMaterialsUpload({ courseId, apiKeys }: CourseMaterialsUplo
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  // Load materials on component mount
-  useEffect(() => {
-    loadMaterials();
-  }, []);
+  const hasMaterials = materials.length > 0;
 
   return (
     <div className="space-y-6">
+      <CourseEmbeddingSettings
+        courseId={courseId}
+        onSettingsSaved={() => {
+          void loadMaterials();
+        }}
+      />
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -137,7 +197,7 @@ export function CourseMaterialsUpload({ courseId, apiKeys }: CourseMaterialsUplo
                 type="file"
                 accept=".pdf,.docx,.pptx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain,text/markdown"
                 onChange={handleFileUpload}
-                disabled={uploading}
+                disabled={uploading || reEmbedding}
                 className="mt-2"
               />
             </div>
@@ -167,11 +227,31 @@ export function CourseMaterialsUpload({ courseId, apiKeys }: CourseMaterialsUplo
       </Card>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Course Materials</CardTitle>
-          <CardDescription>
-            Materials uploaded to this course ({materials.length} total)
-          </CardDescription>
+        <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
+          <div>
+            <CardTitle>Course Materials</CardTitle>
+            <CardDescription>
+              Materials uploaded to this course ({materials.length} total)
+            </CardDescription>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleReEmbed}
+            disabled={!hasMaterials || reEmbedding || uploading}
+          >
+            {reEmbedding ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Re-indexing…
+              </>
+            ) : (
+              <>
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Re-index all materials
+              </>
+            )}
+          </Button>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
