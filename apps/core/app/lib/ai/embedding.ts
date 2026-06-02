@@ -4,6 +4,13 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOllama } from "ollama-ai-provider";
 import prisma from "../prisma.server";
 import { randomUUID } from "crypto";
+import {
+  type EffectiveEmbeddingSettings,
+  DEFAULT_OLLAMA_EMBEDDING_MODEL,
+  DEFAULT_OPENROUTER_OPENAI_MODEL,
+  DEFAULT_OPENAI_EMBEDDING_MODEL,
+  resolveEffectiveEmbeddingSettings,
+} from "./embedding-config";
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
@@ -12,12 +19,6 @@ export const DEFAULT_EMBEDDING_DIMENSION = 1024;
 
 /** Cloud Gemini default (legacy 3072 path — only if EMBEDDING_DIMENSION=3072). */
 const DEFAULT_OPENROUTER_GEMINI_MODEL = "google/gemini-embedding-001";
-/** Cloud OpenAI default for 1024-dim path (LOCAL-EMBEDDINGS). */
-const DEFAULT_OPENROUTER_OPENAI_MODEL = "openai/text-embedding-3-small";
-const DEFAULT_OPENAI_EMBEDDING_MODEL = "text-embedding-3-small";
-
-/** Default Ollama embed model on cmps01 (LOCAL-EMBEDDINGS). */
-const DEFAULT_OLLAMA_EMBEDDING_MODEL = "mxbai-embed-large";
 
 /** Max inputs per `embedMany` batch (provider limits vary; stay conservative). */
 const EMBED_MANY_BATCH_SIZE = Math.min(
@@ -41,6 +42,17 @@ export type EmbeddingProviderKind =
   | "google"
   | "openai";
 
+export {
+  ALLOWED_CLOUD_EMBEDDING_MODELS,
+  ALLOWED_LOCAL_EMBEDDING_MODELS,
+  isEmbeddingIndexStale,
+  parseEmbeddingSettingsUpdate,
+  resolveEffectiveEmbeddingSettings,
+  validateEmbeddingSettingsUpdate,
+  type CourseEmbeddingFields,
+  type EffectiveEmbeddingSettings,
+} from "./embedding-config";
+
 export function getExpectedEmbeddingDimension(): number {
   const raw = process.env.EMBEDDING_DIMENSION?.trim();
   if (!raw) return DEFAULT_EMBEDDING_DIMENSION;
@@ -49,7 +61,7 @@ export function getExpectedEmbeddingDimension(): number {
   return Math.floor(n);
 }
 
-/** True when `EMBEDDING_PROVIDER` is `local` or `ollama`. */
+/** True when global `EMBEDDING_PROVIDER` is `local` or `ollama`. */
 export function wantsLocalEmbeddingProvider(): boolean {
   const provider = process.env.EMBEDDING_PROVIDER?.trim().toLowerCase();
   return provider === "local" || provider === "ollama";
@@ -57,6 +69,14 @@ export function wantsLocalEmbeddingProvider(): boolean {
 
 function normalizeQueryForCache(query: string): string {
   return query.trim().replace(/\s+/g, " ").slice(0, 12_000);
+}
+
+function queryCacheKey(
+  courseId: string | undefined,
+  settings: EffectiveEmbeddingSettings,
+  query: string,
+): string {
+  return `${courseId ?? "global"}:${settings.provider}:${settings.model}:${normalizeQueryForCache(query)}`;
 }
 
 /** Prunes expired entries from the query embedding cache. */
@@ -81,10 +101,16 @@ function getDefaultRagSimilarityThreshold(): number {
   return n;
 }
 
-function logEmbeddingProvider(kind: EmbeddingProviderKind, detail?: string): void {
+function logEmbeddingProvider(
+  kind: EmbeddingProviderKind,
+  settings: EffectiveEmbeddingSettings,
+  detail?: string,
+): void {
   console.log("[embedding]", {
     provider: kind,
     dimension: getExpectedEmbeddingDimension(),
+    courseProvider: settings.provider,
+    model: settings.model,
     ...(detail ? { detail } : {}),
   });
 }
@@ -99,11 +125,61 @@ function assertEmbeddingDimension(embedding: number[], context: string): void {
   }
 }
 
+const courseSettingsCache = new Map<
+  string,
+  { settings: EffectiveEmbeddingSettings; expiresAt: number }
+>();
+const COURSE_SETTINGS_CACHE_TTL_MS = 30_000;
+
+async function loadEffectiveEmbeddingSettings(
+  courseId?: string,
+): Promise<EffectiveEmbeddingSettings> {
+  if (!courseId) {
+    return resolveEffectiveEmbeddingSettings(null);
+  }
+
+  const now = Date.now();
+  const cached = courseSettingsCache.get(courseId);
+  if (cached && cached.expiresAt > now) {
+    return cached.settings;
+  }
+
+  const course = await prisma.course.findUnique({
+    where: { id: courseId },
+    select: {
+      embeddingProvider: true,
+      embeddingModel: true,
+      embeddedWithProvider: true,
+      embeddedWithModel: true,
+      lastEmbeddedAt: true,
+    },
+  });
+
+  const settings = resolveEffectiveEmbeddingSettings(course);
+  courseSettingsCache.set(courseId, {
+    settings,
+    expiresAt: now + COURSE_SETTINGS_CACHE_TTL_MS,
+  });
+  return settings;
+}
+
+export function clearCourseEmbeddingSettingsCache(courseId?: string): void {
+  if (courseId) {
+    courseSettingsCache.delete(courseId);
+    return;
+  }
+  courseSettingsCache.clear();
+}
+
 /**
  * Generate chunks from text content
  * Simple sentence-based chunking with overlap
  */
-export function generateChunks(input: string, maxChunkSize: number = 800, overlap: number = 80): string[] {
+export function generateChunks(
+  input: string,
+  maxChunkSize: number = 800,
+  overlap: number = 80,
+): string[] {
   const sentences = input
     .trim()
     .split(/[.!?]+/)
@@ -163,14 +239,12 @@ function createOpenRouterEmbeddingClient() {
   });
 }
 
-function getOllamaEmbeddingModelId(): string {
-  return process.env.OLLAMA_EMBEDDING_MODEL?.trim() || DEFAULT_OLLAMA_EMBEDDING_MODEL;
-}
-
-function getLocalEmbeddingModel(): { model: EmbeddingModel<string>; kind: EmbeddingProviderKind } {
+function getLocalEmbeddingModel(
+  settings: EffectiveEmbeddingSettings,
+): { model: EmbeddingModel<string>; kind: EmbeddingProviderKind } {
   const ollama = createOllamaEmbeddingClient();
-  const modelId = getOllamaEmbeddingModelId();
-  logEmbeddingProvider("ollama-local", modelId);
+  const modelId = settings.model || DEFAULT_OLLAMA_EMBEDDING_MODEL;
+  logEmbeddingProvider("ollama-local", settings, modelId);
   return { model: ollama.embedding(modelId), kind: "ollama-local" };
 }
 
@@ -178,15 +252,17 @@ function getLocalEmbeddingModel(): { model: EmbeddingModel<string>; kind: Embedd
  * Cloud embedding model for the configured dimension.
  * Resolution: OpenRouter → Google (3072 only) → OpenAI.
  */
-function getCloudEmbeddingModel(): { model: EmbeddingModel<string>; kind: EmbeddingProviderKind } {
+function getCloudEmbeddingModel(
+  settings: EffectiveEmbeddingSettings,
+): { model: EmbeddingModel<string>; kind: EmbeddingProviderKind } {
   const dimension = getExpectedEmbeddingDimension();
 
   if (dimension === 1024) {
     const openRouter = createOpenRouterEmbeddingClient();
-    if (openRouter) {
-      const modelId =
-        process.env.OPENROUTER_EMBEDDING_MODEL?.trim() || DEFAULT_OPENROUTER_OPENAI_MODEL;
-      logEmbeddingProvider("openrouter", modelId);
+    const modelId = settings.model || DEFAULT_OPENROUTER_OPENAI_MODEL;
+
+    if (openRouter && modelId.startsWith("openai/")) {
+      logEmbeddingProvider("openrouter", settings, modelId);
       return {
         model: openRouter.embedding(modelId, { dimensions: dimension }),
         kind: "openrouter",
@@ -194,14 +270,26 @@ function getCloudEmbeddingModel(): { model: EmbeddingModel<string>; kind: Embedd
     }
 
     const openaiApiKey = process.env.OPENAI_API_KEY?.trim();
+    const directModel =
+      modelId === DEFAULT_OPENAI_EMBEDDING_MODEL || !modelId.startsWith("openai/")
+        ? DEFAULT_OPENAI_EMBEDDING_MODEL
+        : modelId.replace(/^openai\//, "");
+
     if (openaiApiKey) {
-      logEmbeddingProvider("openai", DEFAULT_OPENAI_EMBEDDING_MODEL);
+      logEmbeddingProvider("openai", settings, directModel);
       return {
-        model: createOpenAI({ apiKey: openaiApiKey }).embedding(
-          DEFAULT_OPENAI_EMBEDDING_MODEL,
-          { dimensions: dimension },
-        ),
+        model: createOpenAI({ apiKey: openaiApiKey }).embedding(directModel, {
+          dimensions: dimension,
+        }),
         kind: "openai",
+      };
+    }
+
+    if (openRouter) {
+      logEmbeddingProvider("openrouter", settings, DEFAULT_OPENROUTER_OPENAI_MODEL);
+      return {
+        model: openRouter.embedding(DEFAULT_OPENROUTER_OPENAI_MODEL, { dimensions: dimension }),
+        kind: "openrouter",
       };
     }
 
@@ -213,14 +301,14 @@ function getCloudEmbeddingModel(): { model: EmbeddingModel<string>; kind: Embedd
   const openRouter = createOpenRouterEmbeddingClient();
   if (openRouter) {
     const modelId =
-      process.env.OPENROUTER_EMBEDDING_MODEL?.trim() || DEFAULT_OPENROUTER_GEMINI_MODEL;
-    logEmbeddingProvider("openrouter", modelId);
+      settings.model || process.env.OPENROUTER_EMBEDDING_MODEL?.trim() || DEFAULT_OPENROUTER_GEMINI_MODEL;
+    logEmbeddingProvider("openrouter", settings, modelId);
     return { model: openRouter.embedding(modelId), kind: "openrouter" };
   }
 
   const googleApiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim();
   if (googleApiKey) {
-    logEmbeddingProvider("google", "gemini-embedding-001");
+    logEmbeddingProvider("google", settings, "gemini-embedding-001");
     return {
       model: createGoogleGenerativeAI({ apiKey: googleApiKey }).embedding("gemini-embedding-001"),
       kind: "google",
@@ -229,7 +317,7 @@ function getCloudEmbeddingModel(): { model: EmbeddingModel<string>; kind: Embedd
 
   const openaiApiKey = process.env.OPENAI_API_KEY?.trim();
   if (openaiApiKey) {
-    logEmbeddingProvider("openai", DEFAULT_OPENAI_EMBEDDING_MODEL);
+    logEmbeddingProvider("openai", settings, DEFAULT_OPENAI_EMBEDDING_MODEL);
     return {
       model: createOpenAI({ apiKey: openaiApiKey }).embedding(DEFAULT_OPENAI_EMBEDDING_MODEL),
       kind: "openai",
@@ -241,21 +329,18 @@ function getCloudEmbeddingModel(): { model: EmbeddingModel<string>; kind: Embedd
   );
 }
 
-/**
- * Resolve embedding model.
- * When EMBEDDING_PROVIDER=local|ollama: Ollama first; cloud chain on failure.
- * Otherwise: cloud chain only (OpenRouter → Google/OpenAI per dimension).
- */
-async function resolveEmbeddingModel(): Promise<EmbeddingModel<string>> {
-  if (wantsLocalEmbeddingProvider()) {
+async function resolveEmbeddingModel(courseId?: string): Promise<EmbeddingModel<string>> {
+  const settings = await loadEffectiveEmbeddingSettings(courseId);
+
+  if (settings.wantsLocal) {
     try {
-      return getLocalEmbeddingModel().model;
+      return getLocalEmbeddingModel(settings).model;
     } catch (err) {
       console.warn("[embedding] local provider setup failed, falling back to cloud", err);
     }
 
     try {
-      return getCloudEmbeddingModel().model;
+      return getCloudEmbeddingModel(settings).model;
     } catch (cloudErr) {
       throw new Error(
         `Local embedding provider failed and cloud fallback is unavailable: ${cloudErr instanceof Error ? cloudErr.message : String(cloudErr)}`,
@@ -263,22 +348,25 @@ async function resolveEmbeddingModel(): Promise<EmbeddingModel<string>> {
     }
   }
 
-  return getCloudEmbeddingModel().model;
+  return getCloudEmbeddingModel(settings).model;
 }
 
 async function embedWithProviderFallback<T>(
   run: (model: EmbeddingModel<string>) => Promise<T>,
+  courseId?: string,
 ): Promise<T> {
-  if (!wantsLocalEmbeddingProvider()) {
-    return run(await resolveEmbeddingModel());
+  const settings = await loadEffectiveEmbeddingSettings(courseId);
+
+  if (!settings.wantsLocal) {
+    return run(await resolveEmbeddingModel(courseId));
   }
 
   try {
-    const local = getLocalEmbeddingModel().model;
+    const local = getLocalEmbeddingModel(settings).model;
     return await run(local);
   } catch (localErr) {
     console.warn("[embedding] local embed failed, falling back to cloud", localErr);
-    const cloud = getCloudEmbeddingModel().model;
+    const cloud = getCloudEmbeddingModel(settings).model;
     return run(cloud);
   }
 }
@@ -288,6 +376,7 @@ async function embedWithProviderFallback<T>(
  */
 export async function generateEmbeddings(
   chunks: string[],
+  courseId?: string,
 ): Promise<Array<{ embedding: number[]; content: string }>> {
   if (chunks.length === 0) return [];
 
@@ -295,8 +384,9 @@ export async function generateEmbeddings(
 
   for (let i = 0; i < chunks.length; i += EMBED_MANY_BATCH_SIZE) {
     const batch = chunks.slice(i, i + EMBED_MANY_BATCH_SIZE);
-    const { embeddings } = await embedWithProviderFallback((model) =>
-      embedMany({ model, values: batch }),
+    const { embeddings } = await embedWithProviderFallback(
+      (model) => embedMany({ model, values: batch }),
+      courseId,
     );
     for (let j = 0; j < embeddings.length; j++) {
       assertEmbeddingDimension(embeddings[j], "generateEmbeddings");
@@ -310,8 +400,9 @@ export async function generateEmbeddings(
 /**
  * Generate a single embedding for a query (LRU-ish in-memory cache by normalized text).
  */
-export async function generateEmbedding(query: string): Promise<number[]> {
-  const cacheKey = normalizeQueryForCache(query);
+export async function generateEmbedding(query: string, courseId?: string): Promise<number[]> {
+  const settings = await loadEffectiveEmbeddingSettings(courseId);
+  const cacheKey = queryCacheKey(courseId, settings, query);
   const now = Date.now();
   pruneQueryEmbedCache();
   const hit = queryEmbedCache.get(cacheKey);
@@ -319,8 +410,9 @@ export async function generateEmbedding(query: string): Promise<number[]> {
     return hit.embedding;
   }
 
-  const { embedding } = await embedWithProviderFallback((model) =>
-    embed({ model, value: query }),
+  const { embedding } = await embedWithProviderFallback(
+    (model) => embed({ model, value: query }),
+    courseId,
   );
 
   assertEmbeddingDimension(embedding, "generateEmbedding");
@@ -345,7 +437,7 @@ export async function findRelevantContent(
   similarityThreshold?: number,
 ): Promise<Array<{ content: string; similarity: number; materialTitle: string }>> {
   const threshold = similarityThreshold ?? getDefaultRagSimilarityThreshold();
-  const queryEmbedding = await generateEmbedding(userQuery);
+  const queryEmbedding = await generateEmbedding(userQuery, courseId);
 
   const results = await prisma.$queryRaw<
     Array<{
@@ -379,6 +471,19 @@ export async function findRelevantContent(
  */
 export async function clearMaterialEmbeddings(materialId: string): Promise<void> {
   await prisma.materialChunk.deleteMany({ where: { materialId } });
+}
+
+async function markCourseEmbedded(courseId: string): Promise<void> {
+  clearCourseEmbeddingSettingsCache(courseId);
+  const settings = await loadEffectiveEmbeddingSettings(courseId);
+  await prisma.course.update({
+    where: { id: courseId },
+    data: {
+      embeddedWithProvider: settings.provider,
+      embeddedWithModel: settings.model,
+      lastEmbeddedAt: new Date(),
+    },
+  });
 }
 
 /**
@@ -433,6 +538,10 @@ export async function reEmbedCourseMaterials(courseId: string): Promise<{
     }
   }
 
+  if (processed > 0) {
+    await markCourseEmbedded(courseId);
+  }
+
   return { processed, failed };
 }
 
@@ -440,13 +549,22 @@ export async function reEmbedCourseMaterials(courseId: string): Promise<{
  * Process and store embeddings for a course material (single transaction).
  */
 export async function processMaterialEmbeddings(materialId: string, content: string): Promise<void> {
+  const material = await prisma.courseMaterial.findUnique({
+    where: { id: materialId },
+    select: { courseId: true },
+  });
+
+  if (!material) {
+    throw new Error(`Course material not found: ${materialId}`);
+  }
+
   const chunks = generateChunks(content);
 
   if (chunks.length === 0) {
     throw new Error("No content chunks generated");
   }
 
-  const embeddings = await generateEmbeddings(chunks);
+  const embeddings = await generateEmbeddings(chunks, material.courseId);
 
   await prisma.$transaction(async (tx) => {
     for (let i = 0; i < chunks.length; i++) {
