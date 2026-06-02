@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { useLoaderData, useParams, redirect } from "react-router"
 import type { LoaderFunctionArgs } from "react-router"
 import { IconBook, IconUpload, IconUsers, IconCalendar, IconSettings } from "@tabler/icons-react"
@@ -12,6 +12,7 @@ import { AppSidebar } from "~/components/app-sidebar"
 import { SiteHeader } from "~/components/site-header"
 import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar"
 import { CourseMaterialsUpload } from "~/components/course-materials-upload"
+import type { CourseMaterial } from "~/components/course-materials-upload"
 import { useApiKeys } from "~/hooks/use-api-keys"
 import prisma from "~/lib/prisma.server"
 
@@ -76,6 +77,11 @@ export default function CourseDetailPage() {
   const { getValidApiKeys } = useApiKeys()
   const [activeTab, setActiveTab] = useState("overview")
 
+  const [materials, setMaterials] = useState<CourseMaterial[]>([])
+  const [isUploading, setIsUploading] = useState(false)
+  const [materialsError, setMaterialsError] = useState<string | null>(null)
+  const [materialsSuccess, setMaterialsSuccess] = useState<string | null>(null)
+
   const isAdmin = user.role === "ADMIN"
   const isProfessor = user.role === "PROFESSOR"
   const isTA = user.role === "TA"
@@ -85,6 +91,59 @@ export default function CourseDetailPage() {
   const hasAccess = isAdmin ||
     (isProfessor && course.professorId === user.id) ||
     isTA || isStudent // For now, allowing all TAs and students
+
+  const canManageMaterials = isAdmin || (isProfessor && course.professorId === user.id)
+
+  const loadMaterials = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/courses/${courseId}/materials`)
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to load materials")
+      }
+
+      setMaterials(result.materials || [])
+    } catch (err) {
+      console.error("Failed to load materials:", err)
+    }
+  }, [courseId])
+
+  const handleFileSelect = async (file: File) => {
+    setIsUploading(true)
+    setMaterialsError(null)
+    setMaterialsSuccess(null)
+
+    try {
+      const formData = new FormData()
+      formData.append("file", file)
+      formData.append("apiKeys", JSON.stringify(getValidApiKeys()))
+
+      const response = await fetch(`/api/courses/${courseId}/materials`, {
+        method: "POST",
+        body: formData,
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to upload material")
+      }
+
+      setMaterialsSuccess("Material uploaded successfully!")
+      loadMaterials()
+    } catch (err) {
+      setMaterialsError(err instanceof Error ? err.message : "Upload failed")
+    } finally {
+      setIsUploading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (canManageMaterials) {
+      loadMaterials()
+    }
+  }, [canManageMaterials, loadMaterials])
 
   if (!hasAccess) {
     return (
@@ -97,8 +156,6 @@ export default function CourseDetailPage() {
       </div>
     )
   }
-
-  const canManageMaterials = isAdmin || (isProfessor && course.professorId === user.id)
 
   return (
     <SidebarProvider
@@ -190,8 +247,11 @@ export default function CourseDetailPage() {
                   <TabsContent value="materials" className="mt-6">
                     {canManageMaterials ? (
                       <CourseMaterialsUpload
-                        courseId={courseId!}
-                        apiKeys={getValidApiKeys()}
+                        materials={materials}
+                        isUploading={isUploading}
+                        error={materialsError}
+                        success={materialsSuccess}
+                        onFileSelect={handleFileSelect}
                       />
                     ) : (
                       <Card>
