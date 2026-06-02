@@ -283,7 +283,7 @@ model MaterialChunk {
 model MaterialEmbedding {
   id        String                      @id @default(cuid())
   chunkId   String                      @unique
-  embedding Unsupported("vector(3072)")
+  embedding Unsupported("vector(1024)")
   createdAt DateTime                    @default(now())
   chunk     MaterialChunk               @relation(fields: [chunkId], references: [id], onDelete: Cascade)
 
