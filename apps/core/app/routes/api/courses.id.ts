@@ -17,6 +17,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     const serviceKeyGuard = await requireServiceKey(request);
     if (serviceKeyGuard) return serviceKeyGuard;
   } else {
+    // TODO(RBAC #292): replace with resolveCourseAccess
     const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
     if (apiKeyGuard) return apiKeyGuard;
 

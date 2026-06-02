@@ -26,6 +26,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     });
   }
 
+  // TODO(RBAC #292): replace with resolveCourseAccess
   const isAdmin = user.role === 'ADMIN' || user.role === 'UNIT_ADMIN';
   const course = await prisma.course.findFirst({
     where: isAdmin
@@ -138,6 +139,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
   }
 
+  // TODO(RBAC #292): replace with resolveCourseAccess
   const isAdmin = user.role === 'ADMIN' || user.role === 'UNIT_ADMIN';
   const course = await prisma.course.findFirst({
     where: isAdmin
