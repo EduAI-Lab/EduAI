@@ -10,7 +10,7 @@ import { mapAdminBugReportRow } from '../utils/bugReportMappers.js';
 
 const router = express.Router();
 
-router.post('/bug-reports', requireRoles(['STUDENT', 'PROFESSOR']), async (req, res) => {
+router.post('/bug-reports', requireRoles(['STUDENT', 'INSTRUCTOR']), async (req, res) => {
   try {
     await createBugReport(req.user, req.body || {});
     res.status(201).json({ ok: true });

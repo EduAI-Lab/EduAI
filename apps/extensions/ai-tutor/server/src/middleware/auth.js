@@ -39,8 +39,8 @@ export async function requireAuth(req, res, next) {
  * Build a middleware that requires the caller's role to be in `allowed`.
  * Pass a single role string or an array.
  *
- * Example: requireRole(['ADMIN', 'PROFESSOR'])
- *          requireRole('PROFESSOR')
+ * Example: requireRole(['ADMIN', 'INSTRUCTOR'])
+ *          requireRole('INSTRUCTOR')
  */
 export function requireRole(allowed) {
   const roles = Array.isArray(allowed) ? allowed : [allowed];

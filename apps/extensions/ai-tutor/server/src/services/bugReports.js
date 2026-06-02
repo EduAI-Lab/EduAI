@@ -117,9 +117,9 @@ function normalizeContext(context) {
 
 function ensureCourseAuthorization(user, course) {
   const isStudent = user.role === 'STUDENT';
-  const isProfessor = user.role === 'PROFESSOR';
+  const isProfessor = user.role === 'INSTRUCTOR';
   if (!isStudent && !isProfessor) {
-    throw new BugReportError(403, 'Only STUDENT and PROFESSOR users can submit bug reports');
+    throw new BugReportError(403, 'Only STUDENT and INSTRUCTOR users can submit bug reports');
   }
 
   if (isStudent) {

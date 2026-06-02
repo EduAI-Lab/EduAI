@@ -21,7 +21,7 @@ describe('Auth routes', () => {
       expect(res.body.user.id).toBe(prof.id);
       expect(res.body.user.name).toBe(prof.name);
       expect(res.body.user.email).toBe(prof.email);
-      expect(res.body.user.role).toBe('PROFESSOR');
+      expect(res.body.user.role).toBe('INSTRUCTOR');
       expect(res.body.user.password).toBeUndefined();
     });
   });
