@@ -96,14 +96,12 @@ router.put('/variants/:variantId', authenticateToken, async (req, res, next) => 
           if (coreErr.status === 422) {
             const errBody = coreErr.body ?? {};
             if (errBody.error === 'INVALID_TOPIC_IDS' && Array.isArray(errBody.deletedTopicIds) && errBody.deletedTopicIds.length > 0) {
-              const affectedTopics = await Topics.findAll({ where: { coreTopicId: errBody.deletedTopicIds } });
-              const localTopicIds = affectedTopics.map(t => t.id);
               await Topics.update({ coreTopicId: null }, { where: { coreTopicId: errBody.deletedTopicIds } });
               return res.status(422).json({
                 success: false,
                 error: 'INVALID_TOPIC_IDS',
                 message: 'Some topics have been deleted in Core. Please update topic assignments and re-approve.',
-                deletedTopicIds: localTopicIds
+                deletedTopicIds: errBody.deletedTopicIds
               });
             }
             if (errBody.error === 'DUPLICATE_TOPIC') {
