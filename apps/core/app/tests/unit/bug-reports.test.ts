@@ -1,6 +1,7 @@
 // @vitest-environment node
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { Prisma } from "@prisma/client";
 
 const prismaMock = vi.hoisted(() => ({
   user: { findUnique: vi.fn() },
@@ -183,6 +184,6 @@ describe("createBugReport — optional fields", () => {
     const data = prismaMock.bugReport.create.mock.calls[0][0].data;
     expect(data.consoleLogs).toBeNull();
     expect(data.screenshot).toBeNull();
-    expect(data.context).toBeNull();
+    expect(data.context).toEqual(Prisma.DbNull);
   });
 });
