@@ -35,6 +35,25 @@ It serves two purposes:
 - Every new feature or significant change must have corresponding tests recorded here.
 - After any test-related work, update this file to reflect what the tests actually test.
 
+### Coverage
+
+Each app exposes a `test:coverage` script (Vitest V8 coverage), and the monorepo root aggregates them:
+
+```bash
+npm run test:coverage   # root — runs coverage for edu-ai, ai-tutor-server, and question-maker-backend via Turborepo
+```
+
+Per app, from the app directory:
+
+| App | Command |
+|-----|---------|
+| EduAI (core) | `npm run test:coverage` |
+| AI Tutor server | `npm run test:coverage` |
+| Question Maker backend | `npm run test:coverage` |
+| Question Maker frontend | `npm run test:coverage` |
+
+Generated coverage report directories are gitignored.
+
 ## Structure
 
 Tests are organized into three locations across the monorepo:
@@ -130,7 +149,7 @@ Each section should use this format:
 | `chat-api-keys.schema.test.ts` | Validates `clientApiKeysBodySchema` and `toUserProviderSettings` coercion defaults for chat `apiKeys` body parsing. |
 | `chat-rag.test.ts` | Tests `buildCappedRagContextText` and `capRagHitsForTool` chunk/char caps for hybrid and tool RAG paths. |
 | `courses-schemas.test.ts`| Tests that course schemas require non-empty fields, reject fractional years, and enforce that topic deletion specifies at least one identifier. |
-| `courses.server.test.ts` | `getCourse`, `getCourseTopics`, `getCourseTopic`, and `deleteCourseTopic` — verifies `deletedAt: null` queries and soft-delete updates. |
+| `courses.server.test.ts` | `getCourses`, `createCourse`, `updateCourse`, `getCourse`, `getCourseTopics`, `getCourseTopic`, and `deleteCourseTopic` — verifies ADMIN scoping, instructor-enrollment creation in a transaction, `deletedAt: null` queries, and soft-delete updates. |
 | `courses.id.test.ts` | `courses.id` loader: 400/401/403, service-key and session auth, 404 `COURSE_NOT_FOUND`, 200 flat course. |
 | `courses.topics.test.ts` | Topics `loader` and `action` unit tests: GET list/by-id and POST/DELETE auth, status codes, and error bodies (mocked server + auth). |
 | `embedding.test.ts` | Tests that chunk generation returns no chunks for empty input, keeps short content as one chunk, never produces chunks that exceed the size limit, applies word overlap between adjacent chunks, and handles punctuation-free input without throwing. |
@@ -144,6 +163,9 @@ Each section should use this format:
 | `guards.server.test.ts` | `requireServiceKey`: 401 on missing header, 401 on non-Bearer scheme, 403 on wrong token, 403 on unconfigured env var, null on correct token, 403 on prefix/suffix length-variant tokens. `validateRedirectUrl`: returns /dashboard for null/empty/non-path inputs, passes through valid relative paths, allows localhost and production subdomains, and rejects external domains, protocol-relative URLs, and javascript: URIs. |
 | `rate-limit.server.test.ts` | `isRateLimited`: returns false under the limit, true once exceeded, tracks IPs independently, expires hits outside the time window, and reads the default limit from `SESSION_VALIDATE_RATE_LIMIT`. |
 | `bug-reports.test.ts` | `createBugReport` service: rejects null/missing payloads, invalid or CORE source values, empty userId, non-string/missing description, descriptions over 2000 chars; accepts exactly 2000 chars; returns USER_NOT_FOUND when the user doesn't exist; trims userId before DB lookup; passes AI_TUTOR and QUESTION_MAKER source through to the create call; persists userId even when isAnonymous is true; defaults isAnonymous to false; passes all optional fields through unchanged; stores null for absent optional fields. |
+| `courses.enrollments.test.ts` | `GET /api/courses/:id/enrollments` loader: 400 missing id, 401 no session, 403 invalid service key, 403 user not enrolled, 404 course not found (both auth paths), 200 via service key and user OAuth (STUDENT/INSTRUCTOR), role mapping, null `enrolledAt`, active + inactive returned together, and empty enrollment list. |
+| `courses.materials.test.ts` | `GET /api/courses/:courseId/materials` loader and `POST /api/courses/:courseId/materials` action: auth, status codes, and material list/upload behaviour. |
+| `questions.server.test.ts` | `createQuestion` (validation + idempotency-key dedupe), `listQuestions` (filtering), `getQuestionById`, and `updateQuestionTestable` server helpers. |
 
 ---
 
@@ -153,12 +175,14 @@ Each section should use this format:
 
 | Test file | What it tests |
 |-----------|---------------|
-| `courses.integration.test.ts` | `GET /api/courses` against the test DB: returns 200 with a courses array, includes the seeded course, and allows unauthenticated access. |
+| `courses.integration.test.ts` | `GET /api/courses` and `POST /api/courses` against the test DB: 401 when unauthenticated, 403 when the caller is not ADMIN, and 200 with a courses array (including the seeded course) for ADMIN. |
 | `courses.id.integration.test.ts` | `GET /api/courses/:id` on the test DB: 401 without auth, 200 via session or service key, `COURSE_NOT_FOUND` for missing and soft-deleted courses. |
 | `courses-topic.integration.test.ts` | Topics list/get-by-id/create/delete on the test DB (session + service key): status codes, `TOPIC_ALREADY_EXISTS`, soft-delete filtering, and soft-delete on DELETE. |
 | `service-key.integration.test.ts` | Verifies that `requireServiceKey` correctly rejects (403) wrong-key Bearer requests and never calls downstream DB logic, accepts (200) correct-key requests and calls `getCourseTopics`, and that requests with no Authorization header fall through to session auth (401 Unauthorized) — all tested through the real `GET /api/courses/:id/topics` loader with DB and session layers mocked. |
 | `sessions-validate.integration.test.ts` | `POST /api/sessions/validate` contract: valid session cookie → 200 with correct user shape; missing or expired session → 401; rate-limited IP → 429; non-POST method → 405; `x-forwarded-for` IP extraction; `role` field defaults to `STUDENT` when absent from the session. |
 | `bug-reports.integration.test.ts` | `POST /api/bug-reports` against the test DB: 401 on missing service key, 403 on wrong service key, 422 VALIDATION_ERROR for description too long and invalid source, 422 USER_NOT_FOUND for nonexistent userId, 201 with correct source tag in DB for AI_TUTOR and QUESTION_MAKER, anonymous report persists userId with isAnonymous=true, all optional fields round-trip to the DB. |
+| `courses.enrollments.integration.test.ts` | `GET /api/courses/:id/enrollments` against the test DB: seeds STUDENT/TA/INSTRUCTOR/outsider users and enrollments; covers 401, 403 invalid key, 403 not enrolled, 404 nonexistent course, 200 via service key and user OAuth, role mapping, active + inactive returned together, and correct field values from seeded data. |
+| `questions.integration.test.ts` | `GET /api/questions` (list/filter), `POST /api/questions` (validated create with idempotency-key dedupe), `GET /api/questions/:id`, and `PATCH /api/questions/:id` (testable toggle) against the test DB. |
 
 ---
 
@@ -197,6 +221,9 @@ Each section should use this format:
 | `aiModelPolicy.test.js` | Only models that are actually available can be selected, defaults fall back gracefully when the preferred model is missing, and the number of supervisor loop iterations is kept within a safe range |
 | `auth.middleware.test.js` | `requireAuth` populates `req.user` from Core's session validation response, returns 401 on invalid or missing sessions and when Core is unreachable, forwards the cookie header exactly, normalizes unknown roles to `STUDENT`, and preserves all five valid roles; `requireRole` calls next for permitted roles, returns 403 for the wrong role, returns 401 when no user is set, and includes the required roles in the error; `requireRoles` is the same function reference as `requireRole` |
 | `mappers.test.js` | Sensitive fields like passwords are stripped before data leaves the server, IDs resolve correctly whether stored flat or nested, and missing optional fields default to safe values |
+| `eduai.schemas.test.js` | `EduAiEnrollmentSchema` and related EduAI response schemas validate and parse Core payloads and reject malformed shapes |
+| `eduaiClient.testableQuestions.test.js` | `listCourseTestableQuestions` fetches a course's testable questions from Core with the service key and maps/handles the response and error cases |
+| `enrollmentSync.test.js` | `syncCourseEnrollments` — early-return guards, the `options.course` shortcut, and the create path for syncing Core enrollments into AI Tutor |
 
 ---
 
@@ -235,6 +262,11 @@ Each section should use this format:
 | `canvasExportMocked.test.js` | Assessments are exported to Canvas correctly when the Canvas API, database, and integration lookup are replaced with fakes |
 | `encryption.test.js` | Encrypted values round-trip back to the original string, and edge cases like empty input are handled without errors |
 | `extraction.test.js` | Question text is split into individual blocks at numbered boundaries and chunked so multipart questions are never split across chunks |
+| `assessmentVariantUtils.test.js` | `aggregateStructure` and related variant utilities compute assessment structure correctly |
+| `coreApiService.test.js` | `getCourseTopicsFromCore`, `pushTopicToCore`, `pushQuestionToCore`, and `patchQuestionTestableOnCore` — request shape, service-key auth, and response/error handling against a mocked Core |
+| `coreWiringService.test.js` | `pushVariantToCore` maps variant payloads to Core, lowercases enum values, handles CUID topic ids, and surfaces `INVALID_TOPIC_IDS` |
+| `errorHandler.test.js` | `notFound` and `errorHandler` Express middleware return the correct status codes and JSON error envelopes |
+| `generateBankVariants.test.js` | `generateBankVariantsForQuestions` — validation guards, per-question orchestration, and MCQ choice-count retry |
 
 ---
 
@@ -247,8 +279,14 @@ Each section should use this format:
 | `assessmentVariantAuth.test.js` | All assessment variant routes reject unauthenticated requests |
 | `assessmentsAuth.test.js` | All assessment routes reject unauthenticated requests |
 | `assessmentVariantHttp.integration.test.js` | Assessment variant routes reject requests with missing or invalid required fields |
-| `auth.integration.test.js` | Users can register, log in, and retrieve their profile; duplicate emails and wrong passwords are rejected |
 | `bugReports.integration.test.js` | Unauthenticated requests return 401; authenticated requests proxy to Core and return 201; QUESTION_MAKER source and userId are forwarded correctly; 422 validation errors from Core pass through; 502 is returned when Core is unreachable |
+| `coreWiring.integration.test.js` | `PATCH /api/course/:id/link-core`, `POST /api/course/:id/sync-topics`, and `PATCH /api/questions/variants/:variantId/testable` routes with Core mocked |
+| `coreWiringDb.integration.test.js` | Core wiring routes against the test DB — link-core, sync-topics, topic push, and variant testable toggle persist correctly |
+| `syncTopicsCounter.integration.test.js` | `POST /api/course/:id/sync-topics` returns the correct synced counter, including name-updated topics |
+| `variantApproval.integration.test.js` | `PUT /api/questions/variants/:id` pushes the approved variant to Core on approval |
+| `saveExtractedQuestions.integration.test.js` | `POST /extract/save` — topic fallback resolution, MCQ questions, and saving with an assessment payload |
+| `assessmentServiceGaps.integration.test.js` | `deleteAssessment` and `getQuestionsInAssessment` service paths against the test DB |
+| `assessmentVariantService.integration.test.js` | `setAssessmentStudyRole`, `getBlueprintSnapshot`, `getBaselineVariantReadiness`, and `assembleEquivalentExamVariants` against the test DB |
 | `canvasAuth.test.js` | All Canvas integration routes reject unauthenticated requests |
 | `courseAuth.test.js` | All course and topic routes reject unauthenticated requests |
 | `eduaiAuth.test.js` | All EduAI proxy routes reject unauthenticated requests |

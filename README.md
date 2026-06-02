@@ -110,6 +110,7 @@ npm run build        # Build all apps (Turborepo caches outputs)
 npm run lint         # Lint all apps
 npm run test         # All tests across all apps (unit + integration)
 npm run test:all     # Unit + integration tests
+npm run test:coverage # Coverage for edu-ai, ai-tutor-server, and question-maker-backend
 npm run dbseed       # Force-seed all three databases (Core → AI Tutor → Question Maker)
 ```
 
@@ -208,6 +209,18 @@ npm run test:unit          # all unit suites only
 npm run test:integration   # all integration suites only
 npm run test:e2e           # all e2e suites; WARNING: no e2e tests currently
 ```
+
+### Coverage
+
+Each app exposes a `test:coverage` script (Vitest V8 coverage). From the monorepo root:
+
+```bash
+npm run test:coverage   # Aggregates coverage for edu-ai, ai-tutor-server, and question-maker-backend via Turborepo
+```
+
+Run a single app's coverage from its own directory with `npm run test:coverage` (available for core, the AI Tutor server, and the Question Maker frontend and backend). Generated coverage report directories are gitignored.
+
+### Integration tests
 
 #### Run by component
 ```bash
