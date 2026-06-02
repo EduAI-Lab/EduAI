@@ -4,7 +4,7 @@ import { cn } from '~/lib/utils';
 // Lazy load Streamdown to avoid SSR issues with KaTeX CSS
 const Streamdown = lazy(() => import('streamdown').then(module => ({ default: module.Streamdown })));
 
-interface MarkdownRendererProps {
+export interface MarkdownRendererProps {
   content: string;
   className?: string;
 }
