@@ -8,6 +8,7 @@
     "test:watch": "vitest",
     "test:unit": "vitest run tests/unit/",
     "test:integration": "vitest run tests/integration/",
+    "test:coverage": "vitest run --coverage",
     "start": "npx prisma generate && node src/index.js",
     "dev": "npx prisma migrate deploy && npx prisma generate && npm run seed:if-empty && nodemon src/index.js",
     "seed": "prisma generate && tsx prisma/seed.ts",
@@ -26,6 +27,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "^4.1.0",
     "nodemon": "^3.1.10",
     "oxlint": "^1.56.0",
     "prisma": "^6.16.1",
