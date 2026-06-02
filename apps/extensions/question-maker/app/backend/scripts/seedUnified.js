@@ -123,7 +123,7 @@ const COURSES = [
         variants: [
           {
             text: 'Which of the following best describes "decomposition" in computational thinking?',
-            difficulty: 'EASY', reasoningLevel: 'FACTUAL', isDraft: false,
+            difficulty: 'easy', reasoningLevel: 'factual', isDraft: false,
             answer: 'B',
             choices: [
               { letter: 'A', text: 'Combining many small problems into one' },
@@ -135,7 +135,7 @@ const COURSES = [
           },
           {
             text: 'A program is broken into modules, each handling a single concern. What technique is this?',
-            difficulty: 'EASY', reasoningLevel: 'ANALYTICAL', isDraft: true,
+            difficulty: 'easy', reasoningLevel: 'analytical', isDraft: true,
             answer: 'Decomposition',
             choices: null, secondaryTopicSlugs: [],
           },
@@ -148,7 +148,7 @@ const COURSES = [
         variants: [
           {
             text: 'How many bits are required to represent 256 distinct values?',
-            difficulty: 'EASY', reasoningLevel: 'ANALYTICAL', isDraft: false,
+            difficulty: 'easy', reasoningLevel: 'analytical', isDraft: false,
             answer: 'C',
             choices: [
               { letter: 'A', text: '4' },
@@ -167,7 +167,7 @@ const COURSES = [
         variants: [
           {
             text: 'Briefly explain why algorithm efficiency matters even when computers are fast.',
-            difficulty: 'MEDIUM', reasoningLevel: 'ANALYTICAL', isDraft: false,
+            difficulty: 'medium', reasoningLevel: 'analytical', isDraft: false,
             answer: 'As inputs grow, inefficient algorithms scale poorly even on fast machines.',
             choices: null, secondaryTopicSlugs: ['computational_thinking'],
           },
@@ -180,7 +180,7 @@ const COURSES = [
         variants: [
           {
             text: 'Which operation typically dominates the cost of a simple linear search over n items?',
-            difficulty: 'EASY', reasoningLevel: 'FACTUAL', isDraft: false,
+            difficulty: 'easy', reasoningLevel: 'factual', isDraft: false,
             answer: 'A',
             choices: [
               { letter: 'A', text: 'Constant-time comparison repeated n times' },
@@ -216,7 +216,7 @@ const COURSES = [
         variants: [
           {
             text: 'Compare arrays and linked lists. When would you choose a linked list over an array?',
-            difficulty: 'MEDIUM', reasoningLevel: 'ANALYTICAL', isDraft: false,
+            difficulty: 'medium', reasoningLevel: 'analytical', isDraft: false,
             answer: 'Frequent insert/remove dominates, dynamic size, no random access by index.',
             choices: null, secondaryTopicSlugs: [],
           },
@@ -229,7 +229,7 @@ const COURSES = [
         variants: [
           {
             text: 'Describe a recursive implementation of binary search. State the base case.',
-            difficulty: 'MEDIUM', reasoningLevel: 'APPLICATION', isDraft: false,
+            difficulty: 'medium', reasoningLevel: 'application', isDraft: false,
             answer: 'Base case: empty range. Recursive case: compare midpoint, recurse on one half. O(log n).',
             choices: null, secondaryTopicSlugs: ['algorithm_analysis'],
           },
@@ -242,7 +242,7 @@ const COURSES = [
         variants: [
           {
             text: 'In test-driven development, when do you write the unit tests?',
-            difficulty: 'EASY', reasoningLevel: 'FACTUAL', isDraft: false,
+            difficulty: 'easy', reasoningLevel: 'factual', isDraft: false,
             answer: 'B',
             choices: [
               { letter: 'A', text: 'After the code is complete' },
@@ -261,14 +261,14 @@ const COURSES = [
         variants: [
           {
             text: 'Explain encapsulation and give an example where breaking it leads to a bug.',
-            difficulty: 'HARD', reasoningLevel: 'APPLICATION', isDraft: false,
+            difficulty: 'hard', reasoningLevel: 'application', isDraft: false,
             answer: 'Encapsulation hides internal state behind a stable interface; exposing internals can break invariants.',
             choices: null, secondaryTopicSlugs: [],
           },
           {
             // Draft variant — has no core_question_id since it has not been pushed yet.
             text: 'Refactor a class that exposes a mutable internal list and explain the fix.',
-            difficulty: 'HARD', reasoningLevel: 'APPLICATION', isDraft: true,
+            difficulty: 'hard', reasoningLevel: 'application', isDraft: true,
             answer: null, choices: null, secondaryTopicSlugs: [],
           },
         ],
@@ -296,7 +296,7 @@ const COURSES = [
         variants: [
           {
             text: 'State the definition of the partial derivative of f(x, y) with respect to x at (a, b).',
-            difficulty: 'EASY', reasoningLevel: 'FACTUAL', isDraft: false,
+            difficulty: 'easy', reasoningLevel: 'factual', isDraft: false,
             answer: 'f_x(a,b) = lim_{h->0} [f(a+h, b) - f(a, b)] / h, holding y constant.',
             choices: null, secondaryTopicSlugs: [],
           },
@@ -309,7 +309,7 @@ const COURSES = [
         variants: [
           {
             text: 'A vector field F is conservative if and only if:',
-            difficulty: 'MEDIUM', reasoningLevel: 'ANALYTICAL', isDraft: false,
+            difficulty: 'medium', reasoningLevel: 'analytical', isDraft: false,
             answer: 'B',
             choices: [
               { letter: 'A', text: 'div F = 0' },
@@ -328,7 +328,7 @@ const COURSES = [
         variants: [
           {
             text: 'Greens theorem relates a line integral around a simple closed curve to:',
-            difficulty: 'MEDIUM', reasoningLevel: 'FACTUAL', isDraft: false,
+            difficulty: 'medium', reasoningLevel: 'factual', isDraft: false,
             answer: 'B',
             choices: [
               { letter: 'A', text: 'A surface integral over an arbitrary surface' },
@@ -363,7 +363,7 @@ const COURSES = [
         variants: [
           {
             text: 'Distinguish classical conditioning from operant conditioning with one example each.',
-            difficulty: 'MEDIUM', reasoningLevel: 'FACTUAL', isDraft: false,
+            difficulty: 'medium', reasoningLevel: 'factual', isDraft: false,
             answer: 'Classical: stimulus pairing (Pavlov). Operant: behavior shaped by consequences (Skinner).',
             choices: null, secondaryTopicSlugs: [],
           },
@@ -376,7 +376,7 @@ const COURSES = [
         variants: [
           {
             text: 'Which brain structure is most associated with the consolidation of long-term memories?',
-            difficulty: 'EASY', reasoningLevel: 'FACTUAL', isDraft: false,
+            difficulty: 'easy', reasoningLevel: 'factual', isDraft: false,
             answer: 'B',
             choices: [
               { letter: 'A', text: 'Cerebellum' },
