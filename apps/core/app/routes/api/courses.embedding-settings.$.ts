@@ -168,6 +168,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
       refreshed,
       resolveEffectiveEmbeddingSettings(refreshed),
     ),
+    allowedLocalModels: ALLOWED_LOCAL_EMBEDDING_MODELS,
+    allowedCloudModels: ALLOWED_CLOUD_EMBEDDING_MODELS,
     reEmbed: reEmbedResult,
   });
   } catch (error) {
