@@ -334,6 +334,7 @@ router.post('/:id/sync-topics', authenticateToken, async (req, res, next) => {
       let existing = await Topics.findOne({ where: { coreTopicId: ct.id } });
       if (existing) {
         await existing.update({ name: ct.name });
+        synced++;
       } else {
         // Try by name+course to avoid duplicate names
         existing = await Topics.findOne({ where: { courseId: course.id, name: ct.name } });
