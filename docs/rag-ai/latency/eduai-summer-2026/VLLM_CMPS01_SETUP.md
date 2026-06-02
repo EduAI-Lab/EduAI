@@ -29,8 +29,8 @@ Ollama stays on **:11434**. vLLM uses **:8001** on the host so it does not colli
 | Approach | Firewall ticket? | Notes |
 | -------- | ---------------- | ----- |
 | **A — Server-to-server allow** | **Yes** (unless ops confirms an existing rule) | Ticket: **source** = dev app server, **dest** = `cmps01`, **port** = **8001** (`VLLM_PORT`). |
-| **B — SSH tunnel on dev server** | **Often no new port** | On **s378**: `ssh -N -L 18001:127.0.0.1:8001 USER@cmps01`. `VLLM_BASE_URL=http://127.0.0.1:18001`. vLLM on cmps01: `-p 127.0.0.1:8001:8000`. |
-| **C — cmps01-only testing** | No | SSH to cmps01, `curl localhost:8001` — no EduAI integration yet |
+| **B — SSH tunnel on dev server** | **Not viable on s378** | Tested 2026-06: `ssh ssaada08@cmps01.ok.ubc.ca` from **dev** → **port 22 connection timed out**. Use **Path A** (HTTP 8001) instead. Tunnels from **your laptop** to cmps01 still work for personal `curl` only. |
+| **C — cmps01-only testing** | No | SSH to cmps01 from laptop, `curl localhost:8001` — no EduAI on dev until Path A |
 
 **Permissions (from IT):**
 
@@ -40,7 +40,7 @@ Ollama stays on **:11434**. vLLM uses **:8001** on the host so it does not colli
 
 **Reply you can send IT:**
 
-> We need the dev EduAI host (`dev.eduai.ok.ubc.ca` / s378) to call an OpenAI-compatible inference API on cmps01 on port **8001** (`VLLM_PORT`). Destination: cmps01 GPU host. Same access pattern as existing Ollama **11434**. Alternatively we can bind vLLM to localhost on cmps01 and use an SSH tunnel from the dev server — please advise which you prefer.
+> We need the dev EduAI host (`dev.eduai.ok.ubc.ca` / s378) to call an OpenAI-compatible inference API on cmps01 on port **8001** (`VLLM_PORT`), plus **host firewall** on cmps01 for that port. Same access pattern as existing Ollama **11434**. SSH from s378 to cmps01 is **not** available (port 22 timeout); we need **HTTP** access, not SSH port-forwarding.
 
 ---
 
@@ -135,18 +135,7 @@ VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"
 VLLM_API_KEY="vllm-local"
 ```
 
-**Path B — SSH tunnel (no public port on cmps01):**
-
-On **dev server** (tmux), as a user that can SSH to cmps01:
-
-```bash
-ssh -N -L 18001:127.0.0.1:8001 ssaada08@cmps01.ok.ubc.ca
-```
-
-```env
-VLLM_BASE_URL="http://127.0.0.1:18001"
-VLLM_API_KEY="vllm-local"
-```
+**Path B — SSH tunnel:** **Not available from s378** (SSH to cmps01 times out). Use **Path A** after IT opens **TCP 8001**. Optional: tunnel from **your laptop** to cmps01 for manual testing only — EduAI on dev still needs Path A.
 
 Re-seed if `vllm` provider is missing:
 

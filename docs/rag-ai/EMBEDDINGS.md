@@ -151,7 +151,7 @@ Template: [`apps/core/.env.example`](../../apps/core/.env.example).
 | --------- | ----- | ----- |
 | **Vectors + chunk text** | Campus / project Postgres (pgvector) | See `docker-compose.dev.yml` → `eduai-db`; [DEPLOYMENT.md](../DEPLOYMENT.md) for dev/prod |
 | **Embedding computation** | **Cloud** (current code) | Chunk text sent to provider at index + per RAG query |
-| **Chat LLM** | `cmps01` Ollama and/or cloud chat APIs | Separate from embeddings; usually dominates latency |
+| **Chat LLM** | `cmps01` Ollama (`:11434`) and/or vLLM (`:8001`, optional) and/or cloud chat APIs | Separate from embeddings; usually dominates latency. See [ARCHITECTURE.md](../ARCHITECTURE.md#cmps01-gpu-inference-host). |
 
 **Future:** Local embedding model on `cmps01` (new code path + GPU capacity). **Today:** embeddings are cloud; vectors are on-prem.
 
