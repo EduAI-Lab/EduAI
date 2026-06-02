@@ -5,6 +5,7 @@ import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Checkbox } from "~/components/ui/checkbox";
 import { Label } from "~/components/ui/label";
+import { readJsonResponse } from "~/lib/api/client";
 import {
   Select,
   SelectContent,
@@ -59,10 +60,19 @@ export function CourseEmbeddingSettings({ courseId, onSettingsSaved }: CourseEmb
     setError(null);
     try {
       const response = await fetch(`/api/courses/${courseId}/embedding-settings`);
-      const result = await response.json();
-      if (!response.ok) {
-        throw new Error(result.error || "Failed to load embedding settings");
+      const parsed = await readJsonResponse<EmbeddingSettingsResponse & { error?: string; hint?: string }>(response);
+
+      if (!parsed.ok) {
+        throw new Error(parsed.error);
       }
+
+      const result = parsed.data;
+      if (!response.ok) {
+        throw new Error(
+          [result.error, result.hint].filter(Boolean).join(" ") || "Failed to load embedding settings",
+        );
+      }
+
       setData(result);
       setProviderChoice(result.settings.embeddingProvider ?? "env");
       setModelChoice(result.settings.embeddingModel ?? "default");
@@ -106,10 +116,22 @@ export function CourseEmbeddingSettings({ courseId, onSettingsSaved }: CourseEmb
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const result = await response.json();
+      const parsed = await readJsonResponse<
+        EmbeddingSettingsResponse & {
+          success?: boolean;
+          error?: string;
+          hint?: string;
+          reEmbed?: { processed: number; failed: string[] };
+        }
+      >(response);
 
+      if (!parsed.ok) {
+        throw new Error(parsed.error);
+      }
+
+      const result = parsed.data;
       if (!response.ok) {
-        throw new Error(result.error || "Failed to save embedding settings");
+        throw new Error([result.error, result.hint].filter(Boolean).join(" ") || "Failed to save embedding settings");
       }
 
       setData(result);

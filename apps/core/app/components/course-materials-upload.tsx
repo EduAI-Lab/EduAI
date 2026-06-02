@@ -7,6 +7,7 @@ import { Badge } from '~/components/ui/badge';
 import { Upload, FileText, AlertCircle, CheckCircle, XCircle, RefreshCw, Loader2 } from 'lucide-react';
 import { Alert, AlertDescription } from '~/components/ui/alert';
 import { CourseEmbeddingSettings } from '~/components/course-embedding-settings';
+import { readJsonResponse } from '~/lib/api/client';
 
 interface CourseMaterial {
   id: string;
@@ -34,14 +35,18 @@ export function CourseMaterialsUpload({ courseId, apiKeys }: CourseMaterialsUplo
   const loadMaterials = useCallback(async () => {
     try {
       const response = await fetch(`/api/courses/${courseId}/materials`);
-      const result = await response.json();
+      const parsed = await readJsonResponse<{ materials?: CourseMaterial[]; error?: string }>(response);
 
-      if (!response.ok) {
-        throw new Error(result.error || 'Failed to load materials');
+      if (!parsed.ok) {
+        throw new Error(parsed.error);
       }
 
-      setMaterials(result.materials || []);
-      return result.materials as CourseMaterial[];
+      if (!response.ok) {
+        throw new Error(parsed.data.error || 'Failed to load materials');
+      }
+
+      setMaterials(parsed.data.materials || []);
+      return parsed.data.materials as CourseMaterial[];
     } catch (err) {
       console.error('Failed to load materials:', err);
       return null;
@@ -111,11 +116,24 @@ export function CourseMaterialsUpload({ courseId, apiKeys }: CourseMaterialsUplo
       const response = await fetch(`/api/courses/${courseId}/re-embed`, {
         method: 'POST',
       });
-      const result = await response.json();
+      const parsed = await readJsonResponse<{
+        processed?: number;
+        failed?: string[];
+        error?: string;
+        hint?: string;
+      }>(response);
+
+      if (!parsed.ok) {
+        throw new Error(parsed.error);
+      }
 
       if (!response.ok) {
-        throw new Error(result.error || 'Re-index failed');
+        throw new Error(
+          [parsed.data.error, parsed.data.hint].filter(Boolean).join(' ') || 'Re-index failed',
+        );
       }
+
+      const result = parsed.data;
 
       await loadMaterials();
       const failedCount = result.failed?.length ?? 0;
