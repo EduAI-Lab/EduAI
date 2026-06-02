@@ -57,17 +57,17 @@ isProject: false
 |--------------|--------------------------|------------------|--------|-------------|
 | `login-form` | Public — `/auth/login` | `POST /api/auth/sign-in/email` (route action) | exists | yes |
 | `register-form` | Public — `/auth/register` | `POST /api/auth/sign-up/email` | exists | yes |
-| `app-sidebar` | Authenticated shell — dashboard, chat, courses, settings, admin | None (nav only); ADMIN links → `/admin/*` | exists (partial **stubbed** nav: Analytics, Reports → `#`) | no |
-| `site-header` | Authenticated + marketing layouts | None | exists | no |
-| `site-navigation` | Public — `/team` | None | exists | no |
-| `site-footer` | Public — `/team` | None | exists | no |
-| `animated-background` | Public — `/team` | None | exists | no |
-| `team-member-card` | Public — `/team` | None | exists | no |
-| `project-goals` | Public — `/` (landing) | None | exists | no |
-| `nav-main` | Sidebar — all authenticated views | None | exists | no |
-| `nav-secondary` | Sidebar | None (**stubbed** `url: "#"`) | stubbed | no |
-| `nav-documents` | Sidebar (commented out in sidebar) | None | stubbed / unwired | no |
-| `nav-user` | Sidebar — session user menu | `POST /api/auth/sign-out` (via route) | exists | no |
+| `app-sidebar` | Authenticated shell — dashboard, chat, courses, settings, admin | None (nav only); ADMIN links → `/admin/*` | exists (skeleton) — nav data now via props, role-gating preserved | yes |
+| `site-header` | Authenticated + marketing layouts | None | exists (skeleton) — `title` prop added | yes |
+| `site-navigation` | Public — `/team` | None | exists (skeleton) | yes |
+| `site-footer` | Public — `/team` | None | exists (skeleton) | yes |
+| `animated-background` | Public — `/team` | None | exists (skeleton) — presentational, canvas-only | yes |
+| `team-member-card` | Public — `/team` | None | exists (skeleton) | yes |
+| `project-goals` | Public — `/` (landing) | None | exists (skeleton) | yes |
+| `nav-main` | Sidebar — all authenticated views | None | exists (skeleton) | yes |
+| `nav-secondary` | Sidebar | None (**stubbed** `url: "#"`) | exists (skeleton) | yes |
+| `nav-documents` | Sidebar (commented out in sidebar) | None | exists (skeleton) — opt-in via `showDocuments` prop | yes |
+| `nav-user` | Sidebar — session user menu | `POST /api/auth/sign-out` (via route) | exists (skeleton) | yes |
 | `chat-welcome` | All — `/chat` | None | exists | no |
 | `chat-message` | All — `/chat` | None (message props) | exists | no |
 | `chat-input` | All — `/chat` | None (callbacks props) | exists | no |
@@ -76,8 +76,8 @@ isProject: false
 | `markdown-renderer` | Chat + materials | None | exists | no |
 | `system-prompt-settings` | All — `/chat` | `POST /api/chat` (save prompt — today in **route**) | exists | no |
 | `api-key-settings` | Chat (if surfaced) | localStorage via `useApiKeys` (**hook in component today**) | exists — **refactor** | no |
-| `course-materials-upload` | All — `/courses/:courseId` | `GET/POST /api/courses/:courseId/materials` (**fetch in component**) | exists — **refactor** | no |
-| `course-selector` | Unwired | `GET /api/courses` (**fetch in component**) | exists — **refactor** | no |
+| `course-materials-upload` | All — `/courses/:courseId` | `GET/POST /api/courses/:courseId/materials` (now fetched in `courses.$courseId` route) | exists (skeleton) — I/O moved to route; props-only | yes |
+| `course-selector` | Unwired | `GET /api/courses` (route-owned when wired) | exists (skeleton) — props-only; still unwired | yes |
 | `users-table` | **ADMIN** — `/admin/users` | `GET/PATCH/DELETE /api/users` (route owns fetch) | exists | no |
 | `user-form-dialog` | **ADMIN** — `/admin/users` | `POST/PATCH /api/users` | exists | no |
 | `providers-table` | **ADMIN** — `/admin/ai-models` | `GET/PATCH/DELETE /api/ai-providers` | exists | no |
