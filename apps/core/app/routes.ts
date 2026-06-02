@@ -16,6 +16,8 @@ export default [
   route("/courses", "routes/courses.tsx"),
   route("/courses/:courseId", "routes/courses.$courseId.tsx"),
   route("/api/courses/:courseId/materials", "routes/api/courses.materials.$.ts"),
+  route("/api/courses/:courseId/re-embed", "routes/api/courses.re-embed.$.ts"),
+  route("/api/courses/:courseId/embedding-settings", "routes/api/courses.embedding-settings.$.ts"),
   route("/api/courses/:courseId/topics", "routes/api/courses.topics.$.ts"),
   route("/api/courses/:id", "routes/api/courses.id.ts"),
   route("/admin/ai-models", "routes/admin.ai-models.tsx"),

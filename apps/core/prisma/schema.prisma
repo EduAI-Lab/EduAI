@@ -94,6 +94,13 @@ model Course {
   updatedAt      DateTime           @updatedAt
   professorId    String
   aiInstructions String             @default("")
+  /// Per-course override: `local` | `ollama` | `cloud`; null uses server env.
+  embeddingProvider     String?
+  /// Per-course model id (Ollama or OpenRouter/OpenAI); null uses server default for provider.
+  embeddingModel        String?
+  lastEmbeddedAt        DateTime?
+  embeddedWithProvider  String?
+  embeddedWithModel     String?
   aiInteractions AIInteraction[]
   enrollments    CourseEnrollment[]
   materials      CourseMaterial[]
