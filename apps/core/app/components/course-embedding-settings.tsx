@@ -89,8 +89,8 @@ export function CourseEmbeddingSettings({ courseId, onSettingsSaved }: CourseEmb
 
   const modelOptions = useMemo(() => {
     if (!data) return [];
-    if (providerChoice === "local") return data.allowedLocalModels;
-    if (providerChoice === "cloud") return data.allowedCloudModels;
+    if (providerChoice === "local") return data.allowedLocalModels ?? [];
+    if (providerChoice === "cloud") return data.allowedCloudModels ?? [];
     return [];
   }, [data, providerChoice]);
 
@@ -134,7 +134,15 @@ export function CourseEmbeddingSettings({ courseId, onSettingsSaved }: CourseEmb
         throw new Error([result.error, result.hint].filter(Boolean).join(" ") || "Failed to save embedding settings");
       }
 
-      setData(result);
+      setData((prev) => ({
+        settings: result.settings,
+        effective: result.effective,
+        needsReEmbed: result.needsReEmbed,
+        allowedLocalModels:
+          result.allowedLocalModels ?? prev?.allowedLocalModels ?? [],
+        allowedCloudModels:
+          result.allowedCloudModels ?? prev?.allowedCloudModels ?? [],
+      }));
       setProviderChoice(result.settings.embeddingProvider ?? "env");
       setModelChoice(result.settings.embeddingModel ?? "default");
 
