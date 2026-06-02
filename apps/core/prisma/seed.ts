@@ -56,7 +56,7 @@ async function main() {
       displayName: 'vLLM',
       description: 'OpenAI-compatible local inference (vLLM)',
       requiresApiKey: false,
-      defaultBaseUrl: 'http://localhost:8000/v1',
+      defaultBaseUrl: 'http://localhost:8001/v1',
       envVarName: 'VLLM_BASE_URL',
       isActive: true,
     },

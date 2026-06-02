@@ -282,7 +282,7 @@ export default function SettingsPage() {
                           <Button size="sm" onClick={()=>updateProviderSettings('vllm',{ isEnabled: true })}>Enable vLLM</Button>
                         </div>
                       )}
-                      <p className="text-xs text-muted-foreground">OpenAI-compatible server. Set VLLM_BASE_URL on dev (e.g. cmps01:8000).</p>
+                      <p className="text-xs text-muted-foreground">OpenAI-compatible server. Set VLLM_BASE_URL on dev (e.g. cmps01:8001).</p>
                     </div>
                   </CardContent>
                 </Card>
