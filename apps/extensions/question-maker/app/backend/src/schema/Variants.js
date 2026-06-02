@@ -23,14 +23,14 @@ export const Variants = sequelize.define('Variants', {
     }
   },
   difficulty: {
-    type: DataTypes.ENUM('EASY', 'MEDIUM', 'HARD'),
+    type: DataTypes.ENUM('easy', 'medium', 'hard'),
     allowNull: false,
-    defaultValue: 'MEDIUM'
+    defaultValue: 'medium'
   },
   reasoningLevel: {
-    type: DataTypes.ENUM('FACTUAL', 'ANALYTICAL', 'APPLICATION'),
+    type: DataTypes.ENUM('factual', 'analytical', 'application'),
     allowNull: false,
-    defaultValue: 'FACTUAL',
+    defaultValue: 'factual',
     field: 'reasoning_level'
   },
   questionMetadataId: {
