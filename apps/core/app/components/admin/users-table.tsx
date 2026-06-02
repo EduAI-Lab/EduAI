@@ -95,7 +95,7 @@ type User = {
   email: string;
   name: string;
   image?: string;
-  role: "ADMIN" | "PROFESSOR" | "TA" | "STUDENT";
+  role: "ADMIN" | "INSTRUCTOR" | "TA" | "STUDENT";
   isActive: boolean;
   emailVerified: boolean;
   createdAt: string;
@@ -129,7 +129,7 @@ const getRoleColor = (role: string) => {
   switch (role) {
     case "ADMIN":
       return "bg-red-50 text-red-700 border-red-200";
-    case "PROFESSOR":
+    case "INSTRUCTOR":
       return "bg-blue-50 text-blue-700 border-blue-200";
     case "TA":
       return "bg-green-50 text-green-700 border-green-200";

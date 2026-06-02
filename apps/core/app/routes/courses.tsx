@@ -62,7 +62,7 @@ export default function CoursesPage() {
   const [editDialogOpen, setEditDialogOpen] = useState(false)
 
   const isAdmin = user.role === "ADMIN"
-  const isProfessor = user.role === "PROFESSOR"
+  const isProfessor = user.role === "INSTRUCTOR"
   const isTA = user.role === "TA"
   const isStudent = user.role === "STUDENT"
 

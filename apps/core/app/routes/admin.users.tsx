@@ -18,7 +18,7 @@ type User = {
   email: string;
   name: string;
   image?: string;
-  role: "ADMIN" | "PROFESSOR" | "TA" | "STUDENT";
+  role: "ADMIN" | "INSTRUCTOR" | "TA" | "STUDENT";
   isActive: boolean;
   emailVerified: boolean;
   createdAt: string;
