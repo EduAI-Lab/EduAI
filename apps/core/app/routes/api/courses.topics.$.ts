@@ -49,6 +49,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     return topicsGetResponse(courseId, topicId);
   }
 
+  // TODO(RBAC #292): replace with resolveCourseAccess
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
   if (apiKeyGuard) return apiKeyGuard;
 
@@ -84,6 +85,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   let session = null;
   if (!serviceAuth) {
+    // TODO(RBAC #292): replace with resolveCourseAccess
     const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
     if (apiKeyGuard) return apiKeyGuard;
 

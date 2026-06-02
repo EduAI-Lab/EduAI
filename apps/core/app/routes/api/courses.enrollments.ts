@@ -67,7 +67,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const enrollments = await getCourseEnrollments(courseId);
 
   // Authorization: service key callers skip this check entirely.
-  // User OAuth callers must themselves be enrolled in the course.
+  // User OAuth callers must themselves be enrolled in the course (instructors
+  // are stored as enrollment rows, so this covers the "enrolled OR instructor"
+  // rule). This is the #275-specced inline check, not the ADMIN-only placeholder.
+  // TODO(RBAC #292): replace with resolveCourseAccess
   if (!isServiceKey && userId) {
     const callerEnrollment = enrollments.find((e) => e.userId === userId);
 

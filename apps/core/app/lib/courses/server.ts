@@ -49,6 +49,7 @@ export async function createCourse(request: Request) {
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
   if (apiKeyGuard) return apiKeyGuard;
 
+  // TODO(RBAC #292): replace with resolveCourseAccess
   const session = apiKeySession ?? (await auth.api.getSession(request));
   if (!session?.user || session.user.role !== "ADMIN") {
     return new Response(JSON.stringify({ error: "Forbidden" }), {
@@ -163,6 +164,7 @@ export async function updateCourse(request: Request, courseId: string) {
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
   if (apiKeyGuard) return apiKeyGuard;
 
+  // TODO(RBAC #292): replace with resolveCourseAccess
   const session = apiKeySession ?? (await auth.api.getSession(request));
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
