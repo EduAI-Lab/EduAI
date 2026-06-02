@@ -2,11 +2,14 @@
 /**
  * Smoke test vLLM OpenAI-compatible API.
  *
- *   VLLM_BASE_URL=http://cmps01.ok.ubc.ca:8000 node ./scripts/vllm-smoke.mjs
- *   VLLM_MODEL=qwen2.5-7b-instruct node ./scripts/vllm-smoke.mjs
+ *   VLLM_PORT=8001 VLLM_BASE_URL=http://cmps01.ok.ubc.ca:8001 npm run vllm:smoke
+ *   VLLM_MODEL=qwen2.5-7b-instruct npm run vllm:smoke
  */
 
-const base = (process.env.VLLM_BASE_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
+const port = process.env.VLLM_PORT || "8001";
+const base = (
+  process.env.VLLM_BASE_URL || `http://127.0.0.1:${port}`
+).replace(/\/$/, "");
 const apiKey = process.env.VLLM_API_KEY || "vllm-local";
 const model = process.env.VLLM_MODEL || "qwen2.5-7b-instruct";
 
@@ -14,7 +17,7 @@ async function main() {
   const modelsRes = await fetch(`${base}/v1/models`, {
     headers: { Authorization: `Bearer ${apiKey}` },
   });
-  console.log("GET /v1/models", modelsRes.status);
+  console.log("GET /v1/models", modelsRes.status, `→ ${base}`);
   if (modelsRes.ok) {
     const body = await modelsRes.json();
     console.log(JSON.stringify(body, null, 2));

@@ -62,7 +62,7 @@ export const PROVIDER_CONFIGS: Record<SupportedProvider, ProviderConfig> = {
     name: 'vLLM',
     description: 'Local OpenAI-compatible inference (vLLM on cmps01 or tunnel)',
     requiresApiKey: false,
-    defaultBaseUrl: 'http://localhost:8000/v1',
+    defaultBaseUrl: 'http://localhost:8001/v1',
     envVarName: 'VLLM_BASE_URL'
   }
 };
@@ -105,10 +105,11 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
 
   // vLLM (OpenAI-compatible /v1 — see docs/rag-ai/latency/eduai-summer-2026/VLLM_CMPS01_SETUP.md)
   if (userSettings.vllm?.isEnabled) {
+    const vllmPort = process.env.VLLM_PORT || '8001';
     let baseURL =
       userSettings.vllm?.baseUrl ||
       process.env.VLLM_BASE_URL ||
-      'http://localhost:8000';
+      `http://localhost:${vllmPort}`;
 
     baseURL = baseURL.replace(/\/$/, '');
     if (!baseURL.endsWith('/v1')) {
