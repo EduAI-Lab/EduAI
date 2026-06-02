@@ -94,7 +94,7 @@ router.get('/courses/:courseId/topics', async (req, res) => {
  * Why: blocked for imported courses — those topics are owned by EduAI and a
  * manual addition would be wiped on next sync (or worse, drift silently).
  */
-router.post('/courses/:courseId/topics', requireRole('PROFESSOR'), async (req, res) => {
+router.post('/courses/:courseId/topics', requireRole('INSTRUCTOR'), async (req, res) => {
   const instructor = req.user;
   const courseId = Number(req.params.courseId);
   if (!Number.isFinite(courseId)) {
@@ -151,7 +151,7 @@ export default router;
  * Why: name-keyed additive sync preserves activity references even if a topic
  * is renamed upstream — the instructor can use `/topics/remap` to consolidate.
  */
-router.post('/courses/:courseId/topics/sync', requireRole('PROFESSOR'), async (req, res) => {
+router.post('/courses/:courseId/topics/sync', requireRole('INSTRUCTOR'), async (req, res) => {
   const instructor = req.user;
   const courseId = Number(req.params.courseId);
   if (!Number.isFinite(courseId)) {
@@ -212,7 +212,7 @@ router.post('/courses/:courseId/topics/sync', requireRole('PROFESSOR'), async (r
  * instructor uses this to consolidate the orphaned local topic into the new
  * upstream-synced one without losing activity associations.
  */
-router.post('/courses/:courseId/topics/remap', requireRole('PROFESSOR'), async (req, res) => {
+router.post('/courses/:courseId/topics/remap', requireRole('INSTRUCTOR'), async (req, res) => {
   const instructor = req.user;
   const courseId = Number(req.params.courseId);
   if (!Number.isFinite(courseId)) {

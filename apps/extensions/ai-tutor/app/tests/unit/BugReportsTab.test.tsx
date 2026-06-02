@@ -72,12 +72,12 @@ const anonymousReport: AdminBugReportRow = {
   isAnonymous: true,
   reporterName: 'Anonymous',
   reporterEmail: null,
-  reporterRole: 'PROFESSOR',
+  reporterRole: 'INSTRUCTOR',
   user: {
     id: 'u2',
     name: null,
     email: null,
-    role: 'PROFESSOR',
+    role: 'INSTRUCTOR',
   },
 };
 
@@ -88,12 +88,12 @@ const anonymousReportWithPopulatedIdentityFields: AdminBugReportRow = {
   isAnonymous: true,
   reporterName: 'Grace Hopper',
   reporterEmail: 'grace@example.com',
-  reporterRole: 'PROFESSOR',
+  reporterRole: 'INSTRUCTOR',
   user: {
     id: 'u3',
     name: 'Grace Hopper',
     email: 'grace@example.com',
-    role: 'PROFESSOR',
+    role: 'INSTRUCTOR',
   },
 };
 

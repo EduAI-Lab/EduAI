@@ -322,7 +322,7 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
 /**
  * GET /lessons/:lessonId/activities — list activities for a lesson.
  *
- * Auth: any authenticated user; PROFESSOR must instruct the course, STUDENT
+ * Auth: any authenticated user; INSTRUCTOR must instruct the course, STUDENT
  *   must be enrolled AND lesson must be published.
  * Returns: For students, each activity is enriched with `completionStatus`
  *   so the lesson page can render attempt indicators without N+1 calls.
@@ -369,7 +369,7 @@ router.get('/lessons/:lessonId/activities', async (req, res) => {
       (enrollment) => enrollment.userId === authUser.id,
     );
 
-    if (authUser.role === 'PROFESSOR' && !isInstructor) {
+    if (authUser.role === 'INSTRUCTOR' && !isInstructor) {
       return res.status(403).json({ error: 'Not authorized for this lesson' });
     }
     if (authUser.role === 'STUDENT') {
@@ -380,7 +380,7 @@ router.get('/lessons/:lessonId/activities', async (req, res) => {
         return res.status(403).json({ error: 'Lesson is not published' });
       }
     }
-    if (authUser.role !== 'PROFESSOR' && authUser.role !== 'STUDENT') {
+    if (authUser.role !== 'INSTRUCTOR' && authUser.role !== 'STUDENT') {
       return res.status(403).json({ error: 'Role is not supported in AI Tutor' });
     }
 
@@ -418,13 +418,13 @@ router.get('/lessons/:lessonId/activities', async (req, res) => {
 /**
  * POST /lessons/:lessonId/activities — create a new activity.
  *
- * Auth: PROFESSOR who instructs the lesson's course.
+ * Auth: INSTRUCTOR who instructs the lesson's course.
  * Side effects: writes Activity + ActivitySecondaryTopic rows.
  *
  * Why: at-least-one-mode invariant is enforced here (and in PATCH) so the
  * frontend never has to render a tutor screen with no available modes.
  */
-router.post('/lessons/:lessonId/activities', requireRole('PROFESSOR'), async (req, res) => {
+router.post('/lessons/:lessonId/activities', requireRole('INSTRUCTOR'), async (req, res) => {
   const lessonId = Number(req.params.lessonId);
   if (!Number.isFinite(lessonId)) {
     return res.status(400).json({ error: 'Invalid lesson id' });
@@ -532,7 +532,7 @@ router.post('/lessons/:lessonId/activities', requireRole('PROFESSOR'), async (re
 /**
  * PATCH /activities/:activityId — partial update of an activity.
  *
- * Auth: PROFESSOR who instructs the activity's course.
+ * Auth: INSTRUCTOR who instructs the activity's course.
  * Side effects: when `secondaryTopicIds` is provided the entire join table is
  *   rewritten (deleteMany + create) for that activity.
  *
@@ -540,7 +540,7 @@ router.post('/lessons/:lessonId/activities', requireRole('PROFESSOR'), async (re
  * column, so the handler reads-modifies-writes that blob whenever any of those
  * fields appear, leaving other config keys untouched.
  */
-router.patch('/activities/:activityId', requireRole('PROFESSOR'), async (req, res) => {
+router.patch('/activities/:activityId', requireRole('INSTRUCTOR'), async (req, res) => {
   const instructor = req.user;
   const activityId = Number(req.params.activityId);
   if (!Number.isFinite(activityId)) {
@@ -804,7 +804,7 @@ router.patch('/activities/:activityId', requireRole('PROFESSOR'), async (req, re
   }
 });
 
-router.delete('/activities/:activityId', requireRole('PROFESSOR'), async (req, res) => {
+router.delete('/activities/:activityId', requireRole('INSTRUCTOR'), async (req, res) => {
   const instructor = req.user;
   const activityId = Number(req.params.activityId);
   if (!Number.isFinite(activityId)) {

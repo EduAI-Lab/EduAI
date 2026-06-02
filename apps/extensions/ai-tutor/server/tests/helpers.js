@@ -13,7 +13,7 @@ export function makeProfessor(overrides = {}) {
     id: nextId(),
     name: 'Prof Test',
     email: `prof_${counter}@test.com`,
-    role: 'PROFESSOR',
+    role: 'INSTRUCTOR',
     createdAt: new Date(),
     updatedAt: new Date(),
     emailVerified: false,
