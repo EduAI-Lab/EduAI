@@ -6,6 +6,14 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ---
 
+## [Week 5 — June 1–5, 2026]
+
+### Added
+- [core] feat: Persist Assistive mode + selected course per user across page refreshes and new chats. New `UserPreference` table (`assistDefault`, `lastCourseCode`) + migration `add_user_preferences`; the `/chat` loader seeds the toggle + course from the user's stored preference, a `/chat` route `action` upserts on change via `useFetcher`, and `POST /auth/logout` clears the row so the next login starts fresh. A restored course the user can no longer access falls back to none; per-chat `Chat.adhdAssist` still wins when opening an existing chat. New `apps/core/app/lib/user-preferences.ts` (pure parse/resolve helpers) and `user-preferences.server.ts` (centralized `prisma.userPreference` access). (#420, @Ayyhab, 2026-06-02)
+- [core] tests: Unit tests for `parsePreferenceUpdates`, `resolveSelectedCourse`, and the preference persistence service (`get`/`save`/`clear`) at `apps/core/app/tests/unit/user-preferences.test.ts` and `user-preferences.server.test.ts` — 16 cases mapped to the #420 acceptance criteria; pinned to the node test environment. (#420, @Ayyhab, 2026-06-02)
+
+---
+
 ## [Week 4 — May 25–29, 2026]
 
 ### Added
