@@ -42,7 +42,7 @@ type AIModel = {
   provider: Omit<AIProvider, 'models' | '_count'>;
 };
 
-interface AIModelsTableProps {
+export interface AIModelsTableProps {
   models: AIModel[];
   onEdit: (model: AIModel) => void;
   onDelete: (id: string) => void;
@@ -97,6 +97,13 @@ export function AIModelsTable({ models, onEdit, onDelete, onToggleActive }: AIMo
           </TableRow>
         </TableHeader>
         <TableBody>
+          {models.length === 0 && (
+            <TableRow>
+              <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
+                No models found.
+              </TableCell>
+            </TableRow>
+          )}
           {models.map((model) => (
             <TableRow key={model.id}>
               <TableCell>
