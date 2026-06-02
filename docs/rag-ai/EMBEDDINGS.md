@@ -180,7 +180,9 @@ After [LOCAL-EMBEDDINGS](./LOCAL-EMBEDDINGS.md) migration, existing Gemini (3072
 
 ```bash
 cd apps/core
-npm run re-embed:course -- <courseId>
+npm run re-embed:course -- --list          # show id + code for every course
+npm run re-embed:course -- "COSC 111"      # by course code
+npm run re-embed:course -- <courseId>       # by internal id (cuid)
 ```
 
 This clears chunks/embeddings per material, re-runs `processMaterialEmbeddings`, and sets material status to `READY` or `FAILED`.
