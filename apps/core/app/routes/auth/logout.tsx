@@ -4,6 +4,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
 import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies";
 import { auth } from "~/lib/auth/server";
+import prisma from "~/lib/prisma.server";
 
 /** GET /auth/logout → login page */
 export async function loader(_args: LoaderFunctionArgs) {
@@ -12,6 +13,16 @@ export async function loader(_args: LoaderFunctionArgs) {
 
 /** POST /auth/logout — invalidate session and clear cookies via Better Auth */
 export async function action({ request }: ActionFunctionArgs) {
+  // Clear per-user chat prefs before the session is invalidated (#420).
+  const session = await auth.api.getSession(request);
+  if (session?.user) {
+    try {
+      await prisma.userPreference.deleteMany({ where: { userId: session.user.id } });
+    } catch (error) {
+      console.error("Failed to clear user preferences on logout:", error);
+    }
+  }
+
   const authRequest = buildAuthSubRequest(
     "/api/auth/sign-out",
     request,
