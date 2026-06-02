@@ -4,7 +4,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
 import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies";
 import { auth } from "~/lib/auth/server";
-import prisma from "~/lib/prisma.server";
+import { clearUserPreference } from "~/lib/user-preferences.server";
 
 /** GET /auth/logout → login page */
 export async function loader(_args: LoaderFunctionArgs) {
@@ -17,7 +17,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const session = await auth.api.getSession(request);
   if (session?.user) {
     try {
-      await prisma.userPreference.deleteMany({ where: { userId: session.user.id } });
+      await clearUserPreference(session.user.id);
     } catch (error) {
       console.error("Failed to clear user preferences on logout:", error);
     }

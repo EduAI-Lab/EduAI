@@ -17,6 +17,8 @@ import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
 
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
+import { getUserPreference, saveUserPreference } from "~/lib/user-preferences.server";
+import { parsePreferenceUpdates, resolveSelectedCourse } from "~/lib/user-preferences";
 
 interface ChatModel {
   id: string;
@@ -58,15 +60,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
     supportsTools: model.supportsTools,
   }));
 
-  const preference = await prisma.userPreference.findUnique({
-    where: { userId: session.user.id },
-  });
+  const preferences = await getUserPreference(session.user.id);
 
   return {
     chatModels,
     user: session.user,
-    assistDefault: preference?.assistDefault ?? false,
-    lastCourseCode: preference?.lastCourseCode ?? null,
+    ...preferences,
   };
 }
 
@@ -84,37 +83,15 @@ export async function action({ request }: ActionFunctionArgs) {
     });
   }
 
-  const body = await request.json().catch(() => null);
-  const payload = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
-
-  const data: { assistDefault?: boolean; lastCourseCode?: string | null } = {};
-  if (typeof payload.assistDefault === "boolean") {
-    data.assistDefault = payload.assistDefault;
-  }
-  if (typeof payload.lastCourseCode === "string") {
-    const trimmed = payload.lastCourseCode.trim();
-    data.lastCourseCode = trimmed.length > 0 ? trimmed : null;
-  } else if (payload.lastCourseCode === null) {
-    data.lastCourseCode = null;
-  }
-
-  if (Object.keys(data).length === 0) {
+  const updates = parsePreferenceUpdates(await request.json().catch(() => null));
+  if (Object.keys(updates).length === 0) {
     return new Response(JSON.stringify({ error: "No valid preference fields provided" }), {
       status: 400,
       headers: { "Content-Type": "application/json" },
     });
   }
 
-  const preference = await prisma.userPreference.upsert({
-    where: { userId: session.user.id },
-    create: { userId: session.user.id, ...data },
-    update: data,
-  });
-
-  return {
-    assistDefault: preference.assistDefault,
-    lastCourseCode: preference.lastCourseCode,
-  };
+  return saveUserPreference(session.user.id, updates);
 }
 
 export default function Chat() {
@@ -163,7 +140,7 @@ export default function Chat() {
         const courses: Array<{ id: string; name: string; code: string }> = data.courses || [];
         setAvailableCourses(courses);
         setSelectedCourseCode((current) =>
-          current && !courses.some((c) => c.code === current) ? null : current,
+          resolveSelectedCourse(current, courses.map((c) => c.code)),
         );
       } catch (error) {
         console.error('Failed to fetch courses:', error);
