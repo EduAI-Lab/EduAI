@@ -13,7 +13,8 @@ import {
   getQuestionStats,
   updateQuestionOrder,
   removeQuestionFromAssessment,
-  saveExtractedQuestions
+  saveExtractedQuestions,
+  normalizePrimaryTopicId
 } from '../services/questionService.js';
 import { generateQuestions, AI_PROVIDERS, extractQuestionsFromText } from '../services/aiService.js';
 import { authenticateToken } from '../middleware/auth.js';
@@ -51,8 +52,8 @@ router.post('/', authenticateToken, async (req, res, next) => {
       });
     }
 
-    const primaryTopicId = Number(rawPrimaryTopicId);
-    if (!Number.isInteger(primaryTopicId)) {
+    const primaryTopicId = normalizePrimaryTopicId(rawPrimaryTopicId);
+    if (!primaryTopicId) {
       return res.status(400).json({
         success: false,
         error: 'Valid primaryTopicId is required'
@@ -154,8 +155,8 @@ router.put('/:id', authenticateToken, async (req, res, next) => {
     }
 
     if (primaryTopicId !== undefined) {
-      const resolvedTopicId = Number(primaryTopicId);
-      if (!Number.isInteger(resolvedTopicId)) {
+      const resolvedTopicId = normalizePrimaryTopicId(primaryTopicId);
+      if (!resolvedTopicId) {
         return res.status(400).json({
           success: false,
           error: 'Valid primaryTopicId is required'
@@ -312,9 +313,7 @@ router.post('/extract/save', authenticateToken, async (req, res, next) => {
 
     const saved = await saveExtractedQuestions(req.user.id, {
       courseId: Number(courseId),
-      primaryTopicId: primaryTopicId !== undefined && primaryTopicId !== null && primaryTopicId !== ''
-        ? Number(primaryTopicId)
-        : undefined,
+      primaryTopicId: normalizePrimaryTopicId(primaryTopicId) ?? undefined,
       topicName,
       questions,
       assessment
