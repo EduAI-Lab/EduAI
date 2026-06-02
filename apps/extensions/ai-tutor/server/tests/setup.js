@@ -1,8 +1,17 @@
+import { vi } from 'vitest';
 import { config } from 'dotenv';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// Keep test output clean: the app logs intentional error paths via console.error/warn
+// (e.g. supervisor verdict-parse fallback, manual enrollment-sync failures) that several
+// tests deliberately exercise. Silence them during tests; run with TEST_VERBOSE=1 to restore.
+if (!process.env.TEST_VERBOSE) {
+  vi.spyOn(console, 'error').mockImplementation(() => {});
+  vi.spyOn(console, 'warn').mockImplementation(() => {});
+}
 
 // Load .env.test BEFORE any app imports so the Prisma singleton connects to the test DB
 config({ path: resolve(__dirname, '..', '.env.test'), override: true });
