@@ -186,18 +186,25 @@ async function getSelectionCursorForUpdate({ questionMetadataId, courseId, trans
   }
 
   try {
-    cursor = await VariantSelectionCursor.create(
-      {
-        questionMetadataId,
-        courseId,
-        nextOffset: 0,
-        lastVariantId: null
-      },
-      { transaction }
+    // Wrap the insert in a SAVEPOINT: if a concurrent transaction wins the
+    // unique-key race, only this nested block rolls back, leaving the outer
+    // transaction usable so we can re-fetch the row the winner created.
+    // Without the savepoint, the failed INSERT aborts the whole transaction
+    // ("current transaction is aborted") and the recovery findOne also fails.
+    cursor = await sequelize.transaction({ transaction }, async (savepoint) =>
+      VariantSelectionCursor.create(
+        {
+          questionMetadataId,
+          courseId,
+          nextOffset: 0,
+          lastVariantId: null
+        },
+        { transaction: savepoint }
+      )
     );
     return cursor;
   } catch (error) {
-    // Another transaction may create this row first due to unique key race.
+    // Another transaction created this row first due to the unique key race.
     cursor = await VariantSelectionCursor.findOne({
       where: { questionMetadataId, courseId },
       transaction,
