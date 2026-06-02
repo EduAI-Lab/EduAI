@@ -1,4 +1,4 @@
-import { EduAiCourseListSchema, EduAiTopicListSchema, EduAiEnrollmentListSchema } from '../schemas/eduai.js';
+import { EduAiCourseListSchema, EduAiTopicListSchema, EduAiEnrollmentListSchema, EduAiQuestionListSchema } from '../schemas/eduai.js';
 const DEFAULT_BASE_URL = 'http://localhost:5174/api';
 
 function normalizeBaseUrl(rawUrl) {
@@ -132,9 +132,15 @@ export async function listEduAiCourseTopics(externalCourseId, cookie) {
   }
 }
 
-export async function listEduAiCourseEnrollments(externalCourseId, cookie) {
+export async function listEduAiCourseEnrollmentsServiceKey(externalCourseId) {
   if (!externalCourseId) return [];
-  const data = await requestEduAi(`/courses/${externalCourseId}/enrollments`, { cookie });
+  const serviceKey = process.env.EDUAI_API_KEY;
+  if (!serviceKey) {
+    throw new Error('EDUAI_API_KEY not configured');
+  }
+  const data = await requestEduAi(`/courses/${externalCourseId}/enrollments`, {
+    headers: { Authorization: `Bearer ${serviceKey}` },
+  });
   try {
     const parsed = EduAiEnrollmentListSchema.parse(data);
     return parsed.enrollments;
@@ -187,5 +193,13 @@ export async function listCourseTestableQuestions(coreOfferingId, { limit = 20, 
   }
 
   const data = await response.json();
-  return data.questions ?? [];
+  try {
+    const parsed = EduAiQuestionListSchema.parse(data);
+    return parsed.questions;
+  } catch (e) {
+    const err = new Error('Invalid response when fetching Core testable questions');
+    err.cause = e;
+    err.status = 502;
+    throw err;
+  }
 }
