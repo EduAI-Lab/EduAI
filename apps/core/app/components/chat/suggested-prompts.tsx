@@ -41,7 +41,7 @@ const suggestedPrompts = [
   }
 ];
 
-interface SuggestedPromptsProps {
+export interface SuggestedPromptsProps {
   onSelectPrompt: (prompt: string) => void;
 }
 

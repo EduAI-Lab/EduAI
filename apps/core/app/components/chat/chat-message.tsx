@@ -11,7 +11,7 @@ import {
 } from "~/components/ui/message";
 import { Tool } from "~/components/ui/tool";
 
-interface ChatMessageProps {
+export interface ChatMessageProps {
   message: Message;
   isStreaming?: boolean;
 }
