@@ -39,6 +39,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.8.10",
+    "@vitest/coverage-v8": "^2.1.9",
     "eslint": "^9.13.0",
     "vitest": "^2.0.0",
     "nodemon": "^3.0.2",
