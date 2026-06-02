@@ -54,6 +54,29 @@ The shared **dev server** (`dev.eduai.ok.ubc.ca` / `s378`) runs the Turborepo mo
    Then set `OLLAMA_BASE_URL="http://127.0.0.1:11435"` in your local `apps/core/.env`.
 2. **Use the dev server directly** (recommended for most AI testing) — see below.
 
+### Seed accounts
+
+Running `npm run db:seed` (from `apps/core`) creates the following test accounts. All share the same password: **`EduAI2026!`**
+
+| Role | Email | Name |
+| --- | --- | --- |
+| ADMIN | `admin@eduai.local` | EduAI Admin |
+| UNIT_ADMIN | `unitadmin.cosc@eduai.local` | COSC Unit Admin |
+| UNIT_ADMIN | `unitadmin.multi@eduai.local` | Multi-Unit Admin |
+| INSTRUCTOR | `instructor.cs@eduai.local` | Dr. Ada Lovelace |
+| INSTRUCTOR | `instructor.math@eduai.local` | Dr. Emmy Noether |
+| INSTRUCTOR | `instructor.sci@eduai.local` | Dr. Marie Curie |
+| INSTRUCTOR | `instructor.hum@eduai.local` | Dr. Hannah Arendt |
+| TA | `ta.cs@eduai.local` | Sam Carter |
+| TA | `ta.math@eduai.local` | Riley Chen |
+| STUDENT | `student1@eduai.local` | Alex Patel |
+| STUDENT | `student2@eduai.local` | Brooke Kim |
+| STUDENT | `student3@eduai.local` | Cameron Lee |
+| STUDENT | `student4@eduai.local` | Devon Singh |
+| STUDENT | `student5@eduai.local` | Erin Walsh |
+
+These are development-only accounts. Do not run `db:seed` against a production database.
+
 ### Current access
 
 - **Saad (`ssaada08`)** currently has dev server access.
