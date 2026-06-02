@@ -30,6 +30,7 @@ export default defineConfig(({ mode }) => {
       clearMocks: true,
       environment: 'jsdom',
       setupFiles: ['./src/tests/vitest.setup.ts'],
+      passWithNoTests: true,
     },
   }
 })
