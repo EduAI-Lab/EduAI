@@ -17,11 +17,11 @@ import {
   buildCappedRagContextText,
   capRagHitsForTool,
   capToolResultsInMessages,
+  prepareBoundedSessionContext,
+  resolveMaxContextMessages,
   HYBRID_RAG_MAX_CHUNKS,
   HYBRID_RAG_MAX_CONTEXT_CHARS,
 } from "~/lib/chat-rag";
-
-const MAX_CONTEXT_MESSAGES = 20;
 
 const TOOL_MAX_STEPS = Math.min(
   32,
@@ -449,10 +449,11 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     // Fetch only the slice of history we plan to send back to the LLM.
+    const maxContextMessages = resolveMaxContextMessages();
     const recentMessageRecords = await prisma.chatMessage.findMany({
       where: { chatId: chat.id },
       orderBy: { position: "desc" },
-      take: MAX_CONTEXT_MESSAGES,
+      take: maxContextMessages,
     });
 
     const storedMessages = recentMessageRecords.reverse().map((record) =>
@@ -471,16 +472,20 @@ export async function action({ request }: ActionFunctionArgs) {
 
     const mergedMessages = mergeMessages(storedMessages, normalizedIncomingMessages);
     const trimmedMessages =
-      mergedMessages.length > MAX_CONTEXT_MESSAGES
-        ? mergedMessages.slice(-MAX_CONTEXT_MESSAGES)
+      mergedMessages.length > maxContextMessages
+        ? mergedMessages.slice(-maxContextMessages)
         : mergedMessages;
 
     chatApiDebug("chat history merged", {
       mergedCount: mergedMessages.length,
       trimmedCount: trimmedMessages.length,
+      maxContextMessages,
     });
 
-    const modelMessages = capToolResultsInMessages(trimmedMessages);
+    const modelMessages = prepareBoundedSessionContext(
+      capToolResultsInMessages(trimmedMessages),
+      extractTextFromMessage,
+    );
 
     if (mergedMessages.length === 0) {
       return new Response(
