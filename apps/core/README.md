@@ -30,18 +30,6 @@ A production-ready chat platform with Retrieval-Augmented Generation (RAG) capab
 - PostgreSQL with PGVector extension
 - Docker (optional, for containerized database)
 
-## Component architecture
-
-Domain UI lives in `app/components/` (auth, chat, admin, nav, courses). Shared shadcn primitives live in `app/components/ui/` and are not refactored as part of domain work.
-
-**Skeleton contract (all domain components):**
-
-- Export a `ComponentNameProps` type
-- No `fetch`, `useApiKeys`, or `useChat` inside component files — routes pass data and handlers
-- Unit tests in `app/tests/unit/<ComponentName>.test.tsx`
-
-Full audit and assignment split: [`docs/message.md`](docs/message.md), [`docs/TWO_PERSON_ASSIGNMENT.md`](docs/TWO_PERSON_ASSIGNMENT.md).
-
 ## Installation
 
 ### Local Development Setup
