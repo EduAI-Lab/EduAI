@@ -178,21 +178,10 @@ export async function listCourseTestableQuestions(coreOfferingId, { limit = 20, 
     offset: String(offset),
   });
 
-  const response = await fetch(`${getEduAiBaseUrl()}/questions?${params}`, {
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${serviceKey}`,
-    },
+  const data = await requestEduAi(`/questions?${params}`, {
+    headers: { Authorization: `Bearer ${serviceKey}` },
   });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    const error = new Error(errorText || `Core questions fetch failed with status ${response.status}`);
-    error.status = response.status;
-    throw error;
-  }
-
-  const data = await response.json();
   try {
     const parsed = EduAiQuestionListSchema.parse(data);
     return parsed.questions;

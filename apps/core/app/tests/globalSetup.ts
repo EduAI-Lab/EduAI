@@ -59,14 +59,26 @@ export async function setup() {
     }
   }
 
-  // Enable pgvector extension (idempotent)
+  // Enable pgvector extension (idempotent).
+  // Try psql directly first; fall back to docker exec for Windows where psql is often not in PATH.
+  let vectorEnabled = false;
   try {
     execSync(`psql -h ${dbHost} -U ${dbUser} -d "${dbName}" -c "CREATE EXTENSION IF NOT EXISTS vector;"`, {
       env: pgEnv,
       stdio: 'pipe',
     });
-  } catch {
-    // Extension already enabled or psql unavailable — db push will surface real errors
+    vectorEnabled = true;
+  } catch {}
+
+  if (!vectorEnabled) {
+    try {
+      execSync(
+        `docker exec eduai-db psql -U ${dbUser} -d "${dbName}" -c "CREATE EXTENSION IF NOT EXISTS vector;"`,
+        { stdio: 'pipe' },
+      );
+    } catch {
+      // If both fail, db push below will surface the error
+    }
   }
 
   const prismaBin = findBin('prisma');

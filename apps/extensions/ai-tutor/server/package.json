@@ -4,14 +4,14 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "vitest run",
+    "test": "vitest run && vitest run --config vitest.integration.config.js",
     "test:watch": "vitest",
-    "test:unit": "vitest run tests/unit/",
-    "test:integration": "vitest run tests/integration/",
+    "test:unit": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.js",
     "test:coverage": "vitest run --coverage",
     "start": "npx prisma generate && node src/index.js",
     "dev": "npx prisma migrate deploy && npx prisma generate && npm run seed:if-empty && nodemon src/index.js",
-    "seed": "prisma generate && tsx prisma/seed.ts",
+    "seed": "tsx prisma/seed.ts",
     "seed:if-empty": "tsx prisma/seed-if-empty.ts",
     "typecheck": "tsc --noEmit"
   },

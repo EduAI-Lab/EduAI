@@ -344,6 +344,7 @@ CREATE TABLE "chats" (
     "userId" TEXT NOT NULL,
     "systemPrompt" TEXT,
     "title" TEXT,
+    "adhdAssist" BOOLEAN NOT NULL DEFAULT false,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
