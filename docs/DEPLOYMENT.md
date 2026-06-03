@@ -48,7 +48,7 @@ The shared **dev server** (`dev.eduai.ok.ubc.ca` / `s378`) runs the Turborepo mo
 | Service | Port | Dev (s378) access today |
 | ------- | ---- | ------------------------ |
 | **Ollama** | **11434** | HTTP allowed (set `OLLAMA_BASE_URL`) |
-| **vLLM** | **8001** (`VLLM_PORT`) | HTTP requires IT firewall + cmps01 host firewall (see [vLLM setup](rag-ai/latency/eduai-summer-2026/VLLM_CMPS01_SETUP.md)) |
+| **vLLM** | **8001** (`VLLM_PORT`) | HTTP requires IT firewall + cmps01 host firewall (see [vLLM setup](rag-ai/VLLM.md)) |
 | **SSH** cmps01 | **22** | **Not** from s378 (timeout) — do not plan dev→cmps01 SSH tunnels |
 
 #### Workarounds for AI access from a laptop
