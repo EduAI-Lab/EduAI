@@ -158,8 +158,9 @@ export function prepareBoundedSessionContext<T extends Record<string, unknown>>(
 
   if (older.length === 0) {
     let trimmed = [...messages];
+    // All turns are in the recent tail; drop oldest until under budget (keep ≥1 turn).
     while (
-      trimmed.length > MIN_SESSION_MESSAGES &&
+      trimmed.length > 1 &&
       totalMessageChars(trimmed, extractText) > charBudget
     ) {
       trimmed = trimmed.slice(1);
