@@ -76,4 +76,5 @@ Every row in `material_embeddings` built with Gemini (3072) is **incompatible** 
 - [`EMBEDDINGS.md`](./EMBEDDINGS.md) — operational guide
 - [`EDUAI_HELPME_ANALYSIS.md`](./eduai-summer-2026/EDUAI_HELPME_ANALYSIS.md) — HelpMe local embed patterns
 - `apps/core/app/lib/ai/embedding.ts` — provider implementation
-- `apps/core/scripts/re-embed-course.ts` — course re-index script
+- `apps/core/scripts/re-embed-course.ts` — course re-index script (CLI, synchronous)
+- UI/API re-index uses background `CourseReEmbedJob` records — `POST /api/courses/:id/re-embed` returns a job id; poll `GET /api/courses/:id/re-embed/:jobId` for progress
