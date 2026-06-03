@@ -185,7 +185,7 @@ Signature: `findRelevantContent(userQuery, courseId, limit = 6, similarityThresh
 
 ## 5. LLM execution and response
 
-- **`streamText(streamConfig)`** — provider from registry (OpenAI, Google, Ollama, vLLM, etc.). Local models on **cmps01**: `ollama:…` (:11434), `vllm:…` (:8001, OpenAI-compatible — see [VLLM_CMPS01_SETUP.md](latency/eduai-summer-2026/VLLM_CMPS01_SETUP.md))
+- **`streamText(streamConfig)`** — provider from registry (OpenAI, Google, Ollama, vLLM, etc.). Local models on **cmps01**: `ollama:…` (:11434), `vllm:…` (:8001, OpenAI-compatible — see [VLLM.md](VLLM.md))
 - **Streaming:** `toDataStreamResponse` with `X-Chat-Id` when known
 - **Non-streaming:** `consumeStream`, read text/usage/finishReason, `appendMessages` for assistant (from `response.messages` or fallback text), JSON body
 

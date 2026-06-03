@@ -26,7 +26,7 @@ Team documentation for **course-aware retrieval**, the **`POST /api/chat`** pipe
 | Logging probe timings | [`latency/MODEL_LATENCY_TRACKER.md`](./latency/MODEL_LATENCY_TRACKER.md) |
 | Implementing Auto routing (#197) | [`routing/eduai-summer-2026/TEAM_PHASE_0_AND_1_GUIDE.md`](./routing/eduai-summer-2026/TEAM_PHASE_0_AND_1_GUIDE.md) |
 | Testing on `dev.eduai.ok.ubc.ca` | [`HOW_TO_USE_DEV_SERVER.md`](./HOW_TO_USE_DEV_SERVER.md) |
-| vLLM on cmps01 (Docker, firewall, EduAI wiring) | [`latency/eduai-summer-2026/VLLM_CMPS01_SETUP.md`](./latency/eduai-summer-2026/VLLM_CMPS01_SETUP.md) |
+| vLLM on cmps01 (Docker, firewall, EduAI wiring) | [`VLLM.md`](./VLLM.md) |
 
 ---
 
@@ -48,7 +48,7 @@ Team documentation for **course-aware retrieval**, the **`POST /api/chat`** pipe
 | [`latency/eduai-summer-2026/TEAM_CHAT_LATENCY_SPRINT_GUIDE.md`](./latency/eduai-summer-2026/TEAM_CHAT_LATENCY_SPRINT_GUIDE.md) | **Sprint playbook** — Delegatable steps L00–L09 (bench script, baselines, auto-RAG, intent routing, Ollama warm-up, TTFT audit). Teammate entry point. |
 | [`latency/eduai-summer-2026/TEAM_CHAT_LATENCY_AND_TOOLS.md`](./latency/eduai-summer-2026/TEAM_CHAT_LATENCY_AND_TOOLS.md) | **Discussion doc** — Problem statement, `supportsTools` vs hybrid path, option table (A–G), open decisions L1–L5, regression rules. |
 | [`latency/MODEL_LATENCY_TRACKER.md`](./latency/MODEL_LATENCY_TRACKER.md) | **Measurement ledger** — TTFT/Total/tool-call rows per session; live probe table, Gemini quota FAQ, how to record a fresh row. |
-| [`latency/eduai-summer-2026/VLLM_CMPS01_SETUP.md`](./latency/eduai-summer-2026/VLLM_CMPS01_SETUP.md) | **vLLM on cmps01** — Docker + `VLLM_PORT=8001`, IT firewall checklist, EduAI `vllm` provider, smoke test. |
+| [`VLLM.md`](./VLLM.md) | **vLLM on cmps01** — Docker + `VLLM_PORT=8001`, IT firewall, EduAI `vllm` provider, stress test vs Ollama, smoke test. |
 | [`latency/eduai-summer-2026/FINDINGS.md`](./latency/eduai-summer-2026/FINDINGS.md) | **Latency investigation** — Ollama cold/warm; vLLM bench pending. |
 
 ---
@@ -80,6 +80,7 @@ docs/rag-ai/
 ├── README.md                          ← this index
 ├── CHAT_RAG_PIPELINE.md
 ├── EMBEDDINGS.md
+├── VLLM.md
 ├── HOW_TO_USE_DEV_SERVER.md
 ├── eduai-summer-2026/
 │   └── EDUAI_HELPME_ANALYSIS.md
@@ -88,7 +89,6 @@ docs/rag-ai/
 │   └── eduai-summer-2026/
 │       ├── TEAM_CHAT_LATENCY_SPRINT_GUIDE.md
 │       ├── TEAM_CHAT_LATENCY_AND_TOOLS.md
-│       ├── VLLM_CMPS01_SETUP.md
 │       └── FINDINGS.md
 └── routing/
     └── eduai-summer-2026/

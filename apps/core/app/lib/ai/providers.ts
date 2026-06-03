@@ -103,7 +103,7 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
     });
   }
 
-  // vLLM (OpenAI-compatible /v1 — see docs/rag-ai/latency/eduai-summer-2026/VLLM_CMPS01_SETUP.md)
+  // vLLM (OpenAI-compatible /v1 — see docs/rag-ai/VLLM.md)
   if (userSettings.vllm?.isEnabled) {
     const vllmPort = process.env.VLLM_PORT || '8001';
     let baseURL =
