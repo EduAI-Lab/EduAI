@@ -11,6 +11,7 @@ import {
   DEFAULT_OPENAI_EMBEDDING_MODEL,
   resolveEffectiveEmbeddingSettings,
 } from "./embedding-config";
+import { logReEmbedMaterialFailed, logReEmbedMaterialOk } from "./embedding-log.server";
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
@@ -525,7 +526,7 @@ export async function reEmbedCourseMaterials(
         data: { status: "READY", processedAt: new Date() },
       });
       processed += 1;
-      console.log("[embedding] re-embedded material", {
+      await logReEmbedMaterialOk({
         courseId,
         materialId: material.id,
         title: material.title,
@@ -536,11 +537,12 @@ export async function reEmbedCourseMaterials(
         where: { id: material.id },
         data: { status: "FAILED" },
       });
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      // One line so tmux/grep on the dev server captures title + error (object logs span many lines).
-      console.error(
-        `[embedding] re-embed failed courseId=${courseId} materialId=${material.id} title=${JSON.stringify(material.title)} error=${JSON.stringify(errorMessage)}`,
-      );
+      await logReEmbedMaterialFailed({
+        courseId,
+        materialId: material.id,
+        title: material.title,
+        err,
+      });
     }
 
     await reportProgress();
