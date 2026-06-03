@@ -55,7 +55,7 @@ export async function loadUserFromRequest(request: Request): Promise<User | null
 }
 
 export async function requireUserFromRequest(request: Request, role?: Role): Promise<User> {
-  const coreUrl = process.env.VITE_CORE_URL || 'http://localhost:3000';
+  const coreUrl = process.env.CORE_URL || 'http://localhost:3000';
   const returnUrl = encodeURIComponent(request.url);
   const loginUrl = `${coreUrl}/login?redirect=${returnUrl}`;
 

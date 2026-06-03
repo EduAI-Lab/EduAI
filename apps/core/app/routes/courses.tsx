@@ -62,7 +62,7 @@ export default function CoursesPage() {
   const [editDialogOpen, setEditDialogOpen] = useState(false)
 
   const isAdmin = user.role === "ADMIN"
-  const isProfessor = user.role === "INSTRUCTOR"
+  const isInstructor = user.role === "INSTRUCTOR"
   const isTA = user.role === "TA"
   const isStudent = user.role === "STUDENT"
 
@@ -88,7 +88,7 @@ export default function CoursesPage() {
   // Filter courses based on role (client-side filtering since API doesn't filter)
   const filteredCourses = courses.filter(course => {
     if (isAdmin) return true
-    if (isProfessor) return course.professorId === user.id
+    if (isInstructor) return course.professorId === user.id
     // For TA and STUDENT, we'd need enrollment data from the API
     // For now, showing all courses since API doesn't provide filtering
     return true
@@ -157,7 +157,7 @@ export default function CoursesPage() {
       )
     }
 
-    if (isProfessor && course.professorId === user.id) {
+    if (isInstructor && course.professorId === user.id) {
       return (
         <div onClick={(e) => e.stopPropagation()}>
           <Button
@@ -204,7 +204,7 @@ export default function CoursesPage() {
                     <h2 className="text-2xl font-bold">Courses</h2>
                     <p className="text-muted-foreground">
                       {isAdmin && "Manage all courses in the system"}
-                      {isProfessor && "View and manage your courses"}
+                      {isInstructor && "View and manage your courses"}
                       {(isTA || isStudent) && "View your enrolled courses"}
                     </p>
                   </div>

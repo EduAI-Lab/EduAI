@@ -218,6 +218,8 @@ Each app exposes a `test:coverage` script (Vitest V8 coverage). From the monorep
 npm run test:coverage   # Aggregates coverage for edu-ai, ai-tutor-server, and question-maker-backend via Turborepo
 ```
 
+> **Note:** The root `test:coverage` command covers backend services only (Core, AI Tutor server, and Question Maker backend). Frontend coverage is not aggregated at the root level.
+
 Run a single app's coverage from its own directory with `npm run test:coverage` (available for core, the AI Tutor server, and the Question Maker frontend and backend). Generated coverage report directories are gitignored.
 
 ### Integration tests
