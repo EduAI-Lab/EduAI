@@ -1,5 +1,5 @@
 import prisma from "~/lib/prisma.server";
-import type { PreferenceUpdates } from "~/lib/user-preferences";
+import { resolveSelectedCourse, type PreferenceUpdates } from "~/lib/user-preferences";
 
 export type ChatPreferences = {
   assistDefault: boolean;
@@ -11,16 +11,34 @@ const DEFAULT_PREFERENCES: ChatPreferences = {
   lastCourseCode: null,
 };
 
-/** Reads a user's chat preferences, falling back to defaults when unset. */
-export async function getUserPreference(userId: string): Promise<ChatPreferences> {
+/**
+ * Reads a user's chat preferences, falling back to defaults when unset.
+ * When `availableCourseCodes` is provided, a stored course that is no longer
+ * accessible is cleared in the database and returned as null.
+ */
+export async function getUserPreference(
+  userId: string,
+  availableCourseCodes?: readonly string[],
+): Promise<ChatPreferences> {
   const row = await prisma.userPreference.findUnique({ where: { userId } });
   if (!row) {
     return DEFAULT_PREFERENCES;
   }
-  return {
+
+  const prefs: ChatPreferences = {
     assistDefault: row.assistDefault,
     lastCourseCode: row.lastCourseCode,
   };
+
+  if (
+    availableCourseCodes &&
+    prefs.lastCourseCode &&
+    resolveSelectedCourse(prefs.lastCourseCode, availableCourseCodes) === null
+  ) {
+    return saveUserPreference(userId, { lastCourseCode: null });
+  }
+
+  return prefs;
 }
 
 /** Creates or updates a user's chat preferences and returns the stored values. */

@@ -60,7 +60,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
     supportsTools: model.supportsTools,
   }));
 
-  const preferences = await getUserPreference(session.user.id);
+  const courses = await prisma.course.findMany({
+    select: { code: true },
+  });
+  const preferences = await getUserPreference(
+    session.user.id,
+    courses.map((course) => course.code),
+  );
 
   return {
     chatModels,
@@ -138,16 +144,21 @@ export default function Chat() {
         const response = await fetch('/api/courses');
         const data = await response.json();
         const courses: Array<{ id: string; name: string; code: string }> = data.courses || [];
+        const courseCodes = courses.map((c) => c.code);
         setAvailableCourses(courses);
-        setSelectedCourseCode((current) =>
-          resolveSelectedCourse(current, courses.map((c) => c.code)),
-        );
+        setSelectedCourseCode((current) => {
+          const resolved = resolveSelectedCourse(current, courseCodes);
+          if (current && resolved === null) {
+            persistPreference({ lastCourseCode: null });
+          }
+          return resolved;
+        });
       } catch (error) {
         console.error('Failed to fetch courses:', error);
       }
     };
     fetchCourses();
-  }, []);
+  }, [persistPreference]);
 
   // Load system prompt when chatId is set
   useEffect(() => {

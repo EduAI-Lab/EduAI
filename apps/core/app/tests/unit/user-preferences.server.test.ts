@@ -50,6 +50,40 @@ describe("getUserPreference (restore on load)", () => {
       lastCourseCode: "COSC 121",
     });
   });
+
+  it("clears a stale stored course and returns null when it is no longer available", async () => {
+    db.userPreference.findUnique.mockResolvedValue({
+      assistDefault: true,
+      lastCourseCode: "BIOL 200",
+    });
+    db.userPreference.upsert.mockResolvedValue({
+      assistDefault: true,
+      lastCourseCode: null,
+    });
+
+    await expect(getUserPreference("u1", ["COSC 121", "MATH 100"])).resolves.toEqual({
+      assistDefault: true,
+      lastCourseCode: null,
+    });
+    expect(db.userPreference.upsert).toHaveBeenCalledWith({
+      where: { userId: "u1" },
+      create: { userId: "u1", lastCourseCode: null },
+      update: { lastCourseCode: null },
+    });
+  });
+
+  it("keeps a stored course when it is still in the available list", async () => {
+    db.userPreference.findUnique.mockResolvedValue({
+      assistDefault: false,
+      lastCourseCode: "MATH 100",
+    });
+
+    await expect(getUserPreference("u1", ["COSC 121", "MATH 100"])).resolves.toEqual({
+      assistDefault: false,
+      lastCourseCode: "MATH 100",
+    });
+    expect(db.userPreference.upsert).not.toHaveBeenCalled();
+  });
 });
 
 describe("saveUserPreference (persist on change)", () => {
