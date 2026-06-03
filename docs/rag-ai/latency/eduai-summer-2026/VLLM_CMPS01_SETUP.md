@@ -160,22 +160,146 @@ Log rows in `docs/rag-ai/latency/MODEL_LATENCY_TRACKER.md`.
 
 ---
 
-## 5. Constraints on shared cmps01
+## 5. GPU residency, energy, and sleep mode
 
-- **Do not** run huge 31B on vLLM + Ollama large model **at once** — VRAM contention.
-- Stop vLLM when done: `docker stop eduai-vllm` (or tmux → Ctrl+C for venv).
-- Firewall: port **8001** needs a ticket for path A. Ollama **:11434** is already allowed dev → cmps01; vLLM is a **new** service/port.
-- vLLM does **not** implement “RAM offload standby” — model stays loaded while the server runs.
+### Always resident while the server runs
+
+Unlike Ollama’s `keep_alive` TTL, vLLM **keeps the served model in GPU memory** for the lifetime of the process/container. There is no built-in idle timer that unloads weights.
+
+With our default Docker setup (`--restart unless-stopped`):
+
+- **Container running** → Qwen weights stay in VRAM → warm chat (sub‑second to low‑seconds TTFT after initial load).
+- **Container stopped or restarted** → full cold load again (first request slow until weights are back on GPU).
+
+This is why day‑to‑day chat feels fast: you are not paying Ollama’s ~9–10 s cold reload on every `keep_alive` expiry (#394 Phase 1).
+
+### Energy — measured on cmps01 (2026-06)
+
+Command: `nvidia-smi --query-gpu=power.draw --format=csv -l 5` (5 s interval). cmps01 has **two** RTX 6000 Ada; each sample line alternates GPU 0 (vLLM) / GPU 1 (idle).
+
+#### Idle — vLLM up, no chat (~2 min)
+
+| GPU | power.draw |
+| --- | ---------- |
+| GPU 0 — Qwen 7B resident | **~27–28 W** (mean ~27.8 W) |
+| GPU 1 — idle | **~18–20 W** (mean ~19.2 W) |
+| **Both GPUs** | **~47 W** |
+
+#### Active chat — single user talking to vLLM (~same session)
+
+| GPU | power.draw |
+| --- | ---------- |
+| GPU 0 — inference bursts | **~65–127 W** typical; **peaks ~292–299 W** (near 300 W TDP) |
+| GPU 1 — idle | **~19–20 W** (unchanged) |
+| After last token | drops toward idle (**~32 W** seen on GPU 0) |
+
+**Interpretation:** idle residency is **~28 W**; you only pay **near-TDP** power during token generation, not 24/7. A classroom spike to ~300 W is short-lived per request.
+
+#### Extrapolated daily energy (GPU only — not a billing quote)
+
+| Scenario | Assumption | ~kWh / day |
+| -------- | ---------- | ---------- |
+| **Always idle** (24/7 resident, no traffic) | 27.8 W on GPU 0 | **~0.67** |
+| **Both GPUs idle** | 47 W | **~1.1** |
+| **Heavy use** (illustrative) | e.g. 8 h at ~120 W avg + 16 h at 28 W idle on GPU 0 | **~1.4** |
+
+Real daily use sits between the idle and heavy rows depending on chat volume. Keeping the model warm 24/7 on dev is **feasible** — most hours are idle (~28 W), not peak (~300 W).
+
+```bash
+nvidia-smi --query-gpu=index,power.draw --format=csv -l 5
+```
+
+### vLLM Sleep Mode (optional — off‑hours / RAM warm tier)
+
+If ops wants to **free VRAM overnight** without a full container restart, vLLM supports **[Sleep Mode](https://docs.vllm.ai/en/stable/features/sleep_mode/)** (requires enabling at startup — verify against your `vllm/vllm-openai` image version):
+
+```bash
+# Example: add to docker run (env + flag names per upstream docs)
+-e VLLM_SERVER_DEV_MODE=1 \
+  ...
+  --enable-sleep-mode
+```
+
+| Level | Behavior | Typical wake | Use case |
+| ----- | -------- | ------------ | -------- |
+| **1** | Weights → **CPU RAM**, KV cache dropped | ~2–3 s (upstream/docs; measure on cmps01) | Nights / weekends — **closest to #394 “RAM warm”** for vLLM |
+| **2** | Weights discarded; reload from disk on wake | ~7–8 s+ | Max VRAM free; limited CPU RAM |
+| **3** | Weights stay on GPU; KV cache dropped | Fastest | Lower VRAM reclaim; still pays idle GPU power |
+
+HTTP control (port 8001 on host):
+
+```bash
+curl -X POST 'http://127.0.0.1:8001/sleep?level=1'
+curl -X POST 'http://127.0.0.1:8001/wake_up'
+```
+
+**Ops scheduling (simple alternative):** cron `docker stop eduai-vllm` off‑hours and `docker start eduai-vllm` before class — no sleep flags, but first user after start waits for cold load.
+
+**Not implemented in EduAI yet** — sleep/wake is manual, cron, or a future ops ticket (#382‑style policy for vLLM).
 
 ---
 
-## 6. Troubleshooting
+## 6. Multiple models on one GPU (or cmps01)
+
+**One vLLM server process = one base model.** There is no `--model` list or multi-model flag on a single container. `/v1/models` returns that instance’s model (plus LoRA adapters if configured).
+
+### Options on cmps01 (2× RTX 6000 Ada, 48 GB each)
+
+| Pattern | How | When to use |
+| ------- | --- | ----------- |
+| **A — one model per GPU** (recommended) | Two containers, `CUDA_VISIBLE_DEVICES=0` vs `1`, ports **8001** / **8002** | Different sizes or architectures without VRAM fights |
+| **B — two models, same GPU** | Two containers, same GPU, each `--gpu-memory-utilization 0.40–0.50`, different ports | Only for **small** models; watch OOM under concurrent load + KV cache |
+| **C — LoRA adapters** | One container, one base model, multiple LoRA finetunes | Same architecture, course-specific tweaks — not “Qwen + Llama” |
+| **D — sleep / wake** | One container with `--enable-sleep-mode`; `POST /sleep`, `POST /wake_up` | **Swap** models on one GPU — not serve two at once |
+
+**VRAM rule of thumb:** Qwen 7B FP16 ≈ **~14 GB** weights plus KV cache headroom. Two 7B models on one 48 GB card may fit in theory but is **risky** with real traffic; prefer **GPU 0 + GPU 1** split.
+
+### Example — second model on GPU 1
+
+```bash
+export VLLM_PORT=8002
+
+docker run -d --name eduai-vllm-2 --gpus '"device=1"' \
+  -p ${VLLM_PORT}:8000 \
+  --restart unless-stopped \
+  vllm/vllm-openai:latest \
+  --model Qwen/Qwen2.5-3B-Instruct \
+  --served-model-name qwen2.5-3b-instruct \
+  --host 0.0.0.0 --port 8000 \
+  --gpu-memory-utilization 0.85
+```
+
+Open **8002** on the cmps01 host firewall (same IT pattern as 8001). EduAI today has **one** `VLLM_BASE_URL` per env — a second model needs another provider URL, a router (LiteLLM / nginx), or a separate spike; not wired in `providers.ts` yet.
+
+### vs Ollama on the same host
+
+| | Ollama `:11434` | vLLM |
+| --- | --- | --- |
+| Multi-model | Several GGUF names; lazy load / swap | One model per **instance**; optional sleep to swap |
+| Cold swap cost | ~9–10 s full reload (#394) | Container restart or sleep Level 2; Level 1 wake ~2–3 s (measure on box) |
+| Strength | Dev flexibility, embeddings | Resident model + continuous batching under load |
+
+**Practical split today:** vLLM **house chat** on GPU 0 (`:8001`); Ollama for **embeddings**, legacy chat models, and experiments on GPU 1 or host RAM.
+
+---
+
+## 7. Constraints on shared cmps01
+
+- **Do not** run huge 31B on vLLM + Ollama large model **at once** — VRAM contention.
+- **Default policy:** leave vLLM running during dev/teaching windows (resident model, low idle power — see §5).
+- **When fully done** with a spike: `docker stop eduai-vllm` (or tmux → Ctrl+C for venv).
+- Firewall: port **8001** needs a ticket for path A. Ollama **:11434** is already allowed dev → cmps01; vLLM is a **new** service/port.
+- Ollama does **not** RAM‑stage after unload (#394 Phase 1). vLLM **Sleep Level 1** can offload weights to host RAM — different mechanism, optional.
+
+---
+
+## 8. Troubleshooting
 
 | Symptom | Check |
 | ------- | ----- |
 | Connection refused from dev | Port **8001** open? `curl http://cmps01:8001/v1/models` from s378 |
 | 404 model | `curl /v1/models` — use exact `id` as `model` in chat |
-| OOM | Lower `--gpu-memory-utilization` or smaller model |
+| OOM | Lower `--gpu-memory-utilization` or smaller model; do not stack two large models on one GPU without headroom (§6) |
 | EduAI “provider not configured” | Enable vLLM in settings; `VLLM_BASE_URL` or `VLLM_PORT` |
 | Tools fail | `supportsTools: true` on seeded model; verify vLLM tool calling for that arch |
 
@@ -183,7 +307,7 @@ Log rows in `docs/rag-ai/latency/MODEL_LATENCY_TRACKER.md`.
 
 ## Related
 
-- [FINDINGS.md](./FINDINGS.md) — Ollama cold ~9 s; vLLM not benchmarked yet  
+- [FINDINGS.md](./FINDINGS.md) — Ollama cold ~9 s; vLLM warm latency on dev (informal); formal bench TBD  
 - [EXPERIMENT_HOST_RAM_STANDBY.md](./EXPERIMENT_HOST_RAM_STANDBY.md) — RAM offload not in Ollama  
 - [SOLUTIONS_PLAN.md](./SOLUTIONS_PLAN.md) — Phase D  
 - `apps/core/app/lib/ai/providers.ts` — `vllm` provider  
