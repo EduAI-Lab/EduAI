@@ -13,6 +13,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] docs: LOCAL-EMBEDDINGS decision — `vector(1024)` migration, default local model, re-embed strategy in [`docs/rag-ai/LOCAL-EMBEDDINGS.md`](docs/rag-ai/LOCAL-EMBEDDINGS.md). (#369)
 - [core] tooling: `npm run re-embed:course -- <courseId>` and `reEmbedCourseMaterials()` to re-index course materials after provider/dimension changes. (#373)
 - [core] tests: Unit tests for `getExpectedEmbeddingDimension` and `wantsLocalEmbeddingProvider` in `embedding.test.ts`. (#361)
+- [core] feat: Per-course embedding settings and re-index UI — `Course` embedding fields, `GET/PATCH /api/courses/:courseId/embedding-settings`, `POST /api/courses/:courseId/re-embed`, Materials tab controls, and `embedding-config.test.ts`. (#373, #PR)
 
 ### Changed
 - [core] infra: Prisma migration `20250602120000_local_embeddings_vector_1024` — `material_embeddings.embedding` from `vector(3072)` to `vector(1024)` (clears incompatible rows; re-embed required). (#373)
