@@ -14,7 +14,6 @@ import { HelpPage } from './pages/HelpPage';
 import { AssessmentVariantPage } from './pages/AssessmentVariantPage';
 import { GuidedTourProvider } from './contexts/GuidedTourContext';
 import { BugReportProvider } from './contexts/BugReportContext';
-import { BugReportsAdminPage } from './pages/BugReportsAdminPage';
 
 function RedirectAssessmentToBuilder() {
   const { id } = useParams<{ id: string }>();
@@ -48,8 +47,7 @@ function App() {
                   <Route path="/help" element={<HelpPage />} />
                   <Route path="/assessment-variant" element={<AssessmentVariantPage />} />
                   <Route path="/study" element={<RedirectLegacyStudyRoute />} />
-                  <Route path="/admin/bug-reports" element={<BugReportsAdminPage />} />
-                  <Route path="/" element={<Navigate to="/courses" replace />} />
+<Route path="/" element={<Navigate to="/courses" replace />} />
                 </Routes>
                 <Toaster />
               </div>
