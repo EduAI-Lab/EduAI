@@ -20,21 +20,11 @@ export const DEFAULT_EMBEDDING_DIMENSION = 1024;
 /** Cloud Gemini default (legacy 3072 path — only if EMBEDDING_DIMENSION=3072). */
 const DEFAULT_OPENROUTER_GEMINI_MODEL = "google/gemini-embedding-001";
 
-/** Max inputs per `embedMany` batch for cloud providers. */
-const CLOUD_EMBED_MANY_BATCH_SIZE = Math.min(
+/** Max inputs per `embedMany` batch (provider limits vary; stay conservative). */
+const EMBED_MANY_BATCH_SIZE = Math.min(
   128,
   Math.max(8, Number(process.env.EMBED_MANY_BATCH_SIZE) || 64),
 );
-
-/** Ollama on a shared GPU is sensitive to large `embedMany` payloads — default smaller than cloud. */
-const LOCAL_EMBED_MANY_BATCH_SIZE = Math.min(
-  32,
-  Math.max(1, Number(process.env.OLLAMA_EMBED_MANY_BATCH_SIZE) || 8),
-);
-
-function resolveEmbedManyBatchSize(wantsLocal: boolean): number {
-  return wantsLocal ? LOCAL_EMBED_MANY_BATCH_SIZE : CLOUD_EMBED_MANY_BATCH_SIZE;
-}
 
 const queryEmbedCache = new Map<string, { embedding: number[]; expiresAt: number }>();
 const QUERY_EMBED_CACHE_TTL_MS = Math.min(
@@ -370,12 +360,10 @@ export async function generateEmbeddings(
 ): Promise<Array<{ embedding: number[]; content: string }>> {
   if (chunks.length === 0) return [];
 
-  const settings = await loadEffectiveEmbeddingSettings(courseId);
-  const batchSize = resolveEmbedManyBatchSize(settings.wantsLocal);
   const out: Array<{ embedding: number[]; content: string }> = [];
 
-  for (let i = 0; i < chunks.length; i += batchSize) {
-    const batch = chunks.slice(i, i + batchSize);
+  for (let i = 0; i < chunks.length; i += EMBED_MANY_BATCH_SIZE) {
+    const batch = chunks.slice(i, i + EMBED_MANY_BATCH_SIZE);
     const { embeddings } = await embedWithConfiguredProvider(
       (model) => embedMany({ model, values: batch }),
       courseId,
@@ -548,12 +536,11 @@ export async function reEmbedCourseMaterials(
         where: { id: material.id },
         data: { status: "FAILED" },
       });
-      console.error("[embedding] re-embed failed", {
-        courseId,
-        materialId: material.id,
-        title: material.title,
-        error: err instanceof Error ? err.message : String(err),
-      });
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      // One line so tmux/grep on the dev server captures title + error (object logs span many lines).
+      console.error(
+        `[embedding] re-embed failed courseId=${courseId} materialId=${material.id} title=${JSON.stringify(material.title)} error=${JSON.stringify(errorMessage)}`,
+      );
     }
 
     await reportProgress();
