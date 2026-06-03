@@ -3,6 +3,9 @@ import {
   buildCappedRagContextText,
   capRagHitsForTool,
   capToolResultsInMessages,
+  prepareBoundedSessionContext,
+  resolveMaxContextMessages,
+  resolveSessionCharBudget,
   resolveToolResultMaxChars,
   truncateToMaxChars,
   HYBRID_RAG_MAX_CHUNKS,
@@ -178,5 +181,87 @@ describe("capToolResultsInMessages", () => {
     const messages = [{ id: "1", role: "tool", content: "t".repeat(8000) }];
     const capped = capToolResultsInMessages(messages, 6000);
     expect((capped[0].content as string).length).toBe(6001);
+  });
+});
+
+describe("prepareBoundedSessionContext", () => {
+  const extractText = (message?: { content?: unknown }) =>
+    typeof message?.content === "string" ? message.content : "";
+
+  it("returns short threads unchanged", () => {
+    const messages = [
+      { id: "1", role: "user", content: "hello" },
+      { id: "2", role: "assistant", content: "hi there" },
+    ];
+    expect(prepareBoundedSessionContext(messages, extractText, { charBudget: 10_000 })).toBe(
+      messages,
+    );
+  });
+
+  it("replaces older turns with a digest and keeps the recent tail", () => {
+    const messages = [
+      { id: "1", role: "user", content: "a".repeat(5000) },
+      { id: "2", role: "assistant", content: "b".repeat(5000) },
+      { id: "3", role: "user", content: "recent question" },
+      { id: "4", role: "assistant", content: "recent answer" },
+    ];
+
+    const bounded = prepareBoundedSessionContext(messages, extractText, {
+      charBudget: 500,
+      recentCount: 2,
+      digestMaxChars: 300,
+    });
+
+    expect(bounded).toHaveLength(3);
+    expect(bounded[0].id).toBe("session-digest");
+    expect(bounded[0].content).toContain("Session digest");
+    expect(bounded[1].content).toBe("recent question");
+    expect(bounded[2].content).toBe("recent answer");
+  });
+
+  it("drops oldest messages when everything is recent but still over budget", () => {
+    const messages = [
+      { id: "1", role: "user", content: "a".repeat(400) },
+      { id: "2", role: "assistant", content: "b".repeat(400) },
+      { id: "3", role: "user", content: "c".repeat(400) },
+    ];
+
+    const bounded = prepareBoundedSessionContext(messages, extractText, {
+      charBudget: 500,
+      recentCount: 3,
+    });
+
+    expect(bounded.length).toBeLessThan(messages.length);
+    expect(totalChars(bounded, extractText)).toBeLessThanOrEqual(500);
+  });
+});
+
+function totalChars(
+  messages: Array<{ content?: unknown }>,
+  extractText: (message?: { content?: unknown }) => string,
+): number {
+  return messages.reduce((sum, message) => sum + extractText(message).length, 0);
+}
+
+describe("resolveMaxContextMessages", () => {
+  const original = process.env.CHAT_MAX_CONTEXT_MESSAGES;
+
+  afterEach(() => {
+    if (original === undefined) {
+      delete process.env.CHAT_MAX_CONTEXT_MESSAGES;
+    } else {
+      process.env.CHAT_MAX_CONTEXT_MESSAGES = original;
+    }
+  });
+
+  it("defaults to 20 when env is unset", () => {
+    delete process.env.CHAT_MAX_CONTEXT_MESSAGES;
+    expect(resolveMaxContextMessages()).toBe(20);
+  });
+});
+
+describe("resolveSessionCharBudget", () => {
+  it("defaults to 28_000 when env is unset", () => {
+    expect(resolveSessionCharBudget()).toBe(28_000);
   });
 });
