@@ -10,10 +10,13 @@ import {
   clearCourseEmbeddingSettingsCache,
   isEmbeddingIndexStale,
   parseEmbeddingSettingsUpdate,
-  reEmbedCourseMaterials,
   resolveEffectiveEmbeddingSettings,
   validateEmbeddingSettingsUpdate,
 } from "~/lib/ai/embedding";
+import {
+  serializeReEmbedJob,
+  startReEmbedJob,
+} from "~/lib/ai/re-embed-job.server";
 
 async function requireManageSession(request: Request) {
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
@@ -136,23 +139,13 @@ export async function action({ request, params }: ActionFunctionArgs) {
     lastEmbeddedAt: updated.lastEmbeddedAt,
   };
 
-  let reEmbedResult: { processed: number; failed: string[] } | undefined;
+  let reEmbedJob: ReturnType<typeof serializeReEmbedJob> | undefined;
   if (reEmbedAfterSave) {
-    reEmbedResult = await reEmbedCourseMaterials(courseId);
+    const job = await startReEmbedJob(courseId);
+    reEmbedJob = serializeReEmbedJob(job);
   }
 
-  const refreshed = reEmbedResult
-    ? await prisma.course.findUniqueOrThrow({
-        where: { id: courseId },
-        select: {
-          embeddingProvider: true,
-          embeddingModel: true,
-          embeddedWithProvider: true,
-          embeddedWithModel: true,
-          lastEmbeddedAt: true,
-        },
-      })
-    : fields;
+  const refreshed = fields;
 
   return jsonResponse({
     success: true,
@@ -170,7 +163,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     ),
     allowedLocalModels: ALLOWED_LOCAL_EMBEDDING_MODELS,
     allowedCloudModels: ALLOWED_CLOUD_EMBEDDING_MODELS,
-    reEmbed: reEmbedResult,
+    reEmbedJob,
   });
   } catch (error) {
     console.error("[embedding-settings] PATCH failed:", error);

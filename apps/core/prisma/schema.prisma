@@ -104,12 +104,32 @@ model Course {
   aiInteractions AIInteraction[]
   enrollments    CourseEnrollment[]
   materials      CourseMaterial[]
+  reEmbedJobs    CourseReEmbedJob[]
   tas            CourseTA[]
   topics         CourseTopic[]
   professor      User               @relation("ProfessorCourses", fields: [professorId], references: [id])
   documents      Document[]
 
   @@map("courses")
+}
+
+model CourseReEmbedJob {
+  id                   String           @id @default(cuid())
+  courseId             String
+  status               ReEmbedJobStatus @default(PENDING)
+  totalMaterials       Int              @default(0)
+  processedCount       Int              @default(0)
+  failedMaterialIds    String[]         @default([])
+  currentMaterialTitle String?
+  errorMessage         String?
+  startedAt            DateTime?
+  completedAt          DateTime?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+  course               Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@index([courseId, status])
+  @@map("course_re_embed_jobs")
 }
 
 model CourseTA {
@@ -406,5 +426,13 @@ enum AIModelType {
 enum MaterialStatus {
   PROCESSING
   READY
+  FAILED
+}
+
+enum ReEmbedJobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  PARTIAL
   FAILED
 }

@@ -8,6 +8,11 @@ import { Upload, FileText, AlertCircle, CheckCircle, XCircle, RefreshCw, Loader2
 import { Alert, AlertDescription } from '~/components/ui/alert';
 import { CourseEmbeddingSettings } from '~/components/course-embedding-settings';
 import { readJsonResponse } from '~/lib/api/client';
+import {
+  formatReEmbedJobMessage,
+  pollReEmbedJobUntilDone,
+  type ReEmbedJobResponse,
+} from '~/lib/api/re-embed-job.client';
 
 interface CourseMaterial {
   id: string;
@@ -28,6 +33,7 @@ export function CourseMaterialsUpload({ courseId, apiKeys }: CourseMaterialsUplo
   const [materials, setMaterials] = useState<CourseMaterial[]>([]);
   const [uploading, setUploading] = useState(false);
   const [reEmbedding, setReEmbedding] = useState(false);
+  const [reEmbedProgress, setReEmbedProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -108,6 +114,7 @@ export function CourseMaterialsUpload({ courseId, apiKeys }: CourseMaterialsUplo
 
   const handleReEmbed = async () => {
     setReEmbedding(true);
+    setReEmbedProgress(null);
     setError(null);
     setSuccess(null);
     startPolling();
@@ -117,8 +124,7 @@ export function CourseMaterialsUpload({ courseId, apiKeys }: CourseMaterialsUplo
         method: 'POST',
       });
       const parsed = await readJsonResponse<{
-        processed?: number;
-        failed?: string[];
+        job?: { id: string };
         error?: string;
         hint?: string;
       }>(response);
@@ -127,25 +133,37 @@ export function CourseMaterialsUpload({ courseId, apiKeys }: CourseMaterialsUplo
         throw new Error(parsed.error);
       }
 
-      if (!response.ok) {
+      if (!response.ok || !parsed.data.job?.id) {
         throw new Error(
           [parsed.data.error, parsed.data.hint].filter(Boolean).join(' ') || 'Re-index failed',
         );
       }
 
-      const result = parsed.data;
+      const jobId = parsed.data.job.id;
+      const formatProgress = (job: ReEmbedJobResponse) => {
+        if (job.currentMaterialTitle) {
+          return `Re-indexing: ${job.processedCount + 1} of ${job.totalMaterials} — ${job.currentMaterialTitle}`;
+        }
+        if (job.totalMaterials > 0) {
+          return `Re-indexing: ${job.processedCount} of ${job.totalMaterials} complete`;
+        }
+        return 'Re-indexing materials…';
+      };
+
+      const finalJob = await pollReEmbedJobUntilDone(courseId, jobId, {
+        onUpdate: (job) => setReEmbedProgress(formatProgress(job)),
+      });
 
       await loadMaterials();
-      const failedCount = result.failed?.length ?? 0;
-      setSuccess(
-        `Re-indexed ${result.processed} material(s)` +
-          (failedCount > 0 ? `; ${failedCount} failed` : '') +
-          '.',
-      );
+      if (finalJob.status === 'FAILED') {
+        throw new Error(finalJob.errorMessage || 'Re-index failed');
+      }
+      setSuccess(formatReEmbedJobMessage(finalJob));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Re-index failed');
     } finally {
       setReEmbedding(false);
+      setReEmbedProgress(null);
       stopPolling();
       await loadMaterials();
     }
@@ -261,7 +279,7 @@ export function CourseMaterialsUpload({ courseId, apiKeys }: CourseMaterialsUplo
             {reEmbedding ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Re-indexing…
+                {reEmbedProgress ?? 'Re-indexing…'}
               </>
             ) : (
               <>

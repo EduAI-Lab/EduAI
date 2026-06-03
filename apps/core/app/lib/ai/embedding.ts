@@ -466,29 +466,56 @@ async function markCourseEmbedded(courseId: string): Promise<void> {
   });
 }
 
+export type ReEmbedProgress = {
+  total: number;
+  processed: number;
+  failed: string[];
+  currentMaterialTitle?: string;
+};
+
+export type ReEmbedCourseMaterialsOptions = {
+  onProgress?: (progress: ReEmbedProgress) => void | Promise<void>;
+};
+
 /**
  * Re-embed all materials for a course that have stored raw text.
  */
-export async function reEmbedCourseMaterials(courseId: string): Promise<{
+export async function reEmbedCourseMaterials(
+  courseId: string,
+  options?: ReEmbedCourseMaterialsOptions,
+): Promise<{
   processed: number;
   failed: string[];
+  total: number;
 }> {
   const materials = await prisma.courseMaterial.findMany({
     where: { courseId, rawText: { not: null } },
     select: { id: true, rawText: true, title: true },
   });
 
+  const eligible = materials.filter((m) => m.rawText?.trim());
   const failed: string[] = [];
   let processed = 0;
 
-  for (const material of materials) {
-    const content = material.rawText?.trim();
-    if (!content) continue;
+  const reportProgress = async (currentMaterialTitle?: string) => {
+    await options?.onProgress?.({
+      total: eligible.length,
+      processed,
+      failed: [...failed],
+      currentMaterialTitle,
+    });
+  };
+
+  await reportProgress();
+
+  for (const material of eligible) {
+    const content = material.rawText!.trim();
 
     await prisma.courseMaterial.update({
       where: { id: material.id },
       data: { status: "PROCESSING" },
     });
+    await reportProgress(material.title);
 
     try {
       await clearMaterialEmbeddings(material.id);
@@ -516,14 +543,15 @@ export async function reEmbedCourseMaterials(courseId: string): Promise<{
         error: err instanceof Error ? err.message : String(err),
       });
     }
+
+    await reportProgress();
   }
 
-  const eligibleCount = materials.filter((m) => m.rawText?.trim()).length;
-  if (processed > 0 && failed.length === 0 && processed === eligibleCount) {
+  if (processed > 0 && failed.length === 0 && processed === eligible.length) {
     await markCourseEmbedded(courseId);
   }
 
-  return { processed, failed };
+  return { processed, failed, total: eligible.length };
 }
 
 /**
