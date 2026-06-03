@@ -3,7 +3,7 @@
 ## Prerequisites
 - UBC VPN (or campus network)
 - SSH: `ssh YOUR_CWL@dev.eduai.ok.ubc.ca`
-- RAG embeddings: set **`EMBEDDING_PROVIDER=local`**, **`OLLAMA_EMBEDDING_MODEL=mxbai-embed-large`**, and **`OLLAMA_BASE_URL`** in `apps/core/.env` (Ollama runs on cmps01). Pull the model once: `ollama pull mxbai-embed-large`. Cloud fallback: **`OPENROUTER_API_KEY`** or **`OPENAI_API_KEY`**. Verify with `npm run test:embedding` from `apps/core`. After the LOCAL-EMBEDDINGS migration, re-embed courses with `npm run re-embed:course -- <courseId>`. See [`EMBEDDINGS.md`](./EMBEDDINGS.md) and [`LOCAL-EMBEDDINGS.md`](./LOCAL-EMBEDDINGS.md).
+- RAG embeddings: set **`EMBEDDING_PROVIDER=local`**, **`OLLAMA_EMBEDDING_MODEL=mxbai-embed-large`**, and **`OLLAMA_BASE_URL`** in `apps/core/.env` (Ollama runs on cmps01). Pull the model once: `ollama pull mxbai-embed-large`. For laptop dev without Ollama, use **`EMBEDDING_PROVIDER=cloud`** plus **`OPENROUTER_API_KEY`** or **`OPENAI_API_KEY`** (local mode does not silently fall back to cloud). Verify with `npm run test:embedding` from `apps/core`. After the LOCAL-EMBEDDINGS migration, re-embed courses with `npm run re-embed:course -- <courseId>`. See [`EMBEDDINGS.md`](./EMBEDDINGS.md) and [`LOCAL-EMBEDDINGS.md`](./LOCAL-EMBEDDINGS.md).
 
 ## Use the app
 Open https://dev.eduai.ok.ubc.ca
