@@ -178,7 +178,7 @@ export default function AIModelsPage() {
     }
   };
 
-  const closeModelDialog = (open: boolean) => {
+  const handleModelDialogChange = (open: boolean) => {
     setModelDialogOpen(open);
     if (!open) {
       setOllamaModels([]);
@@ -197,7 +197,7 @@ export default function AIModelsPage() {
 
       if (response.ok) {
         await Promise.all([fetchModels(), fetchProviders()]);
-        closeModelDialog(false);
+        handleModelDialogChange(false);
         setEditingModel(null);
       }
     } catch (error) {
@@ -217,7 +217,7 @@ export default function AIModelsPage() {
 
       if (response.ok) {
         await Promise.all([fetchModels(), fetchProviders()]);
-        closeModelDialog(false);
+        handleModelDialogChange(false);
         setEditingModel(null);
       }
     } catch (error) {
@@ -323,7 +323,7 @@ export default function AIModelsPage() {
                     </div>
                     <Button onClick={() => {
                       setEditingModel(null);
-                      closeModelDialog(true);
+                      handleModelDialogChange(true);
                     }}>
                       <IconPlus className="h-4 w-4 mr-2" />
                       Add Model
@@ -362,7 +362,7 @@ export default function AIModelsPage() {
                     models={filteredModels}
                     onEdit={(model) => {
                       setEditingModel(model);
-                      closeModelDialog(true);
+                      handleModelDialogChange(true);
                     }}
                     onDelete={handleDeleteModel}
                     onToggleActive={handleToggleModel}
@@ -411,7 +411,7 @@ export default function AIModelsPage() {
           {/* Dialogs */}
           <ModelFormDialog
             open={modelDialogOpen}
-            onOpenChange={closeModelDialog}
+            onOpenChange={handleModelDialogChange}
             model={editingModel}
             providers={providers}
             onSubmit={editingModel ? handleUpdateModel : handleCreateModel}
