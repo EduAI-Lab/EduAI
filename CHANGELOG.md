@@ -6,6 +6,15 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ---
 
+
+## [Week 5 — June 2–6, 2026]
+
+### Added
+
+- [monorepo] docs: Add Canvas integration strategy report — CWL-first access, Canvas REST roster sync MVP (course users + profile `primary_email` fallback), Question Maker REST for quizzes; LTI 1.3 documented as deferred until in-Canvas launch is required; local API validation notes and UBC pilot checklist. Added Canvas LTI vs API key technical research — endpoint reference, PowerShell/`curl.exe` testing notes, pros/cons, implementation checklist; links to `docs/reports/lti-canvas-integration-report.md`. (447, @glowyblack, 2026-06-03)
+
+---
+
 ## [Week 4 — May 25–29, 2026]
 
 ### Added
