@@ -39,28 +39,69 @@ function resolveEmbedManyBatchSize(wantsLocal: boolean): number {
 
 function isOllamaBadRequestError(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err);
-  return /bad request/i.test(message);
+  return /bad request/i.test(message) || /\b400\b/.test(message);
+}
+
+function ollamaEmbedEndpoint(): string {
+  return `${resolveOllamaBaseUrl()}/embed`;
+}
+
+/** Native Ollama `/api/embed` (same contract as `curl`); avoids AI SDK provider batch quirks. */
+async function fetchOllamaEmbeddings(
+  modelId: string,
+  values: string[],
+): Promise<number[][]> {
+  const res = await fetch(ollamaEmbedEndpoint(), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: modelId,
+      input: values.length === 1 ? values[0] : values,
+    }),
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(
+      `${res.status} ${res.statusText}${detail ? `: ${detail.slice(0, 300)}` : ""}`,
+    );
+  }
+  const data = (await res.json()) as { embeddings?: number[][] };
+  const embeddings = data.embeddings;
+  if (!Array.isArray(embeddings) || embeddings.length !== values.length) {
+    throw new Error(
+      `Ollama embed response invalid (expected ${values.length} vectors, got ${embeddings?.length ?? 0})`,
+    );
+  }
+  return embeddings;
+}
+
+function sanitizeTextForOllamaEmbed(text: string): string {
+  return text.replace(/\0/g, "");
 }
 
 /** Split batch on Ollama 400 until each chunk embeds or a single chunk fails. */
-async function embedManyOllamaWithSplit(
-  model: EmbeddingModel<string>,
-  values: string[],
-): Promise<number[][]> {
+async function embedManyOllamaNative(modelId: string, values: string[]): Promise<number[][]> {
   if (values.length === 0) return [];
+  const sanitized = values.map(sanitizeTextForOllamaEmbed);
 
   try {
-    const { embeddings } = await embedMany({ model, values });
-    return embeddings;
+    return await fetchOllamaEmbeddings(modelId, sanitized);
   } catch (err) {
     if (values.length <= 1 || !isOllamaBadRequestError(err)) {
       throw err;
     }
     const mid = Math.floor(values.length / 2);
-    const left = await embedManyOllamaWithSplit(model, values.slice(0, mid));
-    const right = await embedManyOllamaWithSplit(model, values.slice(mid));
+    const left = await embedManyOllamaNative(modelId, values.slice(0, mid));
+    const right = await embedManyOllamaNative(modelId, values.slice(mid));
     return [...left, ...right];
   }
+}
+
+function wrapLocalEmbeddingError(modelId: string, err: unknown): Error {
+  return new Error(
+    `Local embedding provider failed (${modelId}). Index and query must use the same model space; fix Ollama or switch the course to cloud. ${err instanceof Error ? err.message : String(err)}`,
+    { cause: err },
+  );
 }
 
 const queryEmbedCache = new Map<string, { embedding: number[]; expiresAt: number }>();
@@ -403,13 +444,14 @@ export async function generateEmbeddings(
 
   for (let i = 0; i < chunks.length; i += batchSize) {
     const batch = chunks.slice(i, i + batchSize);
-    const embeddings = await embedWithConfiguredProvider(async (model) => {
-      if (settings.wantsLocal) {
-        return embedManyOllamaWithSplit(model, batch);
-      }
-      const result = await embedMany({ model, values: batch });
-      return result.embeddings;
-    }, courseId);
+    const embeddings = settings.wantsLocal
+      ? await embedManyOllamaNative(settings.model, batch).catch((err) => {
+          throw wrapLocalEmbeddingError(settings.model, err);
+        })
+      : await embedWithConfiguredProvider(async (model) => {
+          const result = await embedMany({ model, values: batch });
+          return result.embeddings;
+        }, courseId);
 
     for (let j = 0; j < embeddings.length; j++) {
       assertEmbeddingDimension(embeddings[j], "generateEmbeddings");
@@ -433,10 +475,15 @@ export async function generateEmbedding(query: string, courseId?: string): Promi
     return hit.embedding;
   }
 
-  const { embedding } = await embedWithConfiguredProvider(
-    (model) => embed({ model, value: query }),
-    courseId,
-  );
+  const embedding = settings.wantsLocal
+    ? (
+        await embedManyOllamaNative(settings.model, [query]).catch((err) => {
+          throw wrapLocalEmbeddingError(settings.model, err);
+        })
+      )[0]
+    : (
+        await embedWithConfiguredProvider((model) => embed({ model, value: query }), courseId)
+      ).embedding;
 
   assertEmbeddingDimension(embedding, "generateEmbedding");
 
