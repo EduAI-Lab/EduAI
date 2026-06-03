@@ -1,6 +1,7 @@
 import { tool } from "ai";
 import FirecrawlApp from "@mendable/firecrawl-js";
 import { z } from "zod";
+import { resolveToolResultMaxChars, truncateToMaxChars } from "~/lib/chat-rag";
 
 const FIRECRAWL_API_KEY = process.env.FIRECRAWL_API_KEY;
 
@@ -15,8 +16,6 @@ function getFirecrawlClient(): FirecrawlApp {
   }
   return firecrawlClient;
 }
-
-const MAX_MARKDOWN_LENGTH = 20000;
 
 type GenericDoc = {
   url?: string;
@@ -59,13 +58,11 @@ export const fetchPage = tool({
         const scraped = await client.scrape(url as string);
         const doc = coerceDoc(scraped as unknown, url);
         if (doc && doc.markdown && doc.markdown.length > 0) {
+          const maxChars = resolveToolResultMaxChars();
           return {
             url: doc.url,
             title: doc.title,
-            markdown:
-              doc.markdown.length > MAX_MARKDOWN_LENGTH
-                ? `${doc.markdown.slice(0, MAX_MARKDOWN_LENGTH - 3).trimEnd()}...`
-                : doc.markdown,
+            markdown: truncateToMaxChars(doc.markdown, maxChars),
           };
         }
       } catch {
@@ -94,13 +91,11 @@ export const fetchPage = tool({
         const first = dataArr[0] || (resp as unknown);
         const doc = coerceDoc(first, url);
         if (doc) {
+          const maxChars = resolveToolResultMaxChars();
           return {
             url: doc.url,
             title: doc.title,
-            markdown:
-              (doc.markdown || "").length > MAX_MARKDOWN_LENGTH
-                ? `${doc.markdown.slice(0, MAX_MARKDOWN_LENGTH - 3).trimEnd()}...`
-                : doc.markdown,
+            markdown: truncateToMaxChars(doc.markdown || "", maxChars),
           };
         }
       } catch {
