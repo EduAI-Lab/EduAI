@@ -130,8 +130,8 @@ export default function CourseDetailPage() {
         throw new Error(result.error || "Failed to upload material")
       }
 
+      await loadMaterials()
       setMaterialsSuccess("Material uploaded successfully!")
-      loadMaterials()
     } catch (err) {
       setMaterialsError(err instanceof Error ? err.message : "Upload failed")
     } finally {
