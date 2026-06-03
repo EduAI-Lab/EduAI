@@ -54,7 +54,7 @@ Per app, from the app directory:
 
 Generated coverage report directories are gitignored.
 
-The **Question Maker backend** `test:coverage` (`vitest.coverage.config.js`) measures the unit **and** integration suites together over `src/**` (excluding the `src/index.js` bootstrap and operational `scripts/`). The integration suite needs a PostgreSQL test database via `TEST_DATABASE_URL`; with it the suite reports ~72% statements, and without it the integration tests self-skip and coverage collapses to unit-only (~30%). A `globalSetup` syncs the schema once up front so the shared-worker run is deterministic.
+The **Question Maker backend** `test:coverage` (`vitest.coverage.config.js`) measures the unit **and** integration suites together over `src/**` (excluding the `src/index.js` bootstrap and operational `scripts/`). The integration suite needs a PostgreSQL test database via `TEST_DATABASE_URL`; without it the integration tests self-skip and only unit coverage is reported. A `globalSetup` syncs the schema once up front so the shared-worker run is deterministic.
 
 ## Structure
 
