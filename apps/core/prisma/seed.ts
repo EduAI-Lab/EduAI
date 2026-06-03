@@ -188,7 +188,8 @@ async function main() {
       type: 'CHAT' as const,
       maxTokens: 8192,
       supportsImages: false,
-      supportsTools: true,
+      // Hybrid RAG path only until vLLM is started with tool-call flags on cmps01.
+      supportsTools: false,
       supportsStreaming: true,
       inputPricing: 0,
       outputPricing: 0,
@@ -203,7 +204,9 @@ async function main() {
           modelId: model.modelId,
         },
       },
-      update: {},
+      update: {
+        supportsTools: model.supportsTools,
+      },
       create: {
         ...model,
         providerId: vllmProvider.id,
