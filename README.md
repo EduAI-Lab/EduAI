@@ -55,6 +55,7 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 | [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Core vs hosted services, provider keys, embeddings overview, and high-level flows |
 | [`implementations/schema-design.md`](docs/implementations/schema-design.md) | Unified schema design across apps |
 | [`DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Instructions on how to deploy the system (production and development) |
+| [`implementations/canvas-api-integration-guide.md`](docs/implementations/canvas-api-integration-guide.md) | Canvas API token setup — WSL, local Canvas Docker, QM connect (#379) |
 | [`implementations/lti-canvas-integration-report.md`](docs/implementations/lti-canvas-integration-report.md) | Canvas / CWL / LTI strategy |
 
 ## Changelog

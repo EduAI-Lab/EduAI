@@ -1,8 +1,9 @@
 # Canvas Integration — Technical Research
 
 **Status:** Complete (June 2026)  
-**Strategy report (read first):** [../reports/lti-canvas-integration-report.md](../reports/lti-canvas-integration-report.md)  
+**Strategy report (read first):** [lti-canvas-integration-report.md](./lti-canvas-integration-report.md)  
 **LTI (deferred):** [lti-schema-changes.md](./lti-schema-changes.md)  
+**Integration how-to (Docker + web):** [canvas-api-integration-guide.md](./canvas-api-integration-guide.md)  
 **Question Maker export:** [CANVAS_EXPORT.md](../../apps/extensions/question-maker/docs/features/CANVAS_EXPORT.md)
 
 ---
