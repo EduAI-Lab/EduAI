@@ -290,7 +290,7 @@ flowchart LR
 - **HTTP :8001** (vLLM) — requires **network firewall** + **host firewall** on cmps01 (IT ticket). Precedent: same pattern as 11434.
 - **SSH :22** (s378 → cmps01) — **not** available (connection timed out in testing). Do **not** rely on SSH port-forward from dev to cmps01; use direct HTTP once 8001 is open.
 
-**Setup / ops:** [rag-ai/latency/eduai-summer-2026/VLLM_CMPS01_SETUP.md](rag-ai/latency/eduai-summer-2026/VLLM_CMPS01_SETUP.md) · [DEPLOYMENT.md](DEPLOYMENT.md) · [HOW_TO_USE_DEV_SERVER.md](rag-ai/HOW_TO_USE_DEV_SERVER.md)
+**Setup / ops:** [rag-ai/VLLM.md](rag-ai/VLLM.md) · [DEPLOYMENT.md](DEPLOYMENT.md) · [HOW_TO_USE_DEV_SERVER.md](rag-ai/HOW_TO_USE_DEV_SERVER.md)
 
 **Code:** `app/lib/ai/providers.ts` (`ollama`, `vllm`); enable vLLM in Settings → API keys on dev.
 

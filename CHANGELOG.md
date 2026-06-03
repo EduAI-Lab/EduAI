@@ -6,6 +6,13 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ---
 
+## [Week 5 — Jun 1–5, 2026]
+
+### Added
+- [core] feat: vLLM local inference provider — OpenAI-compatible `vllm` provider on cmps01 (`VLLM_BASE_URL`, port **8001**), `mergeLocalInferenceFromEnv()`, seeded `qwen2.5-7b-instruct` model, `npm run vllm:smoke`, and `providers.server.ts` split for Vite client/server boundary. Stress-tested on dev: **~15× faster** than Ollama under 5-way parallel load; warm direct **~57 ms**, 10 parallel **~320–380 ms**, EduAI full stack median **~211 ms**. Docs: [`docs/rag-ai/VLLM.md`](docs/rag-ai/VLLM.md). (#PR, Closes #435, #394)
+
+---
+
 ## [Week 4 — May 25–29, 2026]
 
 ### Added

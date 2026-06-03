@@ -79,7 +79,7 @@ OLLAMA_BASE_URL="http://cmps01.ok.ubc.ca:11434"
 | vLLM reachable (after ticket) | `curl -s http://cmps01.ok.ubc.ca:8001/v1/models` |
 | SSH dev → cmps01 | **Fails** (port 22 timeout) — **do not** use SSH tunnel from s378 |
 
-**vLLM setup (Docker on cmps01, IT checklist):** [`latency/eduai-summer-2026/VLLM_CMPS01_SETUP.md`](./latency/eduai-summer-2026/VLLM_CMPS01_SETUP.md)
+**vLLM setup (Docker on cmps01, IT checklist):** [`VLLM.md`](./VLLM.md)
 
 In the app: **Settings → Enable vLLM** (no API key) → model **`vllm:qwen2.5-7b-instruct`** after seed/deploy. Branch must include `vllm` in `providers.ts`.
 

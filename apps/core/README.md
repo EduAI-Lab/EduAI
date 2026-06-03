@@ -84,7 +84,7 @@ OPENROUTER_API_KEY="" # Embeddings via OpenRouter (recommended if you have one k
 GOOGLE_GENERATIVE_AI_API_KEY="" # Direct Gemini embeddings (used when OPENROUTER_API_KEY is unset)
 OLLAMA_BASE_URL="http://localhost:11434/"  # dev server: http://cmps01.ok.ubc.ca:11434
 # VLLM_PORT=8001
-# VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"  # after IT firewall; see docs/rag-ai/latency/eduai-summer-2026/VLLM_CMPS01_SETUP.md
+# VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"  # after IT firewall; see docs/rag-ai/VLLM.md
 FIRECRAWL_API_KEY="" # Required for Firecrawl web search tool. If not set, web search is unavailable.
 ```
 
