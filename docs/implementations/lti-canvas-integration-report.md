@@ -13,8 +13,9 @@
 | Document | Role |
 |----------|------|
 | **This report** | What to build, in what order, and why |
-| [`canvas-lti-vs-api-key-research.md`](../implementations/canvas-lti-vs-api-key-research.md) | API reference, local test results, endpoint details |
-| [`lti-schema-changes.md`](../implementations/lti-schema-changes.md) | LTI schema and launch design (**deferred**) |
+| [`canvas-lti-vs-api-key-research.md`](./canvas-lti-vs-api-key-research.md) | API reference, local test results, endpoint details |
+| [`lti-schema-changes.md`](./lti-schema-changes.md) | LTI schema and launch design (**deferred**) |
+| [`canvas-api-integration-guide.md`](./canvas-api-integration-guide.md) | **#379** — Docker + web setup, token, connect, troubleshoot |
 | [`CANVAS_EXPORT.md`](../../apps/extensions/question-maker/docs/features/CANVAS_EXPORT.md) | Question Maker export (existing) |
 
 ---
@@ -73,7 +74,7 @@ Student → Canvas course menu → "EduAI" → auto session   (requires LTI)
 
 ### 3.1 When to revisit LTI (Path B)
 
-Adopt LTI if UBC/CTL requires EduAI in **course navigation**, or students must not have a separate EduAI account. See [`lti-schema-changes.md`](../implementations/lti-schema-changes.md).
+Adopt LTI if UBC/CTL requires EduAI in **course navigation**, or students must not have a separate EduAI account. See [`lti-schema-changes.md`](./lti-schema-changes.md).
 
 ---
 
@@ -105,7 +106,7 @@ Local Canvas testing (June 2026) showed:
 
 **Do not use** deprecated `GET /courses/:id/students` for new code; use **course users** with `enrollment_type[]=student`.
 
-Details and curl examples: [`canvas-lti-vs-api-key-research.md`](../implementations/canvas-lti-vs-api-key-research.md) §6.
+Details and curl examples: [`canvas-lti-vs-api-key-research.md`](./canvas-lti-vs-api-key-research.md) §6.
 
 ### 4.4 Local vs UBC Canvas
 
