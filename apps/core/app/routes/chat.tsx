@@ -185,7 +185,7 @@ export default function Chat() {
     >
       <AppSidebar variant="inset" user={user} />
       <SidebarInset>
-        <SiteHeader user={user} />
+        <SiteHeader />
         <div className="flex flex-col h-[calc(100vh-var(--header-height))] bg-gradient-to-br from-background via-background to-muted/20">
           {/* Main content area */}
           <div className="flex-1 flex flex-col min-h-0 relative">
