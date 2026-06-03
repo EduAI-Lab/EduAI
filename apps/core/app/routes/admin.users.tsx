@@ -153,7 +153,7 @@ export default function UsersPage() {
       <SidebarProvider>
         <AppSidebar variant="inset" user={user} />
         <SidebarInset>
-          <SiteHeader user={user} />
+          <SiteHeader />
           <div className="flex flex-1 flex-col items-center justify-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
             <p className="mt-4 text-sm text-muted-foreground">Loading...</p>
@@ -174,7 +174,7 @@ export default function UsersPage() {
     >
       <AppSidebar variant="inset" user={user} />
       <SidebarInset>
-        <SiteHeader user={user} />
+        <SiteHeader />
         <div className="flex flex-1 flex-col">
           <div className="@container/main flex flex-1 flex-col gap-2">
             <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
