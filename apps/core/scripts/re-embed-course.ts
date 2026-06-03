@@ -126,10 +126,7 @@ async function main() {
   });
 
   const result = await reEmbedCourseMaterials(course.id);
-
-  const { getReEmbedLogPath } = await import("../app/lib/ai/embedding-log.server");
   console.log("[re-embed] done", result);
-  console.log("[re-embed] audit log:", getReEmbedLogPath());
   if (result.failed.length > 0) process.exit(1);
 }
 
