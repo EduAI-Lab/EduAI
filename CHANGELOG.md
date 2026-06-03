@@ -20,6 +20,9 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] infra: Prisma migration `20250805130000_local_embeddings_vector_1024` — `material_embeddings.embedding` from `vector(3072)` to `vector(1024)` (clears incompatible rows; re-embed required). (#373, #441)
 - [core] docs: Update [`EMBEDDINGS.md`](docs/rag-ai/EMBEDDINGS.md), [`ARCHITECTURE.md`](docs/ARCHITECTURE.md), `apps/core/.env.example`, and README for local embed env vars. (#370)
 
+### Fixed
+- [core] fix: Local Ollama re-embed for large slide decks — use native `POST /api/embed`, smaller char-based chunks when PDF text has no sentence breaks (avoids `mxbai-embed-large` context-length 400), and batched embed with split-on-400; verified 7/7 materials on dev COSC 315. (#441)
+
 ---
 
 ## [Week 4 — May 25–29, 2026]
