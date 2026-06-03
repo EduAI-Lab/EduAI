@@ -16,6 +16,7 @@ import { clientApiKeysBodySchema, toUserProviderSettings } from "~/lib/chat-api-
 import {
   buildCappedRagContextText,
   capRagHitsForTool,
+  capToolResultsInMessages,
   HYBRID_RAG_MAX_CHUNKS,
   HYBRID_RAG_MAX_CONTEXT_CHARS,
 } from "~/lib/chat-rag";
@@ -479,6 +480,8 @@ export async function action({ request }: ActionFunctionArgs) {
       trimmedCount: trimmedMessages.length,
     });
 
+    const modelMessages = capToolResultsInMessages(trimmedMessages);
+
     if (mergedMessages.length === 0) {
       return new Response(
         JSON.stringify({
@@ -663,7 +666,7 @@ Based on this information, provide a comprehensive answer to the user's question
 
           streamConfig = {
             model: aiModel,
-            messages: trimmedMessages,
+            messages: modelMessages,
             temperature: 0.6,
             maxTokens: 8192,
             system: systemWithRAG,
@@ -680,7 +683,7 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
 
           streamConfig = {
             model: aiModel,
-            messages: trimmedMessages,
+            messages: modelMessages,
             temperature: 0.6,
             maxTokens: 8192,
             system: defaultSystemPrompt,
@@ -697,7 +700,7 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
 
         streamConfig = {
           model: aiModel,
-          messages: trimmedMessages,
+          messages: modelMessages,
           temperature: 0.6,
           maxTokens: 8192,
           system: defaultSystemPrompt,
@@ -726,7 +729,7 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
 
       streamConfig = {
         model: aiModel,
-        messages: trimmedMessages,
+        messages: modelMessages,
         temperature: 0.6,
         maxTokens: TOOL_MAX_TOKENS,
         maxSteps: TOOL_MAX_STEPS,
@@ -747,7 +750,7 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
     chatApiDebug("Starting LLM stream", {
       model,
       approach: supportsTools ? "tool_calling" : "hybrid_rag",
-      ...llmPromptSizeHints(streamConfig.system, trimmedMessages),
+      ...llmPromptSizeHints(streamConfig.system, modelMessages),
     });
     const result = await streamText(streamConfig as Parameters<typeof streamText>[0]);
 

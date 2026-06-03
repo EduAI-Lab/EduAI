@@ -1,7 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import {
   buildCappedRagContextText,
   capRagHitsForTool,
+  capToolResultsInMessages,
+  resolveToolResultMaxChars,
+  truncateToMaxChars,
   HYBRID_RAG_MAX_CHUNKS,
   HYBRID_RAG_MAX_CONTEXT_CHARS,
   TOOL_RAG_MAX_CHARS_PER_CHUNK,
@@ -96,5 +99,84 @@ describe("RAG cap constants", () => {
     expect(HYBRID_RAG_MAX_CONTEXT_CHARS).toBe(14_000);
     expect(TOOL_RAG_MAX_CHARS_PER_CHUNK).toBe(6000);
     expect(HYBRID_RAG_MIN_TRUNCATE_CHARS).toBe(120);
+  });
+});
+
+describe("truncateToMaxChars", () => {
+  it("returns the original string when under the limit", () => {
+    expect(truncateToMaxChars("hello", 10)).toBe("hello");
+  });
+
+  it("appends the ellipsis suffix when over the limit", () => {
+    const result = truncateToMaxChars("abcdefgh", 5);
+    expect(result).toBe("abcde…");
+    expect(result.length).toBe(6);
+  });
+});
+
+describe("resolveToolResultMaxChars", () => {
+  const original = process.env.CHAT_TOOL_RAG_MAX_CHARS_PER_CHUNK;
+
+  afterEach(() => {
+    if (original === undefined) {
+      delete process.env.CHAT_TOOL_RAG_MAX_CHARS_PER_CHUNK;
+    } else {
+      process.env.CHAT_TOOL_RAG_MAX_CHARS_PER_CHUNK = original;
+    }
+  });
+
+  it("defaults to TOOL_RAG_MAX_CHARS_PER_CHUNK when env is unset", () => {
+    delete process.env.CHAT_TOOL_RAG_MAX_CHARS_PER_CHUNK;
+    expect(resolveToolResultMaxChars()).toBe(TOOL_RAG_MAX_CHARS_PER_CHUNK);
+  });
+
+  it("clamps env override to the allowed range", () => {
+    process.env.CHAT_TOOL_RAG_MAX_CHARS_PER_CHUNK = "999999";
+    expect(resolveToolResultMaxChars()).toBe(50_000);
+    process.env.CHAT_TOOL_RAG_MAX_CHARS_PER_CHUNK = "10";
+    expect(resolveToolResultMaxChars()).toBe(500);
+  });
+});
+
+describe("capToolResultsInMessages", () => {
+  it("leaves user messages unchanged", () => {
+    const messages = [{ id: "1", role: "user", content: "x".repeat(10_000) }];
+    const capped = capToolResultsInMessages(messages, 100);
+    expect(capped[0]).toBe(messages[0]);
+    expect(capped[0].content).toBe(messages[0].content);
+  });
+
+  it("truncates oversized tool results inside assistant messages", () => {
+    const longMarkdown = "m".repeat(20_000);
+    const messages = [
+      {
+        id: "1",
+        role: "assistant",
+        content: [
+          {
+            type: "tool-invocation",
+            toolInvocation: {
+              toolName: "fetchPage",
+              toolCallId: "call-1",
+              state: "result",
+              result: { markdown: longMarkdown, url: "https://example.com" },
+            },
+          },
+        ],
+      },
+    ];
+
+    const capped = capToolResultsInMessages(messages, 6000);
+    const result = (capped[0].content as Array<{ toolInvocation: { result: { markdown: string } } }>)[0]
+      .toolInvocation.result.markdown;
+
+    expect(result.length).toBe(6001);
+    expect(result.endsWith("…")).toBe(true);
+  });
+
+  it("caps tool-role messages", () => {
+    const messages = [{ id: "1", role: "tool", content: "t".repeat(8000) }];
+    const capped = capToolResultsInMessages(messages, 6000);
+    expect((capped[0].content as string).length).toBe(6001);
   });
 });
