@@ -27,7 +27,7 @@ We adopt **Option A** (not dual-store, not 3072-local):
 | **Target dimension** | **1024** (`EMBEDDING_DIMENSION=1024`, pgvector `vector(1024)`) |
 | **Default local model** | **`mxbai-embed-large`** via Ollama (`OLLAMA_EMBEDDING_MODEL=mxbai-embed-large`) |
 | **Dev server default** | `EMBEDDING_PROVIDER=local` on cmps01 |
-| **Cloud fallback** | When local is unset or unhealthy: OpenRouter → OpenAI with **1024-dim** models (`openai/text-embedding-3-small` with `dimensions: 1024`) |
+| **Cloud path** | When `EMBEDDING_PROVIDER` is cloud/unset (or a course uses cloud): OpenRouter → OpenAI with **1024-dim** models (`openai/text-embedding-3-small` with `dimensions: 1024`) |
 
 **Runner-up local model:** `nomic-embed-text` (768 dims) — requires `vector(768)` instead; not chosen for this migration.
 
@@ -38,11 +38,12 @@ We adopt **Option A** (not dual-store, not 3072-local):
 ### 2. Provider resolution
 
 ```
-EMBEDDING_PROVIDER=local  →  Ollama (OLLAMA_BASE_URL + OLLAMA_EMBEDDING_MODEL)
-                              →  on failure: cloud chain (1024-dim models only)
+EMBEDDING_PROVIDER=local  →  Ollama only (no silent cloud fallback; indexing fails if Ollama is down)
 
-EMBEDDING_PROVIDER=cloud or unset  →  cloud chain only
+EMBEDDING_PROVIDER=cloud or unset  →  cloud chain (1024-dim models)
 ```
+
+Per-course `embeddingProvider=local` follows the same rule: index and query must use the configured local model space.
 
 Cloud chain (1024-dim path): OpenRouter (`openai/text-embedding-3-small`) → OpenAI direct → throws if no key.
 
