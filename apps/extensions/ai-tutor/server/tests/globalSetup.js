@@ -53,13 +53,6 @@ export async function setup() {
 
   const prismaBin = findBin('prisma');
 
-  // Generates the Prisma client before running migrations
-  execBin(prismaBin, ['generate'], {
-    cwd: serverRoot,
-    env: { ...process.env },
-    stdio: 'pipe',
-  });
-
   execBin(prismaBin, ['migrate', 'deploy'], {
     cwd: serverRoot,
     env: { ...process.env, DATABASE_URL: process.env.DATABASE_URL },
