@@ -37,6 +37,16 @@ export function formatApiError(error: unknown): { error: string; hint?: string }
           "On the server: cd apps/core && npx prisma generate, then restart the dev server (tmux: Ctrl+C, then npx turbo run dev --filter=edu-ai from repo root).",
       };
     }
+    if (
+      error.message.includes("reading 'findFirst'") ||
+      error.message.includes('reading "findFirst"')
+    ) {
+      return {
+        error: "Prisma client is out of date (missing generated models such as CourseReEmbedJob).",
+        hint:
+          "On the server: cd apps/core && npx prisma generate && npx prisma migrate deploy, then restart the dev server.",
+      };
+    }
     return { error: error.message };
   }
 

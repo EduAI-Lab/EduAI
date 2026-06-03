@@ -13,10 +13,6 @@ import {
   resolveEffectiveEmbeddingSettings,
   validateEmbeddingSettingsUpdate,
 } from "~/lib/ai/embedding";
-import {
-  serializeReEmbedJob,
-  startReEmbedJob,
-} from "~/lib/ai/re-embed-job.server";
 
 async function requireManageSession(request: Request) {
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
@@ -139,8 +135,13 @@ export async function action({ request, params }: ActionFunctionArgs) {
     lastEmbeddedAt: updated.lastEmbeddedAt,
   };
 
-  let reEmbedJob: ReturnType<typeof serializeReEmbedJob> | undefined;
+  let reEmbedJob:
+    | Awaited<ReturnType<typeof import("~/lib/ai/re-embed-job.server").serializeReEmbedJob>>
+    | undefined;
   if (reEmbedAfterSave) {
+    const { startReEmbedJob, serializeReEmbedJob } = await import(
+      "~/lib/ai/re-embed-job.server"
+    );
     const job = await startReEmbedJob(courseId);
     reEmbedJob = serializeReEmbedJob(job);
   }

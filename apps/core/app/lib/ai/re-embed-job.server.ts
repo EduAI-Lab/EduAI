@@ -43,10 +43,20 @@ export function serializeReEmbedJob(job: ReEmbedJobSnapshot) {
 
 const ACTIVE_JOB_STATUSES: ReEmbedJobStatus[] = ["PENDING", "RUNNING"];
 
+function reEmbedJobClient() {
+  const client = prisma.courseReEmbedJob;
+  if (!client) {
+    throw new Error(
+      "Prisma client is missing CourseReEmbedJob. Run: cd apps/core && npx prisma generate && npx prisma migrate deploy, then restart the dev server.",
+    );
+  }
+  return client;
+}
+
 export async function findActiveReEmbedJob(
   courseId: string,
 ): Promise<ReEmbedJobSnapshot | null> {
-  const job = await prisma.courseReEmbedJob.findFirst({
+  const job = await reEmbedJobClient().findFirst({
     where: { courseId, status: { in: ACTIVE_JOB_STATUSES } },
     orderBy: { createdAt: "desc" },
   });
@@ -57,14 +67,14 @@ export async function getReEmbedJobForCourse(
   courseId: string,
   jobId: string,
 ): Promise<ReEmbedJobSnapshot | null> {
-  const job = await prisma.courseReEmbedJob.findFirst({
+  const job = await reEmbedJobClient().findFirst({
     where: { id: jobId, courseId },
   });
   return job ? toSnapshot(job) : null;
 }
 
 async function updateJobProgress(jobId: string, progress: ReEmbedProgress): Promise<void> {
-  await prisma.courseReEmbedJob.update({
+  await reEmbedJobClient().update({
     where: { id: jobId },
     data: {
       totalMaterials: progress.total,
@@ -77,7 +87,7 @@ async function updateJobProgress(jobId: string, progress: ReEmbedProgress): Prom
 
 async function runReEmbedJob(jobId: string, courseId: string): Promise<void> {
   try {
-    await prisma.courseReEmbedJob.update({
+    await reEmbedJobClient().update({
       where: { id: jobId },
       data: { status: "RUNNING", startedAt: new Date(), errorMessage: null },
     });
@@ -88,7 +98,7 @@ async function runReEmbedJob(jobId: string, courseId: string): Promise<void> {
 
     const status = resolveReEmbedJobStatus(result);
 
-    await prisma.courseReEmbedJob.update({
+    await reEmbedJobClient().update({
       where: { id: jobId },
       data: {
         status,
@@ -102,7 +112,7 @@ async function runReEmbedJob(jobId: string, courseId: string): Promise<void> {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("[re-embed-job] job failed", { jobId, courseId, error: message });
-    await prisma.courseReEmbedJob.update({
+    await reEmbedJobClient().update({
       where: { id: jobId },
       data: {
         status: "FAILED",
@@ -123,7 +133,7 @@ export async function startReEmbedJob(courseId: string): Promise<ReEmbedJobSnaps
     return active;
   }
 
-  const job = await prisma.courseReEmbedJob.create({
+  const job = await reEmbedJobClient().create({
     data: { courseId, status: "PENDING" },
   });
 
