@@ -1,19 +1,14 @@
-import type { ActionFunctionArgs } from "react-router";
+import type { LoaderFunctionArgs } from "react-router";
 import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { getCourseIfCanManageMaterials } from "~/lib/courses/access.server";
 import { formatApiError, jsonResponse } from "~/lib/api/json-response.server";
 import {
-  findActiveReEmbedJob,
+  getReEmbedJobForCourse,
   serializeReEmbedJob,
-  startReEmbedJob,
 } from "~/lib/ai/re-embed-job.server";
 
-export async function action({ request, params }: ActionFunctionArgs) {
-  if (request.method !== "POST") {
-    return jsonResponse({ error: "Method not allowed" }, 405);
-  }
-
+export async function loader({ request, params }: LoaderFunctionArgs) {
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
   if (apiKeyGuard) return apiKeyGuard;
 
@@ -23,8 +18,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 
   const courseId = params.courseId;
-  if (!courseId) {
-    return jsonResponse({ error: "Course ID is required" }, 400);
+  const jobId = params.jobId;
+  if (!courseId || !jobId) {
+    return jsonResponse({ error: "Course ID and job ID are required" }, 400);
   }
 
   try {
@@ -33,19 +29,14 @@ export async function action({ request, params }: ActionFunctionArgs) {
       return jsonResponse({ error: "Course not found or access denied" }, 404);
     }
 
-    const existing = await findActiveReEmbedJob(courseId);
-    const job = existing ?? (await startReEmbedJob(courseId));
+    const job = await getReEmbedJobForCourse(courseId, jobId);
+    if (!job) {
+      return jsonResponse({ error: "Re-index job not found" }, 404);
+    }
 
-    return jsonResponse(
-      {
-        success: true,
-        job: serializeReEmbedJob(job),
-        reusedExistingJob: Boolean(existing),
-      },
-      existing ? 200 : 202,
-    );
+    return jsonResponse({ job: serializeReEmbedJob(job) });
   } catch (error) {
-    console.error("[re-embed] API failed:", error);
+    console.error("[re-embed-job] GET failed:", error);
     return jsonResponse(formatApiError(error), 500);
   }
 }

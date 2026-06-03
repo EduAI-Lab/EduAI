@@ -7,6 +7,10 @@ import { Checkbox } from "~/components/ui/checkbox";
 import { Label } from "~/components/ui/label";
 import { readJsonResponse } from "~/lib/api/client";
 import {
+  formatReEmbedJobMessage,
+  pollReEmbedJobUntilDone,
+} from "~/lib/api/re-embed-job.client";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -54,6 +58,7 @@ export function CourseEmbeddingSettings({ courseId, onSettingsSaved }: CourseEmb
   const [providerChoice, setProviderChoice] = useState<string>("env");
   const [modelChoice, setModelChoice] = useState<string>("default");
   const [reEmbedOnSave, setReEmbedOnSave] = useState(false);
+  const [reEmbedProgress, setReEmbedProgress] = useState<string | null>(null);
 
   const loadSettings = useCallback(async () => {
     setLoading(true);
@@ -121,7 +126,7 @@ export function CourseEmbeddingSettings({ courseId, onSettingsSaved }: CourseEmb
           success?: boolean;
           error?: string;
           hint?: string;
-          reEmbed?: { processed: number; failed: string[] };
+          reEmbedJob?: { id: string };
         }
       >(response);
 
@@ -146,12 +151,25 @@ export function CourseEmbeddingSettings({ courseId, onSettingsSaved }: CourseEmb
       setProviderChoice(result.settings.embeddingProvider ?? "env");
       setModelChoice(result.settings.embeddingModel ?? "default");
 
-      if (result.reEmbed) {
-        setSuccess(
-          `Settings saved. Re-indexed ${result.reEmbed.processed} material(s)` +
-            (result.reEmbed.failed?.length ? ` (${result.reEmbed.failed.length} failed)` : "") +
-            ".",
-        );
+      if (result.reEmbedJob?.id) {
+        setReEmbedProgress("Re-indexing materials…");
+        const finalJob = await pollReEmbedJobUntilDone(courseId, result.reEmbedJob.id, {
+          onUpdate: (job) => {
+            if (job.currentMaterialTitle) {
+              setReEmbedProgress(
+                `Re-indexing ${job.processedCount + 1}/${job.totalMaterials}: ${job.currentMaterialTitle}`,
+              );
+            } else if (job.totalMaterials > 0) {
+              setReEmbedProgress(`Re-indexing ${job.processedCount}/${job.totalMaterials}…`);
+            }
+          },
+        });
+        setReEmbedProgress(null);
+        if (finalJob.status === "FAILED") {
+          throw new Error(finalJob.errorMessage || "Re-index failed after saving settings");
+        }
+        await loadSettings();
+        setSuccess(`Settings saved. ${formatReEmbedJobMessage(finalJob)}`);
         onSettingsSaved?.();
       } else if (result.needsReEmbed) {
         setSuccess("Settings saved. Re-index materials so RAG uses the new embedding model.");
@@ -162,6 +180,7 @@ export function CourseEmbeddingSettings({ courseId, onSettingsSaved }: CourseEmb
       setError(err instanceof Error ? err.message : "Save failed");
     } finally {
       setSaving(false);
+      setReEmbedProgress(null);
     }
   };
 
@@ -279,7 +298,7 @@ export function CourseEmbeddingSettings({ courseId, onSettingsSaved }: CourseEmb
           {saving ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Saving…
+              {reEmbedProgress ?? "Saving…"}
             </>
           ) : (
             <>
