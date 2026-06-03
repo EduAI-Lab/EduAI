@@ -2,6 +2,8 @@
 
 Validates [#260](https://github.com/EduAI-Lab/EduAI/issues/260) and [#259](https://github.com/EduAI-Lab/EduAI/issues/259) against S4-style tool-heavy turns through the real `POST /api/chat` path.
 
+**IURA / §3b record:** [`docs/literature/iura-appendix-3b-scaffold.md`](../literature/iura-appendix-3b-scaffold.md) (#262)
+
 Formal S4 wording will live in `docs/literature/form-a-eval-scenarios.md` (not in repo yet). Until then, scenario **S4** in `apps/core/scripts/eval-adhd-assist.mjs` mirrors the tool-heavy probes in [`MODEL_LATENCY_TRACKER.md`](./latency/MODEL_LATENCY_TRACKER.md) (`webSearch` + `fetchPage`, multi-turn).
 
 ## Run (local)
