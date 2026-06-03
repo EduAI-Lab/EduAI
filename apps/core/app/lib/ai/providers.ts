@@ -211,3 +211,28 @@ export function parseModelIdentifier(identifier: string): { providerId: Supporte
   return { providerId: providerId as SupportedProvider, modelId };
 }
 
+/**
+ * Enable local GPU providers from server env when the browser did not send them
+ * (common on dev when only VLLM_BASE_URL / OLLAMA_BASE_URL are set in .env).
+ */
+export function mergeLocalInferenceFromEnv(
+  userSettings: UserProviderSettings,
+  modelIdentifier?: string,
+): UserProviderSettings {
+  const merged: UserProviderSettings = { ...userSettings };
+  const parsed = modelIdentifier ? parseModelIdentifier(modelIdentifier) : null;
+  const providerIds = parsed ? [parsed.providerId] : LOCAL_INFERENCE_PROVIDERS;
+
+  for (const providerId of providerIds) {
+    if (merged[providerId]?.isEnabled) continue;
+
+    const envVar = PROVIDER_CONFIGS[providerId]?.envVarName;
+    const envUrl = envVar ? process.env[envVar] : undefined;
+    if (envUrl) {
+      merged[providerId] = { isEnabled: true, baseUrl: envUrl };
+    }
+  }
+
+  return merged;
+}
+

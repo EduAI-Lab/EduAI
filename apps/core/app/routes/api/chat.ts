@@ -2,7 +2,11 @@ import type { Prisma, User } from "@prisma/client";
 import { UserRole } from "@prisma/client";
 import { randomUUID } from "crypto";
 import { streamText, tool } from "ai";
-import { createAIProviderRegistry } from "~/lib/ai/providers";
+import {
+  createAIProviderRegistry,
+  mergeLocalInferenceFromEnv,
+  parseModelIdentifier,
+} from "~/lib/ai/providers";
 import { modelSupportsTools } from "~/lib/ai/providers.server";
 import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
 import { findRelevantContent } from "~/lib/ai/embedding";
@@ -518,7 +522,23 @@ export async function action({ request }: ActionFunctionArgs) {
         },
       );
     }
-    const validatedApiKeys = toUserProviderSettings(apiKeysParsed.data);
+    const validatedApiKeys = mergeLocalInferenceFromEnv(
+      toUserProviderSettings(apiKeysParsed.data),
+      model,
+    );
+
+    const parsedModel = parseModelIdentifier(model);
+    if (parsedModel && !validatedApiKeys[parsedModel.providerId]?.isEnabled) {
+      return new Response(
+        JSON.stringify({
+          error: `Provider "${parsedModel.providerId}" is not enabled. Turn it on in Settings or set ${parsedModel.providerId === "vllm" ? "VLLM_BASE_URL" : "OLLAMA_BASE_URL"} in the server .env.`,
+        }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
 
     const existingMessageIds = new Set(storedMessages.map((message) => message.id).filter(isNonEmptyString));
     const appendMessages = async (messages: GenericMessage[]) => {
