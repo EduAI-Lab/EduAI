@@ -329,45 +329,25 @@ function getCloudEmbeddingModel(
   );
 }
 
-async function resolveEmbeddingModel(courseId?: string): Promise<EmbeddingModel<string>> {
-  const settings = await loadEffectiveEmbeddingSettings(courseId);
-
-  if (settings.wantsLocal) {
-    try {
-      return getLocalEmbeddingModel(settings).model;
-    } catch (err) {
-      console.warn("[embedding] local provider setup failed, falling back to cloud", err);
-    }
-
-    try {
-      return getCloudEmbeddingModel(settings).model;
-    } catch (cloudErr) {
-      throw new Error(
-        `Local embedding provider failed and cloud fallback is unavailable: ${cloudErr instanceof Error ? cloudErr.message : String(cloudErr)}`,
-      );
-    }
-  }
-
-  return getCloudEmbeddingModel(settings).model;
-}
-
-async function embedWithProviderFallback<T>(
+async function embedWithConfiguredProvider<T>(
   run: (model: EmbeddingModel<string>) => Promise<T>,
   courseId?: string,
 ): Promise<T> {
   const settings = await loadEffectiveEmbeddingSettings(courseId);
-
-  if (!settings.wantsLocal) {
-    return run(await resolveEmbeddingModel(courseId));
-  }
+  const model = settings.wantsLocal
+    ? getLocalEmbeddingModel(settings).model
+    : getCloudEmbeddingModel(settings).model;
 
   try {
-    const local = getLocalEmbeddingModel(settings).model;
-    return await run(local);
-  } catch (localErr) {
-    console.warn("[embedding] local embed failed, falling back to cloud", localErr);
-    const cloud = getCloudEmbeddingModel(settings).model;
-    return run(cloud);
+    return await run(model);
+  } catch (err) {
+    if (settings.wantsLocal) {
+      throw new Error(
+        `Local embedding provider failed (${settings.model}). Index and query must use the same model space; fix Ollama or switch the course to cloud. ${err instanceof Error ? err.message : String(err)}`,
+        { cause: err },
+      );
+    }
+    throw err;
   }
 }
 
@@ -384,7 +364,7 @@ export async function generateEmbeddings(
 
   for (let i = 0; i < chunks.length; i += EMBED_MANY_BATCH_SIZE) {
     const batch = chunks.slice(i, i + EMBED_MANY_BATCH_SIZE);
-    const { embeddings } = await embedWithProviderFallback(
+    const { embeddings } = await embedWithConfiguredProvider(
       (model) => embedMany({ model, values: batch }),
       courseId,
     );
@@ -410,7 +390,7 @@ export async function generateEmbedding(query: string, courseId?: string): Promi
     return hit.embedding;
   }
 
-  const { embedding } = await embedWithProviderFallback(
+  const { embedding } = await embedWithConfiguredProvider(
     (model) => embed({ model, value: query }),
     courseId,
   );
@@ -538,7 +518,8 @@ export async function reEmbedCourseMaterials(courseId: string): Promise<{
     }
   }
 
-  if (processed > 0) {
+  const eligibleCount = materials.filter((m) => m.rawText?.trim()).length;
+  if (processed > 0 && failed.length === 0 && processed === eligibleCount) {
     await markCourseEmbedded(courseId);
   }
 
