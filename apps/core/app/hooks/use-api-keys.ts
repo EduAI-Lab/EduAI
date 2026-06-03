@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { UserProviderSettings } from '~/lib/ai/providers';
-import { LOCAL_INFERENCE_PROVIDERS } from '~/lib/ai/providers';
+import type { UserProviderSettings } from '~/lib/ai/provider-types';
+import { LOCAL_INFERENCE_PROVIDERS } from '~/lib/ai/provider-types';
 
 export interface ApiKeyData {
   providerId: string;
