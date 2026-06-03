@@ -1,5 +1,6 @@
 import prisma from "../prisma.server";
 import { reEmbedCourseMaterials, type ReEmbedProgress } from "./embedding";
+import { logReEmbedJobCrashed, logReEmbedJobFinished } from "./embedding-log.server";
 import { resolveReEmbedJobStatus } from "./re-embed-job-status";
 import type { ReEmbedJobStatus } from "@prisma/client";
 
@@ -98,6 +99,16 @@ async function runReEmbedJob(jobId: string, courseId: string): Promise<void> {
 
     const status = resolveReEmbedJobStatus(result);
 
+    await logReEmbedJobFinished({
+      courseId,
+      jobId,
+      status,
+      processed: result.processed,
+      failedCount: result.failed.length,
+      total: result.total,
+      failedMaterialIds: result.failed,
+    });
+
     await reEmbedJobClient().update({
       where: { id: jobId },
       data: {
@@ -111,6 +122,7 @@ async function runReEmbedJob(jobId: string, courseId: string): Promise<void> {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    await logReEmbedJobCrashed({ courseId, jobId, err });
     console.error("[re-embed-job] job failed", { jobId, courseId, error: message });
     await reEmbedJobClient().update({
       where: { id: jobId },
