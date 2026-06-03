@@ -49,6 +49,15 @@ describe("generateChunks", () => {
     expect(() => generateChunks("no punctuation here at all", 800)).not.toThrow();
   });
 
+  it("splits slide-deck text without punctuation into bounded chunks", () => {
+    const slides = "Topic line without periods\n".repeat(400);
+    const chunks = generateChunks(slides, 200, 40);
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const chunk of chunks) {
+      expect(chunk.length).toBeLessThanOrEqual(200);
+    }
+  });
+
   it("trims whitespace from each chunk", () => {
     const chunks = generateChunks("  Hello world.  Goodbye world.  ", 800);
     for (const chunk of chunks) {

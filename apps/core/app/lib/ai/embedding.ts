@@ -42,6 +42,62 @@ function isOllamaBadRequestError(err: unknown): boolean {
   return /bad request/i.test(message) || /\b400\b/.test(message);
 }
 
+function isOllamaContextLengthError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return /context length/i.test(message) || /input length exceeds/i.test(message);
+}
+
+function isOllamaSplittableError(err: unknown): boolean {
+  return isOllamaBadRequestError(err) || isOllamaContextLengthError(err);
+}
+
+/** mxbai-embed-large ~512 tokens; stay under with char-based chunks (slide decks lack `.`). */
+const DEFAULT_OLLAMA_CHUNK_CHARS = 480;
+
+function resolveChunkParams(wantsLocal: boolean): { maxChunkSize: number; overlap: number } {
+  if (!wantsLocal) {
+    return { maxChunkSize: 800, overlap: 80 };
+  }
+  const maxChunkSize = Math.min(
+    800,
+    Math.max(128, Number(process.env.OLLAMA_EMBED_CHUNK_SIZE) || DEFAULT_OLLAMA_CHUNK_CHARS),
+  );
+  const overlap = Math.min(
+    maxChunkSize - 1,
+    Math.max(0, Number(process.env.OLLAMA_EMBED_CHUNK_OVERLAP) || 48),
+  );
+  return { maxChunkSize, overlap };
+}
+
+function chunkTextBySize(text: string, maxChunkSize: number, overlap: number): string[] {
+  const chunks: string[] = [];
+  let start = 0;
+  while (start < text.length) {
+    const end = Math.min(start + maxChunkSize, text.length);
+    const piece = text.slice(start, end).trim();
+    if (piece.length > 0) chunks.push(piece);
+    if (end >= text.length) break;
+    start = Math.max(start + 1, end - overlap);
+  }
+  return chunks;
+}
+
+function enforceMaxChunkSize(
+  chunks: string[],
+  maxChunkSize: number,
+  overlap: number,
+): string[] {
+  const out: string[] = [];
+  for (const chunk of chunks) {
+    if (chunk.length <= maxChunkSize) {
+      out.push(chunk);
+    } else {
+      out.push(...chunkTextBySize(chunk, maxChunkSize, overlap));
+    }
+  }
+  return out;
+}
+
 function ollamaEmbedEndpoint(): string {
   return `${resolveOllamaBaseUrl()}/embed`;
 }
@@ -87,7 +143,7 @@ async function embedManyOllamaNative(modelId: string, values: string[]): Promise
   try {
     return await fetchOllamaEmbeddings(modelId, sanitized);
   } catch (err) {
-    if (values.length <= 1 || !isOllamaBadRequestError(err)) {
+    if (values.length <= 1 || !isOllamaSplittableError(err)) {
       throw err;
     }
     const mid = Math.floor(values.length / 2);
@@ -258,11 +314,20 @@ export function generateChunks(
   maxChunkSize: number = 800,
   overlap: number = 80,
 ): string[] {
-  const sentences = input
-    .trim()
+  const trimmed = input.trim();
+  if (!trimmed) return [];
+
+  const parts = trimmed
     .split(/[.!?]+/)
-    .filter((sentence) => sentence.trim().length > 0)
-    .map((sentence) => sentence.trim() + ".");
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+
+  // Slide decks / bullet lists often have no sentence endings — one giant "sentence" otherwise.
+  if (parts.length <= 1 && trimmed.length > maxChunkSize) {
+    return chunkTextBySize(trimmed, maxChunkSize, overlap);
+  }
+
+  const sentences = parts.map((part) => (part.endsWith(".") ? part : `${part}.`));
 
   const chunks: string[] = [];
   let currentChunk = "";
@@ -275,7 +340,7 @@ export function generateChunks(
       const overlapWords = words.slice(-Math.floor(overlap / 5));
       currentChunk = overlapWords.join(" ") + " " + sentence;
     } else {
-      currentChunk += " " + sentence;
+      currentChunk += (currentChunk ? " " : "") + sentence;
     }
   }
 
@@ -283,7 +348,7 @@ export function generateChunks(
     chunks.push(currentChunk.trim());
   }
 
-  return chunks;
+  return enforceMaxChunkSize(chunks, maxChunkSize, overlap);
 }
 
 function resolveOllamaBaseUrl(): string {
@@ -657,7 +722,9 @@ export async function processMaterialEmbeddings(materialId: string, content: str
     throw new Error(`Course material not found: ${materialId}`);
   }
 
-  const chunks = generateChunks(content);
+  const settings = await loadEffectiveEmbeddingSettings(material.courseId);
+  const { maxChunkSize, overlap } = resolveChunkParams(settings.wantsLocal);
+  const chunks = generateChunks(content, maxChunkSize, overlap);
 
   if (chunks.length === 0) {
     throw new Error("No content chunks generated");
