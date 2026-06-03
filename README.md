@@ -32,8 +32,6 @@ EduAI/
 
 RAG-powered chat platform and the central API layer for the EduAI ecosystem. Handles AI provider routing, course-aware retrieval, auth, and exposes the API that AI Tutor and Question Maker integrate with.
 
-**Component architecture (June 2026):** All 32 domain UI components under `apps/core/app/components/` (excluding shadcn primitives in `ui/`) are presentational — they receive data and callbacks via props; routes own API calls. See [`apps/core/docs/message.md`](apps/core/docs/message.md) for the audit and [`apps/core/docs/TWO_PERSON_ASSIGNMENT.md`](apps/core/docs/TWO_PERSON_ASSIGNMENT.md) for the two-person split. Run component tests with `cd apps/core && npm run test`.
-
 ### [AI Tutor](apps/extensions/ai-tutor/)
 
 AI tutoring platform with a two-agent supervisor system (primary tutor + pedagogical reviewer). Manages course hierarchies (CourseOffering → Module → Lesson → Activity) and student/professor/TA roles.
