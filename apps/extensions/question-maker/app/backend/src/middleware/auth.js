@@ -20,7 +20,7 @@ function normalizeRole(role) {
  */
 export async function requireAuth(req, res, next) {
   try {
-    const response = await fetch(`${process.env.CORE_URL}/api/sessions/validate`, {
+    const response = await fetch(`${process.env.CORE_URL || 'http://localhost:3000'}/api/sessions/validate`, {
       method: 'POST',
       headers: { cookie: req.headers.cookie ?? '' },
     });

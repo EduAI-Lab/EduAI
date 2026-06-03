@@ -70,6 +70,9 @@ export async function action({ request }: ActionFunctionArgs) {
     });
   }
 
+  // TODO: POST /api/questions accepts session-cookie auth only (no service-key path).
+  // The GET loader above accepts service keys; add a Bearer branch here if a
+  // backend service ever needs to create questions without a user session.
   // TODO(RBAC #292): replace with resolveCourseAccess
   const session = await auth.api.getSession(request);
   if (!session?.user) {
