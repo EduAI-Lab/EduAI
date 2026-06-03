@@ -189,13 +189,6 @@ export function CourseMaterialsUpload({ courseId, apiKeys }: CourseMaterialsUplo
 
   return (
     <div className="space-y-6">
-      <CourseEmbeddingSettings
-        courseId={courseId}
-        onSettingsSaved={() => {
-          void loadMaterials();
-        }}
-      />
-
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -243,6 +236,13 @@ export function CourseMaterialsUpload({ courseId, apiKeys }: CourseMaterialsUplo
           </div>
         </CardContent>
       </Card>
+
+      <CourseEmbeddingSettings
+        courseId={courseId}
+        onSettingsSaved={() => {
+          void loadMaterials();
+        }}
+      />
 
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
