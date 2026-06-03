@@ -5,9 +5,10 @@ export default defineConfig({
   plugins: [tsconfigPaths()],
   test: {
     globals: true,
-    include: ['app/tests/unit/**/*.test.{ts,tsx}'],
-    environment: 'jsdom',
+    include: ['app/tests/integration/**/*.test.ts'],
+    globalSetup: ['./app/tests/globalSetup.ts'],
+    environment: 'node',
     fileParallelism: false,
-    setupFiles: ['./app/tests/setup.ts'],
+    setupFiles: ['./app/tests/setup.ts', './app/tests/setup.integration.ts'],
   },
 });

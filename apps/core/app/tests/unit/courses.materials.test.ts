@@ -162,14 +162,15 @@ describe("POST /api/courses/:courseId/materials action", () => {
     } as never);
     vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({ id: "existing-mat" } as never);
 
-    const form = new FormData();
-    form.append("file", new Blob(["content"]), "file.pdf");
-    form.append("apiKeys", "{}");
+    // Stub the request's formData() directly: putting a Blob inside a real Request
+    // body hangs in jsdom and undici rejects the parsed File in the webidl layer.
+    // All auth functions are module-mocked so they never inspect the request object.
+    const mockFormData = new FormData();
+    mockFormData.append("file", new File(["content"], "file.pdf", { type: "application/pdf" }));
+    const stubRequest = { formData: () => Promise.resolve(mockFormData) } as unknown as Request;
+
     const res = await action({
-      request: new Request(`http://localhost/api/courses/${COURSE_ID}/materials`, {
-        method: "POST",
-        body: form,
-      }),
+      request: stubRequest,
       params: { courseId: COURSE_ID },
       context: {} as never,
     });
