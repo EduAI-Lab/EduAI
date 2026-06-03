@@ -2,6 +2,7 @@
 
 **Related docs**
 
+- Master plan: [eduai_rbac_ui_plan.md](../eduai_rbac_ui_plan.md)
 - Permissions spec: [rbac-matrix.md](./rbac-matrix.md) §4–13
 - Two-person split: [RBAC_UI_TWO_PERSON_ASSIGNMENT.md](../../apps/core/docs/RBAC_UI_TWO_PERSON_ASSIGNMENT.md)
 

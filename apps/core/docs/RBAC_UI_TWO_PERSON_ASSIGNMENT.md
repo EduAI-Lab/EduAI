@@ -1,5 +1,6 @@
 # Issue #386 Task 3 — Two-Person Assignment (EduAI Core RBAC UI)
 
+**Master plan:** [docs/eduai_rbac_ui_plan.md](../../docs/eduai_rbac_ui_plan.md)  
 **Implementation plan:** [docs/implementations/RBAC_UI_IMPLEMENTATION_PLAN.md](../../docs/implementations/RBAC_UI_IMPLEMENTATION_PLAN.md)  
 **“Wireframes” = implement working UI in code** (routes, components, hooks, tests) — not Figma-only mockups.  
 **Spec:** [`docs/implementations/rbac-matrix.md`](../../docs/implementations/rbac-matrix.md) §4–13  
