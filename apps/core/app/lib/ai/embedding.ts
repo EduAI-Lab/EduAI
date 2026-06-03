@@ -11,7 +11,6 @@ import {
   DEFAULT_OPENAI_EMBEDDING_MODEL,
   resolveEffectiveEmbeddingSettings,
 } from "./embedding-config";
-import { logReEmbedMaterialFailed, logReEmbedMaterialOk } from "./embedding-log.server";
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
@@ -51,7 +50,11 @@ function isOllamaSplittableError(err: unknown): boolean {
   return isOllamaBadRequestError(err) || isOllamaContextLengthError(err);
 }
 
-/** mxbai-embed-large ~512 tokens; stay under with char-based chunks (slide decks lack `.`). */
+/**
+ * Local Ollama (mxbai-embed-large): call POST /api/embed directly; batch-split on HTTP 400.
+ * Slide decks often have no `.`/`!`/`?` — sentence chunking used one oversized chunk and hit
+ * "input length exceeds the context length"; use smaller char-based chunks (default 480).
+ */
 const DEFAULT_OLLAMA_CHUNK_CHARS = 480;
 
 function resolveChunkParams(wantsLocal: boolean): { maxChunkSize: number; overlap: number } {
@@ -680,22 +683,17 @@ export async function reEmbedCourseMaterials(
         data: { status: "READY", processedAt: new Date() },
       });
       processed += 1;
-      await logReEmbedMaterialOk({
-        courseId,
-        materialId: material.id,
-        title: material.title,
-      });
     } catch (err) {
       failed.push(material.id);
       await prisma.courseMaterial.update({
         where: { id: material.id },
         data: { status: "FAILED" },
       });
-      await logReEmbedMaterialFailed({
+      console.error("[re-embed] material failed", {
         courseId,
         materialId: material.id,
         title: material.title,
-        err,
+        error: err instanceof Error ? err.message : String(err),
       });
     }
 
