@@ -84,7 +84,7 @@ export async function setup() {
   const prismaBin = findBin('prisma');
 
   // Sync schema to test DB (idempotent, no migration history needed)
-  execBin(prismaBin, ['db', 'push', '--accept-data-loss'], {
+  execBin(prismaBin, ['db', 'push', '--accept-data-loss', '--skip-generate'], {
     cwd: appRoot,
     env: { ...process.env, DATABASE_URL: dbUrl },
     stdio: 'pipe',
