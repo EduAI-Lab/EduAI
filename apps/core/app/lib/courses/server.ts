@@ -78,6 +78,51 @@ export async function handleCourseRequest(request: Request) {
       });
     }
 
+    case "DELETE": {
+      const idMatch = url.pathname.match(/\/api\/courses\/([^/]+)/);
+      const courseId = idMatch?.[1];
+
+      if (!courseId) {
+        return new Response("Missing course ID", { status: 400 });
+      }
+
+      const session = apiKeySession ?? await auth.api.getSession(request);
+      if (!session?.user) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      const user = session.user;
+      const isAdmin = user.role === "ADMIN";
+      const isUnitAdmin = user.role === "UNIT_ADMIN";
+
+      if (!isAdmin && !isUnitAdmin) {
+        return new Response("Forbidden", { status: 403 });
+      }
+
+      const existing = await prisma.course.findUnique({
+        where: { id: courseId },
+        select: { department: true, isActive: true },
+      });
+
+      if (!existing || !existing.isActive) {
+        return new Response("Course not found", { status: 404 });
+      }
+
+      if (isUnitAdmin) {
+        const dbUser = await prisma.user.findUnique({
+          where: { id: user.id },
+          select: { authorizedUnits: true },
+        });
+        const authorizedUnits = dbUser?.authorizedUnits ?? [];
+        if (!existing.department || !authorizedUnits.includes(existing.department)) {
+          return new Response("Forbidden", { status: 403 });
+        }
+      }
+
+      await prisma.course.update({ where: { id: courseId }, data: { isActive: false } });
+      return new Response(null, { status: 204 });
+    }
+
     case "PATCH": {
       // Extract ID from /api/courses/:id
       const idMatch = url.pathname.match(/\/api\/courses\/([^/]+)/);
