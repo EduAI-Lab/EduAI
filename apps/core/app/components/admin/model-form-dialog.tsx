@@ -38,7 +38,8 @@ export interface ModelFormDialogProps {
   vllmModels?: VllmModel[];
   fetchingVllmModels?: boolean;
   vllmError?: string | null;
-  onFetchVllmModels?: () => void;
+  onFetchVllmModels?: (baseUrl?: string) => void;
+  vllmFetched?: boolean;
 }
 
 export function ModelFormDialog({
@@ -55,6 +56,7 @@ export function ModelFormDialog({
   fetchingVllmModels = false,
   vllmError = null,
   onFetchVllmModels,
+  vllmFetched = false,
 }: ModelFormDialogProps) {
   const [formData, setFormData] = useState<{
     modelId: string;
@@ -86,6 +88,7 @@ export function ModelFormDialog({
 
   const [selectedOllamaModel, setSelectedOllamaModel] = useState<string>("");
   const [selectedVllmModel, setSelectedVllmModel] = useState<string>("");
+  const [vllmBaseUrlOverride, setVllmBaseUrlOverride] = useState("");
 
   useEffect(() => {
     if (model) {
@@ -124,11 +127,33 @@ export function ModelFormDialog({
   useEffect(() => {
     setSelectedOllamaModel("");
     setSelectedVllmModel("");
+    setVllmBaseUrlOverride("");
   }, [formData.providerId]);
 
   const selectedProvider = providers.find(p => p.id === formData.providerId);
-  const isOllamaProvider = selectedProvider?.name === "ollama";
-  const isVllmProvider = selectedProvider?.name === "vllm";
+  const providerName = selectedProvider?.name?.toLowerCase() ?? "";
+  const isOllamaProvider = providerName === "ollama";
+  const isVllmProvider = providerName === "vllm";
+
+  useEffect(() => {
+    if (!open || !isVllmProvider || !onFetchVllmModels || vllmFetched) return;
+    if (fetchingVllmModels || vllmModels.length > 0) return;
+    const base =
+      vllmBaseUrlOverride.trim() ||
+      selectedProvider?.defaultBaseUrl?.replace(/\/v1\/?$/, "") ||
+      undefined;
+    onFetchVllmModels(base);
+  }, [
+    open,
+    isVllmProvider,
+    formData.providerId,
+    onFetchVllmModels,
+    fetchingVllmModels,
+    vllmModels.length,
+    vllmFetched,
+    vllmBaseUrlOverride,
+    selectedProvider?.defaultBaseUrl,
+  ]);
 
   const handleOllamaModelSelect = (modelName: string) => {
     setSelectedOllamaModel(modelName);
@@ -273,7 +298,7 @@ export function ModelFormDialog({
                     <SelectTrigger>
                       <SelectValue placeholder="Choose an Ollama model" />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="z-[100]">
                       {ollamaModels.map((m) => (
                         <SelectItem key={m.name} value={m.name}>
                           <div className="flex flex-col">
@@ -293,13 +318,19 @@ export function ModelFormDialog({
 
           {isVllmProvider && (
             <div className="space-y-4 p-4 border rounded-lg bg-muted/50">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <Label>Available vLLM Models</Label>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => onFetchVllmModels?.()}
+                  onClick={() =>
+                    onFetchVllmModels?.(
+                      vllmBaseUrlOverride.trim() ||
+                        selectedProvider?.defaultBaseUrl?.replace(/\/v1\/?$/, "") ||
+                        undefined,
+                    )
+                  }
                   disabled={fetchingVllmModels || !onFetchVllmModels}
                 >
                   {fetchingVllmModels ? (
@@ -313,40 +344,84 @@ export function ModelFormDialog({
                 </Button>
               </div>
 
+              <div className="space-y-2">
+                <Label htmlFor="vllmBaseUrlOverride">vLLM base URL (optional)</Label>
+                <Input
+                  id="vllmBaseUrlOverride"
+                  value={vllmBaseUrlOverride}
+                  onChange={(e) => setVllmBaseUrlOverride(e.target.value)}
+                  placeholder={
+                    selectedProvider?.defaultBaseUrl?.replace(/\/v1\/?$/, "") ||
+                    "http://cmps01.ok.ubc.ca:8001"
+                  }
+                />
+                <p className="text-xs text-muted-foreground">
+                  Leave empty to use server <code className="text-xs">VLLM_BASE_URL</code> from{" "}
+                  <code className="text-xs">.env</code>. Use{" "}
+                  <code className="text-xs">:8002</code> for a second container.
+                </p>
+              </div>
+
               {vllmError && (
                 <Alert variant="destructive">
                   <AlertDescription>{vllmError}</AlertDescription>
                 </Alert>
               )}
 
-              {vllmModels.length > 0 && (
-                <div className="space-y-2">
-                  <Label htmlFor="vllmModelSelect">Select Model</Label>
-                  <Select value={selectedVllmModel} onValueChange={handleVllmModelSelect}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Choose a vLLM model" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {vllmModels.map((m) => (
-                        <SelectItem key={m.id} value={m.id}>
-                          <div className="flex flex-col">
-                            <span>{m.id}</span>
-                            {m.owned_by && (
-                              <span className="text-xs text-muted-foreground">
-                                {m.owned_by}
-                              </span>
-                            )}
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+              {fetchingVllmModels && (
+                <p className="text-sm text-muted-foreground">Loading models from vLLM…</p>
               )}
 
+              {vllmFetched && !fetchingVllmModels && !vllmError && vllmModels.length === 0 && (
+                <Alert>
+                  <AlertDescription>
+                    No models returned. Check <code>VLLM_BASE_URL</code> on the EduAI server,
+                    firewall to cmps01, and that the vLLM container is running (
+                    <code>curl …/v1/models</code>).
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              <div className="space-y-2">
+                <Label htmlFor="vllmModelSelect">Select Model</Label>
+                <Select
+                  value={selectedVllmModel}
+                  onValueChange={handleVllmModelSelect}
+                  disabled={vllmModels.length === 0}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue
+                      placeholder={
+                        fetchingVllmModels
+                          ? "Loading…"
+                          : vllmModels.length === 0
+                            ? "Fetch models first"
+                            : "Choose a vLLM model"
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent className="z-[100]">
+                    {vllmModels.map((m) => (
+                      <SelectItem key={m.id} value={m.id}>
+                        <div className="flex flex-col">
+                          <span>{m.id}</span>
+                          {m.owned_by && (
+                            <span className="text-xs text-muted-foreground">
+                              {m.owned_by}
+                            </span>
+                          )}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               <p className="text-xs text-muted-foreground">
-                Uses server <code className="text-xs">VLLM_BASE_URL</code> (OpenAI-compatible{" "}
-                <code className="text-xs">/v1/models</code>). Tools default off for hybrid RAG.
+                Models load automatically when you pick vLLM. Chat uses{" "}
+                <code className="text-xs">VLLM_BASE_URL</code> in server{" "}
+                <code className="text-xs">.env</code> (one URL for all vLLM models). Tools default
+                off for hybrid RAG.
               </p>
             </div>
           )}
