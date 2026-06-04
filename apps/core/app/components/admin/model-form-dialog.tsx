@@ -8,52 +8,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~
 import { Switch } from "~/components/ui/switch";
 import { Alert, AlertDescription } from "~/components/ui/alert";
 import { Loader } from "~/components/ui/loader";
+import type { AIProvider, AIModel } from "~/types/ai";
 
-type AIProvider = {
-  id: string;
-  name: string;
-  displayName: string;
-  description: string;
-  requiresApiKey: boolean;
-  defaultBaseUrl?: string;
-  envVarName?: string;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-  models?: AIModel[];
-  _count?: {
-    models: number;
-  };
-};
-
-type AIModel = {
-  id: string;
-  modelId: string;
-  name: string;
-  description: string;
-  type: "CHAT" | "COMPLETION" | "EMBEDDING" | "IMAGE" | "AUDIO" | "VIDEO";
-  maxTokens?: number;
-  supportsImages: boolean;
-  supportsTools: boolean;
-  supportsStreaming: boolean;
-  inputPricing?: number;
-  outputPricing?: number;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-  providerId: string;
-  provider: Omit<AIProvider, 'models' | '_count'>;
-};
-
-interface ModelFormDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  model?: AIModel | null;
-  providers: AIProvider[];
-  onSubmit: (data: any) => void;
-}
-
-type OllamaModel = {
+export type OllamaModel = {
   name: string;
   model: string;
   size: number;
@@ -62,7 +19,29 @@ type OllamaModel = {
   details: any;
 };
 
-export function ModelFormDialog({ open, onOpenChange, model, providers, onSubmit }: ModelFormDialogProps) {
+export interface ModelFormDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  model?: AIModel | null;
+  providers: AIProvider[];
+  onSubmit: (data: any) => void;
+  ollamaModels?: OllamaModel[];
+  fetchingOllamaModels?: boolean;
+  ollamaError?: string | null;
+  onFetchOllamaModels?: () => void;
+}
+
+export function ModelFormDialog({
+  open,
+  onOpenChange,
+  model,
+  providers,
+  onSubmit,
+  ollamaModels = [],
+  fetchingOllamaModels = false,
+  ollamaError = null,
+  onFetchOllamaModels,
+}: ModelFormDialogProps) {
   const [formData, setFormData] = useState<{
     modelId: string;
     name: string;
@@ -91,10 +70,6 @@ export function ModelFormDialog({ open, onOpenChange, model, providers, onSubmit
     providerId: "",
   });
 
-  // Ollama-specific state
-  const [ollamaModels, setOllamaModels] = useState<OllamaModel[]>([]);
-  const [fetchingOllamaModels, setFetchingOllamaModels] = useState(false);
-  const [ollamaError, setOllamaError] = useState<string | null>(null);
   const [selectedOllamaModel, setSelectedOllamaModel] = useState<string>("");
 
   useEffect(() => {
@@ -131,73 +106,41 @@ export function ModelFormDialog({ open, onOpenChange, model, providers, onSubmit
     }
   }, [model, open]);
 
-  // Reset Ollama state when provider changes
   useEffect(() => {
-    setOllamaModels([]);
-    setOllamaError(null);
     setSelectedOllamaModel("");
   }, [formData.providerId]);
 
-  // Check if current provider is Ollama
   const selectedProvider = providers.find(p => p.id === formData.providerId);
-  const isOllamaProvider = selectedProvider?.name === 'ollama';
+  const isOllamaProvider = selectedProvider?.name === "ollama";
 
-  // Fetch Ollama models
-  const fetchOllamaModels = async () => {
-    setFetchingOllamaModels(true);
-    setOllamaError(null);
-
-    try {
-      const response = await fetch('/api/ollama-models');
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to fetch Ollama models');
-      }
-
-      setOllamaModels(data.models || []);
-    } catch (error: any) {
-      setOllamaError(error.message || 'Failed to fetch Ollama models');
-      setOllamaModels([]);
-    } finally {
-      setFetchingOllamaModels(false);
-    }
-  };
-
-  // Handle Ollama model selection
   const handleOllamaModelSelect = (modelName: string) => {
     setSelectedOllamaModel(modelName);
-    const selectedModel = ollamaModels.find(m => m.name === modelName);
-
-    if (selectedModel) {
-      // Auto-populate form fields based on Ollama model
+    const selected = ollamaModels.find(m => m.name === modelName);
+    if (selected) {
       setFormData(prev => ({
         ...prev,
-        modelId: selectedModel.name,
-        name: selectedModel.name.charAt(0).toUpperCase() + selectedModel.name.slice(1),
-        description: `Local Ollama model: ${selectedModel.name}`,
-        type: "CHAT", // Most Ollama models are chat models
-        maxTokens: "", // Ollama doesn't provide max tokens info
-        supportsImages: selectedModel.name.toLowerCase().includes('vision') || selectedModel.name.toLowerCase().includes('llava'),
-        supportsTools: true, // Most modern Ollama models support tools
+        modelId: selected.name,
+        name: selected.name.charAt(0).toUpperCase() + selected.name.slice(1),
+        description: `Local Ollama model: ${selected.name}`,
+        type: "CHAT",
+        maxTokens: "",
+        supportsImages: selected.name.toLowerCase().includes("vision") || selected.name.toLowerCase().includes("llava"),
+        supportsTools: true,
         supportsStreaming: true,
-        inputPricing: "0", // Local models are free
-        outputPricing: "0", // Local models are free
+        inputPricing: "0",
+        outputPricing: "0",
       }));
     }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-
-    const submitData = {
+    onSubmit({
       ...formData,
       maxTokens: formData.maxTokens ? Number(formData.maxTokens) : undefined,
       inputPricing: formData.inputPricing ? Number(formData.inputPricing) : undefined,
       outputPricing: formData.outputPricing ? Number(formData.outputPricing) : undefined,
-    };
-
-    onSubmit(submitData);
+    });
   };
 
   return (
@@ -254,7 +197,6 @@ export function ModelFormDialog({ open, onOpenChange, model, providers, onSubmit
             </div>
           </div>
 
-          {/* Ollama Model Fetching Section */}
           {isOllamaProvider && (
             <div className="space-y-4 p-4 border rounded-lg bg-muted/50">
               <div className="flex items-center justify-between">
@@ -263,8 +205,8 @@ export function ModelFormDialog({ open, onOpenChange, model, providers, onSubmit
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={fetchOllamaModels}
-                  disabled={fetchingOllamaModels}
+                  onClick={() => onFetchOllamaModels?.()}
+                  disabled={fetchingOllamaModels || !onFetchOllamaModels}
                 >
                   {fetchingOllamaModels ? (
                     <>
@@ -272,36 +214,31 @@ export function ModelFormDialog({ open, onOpenChange, model, providers, onSubmit
                       Fetching...
                     </>
                   ) : (
-                    'Fetch Models'
+                    "Fetch Models"
                   )}
                 </Button>
               </div>
 
               {ollamaError && (
                 <Alert variant="destructive">
-                  <AlertDescription>
-                    {ollamaError}
-                  </AlertDescription>
+                  <AlertDescription>{ollamaError}</AlertDescription>
                 </Alert>
               )}
 
               {ollamaModels.length > 0 && (
                 <div className="space-y-2">
                   <Label htmlFor="ollamaModelSelect">Select Model</Label>
-                  <Select
-                    value={selectedOllamaModel}
-                    onValueChange={handleOllamaModelSelect}
-                  >
+                  <Select value={selectedOllamaModel} onValueChange={handleOllamaModelSelect}>
                     <SelectTrigger>
                       <SelectValue placeholder="Choose an Ollama model" />
                     </SelectTrigger>
                     <SelectContent>
-                      {ollamaModels.map((model) => (
-                        <SelectItem key={model.name} value={model.name}>
+                      {ollamaModels.map((m) => (
+                        <SelectItem key={m.name} value={m.name}>
                           <div className="flex flex-col">
-                            <span>{model.name}</span>
+                            <span>{m.name}</span>
                             <span className="text-xs text-muted-foreground">
-                              Size: {Math.round(model.size / 1024 / 1024 / 1024 * 100) / 100} GB
+                              Size: {Math.round(m.size / 1024 / 1024 / 1024 * 100) / 100} GB
                             </span>
                           </div>
                         </SelectItem>
