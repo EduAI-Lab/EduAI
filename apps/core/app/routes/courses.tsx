@@ -73,6 +73,7 @@ export default function CoursesPage() {
             authorizedUnits={authorizedUnits}
             onCreateCourse={async (data) => { await createCourse(data) }}
             onEditCourse={async (id, data) => { await updateCourse(id, data) }}
+            onDeleteCourse={async (id) => { await deleteCourse(id) }}
             onPublishToggle={handlePublishToggle}
           />
         ) : isProfessor ? (
