@@ -33,8 +33,9 @@ export async function handleCourseRequest(request: Request) {
 
     case "POST": {
       const session = apiKeySession ?? await auth.api.getSession(request);
-      if (!session?.user || session.user.role !== "ADMIN") {
-        return new Response("Forbidden: Admins only", { status: 403 });
+      const role = session?.user?.role;
+      if (!session?.user || (role !== "ADMIN" && role !== "UNIT_ADMIN")) {
+        return new Response("Forbidden", { status: 403 });
       }
 
       const formData = await request.formData();
@@ -43,6 +44,7 @@ export async function handleCourseRequest(request: Request) {
         code: formData.get("code"),
         term: formData.get("term"),
         year: Number(formData.get("year")),
+        department: (formData.get("department") as string) || undefined,
         aiInstructions: formData.get("aiInstructions") || "",
       };
 
@@ -64,6 +66,7 @@ export async function handleCourseRequest(request: Request) {
           code: result.data.code,
           term: result.data.term,
           year: result.data.year,
+          department: result.data.department ?? null,
           professorId: session.user.id,
           aiInstructions: result.data.aiInstructions,
         },
@@ -115,10 +118,11 @@ export async function handleCourseRequest(request: Request) {
       }
 
       const isAdmin = user.role === "ADMIN";
+      const isUnitAdmin = user.role === "UNIT_ADMIN";
       const isProfessor =
         user.role === "PROFESSOR" && user.id === course.professorId;
 
-      if (!isAdmin && !isProfessor) {
+      if (!isAdmin && !isUnitAdmin && !isProfessor) {
         return new Response("Forbidden", { status: 403 });
       }
 
