@@ -4,7 +4,7 @@ set -e
 if ! docker info > /dev/null 2>&1; then
   case "$(uname -s)" in
     Darwin)
-      echo "Docker not running — starting Docker Desktop..."
+      echo "Docker not running; Starting Docker Desktop..."
       open -a Docker
       ;;
     *)
