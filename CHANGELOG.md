@@ -16,6 +16,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] refactor: Move data fetching out of domain components into parent routes — `courses.$courseId` owns materials load/upload; `chat` owns `useApiKeys` / `ApiKeySettings`; `admin.ai-models` owns Ollama model fetch for `ModelFormDialog`. (#437, #438, 2026-06-03)
 - [core] docs: Update `apps/core/README.md` — monorepo install from root, component architecture section, and expanded component test inventory. (#385, @Ayyhab, 2026-06-03)
 - [monorepo] docs: Update root `README.md` with EduAI component skeleton overview and link to `apps/core/docs/`. (#385, @Ayyhab, 2026-06-03)
+- [core] ui: Move Assistive mode toggle and System Prompt button from the scrollable chat area into the sticky page header on `/chat` so they remain visible during long conversations. Adds optional `actions` slot to `SiteHeader` and extracts `ChatHeaderControls`; state, API calls, and persistence are unchanged. (#PR, @Ayyhab, 2026-06-03)
 
 ### Fixed
 - [monorepo] infra: Replace em dash with hyphen in `scripts/dev-db.sh` Docker startup message to avoid PowerShell parse errors on Windows. (#438, @yta3216, 2026-06-03)
