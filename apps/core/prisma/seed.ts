@@ -266,6 +266,81 @@ async function main() {
   }
 
   console.log('✅ Course topics seeded successfully');
+
+  // ── Person A: RBAC personas + courses ──────────────────────────────────────
+  console.log('👥 Seeding RBAC test personas...');
+
+  const unitAdminUser = await prisma.user.upsert({
+    where: { email: 'unitadmin@eduai.local' },
+    update: { name: 'Uma UnitAdmin', role: 'UNIT_ADMIN', isActive: true, emailVerified: true, authorizedUnits: ['COSC'] },
+    create: { email: 'unitadmin@eduai.local', name: 'Uma UnitAdmin', role: 'UNIT_ADMIN', isActive: true, emailVerified: true, authorizedUnits: ['COSC'] },
+  });
+
+  const professorUser = await prisma.user.upsert({
+    where: { email: 'instructor@eduai.local' },
+    update: { name: 'Alex Instructor', role: 'PROFESSOR', isActive: true, emailVerified: true },
+    create: { email: 'instructor@eduai.local', name: 'Alex Instructor', role: 'PROFESSOR', isActive: true, emailVerified: true },
+  });
+
+  const taUser = await prisma.user.upsert({
+    where: { email: 'ta@eduai.local' },
+    update: { name: 'Taylor TA', role: 'TA', isActive: true, emailVerified: true },
+    create: { email: 'ta@eduai.local', name: 'Taylor TA', role: 'TA', isActive: true, emailVerified: true },
+  });
+
+  const studentUser = await prisma.user.upsert({
+    where: { email: 'student@eduai.local' },
+    update: { name: 'Sam Student', role: 'STUDENT', isActive: true, emailVerified: true },
+    create: { email: 'student@eduai.local', name: 'Sam Student', role: 'STUDENT', isActive: true, emailVerified: true },
+  });
+
+  console.log('✅ RBAC personas seeded (admin@eduai.local / instructor@eduai.local / ta@eduai.local / student@eduai.local)');
+
+  console.log('📚 Seeding RBAC demo courses...');
+
+  const rbacCourse1 = await prisma.course.upsert({
+    where: { code: 'RBAC101' },
+    update: { name: 'RBAC Demo: Active Course', professorId: professorUser.id, term: 'Fall', year: 2025, aiInstructions: 'Demo course — RBAC test', isActive: true, department: 'COSC' },
+    create: { code: 'RBAC101', name: 'RBAC Demo: Active Course', professorId: professorUser.id, term: 'Fall', year: 2025, aiInstructions: 'Demo course — RBAC test', isActive: true, department: 'COSC' },
+  });
+
+  const rbacCourse2 = await prisma.course.upsert({
+    where: { code: 'RBAC102' },
+    update: { name: 'RBAC Demo: Inactive Course', professorId: adminUser.id, term: 'Fall', year: 2025, aiInstructions: '', isActive: false },
+    create: { code: 'RBAC102', name: 'RBAC Demo: Inactive Course', professorId: adminUser.id, term: 'Fall', year: 2025, aiInstructions: '', isActive: false },
+  });
+
+  // TA assignment for rbacCourse1
+  await prisma.courseTA.upsert({
+    where: { courseId_userId: { courseId: rbacCourse1.id, userId: taUser.id } },
+    update: {},
+    create: { courseId: rbacCourse1.id, userId: taUser.id },
+  });
+
+  // Student enrollment for rbacCourse1
+  await prisma.courseEnrollment.upsert({
+    where: { courseId_studentId: { courseId: rbacCourse1.id, studentId: studentUser.id } },
+    update: { isActive: true },
+    create: { courseId: rbacCourse1.id, studentId: studentUser.id, isActive: true },
+  });
+
+  // Add a couple of topics to the demo course
+  await prisma.courseTopic.createMany({
+    data: [
+      { courseId: rbacCourse1.id, name: 'Role-Based Access Control' },
+      { courseId: rbacCourse1.id, name: 'Permission Matrices' },
+    ],
+    skipDuplicates: true,
+  });
+
+  console.log('✅ RBAC demo courses seeded (RBAC101 active, RBAC102 inactive)');
+  console.log('');
+  console.log('🔑 Test logins (set passwords via Better Auth or admin panel):');
+  console.log('   admin@eduai.local      — ADMIN');
+  console.log('   unitadmin@eduai.local  — UNIT_ADMIN (authorizedUnits: [COSC])');
+  console.log('   instructor@eduai.local — PROFESSOR (owns RBAC101)');
+  console.log('   ta@eduai.local         — TA (assists RBAC101)');
+  console.log('   student@eduai.local    — STUDENT (enrolled in RBAC101)');
 }
 
 main()
