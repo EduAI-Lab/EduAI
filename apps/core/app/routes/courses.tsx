@@ -33,7 +33,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 export default function CoursesPage() {
   const { user, authorizedUnits } = useLoaderData<typeof loader>()
-  const { courses, loading, createCourse, updateCourse } = useCourses()
+  const { courses, loading, createCourse, updateCourse, deleteCourse } = useCourses()
 
   const isAdmin = user.role === 'ADMIN'
   const isUnitAdmin = user.role === 'UNIT_ADMIN'
@@ -62,7 +62,7 @@ export default function CoursesPage() {
             courses={courses}
             onCreateCourse={async (data) => { await createCourse(data) }}
             onEditCourse={async (id, data) => { await updateCourse(id, data) }}
-            onDeleteCourse={async (_id) => { /* stub — no delete endpoint */ }}
+            onDeleteCourse={async (id) => { await deleteCourse(id) }}
             onPublishToggle={handlePublishToggle}
           />
         ) : isUnitAdmin ? (

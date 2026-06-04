@@ -4,7 +4,7 @@ import { IconPlus, IconEdit, IconTrash, IconBook, IconCalendar, IconEye, IconEye
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
 import { Badge } from '~/components/ui/badge'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '~/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '~/components/ui/dialog'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select'
@@ -23,6 +23,7 @@ interface Props {
 export function CoursesAdminView({ courses, onCreateCourse, onEditCourse, onDeleteCourse, onPublishToggle }: Props) {
   const [createOpen, setCreateOpen] = useState(false)
   const [editingCourse, setEditingCourse] = useState<Course | null>(null)
+  const [deletingCourse, setDeletingCourse] = useState<Course | null>(null)
   const [createDept, setCreateDept] = useState<string>('')
 
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -180,7 +181,7 @@ export function CoursesAdminView({ courses, onCreateCourse, onEditCourse, onDele
                       variant="ghost"
                       size="icon"
                       className="text-destructive hover:text-destructive"
-                      onClick={() => onDeleteCourse(course.id)}
+                      onClick={() => setDeletingCourse(course)}
                     >
                       <IconTrash className="w-4 h-4" />
                     </Button>
@@ -205,6 +206,31 @@ export function CoursesAdminView({ courses, onCreateCourse, onEditCourse, onDele
           ))}
         </div>
       )}
+
+      <Dialog open={!!deletingCourse} onOpenChange={(open) => !open && setDeletingCourse(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Course</DialogTitle>
+            <DialogDescription>
+              Delete <strong>{deletingCourse?.code} — {deletingCourse?.name}</strong>? This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeletingCourse(null)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={async () => {
+                if (deletingCourse) {
+                  await onDeleteCourse(deletingCourse.id)
+                  setDeletingCourse(null)
+                }
+              }}
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!editingCourse} onOpenChange={(open) => !open && setEditingCourse(null)}>
         <DialogContent>

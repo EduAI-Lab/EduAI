@@ -83,5 +83,11 @@ export function useCourses() {
     return updated
   }, [])
 
-  return { courses, loading, error, createCourse, updateCourse, refetch: fetchCourses }
+  const deleteCourse = useCallback(async (id: string): Promise<void> => {
+    const res = await fetch(`/api/courses/${id}`, { method: 'DELETE' })
+    if (!res.ok) throw new Error(await res.text())
+    setCourses((prev) => prev.filter((c) => c.id !== id))
+  }, [])
+
+  return { courses, loading, error, createCourse, updateCourse, deleteCourse, refetch: fetchCourses }
 }
