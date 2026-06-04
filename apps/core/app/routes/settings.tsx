@@ -129,7 +129,7 @@ export default function SettingsPage() {
     >
       <AppSidebar variant="inset" user={user} />
       <SidebarInset>
-        <SiteHeader user={user} />
+        <SiteHeader />
         <div className="px-4 py-6 max-w-4xl mx-auto w-full">
           <h1 className="text-2xl font-bold mb-2">Settings</h1>
           <p className="text-sm text-muted-foreground mb-4">Manage server API keys and local model provider configuration.</p>
