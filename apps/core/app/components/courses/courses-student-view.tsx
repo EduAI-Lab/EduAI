@@ -9,8 +9,8 @@ interface Props {
 }
 
 export function CoursesStudentView({ courses }: Props) {
-  // Students only see active courses (legacy: isActive is the visibility gate)
-  const visible = courses.filter((c) => c.isActive)
+  // Students only see published courses (§5 isPublished gate, §19 cross-cutting)
+  const visible = courses.filter((c) => c.isPublished)
 
   return (
     <div className="flex flex-col gap-4">
@@ -23,7 +23,7 @@ export function CoursesStudentView({ courses }: Props) {
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-8">
             <IconBook className="w-12 h-12 text-muted-foreground mb-4" />
-            <p className="text-muted-foreground">No active courses available yet.</p>
+            <p className="text-muted-foreground">No published courses available yet.</p>
           </CardContent>
         </Card>
       ) : (

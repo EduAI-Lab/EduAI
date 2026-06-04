@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router'
-import { IconPlus, IconEdit, IconTrash, IconBook, IconCalendar } from '@tabler/icons-react'
+import { IconPlus, IconEdit, IconTrash, IconBook, IconCalendar, IconEye, IconEyeOff } from '@tabler/icons-react'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
 import { Badge } from '~/components/ui/badge'
@@ -9,6 +9,7 @@ import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select'
 import { Textarea } from '~/components/ui/textarea'
+import { DEPARTMENTS, getDepartmentLabel } from '~/lib/departments'
 import type { Course, CreateCourseInput, UpdateCourseInput } from '~/hooks/api/use-courses'
 
 interface Props {
@@ -16,9 +17,10 @@ interface Props {
   onCreateCourse: (data: CreateCourseInput) => Promise<void>
   onEditCourse: (id: string, data: UpdateCourseInput) => Promise<void>
   onDeleteCourse: (id: string) => Promise<void>
+  onPublishToggle: (id: string, publish: boolean) => Promise<void>
 }
 
-export function CoursesAdminView({ courses, onCreateCourse, onEditCourse, onDeleteCourse }: Props) {
+export function CoursesAdminView({ courses, onCreateCourse, onEditCourse, onDeleteCourse, onPublishToggle }: Props) {
   const [createOpen, setCreateOpen] = useState(false)
   const [editingCourse, setEditingCourse] = useState<Course | null>(null)
 
@@ -30,6 +32,7 @@ export function CoursesAdminView({ courses, onCreateCourse, onEditCourse, onDele
       code: fd.get('code') as string,
       term: fd.get('term') as string,
       year: parseInt(fd.get('year') as string),
+      department: (fd.get('department') as string) || undefined,
       aiInstructions: (fd.get('aiInstructions') as string) || undefined,
     })
     setCreateOpen(false)
@@ -76,9 +79,20 @@ export function CoursesAdminView({ courses, onCreateCourse, onEditCourse, onDele
                 <Label htmlFor="create-code">Course Code</Label>
                 <Input id="create-code" name="code" placeholder="CS101" required />
               </div>
+              <div className="grid gap-2">
+                <Label htmlFor="create-dept">Department</Label>
+                <Select name="department">
+                  <SelectTrigger id="create-dept"><SelectValue placeholder="Select department (optional)" /></SelectTrigger>
+                  <SelectContent>
+                    {DEPARTMENTS.map((d) => (
+                      <SelectItem key={d.code} value={d.code}>{d.label} ({d.code})</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
-                  <Label htmlFor="create-term">Term</Label>
+                  <Label>Term</Label>
                   <Select name="term" defaultValue="Fall">
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -90,13 +104,13 @@ export function CoursesAdminView({ courses, onCreateCourse, onEditCourse, onDele
                   </Select>
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="create-year">Year</Label>
-                  <Input id="create-year" name="year" type="number" defaultValue={new Date().getFullYear()} required />
+                  <Label>Year</Label>
+                  <Input name="year" type="number" defaultValue={new Date().getFullYear()} required />
                 </div>
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="create-ai">AI Instructions</Label>
-                <Textarea id="create-ai" name="aiInstructions" rows={2} />
+                <Label>AI Instructions</Label>
+                <Textarea name="aiInstructions" rows={2} />
               </div>
               <div className="flex justify-end gap-2">
                 <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
@@ -124,11 +138,21 @@ export function CoursesAdminView({ courses, onCreateCourse, onEditCourse, onDele
             <Card key={course.id} className="hover:shadow-md transition-shadow">
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
-                  <Link to={`/courses/${course.id}`} className="flex-1">
-                    <CardTitle className="text-lg">{course.code}</CardTitle>
-                    <CardDescription className="mt-1">{course.name}</CardDescription>
+                  <Link to={`/courses/${course.id}`} className="flex-1 min-w-0">
+                    <CardTitle className="text-lg truncate">{course.code}</CardTitle>
+                    <CardDescription className="mt-1 line-clamp-2">{course.name}</CardDescription>
                   </Link>
-                  <div className="flex gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex gap-1 shrink-0 ml-2" onClick={(e) => e.stopPropagation()}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title={course.isPublished ? 'Unpublish' : 'Publish'}
+                      onClick={() => onPublishToggle(course.id, !course.isPublished)}
+                    >
+                      {course.isPublished
+                        ? <IconEyeOff className="w-4 h-4 text-muted-foreground" />
+                        : <IconEye className="w-4 h-4 text-blue-600" />}
+                    </Button>
                     <Button variant="ghost" size="icon" onClick={() => setEditingCourse(course)}>
                       <IconEdit className="w-4 h-4" />
                     </Button>
@@ -144,13 +168,16 @@ export function CoursesAdminView({ courses, onCreateCourse, onEditCourse, onDele
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                   <div className="flex items-center gap-1">
                     <IconCalendar className="w-4 h-4" />
                     {course.term} {course.year}
                   </div>
-                  <Badge variant={course.isActive ? 'default' : 'secondary'}>
-                    {course.isActive ? 'Active' : 'Inactive'}
+                  {course.department && (
+                    <Badge variant="outline">{getDepartmentLabel(course.department)}</Badge>
+                  )}
+                  <Badge variant={course.isPublished ? 'default' : 'secondary'}>
+                    {course.isPublished ? 'Published' : 'Draft'}
                   </Badge>
                 </div>
               </CardContent>
