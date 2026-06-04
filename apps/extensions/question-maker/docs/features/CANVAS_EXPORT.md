@@ -2,8 +2,6 @@
 
 This guide explains how to export assessments from Question Maker to Canvas LMS as quizzes.
 
-> **Developers:** For monorepo setup (Docker vs local npm), API verification, and networking to local Canvas, see [`docs/implementations/canvas-api-integration-guide.md`](../../../../docs/implementations/canvas-api-integration-guide.md) in EduAICore.
-
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)
