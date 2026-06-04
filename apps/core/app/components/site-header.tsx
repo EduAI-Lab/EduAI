@@ -1,5 +1,6 @@
 import { Separator } from "~/components/ui/separator"
 import { SidebarTrigger } from "~/components/ui/sidebar"
+import { cn } from "~/lib/utils"
 
 export interface SiteHeaderProps {
   title?: string
@@ -8,7 +9,12 @@ export interface SiteHeaderProps {
 
 export function SiteHeader({ title = "Dashboard", actions }: SiteHeaderProps) {
   return (
-    <header className="flex h-[var(--header-height)] shrink-0 items-center border-b">
+    <header
+      className={cn(
+        "flex h-[var(--header-height)] shrink-0 items-center border-b",
+        actions && "pb-1.5",
+      )}
+    >
       <div className="flex h-full w-full items-center gap-1 px-4 lg:gap-2 lg:px-6">
         <SidebarTrigger className="-ml-1" />
         <Separator
