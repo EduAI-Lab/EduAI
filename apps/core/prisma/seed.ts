@@ -962,14 +962,18 @@ const SEED_PASSWORD = 'EduAI2026!';
 async function seedPasswords() {
   const hashed = await hashPassword(SEED_PASSWORD);
   const userIds = Object.values(SEED_IDS.users);
-  for (const userId of userIds) {
+  const users = await prisma.user.findMany({
+    where: { id: { in: userIds } },
+    select: { id: true, email: true },
+  });
+  for (const user of users) {
     await prisma.account.upsert({
-      where: { providerId_accountId: { providerId: 'credential', accountId: userId } },
+      where: { providerId_accountId: { providerId: 'credential', accountId: user.email } },
       update: { password: hashed },
       create: {
         providerId: 'credential',
-        accountId: userId,
-        userId,
+        accountId: user.email,
+        userId: user.id,
         password: hashed,
       },
     });

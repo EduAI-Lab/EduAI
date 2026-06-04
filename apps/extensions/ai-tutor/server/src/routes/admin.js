@@ -37,14 +37,8 @@ import { syncCourseEnrollments } from '../services/enrollmentSync.js';
 const router = express.Router();
 
 router.get('/admin/users', requireRole('ADMIN'), async (_req, res) => {
-  try {
-    const users = await prisma.user.findMany({
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-    });
-    res.json(users.map(mapAdminUser));
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
+  // User records live in Core; the AT schema has no local User table post-auth-migration.
+  res.json([]);
 });
 
 /**
@@ -89,35 +83,21 @@ router.get('/admin/courses/:courseId/enrollments', requireRole('ADMIN'), async (
   try {
     const course = await prisma.courseOffering.findUnique({
       where: { id: courseId },
-      include: {
-        enrollments: {
-          include: {
-            user: true,
-          },
-        },
-      },
+      include: { enrollments: true },
     });
 
     if (!course) {
       return res.status(404).json({ error: 'Course not found' });
     }
 
-    const enrolledIds = course.enrollments.map((enrollment) => enrollment.userId);
-    const availableStudents = await prisma.user.findMany({
-      where: {
-        role: 'STUDENT',
-        id: { notIn: enrolledIds.length > 0 ? enrolledIds : undefined },
-      },
-      orderBy: [{ name: 'asc' }, { email: 'asc' }],
-    });
-
+    // User records live in Core; return enrolled userIds with a stub shape.
+    // availableStudents cannot be populated without a Core user-list API.
     res.json({
       courseId,
       enrolledStudents: course.enrollments
-        .map((enrollment) => enrollment.user)
-        .toSorted((a, b) => a.name.localeCompare(b.name))
-        .map(mapAdminUser),
-      availableStudents: availableStudents.map(mapAdminUser),
+        .toSorted((a, b) => a.userId.localeCompare(b.userId))
+        .map((e) => ({ id: e.userId, name: e.userId, email: '', role: 'STUDENT', createdAt: e.createdAt })),
+      availableStudents: [],
     });
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -148,17 +128,10 @@ router.post('/admin/courses/:courseId/enrollments', requireRole('ADMIN'), async 
   }
 
   try {
-    const [course, user] = await Promise.all([
-      prisma.courseOffering.findUnique({ where: { id: courseId } }),
-      prisma.user.findUnique({ where: { id: userId } }),
-    ]);
+    const course = await prisma.courseOffering.findUnique({ where: { id: courseId } });
 
     if (!course) {
       return res.status(404).json({ error: 'Course not found' });
-    }
-
-    if (!user || user.role !== 'STUDENT') {
-      return res.status(400).json({ error: 'Only student users can be enrolled' });
     }
 
     await prisma.courseEnrollment.upsert({
