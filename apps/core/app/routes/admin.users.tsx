@@ -18,9 +18,10 @@ type User = {
   email: string;
   name: string;
   image?: string;
-  role: "ADMIN" | "PROFESSOR" | "TA" | "STUDENT";
+  role: "ADMIN" | "UNIT_ADMIN" | "PROFESSOR" | "TA" | "STUDENT";
   isActive: boolean;
   emailVerified: boolean;
+  authorizedUnits: string[];
   createdAt: string;
   updatedAt: string;
   _count: {

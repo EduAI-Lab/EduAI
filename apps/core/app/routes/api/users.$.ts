@@ -35,6 +35,7 @@ async function handleRequest(request: Request) {
           role: true,
           isActive: true,
           emailVerified: true,
+          authorizedUnits: true,
           createdAt: true,
           updatedAt: true,
           _count: {
