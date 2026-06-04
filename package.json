@@ -57,6 +57,7 @@
   "devDependencies": {
     "@playwright/test": "^1.60.0",
     "@types/node": "^22",
+    "lucide-react": "^0.554.0",
     "nodemon": "^3.1.10",
     "syncpack": "^13",
     "tsx": "^4.19.4",
