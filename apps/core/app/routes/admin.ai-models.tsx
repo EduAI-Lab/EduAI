@@ -15,7 +15,7 @@ import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
 
 import { AIModelsTable } from "~/components/admin/ai-models-table";
 import { ModelFormDialog } from "~/components/admin/model-form-dialog";
-import type { OllamaModel } from "~/components/admin/model-form-dialog";
+import type { OllamaModel, VllmModel } from "~/components/admin/model-form-dialog";
 import { ProvidersTable } from "~/components/admin/providers-table";
 import { ProviderFormDialog } from "~/components/admin/provider-form-dialog";
 import type { AIProvider, AIModel } from "../types/ai";
@@ -50,10 +50,13 @@ export default function AIModelsPage() {
   const [editingModel, setEditingModel] = useState<AIModel | null>(null);
   const [editingProvider, setEditingProvider] = useState<AIProvider | null>(null);
 
-  // Ollama fetch state (owned here, passed as props to ModelFormDialog)
+  // Local inference fetch state (passed as props to ModelFormDialog)
   const [ollamaModels, setOllamaModels] = useState<OllamaModel[]>([]);
   const [fetchingOllamaModels, setFetchingOllamaModels] = useState(false);
   const [ollamaError, setOllamaError] = useState<string | null>(null);
+  const [vllmModels, setVllmModels] = useState<VllmModel[]>([]);
+  const [fetchingVllmModels, setFetchingVllmModels] = useState(false);
+  const [vllmError, setVllmError] = useState<string | null>(null);
 
   // Fetch data
   const fetchProviders = async () => {
@@ -178,11 +181,29 @@ export default function AIModelsPage() {
     }
   };
 
+  const fetchVllmModels = async () => {
+    setFetchingVllmModels(true);
+    setVllmError(null);
+    try {
+      const response = await fetch("/api/vllm-models");
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Failed to fetch vLLM models");
+      setVllmModels(data.models || []);
+    } catch (error: any) {
+      setVllmError(error.message || "Failed to fetch vLLM models");
+      setVllmModels([]);
+    } finally {
+      setFetchingVllmModels(false);
+    }
+  };
+
   const handleModelDialogChange = (open: boolean) => {
     setModelDialogOpen(open);
     if (!open) {
       setOllamaModels([]);
       setOllamaError(null);
+      setVllmModels([]);
+      setVllmError(null);
     }
   };
 
@@ -419,6 +440,10 @@ export default function AIModelsPage() {
             fetchingOllamaModels={fetchingOllamaModels}
             ollamaError={ollamaError}
             onFetchOllamaModels={fetchOllamaModels}
+            vllmModels={vllmModels}
+            fetchingVllmModels={fetchingVllmModels}
+            vllmError={vllmError}
+            onFetchVllmModels={fetchVllmModels}
           />
 
           <ProviderFormDialog
