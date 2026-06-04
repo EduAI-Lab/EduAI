@@ -22,6 +22,12 @@ export const User = sequelize.define('User', {
     type: DataTypes.STRING,
     allowNull: true
   },
+  coursesSeededAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    defaultValue: null,
+    field: 'courses_seeded_at',
+  },
   createdAt: {
     type: DataTypes.DATE,
     allowNull: false,

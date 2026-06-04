@@ -24,6 +24,7 @@ describe('Bug report routes', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
 
     student = makeStudent();
     professor = makeProfessor();
@@ -71,6 +72,7 @@ describe('Bug report routes', () => {
   });
 
   it('unauthenticated requests are rejected with 401', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 401 }));
     const app = await createApp();
     const res = await request(app).post('/api/bug-reports').send({
       description: 'Unauthenticated submission should fail.',
