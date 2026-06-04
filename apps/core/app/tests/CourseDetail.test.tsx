@@ -31,6 +31,7 @@ const COURSE: CourseDetail = {
   aiInstructions: 'Be helpful',
   professorId: 'user-instructor',
   department: 'COSC',
+  isPublished: true,
   createdAt: '2025-01-01T00:00:00.000Z',
   updatedAt: '2025-01-01T00:00:00.000Z',
 }
