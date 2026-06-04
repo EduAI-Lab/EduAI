@@ -21,7 +21,7 @@ type AIProvider = {
   };
 };
 
-interface ProvidersTableProps {
+export interface ProvidersTableProps {
   providers: AIProvider[];
   onEdit: (provider: AIProvider) => void;
   onDelete: (id: string) => void;
@@ -43,6 +43,13 @@ export function ProvidersTable({ providers, onEdit, onDelete, onToggleActive }: 
           </TableRow>
         </TableHeader>
         <TableBody>
+          {providers.length === 0 && (
+            <TableRow>
+              <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+                No providers found.
+              </TableCell>
+            </TableRow>
+          )}
           {providers.map((provider) => (
             <TableRow key={provider.id}>
               <TableCell>

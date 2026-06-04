@@ -11,16 +11,20 @@ import {
   SidebarMenuItem,
 } from "~/components/ui/sidebar"
 
+export interface NavSecondaryItem {
+  title: string
+  url: string
+  icon: Icon
+}
+
+export type NavSecondaryProps = {
+  items: NavSecondaryItem[]
+} & React.ComponentPropsWithoutRef<typeof SidebarGroup>
+
 export function NavSecondary({
   items,
   ...props
-}: {
-  items: {
-    title: string
-    url: string
-    icon: Icon
-  }[]
-} & React.ComponentPropsWithoutRef<typeof SidebarGroup>) {
+}: NavSecondaryProps) {
   return (
     <SidebarGroup {...props}>
       <SidebarGroupContent>

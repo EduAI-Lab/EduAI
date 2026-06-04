@@ -15,6 +15,7 @@ import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
 
 import { AIModelsTable } from "~/components/admin/ai-models-table";
 import { ModelFormDialog } from "~/components/admin/model-form-dialog";
+import type { OllamaModel } from "~/components/admin/model-form-dialog";
 import { ProvidersTable } from "~/components/admin/providers-table";
 import { ProviderFormDialog } from "~/components/admin/provider-form-dialog";
 import type { AIProvider, AIModel } from "../types/ai";
@@ -48,6 +49,11 @@ export default function AIModelsPage() {
   const [providerDialogOpen, setProviderDialogOpen] = useState(false);
   const [editingModel, setEditingModel] = useState<AIModel | null>(null);
   const [editingProvider, setEditingProvider] = useState<AIProvider | null>(null);
+
+  // Ollama fetch state (owned here, passed as props to ModelFormDialog)
+  const [ollamaModels, setOllamaModels] = useState<OllamaModel[]>([]);
+  const [fetchingOllamaModels, setFetchingOllamaModels] = useState(false);
+  const [ollamaError, setOllamaError] = useState<string | null>(null);
 
   // Fetch data
   const fetchProviders = async () => {
@@ -156,6 +162,30 @@ export default function AIModelsPage() {
     }
   };
 
+  const fetchOllamaModels = async () => {
+    setFetchingOllamaModels(true);
+    setOllamaError(null);
+    try {
+      const response = await fetch("/api/ollama-models");
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Failed to fetch Ollama models");
+      setOllamaModels(data.models || []);
+    } catch (error: any) {
+      setOllamaError(error.message || "Failed to fetch Ollama models");
+      setOllamaModels([]);
+    } finally {
+      setFetchingOllamaModels(false);
+    }
+  };
+
+  const handleModelDialogChange = (open: boolean) => {
+    setModelDialogOpen(open);
+    if (!open) {
+      setOllamaModels([]);
+      setOllamaError(null);
+    }
+  };
+
   // Model CRUD operations
   const handleCreateModel = async (data: any) => {
     try {
@@ -167,7 +197,7 @@ export default function AIModelsPage() {
 
       if (response.ok) {
         await Promise.all([fetchModels(), fetchProviders()]);
-        setModelDialogOpen(false);
+        handleModelDialogChange(false);
         setEditingModel(null);
       }
     } catch (error) {
@@ -187,7 +217,7 @@ export default function AIModelsPage() {
 
       if (response.ok) {
         await Promise.all([fetchModels(), fetchProviders()]);
-        setModelDialogOpen(false);
+        handleModelDialogChange(false);
         setEditingModel(null);
       }
     } catch (error) {
@@ -238,7 +268,7 @@ export default function AIModelsPage() {
       <SidebarProvider>
         <AppSidebar variant="inset" user={user} />
         <SidebarInset>
-          <SiteHeader user={user} />
+          <SiteHeader />
           <div className="flex flex-1 flex-col items-center justify-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
             <p className="mt-4 text-sm text-muted-foreground">Loading...</p>
@@ -259,7 +289,7 @@ export default function AIModelsPage() {
     >
       <AppSidebar variant="inset" user={user} />
       <SidebarInset>
-        <SiteHeader user={user} />
+        <SiteHeader />
         <div className="flex flex-1 flex-col">
           <div className="@container/main flex flex-1 flex-col gap-2">
             <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
@@ -293,7 +323,7 @@ export default function AIModelsPage() {
                     </div>
                     <Button onClick={() => {
                       setEditingModel(null);
-                      setModelDialogOpen(true);
+                      handleModelDialogChange(true);
                     }}>
                       <IconPlus className="h-4 w-4 mr-2" />
                       Add Model
@@ -332,7 +362,7 @@ export default function AIModelsPage() {
                     models={filteredModels}
                     onEdit={(model) => {
                       setEditingModel(model);
-                      setModelDialogOpen(true);
+                      handleModelDialogChange(true);
                     }}
                     onDelete={handleDeleteModel}
                     onToggleActive={handleToggleModel}
@@ -381,10 +411,14 @@ export default function AIModelsPage() {
           {/* Dialogs */}
           <ModelFormDialog
             open={modelDialogOpen}
-            onOpenChange={setModelDialogOpen}
+            onOpenChange={handleModelDialogChange}
             model={editingModel}
             providers={providers}
             onSubmit={editingModel ? handleUpdateModel : handleCreateModel}
+            ollamaModels={ollamaModels}
+            fetchingOllamaModels={fetchingOllamaModels}
+            ollamaError={ollamaError}
+            onFetchOllamaModels={fetchOllamaModels}
           />
 
           <ProviderFormDialog
