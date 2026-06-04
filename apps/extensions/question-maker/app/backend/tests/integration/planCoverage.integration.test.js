@@ -106,8 +106,8 @@ describeDb('Plan coverage (integration)', () => {
       });
     expect(res.status).toBe(201);
     expect(res.body.success).toBe(true);
-    expect(Array.isArray(res.body.data.questions)).toBe(true);
-    expect(res.body.data.questions.length).toBe(1);
+    expect(Array.isArray(res.body.data)).toBe(true);
+    expect(res.body.data.length).toBe(1);
   });
 
   it('assembles a variant exam from the Practice Exam via assemble-variants', async () => {
