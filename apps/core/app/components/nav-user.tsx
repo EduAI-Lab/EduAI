@@ -55,6 +55,13 @@ export function NavUser({ user }: { user: User }) {
             <span className="text-xs">Admin</span>
           </Badge>
         )
+      case "UNIT_ADMIN":
+        return (
+          <Badge variant="outline" className="bg-orange-500 text-white border-orange-500 h-5 px-1.5 gap-1">
+            <IconShield className="h-3 w-3" />
+            <span className="text-xs">Unit Admin</span>
+          </Badge>
+        )
       case "PROFESSOR":
         return (
           <Badge variant="outline" className="bg-blue-500 text-white border-blue-500 h-5 px-1.5 gap-1">
