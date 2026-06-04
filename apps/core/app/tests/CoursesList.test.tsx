@@ -8,7 +8,7 @@ import { CoursesTaView } from '~/components/courses/courses-ta-view'
 import { CoursesStudentView } from '~/components/courses/courses-student-view'
 import type { Course } from '~/hooks/api/use-courses'
 
-const ACTIVE_COURSE: Course = {
+const PUBLISHED_COURSE: Course = {
   id: 'c1',
   code: 'COSC 101',
   name: 'Intro to CS',
@@ -16,6 +16,7 @@ const ACTIVE_COURSE: Course = {
   term: 'Fall',
   year: 2025,
   isActive: true,
+  isPublished: true,
   aiInstructions: '',
   professorId: 'prof-1',
   department: 'COSC',
@@ -23,16 +24,16 @@ const ACTIVE_COURSE: Course = {
   updatedAt: '2025-01-01T00:00:00.000Z',
 }
 
-const INACTIVE_COURSE: Course = {
-  ...ACTIVE_COURSE,
+const DRAFT_COURSE: Course = {
+  ...PUBLISHED_COURSE,
   id: 'c2',
   code: 'COSC 201',
   name: 'Data Structures',
-  isActive: false,
+  isPublished: false,
 }
 
 const MATH_COURSE: Course = {
-  ...ACTIVE_COURSE,
+  ...PUBLISHED_COURSE,
   id: 'c3',
   code: 'MATH 101',
   name: 'Calculus I',
@@ -50,97 +51,116 @@ describe('CoursesAdminView', () => {
   it('shows "Create Course" button', () => {
     wrap(
       <CoursesAdminView
-        courses={[ACTIVE_COURSE]}
+        courses={[PUBLISHED_COURSE]}
         onCreateCourse={NOOP}
         onEditCourse={NOOP}
         onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
       />
     )
     expect(screen.getByRole('button', { name: /create course/i })).toBeInTheDocument()
   })
 
-  it('renders both active and inactive courses', () => {
+  it('renders both published and draft courses', () => {
     wrap(
       <CoursesAdminView
-        courses={[ACTIVE_COURSE, INACTIVE_COURSE]}
+        courses={[PUBLISHED_COURSE, DRAFT_COURSE]}
         onCreateCourse={NOOP}
         onEditCourse={NOOP}
         onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
       />
     )
     expect(screen.getByText('COSC 101')).toBeInTheDocument()
     expect(screen.getByText('COSC 201')).toBeInTheDocument()
   })
 
-  it('shows edit and delete icon buttons per course', () => {
+  it('shows publish, edit, and delete icon buttons per course', () => {
     wrap(
       <CoursesAdminView
-        courses={[ACTIVE_COURSE]}
+        courses={[PUBLISHED_COURSE]}
         onCreateCourse={NOOP}
         onEditCourse={NOOP}
         onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
       />
     )
-    // Edit + delete buttons exist (ghost icon buttons)
+    // Create + publish + edit + delete
     const btns = screen.getAllByRole('button')
-    expect(btns.length).toBeGreaterThanOrEqual(3) // Create + edit + delete
+    expect(btns.length).toBeGreaterThanOrEqual(4)
   })
 })
 
 // CoursesUnitAdminView
 describe('CoursesUnitAdminView', () => {
-  it('shows "Create Course" button', () => {
+  it('shows "Create Course" button for authorized unit', () => {
     wrap(
       <CoursesUnitAdminView
-        courses={[ACTIVE_COURSE]}
+        courses={[PUBLISHED_COURSE]}
         authorizedUnits={['COSC']}
         onCreateCourse={NOOP}
         onEditCourse={NOOP}
+        onPublishToggle={NOOP}
       />
     )
     expect(screen.getByRole('button', { name: /create course/i })).toBeInTheDocument()
   })
 
-  it('shows authorized unit label in description', () => {
+  it('shows authorized unit label including department name', () => {
     wrap(
       <CoursesUnitAdminView
-        courses={[ACTIVE_COURSE]}
+        courses={[PUBLISHED_COURSE]}
         authorizedUnits={['COSC']}
         onCreateCourse={NOOP}
         onEditCourse={NOOP}
+        onPublishToggle={NOOP}
       />
     )
-    expect(screen.getByText(/managing courses in/i)).toBeInTheDocument()
-    expect(screen.getAllByText('COSC').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText(/managing/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/computer science/i).length).toBeGreaterThanOrEqual(1)
   })
 
   it('renders only courses passed to it (route already filters by unit)', () => {
     wrap(
       <CoursesUnitAdminView
-        courses={[ACTIVE_COURSE]}          // COSC only — MATH filtered out by route
+        courses={[PUBLISHED_COURSE]}
         authorizedUnits={['COSC']}
         onCreateCourse={NOOP}
         onEditCourse={NOOP}
+        onPublishToggle={NOOP}
       />
     )
     expect(screen.getByText('COSC 101')).toBeInTheDocument()
     expect(screen.queryByText('MATH 101')).not.toBeInTheDocument()
   })
 
-  it('shows edit button but no delete button', () => {
+  it('shows publish and edit buttons but no delete button', () => {
     wrap(
       <CoursesUnitAdminView
-        courses={[ACTIVE_COURSE]}
+        courses={[PUBLISHED_COURSE]}
         authorizedUnits={['COSC']}
         onCreateCourse={NOOP}
         onEditCourse={NOOP}
+        onPublishToggle={NOOP}
       />
     )
-    // Has at least one button (Create + edit)
+    // Has at least create + publish + edit
     const btns = screen.getAllByRole('button')
-    expect(btns.length).toBeGreaterThanOrEqual(2)
-    // No delete button (unit admins can't delete)
+    expect(btns.length).toBeGreaterThanOrEqual(3)
     expect(screen.queryByRole('button', { name: /delete/i })).not.toBeInTheDocument()
+  })
+
+  it('disables Create Course when no authorized units match departments', () => {
+    wrap(
+      <CoursesUnitAdminView
+        courses={[]}
+        authorizedUnits={[]}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onPublishToggle={NOOP}
+      />
+    )
+    expect(screen.getByRole('button', { name: /create course/i })).toBeDisabled()
   })
 })
 
@@ -149,29 +169,32 @@ describe('CoursesInstructorView', () => {
   it('does NOT show "Create Course" button', () => {
     wrap(
       <CoursesInstructorView
-        courses={[ACTIVE_COURSE]}
+        courses={[PUBLISHED_COURSE]}
         onEditCourse={NOOP}
+        onPublishToggle={NOOP}
       />
     )
     expect(screen.queryByRole('button', { name: /create course/i })).not.toBeInTheDocument()
   })
 
-  it('shows edit button for each course', () => {
+  it('shows publish and edit buttons per course', () => {
     wrap(
       <CoursesInstructorView
-        courses={[ACTIVE_COURSE]}
+        courses={[PUBLISHED_COURSE]}
         onEditCourse={NOOP}
+        onPublishToggle={NOOP}
       />
     )
     const btns = screen.getAllByRole('button')
-    expect(btns.length).toBeGreaterThan(0)
+    expect(btns.length).toBeGreaterThanOrEqual(2) // publish + edit
   })
 
-  it('renders both active and inactive courses', () => {
+  it('renders both published and draft courses', () => {
     wrap(
       <CoursesInstructorView
-        courses={[ACTIVE_COURSE, INACTIVE_COURSE]}
+        courses={[PUBLISHED_COURSE, DRAFT_COURSE]}
         onEditCourse={NOOP}
+        onPublishToggle={NOOP}
       />
     )
     expect(screen.getByText('COSC 101')).toBeInTheDocument()
@@ -182,12 +205,12 @@ describe('CoursesInstructorView', () => {
 // CoursesTaView
 describe('CoursesTaView', () => {
   it('does NOT show "Create Course" button', () => {
-    wrap(<CoursesTaView courses={[ACTIVE_COURSE]} />)
+    wrap(<CoursesTaView courses={[PUBLISHED_COURSE]} />)
     expect(screen.queryByRole('button', { name: /create course/i })).not.toBeInTheDocument()
   })
 
   it('shows no action buttons', () => {
-    wrap(<CoursesTaView courses={[ACTIVE_COURSE]} />)
+    wrap(<CoursesTaView courses={[PUBLISHED_COURSE]} />)
     expect(screen.queryAllByRole('button')).toHaveLength(0)
   })
 })
@@ -195,18 +218,18 @@ describe('CoursesTaView', () => {
 // CoursesStudentView
 describe('CoursesStudentView', () => {
   it('does NOT show "Create Course" button', () => {
-    wrap(<CoursesStudentView courses={[ACTIVE_COURSE]} />)
+    wrap(<CoursesStudentView courses={[PUBLISHED_COURSE]} />)
     expect(screen.queryByRole('button', { name: /create course/i })).not.toBeInTheDocument()
   })
 
-  it('hides inactive courses', () => {
-    wrap(<CoursesStudentView courses={[ACTIVE_COURSE, INACTIVE_COURSE]} />)
+  it('hides draft (unpublished) courses', () => {
+    wrap(<CoursesStudentView courses={[PUBLISHED_COURSE, DRAFT_COURSE]} />)
     expect(screen.getByText('COSC 101')).toBeInTheDocument()
     expect(screen.queryByText('COSC 201')).not.toBeInTheDocument()
   })
 
-  it('shows empty state when no active courses', () => {
-    wrap(<CoursesStudentView courses={[INACTIVE_COURSE]} />)
-    expect(screen.getByText(/no active courses available/i)).toBeInTheDocument()
+  it('shows empty state when no published courses', () => {
+    wrap(<CoursesStudentView courses={[DRAFT_COURSE]} />)
+    expect(screen.getByText(/no published courses available/i)).toBeInTheDocument()
   })
 })
