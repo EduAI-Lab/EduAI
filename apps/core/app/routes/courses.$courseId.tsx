@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useLoaderData, useParams, redirect } from "react-router"
 import type { LoaderFunctionArgs } from "react-router"
 import { IconBook, IconUpload, IconUsers, IconCalendar, IconSettings } from "@tabler/icons-react"
@@ -12,7 +12,14 @@ import { AppSidebar } from "~/components/app-sidebar"
 import { SiteHeader } from "~/components/site-header"
 import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar"
 import { CourseMaterialsUpload } from "~/components/course-materials-upload"
+import type { CourseMaterial } from "~/components/course-materials-upload"
 import { useApiKeys } from "~/hooks/use-api-keys"
+import { readJsonResponse } from "~/lib/api/client"
+import {
+  formatReEmbedJobMessage,
+  pollReEmbedJobUntilDone,
+  type ReEmbedJobResponse,
+} from "~/lib/api/re-embed-job.client"
 import prisma from "~/lib/prisma.server"
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
@@ -76,6 +83,14 @@ export default function CourseDetailPage() {
   const { getValidApiKeys } = useApiKeys()
   const [activeTab, setActiveTab] = useState("overview")
 
+  const [materials, setMaterials] = useState<CourseMaterial[]>([])
+  const [isUploading, setIsUploading] = useState(false)
+  const [isReEmbedding, setIsReEmbedding] = useState(false)
+  const [reEmbedProgress, setReEmbedProgress] = useState<string | null>(null)
+  const [materialsError, setMaterialsError] = useState<string | null>(null)
+  const [materialsSuccess, setMaterialsSuccess] = useState<string | null>(null)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
   const isAdmin = user.role === "ADMIN"
   const isProfessor = user.role === "PROFESSOR"
   const isTA = user.role === "TA"
@@ -85,6 +100,137 @@ export default function CourseDetailPage() {
   const hasAccess = isAdmin ||
     (isProfessor && course.professorId === user.id) ||
     isTA || isStudent // For now, allowing all TAs and students
+
+  const canManageMaterials = isAdmin || (isProfessor && course.professorId === user.id)
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current)
+      pollRef.current = null
+    }
+  }, [])
+
+  const loadMaterials = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/courses/${courseId}/materials`)
+      const parsed = await readJsonResponse<{ materials?: CourseMaterial[]; error?: string }>(response)
+
+      if (!parsed.ok) {
+        throw new Error(parsed.error)
+      }
+
+      if (!response.ok) {
+        throw new Error(parsed.data.error || "Failed to load materials")
+      }
+
+      setMaterials(parsed.data.materials || [])
+    } catch (err) {
+      console.error("Failed to load materials:", err)
+    }
+  }, [courseId])
+
+  const startPolling = useCallback(() => {
+    stopPolling()
+    pollRef.current = setInterval(() => {
+      void loadMaterials()
+    }, 2000)
+  }, [stopPolling, loadMaterials])
+
+  const handleFileSelect = async (file: File) => {
+    setIsUploading(true)
+    setMaterialsError(null)
+    setMaterialsSuccess(null)
+
+    try {
+      const formData = new FormData()
+      formData.append("file", file)
+      formData.append("apiKeys", JSON.stringify(getValidApiKeys()))
+
+      const response = await fetch(`/api/courses/${courseId}/materials`, {
+        method: "POST",
+        body: formData,
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to upload material")
+      }
+
+      await loadMaterials()
+      setMaterialsSuccess("Material uploaded successfully!")
+    } catch (err) {
+      setMaterialsError(err instanceof Error ? err.message : "Upload failed")
+    } finally {
+      setIsUploading(false)
+    }
+  }
+
+  const handleReEmbed = async () => {
+    if (!courseId) return
+
+    setIsReEmbedding(true)
+    setReEmbedProgress(null)
+    setMaterialsError(null)
+    setMaterialsSuccess(null)
+    startPolling()
+
+    try {
+      const response = await fetch(`/api/courses/${courseId}/re-embed`, {
+        method: "POST",
+      })
+      const parsed = await readJsonResponse<{
+        job?: { id: string }
+        error?: string
+        hint?: string
+      }>(response)
+
+      if (!parsed.ok) {
+        throw new Error(parsed.error)
+      }
+
+      if (!response.ok || !parsed.data.job?.id) {
+        throw new Error(
+          [parsed.data.error, parsed.data.hint].filter(Boolean).join(" ") || "Re-index failed",
+        )
+      }
+
+      const jobId = parsed.data.job.id
+      const formatProgress = (job: ReEmbedJobResponse) => {
+        if (job.currentMaterialTitle) {
+          return `Re-indexing: ${job.processedCount + 1} of ${job.totalMaterials} — ${job.currentMaterialTitle}`
+        }
+        if (job.totalMaterials > 0) {
+          return `Re-indexing: ${job.processedCount} of ${job.totalMaterials} complete`
+        }
+        return "Re-indexing materials…"
+      }
+
+      const finalJob = await pollReEmbedJobUntilDone(courseId, jobId, {
+        onUpdate: (job) => setReEmbedProgress(formatProgress(job)),
+      })
+
+      await loadMaterials()
+      if (finalJob.status === "FAILED") {
+        throw new Error(finalJob.errorMessage || "Re-index failed")
+      }
+      setMaterialsSuccess(formatReEmbedJobMessage(finalJob))
+    } catch (err) {
+      setMaterialsError(err instanceof Error ? err.message : "Re-index failed")
+    } finally {
+      setIsReEmbedding(false)
+      setReEmbedProgress(null)
+      stopPolling()
+      await loadMaterials()
+    }
+  }
+
+  useEffect(() => {
+    if (canManageMaterials) {
+      loadMaterials()
+    }
+    return () => stopPolling()
+  }, [canManageMaterials, loadMaterials, stopPolling])
 
   if (!hasAccess) {
     return (
@@ -98,8 +244,6 @@ export default function CourseDetailPage() {
     )
   }
 
-  const canManageMaterials = isAdmin || (isProfessor && course.professorId === user.id)
-
   return (
     <SidebarProvider
       style={
@@ -111,7 +255,7 @@ export default function CourseDetailPage() {
     >
       <AppSidebar variant="inset" user={user} />
       <SidebarInset>
-        <SiteHeader user={user} />
+        <SiteHeader />
         <div className="flex flex-1 flex-col">
           <div className="@container/main flex flex-1 flex-col gap-2">
             <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
@@ -190,8 +334,18 @@ export default function CourseDetailPage() {
                   <TabsContent value="materials" className="mt-6">
                     {canManageMaterials ? (
                       <CourseMaterialsUpload
-                        courseId={courseId!}
-                        apiKeys={getValidApiKeys()}
+                        materials={materials}
+                        isUploading={isUploading}
+                        error={materialsError}
+                        success={materialsSuccess}
+                        onFileSelect={handleFileSelect}
+                        courseId={courseId}
+                        onMaterialsRefresh={() => {
+                          void loadMaterials()
+                        }}
+                        onReEmbed={handleReEmbed}
+                        isReEmbedding={isReEmbedding}
+                        reEmbedProgress={reEmbedProgress}
                       />
                     ) : (
                       <Card>

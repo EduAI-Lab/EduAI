@@ -1,4 +1,3 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
 import { Button } from '~/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
 import { Input } from '~/components/ui/input';
@@ -7,14 +6,8 @@ import { Badge } from '~/components/ui/badge';
 import { Upload, FileText, AlertCircle, CheckCircle, XCircle, RefreshCw, Loader2 } from 'lucide-react';
 import { Alert, AlertDescription } from '~/components/ui/alert';
 import { CourseEmbeddingSettings } from '~/components/course-embedding-settings';
-import { readJsonResponse } from '~/lib/api/client';
-import {
-  formatReEmbedJobMessage,
-  pollReEmbedJobUntilDone,
-  type ReEmbedJobResponse,
-} from '~/lib/api/re-embed-job.client';
 
-interface CourseMaterial {
+export interface CourseMaterial {
   id: string;
   title: string;
   mimeType: string;
@@ -24,149 +17,37 @@ interface CourseMaterial {
   chunks?: Array<{ id: string; content: string }>;
 }
 
-interface CourseMaterialsUploadProps {
-  courseId: string;
-  apiKeys: any;
+export interface CourseMaterialsUploadProps {
+  materials: CourseMaterial[];
+  isUploading?: boolean;
+  error?: string | null;
+  success?: string | null;
+  onFileSelect: (file: File) => void;
+  courseId?: string;
+  onMaterialsRefresh?: () => void;
+  onReEmbed?: () => void;
+  isReEmbedding?: boolean;
+  reEmbedProgress?: string | null;
 }
 
-export function CourseMaterialsUpload({ courseId, apiKeys }: CourseMaterialsUploadProps) {
-  const [materials, setMaterials] = useState<CourseMaterial[]>([]);
-  const [uploading, setUploading] = useState(false);
-  const [reEmbedding, setReEmbedding] = useState(false);
-  const [reEmbedProgress, setReEmbedProgress] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const loadMaterials = useCallback(async () => {
-    try {
-      const response = await fetch(`/api/courses/${courseId}/materials`);
-      const parsed = await readJsonResponse<{ materials?: CourseMaterial[]; error?: string }>(response);
-
-      if (!parsed.ok) {
-        throw new Error(parsed.error);
-      }
-
-      if (!response.ok) {
-        throw new Error(parsed.data.error || 'Failed to load materials');
-      }
-
-      setMaterials(parsed.data.materials || []);
-      return parsed.data.materials as CourseMaterial[];
-    } catch (err) {
-      console.error('Failed to load materials:', err);
-      return null;
-    }
-  }, [courseId]);
-
-  const stopPolling = () => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
-  };
-
-  const startPolling = () => {
-    stopPolling();
-    pollRef.current = setInterval(() => {
-      void loadMaterials();
-    }, 2000);
-  };
-
-  useEffect(() => {
-    loadMaterials();
-    return () => stopPolling();
-  }, [loadMaterials]);
-
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+export function CourseMaterialsUpload({
+  materials,
+  isUploading = false,
+  error = null,
+  success = null,
+  onFileSelect,
+  courseId,
+  onMaterialsRefresh,
+  onReEmbed,
+  isReEmbedding = false,
+  reEmbedProgress = null,
+}: CourseMaterialsUploadProps) {
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (!file) return;
-
-    setUploading(true);
-    setError(null);
-    setSuccess(null);
-
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('apiKeys', JSON.stringify(apiKeys));
-
-      const response = await fetch(`/api/courses/${courseId}/materials`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || 'Failed to upload material');
-      }
-
-      setSuccess('Material uploaded successfully!');
-      loadMaterials();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Upload failed');
-    } finally {
-      setUploading(false);
-      event.target.value = '';
+    if (file) {
+      onFileSelect(file);
     }
-  };
-
-  const handleReEmbed = async () => {
-    setReEmbedding(true);
-    setReEmbedProgress(null);
-    setError(null);
-    setSuccess(null);
-    startPolling();
-
-    try {
-      const response = await fetch(`/api/courses/${courseId}/re-embed`, {
-        method: 'POST',
-      });
-      const parsed = await readJsonResponse<{
-        job?: { id: string };
-        error?: string;
-        hint?: string;
-      }>(response);
-
-      if (!parsed.ok) {
-        throw new Error(parsed.error);
-      }
-
-      if (!response.ok || !parsed.data.job?.id) {
-        throw new Error(
-          [parsed.data.error, parsed.data.hint].filter(Boolean).join(' ') || 'Re-index failed',
-        );
-      }
-
-      const jobId = parsed.data.job.id;
-      const formatProgress = (job: ReEmbedJobResponse) => {
-        if (job.currentMaterialTitle) {
-          return `Re-indexing: ${job.processedCount + 1} of ${job.totalMaterials} — ${job.currentMaterialTitle}`;
-        }
-        if (job.totalMaterials > 0) {
-          return `Re-indexing: ${job.processedCount} of ${job.totalMaterials} complete`;
-        }
-        return 'Re-indexing materials…';
-      };
-
-      const finalJob = await pollReEmbedJobUntilDone(courseId, jobId, {
-        onUpdate: (job) => setReEmbedProgress(formatProgress(job)),
-      });
-
-      await loadMaterials();
-      if (finalJob.status === 'FAILED') {
-        throw new Error(finalJob.errorMessage || 'Re-index failed');
-      }
-      setSuccess(formatReEmbedJobMessage(finalJob));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Re-index failed');
-    } finally {
-      setReEmbedding(false);
-      setReEmbedProgress(null);
-      stopPolling();
-      await loadMaterials();
-    }
+    event.target.value = '';
   };
 
   const getStatusIcon = (status: string) => {
@@ -204,6 +85,7 @@ export function CourseMaterialsUpload({ courseId, apiKeys }: CourseMaterialsUplo
   };
 
   const hasMaterials = materials.length > 0;
+  const busy = isUploading || isReEmbedding;
 
   return (
     <div className="space-y-6">
@@ -225,13 +107,13 @@ export function CourseMaterialsUpload({ courseId, apiKeys }: CourseMaterialsUplo
                 id="file-upload"
                 type="file"
                 accept=".pdf,.docx,.pptx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain,text/markdown"
-                onChange={handleFileUpload}
-                disabled={uploading || reEmbedding}
+                onChange={handleFileChange}
+                disabled={busy}
                 className="mt-2"
               />
             </div>
 
-            {uploading && (
+            {isUploading && (
               <Alert>
                 <AlertCircle className="h-4 w-4" />
                 <AlertDescription>Uploading and processing material...</AlertDescription>
@@ -255,12 +137,14 @@ export function CourseMaterialsUpload({ courseId, apiKeys }: CourseMaterialsUplo
         </CardContent>
       </Card>
 
-      <CourseEmbeddingSettings
-        courseId={courseId}
-        onSettingsSaved={() => {
-          void loadMaterials();
-        }}
-      />
+      {courseId && (
+        <CourseEmbeddingSettings
+          courseId={courseId}
+          onSettingsSaved={() => {
+            onMaterialsRefresh?.();
+          }}
+        />
+      )}
 
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
@@ -270,24 +154,26 @@ export function CourseMaterialsUpload({ courseId, apiKeys }: CourseMaterialsUplo
               Materials uploaded to this course ({materials.length} total)
             </CardDescription>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleReEmbed}
-            disabled={!hasMaterials || reEmbedding || uploading}
-          >
-            {reEmbedding ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                {reEmbedProgress ?? 'Re-indexing…'}
-              </>
-            ) : (
-              <>
-                <RefreshCw className="mr-2 h-4 w-4" />
-                Re-index all materials
-              </>
-            )}
-          </Button>
+          {onReEmbed && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onReEmbed}
+              disabled={!hasMaterials || busy}
+            >
+              {isReEmbedding ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  {reEmbedProgress ?? 'Re-indexing…'}
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Re-index all materials
+                </>
+              )}
+            </Button>
+          )}
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
