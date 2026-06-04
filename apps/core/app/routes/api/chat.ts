@@ -4,6 +4,7 @@ import { randomUUID } from "crypto";
 import { streamText, tool } from "ai";
 import {
   createAIProviderRegistry,
+  listEnabledRegistryProviders,
   mergeLocalInferenceFromEnv,
   parseModelIdentifier,
 } from "~/lib/ai/providers";
@@ -522,16 +523,35 @@ export async function action({ request }: ActionFunctionArgs) {
         },
       );
     }
+    const parsedModel = parseModelIdentifier(model);
+    if (!parsedModel) {
+      return new Response(
+        JSON.stringify({
+          error:
+            'Invalid model id. Use provider:modelId (e.g. vllm:qwen2.5-7b-instruct). Check Admin → AI Models.',
+        }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
     const validatedApiKeys = mergeLocalInferenceFromEnv(
       toUserProviderSettings(apiKeysParsed.data),
       model,
     );
 
-    const parsedModel = parseModelIdentifier(model);
-    if (parsedModel && !validatedApiKeys[parsedModel.providerId]?.isEnabled) {
+    if (!validatedApiKeys[parsedModel.providerId]?.isEnabled) {
+      const envHint =
+        parsedModel.providerId === "vllm"
+          ? "VLLM_BASE_URL"
+          : parsedModel.providerId === "ollama"
+            ? "OLLAMA_BASE_URL"
+            : "provider API key";
       return new Response(
         JSON.stringify({
-          error: `Provider "${parsedModel.providerId}" is not enabled. Turn it on in Settings or set ${parsedModel.providerId === "vllm" ? "VLLM_BASE_URL" : "OLLAMA_BASE_URL"} in the server .env.`,
+          error: `Provider "${parsedModel.providerId}" is not enabled. Turn it on in Settings and set ${envHint} in apps/core/.env on the server.`,
         }),
         {
           status: 400,
@@ -574,9 +594,43 @@ export async function action({ request }: ActionFunctionArgs) {
     };
 
     const registry = createAIProviderRegistry(validatedApiKeys);
+    const enabledProviders = listEnabledRegistryProviders(validatedApiKeys);
 
-    // Get the AI model from registry
-    const aiModel = registry.languageModel(model);
+    if (!enabledProviders.includes(parsedModel.providerId)) {
+      const envVar =
+        parsedModel.providerId === "vllm" ? "VLLM_BASE_URL" : "OLLAMA_BASE_URL";
+      return new Response(
+        JSON.stringify({
+          error: `Provider "${parsedModel.providerId}" is not available on this server (active: ${enabledProviders.join(", ") || "none"}). For vLLM: add ${envVar} to apps/core/.env, enable vLLM in Settings, restart dev, and ensure feat/VLLM code is deployed.`,
+        }),
+        {
+          status: 503,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    let aiModel;
+    try {
+      aiModel = registry.languageModel(model);
+    } catch (err: unknown) {
+      const available =
+        typeof err === "object" &&
+        err !== null &&
+        "availableProviders" in err &&
+        Array.isArray((err as { availableProviders?: string[] }).availableProviders)
+          ? (err as { availableProviders: string[] }).availableProviders.join(", ")
+          : enabledProviders.join(", ");
+      return new Response(
+        JSON.stringify({
+          error: `Model "${model}" could not be loaded (providers on server: ${available}). For vLLM set VLLM_BASE_URL in .env and deploy the feat/VLLM provider code.`,
+        }),
+        {
+          status: 503,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
 
     await appendMessages(normalizedIncomingMessages);
 

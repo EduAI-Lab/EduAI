@@ -54,3 +54,52 @@ export const PROVIDER_CONFIGS: Record<SupportedProvider, ProviderConfig> = {
     envVarName: 'VLLM_BASE_URL',
   },
 };
+
+export function parseModelIdentifier(
+  identifier: string,
+): { providerId: SupportedProvider; modelId: string } | null {
+  if (!identifier || typeof identifier !== 'string') return null;
+
+  const firstColonIndex = identifier.indexOf(':');
+  if (firstColonIndex === -1) return null;
+
+  const providerId = identifier.slice(0, firstColonIndex);
+  const modelId = identifier.slice(firstColonIndex + 1);
+
+  if (!providerId || !modelId) return null;
+  if (!Object.keys(PROVIDER_CONFIGS).includes(providerId)) return null;
+
+  return { providerId: providerId as SupportedProvider, modelId };
+}
+
+export function mergeLocalInferenceFromEnv(
+  userSettings: UserProviderSettings,
+  modelIdentifier?: string,
+): UserProviderSettings {
+  const merged: UserProviderSettings = { ...userSettings };
+  const parsed = modelIdentifier ? parseModelIdentifier(modelIdentifier) : null;
+  const providerIds = parsed ? [parsed.providerId] : LOCAL_INFERENCE_PROVIDERS;
+
+  for (const providerId of providerIds) {
+    const envVar = PROVIDER_CONFIGS[providerId]?.envVarName;
+    const envUrl = envVar ? process.env[envVar] : undefined;
+    const requestedOnThisChat = parsed?.providerId === providerId;
+
+    if (requestedOnThisChat && envUrl) {
+      merged[providerId] = {
+        ...merged[providerId],
+        isEnabled: true,
+        baseUrl: merged[providerId]?.baseUrl || envUrl,
+      };
+      continue;
+    }
+
+    if (merged[providerId]?.isEnabled) continue;
+
+    if (envUrl) {
+      merged[providerId] = { isEnabled: true, baseUrl: envUrl };
+    }
+  }
+
+  return merged;
+}
