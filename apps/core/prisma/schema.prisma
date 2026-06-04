@@ -21,6 +21,7 @@ model User {
   createdAt         DateTime               @default(now())
   updatedAt         DateTime               @updatedAt
   emailVerified     Boolean                @default(false)
+  authorizedUnits   String[]
   accounts          Account[]
   aiInteractions    AIInteraction[]
   enrolledCourses   CourseEnrollment[]
@@ -94,6 +95,7 @@ model Course {
   updatedAt      DateTime           @updatedAt
   professorId    String
   aiInstructions String             @default("")
+  department     String?
   aiInteractions AIInteraction[]
   enrollments    CourseEnrollment[]
   materials      CourseMaterial[]
@@ -367,6 +369,7 @@ model ExternalUser {
 
 enum UserRole {
   ADMIN
+  UNIT_ADMIN
   PROFESSOR
   TA
   STUDENT
