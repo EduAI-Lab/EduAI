@@ -1,45 +1,27 @@
-import { useState, useEffect } from 'react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
 import { BookOpen, MessageSquare } from 'lucide-react';
 
-interface Course {
+export interface Course {
   id: string;
   code: string;
   name: string;
   description?: string;
 }
 
-interface CourseSelectorProps {
+export interface CourseSelectorProps {
+  courses: Course[];
   selectedCourseId: string | null;
   onCourseSelect: (courseId: string | null) => void;
+  isLoading?: boolean;
 }
 
-export function CourseSelector({ selectedCourseId, onCourseSelect }: CourseSelectorProps) {
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    loadCourses();
-  }, []);
-
-  const loadCourses = async () => {
-    try {
-      const response = await fetch('/api/courses');
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || 'Failed to load courses');
-      }
-
-      setCourses(result.courses || []);
-    } catch (err) {
-      console.error('Failed to load courses:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+export function CourseSelector({
+  courses,
+  selectedCourseId,
+  onCourseSelect,
+  isLoading = false,
+}: CourseSelectorProps) {
   const handleCourseChange = (courseId: string) => {
     onCourseSelect(courseId === 'none' ? null : courseId);
   };
@@ -59,9 +41,13 @@ export function CourseSelector({ selectedCourseId, onCourseSelect }: CourseSelec
         <div className="space-y-4">
           <div>
             <label className="text-sm font-medium">Course</label>
-            <Select value={selectedCourseId || 'none'} onValueChange={handleCourseChange}>
+            <Select
+              value={selectedCourseId || 'none'}
+              onValueChange={handleCourseChange}
+              disabled={isLoading}
+            >
               <SelectTrigger className="mt-2">
-                <SelectValue placeholder="Select a course" />
+                <SelectValue placeholder={isLoading ? 'Loading courses...' : 'Select a course'} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">No course selected</SelectItem>
