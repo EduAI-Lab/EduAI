@@ -17,7 +17,7 @@ export function ChatHeaderControls({
 }: ChatHeaderControlsProps) {
   return (
     <div className="flex h-full items-center gap-3 sm:gap-4">
-      <div className="flex items-center gap-2">
+      <div className="flex h-9 items-center gap-2">
         <Switch
           id="adhd-assist"
           checked={adhdAssist}
@@ -31,7 +31,6 @@ export function ChatHeaderControls({
       <SystemPromptSettings
         systemPrompt={systemPrompt}
         onSave={onSystemPromptSave}
-        compact
       />
     </div>
   );
