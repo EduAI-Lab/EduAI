@@ -10,6 +10,7 @@ export const CreateCourseSchema = z.object({
   code: z.string().min(1),
   term: z.string().min(1),
   year: z.number().int(),
+  department: z.string().optional(),
   aiInstructions: z.string().optional().default(""),
 });
 
@@ -19,6 +20,7 @@ export const UpdateCourseSchema = z.object({
   term: z.string().optional(),
   year: z.number().int().optional(),
   aiInstructions: z.string().optional(),
+  isPublished: z.boolean().optional(),
 });
 
 export const CreateCourseTopicSchema = z.object({
