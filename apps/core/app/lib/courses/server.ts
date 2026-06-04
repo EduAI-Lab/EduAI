@@ -24,7 +24,7 @@ export async function handleCourseRequest(request: Request) {
 
   switch (request.method) {
     case "GET": {
-      const courses = await prisma.course.findMany();
+      const courses = await prisma.course.findMany({ where: { isActive: true } });
       return new Response(JSON.stringify({ courses }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
