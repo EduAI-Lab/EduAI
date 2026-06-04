@@ -46,6 +46,8 @@ npm run vllm:smoke
 
 **In the app:** Settings → **Enable vLLM** → chat model **`vllm:qwen2.5-7b-instruct`** (run `npx prisma db seed` if missing).
 
+**Admins:** **Admin → AI Models → Create Model** → provider **vLLM** → **Fetch Models** (calls `GET /v1/models` via `VLLM_BASE_URL`) → pick a model → save.
+
 ### 3. Who does what
 
 | Role | Task |
