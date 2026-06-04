@@ -6,6 +6,22 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ---
 
+## [Week 5 — June 2–6, 2026]
+
+### Added
+- [core] ui: Add presentational skeleton for all 32 EduAI Core domain components — exported `*Props` types, route-owned I/O for materials upload, course selector, API key settings, and Ollama model fetch; 29 Vitest + RTL component tests under `apps/core/app/tests/unit/`. (#437, #438, #385, @ebabar5 @yta3216 @Ayyhab, 2026-06-03)
+- [core] ui: Add empty-state rows to admin AI models and providers tables (`No models found.`, `No providers found.`). (#438, @yta3216, 2026-06-03)
+
+### Changed
+- [core] refactor: Move data fetching out of domain components into parent routes — `courses.$courseId` owns materials load/upload; `chat` owns `useApiKeys` / `ApiKeySettings`; `admin.ai-models` owns Ollama model fetch for `ModelFormDialog`. (#437, #438, 2026-06-03)
+- [core] docs: Update `apps/core/README.md` — monorepo install from root, component architecture section, and expanded component test inventory. (#385, @Ayyhab, 2026-06-03)
+- [monorepo] docs: Update root `README.md` with EduAI component skeleton overview and link to `apps/core/docs/`. (#385, @Ayyhab, 2026-06-03)
+
+### Fixed
+- [monorepo] infra: Replace em dash with hyphen in `scripts/dev-db.sh` Docker startup message to avoid PowerShell parse errors on Windows. (#438, @yta3216, 2026-06-03)
+
+---
+
 ## [Week 4 — May 25–29, 2026]
 
 ### Added
