@@ -46,7 +46,10 @@ export function SystemPromptSettings({ systemPrompt, onSave, compact = false }: 
           type="button"
           variant="outline"
           size={compact ? "sm" : "default"}
-          className={cn(compact && "border-b text-xs")}
+          className={cn(
+            compact &&
+              "border border-input/50 border-b text-xs shadow-none ring-0",
+          )}
         >
           <MessageSquare className={compact ? "h-3.5 w-3.5" : "h-4 w-4"} />
           <span>System Prompt</span>
