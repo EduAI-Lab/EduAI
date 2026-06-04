@@ -89,6 +89,25 @@ npm run dev
 
 On first run (or after a database wipe), the Core and AI Tutor databases are seeded automatically with development data — users, courses, topics, questions, and AI Tutor prompt templates. Subsequent dev restarts detect existing data and skip the seed, so normal restarts are not slowed down.
 
+**Seeded dev accounts** — all share password `EduAI2026!`
+
+| Role | Email | Name |
+| --- | --- | --- |
+| ADMIN | `admin@eduai.local` | EduAI Admin |
+| UNIT_ADMIN | `unitadmin.cosc@eduai.local` | COSC Unit Admin |
+| UNIT_ADMIN | `unitadmin.multi@eduai.local` | Multi-Unit Admin |
+| INSTRUCTOR | `instructor.cs@eduai.local` | Dr. Ada Lovelace |
+| INSTRUCTOR | `instructor.math@eduai.local` | Dr. Emmy Noether |
+| INSTRUCTOR | `instructor.sci@eduai.local` | Dr. Marie Curie |
+| INSTRUCTOR | `instructor.hum@eduai.local` | Dr. Hannah Arendt |
+| TA | `ta.cs@eduai.local` | Sam Carter |
+| TA | `ta.math@eduai.local` | Riley Chen |
+| STUDENT | `student1@eduai.local` | Alex Patel |
+| STUDENT | `student2@eduai.local` | Brooke Kim |
+| STUDENT | `student3@eduai.local` | Cameron Lee |
+| STUDENT | `student4@eduai.local` | Devon Singh |
+| STUDENT | `student5@eduai.local` | Erin Walsh |
+
 After `npm install`, each app gets a `.env` copied from its `.env.example` (only if one doesn't already exist). Fill in any secrets (auth keys, API keys) before the relevant features will work. See each app's `.env.example` for what is required.
 
 **Dev server ports**
