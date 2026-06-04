@@ -33,7 +33,7 @@ beforeEach(() => {
 describe("getUserPreference (restore on load)", () => {
   it("returns defaults (off / no course) when the user has no stored preference", async () => {
     db.userPreference.findUnique.mockResolvedValue(null);
-    await expect(getUserPreference("u1")).resolves.toEqual({
+    await expect(getUserPreference("u1", [])).resolves.toEqual({
       assistDefault: false,
       lastCourseCode: null,
     });
@@ -45,7 +45,7 @@ describe("getUserPreference (restore on load)", () => {
       assistDefault: true,
       lastCourseCode: "COSC 121",
     });
-    await expect(getUserPreference("u1")).resolves.toEqual({
+    await expect(getUserPreference("u1", ["COSC 121"])).resolves.toEqual({
       assistDefault: true,
       lastCourseCode: "COSC 121",
     });
