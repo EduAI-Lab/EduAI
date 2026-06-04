@@ -16,9 +16,10 @@ import { MessageSquare } from "lucide-react";
 export interface SystemPromptSettingsProps {
   systemPrompt?: string | null;
   onSave: (systemPrompt: string | null) => void;
+  compact?: boolean;
 }
 
-export function SystemPromptSettings({ systemPrompt, onSave }: SystemPromptSettingsProps) {
+export function SystemPromptSettings({ systemPrompt, onSave, compact = false }: SystemPromptSettingsProps) {
   const [open, setOpen] = useState(false);
   const [prompt, setPrompt] = useState(systemPrompt || "");
 
@@ -43,9 +44,9 @@ export function SystemPromptSettings({ systemPrompt, onSave }: SystemPromptSetti
         <Button
           type="button"
           variant="outline"
-          className="h-9 gap-2"
+          className={compact ? "h-8 gap-1.5 px-2.5 text-xs" : "h-9 gap-2"}
         >
-          <MessageSquare className="h-4 w-4" />
+          <MessageSquare className={compact ? "h-3.5 w-3.5" : "h-4 w-4"} />
           <span>System Prompt</span>
         </Button>
       </DialogTrigger>
