@@ -1,12 +1,11 @@
 import { useState, useEffect } from "react";
 import { Button } from "~/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "~/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "~/components/ui/dialog";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "~/components/ui/form";
 import { Input } from "~/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import { Switch } from "~/components/ui/switch";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm, useWatch } from "react-hook-form";
 import { createUserSchema, updateUserSchema } from "~/lib/auth/schemas";
 import type { z } from "zod";
 
@@ -15,9 +14,10 @@ type User = {
   email: string;
   name: string;
   image?: string;
-  role: "ADMIN" | "PROFESSOR" | "TA" | "STUDENT";
+  role: "ADMIN" | "UNIT_ADMIN" | "PROFESSOR" | "TA" | "STUDENT";
   isActive: boolean;
   emailVerified: boolean;
+  authorizedUnits: string[];
   createdAt: string;
   updatedAt: string;
   _count: {
@@ -30,12 +30,14 @@ type User = {
 
 type CreateUserFormData = z.infer<typeof createUserSchema>;
 type UpdateUserFormData = z.infer<typeof updateUserSchema>;
+
 type FormData = {
   name: string;
   email: string;
-  role: "ADMIN" | "PROFESSOR" | "TA" | "STUDENT";
+  role: "ADMIN" | "UNIT_ADMIN" | "PROFESSOR" | "TA" | "STUDENT";
   isActive: boolean;
   emailVerified?: boolean;
+  authorizedUnitsInput: string; // comma-separated, converted to string[] on submit
 };
 
 interface UserFormDialogProps {
@@ -49,8 +51,16 @@ const roleOptions = [
   { value: "STUDENT", label: "Student" },
   { value: "TA", label: "Teaching Assistant" },
   { value: "PROFESSOR", label: "Professor" },
+  { value: "UNIT_ADMIN", label: "Unit Administrator" },
   { value: "ADMIN", label: "Administrator" },
 ];
+
+function parseUnits(raw: string): string[] {
+  return raw
+    .split(",")
+    .map((s) => s.trim().toUpperCase())
+    .filter(Boolean);
+}
 
 export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormDialogProps) {
   const isEditing = !!user;
@@ -59,11 +69,14 @@ export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormD
     defaultValues: {
       name: "",
       email: "",
-      role: "STUDENT" as const,
+      role: "STUDENT",
       isActive: true,
       emailVerified: false,
+      authorizedUnitsInput: "",
     },
   });
+
+  const selectedRole = useWatch({ control: form.control, name: "role" });
 
   useEffect(() => {
     if (user) {
@@ -73,6 +86,7 @@ export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormD
         role: user.role,
         isActive: user.isActive,
         emailVerified: user.emailVerified,
+        authorizedUnitsInput: (user.authorizedUnits ?? []).join(", "),
       });
     } else {
       form.reset({
@@ -81,14 +95,20 @@ export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormD
         role: "STUDENT",
         isActive: true,
         emailVerified: false,
+        authorizedUnitsInput: "",
       });
     }
   }, [user, form]);
 
   const handleSubmit = (data: FormData) => {
-    // Validate with the appropriate schema
+    const { authorizedUnitsInput, ...rest } = data;
+    const payload = {
+      ...rest,
+      authorizedUnits: rest.role === "UNIT_ADMIN" ? parseUnits(authorizedUnitsInput) : [],
+    };
+
     const schema = isEditing ? updateUserSchema : createUserSchema;
-    const result = schema.safeParse(data);
+    const result = schema.safeParse(payload);
 
     if (result.success) {
       onSubmit(result.data);
@@ -128,11 +148,7 @@ export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormD
                 <FormItem>
                   <FormLabel>Email</FormLabel>
                   <FormControl>
-                    <Input
-                      type="email"
-                      placeholder="Enter email address"
-                      {...field}
-                    />
+                    <Input type="email" placeholder="Enter email address" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -164,6 +180,28 @@ export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormD
               )}
             />
 
+            {selectedRole === "UNIT_ADMIN" && (
+              <FormField
+                control={form.control}
+                name="authorizedUnitsInput"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Authorized Units</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="COSC, MATH, CHEM"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      Department codes this admin can manage, separated by commas.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+
             <FormField
               control={form.control}
               name="isActive"
@@ -176,10 +214,7 @@ export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormD
                     </FormDescription>
                   </div>
                   <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                    />
+                    <Switch checked={field.value} onCheckedChange={field.onChange} />
                   </FormControl>
                 </FormItem>
               )}
@@ -198,10 +233,7 @@ export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormD
                       </FormDescription>
                     </div>
                     <FormControl>
-                      <Switch
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                      />
+                      <Switch checked={field.value} onCheckedChange={field.onChange} />
                     </FormControl>
                   </FormItem>
                 )}
@@ -209,11 +241,7 @@ export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormD
             )}
 
             <div className="flex justify-end space-x-2 pt-4">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-              >
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                 Cancel
               </Button>
               <Button type="submit">
