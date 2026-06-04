@@ -12,6 +12,7 @@ import {
 import { Textarea } from "~/components/ui/textarea";
 import { Label } from "~/components/ui/label";
 import { MessageSquare } from "lucide-react";
+import { cn } from "~/lib/utils";
 
 export interface SystemPromptSettingsProps {
   systemPrompt?: string | null;
@@ -44,7 +45,8 @@ export function SystemPromptSettings({ systemPrompt, onSave, compact = false }: 
         <Button
           type="button"
           variant="outline"
-          className={compact ? "h-8 gap-1.5 px-2.5 text-xs" : "h-9 gap-2"}
+          size={compact ? "sm" : "default"}
+          className={cn(compact && "border-b text-xs")}
         >
           <MessageSquare className={compact ? "h-3.5 w-3.5" : "h-4 w-4"} />
           <span>System Prompt</span>
