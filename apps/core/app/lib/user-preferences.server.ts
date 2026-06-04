@@ -13,12 +13,12 @@ const DEFAULT_PREFERENCES: ChatPreferences = {
 
 /**
  * Reads a user's chat preferences, falling back to defaults when unset.
- * When `availableCourseCodes` is provided, a stored course that is no longer
- * accessible is cleared in the database and returned as null.
+ * Validates `lastCourseCode` against `availableCourseCodes`; a stored course that
+ * is no longer accessible is cleared in the database and returned as null.
  */
 export async function getUserPreference(
   userId: string,
-  availableCourseCodes?: readonly string[],
+  availableCourseCodes: readonly string[],
 ): Promise<ChatPreferences> {
   const row = await prisma.userPreference.findUnique({ where: { userId } });
   if (!row) {
@@ -31,7 +31,6 @@ export async function getUserPreference(
   };
 
   if (
-    availableCourseCodes &&
     prefs.lastCourseCode &&
     resolveSelectedCourse(prefs.lastCourseCode, availableCourseCodes) === null
   ) {
