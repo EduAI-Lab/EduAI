@@ -9,6 +9,8 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOllama } from 'ollama-ai-provider';
 import {
   LOCAL_INFERENCE_PROVIDERS,
+  mergeLocalInferenceFromEnv,
+  parseModelIdentifier,
   PROVIDER_CONFIGS,
   type ProviderConfig,
   type SupportedProvider,
@@ -16,7 +18,12 @@ import {
 } from './provider-types';
 
 export type { ProviderConfig, SupportedProvider, UserProviderSettings };
-export { LOCAL_INFERENCE_PROVIDERS, PROVIDER_CONFIGS };
+export {
+  LOCAL_INFERENCE_PROVIDERS,
+  mergeLocalInferenceFromEnv,
+  parseModelIdentifier,
+  PROVIDER_CONFIGS,
+};
 
 /**
  * Creates a dynamic provider registry with user-provided settings
@@ -143,47 +150,15 @@ export function getModelIdentifier(providerId: SupportedProvider, modelId: strin
   return `${providerId}:${modelId}`;
 }
 
-/**
- * Parse model identifier to extract provider and model IDs
- */
-export function parseModelIdentifier(identifier: string): { providerId: SupportedProvider; modelId: string } | null {
-  if (!identifier || typeof identifier !== 'string') return null;
-
-  // Allow additional colons in modelId (e.g., "ollama:gpt-oss:120b") by splitting on the first colon only
-  const firstColonIndex = identifier.indexOf(':');
-  if (firstColonIndex === -1) return null;
-
-  const providerId = identifier.slice(0, firstColonIndex);
-  const modelId = identifier.slice(firstColonIndex + 1);
-
-  if (!providerId || !modelId) return null;
-  if (!Object.keys(PROVIDER_CONFIGS).includes(providerId)) return null;
-
-  return { providerId: providerId as SupportedProvider, modelId };
-}
-
-/**
- * Enable local GPU providers from server env when the browser did not send them
- * (common on dev when only VLLM_BASE_URL / OLLAMA_BASE_URL are set in .env).
- */
-export function mergeLocalInferenceFromEnv(
+/** Providers that would be registered from current settings (for error messages). */
+export function listEnabledRegistryProviders(
   userSettings: UserProviderSettings,
-  modelIdentifier?: string,
-): UserProviderSettings {
-  const merged: UserProviderSettings = { ...userSettings };
-  const parsed = modelIdentifier ? parseModelIdentifier(modelIdentifier) : null;
-  const providerIds = parsed ? [parsed.providerId] : LOCAL_INFERENCE_PROVIDERS;
-
-  for (const providerId of providerIds) {
-    if (merged[providerId]?.isEnabled) continue;
-
-    const envVar = PROVIDER_CONFIGS[providerId]?.envVarName;
-    const envUrl = envVar ? process.env[envVar] : undefined;
-    if (envUrl) {
-      merged[providerId] = { isEnabled: true, baseUrl: envUrl };
-    }
-  }
-
-  return merged;
+): string[] {
+  const ids: string[] = [];
+  if (userSettings.openai?.isEnabled && userSettings.openai?.apiKey) ids.push('openai');
+  if (userSettings.google?.isEnabled && userSettings.google?.apiKey) ids.push('google');
+  if (userSettings.ollama?.isEnabled) ids.push('ollama');
+  if (userSettings.vllm?.isEnabled) ids.push('vllm');
+  return ids;
 }
 
