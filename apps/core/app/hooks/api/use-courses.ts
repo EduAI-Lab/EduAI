@@ -8,6 +8,7 @@ export interface Course {
   term: string
   year: number
   isActive: boolean
+  isPublished: boolean
   aiInstructions: string
   professorId: string
   department: string | null
@@ -30,6 +31,7 @@ export interface UpdateCourseInput {
   term?: string
   year?: number
   aiInstructions?: string
+  isPublished?: boolean
 }
 
 export function useCourses() {
