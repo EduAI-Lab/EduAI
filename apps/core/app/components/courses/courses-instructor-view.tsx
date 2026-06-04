@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router'
-import { IconEdit, IconBook, IconCalendar } from '@tabler/icons-react'
+import { IconEdit, IconBook, IconCalendar, IconEye, IconEyeOff } from '@tabler/icons-react'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
 import { Badge } from '~/components/ui/badge'
@@ -13,9 +13,10 @@ import type { Course, UpdateCourseInput } from '~/hooks/api/use-courses'
 interface Props {
   courses: Course[]
   onEditCourse: (id: string, data: UpdateCourseInput) => Promise<void>
+  onPublishToggle: (id: string, publish: boolean) => Promise<void>
 }
 
-export function CoursesInstructorView({ courses, onEditCourse }: Props) {
+export function CoursesInstructorView({ courses, onEditCourse, onPublishToggle }: Props) {
   const [editingCourse, setEditingCourse] = useState<Course | null>(null)
 
   const handleEdit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -49,27 +50,39 @@ export function CoursesInstructorView({ courses, onEditCourse }: Props) {
             <Card key={course.id} className="hover:shadow-md transition-shadow">
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
-                  <Link to={`/courses/${course.id}`} className="flex-1">
-                    <CardTitle className="text-lg">{course.code}</CardTitle>
-                    <CardDescription className="mt-1">{course.name}</CardDescription>
+                  <Link to={`/courses/${course.id}`} className="flex-1 min-w-0">
+                    <CardTitle className="text-lg truncate">{course.code}</CardTitle>
+                    <CardDescription className="mt-1 line-clamp-2">{course.name}</CardDescription>
                   </Link>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={(e) => { e.stopPropagation(); setEditingCourse(course) }}
-                  >
-                    <IconEdit className="w-4 h-4" />
-                  </Button>
+                  <div className="flex gap-1 shrink-0 ml-2" onClick={(e) => e.stopPropagation()}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title={course.isPublished ? 'Unpublish' : 'Publish'}
+                      onClick={() => onPublishToggle(course.id, !course.isPublished)}
+                    >
+                      {course.isPublished
+                        ? <IconEyeOff className="w-4 h-4 text-muted-foreground" />
+                        : <IconEye className="w-4 h-4 text-blue-600" />}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setEditingCourse(course)}
+                    >
+                      <IconEdit className="w-4 h-4" />
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                   <div className="flex items-center gap-1">
                     <IconCalendar className="w-4 h-4" />
                     {course.term} {course.year}
                   </div>
-                  <Badge variant={course.isActive ? 'default' : 'secondary'}>
-                    {course.isActive ? 'Active' : 'Inactive'}
+                  <Badge variant={course.isPublished ? 'default' : 'secondary'}>
+                    {course.isPublished ? 'Published' : 'Draft'}
                   </Badge>
                 </div>
               </CardContent>

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router'
-import { IconPlus, IconEdit, IconBook, IconCalendar } from '@tabler/icons-react'
+import { IconPlus, IconEdit, IconBook, IconCalendar, IconEye, IconEyeOff } from '@tabler/icons-react'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
 import { Badge } from '~/components/ui/badge'
@@ -9,6 +9,7 @@ import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select'
 import { Textarea } from '~/components/ui/textarea'
+import { DEPARTMENTS, getDepartmentLabel } from '~/lib/departments'
 import type { Course, CreateCourseInput, UpdateCourseInput } from '~/hooks/api/use-courses'
 
 interface Props {
@@ -16,12 +17,19 @@ interface Props {
   authorizedUnits: string[] // e.g. ['COSC', 'MATH']
   onCreateCourse: (data: CreateCourseInput) => Promise<void>
   onEditCourse: (id: string, data: UpdateCourseInput) => Promise<void>
+  onPublishToggle: (id: string, publish: boolean) => Promise<void>
 }
 
-export function CoursesUnitAdminView({ courses, authorizedUnits, onCreateCourse, onEditCourse }: Props) {
+// Only show department options that are both canonical and in the user's authorized units
+function useAuthorizedDepts(authorizedUnits: string[]) {
+  return DEPARTMENTS.filter((d) => authorizedUnits.includes(d.code))
+}
+
+export function CoursesUnitAdminView({ courses, authorizedUnits, onCreateCourse, onEditCourse, onPublishToggle }: Props) {
   const [createOpen, setCreateOpen] = useState(false)
   const [editingCourse, setEditingCourse] = useState<Course | null>(null)
-  const [selectedUnit, setSelectedUnit] = useState(authorizedUnits[0] ?? '')
+  const authorizedDepts = useAuthorizedDepts(authorizedUnits)
+  const [selectedDept, setSelectedDept] = useState<string>(authorizedDepts[0]?.code ?? '')
 
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -49,7 +57,9 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, onCreateCourse,
     setEditingCourse(null)
   }
 
-  const unitLabel = authorizedUnits.join(', ')
+  const unitLabel = authorizedDepts.length > 0
+    ? authorizedDepts.map((d) => `${d.label} (${d.code})`).join(', ')
+    : authorizedUnits.join(', ') || '—'
 
   return (
     <div className="flex flex-col gap-4">
@@ -57,13 +67,13 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, onCreateCourse,
         <div>
           <h2 className="text-2xl font-bold">Courses</h2>
           <p className="text-muted-foreground">
-            Managing courses in: <span className="font-medium">{unitLabel}</span>
+            Managing: <span className="font-medium">{unitLabel}</span>
           </p>
         </div>
 
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogTrigger asChild>
-            <Button>
+            <Button disabled={authorizedDepts.length === 0}>
               <IconPlus className="w-4 h-4 mr-2" />
               Create Course
             </Button>
@@ -72,7 +82,7 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, onCreateCourse,
             <DialogHeader>
               <DialogTitle>Create Course</DialogTitle>
               <DialogDescription>
-                New courses will be assigned to one of your authorized units.
+                New courses will be assigned to one of your authorized departments.
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleCreate} className="grid gap-4 py-4">
@@ -86,17 +96,29 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, onCreateCourse,
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="ua-dept">Department</Label>
-                {authorizedUnits.length === 1 ? (
-                  // Single unit — lock to it
+                {authorizedDepts.length === 1 ? (
                   <>
-                    <Input name="department" value={authorizedUnits[0]} readOnly className="bg-muted" />
+                    <input type="hidden" name="department" value={authorizedDepts[0].code} />
+                    <Input
+                      id="ua-dept"
+                      value={`${authorizedDepts[0].label} (${authorizedDepts[0].code})`}
+                      readOnly
+                      className="bg-muted"
+                    />
                   </>
                 ) : (
-                  <Select name="department" value={selectedUnit} onValueChange={setSelectedUnit}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                  <Select
+                    name="department"
+                    value={selectedDept}
+                    onValueChange={setSelectedDept}
+                    required
+                  >
+                    <SelectTrigger id="ua-dept"><SelectValue placeholder="Select department" /></SelectTrigger>
                     <SelectContent>
-                      {authorizedUnits.map((u) => (
-                        <SelectItem key={u} value={u}>{u}</SelectItem>
+                      {authorizedDepts.map((d) => (
+                        <SelectItem key={d.code} value={d.code}>
+                          {d.label} ({d.code})
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -138,10 +160,12 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, onCreateCourse,
           <CardContent className="flex flex-col items-center justify-center py-8">
             <IconBook className="w-12 h-12 text-muted-foreground mb-4" />
             <p className="text-muted-foreground">No courses in {unitLabel} yet.</p>
-            <Button className="mt-4" onClick={() => setCreateOpen(true)}>
-              <IconPlus className="w-4 h-4 mr-2" />
-              Create First Course
-            </Button>
+            {authorizedDepts.length > 0 && (
+              <Button className="mt-4" onClick={() => setCreateOpen(true)}>
+                <IconPlus className="w-4 h-4 mr-2" />
+                Create First Course
+              </Button>
+            )}
           </CardContent>
         </Card>
       ) : (
@@ -150,31 +174,43 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, onCreateCourse,
             <Card key={course.id} className="hover:shadow-md transition-shadow">
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
-                  <Link to={`/courses/${course.id}`} className="flex-1">
-                    <CardTitle className="text-lg">{course.code}</CardTitle>
-                    <CardDescription className="mt-1">{course.name}</CardDescription>
+                  <Link to={`/courses/${course.id}`} className="flex-1 min-w-0">
+                    <CardTitle className="text-lg truncate">{course.code}</CardTitle>
+                    <CardDescription className="mt-1 line-clamp-2">{course.name}</CardDescription>
                   </Link>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={(e) => { e.stopPropagation(); setEditingCourse(course) }}
-                  >
-                    <IconEdit className="w-4 h-4" />
-                  </Button>
+                  <div className="flex gap-1 shrink-0 ml-2" onClick={(e) => e.stopPropagation()}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title={course.isPublished ? 'Unpublish' : 'Publish'}
+                      onClick={() => onPublishToggle(course.id, !course.isPublished)}
+                    >
+                      {course.isPublished
+                        ? <IconEyeOff className="w-4 h-4 text-muted-foreground" />
+                        : <IconEye className="w-4 h-4 text-blue-600" />}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={(e) => { e.stopPropagation(); setEditingCourse(course) }}
+                    >
+                      <IconEdit className="w-4 h-4" />
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                   <div className="flex items-center gap-1">
                     <IconCalendar className="w-4 h-4" />
                     {course.term} {course.year}
                   </div>
-                  <Badge variant={course.isActive ? 'default' : 'secondary'}>
-                    {course.isActive ? 'Active' : 'Inactive'}
-                  </Badge>
                   {course.department && (
-                    <Badge variant="outline">{course.department}</Badge>
+                    <Badge variant="outline">{getDepartmentLabel(course.department)}</Badge>
                   )}
+                  <Badge variant={course.isPublished ? 'default' : 'secondary'}>
+                    {course.isPublished ? 'Published' : 'Draft'}
+                  </Badge>
                 </div>
               </CardContent>
             </Card>

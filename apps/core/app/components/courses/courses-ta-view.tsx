@@ -38,8 +38,8 @@ export function CoursesTaView({ courses }: Props) {
                       <IconCalendar className="w-4 h-4" />
                       {course.term} {course.year}
                     </div>
-                    <Badge variant={course.isActive ? 'default' : 'secondary'}>
-                      {course.isActive ? 'Active' : 'Inactive'}
+                    <Badge variant={course.isPublished ? 'default' : 'secondary'}>
+                      {course.isPublished ? 'Published' : 'Draft'}
                     </Badge>
                   </div>
                 </CardContent>
