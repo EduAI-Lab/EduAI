@@ -55,7 +55,7 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 | [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Core vs hosted services, provider keys, embeddings overview, and high-level flows |
 | [`implementations/schema-design.md`](docs/implementations/schema-design.md) | Unified schema design across apps |
 | [`DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Instructions on how to deploy the system (production and development) |
-
+| [`CANVAS.md`](docs/CANVAS.md) | Local Canvas LMS setup — WSL, Docker, ports, seed script |
 ## Changelog
 
 All notable changes across apps are recorded in [`CHANGELOG.md`](CHANGELOG.md) at the monorepo root.
