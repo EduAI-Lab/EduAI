@@ -9,6 +9,7 @@
 
 | Document                                                                                            | Purpose                                        |
 | --------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| [Local Canvas setup](../CANVAS.md) | Install and run Canvas LMS on your machine (WSL, Docker, ports) |
 | [Canvas integration strategy](./lti-canvas-integration-report.md) | CWL-first product direction; LTI deferred |
 | [Canvas LTI vs API research](./canvas-lti-vs-api-key-research.md)                                   | Endpoints, roster sync, local API test results |
 | [Question Maker Canvas export](../../apps/extensions/question-maker/docs/features/CANVAS_EXPORT.md) | Instructor UI walkthrough for quiz export      |
@@ -26,7 +27,7 @@ This guide documents **how to connect EduAI to Canvas using a personal API acces
 | -------------------------------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------- |
 | **0. Canvas LMS (WSL + Docker)**       | —                                               | [canvas-lms](https://github.com/instructure/canvas-lms) via `docker_dev_setup.sh` (§4) |
 | **A. Web / host (local npm)**          | On your machine (`npm run dev` or QM terminals) | Local Canvas (§4) or UBC Canvas                                                        |
-| **B. Docker (Question Maker Compose)** | QM backend + frontend in containers             | Canvas on WSL/host (see §4.7)                                                          |
+| **B. Docker (Question Maker Compose)** | QM backend + frontend in containers             | Canvas on WSL/host (see [CANVAS.md](../CANVAS.md))                                                          |
 
 
 **Out of scope here:** LTI launch inside Canvas (see [lti-schema-changes.md](./lti-schema-changes.md)).  
@@ -81,7 +82,7 @@ Instructor browser
 
 ### 3.3 Port conflict warning
 
-**EduAI Core** and Canvas Quick Start both *can* use host port **3000**. The usual fix is to map Canvas to another host port in `docker-compose.override.yml` (e.g. `**8080:80`**) — see §4.4. Then Core stays on 3000 and Canvas on 8080.
+**EduAI Core** and Canvas Quick Start both *can* use host port **3000**. Map Canvas to another host port (e.g. `8080:80`) — see [CANVAS.md](../CANVAS.md). Then Core stays on 3000 and Canvas on 8080.
 
 
 | Service                       | Default port                   |
@@ -96,160 +97,16 @@ Use whatever host port loads Canvas in your browser as `canvasUrl`.
 
 ---
 
-## 4. Run Canvas LMS locally (Docker + WSL)
+## 4. Local Canvas instance
 
-EduAI does **not** ship Canvas in this monorepo. For local development, use Instructure’s official **Quick Start** flow with Docker.
+Install and run Canvas on your machine first — see **[CANVAS.md](../CANVAS.md)** (WSL, Docker, port mapping, seed script, troubleshooting).
 
-**Upstream guide:** [Canvas LMS Wiki — Quick Start](https://github.com/instructure/canvas-lms/wiki/Quick-Start)  
-**More Docker detail:** [canvas-lms/doc/docker](https://github.com/instructure/canvas-lms/tree/master/doc/docker)
+After Canvas is up:
 
-The environment produced by Quick Start is **development-only** (no production email, simplified job processing, etc.). Do not use it as a production Canvas instance.
+1. Log in and create a **course** with your user as **Teacher**.
+2. Set **`canvasUrl`** to the browser origin, e.g. `http://localhost:8080` (no trailing slash).
 
-### 4.1 Requirements (from Quick Start)
-
-Instructure recommends for `docker_dev_setup.sh`:
-
-
-| Resource | Minimum      |
-| -------- | ------------ |
-| Disk     | ~150 GB free |
-| RAM      | 8 GB         |
-| CPU      | Quad-core    |
-
-
-First run can take a long time (image builds, DB setup, asset compilation).
-
-### 4.2 Windows: WSL 2 + Docker Desktop
-
-On Windows, run Canvas inside **WSL 2** and use **Docker Desktop** with WSL integration.
-
-1. **Install WSL 2** with an **Ubuntu** distribution (e.g. Ubuntu 22.04 LTS) if not already installed.
-2. **Install [Docker Desktop](https://www.docker.com/products/docker-desktop/)** on Windows.
-3. **Enable WSL integration for Ubuntu:**
-  - Docker Desktop → **Settings** → **Resources** → **WSL Integration**
-  - Turn on integration for your **Ubuntu** distro
-  - Apply & restart if prompted
-4. Open **Ubuntu** from the Start menu (or `wsl` in PowerShell) and confirm Docker works:
-
-```bash
-docker --version
-docker compose version
-```
-
-All `git clone` and `./script/docker_dev_setup.sh` steps below should run **inside this Ubuntu WSL shell**, not in PowerShell (unless you use WSL explicitly: `wsl -d Ubuntu`).
-
-### 4.3 Clone Canvas LMS and run automated Docker setup
-
-In your **WSL Ubuntu** terminal (e.g. home directory):
-
-```bash
-git clone https://github.com/instructure/canvas-lms.git
-cd canvas-lms
-
-./script/docker_dev_setup.sh
-```
-
-The script builds images, starts Compose services, and performs initial Canvas setup. Follow any prompts (e.g. admin email/password during `db:initial_setup`).
-
-> **Note:** If the script asks whether to recreate or overwrite `docker-compose.override.yml`, answer **n**. That file is created during setup; recreating it will wipe port mappings you add in §4.4.
-
-**If the script fails with Docker file permission / BuildKit errors** (per [Quick Start](https://github.com/instructure/canvas-lms/wiki/Quick-Start)):
-
-```bash
-export DOCKER_BUILDKIT=0
-export COMPOSE_DOCKER_CLI_BUILD=0
-./script/docker_dev_setup.sh
-```
-
-Only use those exports if you hit that class of failure.
-
-**If the script fails a Docker daemon check in WSL** even when Docker Desktop is running:
-
-```bash
-sed -i 's/start_docker_daemon/true #start_docker_daemon/' script/common/os/linux/dev_setup.sh
-./script/docker_dev_setup.sh
-```
-
-**If you get a permission error on `Gemfile.lock`:**
-
-```bash
-sudo chmod -R 777 ~/canvas-lms/
-./script/docker_dev_setup.sh
-```
-
-### 4.4 Expose Canvas on a host port (and avoid conflict with EduAI Core)
-
-Canvas Quick Start runs the web app **inside** the container on port **80**. You choose the **host** port with Docker Compose port mapping: `"HOST:CONTAINER"`.
-
-In `canvas-lms/docker-compose.override.yml`, under the `web:` service, set `ports`:
-
-```yaml
-web:
-  ports:
-    - "8080:80"
-```
-
-
-| Mapping       | Meaning                                                                 |
-| ------------- | ----------------------------------------------------------------------- |
-| `8080` (left) | Port on your machine / WSL — use this in the browser and as `canvasUrl` |
-| `80` (right)  | Port inside the Canvas container — leave as `80`                        |
-
-
-**Yes — map Canvas to a different host port** so it does not clash with EduAI Core on **3000**. Recommended when running both:
-
-- **Canvas:** `http://localhost:8080` → `canvasUrl` = `http://localhost:8080`
-- **EduAI Core:** `http://localhost:3000` (default in monorepo)
-
-You can use any free host port (e.g. `8888:80`, `3001:80`). Only the **left** number must not be in use.
-
-Example for default Canvas on 3000 (QM-only testing, Core not running):
-
-```yaml
-web:
-  ports:
-    - "3000:80"
-```
-
-After editing `docker-compose.override.yml`, start or restart Canvas from the repo root:
-
-```bash
-cd ~/canvas-lms
-docker compose up -d
-# or: docker compose up   (foreground, useful for first boot logs)
-```
-
-Confirm in a browser: `http://localhost:8080/` (or whichever host port you chose).
-
-### 4.5 Access Canvas and prepare for EduAI
-
-1. Open Canvas at `**http://localhost:<HOST_PORT>/**` (e.g. `8080`).
-2. Log in with the **admin credentials** from initial setup.
-3. Create a **course** and enroll your user as **Teacher**.
-4. Add test students if you will test roster APIs (People → enroll users).
-
-`**canvasUrl` in Question Maker** must match the host port exactly:
-
-```text
-http://localhost:8080
-```
-
-No trailing slash. If the browser loads Canvas, that origin is correct for API calls too.
-
-### 4.6 Useful Canvas Docker commands (WSL)
-
-From your `canvas-lms` clone (see [doc/docker](https://github.com/instructure/canvas-lms/tree/master/doc/docker)):
-
-```bash
-cd ~/canvas-lms
-
-docker compose ps
-docker compose logs -f web
-docker compose down
-docker compose up -d
-```
-
-### 4.7 Reachability from EduAI (Windows + WSL + QM Docker)
+### 4.1 Reachability from EduAI (Windows + WSL + QM Docker)
 
 Replace `8080` with your chosen host port if different.
 
@@ -340,7 +197,7 @@ Ensure root `apps/extensions/question-maker/.env` has:
 1. Open `http://localhost:5173` and log in.
 2. Open an assessment → **Export to Canvas** (or flow that opens Canvas connect).
 3. **Uncheck** “Use Test Mode” for real Canvas.
-4. **Canvas Instance URL:** your Canvas origin, e.g. `http://localhost:8080` (or whatever host port you mapped in §4.4).
+4. **Canvas Instance URL:** your Canvas origin, e.g. `http://localhost:8080` (host port from [CANVAS.md](../CANVAS.md)).
 5. **API Key:** paste token from §5.
 6. **Connect Canvas** → course dropdown should populate.
 
@@ -352,7 +209,7 @@ PowerShell — use `curl.exe` (not `curl`):
 
 ```powershell
 $token = "YOUR_TOKEN"
-$canvas = "http://localhost:8080"   # match your Canvas host port (§4.4)
+$canvas = "http://localhost:8080"   # match your Canvas host port (CANVAS.md)
 $h = @{ Authorization = "Bearer $token" }
 
 Invoke-RestMethod "$canvas/api/v1/courses?enrollment_type=teacher&enrollment_role=TeacherEnrollment&per_page=5" -Headers $h
@@ -405,7 +262,7 @@ DATABASE_URL=postgresql://postgres:password@postgres:5432/eduquery
 
 (Compose file uses DB name `eduquery` — match `docker-compose.dev.yml`.)
 
-**Canvas URL from backend container:** use `http://host.docker.internal:PORT` if Canvas is on the host (§4.2).
+**Canvas URL from backend container:** use `http://host.docker.internal:PORT` if Canvas is on the host ([CANVAS.md](../CANVAS.md)).
 
 **Connect:** same UI steps as §6.3 at `http://localhost:5173`.
 
@@ -460,17 +317,14 @@ For UI/dev without Canvas:
 | QM connect works from host but not Docker | `localhost` inside container        | Use `host.docker.internal`                                                               |
 | PowerShell `curl -s` fails                | `curl` is `Invoke-WebRequest` alias | Use `curl.exe` or `Invoke-RestMethod`                                                    |
 | Roster has no `email`                     | Canvas omits field on course users  | `GET /users/:id/profile` → `primary_email`                                               |
-| Core + Canvas both on 3000                | Port conflict                       | Map Canvas to another host port in `docker-compose.override.yml` (e.g. `8080:80`) — §4.4 |
+| Core + Canvas both on 3000                | Port conflict                       | Map Canvas to another host port — [CANVAS.md](../CANVAS.md) |
 
 
 ---
 
 ## 11. Checklist — first successful integration
 
-- WSL Ubuntu installed; Docker Desktop WSL integration enabled for Ubuntu
-- `git clone https://github.com/instructure/canvas-lms.git` and `./script/docker_dev_setup.sh` completed in WSL
-- `docker-compose.override.yml` sets host port (e.g. `8080:80` if Core uses 3000)
-- Canvas loads at `http://localhost:<port>/`; admin login works
+- Local Canvas installed per [CANVAS.md](../CANVAS.md)
 - Teacher enrolled on at least one course
 - API token created and copied
 - `curl.exe` / `Invoke-RestMethod` returns courses with token
