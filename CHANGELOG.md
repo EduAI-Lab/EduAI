@@ -12,6 +12,16 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ### Added
 
 - [monorepo] docs: Add Canvas integration strategy report — CWL-first access, Canvas REST roster sync MVP (course users + profile `primary_email` fallback), Question Maker REST for quizzes; LTI 1.3 documented as deferred until in-Canvas launch is required; local API validation notes and UBC pilot checklist. Added Canvas LTI vs API key technical research — endpoint reference, PowerShell/`curl.exe` testing notes, pros/cons, implementation checklist; links to `docs/implementations/lti-canvas-integration-report.md`. Add Canvas API integration guide — WSL + Canvas LMS `docker_dev_setup.sh`, `docker-compose.override.yml` host port mapping (e.g. `8080:80` to avoid Core on 3000), Question Maker connect/API verification, Docker vs host dev, troubleshooting. (#447, @glowyblack, 2026-06-03)
+- [core] ui: Add presentational skeleton for all 32 EduAI Core domain components — exported `*Props` types, route-owned I/O for materials upload, course selector, API key settings, and Ollama model fetch; 29 Vitest + RTL component tests under `apps/core/app/tests/unit/`. (#437, #438, #385, @ebabar5 @yta3216 @Ayyhab, 2026-06-03)
+- [core] ui: Add empty-state rows to admin AI models and providers tables (`No models found.`, `No providers found.`). (#438, @yta3216, 2026-06-03)
+
+### Changed
+- [core] refactor: Move data fetching out of domain components into parent routes — `courses.$courseId` owns materials load/upload; `chat` owns `useApiKeys` / `ApiKeySettings`; `admin.ai-models` owns Ollama model fetch for `ModelFormDialog`. (#437, #438, 2026-06-03)
+- [core] docs: Update `apps/core/README.md` — monorepo install from root, component architecture section, and expanded component test inventory. (#385, @Ayyhab, 2026-06-03)
+- [monorepo] docs: Update root `README.md` with EduAI component skeleton overview and link to `apps/core/docs/`. (#385, @Ayyhab, 2026-06-03)
+
+### Fixed
+- [monorepo] infra: Replace em dash with hyphen in `scripts/dev-db.sh` Docker startup message to avoid PowerShell parse errors on Windows. (#438, @yta3216, 2026-06-03)
 
 ---
 
@@ -24,6 +34,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] tooling: Add `apps/core/scripts/eval-adhd-assist.mjs` and `npm run eval:adhd` — pure-Node runner that drives Form A S1/S2/S3 (+ optional S5) through `POST /api/chat` twice each (Baseline vs ADHD Assist) and emits a results matrix (markdown table, per-pair transcripts, `results.csv`, `run-meta.json` with git SHA and redacted env presence booleans). Adds `eval-runs/` to root `.gitignore` so research outputs stay out of git. (#258, @Ayyhab, 2026-05-29)
 - [core] feat: OpenRouter embedding provider — `OPENROUTER_API_KEY` routes RAG indexing and query embeds through OpenRouter (`google/gemini-embedding-001`, 3072-dim) before direct Google/OpenAI fallbacks; add `npm run test:embedding` smoke script. Docs: [`EMBEDDINGS.md`](docs/rag-ai/EMBEDDINGS.md), [`ARCHITECTURE.md`](docs/ARCHITECTURE.md), dev server runbook. (#PR)
 - [core] tests: Unit tests for `forward-session-cookies` and `auth-handler-request` (auth cookie forwarding and sign-in/sign-out sub-requests). (#PR)
+- [monorepo] docs: Add `docs/implementations/shared-component-library-audit.md` — audit of UI components that are candidates for a shared component library across AI Tutor, Question Maker, and EduAI; covers component structure, behaviour, accessibility requirements, and UBC brand token constraints. (#376, @yta3216, 2026-05-29)
 
 ### Changed
 - [core] docs: Update `apps/core/README.md` `POST /api/chat` body table — `adhdAssist` now describes the active Phase 2 behavior (policy-block prepend) instead of the Phase 1 "no behavioural effect" placeholder. (@Ayyhab, 2026-05-29)
