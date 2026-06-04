@@ -21,8 +21,11 @@ import {
 } from "@tabler/icons-react"
 
 import { NavDocuments } from "~/components/nav-documents"
+import type { NavDocumentItem } from "~/components/nav-documents"
 import { NavMain } from "~/components/nav-main"
+import type { NavMainItem } from "~/components/nav-main"
 import { NavSecondary } from "~/components/nav-secondary"
+import type { NavSecondaryItem } from "~/components/nav-secondary"
 import { NavUser } from "~/components/nav-user"
 import {
   Sidebar,
@@ -179,12 +182,28 @@ const data = {
   ],
 }
 
+export type AppSidebarProps = {
+  user: User
+  navMain?: NavMainItem[]
+  navSecondary?: NavSecondaryItem[]
+  documents?: NavDocumentItem[]
+  showDocuments?: boolean
+} & React.ComponentProps<typeof Sidebar>
+
 export function AppSidebar({
   user,
+  navMain = data.navMain,
+  navSecondary = data.navSecondary,
+  documents = data.documents,
+  showDocuments = false,
   ...props
-}: {
-  user: User
-} & React.ComponentProps<typeof Sidebar>) {
+}: AppSidebarProps) {
+  const visibleNavMain = navMain.filter(
+    (item) =>
+      (item.title !== "AI Management" && item.title !== "User Management") ||
+      user.role === "ADMIN"
+  )
+
   return (
     <Sidebar collapsible="offcanvas" {...props}>
       <SidebarHeader>
@@ -203,11 +222,9 @@ export function AppSidebar({
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        <NavMain items={data.navMain.filter(item =>
-          (item.title !== "AI Management" && item.title !== "User Management") || user.role === "ADMIN"
-        )} />
-        {/* <NavDocuments items={data.documents} /> */}
-        <NavSecondary items={data.navSecondary} className="mt-auto" />
+        <NavMain items={visibleNavMain} />
+        {showDocuments && <NavDocuments items={documents} />}
+        <NavSecondary items={navSecondary} className="mt-auto" />
       </SidebarContent>
       <SidebarFooter>
         <NavUser user={user} />

@@ -2,7 +2,7 @@ import { Card } from "~/components/ui/card";
 import type { TeamMember } from "~/routes/team";
 import { Terminal, Code, Braces } from "lucide-react";
 
-interface TeamMemberCardProps {
+export interface TeamMemberCardProps {
   member: TeamMember;
   index: number;
 }
