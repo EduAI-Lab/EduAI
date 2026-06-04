@@ -4,7 +4,7 @@
  * This service only maintains the thin local user record required for FK
  * integrity within QM (courses, canvas_integrations, canvas_course_mappings).
  */
-import { User } from '../schema/index.js';
+import { User, Course } from '../schema/index.js';
 import { seedCoursesForNewUser } from './seedNewUserService.js';
 
 /**
@@ -23,8 +23,15 @@ export async function findOrCreateUser(coreUser) {
     },
   });
 
-  if (created) {
-    await seedCoursesForNewUser(user.id);
+  if (!user.coursesSeededAt) {
+    // coursesSeededAt is NULL for: (a) brand-new users, (b) users created before this
+    // column existed. Only seed if they still have 0 courses — existing users with
+    // courses just need the flag backfilled.
+    const courseCount = await Course.count({ where: { userId: user.id } });
+    if (courseCount === 0) {
+      await seedCoursesForNewUser(user.id);
+    }
+    await user.update({ coursesSeededAt: new Date() });
   }
 
   return user;
