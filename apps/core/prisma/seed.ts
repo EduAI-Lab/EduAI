@@ -300,8 +300,8 @@ async function main() {
 
   const rbacCourse1 = await prisma.course.upsert({
     where: { code: 'RBAC101' },
-    update: { name: 'RBAC Demo: Active Course', professorId: professorUser.id, term: 'Fall', year: 2025, aiInstructions: 'Demo course — RBAC test', isActive: true, department: 'COSC' },
-    create: { code: 'RBAC101', name: 'RBAC Demo: Active Course', professorId: professorUser.id, term: 'Fall', year: 2025, aiInstructions: 'Demo course — RBAC test', isActive: true, department: 'COSC' },
+    update: { name: 'RBAC Demo: Active Course', professorId: professorUser.id, term: 'Fall', year: 2025, aiInstructions: 'Demo course — RBAC test', isActive: true, isPublished: true, department: 'COSC' },
+    create: { code: 'RBAC101', name: 'RBAC Demo: Active Course', professorId: professorUser.id, term: 'Fall', year: 2025, aiInstructions: 'Demo course — RBAC test', isActive: true, isPublished: true, department: 'COSC' },
   });
 
   const rbacCourse2 = await prisma.course.upsert({

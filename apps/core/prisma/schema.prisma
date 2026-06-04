@@ -96,6 +96,7 @@ model Course {
   professorId    String
   aiInstructions String             @default("")
   department     String?
+  isPublished    Boolean            @default(false)
   aiInteractions AIInteraction[]
   enrollments    CourseEnrollment[]
   materials      CourseMaterial[]
