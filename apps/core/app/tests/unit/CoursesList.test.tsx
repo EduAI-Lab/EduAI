@@ -100,6 +100,7 @@ describe('CoursesUnitAdminView', () => {
         authorizedUnits={['COSC']}
         onCreateCourse={NOOP}
         onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
         onPublishToggle={NOOP}
       />
     )
@@ -113,6 +114,7 @@ describe('CoursesUnitAdminView', () => {
         authorizedUnits={['COSC']}
         onCreateCourse={NOOP}
         onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
         onPublishToggle={NOOP}
       />
     )
@@ -127,6 +129,7 @@ describe('CoursesUnitAdminView', () => {
         authorizedUnits={['COSC']}
         onCreateCourse={NOOP}
         onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
         onPublishToggle={NOOP}
       />
     )
@@ -134,20 +137,19 @@ describe('CoursesUnitAdminView', () => {
     expect(screen.queryByText('MATH 101')).not.toBeInTheDocument()
   })
 
-  it('shows publish and edit buttons but no delete button', () => {
+  it('shows publish, edit, and delete icon buttons per course', () => {
     wrap(
       <CoursesUnitAdminView
         courses={[PUBLISHED_COURSE]}
         authorizedUnits={['COSC']}
         onCreateCourse={NOOP}
         onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
         onPublishToggle={NOOP}
       />
     )
-    // Has at least create + publish + edit
     const btns = screen.getAllByRole('button')
-    expect(btns.length).toBeGreaterThanOrEqual(3)
-    expect(screen.queryByRole('button', { name: /delete/i })).not.toBeInTheDocument()
+    expect(btns.length).toBeGreaterThanOrEqual(4)
   })
 
   it('disables Create Course when no authorized units match departments', () => {
@@ -157,6 +159,7 @@ describe('CoursesUnitAdminView', () => {
         authorizedUnits={[]}
         onCreateCourse={NOOP}
         onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
         onPublishToggle={NOOP}
       />
     )
