@@ -4,6 +4,8 @@ import {
 } from "~/components/ui/message";
 import { Loader } from "~/components/ui/loader";
 
+export type ChatTypingIndicatorProps = Record<string, never>;
+
 export function ChatTypingIndicator() {
   return (
     <BasicMessage>

@@ -4,7 +4,7 @@ import { Input } from "~/components/ui/input"
 import { Label } from "~/components/ui/label"
 import type { SignUpInput } from "~/lib/auth"
 
-interface RegisterFormProps extends React.ComponentProps<"div"> {
+export interface RegisterFormProps extends React.ComponentProps<"div"> {
   fieldErrors?: Partial<Record<keyof SignUpInput, string>>;
   isLoading?: boolean;
 }
