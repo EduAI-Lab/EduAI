@@ -5,8 +5,11 @@ import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, For
 import { Input } from "~/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import { Switch } from "~/components/ui/switch";
+import { Checkbox } from "~/components/ui/checkbox";
+import { Badge } from "~/components/ui/badge";
 import { useForm, useWatch } from "react-hook-form";
 import { createUserSchema, updateUserSchema } from "~/lib/auth/schemas";
+import { DEPARTMENTS } from "~/lib/departments";
 import type { z } from "zod";
 
 type User = {
@@ -37,7 +40,6 @@ type FormData = {
   role: "ADMIN" | "UNIT_ADMIN" | "PROFESSOR" | "TA" | "STUDENT";
   isActive: boolean;
   emailVerified?: boolean;
-  authorizedUnitsInput: string; // comma-separated, converted to string[] on submit
 };
 
 interface UserFormDialogProps {
@@ -55,15 +57,11 @@ const roleOptions = [
   { value: "ADMIN", label: "Administrator" },
 ];
 
-function parseUnits(raw: string): string[] {
-  return raw
-    .split(",")
-    .map((s) => s.trim().toUpperCase())
-    .filter(Boolean);
-}
-
 export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormDialogProps) {
   const isEditing = !!user;
+
+  // Authorized units selection managed separately (not in RHF) to avoid string[] typing complexity
+  const [selectedUnits, setSelectedUnits] = useState<string[]>([]);
 
   const form = useForm<FormData>({
     defaultValues: {
@@ -72,7 +70,6 @@ export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormD
       role: "STUDENT",
       isActive: true,
       emailVerified: false,
-      authorizedUnitsInput: "",
     },
   });
 
@@ -86,8 +83,8 @@ export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormD
         role: user.role,
         isActive: user.isActive,
         emailVerified: user.emailVerified,
-        authorizedUnitsInput: (user.authorizedUnits ?? []).join(", "),
       });
+      setSelectedUnits(user.authorizedUnits ?? []);
     } else {
       form.reset({
         name: "",
@@ -95,16 +92,21 @@ export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormD
         role: "STUDENT",
         isActive: true,
         emailVerified: false,
-        authorizedUnitsInput: "",
       });
+      setSelectedUnits([]);
     }
   }, [user, form]);
 
+  const toggleUnit = (code: string) => {
+    setSelectedUnits((prev) =>
+      prev.includes(code) ? prev.filter((u) => u !== code) : [...prev, code]
+    );
+  };
+
   const handleSubmit = (data: FormData) => {
-    const { authorizedUnitsInput, ...rest } = data;
     const payload = {
-      ...rest,
-      authorizedUnits: rest.role === "UNIT_ADMIN" ? parseUnits(authorizedUnitsInput) : [],
+      ...data,
+      authorizedUnits: data.role === "UNIT_ADMIN" ? selectedUnits : [],
     };
 
     const schema = isEditing ? updateUserSchema : createUserSchema;
@@ -113,6 +115,7 @@ export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormD
     if (result.success) {
       onSubmit(result.data);
       form.reset();
+      setSelectedUnits([]);
     }
   };
 
@@ -181,25 +184,36 @@ export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormD
             />
 
             {selectedRole === "UNIT_ADMIN" && (
-              <FormField
-                control={form.control}
-                name="authorizedUnitsInput"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Authorized Units</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="COSC, MATH, CHEM"
-                        {...field}
+              <FormItem>
+                <FormLabel>Authorized Departments</FormLabel>
+                <FormDescription>
+                  Select the departments this administrator can manage.
+                </FormDescription>
+                <div className="grid grid-cols-2 gap-2 rounded-md border p-3">
+                  {DEPARTMENTS.map((dept) => (
+                    <label
+                      key={dept.code}
+                      className="flex items-center gap-2 cursor-pointer select-none"
+                    >
+                      <Checkbox
+                        checked={selectedUnits.includes(dept.code)}
+                        onCheckedChange={() => toggleUnit(dept.code)}
                       />
-                    </FormControl>
-                    <FormDescription>
-                      Department codes this admin can manage, separated by commas.
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
+                      <span className="text-sm">
+                        {dept.label}
+                        <span className="ml-1 text-xs text-muted-foreground">({dept.code})</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                {selectedUnits.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {selectedUnits.map((code) => (
+                      <Badge key={code} variant="secondary" className="text-xs">{code}</Badge>
+                    ))}
+                  </div>
                 )}
-              />
+              </FormItem>
             )}
 
             <FormField

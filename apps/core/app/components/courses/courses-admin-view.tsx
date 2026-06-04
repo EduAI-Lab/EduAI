@@ -23,18 +23,24 @@ interface Props {
 export function CoursesAdminView({ courses, onCreateCourse, onEditCourse, onDeleteCourse, onPublishToggle }: Props) {
   const [createOpen, setCreateOpen] = useState(false)
   const [editingCourse, setEditingCourse] = useState<Course | null>(null)
+  const [createDept, setCreateDept] = useState<string>('')
 
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     const fd = new FormData(e.currentTarget)
+    const dept = (fd.get('department') as string) || undefined
+    const codeSuffix = (fd.get('codeSuffix') as string | null)?.trim() ?? ''
+    // If a department is chosen, auto-prefix the code (e.g. "COSC 101"); otherwise use raw entry
+    const code = dept && codeSuffix ? `${dept} ${codeSuffix}` : (fd.get('code') as string)
     await onCreateCourse({
       name: fd.get('name') as string,
-      code: fd.get('code') as string,
+      code,
       term: fd.get('term') as string,
       year: parseInt(fd.get('year') as string),
-      department: (fd.get('department') as string) || undefined,
+      department: dept,
       aiInstructions: (fd.get('aiInstructions') as string) || undefined,
     })
+    setCreateDept('')
     setCreateOpen(false)
   }
 
@@ -76,19 +82,33 @@ export function CoursesAdminView({ courses, onCreateCourse, onEditCourse, onDele
                 <Input id="create-name" name="name" placeholder="Introduction to Computer Science" required />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="create-code">Course Code</Label>
-                <Input id="create-code" name="code" placeholder="CS101" required />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="create-dept">Department</Label>
-                <Select name="department">
-                  <SelectTrigger id="create-dept"><SelectValue placeholder="Select department (optional)" /></SelectTrigger>
+                <Label htmlFor="create-dept">Department (optional)</Label>
+                <Select name="department" value={createDept} onValueChange={setCreateDept}>
+                  <SelectTrigger id="create-dept"><SelectValue placeholder="None" /></SelectTrigger>
                   <SelectContent>
                     {DEPARTMENTS.map((d) => (
                       <SelectItem key={d.code} value={d.code}>{d.label} ({d.code})</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="create-code">Course Number / Code</Label>
+                {createDept ? (
+                  <div className="flex items-center gap-2">
+                    <span className="shrink-0 rounded-md border bg-muted px-3 py-2 text-sm font-mono text-muted-foreground">
+                      {createDept}
+                    </span>
+                    <Input id="create-code" name="codeSuffix" placeholder="101" className="font-mono" required />
+                  </div>
+                ) : (
+                  <Input id="create-code" name="code" placeholder="101 or COSC 101" required />
+                )}
+                {createDept && (
+                  <p className="text-xs text-muted-foreground">
+                    Full code: <span className="font-mono">{createDept} 101</span>
+                  </p>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">

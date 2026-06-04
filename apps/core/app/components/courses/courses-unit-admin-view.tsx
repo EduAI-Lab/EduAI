@@ -34,12 +34,16 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, onCreateCourse,
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     const fd = new FormData(e.currentTarget)
+    const dept = fd.get('department') as string
+    const codeSuffix = (fd.get('codeSuffix') as string).trim()
+    // Combine dept prefix + suffix into canonical course code (e.g. "COSC 101")
+    const code = dept ? `${dept} ${codeSuffix}` : codeSuffix
     await onCreateCourse({
       name: fd.get('name') as string,
-      code: fd.get('code') as string,
+      code,
       term: fd.get('term') as string,
       year: parseInt(fd.get('year') as string),
-      department: fd.get('department') as string,
+      department: dept || undefined,
       aiInstructions: (fd.get('aiInstructions') as string) || undefined,
     })
     setCreateOpen(false)
@@ -91,10 +95,6 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, onCreateCourse,
                 <Input id="ua-name" name="name" placeholder="Introduction to Computer Science" required />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="ua-code">Course Code</Label>
-                <Input id="ua-code" name="code" placeholder="COSC 101" required />
-              </div>
-              <div className="grid gap-2">
                 <Label htmlFor="ua-dept">Department</Label>
                 {authorizedDepts.length === 1 ? (
                   <>
@@ -123,6 +123,24 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, onCreateCourse,
                     </SelectContent>
                   </Select>
                 )}
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="ua-code">Course Number</Label>
+                <div className="flex items-center gap-2">
+                  <span className="shrink-0 rounded-md border bg-muted px-3 py-2 text-sm font-mono text-muted-foreground">
+                    {selectedDept || authorizedDepts[0]?.code || '—'}
+                  </span>
+                  <Input
+                    id="ua-code"
+                    name="codeSuffix"
+                    placeholder="101"
+                    className="font-mono"
+                    required
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  The full course code will be e.g. <span className="font-mono">{selectedDept || authorizedDepts[0]?.code || 'DEPT'} 101</span>
+                </p>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
