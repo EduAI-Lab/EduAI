@@ -9,7 +9,7 @@ interface Props {
 }
 
 export function CoursesStudentView({ courses }: Props) {
-  // Students only see published courses (§5 isPublished gate, §19 cross-cutting)
+  // Route already filters to enrolled + published; keep gate for tests/direct usage
   const visible = courses.filter((c) => c.isPublished)
 
   return (

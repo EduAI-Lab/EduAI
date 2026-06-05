@@ -1,4 +1,4 @@
-import { redirect, useLoaderData } from 'react-router'
+import { redirect, useLoaderData, useSearchParams } from 'react-router'
 import type { LoaderFunctionArgs } from 'react-router'
 
 import { auth } from '~/lib/auth/server'
@@ -28,11 +28,31 @@ export async function loader({ request }: LoaderFunctionArgs) {
     authorizedUnits = dbUser?.authorizedUnits ?? []
   }
 
-  return { user: session.user, authorizedUnits }
+  // Scope list to assignments so detail loader access matches visible cards (§5 list gate)
+  let taCourseIds: string[] = []
+  let enrolledCourseIds: string[] = []
+  if (session.user.role === 'TA') {
+    const rows = await prisma.courseTA.findMany({
+      where: { userId: session.user.id },
+      select: { courseId: true },
+    })
+    taCourseIds = rows.map((r) => r.courseId)
+  }
+  if (session.user.role === 'STUDENT') {
+    const rows = await prisma.courseEnrollment.findMany({
+      where: { studentId: session.user.id, isActive: true },
+      select: { courseId: true },
+    })
+    enrolledCourseIds = rows.map((r) => r.courseId)
+  }
+
+  return { user: session.user, authorizedUnits, taCourseIds, enrolledCourseIds }
 }
 
 export default function CoursesPage() {
-  const { user, authorizedUnits } = useLoaderData<typeof loader>()
+  const { user, authorizedUnits, taCourseIds, enrolledCourseIds } = useLoaderData<typeof loader>()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const accessDenied = searchParams.get('access') === 'denied'
   const { courses, loading, createCourse, updateCourse, deleteCourse } = useCourses()
 
   const isAdmin = user.role === 'ADMIN'
@@ -57,6 +77,21 @@ export default function CoursesPage() {
   return (
     <Layout user={user}>
       <div className="px-4 lg:px-6 py-4">
+        {accessDenied && (
+          <div
+            role="alert"
+            className="mb-4 rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+          >
+            You do not have access to that course. Open a course from this list only.
+            <button
+              type="button"
+              className="ml-2 underline"
+              onClick={() => setSearchParams({})}
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
         {isAdmin ? (
           <CoursesAdminView
             courses={courses}
@@ -83,9 +118,13 @@ export default function CoursesPage() {
             onPublishToggle={handlePublishToggle}
           />
         ) : isTA ? (
-          <CoursesTaView courses={courses} />
+          <CoursesTaView courses={courses.filter((c) => taCourseIds.includes(c.id))} />
         ) : (
-          <CoursesStudentView courses={courses} />
+          <CoursesStudentView
+            courses={courses.filter(
+              (c) => enrolledCourseIds.includes(c.id) && c.isPublished,
+            )}
+          />
         )}
       </div>
     </Layout>
