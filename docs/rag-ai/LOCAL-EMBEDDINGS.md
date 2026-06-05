@@ -71,9 +71,18 @@ Every row in `material_embeddings` built with Gemini (3072) is **incompatible** 
 
 ---
 
+## How to change vector dimensionality on the dev server
+
+The shared host uses one Postgres container (`eduai-db`). When a branch expects a different embedding dimension than the DB currently has, follow the full procedure in [`EMBEDDINGS.md` — How to change vector dimensionality](./EMBEDDINGS.md#how-to-change-vector-dimensionality).
+
+Before switching branches for others, repeat the same steps for **that branch’s target dimension** so column, `.env`, and re-embedded vectors stay aligned.
+
+---
+
 ## References
 
-- [`EMBEDDINGS.md`](./EMBEDDINGS.md) — operational guide
+- [`EMBEDDINGS.md`](./EMBEDDINGS.md) — operational guide (includes dimension change procedure)
+- [`HOW_TO_USE_DEV_SERVER.md`](./HOW_TO_USE_DEV_SERVER.md) — SSH, tmux, branch switching
 - [`EDUAI_HELPME_ANALYSIS.md`](./eduai-summer-2026/EDUAI_HELPME_ANALYSIS.md) — HelpMe local embed patterns
 - `apps/core/app/lib/ai/embedding.ts` — provider implementation
 - `apps/core/scripts/re-embed-course.ts` — course re-index script (CLI, synchronous)
