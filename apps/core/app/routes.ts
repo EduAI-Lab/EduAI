@@ -17,6 +17,11 @@ export default [
   route("/courses", "routes/courses.tsx"),
   route("/courses/:courseId", "routes/courses.$courseId.tsx"),
   route("/api/courses/:courseId/materials", "routes/api/courses.materials.$.ts"),
+  route(
+    "/api/courses/:courseId/materials/:materialId",
+    "routes/api/courses.materials.$.ts",
+    { id: "routes/api/courses.materials.$:materialId" },
+  ),
   route("/api/courses/:courseId/topics", "routes/api/courses.topics.$.ts"),
   route(
     "/api/courses/:courseId/topics/:topicId",
