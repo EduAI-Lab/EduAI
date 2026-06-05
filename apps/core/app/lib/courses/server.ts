@@ -337,6 +337,19 @@ export async function getAccessibleCourseCodes(user: {
   return courses.map((course) => course.code);
 }
 
+/**
+ * Returns only the RAG-tuning fields for a course.
+ * Both fields are nullable — callers should fall back to global defaults when null.
+ */
+export async function getCourseRagSettings(
+  courseId: string,
+): Promise<{ ragTopK: number | null; ragSimilarityThreshold: number | null } | null> {
+  return prisma.course.findUnique({
+    where: { id: courseId },
+    select: { ragTopK: true, ragSimilarityThreshold: true },
+  });
+}
+
 export async function getCourseTopics(courseId: string) {
   return prisma.courseTopic.findMany({
     where: { courseId, deletedAt: null },

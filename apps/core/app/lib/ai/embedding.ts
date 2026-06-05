@@ -2,6 +2,7 @@ import { embed, embedMany } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import prisma from "../prisma.server";
+import { getCourseRagSettings } from "../courses/server";
 import { randomUUID } from "crypto";
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
@@ -163,7 +164,13 @@ export async function generateEmbedding(query: string): Promise<number[]> {
 
 /**
  * Find relevant content using cosine similarity search.
- * `similarityThreshold` defaults from env `RAG_SIMILARITY_THRESHOLD` (0–1) when omitted.
+ *
+ * Resolution order for each tunable:
+ *   1. Course-level setting (`ragTopK` / `ragSimilarityThreshold` on the Course row) — wins when non-null.
+ *   2. Caller-supplied `limit` / `similarityThreshold` arguments.
+ *   3. Global env default (`RAG_SIMILARITY_THRESHOLD`, falls back to 0.5).
+ *
+ * This lets individual courses be tuned independently without touching global config.
  */
 export async function findRelevantContent(
   userQuery: string,
@@ -171,7 +178,12 @@ export async function findRelevantContent(
   limit: number = 6,
   similarityThreshold?: number,
 ): Promise<Array<{ content: string; similarity: number; materialTitle: string }>> {
-  const threshold = similarityThreshold ?? getDefaultRagSimilarityThreshold();
+  // Fetch per-course RAG overrides; both fields are nullable — null means "use default".
+  const courseSettings = await getCourseRagSettings(courseId);
+  const effectiveLimit = courseSettings?.ragTopK ?? limit;
+  const threshold =
+    courseSettings?.ragSimilarityThreshold ?? similarityThreshold ?? getDefaultRagSimilarityThreshold();
+
   const queryEmbedding = await generateEmbedding(userQuery);
 
   const results = await prisma.$queryRaw<
@@ -191,7 +203,7 @@ export async function findRelevantContent(
     WHERE cm."courseId" = ${courseId}
       AND 1 - (me.embedding <=> ${queryEmbedding}::vector) > ${threshold}
     ORDER BY similarity DESC
-    LIMIT ${Number(limit)}
+    LIMIT ${Number(effectiveLimit)}
   `;
 
   return results.map((result) => ({

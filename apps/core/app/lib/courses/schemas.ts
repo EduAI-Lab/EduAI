@@ -37,6 +37,24 @@ export const UpdateCourseSchema = z.object({
   aiInstructions: z.string().optional(),
 });
 
+export const UpdateCourseRagSettingsSchema = z.object({
+  ragTopK: z
+    .number()
+    .int()
+    .min(1, "ragTopK must be at least 1")
+    .max(20, "ragTopK must be at most 20")
+    .nullable()
+    .optional(),
+  ragSimilarityThreshold: z
+    .number()
+    .gt(0, "ragSimilarityThreshold must be > 0")
+    .lt(1, "ragSimilarityThreshold must be < 1")
+    .nullable()
+    .optional(),
+});
+
+export type UpdateCourseRagSettingsInput = z.infer<typeof UpdateCourseRagSettingsSchema>;
+
 export const CreateCourseTopicSchema = z.object({
   name: z.string().min(1, "Topic name is required"),
 });
