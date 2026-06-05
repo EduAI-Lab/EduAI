@@ -191,15 +191,12 @@ export default function AIModelsPage() {
     }
   };
 
-  const fetchVllmModels = useCallback(async (baseUrl?: string) => {
+  const fetchVllmModels = useCallback(async () => {
     setFetchingVllmModels(true);
     setVllmError(null);
     setVllmFetched(false);
     try {
-      const qs = baseUrl?.trim()
-        ? `?baseUrl=${encodeURIComponent(baseUrl.trim())}`
-        : "";
-      const response = await fetch(`/api/vllm-models${qs}`);
+      const response = await fetch("/api/vllm-models");
       let data: { error?: string; models?: VllmModel[] } = {};
       try {
         data = await response.json();

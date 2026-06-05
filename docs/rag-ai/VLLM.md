@@ -6,7 +6,7 @@ Run **vLLM** on the shared GPU host (**cmps01**) for fast, multi-user chat infer
 
 | | |
 | --- | --- |
-| **Host port** | `VLLM_PORT=8001` on cmps01 (container listens on **8000** inside Docker) |
+| **Host port (public)** | **8001** — LiteLLM proxy (routes to internal vLLM backends) |
 | **Dev app** | `dev.eduai.ok.ubc.ca` (s378) → `http://cmps01.ok.ubc.ca:8001` |
 | **Seed model** | `vllm:qwen2.5-7b-instruct` |
 | **Issues** | [#435](https://github.com/EduAI-Lab/EduAI/issues/435) install/wire · [#394](https://github.com/EduAI-Lab/EduAI/issues/394) tiered memory spike |
@@ -32,7 +32,6 @@ Session **vLLM-S1** (Jun 2026, dev → cmps01): warm direct **~57 ms**; EduAI fu
 **On s378** — add to `apps/core/.env`:
 
 ```env
-VLLM_PORT=8001
 VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"
 VLLM_API_KEY="vllm-local"
 ```
@@ -54,7 +53,7 @@ npm run vllm:smoke
 | --- | --- |
 | **You (dev)** | `.env`, enable provider, pick model, run smoke/bench |
 | **IT / ops** | Firewall dev → cmps01 **TCP 8001**, Docker GPU on cmps01 |
-| **On cmps01** | `docker run eduai-vllm` (see [Install on cmps01](#install-on-cmps01-docker)) |
+| **On cmps01** | vLLM backends + LiteLLM proxy (see [`infra/cmps01/README.md`](../../infra/cmps01/README.md)) |
 
 ---
 
@@ -63,9 +62,9 @@ npm run vllm:smoke
 ```text
 dev.eduai.ok.ubc.ca (s378)          cmps01
         │                              │
-        │  VLLM_BASE_URL               │  :8001 (host) → :8000 (container)
-        └──────────────────────────────►  GPU 0 — Qwen 7B (eduai-vllm)
-                                         GPU 1 — often idle / Ollama
+        │  VLLM_BASE_URL :8001         │  eduai-vllm-proxy (LiteLLM)
+        └──────────────────────────────►       ├── 127.0.0.1:18001 → GPU 0 vLLM
+                                               └── 127.0.0.1:18002 → GPU 1 vLLM
 Ollama :11434 — embeddings + legacy chat (separate service)
 ```
 
@@ -276,18 +275,27 @@ Not wired in EduAI yet — manual or future ops ticket.
 
 ---
 
-## Multiple models
+## Multiple models (one firewall port)
 
-**One vLLM process = one base model.** For two models, run **two containers** (prefer **one GPU each** on cmps01’s 2× RTX 6000 Ada).
+**One vLLM process = one base model.** For two models on two GPUs, run **two backend containers** on **localhost** (`127.0.0.1:18001`, `:18002`) and a **LiteLLM proxy** on public **:8001**.
+
+| Layer | Port | Firewall from dev? |
+| --- | --- | --- |
+| LiteLLM proxy | **8001** | **Yes** (only this one) |
+| vLLM backend 1 | 127.0.0.1:18001 | No |
+| vLLM backend 2 | 127.0.0.1:18002 | No |
+
+**Setup:** [`infra/cmps01/README.md`](../../infra/cmps01/README.md) — edit `litellm-config.yaml`, `docker compose up`.
+
+**Adding a third model:** new localhost backend + config row + proxy restart — **no new IT ticket**.
+
+EduAI always uses one `VLLM_BASE_URL`; chat picks the model via `vllm:<served-model-name>`.
 
 | Pattern | When |
 | --- | --- |
-| **GPU 0 + GPU 1** | Recommended — e.g. `:8001` and `:8002` |
-| **Two on same GPU** | Small models only; `--gpu-memory-utilization 0.4–0.5` each |
-| **LoRA adapters** | Same base model, course-specific finetunes |
+| **LiteLLM proxy (recommended)** | 2+ models, one firewall port |
+| **LoRA adapters** | Same base, course finetunes |
 | **Sleep / wake** | Swap models — not simultaneous |
-
-EduAI has one `VLLM_BASE_URL` today; a second model needs another URL or a router (LiteLLM/nginx).
 
 ---
 
@@ -304,7 +312,8 @@ EduAI has one `VLLM_BASE_URL` today; a second model needs another URL or a route
 
 | Symptom | Fix |
 | --- | --- |
-| Connection refused from dev | IT firewall + cmps01 host firewall; `curl http://cmps01:8001/v1/models` from s378 |
+| Connection refused from dev | `VLLM_BASE_URL` in server `.env`; firewall **8001**; `curl http://cmps01:8001/v1/models` from s378 |
+| SSL / wrong version number | Use **`http://`** not `https://` for vLLM |
 | 404 model | `curl /v1/models` — use exact `id` in chat (`qwen2.5-7b-instruct`) |
 | EduAI “provider not configured” | Settings → Enable vLLM; set `VLLM_BASE_URL` in server `.env` |
 | RAG vector dimension error | DB `vector(3072)` vs local 1024 embed mismatch — re-embed on same branch/stack |

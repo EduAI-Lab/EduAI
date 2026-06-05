@@ -2,7 +2,8 @@
 /**
  * Smoke test vLLM OpenAI-compatible API.
  *
- *   VLLM_PORT=8001 VLLM_BASE_URL=http://cmps01.ok.ubc.ca:8001 npm run vllm:smoke
+ *   VLLM_BASE_URL=http://cmps01.ok.ubc.ca:8001 npm run vllm:smoke
+ *   (8001 = LiteLLM proxy; backends on localhost:18001/18002 — see infra/cmps01/)
  *   VLLM_MODEL=qwen2.5-7b-instruct npm run vllm:smoke
  */
 

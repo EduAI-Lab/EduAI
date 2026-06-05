@@ -1,0 +1,13 @@
+# LiteLLM proxy on cmps01 — one public port (8001) for all vLLM models.
+# vLLM backend containers are started separately (see README.md).
+
+services:
+  eduai-vllm-proxy:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: eduai-vllm-proxy
+    restart: unless-stopped
+    ports:
+      - "8001:4000"
+    volumes:
+      - ./litellm-config.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--port", "4000", "--host", "0.0.0.0"]

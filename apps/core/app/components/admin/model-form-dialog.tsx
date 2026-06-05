@@ -38,7 +38,7 @@ export interface ModelFormDialogProps {
   vllmModels?: VllmModel[];
   fetchingVllmModels?: boolean;
   vllmError?: string | null;
-  onFetchVllmModels?: (baseUrl?: string) => void;
+  onFetchVllmModels?: () => void;
   vllmFetched?: boolean;
 }
 
@@ -88,7 +88,6 @@ export function ModelFormDialog({
 
   const [selectedOllamaModel, setSelectedOllamaModel] = useState<string>("");
   const [selectedVllmModel, setSelectedVllmModel] = useState<string>("");
-  const [vllmBaseUrlOverride, setVllmBaseUrlOverride] = useState("");
 
   useEffect(() => {
     if (model) {
@@ -127,7 +126,6 @@ export function ModelFormDialog({
   useEffect(() => {
     setSelectedOllamaModel("");
     setSelectedVllmModel("");
-    setVllmBaseUrlOverride("");
   }, [formData.providerId]);
 
   const selectedProvider = providers.find(p => p.id === formData.providerId);
@@ -138,11 +136,7 @@ export function ModelFormDialog({
   useEffect(() => {
     if (!open || !isVllmProvider || !onFetchVllmModels || vllmFetched) return;
     if (fetchingVllmModels || vllmModels.length > 0) return;
-    const base =
-      vllmBaseUrlOverride.trim() ||
-      selectedProvider?.defaultBaseUrl?.replace(/\/v1\/?$/, "") ||
-      undefined;
-    onFetchVllmModels(base);
+    onFetchVllmModels();
   }, [
     open,
     isVllmProvider,
@@ -151,8 +145,6 @@ export function ModelFormDialog({
     fetchingVllmModels,
     vllmModels.length,
     vllmFetched,
-    vllmBaseUrlOverride,
-    selectedProvider?.defaultBaseUrl,
   ]);
 
   const handleOllamaModelSelect = (modelName: string) => {
@@ -324,13 +316,7 @@ export function ModelFormDialog({
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() =>
-                    onFetchVllmModels?.(
-                      vllmBaseUrlOverride.trim() ||
-                        selectedProvider?.defaultBaseUrl?.replace(/\/v1\/?$/, "") ||
-                        undefined,
-                    )
-                  }
+                  onClick={() => onFetchVllmModels?.()}
                   disabled={fetchingVllmModels || !onFetchVllmModels}
                 >
                   {fetchingVllmModels ? (
@@ -339,28 +325,16 @@ export function ModelFormDialog({
                       Fetching...
                     </>
                   ) : (
-                    "Fetch Models"
+                    "Refresh list"
                   )}
                 </Button>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="vllmBaseUrlOverride">vLLM base URL (optional)</Label>
-                <Input
-                  id="vllmBaseUrlOverride"
-                  value={vllmBaseUrlOverride}
-                  onChange={(e) => setVllmBaseUrlOverride(e.target.value)}
-                  placeholder={
-                    selectedProvider?.defaultBaseUrl?.replace(/\/v1\/?$/, "") ||
-                    "http://cmps01.ok.ubc.ca:8001"
-                  }
-                />
-                <p className="text-xs text-muted-foreground">
-                  Leave empty to use server <code className="text-xs">VLLM_BASE_URL</code> from{" "}
-                  <code className="text-xs">.env</code>. Use{" "}
-                  <code className="text-xs">:8002</code> for a second container.
-                </p>
-              </div>
+              <p className="text-xs text-muted-foreground">
+                Loaded from server <code className="text-xs">VLLM_BASE_URL</code> (LiteLLM proxy on
+                cmps01, port 8001). If fetch fails, ask ops to check{" "}
+                <code className="text-xs">infra/cmps01</code> — not a URL you enter here.
+              </p>
 
               {vllmError && (
                 <Alert variant="destructive">
@@ -369,15 +343,15 @@ export function ModelFormDialog({
               )}
 
               {fetchingVllmModels && (
-                <p className="text-sm text-muted-foreground">Loading models from vLLM…</p>
+                <p className="text-sm text-muted-foreground">Loading models from vLLM proxy…</p>
               )}
 
               {vllmFetched && !fetchingVllmModels && !vllmError && vllmModels.length === 0 && (
                 <Alert>
                   <AlertDescription>
-                    No models returned. Check <code>VLLM_BASE_URL</code> on the EduAI server,
-                    firewall to cmps01, and that the vLLM container is running (
-                    <code>curl …/v1/models</code>).
+                    No models returned. Ops: verify LiteLLM on cmps01 and{" "}
+                    <code>VLLM_BASE_URL</code> in EduAI <code>.env</code> (
+                    <code>http://cmps01.ok.ubc.ca:8001</code>).
                   </AlertDescription>
                 </Alert>
               )}
@@ -395,7 +369,7 @@ export function ModelFormDialog({
                         fetchingVllmModels
                           ? "Loading…"
                           : vllmModels.length === 0
-                            ? "Fetch models first"
+                            ? "Refresh list first"
                             : "Choose a vLLM model"
                       }
                     />
@@ -416,13 +390,6 @@ export function ModelFormDialog({
                   </SelectContent>
                 </Select>
               </div>
-
-              <p className="text-xs text-muted-foreground">
-                Models load automatically when you pick vLLM. Chat uses{" "}
-                <code className="text-xs">VLLM_BASE_URL</code> in server{" "}
-                <code className="text-xs">.env</code> (one URL for all vLLM models). Tools default
-                off for hybrid RAG.
-              </p>
             </div>
           )}
 
