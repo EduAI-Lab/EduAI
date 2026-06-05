@@ -44,8 +44,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     department: course.department,
   })
 
-  // No access at all — redirect
-  if (!access) return redirect('/courses')
+  // No access at all — redirect (e.g. TA opened a course they do not assist)
+  if (!access) return redirect('/courses?access=denied')
 
   return {
     course: {
