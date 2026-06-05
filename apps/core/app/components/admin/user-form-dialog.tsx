@@ -12,24 +12,7 @@ import { createUserSchema, updateUserSchema } from "~/lib/auth/schemas";
 import { DEPARTMENTS } from "~/lib/departments";
 import type { z } from "zod";
 
-type User = {
-  id: string;
-  email: string;
-  name: string;
-  image?: string;
-  role: "ADMIN" | "UNIT_ADMIN" | "PROFESSOR" | "TA" | "STUDENT";
-  isActive: boolean;
-  emailVerified: boolean;
-  authorizedUnits: string[];
-  createdAt: string;
-  updatedAt: string;
-  _count: {
-    enrolledCourses: number;
-    assistedCourses: number;
-    taughtCourses: number;
-    aiInteractions: number;
-  };
-};
+import type { User } from "~/components/admin/users-table";
 
 type CreateUserFormData = z.infer<typeof createUserSchema>;
 type UpdateUserFormData = z.infer<typeof updateUserSchema>;
@@ -42,7 +25,7 @@ type FormData = {
   emailVerified?: boolean;
 };
 
-interface UserFormDialogProps {
+export interface UserFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   user?: User | null;

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import type { UserProviderSettings } from '~/lib/ai/providers'
 
 export const STUB_ONLY = {
   deleteMaterial: true, // pending #300
@@ -41,7 +42,7 @@ export function useCourseMaterials(courseId: string) {
 
   useEffect(() => { fetchMaterials() }, [fetchMaterials])
 
-  const uploadMaterial = useCallback(async (file: File, apiKeys: Record<string, string>): Promise<CourseMaterial> => {
+  const uploadMaterial = useCallback(async (file: File, apiKeys: UserProviderSettings): Promise<CourseMaterial> => {
     const formData = new FormData()
     formData.append('file', file)
     formData.append('apiKeys', JSON.stringify(apiKeys))

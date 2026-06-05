@@ -2,18 +2,32 @@ import { IconCalendar } from '@tabler/icons-react'
 import { Card, CardContent } from '~/components/ui/card'
 import { Badge } from '~/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs'
-import { CourseMaterialsUpload } from '~/components/course-materials-upload'
-import { useApiKeys } from '~/hooks/use-api-keys'
+import {
+  CourseMaterialsUpload,
+  type CourseMaterial,
+} from '~/components/course-materials-upload'
 import type { CourseDetail } from '~/hooks/api/use-course-detail'
 import type { CourseTopic } from '~/hooks/api/use-course-topics'
 
 interface Props {
   course: CourseDetail
   topics: CourseTopic[]
+  materials: CourseMaterial[]
+  isUploading?: boolean
+  materialsError?: string | null
+  materialsSuccess?: string | null
+  onFileSelect: (file: File) => void
 }
 
-export function CourseDetailTaView({ course, topics }: Props) {
-  const { apiKeys } = useApiKeys()
+export function CourseDetailTaView({
+  course,
+  topics,
+  materials,
+  isUploading = false,
+  materialsError = null,
+  materialsSuccess = null,
+  onFileSelect,
+}: Props) {
 
   return (
     <div className="flex flex-col gap-6">
@@ -54,7 +68,13 @@ export function CourseDetailTaView({ course, topics }: Props) {
         </TabsContent>
 
         <TabsContent value="materials" forceMount className="data-[state=inactive]:hidden flex-1 outline-none">
-          <CourseMaterialsUpload courseId={course.id} apiKeys={apiKeys} />
+          <CourseMaterialsUpload
+            materials={materials}
+            isUploading={isUploading}
+            error={materialsError}
+            success={materialsSuccess}
+            onFileSelect={onFileSelect}
+          />
         </TabsContent>
 
         <TabsContent value="topics" forceMount className="data-[state=inactive]:hidden flex-1 outline-none">

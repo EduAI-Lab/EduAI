@@ -90,7 +90,7 @@ import {
 import { Switch } from "~/components/ui/switch";
 import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
 
-type User = {
+export type User = {
   id: string;
   email: string;
   name: string;
@@ -109,7 +109,7 @@ type User = {
   };
 };
 
-interface UsersTableProps {
+export interface UsersTableProps {
   users: User[];
   currentUserId: string;
   onEdit: (user: User) => void;

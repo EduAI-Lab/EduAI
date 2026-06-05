@@ -15,9 +15,7 @@ vi.mock('~/hooks/use-api-keys', () => ({
 }))
 
 vi.mock('~/components/course-materials-upload', () => ({
-  CourseMaterialsUpload: ({ courseId }: { courseId: string }) => (
-    <div data-testid="upload-widget">Upload for {courseId}</div>
-  ),
+  CourseMaterialsUpload: () => <div data-testid="upload-widget">Upload widget</div>,
 }))
 
 const COURSE: CourseDetail = {
@@ -57,6 +55,7 @@ const TOPIC: CourseTopic = {
 }
 
 const NOOP = async () => {}
+const onFileSelect = vi.fn()
 
 function wrap(ui: React.ReactElement) {
   return render(<MemoryRouter>{ui}</MemoryRouter>)
@@ -71,6 +70,8 @@ describe('CourseDetailManagerView', () => {
         access="instructor"
         topics={[]}
         enrollments={[]}
+        materials={[]}
+        onFileSelect={onFileSelect}
         onCreateTopic={NOOP}
         onDeleteTopic={NOOP}
       />
@@ -88,6 +89,8 @@ describe('CourseDetailManagerView', () => {
         access="instructor"
         topics={[]}
         enrollments={[]}
+        materials={[]}
+        onFileSelect={onFileSelect}
         onCreateTopic={NOOP}
         onDeleteTopic={NOOP}
       />
@@ -102,6 +105,8 @@ describe('CourseDetailManagerView', () => {
         access="instructor"
         topics={[]}
         enrollments={[]}
+        materials={[]}
+        onFileSelect={onFileSelect}
         onCreateTopic={NOOP}
         onDeleteTopic={NOOP}
       />
@@ -117,6 +122,8 @@ describe('CourseDetailManagerView', () => {
         access="unit"
         topics={[TOPIC]}
         enrollments={[]}
+        materials={[]}
+        onFileSelect={onFileSelect}
         onCreateTopic={NOOP}
         onDeleteTopic={NOOP}
       />
@@ -133,6 +140,8 @@ describe('CourseDetailTaView', () => {
       <CourseDetailTaView
         course={COURSE}
         topics={[]}
+        materials={[]}
+        onFileSelect={onFileSelect}
       />
     )
     expect(screen.queryByRole('tab', { name: /enrollments/i })).not.toBeInTheDocument()
@@ -143,6 +152,8 @@ describe('CourseDetailTaView', () => {
       <CourseDetailTaView
         course={COURSE}
         topics={[]}
+        materials={[]}
+        onFileSelect={onFileSelect}
       />
     )
     expect(screen.getByTestId('upload-widget')).toBeInTheDocument()
@@ -153,6 +164,8 @@ describe('CourseDetailTaView', () => {
       <CourseDetailTaView
         course={COURSE}
         topics={[TOPIC]}
+        materials={[]}
+        onFileSelect={onFileSelect}
       />
     )
     expect(screen.queryByPlaceholderText(/new topic name/i)).not.toBeInTheDocument()
@@ -163,6 +176,8 @@ describe('CourseDetailTaView', () => {
       <CourseDetailTaView
         course={COURSE}
         topics={[TOPIC]}
+        materials={[]}
+        onFileSelect={onFileSelect}
       />
     )
     expect(screen.getByText('Variables')).toBeInTheDocument()
