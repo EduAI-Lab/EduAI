@@ -50,7 +50,7 @@ Course materials are usually long. Embedding the entire syllabus as one vector w
 
 ### Dimensionality (1024, 768, 3072, etc.)
 
-**Dimensionality** is how long the number list is (e.g. 1024 floats). Higher does not automatically mean better search quality; what matters is a **good embedding model** and the **same model** for indexing and queries. After [LOCAL-EMBEDDINGS](./LOCAL-EMBEDDINGS.md), our schema is `vector(1024)` with default local model **`mxbai-embed-large`**. Switching model or provider requires **re-embedding** all materials — see [Re-embed after migration](#re-embed-after-migration).
+**Dimensionality** is how long the number list is (e.g. 1024 floats). Higher does not automatically mean better search quality; what matters is a **good embedding model** and the **same model** for indexing and queries. After [LOCAL-EMBEDDINGS](./LOCAL-EMBEDDINGS.md), our schema is `vector(1024)` with default local model **`mxbai-embed-large`**. Switching model, provider, or dimension requires **re-embedding** — see [How to change vector dimensionality](#how-to-change-vector-dimensionality).
 
 For the full upload → chat pipeline, see [Two lifecycles](#two-lifecycles-write-index-and-read-rag) below.
 
@@ -174,9 +174,95 @@ OPENROUTER_API_KEY=sk-or-...
 
 **Smoke test:** from `apps/core`, run `npm run test:embedding` (loads `.env`, prints active provider and vector length).
 
-### Re-embed after migration
+### How to change vector dimensionality
 
-After [LOCAL-EMBEDDINGS](./LOCAL-EMBEDDINGS.md) migration, existing Gemini (3072) vectors are removed. Re-index each course:
+Indexing, query embeds, and Postgres must all use the **same dimension**. Three places must agree:
+
+| Layer | What to set |
+| ----- | ----------- |
+| **Postgres** | `material_embeddings.embedding` column — `vector(N)` |
+| **`apps/core/.env`** | `EMBEDDING_DIMENSION=N` and matching `EMBEDDING_PROVIDER` / model vars |
+| **Embedding API** | Model output length must equal `N` |
+
+If any layer disagrees, you get errors like `expected 3072 dimensions, not 1024` during upload or re-embed.
+
+**When you need this:** switching git branches on the shared dev server, changing embedding provider, or applying a Prisma migration that alters the pgvector column. Existing vectors are **incompatible** across dimensions — changing `N` clears old embeddings and requires **re-embed** per course. Course materials keep `rawText`.
+
+**Coordinate on the shared dev host** (`dev.eduai.ok.ubc.ca`) before altering dimensions; everyone shares one `eduai-db` container.
+
+#### Common configurations
+
+| Target dimension | Typical provider | `.env` highlights |
+| ---------------- | ---------------- | ----------------- |
+| **1024** | Local Ollama | `EMBEDDING_PROVIDER=local`, `EMBEDDING_DIMENSION=1024`, `OLLAMA_EMBEDDING_MODEL=mxbai-embed-large` |
+| **1024** | Cloud | `EMBEDDING_PROVIDER=cloud`, `EMBEDDING_DIMENSION=1024`, `OPENROUTER_API_KEY` or `OPENAI_API_KEY` |
+| **3072** | Cloud (legacy Gemini) | `EMBEDDING_PROVIDER=cloud`, `EMBEDDING_DIMENSION=3072`, `OPENROUTER_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` |
+
+Check the branch you checked out (e.g. `schema.prisma` → `vector(N)`) to know which row applies.
+
+#### Procedure (dev server or local Docker DB)
+
+From repo root on the server (path may be `/srv/www/dev.eduai.ok.ubc.ca/EduAICore` or a nested clone — use whichever contains `apps/core`):
+
+1. **Checkout the branch** you want to test and install deps:
+   ```bash
+   cd /srv/www/dev.eduai.ok.ubc.ca/EduAICore
+   git fetch origin && git checkout <branch> && git pull
+   npm install
+   cd apps/core && npx prisma generate && npx prisma migrate deploy
+   ```
+
+2. **Set `apps/core/.env`** to match the target dimension (see table above).
+
+3. **Verify the pgvector column** — `atttypmod` must equal your target `N`:
+   ```bash
+   docker exec -it eduai-db psql -U postgres -d eduai -c \
+     "SELECT atttypmod FROM pg_attribute WHERE attrelid = 'material_embeddings'::regclass AND attname = 'embedding';"
+   ```
+
+4. **If the column is wrong** — `prisma migrate deploy` may report “up to date” while the column was never altered. Fix manually (run SQL via `docker exec`, not as bare shell commands):
+   ```bash
+   docker exec -it eduai-db psql -U postgres -d eduai -c \
+     "DELETE FROM material_embeddings; ALTER TABLE material_embeddings ALTER COLUMN embedding TYPE vector(<N>);"
+   ```
+   Replace `<N>` with `1024` or `3072`. This deletes existing vectors; `rawText` on materials is unchanged.
+
+5. **Smoke test and re-embed** affected courses:
+   ```bash
+   cd apps/core
+   npm run test:embedding
+   npm run re-embed:course -- --list
+   npm run re-embed:course -- <courseId-or-code>
+   ```
+
+6. **Restart the dev server** (tmux) so `.env` changes load.
+
+#### Switching back
+
+Before checking out another branch (e.g. returning the shared server to `development` for others), **repeat the procedure for that branch’s target dimension** — alter the column, update `.env`, re-embed, restart. There is no automatic down-migration for pgvector dimension in Prisma.
+
+#### Copy into PR test plan (dev server)
+
+```markdown
+## How to change vector dimensionality (dev server)
+
+Shared DB: coordinate in team chat. Requires SSH to `dev.eduai.ok.ubc.ca`, UBC VPN, `eduai-db` running.
+
+1. Checkout branch → `npm install` → `cd apps/core && npx prisma generate && npx prisma migrate deploy`
+2. Set `apps/core/.env` so `EMBEDDING_DIMENSION` and provider match this branch (see docs/rag-ai/EMBEDDINGS.md)
+3. Verify column: `docker exec -it eduai-db psql -U postgres -d eduai -c "SELECT atttypmod FROM pg_attribute WHERE attrelid = 'material_embeddings'::regclass AND attname = 'embedding';"`
+4. If wrong, manual fix: `DELETE FROM material_embeddings; ALTER TABLE material_embeddings ALTER COLUMN embedding TYPE vector(<N>);` via `docker exec`
+5. `npm run test:embedding` → `npm run re-embed:course -- <courseId>` for each course under test
+6. Restart tmux dev server
+
+Before leaving the branch: repeat for the next branch’s dimension so the shared server stays consistent for others.
+```
+
+Full detail: [How to change vector dimensionality](#how-to-change-vector-dimensionality) (this section).
+
+### Re-embed after dimension change
+
+After changing dimension (see [How to change vector dimensionality](#how-to-change-vector-dimensionality)), re-index each course that had materials:
 
 ```bash
 cd apps/core
@@ -218,7 +304,7 @@ pgvector enabled via migration (`CREATE EXTENSION IF NOT EXISTS vector`). Prisma
 | Symptom | Likely cause |
 | ------- | ------------ |
 | `No embedding provider configured` | Missing local Ollama or cloud keys in `apps/core/.env` |
-| `Embedding dimension mismatch` | `EMBEDDING_DIMENSION` / model output does not match pgvector column — re-embed |
+| `Embedding dimension mismatch` | Column, `EMBEDDING_DIMENSION`, and model output disagree — see [How to change vector dimensionality](#how-to-change-vector-dimensionality) |
 | Generic “check the university website” answers (Ollama + course) | Hybrid RAG failed embed step; fallback prompt without excerpts |
 | `getInformation` → `Failed to search course materials` | Same missing/unhealthy embed provider on tool path |
 | RAG runs, empty results | No indexed materials (run re-embed), similarity below 0.5, or wrong course |
