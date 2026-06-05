@@ -34,7 +34,11 @@ import {
 import { Badge } from "~/components/ui/badge"
 import type { User } from "~/lib/auth/types"
 
-export function NavUser({ user }: { user: User }) {
+export interface NavUserProps {
+  user: User
+}
+
+export function NavUser({ user }: NavUserProps) {
   const { isMobile } = useSidebar()
 
   const getUserInitials = (name: string) => {

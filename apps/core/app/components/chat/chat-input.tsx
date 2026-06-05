@@ -2,6 +2,7 @@ import { Button } from "~/components/ui/button";
 import { Settings } from "lucide-react";
 import { useState } from "react";
 import { ApiKeySettings } from "./api-key-settings";
+import { useApiKeys } from "~/hooks/use-api-keys";
 import {
   PromptInput,
   PromptInputTextarea,
@@ -42,6 +43,12 @@ export function ChatInput({
   showCourseSelector = true,
 }: ChatInputProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const {
+    apiKeys,
+    isProviderConfigured,
+    updateProviderSettings,
+    removeProviderSettings,
+  } = useApiKeys();
 
   const handleValueChange = (value: string) => {
     // Create a synthetic event to maintain compatibility
@@ -169,7 +176,14 @@ export function ChatInput({
           </PromptInput>
         </div>
       </div>
-      <ApiKeySettings open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <ApiKeySettings
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        apiKeys={apiKeys}
+        isProviderConfigured={isProviderConfigured}
+        onUpdateProvider={updateProviderSettings}
+        onRemoveProvider={removeProviderSettings}
+      />
     </>
   );
 }

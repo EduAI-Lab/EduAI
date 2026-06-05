@@ -55,7 +55,7 @@ export default function Page() {
     >
       <AppSidebar variant="inset" user={user} />
       <SidebarInset>
-        <SiteHeader user={user} />
+        <SiteHeader user={user} title="Dashboard" />
         <DashboardContent user={user} />
       </SidebarInset>
     </SidebarProvider>

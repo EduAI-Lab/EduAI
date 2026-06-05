@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router";
 
 import { AppSidebar } from "~/components/app-sidebar";
 import { SidebarProvider } from "~/components/ui/sidebar";
@@ -34,11 +35,26 @@ function renderSidebar(role: string) {
   } as User;
 
   return render(
-    <SidebarProvider>
-      <AppSidebar user={user} />
-    </SidebarProvider>,
+    <MemoryRouter>
+      <SidebarProvider>
+        <AppSidebar user={user} />
+      </SidebarProvider>
+    </MemoryRouter>,
   );
 }
+
+describe("AppSidebar — rendering", () => {
+  it("renders the EduAI brand", () => {
+    renderSidebar("ADMIN");
+    expect(screen.getByText("EduAI")).toBeInTheDocument();
+  });
+
+  it("renders Dashboard and Courses links", () => {
+    renderSidebar("ADMIN");
+    expect(screen.getByRole("link", { name: "Dashboard" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Courses" })).toBeInTheDocument();
+  });
+});
 
 describe("AppSidebar — role-gated nav", () => {
   it("shows admin links for ADMIN", () => {
@@ -61,5 +77,13 @@ describe("AppSidebar — role-gated nav", () => {
     renderSidebar("PROFESSOR");
     expect(screen.queryByText("User Management")).not.toBeInTheDocument();
     expect(screen.getByText("Chatbot")).toBeInTheDocument();
+  });
+
+  it("hides admin links for UNIT_ADMIN", () => {
+    renderSidebar("UNIT_ADMIN");
+    expect(screen.queryByText("User Management")).not.toBeInTheDocument();
+    expect(screen.queryByText("AI Management")).not.toBeInTheDocument();
+    expect(screen.queryByText("Bug Reports")).not.toBeInTheDocument();
+    expect(screen.getByText("Courses")).toBeInTheDocument();
   });
 });

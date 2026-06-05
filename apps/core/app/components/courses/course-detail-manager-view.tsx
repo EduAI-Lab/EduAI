@@ -5,8 +5,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { Badge } from '~/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs'
 import { Input } from '~/components/ui/input'
-import { CourseMaterialsUpload } from '~/components/course-materials-upload'
-import { useApiKeys } from '~/hooks/use-api-keys'
+import {
+  CourseMaterialsUpload,
+  type CourseMaterial,
+} from '~/components/course-materials-upload'
 import type { CourseDetail } from '~/hooks/api/use-course-detail'
 import type { CourseTopic } from '~/hooks/api/use-course-topics'
 import type { CourseEnrollment } from '~/hooks/api/use-course-enrollments'
@@ -18,6 +20,11 @@ interface Props {
   access: CourseAccess
   topics: CourseTopic[]
   enrollments: CourseEnrollment[]
+  materials: CourseMaterial[]
+  isUploading?: boolean
+  materialsError?: string | null
+  materialsSuccess?: string | null
+  onFileSelect: (file: File) => void
   onCreateTopic: (name: string) => Promise<void>
   onDeleteTopic: (id: string) => Promise<void>
 }
@@ -27,10 +34,14 @@ export function CourseDetailManagerView({
   access,
   topics,
   enrollments,
+  materials,
+  isUploading = false,
+  materialsError = null,
+  materialsSuccess = null,
+  onFileSelect,
   onCreateTopic,
   onDeleteTopic,
 }: Props) {
-  const { apiKeys } = useApiKeys()
   const [newTopic, setNewTopic] = useState('')
   const canManage = canManageTopics(access)
 
@@ -87,7 +98,13 @@ export function CourseDetailManagerView({
         </TabsContent>
 
         <TabsContent value="materials" forceMount className="data-[state=inactive]:hidden flex-1 outline-none">
-          <CourseMaterialsUpload courseId={course.id} apiKeys={apiKeys} />
+          <CourseMaterialsUpload
+            materials={materials}
+            isUploading={isUploading}
+            error={materialsError}
+            success={materialsSuccess}
+            onFileSelect={onFileSelect}
+          />
         </TabsContent>
 
         <TabsContent value="topics" forceMount className="data-[state=inactive]:hidden flex-1 outline-none">

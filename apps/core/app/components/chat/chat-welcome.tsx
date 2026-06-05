@@ -1,7 +1,7 @@
 import { Bot } from "lucide-react";
 import { PromptSuggestion } from "~/components/ui/prompt-suggestion";
 
-interface ChatWelcomeProps {
+export interface ChatWelcomeProps {
   selectedModelInfo?: {
     name: string;
     description?: string;

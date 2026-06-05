@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { redirect, useLoaderData } from 'react-router'
 import type { LoaderFunctionArgs } from 'react-router'
 
@@ -12,6 +13,8 @@ import { CourseDetailStudentView } from '~/components/courses/course-detail-stud
 import { useCourseTopics } from '~/hooks/api/use-course-topics'
 import { useCourseEnrollments } from '~/hooks/api/use-course-enrollments'
 import { useCourseMaterials } from '~/hooks/api/use-course-materials'
+import { useApiKeys } from '~/hooks/use-api-keys'
+import type { CourseMaterial as UploadMaterial } from '~/components/course-materials-upload'
 import { resolveCourseAccess } from '~/lib/rbac/resolve-course-access.server'
 import type { RbacUser } from '~/lib/rbac'
 
@@ -62,7 +65,34 @@ export default function CourseDetailPage() {
   const { course, user, access } = useLoaderData<typeof loader>()
   const { topics, createTopic, deleteTopic } = useCourseTopics(course.id)
   const { enrollments } = useCourseEnrollments(course.id)
-  const { materials } = useCourseMaterials(course.id)
+  const { materials, uploadMaterial } = useCourseMaterials(course.id)
+  const { getValidApiKeys } = useApiKeys()
+  const [isUploading, setIsUploading] = useState(false)
+  const [materialsError, setMaterialsError] = useState<string | null>(null)
+  const [materialsSuccess, setMaterialsSuccess] = useState<string | null>(null)
+
+  const uploadMaterials: UploadMaterial[] = materials.map((m) => ({
+    id: m.id,
+    title: m.title,
+    mimeType: m.mimeType,
+    fileSize: m.fileSize,
+    status: m.status,
+    createdAt: m.createdAt,
+  }))
+
+  const handleFileSelect = async (file: File) => {
+    setIsUploading(true)
+    setMaterialsError(null)
+    setMaterialsSuccess(null)
+    try {
+      await uploadMaterial(file, getValidApiKeys())
+      setMaterialsSuccess('Material uploaded successfully')
+    } catch (e) {
+      setMaterialsError(e instanceof Error ? e.message : 'Upload failed')
+    } finally {
+      setIsUploading(false)
+    }
+  }
 
   return (
     <SidebarProvider
@@ -82,6 +112,11 @@ export default function CourseDetailPage() {
                 access={access}
                 topics={topics}
                 enrollments={enrollments}
+                materials={uploadMaterials}
+                isUploading={isUploading}
+                materialsError={materialsError}
+                materialsSuccess={materialsSuccess}
+                onFileSelect={handleFileSelect}
                 onCreateTopic={async (name) => { await createTopic(name) }}
                 onDeleteTopic={async (id) => { await deleteTopic(id) }}
               />
@@ -89,6 +124,11 @@ export default function CourseDetailPage() {
               <CourseDetailTaView
                 course={course}
                 topics={topics}
+                materials={uploadMaterials}
+                isUploading={isUploading}
+                materialsError={materialsError}
+                materialsSuccess={materialsSuccess}
+                onFileSelect={handleFileSelect}
               />
             ) : (
               <CourseDetailStudentView
