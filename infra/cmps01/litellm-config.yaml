@@ -1,21 +1,23 @@
-# LiteLLM router — single public port for all vLLM backends on cmps01.
-# Edit model_name / api_base entries when you add backends; no new firewall port.
-#
-# Backends bind localhost only (127.0.0.1:18001, :18002). LiteLLM publishes :8001.
-
-model_list:
-  - model_name: qwen2.5-7b-instruct
-    litellm_params:
-      model: openai/qwen2.5-7b-instruct
-      api_base: http://127.0.0.1:18001/v1
-      api_key: vllm-local
-
-  # GPU 1 — Qwen2.5-32B-Instruct-AWQ (eduai-vllm-t3)
-  - model_name: qwen2.5-32b-instruct
-    litellm_params:
-      model: openai/qwen2.5-32b-instruct
-      api_base: http://127.0.0.1:18002/v1
-      api_key: vllm-local
-
-general_settings:
-  master_key: vllm-local
+# LiteLLM router — single public port for all vLLM backends on cmps01.
+# Edit model_name / api_base entries when you add backends; no new firewall port.
+#
+# Backends bind on the HOST at 127.0.0.1:18001 / :18002.
+# LiteLLM runs in Docker — use host.docker.internal (not 127.0.0.1) to reach host ports.
+# docker-compose.yml sets extra_hosts: host.docker.internal:host-gateway
+
+model_list:
+  - model_name: qwen2.5-7b-instruct
+    litellm_params:
+      model: openai/qwen2.5-7b-instruct
+      api_base: http://host.docker.internal:18001/v1
+      api_key: vllm-local
+
+  # GPU 1 — Qwen2.5-32B-Instruct-AWQ (eduai-vllm-t3)
+  - model_name: qwen2.5-32b-instruct
+    litellm_params:
+      model: openai/qwen2.5-32b-instruct
+      api_base: http://host.docker.internal:18002/v1
+      api_key: vllm-local
+
+general_settings:
+  master_key: vllm-local
