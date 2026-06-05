@@ -194,6 +194,18 @@ async function main() {
       inputPricing: 0,
       outputPricing: 0,
     },
+    {
+      modelId: 'qwen2.5-32b-instruct',
+      name: 'Qwen 2.5 32B Instruct (vLLM)',
+      description: 'Qwen2.5-32B-Instruct-AWQ on cmps01 GPU 1 (vLLM backend :18002)',
+      type: 'CHAT' as const,
+      maxTokens: 16384,
+      supportsImages: false,
+      supportsTools: false,
+      supportsStreaming: true,
+      inputPricing: 0,
+      outputPricing: 0,
+    },
   ];
 
   for (const model of vllmModels) {

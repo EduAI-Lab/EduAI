@@ -9,18 +9,35 @@ function resolveVllmBaseUrl(raw: string): string {
   return base;
 }
 
+function formatVllmFetchError(err: {
+  name?: string;
+  code?: string;
+  message?: string;
+}): string {
+  if (err.name === "AbortError") {
+    return "Request timeout — vLLM proxy did not respond within 10s";
+  }
+  if (err.code === "ECONNREFUSED") {
+    return "Connection refused — set VLLM_BASE_URL in apps/core/.env on the server (e.g. http://cmps01.ok.ubc.ca:8001) and ensure LiteLLM is running";
+  }
+  if (
+    err.code === "ERR_SSL_WRONG_VERSION_NUMBER" ||
+    err.message?.includes("wrong version number")
+  ) {
+    return "Use http:// not https:// for VLLM_BASE_URL (vLLM speaks plain HTTP)";
+  }
+  return err.message || "Failed to connect to vLLM proxy";
+}
+
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request);
   if (!session?.user || session.user.role !== "ADMIN") {
     return new Response("Forbidden: Admins only", { status: 403 });
   }
 
-  const url = new URL(request.url);
   const vllmPort = process.env.VLLM_PORT || "8001";
   const rawBase =
-    url.searchParams.get("baseUrl") ||
-    process.env.VLLM_BASE_URL ||
-    `http://localhost:${vllmPort}`;
+    process.env.VLLM_BASE_URL || `http://localhost:${vllmPort}`;
   const baseUrl = resolveVllmBaseUrl(rawBase);
   const apiKey = process.env.VLLM_API_KEY || "vllm-local";
 
@@ -40,6 +57,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         JSON.stringify({
           error: `Failed to fetch vLLM models: ${response.status} ${response.statusText}`,
           baseUrl: modelsUrl,
+          hint: "Check LiteLLM proxy on cmps01 (infra/cmps01/README.md)",
         }),
         {
           status: response.status,
@@ -62,21 +80,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
     });
   } catch (error: unknown) {
     console.error("Error fetching vLLM models:", error);
-
-    let errorMessage = "Failed to connect to vLLM server";
     const err = error as { name?: string; code?: string; message?: string };
-    if (err.name === "AbortError") {
-      errorMessage = "Request timeout - vLLM server did not respond";
-    } else if (err.code === "ECONNREFUSED") {
-      errorMessage =
-        "Connection refused - vLLM server is not running or not accessible";
-    } else if (err.message) {
-      errorMessage = err.message;
-    }
 
     return new Response(
       JSON.stringify({
-        error: errorMessage,
+        error: formatVllmFetchError(err),
         baseUrl,
         details: err.code || err.name || "Unknown error",
       }),
