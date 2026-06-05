@@ -256,6 +256,9 @@ export async function getCourseTopic(courseId: string, topicId: string) {
 export async function createCourseTopic(
   courseId: string,
   payload: CreateCourseTopicInput,
+  // #294: null on the service-key path (no user); routes treat a null
+  // createdBy as "no owner — TA delete not permitted".
+  createdBy: string | null = null,
 ) {
   const parsed = CreateCourseTopicSchema.safeParse(payload);
 
@@ -279,6 +282,7 @@ export async function createCourseTopic(
       data: {
         courseId,
         name: parsed.data.name.trim(),
+        createdBy,
       },
     });
 

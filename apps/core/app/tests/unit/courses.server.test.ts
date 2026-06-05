@@ -100,6 +100,24 @@ describe("createCourseTopic", () => {
     expect(result).toHaveProperty("topic");
     expect(prismaMock.courseTopic.create).toHaveBeenCalled();
   });
+
+  it("persists createdBy when a user id is provided (#294)", async () => {
+    prismaMock.course.findFirst.mockResolvedValue({ id: "c1" });
+    prismaMock.courseTopic.create.mockResolvedValue({ id: "t1" });
+    await createCourseTopic("c1", { name: "Heaps" }, "user-9");
+    expect(prismaMock.courseTopic.create).toHaveBeenCalledWith({
+      data: { courseId: "c1", name: "Heaps", createdBy: "user-9" },
+    });
+  });
+
+  it("defaults createdBy to null (service-key path — no owner)", async () => {
+    prismaMock.course.findFirst.mockResolvedValue({ id: "c1" });
+    prismaMock.courseTopic.create.mockResolvedValue({ id: "t1" });
+    await createCourseTopic("c1", { name: "Heaps" });
+    expect(prismaMock.courseTopic.create).toHaveBeenCalledWith({
+      data: { courseId: "c1", name: "Heaps", createdBy: null },
+    });
+  });
 });
 
 describe("deleteCourseTopic", () => {
