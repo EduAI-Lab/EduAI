@@ -23,6 +23,7 @@ interface ChatInputProps {
   setSelectedModel: (value: string) => void;
   chatModels: Array<{ id: string; name: string; description: string; provider: string; maxTokens?: number; supportsImages?: boolean; supportsTools?: boolean }>;
   selectedModelInfo?: { id: string; name: string; description: string; provider: string; maxTokens?: number; supportsImages?: boolean; supportsTools?: boolean };
+  showCourseSelector?: boolean;
 }
 
 export function ChatInput({
@@ -37,7 +38,8 @@ export function ChatInput({
   selectedModel,
   setSelectedModel,
   chatModels,
-  selectedModelInfo
+  selectedModelInfo,
+  showCourseSelector = true,
 }: ChatInputProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -93,19 +95,21 @@ export function ChatInput({
                   </Button>
                 </PromptInputAction>
               </PromptInputActions>
-              <Select value={selectedCourseId || "none"} onValueChange={(value) => setSelectedCourseId(value === "none" ? null : value)}>
-                <SelectTrigger className="w-[120px] h-8 text-xs">
-                  {selectedCourseId ? (availableCourses.find(c => c.code === selectedCourseId)?.code || 'No Course') : 'No Course'}
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No Course Selected</SelectItem>
-                  {availableCourses.map((course) => (
-                    <SelectItem key={course.code} value={course.code}>
-                      {course.code}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {showCourseSelector && (
+                <Select value={selectedCourseId || "none"} onValueChange={(value) => setSelectedCourseId(value === "none" ? null : value)}>
+                  <SelectTrigger className="w-[120px] h-8 text-xs">
+                    {selectedCourseId ? (availableCourses.find(c => c.code === selectedCourseId)?.code || 'No Course') : 'No Course'}
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No Course Selected</SelectItem>
+                    {availableCourses.map((course) => (
+                      <SelectItem key={course.code} value={course.code}>
+                        {course.code}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               <Select value={selectedModel} onValueChange={setSelectedModel}>
                 <SelectTrigger className="w-[140px] h-8 text-xs">
                   {selectedModelInfo?.name}

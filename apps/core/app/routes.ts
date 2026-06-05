@@ -20,6 +20,7 @@ export default [
   route("/api/courses/:id", "routes/api/courses.id.ts"),
   route("/admin/ai-models", "routes/admin.ai-models.tsx"),
   route("/admin/users", "routes/admin.users.tsx"),
+  route("/admin/bug-reports", "routes/admin.bug-reports.tsx"),
   route("/api/ai-providers/*", "routes/api/ai-providers.$.ts"),
   route("/api/ai-models/*", "routes/api/ai-models.$.ts"),
   route("/api/users/*", "routes/api/users.$.ts"),
