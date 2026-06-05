@@ -45,4 +45,10 @@ export default [
   route("/api/ollama-models", "routes/api/ollama-models.ts"),
   route("/api/sessions/validate", "routes/api/sessions.validate.ts"),
   route("/api/bug-reports", "routes/api/bug-reports.ts"),
+  route("/api/admin/bug-reports", "routes/api/admin.bug-reports.ts"),
+  route(
+    "/api/admin/bug-reports/:id",
+    "routes/api/admin.bug-reports.ts",
+    { id: "routes/api/admin.bug-reports:id" },
+  ),
 ] satisfies RouteConfig;
