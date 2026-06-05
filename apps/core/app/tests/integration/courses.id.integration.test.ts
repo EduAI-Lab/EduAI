@@ -9,6 +9,7 @@ vi.mock("~/lib/auth/server", () => ({
 
 import { loader } from "~/routes/api/courses.id";
 import { auth } from "~/lib/auth/server";
+import { seedUser, seedCourse, enroll, mockSession, cleanupRbac } from "../helpers/rbac";
 
 const VALID_SERVICE_KEY = "courses-id-integration-service-key";
 const ADMIN_SESSION = {
@@ -120,5 +121,36 @@ describe("GET /api/courses/:id", () => {
     const res = await loader(makeArgs(deletedCourseId));
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: "COURSE_NOT_FOUND" });
+  });
+
+  it("returns 403 for an authenticated user with no course relationship (#298)", async () => {
+    const outsider = await seedUser({ role: "STUDENT" });
+    try {
+      mockSession(outsider);
+      const res = await loader(makeArgs(courseId));
+      expect(res.status).toBe(403);
+    } finally {
+      await cleanupRbac({ userIds: [outsider.id] });
+    }
+  });
+
+  it("gates enrolled students on isPublished (§19) but admits them when published", async () => {
+    const student = await seedUser({ role: "STUDENT" });
+    const unpublished = await seedCourse({ isPublished: false });
+    const published = await seedCourse({ isPublished: true });
+    await enroll(unpublished.id, student.id, "STUDENT");
+    await enroll(published.id, student.id, "STUDENT");
+
+    try {
+      mockSession(student);
+      const blocked = await loader(makeArgs(unpublished.id));
+      expect(blocked.status).toBe(403);
+
+      mockSession(student);
+      const allowed = await loader(makeArgs(published.id));
+      expect(allowed.status).toBe(200);
+    } finally {
+      await cleanupRbac({ userIds: [student.id], courseIds: [unpublished.id, published.id] });
+    }
   });
 });
