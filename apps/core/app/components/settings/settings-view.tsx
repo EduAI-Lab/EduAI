@@ -1,3 +1,4 @@
+import { Form } from "react-router";
 import { useEffect, useState } from "react";
 import {
   CheckCircle2,
@@ -316,6 +317,20 @@ export function SettingsView() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Account</CardTitle>
+          <CardDescription>Sign out of EduAI on this browser.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Form method="post" action="/auth/logout" replace>
+            <Button type="submit" variant="outline">
+              Log out
+            </Button>
+          </Form>
+        </CardContent>
+      </Card>
     </div>
   );
 }
