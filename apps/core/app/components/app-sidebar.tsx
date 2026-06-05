@@ -1,26 +1,16 @@
 import * as React from "react"
 import {
-  IconCamera,
-  IconChartBar,
-  IconDatabase,
-  IconDashboard,
-  IconFileAi,
-  IconFileDescription,
-  IconFileWord,
-  IconFolder,
-  IconHelp,
-  IconInnerShadowTop,
   IconBooks,
+  IconBrain,
+  IconDashboard,
+  IconInnerShadowTop,
   IconReport,
-  IconSearch,
+  IconRobot,
   IconSettings,
   IconUsers,
-  IconMessageCircle,
-  IconRobot,
-  IconBrain,
+  type Icon,
 } from "@tabler/icons-react"
 
-import { NavDocuments } from "~/components/nav-documents"
 import { NavMain } from "~/components/nav-main"
 import { NavSecondary } from "~/components/nav-secondary"
 import { NavUser } from "~/components/nav-user"
@@ -34,149 +24,28 @@ import {
   SidebarMenuItem,
 } from "~/components/ui/sidebar"
 import type { User } from "~/lib/auth/types"
+import {
+  getNavForUser,
+  getNavSecondaryForUser,
+  type NavItemKey,
+} from "~/lib/rbac"
 
-const data = {
-  navMain: [
-    {
-      title: "Dashboard",
-      url: "/dashboard",
-      icon: IconDashboard,
-    },
-    {
-      title: "Courses",
-      url: "/courses",
-      icon: IconBooks,
-    },
-    {
-      title: "AI Management",
-      url: "/admin/ai-models",
-      icon: IconBrain,
-    },
-    {
-      title: "User Management",
-      url: "/admin/users",
-      icon: IconUsers,
-    },
-    {
-      title: "Chatbot",
-      url: "/chat",
-      icon: IconRobot,
-    },
-    {
-      title: "Analytics",
-      url: "#",
-      icon: IconCamera,
-    },
-    {
-      title: "Reports",
-      url: "#",
-      icon: IconReport,
-    },
-  ],
-  navDocs: [
-    {
-      title: "Documents",
-      icon: IconFileDescription,
-      url: "#",
-      items: [
-        {
-          title: "Recent",
-          url: "#",
-        },
-        {
-          title: "Shared",
-          url: "#",
-        },
-        {
-          title: "Archived",
-          url: "#",
-        },
-      ],
-    },
-    {
-      title: "Users",
-      icon: IconUsers,
-      url: "#",
-      items: [
-        {
-          title: "All Users",
-          url: "#",
-        },
-        {
-          title: "Roles",
-          url: "#",
-        },
-        {
-          title: "Permissions",
-          url: "#",
-        },
-      ],
-    },
-    {
-      title: "Projects",
-      icon: IconFolder,
-      url: "#",
-      items: [
-        {
-          title: "Active",
-          url: "#",
-        },
-        {
-          title: "Completed",
-          url: "#",
-        },
-      ],
-    },
-    {
-      title: "Prompts",
-      icon: IconFileAi,
-      url: "#",
-      items: [
-        {
-          title: "Active Proposals",
-          url: "#",
-        },
-        {
-          title: "Archived",
-          url: "#",
-        },
-      ],
-    },
-  ],
-  navSecondary: [
-    {
-      title: "Settings",
-      url: "/settings",
-      icon: IconSettings,
-    },
-    {
-      title: "Get Help",
-      url: "#",
-      icon: IconHelp,
-    },
-    {
-      title: "Search",
-      url: "#",
-      icon: IconSearch,
-    },
-  ],
-  documents: [
-    {
-      name: "Data Library",
-      url: "#",
-      icon: IconDatabase,
-    },
-    {
-      name: "Reports",
-      url: "#",
-      icon: IconReport,
-    },
-    {
-      name: "Word Assistant",
-      url: "#",
-      icon: IconFileWord,
-    },
-  ],
+const NAV_ICONS: Record<NavItemKey, Icon> = {
+  dashboard: IconDashboard,
+  courses: IconBooks,
+  chat: IconRobot,
+  "admin-users": IconUsers,
+  "admin-ai": IconBrain,
+  "admin-bugs": IconReport,
+  settings: IconSettings,
+}
+
+function toNavMainItems(items: ReturnType<typeof getNavForUser>) {
+  return items.map((item) => ({
+    title: item.title,
+    url: item.url,
+    icon: NAV_ICONS[item.key],
+  }))
 }
 
 export function AppSidebar({
@@ -185,6 +54,9 @@ export function AppSidebar({
 }: {
   user: User
 } & React.ComponentProps<typeof Sidebar>) {
+  const navMain = toNavMainItems(getNavForUser(user))
+  const navSecondary = toNavMainItems(getNavSecondaryForUser(user))
+
   return (
     <Sidebar collapsible="offcanvas" {...props}>
       <SidebarHeader>
@@ -194,7 +66,7 @@ export function AppSidebar({
               asChild
               className="data-[slot=sidebar-menu-button]:!p-1.5"
             >
-              <a href="#">
+              <a href="/dashboard">
                 <IconInnerShadowTop className="!size-5" />
                 <span className="text-base font-semibold">EduAI</span>
               </a>
@@ -203,11 +75,8 @@ export function AppSidebar({
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        <NavMain items={data.navMain.filter(item =>
-          (item.title !== "AI Management" && item.title !== "User Management") || user.role === "ADMIN"
-        )} />
-        {/* <NavDocuments items={data.documents} /> */}
-        <NavSecondary items={data.navSecondary} className="mt-auto" />
+        <NavMain items={navMain} />
+        <NavSecondary items={navSecondary} className="mt-auto" />
       </SidebarContent>
       <SidebarFooter>
         <NavUser user={user} />

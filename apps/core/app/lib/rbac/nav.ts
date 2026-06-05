@@ -1,29 +1,40 @@
-export interface NavItem {
-  title: string
-  url: string
-  icon?: string
-}
+import type { NavItem, NavUser } from '~/lib/rbac/types'
 
-export interface NavGroup {
-  label?: string
-  items: NavItem[]
-}
-
-const BASE_NAV: NavItem[] = [
-  { title: 'Courses', url: '/courses', icon: 'book' },
-  { title: 'Chat', url: '/chat', icon: 'message' },
-  { title: 'Settings', url: '/settings', icon: 'settings' },
+const CORE_NAV: NavItem[] = [
+  { key: 'dashboard', title: 'Dashboard', url: '/dashboard' },
+  { key: 'courses', title: 'Courses', url: '/courses' },
+  { key: 'chat', title: 'Chatbot', url: '/chat' },
 ]
 
 const ADMIN_NAV: NavItem[] = [
-  { title: 'User Management', url: '/admin/users', icon: 'users' },
-  { title: 'AI Management', url: '/admin/ai-models', icon: 'cpu' },
-  { title: 'Bug Reports', url: '/admin/bug-reports', icon: 'bug' },
+  { key: 'admin-users', title: 'User Management', url: '/admin/users' },
+  { key: 'admin-ai', title: 'AI Management', url: '/admin/ai-models' },
+  { key: 'admin-bugs', title: 'Bug Reports', url: '/admin/bug-reports' },
 ]
 
-// Returns nav items for a given UserRole string. B imports this for app-sidebar.tsx.
-// UNIT_ADMIN gets no system-level admin nav (§4 — no User/AI/Bug admin access).
-export function getNavForUser(role: string): { main: NavItem[]; admin: NavItem[] } {
-  const admin = role === 'ADMIN' ? ADMIN_NAV : []
-  return { main: BASE_NAV, admin }
+const SETTINGS_NAV: NavItem[] = [
+  { key: 'settings', title: 'Settings', url: '/settings' },
+]
+
+/** Main sidebar links per rbac-matrix §4, §10–13 shell rules. */
+export function getNavForUser(user: NavUser): NavItem[] {
+  const role = user.role ?? 'STUDENT'
+
+  if (role === 'ADMIN') {
+    return [...CORE_NAV, ...ADMIN_NAV]
+  }
+
+  // UNIT_ADMIN, INSTRUCTOR, TA, STUDENT — no platform admin section
+  return CORE_NAV
+}
+
+/** ADMIN / UNIT_ADMIN use global chat; others use course-scoped chat (§10). */
+export function usesGlobalChat(user: NavUser): boolean {
+  const role = user.role ?? 'STUDENT'
+  return role === 'ADMIN' || role === 'UNIT_ADMIN'
+}
+
+/** Secondary sidebar links (Settings — all roles §12). */
+export function getNavSecondaryForUser(_user: NavUser): NavItem[] {
+  return SETTINGS_NAV
 }
