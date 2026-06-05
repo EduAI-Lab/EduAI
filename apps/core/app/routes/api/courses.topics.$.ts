@@ -109,7 +109,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       }
 
       const body = await request.json();
-      const result = await createCourseTopic(courseId, body);
+      const result = await createCourseTopic(courseId, body, session?.user.id ?? null);
 
       if (result.status !== "201") {
         if (result.status === "409") {

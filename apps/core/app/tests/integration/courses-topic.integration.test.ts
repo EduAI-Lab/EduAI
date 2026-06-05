@@ -343,6 +343,25 @@ describe("POST /api/courses/:courseId/topics", () => {
     expect(vi.mocked(auth.api.getSession)).not.toHaveBeenCalled();
   });
 
+  it("persists createdBy as the session user on user-auth create (#294)", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(ADMIN_SESSION as never);
+    const res = await action(makeActionArgs("POST", courseId, { name: "Owner Tracking" }));
+    expect(res.status).toBe(201);
+    const { id } = await res.json();
+    const row = await prisma.courseTopic.findUnique({ where: { id } });
+    expect(row?.createdBy).toBe(adminId);
+  });
+
+  it("persists null createdBy on service-key create (#294 — no owner)", async () => {
+    const res = await action(
+      makeActionArgs("POST", courseId, { name: "Ownerless Topic" }, `Bearer ${VALID_SERVICE_KEY}`),
+    );
+    expect(res.status).toBe(201);
+    const { id } = await res.json();
+    const row = await prisma.courseTopic.findUnique({ where: { id } });
+    expect(row?.createdBy).toBeNull();
+  });
+
   it("returns 409 TOPIC_ALREADY_EXISTS with existingId on duplicate name", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(ADMIN_SESSION as never);
 
