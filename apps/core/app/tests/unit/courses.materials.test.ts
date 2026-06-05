@@ -153,6 +153,34 @@ describe("POST /api/courses/:courseId/materials action", () => {
     expect(res.status).toBe(400);
   });
 
+  it("persists uploadedBy as the session user on create (#294)", async () => {
+    mockSession("INSTRUCTOR");
+    vi.mocked(prisma.course.findFirst).mockResolvedValue({ id: COURSE_ID } as never);
+    vi.mocked(processUploadedFile).mockResolvedValue({
+      checksum: "new-checksum", title: "file.pdf", mimeType: "application/pdf",
+      fileSize: 100, content: "text",
+    } as never);
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
+    vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-1" } as never);
+    vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "mat-1" } as never);
+
+    const mockFormData = new FormData();
+    mockFormData.append("file", new File(["content"], "file.pdf", { type: "application/pdf" }));
+    const stubRequest = { formData: () => Promise.resolve(mockFormData) } as unknown as Request;
+
+    const res = await action({
+      request: stubRequest,
+      params: { courseId: COURSE_ID },
+      context: {} as never,
+    });
+    expect(res.status).toBe(200);
+    expect(prisma.courseMaterial.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ uploadedBy: "user-1" }),
+      }),
+    );
+  });
+
   it("returns 409 when duplicate file checksum exists", async () => {
     mockSession("ADMIN");
     vi.mocked(prisma.course.findFirst).mockResolvedValue({ id: COURSE_ID } as never);

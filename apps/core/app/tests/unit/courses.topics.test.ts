@@ -33,6 +33,7 @@ const TOPIC = {
   id: "topic-1",
   courseId: COURSE_ID,
   name: "Graphs",
+  createdBy: null,
   deletedAt: null,
   createdAt: TOPIC_AT,
   updatedAt: TOPIC_AT,
@@ -224,11 +225,26 @@ describe("courses.topics action — POST", () => {
     expect(await res.json()).toEqual(TOPIC_JSON);
   });
 
+  it("threads the session user id as createdBy (#294)", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", role: "ADMIN" },
+    } as never);
+    vi.mocked(createCourseTopic).mockResolvedValue({ status: "201", topic: TOPIC });
+    await action(makePost({ name: "Heaps" }));
+    expect(createCourseTopic).toHaveBeenCalledWith(COURSE_ID, { name: "Heaps" }, "u1");
+  });
+
   it("returns 201 via service key without session", async () => {
     vi.mocked(createCourseTopic).mockResolvedValue({ status: "201", topic: TOPIC });
     const res = await action(makePost({ name: "Heaps" }, `Bearer ${VALID_KEY}`));
     expect(res.status).toBe(201);
     expect(auth.api.getSession).not.toHaveBeenCalled();
+  });
+
+  it("passes null createdBy on the service-key path (#294 — no owner)", async () => {
+    vi.mocked(createCourseTopic).mockResolvedValue({ status: "201", topic: TOPIC });
+    await action(makePost({ name: "Heaps" }, `Bearer ${VALID_KEY}`));
+    expect(createCourseTopic).toHaveBeenCalledWith(COURSE_ID, { name: "Heaps" }, null);
   });
 });
 

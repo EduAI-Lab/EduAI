@@ -79,6 +79,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
         checksum: fileInfo.checksum,
         rawText: fileInfo.content,
         status: 'PROCESSING',
+        uploadedBy: user.id, // #294: owner FK for TA own-only delete (§7)
       },
     });
 
