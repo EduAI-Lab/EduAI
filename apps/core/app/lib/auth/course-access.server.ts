@@ -14,7 +14,8 @@ export type AccessLevel = {
 /** Minimal user shape needed to resolve access (a better-auth session user satisfies it). */
 export type RbacUser = {
   id: string;
-  role: string;
+  /** Optional/null on better-auth session users — no platform privilege when absent. */
+  role?: string | null;
   /** Optional — fetched from the DB when absent and the user is a UNIT_ADMIN. */
   authorizedUnits?: string[];
 };
@@ -31,7 +32,7 @@ const LEVELS: Record<AccessLevel["level"], AccessLevel> = {
  * Session users don't carry `authorizedUnits` (not a better-auth additional
  * field) — fetch lazily, only for UNIT_ADMIN callers.
  */
-async function getAuthorizedUnits(user: RbacUser): Promise<string[]> {
+export async function getAuthorizedUnits(user: RbacUser): Promise<string[]> {
   if (user.authorizedUnits) return user.authorizedUnits;
   const row = await prisma.user.findUnique({
     where: { id: user.id },
