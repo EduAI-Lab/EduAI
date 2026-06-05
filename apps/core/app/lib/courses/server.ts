@@ -10,8 +10,10 @@ import {
   CreateCourseSchema,
   UpdateCourseSchema,
   CreateCourseTopicSchema,
+  UpdateCourseTopicSchema,
   DeleteCourseTopicSchema,
   type CreateCourseTopicInput,
+  type UpdateCourseTopicInput,
   type DeleteCourseTopicInput,
 } from "./schemas";
 
@@ -345,6 +347,49 @@ export async function createCourseTopic(
       return {
         status: "409",
         existingId: existing?.id ?? null,
+      } as const;
+    }
+    throw error;
+  }
+}
+
+export async function updateCourseTopic(
+  courseId: string,
+  topicId: string,
+  payload: UpdateCourseTopicInput,
+) {
+  const parsed = UpdateCourseTopicSchema.safeParse(payload);
+
+  if (!parsed.success) {
+    return {
+      status: "400",
+      details: parsed.error.flatten(),
+    } as const;
+  }
+
+  const existing = await prisma.courseTopic.findFirst({
+    where: { id: topicId, courseId, deletedAt: null },
+    select: { id: true },
+  });
+  if (!existing) {
+    return { status: "404" } as const;
+  }
+
+  try {
+    const topic = await prisma.courseTopic.update({
+      where: { id: topicId },
+      data: { name: parsed.data.name.trim() },
+    });
+    return { status: "200", topic } as const;
+  } catch (error: any) {
+    if (error?.code === "P2002") {
+      const duplicate = await prisma.courseTopic.findFirst({
+        where: { courseId, name: parsed.data.name.trim(), deletedAt: null },
+        select: { id: true },
+      });
+      return {
+        status: "409",
+        existingId: duplicate?.id ?? null,
       } as const;
     }
     throw error;

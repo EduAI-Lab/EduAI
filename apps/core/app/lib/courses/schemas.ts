@@ -41,6 +41,10 @@ export const CreateCourseTopicSchema = z.object({
   name: z.string().min(1, "Topic name is required"),
 });
 
+export const UpdateCourseTopicSchema = z.object({
+  name: z.string().min(1, "Topic name is required"),
+});
+
 export const DeleteCourseTopicSchema = z
   .object({
     topicId: z.string().min(1).optional(),
@@ -52,4 +56,5 @@ export const DeleteCourseTopicSchema = z
   });
 
 export type CreateCourseTopicInput = z.infer<typeof CreateCourseTopicSchema>;
+export type UpdateCourseTopicInput = z.infer<typeof UpdateCourseTopicSchema>;
 export type DeleteCourseTopicInput = z.infer<typeof DeleteCourseTopicSchema>;

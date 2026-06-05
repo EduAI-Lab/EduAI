@@ -8,6 +8,7 @@ const prismaMock = vi.hoisted(() => ({
     findMany: vi.fn(),
     findFirst: vi.fn(),
     create: vi.fn(),
+    update: vi.fn(),
     updateMany: vi.fn(),
   },
   user: { findMany: vi.fn(), findUnique: vi.fn() },
@@ -36,6 +37,7 @@ import {
   updateCourse,
   deleteCourse,
   createCourseTopic,
+  updateCourseTopic,
   deleteCourseTopic,
 } from "~/lib/courses/server";
 import { auth } from "~/lib/auth/server";
@@ -118,6 +120,42 @@ describe("createCourseTopic", () => {
     expect(prismaMock.courseTopic.create).toHaveBeenCalledWith({
       data: { courseId: "c1", name: "Heaps", createdBy: null },
     });
+  });
+});
+
+describe("updateCourseTopic", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("returns 404 when topic is missing or soft-deleted", async () => {
+    prismaMock.courseTopic.findFirst.mockResolvedValue(null);
+    const result = await updateCourseTopic("c1", "missing", { name: "Renamed" });
+    expect(result).toEqual({ status: "404" });
+    expect(prismaMock.courseTopic.update).not.toHaveBeenCalled();
+  });
+
+  it("renames the topic and returns 200", async () => {
+    prismaMock.courseTopic.findFirst.mockResolvedValue({ id: "t1" });
+    prismaMock.courseTopic.update.mockResolvedValue({ id: "t1", name: "Renamed" });
+    const result = await updateCourseTopic("c1", "t1", { name: "  Renamed  " });
+    expect(result.status).toBe("200");
+    expect(prismaMock.courseTopic.update).toHaveBeenCalledWith({
+      where: { id: "t1" },
+      data: { name: "Renamed" },
+    });
+  });
+
+  it("returns 409 with existingId on duplicate name", async () => {
+    prismaMock.courseTopic.findFirst
+      .mockResolvedValueOnce({ id: "t1" })
+      .mockResolvedValueOnce({ id: "t2" });
+    prismaMock.courseTopic.update.mockRejectedValue({ code: "P2002" });
+    const result = await updateCourseTopic("c1", "t1", { name: "Taken" });
+    expect(result).toEqual({ status: "409", existingId: "t2" });
+  });
+
+  it("returns 400 on empty name", async () => {
+    const result = await updateCourseTopic("c1", "t1", { name: "" });
+    expect(result.status).toBe("400");
   });
 });
 
