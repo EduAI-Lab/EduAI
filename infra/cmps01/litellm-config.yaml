@@ -10,7 +10,7 @@ model_list:
       api_base: http://127.0.0.1:18001/v1
       api_key: vllm-local
 
-  # GPU 1 — Qwen2.5-32B-Instruct-AWQ (eduai-vllm-2)
+  # GPU 1 — Qwen2.5-32B-Instruct-AWQ (eduai-vllm-t3)
   - model_name: qwen2.5-32b-instruct
     litellm_params:
       model: openai/qwen2.5-32b-instruct
