@@ -1,16 +1,12 @@
 import { redirect, useLoaderData } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 
+import { BugReportsAdminView } from "~/components/admin/bug-reports-admin-view";
 import { AppSidebar } from "~/components/app-sidebar";
-import { DashboardAdminView } from "~/components/dashboard/dashboard-admin-view";
-import { DashboardInstructorView } from "~/components/dashboard/dashboard-instructor-view";
-import { DashboardStudentView } from "~/components/dashboard/dashboard-student-view";
-import { DashboardTaView } from "~/components/dashboard/dashboard-ta-view";
-import { DashboardUnitAdminView } from "~/components/dashboard/dashboard-unit-admin-view";
 import { SiteHeader } from "~/components/site-header";
 import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
+import { useBugReports } from "~/hooks/api/use-bug-reports";
 import { auth } from "~/lib/auth/server";
-import type { User } from "~/lib/auth/types";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request);
@@ -19,30 +15,18 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return redirect("/auth/login");
   }
 
+  if (session.user.role !== "ADMIN") {
+    return redirect("/dashboard");
+  }
+
   return {
     user: session.user,
   };
 }
 
-function DashboardContent({ user }: { user: User }) {
-  switch (user.role) {
-    case "ADMIN":
-      return <DashboardAdminView />;
-    case "UNIT_ADMIN":
-      return <DashboardUnitAdminView />;
-    case "INSTRUCTOR":
-    case "PROFESSOR":
-      return <DashboardInstructorView />;
-    case "TA":
-      return <DashboardTaView />;
-    case "STUDENT":
-    default:
-      return <DashboardStudentView />;
-  }
-}
-
-export default function Page() {
+export default function BugReportsPage() {
   const { user } = useLoaderData<typeof loader>();
+  const { reports, isLoading, isStubbed, updateReportStatus } = useBugReports();
 
   return (
     <SidebarProvider
@@ -56,7 +40,12 @@ export default function Page() {
       <AppSidebar variant="inset" user={user} />
       <SidebarInset>
         <SiteHeader user={user} />
-        <DashboardContent user={user} />
+        <BugReportsAdminView
+          reports={reports}
+          isLoading={isLoading}
+          isStubbed={isStubbed}
+          onUpdateStatus={updateReportStatus}
+        />
       </SidebarInset>
     </SidebarProvider>
   );
