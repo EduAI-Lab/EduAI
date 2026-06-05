@@ -201,7 +201,10 @@ export async function findRelevantContent(
  * Process and store embeddings for a course material (single transaction).
  */
 export async function processMaterialEmbeddings(materialId: string, content: string): Promise<void> {
-  const chunks = generateChunks(content);
+  const SEMANTIC_SEPARATOR = "--- CHUNK SEPARATOR ---";
+  const chunks = content.includes(SEMANTIC_SEPARATOR)
+    ? content.split(SEMANTIC_SEPARATOR).map((c) => c.trim()).filter((c) => c.length > 0)
+    : generateChunks(content);
 
   if (chunks.length === 0) {
     throw new Error("No content chunks generated");

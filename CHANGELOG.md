@@ -3,8 +3,10 @@
 All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) are documented in this file.
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
-
 ## [Week 5 — June 1–5, 2026]
+
+### Fixed
+- [core] rag: Eliminate double-split on material ingest path — `processMaterialEmbeddings` now detects the `--- CHUNK SEPARATOR ---` delimiter written by `processUploadedFile` and splits on it directly, preserving the semantic chunks produced by `applySemanticChunking`; falls back to `generateChunks` for content that did not pass through the upload path. Previously, every uploaded file was semantically chunked in `file-processing.ts` and then immediately re-split by a naive sentence splitter in `embedding.ts`, destroying section boundaries and producing ~4× more fragments than necessary (13 chunks → 3 chunks on a representative 5-section lecture-notes PDF). (#360, @ammaarm128, 2026-06-05)
 
 ### Added
 - [core] api: Build `GET /api/courses/:id/enrollments` — dual-auth endpoint (user OAuth Bearer and service key) that returns all enrollments (active and inactive) for a course; maps Prisma `Enrollment` + `User` join to the contract shape (`studentId`, `studentEmail`, `studentName`, `enrolledAt`, `isActive`, `role`); service key callers skip enrollment authorization; user OAuth callers must be enrolled in the course (else `403`); returns `404 COURSE_NOT_FOUND` for missing/soft-deleted courses. Unblocks AI Tutor's `POST /api/courses/import-external` flow. (#NNN, @ammaarm128, 2026-05-30)
@@ -12,7 +14,6 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] tests: Add integration tests (`courses.enrollments.integration.test.ts`) for `GET /api/courses/:id/enrollments` — seeds users (STUDENT, TA, INSTRUCTOR, outsider) and enrollments against a real test DB; covers `401`, `403` invalid key, `403` not enrolled, `404` nonexistent course, `200` via service key and user OAuth, role mapping, active + inactive returned, and correct field values from seeded data. (#NNN, @ammaarm128, 2026-05-30)
 
 ---
-
 ## [Week 4 — May 25–29, 2026]
 
 ### Added
