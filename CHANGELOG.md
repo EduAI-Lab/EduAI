@@ -10,6 +10,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
+- [core] rag: Add per-course RAG tuning — `ragTopK Int?` and `ragSimilarityThreshold Float?` on the `Course` model (nullable, both default to global values when null); `findRelevantContent` now fetches course settings and applies them with the resolution order: course override → caller arg → global env default. Two courses can now have completely different retrieval behaviour without touching the global config. (#365, @ammaarm128, 2026-06-05)
+- [core] api: `GET /api/courses/:id/rag-settings` + `PATCH /api/courses/:id/rag-settings` — read and update per-course RAG overrides; PATCH is restricted to ADMIN/INSTRUCTOR; setting a field to `null` restores the global default. (#365, @ammaarm128, 2026-06-05)
+- [core] ui: RAG Settings tab on the course detail page (`/courses/:courseId`) — visible to admins and instructors; form fields for Top-K chunks (1–20) and similarity threshold (0–1); empty fields clear the override back to global default. (#365, @ammaarm128, 2026-06-05)
+- [core] tests: 10 unit tests (`embedding.rag-settings.test.ts`) for `findRelevantContent` course-level settings — covers ragTopK priority over caller limit, fallback to caller limit, fallback to global default, null course row, ragSimilarityThreshold priority, caller threshold fallback, `RAG_SIMILARITY_THRESHOLD` env var reading, correct `findUnique` call shape, and output mapping. (#365, @ammaarm128, 2026-06-05)
 - [core] api: Add ADMIN-only bug-report list/triage endpoints with anonymity masking, plus `GET /api/bug-reports?mine=true` for own reports (§11). (#304, #478, @abdullahmoh21, 2026-06-05)
 - [core] auth: Make `GET /api/ai-providers` and `GET /api/ai-models` ADMIN-only (§13). (#303, #478, @abdullahmoh21, 2026-06-05)
 - [core] api: Add `GET`/`PATCH /api/me`, block self-role-changes, and support `authorizedUnits` assignment for UNIT_ADMINs (§4). (#297, #478, @abdullahmoh21, 2026-06-05)
