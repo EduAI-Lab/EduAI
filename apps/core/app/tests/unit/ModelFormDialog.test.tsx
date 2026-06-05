@@ -258,7 +258,7 @@ describe("ModelFormDialog — vLLM section", () => {
     expect(screen.getByText("Available vLLM Models")).toBeInTheDocument();
   });
 
-  it("calls onFetchVllmModels when Fetch Models is clicked", () => {
+  it("calls onFetchVllmModels when Refresh list is clicked", () => {
     const onFetchVllmModels = vi.fn();
     render(
       <ModelFormDialog
@@ -270,7 +270,7 @@ describe("ModelFormDialog — vLLM section", () => {
         onFetchVllmModels={onFetchVllmModels}
       />
     );
-    fireEvent.click(screen.getByRole("button", { name: "Fetch Models" }));
+    fireEvent.click(screen.getByRole("button", { name: /refresh list/i }));
     expect(onFetchVllmModels).toHaveBeenCalled();
   });
 
