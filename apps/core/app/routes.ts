@@ -35,6 +35,7 @@ export default [
     "/api/courses/:id/enrollments/:enrollmentId",
     "routes/api/courses.enrollments.$enrollmentId.ts",
   ),
+  route("/api/courses/:id/rag-settings", "routes/api/courses.id.rag-settings.ts"),
   route("/api/questions", "routes/api/questions.ts"),
   route("/api/questions/:id", "routes/api/questions.$id.ts"),
   route("/admin/ai-models", "routes/admin.ai-models.tsx"),
