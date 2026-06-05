@@ -105,7 +105,11 @@ model Course {
   deletedAt      DateTime?
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
-  aiInstructions String           @default("")
+  aiInstructions         String           @default("")
+  /// Per-course RAG chunk limit. Overrides the global HYBRID_RAG_MAX_CHUNKS when set.
+  ragTopK                Int?
+  /// Per-course cosine-similarity threshold (0–1). Overrides RAG_SIMILARITY_THRESHOLD env when set.
+  ragSimilarityThreshold Float?
   aiInteractions AIInteraction[]
   enrollments    Enrollment[]
   materials      CourseMaterial[]
