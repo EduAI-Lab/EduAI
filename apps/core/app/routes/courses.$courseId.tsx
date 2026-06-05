@@ -14,6 +14,8 @@ import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar"
 import { CourseMaterialsUpload } from "~/components/course-materials-upload"
 import { useApiKeys } from "~/hooks/use-api-keys"
 import prisma from "~/lib/prisma.server"
+import { Label } from "~/components/ui/label"
+import { Input } from "~/components/ui/input"
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request)
@@ -65,7 +67,8 @@ type Course = {
   year: number
   isActive: boolean
   aiInstructions: string
-  professorId: string
+  ragTopK: number | null
+  ragSimilarityThreshold: number | null
   createdAt: string
   updatedAt: string
 }
@@ -75,6 +78,40 @@ export default function CourseDetailPage() {
   const { courseId } = useParams()
   const { getValidApiKeys } = useApiKeys()
   const [activeTab, setActiveTab] = useState("overview")
+
+  // RAG settings local state (pre-populated from loaded course)
+  const [ragTopK, setRagTopK] = useState<string>(course.ragTopK?.toString() ?? "")
+  const [ragThreshold, setRagThreshold] = useState<string>(
+    course.ragSimilarityThreshold?.toString() ?? "",
+  )
+  const [ragSaving, setRagSaving] = useState(false)
+  const [ragSaveMsg, setRagSaveMsg] = useState<string | null>(null)
+
+  async function saveRagSettings() {
+    setRagSaving(true)
+    setRagSaveMsg(null)
+    try {
+      const payload: Record<string, number | null> = {
+        ragTopK: ragTopK === "" ? null : parseInt(ragTopK, 10),
+        ragSimilarityThreshold: ragThreshold === "" ? null : parseFloat(ragThreshold),
+      }
+      const res = await fetch(`/api/courses/${courseId}/rag-settings`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+      if (res.ok) {
+        setRagSaveMsg("Saved.")
+      } else {
+        const err = await res.json().catch(() => ({}))
+        setRagSaveMsg(err?.error ?? "Save failed.")
+      }
+    } catch {
+      setRagSaveMsg("Network error.")
+    } finally {
+      setRagSaving(false)
+    }
+  }
 
   const isAdmin = user.role === "ADMIN"
   const isProfessor = user.role === "PROFESSOR"
@@ -140,10 +177,13 @@ export default function CourseDetailPage() {
 
               <div className="px-4 lg:px-6">
                 <Tabs value={activeTab} onValueChange={setActiveTab}>
-                  <TabsList className="grid w-full grid-cols-3">
+                  <TabsList className="grid w-full grid-cols-4">
                     <TabsTrigger value="overview">Overview</TabsTrigger>
                     <TabsTrigger value="materials">Materials</TabsTrigger>
                     <TabsTrigger value="chat">Chat</TabsTrigger>
+                    {canManageMaterials && (
+                      <TabsTrigger value="settings">Settings</TabsTrigger>
+                    )}
                   </TabsList>
 
                   <TabsContent value="overview" className="mt-6">
@@ -226,6 +266,75 @@ export default function CourseDetailPage() {
                       </CardContent>
                     </Card>
                   </TabsContent>
+
+                  {canManageMaterials && (
+                    <TabsContent value="settings" className="mt-6">
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="flex items-center gap-2">
+                            <IconSettings className="h-5 w-5" />
+                            RAG Settings
+                          </CardTitle>
+                          <CardDescription>
+                            Override the global retrieval defaults for this course. Leave a field
+                            blank to use the platform default.
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="grid gap-6 max-w-sm">
+                            <div className="grid gap-2">
+                              <Label htmlFor="ragTopK">
+                                Top-K chunks{" "}
+                                <span className="text-muted-foreground text-xs">(default: 4)</span>
+                              </Label>
+                              <Input
+                                id="ragTopK"
+                                type="number"
+                                min={1}
+                                max={20}
+                                placeholder="e.g. 6"
+                                value={ragTopK}
+                                onChange={(e) => setRagTopK(e.target.value)}
+                              />
+                              <p className="text-xs text-muted-foreground">
+                                Maximum number of material chunks returned per RAG query (1–20).
+                              </p>
+                            </div>
+
+                            <div className="grid gap-2">
+                              <Label htmlFor="ragThreshold">
+                                Similarity threshold{" "}
+                                <span className="text-muted-foreground text-xs">(default: 0.5)</span>
+                              </Label>
+                              <Input
+                                id="ragThreshold"
+                                type="number"
+                                min={0.01}
+                                max={0.99}
+                                step={0.05}
+                                placeholder="e.g. 0.6"
+                                value={ragThreshold}
+                                onChange={(e) => setRagThreshold(e.target.value)}
+                              />
+                              <p className="text-xs text-muted-foreground">
+                                Minimum cosine similarity score (0–1). Higher values return fewer
+                                but more relevant chunks.
+                              </p>
+                            </div>
+
+                            <div className="flex items-center gap-3">
+                              <Button onClick={saveRagSettings} disabled={ragSaving}>
+                                {ragSaving ? "Saving…" : "Save settings"}
+                              </Button>
+                              {ragSaveMsg && (
+                                <span className="text-sm text-muted-foreground">{ragSaveMsg}</span>
+                              )}
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </TabsContent>
+                  )}
                 </Tabs>
               </div>
             </div>
