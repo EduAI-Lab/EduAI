@@ -8,6 +8,9 @@ services:
     restart: unless-stopped
     ports:
       - "8001:4000"
+    extra_hosts:
+      # Lets LiteLLM reach vLLM backends bound to host 127.0.0.1:18001/18002
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./litellm-config.yaml:/app/config.yaml:ro
     command: ["--config", "/app/config.yaml", "--port", "4000", "--host", "0.0.0.0"]

@@ -80,11 +80,15 @@ async function main() {
   const text = await chatRes.text();
   try {
     const json = JSON.parse(text);
-    const content = json.choices?.[0]?.message?.content;
-    console.log("reply:", content);
-    console.log("usage:", json.usage);
+    if (!chatRes.ok) {
+      console.error("error body:", JSON.stringify(json, null, 2));
+    } else {
+      const content = json.choices?.[0]?.message?.content;
+      console.log("reply:", content);
+      console.log("usage:", json.usage);
+    }
   } catch {
-    console.log(text.slice(0, 500));
+    console.log(text.slice(0, 2000));
   }
 
   if (!chatRes.ok) process.exit(1);
