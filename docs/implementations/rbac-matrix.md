@@ -94,6 +94,30 @@ The **TA** and **Student** columns in all matrices below refer to `EnrollmentRol
 
 Every route handler that touches a course-scoped resource should resolve access through a single shared helper rather than inline checks. The helper evaluates the composition table from [Section 1](#1-role-model) and returns the resolved access level for the request.
 
+### Shared contract
+
+All three apps implement the same signature (Core: `apps/core/app/lib/auth/course-access.server.ts` — #293; AI Tutor: #295; QM: #296):
+
+```
+resolveCourseAccess(user, courseId) → Promise<AccessLevel | null>
+
+AccessLevel = {
+  level: 'admin' | 'unit' | 'instructor' | 'ta' | 'student',
+  rank:  4 | 3 | 2 | 1 | 0,
+}
+```
+
+Resolution order (first match wins):
+
+1. `user.role === 'ADMIN'` → `{ level: 'admin', rank: 4 }`
+2. `user.role === 'UNIT_ADMIN'` AND `course.department !== null` AND `course.department in user.authorizedUnits` → `{ level: 'unit', rank: 3 }` (null department is **not** a match — [§19](#19-cross-cutting-rules) unit lock)
+3. Active `Enrollment` row `(courseId, userId)` with `role === 'INSTRUCTOR'` → `{ level: 'instructor', rank: 2 }`
+4. Active `Enrollment` row with `role === 'TA'` → `{ level: 'ta', rank: 1 }`
+5. Active `Enrollment` row with `role === 'STUDENT'` → `{ level: 'student', rank: 0 }`
+6. Otherwise → `null` (also when the course does not exist or is soft-deleted)
+
+Gate tiers derive from `rank`: view = any non-null access (+ publish gate for `student`); manage = `rank >= 2`; TA own-only carve-outs = `level === 'ta' && resource.createdBy === user.id`. Implementations may add app-local refinements (e.g. Core also exposes a variant returning the fetched course row to distinguish 404 from 403) as long as this contract is preserved.
+
 **Pseudo-code:**
 
 ```ts
