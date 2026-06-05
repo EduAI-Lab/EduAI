@@ -6,6 +6,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ## [Week 5 — June 1–5, 2026]
 
 ### Fixed
+- [core] rag: Replace per-chunk sequential INSERT with `createManyAndReturn` + batched transaction on material embed path — chunk creation now costs 1 DB round-trip regardless of document size (down from N); embedding inserts remain individual raw SQL due to the pgvector type but run inside the same transaction; verified against local DB: 8 queries → 6 queries for a 3-chunk PDF, scales to N+1 → 2 for large documents where N is chunk count. (#364, @ammaarm128, 2026-06-05)
 - [core] rag: Eliminate double-split on material ingest path — `processMaterialEmbeddings` now detects the `--- CHUNK SEPARATOR ---` delimiter written by `processUploadedFile` and splits on it directly, preserving the semantic chunks produced by `applySemanticChunking`; falls back to `generateChunks` for content that did not pass through the upload path. Previously, every uploaded file was semantically chunked in `file-processing.ts` and then immediately re-split by a naive sentence splitter in `embedding.ts`, destroying section boundaries and producing ~4× more fragments than necessary (13 chunks → 3 chunks on a representative 5-section lecture-notes PDF). (#360, @ammaarm128, 2026-06-05)
 
 ### Added

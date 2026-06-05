@@ -213,17 +213,17 @@ export async function processMaterialEmbeddings(materialId: string, content: str
   const embeddings = await generateEmbeddings(chunks);
 
   await prisma.$transaction(async (tx) => {
-    for (let i = 0; i < chunks.length; i++) {
-      const createdChunk = await tx.materialChunk.create({
-        data: {
-          materialId,
-          index: i,
-          content: chunks[i],
-        },
-      });
+    // Batch-insert all chunks in one round-trip and get back their IDs
+    const createdChunks = await tx.materialChunk.createManyAndReturn({
+      data: chunks.map((content, i) => ({ materialId, index: i, content })),
+    });
+
+    // Embedding inserts require raw SQL for the vector type — kept individual
+    // but now run against already-resolved chunk IDs inside the same transaction
+    for (let i = 0; i < createdChunks.length; i++) {
       await tx.$executeRaw`
         INSERT INTO material_embeddings (id, "chunkId", embedding, "createdAt")
-        VALUES (${randomUUID()}, ${createdChunk.id}, ${embeddings[i].embedding}::vector, NOW())
+        VALUES (${randomUUID()}, ${createdChunks[i].id}, ${embeddings[i].embedding}::vector, NOW())
       `;
     }
   });
