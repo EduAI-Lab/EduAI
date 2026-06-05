@@ -11,8 +11,12 @@ import {
   type Icon,
 } from "@tabler/icons-react"
 
+import { NavDocuments } from "~/components/nav-documents"
+import type { NavDocumentItem } from "~/components/nav-documents"
 import { NavMain } from "~/components/nav-main"
+import type { NavMainItem } from "~/components/nav-main"
 import { NavSecondary } from "~/components/nav-secondary"
+import type { NavSecondaryItem } from "~/components/nav-secondary"
 import { NavUser } from "~/components/nav-user"
 import {
   Sidebar,
@@ -40,7 +44,7 @@ const NAV_ICONS: Record<NavItemKey, Icon> = {
   settings: IconSettings,
 }
 
-function toNavMainItems(items: ReturnType<typeof getNavForUser>) {
+function toNavMainItems(items: ReturnType<typeof getNavForUser>): NavMainItem[] {
   return items.map((item) => ({
     title: item.title,
     url: item.url,
@@ -48,14 +52,35 @@ function toNavMainItems(items: ReturnType<typeof getNavForUser>) {
   }))
 }
 
+function toNavSecondaryItems(
+  items: ReturnType<typeof getNavSecondaryForUser>,
+): NavSecondaryItem[] {
+  return items.map((item) => ({
+    title: item.title,
+    url: item.url,
+    icon: NAV_ICONS[item.key],
+  }))
+}
+
+export type AppSidebarProps = {
+  user: User
+  navMain?: NavMainItem[]
+  navSecondary?: NavSecondaryItem[]
+  documents?: NavDocumentItem[]
+  showDocuments?: boolean
+} & React.ComponentProps<typeof Sidebar>
+
 export function AppSidebar({
   user,
+  navMain: navMainOverride,
+  navSecondary: navSecondaryOverride,
+  documents = [],
+  showDocuments = false,
   ...props
-}: {
-  user: User
-} & React.ComponentProps<typeof Sidebar>) {
-  const navMain = toNavMainItems(getNavForUser(user))
-  const navSecondary = toNavMainItems(getNavSecondaryForUser(user))
+}: AppSidebarProps) {
+  const navMain = navMainOverride ?? toNavMainItems(getNavForUser(user))
+  const navSecondary =
+    navSecondaryOverride ?? toNavSecondaryItems(getNavSecondaryForUser(user))
 
   return (
     <Sidebar collapsible="offcanvas" {...props}>
@@ -76,6 +101,7 @@ export function AppSidebar({
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={navMain} />
+        {showDocuments && <NavDocuments items={documents} />}
         <NavSecondary items={navSecondary} className="mt-auto" />
       </SidebarContent>
       <SidebarFooter>
