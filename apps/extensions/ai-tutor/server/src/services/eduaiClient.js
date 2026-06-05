@@ -66,7 +66,7 @@ export async function postCoreBugReport(userId, payload) {
     throw new Error('EDUAI_API_KEY not configured');
   }
 
-  const url = `${getEduAiBaseUrl()}/bug-reports`;
+  const url = `${process.env.CORE_URL || 'http://localhost:3000'}/api/bug-reports`;
   const body = {
     source: 'AI_TUTOR',
     userId,
