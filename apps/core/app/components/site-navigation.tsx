@@ -2,7 +2,7 @@ import { Link, useNavigate } from "react-router";
 import { Button } from "~/components/ui/button";
 import { cn } from "~/lib/utils";
 
-interface SiteNavigationProps {
+export interface SiteNavigationProps {
   currentPage: string;
 }
 
