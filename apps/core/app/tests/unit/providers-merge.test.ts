@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { mergeLocalInferenceFromEnv } from "~/lib/ai/provider-types";
 
 describe("mergeLocalInferenceFromEnv", () => {
@@ -12,7 +12,7 @@ describe("mergeLocalInferenceFromEnv", () => {
     else process.env.OLLAMA_BASE_URL = originalOllama;
   });
 
-  it("enables vllm from env when chat model is vllm:… even if Settings sent isEnabled false", () => {
+  it("enables vllm from server env when chat model is vllm:* (ignores client isEnabled false)", () => {
     process.env.VLLM_BASE_URL = "http://cmps01.ok.ubc.ca:8001";
     const merged = mergeLocalInferenceFromEnv(
       { vllm: { isEnabled: false } },
@@ -22,12 +22,39 @@ describe("mergeLocalInferenceFromEnv", () => {
     expect(merged.vllm?.baseUrl).toBe("http://cmps01.ok.ubc.ca:8001");
   });
 
-  it("does not enable vllm without env URL when explicitly disabled", () => {
+  it("enables ollama from server env when chat model is ollama:*", () => {
+    process.env.OLLAMA_BASE_URL = "http://cmps01.ok.ubc.ca:11434";
+    const merged = mergeLocalInferenceFromEnv(
+      { ollama: { isEnabled: false } },
+      "ollama:qwen2.5:7b",
+    );
+    expect(merged.ollama?.isEnabled).toBe(true);
+    expect(merged.ollama?.baseUrl).toBe("http://cmps01.ok.ubc.ca:11434");
+  });
+
+  it("does not enable vllm without env URL", () => {
     delete process.env.VLLM_BASE_URL;
+    const merged = mergeLocalInferenceFromEnv(
+      { vllm: { isEnabled: false } },
+      "vllm:qwen2.5-7b-instruct",
+    );
+    expect(merged.vllm?.isEnabled).toBe(false);
+  });
+
+  it("does not touch local providers when chat model is cloud-only", () => {
+    process.env.VLLM_BASE_URL = "http://cmps01.ok.ubc.ca:8001";
     const merged = mergeLocalInferenceFromEnv(
       { vllm: { isEnabled: false } },
       "openai:gpt-4o",
     );
-    expect(merged.vllm?.isEnabled).toBeFalsy();
+    expect(merged.vllm?.isEnabled).toBe(false);
+  });
+
+  it("enables all local providers with env when no model id is passed", () => {
+    process.env.VLLM_BASE_URL = "http://cmps01.ok.ubc.ca:8001";
+    process.env.OLLAMA_BASE_URL = "http://cmps01.ok.ubc.ca:11434";
+    const merged = mergeLocalInferenceFromEnv({});
+    expect(merged.vllm?.isEnabled).toBe(true);
+    expect(merged.ollama?.isEnabled).toBe(true);
   });
 });
