@@ -11,17 +11,20 @@
   ],
   "scripts": {
     "postinstall": "node scripts/setup-env.js",
-    "docker:dev:db": "bash scripts/dev-db.sh",
+    "docker:dev:db": "node scripts/dev-db.js",
     "docker:dev:db:eduai": "docker compose -f docker-compose.dev.yml up -d --wait eduai-db",
     "docker:dev:db:ai-tutor": "docker compose -f docker-compose.dev.yml up -d --wait ai-tutor-db",
     "docker:dev:db:question-maker": "docker compose -f docker-compose.dev.yml up -d --wait question-maker-db",
     "docker:dev:db:down": "docker compose -f docker-compose.dev.yml down --remove-orphans",
     "docker:dev:db:logs": "docker compose -f docker-compose.dev.yml logs -f",
     "build": "turbo run build",
-    "predev": "npm run docker:dev:db",
+    "kill:ports": "node scripts/kill-ports.js",
+    "predev": "npm run kill:ports && npm run docker:dev:db",
     "dev": "turbo run dev",
+    "dbseed": "npm run db:seed -w edu-ai && npm run seed -w ai-tutor-server && npm run seed -w question-maker-backend",
     "lint": "turbo run lint",
-    "test": "turbo run test",
+    "test": "turbo run test --continue",
+    "test:coverage": "turbo run test:coverage --continue --filter=edu-ai --filter=ai-tutor-server --filter=question-maker-backend",
     "test:time-report": "node --test eduai-summer-2026/tests/team-time-report.test.js",
 
     "test:all": "bash scripts/test-in-docker.sh",
@@ -53,10 +56,21 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
-    "turbo": "latest"
+    "@types/node": "^22",
+    "lucide-react": "^0.554.0",
+    "nodemon": "^3.1.10",
+    "syncpack": "^13",
+    "tsx": "^4.19.4",
+    "turbo": "latest",
+    "typescript": "^5.8.3"
   },
   "overrides": {
     "better-auth": "1.2.8",
-    "@better-auth/cli": "1.2.8"
+    "@better-auth/cli": "1.2.8",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
+    "zod": "^3.25.76",
+    "clsx": "^2.1.1",
+    "class-variance-authority": "^0.7.1"
   }
 }

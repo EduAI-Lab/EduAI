@@ -2,7 +2,6 @@
  * Provides bug-report capture, dialog state, and a floating entry point for logged-in users.
  */
 import React, { createContext, useContext, useState, useMemo, ReactNode } from 'react';
-import { useLocation } from 'react-router-dom';
 import { BugOff } from 'lucide-react';
 import { useAuth } from './AuthContext';
 import { useBugReportCapture } from '../hooks/useBugReportCapture';
@@ -26,10 +25,9 @@ interface BugReportProviderProps {
 
 export function BugReportProvider({ children }: BugReportProviderProps) {
   const { isAuthenticated, user, isLoading } = useAuth();
-  const { pathname } = useLocation();
   const [open, setOpen] = useState(false);
 
-  const captureEnabled = !isLoading && isAuthenticated && pathname !== '/login';
+  const captureEnabled = !isLoading && isAuthenticated;
   const { getCapturedData } = useBugReportCapture(captureEnabled);
 
   const value = useMemo(

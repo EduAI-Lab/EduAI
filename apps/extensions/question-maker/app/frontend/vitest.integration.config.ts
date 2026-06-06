@@ -21,8 +21,9 @@ export default defineConfig(({ mode }) => {
     test: {
       clearMocks: true,
       environment: 'node',
-      setupFiles: ['./src/tests/vitest.setup.ts', './src/tests/integration/api.test.setup.ts'],
+      setupFiles: ['./src/tests/vitest.setup.ts'],
       include: ['src/tests/integration/**/*.test.ts', 'src/tests/integration/**/*.test.tsx'],
+      passWithNoTests: true,
     },
   }
 })

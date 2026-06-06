@@ -162,7 +162,7 @@ export const ApiTestPage = () => {
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/courses" replace />;
   }
 
   return (

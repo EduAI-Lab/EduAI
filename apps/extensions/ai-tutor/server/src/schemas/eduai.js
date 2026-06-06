@@ -37,7 +37,6 @@ export const EduAiTopicListSchema = z
 
 export const EduAiEnrollmentSchema = z
   .object({
-    id: z.string(),
     studentId: z.string(),
     studentEmail: z.string(),
     studentName: z.string(),
@@ -49,5 +48,22 @@ export const EduAiEnrollmentSchema = z
 export const EduAiEnrollmentListSchema = z
   .object({
     enrollments: z.array(EduAiEnrollmentSchema),
+  })
+  .passthrough();
+
+export const EduAiQuestionSchema = z
+  .object({
+    id: z.string(),
+    type: z.string(),
+    difficulty: z.string(),
+    content: z.string(),
+    choices: z.array(z.object({ letter: z.string(), text: z.string() })).nullable().optional(),
+    answer: z.string().nullable().optional(),
+  })
+  .passthrough();
+
+export const EduAiQuestionListSchema = z
+  .object({
+    questions: z.array(EduAiQuestionSchema),
   })
   .passthrough();
