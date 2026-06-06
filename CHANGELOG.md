@@ -7,10 +7,18 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ---
 
 
+<<<<<<< feat/VLLM
 ## [Week 5 — Jun 1–5, 2026]
 
 ### Added
 - [core] feat: vLLM local inference provider — OpenAI-compatible `vllm` provider on cmps01 (`VLLM_BASE_URL`, port **8001**), `mergeLocalInferenceFromEnv()`, seeded `qwen2.5-7b-instruct` model, `npm run vllm:smoke`, and `providers.server.ts` split for Vite client/server boundary. Stress-tested on dev: **~15× faster** than Ollama under 5-way parallel load; warm direct **~57 ms**, 10 parallel **~320–380 ms**, EduAI full stack median **~211 ms**. Docs: [`docs/rag-ai/VLLM.md`](docs/rag-ai/VLLM.md). ([#449](https://github.com/EduAI-Lab/EduAI/pull/449), Closes #435, #394)
+=======
+## [Week 5 — June 2–6, 2026]
+
+### Added
+
+- [monorepo] docs: Add Canvas integration strategy report — CWL-first access, Canvas REST roster sync MVP (course users + profile `primary_email` fallback), Question Maker REST for quizzes; LTI 1.3 documented as deferred until in-Canvas launch is required; local API validation notes and UBC pilot checklist. Added Canvas LTI vs API key technical research — endpoint reference, PowerShell/`curl.exe` testing notes, pros/cons, implementation checklist; links to `docs/implementations/lti-canvas-integration-report.md`. Add Canvas API integration guide — WSL + Canvas LMS `docker_dev_setup.sh`, `docker-compose.override.yml` host port mapping (e.g. `8080:80` to avoid Core on 3000), Question Maker connect/API verification, Docker vs host dev, troubleshooting. (#447, @glowyblack, 2026-06-03)
+>>>>>>> development
 - [core] ui: Add presentational skeleton for all 32 EduAI Core domain components — exported `*Props` types, route-owned I/O for materials upload, course selector, API key settings, and Ollama model fetch; 29 Vitest + RTL component tests under `apps/core/app/tests/unit/`. (#437, #438, #385, @ebabar5 @yta3216 @Ayyhab, 2026-06-03)
 - [core] ui: Add empty-state rows to admin AI models and providers tables (`No models found.`, `No providers found.`). (#438, @yta3216, 2026-06-03)
 
@@ -28,6 +36,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ## [Week 4 — May 25–29, 2026]
 
 ### Added
+- [monorepo] docs: Add summer 2026 chat latency investigation write-ups under [`docs/rag-ai/latency/eduai-summer-2026/`](docs/rag-ai/latency/eduai-summer-2026/) — [`FINDINGS.md`](docs/rag-ai/latency/eduai-summer-2026/FINDINGS.md) (team summary), [`FINDINGS_APPENDIX.md`](docs/rag-ai/latency/eduai-summer-2026/FINDINGS_APPENDIX.md) (sessions, methodology, data index on `troubleshoot-RAG-delay`), and [`SOLUTIONS_PLAN.md`](docs/rag-ai/latency/eduai-summer-2026/SOLUTIONS_PLAN.md) (mitigations: keep-alive, routing, token caps, cold-load UX). Docs-only; benchmark JSON/CSV and bench tooling remain on branch `troubleshoot-RAG-delay`. ([#383](https://github.com/EduAI-Lab/EduAI/pull/383), @superbolt08, 2026-05-29)
 - [monorepo] tests: Introduced Docker-based test infrastructure across all components (EduAI, AI Tutor app/server, Question Maker app/server). Added multi-stage Dockerfiles with a lockfile-exact `deps` stage, restructured `docker-compose.test.yml` into a consistent `{component}-{app|server}-{unit|integration}-tests` naming scheme, added `unit`/`integration` group arguments to `test-in-docker.sh`, and added corresponding npm scripts. (#352, @yta3216, 2026-05-27)
 - [core] feat: ADHD Assist Phase 2 — mode-conditional system prompt. When `Chat.adhdAssist === true`, `POST /api/chat` prepends the verbatim policy block from `docs/literature/adhd-assist-prompt-policy.md` §3 to the resolved system prompt before `streamText`. Style is the only IV — model, retrieval, tools, persistence, temperature, and streaming behavior are unchanged. New `apps/core/app/lib/ai/adhd-assist.ts` exports `ADHD_ASSIST_POLICY_BLOCK` and `composeSystemPrompt(base, { adhdAssist })`. Single call site in `chat.ts` covers both the tool-supporting and no-tool RAG branches. (#255, #256, #258, @Ayyhab, 2026-05-29)
 - [core] tests: Unit tests for `composeSystemPrompt` covering identity, prepend, course-context preservation, empty/whitespace base, and verbatim policy-block anchors at `apps/core/app/tests/unit/adhd-assist.test.ts`. (#255, @Ayyhab, 2026-05-29)
