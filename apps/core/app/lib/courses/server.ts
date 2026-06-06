@@ -1,3 +1,4 @@
+import { UserRole, type Prisma } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
@@ -136,6 +137,36 @@ export async function handleCourseRequest(request: Request) {
     default:
       return new Response("Method not allowed", { status: 405 });
   }
+}
+
+/**
+ * Returns the `code`s of courses the given user may select in chat.
+ *
+ * Admins can access every course; everyone else can access only courses they
+ * teach, TA, or are actively enrolled in. Used to validate the persisted
+ * `lastCourseCode` on restore so a course the user can no longer access is not
+ * brought back (#420 review — scope to the user, not the whole database).
+ */
+export async function getAccessibleCourseCodes(user: {
+  id: string;
+  role: UserRole | string | null | undefined;
+}): Promise<string[]> {
+  const where: Prisma.CourseWhereInput =
+    user.role === UserRole.ADMIN
+      ? {}
+      : {
+          OR: [
+            { professorId: user.id },
+            { tas: { some: { userId: user.id } } },
+            { enrollments: { some: { studentId: user.id, isActive: true } } },
+          ],
+        };
+
+  const courses = await prisma.course.findMany({
+    where,
+    select: { code: true },
+  });
+  return courses.map((course) => course.code);
 }
 
 export async function getCourseTopics(courseId: string) {

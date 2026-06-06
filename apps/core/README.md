@@ -35,15 +35,15 @@ A production-ready chat platform with Retrieval-Augmented Generation (RAG) capab
 
 ### Local Development Setup
 
-1. **Clone the monorepo and navigate to this app**
+1. **Clone the monorepo**
    ```bash
    git clone <EduAICore monorepo URL>
-   cd EduAICore/apps/core
+   cd EduAICore
    ```
 
-2. **Install dependencies**
+2. **Install dependencies (from monorepo root)**
    ```bash
-   npm install
+   npm ci
    ```
 
 3. **Database Setup**
@@ -356,36 +356,43 @@ Unit tests are written with [Vitest](https://vitest.dev/) and [Testing Library](
 
 ### Running tests
 
+From the monorepo root:
+
 ```bash
-# Run all tests once
-npm test
+cd apps/core
+npm run test          # run all tests once
+npm run test:watch    # watch mode
+npm run typecheck     # TypeScript + React Router typegen
+```
 
-# Run in watch mode
-npm run test:watch
+Run a single file:
 
-# Run a specific file
-npx vitest run app/tests/unit/form-utils.test.ts
+```bash
+npx vitest run app/tests/unit/LoginForm.test.tsx
 ```
 
 ### Folder structure
 
-All tests live under `app/tests/`:
-
 ```
 app/tests/
-├── setup.ts          # Global test setup (jest-dom matchers, browser API mocks)
-└── unit/             # Unit tests, mirroring the source layout
-    ├── form-utils.test.ts
-    └── ...
+├── setup.ts          # Global setup (jest-dom, ResizeObserver mock, matchMedia mock)
+└── unit/             # Unit tests
+    ├── LoginForm.test.tsx
+    ├── AppSidebar.test.tsx
+    ├── ApiKeySettings.test.tsx
+    ├── CourseMaterialsUpload.test.tsx
+    └── ...           # 29 component tests + lib/schema tests
 ```
 
-See [`TESTS.md`](../../TESTS.md) at the monorepo root for the full list of planned test cases and contributor assignments.
+**Component test coverage:** 29 domain components have dedicated RTL tests (all required components except three optional shadcn demo orphans: `section-cards`, `chart-area-interactive`, `data-table`).
+
+See [`TESTS.md`](../../TESTS.md) at the monorepo root for the full test inventory.
 
 ### Notes
 
-- The Vitest config (`vitest.config.ts`) uses `pool: vmThreads`. This is required on Windows to avoid a worker startup timeout with the default `forks` pool.
-- The test environment is `jsdom`. Tests that need real browser APIs (e.g. `ResizeObserver`) have mocks defined in `setup.ts`.
-- Tests must be placed inside `app/tests/` and named `*.test.ts` or `*.test.tsx` to be picked up automatically.
+- The Vitest config (`vitest.config.ts`) uses `pool: vmThreads` and environment `jsdom`.
+- If `npm run test` fails with `ERR_REQUIRE_ESM` from `html-encoding-sniffer`, that is a known jsdom 29 dependency issue in the monorepo — track fix separately; component test files themselves are valid.
+- Tests must live under `app/tests/` and be named `*.test.ts` or `*.test.tsx`.
 
 ## Contributing
 

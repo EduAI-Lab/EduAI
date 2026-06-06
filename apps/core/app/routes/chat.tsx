@@ -2,12 +2,12 @@ import { useChat } from '@ai-sdk/react';
 import { useState, useEffect, useCallback } from "react";
 import { redirect, useLoaderData, useFetcher } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import { Select, SelectContent, SelectItem, SelectTrigger } from "~/components/ui/select";
 import { ChatWelcome } from "~/components/chat/chat-welcome";
 import { ChatMessage } from "~/components/chat/chat-message";
 import { ChatInput } from "~/components/chat/chat-input";
 import { ChatTypingIndicator } from "~/components/chat/chat-typing-indicator";
 import { SystemPromptSettings } from "~/components/chat/system-prompt-settings";
+import { ApiKeySettings } from "~/components/chat/api-key-settings";
 import { Switch } from "~/components/ui/switch";
 import { Label } from "~/components/ui/label";
 import { useApiKeys } from "~/hooks/use-api-keys";
@@ -18,6 +18,7 @@ import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { getUserPreference, saveUserPreference } from "~/lib/user-preferences.server";
+import { getAccessibleCourseCodes } from "~/lib/courses/server";
 import { parsePreferenceUpdates, resolveSelectedCourse } from "~/lib/user-preferences";
 
 interface ChatModel {
@@ -60,13 +61,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
     supportsTools: model.supportsTools,
   }));
 
-  const courses = await prisma.course.findMany({
-    select: { code: true },
-  });
-  const preferences = await getUserPreference(
-    session.user.id,
-    courses.map((course) => course.code),
-  );
+  // Validate the persisted course against the courses THIS user can actually
+  // access, so a stale / now-inaccessible `lastCourseCode` is dropped on restore
+  // rather than treated as valid just because the course still exists (#420 review).
+  const availableCourseCodes = await getAccessibleCourseCodes(session.user);
+  const preferences = await getUserPreference(session.user.id, availableCourseCodes);
 
   return {
     chatModels,
@@ -108,7 +107,8 @@ export default function Chat() {
   const [chatId, setChatId] = useState<string | null>(null);
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
   const [adhdAssist, setAdhdAssist] = useState(assistDefault);
-  const { apiKeys, getValidApiKeys } = useApiKeys();
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const { apiKeys, getValidApiKeys, updateProviderSettings, removeProviderSettings, isProviderConfigured } = useApiKeys();
   const prefsFetcher = useFetcher();
 
   const persistPreference = useCallback(
@@ -256,7 +256,7 @@ export default function Chat() {
     >
       <AppSidebar variant="inset" user={user} />
       <SidebarInset>
-        <SiteHeader user={user} />
+        <SiteHeader />
         <div className="flex flex-col h-[calc(100vh-var(--header-height))] bg-gradient-to-br from-background via-background to-muted/20">
           {/* Main content area */}
           <div className="flex-1 flex flex-col min-h-0 relative">
@@ -316,6 +316,7 @@ export default function Chat() {
             onInputChange={handleInputChange}
             onSubmit={handleSubmit}
             onStop={stop}
+            onOpenSettings={() => setSettingsOpen(true)}
             selectedCourseId={selectedCourseCode}
             setSelectedCourseId={handleCourseChange}
             availableCourses={availableCourses}
@@ -323,6 +324,14 @@ export default function Chat() {
             setSelectedModel={setSelectedModel}
             chatModels={chatModels}
             selectedModelInfo={selectedModelInfo}
+          />
+          <ApiKeySettings
+            open={settingsOpen}
+            onOpenChange={setSettingsOpen}
+            apiKeys={apiKeys}
+            isProviderConfigured={isProviderConfigured}
+            onUpdateProvider={updateProviderSettings}
+            onRemoveProvider={removeProviderSettings}
           />
         </div>
       </SidebarInset>

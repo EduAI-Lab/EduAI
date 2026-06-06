@@ -24,7 +24,7 @@ type AIProvider = {
   };
 };
 
-interface ProviderFormDialogProps {
+export interface ProviderFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   provider?: AIProvider | null;
