@@ -99,8 +99,14 @@ export async function postCoreBugReport(userId, payload) {
   return null;
 }
 
-export async function listEduAiCourses(cookie) {
-  const data = await requestEduAi('/courses', { cookie });
+export async function listEduAiCourses() {
+  const serviceKey = process.env.EDUAI_API_KEY;
+  if (!serviceKey) {
+    throw new Error('EDUAI_API_KEY not configured');
+  }
+  const data = await requestEduAi('/courses', {
+    headers: { Authorization: `Bearer ${serviceKey}` },
+  });
   try {
     const parsed = EduAiCourseListSchema.parse(data);
     return parsed.courses;
@@ -112,15 +118,21 @@ export async function listEduAiCourses(cookie) {
   }
 }
 
-export async function findEduAiCourseById(courseId, cookie) {
+export async function findEduAiCourseById(courseId) {
   if (!courseId) return null;
-  const courses = await listEduAiCourses(cookie);
+  const courses = await listEduAiCourses();
   return courses.find((course) => course.id === courseId) ?? null;
 }
 
-export async function listEduAiCourseTopics(externalCourseId, cookie) {
+export async function listEduAiCourseTopics(externalCourseId) {
   if (!externalCourseId) return [];
-  const data = await requestEduAi(`/courses/${externalCourseId}/topics`, { cookie });
+  const serviceKey = process.env.EDUAI_API_KEY;
+  if (!serviceKey) {
+    throw new Error('EDUAI_API_KEY not configured');
+  }
+  const data = await requestEduAi(`/courses/${externalCourseId}/topics`, {
+    headers: { Authorization: `Bearer ${serviceKey}` },
+  });
   try {
     const parsed = EduAiTopicListSchema.parse(data);
     return parsed.topics;
