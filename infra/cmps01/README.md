@@ -173,12 +173,129 @@ After editing config: `docker compose restart` in this directory.
 
 ---
 
-## Adding a third model later
+## Adding more models
 
-1. Run new vLLM on `127.0.0.1:18003` (localhost only).
-2. Add a block to `litellm-config.yaml`.
-3. `docker compose restart eduai-vllm-proxy`
-4. Admin → AI Models → Refresh list — **no new firewall ticket**.
+One vLLM container = one loaded model. To expose another model through the **same public port (8001)**, add a **new backend** on the next localhost port and register it in LiteLLM. **No new firewall ticket.**
+
+### Before you start
+
+| Decide | Example |
+| --- | --- |
+| **GPU** | Free GPU, or stop/replace an existing backend |
+| **Host port** | Next free port: `18003`, `18004`, … (backends stay on `127.0.0.1`) |
+| **HF weights** | e.g. `Qwen/Qwen2.5-14B-Instruct` |
+| **`--served-model-name`** | Short id for API — e.g. `qwen2.5-14b-instruct` (must match EduAI `modelId`) |
+| **Container name** | e.g. `eduai-vllm-14b` |
+
+Check GPU memory: `nvidia-smi`. Do not overload a GPU that already runs a large model.
+
+### Step 1 — Start vLLM backend on cmps01
+
+SSH to cmps01. Template (adjust GPU, model, flags):
+
+```bash
+docker run -d --name eduai-vllm-14b --gpus '"device=0"' \
+  -p 127.0.0.1:18003:8000 \
+  --restart unless-stopped \
+  vllm/vllm-openai:latest \
+  --model Qwen/Qwen2.5-14B-Instruct \
+  --served-model-name qwen2.5-14b-instruct \
+  --host 0.0.0.0 \
+  --port 8000
+```
+
+Wait until ready (`docker logs -f eduai-vllm-14b`), then:
+
+```bash
+curl -s http://127.0.0.1:18003/v1/models | jq '.data[].id'
+# expect: "qwen2.5-14b-instruct"
+```
+
+Direct chat smoke:
+
+```bash
+curl -s http://127.0.0.1:18003/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"qwen2.5-14b-instruct","messages":[{"role":"user","content":"Say hi"}],"max_tokens":16}'
+```
+
+### Step 2 — Register in LiteLLM
+
+Edit `~/cmps01/litellm-config.yaml` — add a block (copy an existing entry, change names and port):
+
+```yaml
+  - model_name: qwen2.5-14b-instruct
+    litellm_params:
+      model: openai/qwen2.5-14b-instruct
+      api_base: http://127.0.0.1:18003/v1
+      api_key: vllm-local
+```
+
+Restart proxy:
+
+```bash
+cd ~/cmps01
+docker compose restart
+```
+
+### Step 3 — Verify through proxy
+
+On cmps01:
+
+```bash
+curl -s http://127.0.0.1:8001/v1/models -H "Authorization: Bearer vllm-local" | jq '.data[].id'
+# should include the new id alongside existing models
+
+curl -s http://127.0.0.1:8001/v1/chat/completions \
+  -H "Authorization: Bearer vllm-local" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"qwen2.5-14b-instruct","messages":[{"role":"user","content":"Say hi"}],"max_tokens":16}'
+```
+
+From dev (s378):
+
+```bash
+curl -s http://cmps01.ok.ubc.ca:8001/v1/models -H "Authorization: Bearer vllm-local" | jq '.data[].id'
+cd apps/core && VLLM_MODEL=qwen2.5-14b-instruct npm run vllm:smoke
+```
+
+`VLLM_BASE_URL` on dev **does not change** — still `http://cmps01.ok.ubc.ca:8001`.
+
+### Step 4 — Register in EduAI
+
+**Option A — seed (preferred for shared dev):** add a row to `apps/core/prisma/seed.ts` under `vllmModels`, then on s378:
+
+```bash
+cd apps/core
+npx prisma db seed
+```
+
+**Option B — Admin UI:** **Admin → AI Models → Create Model** → provider **vLLM** → **Refresh list** → pick the new id → save.  
+(Skip if seed already added the same `modelId` — you'll get **409 Conflict**.)
+
+Chat model id: **`vllm:<served-model-name>`** (e.g. `vllm:qwen2.5-14b-instruct`).
+
+### Step 5 — Use in the app
+
+1. **Settings** → vLLM enabled (unchanged)
+2. Chat → select the new model from the picker
+
+### Replacing vs adding
+
+| Goal | Action |
+| --- | --- |
+| **Add** model (keep 7B + 32B) | New GPU or enough VRAM; new port `18003+`; new LiteLLM row |
+| **Swap** model on a GPU | Stop old container, reuse same port (e.g. `18001`), update LiteLLM row + EduAI seed/Admin |
+| **Remove** model | Stop/remove backend container; delete its block from `litellm-config.yaml`; `docker compose restart`; deactivate row in Admin |
+
+### Port map (convention)
+
+| Port | Current use |
+| --- | --- |
+| `18001` | `eduai-vllm` — 7B |
+| `18002` | `eduai-vllm-t3` — 32B AWQ |
+| `18003+` | Next backends |
+| `8001` | LiteLLM proxy (public) — **never** bind a raw vLLM backend here |
 
 ---
 

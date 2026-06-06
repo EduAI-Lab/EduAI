@@ -294,9 +294,17 @@ Not wired in EduAI yet — manual or future ops ticket.
 | vLLM backend 1 (`eduai-vllm`) | 127.0.0.1:18001 | No |
 | vLLM backend 2 (`eduai-vllm-t3`) | 127.0.0.1:18002 | No |
 
-**Setup:** [`infra/cmps01/README.md`](../../infra/cmps01/README.md) — `migrate.sh` or manual steps, then `docker compose up -d`.
+**Setup:** [`infra/cmps01/README.md`](../../infra/cmps01/README.md) — initial migration + **§ Adding more models**.
 
-**Adding a third model:** new localhost backend + config row + proxy restart — **no new IT ticket**.
+**Quick summary — add another model:**
+
+1. **cmps01** — `docker run` new vLLM on `127.0.0.1:18003` (next free port), unique `--served-model-name`
+2. **`litellm-config.yaml`** — new `model_list` entry pointing at `http://127.0.0.1:18003/v1`
+3. **`docker compose restart`** in `~/cmps01`
+4. **Verify** — new id in `curl :8001/v1/models`; `npm run vllm:smoke` with `VLLM_MODEL=…` from s378
+5. **EduAI** — add to `prisma/seed.ts` + `npx prisma db seed`, *or* Admin → Create Model (if not seeded)
+
+Full walkthrough with examples: [`infra/cmps01/README.md` § Adding more models](../../infra/cmps01/README.md#adding-more-models).
 
 EduAI always uses one `VLLM_BASE_URL`; chat picks the model via `vllm:<served-model-name>`.
 
