@@ -163,10 +163,10 @@ npx prisma db seed   # registers both vLLM models in Admin
 
 See [`litellm-config.yaml`](./litellm-config.yaml). Backends:
 
-| `model_name` | Backend URL (from LiteLLM container) |
+| `model_name` | Backend URL (proxy uses host network) |
 | --- | --- |
-| `qwen2.5-7b-instruct` | `http://host.docker.internal:18001/v1` |
-| `qwen2.5-32b-instruct` | `http://host.docker.internal:18002/v1` |
+| `qwen2.5-7b-instruct` | `http://127.0.0.1:18001/v1` |
+| `qwen2.5-32b-instruct` | `http://127.0.0.1:18002/v1` |
 
 After editing config: `docker compose restart` in this directory.
 
@@ -186,7 +186,7 @@ After editing config: `docker compose restart` in this directory.
 | Symptom | Check |
 | --- | --- |
 | `curl :8001` fails after proxy up | `docker ps` — is `eduai-vllm-proxy` running? Port 8001 free? |
-| `GET /v1/models` OK but `POST /v1/chat/completions` **500** “Connection error” | LiteLLM runs **in Docker**; `127.0.0.1:18001` inside the container is not the host. Use `host.docker.internal:18001` in `litellm-config.yaml` + `extra_hosts: host-gateway` in compose. Direct `curl :18001` on the **host** should still work. |
+| `GET /v1/models` OK but `POST /v1/chat/completions` **500** “Connection error” | LiteLLM could not reach backends. Backends on **host** `127.0.0.1:18001` are invisible to bridge-networked containers (`host.docker.internal` hits the host NIC, not loopback). Fix: **`network_mode: host`** on the proxy (see `docker-compose.yml`) and `api_base: http://127.0.0.1:18001/v1` in config. |
 | EduAI fetch fails | `VLLM_BASE_URL` on **s378** `.env`; use `http://`; restart dev |
 | SSL wrong version | Do not use `https://` for vLLM |
 | `-p: command not found` | `-p` is a **docker run** flag, not a standalone command |
