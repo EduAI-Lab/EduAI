@@ -19,14 +19,6 @@ describe('Lessons routes', () => {
 
   async function enrollStudent() {
     const student = makeStudent();
-    await prisma.user.create({
-      data: {
-        id: student.id,
-        name: student.name,
-        email: student.email,
-        role: 'STUDENT',
-      },
-    });
     await prisma.courseEnrollment.create({
       data: {
         courseOfferingId: seed.course.id,
@@ -96,14 +88,6 @@ describe('Lessons routes', () => {
 
     it('returns 403 for non-member', async () => {
       const otherProf = makeProfessor();
-      await prisma.user.create({
-        data: {
-          id: otherProf.id,
-          name: otherProf.name,
-          email: otherProf.email,
-          role: 'PROFESSOR',
-        },
-      });
       const otherApp = await createApp({ mockUser: otherProf });
 
       const res = await request(otherApp).get(`/api/modules/${seed.module.id}/lessons`);

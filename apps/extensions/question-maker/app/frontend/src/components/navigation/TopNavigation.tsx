@@ -13,9 +13,7 @@ import { EduAIStatusBadge } from '../eduai/EduAIStatusBadge';
 import { useEduAIStatus } from '../../hooks/useEduAIStatus';
 import { useGuidedTour } from '../../contexts/GuidedTourContext';
 import { Tooltip } from '../ui/tooltip';
-import { Link } from 'react-router-dom';
 import { BugReportContext } from '../../contexts/BugReportContext';
-import { useAuth } from '../../contexts/AuthContext';
 
 type TopNavigationProps = (
   | {
@@ -60,9 +58,6 @@ export const TopNavigation = (props: TopNavigationProps) => {
   const eduaiStatus = useEduAIStatus();
   const { startTour } = useGuidedTour();
   const bugReportCtx = useContext(BugReportContext);
-  const { user } = useAuth();
-  const showBugReportsAdminLink = Boolean(user?.isBugReportAdmin);
-
   const handleGuidedTourClick = () => {
     if (typeof customGuidedTourHandler === 'function') {
       customGuidedTourHandler();
@@ -149,16 +144,6 @@ export const TopNavigation = (props: TopNavigationProps) => {
                         />
                     </div>
                     <div className="relative">
-                    {showBugReportsAdminLink && (
-                      <Tooltip content="Review submitted bug reports" side="bottom">
-                        <Link
-                          to="/admin/bug-reports"
-                          className="inline-flex items-center justify-center rounded-md px-3 h-8 text-sm font-medium text-blue-700 hover:bg-accent hover:text-accent-foreground transition-colors mr-1"
-                        >
-                          Bug reports
-                        </Link>
-                      </Tooltip>
-                    )}
                     <Tooltip content="Walk through the app with a guided tour" side="bottom">
                         <Button
                           variant="ghost"

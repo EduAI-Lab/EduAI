@@ -870,4 +870,11 @@ export const importQuizFromCanvas = async (userId, canvasCourseId, quizId, local
   }
 };
 
-export { convertVariantToCanvasQuestion, parseMCQOptions };
+export {
+  convertVariantToCanvasQuestion,
+  parseMCQOptions,
+  convertCanvasQuestionToVariant,
+  parseChoicesFromQuestionText,
+  stripHtmlTags,
+  normalizeCanvasQuestionType,
+};
