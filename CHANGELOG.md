@@ -6,22 +6,37 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ---
 
-## [Week 5 — June 1–5, 2026]
+## [Week 5 — June 2–6, 2026]
 
 ### Added
 - [core] feat: Persist Assistive mode + selected course per user across page refreshes and new chats. New `UserPreference` table (`assistDefault`, `lastCourseCode`) + migration `add_user_preferences`; the `/chat` loader seeds the toggle + course from the user's stored preference, a `/chat` route `action` upserts on change via `useFetcher`, and `POST /auth/logout` clears the row so the next login starts fresh. A restored course the user can no longer access falls back to none; per-chat `Chat.adhdAssist` still wins when opening an existing chat. New `apps/core/app/lib/user-preferences.ts` (pure parse/resolve helpers) and `user-preferences.server.ts` (centralized `prisma.userPreference` access). (#420, @Ayyhab, 2026-06-02)
 - [core] tests: Unit tests for `parsePreferenceUpdates`, `resolveSelectedCourse`, and the preference persistence service (`get`/`save`/`clear`) at `apps/core/app/tests/unit/user-preferences.test.ts` and `user-preferences.server.test.ts` — 16 cases mapped to the #420 acceptance criteria; pinned to the node test environment. (#420, @Ayyhab, 2026-06-02)
+- [monorepo] docs: Add Canvas integration strategy report — CWL-first access, Canvas REST roster sync MVP (course users + profile `primary_email` fallback), Question Maker REST for quizzes; LTI 1.3 documented as deferred until in-Canvas launch is required; local API validation notes and UBC pilot checklist. Added Canvas LTI vs API key technical research — endpoint reference, PowerShell/`curl.exe` testing notes, pros/cons, implementation checklist; links to `docs/implementations/lti-canvas-integration-report.md`. Add Canvas API integration guide — WSL + Canvas LMS `docker_dev_setup.sh`, `docker-compose.override.yml` host port mapping (e.g. `8080:80` to avoid Core on 3000), Question Maker connect/API verification, Docker vs host dev, troubleshooting. (#447, @glowyblack, 2026-06-03)
+- [core] ui: Add presentational skeleton for all 32 EduAI Core domain components — exported `*Props` types, route-owned I/O for materials upload, course selector, API key settings, and Ollama model fetch; 29 Vitest + RTL component tests under `apps/core/app/tests/unit/`. (#437, #438, #385, @ebabar5 @yta3216 @Ayyhab, 2026-06-03)
+- [core] ui: Add empty-state rows to admin AI models and providers tables (`No models found.`, `No providers found.`). (#438, @yta3216, 2026-06-03)
+
+### Changed
+- [core] refactor: Move data fetching out of domain components into parent routes — `courses.$courseId` owns materials load/upload; `chat` owns `useApiKeys` / `ApiKeySettings`; `admin.ai-models` owns Ollama model fetch for `ModelFormDialog`. (#437, #438, 2026-06-03)
+- [core] docs: Update `apps/core/README.md` — monorepo install from root, component architecture section, and expanded component test inventory. (#385, @Ayyhab, 2026-06-03)
+- [monorepo] docs: Update root `README.md` with EduAI component skeleton overview and link to `apps/core/docs/`. (#385, @Ayyhab, 2026-06-03)
+
+### Fixed
+- [core] fix: Scope persisted-course validation to the current user (#420 review) — the `/chat` loader now restores `lastCourseCode` against the courses the user can actually access (courses they teach, TA, or are actively enrolled in; admins see all) via new `getAccessibleCourseCodes` in `apps/core/app/lib/courses/server.ts`, instead of every course in the database. A course the user can no longer access is dropped on restore rather than treated as valid just because it still exists globally. Adds `apps/core/app/tests/unit/courses-server.test.ts`. (#420, review feedback from @Whiteknight07, @Ayyhab, 2026-06-05)
+- [monorepo] infra: Replace em dash with hyphen in `scripts/dev-db.sh` Docker startup message to avoid PowerShell parse errors on Windows. (#438, @yta3216, 2026-06-03)
 
 ---
 
 ## [Week 4 — May 25–29, 2026]
 
 ### Added
+- [monorepo] docs: Add summer 2026 chat latency investigation write-ups under [`docs/rag-ai/latency/eduai-summer-2026/`](docs/rag-ai/latency/eduai-summer-2026/) — [`FINDINGS.md`](docs/rag-ai/latency/eduai-summer-2026/FINDINGS.md) (team summary), [`FINDINGS_APPENDIX.md`](docs/rag-ai/latency/eduai-summer-2026/FINDINGS_APPENDIX.md) (sessions, methodology, data index on `troubleshoot-RAG-delay`), and [`SOLUTIONS_PLAN.md`](docs/rag-ai/latency/eduai-summer-2026/SOLUTIONS_PLAN.md) (mitigations: keep-alive, routing, token caps, cold-load UX). Docs-only; benchmark JSON/CSV and bench tooling remain on branch `troubleshoot-RAG-delay`. ([#383](https://github.com/EduAI-Lab/EduAI/pull/383), @superbolt08, 2026-05-29)
+- [monorepo] tests: Introduced Docker-based test infrastructure across all components (EduAI, AI Tutor app/server, Question Maker app/server). Added multi-stage Dockerfiles with a lockfile-exact `deps` stage, restructured `docker-compose.test.yml` into a consistent `{component}-{app|server}-{unit|integration}-tests` naming scheme, added `unit`/`integration` group arguments to `test-in-docker.sh`, and added corresponding npm scripts. (#352, @yta3216, 2026-05-27)
 - [core] feat: ADHD Assist Phase 2 — mode-conditional system prompt. When `Chat.adhdAssist === true`, `POST /api/chat` prepends the verbatim policy block from `docs/literature/adhd-assist-prompt-policy.md` §3 to the resolved system prompt before `streamText`. Style is the only IV — model, retrieval, tools, persistence, temperature, and streaming behavior are unchanged. New `apps/core/app/lib/ai/adhd-assist.ts` exports `ADHD_ASSIST_POLICY_BLOCK` and `composeSystemPrompt(base, { adhdAssist })`. Single call site in `chat.ts` covers both the tool-supporting and no-tool RAG branches. (#255, #256, #258, @Ayyhab, 2026-05-29)
 - [core] tests: Unit tests for `composeSystemPrompt` covering identity, prepend, course-context preservation, empty/whitespace base, and verbatim policy-block anchors at `apps/core/app/tests/unit/adhd-assist.test.ts`. (#255, @Ayyhab, 2026-05-29)
 - [core] tooling: Add `apps/core/scripts/eval-adhd-assist.mjs` and `npm run eval:adhd` — pure-Node runner that drives Form A S1/S2/S3 (+ optional S5) through `POST /api/chat` twice each (Baseline vs ADHD Assist) and emits a results matrix (markdown table, per-pair transcripts, `results.csv`, `run-meta.json` with git SHA and redacted env presence booleans). Adds `eval-runs/` to root `.gitignore` so research outputs stay out of git. (#258, @Ayyhab, 2026-05-29)
 - [core] feat: OpenRouter embedding provider — `OPENROUTER_API_KEY` routes RAG indexing and query embeds through OpenRouter (`google/gemini-embedding-001`, 3072-dim) before direct Google/OpenAI fallbacks; add `npm run test:embedding` smoke script. Docs: [`EMBEDDINGS.md`](docs/rag-ai/EMBEDDINGS.md), [`ARCHITECTURE.md`](docs/ARCHITECTURE.md), dev server runbook. (#PR)
 - [core] tests: Unit tests for `forward-session-cookies` and `auth-handler-request` (auth cookie forwarding and sign-in/sign-out sub-requests). (#PR)
+- [monorepo] docs: Add `docs/implementations/shared-component-library-audit.md` — audit of UI components that are candidates for a shared component library across AI Tutor, Question Maker, and EduAI; covers component structure, behaviour, accessibility requirements, and UBC brand token constraints. (#376, @yta3216, 2026-05-29)
 
 ### Changed
 - [core] docs: Update `apps/core/README.md` `POST /api/chat` body table — `adhdAssist` now describes the active Phase 2 behavior (policy-block prepend) instead of the Phase 1 "no behavioural effect" placeholder. (@Ayyhab, 2026-05-29)

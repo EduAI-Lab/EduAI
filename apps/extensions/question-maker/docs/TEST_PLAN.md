@@ -17,7 +17,7 @@ This document maps product features to automated tests, defines layers and prior
 |------|---------|--------|
 | Backend | `cd app/backend && npm test` | Vitest — [vitest.config.js](../app/backend/vitest.config.js) |
 | Backend coverage | `npm run test:coverage` | Same |
-| Frontend | `cd app/frontend && npm test` | `vitest run` — [package.json](../app/frontend/package.json); local watch: `npm run test:watch`. [vite.config.ts](../app/frontend/vite.config.ts) uses `jsdom` + [vitest.setup.ts](../app/frontend/src/test/vitest.setup.ts); [api.test.ts](../app/frontend/src/services/api.test.ts) uses `@vitest-environment node` for a local HTTP stub. |
+| Frontend | `cd app/frontend && npm test` | `npm run test:unit` runs [src/tests/unit](../app/frontend/src/tests/unit); `npm run test:integration` runs [src/tests/integration](../app/frontend/src/tests/integration); `npm test` runs both. [vite.config.ts](../app/frontend/vite.config.ts) uses `jsdom` + [vitest.setup.ts](../app/frontend/src/tests/vitest.setup.ts). |
 | Test env | `app/backend/tests/setup.js` | Loads root `.env` (optional); if `TEST_DATABASE_URL` is set, it becomes `DATABASE_URL`. If still unset (e.g. GitHub Actions with no file), a **local stub** `postgresql://vitest:vitest@127.0.0.1:5432/vitest_unit_stub` is set so imports succeed — unit tests do not need a real server. You can also set `DATABASE_URL` in the workflow env. `JWT_SECRET` / `ENCRYPTION_KEY` get defaults if missing. |
 | DB integration | `cd app/backend && npm run test:integration` | [vitest.integration.config.js](../app/backend/vitest.integration.config.js) — only `*.integration.test.js`, `singleFork: true` to avoid clobbering a shared test DB. |
 | Full backend | `npm run test:all` | Unit suite then integration suite. |
@@ -61,17 +61,20 @@ Skipped when unset (exit 0). [testDb.js](../app/backend/tests/helpers/testDb.js)
 - [assessmentVariantHttp.integration.test.js](../app/backend/tests/assessmentVariantHttp.integration.test.js) — assessment-variant `400` bodies (H2).
 - [planCoverage.integration.test.js](../app/backend/tests/planCoverage.integration.test.js) — **cross-user** `GET /api/course/:id` → `404` (B1); **POST extract/save** success (D3); **POST assemble-variants** for Practice Exam with one label (H3).
 
-### Frontend (Vitest)
+### Frontend — unit (Vitest + Testing Library)
 
-- [api.test.ts](../app/frontend/src/services/api.test.ts) — axios `Authorization` + `401` handling (J1).
-- [LoginPage.test.tsx](../app/frontend/src/pages/LoginPage.test.tsx) — login/register, errors, loading, redirect (J2).
+- [LoginPage.test.tsx](../app/frontend/src/tests/unit/LoginPage.test.tsx) — login/register, errors, loading, redirect (J2).
+
+### Frontend — integration (Vitest + local HTTP stub)
+
+- [api.test.ts](../app/frontend/src/tests/integration/api.test.ts) — axios `Authorization` + `401` handling (J1).
 
 ## 4. Test layers
 
 1. **Unit (no DB):** `extractionUtils`, `encryption`, `assessmentVariantMetadataScoring`, Canvas MCQ helpers, `extractQuestionsFromText` with mocks, `exportAssessmentToCanvas` with mocks.
 2. **Service + DB:** Exercised via integration tests (`saveExtractedQuestions`, `assembleEquivalentExamVariants` paths, seeded courses/assessments).
 3. **HTTP (supertest):** Authed and unauthed routes; no real EduAI/Canvas in CI (mocks for unit; validation routes hit code before upstream).
-4. **Frontend (Vitest + Testing Library):** [api.test.ts](../app/frontend/src/services/api.test.ts), [LoginPage.test.tsx](../app/frontend/src/pages/LoginPage.test.tsx).
+4. **Frontend (Vitest + Testing Library):** unit suite [LoginPage.test.tsx](../app/frontend/src/tests/unit/LoginPage.test.tsx); integration suite [api.test.ts](../app/frontend/src/tests/integration/api.test.ts).
 
 **Do not** call real EduAI or Canvas in automated suites except local/manual runs; use fixtures and mocks for CI.
 
@@ -104,8 +107,8 @@ Skipped when unset (exit 0). [testDb.js](../app/backend/tests/helpers/testDb.js)
 | H3 | `assembleEquivalentExamVariants` (single exam label) | Done | [planCoverage.integration.test.js](../app/backend/tests/planCoverage.integration.test.js) |
 | I1 | Health / root | Done | [health.test.js](../app/backend/tests/health.test.js) |
 | I2 | 404 JSON | Done | [health.test.js](../app/backend/tests/health.test.js) |
-| J1 | Frontend `api` client | Done | [api.test.ts](../app/frontend/src/services/api.test.ts) |
-| J2 | `LoginPage` | Done | [LoginPage.test.tsx](../app/frontend/src/pages/LoginPage.test.tsx) |
+| J1 | Frontend `api` client | Done | [api.test.ts](../app/frontend/src/tests/integration/api.test.ts) |
+| J2 | `LoginPage` | Done | [LoginPage.test.tsx](../app/frontend/src/tests/unit/LoginPage.test.tsx) |
 
 **Intentional gaps (future work):** F1 “reorder” endpoints; E2E (Playwright/Cypress); full EduAI/Canvas E2E against sandboxes. Add new rows here when you add tests.
 
@@ -120,7 +123,7 @@ Skipped when unset (exit 0). [testDb.js](../app/backend/tests/helpers/testDb.js)
 - [x] **CI** ([feature-ci.yml](../.github/workflows/feature-ci.yml)) runs `npm test` in `app/backend` and `app/frontend` on feature branches and PRs to `dev`.  
 - [ ] **Integration in CI** — set `TEST_DATABASE_URL` and run `cd app/backend && npm run test:integration` in a job with Postgres (e.g. `services: postgres`) when you want DB tests on every PR. Local: `TEST_DATABASE_URL=... npm run test:all`.  
 - [x] **No production secrets in repo** — use root `.env` (gitignored) or CI secrets; [test setup](../app/backend/tests/setup.js) uses stubs when env is missing.  
-- [x] **Frontend tests are non-interactive** — `npm test` runs `vitest run` (one shot); use `npm run test:watch` during development.  
+- [x] **Frontend tests are non-interactive** — `npm test` runs the unit and integration Vitest suites; use `npm run test:watch` during development.  
 
 ---
 

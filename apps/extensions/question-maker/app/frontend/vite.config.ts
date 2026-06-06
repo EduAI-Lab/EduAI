@@ -29,7 +29,7 @@ export default defineConfig(({ mode }) => {
     test: {
       clearMocks: true,
       environment: 'jsdom',
-      setupFiles: ['./src/test/vitest.setup.ts'],
+      setupFiles: ['./src/tests/vitest.setup.ts'],
     },
   }
 })
