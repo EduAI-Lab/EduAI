@@ -67,21 +67,23 @@ Add to `apps/core/.env` on **s378**:
 # Ollama — works today from dev
 OLLAMA_BASE_URL="http://cmps01.ok.ubc.ca:11434"
 
-# vLLM — after IT opens TCP 8001 (+ cmps01 host firewall)
-# VLLM_PORT=8001
-# VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"
-# VLLM_API_KEY="vllm-local"
+# vLLM — LiteLLM proxy on cmps01 (TCP 8001 open dev → cmps01)
+VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"
+VLLM_API_KEY="vllm-local"
 ```
+
+Restart dev server (tmux) after editing `.env`.
 
 | Check | Command (on dev) |
 | ----- | ---------------- |
 | Ollama reachable | `curl -s http://cmps01.ok.ubc.ca:11434/api/tags \| head` |
-| vLLM reachable (after ticket) | `curl -s http://cmps01.ok.ubc.ca:8001/v1/models` |
+| vLLM models | `curl -s http://cmps01.ok.ubc.ca:8001/v1/models -H "Authorization: Bearer vllm-local" \| jq '.data[].id'` |
+| vLLM chat smoke | `cd apps/core && npm run vllm:smoke` |
 | SSH dev → cmps01 | **Fails** (port 22 timeout) — **do not** use SSH tunnel from s378 |
 
-**vLLM setup (Docker on cmps01, IT checklist):** [`VLLM.md`](./VLLM.md)
+**vLLM ops on cmps01 (LiteLLM + two backends):** [`VLLM.md`](./VLLM.md) · [`infra/cmps01/README.md`](../../infra/cmps01/README.md)
 
-In the app: **Settings → Enable vLLM** (no API key) → model **`vllm:qwen2.5-7b-instruct`** after seed/deploy. Branch must include `vllm` in `providers.ts`.
+In the app: **Settings → Enable vLLM** (no API key) → **`vllm:qwen2.5-7b-instruct`** or **`vllm:qwen2.5-32b-instruct`**. Models are seeded — run `npx prisma db seed` if missing. Branch must include `vllm` in `providers.ts`.
 
 #### Auth / login troubleshooting
 

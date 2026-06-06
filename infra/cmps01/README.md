@@ -13,16 +13,17 @@ EduAI uses **`VLLM_BASE_URL=http://cmps01.ok.ubc.ca:8001`** only. Chat picks the
 
 ---
 
-## Current inventory (cmps01, Mar 2026)
+## Current inventory (cmps01, deployed)
 
-| Docker name | Public port (today) | Served model (`/v1/models` → `id`) | HF root (from API) |
+| Docker name | Host bind | Served model (`/v1/models` → `id`) | Notes |
 | --- | --- | --- | --- |
-| **`eduai-vllm`** | `0.0.0.0:8001→8000` | `qwen2.5-7b-instruct` | Qwen 7B Instruct |
-| **`eduai-vllm-t3`** | `0.0.0.0:8002→8000` | `qwen2.5-32b-instruct` | `Qwen/Qwen2.5-32B-Instruct-AWQ` |
+| **`eduai-vllm`** | `127.0.0.1:18001→8000` | `qwen2.5-7b-instruct` | GPU 0, Qwen 7B Instruct |
+| **`eduai-vllm-t3`** | `127.0.0.1:18002→8000` | `qwen2.5-32b-instruct` | GPU 1, 32B AWQ + tool-call flags |
+| **`eduai-vllm-proxy`** | host `:8001` (LiteLLM) | routes both ids | `network_mode: host` — see below |
 
-After migration, backends move to **localhost only** (`18001`, `18002`); **LiteLLM** listens on public **`8001`**.
+Backends are **localhost only**; **LiteLLM** is the only public listener on **`8001`**.
 
-`litellm-config.yaml` in this folder is already set for both model names.
+**Why `network_mode: host` on the proxy?** Backends bind `127.0.0.1:18001/18002`. A bridge-networked LiteLLM container cannot reach those ports (and `host.docker.internal` on Linux does not map to loopback). Host networking lets LiteLLM use `http://127.0.0.1:18001/v1` in config.
 
 ---
 
@@ -148,7 +149,7 @@ npx prisma db seed   # registers both vLLM models in Admin
 ### Step 5 — App
 
 1. **Settings** → Enable vLLM  
-2. **Admin → AI Models** → provider vLLM → **Refresh list** → confirm both models  
+2. **Admin → AI Models** — models are seeded (`npx prisma db seed`); do **not** re-add the same model id (409 Conflict). Use **Refresh list** only when registering a *new* served name.  
 3. Chat: `vllm:qwen2.5-7b-instruct` or `vllm:qwen2.5-32b-instruct`
 
 ### Step 6 — IT / firewall
