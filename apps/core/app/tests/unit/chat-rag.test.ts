@@ -3,6 +3,7 @@ import {
   buildCappedRagContextText,
   capRagHitsForTool,
   capToolResultsInMessages,
+  estimateMessageCharsForModel,
   prepareBoundedSessionContext,
   resolveMaxContextMessages,
   resolveSessionCharBudget,
@@ -184,18 +185,54 @@ describe("capToolResultsInMessages", () => {
   });
 });
 
-describe("prepareBoundedSessionContext", () => {
-  const extractText = (message?: { content?: unknown }) =>
-    typeof message?.content === "string" ? message.content : "";
+/** Realistic AI SDK assistant message carrying a `fetchPage` tool result. */
+function toolResultMessage(id: string, markdownLength: number, role = "assistant") {
+  return {
+    id,
+    role,
+    content: [
+      {
+        type: "tool-invocation",
+        toolInvocation: {
+          toolName: "fetchPage",
+          toolCallId: `call-${id}`,
+          state: "result",
+          result: { markdown: "m".repeat(markdownLength), url: "https://example.com" },
+        },
+      },
+    ],
+  };
+}
 
+/** Model-input size, counting tool payloads — mirrors production wiring. */
+function totalModelChars(messages: Array<Record<string, unknown>>): number {
+  return messages.reduce((sum, message) => sum + estimateMessageCharsForModel(message), 0);
+}
+
+describe("estimateMessageCharsForModel", () => {
+  it("counts string content by its length", () => {
+    expect(estimateMessageCharsForModel({ role: "user", content: "hello" })).toBe(5);
+  });
+
+  it("counts tool-invocation payloads, not just text parts", () => {
+    const chars = estimateMessageCharsForModel(toolResultMessage("1", 5000));
+    // A naive text-parts extractor would return 0 here; we must see the payload.
+    expect(chars).toBeGreaterThan(5000);
+  });
+
+  it("returns 0 for empty or content-less messages", () => {
+    expect(estimateMessageCharsForModel(undefined)).toBe(0);
+    expect(estimateMessageCharsForModel({ role: "user" })).toBe(0);
+  });
+});
+
+describe("prepareBoundedSessionContext", () => {
   it("returns short threads unchanged", () => {
     const messages = [
       { id: "1", role: "user", content: "hello" },
       { id: "2", role: "assistant", content: "hi there" },
     ];
-    expect(prepareBoundedSessionContext(messages, extractText, { charBudget: 10_000 })).toBe(
-      messages,
-    );
+    expect(prepareBoundedSessionContext(messages, { charBudget: 10_000 })).toBe(messages);
   });
 
   it("replaces older turns with a digest and keeps the recent tail", () => {
@@ -206,7 +243,7 @@ describe("prepareBoundedSessionContext", () => {
       { id: "4", role: "assistant", content: "recent answer" },
     ];
 
-    const bounded = prepareBoundedSessionContext(messages, extractText, {
+    const bounded = prepareBoundedSessionContext(messages, {
       charBudget: 500,
       recentCount: 2,
       digestMaxChars: 300,
@@ -219,6 +256,69 @@ describe("prepareBoundedSessionContext", () => {
     expect(bounded[2].content).toBe("recent answer");
   });
 
+  it("triggers the digest on tool-heavy threads where text parts are tiny", () => {
+    // Two ~6k fetchPage turns: a text-only counter would see ~0 chars and never
+    // digest. With payload-aware accounting the thread is over budget and the
+    // oversized blobs are removed from the model input.
+    const messages = [
+      toolResultMessage("1", 6000),
+      toolResultMessage("2", 6000),
+      { id: "3", role: "user", content: "latest question" },
+      { id: "4", role: "assistant", content: "latest answer" },
+    ];
+
+    const bounded = prepareBoundedSessionContext(messages, {
+      charBudget: 10_000,
+      recentCount: 2,
+      digestMaxChars: 2_000,
+    });
+
+    expect(bounded).not.toBe(messages);
+    expect(bounded[0].id).toBe("session-digest");
+    expect(totalModelChars(bounded)).toBeLessThanOrEqual(10_000);
+  });
+
+  it("keeps digest + a tool-heavy recent tail within the char budget", () => {
+    const older = [
+      { id: "o1", role: "user", content: "a".repeat(8000) },
+      { id: "o2", role: "assistant", content: "b".repeat(8000) },
+    ];
+    const recent = Array.from({ length: 6 }, (_, i) => toolResultMessage(`r${i}`, 6000));
+    const messages = [...older, ...recent];
+
+    const bounded = prepareBoundedSessionContext(messages, {
+      charBudget: 28_000,
+      recentCount: 6,
+      digestMaxChars: 14_000,
+    });
+
+    expect(totalModelChars(bounded)).toBeLessThanOrEqual(28_000);
+  });
+
+  it("truncates a single string message that alone exceeds the budget", () => {
+    const messages = [{ id: "1", role: "user", content: "x".repeat(50_000) }];
+
+    const bounded = prepareBoundedSessionContext(messages, {
+      charBudget: 5_000,
+      recentCount: 6,
+    });
+
+    expect(bounded).toHaveLength(1);
+    expect(typeof bounded[0].content).toBe("string");
+    expect(totalModelChars(bounded)).toBeLessThanOrEqual(5_000);
+  });
+
+  it("truncates a single oversized tool message to the budget", () => {
+    const messages = [toolResultMessage("1", 50_000)];
+
+    const bounded = prepareBoundedSessionContext(messages, {
+      charBudget: 5_000,
+      recentCount: 6,
+    });
+
+    expect(totalModelChars(bounded)).toBeLessThanOrEqual(5_000);
+  });
+
   it("drops oldest messages when everything is recent but still over budget", () => {
     const messages = [
       { id: "1", role: "user", content: "a".repeat(400) },
@@ -226,13 +326,13 @@ describe("prepareBoundedSessionContext", () => {
       { id: "3", role: "user", content: "c".repeat(400) },
     ];
 
-    const bounded = prepareBoundedSessionContext(messages, extractText, {
+    const bounded = prepareBoundedSessionContext(messages, {
       charBudget: 500,
       recentCount: 3,
     });
 
     expect(bounded.length).toBeLessThan(messages.length);
-    expect(totalChars(bounded, extractText)).toBeLessThanOrEqual(500);
+    expect(totalModelChars(bounded)).toBeLessThanOrEqual(500);
   });
 });
 

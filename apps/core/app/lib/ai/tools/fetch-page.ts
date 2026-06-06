@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import FirecrawlApp from "@mendable/firecrawl-js";
 import { z } from "zod";
-import { resolveToolResultMaxChars, truncateToMaxChars } from "~/lib/chat-rag";
+import { resolveToolResultMaxChars, truncateToMaxChars } from "~/lib/ai/tool-output-limits";
 
 const FIRECRAWL_API_KEY = process.env.FIRECRAWL_API_KEY;
 

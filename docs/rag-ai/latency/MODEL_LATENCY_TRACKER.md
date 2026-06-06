@@ -185,12 +185,14 @@ Hybrid / tool RAG limits are tuned for **token safety** and latency; defaults we
 |---------|-----------------------------|---------|
 | `CHAT_HYBRID_RAG_MAX_CHUNKS` | `8` (max 24) | Vector hits merged into hybrid system prompt / tool payload cap |
 | `CHAT_HYBRID_RAG_MAX_CONTEXT_CHARS` | `28000` (max 100000) | Total character budget for hybrid `system` injection (non-tool path) |
-| `CHAT_TOOL_RAG_MAX_CHARS_PER_CHUNK` | `10000` (max 50000) | Per-chunk truncation for `getInformation` tool results |
+| `CHAT_TOOL_RAG_MAX_CHARS_PER_CHUNK` | `6000` (500–50000) | Per-result cap for `getInformation` / `fetchPage` / reloaded tool messages (#260) |
 | `CHAT_LLM_MAX_RETRIES` | `2` (max 4) | HTTP retries inside `streamText`; use `0` on Gemini free tier to avoid 3× quota burn per send |
 
 ### Conversation length
 
-`MAX_CONTEXT_MESSAGES` in `chat.ts` (default **20** messages) trims what is sent to the model so context does not grow without bound — separate from `TOOL_MAX_STEPS`.
+`CHAT_MAX_CONTEXT_MESSAGES` (default **20** messages, clamps 4–50) trims what is loaded from the DB and sent to the model so context does not grow without bound — separate from `TOOL_MAX_STEPS`.
+
+Beyond the message-count window, Form A §3b (#259) caps the **character** size of `messages[]`: when the model-input size exceeds `CHAT_SESSION_MAX_CHARS` (default **28000**), older turns are replaced by a synthetic "Session digest" (`CHAT_SESSION_DIGEST_MAX_CHARS`, default **14000**) while the last `CHAT_SESSION_RECENT_MESSAGES` (default **6**) turns are kept verbatim, then a final pass enforces the budget. Implemented by `prepareBoundedSessionContext` in `chat-rag.ts`. Size accounting counts tool-call/result payloads, so `messageTextChars` in the `Starting LLM stream` debug line reflects what the model actually receives.
 
 ---
 
