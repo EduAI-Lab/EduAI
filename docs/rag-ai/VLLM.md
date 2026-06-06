@@ -6,9 +6,9 @@ Run **vLLM** on the shared GPU host (**cmps01**) for fast, multi-user chat infer
 
 | | |
 | --- | --- |
-| **Host port (public)** | **8001** — LiteLLM proxy (routes to internal vLLM backends) |
+| **Host port (public)** | **8001** — LiteLLM proxy (`network_mode: host`) → backends `127.0.0.1:18001` / `:18002` |
 | **Dev app** | `dev.eduai.ok.ubc.ca` (s378) → `http://cmps01.ok.ubc.ca:8001` |
-| **Seed model** | `vllm:qwen2.5-7b-instruct` |
+| **Seed models** | `vllm:qwen2.5-7b-instruct`, `vllm:qwen2.5-32b-instruct` |
 | **Issues** | [#435](https://github.com/EduAI-Lab/EduAI/issues/435) install/wire · [#394](https://github.com/EduAI-Lab/EduAI/issues/394) tiered memory spike |
 
 ---
@@ -43,9 +43,9 @@ cd apps/core
 npm run vllm:smoke
 ```
 
-**In the app:** Settings → **Enable vLLM** → chat model **`vllm:qwen2.5-7b-instruct`** (run `npx prisma db seed` if missing).
+**In the app:** Settings → **Enable vLLM** → chat model **`vllm:qwen2.5-7b-instruct`** or **`vllm:qwen2.5-32b-instruct`** (run `npx prisma db seed` if missing from Admin).
 
-**Admins:** **Admin → AI Models → Create Model** → provider **vLLM** → **Fetch Models** (calls `GET /v1/models` via `VLLM_BASE_URL`) → pick a model → save.
+**Admins:** Models are **seeded** — do not use **Create Model** for the same `modelId` (409 Conflict). **Admin → AI Models → Refresh list** (vLLM provider) only when adding a *new* served name from cmps01.
 
 ### 3. Who does what
 
@@ -62,43 +62,47 @@ npm run vllm:smoke
 ```text
 dev.eduai.ok.ubc.ca (s378)          cmps01
         │                              │
-        │  VLLM_BASE_URL :8001         │  eduai-vllm-proxy (LiteLLM)
-        └──────────────────────────────►       ├── 127.0.0.1:18001 → GPU 0 vLLM
-                                               └── 127.0.0.1:18002 → GPU 1 vLLM
+        │  VLLM_BASE_URL :8001         │  eduai-vllm-proxy (LiteLLM, host network)
+        └──────────────────────────────►       ├── 127.0.0.1:18001 → eduai-vllm (7B, GPU 0)
+                                               └── 127.0.0.1:18002 → eduai-vllm-t3 (32B AWQ, GPU 1)
 Ollama :11434 — embeddings + legacy chat (separate service)
 ```
 
+LiteLLM uses **`network_mode: host`** so it can reach backends on host loopback. Bridge networking + `host.docker.internal` **does not** work for `127.0.0.1`-bound ports on Linux.
+
 ---
 
-## Install on cmps01 (Docker)
+## Install on cmps01 (production)
 
-SSH: `ssh YOUR_CWL@cmps01.ok.ubc.ca` · Docker group membership required.
+**Use the repo ops bundle** — do not publish vLLM backends on `:8001`/`:8002` directly:
 
-**Production path (dev can reach cmps01)** — publish on all interfaces **after** IT opens port 8001:
+| Doc / path | Purpose |
+| --- | --- |
+| [`infra/cmps01/README.md`](../../infra/cmps01/README.md) | Migration checklist, container names, troubleshooting |
+| [`infra/cmps01/migrate.sh`](../../infra/cmps01/migrate.sh) | One-shot recreate backends + start proxy |
+| [`infra/cmps01/docker-compose.yml`](../../infra/cmps01/docker-compose.yml) | LiteLLM proxy (`network_mode: host`, port **8001**) |
+| [`infra/cmps01/litellm-config.yaml`](../../infra/cmps01/litellm-config.yaml) | Routes model ids → `:18001` / `:18002` |
+
+**Deployed containers (Jun 2026):**
+
+| Name | Bind | Model id |
+| --- | --- | --- |
+| `eduai-vllm` | `127.0.0.1:18001` | `qwen2.5-7b-instruct` |
+| `eduai-vllm-t3` | `127.0.0.1:18002` | `qwen2.5-32b-instruct` |
+| `eduai-vllm-proxy` | host `:8001` | both (via LiteLLM) |
+
+Copy `infra/cmps01` to cmps01 (`~/cmps01`), then `docker compose up -d` after backends are on `18001`/`18002`.
+
+<details>
+<summary>Legacy single-container install (superseded)</summary>
+
+Single public `:8001` vLLM container — replaced by LiteLLM + two backends so **one firewall port** serves **two models**:
 
 ```bash
-export VLLM_PORT=8001
-
 docker run -d --name eduai-vllm --gpus all \
-  -p ${VLLM_PORT}:8000 \
-  --restart unless-stopped \
-  vllm/vllm-openai:latest \
-  --model Qwen/Qwen2.5-7B-Instruct \
-  --served-model-name qwen2.5-7b-instruct \
-  --host 0.0.0.0 --port 8000
+  -p 8001:8000 ...  # do not use for multi-model production
 ```
-
-**Localhost-only** (laptop testing before firewall):
-
-```bash
-docker run -d --name eduai-vllm --gpus all \
-  -p 127.0.0.1:${VLLM_PORT}:8000 \
-  ...
-```
-
-Cleanup: `docker stop eduai-vllm && docker rm eduai-vllm`
-
-First start downloads HF weights — can take **10–30+ minutes**. Use `docker logs -f eduai-vllm`.
+</details>
 
 <details>
 <summary>venv fallback (if Docker blocked)</summary>
@@ -138,13 +142,18 @@ Permissions: prefer **Docker** over large venv; **docker group** for deployers; 
 
 ```bash
 cd apps/core
-VLLM_BASE_URL=http://cmps01.ok.ubc.ca:8001 npm run vllm:smoke
+npm run vllm:smoke
+# 32B (slower first token):
+VLLM_MODEL=qwen2.5-32b-instruct npm run vllm:smoke
 ```
 
-On cmps01:
+Reads `apps/core/.env` automatically. On cmps01 (proxy + auth):
 
 ```bash
-curl -s http://127.0.0.1:8001/v1/models | jq .
+curl -s http://127.0.0.1:8001/v1/models -H "Authorization: Bearer vllm-local" | jq '.data[].id'
+curl -s http://127.0.0.1:8001/v1/chat/completions \
+  -H "Authorization: Bearer vllm-local" -H "Content-Type: application/json" \
+  -d '{"model":"qwen2.5-7b-instruct","messages":[{"role":"user","content":"Say hi"}],"max_tokens":16}'
 ```
 
 ### EduAI bench (full stack)
@@ -277,15 +286,15 @@ Not wired in EduAI yet — manual or future ops ticket.
 
 ## Multiple models (one firewall port)
 
-**One vLLM process = one base model.** For two models on two GPUs, run **two backend containers** on **localhost** (`127.0.0.1:18001`, `:18002`) and a **LiteLLM proxy** on public **:8001**.
+**One vLLM process = one base model.** For two models on two GPUs, run **two backend containers** on **host loopback** (`127.0.0.1:18001`, `:18002`) and a **LiteLLM proxy** on public **:8001** with **`network_mode: host`**.
 
 | Layer | Port | Firewall from dev? |
 | --- | --- | --- |
-| LiteLLM proxy | **8001** | **Yes** (only this one) |
-| vLLM backend 1 | 127.0.0.1:18001 | No |
-| vLLM backend 2 | 127.0.0.1:18002 | No |
+| LiteLLM proxy (`eduai-vllm-proxy`) | **8001** (host network) | **Yes** (only this one) |
+| vLLM backend 1 (`eduai-vllm`) | 127.0.0.1:18001 | No |
+| vLLM backend 2 (`eduai-vllm-t3`) | 127.0.0.1:18002 | No |
 
-**Setup:** [`infra/cmps01/README.md`](../../infra/cmps01/README.md) — edit `litellm-config.yaml`, `docker compose up`.
+**Setup:** [`infra/cmps01/README.md`](../../infra/cmps01/README.md) — `migrate.sh` or manual steps, then `docker compose up -d`.
 
 **Adding a third model:** new localhost backend + config row + proxy restart — **no new IT ticket**.
 
@@ -314,8 +323,11 @@ EduAI always uses one `VLLM_BASE_URL`; chat picks the model via `vllm:<served-mo
 | --- | --- |
 | Connection refused from dev | `VLLM_BASE_URL` in server `.env`; firewall **8001**; `curl http://cmps01:8001/v1/models` from s378 |
 | SSL / wrong version number | Use **`http://`** not `https://` for vLLM |
+| `/models` OK, chat **500** “Connection error” | LiteLLM cannot reach backends — use **`network_mode: host`** on proxy + `127.0.0.1:18001` in config ([`infra/cmps01/README.md`](../../infra/cmps01/README.md)) |
 | 404 model | `curl /v1/models` — use exact `id` in chat (`qwen2.5-7b-instruct`) |
-| EduAI “provider not configured” | Settings → Enable vLLM; set `VLLM_BASE_URL` in server `.env` |
+| EduAI “provider not configured” | Settings → Enable vLLM; set `VLLM_BASE_URL` in server `.env`; restart dev (tmux) |
+| Admin **409** adding model | Model already seeded — use existing row, don’t duplicate |
+| Chat empty / no reply | Run `npm run vllm:smoke`; check Network tab on `POST /api/chat` |
 | RAG vector dimension error | DB `vector(3072)` vs local 1024 embed mismatch — re-embed on same branch/stack |
 | OOM | Lower `--gpu-memory-utilization` or smaller model |
 | Vite / prisma.client error | `providers.server.ts` split — pull latest `feat/VLLM` |
