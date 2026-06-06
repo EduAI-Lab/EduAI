@@ -110,6 +110,26 @@ On first run (or after a database wipe), the Core and AI Tutor databases are see
 
 After `npm install`, each app gets a `.env` copied from its `.env.example` (only if one doesn't already exist). Fill in any secrets (auth keys, API keys) before the relevant features will work. See each app's `.env.example` for what is required.
 
+**Service API key (`EDUAI_API_KEY`)**
+
+AI Tutor and Question Maker make server-to-server calls to Core for several features: bug report submission, enrollment sync, topic sync, question push, and listing importable courses. These calls are authenticated with a shared secret called `EDUAI_API_KEY`.
+
+You must set the **same value** in all three services:
+
+| File | Variable |
+| --- | --- |
+| `apps/core/.env` | `EDUAI_API_KEY` |
+| `apps/extensions/ai-tutor/server/.env` | `EDUAI_API_KEY` |
+| `apps/extensions/question-maker/.env` | `EDUAI_API_KEY` |
+
+Generate a value with:
+
+```bash
+openssl rand -hex 32
+```
+
+Without this key the following features will not work: bug report submission from AI Tutor and Question Maker, AI Tutor course import from Core, AI Tutor enrollment sync, and Question Maker topic/question push to Core.
+
 **Dev server ports**
 
 | App | URL |
