@@ -16,9 +16,11 @@ This document explains **what runs inside this repo (Core)** versus **what lives
    - [5.3 Chat with course context](#sec-53-chat-with-course-context)
 6. [Chat & RAG pipeline (detailed)](#6-chat--rag-pipeline-detailed)
 7. [Codebase walkthrough (where to look)](#7-codebase-walkthrough-where-to-look)
-8. [Extension auth pipeline](#8-extension-auth-pipeline)
-9. [Saving as PDF](#9-saving-as-pdf)
-10. [One-page mental model](#10-one-page-mental-model)
+9. [Extension auth pipeline](#9-extension-auth-pipeline)
+8. [Extension data flows](#8-extension-data-flows)
+9. [Extension auth pipeline](#9-extension-auth-pipeline)
+10. [Saving as PDF](#10-saving-as-pdf)
+11. [One-page mental model](#11-one-page-mental-model)
 
 ---
 
@@ -307,7 +309,51 @@ Single Postgres database; Prisma models include users/sessions, courses, materia
 
 ---
 
-## 8. Extension auth pipeline
+## 8. Extension data flows
+
+### Course data — one-way import, not round-trip sync
+
+Core is the **authoritative source** for courses, topics, and enrollments. Extensions mirror this data locally; nothing is pushed back to Core during an import.
+
+**AI Tutor course import**
+
+When an instructor clicks "Import from EduAI" in AI Tutor, the server calls `GET /api/courses` on Core using the service key, then creates a local `CourseOffering` row with `externalId` set to the Core course's CUID. Topics and enrollments are synced in the same flow. Core's view of the course does **not** change — the import is purely additive on the AI Tutor side.
+
+After import, the instructor must set `isPublished = true` on the `CourseOffering` in AI Tutor before students can see it. This published flag is currently AI Tutor-local state; Core does not track it.
+
+```
+Core (source of truth)          AI Tutor
+────────────────────────        ─────────────────────────────────────
+courses  →  GET /api/courses  →  CourseOffering { externalId: coreId }
+topics   →  GET /api/courses/:id/topics  →  Topic rows
+enrollments → GET /api/courses/:id/enrollments → CourseEnrollment rows
+```
+
+**Question Maker course link (Part D)**
+
+QM maintains its own `Course` table for instructor-created question banks. An instructor links a QM course to a Core course by calling `PATCH /api/course/:id/link-core` with `{ coreCourseId }`. After linking:
+
+- `POST /api/course/:id/sync-topics` pulls topics from Core into QM.
+- Approved question variants can be pushed to Core via `POST /api/questions`.
+
+Unlike AI Tutor's import, QM's link is a persistent FK (`coreCourseId`) on an existing local course, not a mirror of the course itself.
+
+### Service key pattern (`EDUAI_API_KEY`)
+
+All server-to-server calls from extensions to Core are authenticated with a shared secret, **not** a user session cookie. The key is sent as `Authorization: Bearer <EDUAI_API_KEY>` and validated by `requireServiceKey()` in Core.
+
+Endpoints that accept the service key:
+- `GET /api/courses` — used by AI Tutor course import
+- `GET /api/courses/:id/topics` — used by AI Tutor topic sync
+- `GET /api/courses/:id/enrollments` — used by AI Tutor enrollment sync
+- `POST /api/bug-reports` — used by AI Tutor and QM bug report submission
+- `POST /api/questions` — used by QM variant push
+
+The service key path is always checked **before** the admin/session path in these endpoints so extensions never need admin credentials.
+
+---
+
+## 9. Extension auth pipeline
 
 Extensions (AI Tutor, Question Maker) do **not** maintain their own user accounts, passwords, or sessions. Core is the single identity provider.
 
@@ -363,7 +409,7 @@ For the full migration plan and rationale see [`docs/implementations/auth-pipeli
 
 ---
 
-## 9. Saving as PDF
+## 10. Saving as PDF
 
 This file is Markdown so it stays diff-friendly in git. To get a **PDF**:
 
@@ -376,6 +422,6 @@ Mermaid diagrams render in GitHub and many Markdown previews; some PDF tools nee
 
 ---
 
-## 10. One-page mental model
+## 11. One-page mental model
 
 **Core** is one app + one DB. **Hosted APIs** supply brains (chat + embeddings). **Embeddings for RAG** always use **server env** (`OPENROUTER_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` preferred). **Chat** uses the **AI SDK + provider registry** with keys from **request/UI settings**. **Extensions** call your APIs; they are not inside this repo.
