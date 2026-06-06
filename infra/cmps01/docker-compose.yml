@@ -1,16 +1,7 @@
 # LiteLLM proxy on cmps01 — one public port (8001) for all vLLM models.
 # vLLM backend containers are started separately (see README.md).
+#
+# network_mode: host — required because backends bind 127.0.0.1:18001/18002 on the
+# host. Bridge networking + host.docker.internal cannot reach loopback-only ports.
 
-services:
-  eduai-vllm-proxy:
-    image: ghcr.io/berriai/litellm:main-latest
-    container_name: eduai-vllm-proxy
-    restart: unless-stopped
-    ports:
-      - "8001:4000"
-    extra_hosts:
-      # Lets LiteLLM reach vLLM backends bound to host 127.0.0.1:18001/18002
-      - "host.docker.internal:host-gateway"
-    volumes:
-      - ./litellm-config.yaml:/app/config.yaml:ro
-    command: ["--config", "/app/config.yaml", "--port", "4000", "--host", "0.0.0.0"]
+
