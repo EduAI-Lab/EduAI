@@ -21,8 +21,8 @@ export async function syncExternalCourseTopics(courseOfferingId, options = {}) {
     return local;
   }
 
-  // Fetch topics from EduAI
-  const externalTopics = await listEduAiCourseTopics(course.externalId, options.accessToken);
+  // Fetch topics from Core using the service key
+  const externalTopics = await listEduAiCourseTopics(course.externalId);
   const upstreamNames = Array.from(
     new Set(
       externalTopics

@@ -2,7 +2,7 @@
  * @file Instructor module view — the lesson list inside a single module.
  *
  * Route: /instructor/module/:moduleId
- * Auth: PROFESSOR
+ * Auth: INSTRUCTOR
  * Loads: module detail, its lessons (parallel), then its course (sequential
  *        because the courseId comes from the module row).
  * Owns: lesson CRUD entry points, cross-course lesson import (course →
@@ -43,7 +43,7 @@ import { requireClientUser } from '~/lib/client-auth';
  * needed for breadcrumbs and to compute the publish-cascade gate.
  */
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
-  await requireClientUser('PROFESSOR');
+  await requireClientUser('INSTRUCTOR');
   const moduleId = Number(params.moduleId);
   if (!Number.isFinite(moduleId)) {
     throw new Response('Invalid module id', { status: 400 });

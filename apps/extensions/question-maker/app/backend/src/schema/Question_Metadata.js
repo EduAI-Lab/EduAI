@@ -1,6 +1,7 @@
 /**
  * Sequelize model representing the question shell (metadata) that owns variants.
  * Stores course/topic relationships, type, and per-assessment ordering for the question.
+ * `primaryTopicId` is a VARCHAR UUID referencing topics.id (changed from INTEGER in schema-unification).
  */
 import { DataTypes } from 'sequelize';
 import { sequelize } from '../config/database.js';
@@ -29,7 +30,7 @@ export const Question_Metadata = sequelize.define('Question_Metadata', {
     }
   },
   primaryTopicId: {
-    type: DataTypes.INTEGER,
+    type: DataTypes.STRING,
     allowNull: false,
     field: 'primary_topic_id',
     references: {
