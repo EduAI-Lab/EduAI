@@ -175,11 +175,13 @@ export function ApiKeySettings({
             </Card>
           ))}
 
-          <div className="rounded-lg border bg-muted/30 p-3 space-y-1">
-            <p className="text-sm font-medium">Ollama &amp; vLLM (local)</p>
-            <p className="text-xs text-muted-foreground">
-              Configured on the server via <code>OLLAMA_BASE_URL</code> and <code>VLLM_BASE_URL</code> — no API key or browser toggle.
-              Select <code>ollama:</code> or <code>vllm:</code> models in chat when available.
+          <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+            <p className="text-sm text-muted-foreground">
+              Managed on the server via <code>OLLAMA_BASE_URL</code> and <code>VLLM_BASE_URL</code> in{" "}
+              <code>apps/core/.env</code>. No browser toggle — pick <code>ollama:</code> or <code>vllm:</code> models in chat when configured.
+            </p>
+            <p className="text-sm text-muted-foreground">
+              See repo docs: <code>docs/rag-ai/VLLM.md</code>, <code>docs/rag-ai/HOW_TO_USE_DEV_SERVER.md</code>
             </p>
           </div>
 
