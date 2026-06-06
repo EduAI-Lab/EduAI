@@ -55,7 +55,7 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 | [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Core vs hosted services, provider keys, embeddings overview, and high-level flows |
 | [`implementations/schema-design.md`](docs/implementations/schema-design.md) | Unified schema design across apps |
 | [`DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Instructions on how to deploy the system (production and development) |
-
+| [`CANVAS.md`](docs/CANVAS.md) | Local Canvas LMS setup — WSL, Docker, ports, seed script |
 ## Changelog
 
 All notable changes across apps are recorded in [`CHANGELOG.md`](CHANGELOG.md) at the monorepo root.
@@ -180,41 +180,66 @@ exit
 3. Click **Test Connection** — if Docker is running the DB container you should see a success message.
 4. Click **Finish** to save the connection.
 
-## Testing
+## Running Tests
 
-With Turborepo, testing is orchestrated from the monorepo root. Each app uses its own test runner and is invoked in isolation, with results heavily cached to speed up development.
+All test suites run inside Docker. This ensures every developer and CI run uses an identical Node version, dependency tree, and database state regardless of what is installed locally.
 
 ### Prerequisites
 
-Before running tests for the first time, ensure dependencies are installed via `npm install` at the monorepo root.
+- Docker Desktop running
+- Dependencies installed locally (`npm install`) — only needed to invoke the npm scripts; the actual test execution happens inside containers
 
 ### Running tests
 
 From the monorepo root:
 
-| Command | What runs |
-| --- | --- |
-| `npm run test` | All tests across every app (unit + integration) |
-| `npx turbo run test --filter=edu-ai` | EduAI tests only |
-| `npx turbo run test --filter=ai-tutor --filter=ai-tutor-server` | AI Tutor frontend and server tests |
-| `npx turbo run test --filter='question-maker-*'` | Question Maker frontend and backend tests |
+#### Run everything
+```bash
+npm run test:all           # all unit + integration suites
+npm run test:unit          # all unit suites only
+npm run test:integration   # all integration suites only
+npm run test:e2e           # all e2e suites; WARNING: no e2e tests currently
+```
 
-### Integration tests
+#### Run by component
+```bash
+# EduAI (core SSR app)
+npm run test:eduai
+npm run test:eduai:unit
+npm run test:eduai:integration
 
-Some tests require a running PostgreSQL instance and will fail without one:
+# AI Tutor
+npm run test:ai-tutor
 
-* **AI Tutor server** — both unit and integration tests run automatically. Connection details are configured in `apps/extensions/ai-tutor/server/.env.test`. The test database (`ai-tutor_test`) is created automatically on the first run.
-* **Question Maker backend** — both unit and integration tests run automatically via `npm run test`. Set `TEST_DATABASE_URL` to a dedicated PostgreSQL database before running (integration tests are skipped gracefully if it is not set).
+# AI Tutor — frontend app (WARNING: ai-tutor has no integration tests)
+npm run test:ai-tutor:app
+npm run test:ai-tutor:app:unit
+npm run test:ai-tutor:app:integration
 
-### Test runners by app
+# AI Tutor — Express server
+npm run test:ai-tutor:server
+npm run test:ai-tutor:server:unit
+npm run test:ai-tutor:server:integration
 
-| App | Runner | Config |
-| --- | --- | --- |
-| EduAI | Vitest | `apps/core/vitest.config.ts` |
-| AI Tutor frontend | Vitest | `apps/extensions/ai-tutor/vitest.config.ts` |
-| AI Tutor server | Vitest | `apps/extensions/ai-tutor/server/vitest.config.js` |
-| Question Maker backend | Vitest | `apps/extensions/question-maker/app/backend/vitest.config.js` |
-| Question Maker frontend | Vitest | `apps/extensions/question-maker/app/frontend/vite.config.ts` |
+# Question Maker
+npm run test:qm
+npm run test:qm:app
+npm run test:qm:app:unit
+npm run test:qm:app:integration
+
+# Question Maker — frontend app
+npm run test:qm:app:unit
+npm run test:qm:app:integration
+
+# Question Maker — Express server
+npm run test:qm:server
+npm run test:qm:server:unit
+npm run test:qm:server:integration
+```
+
+Individual commands use `docker compose run --rm`, which starts only the containers that suite needs (e.g. a Postgres instance for integration tests), streams output directly to your terminal, and exits with the test process's exit code.
+
+The full-suite commands (`test:docker`, `test:docker:unit`, `test:docker:integration`) run through `scripts/test-in-docker.sh`, which builds all images in parallel, runs each suite sequentially, reports a per-suite pass/fail summary, and cleans up containers on exit.
 
 ## Git hooks
 
