@@ -1,11 +1,19 @@
+import {
+  resolveToolResultMaxChars,
+  truncateToMaxChars,
+  TOOL_RAG_MAX_CHARS_PER_CHUNK,
+} from "~/lib/ai/tool-output-limits";
+
+// Re-export the shared tool-output limits so existing importers (and tests) that
+// reach for them via `~/lib/chat-rag` keep working after the extraction (#260).
+export { resolveToolResultMaxChars, truncateToMaxChars, TOOL_RAG_MAX_CHARS_PER_CHUNK };
+
 export type HybridRagHit = { content: string; similarity: number; materialTitle: string };
 
 /** Hybrid RAG + tool `getInformation`: pgvector row cap (default was 6). */
 export const HYBRID_RAG_MAX_CHUNKS = 4;
 /** Max characters from excerpts injected into hybrid `system` (non-tool models). */
 export const HYBRID_RAG_MAX_CONTEXT_CHARS = 14_000;
-/** Max characters per chunk returned to the model from `getInformation` (tool path). */
-export const TOOL_RAG_MAX_CHARS_PER_CHUNK = 6000;
 /** Minimum remaining chars before truncating the last hybrid RAG excerpt. */
 export const HYBRID_RAG_MIN_TRUNCATE_CHARS = 120;
 
@@ -20,27 +28,6 @@ const MIN_SESSION_MESSAGES = 2;
 const MAX_CONTEXT_MESSAGES_CEILING = 50;
 const SESSION_CHAR_BUDGET_CEILING = 100_000;
 const SESSION_DIGEST_MAX_CEILING = 50_000;
-
-const TOOL_RESULT_MAX_CHARS_FLOOR = 500;
-const TOOL_RESULT_MAX_CHARS_CEILING = 50_000;
-
-export function resolveToolResultMaxChars(): number {
-  const parsed = Number(process.env.CHAT_TOOL_RAG_MAX_CHARS_PER_CHUNK);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return TOOL_RAG_MAX_CHARS_PER_CHUNK;
-  }
-  return Math.min(
-    TOOL_RESULT_MAX_CHARS_CEILING,
-    Math.max(TOOL_RESULT_MAX_CHARS_FLOOR, Math.floor(parsed)),
-  );
-}
-
-export function truncateToMaxChars(text: string, maxChars: number): string {
-  if (text.length <= maxChars) {
-    return text;
-  }
-  return `${text.slice(0, maxChars)}…`;
-}
 
 function readBoundedEnvInt(
   name: string,
@@ -95,23 +82,99 @@ export function resolveSessionDigestMaxChars(): number {
   );
 }
 
+function safeJsonLength(value: unknown): number {
+  try {
+    return JSON.stringify(value)?.length ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
+function safeStringify(value: unknown): string {
+  try {
+    return JSON.stringify(value) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Best-effort size of a message *as the model receives it* — it counts tool-call
+ * and tool-result payloads, not just `text` parts. Used for the session char
+ * budget and the `messageTextChars` debug metric so tool-heavy turns (#260) are
+ * not under-counted and the digest (#259) triggers when it should.
+ */
+export function estimateMessageCharsForModel(
+  message?: Record<string, unknown>,
+): number {
+  if (!message) {
+    return 0;
+  }
+  const content = message.content;
+  if (typeof content === "string") {
+    return content.length;
+  }
+  if (content !== undefined && content !== null) {
+    return safeJsonLength(content);
+  }
+  // Some AI SDK messages carry their payload under `parts` instead of `content`.
+  if ("parts" in message && message.parts != null) {
+    return safeJsonLength(message.parts);
+  }
+  return 0;
+}
+
+/** Human-readable text of a message, used only to build the digest preview. */
+function extractMessageText(message?: Record<string, unknown>): string {
+  const content = message?.content;
+  if (typeof content === "string") {
+    return content;
+  }
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === "string") return part;
+        if (
+          part &&
+          typeof part === "object" &&
+          "text" in part &&
+          typeof (part as { text?: unknown }).text === "string"
+        ) {
+          return (part as { text: string }).text;
+        }
+        return "";
+      })
+      .filter((part) => part.length > 0)
+      .join(" ");
+  }
+  if (
+    content &&
+    typeof content === "object" &&
+    "text" in content &&
+    typeof (content as { text?: unknown }).text === "string"
+  ) {
+    return (content as { text: string }).text;
+  }
+  return content == null ? "" : safeStringify(content);
+}
+
 function totalMessageChars<T extends Record<string, unknown>>(
   messages: T[],
-  extractText: (message?: T) => string,
+  estimate: (message?: T) => number,
 ): number {
-  return messages.reduce((sum, message) => sum + extractText(message).length, 0);
+  return messages.reduce((sum, message) => sum + estimate(message), 0);
 }
 
 function buildSessionDigest<T extends Record<string, unknown>>(
   messages: T[],
-  extractText: (message?: T) => string,
+  previewText: (message?: T) => string,
   maxDigestChars: number,
 ): string {
   const lines: string[] = [];
 
   for (const message of messages) {
     const role = typeof message.role === "string" ? message.role : "unknown";
-    const normalized = extractText(message).replace(/\s+/g, " ").trim();
+    const normalized = previewText(message).replace(/\s+/g, " ").trim();
     if (!normalized) {
       continue;
     }
@@ -128,17 +191,117 @@ function buildSessionDigest<T extends Record<string, unknown>>(
   return truncateToMaxChars(`${header}${lines.join("\n")}`, maxDigestChars);
 }
 
+const DIGEST_MESSAGE_ID = "session-digest";
+/** Floor on per-message budget shares so a tiny budget cannot truncate to nothing. */
+const MIN_TRUNCATED_MESSAGE_CHARS = 200;
+
+/**
+ * Strict truncation: the result length is `<= maxChars` (unlike
+ * `truncateToMaxChars`, whose result is `maxChars + 1`). Used for hard budget
+ * enforcement where the total must not exceed `charBudget`.
+ */
+function hardTruncate(text: string, maxChars: number): string {
+  if (text.length <= maxChars) {
+    return text;
+  }
+  if (maxChars <= 1) {
+    return text.slice(0, Math.max(0, maxChars));
+  }
+  return `${text.slice(0, maxChars - 1)}…`;
+}
+
+/**
+ * Shrinks one message so its model-input size is `<= maxChars`. String content
+ * is sliced directly; structured content (tool calls/results) has its string
+ * leaves capped, and — only if that is still over budget — the content is
+ * collapsed to a truncated serialized preview so the budget is always honored.
+ */
+function enforceMessageBudget<T extends Record<string, unknown>>(
+  message: T,
+  maxChars: number,
+): T {
+  if (estimateMessageCharsForModel(message) <= maxChars) {
+    return message;
+  }
+
+  const content = message.content;
+  if (typeof content === "string") {
+    return { ...message, content: hardTruncate(content, maxChars) };
+  }
+
+  const capped = { ...message, content: capStringsInValue(content, maxChars) } as T;
+  if (estimateMessageCharsForModel(capped) <= maxChars) {
+    return capped;
+  }
+
+  // Structured payload still over budget (many parts / large metadata): collapse
+  // to a truncated serialized preview. Rare; preserves the hard budget guarantee.
+  return { ...message, content: hardTruncate(safeStringify(content), maxChars) } as T;
+}
+
+/**
+ * Final guard after digest + recent tail are assembled: drop the oldest verbatim
+ * turns (preserving a leading digest) until the total fits `charBudget`; if the
+ * minimum set still exceeds it, truncate the survivors to an even share so the
+ * model never receives more than `charBudget` characters.
+ */
+function enforceSessionCharBudget<T extends Record<string, unknown>>(
+  messages: T[],
+  estimate: (message?: T) => number,
+  charBudget: number,
+  hasDigestHead: boolean,
+): T[] {
+  const result = [...messages];
+  // Keep at least the digest (when present) plus one verbatim turn, else one turn.
+  const minKeep = hasDigestHead ? 2 : 1;
+  const verbatimStart = hasDigestHead ? 1 : 0;
+
+  while (
+    result.length > minKeep &&
+    totalMessageChars(result, estimate) > charBudget
+  ) {
+    result.splice(verbatimStart, 1);
+  }
+
+  if (totalMessageChars(result, estimate) <= charBudget) {
+    return result;
+  }
+
+  // Still over with the minimum set: split the budget across the survivors.
+  const share = Math.max(
+    MIN_TRUNCATED_MESSAGE_CHARS,
+    Math.floor(charBudget / result.length),
+  );
+  return result.map((message) => enforceMessageBudget(message, share));
+}
+
 /**
  * Form A §3b (#259): when chat history exceeds the char budget, replace older
- * turns with a short digest and keep the recent tail verbatim. DB/UI unchanged.
+ * turns with a short digest and keep the recent tail verbatim, then enforce the
+ * budget on the result so the model input stays at or below `charBudget`.
+ *
+ * Budget accounting uses {@link estimateMessageCharsForModel} by default, which
+ * counts tool-call/result payloads (#260) — not just `text` parts — so the
+ * digest triggers and is bounded correctly on tool-heavy threads.
+ *
+ * The digest is request-scoped and **never persisted**: only the client's
+ * incoming turns and the model's responses are written to the DB (see
+ * `appendMessages` in `routes/api/chat.ts`), never these derived messages. It is
+ * injected as a `user` message for cross-provider portability — a mid-array
+ * `system` message is handled inconsistently by some providers — and is clearly
+ * labeled "Session digest" so the model reads it as context, not a new question.
+ * DB / UI are unchanged.
  */
 export function prepareBoundedSessionContext<T extends Record<string, unknown>>(
   messages: T[],
-  extractText: (message?: T) => string,
   opts?: {
     charBudget?: number;
     recentCount?: number;
     digestMaxChars?: number;
+    /** Override budget accounting (defaults to {@link estimateMessageCharsForModel}). */
+    estimateChars?: (message?: T) => number;
+    /** Override digest preview text (defaults to the internal text extractor). */
+    previewText?: (message?: T) => string;
   },
 ): T[] {
   if (messages.length === 0) {
@@ -148,38 +311,44 @@ export function prepareBoundedSessionContext<T extends Record<string, unknown>>(
   const charBudget = opts?.charBudget ?? resolveSessionCharBudget();
   const recentCount = opts?.recentCount ?? resolveSessionRecentMessages();
   const digestMaxChars = opts?.digestMaxChars ?? resolveSessionDigestMaxChars();
+  const estimate = opts?.estimateChars ?? estimateMessageCharsForModel;
+  const previewText = opts?.previewText ?? extractMessageText;
 
-  if (totalMessageChars(messages, extractText) <= charBudget) {
+  if (totalMessageChars(messages, estimate) <= charBudget) {
     return messages;
   }
 
   const recent = messages.slice(-recentCount);
-  const older = messages.slice(0, -recentCount);
+  const older = messages.slice(0, messages.length - recent.length);
 
   if (older.length === 0) {
-    let trimmed = [...messages];
-    // All turns are in the recent tail; drop oldest until under budget (keep ≥1 turn).
-    while (
-      trimmed.length > 1 &&
-      totalMessageChars(trimmed, extractText) > charBudget
-    ) {
-      trimmed = trimmed.slice(1);
-    }
-    return trimmed;
+    // Everything is in the recent tail; drop oldest / truncate to fit the budget.
+    return enforceSessionCharBudget(recent, estimate, charBudget, false);
   }
 
-  const digest = buildSessionDigest(older, extractText, digestMaxChars);
+  const digest = buildSessionDigest(older, previewText, digestMaxChars);
   const digestMessage = {
-    id: "session-digest",
+    id: DIGEST_MESSAGE_ID,
     role: "user",
     content:
       digest ||
       "## Session digest (earlier turns)\n\n(Earlier turns summarized for length.)",
   } as unknown as T;
 
-  return [digestMessage, ...recent];
+  return enforceSessionCharBudget(
+    [digestMessage, ...recent],
+    estimate,
+    charBudget,
+    true,
+  );
 }
 
+/**
+ * Recursively caps every string in a value, intentionally including metadata
+ * (`toolCallId`, URLs, etc.). The breadth is deliberate: it is a simple, robust
+ * floodgate for assistant/tool payloads, and at the 6k default cap real metadata
+ * is never affected — only oversized result bodies (`markdown`, `content`, …).
+ */
 function capStringsInValue(value: unknown, maxChars: number): unknown {
   if (typeof value === "string") {
     return truncateToMaxChars(value, maxChars);

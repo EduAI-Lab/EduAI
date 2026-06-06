@@ -12,9 +12,11 @@
 
 ## Evaluated build
 
+> ⚠️ **Record the SHA at eval time.** This scaffold is *not* updated per commit — do not trust any value pinned here. Capture the actual build with `git rev-parse HEAD` on the machine you evaluate, and paste it into the table below for that run.
+
 | Field | Value |
 | --- | --- |
-| **Git SHA** | `4479e23956aa62483e6425299027282028b8a3c5` _(update at each eval run)_ |
+| **Git SHA** | _`git rev-parse HEAD` at eval time_ |
 | **Branch / PR** | `feat/adhd-mvp-phase-2.5` · [PR #443](https://github.com/EduAI-Lab/EduAI/pull/443) |
 | **Eval date** | _YYYY-MM-DD_ |
 | **Evaluator** | _name_ |

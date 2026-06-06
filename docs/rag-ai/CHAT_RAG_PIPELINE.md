@@ -125,12 +125,13 @@ The handler is the `action` in [`chat.ts`](../../apps/core/app/routes/api/chat.t
 2. **Parse body** — `normalizeMessage` ensures `id` and `role`; stamps UUID if missing.
 3. **Course** — `courseCode` → `Course` row by code; `effectiveCourseId = resolved id || courseId`.
 4. **Chat** — load by `chatId` + user (410 if deleted); create/update for `systemPrompt`.
-5. **History** — last **`MAX_CONTEXT_MESSAGES` (20)** from `ChatMessage`, merged with incoming (dedupe by `id`), tail-trimmed to 20.
-6. **Early exits** — empty merged transcript → JSON with `chatId` only; missing `model` / invalid `apiKeys` → 400.
-7. **Registry** — `createAIProviderRegistry(validatedApiKeys)` → `registry.languageModel(model)`.
-8. **Persist** — `appendMessages(normalizedIncomingMessages)` writes new rows before streaming (`skipDuplicates` on `messageId`).
+5. **History** — last **`CHAT_MAX_CONTEXT_MESSAGES` (20)** from `ChatMessage` (`resolveMaxContextMessages`), merged with incoming (dedupe by `id`), tail-trimmed to the same window.
+6. **Char-budget caps (Form A §3b)** — the trimmed window is passed through `capToolResultsInMessages` (#260 — caps each assistant/tool string to `TOOL_RAG_MAX_CHARS_PER_CHUNK`) then `prepareBoundedSessionContext` (#259 — digests older turns when model-input size exceeds `CHAT_SESSION_MAX_CHARS`, then enforces the budget). These produce **`modelMessages`** and never touch the DB / UI.
+7. **Early exits** — empty merged transcript → JSON with `chatId` only; missing `model` / invalid `apiKeys` → 400.
+8. **Registry** — `createAIProviderRegistry(validatedApiKeys)` → `registry.languageModel(model)`.
+9. **Persist** — `appendMessages(normalizedIncomingMessages)` writes new rows before streaming (`skipDuplicates` on `messageId`). Only client turns and model responses are persisted — the session digest is request-scoped.
 
-Debug hooks (`chatApiDebug`) log history merge counts and pre-stream prompt size hints (`systemChars`, `messageCount`, `messageTextChars`) without dumping full RAG text.
+Debug hooks (`chatApiDebug`) log history merge counts and pre-stream prompt size hints (`systemChars`, `messageCount`, `messageTextChars`) without dumping full RAG text. `messageTextChars` is computed by `estimateMessageCharsForModel`, so it counts tool-call/result payloads — not just `text` parts.
 
 ## 3. Two RAG behaviors (split on `supportsTools`)
 
@@ -171,6 +172,21 @@ RAG is **not** one pipeline. It branches on `modelSupportsTools(model)` (from th
 
 `buildCappedRagContextText` preserves retrieval order, adds `**Source**: {materialTitle}` headers, joins with `---`, and truncates the last chunk with `…` when over budget.
 
+`TOOL_RAG_MAX_CHARS_PER_CHUNK` and the helpers `resolveToolResultMaxChars` / `truncateToMaxChars` live in [`ai/tool-output-limits.ts`](../../apps/core/app/lib/ai/tool-output-limits.ts) (re-exported from `chat-rag.ts`) so leaf tools like `fetch-page.ts` can import the cap without pulling in session/RAG logic.
+
+### Session context caps (Form A §3b, env-tunable)
+
+Applied to the trimmed window before the LLM call (see step 6 above). All are model-input only — DB and UI are unchanged.
+
+| Function (`chat-rag.ts`) | Default | Env override | Purpose |
+| --- | ---: | --- | --- |
+| `capToolResultsInMessages` | 6000 | `CHAT_TOOL_RAG_MAX_CHARS_PER_CHUNK` | Cap each oversized assistant/tool string reloaded from history (#260) |
+| `prepareBoundedSessionContext` | 28_000 | `CHAT_SESSION_MAX_CHARS` | Digest older turns once model-input chars exceed the budget (#259) |
+| ↳ recent tail kept verbatim | 6 | `CHAT_SESSION_RECENT_MESSAGES` | Turns left untouched at the end of the thread |
+| ↳ digest block cap | 14_000 | `CHAT_SESSION_DIGEST_MAX_CHARS` | Max size of the synthetic "Session digest" message |
+
+`prepareBoundedSessionContext` accounts for size with `estimateMessageCharsForModel` (counts tool payloads), builds the digest from older turns, keeps the recent tail, then runs a final enforcement pass (drop oldest verbatim turns, else truncate survivors) so model input stays at or below `CHAT_SESSION_MAX_CHARS`. A single message that alone exceeds the budget is truncated. The digest is injected as a clearly-labeled `user` message and is never persisted.
+
 ## 4. `findRelevantContent` (shared)
 
 Defined in [`embedding.ts`](../../apps/core/app/lib/ai/embedding.ts):
@@ -198,6 +214,11 @@ Resolved system prompt order: request `systemPrompt` → stored `chat.systemProm
 | `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE` | off | `1` = hybrid RAG on every message when a course is selected (skip keyword gate) |
 | `CHAT_TOOL_MAX_STEPS` | 12 | Tool-path `maxSteps` (1–32) |
 | `CHAT_TOOL_MAX_OUTPUT_TOKENS` | 32000 | Tool-path `maxTokens` (1024–128000) |
+| `CHAT_MAX_CONTEXT_MESSAGES` | 20 | Messages loaded from DB and tail-trimmed before the model (4–50) |
+| `CHAT_TOOL_RAG_MAX_CHARS_PER_CHUNK` | 6000 | Per-result cap for `getInformation` / `fetchPage` / reloaded tool messages (500–50000) |
+| `CHAT_SESSION_MAX_CHARS` | 28000 | Model-input char budget before older turns are digested (#259) (2000–100000) |
+| `CHAT_SESSION_RECENT_MESSAGES` | 6 | Recent turns kept verbatim when the digest runs (2–50) |
+| `CHAT_SESSION_DIGEST_MAX_CHARS` | 14000 | Max size of the synthetic session-digest block (500–50000) |
 | `RAG_SIMILARITY_THRESHOLD` | 0.5 | Minimum cosine similarity for retrieval hits when caller omits threshold |
 | `QUERY_EMBED_CACHE_TTL_MS` | 90000 | Query embedding cache TTL |
 | `QUERY_EMBED_CACHE_MAX` | 300 | Max cached query embeddings |

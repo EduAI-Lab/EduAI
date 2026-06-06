@@ -27,13 +27,13 @@ node scripts/eval-adhd-assist.mjs --only S4 --mode off
 
 Use `--mode off` only for §3b validation (Baseline path; caps are mode-agnostic). Outputs go to `eval-runs/<timestamp>/` (gitignored).
 
-On the server, each turn logs `Starting LLM stream` with `messageTextChars` when `CHAT_DEBUG_LOG=1`.
+On the server, each turn logs `Starting LLM stream` with `messageTextChars` when `CHAT_DEBUG_LOG=1`. `messageTextChars` is measured by `estimateMessageCharsForModel`, so it counts tool-call/result payloads — not just `text` parts.
 
 ## Pass criteria
 
 - [ ] All three S4 turns complete without HTTP/stream errors.
 - [ ] No single tool-result string in model input exceeds **6,000 chars** (default `TOOL_RAG_MAX_CHARS_PER_CHUNK` / `CHAT_TOOL_RAG_MAX_CHARS_PER_CHUNK`).
-- [ ] On a long thread, total `messageTextChars` stays bounded by session digest (**28,000** default `CHAT_SESSION_MAX_CHARS`) plus recent tail.
+- [ ] On a long thread, total `messageTextChars` stays at or below **28,000** (default `CHAT_SESSION_MAX_CHARS`): once the thread exceeds the budget, `prepareBoundedSessionContext` digests older turns and runs a final enforcement pass over digest + recent tail so the total is bounded.
 
 ## Representative turn — model-input size (before vs after)
 
