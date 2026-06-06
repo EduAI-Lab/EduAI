@@ -4,4 +4,12 @@
 # network_mode: host — required because backends bind 127.0.0.1:18001/18002 on the
 # host. Bridge networking + host.docker.internal cannot reach loopback-only ports.
 
-
+services:
+  eduai-vllm-proxy:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: eduai-vllm-proxy
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./litellm-config.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--port", "8001", "--host", "0.0.0.0"]

@@ -265,7 +265,7 @@ Local **chat** models run on **[cmps01.ok.ubc.ca](http://cmps01.ok.ubc.ca)** (sh
 | Service | Port (host) | Provider id in EduAI | Role |
 | ------- | ----------- | -------------------- | ---- |
 | **Ollama** | **11434** | `ollama` | Default local path; GGUF models; hybrid + tool paths per `supportsTools` |
-| **vLLM** (optional) | **8001** (`VLLM_PORT`) | `vllm` | OpenAI-compatible serving (`@ai-sdk/openai` → `/v1`); HF weights in Docker; multi-user / bench spike ([#394](https://github.com/EduAI-Lab/EduAI/issues/394)) |
+| **vLLM** | **8001** | `vllm` | **LiteLLM proxy** (`network_mode: host`) → backends `127.0.0.1:18001` (7B) / `:18002` (32B AWQ); OpenAI-compatible `/v1`; see [`infra/cmps01/README.md`](../infra/cmps01/README.md) |
 
 **Embeddings for RAG** are still **cloud** (OpenRouter / Google / OpenAI env keys) — not served from cmps01 today. See [EMBEDDINGS.md](rag-ai/EMBEDDINGS.md).
 
@@ -277,20 +277,24 @@ flowchart LR
   end
   subgraph CMPS01["cmps01.ok.ubc.ca GPU"]
     Oll[:11434 Ollama]
-    Vll[:8001 vLLM Docker]
+    Proxy[:8001 LiteLLM proxy]
+    B7[:18001 vLLM 7B]
+    B32[:18002 vLLM 32B]
+    Proxy --> B7
+    Proxy --> B32
   end
-  Dev -->|HTTP allowed| Oll
-  Dev -->|HTTP ticket pending| Vll
+  Dev -->|HTTP| Oll
+  Dev -->|HTTP :8001| Proxy
   Prod --> Oll
 ```
 
 **Network (dev → cmps01):**
 
-- **HTTP :11434** (Ollama) — allowed today from s378; laptops cannot reach cmps01 directly (use dev server or SSH tunnel from laptop to cmps01).
-- **HTTP :8001** (vLLM) — requires **network firewall** + **host firewall** on cmps01 (IT ticket). Precedent: same pattern as 11434.
+- **HTTP :11434** (Ollama) — allowed from s378.
+- **HTTP :8001** (LiteLLM / vLLM) — open dev → cmps01 (Jun 2026). Backends `:18001`/`:18002` are host-local only; IT does **not** need `:8002`.
 - **SSH :22** (s378 → cmps01) — **not** available (connection timed out in testing). Do **not** rely on SSH port-forward from dev to cmps01; use direct HTTP once 8001 is open.
 
-**Setup / ops:** [rag-ai/VLLM.md](rag-ai/VLLM.md) · [DEPLOYMENT.md](DEPLOYMENT.md) · [HOW_TO_USE_DEV_SERVER.md](rag-ai/HOW_TO_USE_DEV_SERVER.md)
+**Setup / ops:** [rag-ai/VLLM.md](rag-ai/VLLM.md) · [infra/cmps01/README.md](../infra/cmps01/README.md) · [HOW_TO_USE_DEV_SERVER.md](rag-ai/HOW_TO_USE_DEV_SERVER.md)
 
 **Code:** `app/lib/ai/providers.ts` (`ollama`, `vllm`); enable vLLM in Settings → API keys on dev.
 
