@@ -43,7 +43,7 @@ cd apps/core
 npm run vllm:smoke
 ```
 
-**In the app:** Settings → **Enable vLLM** → chat model **`vllm:qwen2.5-7b-instruct`** or **`vllm:qwen2.5-32b-instruct`** (run `npx prisma db seed` if missing from Admin).
+**In the app:** pick chat model **`vllm:qwen2.5-7b-instruct`** or **`vllm:qwen2.5-32b-instruct`** (run `npx prisma db seed` if missing from Admin). Local inference is **server-managed** — no Settings toggle when `VLLM_BASE_URL` is set on the app host.
 
 **Admins:** Models are **seeded** — do not use **Create Model** for the same `modelId` (409 Conflict). **Admin → AI Models → Refresh list** (vLLM provider) only when adding a *new* served name from cmps01.
 
@@ -51,7 +51,7 @@ npm run vllm:smoke
 
 | Role | Task |
 | --- | --- |
-| **You (dev)** | `.env`, enable provider, pick model, run smoke/bench |
+| **You (dev)** | `.env`, pick model, run smoke/bench |
 | **IT / ops** | Firewall dev → cmps01 **TCP 8001**, Docker GPU on cmps01 |
 | **On cmps01** | vLLM backends + LiteLLM proxy (see [`infra/cmps01/README.md`](../../infra/cmps01/README.md)) |
 
@@ -333,7 +333,7 @@ EduAI always uses one `VLLM_BASE_URL`; chat picks the model via `vllm:<served-mo
 | SSL / wrong version number | Use **`http://`** not `https://` for vLLM |
 | `/models` OK, chat **500** “Connection error” | LiteLLM cannot reach backends — use **`network_mode: host`** on proxy + `127.0.0.1:18001` in config ([`infra/cmps01/README.md`](../../infra/cmps01/README.md)) |
 | 404 model | `curl /v1/models` — use exact `id` in chat (`qwen2.5-7b-instruct`) |
-| EduAI “provider not configured” | Settings → Enable vLLM; set `VLLM_BASE_URL` in server `.env`; restart dev (tmux) |
+| EduAI “provider not configured” | Set `VLLM_BASE_URL` in server `.env`; restart dev (tmux); pick a `vllm:` model |
 | Admin **409** adding model | Model already seeded — use existing row, don’t duplicate |
 | Chat empty / no reply | Run `npm run vllm:smoke`; check Network tab on `POST /api/chat` |
 | RAG vector dimension error | DB `vector(3072)` vs local 1024 embed mismatch — re-embed on same branch/stack |

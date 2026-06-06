@@ -296,7 +296,7 @@ flowchart LR
 
 **Setup / ops:** [rag-ai/VLLM.md](rag-ai/VLLM.md) · [infra/cmps01/README.md](../infra/cmps01/README.md) · [HOW_TO_USE_DEV_SERVER.md](rag-ai/HOW_TO_USE_DEV_SERVER.md)
 
-**Code:** `app/lib/ai/providers.ts` (`ollama`, `vllm`); enable vLLM in Settings → API keys on dev.
+**Code:** `app/lib/ai/providers.ts` (`ollama`, `vllm`); local inference enabled when `OLLAMA_BASE_URL` / `VLLM_BASE_URL` are set in server `.env`.
 
 ---
 

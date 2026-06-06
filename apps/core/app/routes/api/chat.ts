@@ -551,7 +551,7 @@ export async function action({ request }: ActionFunctionArgs) {
             : "provider API key";
       return new Response(
         JSON.stringify({
-          error: `Provider "${parsedModel.providerId}" is not enabled. Turn it on in Settings and set ${envHint} in apps/core/.env on the server.`,
+          error: `Provider "${parsedModel.providerId}" is not available on this server. Set ${envHint} in apps/core/.env and restart the dev process.`,
         }),
         {
           status: 400,
@@ -601,7 +601,7 @@ export async function action({ request }: ActionFunctionArgs) {
         parsedModel.providerId === "vllm" ? "VLLM_BASE_URL" : "OLLAMA_BASE_URL";
       return new Response(
         JSON.stringify({
-          error: `Provider "${parsedModel.providerId}" is not available on this server (active: ${enabledProviders.join(", ") || "none"}). For vLLM: add ${envVar} to apps/core/.env, enable vLLM in Settings, restart dev, and ensure feat/VLLM code is deployed.`,
+          error: `Provider "${parsedModel.providerId}" is not available on this server (active: ${enabledProviders.join(", ") || "none"}). Set ${envVar} in apps/core/.env and restart the dev process.`,
         }),
         {
           status: 503,

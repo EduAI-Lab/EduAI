@@ -53,11 +53,21 @@ async function main() {
     headers: { Authorization: `Bearer ${apiKey}` },
   });
   console.log("GET /v1/models", modelsRes.status, `→ ${base}`);
-  if (modelsRes.ok) {
-    const body = await modelsRes.json();
+  const modelsText = await modelsRes.text();
+  if (!modelsRes.ok) {
+    console.error(modelsText.slice(0, 2000));
+    process.exit(1);
+  }
+  try {
+    const body = JSON.parse(modelsText);
     console.log(JSON.stringify(body, null, 2));
-  } else {
-    console.log(await modelsRes.text());
+    if (!Array.isArray(body.data) || body.data.length === 0) {
+      console.error("GET /v1/models returned no models");
+      process.exit(1);
+    }
+  } catch {
+    console.error("GET /v1/models returned invalid JSON:", modelsText.slice(0, 500));
+    process.exit(1);
   }
 
   const t0 = performance.now();

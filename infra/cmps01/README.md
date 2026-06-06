@@ -148,9 +148,8 @@ npx prisma db seed   # registers both vLLM models in Admin
 
 ### Step 5 — App
 
-1. **Settings** → Enable vLLM  
-2. **Admin → AI Models** — models are seeded (`npx prisma db seed`); do **not** re-add the same model id (409 Conflict). Use **Refresh list** only when registering a *new* served name.  
-3. Chat: `vllm:qwen2.5-7b-instruct` or `vllm:qwen2.5-32b-instruct`
+1. Chat: **`vllm:qwen2.5-7b-instruct`** or **`vllm:qwen2.5-32b-instruct`** (availability follows server `.env`, no Settings toggle)
+2. **Admin → AI Models** — models are seeded (`npx prisma db seed`); do **not** re-add the same model id (409 Conflict). Use **Refresh list** only when registering a *new* served name.
 
 ### Step 6 — IT / firewall
 
