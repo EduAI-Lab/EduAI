@@ -78,27 +78,23 @@ export function mergeLocalInferenceFromEnv(
 ): UserProviderSettings {
   const merged: UserProviderSettings = { ...userSettings };
   const parsed = modelIdentifier ? parseModelIdentifier(modelIdentifier) : null;
-  const providerIds = parsed ? [parsed.providerId] : LOCAL_INFERENCE_PROVIDERS;
+  const providerIds = parsed
+    ? LOCAL_INFERENCE_PROVIDERS.includes(parsed.providerId)
+      ? [parsed.providerId]
+      : []
+    : LOCAL_INFERENCE_PROVIDERS;
 
   for (const providerId of providerIds) {
     const envVar = PROVIDER_CONFIGS[providerId]?.envVarName;
-    const envUrl = envVar ? process.env[envVar] : undefined;
-    const requestedOnThisChat = parsed?.providerId === providerId;
+    const envUrl = envVar ? process.env[envVar]?.trim() : undefined;
+    if (!envUrl) continue;
 
-    if (requestedOnThisChat && envUrl) {
-      merged[providerId] = {
-        ...merged[providerId],
-        isEnabled: true,
-        baseUrl: merged[providerId]?.baseUrl || envUrl,
-      };
-      continue;
-    }
-
-    if (merged[providerId]?.isEnabled) continue;
-
-    if (envUrl) {
-      merged[providerId] = { isEnabled: true, baseUrl: envUrl };
-    }
+    // Server-managed: availability follows apps/core/.env on the app host, not browser toggles.
+    merged[providerId] = {
+      ...merged[providerId],
+      isEnabled: true,
+      baseUrl: merged[providerId]?.baseUrl || envUrl,
+    };
   }
 
   return merged;

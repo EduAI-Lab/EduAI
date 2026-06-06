@@ -83,7 +83,7 @@ Restart dev server (tmux) after editing `.env`.
 
 **vLLM ops on cmps01 (LiteLLM + two backends):** [`VLLM.md`](./VLLM.md) · [`infra/cmps01/README.md`](../../infra/cmps01/README.md)
 
-In the app: **Settings → Enable vLLM** (no API key) → **`vllm:qwen2.5-7b-instruct`** or **`vllm:qwen2.5-32b-instruct`**. Models are seeded — run `npx prisma db seed` if missing. Branch must include `vllm` in `providers.ts`.
+In the app: pick **`vllm:qwen2.5-7b-instruct`** or **`vllm:qwen2.5-32b-instruct`** in chat (no browser enable step). Models are seeded — run `npx prisma db seed` if missing.
 
 #### Auth / login troubleshooting
 
