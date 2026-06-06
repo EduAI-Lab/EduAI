@@ -24,6 +24,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] tests: Add 4 unit tests for `resolveEffectiveAdhdAssist` at `apps/core/app/tests/unit/adhd-assist.test.ts` covering body-overrides-persisted (both directions) and field-absent fallback (both persisted values). (#377, @Ayyhab, 2026-05-31)
 
 ### Fixed
+- [core] fix: Phase 2.5 §3b review feedback (#443) — session char budget now counts tool-call/result payloads via `estimateMessageCharsForModel`, so the digest triggers and `messageTextChars` is accurate on tool-heavy threads; `prepareBoundedSessionContext` enforces the final char budget over digest + recent tail and truncates a single over-budget message. Shared tool-output limits extracted to `apps/core/app/lib/ai/tool-output-limits.ts` (imported by `fetch-page.ts`/`chat-rag.ts`). Adds unit tests for tool-invocation shapes and budget enforcement; documents `CHAT_*` chat-context vars in `.env.example`, [`CHAT_RAG_PIPELINE.md`](docs/rag-ai/CHAT_RAG_PIPELINE.md), and [`MODEL_LATENCY_TRACKER.md`](docs/rag-ai/latency/MODEL_LATENCY_TRACKER.md) (corrects stale `10000` default to `6000`). (#259, #260, review feedback from @superbolt08, @Ayyhab, 2026-06-05)
 - [core] fix: Better Auth on HTTPS dev host — top-level `baseURL`/`secret`, `useSecureCookies`, disable cross-subdomain cookies unless `COOKIE_DOMAIN` is set; forward all session cookies on login/register redirect; server `POST /auth/logout`; omit stale cookies on sign-in. Dev runbook: [`HOW_TO_USE_DEV_SERVER.md`](docs/rag-ai/HOW_TO_USE_DEV_SERVER.md). (#PR)
 
 ---

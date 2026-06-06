@@ -17,6 +17,7 @@ import {
   buildCappedRagContextText,
   capRagHitsForTool,
   capToolResultsInMessages,
+  estimateMessageCharsForModel,
   prepareBoundedSessionContext,
   resolveMaxContextMessages,
   HYBRID_RAG_MAX_CHUNKS,
@@ -164,7 +165,9 @@ function llmPromptSizeHints(system: unknown, messages: GenericMessage[]) {
   const systemChars = typeof system === "string" ? system.length : 0;
   let messageTextChars = 0;
   for (const m of messages) {
-    messageTextChars += extractTextFromMessage(m).length;
+    // Count what the model actually receives (incl. tool-call/result payloads),
+    // so this metric is not under-reported on tool-heavy turns (#260).
+    messageTextChars += estimateMessageCharsForModel(m);
   }
   return {
     systemChars,
@@ -482,9 +485,10 @@ export async function action({ request }: ActionFunctionArgs) {
       maxContextMessages,
     });
 
+    // Cap oversized tool results (#260), then digest older turns when the thread
+    // exceeds the char budget (#259). Budget accounting counts tool payloads.
     const modelMessages = prepareBoundedSessionContext(
       capToolResultsInMessages(trimmedMessages),
-      extractTextFromMessage,
     );
 
     if (mergedMessages.length === 0) {
