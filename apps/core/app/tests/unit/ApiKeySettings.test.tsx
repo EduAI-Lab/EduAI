@@ -33,10 +33,10 @@ describe("ApiKeySettings — rendering", () => {
     expect(screen.queryByText("Ollama (Local)")).not.toBeInTheDocument();
   });
 
-  it("shows server-managed note for Ollama and vLLM", () => {
+  it("shows preconfigured Ollama and vLLM note", () => {
     render(<ApiKeySettings {...makeProps()} />);
-    expect(screen.getByText(/Ollama & vLLM \(local\)/)).toBeInTheDocument();
-    expect(screen.getByText(/OLLAMA_BASE_URL/)).toBeInTheDocument();
+    expect(screen.getByText(/Managed on the server via/)).toBeInTheDocument();
+    expect(screen.getByText(/docs\/rag-ai\/VLLM\.md/)).toBeInTheDocument();
   });
 
   it("renders nothing when closed", () => {
