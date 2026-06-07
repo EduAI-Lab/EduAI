@@ -6,14 +6,14 @@ import {
   listAdminBugReports,
   updateBugReportStatus,
 } from '../services/bugReports.js';
-import { mapAdminBugReportRow, mapBugReportSummary } from '../utils/bugReportMappers.js';
+import { mapAdminBugReportRow } from '../utils/bugReportMappers.js';
 
 const router = express.Router();
 
-router.post('/bug-reports', requireRoles(['STUDENT', 'PROFESSOR']), async (req, res) => {
+router.post('/bug-reports', requireRoles(['STUDENT', 'INSTRUCTOR']), async (req, res) => {
   try {
-    const report = await createBugReport(req.user, req.body || {});
-    res.status(201).json(mapBugReportSummary(report));
+    await createBugReport(req.user, req.body || {});
+    res.status(201).json({ ok: true });
   } catch (error) {
     if (error instanceof BugReportError) {
       return res.status(error.status).json({ error: error.message });

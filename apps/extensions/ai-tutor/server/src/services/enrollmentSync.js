@@ -1,115 +1,70 @@
 import { prisma } from '../config/database.js';
-import { listEduAiCourseEnrollments } from './eduaiClient.js';
-import { EDUAI_PROVIDER_ID } from './eduaiAuth.js';
-import { normalizeEmail } from '../config/bootstrapAdmins.js';
+import { listEduAiCourseEnrollmentsServiceKey } from './eduaiClient.js';
 
 /**
- * Sync enrollments from EduAI for an imported course into local DB.
- * Finds or creates AiTutor users + accounts, then upserts CourseEnrollment records.
- * @param {number} courseOfferingId
- * @param {{ accessToken?: string, course?: object }} options
- * @returns {{ synced: number, created: number, errors: Array<{ studentId: string, reason: string }> }}
+ * Sync active enrollments from Core into the local CourseEnrollment table.
+ *
+ * - Creates rows for users active in Core but missing locally.
+ * - Deletes rows for users no longer active in Core.
+ * - No-ops if Core returns an empty active list (guards against data loss
+ *   from transient misconfiguration).
+ *
+ * @param {number} courseOfferingId  Local CourseOffering PK
+ * @param {{ course?: object }} options  Pass a pre-fetched course to skip the DB lookup
+ * @returns {{ synced: number, created: number, deleted: number, errors: [] }}
  */
 export async function syncCourseEnrollments(courseOfferingId, options = {}) {
   if (!Number.isFinite(courseOfferingId)) {
-    return { synced: 0, created: 0, errors: [] };
+    return { synced: 0, created: 0, deleted: 0, errors: [] };
   }
 
   const course =
     options.course ??
     (await prisma.courseOffering.findUnique({ where: { id: courseOfferingId } }));
+
   if (!course || !course.externalId || course.externalSource !== 'EDUAI') {
-    return { synced: 0, created: 0, errors: [] };
+    return { synced: 0, created: 0, deleted: 0, errors: [] };
   }
 
-  const externalEnrollments = await listEduAiCourseEnrollments(
-    course.externalId,
-    options.accessToken,
-  );
+  const allEnrollments = await listEduAiCourseEnrollmentsServiceKey(course.externalId);
+  const activeEnrollments = allEnrollments.filter((e) => e.isActive);
 
-  const activeEnrollments = (externalEnrollments ?? []).filter((e) => e.isActive);
+  // Guard: empty upstream means "no data yet" — don't wipe local rows
   if (activeEnrollments.length === 0) {
-    return { synced: 0, created: 0, errors: [] };
+    return { synced: 0, created: 0, deleted: 0, errors: [] };
   }
 
-  // Batch-fetch existing accounts and users to avoid N+1 queries
-  const studentIds = activeEnrollments.map((e) => e.studentId);
-  const studentEmails = activeEnrollments
-    .map((e) => normalizeEmail(e.studentEmail))
-    .filter(Boolean);
+  const activeUserIds = new Set(activeEnrollments.map((e) => e.studentId));
 
-  const [existingAccounts, existingUsers] = await Promise.all([
-    prisma.account.findMany({
-      where: { providerId: EDUAI_PROVIDER_ID, accountId: { in: studentIds } },
-    }),
-    prisma.user.findMany({
-      where: { email: { in: studentEmails } },
-    }),
-  ]);
+  const existing = await prisma.courseEnrollment.findMany({
+    where: { courseOfferingId },
+    select: { userId: true },
+  });
+  const existingUserIds = new Set(existing.map((e) => e.userId));
 
-  const accountByExternalId = new Map(existingAccounts.map((a) => [a.accountId, a]));
-  const userByEmail = new Map(existingUsers.map((u) => [u.email, u]));
+  const toCreate = activeEnrollments.filter((e) => !existingUserIds.has(e.studentId));
+  const toDelete = existing.filter((e) => !activeUserIds.has(e.userId));
 
-  let synced = 0;
-  let created = 0;
-  const errors = [];
-
-  for (const enrollment of activeEnrollments) {
-    try {
-      const account = accountByExternalId.get(enrollment.studentId);
-      let userId;
-
-      if (account) {
-        userId = account.userId;
-      } else {
-        const email = normalizeEmail(enrollment.studentEmail);
-        const name =
-          typeof enrollment.studentName === 'string' && enrollment.studentName.trim()
-            ? enrollment.studentName.trim()
-            : 'EduAI Student';
-
-        if (!email) {
-          errors.push({ studentId: enrollment.studentId, reason: 'Missing student email' });
-          continue;
-        }
-
-        const existingUser = userByEmail.get(email);
-        if (existingUser) {
-          userId = existingUser.id;
-        } else {
-          // Create user + account so Better Auth links them on first OAuth login
-          const newUser = await prisma.user.create({
-            data: { name, email, role: 'STUDENT', emailVerified: false },
-          });
-          userId = newUser.id;
-          userByEmail.set(email, newUser);
-        }
-
-        await prisma.account.create({
-          data: { providerId: EDUAI_PROVIDER_ID, accountId: enrollment.studentId, userId },
-        });
-        accountByExternalId.set(enrollment.studentId, {
-          accountId: enrollment.studentId,
-          userId,
-        });
-        created++;
-      }
-
-      await prisma.courseEnrollment.upsert({
-        where: { courseOfferingId_userId: { courseOfferingId, userId } },
-        update: {},
-        create: {
-          courseOfferingId,
-          userId,
-          enrolledAt: enrollment.enrolledAt ? new Date(enrollment.enrolledAt) : new Date(),
-        },
-      });
-
-      synced++;
-    } catch (e) {
-      errors.push({ studentId: enrollment.studentId, reason: e.message || String(e) });
-    }
+  if (toCreate.length > 0) {
+    await prisma.courseEnrollment.createMany({
+      data: toCreate.map((e) => ({ courseOfferingId, userId: e.studentId })),
+      skipDuplicates: true,
+    });
   }
 
-  return { synced, created, errors };
+  if (toDelete.length > 0) {
+    await prisma.courseEnrollment.deleteMany({
+      where: {
+        courseOfferingId,
+        userId: { in: toDelete.map((e) => e.userId) },
+      },
+    });
+  }
+
+  return {
+    synced: activeEnrollments.length,
+    created: toCreate.length,
+    deleted: toDelete.length,
+    errors: [],
+  };
 }

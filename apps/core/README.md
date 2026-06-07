@@ -374,8 +374,13 @@ npx vitest run app/tests/unit/LoginForm.test.tsx
 
 ```
 app/tests/
-├── setup.ts          # Global setup (jest-dom, ResizeObserver mock, matchMedia mock)
-└── unit/             # Unit tests
+├── setup.ts                    # Global setup (jest-dom, ResizeObserver mock, matchMedia mock)
+├── setup.integration.ts        # Integration-test env (e.g. DATABASE_URL)
+├── globalSetup.ts              # DB migrate/seed before integration suite
+├── integration/                # Route + DB tests (@vitest-environment node)
+│   ├── courses.integration.test.ts
+│   └── ...
+└── unit/                       # Unit tests
     ├── LoginForm.test.tsx
     ├── AppSidebar.test.tsx
     ├── ApiKeySettings.test.tsx

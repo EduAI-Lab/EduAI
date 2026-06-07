@@ -10,7 +10,7 @@ EduAI/
 │   ├── core/                        # EduAI — RAG chat platform and central API
 │   └── extensions/
 │       ├── ai-tutor/                # AI Tutor — two-agent tutoring with hierarchical course content
-│       │   └── server/              # AI Tutor Express/Prisma backend (Better Auth OAuth provider)
+│       │   └── server/              # AI Tutor Express/Prisma backend (session validated via Core)
 │       └── question-maker/          # Question Maker — question bank authoring, Canvas integration
 │           └── app/
 │               ├── backend/         # Question Maker Express/Sequelize API
@@ -55,6 +55,8 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 | [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Core vs hosted services, provider keys, embeddings overview, and high-level flows |
 | [`implementations/schema-design.md`](docs/implementations/schema-design.md) | Unified schema design across apps |
 | [`DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Instructions on how to deploy the system (production and development) |
+| [`CANVAS.md`](docs/CANVAS.md) | Local Canvas LMS setup — WSL, Docker, ports, seed script |
+| [`TEAM_PHASE_0_AND_1_GUIDE.md`](docs/rag-ai/routing/eduai-summer-2026/TEAM_PHASE_0_AND_1_GUIDE.md) | Phase 0 model routing and sustainability telemetry (Prisma schema, router, seeds) |
 
 ## Changelog
 
@@ -85,7 +87,48 @@ npm run dev
 
 `npm run dev` automatically starts the Docker databases before spinning up all apps via Turborepo. On macOS, Docker Desktop is started automatically if it is not already running. On other platforms, start Docker manually before running `npm run dev`.
 
+On first run (or after a database wipe), the Core and AI Tutor databases are seeded automatically with development data — users, courses, topics, questions, and AI Tutor prompt templates. Subsequent dev restarts detect existing data and skip the seed, so normal restarts are not slowed down.
+
+**Seeded dev accounts** — all share password `EduAI2026!`
+
+| Role | Email | Name |
+| --- | --- | --- |
+| ADMIN | `admin@eduai.local` | EduAI Admin |
+| UNIT_ADMIN | `unitadmin.cosc@eduai.local` | COSC Unit Admin |
+| UNIT_ADMIN | `unitadmin.multi@eduai.local` | Multi-Unit Admin |
+| INSTRUCTOR | `instructor.cs@eduai.local` | Dr. Ada Lovelace |
+| INSTRUCTOR | `instructor.math@eduai.local` | Dr. Emmy Noether |
+| INSTRUCTOR | `instructor.sci@eduai.local` | Dr. Marie Curie |
+| INSTRUCTOR | `instructor.hum@eduai.local` | Dr. Hannah Arendt |
+| TA | `ta.cs@eduai.local` | Sam Carter |
+| TA | `ta.math@eduai.local` | Riley Chen |
+| STUDENT | `student1@eduai.local` | Alex Patel |
+| STUDENT | `student2@eduai.local` | Brooke Kim |
+| STUDENT | `student3@eduai.local` | Cameron Lee |
+| STUDENT | `student4@eduai.local` | Devon Singh |
+| STUDENT | `student5@eduai.local` | Erin Walsh |
+
 After `npm install`, each app gets a `.env` copied from its `.env.example` (only if one doesn't already exist). Fill in any secrets (auth keys, API keys) before the relevant features will work. See each app's `.env.example` for what is required.
+
+**Service API key (`EDUAI_API_KEY`)**
+
+AI Tutor and Question Maker make server-to-server calls to Core for several features: bug report submission, enrollment sync, topic sync, question push, and listing importable courses. These calls are authenticated with a shared secret called `EDUAI_API_KEY`.
+
+You must set the **same value** in all three services:
+
+| File | Variable |
+| --- | --- |
+| `apps/core/.env` | `EDUAI_API_KEY` |
+| `apps/extensions/ai-tutor/server/.env` | `EDUAI_API_KEY` |
+| `apps/extensions/question-maker/.env` | `EDUAI_API_KEY` |
+
+Generate a value with:
+
+```bash
+openssl rand -hex 32
+```
+
+Without this key the following features will not work: bug report submission from AI Tutor and Question Maker, AI Tutor course import from Core, AI Tutor enrollment sync, and Question Maker topic/question push to Core.
 
 **Dev server ports**
 
@@ -103,6 +146,9 @@ After `npm install`, each app gets a `.env` copied from its `.env.example` (only
 npm run build        # Build all apps (Turborepo caches outputs)
 npm run lint         # Lint all apps
 npm run test         # All tests across all apps (unit + integration)
+npm run test:all     # Unit + integration tests
+npm run test:coverage # Coverage for edu-ai, ai-tutor-server, and question-maker-backend
+npm run dbseed       # Force-seed all three databases (Core → AI Tutor → Question Maker)
 ```
 
 To run tasks for a single app, use Turborepo's filter flag directly:
@@ -200,6 +246,20 @@ npm run test:unit          # all unit suites only
 npm run test:integration   # all integration suites only
 npm run test:e2e           # all e2e suites; WARNING: no e2e tests currently
 ```
+
+### Coverage
+
+Each app exposes a `test:coverage` script (Vitest V8 coverage). From the monorepo root:
+
+```bash
+npm run test:coverage   # Aggregates coverage for edu-ai, ai-tutor-server, and question-maker-backend via Turborepo
+```
+
+> **Note:** The root `test:coverage` command covers backend services only (Core, AI Tutor server, and Question Maker backend). Frontend coverage is not aggregated at the root level.
+
+Run a single app's coverage from its own directory with `npm run test:coverage` (available for core, the AI Tutor server, and the Question Maker frontend and backend). Generated coverage report directories are gitignored.
+
+### Integration tests
 
 #### Run by component
 ```bash

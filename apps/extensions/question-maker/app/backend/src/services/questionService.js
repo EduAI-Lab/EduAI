@@ -5,27 +5,44 @@
 import { Question_Metadata, Variants, Topics, Assessments, AssessmentSections, SectionVariants } from '../schema/index.js';
 import { Course } from '../schema/Course.js';
 
-/** Normalizes any acceptable topic input (array/string/number) into an array of integers. */
+/**
+ * Normalizes a primary topic id into a non-empty CUID string, or null if absent/invalid.
+ * Topics now use CUID string PKs; integer IDs from older flows are coerced to strings.
+ */
+export const normalizePrimaryTopicId = (value) => {
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  if (typeof value === 'number' && Number.isFinite(value)) return String(Math.trunc(value));
+  return null;
+};
+
+/**
+ * Normalizes any acceptable topic input into an array of strings.
+ * Topics now use CUID string PKs; integer IDs from older flows are coerced to strings.
+ */
 const normalizeSecondaryTopics = (value) => {
   if (Array.isArray(value)) {
     return value
-      .map((item) => Number(item))
-      .filter((item) => Number.isInteger(item));
+      .map((item) => {
+        if (typeof item === 'string' && item.trim()) return item.trim();
+        if (typeof item === 'number' && Number.isFinite(item)) return String(Math.trunc(item));
+        return null;
+      })
+      .filter(Boolean);
   }
 
   if (value === undefined || value === null || value === '') {
     return [];
   }
 
-  if (typeof value === 'number') {
-    return Number.isInteger(value) ? [value] : [];
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return [String(Math.trunc(value))];
   }
 
   if (typeof value === 'string') {
     return value
       .split(',')
-      .map((item) => Number(item.trim()))
-      .filter((item) => Number.isInteger(item));
+      .map((item) => item.trim())
+      .filter(Boolean);
   }
 
   return [];
@@ -136,8 +153,8 @@ export const createQuestion = async (userId, questionData) => {
       throw new Error('Valid courseId is required');
     }
 
-    const parsedPrimaryTopicId = Number(primaryTopicId);
-    if (!Number.isInteger(parsedPrimaryTopicId)) {
+    const parsedPrimaryTopicId = normalizePrimaryTopicId(primaryTopicId);
+    if (!parsedPrimaryTopicId) {
       throw new Error('Valid primaryTopicId is required');
     }
 
@@ -306,8 +323,8 @@ export const updateQuestion = async (questionId, userId, updateData) => {
     }
 
     if (updates.primaryTopicId !== undefined) {
-      const parsedPrimaryTopicId = Number(updates.primaryTopicId);
-      if (!Number.isInteger(parsedPrimaryTopicId)) {
+      const parsedPrimaryTopicId = normalizePrimaryTopicId(updates.primaryTopicId);
+      if (!parsedPrimaryTopicId) {
         throw new Error('Valid primaryTopicId is required');
       }
       updates.primaryTopicId = parsedPrimaryTopicId;
@@ -371,7 +388,7 @@ export const createMultipleQuestions = async (userId, questionsData) => {
       const rawDesc = q.description ?? q.content;
       const description = typeof rawDesc === 'string' && rawDesc.trim() ? rawDesc.trim() : null;
       const courseId = Number(q.courseId ?? q.classId);
-      const primaryTopicId = Number(q.primaryTopicId ?? 1);
+      const primaryTopicId = q.primaryTopicId;
       const type = ['MCQ', 'SA', 'LA'].includes(q.type) ? q.type : 'MCQ';
       const questionOrder = q.questionOrder || {};
 
@@ -422,7 +439,7 @@ export const saveExtractedQuestions = async (userId, payload) => {
     });
     const topicIdSet = new Set(existingTopics.map((topic) => topic.id));
 
-    let fallbackTopicId = primaryTopicId ? Number(primaryTopicId) : null;
+    let fallbackTopicId = primaryTopicId || null;
     if (fallbackTopicId && !topicIdSet.has(fallbackTopicId)) {
       const fallbackTopic = await Topics.findOne({
         where: { id: fallbackTopicId, courseId },
@@ -529,8 +546,8 @@ export const saveExtractedQuestions = async (userId, payload) => {
 
       let primaryTopicForQuestion = null;
       if (item.primaryTopicId !== undefined && item.primaryTopicId !== null) {
-        const candidate = Number(item.primaryTopicId);
-        if (Number.isInteger(candidate) && topicIdSet.has(candidate)) {
+        const candidate = String(item.primaryTopicId);
+        if (topicIdSet.has(candidate)) {
           primaryTopicForQuestion = candidate;
         }
       }

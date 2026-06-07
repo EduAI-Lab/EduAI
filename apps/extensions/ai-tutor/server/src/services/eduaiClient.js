@@ -1,4 +1,4 @@
-import { EduAiCourseListSchema, EduAiTopicListSchema, EduAiEnrollmentListSchema } from '../schemas/eduai.js';
+import { EduAiCourseListSchema, EduAiTopicListSchema, EduAiEnrollmentListSchema, EduAiQuestionListSchema } from '../schemas/eduai.js';
 const DEFAULT_BASE_URL = 'http://localhost:5174/api';
 
 function normalizeBaseUrl(rawUrl) {
@@ -12,8 +12,7 @@ export function getEduAiBaseUrl() {
 
 /**
  * AI completion endpoint. Used by `aiGuidance.js` rather than the
- * `requestEduAi` helper because chat needs custom headers (per-user
- * Authorization) and a non-trivial body shape.
+ * `requestEduAi` helper because chat needs custom headers and a non-trivial body shape.
  */
 export function getEduAiChatUrl() {
   return `${getEduAiBaseUrl()}/chat`;
@@ -23,23 +22,19 @@ export function getEduAiChatUrl() {
  * Shared fetch helper. Surfaces upstream HTTP failures as Errors with
  * `status` set so route handlers can pass them through unchanged. Returns
  * `null` on 204 No Content; otherwise parses JSON.
+ *
+ * Pass `options.cookie` (the raw Cookie header forwarded from the request)
+ * for user-scoped calls. Omit for unauthenticated endpoints.
  */
 async function requestEduAi(path, options = {}) {
-  const accessToken = typeof options.accessToken === 'string' ? options.accessToken.trim() : null;
-  const requireAuth = options.requireAuth === true;
-
-  if (requireAuth && !accessToken) {
-    const err = new Error('EduAI access token is required');
-    err.status = 401;
-    throw err;
-  }
+  const cookie = typeof options.cookie === 'string' ? options.cookie : '';
 
   const url = `${getEduAiBaseUrl()}${path}`;
   const response = await fetch(url, {
     method: options.method ?? 'GET',
     headers: {
       'Content-Type': 'application/json',
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      ...(cookie ? { cookie } : {}),
       ...options.headers,
     },
     body: options.body ? JSON.stringify(options.body) : undefined,
@@ -60,10 +55,57 @@ async function requestEduAi(path, options = {}) {
   return response.json();
 }
 
-export async function listEduAiCourses(accessToken) {
+/**
+ * POST a bug report to Core on behalf of the given Core user CUID.
+ * Returns null on success (Core responds 201 no body).
+ * Throws an Error with `status` set on HTTP failure.
+ */
+export async function postCoreBugReport(userId, payload) {
+  const serviceKey = process.env.EDUAI_API_KEY;
+  if (!serviceKey) {
+    throw new Error('EDUAI_API_KEY not configured');
+  }
+
+  const url = `${process.env.CORE_URL || 'http://localhost:3000'}/api/bug-reports`;
+  const body = {
+    source: 'AI_TUTOR',
+    userId,
+    description: payload.description,
+    isAnonymous: payload.isAnonymous ?? false,
+    consoleLogs: payload.consoleLogs ?? null,
+    networkLogs: payload.networkLogs ?? null,
+    screenshot: payload.screenshot ?? null,
+    pageUrl: payload.pageUrl ?? null,
+    userAgent: payload.userAgent ?? null,
+    context: payload.context ?? null,
+  };
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${serviceKey}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    const error = new Error(errorText || `Core bug report POST failed with status ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+
+  return null;
+}
+
+export async function listEduAiCourses() {
+  const serviceKey = process.env.EDUAI_API_KEY;
+  if (!serviceKey) {
+    throw new Error('EDUAI_API_KEY not configured');
+  }
   const data = await requestEduAi('/courses', {
-    accessToken,
-    requireAuth: true,
+    headers: { Authorization: `Bearer ${serviceKey}` },
   });
   try {
     const parsed = EduAiCourseListSchema.parse(data);
@@ -76,18 +118,20 @@ export async function listEduAiCourses(accessToken) {
   }
 }
 
-export async function findEduAiCourseById(courseId, accessToken) {
+export async function findEduAiCourseById(courseId) {
   if (!courseId) return null;
-  const courses = await listEduAiCourses(accessToken);
+  const courses = await listEduAiCourses();
   return courses.find((course) => course.id === courseId) ?? null;
 }
 
-// Fetch topics for a specific EduAI course by external id
-export async function listEduAiCourseTopics(externalCourseId, accessToken) {
+export async function listEduAiCourseTopics(externalCourseId) {
   if (!externalCourseId) return [];
+  const serviceKey = process.env.EDUAI_API_KEY;
+  if (!serviceKey) {
+    throw new Error('EDUAI_API_KEY not configured');
+  }
   const data = await requestEduAi(`/courses/${externalCourseId}/topics`, {
-    accessToken,
-    requireAuth: true,
+    headers: { Authorization: `Bearer ${serviceKey}` },
   });
   try {
     const parsed = EduAiTopicListSchema.parse(data);
@@ -100,12 +144,14 @@ export async function listEduAiCourseTopics(externalCourseId, accessToken) {
   }
 }
 
-// Fetch enrollments for a specific EduAI course by external id
-export async function listEduAiCourseEnrollments(externalCourseId, accessToken) {
+export async function listEduAiCourseEnrollmentsServiceKey(externalCourseId) {
   if (!externalCourseId) return [];
+  const serviceKey = process.env.EDUAI_API_KEY;
+  if (!serviceKey) {
+    throw new Error('EDUAI_API_KEY not configured');
+  }
   const data = await requestEduAi(`/courses/${externalCourseId}/enrollments`, {
-    accessToken,
-    requireAuth: true,
+    headers: { Authorization: `Bearer ${serviceKey}` },
   });
   try {
     const parsed = EduAiEnrollmentListSchema.parse(data);
@@ -124,4 +170,37 @@ export async function listEduAiModels() {
     throw new Error('Invalid response from EduAI models endpoint');
   }
   return data;
+}
+
+/**
+ * Fetch testable questions for a Core course offering using the service key.
+ * Returns the `questions` array from Core's paginated response.
+ * Throws an Error with `status` set on HTTP failure.
+ */
+export async function listCourseTestableQuestions(coreOfferingId, { limit = 20, offset = 0 } = {}) {
+  const serviceKey = process.env.EDUAI_API_KEY;
+  if (!serviceKey) {
+    throw new Error('EDUAI_API_KEY not configured');
+  }
+
+  const params = new URLSearchParams({
+    courseId: coreOfferingId,
+    testable: 'true',
+    limit: String(limit),
+    offset: String(offset),
+  });
+
+  const data = await requestEduAi(`/questions?${params}`, {
+    headers: { Authorization: `Bearer ${serviceKey}` },
+  });
+
+  try {
+    const parsed = EduAiQuestionListSchema.parse(data);
+    return parsed.questions;
+  } catch (e) {
+    const err = new Error('Invalid response when fetching Core testable questions');
+    err.cause = e;
+    err.status = 502;
+    throw err;
+  }
 }
