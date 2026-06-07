@@ -7,8 +7,11 @@ import { createCipheriv, createDecipheriv, pbkdf2Sync, randomBytes } from "node:
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 16;
 const SALT_LENGTH = 64;
+const TAG_LENGTH = 16;
 const KEY_LENGTH = 32;
 const PBKDF2_ITERATIONS = 100_000;
+
+const STRICT_BASE64_SEGMENT = /^[A-Za-z0-9+/]+={0,2}$/;
 
 function getEncryptionKey(): string {
   const encryptionKey = process.env.ENCRYPTION_KEY;
@@ -22,9 +25,34 @@ function deriveKey(encryptionKey: string, salt: Buffer): Buffer {
   return pbkdf2Sync(encryptionKey, salt, PBKDF2_ITERATIONS, KEY_LENGTH, "sha512");
 }
 
-/** True when value looks like our encrypted blob (four base64 segments). */
+function decodeStrictBase64Segment(segment: string, expectedLength: number): Buffer | null {
+  if (!STRICT_BASE64_SEGMENT.test(segment)) {
+    return null;
+  }
+
+  const decoded = Buffer.from(segment, "base64");
+  if (decoded.length !== expectedLength) {
+    return null;
+  }
+
+  return decoded;
+}
+
+/** True when value matches our encrypted blob format (four strict base64 segments). */
 export function isEncrypted(value: string): boolean {
-  return value.includes(":");
+  const parts = value.split(":");
+  if (parts.length !== 4) {
+    return false;
+  }
+
+  const [saltBase64, ivBase64, tagBase64, ciphertextBase64] = parts;
+  return (
+    decodeStrictBase64Segment(saltBase64, SALT_LENGTH) !== null &&
+    decodeStrictBase64Segment(ivBase64, IV_LENGTH) !== null &&
+    decodeStrictBase64Segment(tagBase64, TAG_LENGTH) !== null &&
+    STRICT_BASE64_SEGMENT.test(ciphertextBase64) &&
+    Buffer.from(ciphertextBase64, "base64").length > 0
+  );
 }
 
 /** Encrypts plaintext into `salt:iv:tag:ciphertext` (base64 segments). */
@@ -59,14 +87,16 @@ export function decrypt(encryptedData: string): string {
 
   try {
     const parts = encryptedData.split(":");
-    if (parts.length !== 4) {
+    const [saltBase64, ivBase64, tagBase64, encrypted] = parts;
+
+    const salt = decodeStrictBase64Segment(saltBase64, SALT_LENGTH);
+    const iv = decodeStrictBase64Segment(ivBase64, IV_LENGTH);
+    const tag = decodeStrictBase64Segment(tagBase64, TAG_LENGTH);
+
+    if (!salt || !iv || !tag) {
       throw new Error("Invalid encrypted data format");
     }
 
-    const [saltBase64, ivBase64, tagBase64, encrypted] = parts;
-    const salt = Buffer.from(saltBase64, "base64");
-    const iv = Buffer.from(ivBase64, "base64");
-    const tag = Buffer.from(tagBase64, "base64");
     const key = deriveKey(getEncryptionKey(), salt);
 
     const decipher = createDecipheriv(ALGORITHM, key, iv);

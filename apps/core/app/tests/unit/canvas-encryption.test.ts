@@ -27,9 +27,17 @@ describe("canvas encryption", () => {
 
   it("treats non-colon strings as legacy plaintext in decrypt", async () => {
     vi.stubEnv("ENCRYPTION_KEY", TEST_KEY);
-    const { decrypt } = await import("~/lib/canvas/encryption");
+    const { decrypt, isEncrypted } = await import("~/lib/canvas/encryption");
 
+    expect(isEncrypted("plain-key-no-colons")).toBe(false);
     expect(decrypt("plain-key-no-colons")).toBe("plain-key-no-colons");
+  });
+
+  it("does not treat arbitrary colon strings as encrypted", async () => {
+    vi.stubEnv("ENCRYPTION_KEY", TEST_KEY);
+    const { isEncrypted } = await import("~/lib/canvas/encryption");
+
+    expect(isEncrypted("not:valid:encrypted:format")).toBe(false);
   });
 
   it("throws when ENCRYPTION_KEY is missing", async () => {

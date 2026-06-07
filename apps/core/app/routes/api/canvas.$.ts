@@ -96,7 +96,12 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
         if (error instanceof CanvasVerificationError) {
           return json({ success: false, error: error.message }, error.statusCode);
         }
-        const message = error instanceof Error ? error.message : "Failed to save Canvas integration";
+        if (process.env.NODE_ENV === "production") {
+          console.error("Canvas connect failed:", error);
+          return json({ success: false, error: "Failed to save Canvas integration" }, 500);
+        }
+        const message =
+          error instanceof Error ? error.message : "Failed to save Canvas integration";
         return json({ success: false, error: message }, 500);
       }
     }
