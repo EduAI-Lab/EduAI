@@ -41,9 +41,6 @@ const scheduleHeartbeatIfNeeded = () => {
     if (typeof window === 'undefined') return;
     if (heartbeatTimeout !== null) return;
 
-    const token = localStorage.getItem('token');
-    if (!token) return;
-
     const seconds = Math.min(8, Math.pow(2, backoffStep));
     const delayMs = seconds * 1000;
 
@@ -99,15 +96,7 @@ export const refreshEduAIStatus = async () => {
     return inflight;
 };
 
-// Kick off an initial check once at module load, but only if user is authenticated
-// This prevents 401 errors and infinite redirect loops on the login page
-const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-if (token) {
-  void refreshEduAIStatus();
-} else {
-  // Set initial state to error if not authenticated
-  setState({ status: 'error', message: 'AI service not available. Connect to UBC wifi or VPN.' });
-}
+void refreshEduAIStatus();
 
 export const useEduAIStatus = () => {
     const subscribe = (callback: () => void) => {

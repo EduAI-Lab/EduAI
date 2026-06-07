@@ -19,5 +19,5 @@ if (process.env.TEST_DATABASE_URL) {
     'postgresql://vitest:vitest@127.0.0.1:5432/vitest_unit_stub';
 }
 
-process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret-for-unit-tests';
+process.env.CORE_URL = process.env.CORE_URL || 'http://localhost:3000';
 process.env.ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'test-encryption-key-32bytes!!';

@@ -10,9 +10,9 @@
  *   - Every request sets `credentials: 'include'` so Better Auth session
  *     cookies are attached. Do not switch to a bearer/JWT flow without
  *     updating the entire stack.
- *   - The shared `http()` helper turns ANY 401/403 (when not already at `/`)
- *     into a hard `window.location.href = '/'` redirect. This is the
- *     codebase-wide auth-failure convention; route guards rely on it.
+ *   - The shared `http()` helper turns ANY 401/403 into a hard redirect to
+ *     Core's login page (`VITE_CORE_URL/login?redirect=<current-url>`).
+ *     Route guards rely on this behavior.
  *   - `logout` deliberately bypasses `http()` to avoid the redirect loop
  *     that would otherwise fire on the post-sign-out 401.
  *   - `updateActivity` accepts three legal `options` shapes for caller
@@ -42,7 +42,7 @@ export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 /**
  * Single fetch wrapper for the entire API surface. Every caller goes through
- * here so the cookie-credential semantics and the 401/403 redirect-to-root
+ * here so the cookie-credential semantics and the 401/403 redirect-to-Core-login
  * behavior remain consistent. Callers that must NOT trigger the redirect
  * (e.g. sign-out) should bypass this helper intentionally.
  */
@@ -62,10 +62,8 @@ async function http(path: string, init?: RequestInit) {
 
   if (!res.ok) {
     if (res.status === 401 || res.status === 403) {
-      // Only redirect if we are NOT already at the root
-      if (window.location.pathname !== '/') {
-        window.location.href = '/';
-      }
+      const coreUrl = import.meta.env.VITE_CORE_URL || 'http://localhost:3000';
+      window.location.href = `${coreUrl}/login?redirect=${encodeURIComponent(window.location.href)}`;
       throw new Error('Authentication required');
     }
     const text = await res.text();
@@ -369,16 +367,16 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   /**
-   * Bypasses `http()` on purpose: sign-out responses can be 401-ish in some
-   * race conditions, and routing the call through `http()` would trigger the
-   * redirect-to-`/` convention before the caller can clean up local state.
-   * We also do not care about the body — best-effort POST is sufficient.
+   * Proxies sign-out through the AT backend (server-to-server to Core) so the
+   * browser avoids CORS restrictions on Core's sign-out endpoint.
+   * Bypasses `http()` to avoid the 401-redirect loop that would fire if the
+   * session is already stale by the time logout is called.
    */
   logout: async () => {
-    await fetch(`${API_BASE}/api/auth/sign-out`, {
+    await fetch(`${API_BASE}/api/logout`, {
       method: 'POST',
       credentials: 'include',
-    });
+    }).catch(() => {});
     return { ok: true } as const;
   },
 };
