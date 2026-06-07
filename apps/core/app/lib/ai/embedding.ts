@@ -3,6 +3,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import prisma from "../prisma.server";
 import { randomUUID } from "crypto";
+import { SEMANTIC_CHUNK_SEPARATOR } from "./file-processing";
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 /** Matches pgvector column vector(3072) — do not switch to 1536-dim models without a migration. */
@@ -84,27 +85,66 @@ export function generateChunks(input: string, maxChunkSize: number = 800, overla
   return chunks;
 }
 
+/** Resolve ingest chunks: preserve upload-path semantic chunks or fall back to sentence splitting. */
+export function resolveMaterialChunks(content: string): string[] {
+  if (content.includes(SEMANTIC_CHUNK_SEPARATOR)) {
+    return content
+      .split(SEMANTIC_CHUNK_SEPARATOR)
+      .map((chunk) => chunk.trim())
+      .filter((chunk) => chunk.length > 0);
+  }
+
+  return generateChunks(content);
+}
+
+function createOpenRouterEmbeddingClient() {
+  const apiKey = process.env.OPENROUTER_API_KEY?.trim();
+  if (!apiKey) return null;
+
+  const referer =
+    process.env.OPENROUTER_HTTP_REFERER?.trim() ||
+    process.env.BETTER_AUTH_URL?.trim() ||
+    undefined;
+
+  return createOpenAI({
+    apiKey,
+    baseURL: OPENROUTER_BASE_URL,
+    headers: {
+      ...(referer ? { "HTTP-Referer": referer } : {}),
+      "X-Title": process.env.OPENROUTER_APP_TITLE?.trim() || "EduAI",
+    },
+  });
+}
+
 /**
  * Resolve embedding model. Priority: OpenRouter → Google Gemini → OpenAI.
  * DB expects 3072-dim vectors (gemini-embedding-001); OpenAI small embeddings are 1536-dim.
  */
 function getEmbeddingModel() {
-  const googleApiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+  const openRouter = createOpenRouterEmbeddingClient();
+  if (openRouter) {
+    const modelId =
+      process.env.OPENROUTER_EMBEDDING_MODEL?.trim() ||
+      DEFAULT_OPENROUTER_EMBEDDING_MODEL;
+    return openRouter.embedding(modelId);
+  }
+
+  const googleApiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim();
   if (googleApiKey) {
     return createGoogleGenerativeAI({
       apiKey: googleApiKey,
     }).embedding("gemini-embedding-001");
   }
 
-  const openaiApiKey = process.env.OPENAI_API_KEY;
+  const openaiApiKey = process.env.OPENAI_API_KEY?.trim();
   if (openaiApiKey) {
     return createOpenAI({
       apiKey: openaiApiKey,
-    }).embedding(DEFAULT_EMBEDDING_MODEL);
+    }).embedding(DEFAULT_OPENAI_EMBEDDING_MODEL);
   }
 
   throw new Error(
-    "No embedding provider configured. Set GOOGLE_GENERATIVE_AI_API_KEY or OPENAI_API_KEY (RAG and material indexing require embeddings).",
+    "No embedding provider configured. Set OPENROUTER_API_KEY, GOOGLE_GENERATIVE_AI_API_KEY, or OPENAI_API_KEY in apps/core/.env.",
   );
 }
 
@@ -205,7 +245,7 @@ export async function findRelevantContent(
  * Process and store embeddings for a course material (single transaction).
  */
 export async function processMaterialEmbeddings(materialId: string, content: string): Promise<void> {
-  const chunks = generateChunks(content);
+  const chunks = resolveMaterialChunks(content);
 
   if (chunks.length === 0) {
     throw new Error("No content chunks generated");
@@ -214,17 +254,16 @@ export async function processMaterialEmbeddings(materialId: string, content: str
   const embeddings = await generateEmbeddings(chunks);
 
   await prisma.$transaction(async (tx) => {
-    for (let i = 0; i < chunks.length; i++) {
-      const createdChunk = await tx.materialChunk.create({
-        data: {
-          materialId,
-          index: i,
-          content: chunks[i],
-        },
-      });
+    const createdChunks = await tx.materialChunk.createManyAndReturn({
+      data: chunks.map((chunkContent, i) => ({ materialId, index: i, content: chunkContent })),
+    });
+
+    const chunksByIndex = [...createdChunks].sort((a, b) => a.index - b.index);
+
+    for (let i = 0; i < chunksByIndex.length; i++) {
       await tx.$executeRaw`
         INSERT INTO material_embeddings (id, "chunkId", embedding, "createdAt")
-        VALUES (${randomUUID()}, ${createdChunk.id}, ${embeddings[i].embedding}::vector, NOW())
+        VALUES (${randomUUID()}, ${chunksByIndex[i].id}, ${embeddings[i].embedding}::vector, NOW())
       `;
     }
   });
