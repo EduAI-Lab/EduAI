@@ -1,12 +1,13 @@
 import { describe, it, expect, vi } from "vitest";
 
-// Mock all server-side and external dependencies so only generateChunks is exercised.
+// Mock all server-side and external dependencies so only chunk helpers are exercised.
 vi.mock("~/lib/prisma.server", () => ({ default: {} }));
 vi.mock("ai", () => ({ embed: vi.fn(), embedMany: vi.fn() }));
 vi.mock("@ai-sdk/openai", () => ({ createOpenAI: vi.fn() }));
 vi.mock("@ai-sdk/google", () => ({ createGoogleGenerativeAI: vi.fn() }));
 
-const { generateChunks } = await import("~/lib/ai/embedding");
+const { generateChunks, resolveMaterialChunks } = await import("~/lib/ai/embedding");
+const { SEMANTIC_CHUNK_SEPARATOR, joinSemanticChunks } = await import("~/lib/ai/file-processing");
 
 // ---------------------------------------------------------------------------
 // generateChunks
@@ -48,5 +49,32 @@ describe("generateChunks", () => {
     for (const chunk of chunks) {
       expect(chunk).toBe(chunk.trim());
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveMaterialChunks
+// ---------------------------------------------------------------------------
+
+describe("resolveMaterialChunks", () => {
+  it("preserves semantic chunks when the upload-path separator is present", () => {
+    const semantic = ["# Section 1\n\nIntro text.", "# Section 2\n\nMore text."];
+    const content = joinSemanticChunks(semantic);
+
+    expect(resolveMaterialChunks(content)).toEqual(semantic);
+  });
+
+  it("falls back to generateChunks when no separator is present", () => {
+    const content = "Short sentence.";
+    expect(resolveMaterialChunks(content)).toEqual(generateChunks(content));
+  });
+
+  it("returns an empty array when content is only separators and whitespace", () => {
+    const content = joinSemanticChunks(["", "   "]);
+    expect(resolveMaterialChunks(content)).toEqual([]);
+  });
+
+  it("uses the shared separator constant from file-processing", () => {
+    expect(SEMANTIC_CHUNK_SEPARATOR).toBe("--- CHUNK SEPARATOR ---");
   });
 });
