@@ -17,4 +17,14 @@ describe("SiteHeader — rendering", () => {
     renderWithSidebar(<SiteHeader title="Courses" />);
     expect(screen.getByRole("heading", { name: "Courses" })).toBeInTheDocument();
   });
+
+  it("renders optional actions on the right side of the header", () => {
+    renderWithSidebar(
+      <SiteHeader
+        title="Chat"
+        actions={<button type="button">Test Action</button>}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Test Action" })).toBeInTheDocument();
+  });
 });
