@@ -58,11 +58,16 @@ export async function getCanvasIntegrationWithDecryptedKey(userId: string) {
 }
 
 export async function saveCanvasIntegration(userId: string, input: ConnectCanvasInput) {
-  const apiKeyPlaintext = input.isTestMode
-    ? input.apiKey || TEST_MODE_API_KEY_PLACEHOLDER
-    : input.apiKey!;
+  let apiKeyPlaintext: string;
 
-  if (!input.isTestMode) {
+  if (input.isTestMode) {
+    apiKeyPlaintext = input.apiKey ?? TEST_MODE_API_KEY_PLACEHOLDER;
+  } else {
+    const apiKey = input.apiKey;
+    if (!apiKey) {
+      throw new Error("API key is required unless using test mode");
+    }
+    apiKeyPlaintext = apiKey;
     await verifyCanvasCredentials(input.canvasUrl, apiKeyPlaintext);
   }
 

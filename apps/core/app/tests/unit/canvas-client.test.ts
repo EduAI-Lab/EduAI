@@ -1,5 +1,32 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CanvasVerificationError, verifyCanvasCredentials } from "~/lib/canvas/client.server";
+import {
+  CanvasVerificationError,
+  parseAndValidateCanvasUrl,
+  verifyCanvasCredentials,
+} from "~/lib/canvas/client.server";
+
+describe("parseAndValidateCanvasUrl", () => {
+  it("allows https URLs", () => {
+    const url = parseAndValidateCanvasUrl("https://canvas.ubc.ca");
+    expect(url.origin).toBe("https://canvas.ubc.ca");
+  });
+
+  it("allows http for localhost", () => {
+    const url = parseAndValidateCanvasUrl("http://localhost:8080");
+    expect(url.origin).toBe("http://localhost:8080");
+  });
+
+  it("allows http for canvas.docker", () => {
+    const url = parseAndValidateCanvasUrl("http://canvas.docker");
+    expect(url.hostname).toBe("canvas.docker");
+  });
+
+  it("rejects http for non-local hosts", () => {
+    expect(() => parseAndValidateCanvasUrl("http://canvas.ubc.ca")).toThrow(
+      CanvasVerificationError,
+    );
+  });
+});
 
 describe("verifyCanvasCredentials", () => {
   afterEach(() => {
