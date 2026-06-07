@@ -15,7 +15,8 @@
     "rootDirs": [".", "./.react-router/types"],
     "baseUrl": ".",
     "paths": {
-      "~/*": ["./app/*"]
+      "~/*": ["./app/*"],
+      "@prisma/client": ["./node_modules/@prisma/client"]
     },
     "esModuleInterop": true,
     "verbatimModuleSyntax": true,

@@ -1,4 +1,4 @@
-import { Form, useActionData, redirect } from "react-router"
+import { Form, useActionData, useLoaderData, redirect } from "react-router"
 import { SquareLibrary } from "lucide-react"
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router"
 
@@ -7,19 +7,23 @@ import { signInSchema, type SignInInput } from "~/lib/auth"
 import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request"
 import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies"
 import { auth } from "~/lib/auth/server"
+import { validateRedirectUrl } from "~/lib/auth/guards.server"
 
 export async function loader({ request }: LoaderFunctionArgs) {
+  const url = new URL(request.url);
+  const redirectTo = validateRedirectUrl(url.searchParams.get("redirect"));
   const session = await auth.api.getSession(request);
 
   if (session?.user) {
-    return redirect("/dashboard");
+    return redirect(redirectTo);
   }
 
-  return {};
+  return { redirectTo };
 }
 
 export async function action({ request }: ActionFunctionArgs) {
   const formData = Object.fromEntries(await request.formData());
+  const redirectTo = validateRedirectUrl(String(formData.redirectTo || ""));
   const input = {
     email: String(formData.email || ""),
     password: String(formData.password || ""),
@@ -67,7 +71,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const headers = new Headers();
     appendAuthSetCookies(response, headers);
 
-    return redirect("/dashboard", { headers });
+    return redirect(redirectTo, { headers });
   } catch (err: unknown) {
     let message = "Sign in failed";
     if (typeof err === "object" && err && "message" in err) {
@@ -82,6 +86,7 @@ export default function LoginPage() {
     fieldErrors?: Partial<Record<keyof SignInInput, string>>;
     formError?: string;
   } | undefined;
+  const { redirectTo } = useLoaderData() as { redirectTo: string };
 
   return (
     <div className="grid min-h-svh lg:grid-cols-2">
@@ -97,6 +102,7 @@ export default function LoginPage() {
         <div className="flex flex-1 items-center justify-center">
           <div className="w-full max-w-xs">
             <Form method="post">
+              <input type="hidden" name="redirectTo" value={redirectTo} />
               {actionData?.formError && (
                 <div className="mb-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
                   {actionData.formError}
