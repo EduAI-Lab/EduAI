@@ -50,7 +50,7 @@ function makeArgs(method: string, subpath: string, body?: unknown) {
 
 async function call(method: string, subpath: string, body?: unknown) {
   const args = makeArgs(method, subpath, body);
-  if (method === "GET" || method === "DELETE") {
+  if (method === "GET") {
     return loader(args);
   }
   return action(args);
@@ -204,9 +204,59 @@ describe("Canvas API — connect / integration / disconnect", () => {
     );
   });
 
+  it("returns 400 when Canvas URL uses insecure HTTP for non-local host", async () => {
+    sessionFor(instructorId, "INSTRUCTOR");
+
+    const res = await call("POST", "connect", {
+      canvasUrl: "http://canvas.ubc.ca",
+      apiKey: "1234~test-token-secret",
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({
+      success: false,
+      error: "Canvas URL must use HTTPS except for local development hosts",
+    });
+    expect(verifyCanvasCredentials).not.toHaveBeenCalled();
+
+    const row = await prisma.canvasIntegration.findUnique({ where: { userId: instructorId } });
+    expect(row).toBeNull();
+  });
+
   it("returns 404 for unknown subpaths", async () => {
     sessionFor(instructorId, "INSTRUCTOR");
     const res = await call("GET", "unknown");
     expect(res.status).toBe(404);
+  });
+
+  it("returns 400 for non-JSON POST body", async () => {
+    sessionFor(instructorId, "INSTRUCTOR");
+    const res = await action({
+      request: new Request("http://localhost/api/canvas/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "not-json",
+      }),
+      params: {},
+      context: {} as never,
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ success: false, error: "Invalid JSON body" });
+  });
+
+  it("returns 200 on disconnect when no integration exists", async () => {
+    sessionFor(instructorId, "INSTRUCTOR");
+    const res = await call("DELETE", "disconnect");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      success: true,
+      message: "Canvas integration disconnected",
+    });
+  });
+
+  it("returns 405 for unsupported methods", async () => {
+    sessionFor(instructorId, "INSTRUCTOR");
+    const res = await call("PUT", "integration");
+    expect(res.status).toBe(405);
+    expect(await res.json()).toEqual({ success: false, error: "Method not allowed" });
   });
 });
