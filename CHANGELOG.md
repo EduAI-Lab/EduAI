@@ -6,6 +6,20 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 
 
+## [Week 6 — June 7–13, 2026]
+
+### Added
+
+- [core] ui: Add instructor Canvas connect card on Settings → API Keys — `CanvasIntegrationSettings` wires `GET/POST/DELETE /api/canvas/*` with session cookie; Canvas URL, personal access token, and test mode; connected/disconnected status (#472, 2026-06-07)
+- [core] tests: Add `CanvasIntegrationSettings.test.tsx` RTL coverage for connect/disconnect UI (mocked `~/lib/canvas/client`); document canvas unit/integration suites in `TESTS.md` (2026-06-07)
+- [monorepo] docs: Add Canvas roster sync design draft (`docs/implementations/canvas-roster-sync-design.md`) — MVP sync-enrollments flow, staging table, and post-CWL enrollment linking (2026-06-04)
+
+### Fixed
+
+- [core] api: Harden Canvas connect path — SSRF guard on `canvasUrl` (HTTPS required except local dev hosts), stricter AES blob format validation, generic 500 responses in production, explicit non–test-mode `apiKey` handling; expand canvas route integration tests (2026-06-06)
+
+---
+
 ## [Week 5 — June 2–6, 2026]
 
 ### Added
