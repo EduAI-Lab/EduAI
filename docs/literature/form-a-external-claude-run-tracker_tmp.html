@@ -1,0 +1,969 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>form-a-external-claude-run-tracker.md</title>
+<meta http-equiv="Content-type" content="text/html;charset=UTF-8">
+
+<style>
+/* https://github.com/microsoft/vscode/blob/master/extensions/markdown-language-features/media/markdown.css */
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+body {
+	font-family: var(--vscode-markdown-font-family, -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif);
+	font-size: var(--vscode-markdown-font-size, 14px);
+	padding: 0 26px;
+	line-height: var(--vscode-markdown-line-height, 22px);
+	word-wrap: break-word;
+}
+
+#code-csp-warning {
+	position: fixed;
+	top: 0;
+	right: 0;
+	color: white;
+	margin: 16px;
+	text-align: center;
+	font-size: 12px;
+	font-family: sans-serif;
+	background-color:#444444;
+	cursor: pointer;
+	padding: 6px;
+	box-shadow: 1px 1px 1px rgba(0,0,0,.25);
+}
+
+#code-csp-warning:hover {
+	text-decoration: none;
+	background-color:#007acc;
+	box-shadow: 2px 2px 2px rgba(0,0,0,.25);
+}
+
+body.scrollBeyondLastLine {
+	margin-bottom: calc(100vh - 22px);
+}
+
+body.showEditorSelection .code-line {
+	position: relative;
+}
+
+body.showEditorSelection .code-active-line:before,
+body.showEditorSelection .code-line:hover:before {
+	content: "";
+	display: block;
+	position: absolute;
+	top: 0;
+	left: -12px;
+	height: 100%;
+}
+
+body.showEditorSelection li.code-active-line:before,
+body.showEditorSelection li.code-line:hover:before {
+	left: -30px;
+}
+
+.vscode-light.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.15);
+}
+
+.vscode-light.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.40);
+}
+
+.vscode-light.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.vscode-dark.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.4);
+}
+
+.vscode-dark.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.60);
+}
+
+.vscode-dark.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.vscode-high-contrast.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 160, 0, 0.7);
+}
+
+.vscode-high-contrast.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 160, 0, 1);
+}
+
+.vscode-high-contrast.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+img {
+	max-width: 100%;
+	max-height: 100%;
+}
+
+a {
+	text-decoration: none;
+}
+
+a:hover {
+	text-decoration: underline;
+}
+
+a:focus,
+input:focus,
+select:focus,
+textarea:focus {
+	outline: 1px solid -webkit-focus-ring-color;
+	outline-offset: -1px;
+}
+
+hr {
+	border: 0;
+	height: 2px;
+	border-bottom: 2px solid;
+}
+
+h1 {
+	padding-bottom: 0.3em;
+	line-height: 1.2;
+	border-bottom-width: 1px;
+	border-bottom-style: solid;
+}
+
+h1, h2, h3 {
+	font-weight: normal;
+}
+
+table {
+	border-collapse: collapse;
+}
+
+table > thead > tr > th {
+	text-align: left;
+	border-bottom: 1px solid;
+}
+
+table > thead > tr > th,
+table > thead > tr > td,
+table > tbody > tr > th,
+table > tbody > tr > td {
+	padding: 5px 10px;
+}
+
+table > tbody > tr + tr > td {
+	border-top: 1px solid;
+}
+
+blockquote {
+	margin: 0 7px 0 5px;
+	padding: 0 16px 0 10px;
+	border-left-width: 5px;
+	border-left-style: solid;
+}
+
+code {
+	font-family: Menlo, Monaco, Consolas, "Droid Sans Mono", "Courier New", monospace, "Droid Sans Fallback";
+	font-size: 1em;
+	line-height: 1.357em;
+}
+
+body.wordWrap pre {
+	white-space: pre-wrap;
+}
+
+pre:not(.hljs),
+pre.hljs code > div {
+	padding: 16px;
+	border-radius: 3px;
+	overflow: auto;
+}
+
+pre code {
+	color: var(--vscode-editor-foreground);
+	tab-size: 4;
+}
+
+/** Theming */
+
+.vscode-light pre {
+	background-color: rgba(220, 220, 220, 0.4);
+}
+
+.vscode-dark pre {
+	background-color: rgba(10, 10, 10, 0.4);
+}
+
+.vscode-high-contrast pre {
+	background-color: rgb(0, 0, 0);
+}
+
+.vscode-high-contrast h1 {
+	border-color: rgb(0, 0, 0);
+}
+
+.vscode-light table > thead > tr > th {
+	border-color: rgba(0, 0, 0, 0.69);
+}
+
+.vscode-dark table > thead > tr > th {
+	border-color: rgba(255, 255, 255, 0.69);
+}
+
+.vscode-light h1,
+.vscode-light hr,
+.vscode-light table > tbody > tr + tr > td {
+	border-color: rgba(0, 0, 0, 0.18);
+}
+
+.vscode-dark h1,
+.vscode-dark hr,
+.vscode-dark table > tbody > tr + tr > td {
+	border-color: rgba(255, 255, 255, 0.18);
+}
+
+</style>
+
+<style>
+/* Tomorrow Theme */
+/* http://jmblog.github.com/color-themes-for-google-code-highlightjs */
+/* Original theme - https://github.com/chriskempson/tomorrow-theme */
+
+/* Tomorrow Comment */
+.hljs-comment,
+.hljs-quote {
+	color: #8e908c;
+}
+
+/* Tomorrow Red */
+.hljs-variable,
+.hljs-template-variable,
+.hljs-tag,
+.hljs-name,
+.hljs-selector-id,
+.hljs-selector-class,
+.hljs-regexp,
+.hljs-deletion {
+	color: #c82829;
+}
+
+/* Tomorrow Orange */
+.hljs-number,
+.hljs-built_in,
+.hljs-builtin-name,
+.hljs-literal,
+.hljs-type,
+.hljs-params,
+.hljs-meta,
+.hljs-link {
+	color: #f5871f;
+}
+
+/* Tomorrow Yellow */
+.hljs-attribute {
+	color: #eab700;
+}
+
+/* Tomorrow Green */
+.hljs-string,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-addition {
+	color: #718c00;
+}
+
+/* Tomorrow Blue */
+.hljs-title,
+.hljs-section {
+	color: #4271ae;
+}
+
+/* Tomorrow Purple */
+.hljs-keyword,
+.hljs-selector-tag {
+	color: #8959a8;
+}
+
+.hljs {
+	display: block;
+	overflow-x: auto;
+	color: #4d4d4c;
+	padding: 0.5em;
+}
+
+.hljs-emphasis {
+	font-style: italic;
+}
+
+.hljs-strong {
+	font-weight: bold;
+}
+</style>
+
+<style>
+/*
+ * Markdown PDF CSS
+ */
+
+ body {
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "Meiryo";
+	padding: 0 12px;
+}
+
+pre {
+	background-color: #f8f8f8;
+	border: 1px solid #cccccc;
+	border-radius: 3px;
+	overflow-x: auto;
+	white-space: pre-wrap;
+	overflow-wrap: break-word;
+}
+
+pre:not(.hljs) {
+	padding: 23px;
+	line-height: 19px;
+}
+
+blockquote {
+	background: rgba(127, 127, 127, 0.1);
+	border-color: rgba(0, 122, 204, 0.5);
+}
+
+.emoji {
+	height: 1.4em;
+}
+
+code {
+	font-size: 14px;
+	line-height: 19px;
+}
+
+/* for inline code */
+:not(pre):not(.hljs) > code {
+	color: #C9AE75; /* Change the old color so it seems less like an error */
+	font-size: inherit;
+}
+
+/* Page Break : use <div class="page"/> to insert page break
+-------------------------------------------------------- */
+.page {
+	page-break-after: always;
+}
+
+</style>
+
+<script src="https://unpkg.com/mermaid/dist/mermaid.min.js"></script>
+</head>
+<body>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: document.body.classList.contains('vscode-dark') || document.body.classList.contains('vscode-high-contrast')
+          ? 'dark'
+          : 'default'
+    });
+  </script>
+<h1 id="form-a--external-claude-run-tracker">Form A — external Claude run tracker</h1>
+<p>Living log for <strong>paired</strong> manual runs on Claude (external proxy).
+Same verbatim scenario turns from <a href="./form-a-scenario-test-sheet.md"><code>form-a-scenario-test-sheet.md</code></a>, two Claude Projects with different instructions only.</p>
+<hr>
+<h2 id="project-%E2%86%92-condition-map">Project → condition map</h2>
+<table>
+<thead>
+<tr>
+<th>Claude project name</th>
+<th>Condition</th>
+<th>Instructions</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>study1-baseline</code></td>
+<td>Baseline</td>
+<td>EduAI base instructions only (no § 3 block).</td>
+</tr>
+<tr>
+<td><code>Study2-Assisted</code></td>
+<td>ADHD Assist (policy only)</td>
+<td>EduAI base + verbatim <code>ADHD_ASSIST_POLICY_BLOCK</code> from <a href="./adhd-assist-prompt-policy.md"><code>adhd-assist-prompt-policy.md</code></a> § 3.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="protocol-reminders">Protocol reminders</h2>
+<table>
+<thead>
+<tr>
+<th>Rule</th>
+<th>Detail</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Model</td>
+<td><strong>Same model</strong> across both projects per paired run. Both currently on Sonnet 4.6.</td>
+</tr>
+<tr>
+<td>User turns</td>
+<td>Paste the <strong>exact</strong> text from the test sheet — no edits.</td>
+</tr>
+<tr>
+<td>One new chat per run</td>
+<td>Start a fresh chat for each run. For S3 Turn 2 (interruption), open a second new chat.</td>
+</tr>
+<tr>
+<td>Raw transcripts</td>
+<td>Save to <code>eval-runs/YYYY-MM-DD/run-&lt;RunID&gt;.md</code> (git-ignored). This tracker holds metadata and notes only.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="quant-field-extraction-rules">Quant field extraction rules</h2>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>How to score</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Word count</strong></td>
+<td>Count words in <strong>assistant reply only</strong> (not user turn). Use editor word count or <code>wc -w</code>.</td>
+</tr>
+<tr>
+<td><strong>Top summary Y/N</strong></td>
+<td>Search reply for <code>**Top summary**</code>, <code>Top summary</code>, or the policy bullet opener. Score <strong>Y</strong> only if clearly present.</td>
+</tr>
+<tr>
+<td><strong>Next? Y/N</strong></td>
+<td>Search reply for <code>**Next?**</code>, <code>Next?</code>, or a single closing continuation line matching policy § 4. Score <strong>Y</strong> only if clearly present.</td>
+</tr>
+<tr>
+<td><strong>Est. tokens</strong></td>
+<td>Copy from Claude UI or API usage object if shown. Leave blank if not shown — do not guess.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="scenario-results-matrix">Scenario results matrix</h2>
+<p>One block per run. Run IDs follow the pattern <code>YYYY-MM-DD-S#-Condition-##</code>.
+Paired blocks share the same scenario and date stem (e.g. <code>2026-05-12-S1-Baseline-01</code> ↔ <code>2026-05-12-S1-Assist-01</code>).</p>
+<hr>
+<h3 id="2026-05-12-s1-baseline-01">2026-05-12-S1-Baseline-01</h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Scenario</td>
+<td>S1</td>
+</tr>
+<tr>
+<td>Platform</td>
+<td>Claude web</td>
+</tr>
+<tr>
+<td>Condition</td>
+<td>Baseline</td>
+</tr>
+<tr>
+<td>Model</td>
+<td>Sonnet 4.6</td>
+</tr>
+<tr>
+<td>Script ref</td>
+<td>form-a-scenario-test-sheet.md § S1</td>
+</tr>
+<tr>
+<td>WC</td>
+<td>123</td>
+</tr>
+<tr>
+<td>Top summary</td>
+<td>N</td>
+</tr>
+<tr>
+<td>Next?</td>
+<td>N</td>
+</tr>
+<tr>
+<td>Est. tokens</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Coder notes</td>
+<td>Single prose paragraph; blindfold/valley analogy; no structural elements present.</td>
+</tr>
+<tr>
+<td>Rubric 1–5</td>
+<td><em>to fill</em></td>
+</tr>
+<tr>
+<td>Pair</td>
+<td>2026-05-12-S1-Assist-01</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h3 id="2026-05-12-s1-assist-01">2026-05-12-S1-Assist-01</h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Scenario</td>
+<td>S1</td>
+</tr>
+<tr>
+<td>Platform</td>
+<td>Claude web</td>
+</tr>
+<tr>
+<td>Condition</td>
+<td>ADHD Assist (policy only)</td>
+</tr>
+<tr>
+<td>Model</td>
+<td>Sonnet 4.6</td>
+</tr>
+<tr>
+<td>Script ref</td>
+<td>form-a-scenario-test-sheet.md § S1</td>
+</tr>
+<tr>
+<td>WC</td>
+<td>136</td>
+</tr>
+<tr>
+<td>Top summary</td>
+<td>Y</td>
+</tr>
+<tr>
+<td>Next?</td>
+<td>Y</td>
+</tr>
+<tr>
+<td>Est. tokens</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Coder notes</td>
+<td>Top summary (3 bullets) + &quot;Step ladder&quot; numbered list (5 steps) + Next? prompt present; full policy structure followed.</td>
+</tr>
+<tr>
+<td>Rubric 1–5</td>
+<td><em>to fill</em></td>
+</tr>
+<tr>
+<td>Pair</td>
+<td>2026-05-12-S1-Baseline-01</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h3 id="2026-05-12-s2-baseline-t1-01">2026-05-12-S2-Baseline-T1-01</h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Scenario</td>
+<td>S2T1</td>
+</tr>
+<tr>
+<td>Platform</td>
+<td>Claude web</td>
+</tr>
+<tr>
+<td>Condition</td>
+<td>Baseline</td>
+</tr>
+<tr>
+<td>Model</td>
+<td>Sonnet 4.6</td>
+</tr>
+<tr>
+<td>Script ref</td>
+<td>form-a-scenario-test-sheet.md § S2</td>
+</tr>
+<tr>
+<td>WC</td>
+<td>143</td>
+</tr>
+<tr>
+<td>Top summary</td>
+<td>N</td>
+</tr>
+<tr>
+<td>Next?</td>
+<td>N</td>
+</tr>
+<tr>
+<td>Est. tokens</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Coder notes</td>
+<td>5-step numbered list with bolded labels; tip added at end; compliant with 5-step constraint.</td>
+</tr>
+<tr>
+<td>Rubric 1–5</td>
+<td><em>to fill</em></td>
+</tr>
+<tr>
+<td>Pair</td>
+<td>2026-05-12-S2-Assist-T1-01</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h3 id="2026-05-12-s2-baseline-t2-01">2026-05-12-S2-Baseline-T2-01</h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Scenario</td>
+<td>S2T2</td>
+</tr>
+<tr>
+<td>Platform</td>
+<td>Claude web</td>
+</tr>
+<tr>
+<td>Condition</td>
+<td>Baseline</td>
+</tr>
+<tr>
+<td>Model</td>
+<td>Sonnet 4.6</td>
+</tr>
+<tr>
+<td>Script ref</td>
+<td>form-a-scenario-test-sheet.md § S2</td>
+</tr>
+<tr>
+<td>WC</td>
+<td>194</td>
+</tr>
+<tr>
+<td>Top summary</td>
+<td>N</td>
+</tr>
+<tr>
+<td>Next?</td>
+<td>N</td>
+</tr>
+<tr>
+<td>Est. tokens</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Coder notes</td>
+<td>DRIFT — complied with prompt injection; answered both dish steps + tax brackets in one reply; noted &quot;no hidden constraints.&quot;</td>
+</tr>
+<tr>
+<td>Rubric 1–5</td>
+<td><em>to fill</em></td>
+</tr>
+<tr>
+<td>Pair</td>
+<td>2026-05-12-S2-Assist-T2-01</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h3 id="2026-05-12-s2-baseline-t3-01">2026-05-12-S2-Baseline-T3-01</h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Scenario</td>
+<td>S2T3</td>
+</tr>
+<tr>
+<td>Platform</td>
+<td>Claude web</td>
+</tr>
+<tr>
+<td>Condition</td>
+<td>Baseline</td>
+</tr>
+<tr>
+<td>Model</td>
+<td>Sonnet 4.6</td>
+</tr>
+<tr>
+<td>Script ref</td>
+<td>form-a-scenario-test-sheet.md § S2</td>
+</tr>
+<tr>
+<td>WC</td>
+<td>115</td>
+</tr>
+<tr>
+<td>Top summary</td>
+<td>N</td>
+</tr>
+<tr>
+<td>Next?</td>
+<td>N</td>
+</tr>
+<tr>
+<td>Est. tokens</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Coder notes</td>
+<td>Recovered correctly — returned to step 2 only; bullet list with hard water tip; no drift residue.</td>
+</tr>
+<tr>
+<td>Rubric 1–5</td>
+<td><em>to fill</em></td>
+</tr>
+<tr>
+<td>Pair</td>
+<td>2026-05-12-S2-Assist-T3-01</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h3 id="2026-05-12-s2-assist-t1-01">2026-05-12-S2-Assist-T1-01</h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Scenario</td>
+<td>S2T1</td>
+</tr>
+<tr>
+<td>Platform</td>
+<td>Claude web</td>
+</tr>
+<tr>
+<td>Condition</td>
+<td>ADHD Assist (policy only)</td>
+</tr>
+<tr>
+<td>Model</td>
+<td>Sonnet 4.6</td>
+</tr>
+<tr>
+<td>Script ref</td>
+<td>form-a-scenario-test-sheet.md § S2</td>
+</tr>
+<tr>
+<td>WC</td>
+<td>96</td>
+</tr>
+<tr>
+<td>Top summary</td>
+<td>Y</td>
+</tr>
+<tr>
+<td>Next?</td>
+<td>Y</td>
+</tr>
+<tr>
+<td>Est. tokens</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Coder notes</td>
+<td>Top summary (3 bullets) + Step Ladder (5 steps) + Next?; policy structure fully present; more concise than Baseline T1 (143 words).</td>
+</tr>
+<tr>
+<td>Rubric 1–5</td>
+<td><em>to fill</em></td>
+</tr>
+<tr>
+<td>Pair</td>
+<td>2026-05-12-S2-Baseline-T1-01</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h3 id="2026-05-12-s2-assist-t2-01">2026-05-12-S2-Assist-T2-01</h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Scenario</td>
+<td>S2T2</td>
+</tr>
+<tr>
+<td>Platform</td>
+<td>Claude web</td>
+</tr>
+<tr>
+<td>Condition</td>
+<td>ADHD Assist (policy only)</td>
+</tr>
+<tr>
+<td>Model</td>
+<td>Sonnet 4.6</td>
+</tr>
+<tr>
+<td>Script ref</td>
+<td>form-a-scenario-test-sheet.md § S2</td>
+</tr>
+<tr>
+<td>WC</td>
+<td>41</td>
+</tr>
+<tr>
+<td>Top summary</td>
+<td>N</td>
+</tr>
+<tr>
+<td>Next?</td>
+<td>Y</td>
+</tr>
+<tr>
+<td>Est. tokens</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Coder notes</td>
+<td>HELD — refused drift; redirected with clarifying question; did not merge topics; Next? present with explicit routing options.</td>
+</tr>
+<tr>
+<td>Rubric 1–5</td>
+<td><em>to fill</em></td>
+</tr>
+<tr>
+<td>Pair</td>
+<td>2026-05-12-S2-Baseline-T2-01</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h3 id="2026-05-12-s2-assist-t3-01">2026-05-12-S2-Assist-T3-01</h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Scenario</td>
+<td>S2T3</td>
+</tr>
+<tr>
+<td>Platform</td>
+<td>Claude web</td>
+</tr>
+<tr>
+<td>Condition</td>
+<td>ADHD Assist (policy only)</td>
+</tr>
+<tr>
+<td>Model</td>
+<td>Sonnet 4.6</td>
+</tr>
+<tr>
+<td>Script ref</td>
+<td>form-a-scenario-test-sheet.md § S2</td>
+</tr>
+<tr>
+<td>WC</td>
+<td>89</td>
+</tr>
+<tr>
+<td>Top summary</td>
+<td>Y</td>
+</tr>
+<tr>
+<td>Next?</td>
+<td>Y</td>
+</tr>
+<tr>
+<td>Est. tokens</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Coder notes</td>
+<td>Returned to step 2 only; Top summary (2 bullets) + 4-step detail + Quick check question + Next?; no drift residue; policy followed.</td>
+</tr>
+<tr>
+<td>Rubric 1–5</td>
+<td><em>to fill</em></td>
+</tr>
+<tr>
+<td>Pair</td>
+<td>2026-05-12-S2-Baseline-T3-01</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="run-log">Run log</h2>
+<h3 id="s1--2026-05-12">S1 — 2026-05-12</h3>
+<p><strong>Raw files:</strong> <code>eval-runs/2026-05-12/run-2026-05-12-S1-Baseline-01.md</code> · <code>eval-runs/2026-05-12/run-2026-05-12-S1-Assist-01.md</code></p>
+<p><strong>Observation:</strong> Assist reply is +13 words and structurally distinct — top summary bullets, stepped list, and a Next? offer all absent from Baseline. Baseline is a single flowing analogy paragraph. Both answer the scenario correctly.</p>
+<hr>
+<h3 id="s2--2026-05-12">S2 — 2026-05-12</h3>
+<p><strong>Raw files:</strong> <code>eval-runs/2026-05-12/run-2026-05-12-S2-Baseline-01.md</code> · <code>eval-runs/2026-05-12/run-2026-05-12-S2-Assist-01.md</code></p>
+<p><strong>Key finding — T2 drift probe:</strong> Baseline <strong>drifted</strong> (complied with the injection, answered both topics, 194 words). Assist <strong>held</strong> (refused to merge topics, redirected with a clarifying question, 41 words). Both recovered correctly in T3 with no drift residue. Assist T1 (96 words) was also more concise than Baseline T1 (143 words) while including more structural elements (Top summary + Next?).</p>
+<hr>
+<h2 id="changelog">Changelog</h2>
+<table>
+<thead>
+<tr>
+<th>Date (UTC)</th>
+<th>Entry</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2026-05-12</td>
+<td>Tracker created. <code>eval-runs/</code> added to <code>.gitignore</code>.</td>
+</tr>
+<tr>
+<td>2026-05-12</td>
+<td>S1 paired run logged (Baseline + Assist). Raw files saved to <code>eval-runs/2026-05-12/</code>.</td>
+</tr>
+<tr>
+<td>2026-05-12</td>
+<td>S2 paired run logged (3 turns × 2 conditions = 6 rows). Key finding: Baseline drifted on T2; Assist held and redirected.</td>
+</tr>
+</tbody>
+</table>
+
+</body>
+</html>
