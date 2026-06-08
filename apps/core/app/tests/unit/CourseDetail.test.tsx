@@ -18,6 +18,10 @@ vi.mock('~/components/course-materials-upload', () => ({
   CourseMaterialsUpload: () => <div data-testid="upload-widget">Upload widget</div>,
 }))
 
+vi.mock('~/hooks/api/use-users', () => ({
+  useUsers: () => ({ users: [], isLoading: false, error: null }),
+}))
+
 const COURSE: CourseDetail = {
   id: 'c1',
   code: 'COSC 101',
@@ -56,6 +60,12 @@ const TOPIC: CourseTopic = {
 
 const NOOP = async () => {}
 const onFileSelect = vi.fn()
+const STAFF_PROPS = {
+  tas: [],
+  onAssignProfessor: NOOP,
+  onAddTA: NOOP,
+  onRemoveTA: NOOP,
+}
 
 function wrap(ui: React.ReactElement) {
   return render(<MemoryRouter>{ui}</MemoryRouter>)
@@ -74,6 +84,7 @@ describe('CourseDetailManagerView', () => {
         onFileSelect={onFileSelect}
         onCreateTopic={NOOP}
         onDeleteTopic={NOOP}
+        {...STAFF_PROPS}
       />
     )
     expect(screen.getByRole('tab', { name: /overview/i })).toBeInTheDocument()
@@ -93,6 +104,7 @@ describe('CourseDetailManagerView', () => {
         onFileSelect={onFileSelect}
         onCreateTopic={NOOP}
         onDeleteTopic={NOOP}
+        {...STAFF_PROPS}
       />
     )
     expect(screen.getByTestId('upload-widget')).toBeInTheDocument()
@@ -109,6 +121,7 @@ describe('CourseDetailManagerView', () => {
         onFileSelect={onFileSelect}
         onCreateTopic={NOOP}
         onDeleteTopic={NOOP}
+        {...STAFF_PROPS}
       />
     )
     expect(screen.getByPlaceholderText(/new topic name/i)).toBeInTheDocument()
@@ -126,6 +139,7 @@ describe('CourseDetailManagerView', () => {
         onFileSelect={onFileSelect}
         onCreateTopic={NOOP}
         onDeleteTopic={NOOP}
+        {...STAFF_PROPS}
       />
     )
     // unit access can manage topics
