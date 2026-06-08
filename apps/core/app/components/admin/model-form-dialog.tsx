@@ -9,6 +9,7 @@ import { Switch } from "~/components/ui/switch";
 import { Alert, AlertDescription } from "~/components/ui/alert";
 import { Loader } from "~/components/ui/loader";
 import type { AIProvider, AIModel } from "~/types/ai";
+import { allowsSupportsToolsToggle } from "~/lib/ai/model-tool-capability";
 
 export type OllamaModel = {
   name: string;
@@ -112,6 +113,7 @@ export function ModelFormDialog({
 
   const selectedProvider = providers.find(p => p.id === formData.providerId);
   const isOllamaProvider = selectedProvider?.name === "ollama";
+  const showSupportsToolsToggle = allowsSupportsToolsToggle(formData.modelId, formData.type);
 
   const handleOllamaModelSelect = (modelName: string) => {
     setSelectedOllamaModel(modelName);
@@ -125,7 +127,7 @@ export function ModelFormDialog({
         type: "CHAT",
         maxTokens: "",
         supportsImages: selected.name.toLowerCase().includes("vision") || selected.name.toLowerCase().includes("llava"),
-        supportsTools: true,
+        supportsTools: allowsSupportsToolsToggle(selected.name, "CHAT"),
         supportsStreaming: true,
         inputPricing: "0",
         outputPricing: "0",
@@ -133,10 +135,17 @@ export function ModelFormDialog({
     }
   };
 
+  useEffect(() => {
+    if (!showSupportsToolsToggle && formData.supportsTools) {
+      setFormData((prev) => ({ ...prev, supportsTools: false }));
+    }
+  }, [showSupportsToolsToggle, formData.supportsTools]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSubmit({
       ...formData,
+      supportsTools: showSupportsToolsToggle ? formData.supportsTools : false,
       maxTokens: formData.maxTokens ? Number(formData.maxTokens) : undefined,
       inputPricing: formData.inputPricing ? Number(formData.inputPricing) : undefined,
       outputPricing: formData.outputPricing ? Number(formData.outputPricing) : undefined,
@@ -333,14 +342,16 @@ export function ModelFormDialog({
                 <Label htmlFor="supportsImages">Supports Images</Label>
               </div>
 
-              <div className="flex items-center space-x-2">
-                <Switch
-                  id="supportsTools"
-                  checked={formData.supportsTools}
-                  onCheckedChange={(checked) => setFormData({ ...formData, supportsTools: checked })}
-                />
-                <Label htmlFor="supportsTools">Supports Tools</Label>
-              </div>
+              {showSupportsToolsToggle ? (
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    id="supportsTools"
+                    checked={formData.supportsTools}
+                    onCheckedChange={(checked) => setFormData({ ...formData, supportsTools: checked })}
+                  />
+                  <Label htmlFor="supportsTools">Supports Tools</Label>
+                </div>
+              ) : null}
             </div>
 
             <div className="space-y-4">
