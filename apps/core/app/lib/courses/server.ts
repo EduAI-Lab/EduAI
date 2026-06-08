@@ -171,6 +171,24 @@ export async function handleCourseRequest(request: Request) {
         return new Response("Forbidden", { status: 403 });
       }
 
+      // Only admin/unit can reassign the professor
+      if (result.data.professorId && !isAdmin && !isUnitAdmin) {
+        return new Response("Forbidden: only admins can reassign the professor", { status: 403 });
+      }
+
+      if (result.data.professorId) {
+        const newProf = await prisma.user.findUnique({
+          where: { id: result.data.professorId },
+          select: { role: true },
+        });
+        if (!newProf || newProf.role !== "PROFESSOR") {
+          return new Response(
+            JSON.stringify({ error: "Target user must have PROFESSOR role" }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+          );
+        }
+      }
+
       const updated = await prisma.course.update({
         where: { id: courseId },
         data: result.data,
