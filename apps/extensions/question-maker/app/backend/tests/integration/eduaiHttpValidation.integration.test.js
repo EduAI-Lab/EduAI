@@ -1,57 +1,34 @@
 /**
- * DB-backed 400s on /api/eduai routes (body validation only; no EduAI HTTP).
- * Run: npm run test:integration (requires TEST_DATABASE_URL).
+ * HTTP validation tests for POST /api/eduai/chat and /generate-questions (400 responses).
+ * Auth is handled by stubbing global fetch for Core session validation.
+ * No DB required — all 400 guards fire before any model access.
  */
+import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import request from 'supertest';
 
-const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
-const describeDb = hasTestDb ? describe : describe.skip;
+vi.mock('../../src/services/authService.js', () => ({
+  findOrCreateUser: vi.fn().mockResolvedValue({}),
+}));
 
-describeDb('EduAI HTTP validation (integration)', () => {
-  let app;
-  let connectTestDatabase;
-  let truncateTestDatabase;
-  let sequelize;
-  let token;
+const { default: app } = await import('../../src/app.js');
 
-  beforeAll(async () => {
-    if (!hasTestDb) {
-      return;
-    }
-    const { default: appMod } = await import('../../src/app.js');
-    const testDb = await import('../helpers/testDb.js');
-    app = appMod;
-    connectTestDatabase = testDb.connectTestDatabase;
-    truncateTestDatabase = testDb.truncateTestDatabase;
-    ({ sequelize } = testDb);
-    await connectTestDatabase();
-  });
+const TEST_USER = { id: 'cuid-test-user', email: 'test@test.com', role: 'INSTRUCTOR', name: 'Test User' };
 
-  beforeEach(async () => {
-    if (!hasTestDb) {
-      return;
-    }
-    await truncateTestDatabase();
-    const reg = await request(app)
-      .post('/api/auth/register')
-      .send({ email: `eduai-val-${Date.now()}@local.test`, password: 'secret12' });
-    expect(reg.status).toBe(201);
-    token = reg.body.data.token;
-  });
+beforeEach(() => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+    ok: true,
+    json: () => Promise.resolve({ user: TEST_USER }),
+  }));
+});
 
-  afterAll(async () => {
-    if (sequelize) {
-      await sequelize.close();
-    }
-  });
+afterEach(() => vi.unstubAllGlobals());
 
-  const auth = () => ({ Authorization: `Bearer ${token}` });
-
+describe('EduAI HTTP validation (integration)', () => {
   describe('POST /api/eduai/chat', () => {
     it('returns 400 when messages is missing', async () => {
       const res = await request(app)
         .post('/api/eduai/chat')
-        .set(auth())
+        .set('Cookie', 'session=valid')
         .send({ courseCode: 'COSC_101' });
       expect(res.status).toBe(400);
       expect(String(res.body.error || '')).toMatch(/[Mm]essage/i);
@@ -60,7 +37,7 @@ describeDb('EduAI HTTP validation (integration)', () => {
     it('returns 400 when courseCode is missing', async () => {
       const res = await request(app)
         .post('/api/eduai/chat')
-        .set(auth())
+        .set('Cookie', 'session=valid')
         .send({ messages: [{ role: 'user', content: 'Hello' }] });
       expect(res.status).toBe(400);
       expect(String(res.body.error || '')).toMatch(/course/i);
@@ -71,7 +48,7 @@ describeDb('EduAI HTTP validation (integration)', () => {
     it('returns 400 when prompt is missing', async () => {
       const res = await request(app)
         .post('/api/eduai/generate-questions')
-        .set(auth())
+        .set('Cookie', 'session=valid')
         .send({ courseCode: 'TEST' });
       expect(res.status).toBe(400);
       expect(String(res.body.error || '')).toMatch(/[Pp]rompt|required/i);
@@ -80,7 +57,7 @@ describeDb('EduAI HTTP validation (integration)', () => {
     it('returns 400 when courseCode is missing', async () => {
       const res = await request(app)
         .post('/api/eduai/generate-questions')
-        .set(auth())
+        .set('Cookie', 'session=valid')
         .send({ prompt: 'Write one MCQ' });
       expect(res.status).toBe(400);
       expect(String(res.body.error || '')).toMatch(/[Cc]ourse|required/i);
