@@ -4,7 +4,7 @@ import { useLocalUser } from '../hooks/useLocalUser';
 
 function routeForRole(role: string) {
   if (role === 'STUDENT') return '/student';
-  if (role === 'PROFESSOR') return '/instructor';
+  if (role === 'INSTRUCTOR') return '/instructor';
   if (role === 'ADMIN') return '/admin';
   return '/';
 }

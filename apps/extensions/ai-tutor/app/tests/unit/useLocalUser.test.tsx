@@ -90,7 +90,7 @@ describe('AuthProvider', () => {
       wrapper: makeWrapper(testUser),
     });
 
-    const newUser: AuthUser = { id: 'test-2', name: 'New User', role: 'PROFESSOR' };
+    const newUser: AuthUser = { id: 'test-2', name: 'New User', role: 'INSTRUCTOR' };
 
     act(() => {
       result.current.saveAuth(newUser);
