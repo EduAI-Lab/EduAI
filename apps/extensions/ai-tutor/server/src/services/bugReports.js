@@ -21,6 +21,7 @@
  */
 
 import { prisma } from '../config/database.js';
+import { postCoreBugReport } from './eduaiClient.js';
 
 export const BUG_REPORT_STATUSES = ['unhandled', 'in progress', 'resolved'];
 const BUG_REPORT_STATUS_SET = new Set(BUG_REPORT_STATUSES);
@@ -116,9 +117,9 @@ function normalizeContext(context) {
 
 function ensureCourseAuthorization(user, course) {
   const isStudent = user.role === 'STUDENT';
-  const isProfessor = user.role === 'PROFESSOR';
+  const isProfessor = user.role === 'INSTRUCTOR';
   if (!isStudent && !isProfessor) {
-    throw new BugReportError(403, 'Only STUDENT and PROFESSOR users can submit bug reports');
+    throw new BugReportError(403, 'Only STUDENT and INSTRUCTOR users can submit bug reports');
   }
 
   if (isStudent) {
@@ -282,21 +283,15 @@ export async function createBugReport(user, payload) {
   const context = normalizeContext(payload?.context);
   const validatedContext = await validateContextAndAccess(user, context);
 
-  return prisma.bugReport.create({
-    data: {
-      description,
-      consoleLogs,
-      networkLogs,
-      screenshot,
-      pageUrl,
-      userAgent,
-      isAnonymous,
-      userId: user.id,
-      courseOfferingId: validatedContext.courseOfferingId,
-      moduleId: validatedContext.moduleId,
-      lessonId: validatedContext.lessonId,
-      activityId: validatedContext.activityId,
-    },
+  await postCoreBugReport(user.id, {
+    description,
+    consoleLogs,
+    networkLogs,
+    screenshot,
+    pageUrl,
+    userAgent,
+    isAnonymous,
+    context: validatedContext,
   });
 }
 
@@ -307,26 +302,8 @@ export async function createBugReport(user, payload) {
  * one query so the UI can sort and inspect reports without N+1 follow-up calls.
  */
 export async function listAdminBugReports() {
-  return prisma.bugReport.findMany({
-    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-    include: {
-      user: {
-        select: { id: true, name: true, email: true, role: true },
-      },
-      courseOffering: {
-        select: { id: true, title: true },
-      },
-      module: {
-        select: { id: true, title: true },
-      },
-      lesson: {
-        select: { id: true, title: true },
-      },
-      activity: {
-        select: { id: true, title: true, config: true },
-      },
-    },
-  });
+  // BugReport model lives in Core post-auth-migration; no local records exist.
+  return [];
 }
 
 /**
@@ -357,34 +334,8 @@ export async function updateBugReportStatus(bugReportId, nextStatus) {
     throw new BugReportError(400, 'Invalid bug report id');
   }
 
-  const status = validateBugReportStatus(nextStatus);
+  validateBugReportStatus(nextStatus);
 
-  try {
-    return await prisma.bugReport.update({
-      where: { id: bugReportId },
-      data: { status },
-      include: {
-        user: {
-          select: { id: true, name: true, email: true, role: true },
-        },
-        courseOffering: {
-          select: { id: true, title: true },
-        },
-        module: {
-          select: { id: true, title: true },
-        },
-        lesson: {
-          select: { id: true, title: true },
-        },
-        activity: {
-          select: { id: true, title: true, config: true },
-        },
-      },
-    });
-  } catch (error) {
-    if (error?.code === 'P2025') {
-      throw new BugReportError(404, 'Bug report not found');
-    }
-    throw error;
-  }
+  // BugReport model lives in Core post-auth-migration; no local records to update.
+  throw new BugReportError(404, 'Bug report not found');
 }

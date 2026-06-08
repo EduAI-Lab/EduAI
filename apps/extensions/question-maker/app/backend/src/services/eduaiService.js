@@ -4,6 +4,7 @@
  */
 import axios from "axios";
 import { config } from "../config/settings.js";
+import { logger } from "../utils/logger.js";
 
 // Debug prefix for EduAI troubleshooting (grep for this to see all EduAI logs)
 const DEBUG_PREFIX = "[EduAI]";
@@ -13,15 +14,18 @@ class EduAIService {
     this.baseURL = config.eduaiApiUrl;
     this.apiKey = config.eduaiApiKey;
 
-    console.log("EduAI Service initialized:", {
-      baseURL: this.baseURL,
-      hasApiKey: !!this.apiKey,
-      apiKeyLength: this.apiKey ? this.apiKey.length : 0,
-      apiKeyPrefix: this.apiKey ? this.apiKey.substring(0, 8) + "..." : "none",
-    });
+    logger.info(
+      {
+        baseURL: this.baseURL,
+        hasApiKey: !!this.apiKey,
+        apiKeyLength: this.apiKey ? this.apiKey.length : 0,
+        apiKeyPrefix: this.apiKey ? this.apiKey.substring(0, 8) + "..." : "none",
+      },
+      "EduAI Service initialized"
+    );
 
     if (!this.apiKey) {
-      console.warn(
+      logger.warn(
         "EduAI API key not configured. EduAI features will be disabled."
       );
     }

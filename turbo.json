@@ -37,6 +37,23 @@
         "tsconfig*.json"
       ]
     },
+    "test:coverage": {
+      "dependsOn": ["build"],
+      "inputs": [
+        "src/**",
+        "app/**",
+        "server/**",
+        "shared/**",
+        "test/**",
+        "vitest.config.*",
+        "jest.config.*",
+        "jest.integration.config.*",
+        "package.json",
+        "prisma/**",
+        "tsconfig*.json"
+      ],
+      "outputs": ["coverage/**"]
+    },
     "lint": {
       "outputs": []
     },

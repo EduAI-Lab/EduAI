@@ -7,5 +7,6 @@ export default defineConfig({
   plugins: [tailwindcss(), reactRouter()],
   resolve: {
     tsconfigPaths: true,
+    dedupe: ['react-router', 'react', 'react-dom'],
   },
 });

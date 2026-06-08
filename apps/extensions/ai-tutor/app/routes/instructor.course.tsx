@@ -2,7 +2,7 @@
  * @file Instructor course view — the module list inside a single course.
  *
  * Route: /instructor/courses/:courseId
- * Auth: PROFESSOR
+ * Auth: INSTRUCTOR
  * Loads: course detail and its module list, in parallel.
  * Owns: module CRUD entry points (create form), cross-course module import
  *       flow, and the per-module publish toggle.
@@ -41,7 +41,7 @@ import { requireClientUser } from '~/lib/client-auth';
  * if the route param isn't numeric so the router renders the error boundary.
  */
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
-  await requireClientUser('PROFESSOR');
+  await requireClientUser('INSTRUCTOR');
   const courseId = Number(params.courseId);
   if (!Number.isFinite(courseId)) {
     throw new Response('Invalid course id', { status: 400 });

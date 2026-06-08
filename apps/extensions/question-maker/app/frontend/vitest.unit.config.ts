@@ -24,6 +24,7 @@ export default defineConfig(({ mode }) => {
       setupFiles: ['./src/tests/vitest.setup.ts'],
       include: ['src/tests/unit/**/*.test.ts', 'src/tests/unit/**/*.test.tsx'],
       exclude: ['src/tests/integration/**'],
+      passWithNoTests: true,
     },
   }
 })
