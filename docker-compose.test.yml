@@ -199,7 +199,7 @@ services:
       JWT_SECRET: test-jwt-secret-for-docker
       ENCRYPTION_KEY: test-encryption-key-32bytes!!
       NODE_ENV: test
-    command: ["sh", "-c", "./node_modules/.bin/vitest run tests/integration"]
+    command: ["npm", "run", "test:integration"]
 
     depends_on:
       question-maker-test-db:
