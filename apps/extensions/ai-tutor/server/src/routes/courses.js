@@ -31,7 +31,6 @@ import { mapCourseOffering, mapProgressData } from '../utils/mappers.js';
 import { cloneCourseContent, cloneLessonsFromOffering } from '../services/courseCloning.js';
 import { calculateCourseProgress } from '../services/progressCalculation.js';
 import { findEduAiCourseById, listEduAiCourses } from '../services/eduaiClient.js';
-import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
 import { syncExternalCourseTopics } from '../services/topicSync.js';
 import { syncCourseEnrollments } from '../services/enrollmentSync.js';
 
@@ -53,10 +52,8 @@ function isSupportedCourseRole(role) {
  */
 router.get('/eduai/courses', requireRole('INSTRUCTOR'), async (req, res) => {
   try {
-    const cookie = getEduAiCookieForRequest(req);
-
-    // Fetch available courses from EduAI
-    const courses = await listEduAiCourses(cookie);
+    // Fetch available courses from Core using the service key
+    const courses = await listEduAiCourses();
 
     // Exclude any EduAI course already imported by this instructor
     // We identify imported ones via CourseOffering.externalId (source id) scoped to the instructor
@@ -157,8 +154,7 @@ router.post('/courses/import-external', requireRole('INSTRUCTOR'), async (req, r
   }
 
   try {
-    const cookie = getEduAiCookieForRequest(req);
-    const externalCourse = await findEduAiCourseById(externalCourseId, cookie);
+    const externalCourse = await findEduAiCourseById(externalCourseId);
     if (!externalCourse) {
       return res.status(404).json({ error: 'EduAI course not found' });
     }
@@ -212,11 +208,10 @@ router.post('/courses/import-external', requireRole('INSTRUCTOR'), async (req, r
       return offering;
     });
 
-    // Sync topics and enrollments from EduAI concurrently (independent operations)
-    const syncOpts = { cookie };
+    // Sync topics and enrollments from Core concurrently (independent operations)
     const [topicResult, enrollmentResult] = await Promise.allSettled([
-      syncExternalCourseTopics(created.id, syncOpts),
-      syncCourseEnrollments(created.id, syncOpts),
+      syncExternalCourseTopics(created.id),
+      syncCourseEnrollments(created.id),
     ]);
     if (topicResult.status === 'rejected') {
       console.error('[eduai] Failed to sync topics for imported course', topicResult.reason);
