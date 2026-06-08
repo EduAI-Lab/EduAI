@@ -14,9 +14,7 @@ export type AccessLevel = {
 /** Minimal user shape needed to resolve access (a better-auth session user satisfies it). */
 export type RbacUser = {
   id: string;
-  /** Optional/null on better-auth session users — no platform privilege when absent. */
   role?: string | null;
-  /** Optional — fetched from the DB when absent and the user is a UNIT_ADMIN. */
   authorizedUnits?: string[];
 };
 
