@@ -21,7 +21,19 @@ export const UpdateCourseSchema = z.object({
   year: z.number().int().optional(),
   aiInstructions: z.string().optional(),
   isPublished: z.boolean().optional(),
+  professorId: z.string().min(1).optional(),
 });
+
+export const AddTASchema = z.object({
+  userId: z.string().min(1, "User ID is required"),
+});
+
+export const RemoveTASchema = z.object({
+  userId: z.string().min(1, "User ID is required"),
+});
+
+export type AddTAInput = z.infer<typeof AddTASchema>;
+export type RemoveTAInput = z.infer<typeof RemoveTASchema>;
 
 export const CreateCourseTopicSchema = z.object({
   name: z.string().min(1, "Topic name is required"),
