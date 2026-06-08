@@ -7,6 +7,9 @@ import {
   deleteCourseTopic,
   getCourseTopics,
 } from "~/lib/courses/server";
+import prisma from "~/lib/prisma.server";
+import { resolveCourseAccess } from "~/lib/rbac/resolve-course-access.server";
+import { canManageTopics } from "~/lib/rbac/permissions";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   // If an API key is provided, only ADMIN users may proceed
@@ -62,15 +65,42 @@ export async function action({ request, params }: ActionFunctionArgs) {
     });
   }
 
+  const course = await prisma.course.findUnique({
+    where: { id: courseId },
+    select: { id: true, professorId: true, department: true },
+  });
+
+  if (!course) {
+    return new Response(JSON.stringify({ error: "Course not found" }), {
+      status: 404,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  let authorizedUnits: string[] = [];
+  if (session.user.role === "UNIT_ADMIN") {
+    const dbUser = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { authorizedUnits: true },
+    });
+    authorizedUnits = dbUser?.authorizedUnits ?? [];
+  }
+  const rbacUser = {
+    id: session.user.id,
+    role: session.user.role as import("~/lib/rbac/types").UserRole,
+    authorizedUnits,
+  };
+  const access = await resolveCourseAccess(rbacUser, course);
+
+  if (!canManageTopics(access)) {
+    return new Response(JSON.stringify({ error: "Forbidden" }), {
+      status: 403,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
   switch (request.method) {
     case "POST": {
-      if (session.user.role !== "ADMIN") {
-        return new Response(JSON.stringify({ error: "Forbidden" }), {
-          status: 403,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-
       const body = await request.json();
       const result = await createCourseTopic(courseId, body);
 
@@ -89,12 +119,6 @@ export async function action({ request, params }: ActionFunctionArgs) {
     }
 
     case "DELETE": {
-      if (session.user.role !== "ADMIN") {
-        return new Response(JSON.stringify({ error: "Forbidden" }), {
-          status: 403,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
 
       const body = await request.json();
       const result = await deleteCourseTopic(courseId, body);
