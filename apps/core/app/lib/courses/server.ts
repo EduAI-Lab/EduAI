@@ -329,6 +329,76 @@ export async function deleteCourse(request: Request, courseId: string) {
   return new Response(null, { status: 204 });
 }
 
+/**
+ * PATCH /api/courses/:id/publish|unpublish — set published state (§5).
+ * Accepts service key (extensions) or user session (ADMIN / UNIT_ADMIN(D) /
+ * INSTRUCTOR(C) — rank >= 2, same gate as updateCourse).
+ */
+export async function setPublishState(request: Request, courseId: string, publish: boolean) {
+  // Service key path: trusted extensions (AI Tutor) call this with Bearer EDUAI_API_KEY.
+  if (request.headers.get("Authorization")?.startsWith("Bearer ")) {
+    const serviceKeyGuard = await requireServiceKey(request);
+    if (serviceKeyGuard) return serviceKeyGuard;
+
+    const course = await prisma.course.findFirst({
+      where: { id: courseId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!course) {
+      return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" } as const,
+      });
+    }
+
+    const updated = await prisma.course.update({
+      where: { id: courseId },
+      data: { isPublished: publish },
+    });
+    return new Response(JSON.stringify(updated), {
+      status: 200,
+      headers: { "Content-Type": "application/json" } as const,
+    });
+  }
+
+  // User session path (admin UI / direct API access)
+  const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
+  if (apiKeyGuard) return apiKeyGuard;
+
+  const session = apiKeySession ?? (await auth.api.getSession(request));
+  if (!session?.user) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" } as const,
+    });
+  }
+
+  const { course, access } = await resolveCourseAccessWithCourse(session.user, courseId);
+
+  if (!course) {
+    return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
+      status: 404,
+      headers: { "Content-Type": "application/json" } as const,
+    });
+  }
+
+  if (!access || access.rank < 2) {
+    return new Response(JSON.stringify({ error: "Forbidden" }), {
+      status: 403,
+      headers: { "Content-Type": "application/json" } as const,
+    });
+  }
+
+  const updated = await prisma.course.update({
+    where: { id: courseId },
+    data: { isPublished: publish },
+  });
+  return new Response(JSON.stringify(updated), {
+    status: 200,
+    headers: { "Content-Type": "application/json" } as const,
+  });
+}
+
 export async function getCourse(courseId: string) {
   return prisma.course.findFirst({
     where: { id: courseId, deletedAt: null },
