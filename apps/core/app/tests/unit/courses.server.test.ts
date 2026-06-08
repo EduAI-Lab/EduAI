@@ -331,7 +331,7 @@ describe("createCourse", () => {
     expect(res.status).toBe(201);
   });
 
-  it("returns 400 for an unknown department code (§19 DepartmentSchema)", async () => {
+  it("returns 400 for an unknown department code (§19 UnitSchema)", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "ADMIN" } } as any);
     const res = await createCourse(
       makePostRequest({ ...VALID_COURSE_FIELDS, department: "BASKET" }),
