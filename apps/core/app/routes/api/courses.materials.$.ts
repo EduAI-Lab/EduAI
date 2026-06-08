@@ -31,11 +31,13 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const course = await prisma.course.findFirst({
     where: {
       id: courseId,
-      OR: [
-        { professorId: user.id },
-        { tas: { some: { userId: user.id } } },
-        { enrollments: { some: { studentId: user.id, isActive: true } } }
-      ]
+      ...(user.role !== 'ADMIN' && {
+        OR: [
+          { professorId: user.id },
+          { tas: { some: { userId: user.id } } },
+          { enrollments: { some: { studentId: user.id, isActive: true } } }
+        ]
+      })
     }
   });
 
@@ -163,11 +165,13 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const course = await prisma.course.findFirst({
     where: {
       id: courseId,
-      OR: [
-        { professorId: user.id },
-        { tas: { some: { userId: user.id } } },
-        { enrollments: { some: { studentId: user.id, isActive: true } } }
-      ]
+      ...(user.role !== 'ADMIN' && {
+        OR: [
+          { professorId: user.id },
+          { tas: { some: { userId: user.id } } },
+          { enrollments: { some: { studentId: user.id, isActive: true } } }
+        ]
+      })
     }
   });
 
