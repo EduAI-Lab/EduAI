@@ -1,6 +1,6 @@
 import prisma from "~/lib/prisma.server";
 import { auth } from "~/lib/auth/server";
-import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
+import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import {
   buildCourseListFilter,
   getAuthorizedUnits,
@@ -19,11 +19,27 @@ import {
 
 
 /**
- * GET /api/courses — list active courses scoped to the caller (§5):
- * ADMIN all; UNIT_ADMIN authorized units; INSTRUCTOR/TA enrolled;
- * STUDENT enrolled + published.
+ * GET /api/courses — list active courses.
+ *
+ * Auth:
+ *   - Service key (Authorization: Bearer EDUAI_API_KEY): unrestricted — used by AI Tutor
+ *     to list importable courses without requiring an admin session.
+ *   - x-api-key / user session: scoped to the caller (§5): ADMIN all;
+ *     UNIT_ADMIN authorized units; INSTRUCTOR/TA enrolled; STUDENT enrolled + published.
  */
 export async function getCourses(request: Request) {
+  // Service key path: AI Tutor and other extensions call this with Authorization: Bearer
+  if (request.headers.get("Authorization")?.startsWith("Bearer ")) {
+    const serviceKeyGuard = await requireServiceKey(request);
+    if (serviceKeyGuard) return serviceKeyGuard;
+    const courses = await prisma.course.findMany({ where: { deletedAt: null } });
+    return new Response(JSON.stringify({ courses }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" } as const,
+    });
+  }
+
+  // x-api-key / session path (admin UI and direct API access)
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
   if (apiKeyGuard) return apiKeyGuard;
 
