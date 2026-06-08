@@ -6,10 +6,23 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 
 
-## [Week 5 — June 2–6, 2026]
+## [Week 6 — June 7–13, 2026]
 
 ### Added
 
+
+### Fixed
+
+
+---
+
+## [Week 5 — June 2–6, 2026]
+
+### Added
+- [core] ui: Add instructor Canvas connect card on Settings → API Keys — `CanvasIntegrationSettings` wires `GET/POST/DELETE /api/canvas/*` with session cookie; Canvas URL, personal access token, and test mode; connected/disconnected status (#472, @GlowyBlack 2026-06-07)
+- [core] tests: Add `CanvasIntegrationSettings.test.tsx` RTL coverage for connect/disconnect UI (mocked `~/lib/canvas/client`); document canvas unit/integration suites in `TESTS.md` (2026-06-07)
+- [monorepo] docs: Add Canvas roster sync design draft (`docs/implementations/canvas-roster-sync-design.md`) — MVP sync-enrollments flow, staging table, and post-CWL enrollment linking (#459, @GlowyBlack, 2026-06-05)
+- [core] api: Implement Canvas API key storage for instructors (#381) — `canvas_integrations` table with AES-256-GCM encrypted tokens; `GET /api/canvas/integration`, `POST /api/canvas/connect` (probes `users/self/profile` before save), `DELETE /api/canvas/disconnect`; session auth for `INSTRUCTOR`/`ADMIN`; unit + integration tests.(#459, @GlowyBlack, 2026-06-05)
 - [monorepo] docs: Add Canvas integration strategy report — CWL-first access, Canvas REST roster sync MVP (course users + profile `primary_email` fallback), Question Maker REST for quizzes; LTI 1.3 documented as deferred until in-Canvas launch is required; local API validation notes and UBC pilot checklist. Added Canvas LTI vs API key technical research — endpoint reference, PowerShell/`curl.exe` testing notes, pros/cons, implementation checklist; links to `docs/implementations/lti-canvas-integration-report.md`. Add Canvas API integration guide — WSL + Canvas LMS `docker_dev_setup.sh`, `docker-compose.override.yml` host port mapping (e.g. `8080:80` to avoid Core on 3000), Question Maker connect/API verification, Docker vs host dev, troubleshooting. (#447, @glowyblack, 2026-06-03)
 - [core] ui: Add presentational skeleton for all 32 EduAI Core domain components — exported `*Props` types, route-owned I/O for materials upload, course selector, API key settings, and Ollama model fetch; 29 Vitest + RTL component tests under `apps/core/app/tests/unit/`. (#437, #438, #385, @ebabar5 @yta3216 @Ayyhab, 2026-06-03)
 - [core] ui: Add empty-state rows to admin AI models and providers tables (`No models found.`, `No providers found.`). (#438, @yta3216, 2026-06-03)
@@ -42,6 +55,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [monorepo] infra: Unify shared infrastructure dependencies — pin `react`, `react-dom`, `zod`, `clsx`, and `class-variance-authority` via root npm `overrides` so they resolve to a single copy across all workspaces; hoist `typescript ^5.8.3`, `@types/node ^22`, `tsx ^4.19.4`, `nodemon ^3.1.10` to root `devDependencies` and remove per-workspace declarations from `edu-ai`, `ai-tutor`, `ai-tutor-server`, `question-maker-frontend`, and `question-maker-backend`; add `syncpack ^13` for ongoing version-drift detection. (@evanbones, 2026-06-03)
 
 ### Fixed
+- [core] api: Harden Canvas connect path — SSRF guard on `canvasUrl` (HTTPS required except local dev hosts), stricter AES blob format validation, generic 500 responses in production, explicit non–test-mode `apiKey` handling; expand canvas route integration tests (#459, @GlowyBlack, 2026-06-06)
 - [monorepo] infra: Replace em dash with hyphen in `scripts/dev-db.sh` Docker startup message to avoid PowerShell parse errors on Windows. (#438, @yta3216, 2026-06-03)
 - [question-maker] api: Fix variant push to Core — support CUID string primary topic ids, lowercase `difficulty` / `reasoningLevel` enum values, return Core topic ids in the `INVALID_TOPIC_IDS` response, count name-updated topics in the sync-topics synced total, query JSON `question_order` with the `->>` operator, and wrap the cursor insert in a savepoint to survive a unique-key race. (#453, @abdullahmoh21, 2026-06-01)
 - [question-maker] ui: Remove the local admin bug-reports page (`BugReportsAdminPage`, `/admin/bug-reports` route) and all navigation entry-points (`ProfileCoursesDialog`, `TopNavigation`) — the local Sequelize `BugReport` model was removed as part of centralization; reports are now written exclusively to Core, so the GET/PATCH admin routes no longer exist and the page was unreachable. (@evanbones, 2026-06-03)
