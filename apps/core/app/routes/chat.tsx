@@ -6,10 +6,8 @@ import { ChatWelcome } from "~/components/chat/chat-welcome";
 import { ChatMessage } from "~/components/chat/chat-message";
 import { ChatInput } from "~/components/chat/chat-input";
 import { ChatTypingIndicator } from "~/components/chat/chat-typing-indicator";
-import { SystemPromptSettings } from "~/components/chat/system-prompt-settings";
+import { ChatHeaderControls } from "~/components/chat/chat-header-controls";
 import { ApiKeySettings } from "~/components/chat/api-key-settings";
-import { Switch } from "~/components/ui/switch";
-import { Label } from "~/components/ui/label";
 import { useApiKeys } from "~/hooks/use-api-keys";
 import { AppSidebar } from "~/components/app-sidebar";
 import { SiteHeader } from "~/components/site-header";
@@ -179,37 +177,29 @@ export default function Chat() {
       style={
         {
           "--sidebar-width": "calc(var(--spacing) * 72)",
-          "--header-height": "calc(var(--spacing) * 12)",
+          "--header-height": "calc(var(--spacing) * 14)",
         } as React.CSSProperties
       }
     >
       <AppSidebar variant="inset" user={user} />
       <SidebarInset>
-        <SiteHeader />
+        <SiteHeader
+          title="Chat"
+          actions={
+            <ChatHeaderControls
+              adhdAssist={adhdAssist}
+              onAdhdAssistChange={setAdhdAssist}
+              systemPrompt={systemPrompt}
+              onSystemPromptSave={handleSystemPromptSave}
+            />
+          }
+        />
         <div className="flex flex-col h-[calc(100vh-var(--header-height))] bg-gradient-to-br from-background via-background to-muted/20">
           {/* Main content area */}
           <div className="flex-1 flex flex-col min-h-0 relative">
             <div className="h-full overflow-y-auto scrollbar-hover">
               <div className="px-4 py-6">
                 <div className="max-w-4xl mx-auto space-y-6">
-                  <div className="flex items-center justify-end gap-4">
-                    <div className="flex items-center gap-2">
-                      <Switch
-                        id="adhd-assist"
-                        checked={adhdAssist}
-                        onCheckedChange={(checked) => setAdhdAssist(Boolean(checked))}
-                        aria-label="Assistive mode"
-                      />
-                      <Label htmlFor="adhd-assist" className="text-sm">
-                        Assistive mode {adhdAssist ? "On" : "Off"}
-                      </Label>
-                    </div>
-                    <SystemPromptSettings
-                      systemPrompt={systemPrompt}
-                      onSave={handleSystemPromptSave}
-                    />
-                  </div>
-
                   {messages.length === 0 ? (
                     <ChatWelcome
                       selectedModelInfo={selectedModelInfo}

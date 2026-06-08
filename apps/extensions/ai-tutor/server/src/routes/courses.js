@@ -8,7 +8,7 @@
  * Callers: Mounted under `/api`; consumed by the home, instructor, and student
  *   list pages plus the course-import dialogs.
  * Gotchas:
- *   - Listing is role-divergent: PROFESSOR sees all assigned courses regardless
+ *   - Listing is role-divergent: INSTRUCTOR sees all assigned courses regardless
  *     of publish state; STUDENT only sees `isPublished` courses they're enrolled
  *     in, with progress computed per course (N+1 by design — kept here, may
  *     warrant batching if course counts grow).
@@ -31,32 +31,29 @@ import { mapCourseOffering, mapProgressData } from '../utils/mappers.js';
 import { cloneCourseContent, cloneLessonsFromOffering } from '../services/courseCloning.js';
 import { calculateCourseProgress } from '../services/progressCalculation.js';
 import { findEduAiCourseById, listEduAiCourses } from '../services/eduaiClient.js';
-import { getEduAiAccessTokenForUser } from '../services/eduaiAuth.js';
 import { syncExternalCourseTopics } from '../services/topicSync.js';
 import { syncCourseEnrollments } from '../services/enrollmentSync.js';
 
 const router = express.Router();
 
 function isSupportedCourseRole(role) {
-  return role === 'PROFESSOR' || role === 'STUDENT';
+  return role === 'INSTRUCTOR' || role === 'STUDENT';
 }
 
 /**
  * GET /eduai/courses — list importable EduAI courses for the instructor.
  *
- * Auth: PROFESSOR.
+ * Auth: INSTRUCTOR.
  * Returns: EduAI course descriptors minus any already imported by this
  *   instructor (de-duped via local `externalId`).
  *
  * Why: filtering by THIS instructor (not globally) lets multiple instructors
  * import the same EduAI course independently into their own offerings.
  */
-router.get('/eduai/courses', requireRole('PROFESSOR'), async (req, res) => {
+router.get('/eduai/courses', requireRole('INSTRUCTOR'), async (req, res) => {
   try {
-    const eduAiAccessToken = await getEduAiAccessTokenForUser(req.user?.id);
-
-    // Fetch available courses from EduAI
-    const courses = await listEduAiCourses(eduAiAccessToken);
+    // Fetch available courses from Core using the service key
+    const courses = await listEduAiCourses();
 
     // Exclude any EduAI course already imported by this instructor
     // We identify imported ones via CourseOffering.externalId (source id) scoped to the instructor
@@ -86,8 +83,8 @@ router.get('/eduai/courses', requireRole('PROFESSOR'), async (req, res) => {
 /**
  * GET /courses — list courses for the current user.
  *
- * Auth: PROFESSOR or STUDENT.
- * Returns: PROFESSOR → all instructor-assigned courses (no progress);
+ * Auth: INSTRUCTOR or STUDENT.
+ * Returns: INSTRUCTOR → all instructor-assigned courses (no progress);
  *   STUDENT → published enrolled courses each with `progress`.
  *
  * Why: the two roles want fundamentally different shapes, so progress
@@ -101,7 +98,7 @@ router.get('/courses', async (req, res) => {
   }
 
   try {
-    if (authUser.role === 'PROFESSOR') {
+    if (authUser.role === 'INSTRUCTOR') {
       // Instructors see all their courses regardless of publish status (no progress)
       const courses = await prisma.courseOffering.findMany({
         where: { instructors: { some: { userId: authUser.id } } },
@@ -139,7 +136,7 @@ router.get('/courses', async (req, res) => {
 /**
  * POST /courses/import-external — create a CourseOffering mirroring an EduAI course.
  *
- * Auth: PROFESSOR.
+ * Auth: INSTRUCTOR.
  * Side effects: creates CourseOffering + CourseInstructor inside a transaction,
  *   then fans out parallel topic + enrollment sync to EduAI; returns 409 if the
  *   instructor has already imported this externalCourseId.
@@ -148,7 +145,7 @@ router.get('/courses', async (req, res) => {
  * for one of {topics, enrollments} doesn't block the other or roll back the
  * import. The instructor can rerun sync explicitly afterwards.
  */
-router.post('/courses/import-external', requireRole('PROFESSOR'), async (req, res) => {
+router.post('/courses/import-external', requireRole('INSTRUCTOR'), async (req, res) => {
   const instructor = req.user;
   const { externalCourseId } = req.body || {};
 
@@ -157,8 +154,7 @@ router.post('/courses/import-external', requireRole('PROFESSOR'), async (req, re
   }
 
   try {
-    const eduAiAccessToken = await getEduAiAccessTokenForUser(instructor.id);
-    const externalCourse = await findEduAiCourseById(externalCourseId, eduAiAccessToken);
+    const externalCourse = await findEduAiCourseById(externalCourseId);
     if (!externalCourse) {
       return res.status(404).json({ error: 'EduAI course not found' });
     }
@@ -212,11 +208,10 @@ router.post('/courses/import-external', requireRole('PROFESSOR'), async (req, re
       return offering;
     });
 
-    // Sync topics and enrollments from EduAI concurrently (independent operations)
-    const syncOpts = { accessToken: eduAiAccessToken };
+    // Sync topics and enrollments from Core concurrently (independent operations)
     const [topicResult, enrollmentResult] = await Promise.allSettled([
-      syncExternalCourseTopics(created.id, syncOpts),
-      syncCourseEnrollments(created.id, syncOpts),
+      syncExternalCourseTopics(created.id),
+      syncCourseEnrollments(created.id),
     ]);
     if (topicResult.status === 'rejected') {
       console.error('[eduai] Failed to sync topics for imported course', topicResult.reason);
@@ -274,14 +269,14 @@ router.get('/courses/:courseId', async (req, res) => {
 /**
  * POST /courses — create a native course, optionally cloning content from another.
  *
- * Auth: PROFESSOR; if `sourceCourseId` is given the caller must instruct it.
+ * Auth: INSTRUCTOR; if `sourceCourseId` is given the caller must instruct it.
  * Side effects: creates CourseOffering + CourseInstructor; if cloning, deep-
  *   copies modules/lessons/activities via `cloneCourseContent`.
  *
  * Why: clone path lets instructors duplicate a previous term's course without
  * re-importing from EduAI or rebuilding lessons by hand.
  */
-router.post('/courses', requireRole('PROFESSOR'), async (req, res) => {
+router.post('/courses', requireRole('INSTRUCTOR'), async (req, res) => {
   const instructor = req.user;
   const { title, description, sourceCourseId, startDate, endDate } = req.body || {};
 
@@ -348,7 +343,7 @@ router.post('/courses', requireRole('PROFESSOR'), async (req, res) => {
   }
 });
 
-router.patch('/courses/:courseId', requireRole('PROFESSOR'), async (req, res) => {
+router.patch('/courses/:courseId', requireRole('INSTRUCTOR'), async (req, res) => {
   const instructor = req.user;
   const courseId = Number(req.params.courseId);
   if (!Number.isFinite(courseId)) {
@@ -389,7 +384,7 @@ router.patch('/courses/:courseId', requireRole('PROFESSOR'), async (req, res) =>
  * POST /courses/:courseId/import — selectively clone modules or lessons into
  * an existing course.
  *
- * Auth: PROFESSOR on both source and destination courses.
+ * Auth: INSTRUCTOR on both source and destination courses.
  * Body: either `{ sourceCourseId, moduleIds }` to clone whole modules, or
  *   `{ lessonIds, targetModuleId }` to clone individual lessons into a chosen
  *   destination module.
@@ -399,7 +394,7 @@ router.patch('/courses/:courseId', requireRole('PROFESSOR'), async (req, res) =>
  * lessons have no implicit destination, whereas module-level imports preserve
  * their structure.
  */
-router.post('/courses/:courseId/import', requireRole('PROFESSOR'), async (req, res) => {
+router.post('/courses/:courseId/import', requireRole('INSTRUCTOR'), async (req, res) => {
   const instructor = req.user;
   const courseId = Number(req.params.courseId);
   if (!Number.isFinite(courseId)) {
@@ -539,13 +534,13 @@ router.post('/courses/:courseId/import', requireRole('PROFESSOR'), async (req, r
 /**
  * PATCH /courses/:courseId/publish — flip course to published.
  *
- * Auth: PROFESSOR on the course.
+ * Auth: INSTRUCTOR on the course.
  *
  * Why: intentionally non-cascading. Publishing a course doesn't auto-publish
  * its modules/lessons; the instructor must opt them in individually so a
  * half-finished module can't leak to students.
  */
-router.patch('/courses/:courseId/publish', requireRole('PROFESSOR'), async (req, res) => {
+router.patch('/courses/:courseId/publish', requireRole('INSTRUCTOR'), async (req, res) => {
   const instructor = req.user;
   const courseId = Number(req.params.courseId);
   if (!Number.isFinite(courseId)) {
@@ -574,7 +569,7 @@ router.patch('/courses/:courseId/publish', requireRole('PROFESSOR'), async (req,
 /**
  * PATCH /courses/:courseId/unpublish — flip course unpublished, cascading down.
  *
- * Auth: PROFESSOR on the course.
+ * Auth: INSTRUCTOR on the course.
  * Side effects: in a single transaction sets `isPublished=false` on the
  *   course, all its modules, and all lessons within those modules.
  *
@@ -582,7 +577,7 @@ router.patch('/courses/:courseId/publish', requireRole('PROFESSOR'), async (req,
  * immediately hide ALL child content from students; without the cascade a
  * module/lesson could remain reachable by direct URL.
  */
-router.patch('/courses/:courseId/unpublish', requireRole('PROFESSOR'), async (req, res) => {
+router.patch('/courses/:courseId/unpublish', requireRole('INSTRUCTOR'), async (req, res) => {
   const instructor = req.user;
   const courseId = Number(req.params.courseId);
   if (!Number.isFinite(courseId)) {
