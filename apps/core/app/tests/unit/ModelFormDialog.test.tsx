@@ -232,6 +232,24 @@ describe("ModelFormDialog — form actions", () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
+  it("hides supportsTools toggle for small models", () => {
+    const smallModel: AIModel = {
+      ...ollamaModel,
+      modelId: "qwen2.5:1.5b",
+      name: "Qwen 2.5 1.5B",
+    };
+    render(
+      <ModelFormDialog
+        open={true}
+        onOpenChange={vi.fn()}
+        model={smallModel}
+        providers={[ollamaProvider]}
+        onSubmit={vi.fn()}
+      />,
+    );
+    expect(screen.queryByLabelText("Supports Tools")).not.toBeInTheDocument();
+  });
+
   it("pre-populates the Model ID field from the model prop", () => {
     render(
       <ModelFormDialog

@@ -1,6 +1,7 @@
 import prisma from "~/lib/prisma.server";
 import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
+import { allowsSupportsToolsToggle } from "~/lib/ai/model-tool-capability";
 import { CreateAIModelSchema, UpdateAIModelSchema } from "~/lib/ai/schemas";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 
@@ -49,6 +50,16 @@ async function handleRequest(request: Request) {
             details: result.error.flatten(),
           }),
           { status: 400, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      if (
+        result.data.supportsTools &&
+        !allowsSupportsToolsToggle(result.data.modelId, result.data.type)
+      ) {
+        return new Response(
+          JSON.stringify({ error: "Small or non-chat models cannot have supportsTools enabled" }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
         );
       }
 
@@ -104,6 +115,22 @@ async function handleRequest(request: Request) {
             details: result.error.flatten(),
           }),
           { status: 400, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      const existingModel = await prisma.aIModel.findUnique({ where: { id: modelId } });
+      if (!existingModel) {
+        return new Response("Model not found", { status: 404 });
+      }
+
+      const nextModelId = result.data.modelId ?? existingModel.modelId;
+      const nextType = result.data.type ?? existingModel.type;
+      const nextSupportsTools = result.data.supportsTools ?? existingModel.supportsTools;
+
+      if (nextSupportsTools && !allowsSupportsToolsToggle(nextModelId, nextType)) {
+        return new Response(
+          JSON.stringify({ error: "Small or non-chat models cannot have supportsTools enabled" }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
         );
       }
 
