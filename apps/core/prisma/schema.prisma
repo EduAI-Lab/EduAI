@@ -12,27 +12,30 @@ datasource db {
 }
 
 model User {
-  id                String                 @id @default(cuid())
-  email             String                 @unique
-  name              String
-  image             String?
-  role              UserRole
-  isActive          Boolean                @default(true)
-  createdAt         DateTime               @default(now())
-  updatedAt         DateTime               @updatedAt
-  emailVerified     Boolean                @default(false)
-  authorizedUnits   String[]
-  accounts          Account[]
-  aiInteractions    AIInteraction[]
-  enrollments       Enrollment[]
-  questions         Question[]
-  sessions          Session[]
-  providerSettings  UserProviderSettings[]
-  apiKeys           apikey[]
-  chats             Chat[]
-  externalUsers     ExternalUser[]
-  bugReports        BugReport[]
-  canvasIntegration CanvasIntegration?
+  id                         String                 @id @default(cuid())
+  email                      String                 @unique
+  name                       String
+  image                      String?
+  role                       UserRole
+  /// UBC student number; matches Canvas sis_user_id for enrollment linking.
+  studentId                  String?                @unique
+  isActive                   Boolean                @default(true)
+  createdAt                  DateTime               @default(now())
+  updatedAt                  DateTime               @updatedAt
+  emailVerified              Boolean                @default(false)
+  authorizedUnits            String[]
+  accounts                   Account[]
+  aiInteractions             AIInteraction[]
+  enrollments                Enrollment[]
+  questions                  Question[]
+  sessions                   Session[]
+  providerSettings           UserProviderSettings[]
+  apiKeys                    apikey[]
+  chats                      Chat[]
+  externalUsers              ExternalUser[]
+  bugReports                 BugReport[]
+  canvasIntegration          CanvasIntegration?
+  syncedCanvasRosterMembers  CanvasRosterMember[]
 
   @@map("user")
 }
@@ -104,10 +107,11 @@ model Course {
   updatedAt      DateTime         @updatedAt
   aiInstructions String           @default("")
   aiInteractions AIInteraction[]
-  enrollments    Enrollment[]
-  materials      CourseMaterial[]
-  topics         CourseTopic[]
-  questions      Question[]
+  enrollments         Enrollment[]
+  materials           CourseMaterial[]
+  topics              CourseTopic[]
+  questions           Question[]
+  canvasRosterMembers CanvasRosterMember[]
 
   @@unique([code, startDate, section])
   @@index([externalSource, externalId])
@@ -426,6 +430,30 @@ model CanvasIntegration {
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("canvas_integrations")
+}
+
+/// Staging table for Canvas roster members before they link to an EduAI User.
+model CanvasRosterMember {
+  id             String         @id @default(cuid())
+  courseId       String
+  canvasUserId   String
+  sisUserId      String?
+  email          String?
+  displayName    String?
+  role           EnrollmentRole
+  syncedByUserId String
+  isActive       Boolean        @default(true)
+  lastSeenAt     DateTime
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  course         Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  syncedBy       User           @relation(fields: [syncedByUserId], references: [id])
+
+  @@unique([courseId, canvasUserId, role])
+  @@index([email])
+  @@index([sisUserId])
+  @@index([canvasUserId])
+  @@map("canvas_roster_members")
 }
 
 model ExternalUser {
