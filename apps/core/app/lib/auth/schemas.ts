@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { DepartmentSchema } from "~/lib/departments";
+import { UnitSchema } from "~/lib/units";
 
 export const signInSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
@@ -69,7 +69,7 @@ export const updateUserSchema = z.object({
   emailVerified: z.boolean().optional(),
   // #297: unit scoping for UNIT_ADMIN targets; values validated against the
   // canonical subject codes (§19).
-  authorizedUnits: z.array(DepartmentSchema).optional(),
+  authorizedUnits: z.array(UnitSchema).optional(),
 });
 
 /** #297: self-service profile edits via /api/me — name and image only. */
