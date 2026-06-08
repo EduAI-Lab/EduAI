@@ -8,8 +8,8 @@
 | **Audience**        | Engineering, product                                                                   |
 | **Epic**            | EduAICore #59 (platform centralization)                                                |
 | **Depends on**      | Core Canvas connect API (#381), settings UI (#472)                                     |
-| **Constraint**      | **CWL not available yet** — do not rely on `User.email` for enrollment matching in MVP |
-| **MVP deliverable** | Instructor **Sync enrollments** button → courses + roster staging in Core              |
+| **Constraint**      | **CWL not available yet** — do not auto-match on `User.email`; use student-number linker in MVP |
+| **MVP deliverable** | Instructor **Sync enrollments** + student **student-number link** → staged roster + `Enrollment` rows |
 
 
 **Related docs:**
@@ -27,13 +27,13 @@
 
 ## 1. Purpose
 
-This document specifies **how Core syncs Canvas courses and rosters** when an instructor clicks **Sync enrollments**, and how student `Enrollment` rows will be linked **later** (after CWL or an explicit student-number flow).
+This document specifies **how Core syncs Canvas courses and rosters** when an instructor clicks **Sync enrollments**, and how students link via **student number (MVP)** or **CWL (post-MVP)**.
 
 It answers:
 
 1. What happens when an instructor clicks **Sync enrollments** (**MVP**).
 2. What data we store in staging before a student has an EduAI account (**MVP**).
-3. How students eventually get `Enrollment` rows (**post-MVP** until CWL or approved linker ships).
+3. How students get `Enrollment` rows (**MVP:** student-number link; **post-MVP:** CWL).
 4. What we deliberately **do not** do (ghost users, synchronous bulk profile fetch, unverified email matching).
 
 This is a **design draft** for teammate feedback. Implementation issue numbers (e.g. #398) may be assigned after review.
@@ -48,10 +48,10 @@ This is a **design draft** for teammate feedback. Implementation issue numbers (
 | Half            | Source                              | Question it answers            | MVP?              |
 | --------------- | ----------------------------------- | ------------------------------ | ----------------- |
 | **Roster sync** | Canvas REST (instructor token)      | Who should be in which course? | **Yes**           |
-| **Login link**  | CWL (future) or verified student id | Who is this person on EduAI?   | **No** (deferred) |
+| **Login link**  | Student number (MVP) or CWL (future) | Who is this person on EduAI?   | **Partial** (student-number linker in MVP) |
 
 
-For **MVP**, sync completes the first half only: Core has courses + staged roster. Student `Enrollment` linking ships when identity is trustworthy (CWL) or via an explicit MVP linker (student number — see §2.4).
+For **MVP**, sync completes the first half (courses + staged roster). Students gain `Enrollment` rows via the **student-number linker** (§6.3) until CWL ships. CWL-based email/SIS matching remains post-MVP (§6.1–6.2).
 
 ### 2.2 Performance principle
 
@@ -59,7 +59,6 @@ Sync must stay **fast** for large classes (e.g. 3 courses × 200 students):
 
 - **~7–15 Canvas API calls** for that size (paginated roster lists).
 - **No per-student `/profile` calls on the sync hot path.**
-- Optional email enrichment runs **async** or **at login**, only for rows missing email.
 - Optional email enrichment runs **async**, only for rows missing email — **not required for MVP**.
 
 ### 2.3 Identity matching — full product (after CWL)
@@ -69,6 +68,21 @@ When CWL is live, matching priority becomes:
 1. **Email** — CWL-verified `User.email` ↔ staged roster email.
 2. **SIS ID from IdP** — CWL student number ↔ Canvas `sis_user_id`.
 3. **Manual fallback** — user enters student number ↔ `sis_user_id`.
+
+### 2.3.1 Without CWL — what actually works?
+
+CWL is not available in MVP. Of the matching strategies in §2.3 and §6, **only manual student-number linking (§6.3) is viable** for connecting a logged-in `User` to staged roster rows:
+
+| Strategy                         | Works without CWL? | Notes                                                                 |
+| -------------------------------- | ------------------ | --------------------------------------------------------------------- |
+| Email ↔ staging email            | **No**             | Requires CWL-verified institutional email (§6.1)                      |
+| CWL student number ↔ `sis_user_id` | **No**           | Requires CWL attribute on `User` (§6.2)                               |
+| Manual student number ↔ `sis_user_id` | **Yes**       | One input field + `POST /api/canvas/link-roster` — **MVP linker**     |
+| Canvas account search by email   | **No**             | Deferred; not validated for instructor PAT on UBC (§6.5)              |
+
+We are not aware of another trustworthy linker without CWL. MVP assumes CWL stays unavailable and ships the student-number flow alongside sync.
+
+**Pre-MVP blocker:** Confirm on a real `canvas.ubc.ca` course that Canvas `sis_user_id` equals the student number students know and type (§9 #2). If it does not, the linker design must change before MVP ships.
 
 ### 2.4 MVP scope (no CWL)
 
@@ -83,6 +97,8 @@ When CWL is live, matching priority becomes:
 | **Instructor enrollment**   | Syncing professor gets `Enrollment` role `INSTRUCTOR` on each synced course |
 | **Re-sync**                 | Deactivate staging rows dropped from Canvas roster                          |
 | **Sync status in UI**       | Counts, `lastSyncedAt`, error messages                                      |
+| **Student-number linker**   | `POST /api/canvas/link-roster` + UI: enter UBC student number (§6.3)        |
+| **Linker security**         | Rate-limit + audit log on link attempts (§12)                               |
 
 
 **Do not ship in MVP:**
@@ -90,19 +106,17 @@ When CWL is live, matching priority becomes:
 
 | Item                                        | Why                                                                                             |
 | ------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `**User.email` ↔ roster email matching**    | No CWL — `User.email` is not institutionally verified; anyone could register a matching address |
-| **Automatic student `Enrollment` on login** | Depends on trustworthy identity (CWL) or explicit student-number flow                           |
-| **Login hook `resolveCanvasEnrollments`**   | Deferred to post-MVP (§6)                                                                       |
+| **`User.email` ↔ roster email matching**    | Without CWL, roster email is institutional but `User.email` is often personal (e.g. Gmail) — auto-match would **silently miss** most students. Not primarily impersonation (`User.emailVerified` exists); the issue is **reliability**. |
+| **Automatic student `Enrollment` on login** | No trustworthy identity signal until CWL or explicit student-number entry                       |
+| **CWL login hook `resolveCanvasEnrollments`** | Email/SIS auto-match deferred until CWL (§6.1–6.2)                                            |
 | **Async bulk `/profile` enrichment**        | Optional; staging works with `canvasUserId` + `sis_user_id` without email                       |
 
 
-**MVP outcome for instructors:** After sync, Core has the right **courses** and a **roster snapshot** professors (and admin tools) can trust. Extensions can read staged data or wait for linker.
+**MVP outcome for instructors:** After sync, Core has the right **courses** and a **roster snapshot** professors (and admin tools) can trust.
 
-**MVP outcome for students:** They do **not** auto-gain enrollments until a follow-up issue ships (CWL linker and/or student-number link UI). That is intentional without verified identity.
+**MVP outcome for students:** After sync, they enter their **student number** once to link staged roster rows → `Enrollment` rows (§6.3). No CWL required.
 
 **Email on staging:** Still **store** roster `email` when Canvas returns it (for future CWL matching). Do **not** use it to create student `Enrollment` in MVP.
-
-**Student number (future linker):** When we add student linking without CWL, match entered student number ↔ staging `sisUserId` (see §6.3). Not part of sync-button MVP unless team explicitly adds it in the same sprint.
 
 ---
 
@@ -119,16 +133,17 @@ When CWL is live, matching priority becomes:
 6. Instructor has INSTRUCTOR Enrollment on each synced course
 ```
 
-### 3.2 Student / TA enrollment link (**post-MVP**)
-
-Not in sync-button MVP. Planned after CWL or explicit linker:
+### 3.2 Student / TA enrollment link (**MVP — student number**)
 
 ```text
 1. Professor has already synced (roster staged in Core)
-2. Student/TA signs in (CWL — preferred — or student-number link flow)
-3. Backend matches identity → creates/updates Enrollment rows
-4. Student sees courses on dashboard / in extensions
+2. Student/TA signs in (existing auth)
+3. Settings (or onboarding): enter UBC student number → POST /api/canvas/link-roster
+4. Backend matches normalize(input) ↔ staging.sisUserId → upsert Enrollment rows
+5. Student sees courses on dashboard / in extensions
 ```
+
+Post-MVP: same flow extended with CWL email/SIS auto-match on login (§6.1–6.2), reducing manual entry.
 
 ### 3.3 Re-sync
 
@@ -156,6 +171,10 @@ Instructor clicks **Sync** again (manual; no cron in v1):
 ### 4.2 New table (proposed): `CanvasRosterMember`
 
 Staging between Canvas sync and EduAI login. Holds **expected** course membership from Canvas.
+
+#### Why not use `Enrollment` for staging?
+
+`Enrollment.userId` is **NOT NULL** with a required FK to `User`. You cannot stage a roster member who has not signed up yet. Making `userId` nullable would break the `(courseId, userId)` unique constraint for real enrollments and force every access-control query to filter out pending rows. A dedicated staging table keeps **expected** Canvas membership separate from **live** EduAI enrollments until a student links (§6.3) or CWL resolves identity (§6).
 
 ```prisma
 // PROPOSED — not in schema yet; names/fields open for review
@@ -334,9 +353,7 @@ upsert Enrollment(
 )
 ```
 
-**Not in MVP:** eager link of students by `User.email` or `sisUserId` (§6.4). Staging rows are written; student `Enrollment` waits for post-MVP linker.
-
-~~Step 7 (removed from MVP): Eager link for existing EduAI users by email.~~
+**Not in MVP:** eager link of students by `User.email` (§6.4). Staging rows are written at sync; student `Enrollment` is created via student-number link (§6.3) or post-CWL auto-match.
 
 ### Step 8 — Response
 
@@ -363,13 +380,12 @@ Defer until CWL linker is planned. Not required for sync-button MVP.
 
 ---
 
-## 6. Login-time enrollment linking (**post-MVP — requires CWL or student-number flow**)
+## 6. Enrollment linking
 
-> **Not in sync-button MVP.** Core auth today has no CWL; `User.email` is not safe for automatic roster matching. Implement this section in a follow-up issue after CWL lands (or alongside an explicit student-number link UI).
+**MVP:** §6.3 student-number link (manual UI + API).  
+**Post-MVP:** §6.1–6.2 CWL login hook; §6.4 optional eager link after CWL.
 
-**Trigger (future):** Internal hook after successful CWL login, or after successful manual link.
-
-Function (proposed name): `resolveCanvasEnrollments(user: User)`
+Function (proposed name for CWL path): `resolveCanvasEnrollments(user: User)`
 
 ### 6.1 Email match (**requires CWL**)
 
@@ -394,19 +410,21 @@ if sisFromIdP:
   upsert Enrollments
 ```
 
-### 6.3 Manual link (interim without CWL)
+### 6.3 Student-number link (**MVP**)
 
-If CWL is delayed, a separate small feature can ship:
+Without CWL this is the **only** viable linker (§2.3.1). Scope is small: one endpoint + one input field; staging already captures `sisUserId` at sync.
 
 ```text
 POST /api/canvas/link-roster
   body: { studentNumber: "12345678" }
 
 normalize(input) === staging.sisUserId
-→ upsert Enrollment(s)
+→ upsert Enrollment(s) for all active staging rows for this user
 ```
 
-Copy: “Enter your UBC student number to link Canvas enrollments.” Rate-limit and audit.
+Copy: “Enter your UBC student number to link Canvas enrollments.”
+
+**MVP requirements:** rate-limit (prevent enumeration) and audit log (§12). Ship alongside sync UI.
 
 ### 6.4 Eager link on sync (optional, post-CWL)
 
@@ -429,7 +447,7 @@ Deferred; validate with instructor PAT on `canvas.ubc.ca` before use.
 | -------- | ------------------------------------- | ----------- | ---------------- |
 | 1        | CWL email ↔ staging email             | CWL         | No               |
 | 2        | CWL student number ↔ `sis_user_id`    | CWL         | No               |
-| 3        | Manual student number ↔ `sis_user_id` | Link UI     | Optional interim |
+| 3        | Manual student number ↔ `sis_user_id` | Link UI     | **Yes (MVP)**    |
 | 4        | Account search by email               | API + token | No               |
 
 
@@ -475,23 +493,23 @@ Auth: `Authorization: Bearer {decryptedToken}`
 | DELETE | `/api/canvas/disconnect`  | Remove integration |
 
 
-### 8.2 MVP (sync enrollments)
+### 8.2 MVP (sync + student link)
 
 
 | Method | Path                       | Purpose                                       |
 | ------ | -------------------------- | --------------------------------------------- |
 | POST   | `/api/canvas/sync-rosters` | Run §5 sync algorithm                         |
+| POST   | `/api/canvas/link-roster`  | Student-number link (§6.3)                    |
 | GET    | `/api/canvas/integration`  | Extend with `lastSyncedAt`, counts (optional) |
 
 
-UI (#472): **Sync enrollments** button + status on Canvas settings tab.
+UI (#472): **Sync enrollments** button + status on Canvas settings tab; student-number input for link flow.
 
 ### 8.3 Post-MVP
 
 
 | Method | Path                      | Purpose                                     |
 | ------ | ------------------------- | ------------------------------------------- |
-| POST   | `/api/canvas/link-roster` | Manual `sis_user_id` link (§6.3)            |
 | GET    | `/api/canvas/sync-status` | Optional if not merged into GET integration |
 
 
@@ -510,11 +528,21 @@ UI (#472): **Sync enrollments** button + status on Canvas settings tab.
 
 Run on **one real course** on `canvas.ubc.ca` with an instructor PAT. **Redact PII** in notes; do not commit real emails to git.
 
+### Blocker (must pass before MVP ship)
+
+| #   | Check                                                                                                      | Record | Status |
+| --- | ---------------------------------------------------------------------------------------------------------- | ------ | ------ |
+| **B1** | **`sis_user_id` === student number students know/type?** On one real course, compare Canvas `sis_user_id` to the number students enter for registration/services. If not equal, student-number linker MVP shape is invalid. |        | **Open** |
+
+The whole student-number linker depends on this. Treat as a **go/no-go gate**, not a nice-to-have checklist item.
+
+### Other checks
+
 
 | #   | Check                                                                           | Record           |
 | --- | ------------------------------------------------------------------------------- | ---------------- |
 | 1   | Roster `include[]=email` — what % of students have `email` on the list row?     |                  |
-| 2   | Is `sis_user_id` populated? Does it match the student number students know?     |                  |
+| 2   | Is `sis_user_id` populated on most roster rows? (see **B1** for format match)   |                  |
 | 3   | For one student without list email: does `/profile` return `primary_email`?     |                  |
 | 4   | Does CWL email equal Canvas `primary_email` / roster email?                     | (when CWL ships) |
 | 5   | Does `GET /accounts/self/users?search_term={email}` work with instructor token? |                  |
@@ -532,7 +560,7 @@ Please comment on these in PR/issue review. **MVP-focused items first.**
 
 | #      | Question                                                             | Proposal                                                      | Alternatives                                     |
 | ------ | -------------------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------ |
-| **M1** | **MVP = sync button only?**                                          | Yes — no student auto-enroll until CWL or link UI             | Include student-number link in same MVP          |
+| **M1** | **MVP = sync + student-number linker?**                              | **Yes** — sync button + `link-roster` (team review consensus)   | Sync only; wait for CWL                          |
 | **M2** | **Button label**                                                     | "Sync enrollments"                                            | "Sync courses", "Sync rosters"                   |
 | **M3** | **Expose staging to UI?**                                            | Instructor sees member count only                             | Admin roster table view                          |
 | 1      | **Shared Core course** when two instructors sync same Canvas course? | One `Course` per `externalId`; both get INSTRUCTOR enrollment | Duplicate courses per instructor                 |
@@ -555,7 +583,7 @@ Please comment on these in PR/issue review. **MVP-focused items first.**
 | ----------------------------------- | ----------------------------------------------------------------------------------- |
 | Student not on EduAI yet            | Staging row only; no `User`, no `Enrollment` (**MVP**)                              |
 | Student logs in before prof syncs   | No enrollments until sync (**MVP**)                                                 |
-| Student logs in after sync (no CWL) | No auto-enroll in MVP; needs link UI or CWL (**by design**)                         |
+| Student logs in after sync (no CWL) | No auto-enroll; student enters number via link UI (§6.3)                              |
 | Email changes in Canvas             | Re-sync updates staging; CWL linker re-links later                                  |
 | Duplicate email on two Canvas users | Log warning; use `sis_user_id` when linker ships                                    |
 | `sis_user_id` null on roster        | Store row anyway; linker may use email after CWL                                    |
@@ -572,7 +600,7 @@ Please comment on these in PR/issue review. **MVP-focused items first.**
 - Expect PIA or amendment before production roster storage (see [strategy report §7](./lti-canvas-integration-report.md)).
 - Store minimum fields needed for matching.
 - Never return decrypted Canvas token to client.
-- Manual student-number link should rate-limit and audit (prevent enumeration).
+- **MVP:** student-number link **must** rate-limit and audit (prevent enumeration) — not post-MVP polish.
 - Normalize and compare `sis_user_id` as string; do not expose whether a given student number exists in a course without auth.
 
 ---
@@ -582,28 +610,28 @@ Please comment on these in PR/issue review. **MVP-focused items first.**
 
 | Phase  | Scope                     | Deliverable                                                     | MVP?    |
 | ------ | ------------------------- | --------------------------------------------------------------- | ------- |
+| **P0** | UBC blocker check         | Verify **B1**: `sis_user_id` === student number (§9)          | **Gate** |
 | **P1** | Schema + sync API         | `CanvasRosterMember`, `POST sync-rosters`, Canvas client, tests | **Yes** |
-| **P2** | Sync UI                   | Sync enrollments button + status (#472)                         | **Yes** |
-| **P3** | CWL + login linker        | `resolveCanvasEnrollments`, email/sis match (§6)                | No      |
-| **P4** | Interim linker (optional) | Student-number link API/UI if CWL delayed                       | No      |
-| **P5** | Pilot + polish            | UBC checklist §9, async email if needed, CHANGELOG              | No      |
+| **P2** | Sync + link UI            | Sync button + student-number link UI (#472), `POST link-roster` | **Yes** |
+| **P3** | Linker hardening          | Rate-limit + audit on link-roster (§12)                         | **Yes** |
+| **P4** | CWL + login linker        | `resolveCanvasEnrollments`, email/sis match (§6.1–6.2)          | No      |
+| **P5** | Pilot + polish            | Remaining §9 checks, async email if needed, CHANGELOG           | No      |
 
 
-**MVP = P1 + P2.** Instructor can connect Canvas and sync enrollments; roster lives in Core staging.
+**MVP = P0 (pass) + P1 + P2 + P3.** Instructor syncs rosters; students link via student number; enrollments created.
 
 ---
 
 ## 14. Out of scope (MVP)
 
-- CWL integration and automatic student enrollment on login
-- Matching on unverified `User.email`
+- CWL integration and automatic student enrollment on login (email/SIS auto-match)
+- Matching on `User.email` without CWL (unreliable — personal vs institutional email)
 - LTI launch / NRPS
 - Creating `User` records for every Canvas roster member at sync time
 - Automatic scheduled sync (cron) — manual re-sync in MVP
 - Quiz export/import (Question Maker — separate)
 - Institutional Canvas developer key (until UBC approves)
 - File/material sync from Canvas
-- `POST /api/canvas/link-roster` (unless explicitly pulled into MVP — see §10 M1)
 
 ---
 
@@ -630,7 +658,7 @@ sequenceDiagram
   Core->>Enroll: upsert INSTRUCTOR for prof
   Core-->>Prof: coursesSynced, membersSynced
 
-  Note over Core,Staging: Post-MVP: CWL or student-number link creates student Enrollments
+  Note over Core,Staging: MVP: student-number link; post-MVP: CWL auto-match
 ```
 
 
@@ -644,5 +672,6 @@ sequenceDiagram
 | ------- | ---------- | ---------------------------------------------------------------------- |
 | 0.1     | 2026-06-04 | Initial draft for team review                                          |
 | 0.2     | 2026-06-04 | MVP scoped to sync enrollments button; no CWL / no User.email matching |
+| 0.3     | 2026-06-05 | PR #459 review: student-number linker in MVP; email-match rationale; staging “why”; B1 blocker |
 
 
