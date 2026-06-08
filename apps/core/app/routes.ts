@@ -12,7 +12,6 @@ export default [
   route("/dashboard", "routes/dashboard.tsx"),
   route("/chat", "routes/chat.tsx"),
   route("/settings", "routes/settings.tsx"),
-  route("/api/canvas/*", "routes/api/canvas.$.ts"),
   route("/api/chat", "routes/api/chat.ts"),
   route("/api/chats/:chatId", "routes/api/chats.$chatId.ts"),
   route("/courses", "routes/courses.tsx"),
