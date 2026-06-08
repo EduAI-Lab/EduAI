@@ -31,7 +31,8 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY apps/extensions/ai-tutor/server/src    ./apps/extensions/ai-tutor/server/src
 COPY apps/extensions/ai-tutor/server/tests  ./apps/extensions/ai-tutor/server/tests
 COPY apps/extensions/ai-tutor/server/prisma ./apps/extensions/ai-tutor/server/prisma
-COPY apps/extensions/ai-tutor/server/vitest.config.js ./apps/extensions/ai-tutor/server/
+COPY apps/extensions/ai-tutor/server/vitest.config.js             ./apps/extensions/ai-tutor/server/
+COPY apps/extensions/ai-tutor/server/vitest.integration.config.js ./apps/extensions/ai-tutor/server/
 COPY apps/extensions/ai-tutor/server/tsconfig.json    ./apps/extensions/ai-tutor/server/
 COPY apps/extensions/ai-tutor/server/package.json     ./apps/extensions/ai-tutor/server/
 COPY apps/extensions/ai-tutor/server/.npmrc           ./apps/extensions/ai-tutor/server/

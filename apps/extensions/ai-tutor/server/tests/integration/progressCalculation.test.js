@@ -20,9 +20,6 @@ describe('progressCalculation service', () => {
 
     // Create and enroll a student
     const student = makeStudent();
-    await prisma.user.create({
-      data: { id: student.id, name: student.name, email: student.email, role: 'STUDENT' },
-    });
     await prisma.courseEnrollment.create({
       data: { courseOfferingId: seed.course.id, userId: student.id },
     });

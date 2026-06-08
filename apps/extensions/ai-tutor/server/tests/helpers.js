@@ -13,7 +13,7 @@ export function makeProfessor(overrides = {}) {
     id: nextId(),
     name: 'Prof Test',
     email: `prof_${counter}@test.com`,
-    role: 'PROFESSOR',
+    role: 'INSTRUCTOR',
     createdAt: new Date(),
     updatedAt: new Date(),
     emailVerified: false,
@@ -57,8 +57,6 @@ export function makeAdmin(overrides = {}) {
 
 export async function truncateAll() {
   // Use Prisma deleteMany in FK-safe order (children before parents).
-  // This goes through Prisma's standard query pipeline and properly
-  // serializes with any other pending operations.
   await prisma.aiInteractionTrace.deleteMany();
   await prisma.aiChatSession.deleteMany();
   await prisma.activityFeedback.deleteMany();
@@ -77,25 +75,13 @@ export async function truncateAll() {
   await prisma.systemPrompt.deleteMany();
   await prisma.systemSetting.deleteMany();
   await prisma.promptTemplate.deleteMany();
-  await prisma.verification.deleteMany();
-  await prisma.account.deleteMany();
-  await prisma.session.deleteMany();
-  await prisma.user.deleteMany();
 }
 
 /**
- * Seed a minimal course structure: user -> course -> instructor assignment -> module -> lesson -> topic.
+ * Seed a minimal course structure: course -> module -> lesson -> topic.
+ * If professorId is provided, a CourseInstructor record is created for them.
  */
 export async function seedMinimalCourse(professorId) {
-  const user = await prisma.user.create({
-    data: {
-      id: professorId,
-      name: 'Prof Test',
-      email: `prof_${professorId}@test.com`,
-      role: 'PROFESSOR',
-    },
-  });
-
   const course = await prisma.courseOffering.create({
     data: {
       title: 'Test Course',
@@ -104,13 +90,11 @@ export async function seedMinimalCourse(professorId) {
     },
   });
 
-  await prisma.courseInstructor.create({
-    data: {
-      courseOfferingId: course.id,
-      userId: professorId,
-      role: 'LEAD',
-    },
-  });
+  if (professorId) {
+    await prisma.courseInstructor.create({
+      data: { courseOfferingId: course.id, userId: professorId, role: 'LEAD' },
+    });
+  }
 
   const module = await prisma.module.create({
     data: {
@@ -139,7 +123,7 @@ export async function seedMinimalCourse(professorId) {
     },
   });
 
-  return { user, course, module, lesson, topic };
+  return { course, module, lesson, topic };
 }
 
 export { prisma };

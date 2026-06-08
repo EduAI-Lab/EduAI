@@ -15,6 +15,7 @@ AI models are hosted on cmps01.ok.ubc.ca. EduAI (hosted on my.eduai.ok.ubc.ca) a
 | New to EduAI chat/RAG | [`CHAT_RAG_PIPELINE.md`](./CHAT_RAG_PIPELINE.md) |
 | How embeddings, API keys, and pgvector fit together | [`EMBEDDINGS.md`](./EMBEDDINGS.md) |
 | Picking up latency work (#203) | [`latency/eduai-summer-2026/TEAM_CHAT_LATENCY_SPRINT_GUIDE.md`](./latency/eduai-summer-2026/TEAM_CHAT_LATENCY_SPRINT_GUIDE.md) |
+| **Latency investigation conclusions** | [`latency/eduai-summer-2026/FINDINGS.md`](./latency/eduai-summer-2026/FINDINGS.md) → appendix + [`SOLUTIONS_PLAN.md`](./latency/eduai-summer-2026/SOLUTIONS_PLAN.md) |
 | Discussing tools vs speed trade-offs | [`latency/eduai-summer-2026/TEAM_CHAT_LATENCY_AND_TOOLS.md`](./latency/eduai-summer-2026/TEAM_CHAT_LATENCY_AND_TOOLS.md) |
 | Logging probe timings | [`latency/MODEL_LATENCY_TRACKER.md`](./latency/MODEL_LATENCY_TRACKER.md) |
 | Implementing Auto routing (#197) | [`routing/eduai-summer-2026/TEAM_PHASE_0_AND_1_GUIDE.md`](./routing/eduai-summer-2026/TEAM_PHASE_0_AND_1_GUIDE.md) |
@@ -38,6 +39,9 @@ AI models are hosted on cmps01.ok.ubc.ca. EduAI (hosted on my.eduai.ok.ubc.ca) a
 
 | File | Brief description |
 | ---- | ----------------- |
+| [`latency/eduai-summer-2026/FINDINGS.md`](./latency/eduai-summer-2026/FINDINGS.md) | **Investigation summary** — Root causes (GPU cold start, token volume, ~60–70 ms EduAI overhead); warm vs cold UX; Session 8 tool-path notes. **Start here** after the sprint guide. |
+| [`latency/eduai-summer-2026/FINDINGS_APPENDIX.md`](./latency/eduai-summer-2026/FINDINGS_APPENDIX.md) | **Evidence & methodology** — Sessions 1–8, confounds, bench protocol, raw data paths on `troubleshoot-RAG-delay`. |
+| [`latency/eduai-summer-2026/SOLUTIONS_PLAN.md`](./latency/eduai-summer-2026/SOLUTIONS_PLAN.md) | **Mitigations & roadmap** — TTL keep-alive, routing, token caps, cold-load UX, scale path. |
 | [`latency/eduai-summer-2026/TEAM_CHAT_LATENCY_SPRINT_GUIDE.md`](./latency/eduai-summer-2026/TEAM_CHAT_LATENCY_SPRINT_GUIDE.md) | **Sprint playbook** — Delegatable steps L00–L09 (bench script, baselines, auto-RAG, intent routing, Ollama warm-up, TTFT audit). Teammate entry point. |
 | [`latency/eduai-summer-2026/TEAM_CHAT_LATENCY_AND_TOOLS.md`](./latency/eduai-summer-2026/TEAM_CHAT_LATENCY_AND_TOOLS.md) | **Discussion doc** — Problem statement, `supportsTools` vs hybrid path, option table (A–G), open decisions L1–L5, regression rules. |
 | [`latency/MODEL_LATENCY_TRACKER.md`](./latency/MODEL_LATENCY_TRACKER.md) | **Measurement ledger** — TTFT/Total/tool-call rows per session; live probe table, Gemini quota FAQ, how to record a fresh row. |
@@ -78,6 +82,9 @@ docs/rag-ai/
 ├── latency/
 │   ├── MODEL_LATENCY_TRACKER.md
 │   └── eduai-summer-2026/
+│       ├── FINDINGS.md
+│       ├── FINDINGS_APPENDIX.md
+│       ├── SOLUTIONS_PLAN.md
 │       ├── TEAM_CHAT_LATENCY_SPRINT_GUIDE.md
 │       └── TEAM_CHAT_LATENCY_AND_TOOLS.md
 └── routing/
