@@ -12,27 +12,26 @@ datasource db {
 }
 
 model User {
-  id                String                 @id @default(cuid())
-  email             String                 @unique
-  name              String
-  image             String?
-  role              UserRole
-  isActive          Boolean                @default(true)
-  createdAt         DateTime               @default(now())
-  updatedAt         DateTime               @updatedAt
-  emailVerified     Boolean                @default(false)
-  authorizedUnits   String[]
-  accounts          Account[]
-  aiInteractions    AIInteraction[]
-  enrollments       Enrollment[]
-  questions         Question[]
-  sessions          Session[]
-  providerSettings  UserProviderSettings[]
-  apiKeys           apikey[]
-  chats             Chat[]
-  externalUsers     ExternalUser[]
-  bugReports        BugReport[]
-  canvasIntegration CanvasIntegration?
+  id               String                 @id @default(cuid())
+  email            String                 @unique
+  name             String
+  image            String?
+  role             UserRole
+  isActive         Boolean                @default(true)
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  emailVerified    Boolean                @default(false)
+  authorizedUnits  String[]
+  accounts         Account[]
+  aiInteractions   AIInteraction[]
+  enrollments      Enrollment[]
+  questions        Question[]
+  sessions         Session[]
+  providerSettings UserProviderSettings[]
+  apiKeys          apikey[]
+  chats            Chat[]
+  externalUsers    ExternalUser[]
+  bugReports       BugReport[]
 
   @@map("user")
 }
@@ -412,20 +411,6 @@ model ChatMessage {
   @@unique([chatId, messageId])
   @@index([chatId, position])
   @@map("chat_messages")
-}
-
-model CanvasIntegration {
-  id         String   @id @default(cuid())
-  userId     String   @unique
-  canvasUrl  String
-  /// AES-256-GCM encrypted Canvas personal access token (see lib/canvas/encryption.ts).
-  apiKey     String
-  isTestMode Boolean  @default(false)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("canvas_integrations")
 }
 
 model ExternalUser {
