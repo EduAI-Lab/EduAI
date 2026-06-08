@@ -22,7 +22,6 @@
 import express from 'express';
 import { prisma } from '../config/database.js';
 import { requireRole } from '../middleware/auth.js';
-import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
 import { syncExternalCourseTopics } from '../services/topicSync.js';
 
 const router = express.Router();
@@ -177,10 +176,7 @@ router.post('/courses/:courseId/topics/sync', requireRole('INSTRUCTOR'), async (
 
     let upstreamNames = [];
     try {
-      const cookie = getEduAiCookieForRequest(req);
-      const { topics: synced, upstreamNames: upstream } = await syncExternalCourseTopics(courseId, {
-        cookie,
-      });
+      const { topics: synced, upstreamNames: upstream } = await syncExternalCourseTopics(courseId);
       upstreamNames = upstream || [];
     } catch (e) {
       const status = Number.isInteger(e?.status) ? e.status : 502;
