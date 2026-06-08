@@ -53,8 +53,15 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] api: Validate Canvas URL with `parseAndValidateCanvasUrl` before saving integration credentials so non-local HTTP hosts are rejected even when credential verification is mocked in tests. (#511, @GlowyBlack, 2026-06-08)
 ---
 
-## [Week 5 — June 1–7, 2026]
+## [Week 6 — June 8–12, 2026]
 
+### Added
+
+- [core] [ai-tutor] api: Move course publish state to Core as source of truth (#477) — new `PATCH /api/courses/:id/publish` and `/unpublish` endpoints on Core (service-key + session auth, rank ≥ 2); AI Tutor write-through calls Core before updating local DB; `coreOfferingId` set at import time and `isPublished` synced from Core; native courses skip the Core call; unpublish cascades to child modules and lessons. (#PR, @evanbones, 2026-06-08)
+
+---
+
+## [Week 5 — June 2–6, 2026]
 
 ### Added
 
