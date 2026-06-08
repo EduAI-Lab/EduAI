@@ -14,7 +14,6 @@
 | [Canvas LTI vs API research](./canvas-lti-vs-api-key-research.md)                                   | Endpoints, roster sync, local API test results |
 | [Question Maker Canvas export](../../apps/extensions/question-maker/docs/features/CANVAS_EXPORT.md) | Instructor UI walkthrough for quiz export      |
 | [Question Maker encryption](../../apps/extensions/question-maker/docs/features/ENCRYPTION.md)       | How API keys are stored                        |
-| [Core README — Canvas endpoints](../../apps/core/README.md#canvas-integration-endpoints)            | Core `POST /api/canvas/connect` API (#381)     |
 
 
 ---
@@ -32,7 +31,7 @@ This guide documents **how to connect EduAI to Canvas using a personal API acces
 
 
 **Out of scope here:** LTI launch inside Canvas (see [lti-schema-changes.md](./lti-schema-changes.md)).  
-**In scope:** Token creation, `canvasUrl`, server-side API calls, Question Maker connect/export, **Core connect API (#381)**, API verification, future Core roster sync.
+**In scope:** Token creation, `canvasUrl`, server-side API calls, Question Maker connect/export, API verification, future Core roster sync.
 
 ---
 
@@ -40,29 +39,18 @@ This guide documents **how to connect EduAI to Canvas using a personal API acces
 
 ```text
 Instructor browser
-    → Core or Question Maker UI (connect: Canvas URL + token)
-    → POST /api/canvas/connect
-    → Verify token (Core only, non–test mode): GET {canvasUrl}/api/v1/users/self/profile
+    → Question Maker UI (connect: Canvas URL + token)
+    → QM backend POST /api/canvas/connect
     → Encrypt token → canvas_integrations table
-    → Later: server calls {canvasUrl}/api/v1/... with Authorization: Bearer {token}
+    → Later: QM backend calls {canvasUrl}/api/v1/... with Authorization: Bearer {token}
     → Canvas LMS
 ```
 
 - The token never goes to the browser after save (only `canvasUrl`, `isTestMode`, `isConnected`).
-- All Canvas calls are **server-to-server** from Core or the QM backend.
-- **`canvasUrl`** must be the Canvas **site root** with no trailing slash, e.g. `http://localhost:8080` (local) or `https://canvas.ubc.ca` — not `/api/v1`.
+- All Canvas calls are **server-to-server** from the QM backend (or future Core service).
+- `**canvasUrl`** must be the Canvas **site root** with no trailing slash, e.g. `http://localhost:8080` (local) or `https://canvas.ubc.ca` — not `/api/v1`.
 
-**Implemented on Core (#381):**
-
-| Endpoint | Purpose |
-|----------|---------|
-| `GET /api/canvas/integration` | Connection status (no token in response) |
-| `POST /api/canvas/connect` | Save URL + token; verifies token against Canvas when not in test mode |
-| `DELETE /api/canvas/disconnect` | Remove integration |
-
-Auth: Better Auth session cookie. Roles: `INSTRUCTOR`, `ADMIN`. Set `ENCRYPTION_KEY` in `apps/core/.env`. See [Core README — Canvas endpoints](../../apps/core/README.md#canvas-integration-endpoints).
-
-**Implemented on Question Maker (quiz export/import):**
+**Implemented today (Question Maker):**
 
 
 | Endpoint                        | Purpose                         |
@@ -74,7 +62,7 @@ Auth: Better Auth session cookie. Roles: `INSTRUCTOR`, `ADMIN`. Set `ENCRYPTION_
 | Export/import routes            | Quizzes (see `canvas.js`)       |
 
 
-**Planned (Core):** Roster sync using stored tokens — see [strategy report](./lti-canvas-integration-report.md) §4.
+**Planned (Core):** Roster sync using same token pattern — see [strategy report](./lti-canvas-integration-report.md) §4.
 
 ---
 
@@ -89,8 +77,8 @@ Auth: Better Auth session cookie. Roles: `INSTRUCTOR`, `ADMIN`. Set `ENCRYPTION_
 ### 3.2 EduAI / Question Maker
 
 - Monorepo cloned; `npm install` at `EduAICore` root.
-- PostgreSQL for Core / Question Maker (monorepo `docker:dev:db` or QM `docker-compose.dev.yml`).
-- `ENCRYPTION_KEY` in **Core** `apps/core/.env` and/or **Question Maker** `.env` (64-char hex) — required for storing tokens. See [ENCRYPTION.md](../../apps/extensions/question-maker/docs/features/ENCRYPTION.md) and [Core README](../../apps/core/README.md#canvas-integration-endpoints).
+- PostgreSQL for Question Maker (monorepo `docker:dev:db` or QM `docker-compose.dev.yml`).
+- `ENCRYPTION_KEY` in Question Maker `.env` (64-char hex) — required for storing tokens. See [ENCRYPTION.md](../../apps/extensions/question-maker/docs/features/ENCRYPTION.md).
 
 ### 3.3 Port conflict warning
 
@@ -344,14 +332,13 @@ For UI/dev without Canvas:
 - QM backend (8000) and frontend (5173) running
 - Connect in UI without test mode; courses appear
 - Export small assessment to Canvas quiz (optional)
-- Core: `POST /api/canvas/connect` via session (see [Core README](../../apps/core/README.md#canvas-integration-endpoints))
 - (Future) Core roster sync documented in strategy report
 
 ---
 
 ## 12. Next steps (engineering)
 
-1. **Core roster sync:** Use stored tokens for course/user sync — see strategy report §4.
+1. **Core:** Move or mirror Canvas connect + roster sync from QM pattern (`canvas_integrations` → Core).
 2. **UBC pilot:** Run §6.4 against one real course on `canvas.ubc.ca`; record fields (redacted).
 3. **LT Hub:** Personal tokens vs developer key for production.
 4. **LTI:** Only if in-Canvas launch becomes a requirement — not blocking API key MVP.
