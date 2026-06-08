@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { redirect, useLoaderData } from 'react-router'
 import type { LoaderFunctionArgs } from 'react-router'
 
@@ -13,6 +13,7 @@ import { CourseDetailStudentView } from '~/components/courses/course-detail-stud
 import { useCourseTopics } from '~/hooks/api/use-course-topics'
 import { useCourseEnrollments } from '~/hooks/api/use-course-enrollments'
 import { useCourseMaterials } from '~/hooks/api/use-course-materials'
+import { useCourseTAs } from '~/hooks/api/use-course-tas'
 import { useApiKeys } from '~/hooks/use-api-keys'
 import type { CourseMaterial as UploadMaterial } from '~/components/course-materials-upload'
 import { resolveCourseAccess } from '~/lib/rbac/resolve-course-access.server'
@@ -29,6 +30,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     where: { id: courseId },
     include: {
       professor: { select: { id: true, name: true, email: true } },
+      tas: {
+        include: { user: { select: { id: true, name: true, email: true } } },
+        orderBy: { createdAt: 'asc' },
+      },
     },
   })
 
@@ -66,10 +71,23 @@ export default function CourseDetailPage() {
   const { topics, createTopic, deleteTopic } = useCourseTopics(course.id)
   const { enrollments } = useCourseEnrollments(course.id)
   const { materials, uploadMaterial } = useCourseMaterials(course.id)
+  const { tas, addTA, removeTA } = useCourseTAs(course.id)
   const { getValidApiKeys } = useApiKeys()
   const [isUploading, setIsUploading] = useState(false)
   const [materialsError, setMaterialsError] = useState<string | null>(null)
   const [materialsSuccess, setMaterialsSuccess] = useState<string | null>(null)
+
+  const handleAssignProfessor = useCallback(async (professorId: string) => {
+    const res = await fetch(`/api/courses/${course.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ professorId }),
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new Error(body.error ?? 'Failed to assign professor')
+    }
+  }, [course.id])
 
   const uploadMaterials: UploadMaterial[] = materials.map((m) => ({
     id: m.id,
@@ -113,12 +131,16 @@ export default function CourseDetailPage() {
                 topics={topics}
                 enrollments={enrollments}
                 materials={uploadMaterials}
+                tas={tas}
                 isUploading={isUploading}
                 materialsError={materialsError}
                 materialsSuccess={materialsSuccess}
                 onFileSelect={handleFileSelect}
                 onCreateTopic={async (name) => { await createTopic(name) }}
                 onDeleteTopic={async (id) => { await deleteTopic(id) }}
+                onAssignProfessor={handleAssignProfessor}
+                onAddTA={addTA}
+                onRemoveTA={removeTA}
               />
             ) : access === 'ta' ? (
               <CourseDetailTaView
