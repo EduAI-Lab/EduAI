@@ -1,5 +1,7 @@
 # AI / editor tool dirs
 .claude/settings.local.json
+.claude/worktrees/
+.claude/agent-memory/
 .cursor/
 .opencode/
 .gemini/
@@ -26,7 +28,6 @@ node_modules/
 .env.local
 .env.production
 .env.development
-.env.test
 
 # IDE
 .vscode/
@@ -46,6 +47,9 @@ build/
 dist/
 .next/
 .react-router/
+
+# Test coverage reports
+coverage/
 
 # Database
 *.db
