@@ -306,7 +306,8 @@ Authorization rules for `UNIT_ADMIN`:
 |---|---|---|
 | `section` | `String` | identifies the section within a course offering (e.g. `"001"`, `"L2A"`); regex-validated on write |
 | `isPublished` | `Boolean @default(false)` | gates student visibility |
-| `startDate` / `endDate` | `DateTime?` | optional; sourced from LMS or set manually |
+| `startDate` | `DateTime` | required; sourced from LMS or set manually at creation time |
+| `endDate` | `DateTime?` | optional; sourced from LMS or set manually |
 | `externalId` | `String?` | LMS course ID |
 | `externalSource` | `String?` | `"canvas"` or null (null = manually created) |
 | `lastSyncedAt` | `DateTime?` | null = manual or never synced |
@@ -403,7 +404,7 @@ AI Tutor's **server** reads via `GET /api/questions?courseId=:id&topicId=:topicI
 
 `Document` is dead schema — no route or service in Core calls `prisma.document`. All file handling runs through `CourseMaterial`. `Document` is removed from the Prisma schema entirely.
 
-### `CourseMaterial` — new columns
+### `CourseMaterial` — new columns and constraint changes
 
 The LMS sync columns originally planned for `Document` are added to `CourseMaterial` instead, so Canvas-synced files enter the same RAG pipeline as manually uploaded ones:
 
@@ -412,13 +413,17 @@ The LMS sync columns originally planned for `Document` are added to `CourseMater
 | `externalId` | `String?` | LMS file/page ID |
 | `externalSource` | `String?` | `"canvas"` or null |
 
+**`checksum` uniqueness relaxed:** the original `checksum @unique` global constraint is replaced with `@@unique([courseId, checksum])`. This allows the same file (same checksum) to be uploaded to multiple courses — a common case for shared reference documents — while still deduplicating within a single course.
+
+**New index:** `@@index([externalSource, externalId])` added to match the lookup pattern already present on `courses` and `enrollments`, for efficient LMS sync queries.
+
 ### `BugReport` — new consolidated table
 
 ```prisma
 model BugReport {
   id          String          @id @default(cuid())
   source      BugReportSource
-  userId      String
+  userId      String?
   isAnonymous Boolean         @default(false)  // when true, admin UI masks name/email in the reporter column
   description String          @db.VarChar(2000)
   status      BugReportStatus @default(UNHANDLED)
@@ -430,7 +435,7 @@ model BugReport {
   context     Json?           // AI Tutor sends {courseOfferingId, moduleId, lessonId, activityId}
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
-  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([status, createdAt])
   @@index([userId])
@@ -439,7 +444,9 @@ model BugReport {
 }
 ```
 
-Extensions POST to `POST /api/bug-reports` with their `source` value. The `context` JSON absorbs AI Tutor's hierarchical context without Core needing to model that hierarchy. QM bug reports leave `context` null. `userId` is always required — bug reports are always tied to an authenticated user.
+Extensions POST to `POST /api/bug-reports` with their `source` value. The `context` JSON absorbs AI Tutor's hierarchical context without Core needing to model that hierarchy. QM bug reports leave `context` null.
+
+`userId` is nullable with `onDelete: SetNull`. Bug reports are audit data — deleting a user account nulls the `userId` reference rather than cascading the deletion. This preserves the report for admin triage while removing the personal identity link. The `isAnonymous` flag controls display in the admin UI; `userId` being null after account deletion has the same effect permanently.
 
 ### Cross-DB deletion — soft-delete strategy
 
@@ -498,6 +505,8 @@ When the cron nullifies `Topic.coreTopicId`, **the local AI Tutor topic record i
 
 All `userId` columns already store CUIDs — no change needed.
 
+**`Role` enum — removed.** The Prisma schema previously defined a local `Role` enum (`STUDENT | INSTRUCTOR | TA | ADMIN`). With the `User`, `Session`, `Account`, and `Verification` tables dropped, no model in the schema uses this enum. Role strings flow from Core's session response as plain values; the local Prisma enum was decorative and has been deleted.
+
 ### Schema changes
 
 **`Topic` — PK type change + one new nullable column:**
@@ -551,13 +560,15 @@ All QM tables that previously held an integer `user_id` FK now hold a `VARCHAR` 
 
 QM creates a local `users` row the first time a Core user is seen (on login). The row exists only for FK integrity within QM — all identity and auth decisions go through Core.
 
-### `topics` table — PK redesigned to VARCHAR
+### `topics` table — PK redesigned to CUID string
 
-Since QM is greenfield, `topics.id` is changed from `INTEGER autoincrement` to `VARCHAR` (CUID). This aligns topic IDs with the CUID type used across Core and AI Tutor, eliminating integer-to-string translation at the API boundary.
+Since QM is greenfield, `topics.id` is changed from `INTEGER autoincrement` to `VARCHAR` CUID, generated via `@paralleldrive/cuid2` (the same library Prisma uses internally for `@default(cuid())`). This aligns topic IDs with the CUID format used across Core and AI Tutor, eliminating integer-to-string translation at the API boundary.
+
+A `@@unique([course_id, name])` uniqueness constraint is added, matching the `@@unique([courseId, name])` constraint on Core's `CourseTopic` and AI Tutor's `Topic`. This prevents duplicate topic names within a course and ensures the pre-push sync check (`GET /api/courses/:id/topics` by name) is unambiguous.
 
 Cascading type changes within QM:
-- `question_metadata.primary_topic_id` → `VARCHAR`
-- `variants.secondary_topics_id` → `VARCHAR[]` (array of CUID strings, was `INTEGER[]`)
+- `question_metadata.primary_topic_id` → `VARCHAR` (local QM CUID)
+- `variants.secondary_topics_id` → `VARCHAR[]` (array of local QM topic CUIDs, was `INTEGER[]`)
 
 ### New reference columns
 
@@ -567,7 +578,9 @@ Cascading type changes within QM:
 | `topics` | `core_topic_id` | `VARCHAR unique` | Core CourseTopic CUID; null until synced |
 | `variants` | `core_question_id` | `VARCHAR unique` | Core Question CUID; null until variant is approved and pushed |
 
-When pushing a variant to Core, the server translates `secondary_topics_id` (array of Core topic CUIDs stored in `variants`) into `QuestionSecondaryTopic` rows on the Core side. Each element in the array becomes one row; the push fails with a 422 if any ID in the array matches the variant's primary `topicId`.
+**`secondary_topics_id` stores local QM topic CUIDs, not Core IDs.** This is consistent with how `primary_topic_id` works — both reference `topics.id` within QM's own database. When pushing a variant to Core, the server translates each local topic ID in `secondary_topics_id` to its corresponding `core_topic_id` (the same lookup performed for the primary topic), then submits those Core CUIDs as `QuestionSecondaryTopic` rows on the Core side. Each element in the array becomes one row; the push fails with a 422 if any translated Core ID matches the variant's primary Core topic ID.
+
+**`difficulty` and `reasoningLevel` enum values use uppercase** (`EASY`, `MEDIUM`, `HARD`, `FACTUAL`, `ANALYTICAL`, `APPLICATION`) to match Core's `QuestionDifficulty` and `ReasoningLevel` Prisma enums exactly. Values are passed to Core's `POST /api/questions` without any transformation.
 
 `core_question_id` lives on `variants`, not on `question_metadata`. Each approved (non-draft) QM Variant is pushed to Core as its own `Question` row; multiple variants from the same `question_metadata` shell each get an independent Core Question entry. `question_metadata` is a QM-internal authoring container — Core never sees it.
 
@@ -590,13 +603,13 @@ No existing production data. No data migration scripts needed — reference colu
 Core continues to run standalone throughout this phase. Extensions are untouched.
 
 - Add `authorizedUnits String[]` to `User` model (UNIT_ADMIN scoping); default `[]`
-- Add new `courses` columns: `section`, `isPublished`, `startDate`, `endDate`, `externalId`, `externalSource`, `lastSyncedAt`, `department`, `deletedAt`
+- Add new `courses` columns: `section`, `isPublished`, `startDate` (required), `endDate`, `externalId`, `externalSource`, `lastSyncedAt`, `department`, `deletedAt`
 - Relax `@@unique([code])` on `courses` to `@@unique([code, startDate, section])`
 - Create `enrollments` table (replacing `course_enrollments` and `course_tas`); update all Core route handlers that currently reference `CourseEnrollment` / `CourseTA`
 - Create `questions` table (with `topicId`, `choices`, `answer`, `difficulty`, `reasoningLevel`, `deletedAt`)
 - Create `question_secondary_topics` join table (`@@id([questionId, topicId])`)
-- Add `externalId` / `externalSource` to `course_materials`; drop the unused `documents` table
-- Create `bug_reports` table (with `isAnonymous`)
+- Add `externalId` / `externalSource` to `course_materials`; change `checksum @unique` to `@@unique([courseId, checksum])`; add `@@index([externalSource, externalId])`; drop the unused `documents` table
+- Create `bug_reports` table (with `isAnonymous`, `userId String?`, `onDelete: SetNull`)
 - Add `deletedAt DateTime?` to `course_topics`
 - Update `UserRole` enum (add `UNIT_ADMIN`)
 - Add `QuestionDifficulty`, `ReasoningLevel`, `BugReportStatus` enums
@@ -644,11 +657,14 @@ Only run after Phase 2a is verified. Each drop is a one-way migration.
   - Drop `User`, `Session`, `Account`, `Verification` tables
   - Drop `CourseInstructor`, `CourseEnrollment` tables; delete `enrollmentSync.js` (enrollment is Core-owned — extensions read, never write)
   - Drop `BugReport` table
+  - Remove local `Role` Prisma enum (no model references it after User table is dropped; roles flow from Core session response)
 - **QM:**
   - Redesign `users` table (CUID string PK, no `password_hash`)
-  - Change `topics.id` to `VARCHAR` CUID; update `question_metadata.primary_topic_id` and `variants.secondary_topics_id` to `VARCHAR` / `VARCHAR[]`
+  - Change `topics.id` to `VARCHAR` CUID via `@paralleldrive/cuid2`; add `@@unique([course_id, name])`; update `question_metadata.primary_topic_id` and `variants.secondary_topics_id` to `VARCHAR` / `VARCHAR[]` (both store local QM CUIDs, translated to Core IDs at push time)
+  - Change `variants.difficulty` to `ENUM('EASY','MEDIUM','HARD')` and `variants.reasoning_level` to `ENUM('FACTUAL','ANALYTICAL','APPLICATION')` — uppercase to match Core's enum values exactly
   - Change `user_id` columns in `courses`, `canvas_integrations`, `canvas_course_mappings` to `VARCHAR`
   - Add `core_course_id` to `courses`, `core_topic_id` to `topics`, `core_question_id` to `variants` (not `question_metadata`)
+  - Add `@paralleldrive/cuid2` to QM backend dependencies and run `npm install`
   - Drop `bug_reports` table
 
 **Test:** `npm run typecheck` in both extensions. Run each app's full test suite (`npm run test:integration` in AI Tutor server; `npm test` in QM backend).

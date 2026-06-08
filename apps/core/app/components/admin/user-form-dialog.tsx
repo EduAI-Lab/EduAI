@@ -17,7 +17,7 @@ type UpdateUserFormData = z.infer<typeof updateUserSchema>;
 type FormData = {
   name: string;
   email: string;
-  role: "ADMIN" | "PROFESSOR" | "TA" | "STUDENT";
+  role: "ADMIN" | "INSTRUCTOR" | "TA" | "STUDENT";
   isActive: boolean;
   emailVerified?: boolean;
 };
@@ -32,7 +32,7 @@ export interface UserFormDialogProps {
 const roleOptions = [
   { value: "STUDENT", label: "Student" },
   { value: "TA", label: "Teaching Assistant" },
-  { value: "PROFESSOR", label: "Professor" },
+  { value: "INSTRUCTOR", label: "Professor" },
   { value: "ADMIN", label: "Administrator" },
 ];
 

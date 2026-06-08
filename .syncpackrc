@@ -1,0 +1,51 @@
+{
+  "versionGroups": [
+    {
+      "label": "QM legacy toolchain — major upgrade tracked separately",
+      "packages": ["question-maker-frontend", "question-maker-backend"],
+      "dependencies": [
+        "vite",
+        "vitest",
+        "@vitest/coverage-v8",
+        "tailwindcss",
+        "tailwind-merge",
+        "express",
+        "supertest",
+        "dotenv"
+      ],
+      "policy": "ignore"
+    },
+    {
+      "label": "react-router — intentionally split (Core 7.5.x, AI Tutor 7.13.x)",
+      "dependencies": [
+        "react-router",
+        "@react-router/dev",
+        "@react-router/node",
+        "@react-router/serve"
+      ],
+      "policy": "ignore"
+    },
+    {
+      "label": "AI SDK — intentionally split (Core v4, AI Tutor v5)",
+      "dependencies": ["ai"],
+      "policy": "ignore"
+    },
+    {
+      "label": "vite — intentionally split (Core v6, AI Tutor v8); QM v4 handled above",
+      "packages": ["edu-ai", "ai-tutor"],
+      "dependencies": ["vite"],
+      "policy": "ignore"
+    },
+    {
+      "label": "better-auth — 1.2.8 pinned via overrides for Core/QM; AI Tutor tracks newer",
+      "dependencies": ["better-auth", "@better-auth/cli"],
+      "policy": "ignore"
+    },
+    {
+      "label": "question-maker-backend workspace reference — * is valid here",
+      "packages": ["question-maker-frontend"],
+      "dependencies": ["question-maker-backend"],
+      "policy": "ignore"
+    }
+  ]
+}

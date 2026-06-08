@@ -16,7 +16,7 @@
  *     in `BugReportDialog`) so the dialog itself is not part of the capture.
  *     Opening the dialog before the capture would leak the modal chrome
  *     into every report.
- *   - `canReportBug` is gated to STUDENT/PROFESSOR; admins use a different
+ *   - `canReportBug` is gated to STUDENT/INSTRUCTOR; admins use a different
  *     triage surface.
  * Related: `app/components/bug-report/BugReportDialog.tsx`,
  *   `app/components/bug-report/useBugReport.ts`, `app/hooks/useLocalUser.tsx`
@@ -46,7 +46,7 @@ export default function Nav() {
   const { user, logout } = useLocalUser();
   const { captureScreenshot } = useBugReport();
   const isAdminUser = user?.role === 'ADMIN';
-  const canReportBug = user?.role === 'STUDENT' || user?.role === 'PROFESSOR';
+  const canReportBug = user?.role === 'STUDENT' || user?.role === 'INSTRUCTOR';
 
   const handleLogout = async () => {
     await logout();

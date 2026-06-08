@@ -2,7 +2,7 @@
  * @file Instructor dashboard — the entry point for everything teaching-side.
  *
  * Route: /instructor
- * Auth: PROFESSOR (the role string used for instructor accounts)
+ * Auth: INSTRUCTOR (the role string used for instructor accounts)
  * Loads: api.listCourses() — the backend already filters to courses this
  *        instructor has been assigned to, so no additional client filter.
  * Owns: course-card grid, EduAI import panel (browse external EduAI courses
@@ -31,7 +31,7 @@ import { requireClientUser } from '~/lib/client-auth';
  * authenticated user's role, so this is the full set the instructor can act on.
  */
 export async function clientLoader(_: Route.ClientLoaderArgs) {
-  await requireClientUser('PROFESSOR');
+  await requireClientUser('INSTRUCTOR');
   const courses = (await api.listCourses()) as Course[];
   return { courses };
 }
