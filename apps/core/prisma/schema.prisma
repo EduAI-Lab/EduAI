@@ -34,6 +34,7 @@ model User {
   bugReports       BugReport[]
   uploadedMaterials CourseMaterial[] @relation("MaterialUploader")
   createdTopics     CourseTopic[]    @relation("TopicCreator")
+  canvasIntegration CanvasIntegration?
 
   @@map("user")
 }
@@ -419,6 +420,20 @@ model ChatMessage {
   @@unique([chatId, messageId])
   @@index([chatId, position])
   @@map("chat_messages")
+}
+
+model CanvasIntegration {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  canvasUrl  String
+  /// AES-256-GCM encrypted Canvas personal access token (see lib/canvas/encryption.ts).
+  apiKey     String
+  isTestMode Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("canvas_integrations")
 }
 
 model ExternalUser {
