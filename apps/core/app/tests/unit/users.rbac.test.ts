@@ -97,7 +97,7 @@ describe("PATCH /api/users/:id — authorizedUnits assignment (#297)", () => {
     );
   });
 
-  it("rejects an invalid subject code with 400 (§19 DepartmentSchema)", async () => {
+  it("rejects an invalid subject code with 400 (§19 UnitSchema)", async () => {
     const res = await action(makePatch("ua-1", { authorizedUnits: ["cosc"] }));
     expect(res.status).toBe(400);
     expect(prisma.user.update).not.toHaveBeenCalled();

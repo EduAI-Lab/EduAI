@@ -135,6 +135,7 @@ export async function updateEnrollmentRole(
  * DELETE /api/courses/:id/enrollments/:enrollmentId — soft removal via
  * `isActive = false`. Enforces the instructor-floor invariant when
  * deactivating an active INSTRUCTOR.
+ * The reconciliation cron job must catch these deleted courses and delete corresponding rows.
  */
 export async function deactivateEnrollment(courseId: string, enrollmentId: string) {
   return prisma.$transaction(async (tx) => {
