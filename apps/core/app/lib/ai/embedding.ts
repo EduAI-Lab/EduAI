@@ -676,8 +676,7 @@ export async function reEmbedCourseMaterials(
     await reportProgress(material.title);
 
     try {
-      await clearMaterialEmbeddings(material.id);
-      await processMaterialEmbeddings(material.id, content);
+      await processMaterialEmbeddings(material.id, content, { replace: true });
       await prisma.courseMaterial.update({
         where: { id: material.id },
         data: { status: "READY", processedAt: new Date() },
@@ -707,10 +706,19 @@ export async function reEmbedCourseMaterials(
   return { processed, failed, total: eligible.length };
 }
 
+export type ProcessMaterialEmbeddingsOptions = {
+  /** Delete existing chunks only after new embeddings succeed, inside the same transaction. */
+  replace?: boolean;
+};
+
 /**
  * Process and store embeddings for a course material (single transaction).
  */
-export async function processMaterialEmbeddings(materialId: string, content: string): Promise<void> {
+export async function processMaterialEmbeddings(
+  materialId: string,
+  content: string,
+  options?: ProcessMaterialEmbeddingsOptions,
+): Promise<void> {
   const material = await prisma.courseMaterial.findUnique({
     where: { id: materialId },
     select: { courseId: true },
@@ -731,6 +739,10 @@ export async function processMaterialEmbeddings(materialId: string, content: str
   const embeddings = await generateEmbeddings(chunks, material.courseId);
 
   await prisma.$transaction(async (tx) => {
+    if (options?.replace) {
+      await tx.materialChunk.deleteMany({ where: { materialId } });
+    }
+
     for (let i = 0; i < chunks.length; i++) {
       const createdChunk = await tx.materialChunk.create({
         data: {
