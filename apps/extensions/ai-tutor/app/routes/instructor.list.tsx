@@ -2,7 +2,7 @@
  * @file Instructor lesson editor — the heaviest authoring page in the app.
  *
  * Route: /instructor/lesson/:lessonId
- * Auth: PROFESSOR
+ * Auth: INSTRUCTOR
  * Loads: lesson + activities (parallel), then walks up to module + course
  *        for breadcrumbs (sequential — module/course IDs come from lesson).
  * Owns:
@@ -104,7 +104,7 @@ function SyncTopicsButton({
  * having the parent course available.
  */
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
-  await requireClientUser('PROFESSOR');
+  await requireClientUser('INSTRUCTOR');
   const lessonId = Number(params.lessonId);
   if (!Number.isFinite(lessonId)) {
     throw new Response('Invalid lesson id', { status: 400 });
