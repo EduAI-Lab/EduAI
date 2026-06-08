@@ -29,6 +29,8 @@ export default [
     "routes/api/courses.topics.$.ts",
     { id: "routes/api/courses.topics.$:topicId" },
   ),
+  route("/api/courses/:id/publish", "routes/api/courses.id.publish.ts"),
+  route("/api/courses/:id/unpublish", "routes/api/courses.id.unpublish.ts"),
   route("/api/courses/:id", "routes/api/courses.id.ts"),
   route("/api/courses/:id/enrollments", "routes/api/courses.enrollments.ts"),
   route(
