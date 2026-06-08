@@ -1,7 +1,7 @@
 import type { Prisma, User } from "@prisma/client";
 import { UserRole } from "@prisma/client";
 import { randomUUID } from "crypto";
-import { streamText, tool } from "ai";
+import { streamText } from "ai";
 import {
   createAIProviderRegistry,
   listEnabledRegistryProviders,
@@ -10,18 +10,21 @@ import {
 } from "~/lib/ai/providers";
 import { modelSupportsTools } from "~/lib/ai/providers.server";
 import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
+import { needsCourseRag } from "~/lib/ai/chat-intent";
+import {
+  buildChatToolRegistry,
+  buildToolCallingSystemPrompt,
+} from "~/lib/ai/chat-tools";
 import { findRelevantContent } from "~/lib/ai/embedding";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { auth } from "~/lib/auth/server";
 import type { ActionFunctionArgs } from "react-router";
-import { z } from "zod";
-import { webSearch, fetchPage } from "~/lib/ai/tools";
 import prisma from "~/lib/prisma.server";
 import { chatApiDebug } from "~/lib/chat-api-log";
 import { clientApiKeysBodySchema, toUserProviderSettings } from "~/lib/chat-api-keys.schema";
+import { getWebToolsEnabled } from "~/lib/system-config.server";
 import {
   buildCappedRagContextText,
-  capRagHitsForTool,
   HYBRID_RAG_MAX_CHUNKS,
   HYBRID_RAG_MAX_CONTEXT_CHARS,
 } from "~/lib/chat-rag";
@@ -539,7 +542,6 @@ export async function action({ request }: ActionFunctionArgs) {
 
     const validatedApiKeys = mergeLocalInferenceFromEnv(
       toUserProviderSettings(apiKeysParsed.data),
-      model,
     );
 
     if (!validatedApiKeys[parsedModel.providerId]?.isEnabled) {
@@ -598,7 +600,11 @@ export async function action({ request }: ActionFunctionArgs) {
 
     if (!enabledProviders.includes(parsedModel.providerId)) {
       const envVar =
-        parsedModel.providerId === "vllm" ? "VLLM_BASE_URL" : "OLLAMA_BASE_URL";
+        parsedModel.providerId === "vllm"
+          ? "VLLM_BASE_URL"
+          : parsedModel.providerId === "ollama"
+            ? "OLLAMA_BASE_URL"
+            : "provider API key";
       return new Response(
         JSON.stringify({
           error: `Provider "${parsedModel.providerId}" is not available on this server (active: ${enabledProviders.join(", ") || "none"}). Set ${envVar} in apps/core/.env and restart the dev process.`,
@@ -610,9 +616,58 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
+    await appendMessages(normalizedIncomingMessages);
+
+    const lastUserMessage = [...trimmedMessages].reverse().find((message) => message.role === "user");
+    const userQuestion = extractTextFromMessage(lastUserMessage);
+    const hasCourse = Boolean(effectiveCourseId);
+    const courseRagNeeded = needsCourseRag(userQuestion, hasCourse);
+
+    const smallModelSlug = process.env.CHAT_SMALL_MODEL?.trim();
+    const tierRoutingEnabled = process.env.CHAT_TIER_ROUTING_ENABLED !== "0";
+    const forceModel = body.forceModel === true;
+    let resolvedModelSlug = model;
+    let routedToSmallModel = false;
+
+    if (tierRoutingEnabled && smallModelSlug && !forceModel && !courseRagNeeded) {
+      resolvedModelSlug = smallModelSlug;
+      routedToSmallModel = true;
+    }
+
+    const resolvedParsed = parseModelIdentifier(resolvedModelSlug);
+    if (!resolvedParsed) {
+      return new Response(
+        JSON.stringify({
+          error: `Invalid resolved model id "${resolvedModelSlug}". Check CHAT_SMALL_MODEL and Admin → AI Models.`,
+        }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (!enabledProviders.includes(resolvedParsed.providerId)) {
+      const envVar =
+        resolvedParsed.providerId === "vllm"
+          ? "VLLM_BASE_URL"
+          : resolvedParsed.providerId === "ollama"
+            ? "OLLAMA_BASE_URL"
+            : "provider API key";
+      return new Response(
+        JSON.stringify({
+          error: `Provider "${resolvedParsed.providerId}" is not available for model "${resolvedModelSlug}" (active: ${enabledProviders.join(", ") || "none"}). Set ${envVar} in apps/core/.env and restart the dev process.`,
+        }),
+        {
+          status: 503,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
     let aiModel;
     try {
-      aiModel = registry.languageModel(model);
+      aiModel = registry.languageModel(resolvedModelSlug);
     } catch (err: unknown) {
       const available =
         typeof err === "object" &&
@@ -623,7 +678,7 @@ export async function action({ request }: ActionFunctionArgs) {
           : enabledProviders.join(", ");
       return new Response(
         JSON.stringify({
-          error: `Model "${model}" could not be loaded (providers on server: ${available}). For vLLM set VLLM_BASE_URL in .env and deploy the feat/VLLM provider code.`,
+          error: `Model "${resolvedModelSlug}" could not be loaded (providers on server: ${available}). For vLLM set VLLM_BASE_URL in .env and restart the dev process.`,
         }),
         {
           status: 503,
@@ -632,80 +687,23 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    await appendMessages(normalizedIncomingMessages);
+    const webToolsEnabled = await getWebToolsEnabled();
+    const tools = buildChatToolRegistry({ effectiveCourseId, webToolsEnabled });
 
-    // Define tools for RAG functionality and external web search
-    const tools = {
-      getInformation: tool({
-        description:
-          "Search uploaded course materials to answer questions about course content. Use this FIRST for course-related queries.",
-        parameters: z.object({
-          question: z
-            .string()
-            .describe("The user's question about course content"),
-        }),
-        execute: async ({ question }) => {
-          if (!effectiveCourseId) {
-            return { error: "No course selected for RAG search" };
-          }
-
-          try {
-            const relevantContent = await findRelevantContent(
-              question,
-              effectiveCourseId,
-              HYBRID_RAG_MAX_CHUNKS,
-            );
-            const capped = capRagHitsForTool(relevantContent);
-            return {
-              relevantContent: capped,
-              count: capped.length,
-            };
-          } catch (error) {
-            console.error("Error finding relevant content:", error);
-            return { error: "Failed to search course materials" };
-          }
-        },
-      }),
-      webSearch,
-      fetchPage,
-    };
-
-    // Check if the model supports tool calling
-    const supportsTools = await modelSupportsTools(model);
+    const supportsTools = await modelSupportsTools(resolvedModelSlug);
 
     let streamConfig;
 
     const resolvedSystemPrompt = trimmedSystemPrompt ?? chat.systemPrompt ?? null;
 
     if (!supportsTools) {
-      // MODELS WITHOUT TOOL SUPPORT: Use hybrid RAG approach
-      const lastUserMessage = [...trimmedMessages].reverse().find((message) => message.role === "user");
-      const userQuestion = extractTextFromMessage(lastUserMessage);
-      const messageContentLower = userQuestion.toLowerCase();
-
-      // Check if hybrid RAG should always be used with course
-      // regex method might not be the best method to determine if RAG is needed. Consider using a small LLM or alternatives.
       const hybridRagAlwaysWithCourse = process.env.CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE === "1";
-      const isRAGQuery =
-        Boolean(effectiveCourseId) &&
-        (hybridRagAlwaysWithCourse ||
-          messageContentLower.includes("course") ||
-          messageContentLower.includes("material") ||
-          messageContentLower.includes("document") ||
-          messageContentLower.includes("chapter") ||
-          messageContentLower.includes("lecture") ||
-          messageContentLower.includes("assignment") ||
-          messageContentLower.includes("explain") ||
-          messageContentLower.includes("what is") ||
-          messageContentLower.includes("summarize") ||
-          messageContentLower.includes("summary") ||
-          messageContentLower.includes("content") ||
-          messageContentLower.includes("about"));
+      const isRAGQuery = hybridRagAlwaysWithCourse ? hasCourse : courseRagNeeded;
 
       if (isRAGQuery) {
         try {
           const relevantContent = await findRelevantContent(
-            userQuestion || messageContentLower,
+            userQuestion,
             effectiveCourseId!,
             HYBRID_RAG_MAX_CHUNKS,
           );
@@ -779,25 +777,47 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
         };
       }
     } else {
-      const defaultSystemPrompt = resolvedSystemPrompt || `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
+      const baseSystemPrompt = resolvedSystemPrompt || `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
 
-IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.
+IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.`;
 
-You have access to two tools:
-- getInformation: searches uploaded course materials (syllabi, lectures, assignments, etc.)
-- webSearch: searches the web for current information, reviews, discussions, news, etc.
-- fetchPage: opens a URL and returns the main page content as markdown for deeper reading. If a page fails to load, try other sources. Try and give a correct response to the user's query even if the page fails to load.
+      let preloadedRagContext = "";
+      if (courseRagNeeded && effectiveCourseId) {
+        try {
+          const relevantContent = await findRelevantContent(
+            userQuestion,
+            effectiveCourseId,
+            HYBRID_RAG_MAX_CHUNKS,
+          );
+          preloadedRagContext =
+            relevantContent.length > 0
+              ? buildCappedRagContextText(
+                  relevantContent,
+                  HYBRID_RAG_MAX_CHUNKS,
+                  HYBRID_RAG_MAX_CONTEXT_CHARS,
+                )
+              : "";
+        } catch (error) {
+          console.error("Error pre-loading course context for tool path:", error);
+        }
+      }
 
-When answering questions:
-1. For course content questions, call getInformation first to retrieve relevant materials.
-2. If the user asks for reviews, opinions, recent updates, or external information (e.g., "what do students say about this course?" or "latest developments"), call webSearch after checking course materials. Prefer queries that include "UBCO" with the course code/name and the professor name when known.
-3. After webSearch, call fetchPage on promising sources (e.g., RateMyProfessors, Reddit threads, official pages) to read the page content before answering. If the page fails to load, try other sources. Try and give a correct response to the user's query even if the page fails to load.
-4. You may call tools multiple times in sequence if needed to give a complete answer.
-5. Always cite your sources: mention course material titles for RAG results and include URLs for web results.
+      let toolSystemPrompt = buildToolCallingSystemPrompt({
+        basePrompt: baseSystemPrompt,
+        courseCode: courseCode ?? undefined,
+        webToolsEnabled,
+        hasPreloadedRag: Boolean(preloadedRagContext),
+      });
 
-${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ""}
+      if (preloadedRagContext) {
+        toolSystemPrompt = `${toolSystemPrompt}
 
-Be helpful, conversational, and accurate. Use markdown for formatting.`;
+Here are relevant excerpts from the course materials to help answer the user's question:
+
+${preloadedRagContext}
+
+Based on this information, provide a comprehensive answer. Use getInformation only if these excerpts are insufficient.`;
+      }
 
       streamConfig = {
         model: aiModel,
@@ -807,7 +827,7 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
         maxSteps: TOOL_MAX_STEPS,
         tools,
         toolCallStreaming: streaming,
-        system: defaultSystemPrompt,
+        system: toolSystemPrompt,
       };
     }
 
@@ -820,7 +840,11 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
 
     // Log the LLM stream configuration
     chatApiDebug("Starting LLM stream", {
-      model,
+      model: resolvedModelSlug,
+      requestedModel: model,
+      routedToSmallModel,
+      courseRagNeeded,
+      webToolsEnabled,
       approach: supportsTools ? "tool_calling" : "hybrid_rag",
       ...llmPromptSizeHints(streamConfig.system, trimmedMessages),
     });
@@ -834,6 +858,10 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
       };
       if (chat?.id) {
         headers["X-Chat-Id"] = chat.id;
+      }
+      headers["X-Web-Tools-Enabled"] = webToolsEnabled ? "1" : "0";
+      if (resolvedModelSlug !== model) {
+        headers["X-Routed-Model"] = resolvedModelSlug;
       }
       return result.toDataStreamResponse({ headers });
     } else {
