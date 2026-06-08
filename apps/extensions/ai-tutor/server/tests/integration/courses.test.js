@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import {
@@ -193,5 +193,148 @@ describe('Courses routes', () => {
       });
       expect(updatedLesson.isPublished).toBe(false);
     });
+  });
+});
+
+// ── Core write-through: publish state propagation (#477) ──────────────────────
+
+describe('Course publish state — Core write-through (#477)', () => {
+  let prof;
+  let seed;
+  let profApp;
+  const CORE_OFFERING_ID = 'core-cuid-abc123';
+
+  beforeEach(async () => {
+    await truncateAll();
+    prof = makeProfessor();
+    seed = await seedMinimalCourse(prof.id);
+    profApp = await createApp({ mockUser: prof });
+
+    // Link the seeded course to a Core offering so write-through is triggered.
+    await prisma.courseOffering.update({
+      where: { id: seed.course.id },
+      data: { coreOfferingId: CORE_OFFERING_ID, isPublished: false },
+    });
+  });
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it('publish — calls Core publish endpoint and updates local isPublished', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: () => Promise.resolve(''),
+      json: () => Promise.resolve({ id: CORE_OFFERING_ID, isPublished: true }),
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    const res = await request(profApp).patch(`/api/courses/${seed.course.id}/publish`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.isPublished).toBe(true);
+
+    // Verify Core was called with the right URL and method.
+    const coreCalls = mockFetch.mock.calls.filter(([url]) =>
+      typeof url === 'string' && url.includes(`/courses/${CORE_OFFERING_ID}/publish`),
+    );
+    expect(coreCalls).toHaveLength(1);
+    expect(coreCalls[0][1].method).toBe('PATCH');
+
+    // Verify local DB was also updated.
+    const updated = await prisma.courseOffering.findUnique({ where: { id: seed.course.id } });
+    expect(updated.isPublished).toBe(true);
+  });
+
+  it('unpublish — calls Core unpublish endpoint and cascades locally', async () => {
+    // Seed as published first.
+    await prisma.courseOffering.update({ where: { id: seed.course.id }, data: { isPublished: true } });
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: () => Promise.resolve(''),
+      json: () => Promise.resolve({ id: CORE_OFFERING_ID, isPublished: false }),
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    const res = await request(profApp).patch(`/api/courses/${seed.course.id}/unpublish`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.isPublished).toBe(false);
+
+    const coreCalls = mockFetch.mock.calls.filter(([url]) =>
+      typeof url === 'string' && url.includes(`/courses/${CORE_OFFERING_ID}/unpublish`),
+    );
+    expect(coreCalls).toHaveLength(1);
+
+    // Cascade: module and lesson should also be unpublished.
+    const updatedModule = await prisma.module.findUnique({ where: { id: seed.module.id } });
+    const updatedLesson = await prisma.lesson.findUnique({ where: { id: seed.lesson.id } });
+    expect(updatedModule.isPublished).toBe(false);
+    expect(updatedLesson.isPublished).toBe(false);
+  });
+
+  it('publish — surfaces Core errors as 500 without touching local DB', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 403,
+      text: () => Promise.resolve('Forbidden'),
+    }));
+
+    const res = await request(profApp).patch(`/api/courses/${seed.course.id}/publish`);
+
+    expect(res.status).toBe(500);
+
+    // Local state must remain unchanged.
+    const unchanged = await prisma.courseOffering.findUnique({ where: { id: seed.course.id } });
+    expect(unchanged.isPublished).toBe(false);
+  });
+
+  it('publish — no Core call when coreOfferingId is null (native course)', async () => {
+    // Remove the Core link — native course.
+    await prisma.courseOffering.update({
+      where: { id: seed.course.id },
+      data: { coreOfferingId: null, isPublished: false },
+    });
+
+    const mockFetch = vi.fn();
+    vi.stubGlobal('fetch', mockFetch);
+
+    const res = await request(profApp).patch(`/api/courses/${seed.course.id}/publish`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.isPublished).toBe(true);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('import — sets coreOfferingId and syncs isPublished from Core course', async () => {
+    const EXTERNAL_COURSE_ID = 'core-cuid-xyz';
+    const coreCourse = {
+      id: EXTERNAL_COURSE_ID,
+      code: 'COSC 999',
+      name: 'Published Course',
+      isPublished: true,
+    };
+
+    // Mock Core's listEduAiCourses response (used by import-external internally).
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: () => Promise.resolve(''),
+      json: () => Promise.resolve({ courses: [coreCourse] }),
+    }));
+
+    const res = await request(profApp)
+      .post('/api/courses/import-external')
+      .send({ externalCourseId: EXTERNAL_COURSE_ID });
+
+    expect(res.status).toBe(201);
+
+    const imported = await prisma.courseOffering.findFirst({
+      where: { externalId: EXTERNAL_COURSE_ID },
+    });
+    expect(imported).not.toBeNull();
+    expect(imported.coreOfferingId).toBe(EXTERNAL_COURSE_ID);
+    expect(imported.isPublished).toBe(true);
   });
 });
