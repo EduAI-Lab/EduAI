@@ -48,7 +48,6 @@ export async function setup() {
       { env: pgEnv, stdio: 'pipe' },
     );
   } catch {
-    // psql not on PATH or DB already exists — try createdb as fallback
     try {
       execSync(`createdb -h ${dbHost} -U ${dbUser} "${dbName}"`, {
         env: pgEnv,
@@ -59,8 +58,16 @@ export async function setup() {
     }
   }
 
+  // Docker fallback when psql/createdb are not on PATH (common on Windows).
+  try {
+    execSync(`docker exec eduai-db psql -U ${dbUser} -c "CREATE DATABASE \\"${dbName}\\""`, {
+      stdio: 'pipe',
+    });
+  } catch {
+    // Already exists — fine
+  }
+
   // Enable pgvector extension (idempotent).
-  // Try psql directly first; fall back to docker exec for Windows where psql is often not in PATH.
   let vectorEnabled = false;
   try {
     execSync(`psql -h ${dbHost} -U ${dbUser} -d "${dbName}" -c "CREATE EXTENSION IF NOT EXISTS vector;"`, {
