@@ -41,13 +41,13 @@ router.get('/modules/:moduleId/lessons', async (req, res) => {
       (enrollment) => enrollment.userId === authUser.id,
     );
 
-    if (authUser.role === 'PROFESSOR' && !isInstructor) {
+    if (authUser.role === 'INSTRUCTOR' && !isInstructor) {
       return res.status(403).json({ error: 'Not authorized for this module' });
     }
     if (authUser.role === 'STUDENT' && !isStudent) {
       return res.status(403).json({ error: 'Not authorized for this module' });
     }
-    if (authUser.role !== 'PROFESSOR' && authUser.role !== 'STUDENT') {
+    if (authUser.role !== 'INSTRUCTOR' && authUser.role !== 'STUDENT') {
       return res.status(403).json({ error: 'Role is not supported in AI Tutor' });
     }
 
@@ -79,7 +79,7 @@ router.get('/modules/:moduleId/lessons', async (req, res) => {
   }
 });
 
-router.post('/modules/:moduleId/lessons', requireRole('PROFESSOR'), async (req, res) => {
+router.post('/modules/:moduleId/lessons', requireRole('INSTRUCTOR'), async (req, res) => {
   const moduleId = Number(req.params.moduleId);
   if (!Number.isFinite(moduleId)) {
     return res.status(400).json({ error: 'Invalid module id' });
@@ -139,7 +139,7 @@ router.get('/lessons/:lessonId', async (req, res) => {
       (enrollment) => enrollment.userId === authUser.id,
     );
 
-    if (authUser.role === 'PROFESSOR' && !isInstructor) {
+    if (authUser.role === 'INSTRUCTOR' && !isInstructor) {
       return res.status(403).json({ error: 'Not authorized for this lesson' });
     }
     if (authUser.role === 'STUDENT') {
@@ -150,7 +150,7 @@ router.get('/lessons/:lessonId', async (req, res) => {
         return res.status(403).json({ error: 'Lesson is not published' });
       }
     }
-    if (authUser.role !== 'PROFESSOR' && authUser.role !== 'STUDENT') {
+    if (authUser.role !== 'INSTRUCTOR' && authUser.role !== 'STUDENT') {
       return res.status(403).json({ error: 'Role is not supported in AI Tutor' });
     }
 
@@ -161,7 +161,7 @@ router.get('/lessons/:lessonId', async (req, res) => {
 });
 
 // Publish a lesson (requires parent module AND course to be published)
-router.patch('/lessons/:lessonId/publish', requireRole('PROFESSOR'), async (req, res) => {
+router.patch('/lessons/:lessonId/publish', requireRole('INSTRUCTOR'), async (req, res) => {
   const instructor = req.user;
   const lessonId = Number(req.params.lessonId);
   if (!Number.isFinite(lessonId)) {
@@ -219,7 +219,7 @@ router.patch('/lessons/:lessonId/publish', requireRole('PROFESSOR'), async (req,
 });
 
 // Unpublish a lesson (no cascading, lessons have no children)
-router.patch('/lessons/:lessonId/unpublish', requireRole('PROFESSOR'), async (req, res) => {
+router.patch('/lessons/:lessonId/unpublish', requireRole('INSTRUCTOR'), async (req, res) => {
   const instructor = req.user;
   const lessonId = Number(req.params.lessonId);
   if (!Number.isFinite(lessonId)) {

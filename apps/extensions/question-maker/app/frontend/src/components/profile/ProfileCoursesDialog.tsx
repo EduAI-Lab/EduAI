@@ -133,13 +133,8 @@ export const ProfileCoursesDialog = ({
     };
 
     const handleLogout = () => {
-        logout();
         onClose();
-        navigate('/login');
-        toast({
-            title: 'Logged out',
-            description: 'You have been successfully logged out.'
-        });
+        logout();
     };
 
     const handleCreateTestCourse = async () => {
@@ -429,23 +424,7 @@ export const ProfileCoursesDialog = ({
                     )}
                 </div>
 
-                {user?.isBugReportAdmin && (
-                    <div className="border-t px-6 py-2">
-                        <Button
-                            type="button"
-                            variant="link"
-                            className="h-auto p-0 text-sm text-blue-700"
-                            onClick={() => {
-                                navigate('/admin/bug-reports');
-                                onClose();
-                            }}
-                        >
-                            Bug reports (admin)
-                        </Button>
-                    </div>
-                )}
-
-                <DialogFooter className="flex items-center justify-between">
+<DialogFooter className="flex items-center justify-between">
                     <Button
                         variant="outline"
                         onClick={handleLogout}

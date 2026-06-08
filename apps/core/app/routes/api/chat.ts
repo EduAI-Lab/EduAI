@@ -360,7 +360,7 @@ export async function action({ request }: ActionFunctionArgs) {
     let resolvedCourseId: string | null = null;
     if (courseCode && typeof courseCode === "string") {
       try {
-        const course = await prisma.course.findUnique({ where: { code: courseCode } });
+        const course = await prisma.course.findFirst({ where: { code: courseCode, deletedAt: null } });
         resolvedCourseId = course?.id || null;
       } catch (e) {
         console.error("Failed to resolve course by code", e);
