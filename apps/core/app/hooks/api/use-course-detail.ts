@@ -4,6 +4,7 @@ import type { Course } from './use-courses'
 
 export interface CourseDetail extends Course {
   professor?: { id: string; name: string; email: string }
+  tas?: Array<{ id: string; userId: string; user: { id: string; name: string; email: string } }>
 }
 
 export function useCourseDetail<T extends CourseDetail = CourseDetail>() {
