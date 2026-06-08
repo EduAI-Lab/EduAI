@@ -32,6 +32,7 @@ export interface UpdateCourseInput {
   year?: number
   aiInstructions?: string
   isPublished?: boolean
+  professorId?: string
 }
 
 export function useCourses() {
