@@ -150,18 +150,25 @@ async function handleRequest(request: Request) {
         return new Response("Forbidden: Admins only", { status: 403 });
       }
 
-      // Prevent admin from deactivating themselves
+      const body = await request.json();
+
+      // Self-lockout guards (§4): an admin cannot deactivate themselves or
+      // change their own role (#297).
       if (userId === session.user.id) {
-        const body = await request.json();
         if (body.isActive === false) {
           return new Response(
             JSON.stringify({ error: "Cannot deactivate your own account" }),
             { status: 400, headers: { "Content-Type": "application/json" } }
           );
         }
+        if (body.role !== undefined && body.role !== session.user.role) {
+          return new Response(
+            JSON.stringify({ error: "Cannot change your own role" }),
+            { status: 403, headers: { "Content-Type": "application/json" } }
+          );
+        }
       }
 
-      const body = await request.json();
       const result = updateUserSchema.safeParse(body);
 
       if (!result.success) {
@@ -172,6 +179,26 @@ async function handleRequest(request: Request) {
           }),
           { status: 400, headers: { "Content-Type": "application/json" } }
         );
+      }
+
+      // #297: authorizedUnits only makes sense on a UNIT_ADMIN — reject
+      // writes against any other target role (considering a role change in
+      // the same request).
+      if (result.data.authorizedUnits !== undefined) {
+        const target = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { role: true },
+        });
+        if (!target) {
+          return new Response("User not found", { status: 404 });
+        }
+        const effectiveRole = result.data.role ?? target.role;
+        if (effectiveRole !== "UNIT_ADMIN") {
+          return new Response(JSON.stringify({ error: "ROLE_MISMATCH" }), {
+            status: 422,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
       }
 
       try {
@@ -186,6 +213,7 @@ async function handleRequest(request: Request) {
             role: true,
             isActive: true,
             emailVerified: true,
+            authorizedUnits: true,
             createdAt: true,
             updatedAt: true,
             _count: {
