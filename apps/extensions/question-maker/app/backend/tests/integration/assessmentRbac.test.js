@@ -176,3 +176,61 @@ describe('INSTRUCTOR authoring path (§17)', () => {
     expect(res.status).toBe(201);
   });
 });
+
+/**
+ * Route→service wiring for cross-course scoping (#1): every section/variant write must
+ * forward the authorized course id (req.qmCourse.id === 1 here) as the trailing arg, so
+ * the service's course check actually fires in production. The service-level guard is
+ * proven in crossCourseScoping.integration.test.js; this locks the call site.
+ */
+describe('section/variant writes forward req.qmCourse.id to the service (#1)', () => {
+  beforeEach(() => authAs(INSTRUCTOR, 'INSTRUCTOR'));
+
+  it('addVariantToSection gets the authorized course id', async () => {
+    sectionSvc.addVariantToSection.mockResolvedValue({ id: 1 });
+    const res = await request(app)
+      .post('/api/assessments/5/sections/8/variants')
+      .set('Cookie', 'session=v')
+      .send({ variantId: 42 });
+    expect(res.status).toBe(201);
+    expect(sectionSvc.addVariantToSection).toHaveBeenCalledWith('8', 'owner-1', 42, expect.anything(), 1);
+  });
+
+  it('updateAssessmentSection gets the authorized course id', async () => {
+    sectionSvc.updateAssessmentSection.mockResolvedValue({ id: 8 });
+    const res = await request(app)
+      .put('/api/assessments/5/sections/8')
+      .set('Cookie', 'session=v')
+      .send({ name: 'x' });
+    expect(res.status).toBe(200);
+    expect(sectionSvc.updateAssessmentSection).toHaveBeenCalledWith('8', 'owner-1', expect.anything(), 1);
+  });
+
+  it('deleteAssessmentSection gets the authorized course id', async () => {
+    sectionSvc.deleteAssessmentSection.mockResolvedValue(true);
+    const res = await request(app)
+      .delete('/api/assessments/5/sections/8')
+      .set('Cookie', 'session=v');
+    expect(res.status).toBe(200);
+    expect(sectionSvc.deleteAssessmentSection).toHaveBeenCalledWith('8', 'owner-1', 1);
+  });
+
+  it('removeVariantFromSection gets the authorized course id', async () => {
+    sectionSvc.removeVariantFromSection.mockResolvedValue(true);
+    const res = await request(app)
+      .delete('/api/assessments/5/sections/8/variants/42')
+      .set('Cookie', 'session=v');
+    expect(res.status).toBe(200);
+    expect(sectionSvc.removeVariantFromSection).toHaveBeenCalledWith('8', 'owner-1', 42, 1);
+  });
+
+  it('updateVariantOrderInSection gets the authorized course id', async () => {
+    sectionSvc.updateVariantOrderInSection.mockResolvedValue({ id: 1 });
+    const res = await request(app)
+      .put('/api/assessments/5/sections/8/variants/42/order')
+      .set('Cookie', 'session=v')
+      .send({ displayOrder: 3 });
+    expect(res.status).toBe(200);
+    expect(sectionSvc.updateVariantOrderInSection).toHaveBeenCalledWith('8', 'owner-1', 42, 3, 1);
+  });
+});

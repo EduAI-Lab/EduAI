@@ -29,6 +29,7 @@ import { generateQuestions, AI_PROVIDERS, extractQuestionsFromText } from '../se
 import { authenticateToken, requireRole } from '../middleware/auth.js';
 import { requireCourseAccess, resolveCourseAccessWithCourse, LEVELS } from '../middleware/courseAccess.js';
 import { requireQuestionAccess } from '../middleware/resourceAccess.js';
+import { Assessments } from '../schema/index.js';
 
 const router = express.Router();
 
@@ -41,6 +42,19 @@ function denyTaNotOwner(req, res) {
     return true;
   }
   return false;
+}
+
+/**
+ * Resolve an assessment only if it belongs to the given course. The order routes mutate
+ * per-assessment composition, so a client-supplied assessmentId must not point at an
+ * assessment in a different course (even one owned by the same user). Returns null when
+ * the id is non-integer, missing, or cross-course.
+ */
+async function assessmentInCourse(assessmentId, courseId) {
+  const id = Number(assessmentId);
+  if (!Number.isInteger(id)) return null;
+  const assessment = await Assessments.findOne({ where: { id } });
+  return assessment && assessment.courseId === courseId ? assessment : null;
 }
 
 /** POST /api/questions – validates payload and creates a new question for the course. */
@@ -407,7 +421,9 @@ router.post('/approve', authenticateToken, requireRole(AUTHORS), async (req, res
       return {
         description: typeof desc === 'string' && desc.trim() ? desc.trim() : null,
         courseId: candidateCourseId === '' ? undefined : candidateCourseId,
-        primaryTopicId: q.primaryTopicId ?? 1,
+        // No default: topics use CUID string PKs with a real FK, so a fabricated id
+        // ("1") matches no topic and fails the insert. Require a valid one up front.
+        primaryTopicId: normalizePrimaryTopicId(q.primaryTopicId),
         type: q.type,
         questionOrder: q.questionOrder,
         createdBy: req.user.id
@@ -415,13 +431,13 @@ router.post('/approve', authenticateToken, requireRole(AUTHORS), async (req, res
     });
 
     const invalid = normalizedQuestions.find(
-      (q) => q.courseId === undefined || q.courseId === null
+      (q) => q.courseId === undefined || q.courseId === null || !q.primaryTopicId
     );
 
     if (invalid) {
       return res.status(400).json({
         success: false,
-        error: 'Each question must include courseId and primaryTopicId'
+        error: 'Each question must include courseId and a valid primaryTopicId'
       });
     }
 
@@ -437,12 +453,12 @@ router.post('/approve', authenticateToken, requireRole(AUTHORS), async (req, res
   }
 });
 
-/** PUT /api/questions/:id/order – updates an assessment-specific order value for the question. */
+/** PUT /api/questions/:id/order – updates an assessment-specific order value for the question (instructor-only, §17). */
 router.put(
   '/:id/order',
   authenticateToken,
   requireRole(AUTHORS),
-  requireQuestionAccess({ min: 'ta' }),
+  requireQuestionAccess({ min: 'instructor' }),
   async (req, res, next) => {
     try {
       const { assessmentId, orderNumber } = req.body;
@@ -452,6 +468,10 @@ router.put(
           success: false,
           error: 'Assessment ID and order number are required'
         });
+      }
+
+      if (!(await assessmentInCourse(assessmentId, req.qmCourse.id))) {
+        return res.status(404).json({ success: false, error: 'Assessment not found' });
       }
 
       const question = await updateQuestionOrder(
@@ -472,14 +492,18 @@ router.put(
   }
 );
 
-/** DELETE /api/questions/:id/order/:assessmentId – removes a question from an assessment’s ordering. */
+/** DELETE /api/questions/:id/order/:assessmentId – removes a question from an assessment’s ordering (instructor-only, §17). */
 router.delete(
   '/:id/order/:assessmentId',
   authenticateToken,
   requireRole(AUTHORS),
-  requireQuestionAccess({ min: 'ta' }),
+  requireQuestionAccess({ min: 'instructor' }),
   async (req, res, next) => {
     try {
+      if (!(await assessmentInCourse(req.params.assessmentId, req.qmCourse.id))) {
+        return res.status(404).json({ success: false, error: 'Assessment not found' });
+      }
+
       const question = await removeQuestionFromAssessment(
         req.params.id,
         req.params.assessmentId,
