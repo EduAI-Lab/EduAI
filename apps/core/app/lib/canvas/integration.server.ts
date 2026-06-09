@@ -2,7 +2,7 @@ import type { CanvasIntegration } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 import { decrypt, encrypt, isEncrypted } from "~/lib/canvas/encryption";
 import type { CanvasIntegrationPublic, ConnectCanvasInput } from "~/lib/canvas/schemas";
-import { verifyCanvasCredentials } from "~/lib/canvas/client.server";
+import { parseAndValidateCanvasUrl, verifyCanvasCredentials } from "~/lib/canvas/client.server";
 
 const TEST_MODE_API_KEY_PLACEHOLDER = "test-key";
 
@@ -55,6 +55,8 @@ export async function getCanvasIntegrationWithDecryptedKey(userId: string) {
 }
 
 export async function saveCanvasIntegration(userId: string, input: ConnectCanvasInput) {
+  parseAndValidateCanvasUrl(input.canvasUrl);
+
   let apiKeyPlaintext: string;
 
   if (input.isTestMode) {
