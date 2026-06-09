@@ -12,6 +12,18 @@
 import { Variants, Question_Metadata, Assessments, Course } from '../schema/index.js';
 import { resolveAccessForCourse, minRank } from './courseAccess.js';
 
+/**
+ * Parse a route id into a positive integer, or null when it isn't one. The schema PKs
+ * are INTEGER, so a non-numeric id (`Number('abc')` → NaN) must never reach the query —
+ * Postgres rejects NaN with `invalid input syntax for type integer`, which errorHandler
+ * leaks as a 500. A null here makes the guard 404 (resource not found), mirroring
+ * `courseAccess.resolveCourseAccessWithCourse`.
+ */
+function parseResourceId(raw) {
+  const parsed = Number(raw);
+  return Number.isInteger(parsed) ? parsed : null;
+}
+
 function makeGuard({ min, attachAs, loader }) {
   const required = minRank(min);
   return async (req, res, next) => {
@@ -52,8 +64,10 @@ export function requireVariantAccess({ min } = { min: 'ta' }) {
     min,
     attachAs: 'variant',
     loader: async (req) => {
+      const id = parseResourceId(req.params.variantId);
+      if (id === null) return null;
       const variant = await Variants.findOne({
-        where: { id: Number(req.params.variantId) },
+        where: { id },
         include: [variantInclude],
       });
       return { resource: variant, course: variant?.questionMetadata?.course };
@@ -67,8 +81,10 @@ export function requireQuestionAccess({ min = 'ta', param = 'id' } = {}) {
     min,
     attachAs: 'question',
     loader: async (req) => {
+      const id = parseResourceId(req.params[param]);
+      if (id === null) return null;
       const question = await Question_Metadata.findOne({
-        where: { id: Number(req.params[param]) },
+        where: { id },
         include: [{ model: Course, as: 'course' }],
       });
       return { resource: question, course: question?.course };
@@ -86,8 +102,10 @@ export function requireAssessmentAccess({ min, param = 'id' } = {}) {
     min,
     attachAs: 'assessment',
     loader: async (req) => {
+      const id = parseResourceId(req.params[param]);
+      if (id === null) return null;
       const assessment = await Assessments.findOne({
-        where: { id: Number(req.params[param]) },
+        where: { id },
         include: [{ model: Course, as: 'course' }],
       });
       return { resource: assessment, course: assessment?.course };

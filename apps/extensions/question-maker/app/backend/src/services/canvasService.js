@@ -778,9 +778,11 @@ export const importQuizFromCanvas = async (callerId, canvasCourseId, quizId, loc
 
       console.log(`${DEBUG_PREFIX} importQuizFromCanvas: processing question ${i + 1}/${canvasQuestions.length} id=${questionId} type=${listItem.question_type} listItem.answers length=${listItem?.answers?.length ?? 'N/A'}`);
 
+      // Declared outside the try so the catch can still describe the question it skipped.
+      let canvasQuestion = listItem;
+
       try {
         // Fetch full question by ID so we get the answers array (list endpoint often returns answers: null)
-        let canvasQuestion = listItem;
         if (questionId != null) {
           try {
             canvasQuestion = await getCanvasQuizQuestionById(callerId, canvasCourseId, quizId, questionId);
