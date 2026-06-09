@@ -22,7 +22,12 @@ import type { CourseEnrollment } from '~/hooks/api/use-course-enrollments'
 import type { CourseTA } from '~/hooks/api/use-course-tas'
 import { canManageTopics, canManageInstructors } from '~/lib/rbac'
 import type { CourseAccess } from '~/lib/rbac'
-import { useUsers } from '~/hooks/api/use-users'
+
+interface StaffUser {
+  id: string
+  name: string
+  email: string
+}
 
 interface Props {
   course: CourseDetail
@@ -31,6 +36,8 @@ interface Props {
   enrollments: CourseEnrollment[]
   materials: CourseMaterial[]
   tas: CourseTA[]
+  professors: StaffUser[]
+  taUsers: StaffUser[]
   isUploading?: boolean
   materialsError?: string | null
   materialsSuccess?: string | null
@@ -49,6 +56,8 @@ export function CourseDetailManagerView({
   enrollments,
   materials,
   tas,
+  professors,
+  taUsers,
   isUploading = false,
   materialsError = null,
   materialsSuccess = null,
@@ -67,10 +76,9 @@ export function CourseDetailManagerView({
   const canManage = canManageTopics(access)
   const canManageStaff = canManageInstructors(access)
 
-  const { users } = useUsers()
-  const professors = users.filter((u) => u.role === 'PROFESSOR' && u.isActive)
-  const availableTAs = users.filter(
-    (u) => u.role === 'TA' && u.isActive && !tas.some((ta) => ta.userId === u.id)
+  const availableProfessors = professors.filter((p) => p.id !== course.professorId)
+  const availableTAs = taUsers.filter(
+    (u) => !tas.some((ta) => ta.userId === u.id)
   )
 
   const handleTopicCreate = async (e: React.FormEvent) => {
@@ -283,23 +291,27 @@ export function CourseDetailManagerView({
                     </CardContent>
                   </Card>
                 )}
-                <div className="flex gap-2">
-                  <Select value={selectedProfId} onValueChange={setSelectedProfId}>
-                    <SelectTrigger className="flex-1">
-                      <SelectValue placeholder="Select a professor to assign" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {professors.map((p) => (
-                        <SelectItem key={p.id} value={p.id}>
-                          {p.name} ({p.email})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button onClick={handleAssignProfessor} disabled={!selectedProfId}>
-                    Assign
-                  </Button>
-                </div>
+                {availableProfessors.length > 0 ? (
+                  <div className="flex gap-2">
+                    <Select value={selectedProfId} onValueChange={setSelectedProfId}>
+                      <SelectTrigger className="flex-1">
+                        <SelectValue placeholder="Select a professor to assign" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableProfessors.map((p) => (
+                          <SelectItem key={p.id} value={p.id}>
+                            {p.name} ({p.email})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button onClick={handleAssignProfessor} disabled={!selectedProfId}>
+                      Assign
+                    </Button>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No other professors available to assign.</p>
+                )}
               </div>
 
               {/* TA management */}
@@ -334,24 +346,28 @@ export function CourseDetailManagerView({
                     ))}
                   </div>
                 )}
-                <div className="flex gap-2">
-                  <Select value={selectedTAId} onValueChange={setSelectedTAId}>
-                    <SelectTrigger className="flex-1">
-                      <SelectValue placeholder="Select a TA to add" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableTAs.map((u) => (
-                        <SelectItem key={u.id} value={u.id}>
-                          {u.name} ({u.email})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button onClick={handleAddTA} disabled={!selectedTAId}>
-                    <IconPlus className="w-4 h-4 mr-1" />
-                    Add TA
-                  </Button>
-                </div>
+                {availableTAs.length > 0 ? (
+                  <div className="flex gap-2">
+                    <Select value={selectedTAId} onValueChange={setSelectedTAId}>
+                      <SelectTrigger className="flex-1">
+                        <SelectValue placeholder="Select a TA to add" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableTAs.map((u) => (
+                          <SelectItem key={u.id} value={u.id}>
+                            {u.name} ({u.email})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button onClick={handleAddTA} disabled={!selectedTAId}>
+                      <IconPlus className="w-4 h-4 mr-1" />
+                      Add TA
+                    </Button>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No other TAs available to assign.</p>
+                )}
               </div>
             </div>
           </TabsContent>
