@@ -35,3 +35,8 @@ export function isCanvasSyncRateLimited(userId: string): boolean {
 export function isCanvasLinkRosterRateLimited(userId: string): boolean {
   return recordRateLimitHit(`canvas-link:${userId}`, LINK_RATE_LIMIT, LINK_RATE_WINDOW_MS);
 }
+
+/** Clears in-memory Canvas rate limits between tests. */
+export function resetCanvasRateLimitsForTests(): void {
+  rateLimitStore.clear();
+}

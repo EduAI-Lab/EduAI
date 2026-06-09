@@ -6,6 +6,22 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 
 
+## [Week 6 — June 8–13, 2026]
+
+### Added
+
+- [core] db: Add Canvas roster sync schema — optional unique `User.studentId` (UBC student number) and `CanvasRosterMember` staging table (`canvas_roster_members`) keyed by course + Canvas user id; migration `20260608200000_canvas_roster_sync_schema`. (#NNN, @GlowyBlack, 2026-06-08)
+- [core] api: Add Canvas course sync backend — `GET /api/canvas/courses` (instructor picker with `isSynced` state), `POST /api/canvas/sync` (selective sync/unsync from checked Canvas course ids: upsert Core `Course`, instructor `Enrollment`, roster staging, and student `Enrollment` when `sis_user_id` matches `User.studentId`), and `POST /api/canvas/link-roster` (STUDENT/TA links account by student number); extend catch-all `canvas.$.ts` routing. (#NNN, @GlowyBlack, 2026-06-08)
+- [core] api: Add Canvas sync services — paginated Canvas REST client (`listTeacherCanvasCourses`, roster fetch), course field mapping, roster upsert/deactivate, enrollment linking from staging (`enrollment-link.server.ts`, `resolveCanvasEnrollmentsForUser`), sync delta (`computeCanvasSyncDelta`), instructor course-access validation, sync rate limit (1 per 30s), and link-roster rate limit (10 per 15 min). (#NNN, @GlowyBlack, 2026-06-08)
+- [core] api: Wire admin `PATCH /api/users/:id` to accept `studentId` and trigger `resolveCanvasEnrollmentsForUser` when a student number is set. (#NNN, @GlowyBlack, 2026-06-08)
+- [core] tests: Add Canvas sync test coverage — 8 unit files (`canvas-client`, `canvas-encryption`, `canvas-schemas`, `canvas-sync-services`, `canvas-sync-delta`, `canvas-enrollment-link`, `canvas-guards`, `canvas-link-roster`) and `canvas.integration.test.ts` (26 integration tests for connect, courses picker, sync/unsync, link-roster, auth guards, and rate limits); document in `TESTS.md`. (#NNN, @GlowyBlack, 2026-06-08)
+
+### Fixed
+
+- [core] api: Validate Canvas URL with `parseAndValidateCanvasUrl` before saving integration credentials so non-local HTTP hosts are rejected even when credential verification is mocked in tests. (#NNN, @GlowyBlack, 2026-06-08)
+
+---
+
 ## [Week 5 — June 2–6, 2026]
 
 ### Added
