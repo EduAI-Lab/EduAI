@@ -2,49 +2,65 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
 import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
+import {
+  resolveCourseAccessWithCourse,
+  stripAnswerForStudents,
+  type AccessLevel,
+} from "~/lib/auth/course-access.server";
 import prisma from "~/lib/prisma.server";
 import {
   createQuestion,
   listQuestions,
 } from "~/lib/questions/server";
 
-export async function loader({ request }: LoaderFunctionArgs) {
-  if (request.headers.get("Authorization")?.startsWith("Bearer ")) {
-    const guard = await requireServiceKey(request);
-    if (guard) return guard;
-  } else {
-    // TODO(RBAC #292): replace with resolveCourseAccess
-    const session = await auth.api.getSession(request);
-    if (!session?.user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    if (session.user.role === "STUDENT") {
-      return new Response(JSON.stringify({ error: "Forbidden" }), {
-        status: 403,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-  }
+function json(status: number, body: unknown) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
 
+export async function loader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url);
   const courseId = url.searchParams.get("courseId");
 
-  if (!courseId) {
-    return new Response(JSON.stringify({ error: "MISSING_COURSE_ID" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
+  // §9: questions are course-scoped — access resolves against the courseId
+  // filter. Reads admit ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C) / TA(C);
+  // students never read questions directly.
+  let access: AccessLevel | null = null;
 
-  const course = await prisma.course.findUnique({ where: { id: courseId }, select: { id: true } });
-  if (!course) {
-    return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
-      status: 404,
-      headers: { "Content-Type": "application/json" },
+  if (request.headers.get("Authorization")?.startsWith("Bearer ")) {
+    const guard = await requireServiceKey(request);
+    if (guard) return guard;
+
+    if (!courseId) {
+      return json(400, { error: "MISSING_COURSE_ID" });
+    }
+    const course = await prisma.course.findUnique({
+      where: { id: courseId },
+      select: { id: true },
     });
+    if (!course) {
+      return json(404, { error: "COURSE_NOT_FOUND" });
+    }
+  } else {
+    const session = await auth.api.getSession(request);
+    if (!session?.user) {
+      return json(401, { error: "Unauthorized" });
+    }
+
+    if (!courseId) {
+      return json(400, { error: "MISSING_COURSE_ID" });
+    }
+
+    const resolved = await resolveCourseAccessWithCourse(session.user, courseId);
+    if (!resolved.course) {
+      return json(404, { error: "COURSE_NOT_FOUND" });
+    }
+    access = resolved.access;
+    if (!access || access.rank < 1) {
+      return json(403, { error: "Forbidden" });
+    }
   }
 
   const topicId = url.searchParams.get("topicId") ?? undefined;
@@ -56,52 +72,49 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const result = await listQuestions({ courseId, topicId, testable, limit, offset });
 
-  return new Response(JSON.stringify(result), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
+  // §19: enforce answer visibility at the serialization layer on every
+  // question response path (defensive — student-level access is already 403).
+  return json(200, {
+    ...result,
+    questions: result.questions.map((q) => stripAnswerForStudents(q, access)),
   });
 }
 
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== "POST") {
-    return new Response(JSON.stringify({ error: "Method not allowed" }), {
-      status: 405,
-      headers: { "Content-Type": "application/json" },
-    });
+    return json(405, { error: "Method not allowed" });
   }
 
-  // TODO: POST /api/questions accepts session-cookie auth only (no service-key path).
+  // POST /api/questions accepts session-cookie auth only (no service-key path).
   // The GET loader above accepts service keys; add a Bearer branch here if a
   // backend service ever needs to create questions without a user session.
-  // TODO(RBAC #292): replace with resolveCourseAccess
   const session = await auth.api.getSession(request);
   if (!session?.user) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-  if (!["INSTRUCTOR", "TA", "ADMIN"].includes(session.user.role ?? "")) {
-    return new Response(JSON.stringify({ error: "Forbidden" }), {
-      status: 403,
-      headers: { "Content-Type": "application/json" },
-    });
+    return json(401, { error: "Unauthorized" });
   }
 
   const body = await request.json();
+
+  // §9: create question is course-scoped, TA-and-up via enrollment (an
+  // INSTRUCTOR not enrolled in the course cannot author questions there).
+  // Missing/invalid courseId falls through to createQuestion's 422.
+  if (typeof body?.courseId === "string" && body.courseId) {
+    const { course, access } = await resolveCourseAccessWithCourse(session.user, body.courseId);
+    if (!course) {
+      return json(404, { error: "COURSE_NOT_FOUND" });
+    }
+    if (!access || access.rank < 1) {
+      return json(403, { error: "Forbidden" });
+    }
+  }
+
   const result = await createQuestion(body, session.user.id);
 
   if ("error" in result) {
     const status =
       result.error === "COURSE_NOT_FOUND" || result.error === "TOPIC_NOT_FOUND" ? 404 : 422;
-    return new Response(JSON.stringify(result), {
-      status,
-      headers: { "Content-Type": "application/json" },
-    });
+    return json(status, result);
   }
 
-  return new Response(JSON.stringify(result), {
-    status: 201,
-    headers: { "Content-Type": "application/json" },
-  });
+  return json(201, result);
 }

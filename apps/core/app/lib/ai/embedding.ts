@@ -100,7 +100,7 @@ function getEmbeddingModel() {
   if (openaiApiKey) {
     return createOpenAI({
       apiKey: openaiApiKey,
-    }).embedding(DEFAULT_EMBEDDING_MODEL);
+    }).embedding(DEFAULT_OPENAI_EMBEDDING_MODEL);
   }
 
   throw new Error(
