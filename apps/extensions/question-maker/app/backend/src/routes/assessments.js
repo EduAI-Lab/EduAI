@@ -5,7 +5,9 @@
  * (ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C)); TAs may VIEW assembled assessments
  * but not mutate them. Reads use min 'ta'; writes use min 'instructor'. The
  * flat role gate (AUTHORS) blocks STUDENT up front; service scoping keys off the
- * authorized course's owner id (`req.qmCourse.userId`).
+ * authorized course's owner id (`req.qmCourse.userId`) and, for section/variant/question
+ * writes, its course id (`req.qmCourse.id`) so a child resource from another course the
+ * same user owns can't be mutated cross-course (#1).
  */
 import express from 'express';
 import {
@@ -268,7 +270,7 @@ router.post('/:id/sections', authenticateToken, requireRole(INSTRUCTORS), writeA
 /** PUT /api/assessments/:assessmentId/sections/:sectionId – updates section metadata (instructor-only). */
 router.put('/:assessmentId/sections/:sectionId', authenticateToken, requireRole(INSTRUCTORS), writeAssessmentByAssessmentId, async (req, res, next) => {
   try {
-    const section = await updateAssessmentSection(req.params.sectionId, req.qmCourse.userId, req.body);
+    const section = await updateAssessmentSection(req.params.sectionId, req.qmCourse.userId, req.body, req.qmCourse.id);
     res.json({
       success: true,
       message: 'Section updated successfully',
@@ -282,7 +284,7 @@ router.put('/:assessmentId/sections/:sectionId', authenticateToken, requireRole(
 /** DELETE /api/assessments/:assessmentId/sections/:sectionId – removes the section (instructor-only). */
 router.delete('/:assessmentId/sections/:sectionId', authenticateToken, requireRole(INSTRUCTORS), writeAssessmentByAssessmentId, async (req, res, next) => {
   try {
-    await deleteAssessmentSection(req.params.sectionId, req.qmCourse.userId);
+    await deleteAssessmentSection(req.params.sectionId, req.qmCourse.userId, req.qmCourse.id);
     res.json({
       success: true,
       message: 'Section deleted successfully'
@@ -308,7 +310,8 @@ router.post('/:assessmentId/sections/:sectionId/variants', authenticateToken, re
       req.params.sectionId,
       req.qmCourse.userId,
       Number(variantId),
-      { displayOrder, metadata }
+      { displayOrder, metadata },
+      req.qmCourse.id
     );
 
     res.status(201).json({
@@ -337,7 +340,8 @@ router.put('/:assessmentId/sections/:sectionId/variants/:variantId/order', authe
       req.params.sectionId,
       req.qmCourse.userId,
       Number(req.params.variantId),
-      Number(displayOrder)
+      Number(displayOrder),
+      req.qmCourse.id
     );
 
     res.json({
@@ -356,7 +360,8 @@ router.delete('/:assessmentId/sections/:sectionId/variants/:variantId', authenti
     await removeVariantFromSection(
       req.params.sectionId,
       req.qmCourse.userId,
-      Number(req.params.variantId)
+      Number(req.params.variantId),
+      req.qmCourse.id
     );
 
     res.json({
