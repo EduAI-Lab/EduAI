@@ -15,16 +15,12 @@ import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
 
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
-
-interface ChatModel {
-  id: string;
-  name: string;
-  description: string;
-  provider: string;
-  maxTokens?: number;
-  supportsImages?: boolean;
-  supportsTools?: boolean;
-}
+import {
+  type ChatModelOption,
+  defaultChatModelId,
+  withAutoChatModel,
+} from "~/lib/chat-auto-model";
+import { routerAutoDefaultEnabled } from "~/lib/router-env.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request);
@@ -32,6 +28,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
   if (!session?.user) {
     return redirect("/auth/login");
   }
+
+  const routerAutoEnabled = routerAutoDefaultEnabled();
 
   // Fetch AI models from database
   const dbModels = await prisma.aIModel.findMany({
@@ -46,7 +44,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   });
 
   // Transform database models to match our interface
-  const chatModels: ChatModel[] = dbModels.map((model: any) => ({
+  const registryModels: ChatModelOption[] = dbModels.map((model: any) => ({
     id: `${model.provider.name}:${model.modelId}`,
     name: model.name,
     description: model.description,
@@ -56,15 +54,20 @@ export async function loader({ request }: LoaderFunctionArgs) {
     supportsTools: model.supportsTools,
   }));
 
+  const chatModels = withAutoChatModel(registryModels, routerAutoEnabled);
+
   return {
     chatModels,
+    routerAutoEnabled,
     user: session.user
   };
 }
 
 export default function Chat() {
-  const { chatModels, user } = useLoaderData<typeof loader>();
-  const [selectedModel, setSelectedModel] = useState(chatModels.length > 0 ? chatModels[0].id : '');
+  const { chatModels, routerAutoEnabled, user } = useLoaderData<typeof loader>();
+  const [selectedModel, setSelectedModel] = useState(() =>
+    defaultChatModelId(chatModels, routerAutoEnabled),
+  );
   const [selectedCourseCode, setSelectedCourseCode] = useState<string | null>(null);
   const [availableCourses, setAvailableCourses] = useState<Array<{ id: string; name: string; code: string }>>([]);
   const [chatId, setChatId] = useState<string | null>(null);
