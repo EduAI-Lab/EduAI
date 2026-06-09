@@ -28,7 +28,7 @@ describe("getAccessibleCourseCodes", () => {
 
     expect(codes).toEqual(["COSC 121", "BIOL 200"]);
     expect(db.course.findMany).toHaveBeenCalledWith({
-      where: {},
+      where: { deletedAt: null },
       select: { code: true },
     });
   });
@@ -41,11 +41,8 @@ describe("getAccessibleCourseCodes", () => {
     expect(codes).toEqual(["COSC 121"]);
     expect(db.course.findMany).toHaveBeenCalledWith({
       where: {
-        OR: [
-          { professorId: "u1" },
-          { tas: { some: { userId: "u1" } } },
-          { enrollments: { some: { studentId: "u1", isActive: true } } },
-        ],
+        deletedAt: null,
+        enrollments: { some: { userId: "u1", isActive: true } },
       },
       select: { code: true },
     });
@@ -57,7 +54,7 @@ describe("getAccessibleCourseCodes", () => {
     await getAccessibleCourseCodes({ id: "u2", role: null });
 
     const whereArg = db.course.findMany.mock.calls[0][0].where;
-    expect(whereArg).toHaveProperty("OR");
-    expect(whereArg).not.toEqual({});
+    expect(whereArg).toHaveProperty("enrollments");
+    expect(whereArg).not.toEqual({ deletedAt: null });
   });
 });

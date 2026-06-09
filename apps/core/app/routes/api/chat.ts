@@ -6,6 +6,7 @@ import { createAIProviderRegistry, modelSupportsTools } from "~/lib/ai/providers
 import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
 import { findRelevantContent } from "~/lib/ai/embedding";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
+import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { auth } from "~/lib/auth/server";
 import type { ActionFunctionArgs } from "react-router";
 import { z } from "zod";
@@ -336,6 +337,30 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     }
     const effectiveCourseId = resolvedCourseId || courseId || null;
+
+    // §10 (#302): course-scoped chats require course access for the acting
+    // user. Students need an active enrollment AND a published course; an
+    // inactive enrollment blocks new chats but never own-history reads
+    // (GET /api/chats/:chatId is ownership-scoped and unaffected).
+    // Chats without a course context (general assistant) are not gated.
+    if (effectiveCourseId) {
+      const { course, access } = await resolveCourseAccessWithCourse(
+        actingUser,
+        effectiveCourseId,
+      );
+      if (!course) {
+        return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (!access || (access.level === "student" && !course.isPublished)) {
+        return new Response(JSON.stringify({ error: "Forbidden" }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    }
 
     // Handle chat lookup and system prompt persistence
     let chat = null;

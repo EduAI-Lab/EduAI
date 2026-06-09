@@ -169,8 +169,6 @@ describe("GET /api/courses/:id/enrollments (integration)", () => {
     } as never);
     const res = await loader(makeArgs(courseId));
     expect(res.status).toBe(403);
-    const body = await res.json();
-    expect(body.error).toMatch(/not enrolled/i);
   });
 
   // --- 200 service key ---
@@ -196,15 +194,13 @@ describe("GET /api/courses/:id/enrollments (integration)", () => {
     expect(vi.mocked(auth.api.getSession)).not.toHaveBeenCalled();
   });
 
-  // --- 200 user auth (enrolled student) ---
-  it("returns all enrollments when caller is an enrolled student", async () => {
+  // --- 403 enrolled student (#305 — students cannot see fellow peers) ---
+  it("returns 403 when caller is an enrolled student", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: studentId, role: "STUDENT" },
     } as never);
     const res = await loader(makeArgs(courseId));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.enrollments).toHaveLength(3);
+    expect(res.status).toBe(403);
   });
 
   // --- 200 user auth (instructor) ---
@@ -272,5 +268,121 @@ describe("GET /api/courses/:id/enrollments (integration)", () => {
     expect(ta.studentEmail).toBe("enroll-ta@test.com");
     expect(ta.isActive).toBe(false);
     expect(ta.role).toBe("TA");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #305 — enrollment management lifecycle + instructor-floor invariant
+// ---------------------------------------------------------------------------
+
+describe("enrollment management lifecycle (#305)", () => {
+  it("create course with 1 instructor → add second → remove first → removing last is 409", async () => {
+    const { action: enrollmentsAction } = await import("~/routes/api/courses.enrollments");
+    const { action: enrollmentIdAction } = await import(
+      "~/routes/api/courses.enrollments.$enrollmentId"
+    );
+    const { createCourse } = await import("~/lib/courses/server");
+    const { seedUser, mockSession, cleanupRbac } = await import("../helpers/rbac");
+
+    const admin = await seedUser({ role: "ADMIN" });
+    const instructorA = await seedUser({ role: "INSTRUCTOR" });
+    const instructorB = await seedUser({ role: "INSTRUCTOR" });
+    let lifecycleCourseId: string | null = null;
+
+    try {
+      // 1. ADMIN creates the course with instructor A (via #298 createCourse).
+      mockSession(admin);
+      const form = new FormData();
+      form.set("name", "Lifecycle 305");
+      form.set("code", "LC 305");
+      form.set("section", "001");
+      form.set("term", "Fall");
+      form.set("year", "2026");
+      form.set("startDate", "2026-09-01");
+      form.set("instructorUserIds", instructorA.id);
+      const created = await createCourse(
+        new Request("http://localhost/api/courses", { method: "POST", body: form }),
+      );
+      expect(created.status).toBe(201);
+      const course = await created.json();
+      lifecycleCourseId = course.id;
+
+      // 2. ADMIN adds instructor B via POST /enrollments.
+      mockSession(admin);
+      const added = await enrollmentsAction({
+        request: new Request(`http://localhost/api/courses/${course.id}/enrollments`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: instructorB.id, role: "INSTRUCTOR" }),
+        }),
+        params: { id: course.id },
+        context: {} as never,
+      });
+      expect(added.status).toBe(201);
+
+      const enrollmentA = await prisma.enrollment.findUnique({
+        where: { courseId_userId: { courseId: course.id, userId: instructorA.id } },
+      });
+      const enrollmentB = await prisma.enrollment.findUnique({
+        where: { courseId_userId: { courseId: course.id, userId: instructorB.id } },
+      });
+
+      // 3. ADMIN removes instructor A — succeeds (B still active).
+      mockSession(admin);
+      const removedA = await enrollmentIdAction({
+        request: new Request(
+          `http://localhost/api/courses/${course.id}/enrollments/${enrollmentA!.id}`,
+          { method: "DELETE" },
+        ),
+        params: { id: course.id, enrollmentId: enrollmentA!.id },
+        context: {} as never,
+      });
+      expect(removedA.status).toBe(204);
+
+      // 4. ADMIN attempts to remove instructor B — 409, no override.
+      mockSession(admin);
+      const removedB = await enrollmentIdAction({
+        request: new Request(
+          `http://localhost/api/courses/${course.id}/enrollments/${enrollmentB!.id}`,
+          { method: "DELETE" },
+        ),
+        params: { id: course.id, enrollmentId: enrollmentB!.id },
+        context: {} as never,
+      });
+      expect(removedB.status).toBe(409);
+      expect(await removedB.json()).toEqual({
+        error: "INSTRUCTOR_FLOOR_VIOLATION",
+        currentInstructorCount: 1,
+      });
+
+      // B is still active in the DB.
+      const bRow = await prisma.enrollment.findUnique({ where: { id: enrollmentB!.id } });
+      expect(bRow?.isActive).toBe(true);
+    } finally {
+      await cleanupRbac({
+        userIds: [admin.id, instructorA.id, instructorB.id],
+        courseIds: lifecycleCourseId ? [lifecycleCourseId] : [],
+      });
+    }
+  });
+
+  it("promoting the last instructor to STUDENT is rejected with 409", async () => {
+    const { updateEnrollmentRole } = await import("~/lib/courses/enrollments.server");
+    const { seedUser, seedCourse, enroll, cleanupRbac } = await import("../helpers/rbac");
+
+    const instructor = await seedUser({ role: "INSTRUCTOR" });
+    const course = await seedCourse();
+    const enrollment = await enroll(course.id, instructor.id, "INSTRUCTOR");
+
+    try {
+      const result = await updateEnrollmentRole(course.id, enrollment.id, { role: "STUDENT" });
+      expect(result).toEqual({
+        status: "409",
+        error: "INSTRUCTOR_FLOOR_VIOLATION",
+        currentInstructorCount: 1,
+      });
+    } finally {
+      await cleanupRbac({ userIds: [instructor.id], courseIds: [course.id] });
+    }
   });
 });
