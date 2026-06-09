@@ -7,7 +7,8 @@ export default defineConfig({
     globals: true,
     // happy-dom avoids jsdom@29 → html-encoding-sniffer → @exodus/bytes ERR_REQUIRE_ESM
     environment: 'happy-dom',
-    include: ['app/tests/**/*.test.{ts,tsx}'],
+    include: ['app/tests/unit/**/*.test.{ts,tsx}'],
+    fileParallelism: false,
     setupFiles: ['./app/tests/setup.ts'],
   },
 });

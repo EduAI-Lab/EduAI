@@ -10,6 +10,7 @@ const {
   formatAnswerKey,
   buildTeachSupervisorContexts,
   buildGuideSupervisorContexts,
+  buildQuestionBankContext,
 } = _testExports;
 
 // ---------------------------------------------------------------------------
@@ -505,5 +506,74 @@ describe('buildGuideSupervisorContexts', () => {
     const params = { message: 'Question', studentAnswer: 1, knowledgeLevel: 'intermediate' };
     const { visibleContext, hiddenContext } = buildGuideSupervisorContexts(activity, params);
     expect(hiddenContext).toContain(visibleContext);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildQuestionBankContext
+// ---------------------------------------------------------------------------
+describe('buildQuestionBankContext', () => {
+  it('returns empty string for empty array', () => {
+    expect(buildQuestionBankContext([])).toBe('');
+  });
+
+  it('returns empty string for null/undefined', () => {
+    expect(buildQuestionBankContext(null)).toBe('');
+    expect(buildQuestionBankContext(undefined)).toBe('');
+  });
+
+  it('formats an MCQ question with choices and answer', () => {
+    const questions = [
+      {
+        type: 'MCQ',
+        difficulty: 'MEDIUM',
+        content: 'What is binary search?',
+        choices: [
+          { letter: 'A', text: 'O(n)' },
+          { letter: 'B', text: 'O(log n)' },
+        ],
+        answer: 'B',
+      },
+    ];
+    const result = buildQuestionBankContext(questions);
+    expect(result).toContain('supervisor reference only');
+    expect(result).toContain('[MCQ, MEDIUM] What is binary search?');
+    expect(result).toContain('Choices: A. O(n), B. O(log n)');
+    expect(result).toContain('Answer: B');
+  });
+
+  it('formats an SA question without choices', () => {
+    const questions = [
+      {
+        type: 'SA',
+        difficulty: 'HARD',
+        content: 'Explain recursion.',
+        choices: null,
+        answer: 'A function that calls itself.',
+      },
+    ];
+    const result = buildQuestionBankContext(questions);
+    expect(result).toContain('[SA, HARD] Explain recursion.');
+    expect(result).not.toContain('Choices:');
+    expect(result).toContain('Answer: A function that calls itself.');
+  });
+
+  it('omits Answer line when answer is null/empty', () => {
+    const questions = [
+      { type: 'LA', difficulty: 'EASY', content: 'Describe sorting.', choices: null, answer: null },
+    ];
+    const result = buildQuestionBankContext(questions);
+    expect(result).toContain('[LA, EASY] Describe sorting.');
+    expect(result).not.toContain('Answer:');
+  });
+
+  it('numbers multiple questions sequentially', () => {
+    const questions = [
+      { type: 'SA', difficulty: 'EASY', content: 'Q1', choices: null, answer: null },
+      { type: 'SA', difficulty: 'EASY', content: 'Q2', choices: null, answer: null },
+    ];
+    const result = buildQuestionBankContext(questions);
+    expect(result).toContain('1. [SA, EASY] Q1');
+    expect(result).toContain('2. [SA, EASY] Q2');
   });
 });

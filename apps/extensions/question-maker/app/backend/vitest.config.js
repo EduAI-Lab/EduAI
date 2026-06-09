@@ -10,5 +10,6 @@ export default defineConfig({
     poolOptions: {
       forks: { singleFork: true },
     },
+    env: { LOG_LEVEL: process.env.LOG_LEVEL || 'silent' },
   },
 });

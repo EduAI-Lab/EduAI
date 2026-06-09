@@ -95,7 +95,7 @@ export type User = {
   email: string;
   name: string;
   image?: string;
-  role: "ADMIN" | "UNIT_ADMIN" | "PROFESSOR" | "TA" | "STUDENT";
+  role: "ADMIN" | "UNIT_ADMIN" | "INSTRUCTOR" | "TA" | "STUDENT";
   isActive: boolean;
   emailVerified: boolean;
   authorizedUnits: string[];
@@ -132,7 +132,7 @@ const getRoleColor = (role: string) => {
       return "bg-red-50 text-red-700 border-red-200";
     case "UNIT_ADMIN":
       return "bg-orange-50 text-orange-700 border-orange-200";
-    case "PROFESSOR":
+    case "INSTRUCTOR":
       return "bg-blue-50 text-blue-700 border-blue-200";
     case "TA":
       return "bg-green-50 text-green-700 border-green-200";

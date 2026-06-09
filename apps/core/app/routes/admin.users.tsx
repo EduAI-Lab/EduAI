@@ -47,7 +47,7 @@ export default function UsersPage() {
     >
       <AppSidebar variant="inset" user={user} />
       <SidebarInset>
-        <SiteHeader user={user} />
+        <SiteHeader title="Users" />
         <UsersAdminView
           users={users}
           isLoading={isLoading}
