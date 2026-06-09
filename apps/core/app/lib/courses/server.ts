@@ -1,3 +1,4 @@
+import { UserRole, type Prisma } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
@@ -305,6 +306,35 @@ export async function getCourse(courseId: string) {
   return prisma.course.findFirst({
     where: { id: courseId, deletedAt: null },
   });
+}
+
+/**
+ * Returns the `code`s of courses the given user may select in chat.
+ *
+ * Admins can access every course; everyone else can access only courses they
+ * teach, TA, or are actively enrolled in. Used to validate the persisted
+ * `lastCourseCode` on restore so a course the user can no longer access is not
+ * brought back (#420 review — scope to the user, not the whole database).
+ */
+export async function getAccessibleCourseCodes(user: {
+  id: string;
+  role: UserRole | string | null | undefined;
+}): Promise<string[]> {
+  const where: Prisma.CourseWhereInput =
+    user.role === UserRole.ADMIN
+      ? { deletedAt: null }
+      : {
+          deletedAt: null,
+          // Instructor, TA, and student access all flow through Enrollment.role
+          // after the RBAC refactor (#293) — any active enrollment grants access.
+          enrollments: { some: { userId: user.id, isActive: true } },
+        };
+
+  const courses = await prisma.course.findMany({
+    where,
+    select: { code: true },
+  });
+  return courses.map((course) => course.code);
 }
 
 export async function getCourseTopics(courseId: string) {
