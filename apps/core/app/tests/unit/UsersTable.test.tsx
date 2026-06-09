@@ -25,7 +25,7 @@ const otherUser = {
   id: "u2",
   email: "bob@example.com",
   name: "Bob Jones",
-  role: "PROFESSOR" as const,
+  role: "INSTRUCTOR" as const,
 };
 
 const defaultProps = {

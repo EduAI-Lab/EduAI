@@ -1,6 +1,6 @@
 export type CourseAccess = 'admin' | 'unit' | 'instructor' | 'ta' | 'student' | null
 
-export type UserRole = 'ADMIN' | 'UNIT_ADMIN' | 'PROFESSOR' | 'TA' | 'STUDENT'
+export type UserRole = 'ADMIN' | 'UNIT_ADMIN' | 'INSTRUCTOR' | 'TA' | 'STUDENT'
 
 export interface RbacUser {
   id: string
@@ -10,7 +10,7 @@ export interface RbacUser {
 
 export interface RbacCourse {
   id: string
-  professorId: string
+  instructorId: string | null
   department: string | null
 }
 

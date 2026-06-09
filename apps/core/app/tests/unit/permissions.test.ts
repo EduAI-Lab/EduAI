@@ -27,7 +27,7 @@ describe('canCreateCourse', () => {
   it.each([
     ['ADMIN', true],
     ['UNIT_ADMIN', true],
-    ['PROFESSOR', false],
+    ['INSTRUCTOR', false],
     ['TA', false],
     ['STUDENT', false],
   ] as const)('role=%s → %s', (role, expected) => {

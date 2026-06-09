@@ -18,7 +18,7 @@ const PUBLISHED_COURSE: Course = {
   isActive: true,
   isPublished: true,
   aiInstructions: '',
-  professorId: 'prof-1',
+  instructorId: 'prof-1',
   department: 'COSC',
   createdAt: '2025-01-01T00:00:00.000Z',
   updatedAt: '2025-01-01T00:00:00.000Z',
