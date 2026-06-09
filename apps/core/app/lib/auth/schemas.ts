@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { UnitSchema } from "~/lib/units";
 
 export const signInSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
@@ -54,7 +55,7 @@ export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
 export const createUserSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
   email: z.string().email("Please enter a valid email address"),
-  role: z.enum(["ADMIN", "INSTRUCTOR", "TA", "STUDENT"], {
+  role: z.enum(["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "TA", "STUDENT"], {
     required_error: "Please select a role",
   }),
   isActive: z.boolean().default(true),
@@ -63,7 +64,7 @@ export const createUserSchema = z.object({
 export const updateUserSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters").optional(),
   email: z.string().email("Please enter a valid email address").optional(),
-  role: z.enum(["ADMIN", "INSTRUCTOR", "TA", "STUDENT"]).optional(),
+  role: z.enum(["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "TA", "STUDENT"]).optional(),
   isActive: z.boolean().optional(),
   emailVerified: z.boolean().optional(),
   studentId: z
@@ -76,3 +77,4 @@ export const updateUserSchema = z.object({
 
 export type CreateUserInput = z.infer<typeof createUserSchema>;
 export type UpdateUserInput = z.infer<typeof updateUserSchema>;
+export type UpdateMeInput = z.infer<typeof updateMeSchema>;
