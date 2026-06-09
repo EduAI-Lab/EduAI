@@ -1,7 +1,7 @@
 import { useChat } from '@ai-sdk/react';
-import { useState, useEffect } from "react";
-import { redirect, useLoaderData } from "react-router";
-import type { LoaderFunctionArgs } from "react-router";
+import { useState, useEffect, useCallback } from "react";
+import { redirect, useLoaderData, useFetcher } from "react-router";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { ChatWelcome } from "~/components/chat/chat-welcome";
 import { ChatMessage } from "~/components/chat/chat-message";
 import { ChatInput } from "~/components/chat/chat-input";
@@ -15,6 +15,9 @@ import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
 
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
+import { getUserPreference, saveUserPreference } from "~/lib/user-preferences.server";
+import { getAccessibleCourseCodes } from "~/lib/courses/server";
+import { parsePreferenceUpdates, resolveSelectedCourse } from "~/lib/user-preferences";
 
 interface ChatModel {
   id: string;
@@ -56,22 +59,81 @@ export async function loader({ request }: LoaderFunctionArgs) {
     supportsTools: model.supportsTools,
   }));
 
+  // Validate the persisted course against the courses THIS user can actually
+  // access, so a stale / now-inaccessible `lastCourseCode` is dropped on restore
+  // rather than treated as valid just because the course still exists (#420 review).
+  const availableCourseCodes = await getAccessibleCourseCodes(session.user);
+  const preferences = await getUserPreference(session.user.id, availableCourseCodes);
+
   return {
     chatModels,
-    user: session.user
+    user: session.user,
+    ...preferences,
   };
 }
 
+/**
+ * Persists the per-user chat preferences written from this route (Assistive-mode
+ * default + last selected course). Accepts any subset of
+ * { assistDefault?: boolean, lastCourseCode?: string | null }.
+ */
+export async function action({ request }: ActionFunctionArgs) {
+  const session = await auth.api.getSession(request);
+  if (!session?.user) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const updates = parsePreferenceUpdates(await request.json().catch(() => null));
+  if (Object.keys(updates).length === 0) {
+    return new Response(JSON.stringify({ error: "No valid preference fields provided" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  return saveUserPreference(session.user.id, updates);
+}
+
 export default function Chat() {
-  const { chatModels, user } = useLoaderData<typeof loader>();
+  const { chatModels, user, assistDefault, lastCourseCode } = useLoaderData<typeof loader>();
   const [selectedModel, setSelectedModel] = useState(chatModels.length > 0 ? chatModels[0].id : '');
-  const [selectedCourseCode, setSelectedCourseCode] = useState<string | null>(null);
+  const [selectedCourseCode, setSelectedCourseCode] = useState<string | null>(lastCourseCode);
   const [availableCourses, setAvailableCourses] = useState<Array<{ id: string; name: string; code: string }>>([]);
   const [chatId, setChatId] = useState<string | null>(null);
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
-  const [adhdAssist, setAdhdAssist] = useState(false);
+  const [adhdAssist, setAdhdAssist] = useState(assistDefault);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { apiKeys, getValidApiKeys, updateProviderSettings, removeProviderSettings, isProviderConfigured } = useApiKeys();
+  const prefsFetcher = useFetcher();
+
+  const persistPreference = useCallback(
+    (updates: { assistDefault?: boolean; lastCourseCode?: string | null }) => {
+      prefsFetcher.submit(updates, {
+        method: "post",
+        encType: "application/json",
+      });
+    },
+    [prefsFetcher],
+  );
+
+  const handleAssistChange = useCallback(
+    (checked: boolean) => {
+      setAdhdAssist(checked);
+      persistPreference({ assistDefault: checked });
+    },
+    [persistPreference],
+  );
+
+  const handleCourseChange = useCallback(
+    (code: string | null) => {
+      setSelectedCourseCode(code);
+      persistPreference({ lastCourseCode: code });
+    },
+    [persistPreference],
+  );
 
   // Fetch available courses
   useEffect(() => {
@@ -79,13 +141,22 @@ export default function Chat() {
       try {
         const response = await fetch('/api/courses');
         const data = await response.json();
-        setAvailableCourses(data.courses || []);
+        const courses: Array<{ id: string; name: string; code: string }> = data.courses || [];
+        const courseCodes = courses.map((c) => c.code);
+        setAvailableCourses(courses);
+        setSelectedCourseCode((current) => {
+          const resolved = resolveSelectedCourse(current, courseCodes);
+          if (current && resolved === null) {
+            persistPreference({ lastCourseCode: null });
+          }
+          return resolved;
+        });
       } catch (error) {
         console.error('Failed to fetch courses:', error);
       }
     };
     fetchCourses();
-  }, []);
+  }, [persistPreference]);
 
   // Load system prompt when chatId is set
   useEffect(() => {
@@ -188,7 +259,7 @@ export default function Chat() {
           actions={
             <ChatHeaderControls
               adhdAssist={adhdAssist}
-              onAdhdAssistChange={setAdhdAssist}
+              onAdhdAssistChange={handleAssistChange}
               systemPrompt={systemPrompt}
               onSystemPromptSave={handleSystemPromptSave}
             />
@@ -237,7 +308,7 @@ export default function Chat() {
             onStop={stop}
             onOpenSettings={() => setSettingsOpen(true)}
             selectedCourseId={selectedCourseCode}
-            setSelectedCourseId={setSelectedCourseCode}
+            setSelectedCourseId={handleCourseChange}
             availableCourses={availableCourses}
             selectedModel={selectedModel}
             setSelectedModel={setSelectedModel}

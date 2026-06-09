@@ -171,6 +171,8 @@ Each section should use this format:
 | `use-api-keys.test.ts` | Tests that the useApiKeys hook hydrates from localStorage, persists and removes provider settings, and correctly identifies which providers are fully configured. |
 | `use-mobile.test.ts` | Tests that useIsMobile returns the correct breakpoint state on mount, updates when the viewport changes, and removes its listener on unmount. |
 | `utils.test.ts` | Tests that the cn() utility merges conflicting Tailwind classes, drops falsy values, and handles conditional objects and nested arrays. |
+| [`user-preferences.test.ts`](apps/core/app/tests/unit/user-preferences.test.ts) | Tests that `parsePreferenceUpdates` keeps a boolean `assistDefault`, ignores non-boolean and unknown fields, trims a course code and normalizes a blank one to null, treats an explicit null as a clear, and returns an empty object for non-object payloads; and that `resolveSelectedCourse` keeps the current course only while it remains in the available list, otherwise returning null (no selection, empty list, or a course the user can no longer access). |
+| [`user-preferences.server.test.ts`](apps/core/app/tests/unit/user-preferences.server.test.ts) | Tests the chat-preferences persistence service against a mocked Prisma client: `getUserPreference` returns defaults when no row exists, restores the stored toggle + course when still available, clears and persists `null` when the stored course is stale, `saveUserPreference` upserts scoped to the user id and returns the stored values, and `clearUserPreference` deletes the user's row on logout. |
 
 ---
 
