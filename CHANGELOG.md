@@ -6,25 +6,12 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 
 
-## [Week 6 — June 7–13, 2026]
-
-### Added
-
-
-### Fixed
-
-
----
-
 ## [Week 5 — June 2–6, 2026]
 
 ### Added
 - [core] feat: Persist Assistive mode + selected course per user across page refreshes and new chats. New `UserPreference` table (`assistDefault`, `lastCourseCode`) + migration `add_user_preferences`; the `/chat` loader seeds the toggle + course from the user's stored preference, a `/chat` route `action` upserts on change via `useFetcher`, and `POST /auth/logout` clears the row so the next login starts fresh. A restored course the user can no longer access falls back to none; per-chat `Chat.adhdAssist` still wins when opening an existing chat. New `apps/core/app/lib/user-preferences.ts` (pure parse/resolve helpers) and `user-preferences.server.ts` (centralized `prisma.userPreference` access). (#420, @Ayyhab, 2026-06-02)
 - [core] tests: Unit tests for `parsePreferenceUpdates`, `resolveSelectedCourse`, and the preference persistence service (`get`/`save`/`clear`) at `apps/core/app/tests/unit/user-preferences.test.ts` and `user-preferences.server.test.ts` — 16 cases mapped to the #420 acceptance criteria; pinned to the node test environment. (#420, @Ayyhab, 2026-06-02)
-- [core] ui: Add instructor Canvas connect card on Settings → API Keys — `CanvasIntegrationSettings` wires `GET/POST/DELETE /api/canvas/*` with session cookie; Canvas URL, personal access token, and test mode; connected/disconnected status (#472, @GlowyBlack 2026-06-07)
-- [core] tests: Add `CanvasIntegrationSettings.test.tsx` RTL coverage for connect/disconnect UI (mocked `~/lib/canvas/client`); document canvas unit/integration suites in `TESTS.md` (2026-06-07)
-- [monorepo] docs: Add Canvas roster sync design draft (`docs/implementations/canvas-roster-sync-design.md`) — MVP sync-enrollments flow, staging table, and post-CWL enrollment linking (#459, @GlowyBlack, 2026-06-05)
-- [core] api: Implement Canvas API key storage for instructors (#381) — `canvas_integrations` table with AES-256-GCM encrypted tokens; `GET /api/canvas/integration`, `POST /api/canvas/connect` (probes `users/self/profile` before save), `DELETE /api/canvas/disconnect`; session auth for `INSTRUCTOR`/`ADMIN`; unit + integration tests.(#459, @GlowyBlack, 2026-06-05)
+- [core] api: Implement Canvas API key storage for instructors (#381) — `canvas_integrations` table with AES-256-GCM encrypted tokens; `GET /api/canvas/integration`, `POST /api/canvas/connect` (probes `users/self/profile` before save), `DELETE /api/canvas/disconnect`; session auth for `INSTRUCTOR`/`ADMIN`; unit + integration tests.(2026-06-05)
 - [monorepo] docs: Add Canvas integration strategy report — CWL-first access, Canvas REST roster sync MVP (course users + profile `primary_email` fallback), Question Maker REST for quizzes; LTI 1.3 documented as deferred until in-Canvas launch is required; local API validation notes and UBC pilot checklist. Added Canvas LTI vs API key technical research — endpoint reference, PowerShell/`curl.exe` testing notes, pros/cons, implementation checklist; links to `docs/implementations/lti-canvas-integration-report.md`. Add Canvas API integration guide — WSL + Canvas LMS `docker_dev_setup.sh`, `docker-compose.override.yml` host port mapping (e.g. `8080:80` to avoid Core on 3000), Question Maker connect/API verification, Docker vs host dev, troubleshooting. (#447, @glowyblack, 2026-06-03)
 - [core] ui: Add presentational skeleton for all 32 EduAI Core domain components — exported `*Props` types, route-owned I/O for materials upload, course selector, API key settings, and Ollama model fetch; 29 Vitest + RTL component tests under `apps/core/app/tests/unit/`. (#437, #438, #385, @ebabar5 @yta3216 @Ayyhab, 2026-06-03)
 - [core] ui: Add empty-state rows to admin AI models and providers tables (`No models found.`, `No providers found.`). (#438, @yta3216, 2026-06-03)
@@ -45,7 +32,6 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] refactor: Move data fetching out of domain components into parent routes — `courses.$courseId` owns materials load/upload; `chat` owns `useApiKeys` / `ApiKeySettings`; `admin.ai-models` owns Ollama model fetch for `ModelFormDialog`. (#437, #438, 2026-06-03)
 - [core] docs: Update `apps/core/README.md` — monorepo install from root, component architecture section, and expanded component test inventory. (#385, @Ayyhab, 2026-06-03)
 - [monorepo] docs: Update root `README.md` with EduAI component skeleton overview and link to `apps/core/docs/`. (#385, @Ayyhab, 2026-06-03)
-- [core] ui: Move Assistive mode toggle and System Prompt button from the scrollable chat area into the sticky page header on `/chat` so they remain visible during long conversations. Adds optional `actions` slot to `SiteHeader` and extracts `ChatHeaderControls`; state, API calls, and persistence are unchanged. (#PR, @Ayyhab, 2026-06-03)
 - [monorepo] infra: Port `docker:dev:db` and `kill:ports` scripts from bash to cross-platform Node.js (`scripts/dev-db.js`, `scripts/kill-ports.js`) so `npm run dev` works on Windows without WSL; add `apps/core/vitest.integration.config.ts` and `apps/extensions/ai-tutor/server/vitest.integration.config.js` for separate unit/integration vitest runs. (@evanbones, 2026-06-02)
 - [core] api: Refactor course server handlers — replace `handleCourseRequest` with `getCourses`, `createCourse`, and `updateCourse`; expand create/update schemas for section, dates, department, publish flags, and `instructorUserIds`; `POST /api/courses` creates instructor enrollments in a transaction; `PATCH /api/courses/:id` takes `params.id` (admin, unit admin, or assigned instructor); `createCourseTopic` / `deleteCourseTopic` return HTTP status codes instead of string error codes; routes and unit/integration tests updated. (#392, @glowyblack, 2026-05-30)
 - [monorepo] auth: Unify the auth frontend across apps so all three apps share a consistent sign-in surface. (#453, @evanbones, 2026-06-01)
@@ -58,7 +44,6 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 - [core] fix: Scope persisted-course validation to the current user (#420 review) — the `/chat` loader now restores `lastCourseCode` against the courses the user can actually access (courses they teach, TA, or are actively enrolled in; admins see all) via new `getAccessibleCourseCodes` in `apps/core/app/lib/courses/server.ts`, instead of every course in the database. A course the user can no longer access is dropped on restore rather than treated as valid just because it still exists globally. Adds `apps/core/app/tests/unit/courses-server.test.ts`. (#420, review feedback from @Whiteknight07, @Ayyhab, 2026-06-05)
-- [core] api: Harden Canvas connect path — SSRF guard on `canvasUrl` (HTTPS required except local dev hosts), stricter AES blob format validation, generic 500 responses in production, explicit non–test-mode `apiKey` handling; expand canvas route integration tests (#459, @GlowyBlack, 2026-06-06)
 - [monorepo] infra: Replace em dash with hyphen in `scripts/dev-db.sh` Docker startup message to avoid PowerShell parse errors on Windows. (#438, @yta3216, 2026-06-03)
 - [question-maker] api: Fix variant push to Core — support CUID string primary topic ids, lowercase `difficulty` / `reasoningLevel` enum values, return Core topic ids in the `INVALID_TOPIC_IDS` response, count name-updated topics in the sync-topics synced total, query JSON `question_order` with the `->>` operator, and wrap the cursor insert in a savepoint to survive a unique-key race. (#453, @abdullahmoh21, 2026-06-01)
 - [question-maker] ui: Remove the local admin bug-reports page (`BugReportsAdminPage`, `/admin/bug-reports` route) and all navigation entry-points (`ProfileCoursesDialog`, `TopNavigation`) — the local Sequelize `BugReport` model was removed as part of centralization; reports are now written exclusively to Core, so the GET/PATCH admin routes no longer exist and the page was unreachable. (@evanbones, 2026-06-03)
