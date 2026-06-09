@@ -12,16 +12,12 @@ import type {
 } from "~/components/chat/chat-view-types";
 import { SiteHeader } from "~/components/site-header";
 import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
-import { apiFetch } from "~/hooks/api/config";
 import { fetchChatSession } from "~/hooks/api/use-chat-sessions";
+import { useCourses } from "~/hooks/api/use-courses";
 import { useApiKeys } from "~/hooks/use-api-keys";
 import { auth } from "~/lib/auth/server";
 import { usesGlobalChat } from "~/lib/rbac";
 import prisma from "~/lib/prisma.server";
-
-type CoursesResponse = {
-  courses: ChatCourseOption[];
-};
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request);
@@ -60,14 +56,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
 export default function Chat() {
   const { chatModels, user } = useLoaderData<typeof loader>();
   const isGlobalChat = usesGlobalChat(user);
+  const { courses } = useCourses();
+  const availableCourses: ChatCourseOption[] = isGlobalChat
+    ? []
+    : courses.map((c) => ({ id: c.id, name: c.name, code: c.code }));
   const [selectedModel, setSelectedModel] = useState(
     chatModels.length > 0 ? chatModels[0].id : "",
   );
   const [selectedCourseCode, setSelectedCourseCode] = useState<string | null>(
     null,
-  );
-  const [availableCourses, setAvailableCourses] = useState<ChatCourseOption[]>(
-    [],
   );
   const [chatId, setChatId] = useState<string | null>(null);
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
@@ -75,20 +72,7 @@ export default function Chat() {
   const { getValidApiKeys } = useApiKeys();
 
   useEffect(() => {
-    if (isGlobalChat) {
-      setAvailableCourses([]);
-      setSelectedCourseCode(null);
-      return;
-    }
-
-    void (async () => {
-      try {
-        const data = await apiFetch<CoursesResponse>("/api/courses");
-        setAvailableCourses(data.courses || []);
-      } catch (error) {
-        console.error("Failed to fetch courses:", error);
-      }
-    })();
+    if (isGlobalChat) setSelectedCourseCode(null);
   }, [isGlobalChat]);
 
   useEffect(() => {
