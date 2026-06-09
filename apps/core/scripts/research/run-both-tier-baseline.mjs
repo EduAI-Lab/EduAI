@@ -7,6 +7,7 @@
  * Required env (or reuse CHAT_BENCH_* aliases):
  *   RESEARCH_RUN_URL / CHAT_BENCH_URL     POST target, e.g. https://dev.eduai.ok.ubc.ca/api/chat
  *   RESEARCH_RUN_API_KEYS / CHAT_BENCH_API_KEYS   JSON apiKeys body
+ *   RESEARCH_RUN_API_KEYS_FILE / CHAT_BENCH_API_KEYS_FILE  path to JSON file (preferred on server)
  *   RESEARCH_RUN_X_API_KEY / CHAT_BENCH_X_API_KEY  admin key, OR
  *   RESEARCH_RUN_COOKIE / CHAT_BENCH_COOKIE         session cookie
  *
@@ -17,6 +18,8 @@
  *   RESEARCH_RUN_LIMIT     max prompts after filter
  *   RESEARCH_RUN_IDS       comma-separated ts-### filter
  *   RESEARCH_RUN_OUT       output JSONL path (default docs/research/data/runs/both-tier.v1.jsonl)
+ *   RESEARCH_SUITE_DIR     override task-suite folder (must contain prompts.v1.jsonl)
+ *   RESEARCH_RUNS_DIR      override runs output folder
  *   RESEARCH_RUN_SLEEP_MS  delay between requests (default 500)
  *   RESEARCH_RUN_LABEL     free-text run label
  *
@@ -42,12 +45,31 @@ function readEnv(primary, alias) {
   return undefined;
 }
 
+function loadApiKeysJson() {
+  const file = readEnv("RESEARCH_RUN_API_KEYS_FILE", "CHAT_BENCH_API_KEYS_FILE");
+  if (file) {
+    return readFileSync(file, "utf8").trim();
+  }
+  return readEnv("RESEARCH_RUN_API_KEYS", "CHAT_BENCH_API_KEYS");
+}
+
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
 function loadPrompts() {
-  const raw = readFileSync(PROMPTS_PATH, "utf8").trim();
+  let raw;
+  try {
+    raw = readFileSync(PROMPTS_PATH, "utf8").trim();
+  } catch (e) {
+    if (e && typeof e === "object" && "code" in e && e.code === "ENOENT") {
+      console.error(`Task suite not found: ${PROMPTS_PATH}`);
+      console.error("Copy prompts.v1.jsonl to that path, or set RESEARCH_SUITE_DIR, e.g.:");
+      console.error("  RESEARCH_SUITE_DIR=./scripts/research/data/task-suite");
+      process.exit(1);
+    }
+    throw e;
+  }
   if (!raw) return [];
   return raw.split("\n").map((line, i) => {
     try {
@@ -105,7 +127,7 @@ async function postChat({ url, headers, apiKeys, model, prompt, courseCode }) {
 
 async function main() {
   const url = readEnv("RESEARCH_RUN_URL", "CHAT_BENCH_URL");
-  const apiKeysJson = readEnv("RESEARCH_RUN_API_KEYS", "CHAT_BENCH_API_KEYS");
+  const apiKeysJson = loadApiKeysJson();
   const xApiKey = readEnv("RESEARCH_RUN_X_API_KEY", "CHAT_BENCH_X_API_KEY");
   const cookie = readEnv("RESEARCH_RUN_COOKIE", "CHAT_BENCH_COOKIE");
   const splitFilter = (readEnv("RESEARCH_RUN_SPLIT") ?? "dev").toLowerCase();
@@ -117,7 +139,10 @@ async function main() {
   const label = readEnv("RESEARCH_RUN_LABEL") ?? "both-tier-v1";
 
   if (!url || !apiKeysJson) {
-    console.error("Need RESEARCH_RUN_URL and RESEARCH_RUN_API_KEYS (or CHAT_BENCH_* equivalents).");
+    console.error(
+      "Need RESEARCH_RUN_URL and RESEARCH_RUN_API_KEYS_FILE (or RESEARCH_RUN_API_KEYS / CHAT_BENCH_* equivalents).",
+    );
+    console.error("See apps/core/.env.research.example");
     process.exit(1);
   }
   if (!xApiKey && !cookie) {
@@ -129,7 +154,9 @@ async function main() {
   try {
     apiKeys = JSON.parse(apiKeysJson);
   } catch {
-    console.error("API keys env must be valid JSON.");
+    console.error("API keys must be valid JSON.");
+    console.error("Use RESEARCH_RUN_API_KEYS_FILE=./scripts/research/research-api-keys.json");
+    console.error(`Received (${apiKeysJson.length} chars): ${apiKeysJson.slice(0, 120)}…`);
     process.exit(1);
   }
 
