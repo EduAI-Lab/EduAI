@@ -67,12 +67,21 @@ export const updateUserSchema = z.object({
   role: z.enum(["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "TA", "STUDENT"]).optional(),
   isActive: z.boolean().optional(),
   emailVerified: z.boolean().optional(),
+  // #297: unit scoping for UNIT_ADMIN targets; values validated against the
+  // canonical subject codes (§19).
+  authorizedUnits: z.array(UnitSchema).optional(),
   studentId: z
     .union([
       z.string().min(1).max(32).transform((value) => value.trim()),
       z.null(),
     ])
     .optional(),
+});
+
+/** #297: self-service profile edits via /api/me — name and image only. */
+export const updateMeSchema = z.object({
+  name: z.string().min(2, "Name must be at least 2 characters").optional(),
+  image: z.string().url("Image must be a valid URL").nullable().optional(),
 });
 
 export type CreateUserInput = z.infer<typeof createUserSchema>;
