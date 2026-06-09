@@ -6,7 +6,6 @@ import { BrowserRouter as Router, Routes, Route, Navigate, useParams, useSearchP
 import { Toaster } from './components/ui/toaster';
 import { ThemeProvider } from './components/theme-provider';
 import { AuthProvider } from './contexts/AuthContext';
-import { LoginPage } from './pages/LoginPage';
 import { CourseSelectionPage } from './pages/CourseSelectionPage';
 import { Homepage } from './pages/Homepage';
 import { ApiTestPage } from './pages/ApiTestPage';
@@ -15,7 +14,6 @@ import { HelpPage } from './pages/HelpPage';
 import { AssessmentVariantPage } from './pages/AssessmentVariantPage';
 import { GuidedTourProvider } from './contexts/GuidedTourContext';
 import { BugReportProvider } from './contexts/BugReportContext';
-import { BugReportsAdminPage } from './pages/BugReportsAdminPage';
 
 function RedirectAssessmentToBuilder() {
   const { id } = useParams<{ id: string }>();
@@ -38,7 +36,6 @@ function App() {
             <BugReportProvider>
               <div className="min-h-screen bg-background">
                 <Routes>
-                  <Route path="/login" element={<LoginPage />} />
                   <Route path="/courses" element={<CourseSelectionPage />} />
                   <Route path="/home" element={<Homepage />} />
                   <Route path="/landing" element={<Navigate to="/home" replace />} />
@@ -50,8 +47,7 @@ function App() {
                   <Route path="/help" element={<HelpPage />} />
                   <Route path="/assessment-variant" element={<AssessmentVariantPage />} />
                   <Route path="/study" element={<RedirectLegacyStudyRoute />} />
-                  <Route path="/admin/bug-reports" element={<BugReportsAdminPage />} />
-                  <Route path="/" element={<Navigate to="/login" replace />} />
+<Route path="/" element={<Navigate to="/courses" replace />} />
                 </Routes>
                 <Toaster />
               </div>

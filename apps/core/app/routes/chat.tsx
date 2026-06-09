@@ -1,7 +1,7 @@
 import { useChat } from "@ai-sdk/react";
-import { useEffect, useState } from "react";
-import { redirect, useLoaderData } from "react-router";
-import type { LoaderFunctionArgs } from "react-router";
+import { useCallback, useEffect, useState } from "react";
+import { redirect, useLoaderData, useFetcher } from "react-router";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
 import { AppSidebar } from "~/components/app-sidebar";
 import { ChatCourseScopedView } from "~/components/chat/chat-course-scoped-view";
@@ -18,6 +18,9 @@ import { useApiKeys } from "~/hooks/use-api-keys";
 import { auth } from "~/lib/auth/server";
 import { usesGlobalChat } from "~/lib/rbac";
 import prisma from "~/lib/prisma.server";
+import { getUserPreference, saveUserPreference } from "~/lib/user-preferences.server";
+import { getAccessibleCourseCodes } from "~/lib/courses/server";
+import { parsePreferenceUpdates } from "~/lib/user-preferences";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request);
@@ -47,14 +50,46 @@ export async function loader({ request }: LoaderFunctionArgs) {
     supportsTools: model.supportsTools,
   }));
 
+  // Validate the persisted course against the courses THIS user can actually
+  // access, so a stale / now-inaccessible `lastCourseCode` is dropped on restore
+  // rather than treated as valid just because the course still exists (#420 review).
+  const availableCourseCodes = await getAccessibleCourseCodes(session.user);
+  const preferences = await getUserPreference(session.user.id, availableCourseCodes);
+
   return {
     chatModels,
     user: session.user,
+    ...preferences,
   };
 }
 
+/**
+ * Persists the per-user chat preferences written from this route (Assistive-mode
+ * default + last selected course). Accepts any subset of
+ * { assistDefault?: boolean, lastCourseCode?: string | null }.
+ */
+export async function action({ request }: ActionFunctionArgs) {
+  const session = await auth.api.getSession(request);
+  if (!session?.user) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const updates = parsePreferenceUpdates(await request.json().catch(() => null));
+  if (Object.keys(updates).length === 0) {
+    return new Response(JSON.stringify({ error: "No valid preference fields provided" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  return saveUserPreference(session.user.id, updates);
+}
+
 export default function Chat() {
-  const { chatModels, user } = useLoaderData<typeof loader>();
+  const { chatModels, user, assistDefault, lastCourseCode } = useLoaderData<typeof loader>();
   const isGlobalChat = usesGlobalChat(user);
   const { courses } = useCourses();
   const availableCourses: ChatCourseOption[] = isGlobalChat
@@ -64,12 +99,20 @@ export default function Chat() {
     chatModels.length > 0 ? chatModels[0].id : "",
   );
   const [selectedCourseCode, setSelectedCourseCode] = useState<string | null>(
-    null,
+    lastCourseCode ?? null,
   );
   const [chatId, setChatId] = useState<string | null>(null);
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
-  const [adhdAssist, setAdhdAssist] = useState(false);
+  const [adhdAssist, setAdhdAssist] = useState(assistDefault ?? false);
   const { getValidApiKeys } = useApiKeys();
+  const prefsFetcher = useFetcher();
+
+  const persistPreference = useCallback(
+    (updates: { assistDefault?: boolean; lastCourseCode?: string | null }) => {
+      prefsFetcher.submit(updates, { method: "post", encType: "application/json" });
+    },
+    [prefsFetcher],
+  );
 
   useEffect(() => {
     if (isGlobalChat) setSelectedCourseCode(null);
@@ -185,13 +228,13 @@ export default function Chat() {
       style={
         {
           "--sidebar-width": "calc(var(--spacing) * 72)",
-          "--header-height": "calc(var(--spacing) * 12)",
+          "--header-height": "calc(var(--spacing) * 14)",
         } as React.CSSProperties
       }
     >
       <AppSidebar variant="inset" user={user} />
       <SidebarInset>
-        <SiteHeader user={user} />
+        <SiteHeader title="Chat" />
         {isGlobalChat ? (
           <ChatGlobalView {...sharedViewProps} />
         ) : (
