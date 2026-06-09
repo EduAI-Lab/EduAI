@@ -433,11 +433,13 @@ export const getQuestionsInAssessment = async (assessmentId, userId) => {
 
     // Get all questions that have this assessment in their questionOrder
     const questions = await Question_Metadata.findAll({
-      where: {
-        questionOrder: {
-          [Op.contains]: { [assessmentId]: { [Op.ne]: null } }
-        }
-      },
+      // `question_order` is a `json` column (not `jsonb`), so the `@>` containment
+      // operator is unavailable. Use `->>` key extraction, which works on `json`
+      // and mirrors the ORDER BY clause below.
+      where: sequelize.where(
+        sequelize.literal(`question_order ->> '${assessmentId}'`),
+        { [Op.ne]: null }
+      ),
       include: [
         {
           model: Course,

@@ -29,7 +29,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const course = await prisma.course.findUnique({
     where: { id: courseId },
     include: {
-      professor: { select: { id: true, name: true, email: true } },
+      instructor: { select: { id: true, name: true, email: true } },
       tas: {
         include: { user: { select: { id: true, name: true, email: true } } },
         orderBy: { createdAt: 'asc' },
@@ -48,7 +48,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   const access = await resolveCourseAccess(rbacUser, {
     id: course.id,
-    professorId: course.professorId,
+    instructorId: course.instructorId,
     department: course.department,
   })
 
@@ -56,10 +56,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   if (!access) return redirect('/courses?access=denied')
 
   const canManageStaff = access === 'admin' || access === 'unit'
-  const [professors, taUsers] = canManageStaff
+  const [instructors, taUsers] = canManageStaff
     ? await Promise.all([
         prisma.user.findMany({
-          where: { role: 'PROFESSOR', isActive: true },
+          where: { role: 'INSTRUCTOR', isActive: true },
           select: { id: true, name: true, email: true },
           orderBy: { name: 'asc' },
         }),
@@ -79,13 +79,13 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     },
     user,
     access,
-    professors,
+    instructors,
     taUsers,
   }
 }
 
 export default function CourseDetailPage() {
-  const { course, user, access, professors, taUsers } = useLoaderData<typeof loader>()
+  const { course, user, access, instructors, taUsers } = useLoaderData<typeof loader>()
   const revalidator = useRevalidator()
   const { topics, createTopic, deleteTopic } = useCourseTopics(course.id)
   const { enrollments } = useCourseEnrollments(course.id)
@@ -96,15 +96,15 @@ export default function CourseDetailPage() {
   const [materialsError, setMaterialsError] = useState<string | null>(null)
   const [materialsSuccess, setMaterialsSuccess] = useState<string | null>(null)
 
-  const handleAssignProfessor = useCallback(async (professorId: string) => {
+  const handleAssignInstructor = useCallback(async (instructorId: string) => {
     const res = await fetch(`/api/courses/${course.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ professorId }),
+      body: JSON.stringify({ instructorId }),
     })
     if (!res.ok) {
       const body = await res.json().catch(() => ({}))
-      throw new Error(body.error ?? 'Failed to assign professor')
+      throw new Error(body.error ?? 'Failed to assign instructor')
     }
     revalidator.revalidate()
   }, [course.id, revalidator])
@@ -141,7 +141,7 @@ export default function CourseDetailPage() {
     >
       <AppSidebar variant="inset" user={user} />
       <SidebarInset>
-        <SiteHeader user={user} />
+        <SiteHeader />
         <div className="flex flex-1 flex-col">
           <div className="px-4 lg:px-6 py-6">
             {access === 'admin' || access === 'unit' || access === 'instructor' ? (
@@ -152,7 +152,7 @@ export default function CourseDetailPage() {
                 enrollments={enrollments}
                 materials={uploadMaterials}
                 tas={tas}
-                professors={professors}
+                instructors={instructors}
                 taUsers={taUsers}
                 isUploading={isUploading}
                 materialsError={materialsError}
@@ -160,7 +160,7 @@ export default function CourseDetailPage() {
                 onFileSelect={handleFileSelect}
                 onCreateTopic={async (name) => { await createTopic(name) }}
                 onDeleteTopic={async (id) => { await deleteTopic(id) }}
-                onAssignProfessor={handleAssignProfessor}
+                onAssignInstructor={handleAssignInstructor}
                 onAddTA={addTA}
                 onRemoveTA={removeTA}
               />

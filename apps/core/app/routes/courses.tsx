@@ -57,7 +57,7 @@ export default function CoursesPage() {
 
   const isAdmin = user.role === 'ADMIN'
   const isUnitAdmin = user.role === 'UNIT_ADMIN'
-  const isProfessor = user.role === 'PROFESSOR'
+  const isInstructor = user.role === 'INSTRUCTOR'
   const isTA = user.role === 'TA'
 
   const handlePublishToggle = async (id: string, publish: boolean) => {
@@ -111,9 +111,9 @@ export default function CoursesPage() {
             onDeleteCourse={async (id) => { await deleteCourse(id) }}
             onPublishToggle={handlePublishToggle}
           />
-        ) : isProfessor ? (
+        ) : isInstructor ? (
           <CoursesInstructorView
-            courses={courses.filter((c) => c.professorId === user.id)}
+            courses={courses.filter((c) => c.instructorId === user.id)}
             onEditCourse={async (id, data) => { await updateCourse(id, data) }}
             onPublishToggle={handlePublishToggle}
           />

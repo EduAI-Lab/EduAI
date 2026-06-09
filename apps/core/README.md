@@ -23,6 +23,7 @@ A production-ready chat platform with Retrieval-Augmented Generation (RAG) capab
 - **Simple Integration**: Clean REST API endpoints for easy integration
 - **Vector Storage**: PGVector-powered embeddings on PostgreSQL for efficient similarity search
 - **Role-based Access**: Support for students, professors, and administrators
+- **Persisted Chat Preferences**: Assistive mode and the selected course are saved per user, restored on every page load and new chat, and cleared on logout
 
 ## Prerequisites
 
@@ -84,6 +85,9 @@ OPENROUTER_API_KEY="" # Embeddings via OpenRouter (recommended if you have one k
 GOOGLE_GENERATIVE_AI_API_KEY="" # Direct Gemini embeddings (used when OPENROUTER_API_KEY is unset)
 OLLAMA_BASE_URL="http://localhost:11434/"
 FIRECRAWL_API_KEY="" # Required for Firecrawl web search tool. If not set, web search is unavailable.
+
+# Canvas instructor API tokens (AES-256-GCM; same format as Question Maker ENCRYPTION_KEY)
+ENCRYPTION_KEY="" # REQUIRED for POST /api/canvas/connect — generate e.g. openssl rand -hex 32
 ```
 
 ## Usage
@@ -349,6 +353,54 @@ curl -X DELETE "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" \
   }'
 ```
 
+### Canvas Integration Endpoints
+
+Store an instructor's Canvas personal access token on Core (encrypted at rest). Used for future roster sync and Canvas REST calls. Requires a Better Auth **session cookie** — not `x-api-key`. Only users with role **`INSTRUCTOR`** or **`ADMIN`** may connect.
+
+Set `ENCRYPTION_KEY` in `apps/core/.env` before calling connect (see [Configuration](#configuration)). Token format and local Canvas setup: [`docs/implementations/canvas-api-integration-guide.md`](../../docs/implementations/canvas-api-integration-guide.md) and [`docs/CANVAS.md`](../../docs/CANVAS.md).
+
+On connect (non–test mode), Core probes `GET {canvasUrl}/api/v1/users/self/profile` before saving. Invalid tokens return `400`; unreachable Canvas returns `502`.
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| `GET` | `/api/canvas/integration` | Connection status (`canvasUrl`, `isTestMode`, `isConnected`) — **never returns the token** |
+| `POST` | `/api/canvas/connect` | Save or update integration |
+| `DELETE` | `/api/canvas/disconnect` | Remove integration |
+
+**Connect body** (`POST /api/canvas/connect`):
+
+```json
+{
+  "canvasUrl": "http://localhost:8080",
+  "apiKey": "1234~your-personal-access-token",
+  "isTestMode": false
+}
+```
+
+In **test mode**, `apiKey` is optional (mock flows only).
+
+#### Connect (browser console, logged in as instructor)
+
+```javascript
+fetch("/api/canvas/connect", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  credentials: "include",
+  body: JSON.stringify({
+    canvasUrl: "http://localhost:8080",
+    apiKey: "YOUR_CANVAS_TOKEN",
+  }),
+}).then((r) => r.json()).then(console.log);
+```
+
+#### Check status
+
+```javascript
+fetch("/api/canvas/integration", { credentials: "include" })
+  .then((r) => r.json())
+  .then(console.log);
+```
+
 ## Testing
 
 Unit tests are written with [Vitest](https://vitest.dev/) and [Testing Library](https://testing-library.com/).
@@ -374,8 +426,13 @@ npx vitest run app/tests/unit/LoginForm.test.tsx
 
 ```
 app/tests/
-├── setup.ts          # Global setup (jest-dom, ResizeObserver mock, matchMedia mock)
-└── unit/             # Unit tests
+├── setup.ts                    # Global setup (jest-dom, ResizeObserver mock, matchMedia mock)
+├── setup.integration.ts        # Integration-test env (e.g. DATABASE_URL)
+├── globalSetup.ts              # DB migrate/seed before integration suite
+├── integration/                # Route + DB tests (@vitest-environment node)
+│   ├── courses.integration.test.ts
+│   └── ...
+└── unit/                       # Unit tests
     ├── LoginForm.test.tsx
     ├── AppSidebar.test.tsx
     ├── ApiKeySettings.test.tsx

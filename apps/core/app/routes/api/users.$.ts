@@ -40,9 +40,7 @@ async function handleRequest(request: Request) {
           updatedAt: true,
           _count: {
             select: {
-              enrolledCourses: true,
-              assistedCourses: true,
-              taughtCourses: true,
+              enrollments: true,
               aiInteractions: true,
             },
           },
@@ -93,9 +91,7 @@ async function handleRequest(request: Request) {
             updatedAt: true,
             _count: {
               select: {
-                enrolledCourses: true,
-                assistedCourses: true,
-                taughtCourses: true,
+                enrollments: true,
                 aiInteractions: true,
               },
             },
@@ -170,9 +166,7 @@ async function handleRequest(request: Request) {
             updatedAt: true,
             _count: {
               select: {
-                enrolledCourses: true,
-                assistedCourses: true,
-                taughtCourses: true,
+                enrollments: true,
                 aiInteractions: true,
               },
             },

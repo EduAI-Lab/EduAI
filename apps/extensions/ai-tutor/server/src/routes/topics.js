@@ -22,7 +22,6 @@
 import express from 'express';
 import { prisma } from '../config/database.js';
 import { requireRole } from '../middleware/auth.js';
-import { getEduAiAccessTokenForUser } from '../services/eduaiAuth.js';
 import { syncExternalCourseTopics } from '../services/topicSync.js';
 
 const router = express.Router();
@@ -94,7 +93,7 @@ router.get('/courses/:courseId/topics', async (req, res) => {
  * Why: blocked for imported courses — those topics are owned by EduAI and a
  * manual addition would be wiped on next sync (or worse, drift silently).
  */
-router.post('/courses/:courseId/topics', requireRole('PROFESSOR'), async (req, res) => {
+router.post('/courses/:courseId/topics', requireRole('INSTRUCTOR'), async (req, res) => {
   const instructor = req.user;
   const courseId = Number(req.params.courseId);
   if (!Number.isFinite(courseId)) {
@@ -151,7 +150,7 @@ export default router;
  * Why: name-keyed additive sync preserves activity references even if a topic
  * is renamed upstream — the instructor can use `/topics/remap` to consolidate.
  */
-router.post('/courses/:courseId/topics/sync', requireRole('PROFESSOR'), async (req, res) => {
+router.post('/courses/:courseId/topics/sync', requireRole('INSTRUCTOR'), async (req, res) => {
   const instructor = req.user;
   const courseId = Number(req.params.courseId);
   if (!Number.isFinite(courseId)) {
@@ -177,10 +176,7 @@ router.post('/courses/:courseId/topics/sync', requireRole('PROFESSOR'), async (r
 
     let upstreamNames = [];
     try {
-      const eduAiAccessToken = await getEduAiAccessTokenForUser(instructor.id);
-      const { topics: synced, upstreamNames: upstream } = await syncExternalCourseTopics(courseId, {
-        accessToken: eduAiAccessToken,
-      });
+      const { topics: synced, upstreamNames: upstream } = await syncExternalCourseTopics(courseId);
       upstreamNames = upstream || [];
     } catch (e) {
       const status = Number.isInteger(e?.status) ? e.status : 502;
@@ -212,7 +208,7 @@ router.post('/courses/:courseId/topics/sync', requireRole('PROFESSOR'), async (r
  * instructor uses this to consolidate the orphaned local topic into the new
  * upstream-synced one without losing activity associations.
  */
-router.post('/courses/:courseId/topics/remap', requireRole('PROFESSOR'), async (req, res) => {
+router.post('/courses/:courseId/topics/remap', requireRole('INSTRUCTOR'), async (req, res) => {
   const instructor = req.user;
   const courseId = Number(req.params.courseId);
   if (!Number.isFinite(courseId)) {
@@ -221,11 +217,11 @@ router.post('/courses/:courseId/topics/remap', requireRole('PROFESSOR'), async (
 
   const mappings = Array.isArray(req.body?.mappings) ? req.body.mappings : [];
   const normalized = mappings
-    .map((m) => ({ fromTopicId: Number(m?.fromTopicId), toTopicId: Number(m?.toTopicId) }))
+    .map((m) => ({ fromTopicId: String(m?.fromTopicId ?? ''), toTopicId: String(m?.toTopicId ?? '') }))
     .filter(
       (m) =>
-        Number.isFinite(m.fromTopicId) &&
-        Number.isFinite(m.toTopicId) &&
+        m.fromTopicId.length > 0 &&
+        m.toTopicId.length > 0 &&
         m.fromTopicId !== m.toTopicId,
     );
 
