@@ -44,16 +44,29 @@ export async function getCourses(request: Request) {
       headers: { "Content-Type": "application/json" } as const,
     });
   }
-  if (session.user.role !== "ADMIN" && session.user.role !== "UNIT_ADMIN") {
+  const role = session.user.role;
+  const userId = session.user.id;
+
+  let where: Prisma.CourseWhereInput = { deletedAt: null };
+
+  if (role === "INSTRUCTOR") {
+    where = { deletedAt: null, instructorId: userId };
+  } else if (role === "TA") {
+    where = { deletedAt: null, tas: { some: { userId } } };
+  } else if (role === "STUDENT") {
+    where = {
+      deletedAt: null,
+      isPublished: true,
+      enrollments: { some: { userId, isActive: true } },
+    };
+  } else if (role !== "ADMIN" && role !== "UNIT_ADMIN") {
     return new Response(JSON.stringify({ error: "Forbidden" }), {
       status: 403,
       headers: { "Content-Type": "application/json" } as const,
     });
   }
 
-  const courses = await prisma.course.findMany({
-    where: { deletedAt: null },
-  });
+  const courses = await prisma.course.findMany({ where });
   return new Response(JSON.stringify({ courses }), {
     status: 200,
     headers: { "Content-Type": "application/json" } as const,
@@ -277,7 +290,7 @@ export async function getAccessibleCourseCodes(user: {
           OR: [
             { instructorId: user.id },
             { tas: { some: { userId: user.id } } },
-            { enrollments: { some: { studentId: user.id, isActive: true } } },
+            { enrollments: { some: { userId: user.id, isActive: true } } },
           ],
         };
 
