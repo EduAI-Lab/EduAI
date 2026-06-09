@@ -18,9 +18,6 @@ vi.mock('~/components/course-materials-upload', () => ({
   CourseMaterialsUpload: () => <div data-testid="upload-widget">Upload widget</div>,
 }))
 
-vi.mock('~/hooks/api/use-users', () => ({
-  useUsers: () => ({ users: [], isLoading: false, error: null }),
-}))
 
 const COURSE: CourseDetail = {
   id: 'c1',
@@ -62,6 +59,8 @@ const NOOP = async () => {}
 const onFileSelect = vi.fn()
 const STAFF_PROPS = {
   tas: [],
+  professors: [],
+  taUsers: [],
   onAssignProfessor: NOOP,
   onAddTA: NOOP,
   onRemoveTA: NOOP,

@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import { redirect, useLoaderData } from 'react-router'
+import { redirect, useLoaderData, useRevalidator } from 'react-router'
 import type { LoaderFunctionArgs } from 'react-router'
 
 import { auth } from '~/lib/auth/server'
@@ -55,6 +55,22 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   // No access at all — redirect (e.g. TA opened a course they do not assist)
   if (!access) return redirect('/courses?access=denied')
 
+  const canManageStaff = access === 'admin' || access === 'unit'
+  const [professors, taUsers] = canManageStaff
+    ? await Promise.all([
+        prisma.user.findMany({
+          where: { role: 'PROFESSOR', isActive: true },
+          select: { id: true, name: true, email: true },
+          orderBy: { name: 'asc' },
+        }),
+        prisma.user.findMany({
+          where: { role: 'TA', isActive: true },
+          select: { id: true, name: true, email: true },
+          orderBy: { name: 'asc' },
+        }),
+      ])
+    : [[], []]
+
   return {
     course: {
       ...course,
@@ -63,11 +79,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     },
     user,
     access,
+    professors,
+    taUsers,
   }
 }
 
 export default function CourseDetailPage() {
-  const { course, user, access } = useLoaderData<typeof loader>()
+  const { course, user, access, professors, taUsers } = useLoaderData<typeof loader>()
+  const revalidator = useRevalidator()
   const { topics, createTopic, deleteTopic } = useCourseTopics(course.id)
   const { enrollments } = useCourseEnrollments(course.id)
   const { materials, uploadMaterial } = useCourseMaterials(course.id)
@@ -87,7 +106,8 @@ export default function CourseDetailPage() {
       const body = await res.json().catch(() => ({}))
       throw new Error(body.error ?? 'Failed to assign professor')
     }
-  }, [course.id])
+    revalidator.revalidate()
+  }, [course.id, revalidator])
 
   const uploadMaterials: UploadMaterial[] = materials.map((m) => ({
     id: m.id,
@@ -132,6 +152,8 @@ export default function CourseDetailPage() {
                 enrollments={enrollments}
                 materials={uploadMaterials}
                 tas={tas}
+                professors={professors}
+                taUsers={taUsers}
                 isUploading={isUploading}
                 materialsError={materialsError}
                 materialsSuccess={materialsSuccess}
