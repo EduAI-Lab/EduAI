@@ -66,6 +66,12 @@ export const updateUserSchema = z.object({
   role: z.enum(["ADMIN", "INSTRUCTOR", "TA", "STUDENT"]).optional(),
   isActive: z.boolean().optional(),
   emailVerified: z.boolean().optional(),
+  studentId: z
+    .union([
+      z.string().min(1).max(32).transform((value) => value.trim()),
+      z.null(),
+    ])
+    .optional(),
 });
 
 export type CreateUserInput = z.infer<typeof createUserSchema>;
