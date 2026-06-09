@@ -83,7 +83,7 @@ Restart dev server (tmux) after editing `.env`.
 
 **vLLM ops on cmps01 (LiteLLM + two backends):** [`VLLM.md`](./VLLM.md) · [`infra/cmps01/README.md`](../../infra/cmps01/README.md)
 
-In the app: pick **`vllm:qwen2.5-7b-instruct`** or **`vllm:qwen2.5-32b-instruct`** in chat (no browser enable step). Models are seeded — run `npx prisma db seed` if missing.
+In the app: pick **`vllm:qwen2.5-7b-instruct`** or **`vllm:qwen2.5-32b-instruct`** in chat (no browser enable step). Register models in **Admin → AI Models** (vLLM provider → **Refresh list**); `npx prisma db seed` only adds the `vllm` provider row.
 
 #### Auth / login troubleshooting
 

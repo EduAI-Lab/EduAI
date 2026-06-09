@@ -82,4 +82,4 @@ echo ""
 echo "Done. Next on s378:"
 echo '  VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"'
 echo '  VLLM_API_KEY="vllm-local"'
-echo "  restart dev server, npm run vllm:smoke, npx prisma db seed"
+echo "  restart dev server, npm run vllm:smoke, register models in Admin → AI Models"
