@@ -391,3 +391,83 @@ describe("Canvas API — courses and sync", () => {
     expect(await res.json()).toMatchObject({ success: false, error: "Invalid input" });
   });
 });
+
+describe("Canvas API — link-roster", () => {
+  async function seedSyncedCourseForLinking() {
+    await connectTestMode();
+    sessionFor(instructorId, "INSTRUCTOR");
+    await call("POST", "sync", { canvasCourseIds: ["1"] });
+  }
+
+  it("allows a student to link enrollments by student number", async () => {
+    await seedSyncedCourseForLinking();
+
+    const unlinkedStudent = await prisma.user.create({
+      data: {
+        email: `canvas-unlinked-${Date.now()}@test.com`,
+        name: "Unlinked Student",
+        role: "STUDENT",
+        emailVerified: true,
+      },
+    });
+
+    sessionFor(unlinkedStudent.id, "STUDENT");
+    const res = await call("POST", "link-roster", { studentNumber: "student_1" });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.data.studentId).toBe("student_1");
+    expect(body.data.enrollmentsLinked).toBeGreaterThanOrEqual(1);
+
+    const updatedUser = await prisma.user.findUnique({
+      where: { id: unlinkedStudent.id },
+      select: { studentId: true },
+    });
+    expect(updatedUser?.studentId).toBe("student_1");
+
+    await prisma.enrollment.deleteMany({ where: { userId: unlinkedStudent.id } });
+    await prisma.user.delete({ where: { id: unlinkedStudent.id } });
+  });
+
+  it("returns 404 when no staged roster matches the student number", async () => {
+    const student = await prisma.user.create({
+      data: {
+        email: `canvas-no-match-${Date.now()}@test.com`,
+        name: "No Match Student",
+        role: "STUDENT",
+        emailVerified: true,
+      },
+    });
+
+    sessionFor(student.id, "STUDENT");
+    const res = await call("POST", "link-roster", { studentNumber: "unknown_999" });
+    expect(res.status).toBe(404);
+
+    await prisma.user.delete({ where: { id: student.id } });
+  });
+
+  it("returns 409 when student number is already linked to another account", async () => {
+    await seedSyncedCourseForLinking();
+
+    const otherStudent = await prisma.user.create({
+      data: {
+        email: `canvas-conflict-${Date.now()}@test.com`,
+        name: "Conflict Student",
+        role: "STUDENT",
+        emailVerified: true,
+      },
+    });
+
+    sessionFor(otherStudent.id, "STUDENT");
+    const res = await call("POST", "link-roster", { studentNumber: "student_1" });
+    expect(res.status).toBe(409);
+
+    await prisma.user.delete({ where: { id: otherStudent.id } });
+  });
+
+  it("returns 403 for unauthenticated link-roster requests via instructor guard", async () => {
+    noSession();
+    const res = await call("POST", "link-roster", { studentNumber: "student_1" });
+    expect(res.status).toBe(401);
+  });
+});
