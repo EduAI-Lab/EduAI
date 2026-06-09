@@ -16,6 +16,9 @@ import { Label } from "~/components/ui/label"
 import { Badge } from "~/components/ui/badge"
 import { useApiKeys } from "~/hooks/use-api-keys"
 import { authClient } from "~/lib/auth/client"
+import { CanvasIntegrationSettings } from "~/components/canvas/CanvasIntegrationSettings"
+
+const CANVAS_SETTINGS_ROLES = new Set(["INSTRUCTOR", "ADMIN"])
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request)
@@ -63,6 +66,8 @@ export default function SettingsPage() {
   const FIXED_PREFIX = "eduai"
   const [createdKeyPlain, setCreatedKeyPlain] = useState<string | null>(null)
   const [copyOk, setCopyOk] = useState(false)
+
+  const showCanvasSettings = CANVAS_SETTINGS_ROLES.has(user.role ?? "")
 
   const loadServerKeys = async () => {
     try {
@@ -202,6 +207,8 @@ export default function SettingsPage() {
                   </div>
                 </CardContent>
               </Card>
+
+              {showCanvasSettings && <CanvasIntegrationSettings />}
 
               <Card>
                 <CardHeader>

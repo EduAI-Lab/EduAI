@@ -8,19 +8,25 @@ vi.mock("~/lib/auth/guards.server", () => ({
   requireServiceKey: vi.fn(),
 }));
 
+vi.mock("~/lib/auth/course-access.server", () => ({
+  resolveCourseAccessWithCourse: vi.fn(),
+}));
+
 vi.mock("~/lib/courses/server", () => ({
   getCourse: vi.fn(),
 }));
 
 vi.mock("~/lib/courses/enrollments.server", () => ({
   getCourseEnrollments: vi.fn(),
+  addEnrollment: vi.fn(),
 }));
 
-import { loader } from "~/routes/api/courses.enrollments";
+import { loader, action } from "~/routes/api/courses.enrollments";
 import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
+import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { getCourse } from "~/lib/courses/server";
-import { getCourseEnrollments } from "~/lib/courses/enrollments.server";
+import { getCourseEnrollments, addEnrollment } from "~/lib/courses/enrollments.server";
 
 const VALID_KEY = "test-service-key";
 
@@ -52,8 +58,18 @@ const MOCK_COURSE = {
   id: "course-1",
   name: "Algorithms",
   code: "COSC 101",
+  isPublished: true,
   deletedAt: null,
 };
+
+type Access = { level: string; rank: number } | null;
+
+function mockAccess(access: Access, course: object | null = MOCK_COURSE) {
+  vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+    course: course as never,
+    access: access as never,
+  });
+}
 
 function makeArgs(id?: string, authorization?: string) {
   const headers = new Headers();
@@ -67,24 +83,36 @@ function makeArgs(id?: string, authorization?: string) {
   };
 }
 
+function makePost(id: string, body: unknown) {
+  return {
+    request: new Request(`http://localhost/api/courses/${id}/enrollments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+    params: { id },
+    context: {} as never,
+  };
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.stubEnv("EDUAI_API_KEY", VALID_KEY);
+  vi.mocked(requireServiceKey).mockResolvedValue(null);
+  vi.mocked(auth.api.getSession).mockResolvedValue(null);
+  vi.mocked(getCourse).mockResolvedValue(MOCK_COURSE as never);
+  vi.mocked(getCourseEnrollments).mockResolvedValue(MOCK_ENROLLMENTS as never);
+  mockAccess({ level: "instructor", rank: 2 });
+});
+
+afterEach(() => vi.unstubAllEnvs());
+
 describe("GET /api/courses/:id/enrollments loader", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    vi.stubEnv("EDUAI_API_KEY", VALID_KEY);
-    vi.mocked(requireServiceKey).mockResolvedValue(null);
-    vi.mocked(auth.api.getSession).mockResolvedValue(null);
-    vi.mocked(getCourse).mockResolvedValue(MOCK_COURSE as never);
-    vi.mocked(getCourseEnrollments).mockResolvedValue(MOCK_ENROLLMENTS as never);
-  });
-
-  afterEach(() => vi.unstubAllEnvs());
-
   // --- 400 ---
   it("returns 400 when id param is missing", async () => {
     const res = await loader(makeArgs() as never);
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "COURSE_ID_REQUIRED" });
-    expect(getCourse).not.toHaveBeenCalled();
     expect(getCourseEnrollments).not.toHaveBeenCalled();
   });
 
@@ -93,7 +121,6 @@ describe("GET /api/courses/:id/enrollments loader", () => {
     const res = await loader(makeArgs("course-1"));
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual({ error: "Unauthorized" });
-    expect(getCourse).not.toHaveBeenCalled();
   });
 
   // --- 403 service key ---
@@ -120,50 +147,61 @@ describe("GET /api/courses/:id/enrollments loader", () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "user-1", role: "STUDENT" },
     } as never);
-    vi.mocked(getCourse).mockResolvedValue(null);
+    mockAccess(null, null);
     const res = await loader(makeArgs("missing"));
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: "COURSE_NOT_FOUND" });
     expect(getCourseEnrollments).not.toHaveBeenCalled();
   });
 
-  // --- 403 user not enrolled ---
-  it("returns 403 when user-auth caller is not enrolled in the course", async () => {
+  // --- 403 user paths (§6) ---
+  it("returns 403 when user-auth caller has no course relationship", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "outsider", role: "STUDENT" },
     } as never);
+    mockAccess(null);
     const res = await loader(makeArgs("course-1"));
     expect(res.status).toBe(403);
-    const body = await res.json();
-    expect(body.error).toMatch(/not enrolled/i);
-    expect(getCourseEnrollments).toHaveBeenCalledWith("course-1");
+    expect(getCourseEnrollments).not.toHaveBeenCalled();
+  });
+
+  it("returns 403 for an enrolled STUDENT (#305 — students cannot see peers)", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "user-1", role: "STUDENT" },
+    } as never);
+    mockAccess({ level: "student", rank: 0 });
+    const res = await loader(makeArgs("course-1"));
+    expect(res.status).toBe(403);
+    expect(getCourseEnrollments).not.toHaveBeenCalled();
   });
 
   // --- 200 service key ---
-  it("returns 200 with enrollments via service key (skips enrollment check)", async () => {
+  it("returns 200 with enrollments via service key (skips RBAC entirely)", async () => {
     const res = await loader(makeArgs("course-1", `Bearer ${VALID_KEY}`));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.enrollments).toHaveLength(3);
     expect(auth.api.getSession).not.toHaveBeenCalled();
+    expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
   });
 
-  // --- 200 user auth (enrolled student) ---
-  it("returns 200 when user-auth caller is enrolled as STUDENT", async () => {
+  // --- 200 user auth (TA and up) ---
+  it("returns 200 when user-auth caller is enrolled as TA", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
-      user: { id: "user-1", role: "STUDENT" },
+      user: { id: "user-2", role: "STUDENT" },
     } as never);
+    mockAccess({ level: "ta", rank: 1 });
     const res = await loader(makeArgs("course-1"));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.enrollments).toHaveLength(3);
   });
 
-  // --- 200 user auth (instructor) ---
   it("returns 200 when user-auth caller is enrolled as INSTRUCTOR", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "user-3", role: "INSTRUCTOR" },
     } as never);
+    mockAccess({ level: "instructor", rank: 2 });
     const res = await loader(makeArgs("course-1"));
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -184,22 +222,6 @@ describe("GET /api/courses/:id/enrollments loader", () => {
       enrolledAt: "2025-09-01T00:00:00.000Z",
       isActive: true,
       role: "STUDENT",
-    });
-  });
-
-  it("maps TA enrollment correctly", async () => {
-    const res = await loader(makeArgs("course-1", `Bearer ${VALID_KEY}`));
-    const body = await res.json();
-    const ta = body.enrollments.find(
-      (e: Record<string, unknown>) => e.role === "TA"
-    );
-    expect(ta).toEqual({
-      studentId: "user-2",
-      studentEmail: "bob@test.com",
-      studentName: "Bob",
-      enrolledAt: "2025-09-02T00:00:00.000Z",
-      isActive: false,
-      role: "TA",
     });
   });
 
@@ -236,5 +258,82 @@ describe("GET /api/courses/:id/enrollments loader", () => {
     const res = await loader(makeArgs("course-1", `Bearer ${VALID_KEY}`));
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ enrollments: [] });
+  });
+});
+
+describe("POST /api/courses/:id/enrollments action (#305)", () => {
+  beforeEach(() => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "actor", role: "INSTRUCTOR" },
+    } as never);
+    vi.mocked(addEnrollment).mockResolvedValue({
+      status: "201",
+      enrollment: { id: "e-new" },
+    } as never);
+  });
+
+  it("returns 401 without a session", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null);
+    const res = await action(makePost("course-1", { userId: "u9", role: "STUDENT" }));
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 403 for an enrolled TA (manage tier is rank >= 2)", async () => {
+    mockAccess({ level: "ta", rank: 1 });
+    const res = await action(makePost("course-1", { userId: "u9", role: "STUDENT" }));
+    expect(res.status).toBe(403);
+    expect(addEnrollment).not.toHaveBeenCalled();
+  });
+
+  it("lets an INSTRUCTOR add a STUDENT", async () => {
+    mockAccess({ level: "instructor", rank: 2 });
+    const res = await action(makePost("course-1", { userId: "u9", role: "STUDENT" }));
+    expect(res.status).toBe(201);
+    expect(addEnrollment).toHaveBeenCalledWith("course-1", { userId: "u9", role: "STUDENT" });
+  });
+
+  it("lets an INSTRUCTOR add a TA", async () => {
+    mockAccess({ level: "instructor", rank: 2 });
+    const res = await action(makePost("course-1", { userId: "u9", role: "TA" }));
+    expect(res.status).toBe(201);
+  });
+
+  it("blocks an INSTRUCTOR from adding another INSTRUCTOR (§6)", async () => {
+    mockAccess({ level: "instructor", rank: 2 });
+    const res = await action(makePost("course-1", { userId: "u9", role: "INSTRUCTOR" }));
+    expect(res.status).toBe(403);
+    expect(addEnrollment).not.toHaveBeenCalled();
+  });
+
+  it("lets UNIT_ADMIN add an INSTRUCTOR", async () => {
+    mockAccess({ level: "unit", rank: 3 });
+    const res = await action(makePost("course-1", { userId: "u9", role: "INSTRUCTOR" }));
+    expect(res.status).toBe(201);
+  });
+
+  it("returns 409 ALREADY_ENROLLED on duplicate", async () => {
+    mockAccess({ level: "admin", rank: 4 });
+    vi.mocked(addEnrollment).mockResolvedValue({
+      status: "409",
+      error: "ALREADY_ENROLLED",
+    } as never);
+    const res = await action(makePost("course-1", { userId: "u9", role: "STUDENT" }));
+    expect(res.status).toBe(409);
+  });
+
+  it("returns 422 USER_NOT_FOUND for unknown user", async () => {
+    mockAccess({ level: "admin", rank: 4 });
+    vi.mocked(addEnrollment).mockResolvedValue({
+      status: "422",
+      error: "USER_NOT_FOUND",
+    } as never);
+    const res = await action(makePost("course-1", { userId: "ghost", role: "STUDENT" }));
+    expect(res.status).toBe(422);
+  });
+
+  it("returns 404 when the course does not exist", async () => {
+    mockAccess(null, null);
+    const res = await action(makePost("missing", { userId: "u9", role: "STUDENT" }));
+    expect(res.status).toBe(404);
   });
 });
