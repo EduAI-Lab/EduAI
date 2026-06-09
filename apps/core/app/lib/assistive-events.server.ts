@@ -52,6 +52,9 @@ export type ResponseComplianceExtras = {
   promptTokens?: number;
   completionTokens?: number;
   durationMs?: number;
+  oversightRewritten?: boolean;
+  oversightMethod?: "none" | "deterministic" | "llm";
+  preStructuralPass?: boolean;
 };
 
 export async function recordResponseComplianceEvent(args: {
@@ -69,6 +72,9 @@ export async function recordResponseComplianceEvent(args: {
     promptTokens: args.extras?.promptTokens ?? null,
     completionTokens: args.extras?.completionTokens ?? null,
     durationMs: args.extras?.durationMs ?? null,
+    oversightRewritten: args.extras?.oversightRewritten ?? null,
+    oversightMethod: args.extras?.oversightMethod ?? null,
+    preStructuralPass: args.extras?.preStructuralPass ?? null,
   };
 
   await recordAssistiveEvent({

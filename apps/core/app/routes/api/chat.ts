@@ -1,7 +1,7 @@
 import type { Prisma, User } from "@prisma/client";
 import { UserRole } from "@prisma/client";
 import { randomUUID } from "crypto";
-import { streamText, tool } from "ai";
+import { createDataStreamResponse, formatDataStreamPart, streamText, tool } from "ai";
 import {
   createAIProviderRegistry,
   listEnabledRegistryProviders,
@@ -10,6 +10,11 @@ import {
 } from "~/lib/ai/providers";
 import { modelSupportsTools } from "~/lib/ai/providers.server";
 import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
+import {
+  auditAndMaybeRewrite,
+  isAdhdOversightEnabled,
+  resolveAdhdWordCap,
+} from "~/lib/ai/adhd-oversight";
 import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
 import { findRelevantContent } from "~/lib/ai/embedding";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
@@ -826,12 +831,21 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
     streamConfig.system = composeSystemPrompt(streamConfig.system ?? "", { adhdAssist: effectiveAdhdAssist });
 
     const streamStartedAt = Date.now();
+    const needsOversight = effectiveAdhdAssist && isAdhdOversightEnabled();
+    const lastUserText = extractMessageText(
+      [...trimmedMessages].reverse().find((message) => message.role === "user"),
+    );
+    const adhdWordCap = resolveAdhdWordCap(lastUserText);
+
     const logResponseCompliance = (
       assistantText: string,
       extras?: {
         finishReason?: string | null;
         promptTokens?: number;
         completionTokens?: number;
+        oversightRewritten?: boolean;
+        oversightMethod?: "none" | "deterministic" | "llm";
+        preStructuralPass?: boolean;
       },
     ) => {
       const trimmed = assistantText?.trim();
@@ -847,6 +861,9 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
           finishReason: extras?.finishReason ?? null,
           promptTokens: extras?.promptTokens,
           completionTokens: extras?.completionTokens,
+          oversightRewritten: extras?.oversightRewritten,
+          oversightMethod: extras?.oversightMethod,
+          preStructuralPass: extras?.preStructuralPass,
         },
       }).catch((err) => {
         console.error("[assistive-events] response_compliance log failed", err);
@@ -857,18 +874,148 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
     chatApiDebug("Starting LLM stream", {
       model,
       approach: supportsTools ? "tool_calling" : "hybrid_rag",
+      adhdOversight: needsOversight,
       ...llmPromptSizeHints(streamConfig.system, modelMessages),
     });
     const result = await streamText({
       ...(streamConfig as Parameters<typeof streamText>[0]),
-      onFinish: async ({ text, usage, finishReason }) => {
-        logResponseCompliance(text, {
+      onFinish: needsOversight
+        ? undefined
+        : async ({ text, usage, finishReason }) => {
+            logResponseCompliance(text, {
+              finishReason,
+              promptTokens: usage?.promptTokens,
+              completionTokens: usage?.completionTokens,
+            });
+          },
+    });
+
+    if (needsOversight) {
+      try {
+        await result.consumeStream();
+
+        const [text, usage, finishReason, sources, reasoning, response] = await Promise.all([
+          result.text,
+          result.usage,
+          result.finishReason,
+          result.sources,
+          result.reasoning,
+          result.response,
+        ]);
+
+        const draft = (text ?? "").trim();
+        const audited = draft
+          ? await auditAndMaybeRewrite({
+              draft,
+              model: aiModel,
+              wordCap: adhdWordCap,
+            })
+          : {
+              text: "",
+              rewritten: false,
+              method: "none" as const,
+              beforeMetrics: {
+                wordCount: 0,
+                topSummary: false,
+                nextLine: false,
+                underCap: true,
+                oneTopic: null,
+                structuralPass: false,
+              },
+              afterMetrics: {
+                wordCount: 0,
+                topSummary: false,
+                nextLine: false,
+                underCap: true,
+                oneTopic: null,
+                structuralPass: false,
+              },
+            };
+
+        const finalText = audited.text;
+        logResponseCompliance(finalText, {
           finishReason,
           promptTokens: usage?.promptTokens,
           completionTokens: usage?.completionTokens,
+          oversightRewritten: audited.rewritten,
+          oversightMethod: audited.method,
+          preStructuralPass: audited.beforeMetrics.structuralPass,
         });
-      },
-    });
+
+        if (streaming) {
+          const headers: Record<string, string> = {
+            "Content-Encoding": "none",
+            "Transfer-Encoding": "chunked",
+            Connection: "keep-alive",
+          };
+          if (chat?.id) {
+            headers["X-Chat-Id"] = chat.id;
+          }
+
+          return createDataStreamResponse({
+            headers,
+            execute: (dataStream) => {
+              if (finalText) {
+                dataStream.write(formatDataStreamPart("text", finalText));
+              }
+              dataStream.write(
+                formatDataStreamPart("finish_message", {
+                  finishReason: finishReason ?? "stop",
+                }),
+              );
+            },
+          });
+        }
+
+        if (response?.messages?.length) {
+          const assistantMessages = response.messages.filter((message) => message.role === "assistant");
+          if (assistantMessages.length > 0 && finalText) {
+            const last = assistantMessages[assistantMessages.length - 1];
+            await appendMessages([{ ...last, content: finalText }]);
+          } else {
+            await appendMessages(assistantMessages);
+          }
+        } else if (finalText) {
+          await appendMessages([
+            {
+              id: randomUUID(),
+              role: "assistant",
+              content: finalText,
+            },
+          ]);
+        }
+
+        return new Response(
+          JSON.stringify({
+            content: finalText,
+            model,
+            usage,
+            finishReason,
+            sources: sources || [],
+            reasoning,
+            responseId: response?.id,
+            courseCode,
+            chatId: chat?.id,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      } catch (error) {
+        console.error("Error in ADHD oversight response:", error);
+        return new Response(
+          JSON.stringify({
+            error: "Failed to generate overseen response",
+            details: error instanceof Error ? error.message : "Unknown error",
+          }),
+          {
+            status: 500,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+    }
 
     if (streaming) {
       const headers: Record<string, string> = {
