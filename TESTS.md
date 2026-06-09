@@ -157,9 +157,14 @@ Each section should use this format:
 | `ai-schemas.test.ts`| AI provider and model schemas reject missing required fields, invalid URLs, negative pricing, and unknown enum values, and apply the correct defaults when optional fields are omitted |
 | `auth-schemas.test.ts`| Tests that auth schemas validate credentials, enforce password matching, and restrict role values across sign-in, sign-up, reset, and user management flows. |
 | `auth-handler-request.test.ts` | Tests that internal Better Auth sub-requests omit session cookies on sign-in (clean re-login after logout) and forward cookies on sign-out. |
-| `forward-session-cookies.test.ts` | Tests that all `Set-Cookie` headers from a Better Auth response are forwarded (multiple cookies, single-header fallback, empty response). |
+| `bug-reports.test.ts` | `createBugReport` service: rejects null/missing payloads, invalid or CORE source values, empty userId, non-string/missing description, descriptions over 2000 chars; accepts exactly 2000 chars; returns USER_NOT_FOUND when the user doesn't exist; trims userId before DB lookup; passes AI_TUTOR and QUESTION_MAKER source through to the create call; persists userId even when isAnonymous is true; defaults isAnonymous to false; passes all optional fields through unchanged; stores null for absent optional fields. |
 | `chat-api-keys.schema.test.ts` | Validates `clientApiKeysBodySchema` and `toUserProviderSettings` coercion defaults for chat `apiKeys` body parsing. |
 | `chat-rag.test.ts` | Tests `buildCappedRagContextText` and `capRagHitsForTool` chunk/char caps for hybrid and tool RAG paths. |
+| `canvas-client.test.ts` | `parseAndValidateCanvasUrl` SSRF guard (HTTPS required except local dev hosts) and `verifyCanvasCredentials` success, invalid token, Canvas error statuses, and unreachable Canvas. |
+| `canvas-encryption.test.ts` | AES-256-GCM encrypt/decrypt round-trip, empty input, legacy plaintext passthrough, strict encrypted-format detection, and missing `ENCRYPTION_KEY`. |
+| `canvas-schemas.test.ts` | `ConnectCanvasSchema` validates canvasUrl normalization, requires apiKey outside test mode, allows test mode without apiKey, and rejects invalid URLs. |
+| `courses.enrollments.test.ts` | `GET /api/courses/:id/enrollments` loader: 400 missing id, 401 no session, 403 invalid service key, 403 user not enrolled, 404 course not found (both auth paths), 200 via service key and user OAuth (STUDENT/INSTRUCTOR), role mapping, null `enrolledAt`, active + inactive returned together, and empty enrollment list. |
+| `courses.materials.test.ts` | `GET /api/courses/:courseId/materials` loader and `POST /api/courses/:courseId/materials` action: auth, status codes, and material list/upload behaviour. |
 | `courses-schemas.test.ts`| Tests that course schemas require non-empty fields, reject fractional years, and enforce that topic deletion specifies at least one identifier. |
 | `courses.server.test.ts` | `getCourses` (role-scoped via `buildCourseListFilter`), `createCourse` (incl. UNIT_ADMIN department lock), `updateCourse` (rank gating, UNIT_ADMIN can't move a course outside their units), new `deleteCourse` soft-delete, `getCourse`, `getCourseTopics`, `getCourseTopic`, and `deleteCourseTopic` — instructor-enrollment creation in a transaction, `deletedAt: null` queries, and soft-delete updates. |
 | `courses.id.test.ts` | `courses.id` loader and action: 400/401, `resolveCourseAccess` gating (403 unrelated user, student publish gate), service-key and session auth, 404 `COURSE_NOT_FOUND`, 200 flat course, rank-gated PATCH, and new soft-DELETE → 204. |
@@ -167,17 +172,20 @@ Each section should use this format:
 | `embedding.test.ts` | Tests that chunk generation returns no chunks for empty input, keeps short content as one chunk, never produces chunks that exceed the size limit, applies word overlap between adjacent chunks, and handles punctuation-free input without throwing. |
 | `file-processing.test.ts` | Tests that text sanitization removes invalid characters and normalises whitespace, checksums are stable and unique, file validation enforces allowed types and the 50 MB limit, semantic chunking splits content at logical boundaries without producing empty or oversized chunks, and file extraction strips the extension and computes the checksum from sanitized content. |
 | `form-utils.test.ts` | Form validation errors are reported per field, combined into one message when multiple fields fail, and fields signal valid/invalid correctly |
+| `forward-session-cookies.test.ts` | Tests that all `Set-Cookie` headers from a Better Auth response are forwarded (multiple cookies, single-header fallback, empty response). |
+| `guards.server.test.ts` | `requireServiceKey`: 401 on missing header, 401 on non-Bearer scheme, 403 on wrong token, 403 on unconfigured env var, null on correct token, 403 on prefix/suffix length-variant tokens. `validateRedirectUrl`: returns /dashboard for null/empty/non-path inputs, passes through valid relative paths, allows localhost and production subdomains, and rejects external domains, protocol-relative URLs, and javascript: URIs. |
 | `LoginForm.test.tsx`| The login form renders all inputs and buttons correctly, shows field-level error messages with error styling, and disables all inputs and updates the button label while signing in |
+| `questions.server.test.ts` | `createQuestion` (validation + idempotency-key dedupe), `listQuestions` (filtering), `getQuestionById`, and `updateQuestionTestable` server helpers. |
+| `rate-limit.server.test.ts` | `isRateLimited`: returns false under the limit, true once exceeded, tracks IPs independently, expires hits outside the time window, and reads the default limit from `SESSION_VALIDATE_RATE_LIMIT`. |
 | `RegisterForm.test.tsx`| The register form renders all four fields and buttons correctly, shows field-level error messages with error styling on each input, and disables all inputs and updates the button label while creating an account |
 | `use-api-keys.test.ts` | Tests that the useApiKeys hook hydrates from localStorage, persists and removes provider settings, and correctly identifies which providers are fully configured. |
 | `use-mobile.test.ts` | Tests that useIsMobile returns the correct breakpoint state on mount, updates when the viewport changes, and removes its listener on unmount. |
 | `utils.test.ts` | Tests that the cn() utility merges conflicting Tailwind classes, drops falsy values, and handles conditional objects and nested arrays. |
-| `guards.server.test.ts` | `requireServiceKey`: 401 on missing header, 401 on non-Bearer scheme, 403 on wrong token, 403 on unconfigured env var, null on correct token, 403 on prefix/suffix length-variant tokens. `validateRedirectUrl`: returns /dashboard for null/empty/non-path inputs, passes through valid relative paths, allows localhost and production subdomains, and rejects external domains, protocol-relative URLs, and javascript: URIs. |
-| `rate-limit.server.test.ts` | `isRateLimited`: returns false under the limit, true once exceeded, tracks IPs independently, expires hits outside the time window, and reads the default limit from `SESSION_VALIDATE_RATE_LIMIT`. |
 | `bug-reports.test.ts` | `createBugReport` service: rejects null/missing payloads, invalid or CORE source values, empty userId, non-string/missing description, descriptions over 2000 chars; accepts exactly 2000 chars; returns USER_NOT_FOUND when the user doesn't exist; trims userId before DB lookup; passes AI_TUTOR and QUESTION_MAKER source through to the create call; persists userId even when isAnonymous is true; defaults isAnonymous to false; passes all optional fields through unchanged; stores null for absent optional fields. |
 | `courses.enrollments.test.ts` | `GET /api/courses/:id/enrollments` loader (§6: TA-and-up see all, enrolled STUDENT → 403, 404 course not found on both auth paths, 200 via service key and user OAuth, role mapping, active + inactive returned together) and new `POST /api/courses/:id/enrollments` action (ADMIN/UNIT_ADMIN any role, INSTRUCTOR may add STUDENT/TA but not INSTRUCTOR, `409 ALREADY_ENROLLED`, `422 USER_NOT_FOUND`). |
 | `courses.materials.test.ts` | `GET` (student publish gate, 404/403 split via `resolveCourseAccess`), `POST` (STUDENT uploads blocked — TA-and-up only), and new `DELETE /api/courses/:id/materials/:materialId` (ADMIN/UNIT_ADMIN/INSTRUCTOR plus TA own-only via `uploadedBy`, ownerless rows denied to TAs, 204 hard delete): the full §7 role × op matrix. |
-| `questions.server.test.ts` | `createQuestion` (validation + idempotency-key dedupe), `listQuestions` (filtering), `getQuestionById`, and `updateQuestionTestable` server helpers. |
+| [`user-preferences.test.ts`](apps/core/app/tests/unit/user-preferences.test.ts) | Tests that `parsePreferenceUpdates` keeps a boolean `assistDefault`, ignores non-boolean and unknown fields, trims a course code and normalizes a blank one to null, treats an explicit null as a clear, and returns an empty object for non-object payloads; and that `resolveSelectedCourse` keeps the current course only while it remains in the available list, otherwise returning null (no selection, empty list, or a course the user can no longer access). |
+| [`user-preferences.server.test.ts`](apps/core/app/tests/unit/user-preferences.server.test.ts) | Tests the chat-preferences persistence service against a mocked Prisma client: `getUserPreference` returns defaults when no row exists, restores the stored toggle + course when still available, clears and persists `null` when the stored course is stale, `saveUserPreference` upserts scoped to the user id and returns the stored values, and `clearUserPreference` deletes the user's row on logout. |
 
 ---
 
@@ -269,21 +277,21 @@ Each section should use this format:
 |-----------|---------------|
 | `aiExtract.test.js` | The AI extraction service returns an empty result immediately when the input text is blank or whitespace, without calling any external service |
 | `aiExtractEduaiMocked.test.js` | Questions are extracted and structured correctly from text when the AI service and database are replaced with fakes |
+| `aiServiceGenerate.test.js` | `generateQuestions` provider routing (Groq/OpenAI/DeepSeek) with parse fallbacks and HTTP errors; `extractQuestionsFromText` EduAI extraction — sanitization, MCQ choices, retry-on-empty, topic prompting, missing-course code, not-configured guard (collaborators mocked) |
 | `assessmentVariantMetadataScoring.test.js` | Questions are scored for how well their metadata matches a slot's requirements, with each matching attribute contributing the correct weight |
+| `assessmentVariantUtils.test.js` | `aggregateStructure` and related variant utilities compute assessment structure correctly |
 | `auth.middleware.test.js` | `requireAuth` populates `req.user` from Core's session validation, calls `findOrCreateUser` to maintain the local FK row, returns 401 JSON on invalid or missing sessions and when Core is unreachable, forwards the cookie header, normalizes unknown roles to `STUDENT`; `requireRole` passes permitted roles, returns 403 for wrong roles, returns 401 when no user is set; `authenticateToken` is the same function reference as `requireAuth` |
 | `authService.test.js` | `findOrCreateUser` returns an existing user without seeding, creates a new user row and seeds courses on first login, stores null when name is absent, and passes the correct `findOrCreate` call shape to Sequelize |
 | `canvasExport.test.js` | MCQ answer choices are parsed correctly from text, and question payloads are built in the format Canvas expects |
 | `canvasExportMocked.test.js` | Assessments are exported to Canvas correctly when the Canvas API, database, and integration lookup are replaced with fakes |
-| `encryption.test.js` | Encrypted values round-trip back to the original string, and edge cases like empty input are handled without errors |
-| `extraction.test.js` | Question text is split into individual blocks at numbered boundaries and chunked so multipart questions are never split across chunks |
-| `assessmentVariantUtils.test.js` | `aggregateStructure` and related variant utilities compute assessment structure correctly |
+| `canvasServiceConvert.test.js` | Pure canvas converters: `convertCanvasQuestionToVariant` (MCQ/true-false/essay/short-answer/text-fallback/unsupported), `convertVariantToCanvasQuestion`, `stripHtmlTags`, `parseChoicesFromQuestionText`, `normalizeCanvasQuestionType`, `parseMCQOptions` |
 | `coreApiService.test.js` | `getCourseTopicsFromCore`, `pushTopicToCore`, `pushQuestionToCore`, and `patchQuestionTestableOnCore` — request shape, service-key auth, and response/error handling against a mocked Core |
 | `coreWiringService.test.js` | `pushVariantToCore` maps variant payloads to Core, lowercases enum values, handles CUID topic ids, and surfaces `INVALID_TOPIC_IDS` |
+| `eduaiService.test.js` | `EduAIService` (axios mocked): `chat` success/timeout/unreachable/reset/HTTP-error paths, `generateQuestions` parsing/normalization (MCQ choices, answer-letter, topic dedupe, error envelopes, retries), `listCourses`/`getCourseTopics`/`listAIModels` success and error handling, `testApiKey` outcomes |
+| `encryption.test.js` | Encrypted values round-trip back to the original string, and edge cases like empty input are handled without errors |
+| `extraction.test.js` | Question text is split into individual blocks at numbered boundaries and chunked so multipart questions are never split across chunks |
 | `errorHandler.test.js` | `notFound` and `errorHandler` Express middleware return the correct status codes and JSON error envelopes |
 | `generateBankVariants.test.js` | `generateBankVariantsForQuestions` — validation guards, per-question orchestration, and MCQ choice-count retry |
-| `eduaiService.test.js` | `EduAIService` (axios mocked): `chat` success/timeout/unreachable/reset/HTTP-error paths, `generateQuestions` parsing/normalization (MCQ choices, answer-letter, topic dedupe, error envelopes, retries), `listCourses`/`getCourseTopics`/`listAIModels` success and error handling, `testApiKey` outcomes |
-| `aiServiceGenerate.test.js` | `generateQuestions` provider routing (Groq/OpenAI/DeepSeek) with parse fallbacks and HTTP errors; `extractQuestionsFromText` EduAI extraction — sanitization, MCQ choices, retry-on-empty, topic prompting, missing-course code, not-configured guard (collaborators mocked) |
-| `canvasServiceConvert.test.js` | Pure canvas converters: `convertCanvasQuestionToVariant` (MCQ/true-false/essay/short-answer/text-fallback/unsupported), `convertVariantToCanvasQuestion`, `stripHtmlTags`, `parseChoicesFromQuestionText`, `normalizeCanvasQuestionType`, `parseMCQOptions` |
 | `courseAccess.test.js` | `resolveCourseAccess` derives the caller's access level (ADMIN/UNIT_ADMIN/INSTRUCTOR/TA/STUDENT) from course ownership, Core enrollments, and unit-department matching, and the `requireCourseAccess` middleware enforces a minimum rank — 401 unauthenticated, 404 missing course, 403 below the required rank. |
 
 ---
@@ -294,21 +302,17 @@ Each section should use this format:
 
 | Test file | What it tests |
 |-----------|---------------|
-| `assessmentVariantAuth.test.js` | All assessment variant routes reject unauthenticated requests |
 | `assessmentsAuth.test.js` | All assessment routes reject unauthenticated requests |
+| `assessmentServiceGaps.integration.test.js` | `deleteAssessment` and `getQuestionsInAssessment` service paths against the test DB |
+| `assessmentSectionService.integration.test.js` | Section CRUD (`createAssessmentSection`/`getSectionsForAssessment`/`updateAssessmentSection`/`deleteAssessmentSection`), variant linking (`addVariantToSection`/`removeVariantFromSection`/`updateVariantOrderInSection`), and `checkQuestionInAssessments`/`removeQuestionFromAllSections`, including ownership and not-found paths |
+| `assessmentVariantService.integration.test.js` | `setAssessmentStudyRole`, `getBlueprintSnapshot`, `getBaselineVariantReadiness`, and `assembleEquivalentExamVariants` against the test DB |
+| `assessmentVariantAuth.test.js` | All assessment variant routes reject unauthenticated requests |
 | `assessmentVariantHttp.integration.test.js` | Assessment variant routes reject requests with missing or invalid required fields |
 | `bugReports.integration.test.js` | Unauthenticated requests return 401; authenticated requests proxy to Core and return 201; QUESTION_MAKER source and userId are forwarded correctly; 422 validation errors from Core pass through; 502 is returned when Core is unreachable |
+| `canvasAuth.test.js` | All Canvas integration routes reject unauthenticated requests |
+| `canvasImportExport.integration.test.js` | `canvasService` stateful flows in Canvas test mode against the test DB: `saveCanvasIntegration`/`getCanvasIntegration`, the test-mode read endpoints, `importQuizFromCanvas` (assessment/section/variant creation, validation guards), `exportAssessmentToCanvas` round-trip, and `getCanvasCourseMapping` |
 | `coreWiring.integration.test.js` | `PATCH /api/course/:id/link-core`, `POST /api/course/:id/sync-topics`, and `PATCH /api/questions/variants/:variantId/testable` routes with Core mocked |
 | `coreWiringDb.integration.test.js` | Core wiring routes against the test DB — link-core, sync-topics, topic push, and variant testable toggle persist correctly |
-| `syncTopicsCounter.integration.test.js` | `POST /api/course/:id/sync-topics` returns the correct synced counter, including name-updated topics |
-| `variantApproval.integration.test.js` | `PUT /api/questions/variants/:id` pushes the approved variant to Core on approval |
-| `saveExtractedQuestions.integration.test.js` | `POST /extract/save` — topic fallback resolution, MCQ questions, and saving with an assessment payload |
-| `assessmentServiceGaps.integration.test.js` | `deleteAssessment` and `getQuestionsInAssessment` service paths against the test DB |
-| `assessmentVariantService.integration.test.js` | `setAssessmentStudyRole`, `getBlueprintSnapshot`, `getBaselineVariantReadiness`, and `assembleEquivalentExamVariants` against the test DB |
-| `assessmentSectionService.integration.test.js` | Section CRUD (`createAssessmentSection`/`getSectionsForAssessment`/`updateAssessmentSection`/`deleteAssessmentSection`), variant linking (`addVariantToSection`/`removeVariantFromSection`/`updateVariantOrderInSection`), and `checkQuestionInAssessments`/`removeQuestionFromAllSections`, including ownership and not-found paths |
-| `canvasImportExport.integration.test.js` | `canvasService` stateful flows in Canvas test mode against the test DB: `saveCanvasIntegration`/`getCanvasIntegration`, the test-mode read endpoints, `importQuizFromCanvas` (assessment/section/variant creation, validation guards), `exportAssessmentToCanvas` round-trip, and `getCanvasCourseMapping` |
-| `canvasAuth.test.js` | All Canvas integration routes reject unauthenticated requests |
-| `courseAuth.test.js` | All course and topic routes reject unauthenticated requests |
 | `eduaiAuth.test.js` | All EduAI proxy routes reject unauthenticated requests |
 | `eduaiHttpValidation.integration.test.js` | EduAI chat and question-generation routes reject requests with missing required fields |
 | `health.test.js` | The health and root endpoints respond correctly when the server is running |
@@ -316,6 +320,9 @@ Each section should use this format:
 | `questionAssessments.integration.test.js` | Questions and assessments can be created and retrieved, invalid inputs are rejected, and variants can be added to questions |
 | `questionsAuth.test.js` | All question and extraction routes reject unauthenticated requests |
 | `questionsExtractValidation.integration.test.js` | The question extraction and save endpoints reject requests with missing or invalid text, courseId, or question list |
+| `saveExtractedQuestions.integration.test.js` | `POST /extract/save` — topic fallback resolution, MCQ questions, and saving with an assessment payload |
+| `syncTopicsCounter.integration.test.js` | `POST /api/course/:id/sync-topics` returns the correct synced counter, including name-updated topics |
+| `variantApproval.integration.test.js` | `PUT /api/questions/variants/:id` pushes the approved variant to Core on approval |
 | `assessmentRbac.test.js` | Assessment route RBAC: STUDENT is 403 on every operation, TA may GET (200) but is blocked on all writes (POST/PUT/DELETE/PATCH → 403), and INSTRUCTOR has full create/update/delete authoring plus variant assembly. |
 | `authMeBugReport.test.js` | `GET /api/auth/me` returns `isBugReportAdmin=true` only for ADMIN, with the legacy `BUG_REPORT_ADMIN_EMAILS` allowlist ignored so UNIT_ADMIN/INSTRUCTOR/TA/STUDENT all resolve to false. |
 | `canvasRbac.test.js` | Canvas RBAC: integration save/get/delete are INSTRUCTOR-only own-scoped (TA/STUDENT → 403), and course-mapping reads and assessment export are course-scoped INSTRUCTOR-only (TA → 403). |

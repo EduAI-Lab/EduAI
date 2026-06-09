@@ -18,6 +18,7 @@
  *   EDUAI_MODEL=openai:gpt-4o-mini \
  *   EDUAI_API_KEYS_JSON='{"openai":{"isEnabled":true,"apiKey":"sk-..."}}' \
  *   node scripts/eval-adhd-assist.mjs --only S1,S2,S3 --mode both
+ *   node scripts/eval-adhd-assist.mjs --only S4 --mode off   # Phase 2.5 tool-heavy sanity (#261)
  */
 
 import { parseArgs } from "node:util";
@@ -32,6 +33,7 @@ const __dirname = path.dirname(__filename);
 const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
 
 // Source of truth: docs/literature/form-a-scenario-test-sheet.md (S1, S2, S3, S5).
+// S4: tool-heavy probes aligned with MODEL_LATENCY_TRACKER.md until form-a-eval-scenarios.md lands.
 const SCENARIOS = {
   S1: [
     `Explain what "gradient descent" means for someone new to machine learning, in one short paragraph of plain language (no math notation).`,
@@ -49,6 +51,11 @@ const SCENARIOS = {
     `In two or three sentences, what is the difference between structural (value) equality and reference equality when comparing two objects in a typical object-oriented language?`,
     `Same question, different words: if I have two variables pointing at two object instances, when should I expect \`==\` (or an operator like it) to return true versus false—assume I am not allowed to overload operators.`,
   ],
+  S4: [
+    `Search the web for the latest news on GPT-5.5 and summarize the top result.`,
+    `Open the most relevant URL from that search with fetchPage and give me three bullet points from the page.`,
+    `Find recent papers on transformer architectures and summarize the top result with source URLs.`,
+  ],
 };
 
 const USAGE = `Usage: node scripts/eval-adhd-assist.mjs [options]
@@ -56,6 +63,7 @@ const USAGE = `Usage: node scripts/eval-adhd-assist.mjs [options]
 Options:
   --only <ids>       Comma-separated scenario IDs (default: S1,S2,S3)
   --include-s5       Also run scenario S5
+  --include-s4       Also run scenario S4 (Phase 2.5 tool-heavy validation)
   --mode <m>         off | on | both  (default: both)
   --out <dir>        Output directory (default: eval-runs/<ISO>)
   --no-write         Skip writing transcripts; print table only
@@ -66,7 +74,7 @@ Required environment variables:
   EDUAI_API_KEYS_JSON   JSON, e.g. {"openai":{"isEnabled":true,"apiKey":"sk-..."}}
 
 Optional environment variables:
-  EDUAI_BASE_URL        Default http://localhost:5173
+  EDUAI_BASE_URL        Default http://localhost:5173 (core dev: http://localhost:3000)
   EDUAI_MODEL           Default openai:gpt-4o-mini
 `;
 
@@ -75,6 +83,7 @@ function parseCliArgs() {
     options: {
       only: { type: "string" },
       "include-s5": { type: "boolean", default: false },
+      "include-s4": { type: "boolean", default: false },
       mode: { type: "string", default: "both" },
       out: { type: "string" },
       "no-write": { type: "boolean", default: false },
@@ -111,6 +120,7 @@ function resolveConfig(cli) {
     : ["S1", "S2", "S3"];
   const scenarioIds = [...requestedOnly];
   if (cli["include-s5"] && !scenarioIds.includes("S5")) scenarioIds.push("S5");
+  if (cli["include-s4"] && !scenarioIds.includes("S4")) scenarioIds.push("S4");
 
   for (const id of scenarioIds) {
     if (!SCENARIOS[id]) fail(`Unknown scenario "${id}". Known: ${Object.keys(SCENARIOS).join(", ")}`);
