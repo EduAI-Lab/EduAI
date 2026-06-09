@@ -73,6 +73,8 @@ node ./scripts/chat-latency-bench.mjs
 
 Required environment variables and auth options (`CHAT_BENCH_URL`, `CHAT_BENCH_MODEL`, `CHAT_BENCH_API_KEYS`, cookies or API key) are documented in the script header in [`apps/core/scripts/chat-latency-bench.mjs`](apps/core/scripts/chat-latency-bench.mjs).
 
+**Tier routing** (optional, `#203 L10`): set in [`apps/core/.env.example`](apps/core/.env.example) — `CHAT_SMALL_MODEL` (fast default for chat-only turns), `CHAT_TIER_ROUTING_ENABLED` (`0` to disable), and `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE` (force hybrid RAG whenever a course is selected). Admin `webToolsEnabled` is seeded `false` in `system_config`.
+
 ## Getting started
 
 This project uses [Turborepo](https://turbo.build/) to orchestrate tasks across all apps and packages. You only need to run from the monorepo root.

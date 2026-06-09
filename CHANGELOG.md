@@ -6,6 +6,14 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 
 
+## [Week 6 — June 8–12, 2026]
+
+### Added
+
+- [core] feat: Chat latency sprint (#203) — auto-RAG on the tool path when a course is selected (#207), admin `webToolsEnabled` toggle default OFF (#348), per-turn tier routing via `needsCourseRag` + `CHAT_SMALL_MODEL` (#334), hide/reject `supportsTools` for small models (#264); extract `chat-tools.ts` / `chat-intent.ts` helpers and add `forceHybridRag` bench override. ([#529](https://github.com/EduAI-Lab/EduAI/pull/529), @superbolt08, 2026-06-09)
+
+---
+
 ## [Week 5 — June 2–6, 2026]
 
 ### Added

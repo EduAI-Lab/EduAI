@@ -20,7 +20,6 @@ import { clientApiKeysBodySchema, toUserProviderSettings } from "~/lib/chat-api-
 import { getWebToolsEnabled } from "~/lib/system-config.server";
 import {
   buildCappedRagContextText,
-  capRagHitsForTool,
   capToolResultsInMessages,
   estimateMessageCharsForModel,
   extractMessageText,
