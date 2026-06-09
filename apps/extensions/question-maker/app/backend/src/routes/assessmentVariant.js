@@ -66,7 +66,7 @@ router.get(
   }
 );
 
-/** GET /api/assessment-variant/assessments/:id/variant-readiness?courseId= (TA view). */
+/** GET /api/assessment-variant/assessments/:id/variant-readiness (TA view; course derived from :id). */
 router.get(
   '/assessments/:id/variant-readiness',
   authenticateToken,
@@ -74,16 +74,11 @@ router.get(
   requireAssessmentAccess({ min: 'ta' }),
   async (req, res, next) => {
     try {
-      const courseId = req.query.courseId;
-      if (!courseId) {
-        return res.status(400).json({
-          success: false,
-          error: 'courseId query parameter is required'
-        });
-      }
+      // Course is derived from the authorized assessment (req.qmCourse), not the
+      // client-supplied ?courseId= which the access gate has already resolved.
       const data = await getBaselineVariantReadiness(req.qmCourse.userId, {
         assessmentId: Number(req.params.id),
-        courseId: Number(courseId)
+        courseId: req.qmCourse.id
       });
       res.json({ success: true, data });
     } catch (error) {
