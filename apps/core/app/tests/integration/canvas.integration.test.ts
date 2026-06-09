@@ -465,9 +465,43 @@ describe("Canvas API — link-roster", () => {
     await prisma.user.delete({ where: { id: otherStudent.id } });
   });
 
-  it("returns 403 for unauthenticated link-roster requests via instructor guard", async () => {
+  it("returns 401 for unauthenticated link-roster requests", async () => {
     noSession();
     const res = await call("POST", "link-roster", { studentNumber: "student_1" });
     expect(res.status).toBe(401);
+  });
+
+  it("returns 403 when an instructor attempts link-roster", async () => {
+    sessionFor(instructorId, "INSTRUCTOR");
+    const res = await call("POST", "link-roster", { studentNumber: "student_1" });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({
+      success: false,
+      error: "Forbidden: students and TAs only",
+    });
+  });
+});
+
+describe("Canvas API — sync guards", () => {
+  it("returns 403 when syncing a course not taught by the instructor", async () => {
+    await connectTestMode();
+    sessionFor(instructorId, "INSTRUCTOR");
+
+    const res = await call("POST", "sync", { canvasCourseIds: ["99999"] });
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.invalidCourseIds).toEqual(["99999"]);
+  });
+
+  it("returns 429 when sync is requested too frequently", async () => {
+    await connectTestMode();
+    sessionFor(instructorId, "INSTRUCTOR");
+
+    const first = await call("POST", "sync", { canvasCourseIds: ["1"] });
+    expect(first.status).toBe(200);
+
+    sessionFor(instructorId, "INSTRUCTOR");
+    const second = await call("POST", "sync", { canvasCourseIds: ["1"] });
+    expect(second.status).toBe(429);
   });
 });
