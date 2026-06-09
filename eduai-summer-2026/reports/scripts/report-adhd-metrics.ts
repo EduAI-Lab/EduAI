@@ -1,9 +1,12 @@
 #!/usr/bin/env tsx
 /**
- * Aggregate AssistiveEvent rows for OFF vs ON before/after reporting.
- * Usage (from apps/core):
- *   npx tsx scripts/report-adhd-metrics.ts
- *   npx tsx scripts/report-adhd-metrics.ts --since 2026-06-09
+ * Research reporting: aggregate AssistiveEvent rows for OFF vs ON before/after analysis.
+ * Lives outside apps/core so production deploys stay free of research tooling.
+ *
+ * Run from apps/core (needs DATABASE_URL + generated Prisma client):
+ *   cd apps/core
+ *   npx tsx ../../eduai-summer-2026/reports/scripts/report-adhd-metrics.ts
+ *   npx tsx ../../eduai-summer-2026/reports/scripts/report-adhd-metrics.ts --since 2026-06-09
  */
 
 import { PrismaClient } from "@prisma/client";
