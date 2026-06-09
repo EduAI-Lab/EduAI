@@ -280,6 +280,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const courseId = typeof body.courseId === "string" ? body.courseId : undefined;
     const courseCode = typeof body.courseCode === "string" ? body.courseCode : undefined;
     const streaming = body.streaming === undefined ? true : Boolean(body.streaming);
+    const forceHybridRag = body.forceHybridRag === true;
     const chatId = typeof body.chatId === "string" ? body.chatId : undefined;
     const proxyUserPayload =
       body.proxyUser && typeof body.proxyUser === "object" ? (body.proxyUser as ProxyUserPayload) : null;
@@ -587,12 +588,13 @@ export async function action({ request }: ActionFunctionArgs) {
     const tools = buildChatToolRegistry({ effectiveCourseId, webToolsEnabled });
 
     const supportsTools = await modelSupportsTools(resolvedModelSlug);
+    const useToolCalling = supportsTools && !forceHybridRag;
 
     let streamConfig;
 
     const resolvedSystemPrompt = trimmedSystemPrompt ?? chat.systemPrompt ?? null;
 
-    if (!supportsTools) {
+    if (!useToolCalling) {
       const hybridRagAlwaysWithCourse = process.env.CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE === "1";
       const isRAGQuery = hybridRagAlwaysWithCourse ? hasCourse : courseRagNeeded;
 
@@ -741,7 +743,8 @@ Based on this information, provide a comprehensive answer. Use getInformation on
       routedToSmallModel,
       courseRagNeeded,
       webToolsEnabled,
-      approach: supportsTools ? "tool_calling" : "hybrid_rag",
+      forceHybridRag,
+      approach: useToolCalling ? "tool_calling" : "hybrid_rag",
       ...llmPromptSizeHints(streamConfig.system, modelMessages),
     });
     const result = await streamText(streamConfig as Parameters<typeof streamText>[0]);

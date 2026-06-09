@@ -7,21 +7,11 @@ import {
   HYBRID_RAG_MAX_CHUNKS,
 } from "~/lib/chat-rag";
 
-export type ChatToolRegistry = {
-  getInformation: ReturnType<typeof tool>;
-  webSearch?: typeof webSearch;
-  fetchPage?: typeof fetchPage;
-};
-
-export function getChatToolNames(registry: ChatToolRegistry): string[] {
-  return Object.keys(registry).sort();
-}
-
 export function buildChatToolRegistry(options: {
   effectiveCourseId: string | null;
   webToolsEnabled: boolean;
-}): ChatToolRegistry {
-  const registry: ChatToolRegistry = {
+}) {
+  const registry = {
     getInformation: tool({
       description:
         "Search uploaded course materials to answer questions about course content. Use when pre-loaded excerpts are insufficient.",
@@ -53,11 +43,16 @@ export function buildChatToolRegistry(options: {
   };
 
   if (options.webToolsEnabled) {
-    registry.webSearch = webSearch;
-    registry.fetchPage = fetchPage;
+    return { ...registry, webSearch, fetchPage };
   }
 
   return registry;
+}
+
+export type ChatToolRegistry = ReturnType<typeof buildChatToolRegistry>;
+
+export function getChatToolNames(registry: ChatToolRegistry): string[] {
+  return Object.keys(registry).sort();
 }
 
 export function buildToolCallingSystemPrompt(options: {
