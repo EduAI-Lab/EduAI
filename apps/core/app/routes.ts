@@ -14,6 +14,7 @@ export default [
   route("/settings", "routes/settings.tsx"),
   route("/api/canvas/*", "routes/api/canvas.$.ts"),
   route("/api/chat", "routes/api/chat.ts"),
+  route("/api/assistive-events", "routes/api/assistive-events.ts"),
   route("/api/chats/:chatId", "routes/api/chats.$chatId.ts"),
   route("/courses", "routes/courses.tsx"),
   route("/courses/:courseId", "routes/courses.$courseId.tsx"),
