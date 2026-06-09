@@ -8,7 +8,7 @@ Run **vLLM** on the shared GPU host (**cmps01**) for fast, multi-user chat infer
 | --- | --- |
 | **Host port (public)** | **8001** — LiteLLM proxy (`network_mode: host`) → backends `127.0.0.1:18001` / `:18002` |
 | **Dev app** | `dev.eduai.ok.ubc.ca` (s378) → `http://cmps01.ok.ubc.ca:8001` |
-| **Seed models** | `vllm:qwen2.5-7b-instruct`, `vllm:qwen2.5-32b-instruct` |
+| **Example model ids** | `vllm:qwen2.5-7b-instruct`, `vllm:qwen2.5-32b-instruct` (register in Admin) |
 | **Issues** | [#435](https://github.com/EduAI-Lab/EduAI/issues/435) install/wire · [#394](https://github.com/EduAI-Lab/EduAI/issues/394) tiered memory spike |
 
 ---
@@ -43,9 +43,9 @@ cd apps/core
 npm run vllm:smoke
 ```
 
-**In the app:** pick chat model **`vllm:qwen2.5-7b-instruct`** or **`vllm:qwen2.5-32b-instruct`** (run `npx prisma db seed` if missing from Admin). Local inference is **server-managed** — no Settings toggle when `VLLM_BASE_URL` is set on the app host.
+**In the app:** pick chat model **`vllm:qwen2.5-7b-instruct`** or **`vllm:qwen2.5-32b-instruct`**. Local inference is **server-managed** — no Settings toggle when `VLLM_BASE_URL` is set on the app host.
 
-**Admins:** Models are **seeded** — do not use **Create Model** for the same `modelId` (409 Conflict). **Admin → AI Models → Refresh list** (vLLM provider) only when adding a *new* served name from cmps01.
+**Admins:** vLLM **models are not seeded** (same pattern as Ollama). Run `npx prisma db seed` once to register the `vllm` provider, then **Admin → AI Models → Create Model** → provider **vLLM** → **Refresh list** → pick each served name from cmps01 → save. Re-registering the same `modelId` returns **409 Conflict**.
 
 ### 3. Who does what
 
@@ -302,7 +302,7 @@ Not wired in EduAI yet — manual or future ops ticket.
 2. **`litellm-config.yaml`** — new `model_list` entry pointing at `http://127.0.0.1:18003/v1`
 3. **`docker compose restart`** in `~/cmps01`
 4. **Verify** — new id in `curl :8001/v1/models`; `npm run vllm:smoke` with `VLLM_MODEL=…` from s378
-5. **EduAI** — add to `prisma/seed.ts` + `npx prisma db seed`, *or* Admin → Create Model (if not seeded)
+5. **EduAI** — **Admin → AI Models → Create Model** → vLLM → **Refresh list** → save the new id
 
 Full walkthrough with examples: [`infra/cmps01/README.md` § Adding more models](../../infra/cmps01/README.md#adding-more-models).
 
@@ -320,7 +320,7 @@ EduAI always uses one `VLLM_BASE_URL`; chat picks the model via `vllm:<served-mo
 
 - Do **not** run huge 31B vLLM + large Ollama model simultaneously — VRAM contention.
 - Default: leave vLLM up during dev/teaching windows (~28 W idle).
-- **`supportsTools: false`** on seeded vLLM model (hybrid RAG path) until vLLM tool-call flags are configured on the server.
+- Set **`supportsTools`** per model in Admin when registering (e.g. `false` for 7B hybrid RAG, `true` for 32B with tool-call flags on cmps01).
 - Embeddings stay on **cloud or Ollama** — not vLLM. Keep **`vector(3072)`** in sync with your embed provider on dev ([`EMBEDDINGS.md`](./EMBEDDINGS.md)).
 
 ---
@@ -334,7 +334,7 @@ EduAI always uses one `VLLM_BASE_URL`; chat picks the model via `vllm:<served-mo
 | `/models` OK, chat **500** “Connection error” | LiteLLM cannot reach backends — use **`network_mode: host`** on proxy + `127.0.0.1:18001` in config ([`infra/cmps01/README.md`](../../infra/cmps01/README.md)) |
 | 404 model | `curl /v1/models` — use exact `id` in chat (`qwen2.5-7b-instruct`) |
 | EduAI “provider not configured” | Set `VLLM_BASE_URL` in server `.env`; restart dev (tmux); pick a `vllm:` model |
-| Admin **409** adding model | Model already seeded — use existing row, don’t duplicate |
+| Admin **409** adding model | Model already registered — use existing row, don’t duplicate |
 | Chat empty / no reply | Run `npm run vllm:smoke`; check Network tab on `POST /api/chat` |
 | RAG vector dimension error | DB `vector(3072)` vs local 1024 embed mismatch — re-embed on same branch/stack |
 | OOM | Lower `--gpu-memory-utilization` or smaller model |
