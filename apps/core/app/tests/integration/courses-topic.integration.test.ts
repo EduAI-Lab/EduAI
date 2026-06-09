@@ -177,16 +177,35 @@ describe("GET /api/courses/:courseId/topics", () => {
     expect(body.topics).toHaveLength(0);
   });
 
-  it("returns 200 with topics for any authenticated user", async () => {
-    await prisma.courseTopic.create({ data: { courseId, name: "Sorting Algorithms" } });
-
+  it("returns 403 for an authenticated user with no course relationship (#299)", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(STUDENT_SESSION as never);
     const res = await loader(makeLoaderArgs(courseId));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.topics.some((t: { name: string }) => t.name === "Sorting Algorithms")).toBe(true);
+    expect(res.status).toBe(403);
+  });
 
-    await prisma.courseTopic.deleteMany({ where: { courseId, name: "Sorting Algorithms" } });
+  it("gates an enrolled student on publish state and admits when published (#299)", async () => {
+    await prisma.courseTopic.create({ data: { courseId, name: "Sorting Algorithms" } });
+    await prisma.enrollment.create({
+      data: { courseId, userId: studentId, role: "STUDENT", isActive: true },
+    });
+
+    try {
+      // Seeded course is unpublished → student blocked (§19).
+      vi.mocked(auth.api.getSession).mockResolvedValue(STUDENT_SESSION as never);
+      const blocked = await loader(makeLoaderArgs(courseId));
+      expect(blocked.status).toBe(403);
+
+      await prisma.course.update({ where: { id: courseId }, data: { isPublished: true } });
+      vi.mocked(auth.api.getSession).mockResolvedValue(STUDENT_SESSION as never);
+      const res = await loader(makeLoaderArgs(courseId));
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.topics.some((t: { name: string }) => t.name === "Sorting Algorithms")).toBe(true);
+    } finally {
+      await prisma.course.update({ where: { id: courseId }, data: { isPublished: false } });
+      await prisma.enrollment.deleteMany({ where: { courseId, userId: studentId } });
+      await prisma.courseTopic.deleteMany({ where: { courseId, name: "Sorting Algorithms" } });
+    }
   });
 
   it("returns 200 with topics via service key — no session required", async () => {
@@ -341,6 +360,77 @@ describe("POST /api/courses/:courseId/topics", () => {
     const topic = await res.json();
     expect(topic.name).toBe("Greedy Algorithms");
     expect(vi.mocked(auth.api.getSession)).not.toHaveBeenCalled();
+  });
+
+  it("persists createdBy as the session user on user-auth create (#294)", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(ADMIN_SESSION as never);
+    const res = await action(makeActionArgs("POST", courseId, { name: "Owner Tracking" }));
+    expect(res.status).toBe(201);
+    const { id } = await res.json();
+    const row = await prisma.courseTopic.findUnique({ where: { id } });
+    expect(row?.createdBy).toBe(adminId);
+  });
+
+  it("persists null createdBy on service-key create (#294 — no owner)", async () => {
+    const res = await action(
+      makeActionArgs("POST", courseId, { name: "Ownerless Topic" }, `Bearer ${VALID_SERVICE_KEY}`),
+    );
+    expect(res.status).toBe(201);
+    const { id } = await res.json();
+    const row = await prisma.courseTopic.findUnique({ where: { id } });
+    expect(row?.createdBy).toBeNull();
+  });
+
+  it("INSTRUCTOR of the course creates, edits, then soft-deletes a topic (#299 lifecycle)", async () => {
+    const instructor = await prisma.user.create({
+      data: {
+        email: "topic-instructor@test.com",
+        name: "Topic Instructor",
+        role: "INSTRUCTOR",
+        emailVerified: false,
+      },
+    });
+    await prisma.enrollment.create({
+      data: { courseId, userId: instructor.id, role: "INSTRUCTOR", isActive: true },
+    });
+    const instructorSession = { user: { id: instructor.id, role: "INSTRUCTOR" } };
+
+    try {
+      // Create (was ADMIN-only before #299)
+      vi.mocked(auth.api.getSession).mockResolvedValue(instructorSession as never);
+      const created = await action(makeActionArgs("POST", courseId, { name: "Lifecycle Topic" }));
+      expect(created.status).toBe(201);
+      const { id: topicId } = await created.json();
+
+      // Edit via the new PATCH route
+      vi.mocked(auth.api.getSession).mockResolvedValue(instructorSession as never);
+      const patched = await action({
+        request: new Request(
+          `http://localhost/api/courses/${courseId}/topics/${topicId}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: "Lifecycle Topic v2" }),
+          },
+        ),
+        params: { courseId, topicId },
+        context: {} as never,
+      });
+      expect(patched.status).toBe(200);
+      expect((await patched.json()).name).toBe("Lifecycle Topic v2");
+
+      // Soft-delete (was ADMIN-only before #299)
+      vi.mocked(auth.api.getSession).mockResolvedValue(instructorSession as never);
+      const deleted = await action(makeActionArgs("DELETE", courseId, { topicId }));
+      expect(deleted.status).toBe(204);
+
+      const row = await prisma.courseTopic.findUnique({ where: { id: topicId } });
+      expect(row?.deletedAt).not.toBeNull();
+    } finally {
+      await prisma.courseTopic.deleteMany({ where: { courseId, name: { contains: "Lifecycle" } } });
+      await prisma.enrollment.deleteMany({ where: { courseId, userId: instructor.id } });
+      await prisma.user.delete({ where: { id: instructor.id } });
+    }
   });
 
   it("returns 409 TOPIC_ALREADY_EXISTS with existingId on duplicate name", async () => {
