@@ -6,6 +6,17 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 
 
+## [Week 6 — June 8–12, 2026]
+
+### Added
+
+- [question-maker] api: Enforce the §16–§18 RBAC matrices — session-role gates, per-course access middleware, `createdBy` TA own-only authoring, instructor-only approval/assessments, owner-keyed Canvas mappings, and ADMIN-only bug-report triage. (#518, @abdullahmoh21, 2026-06-08)
+- [question-maker] tests: Add RBAC coverage — `courseAccess` unit tests plus role×route matrix tests across questions, variants, assessments, and Canvas. (#518, @abdullahmoh21, 2026-06-08)
+
+### Changed
+
+- [monorepo] docs: Mark Question Maker §16–§18 as implemented in `rbac-matrix.md`. (#518, @abdullahmoh21, 2026-06-08)
+
 ## [Week 5 — June 2–6, 2026]
 
 ### Added
