@@ -1,36 +1,20 @@
 /**
- * Tier pool & model selection from the database.
- *
- * Reads active `AIModel` rows that have a non-null **`tier`** (seeded for the routing MVP). Caches them in-memory for the
- * lifetime of the Node process (`invalidateTierModelCache` clears after tier edits without restart).
- *
- * Exposes **`PickSpec`** (filter + tie-break strategy) and **`pickModelForSpec`** so **`rules.ts` / `router.ts`** never
- * duplicate SQL or sorting: tie-break is either lowest **`estEnergyJoulesPerToken`** or lowest **`averageCarbonGramsPerToken`**
- * depending on the rule (see MVP plan Step 05).
+ * Tier pool & model selection from the database (routerTier enum).
  */
 
+import type { RouterTier } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 
-/**
- * Slim view of `AIModel` + provider name for routing tie-breaks.
- * Loaded from the DB (seeded tier, energy, carbon, capability flags).
- */
 export type TierModelRow = {
   registryId: string;
-  tier: number;
+  tier: 1 | 2 | 3;
+  routerTier: RouterTier;
   estEnergyJoulesPerToken: number | null;
   averageCarbonGramsPerToken: number | null;
   supportsImages: boolean;
   supportsTools: boolean;
 };
 
-/**
- * How to filter and rank candidates from the tier pool.
- * - `minTier`: tiers **>=** `minTier` (Phase 1 uses 2 for image/tool rules so Tier 3 can fall back).
- * - `exactTier`: only that tier (e.g. short-factual → Tier 1; long RAG → Tier 2).
- * - `tieBreak`: `energy` → lowest `estEnergyJoulesPerToken`; `carbon` → lowest `averageCarbonGramsPerToken`
- *   (plan: default / long-RAG Tier-2 paths prefer lowest g CO₂/token, e.g. local Gemma on BC grid).
- */
 export type PickSpec =
   | {
       kind: "minTier";
@@ -44,15 +28,29 @@ export type PickSpec =
 let cache: TierModelRow[] | null = null;
 let loading: Promise<TierModelRow[]> | null = null;
 
+export function routerTierToNum(t: RouterTier): 1 | 2 | 3 {
+  if (t === "TIER_1") return 1;
+  if (t === "TIER_2") return 2;
+  return 3;
+}
+
+export function numToRouterTier(n: number): RouterTier | null {
+  if (n === 1) return "TIER_1";
+  if (n === 2) return "TIER_2";
+  if (n === 3) return "TIER_3";
+  return null;
+}
+
 async function loadTierRows(): Promise<TierModelRow[]> {
   const rows = await prisma.aIModel.findMany({
-    where: { isActive: true, tier: { not: null } },
+    where: { isActive: true, routerTier: { not: null } },
     include: { provider: { select: { name: true } } },
   });
 
   return rows.map((r) => ({
     registryId: `${r.provider.name}:${r.modelId}`,
-    tier: r.tier!,
+    tier: routerTierToNum(r.routerTier!),
+    routerTier: r.routerTier!,
     estEnergyJoulesPerToken: r.estEnergyJoulesPerToken,
     averageCarbonGramsPerToken: r.averageCarbonGramsPerToken,
     supportsImages: r.supportsImages,
@@ -60,10 +58,6 @@ async function loadTierRows(): Promise<TierModelRow[]> {
   }));
 }
 
-/**
- * Cached slice of tiered models (refreshes on first use per process).
- * Call `invalidateTierModelCache` after changing tier assignments in DB without restart.
- */
 export async function getCachedTierModels(): Promise<TierModelRow[]> {
   if (cache) {
     return cache;
@@ -89,7 +83,6 @@ function sortKey(row: TierModelRow, tieBreak: "energy" | "carbon"): number {
   return row.estEnergyJoulesPerToken ?? Number.POSITIVE_INFINITY;
 }
 
-/** Rank in-process (do not mutate caller arrays). */
 export function pickFromCandidates(rows: TierModelRow[], spec: PickSpec): TierModelRow | null {
   let filtered: TierModelRow[];
 
@@ -121,7 +114,6 @@ export function pickFromCandidates(rows: TierModelRow[], spec: PickSpec): TierMo
   return ranked[0] ?? null;
 }
 
-/** Load from DB cache, then apply `PickSpec`. */
 export async function pickModelForSpec(spec: PickSpec): Promise<TierModelRow | null> {
   const rows = await getCachedTierModels();
   return pickFromCandidates(rows, spec);

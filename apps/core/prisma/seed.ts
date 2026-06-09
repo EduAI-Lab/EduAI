@@ -838,6 +838,58 @@ const COURSES: SeedCourse[] = [
 
 // ---------------------------------------------------------------------------
 
+/** Research routing pool — vLLM tiers + cloud overflow (see RESEARCH_CONTEXT.md). */
+const ROUTING_TIER_ASSIGNMENTS = [
+  {
+    providerName: 'vllm',
+    modelId: 'qwen2.5-7b-instruct',
+    routerTier: 'TIER_1' as const,
+    estEnergyJoulesPerToken: 0.08,
+    averageCarbonGramsPerToken: 1.78e-6,
+  },
+  {
+    providerName: 'google',
+    modelId: 'gemini-2.5-flash',
+    routerTier: 'TIER_2' as const,
+    estEnergyJoulesPerToken: 0.3,
+    averageCarbonGramsPerToken: 2.0e-5,
+  },
+  {
+    providerName: 'vllm',
+    modelId: 'qwen2.5-32b-instruct',
+    routerTier: 'TIER_3' as const,
+    estEnergyJoulesPerToken: 0.5,
+    averageCarbonGramsPerToken: 1.11e-5,
+  },
+];
+
+async function applyRoutingTierAssignments() {
+  console.log('Applying routing tier and energy constants...');
+
+  for (const row of ROUTING_TIER_ASSIGNMENTS) {
+    const provider = await prisma.aIProvider.findUnique({
+      where: { name: row.providerName },
+    });
+    if (!provider) {
+      console.warn(`   Skip tier row (unknown provider): ${row.providerName}`);
+      continue;
+    }
+
+    const result = await prisma.aIModel.updateMany({
+      where: { providerId: provider.id, modelId: row.modelId },
+      data: {
+        routerTier: row.routerTier,
+        estEnergyJoulesPerToken: row.estEnergyJoulesPerToken,
+        averageCarbonGramsPerToken: row.averageCarbonGramsPerToken,
+      },
+    });
+
+    if (result.count === 0) {
+      console.warn(`   No AIModel row for ${row.providerName}:${row.modelId}`);
+    }
+  }
+}
+
 async function seedAIProvidersAndModels() {
   const openai = await prisma.aIProvider.upsert({
     where: { name: 'openai' },
@@ -879,6 +931,20 @@ async function seedAIProvidersAndModels() {
     },
   });
 
+  const vllm = await prisma.aIProvider.upsert({
+    where: { name: 'vllm' },
+    update: {},
+    create: {
+      name: 'vllm',
+      displayName: 'vLLM',
+      description: 'Local OpenAI-compatible inference (cmps01)',
+      requiresApiKey: false,
+      defaultBaseUrl: 'http://localhost:8001/v1',
+      envVarName: 'VLLM_BASE_URL',
+      isActive: true,
+    },
+  });
+
   const openaiModels = [
     { modelId: 'gpt-4.1', name: 'GPT-4.1', description: 'Advanced GPT-4.1', maxTokens: 128000, inputPricing: 5, outputPricing: 15 },
     { modelId: 'gpt-4o', name: 'GPT-4o', description: 'Multimodal flagship', maxTokens: 128000, inputPricing: 2.5, outputPricing: 10 },
@@ -905,6 +971,39 @@ async function seedAIProvidersAndModels() {
       create: { ...m, type: 'CHAT', supportsImages: true, supportsTools: true, supportsStreaming: true, providerId: google.id },
     });
   }
+
+  const vllmModels = [
+    {
+      modelId: 'qwen2.5-7b-instruct',
+      name: 'Qwen 2.5 7B (vLLM)',
+      description: 'House chat — tier 1, hybrid RAG',
+      maxTokens: 8192,
+      supportsTools: false,
+    },
+    {
+      modelId: 'qwen2.5-32b-instruct',
+      name: 'Qwen 2.5 32B AWQ (vLLM)',
+      description: 'Large tier — tools via Hermes parser',
+      maxTokens: 8192,
+      supportsTools: true,
+    },
+  ];
+
+  for (const m of vllmModels) {
+    await prisma.aIModel.upsert({
+      where: { providerId_modelId: { providerId: vllm.id, modelId: m.modelId } },
+      update: { supportsTools: m.supportsTools },
+      create: {
+        ...m,
+        type: 'CHAT',
+        supportsImages: false,
+        supportsStreaming: true,
+        providerId: vllm.id,
+      },
+    });
+  }
+
+  await applyRoutingTierAssignments();
 }
 
 async function seedUsers() {

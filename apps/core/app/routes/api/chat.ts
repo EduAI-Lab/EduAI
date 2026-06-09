@@ -8,6 +8,8 @@ import {
   mergeLocalInferenceFromEnv,
   parseModelIdentifier,
 } from "~/lib/ai/providers";
+import { activeRouterVersion, resolveRoutedModel } from "~/lib/ai/routing/router";
+import { persistAiInteractionTelemetry } from "~/lib/ai/routing/telemetry";
 import { modelSupportsTools } from "~/lib/ai/providers.server";
 import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
 import { findRelevantContent } from "~/lib/ai/embedding";
@@ -25,6 +27,7 @@ import {
   HYBRID_RAG_MAX_CHUNKS,
   HYBRID_RAG_MAX_CONTEXT_CHARS,
 } from "~/lib/chat-rag";
+import { routerAutoDefaultEnabled } from "~/lib/router-env.server";
 
 const MAX_CONTEXT_MESSAGES = 20;
 
@@ -162,6 +165,42 @@ function extractTextFromMessage(message?: GenericMessage): string {
   }
 
   return message ? JSON.stringify(message.content ?? "") : "";
+}
+
+function userMessageHasImages(message?: GenericMessage): boolean {
+  const content = message?.content;
+  if (!content) {
+    return false;
+  }
+
+  const partLooksLikeImage = (part: unknown): boolean => {
+    if (!part || typeof part !== "object") {
+      return false;
+    }
+    const p = part as Record<string, unknown>;
+    const t = p.type;
+    if (t === "image" || t === "image_url") {
+      return true;
+    }
+    if (t === "file") {
+      const mime = p.mimeType;
+      return typeof mime === "string" && mime.startsWith("image/");
+    }
+    return false;
+  };
+
+  if (Array.isArray(content)) {
+    return content.some(partLooksLikeImage);
+  }
+
+  if (typeof content === "object" && content !== null && "parts" in content) {
+    const parts = (content as { parts?: unknown }).parts;
+    if (Array.isArray(parts)) {
+      return parts.some(partLooksLikeImage);
+    }
+  }
+
+  return false;
 }
 
 /** Cheap metrics for logs — do not print full `system` / messages (RAG can be huge). */
@@ -303,7 +342,26 @@ export async function action({ request }: ActionFunctionArgs) {
 
     const body = await request.json();
     const rawMessages: unknown[] = Array.isArray(body.messages) ? body.messages : [];
-    const model = typeof body.model === "string" ? body.model : undefined;
+    let model = typeof body.model === "string" ? body.model.trim() : undefined;
+    if (model === "") {
+      model = undefined;
+    }
+
+    if (!routerAutoDefaultEnabled() && model === undefined) {
+      return new Response(
+        JSON.stringify({
+          error: "Missing model",
+          details:
+            'ROUTER_AUTO_DEFAULT disables implicit Auto; send model "auto" or a concrete registry id.',
+        }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    const routeWithAuto = model === undefined || model === "auto";
     const apiKeys = body.apiKeys as unknown;
     const courseId = typeof body.courseId === "string" ? body.courseId : undefined;
     const courseCode = typeof body.courseCode === "string" ? body.courseCode : undefined;
@@ -499,7 +557,7 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    if (!model || typeof apiKeys !== "object" || apiKeys === null) {
+    if ((!routeWithAuto && !model) || typeof apiKeys !== "object" || apiKeys === null) {
       return new Response(
         JSON.stringify({ error: "Missing required fields" }),
         {
@@ -523,7 +581,60 @@ export async function action({ request }: ActionFunctionArgs) {
         },
       );
     }
-    const parsedModel = parseModelIdentifier(model);
+    const validatedApiKeys = toUserProviderSettings(apiKeysParsed.data);
+
+    const telemetryLastUser = [...trimmedMessages].reverse().find((m) => m.role === "user");
+    const lastUserMessageTextForTelemetry = extractTextFromMessage(telemetryLastUser);
+    const hasAttachments = userMessageHasImages(telemetryLastUser);
+
+    let ragTopSimilarity: number | null = null;
+    let ragChunkCount: number | null = null;
+    let ragContextTokenEstimate: number | null = null;
+
+    if (routeWithAuto && effectiveCourseId && lastUserMessageTextForTelemetry.trim().length > 0) {
+      try {
+        const ragPrefetch = await findRelevantContent(
+          lastUserMessageTextForTelemetry,
+          effectiveCourseId,
+          6,
+        );
+        ragChunkCount = ragPrefetch.length;
+        ragTopSimilarity = ragPrefetch[0]?.similarity ?? null;
+        ragContextTokenEstimate = ragPrefetch.reduce(
+          (acc, hit) => acc + Math.ceil(hit.content.length / 4),
+          0,
+        );
+      } catch (err) {
+        chatApiDebug("Router RAG prefetch failed", { err });
+      }
+    }
+
+    let wasAuto = false;
+    let routingTier: 1 | 2 | 3 | null = null;
+    let routerContext: Record<string, unknown> | null = null;
+
+    if (routeWithAuto) {
+      const decision = await resolveRoutedModel(lastUserMessageTextForTelemetry, {
+        courseId: effectiveCourseId,
+        courseCode: courseCode ?? null,
+        imagesPresent: hasAttachments,
+        ragTopSimilarity,
+        ragChunkCount,
+        ragContextTokenEstimate,
+      });
+      model = decision.modelId;
+      wasAuto = true;
+      routingTier = decision.tier;
+      routerContext = decision.features;
+      chatApiDebug("Auto routing resolved model", {
+        resolvedModelId: decision.modelId,
+        routingTier: decision.tier,
+        rule: decision.features.rule,
+      });
+    }
+
+    const resolvedModelId = model!;
+    const parsedModel = parseModelIdentifier(resolvedModelId);
     if (!parsedModel) {
       return new Response(
         JSON.stringify({
@@ -537,12 +648,12 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    const validatedApiKeys = mergeLocalInferenceFromEnv(
-      toUserProviderSettings(apiKeysParsed.data),
-      model,
+    const validatedApiKeysMerged = mergeLocalInferenceFromEnv(
+      validatedApiKeys,
+      resolvedModelId,
     );
 
-    if (!validatedApiKeys[parsedModel.providerId]?.isEnabled) {
+    if (!validatedApiKeysMerged[parsedModel.providerId]?.isEnabled) {
       const envHint =
         parsedModel.providerId === "vllm"
           ? "VLLM_BASE_URL"
@@ -593,8 +704,8 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     };
 
-    const registry = createAIProviderRegistry(validatedApiKeys);
-    const enabledProviders = listEnabledRegistryProviders(validatedApiKeys);
+    const registry = createAIProviderRegistry(validatedApiKeysMerged);
+    const enabledProviders = listEnabledRegistryProviders(validatedApiKeysMerged);
 
     if (!enabledProviders.includes(parsedModel.providerId)) {
       const envVar =
@@ -612,7 +723,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
     let aiModel;
     try {
-      aiModel = registry.languageModel(model);
+      aiModel = registry.languageModel(resolvedModelId);
     } catch (err: unknown) {
       const available =
         typeof err === "object" &&
@@ -623,7 +734,7 @@ export async function action({ request }: ActionFunctionArgs) {
           : enabledProviders.join(", ");
       return new Response(
         JSON.stringify({
-          error: `Model "${model}" could not be loaded (providers on server: ${available}). For vLLM set VLLM_BASE_URL in .env and deploy the feat/VLLM provider code.`,
+          error: `Model "${resolvedModelId}" could not be loaded (providers on server: ${available}). For vLLM set VLLM_BASE_URL in .env and deploy the feat/VLLM provider code.`,
         }),
         {
           status: 503,
@@ -671,7 +782,7 @@ export async function action({ request }: ActionFunctionArgs) {
     };
 
     // Check if the model supports tool calling
-    const supportsTools = await modelSupportsTools(model);
+    const supportsTools = await modelSupportsTools(resolvedModelId);
 
     let streamConfig;
 
@@ -818,19 +929,41 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
     });
     streamConfig.system = composeSystemPrompt(streamConfig.system ?? "", { adhdAssist: effectiveAdhdAssist });
 
-    // Log the LLM stream configuration
+    const requestStartMs = Date.now();
+
     chatApiDebug("Starting LLM stream", {
-      model,
+      model: resolvedModelId,
+      routedByAuto: wasAuto,
       approach: supportsTools ? "tool_calling" : "hybrid_rag",
       ...llmPromptSizeHints(streamConfig.system, trimmedMessages),
     });
-    const result = await streamText(streamConfig as Parameters<typeof streamText>[0]);
+
+    const result = await streamText({
+      ...(streamConfig as Parameters<typeof streamText>[0]),
+      onFinish: async ({ usage, finishReason, text }) => {
+        void persistAiInteractionTelemetry({
+          userId: actingUser.id,
+          courseId: effectiveCourseId,
+          resolvedModelId,
+          query: lastUserMessageTextForTelemetry,
+          responseText: text ?? "",
+          usage,
+          finishReason: String(finishReason ?? ""),
+          durationMs: Date.now() - requestStartMs,
+          wasAuto,
+          routingTier,
+          routerVersion: wasAuto ? activeRouterVersion() : null,
+          routerFeatures: routerContext,
+        });
+      },
+    });
 
     if (streaming) {
       const headers: Record<string, string> = {
         "Content-Encoding": "none",
         "Transfer-Encoding": "chunked",
         Connection: "keep-alive",
+        "X-Routed-Model": resolvedModelId,
       };
       if (chat?.id) {
         headers["X-Chat-Id"] = chat.id;
@@ -865,7 +998,7 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
         return new Response(
           JSON.stringify({
             content: text,
-            model,
+            model: resolvedModelId,
             usage,
             finishReason,
             sources: sources || [],
