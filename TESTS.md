@@ -284,6 +284,7 @@ Each section should use this format:
 | `eduaiService.test.js` | `EduAIService` (axios mocked): `chat` success/timeout/unreachable/reset/HTTP-error paths, `generateQuestions` parsing/normalization (MCQ choices, answer-letter, topic dedupe, error envelopes, retries), `listCourses`/`getCourseTopics`/`listAIModels` success and error handling, `testApiKey` outcomes |
 | `aiServiceGenerate.test.js` | `generateQuestions` provider routing (Groq/OpenAI/DeepSeek) with parse fallbacks and HTTP errors; `extractQuestionsFromText` EduAI extraction — sanitization, MCQ choices, retry-on-empty, topic prompting, missing-course code, not-configured guard (collaborators mocked) |
 | `canvasServiceConvert.test.js` | Pure canvas converters: `convertCanvasQuestionToVariant` (MCQ/true-false/essay/short-answer/text-fallback/unsupported), `convertVariantToCanvasQuestion`, `stripHtmlTags`, `parseChoicesFromQuestionText`, `normalizeCanvasQuestionType`, `parseMCQOptions` |
+| `courseAccess.test.js` | `resolveCourseAccess` derives the caller's access level (ADMIN/UNIT_ADMIN/INSTRUCTOR/TA/STUDENT) from course ownership, Core enrollments, and unit-department matching, and the `requireCourseAccess` middleware enforces a minimum rank — 401 unauthenticated, 404 missing course, 403 below the required rank. |
 
 ---
 
@@ -315,6 +316,11 @@ Each section should use this format:
 | `questionAssessments.integration.test.js` | Questions and assessments can be created and retrieved, invalid inputs are rejected, and variants can be added to questions |
 | `questionsAuth.test.js` | All question and extraction routes reject unauthenticated requests |
 | `questionsExtractValidation.integration.test.js` | The question extraction and save endpoints reject requests with missing or invalid text, courseId, or question list |
+| `assessmentRbac.test.js` | Assessment route RBAC: STUDENT is 403 on every operation, TA may GET (200) but is blocked on all writes (POST/PUT/DELETE/PATCH → 403), and INSTRUCTOR has full create/update/delete authoring plus variant assembly. |
+| `authMeBugReport.test.js` | `GET /api/auth/me` returns `isBugReportAdmin=true` only for ADMIN, with the legacy `BUG_REPORT_ADMIN_EMAILS` allowlist ignored so UNIT_ADMIN/INSTRUCTOR/TA/STUDENT all resolve to false. |
+| `canvasRbac.test.js` | Canvas RBAC: integration save/get/delete are INSTRUCTOR-only own-scoped (TA/STUDENT → 403), and course-mapping reads and assessment export are course-scoped INSTRUCTOR-only (TA → 403). |
+| `questionRbac.test.js` | Question route RBAC: STUDENT blocked from all writes (403), TA may view the whole course bank but edit/delete only their own questions (`createdBy`, else 403), and INSTRUCTOR may create/edit/delete any question in the course. |
+| `variantRbac.test.js` | Variant route RBAC: STUDENT blocked from edits/deletes/creates (403), TA own-only draft edit/delete (`createdBy`, else 403), INSTRUCTOR-only approval and draft-revert (TA → 403/409), approved variants locked against edits (409 `VARIANT_LOCKED`), and `PATCH` testable INSTRUCTOR-gated ahead of payload validation. |
 
 ---
 
