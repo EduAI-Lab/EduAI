@@ -1,27 +1,67 @@
 /**
- * HTTP validation tests for /api/assessment-variant routes (400 responses).
- * Auth is handled by stubbing global fetch for Core session validation.
- * No DB required — all 400 guards fire before any model access.
+ * HTTP validation tests for /api/assessment-variant routes.
+ *
+ * These routes are instructor-gated (§17), so authorization runs before payload
+ * validation: an enrolled INSTRUCTOR with an accessible course still hits the
+ * 400 payload guards, while a request that omits courseId 404s at the gate
+ * (no course to authorize). Schema + Core reads are mocked so the gate resolves
+ * without a DB.
  */
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import request from 'supertest';
+
+const { mockCourseFindOne, mockAssessmentFindOne, mockEnrollments } = vi.hoisted(() => ({
+  mockCourseFindOne: vi.fn(),
+  mockAssessmentFindOne: vi.fn(),
+  mockEnrollments: vi.fn(),
+}));
 
 vi.mock('../../src/services/authService.js', () => ({
   findOrCreateUser: vi.fn().mockResolvedValue({}),
 }));
 
+vi.mock('../../src/config/settings.js', () => {
+  const cfg = { coreUrl: 'http://core.test', eduaiApiKey: 'k', corsOrigins: ['*'], nodeEnv: 'test', logLevel: 'silent' };
+  return { config: cfg, default: cfg };
+});
+
+vi.mock('../../src/services/coreApiService.js', () => ({
+  getCourseEnrollmentsFromCore: mockEnrollments,
+  getCourseFromCore: vi.fn().mockResolvedValue({ id: 'cuid-core-course', department: 'COSC' }),
+  getMyProfileFromCore: vi.fn().mockResolvedValue({ authorizedUnits: [] }),
+}));
+
+vi.mock('../../src/schema/index.js', () => ({
+  Course: { findOne: mockCourseFindOne },
+  Assessments: { findOne: mockAssessmentFindOne },
+  Question_Metadata: {},
+  Variants: {},
+  AssessmentSections: {},
+  Topics: {},
+  sequelize: { define: vi.fn(), authenticate: vi.fn(), sync: vi.fn() },
+}));
+
 const { default: app } = await import('../../src/app.js');
 
 const TEST_USER = { id: 'cuid-test-user', email: 'test@test.com', role: 'INSTRUCTOR', name: 'Test User' };
+const COURSE = { id: 1, userId: 'cuid-test-user', coreCourseId: 'cuid-core-course' };
 
 beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
     ok: true,
     json: () => Promise.resolve({ user: TEST_USER }),
   }));
+  mockCourseFindOne.mockResolvedValue(COURSE);
+  mockAssessmentFindOne.mockResolvedValue({ id: 1, course: COURSE });
+  mockEnrollments.mockResolvedValue({
+    enrollments: [{ studentId: TEST_USER.id, role: 'INSTRUCTOR', isActive: true }],
+  });
 });
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.clearAllMocks();
+});
 
 describe('Assessment variant API validation (integration)', () => {
   it('returns 400 when PATCH /role has no studyRole in body', async () => {
@@ -41,12 +81,12 @@ describe('Assessment variant API validation (integration)', () => {
     expect(String(res.body.error || '')).toMatch(/courseId/i);
   });
 
-  it('returns 400 when POST assemble-variants is missing required ids', async () => {
+  it('returns 404 when POST assemble-variants omits courseId (no course to authorize)', async () => {
     const res = await request(app)
       .post('/api/assessment-variant/assemble-variants')
       .set('Cookie', 'session=valid')
       .send({ referenceAssessmentId: 1 });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(404);
   });
 
   it('returns 400 when POST assemble-by-metadata is missing required ids', async () => {
