@@ -1,5 +1,7 @@
 import { Form } from "react-router";
 import { useEffect, useState } from "react";
+
+import { CanvasIntegrationSettings } from "~/components/canvas/CanvasIntegrationSettings";
 import {
   CheckCircle2,
   Copy,
@@ -35,8 +37,14 @@ type ServerApiKey = {
 };
 
 const FIXED_PREFIX = "eduai";
+const CANVAS_SETTINGS_ROLES = new Set(["INSTRUCTOR", "ADMIN"]);
 
-export function SettingsView() {
+interface SettingsViewProps {
+  role?: string;
+}
+
+export function SettingsView({ role }: SettingsViewProps) {
+  const showCanvasSettings = CANVAS_SETTINGS_ROLES.has(role ?? "");
   const {
     updateProviderSettings,
     removeProviderSettings,
@@ -221,6 +229,25 @@ export function SettingsView() {
                   ))
                 )}
               </div>
+            </CardContent>
+          </Card>
+
+          {showCanvasSettings && <CanvasIntegrationSettings />}
+
+          <Card>
+            <CardHeader>
+              <CardTitle>How to use API Keys</CardTitle>
+              <CardDescription>
+                Send your key in the <span className="font-mono">x-api-key</span> header when calling{" "}
+                <span className="font-mono">/api/*</span> endpoints. Note: x-api-key usage is restricted
+                to ADMIN users across /api/*; students should use the web UI.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <pre className="text-xs bg-muted p-3 rounded-md overflow-auto whitespace-pre-wrap break-words">{`curl -N -X POST "http://localhost:5173/api/chat" \\
+  -H "Content-Type: application/json" \\
+  -H "x-api-key: YOUR_API_KEY" \\
+  -d '{"messages":[{"role":"user","content":"hello"}],"model":"google:gemini-2.0-flash","apiKeys":{"google":{"apiKey":"AIza-***","isEnabled":true}}}'`}</pre>
             </CardContent>
           </Card>
         </TabsContent>

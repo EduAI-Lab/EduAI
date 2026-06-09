@@ -1,11 +1,11 @@
 import { redirect, useLoaderData } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 
+import { auth } from "~/lib/auth/server";
 import { AppSidebar } from "~/components/app-sidebar";
 import { SettingsView } from "~/components/settings/settings-view";
 import { SiteHeader } from "~/components/site-header";
 import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
-import { auth } from "~/lib/auth/server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request);
@@ -30,8 +30,8 @@ export default function SettingsPage() {
     >
       <AppSidebar variant="inset" user={user} />
       <SidebarInset>
-        <SiteHeader user={user} />
-        <SettingsView />
+        <SiteHeader />
+        <SettingsView role={user.role} />
       </SidebarInset>
     </SidebarProvider>
   );
