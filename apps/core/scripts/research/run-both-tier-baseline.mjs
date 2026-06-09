@@ -17,6 +17,7 @@
  *   RESEARCH_RUN_SPLIT     dev | test | all (default dev)
  *   RESEARCH_RUN_LIMIT     max prompts after filter
  *   RESEARCH_RUN_IDS       comma-separated ts-### filter
+ *   RESEARCH_RUN_TIERS     comma-separated tier filter (1,3); default both
  *   RESEARCH_RUN_OUT       output JSONL path (default docs/research/data/runs/both-tier.v1.jsonl)
  *   RESEARCH_SUITE_DIR     override task-suite folder (must contain prompts.v1.jsonl)
  *   RESEARCH_RUNS_DIR      override runs output folder
@@ -186,10 +187,25 @@ async function main() {
     process.exit(1);
   }
 
-  const tierModels = TIER_MODELS.map(({ tier, envKey, fallback }) => ({
+  let tierModels = TIER_MODELS.map(({ tier, envKey, fallback }) => ({
     tier,
     model: readEnv(envKey) ?? fallback,
   }));
+
+  const tiersFilter = readEnv("RESEARCH_RUN_TIERS");
+  if (tiersFilter) {
+    const allowed = new Set(
+      tiersFilter
+        .split(",")
+        .map((s) => Number(s.trim()))
+        .filter((n) => n === 1 || n === 3),
+    );
+    tierModels = tierModels.filter(({ tier }) => allowed.has(tier));
+    if (tierModels.length === 0) {
+      console.error("RESEARCH_RUN_TIERS must include 1 and/or 3.");
+      process.exit(1);
+    }
+  }
 
   let prompts = loadPrompts();
   if (splitFilter !== "all") {
