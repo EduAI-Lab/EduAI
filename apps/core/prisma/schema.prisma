@@ -246,7 +246,7 @@ model CourseMaterial {
   title       String
   mimeType    String
   fileSize    Int
-  checksum    String          @unique
+  checksum    String
   rawText     String?
   status      MaterialStatus  @default(PROCESSING)
   createdAt   DateTime        @default(now())
@@ -255,6 +255,7 @@ model CourseMaterial {
   course      Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
   chunks      MaterialChunk[]
 
+  @@unique([courseId, checksum])
   @@map("course_materials")
 }
 
