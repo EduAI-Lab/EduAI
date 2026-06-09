@@ -335,6 +335,16 @@ export function ModelFormDialog({
                 cmps01, port 8001). If fetch fails, ask ops to check{" "}
                 <code className="text-xs">infra/cmps01</code> — not a URL you enter here.
               </p>
+              {!model && (
+                <Alert>
+                  <AlertDescription>
+                    Qwen 7B and 32B are usually pre-seeded via{" "}
+                    <code className="text-xs">npm run db:sync-ai-providers</code>. If Create returns
+                    409 Conflict, the model already exists — check Admin → Models and ensure it is
+                    Active.
+                  </AlertDescription>
+                </Alert>
+              )}
 
               {vllmError && (
                 <Alert variant="destructive">

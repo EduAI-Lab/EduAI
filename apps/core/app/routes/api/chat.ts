@@ -557,7 +557,7 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    if ((!routeWithAuto && !model) || typeof apiKeys !== "object" || apiKeys === null) {
+    if ((!routeWithAuto && !model) || (apiKeys !== null && typeof apiKeys !== "object")) {
       return new Response(
         JSON.stringify({ error: "Missing required fields" }),
         {
@@ -567,8 +567,11 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
+    const apiKeysInput =
+      apiKeys === null || apiKeys === undefined ? {} : (apiKeys as Record<string, unknown>);
+
     // Validate API keys
-    const apiKeysParsed = clientApiKeysBodySchema.safeParse(apiKeys);
+    const apiKeysParsed = clientApiKeysBodySchema.safeParse(apiKeysInput);
     if (!apiKeysParsed.success) {
       return new Response(
         JSON.stringify({

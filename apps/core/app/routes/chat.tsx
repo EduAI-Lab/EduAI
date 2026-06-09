@@ -107,14 +107,14 @@ export default function Chat() {
 
   const { messages, input, handleInputChange, handleSubmit, isLoading, stop } = useChat({
     api: "/api/chat",
-    body: {
+    body: () => ({
       model: selectedModel,
       apiKeys: getValidApiKeys(),
       courseCode: selectedCourseCode || undefined,
       chatId: chatId || undefined,
       systemPrompt: systemPrompt || undefined,
       adhdAssist,
-    },
+    }),
     onResponse: async (response) => {
       // Extract chatId from response headers
       const chatIdHeader = response.headers.get('X-Chat-Id');

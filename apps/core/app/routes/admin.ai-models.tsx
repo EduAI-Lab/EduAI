@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { toast } from "sonner";
 import { useLoaderData, redirect } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { IconPlus, IconSearch, IconFilter } from "@tabler/icons-react";
@@ -255,9 +256,26 @@ export default function AIModelsPage() {
         await Promise.all([fetchModels(), fetchProviders()]);
         handleModelDialogChange(false);
         setEditingModel(null);
+        toast.success("Model created");
+        return;
       }
+
+      const payload = await response.json().catch(() => ({}));
+      if (response.status === 409) {
+        await Promise.all([fetchModels(), fetchProviders()]);
+        toast.info(
+          payload.hint ??
+            "This model is already registered. Check Admin → Models (filter by vLLM) and toggle Active if needed.",
+        );
+        handleModelDialogChange(false);
+        setEditingModel(null);
+        return;
+      }
+
+      toast.error(payload.error ?? `Failed to create model (${response.status})`);
     } catch (error) {
       console.error("Failed to create model:", error);
+      toast.error("Failed to create model");
     }
   };
 

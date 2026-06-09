@@ -70,6 +70,13 @@ export type RouterDecision = {
 
 const FALLBACK_MODEL = "google:gemini-2.5-flash";
 
+function defaultFallbackModelId(): string {
+  if (process.env.VLLM_BASE_URL?.trim()) {
+    return "vllm:qwen2.5-7b-instruct";
+  }
+  return FALLBACK_MODEL;
+}
+
 const carbonByCourse = () =>
   parseCarbonPolicyByCourse(process.env.ROUTING_CARBON_MODE_BY_COURSE);
 
@@ -147,8 +154,8 @@ async function finalizePick(
     tier = tierFromRow(picked, pick.kind === "exactTier" ? pick.tier : 2);
   } else {
     fallbackUsed = true;
-    modelId = FALLBACK_MODEL;
-    tier = 2;
+    modelId = defaultFallbackModelId();
+    tier = modelId.startsWith("vllm:") ? 1 : 2;
   }
 
   const features: Record<string, unknown> = {

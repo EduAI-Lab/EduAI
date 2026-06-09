@@ -64,7 +64,10 @@ export async function getCachedTierModels(): Promise<TierModelRow[]> {
   }
   if (!loading) {
     loading = loadTierRows().then((rows) => {
-      cache = rows;
+      if (rows.length > 0) {
+        cache = rows;
+      }
+      loading = null;
       return rows;
     });
   }
