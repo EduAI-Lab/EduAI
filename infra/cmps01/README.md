@@ -143,13 +143,14 @@ Use **`http://`** not `https://`. Restart the dev server (tmux).
 ```bash
 cd apps/core
 npm run vllm:smoke
-npx prisma db seed   # registers both vLLM models in Admin
+npx prisma db seed   # registers vllm provider only (not individual models)
 ```
 
 ### Step 5 — App
 
-1. Chat: **`vllm:qwen2.5-7b-instruct`** or **`vllm:qwen2.5-32b-instruct`** (availability follows server `.env`, no Settings toggle)
-2. **Admin → AI Models** — models are seeded (`npx prisma db seed`); do **not** re-add the same model id (409 Conflict). Use **Refresh list** only when registering a *new* served name.
+1. **Admin → AI Models → Create Model** → provider **vLLM** → **Refresh list** → register **`qwen2.5-7b-instruct`** and **`qwen2.5-32b-instruct`** (one save per model)
+2. Chat: **`vllm:qwen2.5-7b-instruct`** or **`vllm:qwen2.5-32b-instruct`** (availability follows server `.env`, no Settings toggle)
+3. Do **not** re-add the same `modelId` (409 Conflict). Use **Refresh list** only when registering a *new* served name from cmps01.
 
 ### Step 6 — IT / firewall
 
@@ -262,29 +263,22 @@ cd apps/core && VLLM_MODEL=qwen2.5-14b-instruct npm run vllm:smoke
 
 ### Step 4 — Register in EduAI
 
-**Option A — seed (preferred for shared dev):** add a row to `apps/core/prisma/seed.ts` under `vllmModels`, then on s378:
-
-```bash
-cd apps/core
-npx prisma db seed
-```
-
-**Option B — Admin UI:** **Admin → AI Models → Create Model** → provider **vLLM** → **Refresh list** → pick the new id → save.  
-(Skip if seed already added the same `modelId` — you'll get **409 Conflict**.)
+**Admin → AI Models → Create Model** → provider **vLLM** → **Refresh list** → pick the new id → save.  
+(Duplicate `modelId` returns **409 Conflict** — use the existing row.)
 
 Chat model id: **`vllm:<served-model-name>`** (e.g. `vllm:qwen2.5-14b-instruct`).
 
 ### Step 5 — Use in the app
 
-1. **Settings** → vLLM enabled (unchanged)
-2. Chat → select the new model from the picker
+1. Ensure **`VLLM_BASE_URL`** is set on the app server (s378 `apps/core/.env`)
+2. Chat → select **`vllm:<served-model-name>`** from the picker
 
 ### Replacing vs adding
 
 | Goal | Action |
 | --- | --- |
 | **Add** model (keep 7B + 32B) | New GPU or enough VRAM; new port `18003+`; new LiteLLM row |
-| **Swap** model on a GPU | Stop old container, reuse same port (e.g. `18001`), update LiteLLM row + EduAI seed/Admin |
+| **Swap** model on a GPU | Stop old container, reuse same port (e.g. `18001`), update LiteLLM row + EduAI Admin |
 | **Remove** model | Stop/remove backend container; delete its block from `litellm-config.yaml`; `docker compose restart`; deactivate row in Admin |
 
 ### Port map (convention)

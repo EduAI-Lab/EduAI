@@ -937,7 +937,7 @@ async function seedAIProvidersAndModels() {
     create: {
       name: 'vllm',
       displayName: 'vLLM',
-      description: 'Local OpenAI-compatible inference (cmps01)',
+      description: 'Local OpenAI-compatible inference (vLLM on cmps01 or tunnel)',
       requiresApiKey: false,
       defaultBaseUrl: 'http://localhost:8001/v1',
       envVarName: 'VLLM_BASE_URL',

@@ -63,3 +63,107 @@ export async function createBugReport(raw: unknown): Promise<CreateBugReportResu
 
   return { ok: true };
 }
+
+const VALID_STATUSES = ["UNHANDLED", "IN_PROGRESS", "RESOLVED"] as const;
+type BugReportStatus = (typeof VALID_STATUSES)[number];
+
+export function isBugReportStatus(value: unknown): value is BugReportStatus {
+  return typeof value === "string" && (VALID_STATUSES as readonly string[]).includes(value);
+}
+
+const ADMIN_LIST_SOURCES = ["CORE", "AI_TUTOR", "QUESTION_MAKER"] as const;
+
+export function isBugReportSource(value: unknown): value is (typeof ADMIN_LIST_SOURCES)[number] {
+  return typeof value === "string" && (ADMIN_LIST_SOURCES as readonly string[]).includes(value);
+}
+
+/**
+ * GET /api/admin/bug-reports (#304, §11) — admin listing with source/status
+ * filters and pagination. When `isAnonymous=true`, the reporter's identity
+ * (userId/email/name) is masked in the response — `userId` stays in the DB
+ * for audit but never surfaces here.
+ */
+export async function listBugReports(params: {
+  source?: (typeof ADMIN_LIST_SOURCES)[number];
+  status?: BugReportStatus;
+  limit?: number;
+  offset?: number;
+}) {
+  const { source, status, limit = 50, offset = 0 } = params;
+  const clampedLimit = Math.min(Math.max(limit, 1), 200);
+
+  const where = {
+    ...(source !== undefined && { source }),
+    ...(status !== undefined && { status }),
+  };
+
+  const [reports, total] = await Promise.all([
+    prisma.bugReport.findMany({
+      where,
+      include: { user: { select: { email: true, name: true } } },
+      orderBy: { createdAt: "desc" },
+      take: clampedLimit,
+      skip: offset,
+    }),
+    prisma.bugReport.count({ where }),
+  ]);
+
+  return {
+    reports: reports.map((r) => ({
+      id: r.id,
+      source: r.source,
+      status: r.status,
+      description: r.description,
+      isAnonymous: r.isAnonymous,
+      // §11 anonymity masking — display-only constraint.
+      userId: r.isAnonymous ? null : r.userId,
+      userEmail: r.isAnonymous ? null : (r.user?.email ?? null),
+      userName: r.isAnonymous ? null : (r.user?.name ?? null),
+      consoleLogs: r.consoleLogs,
+      networkLogs: r.networkLogs,
+      screenshot: r.screenshot,
+      pageUrl: r.pageUrl,
+      userAgent: r.userAgent,
+      context: r.context,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+    })),
+    total,
+    limit: clampedLimit,
+    offset,
+  };
+}
+
+/** PATCH /api/admin/bug-reports/:id (#304) — triage status change. */
+export async function updateBugReportStatus(id: string, status: BugReportStatus) {
+  try {
+    return await prisma.bugReport.update({
+      where: { id },
+      data: { status },
+      select: { id: true, status: true },
+    });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
+      return null;
+    }
+    throw err;
+  }
+}
+
+/** GET /api/bug-reports?mine=true (#304, §11) — own reports for any user. */
+export async function listOwnBugReports(userId: string) {
+  return prisma.bugReport.findMany({
+    where: { userId },
+    select: {
+      id: true,
+      source: true,
+      status: true,
+      description: true,
+      isAnonymous: true,
+      pageUrl: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+    orderBy: { createdAt: "desc" },
+  });
+}

@@ -21,6 +21,21 @@ async function handleRequest(request: Request) {
 
   switch (request.method) {
     case "GET": {
+      // §13 (#303): model config is ADMIN-only — including reads.
+      const session = apiKeySession ?? await auth.api.getSession(request);
+      if (!session?.user) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (session.user.role !== "ADMIN") {
+        return new Response(JSON.stringify({ error: "Forbidden" }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
       const models = await prisma.aIModel.findMany({
         include: {
           provider: true,

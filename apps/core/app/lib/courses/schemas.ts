@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { UnitSchema } from "~/lib/units";
 
 /**
  * Schema for creating a new course
@@ -13,7 +14,8 @@ export const CreateCourseSchema = z.object({
   year: z.number().int(),
   startDate: z.coerce.date(),
   endDate: z.coerce.date().optional(),
-  department: z.string().optional(),
+  // §19: department writes are validated against the canonical subject codes
+  department: UnitSchema.optional(),
   description: z.string().optional(),
   isPublished: z.coerce.boolean().optional().default(false),
   aiInstructions: z.string().optional().default(""),
@@ -28,7 +30,7 @@ export const UpdateCourseSchema = z.object({
   year: z.number().int().optional(),
   startDate: z.coerce.date().optional(),
   endDate: z.coerce.date().optional().nullable(),
-  department: z.string().optional().nullable(),
+  department: UnitSchema.optional().nullable(),
   description: z.string().optional().nullable(),
   isPublished: z.coerce.boolean().optional(),
   isActive: z.coerce.boolean().optional(),
@@ -36,6 +38,10 @@ export const UpdateCourseSchema = z.object({
 });
 
 export const CreateCourseTopicSchema = z.object({
+  name: z.string().min(1, "Topic name is required"),
+});
+
+export const UpdateCourseTopicSchema = z.object({
   name: z.string().min(1, "Topic name is required"),
 });
 
@@ -50,4 +56,5 @@ export const DeleteCourseTopicSchema = z
   });
 
 export type CreateCourseTopicInput = z.infer<typeof CreateCourseTopicSchema>;
+export type UpdateCourseTopicInput = z.infer<typeof UpdateCourseTopicSchema>;
 export type DeleteCourseTopicInput = z.infer<typeof DeleteCourseTopicSchema>;
