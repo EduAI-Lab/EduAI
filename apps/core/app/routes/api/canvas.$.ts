@@ -2,19 +2,22 @@ import { auth } from "~/lib/auth/server";
 import { CanvasApiError, CanvasVerificationError } from "~/lib/canvas/client.server";
 import {
   CanvasNotConnectedError,
+  InvalidCanvasCourseAccessError,
   listCanvasCoursesWithSyncState,
+  validateInstructorCanvasCourseIds,
 } from "~/lib/canvas/courses.server";
 import {
+  canLinkCanvasRoster,
   canManageCanvasIntegration,
+  isCanvasLinkRosterRateLimited,
+  isCanvasSyncRateLimited,
+} from "~/lib/canvas/guards.server";
+import {
   deleteCanvasIntegration,
   getCanvasIntegrationPublic,
   saveCanvasIntegration,
 } from "~/lib/canvas/integration.server";
-import {
-  isCanvasLinkRosterRateLimited,
-  LinkRosterError,
-  linkCanvasRoster,
-} from "~/lib/canvas/link-roster.server";
+import { LinkRosterError, linkCanvasRoster } from "~/lib/canvas/link-roster.server";
 import { ConnectCanvasSchema, LinkRosterSchema, SyncCanvasCoursesSchema } from "~/lib/canvas/schemas";
 import { syncCanvasCourses } from "~/lib/canvas/sync.server";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
@@ -48,7 +51,7 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
   const userId = session.user.id;
 
   if (subpath === "link-roster") {
-    return handleLinkRosterRequest(request, userId);
+    return handleLinkRosterRequest(request, userId, session.user.role);
   }
 
   if (!canManageCanvasIntegration(session.user.role)) {
@@ -111,6 +114,13 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
         }
 
         if (subpath === "sync") {
+          if (isCanvasSyncRateLimited(userId)) {
+            return json(
+              { success: false, error: "Sync was requested too recently. Please wait and try again." },
+              429,
+            );
+          }
+
           let body: unknown;
           try {
             body = await request.json();
@@ -129,6 +139,8 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
               400,
             );
           }
+
+          await validateInstructorCanvasCourseIds(userId, result.data.canvasCourseIds);
 
           const syncResult = await syncCanvasCourses(userId, result.data.canvasCourseIds);
           return json({ success: true, data: syncResult });
@@ -156,6 +168,16 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
     if (error instanceof CanvasNotConnectedError) {
       return json({ success: false, error: error.message }, 400);
     }
+    if (error instanceof InvalidCanvasCourseAccessError) {
+      return json(
+        {
+          success: false,
+          error: error.message,
+          invalidCourseIds: error.invalidCourseIds,
+        },
+        403,
+      );
+    }
     if (error instanceof CanvasVerificationError) {
       return json({ success: false, error: error.message }, error.statusCode);
     }
@@ -172,9 +194,17 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
   }
 }
 
-async function handleLinkRosterRequest(request: Request, userId: string): Promise<Response> {
+async function handleLinkRosterRequest(
+  request: Request,
+  userId: string,
+  role: string | null | undefined,
+): Promise<Response> {
   if (request.method !== "POST") {
     return json({ success: false, error: "Method not allowed" }, 405);
+  }
+
+  if (!canLinkCanvasRoster(role)) {
+    return json({ success: false, error: "Forbidden: students and TAs only" }, 403);
   }
 
   if (isCanvasLinkRosterRateLimited(userId)) {

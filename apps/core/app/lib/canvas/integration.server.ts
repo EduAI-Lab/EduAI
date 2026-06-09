@@ -1,5 +1,4 @@
 import type { CanvasIntegration } from "@prisma/client";
-import { UserRole } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 import { decrypt, encrypt, isEncrypted } from "~/lib/canvas/encryption";
 import type { CanvasIntegrationPublic, ConnectCanvasInput } from "~/lib/canvas/schemas";
@@ -7,9 +6,7 @@ import { verifyCanvasCredentials } from "~/lib/canvas/client.server";
 
 const TEST_MODE_API_KEY_PLACEHOLDER = "test-key";
 
-export function canManageCanvasIntegration(role: string | null | undefined): boolean {
-  return role === UserRole.INSTRUCTOR || role === UserRole.ADMIN;
-}
+export { canManageCanvasIntegration } from "~/lib/canvas/guards.server";
 
 export function toCanvasIntegrationPublic(
   integration: Pick<CanvasIntegration, "canvasUrl" | "isTestMode">,

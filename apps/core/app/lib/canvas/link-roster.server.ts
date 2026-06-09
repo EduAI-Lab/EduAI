@@ -4,10 +4,6 @@ import {
   resolveCanvasEnrollmentsForUser,
 } from "~/lib/canvas/enrollment-link.server";
 
-const linkAttemptStore = new Map<string, number[]>();
-const LINK_RATE_LIMIT = Number(process.env.CANVAS_LINK_ROSTER_RATE_LIMIT ?? 10);
-const LINK_RATE_WINDOW_MS = Number(process.env.CANVAS_LINK_ROSTER_RATE_WINDOW_MS ?? 900_000);
-
 export class LinkRosterError extends Error {
   readonly statusCode: number;
 
@@ -33,18 +29,6 @@ function auditLinkAttempt(userId: string, outcome: "success" | "failure", detail
       at: new Date().toISOString(),
     }),
   );
-}
-
-export function isCanvasLinkRosterRateLimited(userId: string): boolean {
-  const now = Date.now();
-  const key = `canvas-link:${userId}`;
-  const hits = (linkAttemptStore.get(key) ?? []).filter((t) => now - t < LINK_RATE_WINDOW_MS);
-  if (hits.length >= LINK_RATE_LIMIT) {
-    return true;
-  }
-  hits.push(now);
-  linkAttemptStore.set(key, hits);
-  return false;
 }
 
 /**
