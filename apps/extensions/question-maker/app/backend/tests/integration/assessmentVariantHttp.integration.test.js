@@ -73,13 +73,8 @@ describe('Assessment variant API validation (integration)', () => {
     expect(res.body.success).toBe(false);
   });
 
-  it('returns 400 when GET variant-readiness is missing courseId', async () => {
-    const res = await request(app)
-      .get('/api/assessment-variant/assessments/1/variant-readiness')
-      .set('Cookie', 'session=valid');
-    expect(res.status).toBe(400);
-    expect(String(res.body.error || '')).toMatch(/courseId/i);
-  });
+  // variant-readiness derives courseId from the authorized assessment (req.qmCourse),
+  // so there is no client-supplied courseId to validate here — see variantReadinessScope.test.js.
 
   it('returns 404 when POST assemble-variants omits courseId (no course to authorize)', async () => {
     const res = await request(app)
