@@ -319,6 +319,53 @@ describe("prepareBoundedSessionContext", () => {
     expect(totalModelChars(bounded)).toBeLessThanOrEqual(5_000);
   });
 
+  it("keeps an oversized tool message structured instead of collapsing it to text", () => {
+    // Regression: enforcing the budget on a structured tool turn must NOT replace
+    // its content array with a truncated JSON-fragment string — that would make
+    // the AI SDK read it as a plain assistant message and orphan paired tool
+    // messages. The shrunk message stays an array with its tool-invocation part.
+    const messages = [toolResultMessage("1", 50_000)];
+
+    const bounded = prepareBoundedSessionContext(messages, {
+      charBudget: 5_000,
+      recentCount: 6,
+    });
+
+    const content = bounded[0].content as Array<{
+      type?: string;
+      toolInvocation?: { toolName?: string };
+    }>;
+    expect(Array.isArray(content)).toBe(true);
+    expect(content[0].type).toBe("tool-invocation");
+    expect(content[0].toolInvocation?.toolName).toBe("fetchPage");
+    expect(totalModelChars(bounded)).toBeLessThanOrEqual(5_000);
+  });
+
+  it("drops oldest parts of a multi-part tool message to fit the budget", () => {
+    const part = (callId: string, len: number) => ({
+      type: "tool-invocation",
+      toolInvocation: {
+        toolName: "fetchPage",
+        toolCallId: callId,
+        state: "result",
+        result: { markdown: "m".repeat(len), url: "https://example.com" },
+      },
+    });
+    const messages = [
+      { id: "1", role: "assistant", content: [part("a", 3_000), part("b", 3_000), part("c", 3_000)] },
+    ];
+
+    const bounded = prepareBoundedSessionContext(messages, {
+      charBudget: 4_000,
+      recentCount: 6,
+    });
+
+    const content = bounded[0].content as unknown[];
+    expect(Array.isArray(content)).toBe(true);
+    expect(content.length).toBeLessThan(3);
+    expect(totalModelChars(bounded)).toBeLessThanOrEqual(4_000);
+  });
+
   it("drops oldest messages when everything is recent but still over budget", () => {
     const messages = [
       { id: "1", role: "user", content: "a".repeat(400) },
@@ -335,13 +382,6 @@ describe("prepareBoundedSessionContext", () => {
     expect(totalModelChars(bounded)).toBeLessThanOrEqual(500);
   });
 });
-
-function totalChars(
-  messages: Array<{ content?: unknown }>,
-  extractText: (message?: { content?: unknown }) => string,
-): number {
-  return messages.reduce((sum, message) => sum + extractText(message).length, 0);
-}
 
 describe("resolveMaxContextMessages", () => {
   const original = process.env.CHAT_MAX_CONTEXT_MESSAGES;

@@ -124,8 +124,12 @@ export function estimateMessageCharsForModel(
   return 0;
 }
 
-/** Human-readable text of a message, used only to build the digest preview. */
-function extractMessageText(message?: Record<string, unknown>): string {
+/**
+ * Human-readable text of a message. Used to build the digest preview and reused
+ * by the chat route for lightweight keyword checks (so the two paths share one
+ * extractor instead of drifting).
+ */
+export function extractMessageText(message?: Record<string, unknown>): string {
   const content = message?.content;
   if (typeof content === "string") {
     return content;
@@ -188,12 +192,12 @@ function buildSessionDigest<T extends Record<string, unknown>>(
   }
 
   const header = "## Session digest (earlier turns)\n\n";
-  return truncateToMaxChars(`${header}${lines.join("\n")}`, maxDigestChars);
+  // Strict cap: keep the digest `<= maxDigestChars` so it cannot push the
+  // assembled session total past `charBudget` and silently drop a recent turn.
+  return hardTruncate(`${header}${lines.join("\n")}`, maxDigestChars);
 }
 
 const DIGEST_MESSAGE_ID = "session-digest";
-/** Floor on per-message budget shares so a tiny budget cannot truncate to nothing. */
-const MIN_TRUNCATED_MESSAGE_CHARS = 200;
 
 /**
  * Strict truncation: the result length is `<= maxChars` (unlike
@@ -212,9 +216,12 @@ function hardTruncate(text: string, maxChars: number): string {
 
 /**
  * Shrinks one message so its model-input size is `<= maxChars`. String content
- * is sliced directly; structured content (tool calls/results) has its string
- * leaves capped, and — only if that is still over budget — the content is
- * collapsed to a truncated serialized preview so the budget is always honored.
+ * is sliced directly; structured content (tool calls/results) keeps its shape
+ * where possible: the oldest parts are dropped and the surviving string leaves
+ * are capped until the serialized message fits. Only when no structured form can
+ * fit (e.g. huge non-array metadata) is the content collapsed to a serialized
+ * preview — collapsing a tool turn into free text would make the AI SDK treat it
+ * as a plain assistant message and orphan any paired tool messages.
  */
 function enforceMessageBudget<T extends Record<string, unknown>>(
   message: T,
@@ -229,13 +236,46 @@ function enforceMessageBudget<T extends Record<string, unknown>>(
     return { ...message, content: hardTruncate(content, maxChars) };
   }
 
-  const capped = { ...message, content: capStringsInValue(content, maxChars) } as T;
-  if (estimateMessageCharsForModel(capped) <= maxChars) {
-    return capped;
+  // Structured content (tool-call / tool-result parts): drop the oldest parts
+  // first (cheapest way to recover budget on multi-step turns), then shrink the
+  // remaining string leaves to fit while keeping the structured shape.
+  if (Array.isArray(content) && content.length > 0) {
+    let parts = content as unknown[];
+    while (
+      parts.length > 1 &&
+      estimateMessageCharsForModel({
+        ...message,
+        content: capStringsInValue(parts, maxChars, hardTruncate),
+      } as T) > maxChars
+    ) {
+      parts = parts.slice(1);
+    }
+    return shrinkStructuredContentToBudget(message, parts, maxChars);
   }
 
-  // Structured payload still over budget (many parts / large metadata): collapse
-  // to a truncated serialized preview. Rare; preserves the hard budget guarantee.
+  // Non-array structured content with no parts to drop: serialized truncation.
+  return { ...message, content: hardTruncate(safeStringify(content), maxChars) } as T;
+}
+
+/**
+ * Caps the string leaves of structured `content` until the serialized message is
+ * `<= maxChars`, shrinking the per-string cap to absorb JSON structural overhead.
+ * Falls back to a serialized preview only if strings cannot be shrunk enough.
+ */
+function shrinkStructuredContentToBudget<T extends Record<string, unknown>>(
+  message: T,
+  content: unknown,
+  maxChars: number,
+): T {
+  let cap = maxChars;
+  for (let attempt = 0; attempt < 8 && cap > 0; attempt++) {
+    const capped = capStringsInValue(content, cap, hardTruncate);
+    const size = estimateMessageCharsForModel({ ...message, content: capped } as T);
+    if (size <= maxChars) {
+      return { ...message, content: capped } as T;
+    }
+    cap = Math.max(0, cap - (size - maxChars) - 1);
+  }
   return { ...message, content: hardTruncate(safeStringify(content), maxChars) } as T;
 }
 
@@ -267,11 +307,10 @@ function enforceSessionCharBudget<T extends Record<string, unknown>>(
     return result;
   }
 
-  // Still over with the minimum set: split the budget across the survivors.
-  const share = Math.max(
-    MIN_TRUNCATED_MESSAGE_CHARS,
-    Math.floor(charBudget / result.length),
-  );
+  // Still over with the minimum set: split the budget evenly across the
+  // survivors. The share is the integer floor of the even split (>= 1) so the
+  // post-truncation total never exceeds `charBudget`.
+  const share = Math.max(1, Math.floor(charBudget / result.length));
   return result.map((message) => enforceMessageBudget(message, share));
 }
 
@@ -348,21 +387,29 @@ export function prepareBoundedSessionContext<T extends Record<string, unknown>>(
  * (`toolCallId`, URLs, etc.). The breadth is deliberate: it is a simple, robust
  * floodgate for assistant/tool payloads, and at the 6k default cap real metadata
  * is never affected — only oversized result bodies (`markdown`, `content`, …).
+ *
+ * `truncate` defaults to {@link truncateToMaxChars} (the `maxChars + 1` tool-cap
+ * convention); pass {@link hardTruncate} when the result must stay `<= maxChars`
+ * for strict budget enforcement.
  */
-function capStringsInValue(value: unknown, maxChars: number): unknown {
+function capStringsInValue(
+  value: unknown,
+  maxChars: number,
+  truncate: (text: string, max: number) => string = truncateToMaxChars,
+): unknown {
   if (typeof value === "string") {
-    return truncateToMaxChars(value, maxChars);
+    return truncate(value, maxChars);
   }
 
   if (Array.isArray(value)) {
-    return value.map((item) => capStringsInValue(item, maxChars));
+    return value.map((item) => capStringsInValue(item, maxChars, truncate));
   }
 
   if (value && typeof value === "object") {
     const record = value as Record<string, unknown>;
     const capped: Record<string, unknown> = {};
     for (const [key, nested] of Object.entries(record)) {
-      capped[key] = capStringsInValue(nested, maxChars);
+      capped[key] = capStringsInValue(nested, maxChars, truncate);
     }
     return capped;
   }

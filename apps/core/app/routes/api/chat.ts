@@ -18,6 +18,7 @@ import {
   capRagHitsForTool,
   capToolResultsInMessages,
   estimateMessageCharsForModel,
+  extractMessageText,
   prepareBoundedSessionContext,
   resolveMaxContextMessages,
   HYBRID_RAG_MAX_CHUNKS,
@@ -126,38 +127,6 @@ function mergeMessages(stored: GenericMessage[], incoming: GenericMessage[]): Ge
   }
 
   return merged;
-}
-
-/**
- * Produces a best-effort string representation of a message. We only need this
- * for lightweight keyword checks when deciding whether to run manual RAG.
- */
-function extractTextFromMessage(message?: GenericMessage): string {
-  if (typeof message?.content === "string") {
-    return message.content;
-  }
-
-  if (Array.isArray(message?.content)) {
-    return message!.content
-      .map((part) => {
-        if (typeof part === "string") return part;
-        if (part && typeof part === "object" && "text" in part && typeof (part as any).text === "string") {
-          return (part as any).text;
-        }
-        return "";
-      })
-      .filter(isNonEmptyString)
-      .join(" ");
-  }
-
-  if (message?.content && typeof message.content === "object" && "text" in (message.content as any)) {
-    const candidate = (message.content as { text?: string }).text;
-    if (typeof candidate === "string") {
-      return candidate;
-    }
-  }
-
-  return message ? JSON.stringify(message.content ?? "") : "";
 }
 
 /** Cheap metrics for logs — do not print full `system` / messages (RAG can be huge). */
@@ -617,7 +586,7 @@ export async function action({ request }: ActionFunctionArgs) {
     if (!supportsTools) {
       // MODELS WITHOUT TOOL SUPPORT: Use hybrid RAG approach
       const lastUserMessage = [...trimmedMessages].reverse().find((message) => message.role === "user");
-      const userQuestion = extractTextFromMessage(lastUserMessage);
+      const userQuestion = extractMessageText(lastUserMessage);
       const messageContentLower = userQuestion.toLowerCase();
 
       // Check if hybrid RAG should always be used with course
