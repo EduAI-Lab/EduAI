@@ -130,6 +130,20 @@ async function unsyncSingleCanvasCourse(
   return { coreCourseId: course.id };
 }
 
+/** Pure delta between currently synced Canvas ids and the instructor's new selection. */
+export function computeCanvasSyncDelta(
+  currentlySynced: Iterable<string>,
+  canvasCourseIds: string[],
+): { toSync: string[]; toUnsync: string[] } {
+  const syncedSet = new Set(currentlySynced);
+  const requested = new Set(canvasCourseIds);
+
+  return {
+    toSync: canvasCourseIds,
+    toUnsync: [...syncedSet].filter((canvasId) => !requested.has(canvasId)),
+  };
+}
+
 /**
  * Syncs checked Canvas courses and unsyncs any the instructor previously synced but omitted.
  */
@@ -139,10 +153,7 @@ export async function syncCanvasCourses(
   fetchImpl: typeof fetch = fetch,
 ): Promise<SyncCanvasCoursesResult> {
   const currentlySynced = await getInstructorSyncedCanvasExternalIds(userId);
-  const requested = new Set(canvasCourseIds);
-
-  const toSync = canvasCourseIds;
-  const toUnsync = [...currentlySynced].filter((canvasId) => !requested.has(canvasId));
+  const { toSync, toUnsync } = computeCanvasSyncDelta(currentlySynced, canvasCourseIds);
 
   const result: SyncCanvasCoursesResult = {
     synced: [],
