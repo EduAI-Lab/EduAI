@@ -25,9 +25,9 @@ export async function resolveCourseAccess(
   })
   if (ta) return 'ta'
 
-  // Student via CourseEnrollment
-  const enrollment = await prisma.courseEnrollment.findFirst({
-    where: { courseId: course.id, studentId: user.id, isActive: true },
+  // Student via Enrollment
+  const enrollment = await prisma.enrollment.findFirst({
+    where: { courseId: course.id, userId: user.id, isActive: true },
   })
   if (enrollment) return 'student'
 

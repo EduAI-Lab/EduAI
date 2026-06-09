@@ -41,6 +41,8 @@ async function handleRequest(request: Request) {
           _count: {
             select: {
               enrollments: true,
+              courseTAs: true,
+              taughtCourses: true,
               aiInteractions: true,
             },
           },
@@ -48,7 +50,17 @@ async function handleRequest(request: Request) {
         orderBy: { createdAt: 'desc' }
       });
 
-      return new Response(JSON.stringify(users), {
+      const mapped = users.map(({ _count, ...u }) => ({
+        ...u,
+        _count: {
+          enrolledCourses: _count.enrollments,
+          assistedCourses: _count.courseTAs,
+          taughtCourses: _count.taughtCourses,
+          aiInteractions: _count.aiInteractions,
+        },
+      }));
+
+      return new Response(JSON.stringify(mapped), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -74,7 +86,7 @@ async function handleRequest(request: Request) {
       }
 
       try {
-        const user = await prisma.user.create({
+        const { _count, ...created } = await prisma.user.create({
           data: {
             ...result.data,
             emailVerified: false, // New users need to verify their email
@@ -92,11 +104,23 @@ async function handleRequest(request: Request) {
             _count: {
               select: {
                 enrollments: true,
+                courseTAs: true,
+                taughtCourses: true,
                 aiInteractions: true,
               },
             },
           },
         });
+
+        const user = {
+          ...created,
+          _count: {
+            enrolledCourses: _count.enrollments,
+            assistedCourses: _count.courseTAs,
+            taughtCourses: _count.taughtCourses,
+            aiInteractions: _count.aiInteractions,
+          },
+        };
 
         return new Response(JSON.stringify(user), {
           status: 201,
@@ -151,7 +175,7 @@ async function handleRequest(request: Request) {
       }
 
       try {
-        const user = await prisma.user.update({
+        const { _count, ...updated } = await prisma.user.update({
           where: { id: userId },
           data: result.data,
           select: {
@@ -167,11 +191,23 @@ async function handleRequest(request: Request) {
             _count: {
               select: {
                 enrollments: true,
+                courseTAs: true,
+                taughtCourses: true,
                 aiInteractions: true,
               },
             },
           },
         });
+
+        const user = {
+          ...updated,
+          _count: {
+            enrolledCourses: _count.enrollments,
+            assistedCourses: _count.courseTAs,
+            taughtCourses: _count.taughtCourses,
+            aiInteractions: _count.aiInteractions,
+          },
+        };
 
         return new Response(JSON.stringify(user), {
           status: 200,
