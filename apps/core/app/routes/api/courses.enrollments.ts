@@ -1,25 +1,29 @@
 /**
- * GET /api/courses/:id/enrollments
+ * /api/courses/:id/enrollments
  *
- * Returns all enrollments (active and inactive) for a course.
+ * GET — returns all enrollments (active and inactive) for a course.
  * Supports dual auth: user OAuth Bearer and service key (EDUAI_API_KEY).
- * This is the only Core endpoint that accepts both auth types.
  *
- * Primary caller: AI Tutor's enrollmentSync.js (via eduaiClient.js).
+ * Primary GET caller: AI Tutor's enrollmentSync.js (via eduaiClient.js).
  * AI Tutor filters isActive: true on its side — we return everything.
  *
- * Auth rules:
+ * Auth rules (§6):
  *   - Service key: unrestricted access, no enrollment check.
- *   - User OAuth: caller must be enrolled in the course, else 403.
+ *   - User OAuth: ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C) / TA(C) see all;
+ *     STUDENT gets 403 (students cannot see fellow enrolled peers).
  *
- * See docs/implementations/api-wiring.md for the full contract.
+ * POST — add a user to the course (#305). ADMIN / UNIT_ADMIN(D) may add any
+ * role including INSTRUCTOR; INSTRUCTOR(C) may add STUDENT or TA only.
+ *
+ * See docs/implementations/api-wiring.md for the GET contract.
  */
-import type { LoaderFunctionArgs } from "react-router";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
 import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
+import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { getCourse } from "~/lib/courses/server";
-import { getCourseEnrollments } from "~/lib/courses/enrollments.server";
+import { addEnrollment, getCourseEnrollments } from "~/lib/courses/enrollments.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const courseId = params.id;
@@ -31,32 +35,38 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }
 
   // --- Dual auth: service key path vs. user OAuth session path ---
-  let isServiceKey = false;
-  let userId: string | null = null;
-
   if (request.headers.get("Authorization")?.startsWith("Bearer ")) {
-    // Service key path: validate EDUAI_API_KEY via requireServiceKey.
-    // Returns null on success (caller may proceed), or a 401/403 Response on failure.
+    // Service key path: unrestricted, never goes through user RBAC.
     const serviceKeyGuard = await requireServiceKey(request);
     if (serviceKeyGuard) {
       return serviceKeyGuard;
     }
-    isServiceKey = true;
-  } else {
-    // User OAuth path: resolve session from cookies/headers.
-    const session = await auth.api.getSession(request);
 
-    if (!session?.user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
+    // Verify the course exists (getCourse excludes soft-deleted courses)
+    const course = await getCourse(courseId);
+    if (!course) {
+      return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
+        status: 404,
         headers: { "Content-Type": "application/json" },
       });
     }
-    userId = session.user.id;
+
+    return enrollmentsResponse(courseId);
   }
 
-  // Verify the course exists (getCourse excludes soft-deleted courses)
-  const course = await getCourse(courseId);
+  // User OAuth path: resolve session from cookies/headers.
+  const session = await auth.api.getSession(request);
+
+  if (!session?.user) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  // §6: enrolled-user list is TA-and-up; students cannot see fellow peers.
+  const { course, access } = await resolveCourseAccessWithCourse(session.user, courseId);
+
   if (!course) {
     return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
       status: 404,
@@ -64,26 +74,18 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
   }
 
-  const enrollments = await getCourseEnrollments(courseId);
-
-  // Authorization: service key callers skip this check entirely.
-  // User OAuth callers must themselves be enrolled in the course (instructors
-  // are stored as enrollment rows, so this covers the "enrolled OR instructor"
-  // rule). This is the #275-specced inline check, not the ADMIN-only placeholder.
-  // TODO(RBAC #292): replace with resolveCourseAccess
-  if (!isServiceKey && userId) {
-    const callerEnrollment = enrollments.find((e) => e.userId === userId);
-
-    if (!callerEnrollment) {
-      return new Response(
-        JSON.stringify({ error: "Forbidden: not enrolled in this course" }),
-        {
-          status: 403,
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-    }
+  if (!access || access.rank < 1) {
+    return new Response(JSON.stringify({ error: "Forbidden" }), {
+      status: 403,
+      headers: { "Content-Type": "application/json" },
+    });
   }
+
+  return enrollmentsResponse(courseId);
+}
+
+async function enrollmentsResponse(courseId: string) {
+  const enrollments = await getCourseEnrollments(courseId);
 
   // Map Prisma model to the API contract shape (see api-wiring.md)
   const mapped = enrollments.map((e) => ({
@@ -99,4 +101,75 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     status: 200,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+export async function action({ request, params }: ActionFunctionArgs) {
+  if (request.method !== "POST") {
+    return new Response(JSON.stringify({ error: "Method not allowed" }), {
+      status: 405,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const courseId = params.id;
+  if (!courseId) {
+    return new Response(JSON.stringify({ error: "COURSE_ID_REQUIRED" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const session = await auth.api.getSession(request);
+  if (!session?.user) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const { course, access } = await resolveCourseAccessWithCourse(session.user, courseId);
+
+  if (!course) {
+    return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
+      status: 404,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const body = await request.json().catch(() => ({}));
+
+  // Manage tier is rank >= 2; only ADMIN / UNIT_ADMIN (rank >= 3) may grow
+  // the instructor set (§6 — instructors cannot add fellow instructors).
+  const requiredRank = body?.role === "INSTRUCTOR" ? 3 : 2;
+  if (!access || access.rank < requiredRank) {
+    return new Response(JSON.stringify({ error: "Forbidden" }), {
+      status: 403,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const result = await addEnrollment(courseId, body ?? {});
+
+  switch (result.status) {
+    case "201":
+      return new Response(JSON.stringify(result.enrollment), {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      });
+    case "409":
+      return new Response(JSON.stringify({ error: result.error }), {
+        status: 409,
+        headers: { "Content-Type": "application/json" },
+      });
+    case "422":
+      return new Response(JSON.stringify({ error: result.error }), {
+        status: 422,
+        headers: { "Content-Type": "application/json" },
+      });
+    default:
+      return new Response(JSON.stringify({ error: "Invalid input" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+  }
 }
