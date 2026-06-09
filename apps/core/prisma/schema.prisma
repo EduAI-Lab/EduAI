@@ -12,26 +12,30 @@ datasource db {
 }
 
 model User {
-  id               String                 @id @default(cuid())
-  email            String                 @unique
-  name             String
-  image            String?
-  role             UserRole
-  isActive         Boolean                @default(true)
-  createdAt        DateTime               @default(now())
-  updatedAt        DateTime               @updatedAt
-  emailVerified    Boolean                @default(false)
-  authorizedUnits  String[]
-  accounts         Account[]
-  aiInteractions   AIInteraction[]
-  enrollments      Enrollment[]
-  questions        Question[]
-  sessions         Session[]
-  providerSettings UserProviderSettings[]
-  apiKeys          apikey[]
-  chats            Chat[]
-  externalUsers    ExternalUser[]
-  bugReports       BugReport[]
+  id                String                 @id @default(cuid())
+  email             String                 @unique
+  name              String
+  image             String?
+  role              UserRole
+  isActive          Boolean                @default(true)
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  emailVerified     Boolean                @default(false)
+  authorizedUnits   String[]
+  accounts          Account[]
+  aiInteractions    AIInteraction[]
+  enrollments       Enrollment[]
+  questions         Question[]
+  sessions          Session[]
+  providerSettings  UserProviderSettings[]
+  apiKeys           apikey[]
+  chats             Chat[]
+  externalUsers     ExternalUser[]
+  preference        UserPreference?
+  bugReports        BugReport[]
+  uploadedMaterials CourseMaterial[]       @relation("MaterialUploader")
+  createdTopics     CourseTopic[]          @relation("TopicCreator")
+  canvasIntegration CanvasIntegration?
 
   @@map("user")
 }
@@ -261,6 +265,18 @@ model UserProviderSettings {
   @@map("user_provider_settings")
 }
 
+model UserPreference {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  assistDefault  Boolean  @default(false)
+  lastCourseCode String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_preferences")
+}
+
 model CourseMaterial {
   id             String          @id @default(cuid())
   courseId       String
@@ -272,14 +288,17 @@ model CourseMaterial {
   status         MaterialStatus  @default(PROCESSING)
   externalId     String?
   externalSource String?
+  uploadedBy     String?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
   processedAt    DateTime?
   course         Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  uploader       User?           @relation("MaterialUploader", fields: [uploadedBy], references: [id], onDelete: SetNull)
   chunks         MaterialChunk[]
 
   @@unique([courseId, checksum])
   @@index([externalSource, externalId])
+  @@index([uploadedBy])
   @@map("course_materials")
 }
 
@@ -287,14 +306,17 @@ model CourseTopic {
   id              String                   @id @default(cuid())
   courseId        String
   name            String
+  createdBy       String?
   deletedAt       DateTime?
   createdAt       DateTime                 @default(now())
   updatedAt       DateTime                 @updatedAt
   course          Course                   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  creator         User?                    @relation("TopicCreator", fields: [createdBy], references: [id], onDelete: SetNull)
   questions       Question[]
   secondaryTopics QuestionSecondaryTopic[]
 
   @@unique([courseId, name])
+  @@index([createdBy])
   @@map("course_topics")
 }
 
@@ -438,6 +460,20 @@ model ChatMessage {
   @@unique([chatId, messageId])
   @@index([chatId, position])
   @@map("chat_messages")
+}
+
+model CanvasIntegration {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  canvasUrl  String
+  /// AES-256-GCM encrypted Canvas personal access token (see lib/canvas/encryption.ts).
+  apiKey     String
+  isTestMode Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("canvas_integrations")
 }
 
 model ExternalUser {
