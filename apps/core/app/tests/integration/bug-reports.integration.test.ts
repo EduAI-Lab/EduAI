@@ -260,3 +260,162 @@ describe("POST /api/bug-reports — optional fields", () => {
     expect(row!.context).toEqual({ variantId: "v-abc", courseId: "c-xyz" });
   });
 });
+
+// ---------------------------------------------------------------------------
+// #304 — admin triage surface + own-reports listing
+// ---------------------------------------------------------------------------
+
+describe("admin bug-reports lifecycle (#304)", () => {
+  it("a #279-submitted report surfaces in the admin list with its source; status transitions persist", async () => {
+    const { loader: adminLoader, action: adminAction } = await import(
+      "~/routes/api/admin.bug-reports"
+    );
+    const { auth } = await import("~/lib/auth/server");
+
+    const admin = await prisma.user.create({
+      data: {
+        email: "bug-admin-304@bug-test.com",
+        name: "Bug Admin",
+        role: "ADMIN",
+        emailVerified: false,
+      },
+    });
+
+    try {
+      // Submit via the #279 service-key endpoint.
+      const submitted = await action(
+        makeActionArgs(
+          {
+            source: "AI_TUTOR",
+            userId: aiTutorUserId,
+            description: "Surfaces in admin list (#304).",
+          },
+          `Bearer ${VALID_SERVICE_KEY}`,
+        ),
+      );
+      expect(submitted.status).toBe(201);
+
+      // Admin lists, filtered by source.
+      vi.mocked(auth.api.getSession).mockResolvedValue({
+        user: { id: admin.id, role: "ADMIN" },
+      } as never);
+      const listed = await adminLoader({
+        request: new Request("http://localhost/api/admin/bug-reports?source=AI_TUTOR"),
+        params: {},
+        context: {} as never,
+      });
+      expect(listed.status).toBe(200);
+      const body = await listed.json();
+      const report = body.reports.find(
+        (r: { description: string }) => r.description === "Surfaces in admin list (#304).",
+      );
+      expect(report).toBeDefined();
+      expect(report.source).toBe("AI_TUTOR");
+      expect(report.status).toBe("UNHANDLED");
+      expect(report.userId).toBe(aiTutorUserId); // not anonymous → identity visible
+
+      // Triage: UNHANDLED → IN_PROGRESS persists.
+      vi.mocked(auth.api.getSession).mockResolvedValue({
+        user: { id: admin.id, role: "ADMIN" },
+      } as never);
+      const patched = await adminAction({
+        request: new Request(`http://localhost/api/admin/bug-reports/${report.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "IN_PROGRESS" }),
+        }),
+        params: { id: report.id },
+        context: {} as never,
+      });
+      expect(patched.status).toBe(200);
+
+      const row = await prisma.bugReport.findUnique({ where: { id: report.id } });
+      expect(row?.status).toBe("IN_PROGRESS");
+    } finally {
+      await prisma.bugReport.deleteMany({
+        where: { description: "Surfaces in admin list (#304)." },
+      });
+      await prisma.user.delete({ where: { id: admin.id } });
+    }
+  });
+
+  it("anonymous reports are masked in the admin list but keep userId in the DB", async () => {
+    const { loader: adminLoader } = await import("~/routes/api/admin.bug-reports");
+    const { auth } = await import("~/lib/auth/server");
+
+    const admin = await prisma.user.create({
+      data: {
+        email: "bug-admin-mask@bug-test.com",
+        name: "Bug Admin Mask",
+        role: "ADMIN",
+        emailVerified: false,
+      },
+    });
+
+    try {
+      const submitted = await action(
+        makeActionArgs(
+          {
+            source: "QUESTION_MAKER",
+            userId: qmUserId,
+            description: "Anonymous masking test (#304).",
+            isAnonymous: true,
+          },
+          `Bearer ${VALID_SERVICE_KEY}`,
+        ),
+      );
+      expect(submitted.status).toBe(201);
+
+      vi.mocked(auth.api.getSession).mockResolvedValue({
+        user: { id: admin.id, role: "ADMIN" },
+      } as never);
+      const listed = await adminLoader({
+        request: new Request("http://localhost/api/admin/bug-reports?source=QUESTION_MAKER"),
+        params: {},
+        context: {} as never,
+      });
+      const body = await listed.json();
+      const report = body.reports.find(
+        (r: { description: string }) => r.description === "Anonymous masking test (#304).",
+      );
+      expect(report).toBeDefined();
+      // §11: masked in the response…
+      expect(report.userId).toBeNull();
+      expect(report.userEmail).toBeNull();
+      expect(report.userName).toBeNull();
+      // …but retained in the DB for audit.
+      const row = await prisma.bugReport.findUnique({ where: { id: report.id } });
+      expect(row?.userId).toBe(qmUserId);
+    } finally {
+      await prisma.bugReport.deleteMany({
+        where: { description: "Anonymous masking test (#304)." },
+      });
+      await prisma.user.delete({ where: { id: admin.id } });
+    }
+  });
+
+  it("GET /api/bug-reports?mine=true returns only the caller's reports", async () => {
+    const { loader: mineLoader } = await import("~/routes/api/bug-reports");
+    const { auth } = await import("~/lib/auth/server");
+
+    // aiTutorUserId already has reports from earlier tests; qmUser queries.
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: aiTutorUserId, role: "STUDENT" },
+    } as never);
+    const res = await mineLoader({
+      request: new Request("http://localhost/api/bug-reports?mine=true"),
+      params: {},
+      context: {} as never,
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Array.isArray(body.reports)).toBe(true);
+    // Every report belongs to the caller — IDs of other users never surface.
+    const foreign = await prisma.bugReport.findMany({
+      where: { userId: { not: aiTutorUserId } },
+      select: { id: true },
+    });
+    const foreignIds = new Set(foreign.map((r) => r.id));
+    expect(body.reports.every((r: { id: string }) => !foreignIds.has(r.id))).toBe(true);
+  });
+});
