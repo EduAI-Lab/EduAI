@@ -16,11 +16,14 @@ import { clientApiKeysBodySchema, toUserProviderSettings } from "~/lib/chat-api-
 import {
   buildCappedRagContextText,
   capRagHitsForTool,
+  capToolResultsInMessages,
+  estimateMessageCharsForModel,
+  extractMessageText,
+  prepareBoundedSessionContext,
+  resolveMaxContextMessages,
   HYBRID_RAG_MAX_CHUNKS,
   HYBRID_RAG_MAX_CONTEXT_CHARS,
 } from "~/lib/chat-rag";
-
-const MAX_CONTEXT_MESSAGES = 20;
 
 const TOOL_MAX_STEPS = Math.min(
   32,
@@ -126,44 +129,14 @@ function mergeMessages(stored: GenericMessage[], incoming: GenericMessage[]): Ge
   return merged;
 }
 
-/**
- * Produces a best-effort string representation of a message. We only need this
- * for lightweight keyword checks when deciding whether to run manual RAG.
- */
-function extractTextFromMessage(message?: GenericMessage): string {
-  if (typeof message?.content === "string") {
-    return message.content;
-  }
-
-  if (Array.isArray(message?.content)) {
-    return message!.content
-      .map((part) => {
-        if (typeof part === "string") return part;
-        if (part && typeof part === "object" && "text" in part && typeof (part as any).text === "string") {
-          return (part as any).text;
-        }
-        return "";
-      })
-      .filter(isNonEmptyString)
-      .join(" ");
-  }
-
-  if (message?.content && typeof message.content === "object" && "text" in (message.content as any)) {
-    const candidate = (message.content as { text?: string }).text;
-    if (typeof candidate === "string") {
-      return candidate;
-    }
-  }
-
-  return message ? JSON.stringify(message.content ?? "") : "";
-}
-
 /** Cheap metrics for logs — do not print full `system` / messages (RAG can be huge). */
 function llmPromptSizeHints(system: unknown, messages: GenericMessage[]) {
   const systemChars = typeof system === "string" ? system.length : 0;
   let messageTextChars = 0;
   for (const m of messages) {
-    messageTextChars += extractTextFromMessage(m).length;
+    // Count what the model actually receives (incl. tool-call/result payloads),
+    // so this metric is not under-reported on tool-heavy turns (#260).
+    messageTextChars += estimateMessageCharsForModel(m);
   }
   return {
     systemChars,
@@ -448,10 +421,11 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     // Fetch only the slice of history we plan to send back to the LLM.
+    const maxContextMessages = resolveMaxContextMessages();
     const recentMessageRecords = await prisma.chatMessage.findMany({
       where: { chatId: chat.id },
       orderBy: { position: "desc" },
-      take: MAX_CONTEXT_MESSAGES,
+      take: maxContextMessages,
     });
 
     const storedMessages = recentMessageRecords.reverse().map((record) =>
@@ -470,14 +444,21 @@ export async function action({ request }: ActionFunctionArgs) {
 
     const mergedMessages = mergeMessages(storedMessages, normalizedIncomingMessages);
     const trimmedMessages =
-      mergedMessages.length > MAX_CONTEXT_MESSAGES
-        ? mergedMessages.slice(-MAX_CONTEXT_MESSAGES)
+      mergedMessages.length > maxContextMessages
+        ? mergedMessages.slice(-maxContextMessages)
         : mergedMessages;
 
     chatApiDebug("chat history merged", {
       mergedCount: mergedMessages.length,
       trimmedCount: trimmedMessages.length,
+      maxContextMessages,
     });
+
+    // Cap oversized tool results (#260), then digest older turns when the thread
+    // exceeds the char budget (#259). Budget accounting counts tool payloads.
+    const modelMessages = prepareBoundedSessionContext(
+      capToolResultsInMessages(trimmedMessages),
+    );
 
     if (mergedMessages.length === 0) {
       return new Response(
@@ -605,7 +586,7 @@ export async function action({ request }: ActionFunctionArgs) {
     if (!supportsTools) {
       // MODELS WITHOUT TOOL SUPPORT: Use hybrid RAG approach
       const lastUserMessage = [...trimmedMessages].reverse().find((message) => message.role === "user");
-      const userQuestion = extractTextFromMessage(lastUserMessage);
+      const userQuestion = extractMessageText(lastUserMessage);
       const messageContentLower = userQuestion.toLowerCase();
 
       // Check if hybrid RAG should always be used with course
@@ -663,7 +644,7 @@ Based on this information, provide a comprehensive answer to the user's question
 
           streamConfig = {
             model: aiModel,
-            messages: trimmedMessages,
+            messages: modelMessages,
             temperature: 0.6,
             maxTokens: 8192,
             system: systemWithRAG,
@@ -680,7 +661,7 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
 
           streamConfig = {
             model: aiModel,
-            messages: trimmedMessages,
+            messages: modelMessages,
             temperature: 0.6,
             maxTokens: 8192,
             system: defaultSystemPrompt,
@@ -697,7 +678,7 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
 
         streamConfig = {
           model: aiModel,
-          messages: trimmedMessages,
+          messages: modelMessages,
           temperature: 0.6,
           maxTokens: 8192,
           system: defaultSystemPrompt,
@@ -726,7 +707,7 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
 
       streamConfig = {
         model: aiModel,
-        messages: trimmedMessages,
+        messages: modelMessages,
         temperature: 0.6,
         maxTokens: TOOL_MAX_TOKENS,
         maxSteps: TOOL_MAX_STEPS,
@@ -747,7 +728,7 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
     chatApiDebug("Starting LLM stream", {
       model,
       approach: supportsTools ? "tool_calling" : "hybrid_rag",
-      ...llmPromptSizeHints(streamConfig.system, trimmedMessages),
+      ...llmPromptSizeHints(streamConfig.system, modelMessages),
     });
     const result = await streamText(streamConfig as Parameters<typeof streamText>[0]);
 
