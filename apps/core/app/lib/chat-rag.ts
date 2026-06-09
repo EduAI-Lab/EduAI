@@ -236,9 +236,6 @@ function enforceMessageBudget<T extends Record<string, unknown>>(
     return { ...message, content: hardTruncate(content, maxChars) };
   }
 
-  // Structured content (tool-call / tool-result parts): drop the oldest parts
-  // first (cheapest way to recover budget on multi-step turns), then shrink the
-  // remaining string leaves to fit while keeping the structured shape.
   if (Array.isArray(content) && content.length > 0) {
     let parts = content as unknown[];
     while (
@@ -253,15 +250,9 @@ function enforceMessageBudget<T extends Record<string, unknown>>(
     return shrinkStructuredContentToBudget(message, parts, maxChars);
   }
 
-  // Non-array structured content with no parts to drop: serialized truncation.
   return { ...message, content: hardTruncate(safeStringify(content), maxChars) } as T;
 }
 
-/**
- * Caps the string leaves of structured `content` until the serialized message is
- * `<= maxChars`, shrinking the per-string cap to absorb JSON structural overhead.
- * Falls back to a serialized preview only if strings cannot be shrunk enough.
- */
 function shrinkStructuredContentToBudget<T extends Record<string, unknown>>(
   message: T,
   content: unknown,
@@ -307,8 +298,7 @@ function enforceSessionCharBudget<T extends Record<string, unknown>>(
     return result;
   }
 
-  // Still over with the minimum set: split the budget evenly across the
-  // survivors. The share is the integer floor of the even split (>= 1) so the
+  // Still over with the minimum set: even split (floored, >= 1) so the
   // post-truncation total never exceeds `charBudget`.
   const share = Math.max(1, Math.floor(charBudget / result.length));
   return result.map((message) => enforceMessageBudget(message, share));
