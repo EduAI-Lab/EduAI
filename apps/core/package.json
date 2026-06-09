@@ -23,6 +23,7 @@
     "bench:chat": "node ./scripts/chat-latency-bench.mjs",
     "vllm:smoke": "node ./scripts/vllm-smoke.mjs",
     "research:validate-suite": "node ../../tools/research/validate-task-suite.mjs",
+    "research:assign-splits": "node ../../tools/research/assign-splits.mjs",
     "test:embedding": "tsx scripts/test-embedding.ts"
   },
   "dependencies": {
