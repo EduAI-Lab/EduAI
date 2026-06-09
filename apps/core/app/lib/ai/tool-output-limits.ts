@@ -31,16 +31,17 @@ export function resolveToolResultMaxChars(): number {
 /**
  * Truncates `text` to `maxChars`, appending a single-character ellipsis marker.
  *
- * Convention (project-wide): when truncation happens the result is `maxChars + 1`
- * characters — `maxChars` of content plus the `…` marker. This matches
- * `capRagHitsForTool` and `buildCappedRagContextText`, so a "6000" cap yields a
- * 6001-char string. Use this for tool-output caps; for hard budget enforcement
- * (result length must be `<= cap`) use the internal strict truncation in
- * `chat-rag.ts`.
+ * Convention (project-wide): when truncation happens the result is at most
+ * `maxChars + 1` characters — up to `maxChars` of content plus the `…` marker.
+ * Trailing whitespace on the truncated slice is trimmed before the marker so a
+ * cut page does not end with " …". This matches `capRagHitsForTool` and
+ * `buildCappedRagContextText`, so a "6000" cap yields an up-to-6001-char string.
+ * Use this for tool-output caps; for hard budget enforcement (result length must
+ * be `<= cap`) use the internal strict truncation in `chat-rag.ts`.
  */
 export function truncateToMaxChars(text: string, maxChars: number): string {
   if (text.length <= maxChars) {
     return text;
   }
-  return `${text.slice(0, maxChars)}…`;
+  return `${text.slice(0, maxChars).trimEnd()}…`;
 }
