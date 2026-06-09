@@ -35,6 +35,7 @@ model User {
   bugReports        BugReport[]
   canvasIntegration CanvasIntegration?
   taughtCourses     Course[]           @relation("CourseInstructor")
+  courseTAs         CourseTA[]
 
   @@map("user")
 }
@@ -109,6 +110,7 @@ model Course {
   instructor     User?            @relation("CourseInstructor", fields: [instructorId], references: [id])
   aiInteractions AIInteraction[]
   enrollments    Enrollment[]
+  tas            CourseTA[]
   materials      CourseMaterial[]
   topics         CourseTopic[]
   questions      Question[]
@@ -135,6 +137,18 @@ model Enrollment {
   @@index([userId])
   @@index([externalSource, externalId])
   @@map("enrollments")
+}
+
+model CourseTA {
+  id        String   @id @default(cuid())
+  courseId  String
+  userId    String
+  createdAt DateTime @default(now())
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, userId])
+  @@map("course_tas")
 }
 
 model AIInteraction {
