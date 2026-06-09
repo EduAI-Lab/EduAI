@@ -42,7 +42,7 @@ describe("getAccessibleCourseCodes", () => {
     expect(db.course.findMany).toHaveBeenCalledWith({
       where: {
         OR: [
-          { professorId: "u1" },
+          { instructorId: "u1" },
           { tas: { some: { userId: "u1" } } },
           { enrollments: { some: { studentId: "u1", isActive: true } } },
         ],

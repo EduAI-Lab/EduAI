@@ -3,7 +3,7 @@ import type { CourseAccess, RbacUser } from './types'
 
 export async function resolveCourseAccess(
   user: RbacUser,
-  course: { id: string; professorId: string; department: string | null },
+  course: { id: string; instructorId: string | null; department: string | null },
 ): Promise<CourseAccess> {
   if (user.role === 'ADMIN') return 'admin'
 
@@ -16,8 +16,8 @@ export async function resolveCourseAccess(
     return 'unit'
   }
 
-  // PROFESSOR who owns the course
-  if (user.role === 'PROFESSOR' && course.professorId === user.id) return 'instructor'
+  // INSTRUCTOR who owns the course
+  if (user.role === 'INSTRUCTOR' && course.instructorId === user.id) return 'instructor'
 
   // TA via CourseTA junction table
   const ta = await prisma.courseTA.findUnique({

@@ -31,7 +31,6 @@ function DashboardContent({ user }: { user: User }) {
     case "UNIT_ADMIN":
       return <DashboardUnitAdminView />;
     case "INSTRUCTOR":
-    case "PROFESSOR":
       return <DashboardInstructorView />;
     case "TA":
       return <DashboardTaView />;
@@ -55,7 +54,7 @@ export default function Page() {
     >
       <AppSidebar variant="inset" user={user} />
       <SidebarInset>
-        <SiteHeader user={user} title="Dashboard" />
+        <SiteHeader title="Dashboard" />
         <DashboardContent user={user} />
       </SidebarInset>
     </SidebarProvider>

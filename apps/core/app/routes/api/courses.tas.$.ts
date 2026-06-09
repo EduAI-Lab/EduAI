@@ -56,7 +56,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   const course = await prisma.course.findUnique({
     where: { id: courseId },
-    select: { id: true, professorId: true, department: true },
+    select: { id: true, instructorId: true, department: true },
   });
 
   if (!course) {

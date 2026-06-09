@@ -28,7 +28,7 @@ const COURSE: CourseDetail = {
   year: 2025,
   isActive: true,
   aiInstructions: 'Be helpful',
-  professorId: 'user-instructor',
+  instructorId: 'user-instructor',
   department: 'COSC',
   isPublished: true,
   createdAt: '2025-01-01T00:00:00.000Z',
@@ -59,9 +59,9 @@ const NOOP = async () => {}
 const onFileSelect = vi.fn()
 const STAFF_PROPS = {
   tas: [],
-  professors: [],
+  instructors: [],
   taUsers: [],
-  onAssignProfessor: NOOP,
+  onAssignInstructor: NOOP,
   onAddTA: NOOP,
   onRemoveTA: NOOP,
 }

@@ -36,7 +36,7 @@ interface Props {
   enrollments: CourseEnrollment[]
   materials: CourseMaterial[]
   tas: CourseTA[]
-  professors: StaffUser[]
+  instructors: StaffUser[]
   taUsers: StaffUser[]
   isUploading?: boolean
   materialsError?: string | null
@@ -44,7 +44,7 @@ interface Props {
   onFileSelect: (file: File) => void
   onCreateTopic: (name: string) => Promise<void>
   onDeleteTopic: (id: string) => Promise<void>
-  onAssignProfessor: (professorId: string) => Promise<void>
+  onAssignInstructor: (instructorId: string) => Promise<void>
   onAddTA: (userId: string) => Promise<void>
   onRemoveTA: (userId: string) => Promise<void>
 }
@@ -56,7 +56,7 @@ export function CourseDetailManagerView({
   enrollments,
   materials,
   tas,
-  professors,
+  instructors,
   taUsers,
   isUploading = false,
   materialsError = null,
@@ -64,19 +64,19 @@ export function CourseDetailManagerView({
   onFileSelect,
   onCreateTopic,
   onDeleteTopic,
-  onAssignProfessor,
+  onAssignInstructor,
   onAddTA,
   onRemoveTA,
 }: Props) {
   const [newTopic, setNewTopic] = useState('')
   const [staffError, setStaffError] = useState<string | null>(null)
   const [staffSuccess, setStaffSuccess] = useState<string | null>(null)
-  const [selectedProfId, setSelectedProfId] = useState<string>('')
+  const [selectedInstructorId, setSelectedInstructorId] = useState<string>('')
   const [selectedTAId, setSelectedTAId] = useState<string>('')
   const canManage = canManageTopics(access)
   const canManageStaff = canManageInstructors(access)
 
-  const availableProfessors = professors.filter((p) => p.id !== course.professorId)
+  const availableInstructors = instructors.filter((p) => p.id !== course.instructorId)
   const availableTAs = taUsers.filter(
     (u) => !tas.some((ta) => ta.userId === u.id)
   )
@@ -88,16 +88,16 @@ export function CourseDetailManagerView({
     setNewTopic('')
   }
 
-  const handleAssignProfessor = async () => {
-    if (!selectedProfId) return
+  const handleAssignInstructor = async () => {
+    if (!selectedInstructorId) return
     setStaffError(null)
     setStaffSuccess(null)
     try {
-      await onAssignProfessor(selectedProfId)
-      setStaffSuccess('Professor assigned successfully')
-      setSelectedProfId('')
+      await onAssignInstructor(selectedInstructorId)
+      setStaffSuccess('Instructor assigned successfully')
+      setSelectedInstructorId('')
     } catch (e) {
-      setStaffError(e instanceof Error ? e.message : 'Failed to assign professor')
+      setStaffError(e instanceof Error ? e.message : 'Failed to assign instructor')
     }
   }
 
@@ -161,9 +161,9 @@ export function CourseDetailManagerView({
                   <p className="text-muted-foreground">{course.aiInstructions}</p>
                 </div>
               )}
-              {course.professor && (
+              {course.instructor && (
                 <p className="text-sm text-muted-foreground">
-                  Instructor: {course.professor.name}
+                  Instructor: {course.instructor.name}
                 </p>
               )}
             </CardContent>
@@ -277,40 +277,40 @@ export function CourseDetailManagerView({
                 <p className="text-sm text-green-600">{staffSuccess}</p>
               )}
 
-              {/* Professor assignment */}
+              {/* Instructor assignment */}
               <div className="flex flex-col gap-3">
-                <p className="text-sm font-medium">Professor</p>
-                {course.professor && (
+                <p className="text-sm font-medium">Instructor</p>
+                {course.instructor && (
                   <Card>
                     <CardContent className="flex items-center justify-between py-3">
                       <div>
-                        <span className="text-sm font-medium">{course.professor.name}</span>
-                        <span className="text-xs text-muted-foreground ml-2">{course.professor.email}</span>
+                        <span className="text-sm font-medium">{course.instructor.name}</span>
+                        <span className="text-xs text-muted-foreground ml-2">{course.instructor.email}</span>
                       </div>
                       <Badge>Current</Badge>
                     </CardContent>
                   </Card>
                 )}
-                {availableProfessors.length > 0 ? (
+                {availableInstructors.length > 0 ? (
                   <div className="flex gap-2">
-                    <Select value={selectedProfId} onValueChange={setSelectedProfId}>
+                    <Select value={selectedInstructorId} onValueChange={setSelectedInstructorId}>
                       <SelectTrigger className="flex-1">
-                        <SelectValue placeholder="Select a professor to assign" />
+                        <SelectValue placeholder="Select an instructor to assign" />
                       </SelectTrigger>
                       <SelectContent>
-                        {availableProfessors.map((p) => (
+                        {availableInstructors.map((p) => (
                           <SelectItem key={p.id} value={p.id}>
                             {p.name} ({p.email})
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
-                    <Button onClick={handleAssignProfessor} disabled={!selectedProfId}>
+                    <Button onClick={handleAssignInstructor} disabled={!selectedInstructorId}>
                       Assign
                     </Button>
                   </div>
                 ) : (
-                  <p className="text-sm text-muted-foreground">No other professors available to assign.</p>
+                  <p className="text-sm text-muted-foreground">No other instructors available to assign.</p>
                 )}
               </div>
 
