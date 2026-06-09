@@ -6,10 +6,28 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 
 
+## [Week 6 — June 9–13, 2026]
+
+### Added
+- [core] api: Add TA management (`GET`/`POST`/`DELETE /api/courses/:courseId/tas`) and instructor reassignment (`PATCH /api/courses/:id`) for `ADMIN`/`UNIT_ADMIN`. (#491, @yta3216, 2026-06-08)
+- [core] ui: Add Staff tab to Course Detail with `useCourseTAs` hook — lists current instructor and TAs with reassignment controls for admin/unit admin. (#491, @yta3216, 2026-06-08)
+
+### Fixed
+- [core] fix: Fix instructors and TAs not seeing assigned courses, admins unable to upload materials, instructors unable to add topics, and the same material being blocked from upload to two different courses. (#491, @yta3216, 2026-06-08)
+- [core] fix: Fix admin user management showing `NaN` for course count and unit admin unable to reassign instructors/TAs to courses. (#491, @yta3216, 2026-06-08)
+
+---
+
+
 ## [Week 5 — June 2–6, 2026]
 
 ### Added
 
+- [core] feat: Add RBAC platform UI layer — permissions matrix, access resolver, nav helpers, role-gated course list/detail components, and course API hooks for courses, materials, topics, and enrollments. (#491, @yta3216, 2026-06-03)
+- [core] feat: Add `UNIT_ADMIN` role — schema migration, unit-scoped view, seed personas, `authorizedUnits` in auth session, `isPublished` on Course schema, departments enum, and `UNIT_ADMIN` support in user management UI and API. (#491, @yta3216, 2026-06-03)
+- [core] ui: Add publish toggle, department dropdown, and `authorizedUnits` DB fetch to course views; improve course code UX with department prefix. (#491, @yta3216, 2026-06-03)
+- [core] feat: Add course delete with confirmation modal, `DELETE /api/courses/:id`, and `UNIT_ADMIN` delete permission scoped to authorized units. (#491, @yta3216, 2026-06-04)
+- [core] ui: Person B RBAC platform UI — role-aware components, hooks, and tests. (#491, @ebabar5, 2026-06-03)
 - [core] api: Add ADMIN-only bug-report list/triage endpoints with anonymity masking, plus `GET /api/bug-reports?mine=true` for own reports (§11). (#304, #478, @abdullahmoh21, 2026-06-05)
 - [core] auth: Make `GET /api/ai-providers` and `GET /api/ai-models` ADMIN-only (§13). (#303, #478, @abdullahmoh21, 2026-06-05)
 - [core] api: Add `GET`/`PATCH /api/me`, block self-role-changes, and support `authorizedUnits` assignment for UNIT_ADMINs (§4). (#297, #478, @abdullahmoh21, 2026-06-05)
@@ -42,6 +60,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [question-maker] tests: Add unit + integration coverage for Core wiring (`coreWiringService.test.js`, `coreApiService.test.js`, `coreWiring.integration.test.js`, `coreWiringDb.integration.test.js`, `syncTopicsCounter.integration.test.js`, `variantApproval.integration.test.js`), variant utils / bank generation / error handler (`assessmentVariantUtils.test.js`, `generateBankVariants.test.js`, `errorHandler.test.js`), assessment service gaps (`assessmentServiceGaps.integration.test.js`, `assessmentVariantService.integration.test.js`), AI generation (`eduaiService.test.js`, `aiServiceGenerate.test.js`), canvas converters (`canvasServiceConvert.test.js`), assessment sections (`assessmentSectionService.integration.test.js`), Canvas import/export (`canvasImportExport.integration.test.js`), and extracted-question saving (`saveExtractedQuestions.integration.test.js`); point QM backend `test:coverage` at a dedicated `vitest.coverage.config.js` that runs the unit and integration suites together over `src/**`, with a `globalSetup` that syncs the test-DB schema once up front for deterministic shared-worker runs. (#430, @abdullahmoh21, 2026-06-01)
 
 ### Changed
+- [core] refactor: Wire RBAC into courses routes with session-based access control; allow `UNIT_ADMIN` to create/edit courses; add `department`+`isPublished` to API; replace `authorizedUnits` freetext with department checkboxes. (#491, @yta3216, 2026-06-03)
 - [core] refactor: Move data fetching out of domain components into parent routes — `courses.$courseId` owns materials load/upload; `chat` owns `useApiKeys` / `ApiKeySettings`; `admin.ai-models` owns Ollama model fetch for `ModelFormDialog`. (#437, #438, 2026-06-03)
 - [core] docs: Update `apps/core/README.md` — monorepo install from root, component architecture section, and expanded component test inventory. (#385, @Ayyhab, 2026-06-03)
 - [monorepo] docs: Update root `README.md` with EduAI component skeleton overview and link to `apps/core/docs/`. (#385, @Ayyhab, 2026-06-03)
@@ -56,6 +75,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [monorepo] infra: Unify shared infrastructure dependencies — pin `react`, `react-dom`, `zod`, `clsx`, and `class-variance-authority` via root npm `overrides` so they resolve to a single copy across all workspaces; hoist `typescript ^5.8.3`, `@types/node ^22`, `tsx ^4.19.4`, `nodemon ^3.1.10` to root `devDependencies` and remove per-workspace declarations from `edu-ai`, `ai-tutor`, `ai-tutor-server`, `question-maker-frontend`, and `question-maker-backend`; add `syncpack ^13` for ongoing version-drift detection. (@evanbones, 2026-06-03)
 
 ### Fixed
+- [core] fix: Unblock vitest and align CoursesList unit-admin tests. (#491, @Ayyhab, 2026-06-04)
 - [core] fix: Scope persisted-course validation to the current user (#420 review) — the `/chat` loader now restores `lastCourseCode` against the courses the user can actually access (courses they teach, TA, or are actively enrolled in; admins see all) via new `getAccessibleCourseCodes` in `apps/core/app/lib/courses/server.ts`, instead of every course in the database. A course the user can no longer access is dropped on restore rather than treated as valid just because it still exists globally. Adds `apps/core/app/tests/unit/courses-server.test.ts`. (#420, review feedback from @Whiteknight07, @Ayyhab, 2026-06-05)
 - [monorepo] infra: Replace em dash with hyphen in `scripts/dev-db.sh` Docker startup message to avoid PowerShell parse errors on Windows. (#438, @yta3216, 2026-06-03)
 - [question-maker] api: Fix variant push to Core — support CUID string primary topic ids, lowercase `difficulty` / `reasoningLevel` enum values, return Core topic ids in the `INVALID_TOPIC_IDS` response, count name-updated topics in the sync-topics synced total, query JSON `question_order` with the `->>` operator, and wrap the cursor insert in a savepoint to survive a unique-key race. (#453, @abdullahmoh21, 2026-06-01)
