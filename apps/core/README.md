@@ -24,6 +24,7 @@ A production-ready chat platform with Retrieval-Augmented Generation (RAG) capab
 - **Vector Storage**: PGVector-powered embeddings on PostgreSQL for efficient similarity search
 - **Role-based Access**: Support for students, professors, and administrators
 - **Persisted Chat Preferences**: Assistive mode and the selected course are saved per user, restored on every page load and new chat, and cleared on logout
+- **Account-level Assistive Mode**: Shell-wide `AssistiveUiProvider` sets `data-assistive` on `<html>` when ON (absent when OFF so baseline CSS is unchanged); preference persists via `UserPreference.assistDefault` and syncs with the `/chat` header toggle
 
 ## Prerequisites
 
@@ -352,6 +353,30 @@ curl -X DELETE "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" \
     "topicId": "TOPIC_ID"
   }'
 ```
+
+### User Preferences Endpoints
+
+Read and update the authenticated user's UI preferences (`UserPreference` row). Requires a Better Auth **session cookie** — not `x-api-key`. Used by `AssistiveUiProvider` in the app shell and the `/chat` assist toggle.
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| `GET` | `/api/preferences` | Returns `{ assistDefault, lastCourseCode }` — defaults to `{ assistDefault: false, lastCourseCode: null }` when no row exists |
+| `PATCH` | `/api/preferences` | Partial update; accepts `assistDefault` (boolean) and/or `lastCourseCode` (string or `null` to clear) |
+
+When `assistDefault` is `true`, the root layout sets `data-assistive="true"` on `<html>` for CSS scoping; when `false`, the attribute is **absent** (not `"false"`) so baseline styles are unchanged.
+
+**Example** (browser session — toggle Assistive Mode on):
+
+```javascript
+fetch("/api/preferences", {
+  method: "PATCH",
+  credentials: "include",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ assistDefault: true }),
+});
+```
+
+The Settings Accessibility tab (motion, density, theme) is tracked separately in GitHub issue #530 and is blocked on the Settings shell rewrite (PR #491).
 
 ### Canvas Integration Endpoints
 
