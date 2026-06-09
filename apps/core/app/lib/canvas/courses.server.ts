@@ -15,6 +15,16 @@ export class CanvasNotConnectedError extends Error {
   }
 }
 
+export class InvalidCanvasCourseAccessError extends Error {
+  readonly invalidCourseIds: string[];
+
+  constructor(invalidCourseIds: string[]) {
+    super("One or more courses are not taught by this Canvas account");
+    this.name = "InvalidCanvasCourseAccessError";
+    this.invalidCourseIds = invalidCourseIds;
+  }
+}
+
 function termFromDate(date: Date): string {
   const month = date.getMonth() + 1;
   if (month >= 1 && month <= 4) return "W1";
@@ -161,6 +171,26 @@ export async function ensureInstructorEnrollment(courseId: string, userId: strin
       externalSource: CANVAS_EXTERNAL_SOURCE,
     },
   });
+}
+
+/** Ensures every requested Canvas course id appears in the instructor's teacher course list. */
+export async function validateInstructorCanvasCourseIds(
+  userId: string,
+  canvasCourseIds: string[],
+  fetchImpl: typeof fetch = fetch,
+): Promise<void> {
+  if (canvasCourseIds.length === 0) {
+    return;
+  }
+
+  const credentials = await requireCanvasCredentials(userId);
+  const teacherCourses = await listTeacherCanvasCourses(credentials, fetchImpl);
+  const allowedIds = new Set(teacherCourses.map((course) => String(course.id)));
+  const invalidCourseIds = canvasCourseIds.filter((canvasId) => !allowedIds.has(canvasId));
+
+  if (invalidCourseIds.length > 0) {
+    throw new InvalidCanvasCourseAccessError(invalidCourseIds);
+  }
 }
 
 /** Returns Canvas external IDs currently synced by this instructor. */

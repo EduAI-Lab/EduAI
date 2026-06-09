@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { LinkRosterSchema } from "~/lib/canvas/schemas";
-import { isCanvasLinkRosterRateLimited } from "~/lib/canvas/link-roster.server";
+import { isCanvasLinkRosterRateLimited } from "~/lib/canvas/guards.server";
 
 describe("LinkRosterSchema", () => {
   it("accepts a student number", () => {
