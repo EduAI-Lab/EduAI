@@ -195,6 +195,7 @@ Each section should use this format:
 | [`user-preferences.server.test.ts`](apps/core/app/tests/unit/user-preferences.server.test.ts) | Tests the chat-preferences persistence service against a mocked Prisma client: `getUserPreference` returns defaults when no row exists, restores the stored toggle + course when still available, clears and persists `null` when the stored course is stale, `saveUserPreference` upserts scoped to the user id and returns the stored values, and `clearUserPreference` deletes the user's row on logout. |
 | [`preferences.test.ts`](apps/core/app/tests/unit/preferences.test.ts) | Tests `GET`/`PATCH /api/preferences`: 401 when unauthenticated, GET defaults when no row exists, PATCH persists `assistDefault` and returns saved values, 405 for unsupported methods, 400 for invalid or empty payloads, and malformed JSON bodies. |
 | [`AssistiveUiProvider.test.tsx`](apps/core/app/tests/unit/AssistiveUiProvider.test.tsx) | Tests the shell-wide assistive context: `data-assistive` is absent on `<html>` when OFF (baseline untouched), present when ON, toggling ON/OFF updates the DOM and PATCHes `/api/preferences`, and `useAssistiveUi` throws outside the provider. |
+| [`assistive-reading.test.ts`](apps/core/app/tests/unit/assistive-reading.test.ts) | Verifies `READING_SURFACE_CLASS` matches assistive-reading.css hooks and that typography rules are scoped under `[data-assistive]` with spacing-based defaults (16px base, 1.625 line-height, 65ch measure, no font-family swap). |
 
 ---
 
