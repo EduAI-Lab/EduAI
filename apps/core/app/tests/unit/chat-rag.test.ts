@@ -320,10 +320,7 @@ describe("prepareBoundedSessionContext", () => {
   });
 
   it("keeps an oversized tool message structured instead of collapsing it to text", () => {
-    // Regression: enforcing the budget on a structured tool turn must NOT replace
-    // its content array with a truncated JSON-fragment string — that would make
-    // the AI SDK read it as a plain assistant message and orphan paired tool
-    // messages. The shrunk message stays an array with its tool-invocation part.
+    // Collapsing to a JSON-fragment string would orphan paired tool messages.
     const messages = [toolResultMessage("1", 50_000)];
 
     const bounded = prepareBoundedSessionContext(messages, {
