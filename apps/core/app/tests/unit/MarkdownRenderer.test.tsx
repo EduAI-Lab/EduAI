@@ -18,6 +18,7 @@ describe("MarkdownRenderer — rendering", () => {
   it("renders the prose wrapper div", () => {
     const { container } = render(<MarkdownRenderer content="Hello world" />);
     expect(container.querySelector(".prose")).toBeInTheDocument();
+    expect(container.querySelector(".reading-surface")).toBeInTheDocument();
   });
 
   it("applies additional className to the wrapper", () => {
