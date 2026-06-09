@@ -18,8 +18,7 @@ apps/**/.env.*
 # Large / generated research & eval outputs
 eval-runs/
 apps/core/output/
-docs/research/data/runs/
-docs/research/data/gpu/
+
 
 # Local databases
 *.db

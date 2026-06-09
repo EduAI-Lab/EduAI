@@ -59,3 +59,4 @@ coverage/
 
 # workspace packages must not have their own lock files
 apps/**/package-lock.json
+docs/research/data/runs/both-tier.v1.jsonl
