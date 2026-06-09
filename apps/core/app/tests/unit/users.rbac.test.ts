@@ -46,7 +46,10 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(enforceAdminIfApiKey).mockResolvedValue({ response: null, session: null });
   mockUser(ADMIN);
-  vi.mocked(prisma.user.update).mockResolvedValue({ id: "target" } as never);
+  vi.mocked(prisma.user.update).mockResolvedValue({
+    id: "target",
+    _count: { enrollments: 0, courseTAs: 0, taughtCourses: 0, aiInteractions: 0 },
+  } as never);
 });
 
 describe("PATCH /api/users/:id — self guards (#297)", () => {
