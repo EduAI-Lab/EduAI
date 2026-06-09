@@ -33,6 +33,8 @@ model User {
   externalUsers     ExternalUser[]
   preference        UserPreference?
   bugReports        BugReport[]
+  uploadedMaterials CourseMaterial[]       @relation("MaterialUploader")
+  createdTopics     CourseTopic[]          @relation("TopicCreator")
   canvasIntegration CanvasIntegration?
   taughtCourses     Course[]           @relation("CourseInstructor")
   courseTAs         CourseTA[]
@@ -276,14 +278,17 @@ model CourseMaterial {
   status         MaterialStatus  @default(PROCESSING)
   externalId     String?
   externalSource String?
+  uploadedBy     String?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
   processedAt    DateTime?
   course         Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  uploader       User?           @relation("MaterialUploader", fields: [uploadedBy], references: [id], onDelete: SetNull)
   chunks         MaterialChunk[]
 
   @@unique([courseId, checksum])
   @@index([externalSource, externalId])
+  @@index([uploadedBy])
   @@map("course_materials")
 }
 
@@ -291,14 +296,17 @@ model CourseTopic {
   id              String                   @id @default(cuid())
   courseId        String
   name            String
+  createdBy       String?
   deletedAt       DateTime?
   createdAt       DateTime                 @default(now())
   updatedAt       DateTime                 @updatedAt
   course          Course                   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  creator         User?                    @relation("TopicCreator", fields: [createdBy], references: [id], onDelete: SetNull)
   questions       Question[]
   secondaryTopics QuestionSecondaryTopic[]
 
   @@unique([courseId, name])
+  @@index([createdBy])
   @@map("course_topics")
 }
 

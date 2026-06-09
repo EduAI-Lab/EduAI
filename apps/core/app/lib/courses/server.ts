@@ -3,11 +3,18 @@ import prisma from "~/lib/prisma.server";
 import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import {
+  buildCourseListFilter,
+  getAuthorizedUnits,
+  resolveCourseAccessWithCourse,
+} from "~/lib/auth/course-access.server";
+import {
   CreateCourseSchema,
   UpdateCourseSchema,
   CreateCourseTopicSchema,
+  UpdateCourseTopicSchema,
   DeleteCourseTopicSchema,
   type CreateCourseTopicInput,
+  type UpdateCourseTopicInput,
   type DeleteCourseTopicInput,
 } from "./schemas";
 
@@ -18,7 +25,8 @@ import {
  * Auth:
  *   - Service key (Authorization: Bearer EDUAI_API_KEY): unrestricted — used by AI Tutor
  *     to list importable courses without requiring an admin session.
- *   - x-api-key / user session: ADMIN only (existing behaviour).
+ *   - x-api-key / user session: scoped to the caller (§5): ADMIN all;
+ *     UNIT_ADMIN authorized units; INSTRUCTOR/TA enrolled; STUDENT enrolled + published.
  */
 export async function getCourses(request: Request) {
   // Service key path: AI Tutor and other extensions call this with Authorization: Bearer
@@ -36,7 +44,6 @@ export async function getCourses(request: Request) {
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
   if (apiKeyGuard) return apiKeyGuard;
 
-  // TODO(RBAC #292): replace with resolveCourseAccess
   const session = apiKeySession ?? (await auth.api.getSession(request));
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -44,29 +51,10 @@ export async function getCourses(request: Request) {
       headers: { "Content-Type": "application/json" } as const,
     });
   }
-  const role = session.user.role;
-  const userId = session.user.id;
 
-  let where: Prisma.CourseWhereInput = { deletedAt: null };
-
-  if (role === "INSTRUCTOR") {
-    where = { deletedAt: null, instructorId: userId };
-  } else if (role === "TA") {
-    where = { deletedAt: null, tas: { some: { userId } } };
-  } else if (role === "STUDENT") {
-    where = {
-      deletedAt: null,
-      isPublished: true,
-      enrollments: { some: { userId, isActive: true } },
-    };
-  } else if (role !== "ADMIN" && role !== "UNIT_ADMIN") {
-    return new Response(JSON.stringify({ error: "Forbidden" }), {
-      status: 403,
-      headers: { "Content-Type": "application/json" } as const,
-    });
-  }
-
-  const courses = await prisma.course.findMany({ where });
+  const courses = await prisma.course.findMany({
+    where: await buildCourseListFilter(session.user),
+  });
   return new Response(JSON.stringify({ courses }), {
     status: 200,
     headers: { "Content-Type": "application/json" } as const,
@@ -74,15 +62,15 @@ export async function getCourses(request: Request) {
 }
 
 /**
- * POST /api/courses — create a course (admin only).
+ * POST /api/courses — create a course (ADMIN, or UNIT_ADMIN within their
+ * authorized units).
  */
 export async function createCourse(request: Request) {
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
   if (apiKeyGuard) return apiKeyGuard;
 
-  // TODO(RBAC #292): replace with resolveCourseAccess
   const session = apiKeySession ?? (await auth.api.getSession(request));
-  if (!session?.user || session.user.role !== "ADMIN") {
+  if (!session?.user || !["ADMIN", "UNIT_ADMIN"].includes(session.user.role ?? "")) {
     return new Response(JSON.stringify({ error: "Forbidden" }), {
       status: 403,
       headers: { "Content-Type": "application/json" } as const,
@@ -138,6 +126,18 @@ export async function createCourse(request: Request) {
     );
   }
 
+  // §5/§19 unit lock: a UNIT_ADMIN can only create courses inside their
+  // authorized units — a missing department is never a match.
+  if (session.user.role === "UNIT_ADMIN") {
+    const units = await getAuthorizedUnits(session.user);
+    if (!result.data.department || !units.includes(result.data.department)) {
+      return new Response(JSON.stringify({ error: "DEPARTMENT_NOT_AUTHORIZED" }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" } as const,
+      });
+    }
+  }
+
   const instructors = await prisma.user.findMany({
     where: {
       id: { in: result.data.instructorUserIds },
@@ -189,13 +189,13 @@ export async function createCourse(request: Request) {
 }
 
 /**
- * PATCH /api/courses/:id — update a course (admin or assigned instructor).
+ * PATCH /api/courses/:id — update a course. Admits ADMIN, UNIT_ADMIN(D),
+ * INSTRUCTOR(C) per §5 (rank >= 2).
  */
 export async function updateCourse(request: Request, courseId: string) {
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
   if (apiKeyGuard) return apiKeyGuard;
 
-  // TODO(RBAC #292): replace with resolveCourseAccess
   const session = apiKeySession ?? (await auth.api.getSession(request));
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -219,39 +219,36 @@ export async function updateCourse(request: Request, courseId: string) {
     );
   }
 
-  const existingCourse = await prisma.course.findFirst({
-    where: { id: courseId, deletedAt: null },
-    select: { id: true },
-  });
+  const { course, access } = await resolveCourseAccessWithCourse(user, courseId);
 
-  if (!existingCourse) {
+  if (!course) {
     return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
       status: 404,
       headers: { "Content-Type": "application/json" } as const,
     });
   }
 
-  const isAdmin = user.role === "ADMIN" || user.role === "UNIT_ADMIN";
-  let canEdit = isAdmin;
-
-  if (!canEdit) {
-    const instructorEnrollment = await prisma.enrollment.findFirst({
-      where: {
-        courseId,
-        userId: user.id,
-        role: "INSTRUCTOR",
-        isActive: true,
-      },
-      select: { id: true },
-    });
-    canEdit = !!instructorEnrollment;
-  }
-
-  if (!canEdit) {
+  if (!access || access.rank < 2) {
     return new Response(JSON.stringify({ error: "Forbidden" }), {
       status: 403,
       headers: { "Content-Type": "application/json" } as const,
     });
+  }
+
+  // §5: a UNIT_ADMIN cannot move a course to a unit outside their authorized
+  // list (nor strip its department, which would orphan it from their scope).
+  if (
+    access.level === "unit" &&
+    "department" in result.data &&
+    result.data.department !== course.department
+  ) {
+    const units = await getAuthorizedUnits(user);
+    if (!result.data.department || !units.includes(result.data.department)) {
+      return new Response(JSON.stringify({ error: "DEPARTMENT_NOT_AUTHORIZED" }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" } as const,
+      });
+    }
   }
 
   const updated = await prisma.course.update({
@@ -263,6 +260,46 @@ export async function updateCourse(request: Request, courseId: string) {
     status: 200,
     headers: { "Content-Type": "application/json" } as const,
   });
+}
+
+/**
+ * DELETE /api/courses/:id — soft-delete (sets `deletedAt`). Admits ADMIN,
+ * UNIT_ADMIN(D), INSTRUCTOR(C) per §5.
+ */
+export async function deleteCourse(request: Request, courseId: string) {
+  const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
+  if (apiKeyGuard) return apiKeyGuard;
+
+  const session = apiKeySession ?? (await auth.api.getSession(request));
+  if (!session?.user) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" } as const,
+    });
+  }
+
+  const { course, access } = await resolveCourseAccessWithCourse(session.user, courseId);
+
+  if (!course) {
+    return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
+      status: 404,
+      headers: { "Content-Type": "application/json" } as const,
+    });
+  }
+
+  if (!access || access.rank < 2) {
+    return new Response(JSON.stringify({ error: "Forbidden" }), {
+      status: 403,
+      headers: { "Content-Type": "application/json" } as const,
+    });
+  }
+
+  await prisma.course.update({
+    where: { id: courseId },
+    data: { deletedAt: new Date() },
+  });
+
+  return new Response(null, { status: 204 });
 }
 
 export async function getCourse(courseId: string) {
@@ -285,13 +322,12 @@ export async function getAccessibleCourseCodes(user: {
 }): Promise<string[]> {
   const where: Prisma.CourseWhereInput =
     user.role === UserRole.ADMIN
-      ? {}
+      ? { deletedAt: null }
       : {
-          OR: [
-            { instructorId: user.id },
-            { tas: { some: { userId: user.id } } },
-            { enrollments: { some: { userId: user.id, isActive: true } } },
-          ],
+          deletedAt: null,
+          // Instructor, TA, and student access all flow through Enrollment.role
+          // after the RBAC refactor (#293) — any active enrollment grants access.
+          enrollments: { some: { userId: user.id, isActive: true } },
         };
 
   const courses = await prisma.course.findMany({
@@ -317,6 +353,9 @@ export async function getCourseTopic(courseId: string, topicId: string) {
 export async function createCourseTopic(
   courseId: string,
   payload: CreateCourseTopicInput,
+  // #294: null on the service-key path (no user); routes treat a null
+  // createdBy as "no owner — TA delete not permitted".
+  createdBy: string | null = null,
 ) {
   const parsed = CreateCourseTopicSchema.safeParse(payload);
 
@@ -340,6 +379,7 @@ export async function createCourseTopic(
       data: {
         courseId,
         name: parsed.data.name.trim(),
+        createdBy,
       },
     });
 
@@ -353,6 +393,49 @@ export async function createCourseTopic(
       return {
         status: "409",
         existingId: existing?.id ?? null,
+      } as const;
+    }
+    throw error;
+  }
+}
+
+export async function updateCourseTopic(
+  courseId: string,
+  topicId: string,
+  payload: UpdateCourseTopicInput,
+) {
+  const parsed = UpdateCourseTopicSchema.safeParse(payload);
+
+  if (!parsed.success) {
+    return {
+      status: "400",
+      details: parsed.error.flatten(),
+    } as const;
+  }
+
+  const existing = await prisma.courseTopic.findFirst({
+    where: { id: topicId, courseId, deletedAt: null },
+    select: { id: true },
+  });
+  if (!existing) {
+    return { status: "404" } as const;
+  }
+
+  try {
+    const topic = await prisma.courseTopic.update({
+      where: { id: topicId },
+      data: { name: parsed.data.name.trim() },
+    });
+    return { status: "200", topic } as const;
+  } catch (error: any) {
+    if (error?.code === "P2002") {
+      const duplicate = await prisma.courseTopic.findFirst({
+        where: { courseId, name: parsed.data.name.trim(), deletedAt: null },
+        select: { id: true },
+      });
+      return {
+        status: "409",
+        existingId: duplicate?.id ?? null,
       } as const;
     }
     throw error;

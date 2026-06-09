@@ -12,6 +12,13 @@ vi.mock("~/lib/auth/server", () => ({
 
 import { getCourses, createCourse } from "~/lib/courses/server";
 import { auth } from "~/lib/auth/server";
+import {
+  seedUser,
+  seedCourse,
+  enroll,
+  mockSession,
+  cleanupRbac,
+} from "../helpers/rbac";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -114,10 +121,60 @@ describe("GET /api/courses", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns 403 when caller is not ADMIN", async () => {
+  it("returns 200 scoped to enrollments for an INSTRUCTOR (#298)", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(INSTRUCTOR_SESSION as any);
     const res = await getCourses(makeGetRequest());
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    const ids = body.courses.map((c: { id: string }) => c.id);
+    // Enrolled as INSTRUCTOR in the seeded (unpublished) course — visible.
+    expect(ids).toContain(courseId);
+    // Sees ONLY enrolled courses, not the whole catalog.
+    expect(
+      body.courses.every((c: { id: string }) => ids.includes(c.id) && c.id !== "nonexistent"),
+    ).toBe(true);
+  });
+
+  it("applies the publish gate per enrollment role — grad-TA mixed case (§1)", async () => {
+    // UserRole=STUDENT user: TA in unpublished course A, STUDENT in unpublished course B.
+    const gradTa = await seedUser({ role: "STUDENT" });
+    const courseA = await seedCourse({ isPublished: false });
+    const courseB = await seedCourse({ isPublished: false });
+    await enroll(courseA.id, gradTa.id, "TA");
+    await enroll(courseB.id, gradTa.id, "STUDENT");
+
+    try {
+      mockSession(gradTa);
+      const res = await getCourses(makeGetRequest());
+      expect(res.status).toBe(200);
+      const ids = (await res.json()).courses.map((c: { id: string }) => c.id);
+      expect(ids).toContain(courseA.id); // TA: publish gate exempt
+      expect(ids).not.toContain(courseB.id); // STUDENT: unpublished hidden
+    } finally {
+      await cleanupRbac({ userIds: [gradTa.id], courseIds: [courseA.id, courseB.id] });
+    }
+  });
+
+  it("scopes UNIT_ADMIN to their authorized units (#298)", async () => {
+    const unitAdmin = await seedUser({ role: "UNIT_ADMIN", authorizedUnits: ["COSC"] });
+    const coscCourse = await seedCourse({ department: "COSC", isPublished: false });
+    const mathCourse = await seedCourse({ department: "MATH", isPublished: true });
+    const noDeptCourse = await seedCourse({ department: null, isPublished: true });
+
+    try {
+      mockSession(unitAdmin);
+      const res = await getCourses(makeGetRequest());
+      expect(res.status).toBe(200);
+      const ids = (await res.json()).courses.map((c: { id: string }) => c.id);
+      expect(ids).toContain(coscCourse.id);
+      expect(ids).not.toContain(mathCourse.id);
+      expect(ids).not.toContain(noDeptCourse.id); // §19: null department never matches
+    } finally {
+      await cleanupRbac({
+        userIds: [unitAdmin.id],
+        courseIds: [coscCourse.id, mathCourse.id, noDeptCourse.id],
+      });
+    }
   });
 
   it("returns 200 with a courses array for ADMIN", async () => {
@@ -231,6 +288,98 @@ describe("POST /api/courses", () => {
       where: { courseId: body.id, userId: instructorId, role: "INSTRUCTOR", isActive: true },
     });
     expect(enrollment).not.toBeNull();
+  });
+
+  it("returns 400 with no instructorUserIds and creates no Course", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(ADMIN_SESSION as any);
+    const res = await createCourse(makeFormDataPost({
+      name: "No Instructor Course",
+      code: "NI 001",
+      section: "001",
+      term: "Fall",
+      year: 2026,
+      startDate: "2026-09-01",
+    }));
+    // Schema requires >= 1 instructor id → validation failure, nothing persisted.
+    expect(res.status).toBe(400);
+    const row = await prisma.course.findFirst({ where: { code: "NI 001" } });
+    expect(row).toBeNull();
+  });
+
+  it("returns 403 when UNIT_ADMIN creates outside authorizedUnits (#298)", async () => {
+    const unitAdmin = await seedUser({ role: "UNIT_ADMIN", authorizedUnits: ["MATH"] });
+    try {
+      mockSession(unitAdmin);
+      const res = await createCourse(makeFormDataPost({
+        name: "Wrong Unit Course",
+        code: "WU 001",
+        section: "001",
+        term: "Fall",
+        year: 2026,
+        startDate: "2026-09-01",
+        department: "COSC",
+        instructorUserIds: professorId,
+      }));
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ error: "DEPARTMENT_NOT_AUTHORIZED" });
+    } finally {
+      await cleanupRbac({ userIds: [unitAdmin.id] });
+    }
+  });
+
+  it("lets UNIT_ADMIN create inside authorizedUnits with instructor enrollment (#298)", async () => {
+    const unitAdmin = await seedUser({ role: "UNIT_ADMIN", authorizedUnits: ["COSC"] });
+    try {
+      mockSession(unitAdmin);
+      const res = await createCourse(makeFormDataPost({
+        name: "Unit Admin Course",
+        code: "UA 001",
+        section: "001",
+        term: "Fall",
+        year: 2026,
+        startDate: "2026-09-01",
+        department: "COSC",
+        instructorUserIds: professorId,
+      }));
+      expect(res.status).toBe(201);
+      const body = await res.json();
+      createdCourseIds.push(body.id);
+      expect(body.department).toBe("COSC");
+    } finally {
+      await cleanupRbac({ userIds: [unitAdmin.id] });
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/courses/:id (soft-delete)
+// ---------------------------------------------------------------------------
+
+describe("DELETE /api/courses/:id", () => {
+  it("instructor soft-deletes own course; it disappears from GET /api/courses (#298)", async () => {
+    const { deleteCourse } = await import("~/lib/courses/server");
+    const instructor = await seedUser({ role: "INSTRUCTOR" });
+    const course = await seedCourse({ isPublished: true });
+    await enroll(course.id, instructor.id, "INSTRUCTOR");
+
+    try {
+      mockSession(instructor);
+      const res = await deleteCourse(
+        new Request(`http://localhost/api/courses/${course.id}`, { method: "DELETE" }),
+        course.id,
+      );
+      expect(res.status).toBe(204);
+
+      const row = await prisma.course.findUnique({ where: { id: course.id } });
+      expect(row?.deletedAt).not.toBeNull();
+
+      mockSession(instructor);
+      const list = await getCourses(makeGetRequest());
+      const ids = (await list.json()).courses.map((c: { id: string }) => c.id);
+      expect(ids).not.toContain(course.id);
+    } finally {
+      await cleanupRbac({ userIds: [instructor.id], courseIds: [course.id] });
+    }
   });
 });
 

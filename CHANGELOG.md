@@ -9,6 +9,19 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ## [Week 5 — June 2–6, 2026]
 
 ### Added
+
+- [core] api: Add ADMIN-only bug-report list/triage endpoints with anonymity masking, plus `GET /api/bug-reports?mine=true` for own reports (§11). (#304, #478, @abdullahmoh21, 2026-06-05)
+- [core] auth: Make `GET /api/ai-providers` and `GET /api/ai-models` ADMIN-only (§13). (#303, #478, @abdullahmoh21, 2026-06-05)
+- [core] api: Add `GET`/`PATCH /api/me`, block self-role-changes, and support `authorizedUnits` assignment for UNIT_ADMINs (§4). (#297, #478, @abdullahmoh21, 2026-06-05)
+- [core] api: Gate course-context AI chat by course access and add owner-only `DELETE /api/chats/:chatId` (§10, partial — chat-metrics deferred pending chat↔course modeling). (#302, #478, @abdullahmoh21, 2026-06-05)
+- [core] api: Enforce course-scoped RBAC and student answer-key stripping on the questions endpoints (§9). (#301, #478, @abdullahmoh21, 2026-06-05)
+- [core] api: Enforce the §7 course-materials RBAC matrix and add `DELETE /api/courses/:id/materials/:materialId`. (#300, #478, @abdullahmoh21, 2026-06-05)
+- [core] api: Add enrollment create/update/remove endpoints with a transactional instructor-floor invariant (§6). (#305, #478, @abdullahmoh21, 2026-06-05)
+- [core] api: Enforce the §8 course-topics RBAC matrix and add a `PATCH` topic rename route. (#299, #478, @abdullahmoh21, 2026-06-05)
+- [core] api: Enforce the §5 course-management RBAC matrix, including per-role course list scoping and a new soft-delete `DELETE /api/courses/:id`. (#298, #478, @abdullahmoh21, 2026-06-05)
+- [core] db: Add `CourseMaterial.uploadedBy` and `CourseTopic.createdBy` owner columns for TA own-only RBAC. (#294, #478, @abdullahmoh21, 2026-06-05)
+- [core] auth: Add the RBAC keystone helpers (`resolveCourseAccess`, course-list filtering, answer stripping, `DepartmentSchema`) and document the shared §3 contract in `rbac-matrix.md`. (#293, #478, @abdullahmoh21, 2026-06-05)
+- [core] tests: Add 41 unit tests and shared test fixtures for the RBAC keystone helpers. (#293, #478, @abdullahmoh21, 2026-06-05)
 - [core] feat: Persist Assistive mode + selected course per user across page refreshes and new chats. New `UserPreference` table (`assistDefault`, `lastCourseCode`) + migration `add_user_preferences`; the `/chat` loader seeds the toggle + course from the user's stored preference, a `/chat` route `action` upserts on change via `useFetcher`, and `POST /auth/logout` clears the row so the next login starts fresh. A restored course the user can no longer access falls back to none; per-chat `Chat.adhdAssist` still wins when opening an existing chat. New `apps/core/app/lib/user-preferences.ts` (pure parse/resolve helpers) and `user-preferences.server.ts` (centralized `prisma.userPreference` access). (#420, @Ayyhab, 2026-06-02)
 - [core] tests: Unit tests for `parsePreferenceUpdates`, `resolveSelectedCourse`, and the preference persistence service (`get`/`save`/`clear`) at `apps/core/app/tests/unit/user-preferences.test.ts` and `user-preferences.server.test.ts` — 16 cases mapped to the #420 acceptance criteria; pinned to the node test environment. (#420, @Ayyhab, 2026-06-02)
 - [core] api: Implement Canvas API key storage for instructors (#381) — `canvas_integrations` table with AES-256-GCM encrypted tokens; `GET /api/canvas/integration`, `POST /api/canvas/connect` (probes `users/self/profile` before save), `DELETE /api/canvas/disconnect`; session auth for `INSTRUCTOR`/`ADMIN`; unit + integration tests.(2026-06-05)

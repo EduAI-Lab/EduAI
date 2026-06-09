@@ -18,6 +18,11 @@ export default [
   route("/courses", "routes/courses.tsx"),
   route("/courses/:courseId", "routes/courses.$courseId.tsx"),
   route("/api/courses/:courseId/materials", "routes/api/courses.materials.$.ts"),
+  route(
+    "/api/courses/:courseId/materials/:materialId",
+    "routes/api/courses.materials.$.ts",
+    { id: "routes/api/courses.materials.$:materialId" },
+  ),
   route("/api/courses/:courseId/topics", "routes/api/courses.topics.$.ts"),
   route("/api/courses/:courseId/tas", "routes/api/courses.tas.$.ts"),
   route(
@@ -27,6 +32,10 @@ export default [
   ),
   route("/api/courses/:id", "routes/api/courses.id.ts"),
   route("/api/courses/:id/enrollments", "routes/api/courses.enrollments.ts"),
+  route(
+    "/api/courses/:id/enrollments/:enrollmentId",
+    "routes/api/courses.enrollments.$enrollmentId.ts",
+  ),
   route("/api/questions", "routes/api/questions.ts"),
   route("/api/questions/:id", "routes/api/questions.$id.ts"),
   route("/admin/ai-models", "routes/admin.ai-models.tsx"),
@@ -34,8 +43,15 @@ export default [
   route("/admin/bug-reports", "routes/admin.bug-reports.tsx"),
   route("/api/ai-providers/*", "routes/api/ai-providers.$.ts"),
   route("/api/ai-models/*", "routes/api/ai-models.$.ts"),
+  route("/api/me", "routes/api/me.ts"),
   route("/api/users/*", "routes/api/users.$.ts"),
   route("/api/ollama-models", "routes/api/ollama-models.ts"),
   route("/api/sessions/validate", "routes/api/sessions.validate.ts"),
   route("/api/bug-reports", "routes/api/bug-reports.ts"),
+  route("/api/admin/bug-reports", "routes/api/admin.bug-reports.ts"),
+  route(
+    "/api/admin/bug-reports/:id",
+    "routes/api/admin.bug-reports.ts",
+    { id: "routes/api/admin.bug-reports:id" },
+  ),
 ] satisfies RouteConfig;

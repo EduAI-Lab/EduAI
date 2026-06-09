@@ -94,6 +94,30 @@ The **TA** and **Student** columns in all matrices below refer to `EnrollmentRol
 
 Every route handler that touches a course-scoped resource should resolve access through a single shared helper rather than inline checks. The helper evaluates the composition table from [Section 1](#1-role-model) and returns the resolved access level for the request.
 
+### Shared contract
+
+All three apps implement the same signature (Core: `apps/core/app/lib/auth/course-access.server.ts` — #293; AI Tutor: #295; QM: #296):
+
+```
+resolveCourseAccess(user, courseId) → Promise<AccessLevel | null>
+
+AccessLevel = {
+  level: 'admin' | 'unit' | 'instructor' | 'ta' | 'student',
+  rank:  4 | 3 | 2 | 1 | 0,
+}
+```
+
+Resolution order (first match wins):
+
+1. `user.role === 'ADMIN'` → `{ level: 'admin', rank: 4 }`
+2. `user.role === 'UNIT_ADMIN'` AND `course.department !== null` AND `course.department in user.authorizedUnits` → `{ level: 'unit', rank: 3 }` (null department is **not** a match — [§19](#19-cross-cutting-rules) unit lock)
+3. Active `Enrollment` row `(courseId, userId)` with `role === 'INSTRUCTOR'` → `{ level: 'instructor', rank: 2 }`
+4. Active `Enrollment` row with `role === 'TA'` → `{ level: 'ta', rank: 1 }`
+5. Active `Enrollment` row with `role === 'STUDENT'` → `{ level: 'student', rank: 0 }`
+6. Otherwise → `null` (also when the course does not exist or is soft-deleted)
+
+Gate tiers derive from `rank`: view = any non-null access (+ publish gate for `student`); manage = `rank >= 2`; TA own-only carve-outs = `level === 'ta' && resource.createdBy === user.id`. Implementations may add app-local refinements (e.g. Core also exposes a variant returning the fetched course row to distinguish 404 from 403) as long as this contract is preserved.
+
 **Pseudo-code:**
 
 ```ts
@@ -462,7 +486,7 @@ Only `ADMIN` can read another user's chat messages. Instructors and unit admins 
 A `UNIT_ADMIN` cannot act on a course where `course.department` is not in `user.authorizedUnits`, including when `course.department` is null. A null department is not a wildcard — it means the course has no unit affiliation and is only manageable by `ADMIN` or the course's enrolled instructors. Authorization middleware must treat a null `course.department` as a match failure for `UNIT_ADMIN`, never a pass.
 
 **Unit subject code casing**  
-`Course.department` values are subject codes controlled by `DepartmentSchema` (an application-layer enum in `apps/core/app/lib/departments.ts`). Route handlers that write `Course.department` must validate the value against this enum on write. Because valid codes are enumerated, a casing mismatch is caught at validation time rather than silently scoping a `UNIT_ADMIN` into a ghost unit. `user.authorizedUnits` stores the same canonical codes set by an `ADMIN`.
+`Course.department` values are subject codes controlled by `UnitSchema` (an application-layer enum in `apps/core/app/lib/units.ts`). Route handlers that write `Course.department` must validate the value against this enum on write. Because valid codes are enumerated, a casing mismatch is caught at validation time rather than silently scoping a `UNIT_ADMIN` into a ghost unit. `user.authorizedUnits` stores the same canonical codes set by an `ADMIN`.
 
 **TA own-resource restriction**  
 In operations marked `O` for TA (delete material, edit/delete question, edit/delete variant, edit/delete question_metadata), "own" means `resource.createdBy === user.id` AND the resource belongs to a course where the user holds `EnrollmentRole=TA`. A TA cannot edit a resource from a course where they are only enrolled as a `STUDENT`.
