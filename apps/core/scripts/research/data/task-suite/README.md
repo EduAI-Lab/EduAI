@@ -1,13 +1,13 @@
-# Task suite copy for dev server
+# Task suite (dev server copy)
 
-On s378, copy `prompts.v1.jsonl` from your URA machine here:
+**`prompts.v1.jsonl`** is bundled here so `npm run research:run-both-tier` works on s378 after `git pull` — no manual scp.
 
-```bash
-# from your laptop (PowerShell example)
-scp "docs/research/data/task-suite/prompts.v1.jsonl" \
-  s378:/srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore/apps/core/scripts/research/data/task-suite/
+Canonical source (edit there first): `URA/docs/research/data/task-suite/prompts.v1.jsonl`
+
+Refresh this copy after changing the canonical file:
+
+```powershell
+Copy-Item "..\..\..\..\..\docs\research\data\task-suite\prompts.v1.jsonl" ".\prompts.v1.jsonl"
 ```
 
-Or set `RESEARCH_SUITE_DIR` in `.env.research` to wherever you placed the file.
-
-Canonical source: `URA/docs/research/data/task-suite/prompts.v1.jsonl`
+From `apps/core`: `npm run research:validate-suite`

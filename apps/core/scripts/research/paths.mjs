@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -9,26 +9,31 @@ const URA_RESEARCH = join(__dirname, "../../../../../docs/research");
 const LOCAL_SUITE = join(__dirname, "data/task-suite");
 const LOCAL_RUNS = join(__dirname, "data/runs");
 
+function resolveDir(override, ...candidates) {
+  if (override) {
+    return isAbsolute(override) ? override : resolve(process.cwd(), override);
+  }
+  for (const dir of candidates) {
+    if (existsSync(join(dir, "prompts.v1.jsonl"))) return dir;
+  }
+  return candidates[0];
+}
+
 function resolveSuiteDir() {
-  const override = process.env.RESEARCH_SUITE_DIR?.trim();
-  if (override) return override;
-
-  const uraSuite = join(URA_RESEARCH, "data/task-suite");
-  if (existsSync(join(uraSuite, "prompts.v1.jsonl"))) return uraSuite;
-  if (existsSync(join(LOCAL_SUITE, "prompts.v1.jsonl"))) return LOCAL_SUITE;
-
-  return uraSuite;
+  return resolveDir(
+    process.env.RESEARCH_SUITE_DIR?.trim(),
+    LOCAL_SUITE,
+    join(URA_RESEARCH, "data/task-suite"),
+  );
 }
 
 function resolveRunsDir() {
   const override = process.env.RESEARCH_RUNS_DIR?.trim();
-  if (override) return override;
-
-  const uraRuns = join(URA_RESEARCH, "data/runs");
-  if (existsSync(uraRuns)) return uraRuns;
+  if (override) {
+    return isAbsolute(override) ? override : resolve(process.cwd(), override);
+  }
   if (existsSync(LOCAL_RUNS)) return LOCAL_RUNS;
-
-  return uraRuns;
+  return join(URA_RESEARCH, "data/runs");
 }
 
 export const SUITE_DIR = resolveSuiteDir();
