@@ -1,0 +1,139 @@
+import prisma from "~/lib/prisma.server";
+import {
+  normalizeStudentId,
+  resolveCanvasEnrollmentsForUser,
+} from "~/lib/canvas/enrollment-link.server";
+
+const linkAttemptStore = new Map<string, number[]>();
+const LINK_RATE_LIMIT = Number(process.env.CANVAS_LINK_ROSTER_RATE_LIMIT ?? 10);
+const LINK_RATE_WINDOW_MS = Number(process.env.CANVAS_LINK_ROSTER_RATE_WINDOW_MS ?? 900_000);
+
+export class LinkRosterError extends Error {
+  readonly statusCode: number;
+
+  constructor(message: string, statusCode: number) {
+    super(message);
+    this.name = "LinkRosterError";
+    this.statusCode = statusCode;
+  }
+}
+
+export type LinkRosterResult = {
+  studentId: string;
+  enrollmentsLinked: number;
+};
+
+function auditLinkAttempt(userId: string, outcome: "success" | "failure", detail?: string) {
+  console.info(
+    JSON.stringify({
+      event: "canvas_link_roster",
+      userId,
+      outcome,
+      detail,
+      at: new Date().toISOString(),
+    }),
+  );
+}
+
+export function isCanvasLinkRosterRateLimited(userId: string): boolean {
+  const now = Date.now();
+  const key = `canvas-link:${userId}`;
+  const hits = (linkAttemptStore.get(key) ?? []).filter((t) => now - t < LINK_RATE_WINDOW_MS);
+  if (hits.length >= LINK_RATE_LIMIT) {
+    return true;
+  }
+  hits.push(now);
+  linkAttemptStore.set(key, hits);
+  return false;
+}
+
+/**
+ * Sets the user's studentId and links active Canvas staging rows to enrollments.
+ */
+export async function linkCanvasRoster(
+  userId: string,
+  studentNumber: string,
+): Promise<LinkRosterResult> {
+  const normalized = normalizeStudentId(studentNumber);
+  if (!normalized) {
+    auditLinkAttempt(userId, "failure", "empty_student_number");
+    throw new LinkRosterError("Student number is required", 400);
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { studentId: true },
+  });
+
+  if (!user) {
+    throw new LinkRosterError("User not found", 404);
+  }
+
+  const currentStudentId = normalizeStudentId(user.studentId);
+  if (currentStudentId && currentStudentId !== normalized) {
+    auditLinkAttempt(userId, "failure", "student_id_already_set");
+    throw new LinkRosterError(
+      "Your account already has a student number linked. Contact support to change it.",
+      409,
+    );
+  }
+
+  const takenByOther = await prisma.user.findFirst({
+    where: {
+      studentId: normalized,
+      id: { not: userId },
+    },
+    select: { id: true },
+  });
+
+  if (takenByOther) {
+    auditLinkAttempt(userId, "failure", "student_id_taken");
+    throw new LinkRosterError(
+      "This student number is already linked to another account.",
+      409,
+    );
+  }
+
+  const stagingCount = await prisma.canvasRosterMember.count({
+    where: {
+      isActive: true,
+      sisUserId: normalized,
+    },
+  });
+
+  if (stagingCount === 0) {
+    auditLinkAttempt(userId, "failure", "no_staging_match");
+    throw new LinkRosterError(
+      "No Canvas enrollments found for this student number. Ask your instructor to sync the course first.",
+      404,
+    );
+  }
+
+  if (currentStudentId !== normalized) {
+    await prisma.user.update({
+      where: { id: userId },
+      data: { studentId: normalized },
+    });
+  }
+
+  const enrollmentsLinked = await resolveCanvasEnrollmentsForUser(userId);
+
+  auditLinkAttempt(userId, "success", `linked_${enrollmentsLinked}`);
+
+  return {
+    studentId: normalized,
+    enrollmentsLinked,
+  };
+}
+
+/** Admin or profile flows that set studentId directly should call this after update. */
+export async function applyStudentIdAndResolveEnrollments(
+  userId: string,
+  studentId: string | null | undefined,
+): Promise<number> {
+  const normalized = normalizeStudentId(studentId);
+  if (!normalized) {
+    return 0;
+  }
+  return resolveCanvasEnrollmentsForUser(userId);
+}

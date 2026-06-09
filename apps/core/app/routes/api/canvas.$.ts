@@ -10,7 +10,12 @@ import {
   getCanvasIntegrationPublic,
   saveCanvasIntegration,
 } from "~/lib/canvas/integration.server";
-import { ConnectCanvasSchema, SyncCanvasCoursesSchema } from "~/lib/canvas/schemas";
+import {
+  isCanvasLinkRosterRateLimited,
+  LinkRosterError,
+  linkCanvasRoster,
+} from "~/lib/canvas/link-roster.server";
+import { ConnectCanvasSchema, LinkRosterSchema, SyncCanvasCoursesSchema } from "~/lib/canvas/schemas";
 import { syncCanvasCourses } from "~/lib/canvas/sync.server";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
@@ -39,12 +44,16 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
     return json({ success: false, error: "Unauthorized" }, 401);
   }
 
+  const subpath = canvasSubpath(new URL(request.url).pathname);
+  const userId = session.user.id;
+
+  if (subpath === "link-roster") {
+    return handleLinkRosterRequest(request, userId);
+  }
+
   if (!canManageCanvasIntegration(session.user.role)) {
     return json({ success: false, error: "Forbidden: instructors only" }, 403);
   }
-
-  const subpath = canvasSubpath(new URL(request.url).pathname);
-  const userId = session.user.id;
 
   try {
     switch (request.method) {
@@ -159,6 +168,57 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
       return json({ success: false, error: "Canvas request failed" }, 500);
     }
     const message = error instanceof Error ? error.message : "Canvas request failed";
+    return json({ success: false, error: message }, 500);
+  }
+}
+
+async function handleLinkRosterRequest(request: Request, userId: string): Promise<Response> {
+  if (request.method !== "POST") {
+    return json({ success: false, error: "Method not allowed" }, 405);
+  }
+
+  if (isCanvasLinkRosterRateLimited(userId)) {
+    return json(
+      { success: false, error: "Too many link attempts. Please try again later." },
+      429,
+    );
+  }
+
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ success: false, error: "Invalid JSON body" }, 400);
+  }
+
+  const result = LinkRosterSchema.safeParse(body);
+  if (!result.success) {
+    return json(
+      {
+        success: false,
+        error: "Invalid input",
+        details: result.error.flatten(),
+      },
+      400,
+    );
+  }
+
+  try {
+    const linkResult = await linkCanvasRoster(userId, result.data.studentNumber);
+    return json({
+      success: true,
+      message: "Canvas enrollments linked successfully",
+      data: linkResult,
+    });
+  } catch (error) {
+    if (error instanceof LinkRosterError) {
+      return json({ success: false, error: error.message }, error.statusCode);
+    }
+    if (process.env.NODE_ENV === "production") {
+      console.error("Canvas link-roster failed:", error);
+      return json({ success: false, error: "Failed to link Canvas enrollments" }, 500);
+    }
+    const message = error instanceof Error ? error.message : "Failed to link Canvas enrollments";
     return json({ success: false, error: message }, 500);
   }
 }

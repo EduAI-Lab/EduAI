@@ -59,3 +59,18 @@ export type SyncCanvasCoursesResult = {
   unsynced: UnsyncCanvasCourseResult[];
   errors: Array<{ canvasId: string; message: string }>;
 };
+
+export const LinkRosterSchema = z.object({
+  studentNumber: z
+    .string()
+    .min(1, "Student number is required")
+    .max(32, "Student number is too long")
+    .transform((value) => value.trim()),
+});
+
+export type LinkRosterInput = z.infer<typeof LinkRosterSchema>;
+
+export type LinkRosterResponse = {
+  studentId: string;
+  enrollmentsLinked: number;
+};

@@ -2,6 +2,8 @@ import prisma from "~/lib/prisma.server";
 import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { createUserSchema, updateUserSchema } from "~/lib/auth/schemas";
+import { applyStudentIdAndResolveEnrollments } from "~/lib/canvas/link-roster.server";
+import { normalizeStudentId } from "~/lib/canvas/enrollment-link.server";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -150,6 +152,25 @@ async function handleRequest(request: Request) {
       }
 
       try {
+        if (result.data.studentId !== undefined) {
+          const normalizedStudentId = normalizeStudentId(result.data.studentId);
+          if (normalizedStudentId) {
+            const takenByOther = await prisma.user.findFirst({
+              where: {
+                studentId: normalizedStudentId,
+                id: { not: userId },
+              },
+              select: { id: true },
+            });
+            if (takenByOther) {
+              return new Response(
+                JSON.stringify({ error: "Student number is already linked to another account" }),
+                { status: 409, headers: { "Content-Type": "application/json" } },
+              );
+            }
+          }
+        }
+
         const user = await prisma.user.update({
           where: { id: userId },
           data: result.data,
@@ -159,6 +180,7 @@ async function handleRequest(request: Request) {
             name: true,
             image: true,
             role: true,
+            studentId: true,
             isActive: true,
             emailVerified: true,
             createdAt: true,
@@ -172,6 +194,10 @@ async function handleRequest(request: Request) {
           },
         });
 
+        if (result.data.studentId !== undefined) {
+          await applyStudentIdAndResolveEnrollments(userId, result.data.studentId);
+        }
+
         return new Response(JSON.stringify(user), {
           status: 200,
           headers: { "Content-Type": "application/json" },
@@ -181,8 +207,12 @@ async function handleRequest(request: Request) {
           return new Response("User not found", { status: 404 });
         }
         if (error.code === 'P2002') {
+          const field = error.meta?.target;
+          const message = Array.isArray(field) && field.includes("studentId")
+            ? "Student number is already linked to another account"
+            : "Email already exists";
           return new Response(
-            JSON.stringify({ error: "Email already exists" }),
+            JSON.stringify({ error: message }),
             { status: 409, headers: { "Content-Type": "application/json" } }
           );
         }
