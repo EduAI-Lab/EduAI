@@ -23,6 +23,7 @@ const TEST_ENCRYPTION_KEY = "canvas-integration-test-key!!";
 
 let instructorId: string;
 let studentId: string;
+let linkedStudentId: string;
 
 function sessionFor(userId: string, role: string) {
   vi.mocked(auth.api.getSession).mockResolvedValue({
@@ -78,13 +79,41 @@ beforeAll(async () => {
     },
   });
   studentId = student.id;
+
+  const linkedStudent = await prisma.user.create({
+    data: {
+      email: "canvas-linked-student@test.com",
+      name: "Linked Student",
+      role: "STUDENT",
+      studentId: "student_1",
+      emailVerified: true,
+    },
+  });
+  linkedStudentId = linkedStudent.id;
 });
 
-afterAll(async () => {
-  await prisma.canvasIntegration.deleteMany({
-    where: { userId: { in: [instructorId, studentId] } },
+async function cleanupCanvasSyncData() {
+  const instructorCourses = await prisma.enrollment.findMany({
+    where: { userId: instructorId, role: "INSTRUCTOR" },
+    select: { courseId: true },
   });
-  await prisma.user.deleteMany({ where: { id: { in: [instructorId, studentId] } } });
+  const courseIds = instructorCourses.map((enrollment) => enrollment.courseId);
+
+  if (courseIds.length > 0) {
+    await prisma.canvasRosterMember.deleteMany({ where: { courseId: { in: courseIds } } });
+    await prisma.enrollment.deleteMany({ where: { courseId: { in: courseIds } } });
+    await prisma.course.deleteMany({ where: { id: { in: courseIds } } });
+  }
+}
+
+afterAll(async () => {
+  await cleanupCanvasSyncData();
+  await prisma.canvasIntegration.deleteMany({
+    where: { userId: { in: [instructorId, studentId, linkedStudentId] } },
+  });
+  await prisma.user.deleteMany({
+    where: { id: { in: [instructorId, studentId, linkedStudentId] } },
+  });
   vi.unstubAllEnvs();
   await prisma.$disconnect();
 });
@@ -92,10 +121,20 @@ afterAll(async () => {
 beforeEach(async () => {
   vi.clearAllMocks();
   vi.mocked(verifyCanvasCredentials).mockResolvedValue(undefined);
+  await cleanupCanvasSyncData();
   await prisma.canvasIntegration.deleteMany({
-    where: { userId: { in: [instructorId, studentId] } },
+    where: { userId: { in: [instructorId, studentId, linkedStudentId] } },
   });
 });
+
+async function connectTestMode() {
+  sessionFor(instructorId, "INSTRUCTOR");
+  const res = await call("POST", "connect", {
+    canvasUrl: "http://localhost:8080",
+    isTestMode: true,
+  });
+  expect(res.status).toBe(200);
+}
 
 describe("Canvas API — auth", () => {
   it("returns 401 without a session", async () => {
@@ -258,5 +297,97 @@ describe("Canvas API — connect / integration / disconnect", () => {
     const res = await call("PUT", "integration");
     expect(res.status).toBe(405);
     expect(await res.json()).toEqual({ success: false, error: "Method not allowed" });
+  });
+});
+
+describe("Canvas API — courses and sync", () => {
+  it("returns 400 for courses when Canvas is not connected", async () => {
+    sessionFor(instructorId, "INSTRUCTOR");
+    const res = await call("GET", "courses");
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ success: false, error: "Connect Canvas first" });
+  });
+
+  it("lists mock courses with sync state in test mode", async () => {
+    await connectTestMode();
+    sessionFor(instructorId, "INSTRUCTOR");
+
+    const res = await call("GET", "courses");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.data.courses.length).toBeGreaterThan(0);
+    expect(body.data.courses[0]).toMatchObject({
+      canvasId: expect.any(String),
+      name: expect.any(String),
+      courseCode: expect.any(String),
+      isSynced: false,
+      coreCourseId: null,
+      lastSyncedAt: null,
+    });
+  });
+
+  it("syncs selected courses and links enrollments by studentId", async () => {
+    await connectTestMode();
+    sessionFor(instructorId, "INSTRUCTOR");
+
+    const syncRes = await call("POST", "sync", { canvasCourseIds: ["1"] });
+    expect(syncRes.status).toBe(200);
+    const syncBody = await syncRes.json();
+    expect(syncBody.success).toBe(true);
+    expect(syncBody.data.synced).toHaveLength(1);
+    expect(syncBody.data.synced[0].canvasId).toBe("1");
+    expect(syncBody.data.synced[0].enrollmentsLinked).toBeGreaterThanOrEqual(1);
+    expect(syncBody.data.unsynced).toHaveLength(0);
+    expect(syncBody.data.errors).toHaveLength(0);
+
+    const linkedEnrollment = await prisma.enrollment.findFirst({
+      where: {
+        userId: linkedStudentId,
+        externalSource: "canvas",
+        isActive: true,
+      },
+      include: { course: true },
+    });
+    expect(linkedEnrollment).not.toBeNull();
+    expect(linkedEnrollment?.course.externalId).toBe("1");
+
+    sessionFor(instructorId, "INSTRUCTOR");
+    const coursesRes = await call("GET", "courses");
+    const coursesBody = await coursesRes.json();
+    const syncedCourse = coursesBody.data.courses.find(
+      (course: { canvasId: string }) => course.canvasId === "1",
+    );
+    expect(syncedCourse?.isSynced).toBe(true);
+    expect(syncedCourse?.coreCourseId).toBeTruthy();
+    expect(syncedCourse?.lastSyncedAt).toBeTruthy();
+  });
+
+  it("unsyncs courses omitted from the selection", async () => {
+    await connectTestMode();
+    sessionFor(instructorId, "INSTRUCTOR");
+
+    await call("POST", "sync", { canvasCourseIds: ["1", "2"] });
+
+    sessionFor(instructorId, "INSTRUCTOR");
+    const unsyncRes = await call("POST", "sync", { canvasCourseIds: ["1"] });
+    expect(unsyncRes.status).toBe(200);
+    const unsyncBody = await unsyncRes.json();
+    expect(unsyncBody.data.unsynced).toHaveLength(1);
+    expect(unsyncBody.data.unsynced[0].canvasId).toBe("2");
+
+    const course2 = await prisma.course.findFirst({
+      where: { externalSource: "canvas", externalId: "2" },
+    });
+    expect(course2?.deletedAt).not.toBeNull();
+  });
+
+  it("returns 400 for invalid sync payload", async () => {
+    await connectTestMode();
+    sessionFor(instructorId, "INSTRUCTOR");
+
+    const res = await call("POST", "sync", { canvasCourseIds: "not-an-array" });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ success: false, error: "Invalid input" });
   });
 });
