@@ -21,7 +21,8 @@
  *   RESEARCH_SUITE_DIR     override task-suite folder (must contain prompts.v1.jsonl)
  *   RESEARCH_RUNS_DIR      override runs output folder
  *   RESEARCH_RUN_SLEEP_MS  delay between requests (default 500)
- *   RESEARCH_RUN_LABEL     free-text run label
+ *   RESEARCH_RUN_TIMEOUT_MS  per-request timeout (default 180000)
+ *   RESEARCH_FORCE_HYBRID=1  force hybrid RAG even for webSearch prompts (debug)
  *
  * Usage:
  *   cd apps/core && npm run research:run-both-tier
@@ -82,6 +83,7 @@ function loadPrompts() {
 
 function extractResponseText(json) {
   if (!json || typeof json !== "object") return "";
+  if (typeof json.content === "string") return json.content;
   if (typeof json.text === "string") return json.text;
   if (typeof json.response === "string") return json.response;
   if (Array.isArray(json.messages)) {
@@ -91,21 +93,43 @@ function extractResponseText(json) {
   return "";
 }
 
-async function postChat({ url, headers, apiKeys, model, prompt, courseCode }) {
+async function postChat({ url, headers, apiKeys, model, prompt, courseCode, forceHybridRag }) {
   const body = {
     model,
     apiKeys,
     messages: [{ id: randomUUID(), role: "user", content: prompt }],
     streaming: false,
     ...(courseCode ? { courseCode } : {}),
+    ...(forceHybridRag ? { forceHybridRag: true } : {}),
   };
 
+  const timeoutMs = Math.max(
+    30_000,
+    Number(readEnv("RESEARCH_RUN_TIMEOUT_MS", "180000")) || 180_000,
+  );
+
   const t0 = performance.now();
-  const res = await fetch(url, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-  });
+  let res;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (e) {
+    const durationMs = Math.round(performance.now() - t0);
+    const message = e instanceof Error ? e.message : String(e);
+    return {
+      httpStatus: 0,
+      durationMs,
+      responseText: "",
+      finishReason: null,
+      error: message.includes("TimeoutError") ? `Request timed out after ${timeoutMs}ms` : message,
+      routedModel: null,
+      forceHybridRag,
+    };
+  }
   const text = await res.text();
   const durationMs = Math.round(performance.now() - t0);
 
@@ -120,8 +144,10 @@ async function postChat({ url, headers, apiKeys, model, prompt, courseCode }) {
     httpStatus: res.status,
     durationMs,
     responseText: extractResponseText(json),
+    finishReason: json?.finishReason ?? null,
     error: json?.error ?? (res.status >= 400 ? text.slice(0, 200) : null),
     routedModel: res.headers.get("x-routed-model"),
+    forceHybridRag,
   };
 }
 
@@ -201,6 +227,8 @@ async function main() {
   console.log("total HTTP calls:", totalCalls);
   console.log("");
 
+  const forceHybridAll = readEnv("RESEARCH_FORCE_HYBRID") === "1";
+
   let callIndex = 0;
   let errors = 0;
 
@@ -213,6 +241,11 @@ async function main() {
         `[${callIndex}/${totalCalls}] ${row.id} tier ${tier} (${model}) — ${preview}`,
       );
 
+      // vLLM 32B + tool_calling path hangs on many prompts; use hybrid RAG unless web tools required.
+      const forceHybridRag =
+        forceHybridAll ||
+        (row.tools_expected !== "webSearch" && row.tools_expected !== "fetchPage");
+
       const result = await postChat({
         url,
         headers,
@@ -220,13 +253,21 @@ async function main() {
         model,
         prompt: row.prompt,
         courseCode: row.course_code ?? undefined,
+        forceHybridRag,
       });
 
       if (result.httpStatus >= 400 || result.error) {
         errors++;
         console.log(`  ERROR HTTP ${result.httpStatus}: ${String(result.error).slice(0, 100)}`);
+      } else if (!result.responseText) {
+        errors++;
+        console.log(
+          `  WARN empty response (${result.durationMs} ms, finish=${result.finishReason ?? "?"})`,
+        );
       } else {
-        console.log(`  OK ${result.durationMs} ms, ${result.responseText.length} chars`);
+        console.log(
+          `  OK ${result.durationMs} ms, ${result.responseText.length} chars (hybrid=${forceHybridRag})`,
+        );
       }
 
       const record = {
@@ -243,9 +284,11 @@ async function main() {
         prompt: row.prompt,
         tier,
         model,
+        force_hybrid_rag: forceHybridRag,
         routed_model: result.routedModel,
         duration_ms: result.durationMs,
         http_status: result.httpStatus,
+        finish_reason: result.finishReason,
         response: result.responseText,
         error: result.error,
       };

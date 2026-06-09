@@ -372,6 +372,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const courseId = typeof body.courseId === "string" ? body.courseId : undefined;
     const courseCode = typeof body.courseCode === "string" ? body.courseCode : undefined;
     const streaming = body.streaming === undefined ? true : Boolean(body.streaming);
+    const forceHybridRag = body.forceHybridRag === true;
     const chatId = typeof body.chatId === "string" ? body.chatId : undefined;
     const proxyUserPayload =
       body.proxyUser && typeof body.proxyUser === "object" ? (body.proxyUser as ProxyUserPayload) : null;
@@ -827,14 +828,15 @@ export async function action({ request }: ActionFunctionArgs) {
       fetchPage,
     };
 
-    // Check if the model supports tool calling
+    // Check if the model supports tool calling (research baseline may force hybrid RAG)
     const supportsTools = await modelSupportsTools(resolvedModelId);
+    const useToolCalling = supportsTools && !forceHybridRag;
 
     let streamConfig;
 
     const resolvedSystemPrompt = trimmedSystemPrompt ?? chat.systemPrompt ?? null;
 
-    if (!supportsTools) {
+    if (!useToolCalling) {
       // MODELS WITHOUT TOOL SUPPORT: Use hybrid RAG approach
       const lastUserMessage = [...trimmedMessages].reverse().find((message) => message.role === "user");
       const userQuestion = extractMessageText(lastUserMessage);
@@ -980,7 +982,8 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
     chatApiDebug("Starting LLM stream", {
       model: resolvedModelId,
       routedByAuto: wasAuto,
-      approach: supportsTools ? "tool_calling" : "hybrid_rag",
+      approach: useToolCalling ? "tool_calling" : "hybrid_rag",
+      forceHybridRag,
       ...llmPromptSizeHints(streamConfig.system, modelMessages),
     });
 
