@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "exemplars": [
+    {
+      "prompt": "What is gradient descent?",
+      "tier": 1,
+      "tags": ["short_factual"]
+    },
+    {
+      "prompt": "Define overfitting in one sentence.",
+      "tier": 1,
+      "tags": ["short_factual"]
+    },
+    {
+      "prompt": "Who is the instructor for this course?",
+      "tier": 1,
+      "tags": ["short_factual"]
+    },
+    {
+      "prompt": "What is a binary search tree?",
+      "tier": 1,
+      "tags": ["short_factual"]
+    },
+    {
+      "prompt": "Summarize the syllabus policy on late work in two bullets.",
+      "tier": 1,
+      "tags": ["strong_rag"]
+    },
+    {
+      "prompt": "Explain the midterm grading rubric in detail.",
+      "tier": 2,
+      "tags": ["default"]
+    },
+    {
+      "prompt": "Walk me through how to approach the assignment step by step.",
+      "tier": 2,
+      "tags": ["default"]
+    },
+    {
+      "prompt": "Compare all lecture topics from weeks 1 through 8 and highlight dependencies.",
+      "tier": 2,
+      "tags": ["long_rag"]
+    },
+    {
+      "prompt": "Using the course materials, draft a study plan for the final exam.",
+      "tier": 2,
+      "tags": ["long_rag"]
+    },
+    {
+      "prompt": "Debug this multi-file project and explain architectural trade-offs.",
+      "tier": 3,
+      "tags": ["complex"]
+    },
+    {
+      "prompt": "Critique my proof and suggest a more rigorous alternative argument.",
+      "tier": 3,
+      "tags": ["complex"]
+    },
+    {
+      "prompt": "Design a capstone-scale system with security, testing, and deployment considerations.",
+      "tier": 3,
+      "tags": ["complex"]
+    }
+  ]
+}
