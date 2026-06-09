@@ -4,6 +4,7 @@ import { randomUUID } from "crypto";
 import { streamText, tool } from "ai";
 import { createAIProviderRegistry, modelSupportsTools } from "~/lib/ai/providers";
 import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
+import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
 import { findRelevantContent } from "~/lib/ai/embedding";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
@@ -749,13 +750,50 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
     });
     streamConfig.system = composeSystemPrompt(streamConfig.system ?? "", { adhdAssist: effectiveAdhdAssist });
 
+    const streamStartedAt = Date.now();
+    const logResponseCompliance = (
+      assistantText: string,
+      extras?: {
+        finishReason?: string | null;
+        promptTokens?: number;
+        completionTokens?: number;
+      },
+    ) => {
+      const trimmed = assistantText?.trim();
+      if (!trimmed) return;
+      void recordResponseComplianceEvent({
+        userId: actingUser.id,
+        chatId: chat.id,
+        adhdAssist: effectiveAdhdAssist,
+        assistantText: trimmed,
+        extras: {
+          model,
+          durationMs: Date.now() - streamStartedAt,
+          finishReason: extras?.finishReason ?? null,
+          promptTokens: extras?.promptTokens,
+          completionTokens: extras?.completionTokens,
+        },
+      }).catch((err) => {
+        console.error("[assistive-events] response_compliance log failed", err);
+      });
+    };
+
     // Log the LLM stream configuration
     chatApiDebug("Starting LLM stream", {
       model,
       approach: supportsTools ? "tool_calling" : "hybrid_rag",
       ...llmPromptSizeHints(streamConfig.system, modelMessages),
     });
-    const result = await streamText(streamConfig as Parameters<typeof streamText>[0]);
+    const result = await streamText({
+      ...(streamConfig as Parameters<typeof streamText>[0]),
+      onFinish: async ({ text, usage, finishReason }) => {
+        logResponseCompliance(text, {
+          finishReason,
+          promptTokens: usage?.promptTokens,
+          completionTokens: usage?.completionTokens,
+        });
+      },
+    });
 
     if (streaming) {
       const headers: Record<string, string> = {
