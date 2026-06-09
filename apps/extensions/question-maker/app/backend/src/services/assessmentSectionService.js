@@ -26,8 +26,13 @@ const findAssessmentForUser = async (assessmentId, userId) => {
   return assessment;
 };
 
-/** Fetches a section while verifying the parent assessment belongs to the user. */
-const findSectionForUser = async (sectionId, userId) => {
+/**
+ * Fetches a section while verifying the parent assessment belongs to the user. When
+ * `courseId` (the authorized course, e.g. req.qmCourse.id) is supplied, the section must
+ * also live in that course — owner scoping alone lets a user reach a section in a
+ * DIFFERENT course they own via a route authorized for another one (#1).
+ */
+const findSectionForUser = async (sectionId, userId, courseId = null) => {
   const section = await AssessmentSections.findOne({
     where: { id: sectionId },
     include: [
@@ -47,6 +52,10 @@ const findSectionForUser = async (sectionId, userId) => {
   });
 
   if (!section) {
+    throw new Error('Section not found');
+  }
+
+  if (courseId != null && section.assessment?.courseId !== courseId) {
     throw new Error('Section not found');
   }
 
@@ -113,9 +122,9 @@ export const createAssessmentSection = async (assessmentId, userId, payload) => 
   return section;
 };
 
-/** Updates section metadata/filters/position after verifying ownership. */
-export const updateAssessmentSection = async (sectionId, userId, updates) => {
-  const section = await findSectionForUser(sectionId, userId);
+/** Updates section metadata/filters/position after verifying ownership and course scope. */
+export const updateAssessmentSection = async (sectionId, userId, updates, courseId = null) => {
+  const section = await findSectionForUser(sectionId, userId, courseId);
 
   await section.update({
     ...(updates.name !== undefined && { name: updates.name?.trim() || section.name }),
@@ -131,8 +140,8 @@ export const updateAssessmentSection = async (sectionId, userId, updates) => {
 };
 
 /** Deletes a section and clears variant assessment links if they are no longer referenced. */
-export const deleteAssessmentSection = async (sectionId, userId) => {
-  const section = await findSectionForUser(sectionId, userId);
+export const deleteAssessmentSection = async (sectionId, userId, courseId = null) => {
+  const section = await findSectionForUser(sectionId, userId, courseId);
   const assessmentId = section.assessment.id;
 
   // Get all variants in this section
@@ -172,8 +181,12 @@ export const deleteAssessmentSection = async (sectionId, userId) => {
   return true;
 };
 
-/** Ensures a variant belongs to the requesting user before linking. */
-const verifyVariantOwnership = async (variantId, userId) => {
+/**
+ * Ensures a variant belongs to the requesting user before linking. When `courseId` (the
+ * authorized course) is supplied, the variant must also belong to that course, so a
+ * variant from another course the user owns can't be linked across courses (#1).
+ */
+const verifyVariantOwnership = async (variantId, userId, courseId = null) => {
   const variant = await Variants.findOne({
     where: { id: variantId },
     include: [
@@ -196,13 +209,17 @@ const verifyVariantOwnership = async (variantId, userId) => {
     throw new Error('Variant not found');
   }
 
+  if (courseId != null && variant.questionMetadata?.courseId !== courseId) {
+    throw new Error('Variant not found');
+  }
+
   return variant;
 };
 
 /** Adds a variant to a section, ensuring assessment linkage/order metadata stays in sync. */
-export const addVariantToSection = async (sectionId, userId, variantId, options = {}) => {
-  const section = await findSectionForUser(sectionId, userId);
-  const variant = await verifyVariantOwnership(variantId, userId);
+export const addVariantToSection = async (sectionId, userId, variantId, options = {}, courseId = null) => {
+  const section = await findSectionForUser(sectionId, userId, courseId);
+  const variant = await verifyVariantOwnership(variantId, userId, courseId);
 
   const displayOrder = options.displayOrder ?? await SectionVariants.count({ where: { sectionId } });
 
@@ -223,8 +240,8 @@ export const addVariantToSection = async (sectionId, userId, variantId, options 
 };
 
 /** Removes a variant from a section and clears assessment references if no other links remain. */
-export const removeVariantFromSection = async (sectionId, userId, variantId) => {
-  const section = await findSectionForUser(sectionId, userId);
+export const removeVariantFromSection = async (sectionId, userId, variantId, courseId = null) => {
+  const section = await findSectionForUser(sectionId, userId, courseId);
 
   const deleted = await SectionVariants.destroy({
     where: { sectionId, variantId }
@@ -260,8 +277,8 @@ export const removeVariantFromSection = async (sectionId, userId, variantId) => 
 };
 
 /** Updates the display order for a variant inside a section. */
-export const updateVariantOrderInSection = async (sectionId, userId, variantId, displayOrder) => {
-  await findSectionForUser(sectionId, userId);
+export const updateVariantOrderInSection = async (sectionId, userId, variantId, displayOrder, courseId = null) => {
+  await findSectionForUser(sectionId, userId, courseId);
 
   const link = await SectionVariants.findOne({
     where: { sectionId, variantId }
