@@ -4,11 +4,7 @@
  * course_code metadata is set by the experiment runner / UI course selection.
  */
 import { readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const PROMPTS_PATH = join(__dirname, "../../../docs/research/data/task-suite/prompts.v1.jsonl");
+import { PROMPTS_PATH } from "./paths.mjs";
 
 const PROMPT_BY_ID = {
   "ts-020": "What's the time complexity of linear search on an unsorted list?",

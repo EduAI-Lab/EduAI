@@ -1,0 +1,248 @@
+#!/usr/bin/env node
+/**
+ * Step 4 — run task-suite prompts on tier 1 (7B) and tier 3 (32B) vLLM models.
+ *
+ * Writes append-friendly JSONL rows for LLM-judge labeling (min_adequate_tier).
+ *
+ * Required env (or reuse CHAT_BENCH_* aliases):
+ *   RESEARCH_RUN_URL / CHAT_BENCH_URL     POST target, e.g. https://dev.eduai.ok.ubc.ca/api/chat
+ *   RESEARCH_RUN_API_KEYS / CHAT_BENCH_API_KEYS   JSON apiKeys body
+ *   RESEARCH_RUN_X_API_KEY / CHAT_BENCH_X_API_KEY  admin key, OR
+ *   RESEARCH_RUN_COOKIE / CHAT_BENCH_COOKIE         session cookie
+ *
+ * Optional:
+ *   RESEARCH_TIER1_MODEL   default vllm:qwen2.5-7b-instruct
+ *   RESEARCH_TIER3_MODEL   default vllm:qwen2.5-32b-instruct
+ *   RESEARCH_RUN_SPLIT     dev | test | all (default dev)
+ *   RESEARCH_RUN_LIMIT     max prompts after filter
+ *   RESEARCH_RUN_IDS       comma-separated ts-### filter
+ *   RESEARCH_RUN_OUT       output JSONL path (default docs/research/data/runs/both-tier.v1.jsonl)
+ *   RESEARCH_RUN_SLEEP_MS  delay between requests (default 500)
+ *   RESEARCH_RUN_LABEL     free-text run label
+ *
+ * Usage:
+ *   cd apps/core && npm run research:run-both-tier
+ */
+import { randomUUID } from "node:crypto";
+import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
+import { dirname } from "node:path";
+import { performance } from "node:perf_hooks";
+import { DEFAULT_BOTH_TIER_OUT, PROMPTS_PATH } from "./paths.mjs";
+
+const TIER_MODELS = [
+  { tier: 1, envKey: "RESEARCH_TIER1_MODEL", fallback: "vllm:qwen2.5-7b-instruct" },
+  { tier: 3, envKey: "RESEARCH_TIER3_MODEL", fallback: "vllm:qwen2.5-32b-instruct" },
+];
+
+function readEnv(primary, alias) {
+  for (const name of [primary, alias]) {
+    const v = process.env[name];
+    if (v !== undefined && v !== "") return v;
+  }
+  return undefined;
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function loadPrompts() {
+  const raw = readFileSync(PROMPTS_PATH, "utf8").trim();
+  if (!raw) return [];
+  return raw.split("\n").map((line, i) => {
+    try {
+      return JSON.parse(line);
+    } catch (e) {
+      throw new Error(`prompts.v1.jsonl line ${i + 1}: ${e.message}`);
+    }
+  });
+}
+
+function extractResponseText(json) {
+  if (!json || typeof json !== "object") return "";
+  if (typeof json.text === "string") return json.text;
+  if (typeof json.response === "string") return json.response;
+  if (Array.isArray(json.messages)) {
+    const last = json.messages.at(-1);
+    if (last && typeof last.content === "string") return last.content;
+  }
+  return "";
+}
+
+async function postChat({ url, headers, apiKeys, model, prompt, courseCode }) {
+  const body = {
+    model,
+    apiKeys,
+    messages: [{ id: randomUUID(), role: "user", content: prompt }],
+    streaming: false,
+    ...(courseCode ? { courseCode } : {}),
+  };
+
+  const t0 = performance.now();
+  const res = await fetch(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+  const text = await res.text();
+  const durationMs = Math.round(performance.now() - t0);
+
+  let json = null;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    /* non-JSON error body */
+  }
+
+  return {
+    httpStatus: res.status,
+    durationMs,
+    responseText: extractResponseText(json),
+    error: json?.error ?? (res.status >= 400 ? text.slice(0, 200) : null),
+    routedModel: res.headers.get("x-routed-model"),
+  };
+}
+
+async function main() {
+  const url = readEnv("RESEARCH_RUN_URL", "CHAT_BENCH_URL");
+  const apiKeysJson = readEnv("RESEARCH_RUN_API_KEYS", "CHAT_BENCH_API_KEYS");
+  const xApiKey = readEnv("RESEARCH_RUN_X_API_KEY", "CHAT_BENCH_X_API_KEY");
+  const cookie = readEnv("RESEARCH_RUN_COOKIE", "CHAT_BENCH_COOKIE");
+  const splitFilter = (readEnv("RESEARCH_RUN_SPLIT") ?? "dev").toLowerCase();
+  const limitRaw = readEnv("RESEARCH_RUN_LIMIT");
+  const limit = limitRaw ? Math.max(1, Number(limitRaw) || 0) : undefined;
+  const idsFilter = readEnv("RESEARCH_RUN_IDS");
+  const outPath = readEnv("RESEARCH_RUN_OUT") ?? DEFAULT_BOTH_TIER_OUT;
+  const sleepMs = Math.max(0, Number(readEnv("RESEARCH_RUN_SLEEP_MS", "500")) || 0);
+  const label = readEnv("RESEARCH_RUN_LABEL") ?? "both-tier-v1";
+
+  if (!url || !apiKeysJson) {
+    console.error("Need RESEARCH_RUN_URL and RESEARCH_RUN_API_KEYS (or CHAT_BENCH_* equivalents).");
+    process.exit(1);
+  }
+  if (!xApiKey && !cookie) {
+    console.error("Need RESEARCH_RUN_X_API_KEY or RESEARCH_RUN_COOKIE for auth.");
+    process.exit(1);
+  }
+
+  let apiKeys;
+  try {
+    apiKeys = JSON.parse(apiKeysJson);
+  } catch {
+    console.error("API keys env must be valid JSON.");
+    process.exit(1);
+  }
+
+  const tierModels = TIER_MODELS.map(({ tier, envKey, fallback }) => ({
+    tier,
+    model: readEnv(envKey) ?? fallback,
+  }));
+
+  let prompts = loadPrompts();
+  if (splitFilter !== "all") {
+    prompts = prompts.filter((p) => p.split === splitFilter);
+  }
+  if (idsFilter) {
+    const ids = new Set(idsFilter.split(",").map((s) => s.trim()).filter(Boolean));
+    prompts = prompts.filter((p) => ids.has(p.id));
+  }
+  if (limit) {
+    prompts = prompts.slice(0, limit);
+  }
+
+  if (prompts.length === 0) {
+    console.error("No prompts matched filters.");
+    process.exit(1);
+  }
+
+  mkdirSync(dirname(outPath), { recursive: true });
+
+  const headers = { "Content-Type": "application/json" };
+  if (xApiKey) headers["x-api-key"] = xApiKey;
+  if (cookie) headers.Cookie = cookie;
+
+  const runStarted = new Date().toISOString();
+  const totalCalls = prompts.length * tierModels.length;
+
+  console.log("=== both-tier baseline run ===");
+  console.log("label:", label);
+  console.log("url:", url);
+  console.log("split:", splitFilter);
+  console.log("prompts:", prompts.length);
+  console.log("tiers:", tierModels.map((t) => `${t.tier}=${t.model}`).join(", "));
+  console.log("output:", outPath);
+  console.log("total HTTP calls:", totalCalls);
+  console.log("");
+
+  let callIndex = 0;
+  let errors = 0;
+
+  for (const row of prompts) {
+    for (const { tier, model } of tierModels) {
+      callIndex++;
+      const preview =
+        row.prompt.length > 55 ? `${row.prompt.slice(0, 52)}…` : row.prompt;
+      console.log(
+        `[${callIndex}/${totalCalls}] ${row.id} tier ${tier} (${model}) — ${preview}`,
+      );
+
+      const result = await postChat({
+        url,
+        headers,
+        apiKeys,
+        model,
+        prompt: row.prompt,
+        courseCode: row.course_code ?? undefined,
+      });
+
+      if (result.httpStatus >= 400 || result.error) {
+        errors++;
+        console.log(`  ERROR HTTP ${result.httpStatus}: ${String(result.error).slice(0, 100)}`);
+      } else {
+        console.log(`  OK ${result.durationMs} ms, ${result.responseText.length} chars`);
+      }
+
+      const record = {
+        run_label: label,
+        run_started: runStarted,
+        recorded_at: new Date().toISOString(),
+        prompt_id: row.id,
+        stratum: row.stratum,
+        category: row.category,
+        split: row.split,
+        rag_context: row.rag_context,
+        tools_expected: row.tools_expected,
+        course_code: row.course_code,
+        prompt: row.prompt,
+        tier,
+        model,
+        routed_model: result.routedModel,
+        duration_ms: result.durationMs,
+        http_status: result.httpStatus,
+        response: result.responseText,
+        error: result.error,
+      };
+
+      appendFileSync(outPath, `${JSON.stringify(record)}\n`, "utf8");
+
+      if (sleepMs && callIndex < totalCalls) {
+        await sleep(sleepMs);
+      }
+    }
+  }
+
+  console.log("");
+  console.log("=== done ===");
+  console.log("rows written:", totalCalls);
+  console.log("errors:", errors);
+  console.log("output:", outPath);
+
+  if (errors > 0) {
+    process.exit(1);
+  }
+}
+
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

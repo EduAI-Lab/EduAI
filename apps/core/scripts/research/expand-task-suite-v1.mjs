@@ -1,14 +1,10 @@
 #!/usr/bin/env node
 /**
  * One-shot expansion script for task suite v1 (48 → 120 prompts).
- * Run: node tools/research/expand-task-suite-v1.mjs
+ * Run: node apps/core/scripts/research/expand-task-suite-v1.mjs
  */
 import { readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const PROMPTS_PATH = join(__dirname, "../../../docs/research/data/task-suite/prompts.v1.jsonl");
+import { PROMPTS_PATH } from "./paths.mjs";
 
 const NEW_PROMPTS = [
   // easy ×19 (ts-049–067)

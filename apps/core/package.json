@@ -23,8 +23,9 @@
     "eval:adhd": "node scripts/eval-adhd-assist.mjs",
     "bench:chat": "node ./scripts/chat-latency-bench.mjs",
     "vllm:smoke": "node ./scripts/vllm-smoke.mjs",
-    "research:validate-suite": "node ../../tools/research/validate-task-suite.mjs",
-    "research:assign-splits": "node ../../tools/research/assign-splits.mjs",
+    "research:validate-suite": "node ./scripts/research/validate-task-suite.mjs",
+    "research:assign-splits": "node ./scripts/research/assign-splits.mjs",
+    "research:run-both-tier": "node ./scripts/research/run-both-tier-baseline.mjs",
     "test:embedding": "tsx scripts/test-embedding.ts"
   },
   "dependencies": {

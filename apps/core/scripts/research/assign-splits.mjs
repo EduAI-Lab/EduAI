@@ -5,13 +5,7 @@
  */
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const SUITE_DIR = join(__dirname, "../../../docs/research/data/task-suite");
-const PROMPTS_PATH = join(SUITE_DIR, "prompts.v1.jsonl");
-const SPLITS_PATH = join(SUITE_DIR, "splits.json");
+import { PROMPTS_PATH, SPLITS_PATH } from "./paths.mjs";
 const TEST_FRACTION = 0.2;
 
 function bucket(id) {
