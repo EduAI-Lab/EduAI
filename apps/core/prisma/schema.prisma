@@ -12,28 +12,29 @@ datasource db {
 }
 
 model User {
-  id               String                 @id @default(cuid())
-  email            String                 @unique
-  name             String
-  image            String?
-  role             UserRole
-  isActive         Boolean                @default(true)
-  createdAt        DateTime               @default(now())
-  updatedAt        DateTime               @updatedAt
-  emailVerified    Boolean                @default(false)
-  authorizedUnits  String[]
-  accounts         Account[]
-  aiInteractions   AIInteraction[]
-  enrollments      Enrollment[]
-  questions        Question[]
-  sessions         Session[]
-  providerSettings UserProviderSettings[]
-  apiKeys          apikey[]
-  chats            Chat[]
-  externalUsers    ExternalUser[]
-  bugReports       BugReport[]
-  uploadedMaterials CourseMaterial[] @relation("MaterialUploader")
-  createdTopics     CourseTopic[]    @relation("TopicCreator")
+  id                String                 @id @default(cuid())
+  email             String                 @unique
+  name              String
+  image             String?
+  role              UserRole
+  isActive          Boolean                @default(true)
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  emailVerified     Boolean                @default(false)
+  authorizedUnits   String[]
+  accounts          Account[]
+  aiInteractions    AIInteraction[]
+  enrollments       Enrollment[]
+  questions         Question[]
+  sessions          Session[]
+  providerSettings  UserProviderSettings[]
+  apiKeys           apikey[]
+  chats             Chat[]
+  externalUsers     ExternalUser[]
+  preference        UserPreference?
+  bugReports        BugReport[]
+  uploadedMaterials CourseMaterial[]       @relation("MaterialUploader")
+  createdTopics     CourseTopic[]          @relation("TopicCreator")
   canvasIntegration CanvasIntegration?
 
   @@map("user")
@@ -235,6 +236,18 @@ model UserProviderSettings {
 
   @@unique([userId, providerId])
   @@map("user_provider_settings")
+}
+
+model UserPreference {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  assistDefault  Boolean  @default(false)
+  lastCourseCode String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_preferences")
 }
 
 model CourseMaterial {

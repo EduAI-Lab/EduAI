@@ -23,6 +23,7 @@ A production-ready chat platform with Retrieval-Augmented Generation (RAG) capab
 - **Simple Integration**: Clean REST API endpoints for easy integration
 - **Vector Storage**: PGVector-powered embeddings on PostgreSQL for efficient similarity search
 - **Role-based Access**: Support for students, professors, and administrators
+- **Persisted Chat Preferences**: Assistive mode and the selected course are saved per user, restored on every page load and new chat, and cleared on logout
 
 ## Prerequisites
 
