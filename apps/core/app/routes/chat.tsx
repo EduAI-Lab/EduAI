@@ -1,5 +1,5 @@
 import { useChat } from '@ai-sdk/react';
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { redirect, useLoaderData } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { ChatWelcome } from "~/components/chat/chat-welcome";
@@ -76,6 +76,76 @@ export default function Chat() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { apiKeys, getValidApiKeys, updateProviderSettings, removeProviderSettings, isProviderConfigured } = useApiKeys();
 
+  const chatOptsRef = useRef({
+    selectedModel,
+    selectedCourseCode,
+    chatId,
+    systemPrompt,
+    adhdAssist,
+    getValidApiKeys,
+  });
+
+  useEffect(() => {
+    chatOptsRef.current = {
+      selectedModel,
+      selectedCourseCode,
+      chatId,
+      systemPrompt,
+      adhdAssist,
+      getValidApiKeys,
+    };
+  }, [selectedModel, selectedCourseCode, chatId, systemPrompt, adhdAssist, getValidApiKeys]);
+
+  const buildChatRequestBody = useCallback(
+    () => ({
+      model: chatOptsRef.current.selectedModel,
+      apiKeys: chatOptsRef.current.getValidApiKeys(),
+      courseCode: chatOptsRef.current.selectedCourseCode || undefined,
+      chatId: chatOptsRef.current.chatId || undefined,
+      systemPrompt: chatOptsRef.current.systemPrompt || undefined,
+      adhdAssist: chatOptsRef.current.adhdAssist,
+    }),
+    [],
+  );
+
+  const chatBody = useMemo(
+    () => buildChatRequestBody(),
+    [buildChatRequestBody, selectedModel, selectedCourseCode, chatId, systemPrompt, adhdAssist, apiKeys],
+  );
+
+  const { messages, input, handleInputChange, handleSubmit: useChatHandleSubmit, isLoading, stop } = useChat({
+    api: "/api/chat",
+    body: chatBody,
+    experimental_prepareRequestBody: ({ id, messages, requestData, requestBody }) => ({
+      id,
+      messages,
+      data: requestData,
+      ...buildChatRequestBody(),
+      ...requestBody,
+    }),
+    onResponse: async (response) => {
+      if (!response.ok) {
+        const text = await response.clone().text().catch(() => "");
+        console.error("[chat] request failed", response.status, text);
+      }
+      // Extract chatId from response headers
+      const chatIdHeader = response.headers.get('X-Chat-Id');
+      if (chatIdHeader && !chatId) {
+        setChatId(chatIdHeader);
+      }
+    },
+    onError: (error) => {
+      console.error("[chat] stream error", error);
+    },
+  });
+
+  const handleSubmit = useCallback(
+    (event: React.FormEvent<HTMLFormElement>) => {
+      useChatHandleSubmit(event, { body: buildChatRequestBody() });
+    },
+    [useChatHandleSubmit, buildChatRequestBody],
+  );
+
   // Fetch available courses
   useEffect(() => {
     const fetchCourses = async () => {
@@ -103,29 +173,7 @@ export default function Chat() {
         })
         .catch(console.error);
     }
-  }, [chatId]);
-
-  const { messages, input, handleInputChange, handleSubmit, isLoading, stop } = useChat({
-    api: "/api/chat",
-    body: () => ({
-      model: selectedModel,
-      apiKeys: getValidApiKeys(),
-      courseCode: selectedCourseCode || undefined,
-      chatId: chatId || undefined,
-      systemPrompt: systemPrompt || undefined,
-      adhdAssist,
-    }),
-    onResponse: async (response) => {
-      // Extract chatId from response headers
-      const chatIdHeader = response.headers.get('X-Chat-Id');
-      if (chatIdHeader && !chatId) {
-        setChatId(chatIdHeader);
-      }
-    },
-    onFinish: async (message) => {
-      // chatId is already captured from headers in onResponse
-    },
-  });
+  }, [chatId, systemPrompt]);
 
   const selectedModelInfo = chatModels.find((model: any) => model.id === selectedModel);
 

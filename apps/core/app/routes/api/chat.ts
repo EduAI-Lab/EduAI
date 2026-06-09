@@ -666,6 +666,11 @@ export async function action({ request }: ActionFunctionArgs) {
       return new Response(
         JSON.stringify({
           error: `Provider "${parsedModel.providerId}" is not available on this server. Set ${envHint} in apps/core/.env and restart the dev process.`,
+          model: resolvedModelId,
+          hint:
+            parsedModel.providerId === "vllm"
+              ? "Run npm run db:sync-ai-providers and confirm VLLM_BASE_URL is set."
+              : undefined,
         }),
         {
           status: 400,
