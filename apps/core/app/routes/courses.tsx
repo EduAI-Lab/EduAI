@@ -39,8 +39,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
     taCourseIds = rows.map((r) => r.courseId)
   }
   if (session.user.role === 'STUDENT') {
-    const rows = await prisma.courseEnrollment.findMany({
-      where: { studentId: session.user.id, isActive: true },
+    const rows = await prisma.enrollment.findMany({
+      where: { userId: session.user.id, isActive: true },
       select: { courseId: true },
     })
     enrolledCourseIds = rows.map((r) => r.courseId)
