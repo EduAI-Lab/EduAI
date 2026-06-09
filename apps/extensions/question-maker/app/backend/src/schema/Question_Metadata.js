@@ -44,6 +44,16 @@ export const Question_Metadata = sequelize.define('Question_Metadata', {
     field: 'question_order',
     comment: 'Dictionary mapping assessment IDs to order numbers: {assessmentId: orderNumber}'
   },
+  createdBy: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    field: 'created_by',
+    references: {
+      model: 'users',
+      key: 'id'
+    },
+    comment: 'users.id of the creator (RBAC §16/§19 TA own-only). Null = no owner → instructor-and-up only.'
+  },
   createdAt: {
     type: DataTypes.DATE,
     allowNull: false,
