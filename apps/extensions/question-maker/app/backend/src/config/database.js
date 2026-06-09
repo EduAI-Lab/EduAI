@@ -150,6 +150,23 @@ export const connectDatabase = async (options = {}) => {
     // Only sync if we have a connection
     if (isConnected) {
       try {
+        // Cast secondary_topics_id from integer[] to TEXT[] if it was created with the old type
+        await sequelize.query(`
+          DO $$ BEGIN
+            IF EXISTS (
+              SELECT 1 FROM information_schema.columns
+              WHERE table_name = 'variants'
+                AND column_name = 'secondary_topics_id'
+                AND udt_name = '_int4'
+            ) THEN
+              ALTER TABLE variants ALTER COLUMN secondary_topics_id TYPE TEXT[] USING secondary_topics_id::TEXT[];
+            END IF;
+          END $$;
+        `);
+      } catch (preMigrationError) {
+        logger.warn({ err: preMigrationError }, 'Pre-sync migration failed (non-fatal)');
+      }
+      try {
         await sequelize.sync({ alter: true });
         logger.info('Database schema synchronized');
       } catch (syncError) {

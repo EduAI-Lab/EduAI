@@ -5,7 +5,7 @@
 
 */
 -- DropIndex
-DROP INDEX "course_materials_checksum_key";
+DROP INDEX IF EXISTS "course_materials_checksum_key";
 
 -- CreateIndex
-CREATE UNIQUE INDEX "course_materials_courseId_checksum_key" ON "course_materials"("courseId", "checksum");
+CREATE UNIQUE INDEX IF NOT EXISTS "course_materials_courseId_checksum_key" ON "course_materials"("courseId", "checksum");
