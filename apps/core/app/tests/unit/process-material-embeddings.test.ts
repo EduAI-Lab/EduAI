@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-const { prismaMock, txDeleteMany, txCreate, txExecuteRaw, embedMany } = vi.hoisted(() => {
+const { prismaMock, txDeleteMany, txCreateManyAndReturn, txExecuteRaw, embedMany } = vi.hoisted(() => {
   const txDeleteMany = vi.fn();
-  const txCreate = vi.fn();
+  const txCreateManyAndReturn = vi.fn();
   const txExecuteRaw = vi.fn();
   const embedMany = vi.fn();
 
@@ -17,14 +17,14 @@ const { prismaMock, txDeleteMany, txCreate, txExecuteRaw, embedMany } = vi.hoist
       await fn({
         materialChunk: {
           deleteMany: txDeleteMany,
-          create: txCreate,
+          createManyAndReturn: txCreateManyAndReturn,
         },
         $executeRaw: txExecuteRaw,
       });
     }),
   };
 
-  return { prismaMock, txDeleteMany, txCreate, txExecuteRaw, embedMany };
+  return { prismaMock, txDeleteMany, txCreateManyAndReturn, txExecuteRaw, embedMany };
 });
 
 vi.mock("~/lib/prisma.server", () => ({ default: prismaMock }));
@@ -57,7 +57,7 @@ describe("processMaterialEmbeddings", () => {
     });
     process.env.EMBEDDING_PROVIDER = "cloud";
     process.env.OPENAI_API_KEY = "test-key";
-    txCreate.mockResolvedValue({ id: "chunk-1" });
+    txCreateManyAndReturn.mockResolvedValue([{ id: "chunk-1", index: 0 }]);
     embedMany.mockResolvedValue({ embeddings: [sampleEmbedding] });
   });
 
@@ -84,13 +84,13 @@ describe("processMaterialEmbeddings", () => {
 
     expect(prismaMock.$transaction).toHaveBeenCalled();
     expect(txDeleteMany).toHaveBeenCalledWith({ where: { materialId: "mat-1" } });
-    expect(txCreate).toHaveBeenCalled();
+    expect(txCreateManyAndReturn).toHaveBeenCalled();
   });
 
   it("does not delete existing chunks on first ingest (no replace option)", async () => {
     await processMaterialEmbeddings("mat-1", "Hello world.");
 
     expect(txDeleteMany).not.toHaveBeenCalled();
-    expect(txCreate).toHaveBeenCalled();
+    expect(txCreateManyAndReturn).toHaveBeenCalled();
   });
 });

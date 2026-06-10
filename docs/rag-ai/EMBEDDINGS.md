@@ -46,7 +46,7 @@ Keyword search (e.g. searching for the word “syllabus”) only finds documents
 
 ### Chunks: we embed paragraphs, not whole PDFs
 
-Course materials are usually long. Embedding the entire syllabus as one vector would blur many topics into a single point and make retrieval vague. So we **split** extracted text into **chunks** — overlapping segments of roughly **800 characters** with about **80 characters** of overlap between neighbors (`generateChunks()`). Each chunk gets its own vector. At question time we retrieve the **top few chunks** (capped in chat code), not the whole course library.
+Course materials are usually long. Embedding the entire syllabus as one vector would blur many topics into a single point and make retrieval vague. So we **split** extracted text into **chunks**. On the upload path, `applySemanticChunking()` in `file-processing.ts` produces header-aware segments (~1500 chars) joined with a delimiter; `processMaterialEmbeddings()` splits on that delimiter instead of re-chunking. Content that did not pass through upload (or has no delimiter) still uses overlapping sentence-based chunks (~800 chars, ~80 overlap) via `generateChunks()`. Each chunk gets its own vector. At question time we retrieve the **top few chunks** (capped in chat code), not the whole course library.
 
 ### Dimensionality (1024, 768, 3072, etc.)
 
@@ -64,15 +64,16 @@ For the full upload → chat pipeline, see [Two lifecycles](#two-lifecycles-writ
 
 **Steps:**
 
-1. `generateChunks(content)` — sentence-based chunks with overlap.
-2. `generateEmbeddings(chunks)` — `embedMany` via Ollama or cloud ([provider order](#provider-selection)).
-3. Insert `material_chunks` (text) + `material_embeddings` (vector via raw SQL).
-4. Material status → `READY` or `FAILED`.
+1. `processUploadedFile()` → `applySemanticChunking()` → content joined with `SEMANTIC_CHUNK_SEPARATOR`.
+2. `resolveMaterialChunks(content)` in `processMaterialEmbeddings()` — splits on the separator when present, else `generateChunks()` with provider-aware chunk sizes (smaller for local Ollama).
+3. `generateEmbeddings(chunks)` — `embedMany` via Ollama or cloud ([provider order](#provider-selection)).
+4. Batch-insert `material_chunks` via `createManyAndReturn`, then insert `material_embeddings` (vector via raw SQL) in one transaction.
+5. Material status → `READY` or `FAILED`.
 
 ```mermaid
 flowchart LR
-  A[PDF / document upload] --> B[Extract rawText]
-  B --> C[generateChunks]
+  A[PDF / document upload] --> B[applySemanticChunking]
+  B --> C[resolveMaterialChunks]
   C --> D[embedMany local or cloud]
   D --> E[(Postgres: chunks + vectors)]
 ```
@@ -156,7 +157,7 @@ OPENROUTER_API_KEY=sk-or-...
 
 ### Provider selection
 
-`getEmbeddingModel()` resolution in [`embedding.ts`](../../apps/core/app/lib/ai/embedding.ts) (logged as `[embedding]`):
+`getCloudEmbeddingModel()` / `getLocalEmbeddingModel()` resolution in [`embedding.ts`](../../apps/core/app/lib/ai/embedding.ts) (logged as `[embedding]`):
 
 **When `EMBEDDING_PROVIDER=local` or `ollama`:**
 
@@ -321,7 +322,9 @@ pgvector enabled via migration (`CREATE EXTENSION IF NOT EXISTS vector`). Prisma
 
 | Function | File | Role |
 | -------- | ---- | ---- |
-| `generateChunks` | `embedding.ts` | Split material text |
+| `generateChunks` | `embedding.ts` | Sentence-based fallback splitter |
+| `resolveMaterialChunks` | `embedding.ts` | Upload semantic chunks or fallback |
+| `joinSemanticChunks` / `SEMANTIC_CHUNK_SEPARATOR` | `file-processing.ts` | Serialize semantic chunks on upload |
 | `generateEmbeddings` / `generateEmbedding` | `embedding.ts` | Local or cloud embed API |
 | `processMaterialEmbeddings` | `embedding.ts` | Index one material |
 | `reEmbedCourseMaterials` | `embedding.ts` | Re-index all materials in a course |

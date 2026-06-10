@@ -181,7 +181,7 @@ Defined in [`embedding.ts`](../../apps/core/app/lib/ai/embedding.ts):
 
 Signature: `findRelevantContent(userQuery, courseId, limit = 6, similarityThreshold?: number)` — omitting `similarityThreshold` reads **`RAG_SIMILARITY_THRESHOLD`** from the environment.
 
-**Ingestion (offline):** `processMaterialEmbeddings` → `generateChunks` (800 chars, 80 overlap) → `generateEmbeddings` via batched `embedMany` (`EMBED_MANY_BATCH_SIZE` default 64) → `MaterialChunk` + `material_embeddings` in one transaction.
+**Ingestion (offline):** `processMaterialEmbeddings` → `resolveMaterialChunks` (semantic chunks from upload when `SEMANTIC_CHUNK_SEPARATOR` is present, else `generateChunks` at 800 chars / 80 overlap) → `generateEmbeddings` via batched `embedMany` (`EMBED_MANY_BATCH_SIZE` default 64) → batch `MaterialChunk` insert + `material_embeddings` in one transaction. Re-upload materials to pick up improved chunk boundaries for files indexed before this fix.
 
 ## 5. LLM execution and response
 
