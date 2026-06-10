@@ -66,13 +66,6 @@ export default function UnsupportedRolePage() {
             <button type="button" onClick={handleLogout} className="btn-primary">
               Sign out
             </button>
-            <button
-              type="button"
-              onClick={() => navigate('/', { replace: true })}
-              className="btn-ghost"
-            >
-              Back to home
-            </button>
           </div>
         </div>
       </div>
