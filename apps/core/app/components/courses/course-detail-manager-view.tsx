@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { IconTrash, IconPlus, IconUsers, IconCalendar, IconUserCheck, IconArrowsExchange } from '@tabler/icons-react'
+import { IconTrash, IconPlus, IconUsers, IconCalendar, IconUserCheck, IconArrowsExchange, IconUserPlus } from '@tabler/icons-react'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { Badge } from '~/components/ui/badge'
@@ -12,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '~/components/ui/select'
+import { Checkbox } from '~/components/ui/checkbox'
 import {
   CourseMaterialsUpload,
   type CourseMaterial,
@@ -72,7 +73,8 @@ export function CourseDetailManagerView({
   const [staffError, setStaffError] = useState<string | null>(null)
   const [staffSuccess, setStaffSuccess] = useState<string | null>(null)
   const [selectedInstructorId, setSelectedInstructorId] = useState<string>('')
-  const [selectedTAId, setSelectedTAId] = useState<string>('')
+  const [selectedTAIds, setSelectedTAIds] = useState<Set<string>>(new Set())
+  const [addingTAs, setAddingTAs] = useState(false)
   const canManage = canManageTopics(access)
   const canManageStaff = canManageInstructors(access)
 
@@ -101,17 +103,36 @@ export function CourseDetailManagerView({
     }
   }
 
-  const handleAddTA = async () => {
-    if (!selectedTAId) return
+  const handleAddTAs = async () => {
+    if (selectedTAIds.size === 0) return
+    setAddingTAs(true)
     setStaffError(null)
     setStaffSuccess(null)
-    try {
-      await onAddTA(selectedTAId)
-      setStaffSuccess('TA added successfully')
-      setSelectedTAId('')
-    } catch (e) {
-      setStaffError(e instanceof Error ? e.message : 'Failed to add TA')
+    const ids = Array.from(selectedTAIds)
+    const failed: string[] = []
+    for (const id of ids) {
+      try {
+        await onAddTA(id)
+      } catch {
+        failed.push(id)
+      }
     }
+    setAddingTAs(false)
+    setSelectedTAIds(new Set())
+    if (failed.length === 0) {
+      setStaffSuccess(`${ids.length} TA${ids.length > 1 ? 's' : ''} added successfully`)
+    } else {
+      setStaffError(`${failed.length} of ${ids.length} TAs failed to add`)
+    }
+  }
+
+  const toggleTA = (id: string) => {
+    setSelectedTAIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
   }
 
   const handleRemoveTA = async (userId: string) => {
@@ -384,22 +405,34 @@ export function CourseDetailManagerView({
                   </div>
                 )}
                 {availableTAs.length > 0 ? (
-                  <div className="flex gap-2">
-                    <Select value={selectedTAId} onValueChange={setSelectedTAId}>
-                      <SelectTrigger className="flex-1">
-                        <SelectValue placeholder="Select a TA to add" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {availableTAs.map((u) => (
-                          <SelectItem key={u.id} value={u.id}>
-                            {u.name} ({u.email})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Button onClick={handleAddTA} disabled={!selectedTAId}>
-                      <IconPlus className="w-4 h-4 mr-1" />
-                      Add TA
+                  <div className="flex flex-col gap-2">
+                    <p className="text-xs text-muted-foreground">Select one or more TAs to add:</p>
+                    <div className="rounded-md border divide-y max-h-48 overflow-y-auto">
+                      {availableTAs.map((u) => (
+                        <label
+                          key={u.id}
+                          className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-muted/50"
+                        >
+                          <Checkbox
+                            checked={selectedTAIds.has(u.id)}
+                            onCheckedChange={() => toggleTA(u.id)}
+                          />
+                          <div className="flex flex-col min-w-0">
+                            <span className="text-sm font-medium truncate">{u.name}</span>
+                            <span className="text-xs text-muted-foreground truncate">{u.email}</span>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                    <Button
+                      onClick={handleAddTAs}
+                      disabled={selectedTAIds.size === 0 || addingTAs}
+                      className="self-end"
+                    >
+                      <IconUserPlus className="w-4 h-4 mr-1" />
+                      {addingTAs
+                        ? 'Adding…'
+                        : `Add ${selectedTAIds.size > 0 ? `${selectedTAIds.size} ` : ''}TA${selectedTAIds.size !== 1 ? 's' : ''}`}
                     </Button>
                   </div>
                 ) : (
