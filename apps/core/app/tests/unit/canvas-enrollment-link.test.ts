@@ -77,6 +77,38 @@ describe("linkEnrollmentsFromStagingForCourse", () => {
     expect(linked).toBe(0);
     expect(prisma.enrollment.upsert).not.toHaveBeenCalled();
   });
+
+  it("links enrollments when roster sisUserId is encrypted at rest", async () => {
+    vi.stubEnv("ENCRYPTION_KEY", "test-encryption-key-32bytes!!");
+    const { prepareRosterSisUserIdStorage, prepareStudentIdStorage } = await import(
+      "~/lib/canvas/student-id.server"
+    );
+    const roster = prepareRosterSisUserIdStorage("student_1");
+    const user = prepareStudentIdStorage("student_1");
+
+    vi.mocked(prisma.canvasRosterMember.findMany).mockResolvedValue([
+      {
+        id: "staging-1",
+        role: "STUDENT",
+        sisUserId: roster.sisUserId,
+        canvasUserId: "101",
+      },
+    ] as never);
+    vi.mocked(prisma.user.findMany).mockResolvedValue([
+      { id: "user-1", studentId: user.studentId },
+    ] as never);
+    vi.mocked(prisma.enrollment.upsert).mockResolvedValue({} as never);
+
+    const linked = await linkEnrollmentsFromStagingForCourse("course-1");
+
+    expect(linked).toBe(1);
+    expect(prisma.enrollment.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({ isActive: true }),
+      }),
+    );
+    vi.unstubAllEnvs();
+  });
 });
 
 describe("resolveCanvasEnrollmentsForUser", () => {
@@ -87,6 +119,7 @@ describe("resolveCanvasEnrollmentsForUser", () => {
   it("links all active staging rows for the user's studentId", async () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValue({
       studentId: "student_2",
+      studentIdLookup: null,
     } as never);
     vi.mocked(prisma.canvasRosterMember.findMany).mockResolvedValue([
       { courseId: "course-a", role: "STUDENT", canvasUserId: "202" },

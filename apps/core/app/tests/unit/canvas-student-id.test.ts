@@ -41,4 +41,27 @@ describe("student-id encryption", () => {
     expect(prepared.studentIdLookup).toMatch(/^[a-f0-9]{64}$/);
     expect(readStoredStudentId(prepared.studentId)).toBe("student_2");
   });
+
+  it("prepareRosterSisUserIdStorage mirrors user storage for roster matching", async () => {
+    vi.stubEnv("ENCRYPTION_KEY", TEST_KEY);
+    const {
+      prepareRosterSisUserIdStorage,
+      prepareStudentIdStorage,
+      readStoredStudentId,
+      rosterSisUserIdMatchFilter,
+      studentIdLookupKey,
+    } = await import("~/lib/canvas/student-id.server");
+
+    const rosterPrepared = prepareRosterSisUserIdStorage("12345678");
+    const userPrepared = prepareStudentIdStorage("12345678");
+
+    expect(rosterPrepared.sisUserIdLookup).toBe(userPrepared.studentIdLookup);
+    expect(readStoredStudentId(rosterPrepared.sisUserId)).toBe("12345678");
+    expect(rosterSisUserIdMatchFilter("12345678")).toEqual({
+      OR: [
+        { sisUserIdLookup: studentIdLookupKey("12345678") },
+        { sisUserId: "12345678", sisUserIdLookup: null },
+      ],
+    });
+  });
 });
