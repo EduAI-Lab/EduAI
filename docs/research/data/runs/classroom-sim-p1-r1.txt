@@ -1,0 +1,22 @@
+=== Classroom simulation (Step 6) ===
+Generated: 2026-06-10T06:31:40.866Z
+policy: P1
+split: test
+students: 30
+concurrency: 5
+wall_time_ms: 103835
+
+OK: 30/30
+errors: 0
+
+Latency (OK only, ms):
+  mean: 10982
+  p50: 11395
+  p95: 21458
+  max: 30778
+
+routing_tier: tier1=9 tier3=21 unknown=0
+
+Interpretation:
+- Compare p50/p95 to sequential Step 5 means (~11s test P1).
+- Higher p95 under concurrency indicates GPU queueing on single vLLM host.

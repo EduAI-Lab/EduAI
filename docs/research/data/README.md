@@ -20,6 +20,7 @@ This folder holds **artifacts from the two-tier routing research program** (7B +
 | **5 merge** | `npm run research:merge-policy-v3` | Merge v2 runs + tool-stratum reruns → v3 |
 | **5 spot-check** | `npm run research:spot-check-labels` | Stricter judge on 10 hard dev prompts |
 | **6** | `npm run research:run-classroom` | Synthetic concurrent load (see below) |
+| **6b** | `npm run research:summarize-classroom-replicates` | Mean ± std over replicate summary files |
 
 Scripts live under `apps/core/scripts/research/`. Task suite: `apps/core/scripts/research/data/task-suite/prompts.v1.jsonl` (120 prompts; dev/test splits).
 
@@ -40,7 +41,10 @@ docs/research/data/
     ├── hard-spot-check.v1.jsonl     # gitignored
     ├── classroom-sim-summary.v1.txt   # Step 6 P1 (tracked)
     ├── classroom-sim-p0-summary.v1.txt
-    └── classroom-sim*.jsonl           # gitignored
+    ├── classroom-sim-p1-r{1,2,3}.txt      # replicate summaries (tracked)
+    ├── classroom-sim-p0-r{1,2,3}.txt
+    ├── classroom-sim-replicates-summary.txt
+    └── classroom-sim*.jsonl               # gitignored
 ```
 
 ---
@@ -114,16 +118,30 @@ This models *“several students submit at once on one shared GPU host”* align
 
 #### Documented runs
 
-| Run | Policy | Students | Concurrency | OK | mean (ms) | p50 | p95 | wall (s) | tier1 / tier3 | Summary file |
-|-----|--------|----------|-------------|-----|-----------|-----|-----|----------|---------------|--------------|
-| classroom-v1 | P1 (auto) | 30 | 5 | 30/30 | 11163 | 11379 | 22062 | 109 | 9 / 21 | `classroom-sim-summary.v1.txt` |
-| classroom-p0-v1 | P0 (always 32B) | 30 | 5 | 30/30 | 11914 | 12229 | 19253 | 103 | 0 / 30 | `classroom-sim-p0-summary.v1.txt` |
+**Pilot (single run each):**
 
-**P1 vs P0 under load (single run, same workload):** P1 mean latency **~6% lower** than P0 (11.2s vs 11.9s) because 9 requests used tier 1. P1 **p95 was higher** (22.1s vs 19.3s) in this run — tier mix and wave ordering affect tails; treat as indicative, not definitive, without repeats.
+| Run | Policy | mean (ms) | p95 (ms) | wall (s) | Summary |
+|-----|--------|-----------|----------|----------|---------|
+| classroom-v1 | P1 | 11163 | 22062 | 109 | `classroom-sim-summary.v1.txt` |
+| classroom-p0-v1 | P0 | 11914 | 19253 | 103 | `classroom-sim-p0-summary.v1.txt` |
 
-P1 run: tier1=9, tier3=21 under load. Both policies show p95 > p50 vs ~11s sequential Step 5 mean → queueing on a single GPU host.
+**Replicates (3 runs each — use for paper):** `npm run research:summarize-classroom-replicates`  
+Aggregate: `classroom-sim-replicates-summary.txt`
 
-**JSONL (gitignored):** `classroom-sim.v1.jsonl`, `classroom-sim-p0.v1.jsonl`.
+| Policy | mean (ms) | p50 (ms) | p95 (ms) | wall (s) | tier1 / tier3 |
+|--------|-----------|----------|----------|----------|---------------|
+| P1 (n=3) | 10977 ± 95 | 11774 ± 432 | 20230 ± 1667 | 103.3 ± 1.3 | 9 / 21 |
+| P0 (n=3) | 11439 ± 213 | 11420 ± 573 | 20361 ± 3046 | 100.8 ± 3.7 | 0 / 30 |
+
+Per-run files: `classroom-sim-p1-r{1,2,3}.txt`, `classroom-sim-p0-r{1,2,3}.txt`.
+
+**P1 vs P0 (replicate means):** P1 mean latency **~4% lower** than P0 (11.0s vs 11.4s). p95 is similar (~20s both); high variance on tails (±1.7–3.0s) — report as mean ± std, not single runs.
+
+Both policies show p95 > p50 vs ~11s sequential Step 5 mean → queueing on a single GPU host.
+
+**Batch replicates on s378:** `bash scripts/research/run-classroom-replicates.sh` (from `apps/core`).
+
+**JSONL (gitignored):** `classroom-sim*.jsonl`, `/tmp/classroom-*-r*.jsonl` on server.
 
 #### How to run (on s378)
 
