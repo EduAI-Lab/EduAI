@@ -15,7 +15,10 @@ const baseProps = {
   input: "",
   isLoading: false,
   adhdAssist: false,
-  onAssistChange: () => {},
+  assistive: false,
+  onAssistiveChange: () => {},
+  focusMode: false,
+  onFocusModeChange: () => {},
   systemPrompt: null,
   onSystemPromptSave: async () => {},
   onInputChange: () => {},
@@ -36,10 +39,10 @@ describe("Chat views — role layouts", () => {
 });
 
 describe("Chat views — assistive mode toggle", () => {
-  it("calls onAssistChange when the assistive mode switch is clicked", () => {
-    const onAssistChange = vi.fn();
-    render(<ChatGlobalView {...baseProps} onAssistChange={onAssistChange} />);
+  it("calls onAssistiveChange when the assistive mode switch is clicked", () => {
+    const onAssistiveChange = vi.fn();
+    render(<ChatGlobalView {...baseProps} onAssistiveChange={onAssistiveChange} />);
     fireEvent.click(screen.getByRole("switch", { name: /assistive mode/i }));
-    expect(onAssistChange).toHaveBeenCalledWith(true);
+    expect(onAssistiveChange).toHaveBeenCalledWith(true);
   });
 });
