@@ -57,6 +57,9 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 - [core] fix: `re-embed-course` script resolves courses by code with `findFirst` since `code` alone is not unique. (#561, @abdullahmoh21, 2026-06-11)
 
+### Fixed
+- [core] fix: ADHD oversight edge cases from pre-PR review (#493) — preserve ineligible draft text instead of empty responses; reject LLM rewrites that exceed word cap; persist all assistant tool-step messages with overseen text on the final turn; return overseen draft on post-audit persistence failures instead of 500. (#493, @Ayyhab, 2026-06-09)
+
 ---
 
 ## [Week 6 — June 8–12, 2026]

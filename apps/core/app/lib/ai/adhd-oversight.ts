@@ -158,11 +158,19 @@ export async function auditAndMaybeRewrite(args: {
     computeAdhdResponseMetrics(trimmed, { wordCap }),
   );
 
-  if (!trimmed || !isOversightEligibleDraft(trimmed)) {
+  if (!trimmed) {
+    return emptyOversightAuditResult();
+  }
+
+  if (!isOversightEligibleDraft(trimmed)) {
     return {
-      ...emptyOversightAuditResult(),
+      text: trimmed,
+      rewritten: false,
+      method: "none",
       beforeMetrics,
       afterMetrics: beforeMetrics,
+      oversightDurationMs: 0,
+      oversightUsage: null,
     };
   }
 
@@ -211,6 +219,7 @@ export async function auditAndMaybeRewrite(args: {
 
     const useLlm =
       llmText.length > 0 &&
+      afterMetrics.underCap &&
       (afterMetrics.structuralPass ||
         structuralScore(afterMetrics) > structuralScore(beforeMetrics));
 
