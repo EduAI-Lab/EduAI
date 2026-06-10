@@ -81,8 +81,11 @@ DATABASE_URL="postgresql://USER:PASSWORD@HOST:PORT/DATABASE?schema=public"
 BETTER_AUTH_SECRET="" # REQUIRED: Generate a strong random secret (e.g., `openssl rand -base64 32`)
 BETTER_AUTH_URL="http://localhost:5173" # Base URL of your app
 
-OPENROUTER_API_KEY="" # Embeddings via OpenRouter (recommended if you have one key for many models)
-GOOGLE_GENERATIVE_AI_API_KEY="" # Direct Gemini embeddings (used when OPENROUTER_API_KEY is unset)
+OPENROUTER_API_KEY="" # Embeddings — see docs/rag-ai/EMBEDDINGS.md (local Ollama or cloud 1024-dim)
+GOOGLE_GENERATIVE_AI_API_KEY="" # Direct Gemini embeddings (legacy 3072 path only)
+EMBEDDING_PROVIDER="local" # local | cloud — dev server uses Ollama mxbai-embed-large
+EMBEDDING_DIMENSION="1024" # Must match pgvector column (LOCAL-EMBEDDINGS)
+OLLAMA_EMBEDDING_MODEL="mxbai-embed-large"
 OLLAMA_BASE_URL="http://localhost:11434/"
 FIRECRAWL_API_KEY="" # Required for Firecrawl web search tool. If not set, web search is unavailable.
 
