@@ -69,6 +69,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   return {
     chatModels,
+    serverOpenRouterAvailable: Boolean(process.env.OPENROUTER_API_KEY?.trim()),
     user: session.user,
     ...preferences,
   };
@@ -100,13 +101,14 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function Chat() {
-  const { chatModels, user, lastCourseCode } = useLoaderData<typeof loader>();
+  const { chatModels, serverOpenRouterAvailable, user, lastCourseCode } = useLoaderData<typeof loader>();
   const { assistive, setAssistive } = useAssistiveUi();
-  const [selectedModel, setSelectedModel] = useState(chatModels.length > 0 ? chatModels[0].id : '');
+  const [selectedModel, setSelectedModel] = useState("");
   const [selectedCourseCode, setSelectedCourseCode] = useState<string | null>(lastCourseCode);
   const [availableCourses, setAvailableCourses] = useState<Array<{ id: string; name: string; code: string }>>([]);
   const [chatId, setChatId] = useState<string | null>(null);
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
+  const [chatError, setChatError] = useState<string | null>(null);
   // Per-chat assist state: seeded from the account-level preference for new
   // chats; restored from the chat's own adhdAssist when opening an old chat
   // (without rewriting the account preference).
@@ -116,12 +118,18 @@ export default function Chat() {
   const prefsFetcher = useFetcher();
 
   const availableChatModels = useMemo(
-    () => filterModelsForApiKeys(chatModels, apiKeys),
-    [chatModels, apiKeys],
+    () => filterModelsForApiKeys(chatModels, apiKeys, { serverOpenRouterAvailable }),
+    [chatModels, apiKeys, serverOpenRouterAvailable],
   );
 
+  const requestApiKeys = useMemo(() => getValidApiKeys(), [apiKeys, getValidApiKeys]);
+
   useEffect(() => {
-    if (apiKeysLoading || availableChatModels.length === 0) return;
+    if (apiKeysLoading) return;
+    if (availableChatModels.length === 0) {
+      setSelectedModel("");
+      return;
+    }
     if (!availableChatModels.some((model) => model.id === selectedModel)) {
       setSelectedModel(availableChatModels[0].id);
     }
@@ -197,21 +205,34 @@ export default function Chat() {
     api: "/api/chat",
     body: {
       model: selectedModel,
-      apiKeys: getValidApiKeys(),
+      apiKeys: requestApiKeys,
       courseCode: selectedCourseCode || undefined,
       chatId: chatId || undefined,
       systemPrompt: systemPrompt || undefined,
       adhdAssist,
     },
     onResponse: async (response) => {
-      // Extract chatId from response headers
+      if (!response.ok) {
+        const text = await response.text();
+        try {
+          const data = JSON.parse(text);
+          setChatError(data.error || `Chat failed (${response.status})`);
+        } catch {
+          setChatError(text || `Chat failed (${response.status})`);
+        }
+        return;
+      }
+      setChatError(null);
       const chatIdHeader = response.headers.get('X-Chat-Id');
       if (chatIdHeader && !chatId) {
         setChatId(chatIdHeader);
       }
     },
-    onFinish: async (message) => {
-      // chatId is already captured from headers in onResponse
+    onError: (error) => {
+      setChatError(error.message || "Chat request failed");
+    },
+    onFinish: async () => {
+      setChatError(null);
     },
   });
 
@@ -291,6 +312,16 @@ export default function Chat() {
             <div className="h-full overflow-y-auto scrollbar-hover">
               <div className="px-4 py-6">
                 <div className="max-w-4xl mx-auto space-y-6">
+                  {chatError && (
+                    <div className="rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                      {chatError}
+                    </div>
+                  )}
+                  {!apiKeysLoading && availableChatModels.length === 0 && (
+                    <div className="rounded-lg border border-amber-500/50 bg-amber-500/10 px-4 py-3 text-sm">
+                      No model providers are configured. Open API key settings and add an OpenRouter key, or ask an admin to set <code>OPENROUTER_API_KEY</code> on the server.
+                    </div>
+                  )}
                   {messages.length === 0 ? (
                     <ChatWelcome
                       selectedModelInfo={selectedModelInfo}

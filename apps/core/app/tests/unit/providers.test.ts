@@ -15,6 +15,7 @@ import {
   isProviderConfigured,
   getAvailableProviders,
   filterModelsForApiKeys,
+  mergeServerOpenRouterApiKey,
   PROVIDER_CONFIGS,
 } from "~/lib/ai/providers.shared";
 import { createAIProviderRegistry } from "~/lib/ai/providers";
@@ -98,6 +99,27 @@ describe("filterModelsForApiKeys", () => {
       openrouter: { isEnabled: true, apiKey: "sk-or-test" },
     });
     expect(filtered.map((m) => m.id)).toEqual(["openrouter:google/gemini-2.5-flash"]);
+  });
+
+  it("includes openrouter models when server key is available", () => {
+    const filtered = filterModelsForApiKeys(models, {}, { serverOpenRouterAvailable: true });
+    expect(filtered.map((m) => m.id)).toEqual(["openrouter:google/gemini-2.5-flash"]);
+  });
+});
+
+describe("mergeServerOpenRouterApiKey", () => {
+  it("injects env key for openrouter models when client omitted it", () => {
+    const merged = mergeServerOpenRouterApiKey({}, "openrouter:google/gemini-2.5-flash", "sk-or-env");
+    expect(merged.openrouter).toEqual({ apiKey: "sk-or-env", isEnabled: true });
+  });
+
+  it("does not override an existing browser key", () => {
+    const merged = mergeServerOpenRouterApiKey(
+      { openrouter: { apiKey: "sk-or-browser", isEnabled: true } },
+      "openrouter:google/gemini-2.5-flash",
+      "sk-or-env",
+    );
+    expect(merged.openrouter?.apiKey).toBe("sk-or-browser");
   });
 });
 

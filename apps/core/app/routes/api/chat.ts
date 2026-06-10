@@ -3,7 +3,7 @@ import { UserRole } from "@prisma/client";
 import { randomUUID } from "crypto";
 import { streamText, tool } from "ai";
 import { createAIProviderRegistry, modelSupportsTools } from "~/lib/ai/providers";
-import { parseModelIdentifier, isProviderConfigured } from "~/lib/ai/providers.shared";
+import { parseModelIdentifier, isProviderConfigured, mergeServerOpenRouterApiKey } from "~/lib/ai/providers.shared";
 import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
 import { findRelevantContent } from "~/lib/ai/embedding";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
@@ -524,7 +524,11 @@ export async function action({ request }: ActionFunctionArgs) {
         },
       );
     }
-    const validatedApiKeys = toUserProviderSettings(apiKeysParsed.data);
+    const validatedApiKeys = mergeServerOpenRouterApiKey(
+      toUserProviderSettings(apiKeysParsed.data),
+      model,
+      process.env.OPENROUTER_API_KEY,
+    );
 
     const parsedModel = parseModelIdentifier(model);
     if (!parsedModel) {

@@ -23,6 +23,7 @@ export {
   getModelIdentifier,
   parseModelIdentifier,
   filterModelsForApiKeys,
+  mergeServerOpenRouterApiKey,
 } from './providers.shared';
 
 import type { UserProviderSettings } from './providers.shared';
@@ -100,6 +101,7 @@ export async function modelSupportsTools(modelIdentifier: string): Promise<boole
         },
         isActive: true,
       },
+      orderBy: { updatedAt: "desc" },
       select: {
         supportsTools: true,
         name: true,

@@ -118,9 +118,33 @@ export function parseModelIdentifier(
 export function filterModelsForApiKeys<T extends { id: string }>(
   models: T[],
   userSettings: UserProviderSettings,
+  options?: { serverOpenRouterAvailable?: boolean },
 ): T[] {
   return models.filter((model) => {
     const parsed = parseModelIdentifier(model.id);
-    return parsed !== null && isProviderConfigured(parsed.providerId, userSettings);
+    if (!parsed) return false;
+    if (parsed.providerId === "openrouter" && options?.serverOpenRouterAvailable) {
+      return true;
+    }
+    return isProviderConfigured(parsed.providerId, userSettings);
   });
+}
+
+/** Use server OPENROUTER_API_KEY when the client omitted a browser-stored key. */
+export function mergeServerOpenRouterApiKey(
+  settings: UserProviderSettings,
+  model: string,
+  serverKey?: string | null,
+): UserProviderSettings {
+  const parsed = parseModelIdentifier(model);
+  if (parsed?.providerId !== "openrouter") return settings;
+  if (isProviderConfigured("openrouter", settings)) return settings;
+
+  const apiKey = serverKey?.trim();
+  if (!apiKey) return settings;
+
+  return {
+    ...settings,
+    openrouter: { apiKey, isEnabled: true },
+  };
 }
