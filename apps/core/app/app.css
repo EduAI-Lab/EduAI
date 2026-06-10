@@ -220,10 +220,10 @@ body {
   }
 }
 
-/* Custom scrollbar styling - make scrollbars transparent/invisible */
+/* Thin scrollbars — visible but unobtrusive */
 * {
   scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
+  scrollbar-color: oklch(0.5 0 0 / 0.2) transparent;
 }
 
 *::-webkit-scrollbar {
@@ -236,23 +236,14 @@ body {
 }
 
 *::-webkit-scrollbar-thumb {
-  background: transparent;
+  background: oklch(0.5 0 0 / 0.2);
   border-radius: 3px;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: transparent;
+  background: oklch(0.5 0 0 / 0.35);
 }
 
 *::-webkit-scrollbar-corner {
   background: transparent;
-}
-
-/* For better UX, show scrollbar on hover for interactive elements */
-.scrollbar-hover:hover::-webkit-scrollbar-thumb {
-  background: oklch(0.5 0 0 / 0.2);
-}
-
-.scrollbar-hover:hover::-webkit-scrollbar-thumb:hover {
-  background: oklch(0.5 0 0 / 0.3);
 }
