@@ -3,6 +3,12 @@ import {
   normalizeStudentId,
   resolveCanvasEnrollmentsForUser,
 } from "~/lib/canvas/enrollment-link.server";
+import {
+  isLegacyPlaintextStudentId,
+  prepareStudentIdStorage,
+  readStoredStudentId,
+  studentIdMatchFilter,
+} from "~/lib/canvas/student-id.server";
 
 export class LinkRosterError extends Error {
   readonly statusCode: number;
@@ -53,7 +59,7 @@ export async function linkCanvasRoster(
     throw new LinkRosterError("User not found", 404);
   }
 
-  const currentStudentId = normalizeStudentId(user.studentId);
+  const currentStudentId = readStoredStudentId(user.studentId);
   if (currentStudentId && currentStudentId !== normalized) {
     auditLinkAttempt(userId, "failure", "student_id_already_set");
     throw new LinkRosterError(
@@ -64,7 +70,7 @@ export async function linkCanvasRoster(
 
   const takenByOther = await prisma.user.findFirst({
     where: {
-      studentId: normalized,
+      ...studentIdMatchFilter(normalized),
       id: { not: userId },
     },
     select: { id: true },
@@ -93,10 +99,13 @@ export async function linkCanvasRoster(
     );
   }
 
-  if (currentStudentId !== normalized) {
+  if (
+    currentStudentId !== normalized ||
+    isLegacyPlaintextStudentId(user.studentId)
+  ) {
     await prisma.user.update({
       where: { id: userId },
-      data: { studentId: normalized },
+      data: prepareStudentIdStorage(normalized),
     });
   }
 

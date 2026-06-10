@@ -4,6 +4,12 @@ import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { createUserSchema, updateUserSchema } from "~/lib/auth/schemas";
 import { applyStudentIdAndResolveEnrollments } from "~/lib/canvas/link-roster.server";
 import { normalizeStudentId } from "~/lib/canvas/enrollment-link.server";
+import {
+  clearStudentIdStorage,
+  prepareStudentIdStorage,
+  readStoredStudentId,
+  studentIdMatchFilter,
+} from "~/lib/canvas/student-id.server";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -179,12 +185,15 @@ async function handleRequest(request: Request) {
       }
 
       try {
-        if (result.data.studentId !== undefined) {
-          const normalizedStudentId = normalizeStudentId(result.data.studentId);
+        const { studentId: studentIdInput, ...userUpdateFields } = result.data;
+        const updateData: Record<string, unknown> = { ...userUpdateFields };
+
+        if (studentIdInput !== undefined) {
+          const normalizedStudentId = normalizeStudentId(studentIdInput);
           if (normalizedStudentId) {
             const takenByOther = await prisma.user.findFirst({
               where: {
-                studentId: normalizedStudentId,
+                ...studentIdMatchFilter(normalizedStudentId),
                 id: { not: userId },
               },
               select: { id: true },
@@ -195,12 +204,15 @@ async function handleRequest(request: Request) {
                 { status: 409, headers: { "Content-Type": "application/json" } },
               );
             }
+            Object.assign(updateData, prepareStudentIdStorage(normalizedStudentId));
+          } else {
+            Object.assign(updateData, clearStudentIdStorage());
           }
         }
 
         const user = await prisma.user.update({
           where: { id: userId },
-          data: result.data,
+          data: updateData,
           select: {
             id: true,
             email: true,
@@ -222,23 +234,31 @@ async function handleRequest(request: Request) {
           },
         });
 
-        if (result.data.studentId !== undefined) {
-          await applyStudentIdAndResolveEnrollments(userId, result.data.studentId);
+        if (studentIdInput !== undefined) {
+          await applyStudentIdAndResolveEnrollments(userId, studentIdInput);
         }
 
-        return new Response(JSON.stringify(user), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
+        return new Response(
+          JSON.stringify({
+            ...user,
+            studentId: readStoredStudentId(user.studentId),
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
       } catch (error: any) {
         if (error.code === 'P2025') {
           return new Response("User not found", { status: 404 });
         }
         if (error.code === 'P2002') {
           const field = error.meta?.target;
-          const message = Array.isArray(field) && field.includes("studentId")
-            ? "Student number is already linked to another account"
-            : "Email already exists";
+          const message =
+            Array.isArray(field) &&
+            (field.includes("studentId") || field.includes("studentIdLookup"))
+              ? "Student number is already linked to another account"
+              : "Email already exists";
           return new Response(
             JSON.stringify({ error: message }),
             { status: 409, headers: { "Content-Type": "application/json" } }
