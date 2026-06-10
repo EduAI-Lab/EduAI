@@ -15,7 +15,7 @@ export const CreateCourseSchema = z.object({
   startDate: z.coerce.date(),
   endDate: z.coerce.date().optional(),
   // §19: department writes are validated against the canonical subject codes
-  department: UnitSchema.optional(),
+  department: UnitSchema,
   description: z.string().optional(),
   isPublished: z.coerce.boolean().optional().default(false),
   aiInstructions: z.string().optional().default(""),
