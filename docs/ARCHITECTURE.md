@@ -96,12 +96,12 @@ flowchart TD
   Req --> Reg
   Parse --> SDK
   Reg --> SDK
-  SDK --> Vendor[Google / OpenAI / Ollama APIs]
+  SDK --> Vendor[Google / OpenAI / OpenRouter / Ollama APIs]
 ```
 
 
 
-Model IDs look like `google:gemini-2.5-flash` or `ollama:gpt-oss:120b` — provider name, colon, then model id (`parseModelIdentifier` in `providers.ts`).
+Model IDs look like `google:gemini-2.5-flash`, `openrouter:google/gemini-2.5-flash`, or `ollama:gpt-oss:120b` — provider name, colon, then model id (`parseModelIdentifier` in `providers.ts`). OpenRouter model ids include a slash (e.g. `google/gemini-2.5-flash`); only the **first** colon separates provider from model id.
 
 ### B) Embeddings for RAG (course materials)
 
@@ -143,10 +143,11 @@ flowchart TD
 
 | Key / variable                                            | Used for                                                       | Comes from                                                                          |
 | --------------------------------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `OPENROUTER_API_KEY`                                      | **Embeddings** via OpenRouter (preferred when set)             | Server `.env` only (`embedding.ts`)                                                 |
+| `OPENROUTER_API_KEY`                                      | **Embeddings** via OpenRouter (preferred when set); optional server env name for OpenRouter chat docs | Server `.env` only for embeddings (`embedding.ts`); chat uses `apiKeys.openrouter.apiKey` from request/UI |
 | `GOOGLE_GENERATIVE_AI_API_KEY`                            | **Embeddings** direct Gemini when OpenRouter unset             | Server `.env` only (`embedding.ts`)                                                 |
 | `OPENAI_API_KEY`                                          | Embeddings fallback if neither above set                       | Server `.env` only                                                                  |
 | `apiKeys.google.apiKey` (and similar) in `/api/chat` body | **Chat** completions for that request                          | Client/request (often admin/API); merged with UI session settings in app code paths |
+| `apiKeys.openrouter.apiKey` in `/api/chat` body             | **Chat** via OpenRouter gateway (models like `openrouter:openai/gpt-4o`) | Client/request or Settings → Providers (browser localStorage)                       |
 | `OLLAMA_BASE_URL`                                         | Local Ollama base URL for **chat** registry                    | Env + optional override in user settings                                            |
 | `BETTER_AUTH_`*                                           | Sessions and API keys for EduAI accounts                       | Env                                                                                 |
 | `FIRECRAWL_API_KEY`                                       | Optional web search tool                                       | Env (see README)                                                                    |
