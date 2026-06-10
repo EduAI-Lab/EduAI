@@ -62,3 +62,4 @@ apps/**/package-lock.json
 docs/research/data/runs/both-tier.v1.jsonl
 docs/research/data/runs/labels.v1.jsonl
 docs/research/data/runs/policy-runs*.jsonl
+docs/research/data/runs/classroom-sim*.jsonl
