@@ -6,6 +6,11 @@
 export const ADHD_TUTORING_WORD_CAP = 250;
 export const ADHD_CLARIFICATION_WORD_CAP = 120;
 
+/** User turns at or below this length use the clarification response cap (see policy §3). */
+export const ADHD_CLARIFICATION_USER_WORD_THRESHOLD = Math.floor(
+  ADHD_CLARIFICATION_WORD_CAP / 6,
+);
+
 export type AdhdResponseMetrics = {
   wordCount: number;
   topSummary: boolean;
@@ -52,4 +57,13 @@ export function withStructuralPass(
     ...metrics,
     structuralPass: isStructuralCompliancePass(metrics),
   };
+}
+
+export function resolveAdhdResponseWordCap(userText?: string): number {
+  const trimmed = (userText ?? "").trim();
+  if (!trimmed) return ADHD_TUTORING_WORD_CAP;
+  const wordCount = trimmed.split(/\s+/).filter(Boolean).length;
+  return wordCount <= ADHD_CLARIFICATION_USER_WORD_THRESHOLD
+    ? ADHD_CLARIFICATION_WORD_CAP
+    : ADHD_TUTORING_WORD_CAP;
 }

@@ -4,6 +4,7 @@ import {
   ADHD_TUTORING_WORD_CAP,
   computeAdhdResponseMetrics,
   isStructuralCompliancePass,
+  resolveAdhdResponseWordCap,
   withStructuralPass,
   type AdhdStructuralCompliance,
 } from "~/lib/ai/adhd-metrics";
@@ -21,12 +22,21 @@ LENGTH: Hard cap 250 words for tutoring answers; 120 for brief clarifications.
 No emojis. No filler ("Great question!", "Certainly!").
 Return ONLY the rewritten response.`;
 
+export type OversightMethod = "none" | "deterministic" | "llm" | "llm_failed";
+
+export type OversightUsage = {
+  promptTokens?: number;
+  completionTokens?: number;
+};
+
 export type AuditAndMaybeRewriteResult = {
   text: string;
   rewritten: boolean;
-  method: "none" | "deterministic" | "llm";
+  method: OversightMethod;
   beforeMetrics: AdhdStructuralCompliance;
   afterMetrics: AdhdStructuralCompliance;
+  oversightDurationMs: number;
+  oversightUsage: OversightUsage | null;
 };
 
 export function isAdhdOversightEnabled(): boolean {
@@ -37,12 +47,74 @@ export function isAdhdOversightEnabled(): boolean {
   return true;
 }
 
+/** Skip oversight when the model produced no readable assistant prose. */
+export function isOversightEligibleDraft(draft: string): boolean {
+  const trimmed = (draft ?? "").trim();
+  if (!trimmed) return false;
+  return /[a-zA-Z]/.test(trimmed);
+}
+
+export function emptyOversightAuditResult(): AuditAndMaybeRewriteResult {
+  const metrics = withStructuralPass(computeAdhdResponseMetrics(""));
+  return {
+    text: "",
+    rewritten: false,
+    method: "none",
+    beforeMetrics: metrics,
+    afterMetrics: metrics,
+    oversightDurationMs: 0,
+    oversightUsage: null,
+  };
+}
+
 function structuralScore(metrics: AdhdStructuralCompliance): number {
   return (
     (metrics.topSummary ? 1 : 0) +
     (metrics.nextLine ? 1 : 0) +
     (metrics.underCap ? 1 : 0)
   );
+}
+
+function lastNonEmptyLine(text: string): string | null {
+  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  return lines.length > 0 ? lines[lines.length - 1] : null;
+}
+
+/** Prefer an existing trailing question (e.g. redirect prompts) over generic filler. */
+export function extractNextPromptCandidate(text: string): string | null {
+  const last = lastNonEmptyLine(text);
+  if (!last) return null;
+  if (/^Next\?\s/i.test(last)) {
+    const prompt = last.replace(/^Next\?\s*/i, "").trim();
+    return prompt.length > 0 ? prompt : null;
+  }
+  if (last.endsWith("?")) return last;
+  return null;
+}
+
+/**
+ * Promote an inline or trailing continuation prompt to the required **Next?** anchor.
+ * Returns null when no candidate exists (caller should try LLM rewrite).
+ */
+export function applyNextLineAnchor(text: string): string | null {
+  const trimmed = (text ?? "").trim();
+  if (!trimmed) return null;
+
+  const inline =
+    trimmed.match(/\nNext\?\s+(.+)$/i) ?? trimmed.match(/^Next\?\s+(.+)$/im);
+  if (inline?.[1]) {
+    const body = trimmed.replace(/\n?Next\?\s+.+$/i, "").trimEnd();
+    return `${body}\n\n**Next?** ${inline[1].trim()}`;
+  }
+
+  const candidate = extractNextPromptCandidate(trimmed);
+  if (!candidate) return null;
+
+  let body = trimmed;
+  if (body.endsWith(candidate)) {
+    body = body.slice(0, body.length - candidate.length).trimEnd();
+  }
+  return `${body}\n\n**Next?** ${candidate}`;
 }
 
 /** Fast path: fix missing literal anchors without an LLM call. */
@@ -66,20 +138,9 @@ export function tryDeterministicStructuralFix(
   }
 
   if (!before.nextLine) {
-    const lines = fixed.split(/\r?\n/);
-    const lastLine = lines[lines.length - 1] ?? "";
-    if (/^Next\?\s/i.test(lastLine)) {
-      lines[lines.length - 1] = lastLine.replace(/^Next\?\s*/i, "**Next?** ");
-      fixed = lines.join("\n");
-    } else {
-      const inline = fixed.match(/\nNext\?\s+(.+)$/i) ?? fixed.match(/^Next\?\s+(.+)$/im);
-      if (inline) {
-        fixed = fixed.replace(/\n?Next\?\s+.+$/i, "").trimEnd();
-        fixed += `\n\n**Next?** ${inline[1].trim()}`;
-      } else {
-        fixed += "\n\n**Next?** Want me to expand on any part of this?";
-      }
-    }
+    const withNext = applyNextLineAnchor(fixed);
+    if (!withNext) return null;
+    fixed = withNext;
   }
 
   const after = computeAdhdResponseMetrics(fixed, { wordCap });
@@ -97,13 +158,23 @@ export async function auditAndMaybeRewrite(args: {
     computeAdhdResponseMetrics(trimmed, { wordCap }),
   );
 
-  if (!trimmed || beforeMetrics.structuralPass) {
+  if (!trimmed || !isOversightEligibleDraft(trimmed)) {
+    return {
+      ...emptyOversightAuditResult(),
+      beforeMetrics,
+      afterMetrics: beforeMetrics,
+    };
+  }
+
+  if (beforeMetrics.structuralPass) {
     return {
       text: trimmed,
       rewritten: false,
       method: "none",
       beforeMetrics,
       afterMetrics: beforeMetrics,
+      oversightDurationMs: 0,
+      oversightUsage: null,
     };
   }
 
@@ -118,43 +189,61 @@ export async function auditAndMaybeRewrite(args: {
       method: "deterministic",
       beforeMetrics,
       afterMetrics,
+      oversightDurationMs: 0,
+      oversightUsage: null,
     };
   }
 
-  const { text: rewritten } = await generateText({
-    model: args.model,
-    temperature: 0.2,
-    maxTokens: 1024,
-    system: ADHD_OVERSIGHT_REWRITE_SYSTEM,
-    prompt: `DRAFT TO REWRITE:\n\n${trimmed}`,
-  });
+  const oversightStartedAt = Date.now();
+  try {
+    const { text: rewritten, usage } = await generateText({
+      model: args.model,
+      temperature: 0.2,
+      maxTokens: 1024,
+      system: ADHD_OVERSIGHT_REWRITE_SYSTEM,
+      prompt: `DRAFT TO REWRITE:\n\n${trimmed}`,
+    });
 
-  const llmText = (rewritten ?? "").trim();
-  const afterMetrics = withStructuralPass(
-    computeAdhdResponseMetrics(llmText, { wordCap }),
-  );
+    const llmText = (rewritten ?? "").trim();
+    const afterMetrics = withStructuralPass(
+      computeAdhdResponseMetrics(llmText, { wordCap }),
+    );
 
-  const useLlm =
-    afterMetrics.structuralPass ||
-    structuralScore(afterMetrics) > structuralScore(beforeMetrics);
+    const useLlm =
+      llmText.length > 0 &&
+      (afterMetrics.structuralPass ||
+        structuralScore(afterMetrics) > structuralScore(beforeMetrics));
 
-  const finalText = useLlm ? llmText : trimmed;
-  const finalMetrics = useLlm ? afterMetrics : beforeMetrics;
+    const finalText = useLlm ? llmText : trimmed;
+    const finalMetrics = useLlm ? afterMetrics : beforeMetrics;
 
-  return {
-    text: finalText,
-    rewritten: useLlm,
-    method: useLlm ? "llm" : "none",
-    beforeMetrics,
-    afterMetrics: finalMetrics,
-  };
+    return {
+      text: finalText,
+      rewritten: useLlm,
+      method: useLlm ? "llm" : "none",
+      beforeMetrics,
+      afterMetrics: finalMetrics,
+      oversightDurationMs: Date.now() - oversightStartedAt,
+      oversightUsage: {
+        promptTokens: usage?.promptTokens,
+        completionTokens: usage?.completionTokens,
+      },
+    };
+  } catch (error) {
+    console.error("[adhd-oversight] LLM rewrite failed", error);
+    return {
+      text: trimmed,
+      rewritten: false,
+      method: "llm_failed",
+      beforeMetrics,
+      afterMetrics: beforeMetrics,
+      oversightDurationMs: Date.now() - oversightStartedAt,
+      oversightUsage: null,
+    };
+  }
 }
 
+/** @deprecated Use resolveAdhdResponseWordCap from adhd-metrics.ts */
 export function resolveAdhdWordCap(userText?: string): number {
-  const trimmed = (userText ?? "").trim();
-  if (!trimmed) return ADHD_TUTORING_WORD_CAP;
-  const isClarification =
-    /^(yes|no|ok|okay|thanks|thank you|got it|sure)\b/i.test(trimmed) ||
-    trimmed.length < 80;
-  return isClarification ? ADHD_CLARIFICATION_WORD_CAP : ADHD_TUTORING_WORD_CAP;
+  return resolveAdhdResponseWordCap(userText);
 }
