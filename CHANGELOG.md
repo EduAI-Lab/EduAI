@@ -26,11 +26,6 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 - [core] ui/css: ADHD UI platform hygiene pass — mount `Toaster`, add global `prefers-reduced-motion` support. (#PR, @yta3216, 2026-06-09)
-
-### Fixed
-- [core] nav/css: Remove dead nav controls (Quick Create, Inbox, stub menu items); fix Outfit/Inter font mismatch; restore visible scrollbars at WCAG 2.5.8-compliant 12px width. (#PR, @yta3216, 2026-06-09)
-
-### Added
 - [core] api: Add TA management (`GET`/`POST`/`DELETE /api/courses/:courseId/tas`) and instructor reassignment (`PATCH /api/courses/:id`) for `ADMIN`/`UNIT_ADMIN`. (#491, @yta3216, 2026-06-08)
 - [core] ui: Add Staff tab to Course Detail with `useCourseTAs` hook — lists current instructor and TAs with reassignment controls for admin/unit admin. (#491, @yta3216, 2026-06-08)
 - [core] feat: Add account-level Assistive Mode shell — `AssistiveUiProvider` syncs `data-assistive` on `<html>` (SSR + client), `GET`/`PATCH /api/preferences` for `UserPreference.assistDefault`, and the `/chat` assist toggle writes through the provider so the preference persists platform-wide. Settings Accessibility tab deferred to #530 (blocked on #491). (#520, #531, @ebabar5, 2026-06-09)
@@ -41,6 +36,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [question-maker] tests: Add RBAC coverage — `courseAccess` unit tests plus role×route matrix tests across questions, variants, assessments, and Canvas. (#518, @abdullahmoh21, 2026-06-08)
 
 ### Fixed
+- [core] nav/css: Remove dead nav controls (Quick Create, Inbox, stub menu items); fix Outfit/Inter font mismatch; restore visible scrollbars at WCAG 2.5.8-compliant 12px width. (#PR, @yta3216, 2026-06-09)
 - [core] fix: Fix instructors and TAs not seeing assigned courses, admins unable to upload materials, instructors unable to add topics, and the same material being blocked from upload to two different courses. (#491, @yta3216, 2026-06-08)
 - [core] fix: Fix admin user management showing `NaN` for course count and unit admin unable to reassign instructors/TAs to courses. (#491, @yta3216, 2026-06-08)
 
