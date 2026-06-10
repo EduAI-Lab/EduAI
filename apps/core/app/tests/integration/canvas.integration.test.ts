@@ -16,6 +16,7 @@ vi.mock("~/lib/canvas/client.server", async (importOriginal) => {
 });
 
 import { resetCanvasRateLimitsForTests } from "~/lib/canvas/guards.server";
+import { prepareStudentIdStorage, readStoredStudentId } from "~/lib/canvas/student-id.server";
 import { loader, action } from "~/routes/api/canvas.$";
 import { auth } from "~/lib/auth/server";
 import { verifyCanvasCredentials, CanvasVerificationError } from "~/lib/canvas/client.server";
@@ -82,12 +83,14 @@ beforeAll(async () => {
   });
   studentId = student.id;
 
+  const linkedStudentPrepared = prepareStudentIdStorage("student_1");
   const linkedStudent = await prisma.user.create({
     data: {
       email: "canvas-linked-student@test.com",
       name: "Linked Student",
       role: "STUDENT",
-      studentId: "student_1",
+      studentId: linkedStudentPrepared.studentId,
+      studentIdLookup: linkedStudentPrepared.studentIdLookup,
       emailVerified: true,
     },
   });
@@ -465,7 +468,7 @@ describe("Canvas API — link-roster", () => {
       where: { id: unlinkedStudent.id },
       select: { studentId: true },
     });
-    expect(updatedUser?.studentId).toBe("student_2");
+    expect(readStoredStudentId(updatedUser?.studentId)).toBe("student_2");
 
     await prisma.enrollment.deleteMany({ where: { userId: unlinkedStudent.id } });
     await prisma.user.delete({ where: { id: unlinkedStudent.id } });

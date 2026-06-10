@@ -17,8 +17,8 @@ model User {
   name                       String
   image                      String?
   role                       UserRole
-  /// UBC student number; matches Canvas sis_user_id for enrollment linking.
-  studentId                  String?                @unique
+  studentId                  String?
+  studentIdLookup            String?                @unique
   isActive                   Boolean                @default(true)
   createdAt                  DateTime               @default(now())
   updatedAt                  DateTime               @updatedAt
