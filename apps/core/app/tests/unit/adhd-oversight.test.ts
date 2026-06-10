@@ -101,6 +101,14 @@ describe("auditAndMaybeRewrite", () => {
     vi.mocked(generateText).mockReset();
   });
 
+  it("preserves ineligible draft text without emptying response", async () => {
+    const result = await auditAndMaybeRewrite({ draft: "{}", model: mockModel });
+    expect(result.text).toBe("{}");
+    expect(result.method).toBe("none");
+    expect(result.rewritten).toBe(false);
+    expect(generateText).not.toHaveBeenCalled();
+  });
+
   it("passes through structurally compliant drafts", async () => {
     const compliant = `**Top summary**
 - One point
@@ -136,6 +144,25 @@ describe("auditAndMaybeRewrite", () => {
     expect(result.oversightDurationMs).toBeGreaterThanOrEqual(0);
     expect(result.oversightUsage?.completionTokens).toBe(20);
     expect(generateText).toHaveBeenCalledOnce();
+  });
+
+  it("rejects LLM rewrite that improves structure but exceeds word cap", async () => {
+    const longBody = Array(280).fill("word").join(" ");
+    vi.mocked(generateText).mockResolvedValue({
+      text: `**Top summary**
+- Point
+
+**Next?** Continue?
+
+${longBody}`,
+      usage: { promptTokens: 10, completionTokens: 20 },
+    } as never);
+
+    const messy = Array(300).fill("word").join(" ");
+    const result = await auditAndMaybeRewrite({ draft: messy, model: mockModel, wordCap: 250 });
+    expect(result.method).toBe("none");
+    expect(result.rewritten).toBe(false);
+    expect(result.text).toBe(messy);
   });
 
   it("returns draft when LLM rewrite fails", async () => {

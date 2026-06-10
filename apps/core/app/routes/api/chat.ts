@@ -899,10 +899,18 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
     });
 
     if (needsOversight) {
+      let draft = "";
+      let finalText = "";
+      let usage: Awaited<typeof result.usage> | undefined;
+      let finishReason: Awaited<typeof result.finishReason> | undefined;
+      let sources: Awaited<typeof result.sources> | undefined;
+      let reasoning: Awaited<typeof result.reasoning> | undefined;
+      let response: Awaited<typeof result.response> | undefined;
+
       try {
         await result.consumeStream();
 
-        const [text, usage, finishReason, sources, reasoning, response] = await Promise.all([
+        const consumed = await Promise.all([
           result.text,
           result.usage,
           result.finishReason,
@@ -910,8 +918,14 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
           result.reasoning,
           result.response,
         ]);
+        const text = consumed[0];
+        usage = consumed[1];
+        finishReason = consumed[2];
+        sources = consumed[3];
+        reasoning = consumed[4];
+        response = consumed[5];
 
-        const draft = (text ?? "").trim();
+        draft = (text ?? "").trim();
         const audited = draft
           ? await auditAndMaybeRewrite({
               draft,
@@ -920,7 +934,7 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
             })
           : emptyOversightAuditResult();
 
-        const finalText = audited.text;
+        finalText = audited.text || draft;
         logResponseCompliance(finalText, {
           finishReason,
           promptTokens: usage?.promptTokens,
@@ -971,8 +985,12 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
         if (response?.messages?.length) {
           const assistantMessages = response.messages.filter((message) => message.role === "assistant");
           if (assistantMessages.length > 0 && finalText) {
-            const last = assistantMessages[assistantMessages.length - 1];
-            await appendMessages([{ ...last, content: finalText }]);
+            const persisted = assistantMessages.map((message, index) =>
+              index === assistantMessages.length - 1
+                ? { ...message, content: finalText }
+                : message,
+            );
+            await appendMessages(persisted);
           } else {
             await appendMessages(assistantMessages);
           }
@@ -1005,10 +1023,29 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
         );
       } catch (error) {
         console.error("Error in ADHD oversight response:", error);
+        const fallbackText = finalText || draft;
+        if (fallbackText) {
+          return new Response(
+            JSON.stringify({
+              content: fallbackText,
+              model,
+              usage,
+              finishReason,
+              sources: sources || [],
+              reasoning,
+              responseId: response?.id,
+              courseCode,
+              chatId: chat?.id,
+            }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            },
+          );
+        }
         return new Response(
           JSON.stringify({
             error: "Failed to generate overseen response",
-            details: error instanceof Error ? error.message : "Unknown error",
           }),
           {
             status: 500,
