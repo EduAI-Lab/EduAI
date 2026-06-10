@@ -1,0 +1,54 @@
+/*
+ * Assistive reading typography — active only when `<html data-assistive>` is set.
+ * Spacing (measure, line-height, letter/word spacing), not font substitution.
+ */
+
+[data-assistive] .reading-surface {
+  font-size: 1rem; /* 16px — within 15–16px spec */
+  line-height: 1.625; /* mid of 1.5–1.7 */
+  max-width: 65ch; /* mid of 50–70ch measure */
+  letter-spacing: 0.03em;
+  word-spacing: 0.05em;
+}
+
+[data-assistive] .reading-surface :where(p, li, blockquote) {
+  line-height: 1.625;
+}
+
+[data-assistive] .reading-surface :where(p) {
+  margin-block: 0.85em;
+}
+
+[data-assistive] .reading-surface :where(p:first-child) {
+  margin-block-start: 0;
+}
+
+[data-assistive] .reading-surface :where(p:last-child) {
+  margin-block-end: 0;
+}
+
+[data-assistive] .reading-surface :where(li + li) {
+  margin-block-start: 0.35em;
+}
+
+[data-assistive] .reading-surface.prose {
+  font-size: 1rem;
+  line-height: 1.625;
+  max-width: 65ch;
+}
+
+[data-assistive] .reading-surface.prose :where(p) {
+  margin-block: 0.85em;
+}
+
+[data-assistive] .reading-surface.prose :where(h1, h2, h3, h4) {
+  line-height: 1.4;
+}
+
+[data-assistive] .reading-surface .streamdown-content {
+  font-size: 1rem;
+  line-height: 1.625;
+  max-width: 65ch;
+  letter-spacing: 0.03em;
+  word-spacing: 0.05em;
+}

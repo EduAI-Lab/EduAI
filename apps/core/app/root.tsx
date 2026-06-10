@@ -5,10 +5,16 @@ import {
   Outlet,
   Scripts,
   ScrollRestoration,
+  useRouteLoaderData,
 } from "react-router";
+import type { LoaderFunctionArgs } from "react-router";
 
 import type { Route } from "./+types/root";
 import "./app.css";
+
+import { auth } from "~/lib/auth/server";
+import prisma from "~/lib/prisma.server";
+import { AssistiveUiProvider } from "~/components/assistive/assistive-ui-provider";
 
 export const links: Route.LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -23,9 +29,33 @@ export const links: Route.LinksFunction = () => [
   },
 ];
 
+/**
+ * Resolves the account-level Assistive Mode flag for every page render.
+ * Guests always get `false`, guaranteeing baseline UI on public pages.
+ * Deliberately a single cheap select — not getUserPreference, whose course
+ * validation is too heavy to run on every navigation.
+ */
+export async function loader({ request }: LoaderFunctionArgs) {
+  const session = await auth.api.getSession(request);
+  if (!session?.user) {
+    return { assistive: false };
+  }
+
+  const row = await prisma.userPreference.findUnique({
+    where: { userId: session.user.id },
+    select: { assistDefault: true },
+  });
+
+  return { assistive: row?.assistDefault ?? false };
+}
+
 export function Layout({ children }: { children: React.ReactNode }) {
+  const data = useRouteLoaderData<typeof loader>("root");
+
   return (
-    <html lang="en">
+    // data-assistive is only ever present when ON — absent (not "false") when
+    // OFF so the baseline state cannot match [data-assistive] CSS selectors.
+    <html lang="en" {...(data?.assistive ? { "data-assistive": "true" } : {})}>
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -41,8 +71,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
   );
 }
 
-export default function App() {
-  return <Outlet />;
+export default function App({ loaderData }: Route.ComponentProps) {
+  return (
+    <AssistiveUiProvider initialAssistive={loaderData?.assistive ?? false}>
+      <Outlet />
+    </AssistiveUiProvider>
+  );
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
