@@ -44,7 +44,6 @@ Send only the new user message. Server loads last 20 messages from DB, merges, d
 - **Deduplication**: Same `messageId` on retry is safely ignored
 - **410 Gone**: Chat deleted or wrong user → discard `chatId`, start fresh
 - **Streaming limitation**: Assistant message persistence only works for non-streaming (`"streaming": false`). Streaming responses persist user messages but not assistant replies.
-- **ADHD Assist Phase 3 oversight**: When Assistive Mode is ON and `ADHD_ASSIST_OVERSIGHT` is enabled (default), the server buffers the full draft, runs a structural audit (`auditAndMaybeRewrite`), then emits the overseen text. Streaming clients receive the final text in one chunk (higher time-to-first-token). Overseen streaming replies are now persisted like non-streaming responses. Disable with `ADHD_ASSIST_OVERSIGHT=false`.
 
 ## Authentication
 
