@@ -1,6 +1,11 @@
 import { createHash } from 'crypto';
 
+/** Delimiter written by `processUploadedFile` between semantic chunks for the embed path. */
+export const SEMANTIC_CHUNK_SEPARATOR = '--- CHUNK SEPARATOR ---';
 
+export function joinSemanticChunks(chunks: string[]): string {
+  return chunks.join(`\n\n${SEMANTIC_CHUNK_SEPARATOR}\n\n`);
+}
 
 export interface FileInfo {
   title: string;
@@ -499,7 +504,7 @@ export async function processUploadedFile(file: File): Promise<FileInfo> {
 
     // Enhanced semantic chunking for markdown content
     const chunks = applySemanticChunking(content, 1500); // Larger chunks for markdown
-    const finalContent = chunks.join('\n\n--- CHUNK SEPARATOR ---\n\n');
+    const finalContent = joinSemanticChunks(chunks);
 
     // Extract file info with enhanced metadata
     const fileInfo = await extractTextFromFile(file, finalContent);
