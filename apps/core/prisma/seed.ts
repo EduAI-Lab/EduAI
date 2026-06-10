@@ -879,6 +879,19 @@ async function seedAIProvidersAndModels() {
     },
   });
 
+  const openrouter = await prisma.aIProvider.upsert({
+    where: { name: 'openrouter' },
+    update: {},
+    create: {
+      name: 'openrouter',
+      displayName: 'OpenRouter',
+      description: 'Unified cloud model gateway',
+      requiresApiKey: true,
+      envVarName: 'OPENROUTER_API_KEY',
+      isActive: true,
+    },
+  });
+
   const openaiModels = [
     { modelId: 'gpt-4.1', name: 'GPT-4.1', description: 'Advanced GPT-4.1', maxTokens: 128000, inputPricing: 5, outputPricing: 15 },
     { modelId: 'gpt-4o', name: 'GPT-4o', description: 'Multimodal flagship', maxTokens: 128000, inputPricing: 2.5, outputPricing: 10 },
@@ -903,6 +916,20 @@ async function seedAIProvidersAndModels() {
       where: { providerId_modelId: { providerId: google.id, modelId: m.modelId } },
       update: {},
       create: { ...m, type: 'CHAT', supportsImages: true, supportsTools: true, supportsStreaming: true, providerId: google.id },
+    });
+  }
+
+  const openrouterModels = [
+    { modelId: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash (OpenRouter)', description: 'Fast multimodal via OpenRouter', maxTokens: 1048576, inputPricing: 0.075, outputPricing: 0.3 },
+    { modelId: 'openai/gpt-4o', name: 'GPT-4o (OpenRouter)', description: 'OpenAI flagship via OpenRouter', maxTokens: 128000, inputPricing: 2.5, outputPricing: 10 },
+    { modelId: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet (OpenRouter)', description: 'Anthropic Sonnet via OpenRouter', maxTokens: 200000, inputPricing: 3, outputPricing: 15 },
+  ];
+
+  for (const m of openrouterModels) {
+    await prisma.aIModel.upsert({
+      where: { providerId_modelId: { providerId: openrouter.id, modelId: m.modelId } },
+      update: {},
+      create: { ...m, type: 'CHAT', supportsImages: true, supportsTools: true, supportsStreaming: true, providerId: openrouter.id },
     });
   }
 }

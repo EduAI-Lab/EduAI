@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/com
 import { Key, Eye, EyeOff, ExternalLink, Shield, Trash2 } from "lucide-react";
 import type { UserProviderSettings } from "~/lib/ai/providers";
 
-type Provider = "openai" | "google" | "ollama";
+type Provider = "openai" | "google" | "ollama" | "openrouter";
 
 export interface ApiKeySettingsProps {
   open: boolean;
@@ -81,6 +81,14 @@ export function ApiKeySettings({
       placeholder: "AIza...",
       learnMoreLabel: "Google AI Studio",
       learnMoreHref: "https://aistudio.google.com/app/apikey",
+    },
+    {
+      id: "openrouter",
+      label: "OpenRouter API Key",
+      description: "For cloud models via OpenRouter (Gemini, Claude, GPT, and more)",
+      placeholder: "sk-or-...",
+      learnMoreLabel: "OpenRouter",
+      learnMoreHref: "https://openrouter.ai/keys",
     },
     {
       id: "ollama",

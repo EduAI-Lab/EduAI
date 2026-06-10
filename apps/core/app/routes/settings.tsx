@@ -263,6 +263,22 @@ export default function SettingsPage() {
                     </div>
 
                     <div className="space-y-2">
+                      <Label className="mb-1">OpenRouter</Label>
+                      {isProviderConfigured('openrouter') ? (
+                        <div className="flex items-center gap-2">
+                          <Badge variant="secondary">Configured</Badge>
+                          <Button size="sm" variant="outline" onClick={()=>removeProviderSettings('openrouter')} className="text-red-600 hover:text-red-700">Remove</Button>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <Input placeholder="sk-or-..." onChange={(e)=>updateProviderSettings('openrouter',{ apiKey: e.target.value, isEnabled: true })} />
+                          <Button size="sm" disabled>Save</Button>
+                        </div>
+                      )}
+                      <p className="text-xs text-muted-foreground">Use models like <code>openrouter:google/gemini-2.5-flash</code> in chat.</p>
+                    </div>
+
+                    <div className="space-y-2">
                       <Label className="mb-1">Ollama (Local)</Label>
                       {isProviderConfigured('ollama') ? (
                         <div className="flex items-center gap-2">

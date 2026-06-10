@@ -9,7 +9,25 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOllama } from 'ollama-ai-provider';
 
 // Supported provider types
-export type SupportedProvider = 'openai' | 'google' | 'ollama';
+export type SupportedProvider = 'openai' | 'google' | 'ollama' | 'openrouter';
+
+const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
+
+function createOpenRouterClient(apiKey: string) {
+  const referer =
+    process.env.OPENROUTER_HTTP_REFERER?.trim() ||
+    process.env.BETTER_AUTH_URL?.trim() ||
+    undefined;
+
+  return createOpenAI({
+    apiKey,
+    baseURL: OPENROUTER_BASE_URL,
+    headers: {
+      ...(referer ? { 'HTTP-Referer': referer } : {}),
+      'X-Title': process.env.OPENROUTER_APP_TITLE?.trim() || 'EduAI',
+    },
+  });
+}
 
 // User provider settings interface
 export interface UserProviderSettings {
@@ -53,6 +71,13 @@ export const PROVIDER_CONFIGS: Record<SupportedProvider, ProviderConfig> = {
     requiresApiKey: false,
     defaultBaseUrl: 'http://localhost:11434/api',
     envVarName: 'OLLAMA_BASE_URL'
+  },
+  openrouter: {
+    id: 'openrouter',
+    name: 'OpenRouter',
+    description: 'Unified access to cloud models via OpenRouter',
+    requiresApiKey: true,
+    envVarName: 'OPENROUTER_API_KEY'
   }
 };
 
@@ -74,6 +99,11 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
     providers.google = createGoogleGenerativeAI({
       apiKey: userSettings.google.apiKey,
     });
+  }
+
+  // OpenRouter (OpenAI-compatible gateway)
+  if (userSettings.openrouter?.isEnabled && userSettings.openrouter?.apiKey) {
+    providers.openrouter = createOpenRouterClient(userSettings.openrouter.apiKey);
   }
 
   // Ollama
