@@ -33,6 +33,7 @@ export interface UpdateCourseInput {
   code?: string
   term?: string
   year?: number
+  department?: string | null
   aiInstructions?: string
   isPublished?: boolean
   instructorId?: string
