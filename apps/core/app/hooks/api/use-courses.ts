@@ -19,10 +19,13 @@ export interface Course {
 export interface CreateCourseInput {
   name: string
   code: string
+  section: string
   term: string
   year: number
+  startDate: string
   department?: string
   aiInstructions?: string
+  instructorUserIds: string[]
 }
 
 export interface UpdateCourseInput {
@@ -61,10 +64,13 @@ export function useCourses() {
     const formData = new FormData()
     formData.append('name', input.name)
     formData.append('code', input.code)
+    formData.append('section', input.section)
     formData.append('term', input.term)
     formData.append('year', String(input.year))
+    formData.append('startDate', input.startDate)
     if (input.department) formData.append('department', input.department)
     if (input.aiInstructions) formData.append('aiInstructions', input.aiInstructions)
+    input.instructorUserIds.forEach((id) => formData.append('instructorUserIds', id))
     const res = await fetch('/api/courses', { method: 'POST', body: formData })
     if (!res.ok) throw new Error(await res.text())
     const course = await res.json()
