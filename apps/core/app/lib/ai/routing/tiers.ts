@@ -4,6 +4,7 @@
 
 import type { RouterTier } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
+import { isLocalVllmRouting, isVllmRegistryId } from "./local-vllm";
 
 export type TierModelRow = {
   registryId: string;
@@ -47,15 +48,17 @@ async function loadTierRows(): Promise<TierModelRow[]> {
     include: { provider: { select: { name: true } } },
   });
 
-  return rows.map((r) => ({
-    registryId: `${r.provider.name}:${r.modelId}`,
-    tier: routerTierToNum(r.routerTier!),
-    routerTier: r.routerTier!,
-    estEnergyJoulesPerToken: r.estEnergyJoulesPerToken,
-    averageCarbonGramsPerToken: r.averageCarbonGramsPerToken,
-    supportsImages: r.supportsImages,
-    supportsTools: r.supportsTools,
-  }));
+  return rows
+    .map((r) => ({
+      registryId: `${r.provider.name}:${r.modelId}`,
+      tier: routerTierToNum(r.routerTier!),
+      routerTier: r.routerTier!,
+      estEnergyJoulesPerToken: r.estEnergyJoulesPerToken,
+      averageCarbonGramsPerToken: r.averageCarbonGramsPerToken,
+      supportsImages: r.supportsImages,
+      supportsTools: r.supportsTools,
+    }))
+    .filter((row) => !isLocalVllmRouting() || isVllmRegistryId(row.registryId));
 }
 
 export async function getCachedTierModels(): Promise<TierModelRow[]> {

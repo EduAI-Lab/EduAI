@@ -16,6 +16,11 @@ import {
   tieBreakForTier,
 } from "./carbon-policy";
 import { predictTierKnn, type KnnTierPrediction } from "./knn";
+import {
+  isLocalVllmRouting,
+  localVllmFallbackModelId,
+  normalizePickForLocalVllm,
+} from "./local-vllm";
 
 export const ROUTER_VERSION_RULES = "v1-rules";
 export const ROUTER_VERSION_KNN = "v2-knn";
@@ -71,6 +76,9 @@ export type RouterDecision = {
 const FALLBACK_MODEL = "google:gemini-2.5-flash";
 
 function defaultFallbackModelId(): string {
+  if (isLocalVllmRouting()) {
+    return localVllmFallbackModelId();
+  }
   if (process.env.VLLM_BASE_URL?.trim()) {
     return "vllm:qwen2.5-7b-instruct";
   }
@@ -134,16 +142,19 @@ async function finalizePick(
     pickSource: "rules" | "knn" | "hybrid";
   },
 ): Promise<RouterDecision> {
+  const normalizedPick = normalizePickForLocalVllm(pick);
   let fallbackUsed = false;
-  let picked: TierModelRow | null = await pickModelForSpec(pick);
+  let picked: TierModelRow | null = await pickModelForSpec(normalizedPick);
 
   if (!picked) {
     fallbackUsed = true;
-    picked = await pickModelForSpec({
-      kind: "exactTier",
-      tier: 2,
-      tieBreak: "carbon",
-    });
+    picked = await pickModelForSpec(
+      normalizePickForLocalVllm({
+        kind: "exactTier",
+        tier: isLocalVllmRouting() ? 3 : 2,
+        tieBreak: "carbon",
+      }),
+    );
   }
 
   let modelId: string;
@@ -151,11 +162,14 @@ async function finalizePick(
 
   if (picked) {
     modelId = picked.registryId;
-    tier = tierFromRow(picked, pick.kind === "exactTier" ? pick.tier : 2);
+    tier = tierFromRow(
+      picked,
+      normalizedPick.kind === "exactTier" ? normalizedPick.tier : isLocalVllmRouting() ? 3 : 2,
+    );
   } else {
     fallbackUsed = true;
     modelId = defaultFallbackModelId();
-    tier = modelId.startsWith("vllm:") ? 1 : 2;
+    tier = modelId.includes("32b") ? 3 : modelId.startsWith("vllm:") ? 1 : 2;
   }
 
   const features: Record<string, unknown> = {
@@ -163,7 +177,7 @@ async function finalizePick(
     routerMode: meta.mode,
     pickSource: meta.pickSource,
     rule: meta.rule,
-    pick,
+    pick: normalizedPick,
     promptLength: meta.phaseCtx.prompt.length,
     imagesPresent: meta.phaseCtx.imagesPresent,
     messageTokenCount: meta.context.messageTokenCount ?? null,

@@ -838,7 +838,7 @@ const COURSES: SeedCourse[] = [
 
 // ---------------------------------------------------------------------------
 
-/** Research routing pool — vLLM tiers + cloud overflow (see RESEARCH_CONTEXT.md). */
+/** Research routing pool — vLLM tier 1 (7B) + tier 3 (32B) only; no cloud tier in Auto. */
 const ROUTING_TIER_ASSIGNMENTS = [
   {
     providerName: 'vllm',
@@ -846,13 +846,6 @@ const ROUTING_TIER_ASSIGNMENTS = [
     routerTier: 'TIER_1' as const,
     estEnergyJoulesPerToken: 0.08,
     averageCarbonGramsPerToken: 1.78e-6,
-  },
-  {
-    providerName: 'google',
-    modelId: 'gemini-2.5-flash',
-    routerTier: 'TIER_2' as const,
-    estEnergyJoulesPerToken: 0.3,
-    averageCarbonGramsPerToken: 2.0e-5,
   },
   {
     providerName: 'vllm',
@@ -887,6 +880,14 @@ async function applyRoutingTierAssignments() {
     if (result.count === 0) {
       console.warn(`   No AIModel row for ${row.providerName}:${row.modelId}`);
     }
+  }
+
+  const google = await prisma.aIProvider.findUnique({ where: { name: "google" } });
+  if (google) {
+    await prisma.aIModel.updateMany({
+      where: { providerId: google.id, routerTier: { not: null } },
+      data: { routerTier: null },
+    });
   }
 }
 

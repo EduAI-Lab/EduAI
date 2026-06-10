@@ -15,13 +15,6 @@ const ROUTING_TIER_ASSIGNMENTS = [
     averageCarbonGramsPerToken: 1.78e-6,
   },
   {
-    providerName: "google",
-    modelId: "gemini-2.5-flash",
-    routerTier: "TIER_2" as const,
-    estEnergyJoulesPerToken: 0.3,
-    averageCarbonGramsPerToken: 2.0e-5,
-  },
-  {
     providerName: "vllm",
     modelId: "qwen2.5-32b-instruct",
     routerTier: "TIER_3" as const,
@@ -49,6 +42,14 @@ async function applyRoutingTierAssignments() {
     if (result.count === 0) {
       console.warn(`  No AIModel row for ${row.providerName}:${row.modelId}`);
     }
+  }
+
+  const google = await prisma.aIProvider.findUnique({ where: { name: "google" } });
+  if (google) {
+    await prisma.aIModel.updateMany({
+      where: { providerId: google.id, routerTier: { not: null } },
+      data: { routerTier: null },
+    });
   }
 }
 
