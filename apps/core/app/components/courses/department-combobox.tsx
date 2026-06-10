@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { CheckIcon, ChevronsUpDownIcon } from 'lucide-react'
 import { Button } from '~/components/ui/button'
 import {
@@ -9,7 +9,6 @@ import {
   CommandItem,
   CommandList,
 } from '~/components/ui/command'
-import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover'
 import { cn } from '~/lib/utils'
 
 interface Department {
@@ -34,6 +33,7 @@ export function DepartmentCombobox({
 }: DepartmentComboboxProps) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
+  const containerRef = useRef<HTMLDivElement>(null)
 
   const selected = departments.find((d) => d.code === value)
 
@@ -45,65 +45,74 @@ export function DepartmentCombobox({
           return d.code.toLowerCase().includes(q) || d.label.toLowerCase().includes(q)
         })
 
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false)
+        setSearch('')
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
   return (
-    <Popover
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next)
-        if (!next) setSearch('')
-      }}
-    >
-      <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          role="combobox"
-          aria-expanded={open}
-          disabled={disabled}
-          className="w-full justify-between font-normal"
-        >
-          {selected ? (
-            <span>
-              {selected.label}{' '}
-              <span className="font-mono text-muted-foreground">({selected.code})</span>
-            </span>
-          ) : (
-            <span className="text-muted-foreground">{placeholder}</span>
-          )}
-          <ChevronsUpDownIcon className="ml-2 size-4 shrink-0 opacity-50" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
-        <Command shouldFilter={false}>
-          <CommandInput
-            placeholder="Search departments..."
-            value={search}
-            onValueChange={setSearch}
-          />
-          <CommandList>
-            <CommandEmpty>No department found.</CommandEmpty>
-            <CommandGroup>
-              {filtered.map((d) => (
-                <CommandItem
-                  key={d.code}
-                  value={d.code}
-                  onMouseDown={(e) => {
-                    e.preventDefault()
-                    onValueChange(d.code)
-                    setOpen(false)
-                    setSearch('')
-                  }}
-                >
-                  <CheckIcon
-                    className={cn('mr-2 size-4', value === d.code ? 'opacity-100' : 'opacity-0')}
-                  />
-                  {d.label}{' '}
-                  <span className="ml-1 font-mono text-muted-foreground">({d.code})</span>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
+    <div ref={containerRef} className="relative">
+      <Button
+        type="button"
+        variant="outline"
+        role="combobox"
+        aria-expanded={open}
+        disabled={disabled}
+        className="w-full justify-between font-normal"
+        onClick={() => setOpen((prev) => !prev)}
+      >
+        {selected ? (
+          <span>
+            {selected.label}{' '}
+            <span className="font-mono text-muted-foreground">({selected.code})</span>
+          </span>
+        ) : (
+          <span className="text-muted-foreground">{placeholder}</span>
+        )}
+        <ChevronsUpDownIcon className="ml-2 size-4 shrink-0 opacity-50" />
+      </Button>
+      {open && (
+        <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover shadow-md">
+          <Command shouldFilter={false}>
+            <CommandInput
+              placeholder="Search departments..."
+              value={search}
+              onValueChange={setSearch}
+            />
+            <CommandList>
+              <CommandEmpty>No department found.</CommandEmpty>
+              <CommandGroup>
+                {filtered.map((d) => (
+                  <CommandItem
+                    key={d.code}
+                    value={d.code}
+                    className="cursor-pointer"
+                    onMouseDown={(e) => {
+                      e.preventDefault()
+                      onValueChange(d.code)
+                      setOpen(false)
+                      setSearch('')
+                    }}
+                  >
+                    <CheckIcon
+                      className={cn('mr-2 size-4', value === d.code ? 'opacity-100' : 'opacity-0')}
+                    />
+                    {d.label}{' '}
+                    <span className="ml-1 font-mono text-muted-foreground">({d.code})</span>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </div>
+      )}
+    </div>
   )
 }
