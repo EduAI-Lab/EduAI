@@ -26,9 +26,17 @@ export async function addCourseTA(courseId: string, payload: AddTAInput) {
   if (user.role !== "TA") return { error: "User must have TA role" } as const;
 
   try {
-    const ta = await prisma.courseTA.create({
-      data: { courseId, userId: parsed.data.userId },
-      include: { user: { select: { id: true, name: true, email: true } } },
+    const ta = await prisma.$transaction(async (tx) => {
+      const created = await tx.courseTA.create({
+        data: { courseId, userId: parsed.data.userId },
+        include: { user: { select: { id: true, name: true, email: true } } },
+      });
+      await tx.enrollment.upsert({
+        where: { courseId_userId: { courseId, userId: parsed.data.userId } },
+        create: { courseId, userId: parsed.data.userId, role: "TA", isActive: true },
+        update: { role: "TA", isActive: true },
+      });
+      return created;
     });
     return { ta } as const;
   } catch (error: any) {
@@ -43,8 +51,17 @@ export async function removeCourseTA(courseId: string, payload: RemoveTAInput) {
     return { error: "Invalid input", details: parsed.error.flatten() } as const;
   }
 
-  const result = await prisma.courseTA.deleteMany({
-    where: { courseId, userId: parsed.data.userId },
+  const result = await prisma.$transaction(async (tx) => {
+    const deleted = await tx.courseTA.deleteMany({
+      where: { courseId, userId: parsed.data.userId },
+    });
+    if (deleted.count > 0) {
+      await tx.enrollment.updateMany({
+        where: { courseId, userId: parsed.data.userId, role: "TA" },
+        data: { isActive: false },
+      });
+    }
+    return deleted;
   });
 
   if (result.count === 0) return { error: "TA not found for this course" } as const;
