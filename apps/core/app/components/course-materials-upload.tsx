@@ -1,9 +1,11 @@
+import { Button } from '~/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
 import { Input } from '~/components/ui/input';
 import { Label } from '~/components/ui/label';
 import { Badge } from '~/components/ui/badge';
-import { Upload, FileText, AlertCircle, CheckCircle, XCircle } from 'lucide-react';
+import { Upload, FileText, AlertCircle, CheckCircle, XCircle, RefreshCw, Loader2 } from 'lucide-react';
 import { Alert, AlertDescription } from '~/components/ui/alert';
+import { CourseEmbeddingSettings } from '~/components/course-embedding-settings';
 
 export interface CourseMaterial {
   id: string;
@@ -21,6 +23,11 @@ export interface CourseMaterialsUploadProps {
   error?: string | null;
   success?: string | null;
   onFileSelect: (file: File) => void;
+  courseId?: string;
+  onMaterialsRefresh?: () => void;
+  onReEmbed?: () => void;
+  isReEmbedding?: boolean;
+  reEmbedProgress?: string | null;
 }
 
 export function CourseMaterialsUpload({
@@ -29,18 +36,24 @@ export function CourseMaterialsUpload({
   error = null,
   success = null,
   onFileSelect,
+  courseId,
+  onMaterialsRefresh,
+  onReEmbed,
+  isReEmbedding = false,
+  reEmbedProgress = null,
 }: CourseMaterialsUploadProps) {
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
       onFileSelect(file);
     }
+    event.target.value = '';
   };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'PROCESSING':
-        return <AlertCircle className="h-4 w-4 text-yellow-500" />;
+        return <Loader2 className="h-4 w-4 animate-spin text-yellow-500" />;
       case 'READY':
         return <CheckCircle className="h-4 w-4 text-green-500" />;
       case 'FAILED':
@@ -71,6 +84,9 @@ export function CourseMaterialsUpload({
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
+  const hasMaterials = materials.length > 0;
+  const busy = isUploading || isReEmbedding;
+
   return (
     <div className="space-y-6">
       <Card>
@@ -92,7 +108,7 @@ export function CourseMaterialsUpload({
                 type="file"
                 accept=".pdf,.docx,.pptx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain,text/markdown"
                 onChange={handleFileChange}
-                disabled={isUploading}
+                disabled={busy}
                 className="mt-2"
               />
             </div>
@@ -121,12 +137,43 @@ export function CourseMaterialsUpload({
         </CardContent>
       </Card>
 
+      {courseId && (
+        <CourseEmbeddingSettings
+          courseId={courseId}
+          onSettingsSaved={() => {
+            onMaterialsRefresh?.();
+          }}
+        />
+      )}
+
       <Card>
-        <CardHeader>
-          <CardTitle>Course Materials</CardTitle>
-          <CardDescription>
-            Materials uploaded to this course ({materials.length} total)
-          </CardDescription>
+        <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
+          <div>
+            <CardTitle>Course Materials</CardTitle>
+            <CardDescription>
+              Materials uploaded to this course ({materials.length} total)
+            </CardDescription>
+          </div>
+          {onReEmbed && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onReEmbed}
+              disabled={!hasMaterials || busy}
+            >
+              {isReEmbedding ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  {reEmbedProgress ?? 'Re-indexing…'}
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Re-index all materials
+                </>
+              )}
+            </Button>
+          )}
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
