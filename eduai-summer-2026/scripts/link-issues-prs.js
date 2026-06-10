@@ -248,6 +248,7 @@ function linkIssuesToPrs({ owner, repo, issues, pullRequests }) {
 
 module.exports = {
   extractReferencedIssueNumbers,
+  getClosingIssueNumbers,
   getIssue,
   getPullRequestDetails,
   getPullRequestIssueComments,

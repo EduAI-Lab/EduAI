@@ -1,6 +1,6 @@
 # EduAI Summer 2026 — Team Time Reporting
 
-**Last Updated:** May 18, 2026
+**Last Updated:** June 10, 2026
 
 ---
 
@@ -19,22 +19,28 @@
 
 ---
 
-This guide documents the weekly EduAI team time reporting automation. The system generates a team time report from GitHub Issues, GitHub Projects, Pull Requests, and PR Analytics.
+This guide documents the weekly EduAI team time reporting automation. The system generates a team time report from GitHub Issues, GitHub Projects, Pull Requests, and optional PR Analytics.
 
 ## Weekly Flow
 
 1. Team members update their GitHub issue descriptions with implementation hours.
-2. Pull requests are linked to their GitHub issues.
-3. The PR Analytics workflow runs for the reporting window.
-4. The Team Time Report workflow reads the EduAI Core project, issue bodies, linked PRs, PR analytics JSON, and base-time CSV.
+2. Completed work is moved to `Done` in Project 8 or the GitHub issue is closed.
+3. The Team Time Report workflow reads Project 8 and issue bodies.
+4. The workflow scopes the professor-facing workbook to completed Project 8 issues only.
 5. The workflow generates:
 
 ```text
 eduai-summer-2026/reports/team-time-report.csv
 eduai-summer-2026/reports/team-time-report.md
+eduai-summer-2026/reports/<report-start>_to_<report-end>/weekly-hours-with-pr-analytics.xlsx
+eduai-summer-2026/reports/<report-start>_to_<report-end>/weekly-hours-with-pr-analytics-summary.md
 ```
 
 The CSV is intended for Excel. The Markdown report is intended for GitHub review.
+
+The weekly analytics workbook is the source for detailed audit/reconciliation. It includes one row per
+person/issue implementation-hour attribution, expected vs. actual hours, an issue-week audit, and
+manual-review rows for ambiguous or missing hours. It intentionally excludes PR analytics.
 
 ## Team Rules To Avoid Missing Data
 
@@ -46,7 +52,9 @@ Every issue needs `Hours to complete`.
 
 Multi-person issues need one hours line per person.
 
-Every PR must be linked to its issue.
+Only issues in Project 8 whose status is `Done` or whose GitHub issue state is closed are counted.
+
+PR links are not required for the professor-facing workbook. Done/closed issue hours are counted from issue descriptions.
 
 Weekly meeting/admin time must be updated in issue #178 before the report runs.
 
@@ -79,6 +87,8 @@ Hours to complete: 2 hours [@Ayyhab]
 The parser accepts `hour`, `hours`, `hrs`, and `h`, plus decimal hours, bullet prefixes, and Markdown bold labels.
 
 If an issue has `Hours to complete: 4 hours` with no username, the time is assigned to the sole issue assignee. If the issue has zero or multiple assignees and no username is provided, the row is marked `Needs manual review` and excluded from totals until fixed.
+
+Week assignment comes from issue titles, week labels, body section headings, and explicit week labels on hours lines. `Week 2, 4` and `Week 2-4` both mean weeks 2 through 4. If an unlabelled hours line appears on a completed issue that spans multiple weeks in the current reporting window, the report marks it for manual review instead of guessing a week.
 
 The script flags duplicate person rows on the same issue instead of summing them, so accidental double counting needs manual review.
 
@@ -133,13 +143,21 @@ The report includes:
 - GitHub username
 - Base hours
 - Issue implementation hours
-- PR process metrics
 - Total tracked hours
 - Issues worked on
 - PRs authored
 - PRs reviewed
 - Review counts, comments, approvals, and change requests
 - Data quality warnings
+
+The detailed weekly workbook additionally includes:
+
+- Actual names and GitHub handles
+- Expected vs. actual weekly hours, with the expected value controlled by `Settings!B2`
+- Project 8 completion scope: only Done project items or closed GitHub issues are counted
+- Actual implementation hours parsed from issue bodies
+- Issue Week Audit rows showing detected title, label, body-heading, and explicit-hour weeks
+- Manual review flags for missing, ambiguous, or inconsistent issue hours
 
 ## Project Integration
 
@@ -178,6 +196,10 @@ Optional project fields can be updated when `UPDATE_PROJECT_FIELDS=true`:
 - on PRs to validate the report scripts
 
 On pull requests, it only runs `npm run test:time-report`. It does not generate reports, update project fields, or commit report files on every PR update.
+
+On scheduled/manual runs, it also generates the weekly analytics workbook under a dated report folder. The workbook
+uses formulas on the `Weekly Summary` sheet over the raw `All Detail` table, so if a reviewer corrects a
+detail row in Excel, the summary and expected-vs-actual chart recalculate.
 
 ## Current GitHub Configuration
 
