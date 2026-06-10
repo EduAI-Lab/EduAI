@@ -235,15 +235,22 @@ export async function updateCourse(request: Request, courseId: string) {
     });
   }
 
+  // §6: only ADMIN / UNIT_ADMIN may reassign instructors or change department.
+  const updateData: Partial<typeof result.data> = { ...result.data };
+  if (access.rank < 3) {
+    delete (updateData as any).instructorId;
+    delete (updateData as any).department;
+  }
+
   // §5: a UNIT_ADMIN cannot move a course to a unit outside their authorized
   // list (nor strip its department, which would orphan it from their scope).
   if (
     access.level === "unit" &&
-    "department" in result.data &&
-    result.data.department !== course.department
+    "department" in updateData &&
+    updateData.department !== course.department
   ) {
     const units = await getAuthorizedUnits(user);
-    if (!result.data.department || !units.includes(result.data.department)) {
+    if (!updateData.department || !units.includes(updateData.department)) {
       return new Response(JSON.stringify({ error: "DEPARTMENT_NOT_AUTHORIZED" }), {
         status: 403,
         headers: { "Content-Type": "application/json" } as const,
@@ -253,7 +260,7 @@ export async function updateCourse(request: Request, courseId: string) {
 
   const updated = await prisma.course.update({
     where: { id: courseId },
-    data: result.data,
+    data: updateData,
   });
 
   return new Response(JSON.stringify(updated), {
