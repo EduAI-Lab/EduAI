@@ -17,7 +17,16 @@ import {
 } from "~/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import type { AIModel, AIProvider } from "~/hooks/api/types";
-import type { OllamaModel } from "~/components/admin/model-form-dialog";
+import type { OllamaModel, VllmModel } from "~/components/admin/model-form-dialog";
+
+function isVllmFetchNotFound(message: string, httpStatus?: number): boolean {
+  return (
+    httpStatus === 404 ||
+    message.includes("404") ||
+    message.includes("Not Found") ||
+    message.includes("/api/vllm-models is missing")
+  );
+}
 
 export type AiModelsAdminViewProps = {
   providers: AIProvider[];
@@ -57,6 +66,10 @@ export function AiModelsAdminView({
   const [ollamaModels, setOllamaModels] = useState<OllamaModel[]>([]);
   const [fetchingOllamaModels, setFetchingOllamaModels] = useState(false);
   const [ollamaError, setOllamaError] = useState<string | null>(null);
+  const [vllmModels, setVllmModels] = useState<VllmModel[]>([]);
+  const [fetchingVllmModels, setFetchingVllmModels] = useState(false);
+  const [vllmError, setVllmError] = useState<string | null>(null);
+  const [vllmFetched, setVllmFetched] = useState(false);
 
   const handleFetchOllamaModels = useCallback(async () => {
     setFetchingOllamaModels(true);
@@ -70,6 +83,56 @@ export function AiModelsAdminView({
       setOllamaError(err instanceof Error ? err.message : "Failed to fetch Ollama models");
     } finally {
       setFetchingOllamaModels(false);
+    }
+  }, []);
+
+  const handleFetchVllmModels = useCallback(async () => {
+    setFetchingVllmModels(true);
+    setVllmError(null);
+    setVllmFetched(false);
+    try {
+      const res = await fetch("/api/vllm-models");
+      let data: { error?: string; models?: VllmModel[] } = {};
+      try {
+        data = await res.json();
+      } catch {
+        throw new Error(
+          `Invalid response from server (HTTP ${res.status}). Restart dev server if /api/vllm-models is missing.`,
+        );
+      }
+      if (!res.ok) {
+        const err = new Error(
+          data.error ?? `Failed to fetch vLLM models (HTTP ${res.status})`,
+        ) as Error & { httpStatus?: number };
+        err.httpStatus = res.status;
+        throw err;
+      }
+      setVllmModels(data.models ?? []);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to fetch vLLM models";
+      const httpStatus = (err as { httpStatus?: number }).httpStatus;
+      if (isVllmFetchNotFound(message, httpStatus)) {
+        setVllmError(
+          "Cannot reach /api/vllm-models — pull latest feat/VLLM and restart the EduAI dev server.",
+        );
+      } else {
+        setVllmError(message);
+      }
+      setVllmModels([]);
+    } finally {
+      setFetchingVllmModels(false);
+      setVllmFetched(true);
+    }
+  }, []);
+
+  const handleModelDialogChange = useCallback((open: boolean) => {
+    setModelDialogOpen(open);
+    if (!open) {
+      setOllamaModels([]);
+      setOllamaError(null);
+      setVllmModels([]);
+      setVllmError(null);
+      setVllmFetched(false);
     }
   }, []);
 
@@ -196,7 +259,7 @@ export function AiModelsAdminView({
                       <Button
                         onClick={() => {
                           setEditingModel(null);
-                          setModelDialogOpen(true);
+                          handleModelDialogChange(true);
                         }}
                       >
                         <IconPlus className="h-4 w-4 mr-2" />
@@ -239,7 +302,7 @@ export function AiModelsAdminView({
                       models={filteredModels}
                       onEdit={(model) => {
                         setEditingModel(model);
-                        setModelDialogOpen(true);
+                        handleModelDialogChange(true);
                       }}
                       onDelete={handleDeleteModel}
                       onToggleActive={handleToggleModel}
@@ -289,7 +352,7 @@ export function AiModelsAdminView({
 
       <ModelFormDialog
         open={modelDialogOpen}
-        onOpenChange={setModelDialogOpen}
+        onOpenChange={handleModelDialogChange}
         model={editingModel}
         providers={providers}
         onSubmit={handleModelSubmit}
@@ -297,6 +360,11 @@ export function AiModelsAdminView({
         fetchingOllamaModels={fetchingOllamaModels}
         ollamaError={ollamaError}
         onFetchOllamaModels={handleFetchOllamaModels}
+        vllmModels={vllmModels}
+        fetchingVllmModels={fetchingVllmModels}
+        vllmError={vllmError}
+        vllmFetched={vllmFetched}
+        onFetchVllmModels={handleFetchVllmModels}
       />
 
       <ProviderFormDialog
