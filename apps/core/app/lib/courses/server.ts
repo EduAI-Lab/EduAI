@@ -258,9 +258,28 @@ export async function updateCourse(request: Request, courseId: string) {
     }
   }
 
-  const updated = await prisma.course.update({
-    where: { id: courseId },
-    data: updateData,
+  const newInstructorId = (updateData as any).instructorId as string | undefined;
+  const instructorChanging =
+    newInstructorId !== undefined && newInstructorId !== course.instructorId;
+
+  const updated = await prisma.$transaction(async (tx) => {
+    if (instructorChanging) {
+      if (course.instructorId) {
+        await tx.enrollment.updateMany({
+          where: { courseId, userId: course.instructorId, role: "INSTRUCTOR" },
+          data: { isActive: false },
+        });
+      }
+      await tx.enrollment.upsert({
+        where: { courseId_userId: { courseId, userId: newInstructorId! } },
+        create: { courseId, userId: newInstructorId!, role: "INSTRUCTOR", isActive: true },
+        update: { role: "INSTRUCTOR", isActive: true },
+      });
+    }
+    return tx.course.update({
+      where: { id: courseId },
+      data: updateData,
+    });
   });
 
   return new Response(JSON.stringify(updated), {
