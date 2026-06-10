@@ -5,6 +5,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "~/components/ui/tooltip"
+import { READING_SURFACE_CLASS } from "~/components/assistive/reading-surface"
 import { cn } from "~/lib/utils"
 import { Markdown } from "./markdown"
 
@@ -59,6 +60,7 @@ const MessageContent = ({
 }: MessageContentProps) => {
   const classNames = cn(
     "rounded-lg p-2 text-foreground bg-secondary prose break-words whitespace-normal",
+    READING_SURFACE_CLASS,
     className
   )
 

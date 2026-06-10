@@ -9,7 +9,9 @@ import {
   MessageActions,
   MessageAction
 } from "~/components/ui/message";
+import { READING_SURFACE_CLASS } from "~/components/assistive/reading-surface";
 import { Tool } from "~/components/ui/tool";
+import { cn } from "~/lib/utils";
 
 export interface ChatMessageProps {
   message: Message;
@@ -79,7 +81,9 @@ export function ChatMessage({ message, isStreaming = false }: ChatMessageProps) 
       <div className="flex justify-end mb-4">
         <div className="flex items-end gap-3 max-w-[80%]">
           <div className="rounded-lg px-4 py-3 bg-primary text-primary-foreground">
-            <div className="whitespace-pre-wrap">{textContent}</div>
+            <div className={cn("whitespace-pre-wrap", READING_SURFACE_CLASS)}>
+              {textContent}
+            </div>
           </div>
           <MessageAvatar
             src=""
