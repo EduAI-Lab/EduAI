@@ -201,11 +201,11 @@ async function loadActivityForChat(activityId) {
               courseOffering: {
                 select: {
                   id: true,
+                  isPublished: true,
                   externalId: true,
                   externalSource: true,
                   externalMetadata: true,
                   coreOfferingId: true,
-                  instructors: { select: { userId: true } },
                   enrollments: { select: { userId: true } },
                 },
               },
@@ -226,9 +226,16 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
     return res.status(500).json({ error: 'Activity course context missing' });
   }
 
-  const { isInstructorForCourse, isEnrolledStudent } = getActivityAccess(course, authUser);
-  if (!(isInstructorForCourse || isEnrolledStudent)) {
-    return res.status(403).json({ error: 'Not authorized for this activity' });
+  if (authUser.role !== 'STUDENT') {
+    return res.status(403).json({ error: 'Only students can use AI tutoring' });
+  }
+  const isEnrolled = course.enrollments.some((e) => e.userId === authUser.id);
+  if (!isEnrolled) {
+    return res.status(403).json({ error: 'Not enrolled in this course' });
+  }
+  const lesson = activity.lesson;
+  if (!course.isPublished || !lesson?.module?.isPublished || !lesson?.isPublished) {
+    return res.status(403).json({ error: 'Activity is not available' });
   }
 
   try {
@@ -873,7 +880,7 @@ router.delete('/activities/:activityId', requireRole(['INSTRUCTOR', 'UNIT_ADMIN'
 /**
  * POST /questions/:id/answer — submit an answer attempt for an activity.
  *
- * Auth: enrolled STUDENT or course instructor (instructors can self-test).
+ * Auth: enrolled STUDENT only (§15); activity + ancestor chain must be published.
  * Side effects: creates a Submission row with monotonic `attemptNumber`,
  *   updates submission analytics for students, and signals whether
  *   per-activity feedback is still owed.
@@ -906,10 +913,10 @@ router.post('/questions/:id/answer', async (req, res) => {
                 courseOffering: {
                   select: {
                     id: true,
+                    isPublished: true,
                     externalId: true,
                     externalSource: true,
                     externalMetadata: true,
-                    instructors: { select: { userId: true } },
                     enrollments: { select: { userId: true } },
                   },
                 },
@@ -921,15 +928,20 @@ router.post('/questions/:id/answer', async (req, res) => {
     });
     if (!activity) return res.status(404).json({ error: 'Activity not found' });
 
-    // Authorization: user must be enrolled (student) or an instructor of the course
+    // §15: only enrolled STUDENTs may submit; activity ancestor chain must be published
     const course = activity.lesson?.module?.courseOffering;
     if (!course) return res.status(500).json({ error: 'Activity course context missing' });
 
-    const isInstructorForCourse = course.instructors.some((i) => i.userId === authUser.id);
-    const isEnrolledStudent = course.enrollments.some((e) => e.userId === authUser.id);
-
-    if (!(isInstructorForCourse || isEnrolledStudent)) {
-      return res.status(403).json({ error: 'Not authorized for this activity' });
+    if (authUser.role !== 'STUDENT') {
+      return res.status(403).json({ error: 'Only students can submit answers' });
+    }
+    const isEnrolled = course.enrollments.some((e) => e.userId === authUser.id);
+    if (!isEnrolled) {
+      return res.status(403).json({ error: 'Not enrolled in this course' });
+    }
+    const answerLesson = activity.lesson;
+    if (!course.isPublished || !answerLesson.module.isPublished || !answerLesson.isPublished) {
+      return res.status(403).json({ error: 'Activity is not available' });
     }
 
     const { isCorrect } = evaluateQuestion(activity, {

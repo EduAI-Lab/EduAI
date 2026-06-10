@@ -335,7 +335,7 @@ describe('Activities routes', () => {
       expect(res.body.isCorrect).toBe(false);
     });
 
-    it('returns 403 for unenrolled user', async () => {
+    it('returns 403 for unenrolled STUDENT', async () => {
       const outsider = makeStudent();
       const outsiderApp = await createApp({ mockUser: outsider });
 
@@ -344,6 +344,66 @@ describe('Activities routes', () => {
         .send({ answerOption: 1 });
 
       expect(res.status).toBe(403);
+    });
+
+    it('returns 403 for INSTRUCTOR role (§15: submission is student-only)', async () => {
+      const res = await request(profApp)
+        .post(`/api/questions/${activity.id}/answer`)
+        .send({ answerOption: 1 });
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toMatch(/only students/i);
+    });
+
+    it('returns 403 for TA role', async () => {
+      const ta = await enrollTa();
+      const taApp = await createApp({ mockUser: ta });
+
+      const res = await request(taApp)
+        .post(`/api/questions/${activity.id}/answer`)
+        .send({ answerOption: 1 });
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toMatch(/only students/i);
+    });
+
+    it('returns 403 when lesson is unpublished', async () => {
+      await prisma.lesson.update({ where: { id: seed.lesson.id }, data: { isPublished: false } });
+      const student = await enrollStudent();
+      const studentApp = await createApp({ mockUser: student });
+
+      const res = await request(studentApp)
+        .post(`/api/questions/${activity.id}/answer`)
+        .send({ answerOption: 1 });
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toMatch(/not available/i);
+    });
+
+    it('returns 403 when module is unpublished', async () => {
+      await prisma.module.update({ where: { id: seed.module.id }, data: { isPublished: false } });
+      const student = await enrollStudent();
+      const studentApp = await createApp({ mockUser: student });
+
+      const res = await request(studentApp)
+        .post(`/api/questions/${activity.id}/answer`)
+        .send({ answerOption: 1 });
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toMatch(/not available/i);
+    });
+
+    it('returns 403 when course is unpublished', async () => {
+      await prisma.courseOffering.update({ where: { id: seed.course.id }, data: { isPublished: false } });
+      const student = await enrollStudent();
+      const studentApp = await createApp({ mockUser: student });
+
+      const res = await request(studentApp)
+        .post(`/api/questions/${activity.id}/answer`)
+        .send({ answerOption: 1 });
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toMatch(/not available/i);
     });
   });
 
@@ -626,14 +686,21 @@ describe('Activities routes', () => {
 describe('Tutoring-flow: question consumption via Core', () => {
   let prof;
   let seed;
-  let profApp;
+  let student;
+  let studentApp;
   let activity;
 
   beforeEach(async () => {
     await truncateAll();
     prof = makeProfessor();
     seed = await seedMinimalCourse(prof.id);
-    profApp = await createApp({ mockUser: prof });
+
+    // Enroll a student — AI tutoring routes require STUDENT role + enrollment
+    student = makeStudent();
+    await prisma.courseEnrollment.create({
+      data: { courseOfferingId: seed.course.id, userId: student.id, role: 'STUDENT' },
+    });
+    studentApp = await createApp({ mockUser: student });
 
     // Provide a service key so listCourseTestableQuestions uses fetch rather than short-circuiting
     vi.stubEnv('EDUAI_API_KEY', 'test-service-key');
@@ -698,7 +765,7 @@ describe('Tutoring-flow: question consumption via Core', () => {
         }),
     );
 
-    const res = await request(profApp)
+    const res = await request(studentApp)
       .post(`/api/activities/${activity.id}/teach`)
       .set('Cookie', 'session=test-cookie')
       .send({ message: 'Explain sorting', knowledgeLevel: 'beginner', apiKey: 'test-key' });
@@ -739,7 +806,7 @@ describe('Tutoring-flow: question consumption via Core', () => {
       json: () => Promise.resolve({ content: 'AI response', chatId: 'chat-1' }),
     }));
 
-    const res = await request(profApp)
+    const res = await request(studentApp)
       .post(`/api/activities/${activity.id}/teach`)
       .set('Cookie', 'session=test-cookie')
       .send({ message: 'Explain sorting', knowledgeLevel: 'beginner', apiKey: 'test-key' });
@@ -764,11 +831,125 @@ describe('Tutoring-flow: question consumption via Core', () => {
         }),
     );
 
-    const res = await request(profApp)
+    const res = await request(studentApp)
       .post(`/api/activities/${activity.id}/teach`)
       .set('Cookie', 'session=test-cookie')
       .send({ message: 'Explain sorting', knowledgeLevel: 'beginner', apiKey: 'test-key' });
 
     expect(res.status).toBe(200);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// §308 — enrollment + publish gate on teach / guide / custom
+// ---------------------------------------------------------------------------
+describe('teach/guide/custom: enrollment and publish gate (§308)', () => {
+  let seed;
+  let activity;
+
+  beforeEach(async () => {
+    await truncateAll();
+    const prof = makeProfessor();
+    seed = await seedMinimalCourse(prof.id);
+
+    await prisma.promptTemplate.createMany({
+      data: [
+        { slug: 'learning-prompt', name: 'Learning', systemPrompt: 'You are a tutor.' },
+        { slug: 'exercise-prompt', name: 'Exercise', systemPrompt: 'You are a guide.' },
+        { slug: 'supervisor-prompt', name: 'Supervisor', systemPrompt: 'You are a supervisor.' },
+      ],
+    });
+
+    activity = await prisma.activity.create({
+      data: {
+        lessonId: seed.lesson.id,
+        mainTopicId: seed.topic.id,
+        instructionsMd: 'Answer the question.',
+        enableTeachMode: true,
+        enableGuideMode: true,
+        config: { questionType: 'MCQ', question: 'Q?', options: ['A', 'B'], answer: 0, hints: [] },
+      },
+    });
+  });
+
+  it('INSTRUCTOR gets 403 on /teach (student-only route)', async () => {
+    const prof = makeProfessor();
+    const profApp = await createApp({ mockUser: prof });
+    const res = await request(profApp)
+      .post(`/api/activities/${activity.id}/teach`)
+      .send({ message: 'Hi', knowledgeLevel: 'beginner' });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/only students/i);
+  });
+
+  it('TA gets 403 on /teach', async () => {
+    const ta = makeTA();
+    await prisma.courseEnrollment.create({
+      data: { courseOfferingId: seed.course.id, userId: ta.id, role: 'TA' },
+    });
+    const taApp = await createApp({ mockUser: ta });
+    const res = await request(taApp)
+      .post(`/api/activities/${activity.id}/teach`)
+      .send({ message: 'Hi', knowledgeLevel: 'beginner' });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/only students/i);
+  });
+
+  it('unenrolled STUDENT gets 403 on /teach', async () => {
+    const student = makeStudent();
+    const studentApp = await createApp({ mockUser: student });
+    const res = await request(studentApp)
+      .post(`/api/activities/${activity.id}/teach`)
+      .send({ message: 'Hi', knowledgeLevel: 'beginner' });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/not enrolled/i);
+  });
+
+  it('enrolled STUDENT gets 403 on /teach when lesson is unpublished', async () => {
+    await prisma.lesson.update({ where: { id: seed.lesson.id }, data: { isPublished: false } });
+    const student = makeStudent();
+    await prisma.courseEnrollment.create({
+      data: { courseOfferingId: seed.course.id, userId: student.id, role: 'STUDENT' },
+    });
+    const studentApp = await createApp({ mockUser: student });
+    const res = await request(studentApp)
+      .post(`/api/activities/${activity.id}/teach`)
+      .send({ message: 'Hi', knowledgeLevel: 'beginner' });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/not available/i);
+  });
+
+  it('enrolled STUDENT gets 403 on /teach when course is unpublished', async () => {
+    await prisma.courseOffering.update({ where: { id: seed.course.id }, data: { isPublished: false } });
+    const student = makeStudent();
+    await prisma.courseEnrollment.create({
+      data: { courseOfferingId: seed.course.id, userId: student.id, role: 'STUDENT' },
+    });
+    const studentApp = await createApp({ mockUser: student });
+    const res = await request(studentApp)
+      .post(`/api/activities/${activity.id}/teach`)
+      .send({ message: 'Hi', knowledgeLevel: 'beginner' });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/not available/i);
+  });
+
+  it('INSTRUCTOR gets 403 on /guide (student-only route)', async () => {
+    const prof = makeProfessor();
+    const profApp = await createApp({ mockUser: prof });
+    const res = await request(profApp)
+      .post(`/api/activities/${activity.id}/guide`)
+      .send({ message: 'Hi', knowledgeLevel: 'beginner' });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/only students/i);
+  });
+
+  it('unenrolled STUDENT gets 403 on /guide', async () => {
+    const student = makeStudent();
+    const studentApp = await createApp({ mockUser: student });
+    const res = await request(studentApp)
+      .post(`/api/activities/${activity.id}/guide`)
+      .send({ message: 'Hi', knowledgeLevel: 'beginner' });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/not enrolled/i);
   });
 });
