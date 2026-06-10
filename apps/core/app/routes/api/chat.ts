@@ -2,7 +2,13 @@ import type { Prisma, User } from "@prisma/client";
 import { UserRole } from "@prisma/client";
 import { randomUUID } from "crypto";
 import { streamText, tool } from "ai";
-import { createAIProviderRegistry, modelSupportsTools } from "~/lib/ai/providers";
+import {
+  createAIProviderRegistry,
+  listEnabledRegistryProviders,
+  mergeLocalInferenceFromEnv,
+  parseModelIdentifier,
+} from "~/lib/ai/providers";
+import { modelSupportsTools } from "~/lib/ai/providers.server";
 import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
 import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
 import { findRelevantContent } from "~/lib/ai/embedding";
@@ -524,7 +530,42 @@ export async function action({ request }: ActionFunctionArgs) {
         },
       );
     }
-    const validatedApiKeys = toUserProviderSettings(apiKeysParsed.data);
+    const parsedModel = parseModelIdentifier(model);
+    if (!parsedModel) {
+      return new Response(
+        JSON.stringify({
+          error:
+            'Invalid model id. Use provider:modelId (e.g. vllm:qwen2.5-7b-instruct). Check Admin → AI Models.',
+        }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    const validatedApiKeys = mergeLocalInferenceFromEnv(
+      toUserProviderSettings(apiKeysParsed.data),
+      model,
+    );
+
+    if (!validatedApiKeys[parsedModel.providerId]?.isEnabled) {
+      const envHint =
+        parsedModel.providerId === "vllm"
+          ? "VLLM_BASE_URL"
+          : parsedModel.providerId === "ollama"
+            ? "OLLAMA_BASE_URL"
+            : "provider API key";
+      return new Response(
+        JSON.stringify({
+          error: `Provider "${parsedModel.providerId}" is not available on this server. Set ${envHint} in apps/core/.env and restart the dev process.`,
+        }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
 
     const existingMessageIds = new Set(storedMessages.map((message) => message.id).filter(isNonEmptyString));
     const appendMessages = async (messages: GenericMessage[]) => {
@@ -560,9 +601,43 @@ export async function action({ request }: ActionFunctionArgs) {
     };
 
     const registry = createAIProviderRegistry(validatedApiKeys);
+    const enabledProviders = listEnabledRegistryProviders(validatedApiKeys);
 
-    // Get the AI model from registry
-    const aiModel = registry.languageModel(model);
+    if (!enabledProviders.includes(parsedModel.providerId)) {
+      const envVar =
+        parsedModel.providerId === "vllm" ? "VLLM_BASE_URL" : "OLLAMA_BASE_URL";
+      return new Response(
+        JSON.stringify({
+          error: `Provider "${parsedModel.providerId}" is not available on this server (active: ${enabledProviders.join(", ") || "none"}). Set ${envVar} in apps/core/.env and restart the dev process.`,
+        }),
+        {
+          status: 503,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    let aiModel;
+    try {
+      aiModel = registry.languageModel(model);
+    } catch (err: unknown) {
+      const available =
+        typeof err === "object" &&
+        err !== null &&
+        "availableProviders" in err &&
+        Array.isArray((err as { availableProviders?: string[] }).availableProviders)
+          ? (err as { availableProviders: string[] }).availableProviders.join(", ")
+          : enabledProviders.join(", ");
+      return new Response(
+        JSON.stringify({
+          error: `Model "${model}" could not be loaded (providers on server: ${available}). For vLLM set VLLM_BASE_URL in .env and deploy the feat/VLLM provider code.`,
+        }),
+        {
+          status: 503,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
 
     await appendMessages(normalizedIncomingMessages);
 

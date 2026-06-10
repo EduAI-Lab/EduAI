@@ -41,18 +41,24 @@ The shared **dev server** (`dev.eduai.ok.ubc.ca` / `s378`) runs the Turborepo mo
 | -------------------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | UI / frontend changes only                   | No — local `npm run dev` is fine | No AI calls needed                                                                                        |
 | Backend logic that doesn't call AI           | No — local dev works             | DB can run in Docker locally                                                                              |
-| **Testing changes that talk to AI (Ollama)** | **Yes**                          | Ollama runs on `cmps01`, which is **not reachable** from personal laptops due to UBC network restrictions |
+| **Testing changes that talk to AI (Ollama / vLLM on cmps01)** | **Yes** | Inference runs on `cmps01`; **not reachable** from personal laptops (even on VPN) |
 
-**Key constraint:** `cmps01.ok.ubc.ca:11434` (Ollama) is only reachable from other UBC servers on the same network (like `s378`). Your laptop cannot reach it directly, even on VPN.
+**Key constraint:** `cmps01.ok.ubc.ca` is only reachable over the campus network from other UBC servers (e.g. **s378** / `dev.eduai.ok.ubc.ca`). Your laptop must use the dev server or SSH to cmps01 from your machine (if you have cmps01 access).
+
+| Service | Port | Dev (s378) access today |
+| ------- | ---- | ------------------------ |
+| **Ollama** | **11434** | HTTP allowed (set `OLLAMA_BASE_URL`) |
+| **vLLM** | **8001** (`VLLM_PORT`) | HTTP requires IT firewall + cmps01 host firewall (see [vLLM setup](rag-ai/VLLM.md)) |
+| **SSH** cmps01 | **22** | **Not** from s378 (timeout) — do not plan dev→cmps01 SSH tunnels |
 
 #### Workarounds for AI access from a laptop
 
-1. **SSH tunnel** (requires access to `cmps01`, which most devs don't have):
+1. **SSH tunnel from your laptop to cmps01** (only if you have cmps01 SSH access):
    ```bash
    ssh -N -L 11435:127.0.0.1:11434 ssaada08@cmps01.ok.ubc.ca
    ```
-   Then set `OLLAMA_BASE_URL="http://127.0.0.1:11435"` in your local `apps/core/.env`.
-2. **Use the dev server directly** (recommended for most AI testing) — see below.
+   Then set `OLLAMA_BASE_URL="http://127.0.0.1:11435"` in local `apps/core/.env`.
+2. **Use the dev server directly** (recommended) — `OLLAMA_BASE_URL=http://cmps01.ok.ubc.ca:11434` and, when IT opens **8001**, `VLLM_BASE_URL=http://cmps01.ok.ubc.ca:8001` in `apps/core/.env` on s378. See [HOW_TO_USE_DEV_SERVER.md](rag-ai/HOW_TO_USE_DEV_SERVER.md).
 
 ### Current access
 
@@ -161,8 +167,13 @@ DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:54320/eduai?schema=public
 BETTER_AUTH_SECRET="<generate with: openssl rand -base64 32>"
 BETTER_AUTH_URL="https://dev.eduai.ok.ubc.ca"
 
-# Ollama on cmps01 — reachable from s378 over internal network
+# cmps01 GPU inference (HTTP from s378 — not from laptop)
 OLLAMA_BASE_URL="http://cmps01.ok.ubc.ca:11434"
+
+# vLLM — after IT opens TCP 8001 (+ host firewall on cmps01)
+# VLLM_PORT=8001
+# VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"
+# VLLM_API_KEY="vllm-local"
 
 GOOGLE_GENERATIVE_AI_API_KEY=""   # set if using Gemini
 FIRECRAWL_API_KEY=""              # set if using Firecrawl web search

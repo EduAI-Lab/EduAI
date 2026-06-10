@@ -44,6 +44,7 @@ export default [
   route("/api/preferences", "routes/api/preferences.ts"),
   route("/api/users/*", "routes/api/users.$.ts"),
   route("/api/ollama-models", "routes/api/ollama-models.ts"),
+  route("/api/vllm-models", "routes/api/vllm-models.ts"),
   route("/api/sessions/validate", "routes/api/sessions.validate.ts"),
   route("/api/bug-reports", "routes/api/bug-reports.ts"),
   route("/api/admin/bug-reports", "routes/api/admin.bug-reports.ts"),
