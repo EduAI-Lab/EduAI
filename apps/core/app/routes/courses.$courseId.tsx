@@ -40,10 +40,18 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   if (!course) return redirect('/courses')
 
   const user = session.user
+  let authorizedUnits: string[] = []
+  if (user.role === 'UNIT_ADMIN') {
+    const dbUser = await prisma.user.findUnique({
+      where: { id: user.id },
+      select: { authorizedUnits: true },
+    })
+    authorizedUnits = dbUser?.authorizedUnits ?? []
+  }
   const rbacUser: RbacUser = {
     id: user.id,
     role: user.role as RbacUser['role'],
-    authorizedUnits: (user as any).authorizedUnits ?? [],
+    authorizedUnits,
   }
 
   const access = await resolveCourseAccess(rbacUser, {
