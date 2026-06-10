@@ -4,6 +4,7 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOllama } from "ollama-ai-provider";
 import prisma from "../prisma.server";
 import { randomUUID } from "crypto";
+import { SEMANTIC_CHUNK_SEPARATOR } from "./file-processing";
 import {
   type EffectiveEmbeddingSettings,
   DEFAULT_OLLAMA_EMBEDDING_MODEL,
@@ -394,6 +395,22 @@ function getLocalEmbeddingModel(
   return { model: ollama.embedding(modelId), kind: "ollama-local" };
 }
 
+/** Resolve ingest chunks: preserve upload-path semantic chunks or fall back to sentence splitting. */
+export function resolveMaterialChunks(
+  content: string,
+  maxChunkSize: number = 800,
+  overlap: number = 80,
+): string[] {
+  if (content.includes(SEMANTIC_CHUNK_SEPARATOR)) {
+    return content
+      .split(SEMANTIC_CHUNK_SEPARATOR)
+      .map((chunk) => chunk.trim())
+      .filter((chunk) => chunk.length > 0);
+  }
+
+  return generateChunks(content, maxChunkSize, overlap);
+}
+
 /**
  * Cloud embedding model for the configured dimension.
  * Resolution: OpenRouter → Google (3072 only) → OpenAI.
@@ -730,7 +747,7 @@ export async function processMaterialEmbeddings(
 
   const settings = await loadEffectiveEmbeddingSettings(material.courseId);
   const { maxChunkSize, overlap } = resolveChunkParams(settings.wantsLocal);
-  const chunks = generateChunks(content, maxChunkSize, overlap);
+  const chunks = resolveMaterialChunks(content, maxChunkSize, overlap);
 
   if (chunks.length === 0) {
     throw new Error("No content chunks generated");
@@ -743,17 +760,16 @@ export async function processMaterialEmbeddings(
       await tx.materialChunk.deleteMany({ where: { materialId } });
     }
 
-    for (let i = 0; i < chunks.length; i++) {
-      const createdChunk = await tx.materialChunk.create({
-        data: {
-          materialId,
-          index: i,
-          content: chunks[i],
-        },
-      });
+    const createdChunks = await tx.materialChunk.createManyAndReturn({
+      data: chunks.map((chunkContent, i) => ({ materialId, index: i, content: chunkContent })),
+    });
+
+    const chunksByIndex = [...createdChunks].sort((a, b) => a.index - b.index);
+
+    for (let i = 0; i < chunksByIndex.length; i++) {
       await tx.$executeRaw`
         INSERT INTO material_embeddings (id, "chunkId", embedding, "createdAt")
-        VALUES (${randomUUID()}, ${createdChunk.id}, ${embeddings[i].embedding}::vector, NOW())
+        VALUES (${randomUUID()}, ${chunksByIndex[i].id}, ${embeddings[i].embedding}::vector, NOW())
       `;
     }
   });

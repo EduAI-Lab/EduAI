@@ -27,6 +27,10 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { execSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  computeAdhdResponseMetrics,
+  isStructuralCompliancePass,
+} from "../app/lib/ai/adhd-metrics.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -180,20 +184,7 @@ async function postChat({ baseUrl, cookie, model, apiKeys, chatId, userText, adh
 }
 
 function computeMetrics(assistantText) {
-  const trimmed = (assistantText ?? "").trim();
-  const words = trimmed.length === 0 ? [] : trimmed.split(/\s+/).filter(Boolean);
-  const wordCount = words.length;
-
-  const leadingStripped = trimmed.replace(/^\s{0,2}/, "");
-  const topSummary = leadingStripped.startsWith("**Top summary**");
-
-  const lines = trimmed.split(/\r?\n/);
-  const tail = lines.slice(-3).join("\n");
-  const nextLine = /\*\*Next\?\*\*/.test(tail);
-
-  const underCap = wordCount <= 250;
-
-  return { wordCount, topSummary, nextLine, underCap, oneTopic: null };
+  return computeAdhdResponseMetrics(assistantText);
 }
 
 function escapeCsv(value) {
@@ -272,7 +263,7 @@ function formatTable(results) {
 function passRateLine(results) {
   const onResults = results.filter((r) => r.mode === "on" && !r.error);
   if (onResults.length === 0) return `ADHD Assist ON pass rate: 0/0 scenarios met all structural checks (TopSummary && Next? && UnderCap).`;
-  const pass = onResults.filter((r) => r.metrics.topSummary && r.metrics.nextLine && r.metrics.underCap).length;
+  const pass = onResults.filter((r) => isStructuralCompliancePass(r.metrics)).length;
   return `ADHD Assist ON pass rate: ${pass}/${onResults.length} scenarios met all structural checks (TopSummary && Next? && UnderCap).`;
 }
 
