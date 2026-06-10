@@ -352,6 +352,12 @@ export const addQuestionToAssessment = async (assessmentId, questionId, orderNum
       throw new Error('Assessment not found');
     }
 
+    // The question and assessment must live in the same course — owner scoping alone
+    // would let a question from another course the user owns be linked here (#1).
+    if (question.courseId !== assessment.courseId) {
+      throw new Error('Question not found');
+    }
+
     // Update question order
     const currentOrder = question.questionOrder || {};
     currentOrder[assessmentId] = orderNumber;
@@ -398,6 +404,11 @@ export const removeQuestionFromAssessment = async (assessmentId, questionId, use
 
     if (!assessment) {
       throw new Error('Assessment not found');
+    }
+
+    // The question and assessment must live in the same course (#1).
+    if (question.courseId !== assessment.courseId) {
+      throw new Error('Question not found');
     }
 
     // Remove from question order

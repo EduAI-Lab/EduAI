@@ -98,6 +98,16 @@ export const Variants = sequelize.define('Variants', {
     field: 'core_question_id',
     comment: 'Core Question CUID; null until variant is approved and pushed to Core'
   },
+  createdBy: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    field: 'created_by',
+    references: {
+      model: 'users',
+      key: 'id'
+    },
+    comment: 'users.id of the creator (RBAC §16/§19 TA own-only). Null = no owner → instructor-and-up only.'
+  },
   createdAt: {
     type: DataTypes.DATE,
     allowNull: false,
