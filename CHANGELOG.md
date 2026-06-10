@@ -6,11 +6,13 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 
 
-## [Week 6 — June 9–13, 2026]
+## [Week 6 — June 8–14, 2026]
 
 ### Added
 - [core] api: Add TA management (`GET`/`POST`/`DELETE /api/courses/:courseId/tas`) and instructor reassignment (`PATCH /api/courses/:id`) for `ADMIN`/`UNIT_ADMIN`. (#491, @yta3216, 2026-06-08)
 - [core] ui: Add Staff tab to Course Detail with `useCourseTAs` hook — lists current instructor and TAs with reassignment controls for admin/unit admin. (#491, @yta3216, 2026-06-08)
+- [core] feat: Add account-level Assistive Mode shell — `AssistiveUiProvider` syncs `data-assistive` on `<html>` (SSR + client), `GET`/`PATCH /api/preferences` for `UserPreference.assistDefault`, and the `/chat` assist toggle writes through the provider so the preference persists platform-wide. Settings Accessibility tab deferred to #530 (blocked on #491). (#520, #531, @ebabar5, 2026-06-09)
+- [core] tests: Unit tests for `/api/preferences` and `AssistiveUiProvider`; integration tests for assistive preference round-trip, per-account isolation, and guest 401 on PATCH. (#520, #531, @ebabar5, 2026-06-09)
 
 ### Fixed
 - [core] fix: Fix instructors and TAs not seeing assigned courses, admins unable to upload materials, instructors unable to add topics, and the same material being blocked from upload to two different courses. (#491, @yta3216, 2026-06-08)
@@ -28,6 +30,17 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] ui: Add publish toggle, department dropdown, and `authorizedUnits` DB fetch to course views; improve course code UX with department prefix. (#491, @yta3216, 2026-06-03)
 - [core] feat: Add course delete with confirmation modal, `DELETE /api/courses/:id`, and `UNIT_ADMIN` delete permission scoped to authorized units. (#491, @yta3216, 2026-06-04)
 - [core] ui: Person B RBAC platform UI — role-aware components, hooks, and tests. (#491, @ebabar5, 2026-06-03)
+- [core] feat: Local Ollama embedding provider for RAG — `EMBEDDING_PROVIDER=local` routes index and query embeds through Ollama (`mxbai-embed-large`, 1024-dim); fails fast when Ollama is unavailable (no silent cloud fallback); dimension validation and `[embedding]` provider logging in `embedding.ts`. (#361, #370, #441)
+- [core] docs: LOCAL-EMBEDDINGS decision — `vector(1024)` migration, default local model, re-embed strategy in [`docs/rag-ai/LOCAL-EMBEDDINGS.md`](docs/rag-ai/LOCAL-EMBEDDINGS.md). (#369)
+- [core] tooling: `npm run re-embed:course -- <courseId>` and `reEmbedCourseMaterials()` to re-index course materials after provider/dimension changes. (#373)
+- [core] tests: Unit tests for `getExpectedEmbeddingDimension` and `wantsLocalEmbeddingProvider` in `embedding.test.ts`. (#361)
+- [core] feat: Per-course embedding settings and re-index UI — `Course` embedding fields, `GET/PATCH /api/courses/:courseId/embedding-settings`, async `POST /api/courses/:courseId/re-embed` + `GET .../re-embed/:jobId` with progress polling, Materials tab controls, and `embedding-config.test.ts`. (#373, #441)
+- [core] feat: Background `CourseReEmbedJob` for re-index — non-blocking HTTP, per-material progress, partial-failure handling; `re-embed-job.test.ts`. (#441)
+
+### Fixed
+- [core] rag: Replace per-chunk sequential INSERT with `createManyAndReturn` + batched transaction on material embed path — chunk creation now costs 1 DB round-trip regardless of document size (down from N); embedding inserts remain individual raw SQL due to the pgvector type but run inside the same transaction. (#364, @ammaarm128, 2026-06-06)
+- [core] rag: Eliminate double-split on material ingest path — `processMaterialEmbeddings` now detects `SEMANTIC_CHUNK_SEPARATOR` written by `processUploadedFile` and splits on it directly, preserving semantic chunks from `applySemanticChunking`; falls back to `generateChunks` for content that did not pass through the upload path. Previously, every uploaded file was semantically chunked in `file-processing.ts` and then immediately re-split by a naive sentence splitter in `embedding.ts`, destroying section boundaries. Re-upload existing materials to benefit. (#360, @ammaarm128, 2026-06-06)
+- [core] tests: Add unit tests for `resolveMaterialChunks` — covers separator-preserving split, `generateChunks` fallback, and empty separator-only input. (#360, @ammaarm128, 2026-06-06)
 - [core] api: Add ADMIN-only bug-report list/triage endpoints with anonymity masking, plus `GET /api/bug-reports?mine=true` for own reports (§11). (#304, #478, @abdullahmoh21, 2026-06-05)
 - [core] auth: Make `GET /api/ai-providers` and `GET /api/ai-models` ADMIN-only (§13). (#303, #478, @abdullahmoh21, 2026-06-05)
 - [core] api: Add `GET`/`PATCH /api/me`, block self-role-changes, and support `authorizedUnits` assignment for UNIT_ADMINs (§4). (#297, #478, @abdullahmoh21, 2026-06-05)
@@ -61,6 +74,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Changed
 - [core] refactor: Wire RBAC into courses routes with session-based access control; allow `UNIT_ADMIN` to create/edit courses; add `department`+`isPublished` to API; replace `authorizedUnits` freetext with department checkboxes. (#491, @yta3216, 2026-06-03)
+- [core] infra: Prisma migration `20260522130000_local_embeddings_vector_1024` — `material_embeddings.embedding` from `vector(3072)` to `vector(1024)` (clears incompatible rows; re-embed required). (#373, #441)
+- [core] docs: Update [`EMBEDDINGS.md`](docs/rag-ai/EMBEDDINGS.md), [`ARCHITECTURE.md`](docs/ARCHITECTURE.md), `apps/core/.env.example`, and README for local embed env vars. (#370)
 - [core] refactor: Move data fetching out of domain components into parent routes — `courses.$courseId` owns materials load/upload; `chat` owns `useApiKeys` / `ApiKeySettings`; `admin.ai-models` owns Ollama model fetch for `ModelFormDialog`. (#437, #438, 2026-06-03)
 - [core] docs: Update `apps/core/README.md` — monorepo install from root, component architecture section, and expanded component test inventory. (#385, @Ayyhab, 2026-06-03)
 - [monorepo] docs: Update root `README.md` with EduAI component skeleton overview and link to `apps/core/docs/`. (#385, @Ayyhab, 2026-06-03)
@@ -76,6 +91,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 - [core] fix: Unblock vitest and align CoursesList unit-admin tests. (#491, @Ayyhab, 2026-06-04)
+- [core] fix: Local Ollama re-embed for large slide decks — use native `POST /api/embed`, smaller char-based chunks when PDF text has no sentence breaks (avoids `mxbai-embed-large` context-length 400), and batched embed with split-on-400; verified 7/7 materials on dev COSC 315. (#441)
 - [core] fix: Scope persisted-course validation to the current user (#420 review) — the `/chat` loader now restores `lastCourseCode` against the courses the user can actually access (courses they teach, TA, or are actively enrolled in; admins see all) via new `getAccessibleCourseCodes` in `apps/core/app/lib/courses/server.ts`, instead of every course in the database. A course the user can no longer access is dropped on restore rather than treated as valid just because it still exists globally. Adds `apps/core/app/tests/unit/courses-server.test.ts`. (#420, review feedback from @Whiteknight07, @Ayyhab, 2026-06-05)
 - [monorepo] infra: Replace em dash with hyphen in `scripts/dev-db.sh` Docker startup message to avoid PowerShell parse errors on Windows. (#438, @yta3216, 2026-06-03)
 - [question-maker] api: Fix variant push to Core — support CUID string primary topic ids, lowercase `difficulty` / `reasoningLevel` enum values, return Core topic ids in the `INVALID_TOPIC_IDS` response, count name-updated topics in the sync-topics synced total, query JSON `question_order` with the `->>` operator, and wrap the cursor insert in a savepoint to survive a unique-key race. (#453, @abdullahmoh21, 2026-06-01)

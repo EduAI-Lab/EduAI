@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { redirect, useLoaderData, useFetcher } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
+
 import { AppSidebar } from "~/components/app-sidebar";
 import { ChatCourseScopedView } from "~/components/chat/chat-course-scoped-view";
 import { ChatGlobalView } from "~/components/chat/chat-global-view";
