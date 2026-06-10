@@ -20,6 +20,12 @@ export type OllamaModel = {
   details: any;
 };
 
+export type VllmModel = {
+  id: string;
+  owned_by?: string;
+  created?: number;
+};
+
 export interface ModelFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -30,6 +36,11 @@ export interface ModelFormDialogProps {
   fetchingOllamaModels?: boolean;
   ollamaError?: string | null;
   onFetchOllamaModels?: () => void;
+  vllmModels?: VllmModel[];
+  fetchingVllmModels?: boolean;
+  vllmError?: string | null;
+  onFetchVllmModels?: () => void;
+  vllmFetched?: boolean;
 }
 
 export function ModelFormDialog({
@@ -42,6 +53,11 @@ export function ModelFormDialog({
   fetchingOllamaModels = false,
   ollamaError = null,
   onFetchOllamaModels,
+  vllmModels = [],
+  fetchingVllmModels = false,
+  vllmError = null,
+  onFetchVllmModels,
+  vllmFetched = false,
 }: ModelFormDialogProps) {
   const [formData, setFormData] = useState<{
     modelId: string;
@@ -72,6 +88,7 @@ export function ModelFormDialog({
   });
 
   const [selectedOllamaModel, setSelectedOllamaModel] = useState<string>("");
+  const [selectedVllmModel, setSelectedVllmModel] = useState<string>("");
 
   useEffect(() => {
     if (model) {
@@ -109,11 +126,28 @@ export function ModelFormDialog({
 
   useEffect(() => {
     setSelectedOllamaModel("");
+    setSelectedVllmModel("");
   }, [formData.providerId]);
 
   const selectedProvider = providers.find(p => p.id === formData.providerId);
-  const isOllamaProvider = selectedProvider?.name === "ollama";
+  const providerName = selectedProvider?.name?.toLowerCase() ?? "";
+  const isOllamaProvider = providerName === "ollama";
+  const isVllmProvider = providerName === "vllm";
   const showSupportsToolsToggle = allowsSupportsToolsToggle(formData.modelId, formData.type);
+
+  useEffect(() => {
+    if (!open || !isVllmProvider || !onFetchVllmModels || vllmFetched) return;
+    if (fetchingVllmModels || vllmModels.length > 0) return;
+    onFetchVllmModels();
+  }, [
+    open,
+    isVllmProvider,
+    formData.providerId,
+    onFetchVllmModels,
+    fetchingVllmModels,
+    vllmModels.length,
+    vllmFetched,
+  ]);
 
   const handleOllamaModelSelect = (modelName: string) => {
     setSelectedOllamaModel(modelName);
@@ -140,6 +174,30 @@ export function ModelFormDialog({
       setFormData((prev) => ({ ...prev, supportsTools: false }));
     }
   }, [showSupportsToolsToggle, formData.supportsTools]);
+
+  const handleVllmModelSelect = (modelId: string) => {
+    setSelectedVllmModel(modelId);
+    const selected = vllmModels.find(m => m.id === modelId);
+    if (selected) {
+      const displayName = selected.id
+        .split(/[-_]/)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ");
+      setFormData(prev => ({
+        ...prev,
+        modelId: selected.id,
+        name: displayName,
+        description: `Local vLLM model: ${selected.id}`,
+        type: "CHAT",
+        maxTokens: "",
+        supportsImages: false,
+        supportsTools: false,
+        supportsStreaming: true,
+        inputPricing: "0",
+        outputPricing: "0",
+      }));
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -241,7 +299,7 @@ export function ModelFormDialog({
                     <SelectTrigger>
                       <SelectValue placeholder="Choose an Ollama model" />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="z-[100]">
                       {ollamaModels.map((m) => (
                         <SelectItem key={m.name} value={m.name}>
                           <div className="flex flex-col">
@@ -256,6 +314,91 @@ export function ModelFormDialog({
                   </Select>
                 </div>
               )}
+            </div>
+          )}
+
+          {isVllmProvider && (
+            <div className="space-y-4 p-4 border rounded-lg bg-muted/50">
+              <div className="flex items-center justify-between gap-2">
+                <Label>Available vLLM Models</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onFetchVllmModels?.()}
+                  disabled={fetchingVllmModels || !onFetchVllmModels}
+                >
+                  {fetchingVllmModels ? (
+                    <>
+                      <Loader className="w-4 h-4 mr-2" />
+                      Fetching...
+                    </>
+                  ) : (
+                    "Refresh list"
+                  )}
+                </Button>
+              </div>
+
+              <p className="text-xs text-muted-foreground">
+                Loaded from server <code className="text-xs">VLLM_BASE_URL</code> (LiteLLM proxy on
+                cmps01, port 8001). If fetch fails, ask ops to check{" "}
+                <code className="text-xs">infra/cmps01</code> — not a URL you enter here.
+              </p>
+
+              {vllmError && (
+                <Alert variant="destructive">
+                  <AlertDescription>{vllmError}</AlertDescription>
+                </Alert>
+              )}
+
+              {fetchingVllmModels && (
+                <p className="text-sm text-muted-foreground">Loading models from vLLM proxy…</p>
+              )}
+
+              {vllmFetched && !fetchingVllmModels && !vllmError && vllmModels.length === 0 && (
+                <Alert>
+                  <AlertDescription>
+                    No models returned. Ops: verify LiteLLM on cmps01 and{" "}
+                    <code>VLLM_BASE_URL</code> in EduAI <code>.env</code> (
+                    <code>http://cmps01.ok.ubc.ca:8001</code>).
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              <div className="space-y-2">
+                <Label htmlFor="vllmModelSelect">Select Model</Label>
+                <Select
+                  value={selectedVllmModel}
+                  onValueChange={handleVllmModelSelect}
+                  disabled={vllmModels.length === 0}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue
+                      placeholder={
+                        fetchingVllmModels
+                          ? "Loading…"
+                          : vllmModels.length === 0
+                            ? "Refresh list first"
+                            : "Choose a vLLM model"
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent className="z-[100]">
+                    {vllmModels.map((m) => (
+                      <SelectItem key={m.id} value={m.id}>
+                        <div className="flex flex-col">
+                          <span>{m.id}</span>
+                          {m.owned_by && (
+                            <span className="text-xs text-muted-foreground">
+                              {m.owned_by}
+                            </span>
+                          )}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           )}
 

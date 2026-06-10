@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useLoaderData, redirect } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { IconPlus, IconSearch, IconFilter } from "@tabler/icons-react";
@@ -17,10 +17,19 @@ import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
 
 import { AIModelsTable } from "~/components/admin/ai-models-table";
 import { ModelFormDialog } from "~/components/admin/model-form-dialog";
-import type { OllamaModel } from "~/components/admin/model-form-dialog";
+import type { OllamaModel, VllmModel } from "~/components/admin/model-form-dialog";
 import { ProvidersTable } from "~/components/admin/providers-table";
 import { ProviderFormDialog } from "~/components/admin/provider-form-dialog";
 import type { AIProvider, AIModel } from "../types/ai";
+
+function isVllmFetchNotFound(message: string, httpStatus?: number): boolean {
+  return (
+    httpStatus === 404 ||
+    message.includes("404") ||
+    message.includes("Not Found") ||
+    message.includes("/api/vllm-models is missing")
+  );
+}
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request);
@@ -52,12 +61,16 @@ export default function AIModelsPage() {
   const [editingModel, setEditingModel] = useState<AIModel | null>(null);
   const [editingProvider, setEditingProvider] = useState<AIProvider | null>(null);
 
-  // Ollama fetch state (owned here, passed as props to ModelFormDialog)
+  // Local inference fetch state (passed as props to ModelFormDialog)
   const [ollamaModels, setOllamaModels] = useState<OllamaModel[]>([]);
   const [fetchingOllamaModels, setFetchingOllamaModels] = useState(false);
   const [ollamaError, setOllamaError] = useState<string | null>(null);
   const [webToolsEnabled, setWebToolsEnabled] = useState(false);
   const [savingWebTools, setSavingWebTools] = useState(false);
+  const [vllmModels, setVllmModels] = useState<VllmModel[]>([]);
+  const [fetchingVllmModels, setFetchingVllmModels] = useState(false);
+  const [vllmError, setVllmError] = useState<string | null>(null);
+  const [vllmFetched, setVllmFetched] = useState(false);
 
   // Fetch data
   const fetchProviders = async () => {
@@ -212,11 +225,54 @@ export default function AIModelsPage() {
     }
   };
 
+  const fetchVllmModels = useCallback(async () => {
+    setFetchingVllmModels(true);
+    setVllmError(null);
+    setVllmFetched(false);
+    try {
+      const response = await fetch("/api/vllm-models");
+      let data: { error?: string; models?: VllmModel[] } = {};
+      try {
+        data = await response.json();
+      } catch {
+        throw new Error(
+          `Invalid response from server (HTTP ${response.status}). Restart dev server if /api/vllm-models is missing.`,
+        );
+      }
+      if (!response.ok) {
+        const err = new Error(
+          data.error ||
+            `Failed to fetch vLLM models (HTTP ${response.status})`,
+        ) as Error & { httpStatus?: number };
+        err.httpStatus = response.status;
+        throw err;
+      }
+      setVllmModels(data.models || []);
+    } catch (error: any) {
+      const message = error.message || "Failed to fetch vLLM models";
+      const httpStatus = error.httpStatus as number | undefined;
+      if (isVllmFetchNotFound(message, httpStatus)) {
+        setVllmError(
+          "Cannot reach /api/vllm-models — pull latest feat/VLLM and restart the EduAI dev server.",
+        );
+      } else {
+        setVllmError(message);
+      }
+      setVllmModels([]);
+    } finally {
+      setFetchingVllmModels(false);
+      setVllmFetched(true);
+    }
+  }, []);
+
   const handleModelDialogChange = (open: boolean) => {
     setModelDialogOpen(open);
     if (!open) {
       setOllamaModels([]);
       setOllamaError(null);
+      setVllmModels([]);
+      setVllmError(null);
+      setVllmFetched(false);
     }
   };
 
@@ -481,6 +537,11 @@ export default function AIModelsPage() {
             fetchingOllamaModels={fetchingOllamaModels}
             ollamaError={ollamaError}
             onFetchOllamaModels={fetchOllamaModels}
+            vllmModels={vllmModels}
+            fetchingVllmModels={fetchingVllmModels}
+            vllmError={vllmError}
+            vllmFetched={vllmFetched}
+            onFetchVllmModels={fetchVllmModels}
           />
 
           <ProviderFormDialog

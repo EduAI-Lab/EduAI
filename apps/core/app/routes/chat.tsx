@@ -110,6 +110,7 @@ export default function Chat() {
   // chats; restored from the chat's own adhdAssist when opening an old chat
   // (without rewriting the account preference).
   const [adhdAssist, setAdhdAssist] = useState(assistive);
+  const [webToolsEnabled, setWebToolsEnabled] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { apiKeys, getValidApiKeys, updateProviderSettings, removeProviderSettings, isProviderConfigured } = useApiKeys();
   const prefsFetcher = useFetcher();
@@ -191,10 +192,14 @@ export default function Chat() {
       adhdAssist,
     },
     onResponse: async (response) => {
-      // Extract chatId from response headers
       const chatIdHeader = response.headers.get('X-Chat-Id');
       if (chatIdHeader && !chatId) {
         setChatId(chatIdHeader);
+      }
+
+      const webToolsHeader = response.headers.get('X-Web-Tools-Enabled');
+      if (webToolsHeader !== null) {
+        setWebToolsEnabled(webToolsHeader === '1');
       }
     },
     onFinish: async (message) => {
@@ -294,6 +299,7 @@ export default function Chat() {
                             key={message.id}
                             message={message}
                             isStreaming={isStreamingMessage}
+                            webToolsEnabled={webToolsEnabled}
                           />
                         );
                       })}
