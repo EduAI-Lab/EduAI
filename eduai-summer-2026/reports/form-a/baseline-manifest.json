@@ -1,0 +1,9 @@
+{
+  "label": "form-a-before-phase3-oversight",
+  "runDir": "eval-runs/2026-06-09T21-14-53-136Z",
+  "gitSha": "7d464b18afe61df519fcc1e7c6928dc2d1d30d0a",
+  "model": "google:gemini-2.5-flash",
+  "capturedAt": "2026-06-09T21:14:53.136Z",
+  "oversightEnabled": false,
+  "note": "Frozen BEFORE snapshot — Assist ON policy prompt only; no server-side Phase 3 oversight on this SHA."
+}
