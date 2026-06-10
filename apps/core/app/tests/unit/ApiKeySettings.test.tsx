@@ -26,11 +26,17 @@ const makeProps = (overrides: Record<string, any> = {}) => ({
 // ---------------------------------------------------------------------------
 
 describe("ApiKeySettings — rendering", () => {
-  it("renders all three provider card labels when open", () => {
+  it("renders OpenAI and Google provider cards when open", () => {
     render(<ApiKeySettings {...makeProps()} />);
     expect(screen.getByText("OpenAI API Key")).toBeInTheDocument();
     expect(screen.getByText("Google AI API Key")).toBeInTheDocument();
-    expect(screen.getByText("Ollama (Local)")).toBeInTheDocument();
+    expect(screen.queryByText("Ollama (Local)")).not.toBeInTheDocument();
+  });
+
+  it("shows preconfigured Ollama and vLLM note", () => {
+    render(<ApiKeySettings {...makeProps()} />);
+    expect(screen.getByText(/Managed on the server via/)).toBeInTheDocument();
+    expect(screen.getByText(/docs\/rag-ai\/VLLM\.md/)).toBeInTheDocument();
   });
 
   it("renders nothing when closed", () => {
@@ -73,18 +79,6 @@ describe("ApiKeySettings — unconfigured providers", () => {
       apiKey: "sk-mykey",
       isEnabled: true,
     });
-  });
-
-  it("shows the Enable Ollama button for an unconfigured Ollama provider", () => {
-    render(<ApiKeySettings {...makeProps()} />);
-    expect(screen.getByRole("button", { name: /enable ollama/i })).toBeInTheDocument();
-  });
-
-  it("calls onUpdateProvider with isEnabled when Enable Ollama is clicked", () => {
-    const onUpdateProvider = vi.fn();
-    render(<ApiKeySettings {...makeProps({ onUpdateProvider })} />);
-    fireEvent.click(screen.getByRole("button", { name: /enable ollama/i }));
-    expect(onUpdateProvider).toHaveBeenCalledWith("ollama", { isEnabled: true });
   });
 });
 
