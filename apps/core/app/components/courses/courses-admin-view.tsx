@@ -10,6 +10,7 @@ import { Label } from '~/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select'
 import { Textarea } from '~/components/ui/textarea'
 import { DEPARTMENTS, getDepartmentLabel } from '~/lib/departments'
+import { DepartmentCombobox } from '~/components/courses/department-combobox'
 import type { Course, CreateCourseInput, UpdateCourseInput } from '~/hooks/api/use-courses'
 
 interface Instructor {
@@ -38,9 +39,8 @@ export function CoursesAdminView({ courses, instructors = [], onCreateCourse, on
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     const fd = new FormData(e.currentTarget)
-    const dept = createDept || undefined
-    const codeSuffix = (fd.get('codeSuffix') as string | null)?.trim() ?? ''
-    const code = dept && codeSuffix ? `${dept} ${codeSuffix}` : (fd.get('code') as string)
+    const codeSuffix = (fd.get('codeSuffix') as string).trim()
+    const code = `${createDept} ${codeSuffix}`
     await onCreateCourse({
       name: fd.get('name') as string,
       code,
@@ -48,7 +48,7 @@ export function CoursesAdminView({ courses, instructors = [], onCreateCourse, on
       term: selectedTerm,
       year: parseInt(fd.get('year') as string),
       startDate: fd.get('startDate') as string,
-      department: dept,
+      department: createDept,
       aiInstructions: (fd.get('aiInstructions') as string) || undefined,
       instructorUserIds: selectedInstructor ? [selectedInstructor] : [],
     })
@@ -96,28 +96,21 @@ export function CoursesAdminView({ courses, instructors = [], onCreateCourse, on
                 <Input id="create-name" name="name" placeholder="Introduction to Computer Science" required />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="create-dept">Department (optional)</Label>
-                <Select name="department" value={createDept} onValueChange={setCreateDept}>
-                  <SelectTrigger id="create-dept"><SelectValue placeholder="None" /></SelectTrigger>
-                  <SelectContent>
-                    {DEPARTMENTS.map((d) => (
-                      <SelectItem key={d.code} value={d.code}>{d.label} ({d.code})</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label htmlFor="create-dept">Department</Label>
+                <DepartmentCombobox
+                  departments={[...DEPARTMENTS]}
+                  value={createDept}
+                  onValueChange={setCreateDept}
+                />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="create-code">Course Number / Code</Label>
-                {createDept ? (
-                  <div className="flex items-center gap-2">
-                    <span className="shrink-0 rounded-md border bg-muted px-3 py-2 text-sm font-mono text-muted-foreground">
-                      {createDept}
-                    </span>
-                    <Input id="create-code" name="codeSuffix" placeholder="101" className="font-mono" required />
-                  </div>
-                ) : (
-                  <Input id="create-code" name="code" placeholder="101 or COSC 101" required />
-                )}
+                <Label htmlFor="create-code">Course Number</Label>
+                <div className="flex items-center gap-2">
+                  <span className="shrink-0 rounded-md border bg-muted px-3 py-2 text-sm font-mono text-muted-foreground">
+                    {createDept || '—'}
+                  </span>
+                  <Input id="create-code" name="codeSuffix" placeholder="101" className="font-mono" required />
+                </div>
                 {createDept && (
                   <p className="text-xs text-muted-foreground">
                     Full code: <span className="font-mono">{createDept} 101</span>
@@ -169,7 +162,7 @@ export function CoursesAdminView({ courses, instructors = [], onCreateCourse, on
               </div>
               <div className="flex justify-end gap-2">
                 <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
-                <Button type="submit" disabled={!selectedInstructor}>Create Course</Button>
+                <Button type="submit" disabled={!selectedInstructor || !createDept}>Create Course</Button>
               </div>
             </form>
           </DialogContent>
