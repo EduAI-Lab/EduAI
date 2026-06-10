@@ -167,6 +167,7 @@ export async function createCourse(request: Request) {
         description: result.data.description,
         isPublished: result.data.isPublished,
         aiInstructions: result.data.aiInstructions,
+        instructorId: result.data.instructorUserIds[0],
       },
     });
 
