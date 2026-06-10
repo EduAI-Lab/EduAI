@@ -60,6 +60,34 @@ The server process **dies when your SSH session ends**. Use `tmux` so it survive
 
 Apache proxies `https://dev.eduai.ok.ubc.ca` → `http://127.0.0.1:3000`.
 
+#### cmps01 inference (Ollama + vLLM)
+
+Local **chat** models run on **cmps01**; the dev app calls them over **HTTP** (not SSH). See [ARCHITECTURE.md](../ARCHITECTURE.md#cmps01-gpu-inference-host).
+
+Add to `apps/core/.env` on **s378**:
+
+```env
+# Ollama — works today from dev
+OLLAMA_BASE_URL="http://cmps01.ok.ubc.ca:11434"
+
+# vLLM — LiteLLM proxy on cmps01 (TCP 8001 open dev → cmps01)
+VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"
+VLLM_API_KEY="vllm-local"
+```
+
+Restart dev server (tmux) after editing `.env`.
+
+| Check | Command (on dev) |
+| ----- | ---------------- |
+| Ollama reachable | `curl -s http://cmps01.ok.ubc.ca:11434/api/tags \| head` |
+| vLLM models | `curl -s http://cmps01.ok.ubc.ca:8001/v1/models -H "Authorization: Bearer vllm-local" \| jq '.data[].id'` |
+| vLLM chat smoke | `cd apps/core && npm run vllm:smoke` |
+| SSH dev → cmps01 | **Fails** (port 22 timeout) — **do not** use SSH tunnel from s378 |
+
+**vLLM ops on cmps01 (LiteLLM + two backends):** [`VLLM.md`](./VLLM.md) · [`infra/cmps01/README.md`](../../infra/cmps01/README.md)
+
+In the app: pick **`vllm:qwen2.5-7b-instruct`** or **`vllm:qwen2.5-32b-instruct`** in chat (no browser enable step). Register models in **Admin → AI Models** (vLLM provider → **Refresh list**); `npx prisma db seed` only adds the `vllm` provider row.
+
 #### Auth / login troubleshooting
 
 Required in `apps/core/.env` on the server:

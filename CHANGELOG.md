@@ -41,6 +41,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] tests: Add unit tests for `resolveMaterialChunks` — covers separator-preserving split, `generateChunks` fallback, and empty separator-only input. (#360, @ammaarm128, 2026-06-06)
 
 ### Added
+- [core] feat: vLLM local inference provider — OpenAI-compatible `vllm` provider on cmps01 (`VLLM_BASE_URL`, port **8001**), `mergeLocalInferenceFromEnv()`, Admin-registered models (provider seeded, same pattern as Ollama), `npm run vllm:smoke`, and `providers.server.ts` split for Vite client/server boundary. Stress-tested on dev: **~15× faster** than Ollama under 5-way parallel load; warm direct **~57 ms**, 10 parallel **~320–380 ms**, EduAI full stack median **~211 ms**. Docs: [`docs/rag-ai/VLLM.md`](docs/rag-ai/VLLM.md). ([#449](https://github.com/EduAI-Lab/EduAI/pull/449), Closes #435, #394)
 - [core] feat: Local Ollama embedding provider for RAG — `EMBEDDING_PROVIDER=local` routes index and query embeds through Ollama (`mxbai-embed-large`, 1024-dim); fails fast when Ollama is unavailable (no silent cloud fallback); dimension validation and `[embedding]` provider logging in `embedding.ts`. (#361, #370, #441)
 - [core] docs: LOCAL-EMBEDDINGS decision — `vector(1024)` migration, default local model, re-embed strategy in [`docs/rag-ai/LOCAL-EMBEDDINGS.md`](docs/rag-ai/LOCAL-EMBEDDINGS.md). (#369)
 - [core] tooling: `npm run re-embed:course -- <courseId>` and `reEmbedCourseMaterials()` to re-index course materials after provider/dimension changes. (#373)
