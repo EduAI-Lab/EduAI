@@ -922,7 +922,6 @@ async function seedAIProvidersAndModels() {
   const openrouterModels = [
     { modelId: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash (OpenRouter)', description: 'Fast multimodal via OpenRouter', maxTokens: 1048576, inputPricing: 0.075, outputPricing: 0.3 },
     { modelId: 'openai/gpt-4o', name: 'GPT-4o (OpenRouter)', description: 'OpenAI flagship via OpenRouter', maxTokens: 128000, inputPricing: 2.5, outputPricing: 10, supportsTools: false },
-    { modelId: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet (OpenRouter)', description: 'Anthropic Sonnet via OpenRouter', maxTokens: 200000, inputPricing: 3, outputPricing: 15, supportsTools: false },
   ];
 
   for (const m of openrouterModels) {
@@ -934,6 +933,11 @@ async function seedAIProvidersAndModels() {
       create: { ...m, type: 'CHAT', supportsImages: true, supportsTools: m.supportsTools ?? true, supportsStreaming: true, providerId: openrouter.id },
     });
   }
+
+  await prisma.aIModel.updateMany({
+    where: { providerId: openrouter.id, modelId: 'anthropic/claude-3.5-sonnet' },
+    data: { isActive: false },
+  });
 }
 
 async function seedUsers() {
