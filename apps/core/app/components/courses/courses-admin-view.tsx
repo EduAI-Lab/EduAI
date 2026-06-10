@@ -20,14 +20,14 @@ interface Instructor {
 
 interface Props {
   courses: Course[]
-  instructors: Instructor[]
+  instructors?: Instructor[]
   onCreateCourse: (data: CreateCourseInput) => Promise<void>
   onEditCourse: (id: string, data: UpdateCourseInput) => Promise<void>
   onDeleteCourse: (id: string) => Promise<void>
   onPublishToggle: (id: string, publish: boolean) => Promise<void>
 }
 
-export function CoursesAdminView({ courses, instructors, onCreateCourse, onEditCourse, onDeleteCourse, onPublishToggle }: Props) {
+export function CoursesAdminView({ courses, instructors = [], onCreateCourse, onEditCourse, onDeleteCourse, onPublishToggle }: Props) {
   const [createOpen, setCreateOpen] = useState(false)
   const [editingCourse, setEditingCourse] = useState<Course | null>(null)
   const [deletingCourse, setDeletingCourse] = useState<Course | null>(null)

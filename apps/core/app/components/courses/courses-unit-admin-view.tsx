@@ -21,7 +21,7 @@ interface Instructor {
 interface Props {
   courses: Course[]         // already filtered to this unit's courses by the route
   authorizedUnits: string[] // e.g. ['COSC', 'MATH']
-  instructors: Instructor[]
+  instructors?: Instructor[]
   onCreateCourse: (data: CreateCourseInput) => Promise<void>
   onEditCourse: (id: string, data: UpdateCourseInput) => Promise<void>
   onDeleteCourse: (id: string) => Promise<void>
@@ -33,7 +33,7 @@ function useAuthorizedDepts(authorizedUnits: string[]) {
   return DEPARTMENTS.filter((d) => authorizedUnits.includes(d.code))
 }
 
-export function CoursesUnitAdminView({ courses, authorizedUnits, instructors, onCreateCourse, onEditCourse, onDeleteCourse, onPublishToggle }: Props) {
+export function CoursesUnitAdminView({ courses, authorizedUnits, instructors = [], onCreateCourse, onEditCourse, onDeleteCourse, onPublishToggle }: Props) {
   const [createOpen, setCreateOpen] = useState(false)
   const [editingCourse, setEditingCourse] = useState<Course | null>(null)
   const [deletingCourse, setDeletingCourse] = useState<Course | null>(null)
