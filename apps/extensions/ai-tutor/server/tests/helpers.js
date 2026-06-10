@@ -53,6 +53,37 @@ export function makeAdmin(overrides = {}) {
   };
 }
 
+export function makeTA(overrides = {}) {
+  return {
+    id: nextId(),
+    name: 'TA Test',
+    email: `ta_${counter}@test.com`,
+    role: 'TA',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    emailVerified: false,
+    image: null,
+    password: null,
+    ...overrides,
+  };
+}
+
+export function makeUnitAdmin(authorizedUnits = [], overrides = {}) {
+  return {
+    id: nextId(),
+    name: 'Unit Admin Test',
+    email: `unit_admin_${counter}@test.com`,
+    role: 'UNIT_ADMIN',
+    authorizedUnits,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    emailVerified: false,
+    image: null,
+    password: null,
+    ...overrides,
+  };
+}
+
 // ----- Database utilities -----
 
 export async function truncateAll() {

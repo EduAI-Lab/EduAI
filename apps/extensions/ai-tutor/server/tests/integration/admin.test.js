@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
-import { makeProfessor, makeAdmin, truncateAll, prisma } from '../helpers.js';
+import { makeProfessor, makeAdmin, makeStudent, makeTA, makeUnitAdmin, truncateAll, prisma } from '../helpers.js';
 
 vi.mock('../../src/services/eduaiClient.js', () => ({
   listEduAiCourseEnrollmentsServiceKey: vi.fn(),
@@ -204,7 +204,7 @@ describe('Admin routes', () => {
       );
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ synced: 2, created: 2, deleted: 0, errors: [] });
+      expect(res.body).toEqual({ synced: 2, created: 2, updated: 0, deleted: 0, errors: [] });
 
       const rows = await prisma.courseEnrollment.findMany({
         where: { courseOfferingId: externalCourse.id },
@@ -223,7 +223,7 @@ describe('Admin routes', () => {
       );
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ synced: 1, created: 1, deleted: 1, errors: [] });
+      expect(res.body).toEqual({ synced: 1, created: 1, updated: 0, deleted: 1, errors: [] });
 
       const rows = await prisma.courseEnrollment.findMany({
         where: { courseOfferingId: externalCourse.id },
@@ -248,7 +248,7 @@ describe('Admin routes', () => {
       );
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ synced: 2, created: 1, deleted: 1, errors: [] });
+      expect(res.body).toEqual({ synced: 2, created: 1, updated: 0, deleted: 1, errors: [] });
 
       const rows = await prisma.courseEnrollment.findMany({
         where: { courseOfferingId: externalCourse.id },
@@ -267,7 +267,7 @@ describe('Admin routes', () => {
       );
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ synced: 0, created: 0, deleted: 0, errors: [] });
+      expect(res.body).toEqual({ synced: 0, created: 0, updated: 0, deleted: 0, errors: [] });
 
       const rows = await prisma.courseEnrollment.findMany({
         where: { courseOfferingId: externalCourse.id },
@@ -288,7 +288,7 @@ describe('Admin routes', () => {
       );
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ synced: 0, created: 0, deleted: 0, errors: [] });
+      expect(res.body).toEqual({ synced: 0, created: 0, updated: 0, deleted: 0, errors: [] });
 
       const rows = await prisma.courseEnrollment.findMany({
         where: { courseOfferingId: externalCourse.id },
@@ -328,12 +328,190 @@ describe('Admin routes', () => {
       );
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ synced: 1, created: 0, deleted: 0, errors: [] });
+      expect(res.body).toEqual({ synced: 1, created: 0, updated: 0, deleted: 0, errors: [] });
 
       const rows = await prisma.courseEnrollment.findMany({
         where: { courseOfferingId: externalCourse.id },
       });
       expect(rows).toHaveLength(1);
+    });
+  });
+
+  // ── UNIT_ADMIN enrollment management ─────────────────────────────
+
+  describe('UNIT_ADMIN enrollment management', () => {
+    let coscCourse;
+    let mathCourse;
+    let unitAdmin;
+    let unitAdminApp;
+
+    beforeEach(async () => {
+      coscCourse = await prisma.courseOffering.create({
+        data: { title: 'COSC 101', isPublished: true, department: 'COSC' },
+      });
+      mathCourse = await prisma.courseOffering.create({
+        data: { title: 'MATH 101', isPublished: true, department: 'MATH' },
+      });
+      unitAdmin = makeUnitAdmin(['COSC']);
+      unitAdminApp = await createApp({ mockUser: unitAdmin });
+    });
+
+    it('UNIT_ADMIN lists enrollments for a course in their department', async () => {
+      const student = makeStudent();
+      await prisma.courseEnrollment.create({
+        data: { courseOfferingId: coscCourse.id, userId: student.id, role: 'STUDENT' },
+      });
+
+      const res = await request(unitAdminApp).get(
+        `/api/admin/courses/${coscCourse.id}/enrollments`,
+      );
+
+      expect(res.status).toBe(200);
+      expect(res.body.enrolledStudents).toHaveLength(1);
+      expect(res.body.enrolledStudents[0].id).toBe(student.id);
+      expect(res.body.enrolledStudents[0].role).toBe('STUDENT');
+    });
+
+    it('UNIT_ADMIN gets 403 for a course outside their department', async () => {
+      const res = await request(unitAdminApp).get(
+        `/api/admin/courses/${mathCourse.id}/enrollments`,
+      );
+      expect(res.status).toBe(403);
+    });
+
+    it('UNIT_ADMIN enrolls a student in a COSC course', async () => {
+      const student = makeStudent();
+      const res = await request(unitAdminApp)
+        .post(`/api/admin/courses/${coscCourse.id}/enrollments`)
+        .send({ userId: student.id });
+
+      expect(res.status).toBe(201);
+      expect(res.body.ok).toBe(true);
+
+      const row = await prisma.courseEnrollment.findUnique({
+        where: { courseOfferingId_userId: { courseOfferingId: coscCourse.id, userId: student.id } },
+      });
+      expect(row).not.toBeNull();
+      expect(row.role).toBe('STUDENT');
+    });
+
+    it('UNIT_ADMIN can enroll with role TA', async () => {
+      const ta = makeTA();
+      const res = await request(unitAdminApp)
+        .post(`/api/admin/courses/${coscCourse.id}/enrollments`)
+        .send({ userId: ta.id, role: 'TA' });
+
+      expect(res.status).toBe(201);
+
+      const row = await prisma.courseEnrollment.findUnique({
+        where: { courseOfferingId_userId: { courseOfferingId: coscCourse.id, userId: ta.id } },
+      });
+      expect(row.role).toBe('TA');
+    });
+
+    it('UNIT_ADMIN gets 403 when enrolling on a course outside department', async () => {
+      const student = makeStudent();
+      const res = await request(unitAdminApp)
+        .post(`/api/admin/courses/${mathCourse.id}/enrollments`)
+        .send({ userId: student.id });
+      expect(res.status).toBe(403);
+    });
+
+    it('UNIT_ADMIN removes an enrollment from a COSC course', async () => {
+      const student = makeStudent();
+      await prisma.courseEnrollment.create({
+        data: { courseOfferingId: coscCourse.id, userId: student.id, role: 'STUDENT' },
+      });
+
+      const res = await request(unitAdminApp).delete(
+        `/api/admin/courses/${coscCourse.id}/enrollments/${student.id}`,
+      );
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+
+      const row = await prisma.courseEnrollment.findUnique({
+        where: { courseOfferingId_userId: { courseOfferingId: coscCourse.id, userId: student.id } },
+      });
+      expect(row).toBeNull();
+    });
+
+    it('UNIT_ADMIN gets 403 when removing enrollment outside department', async () => {
+      const student = makeStudent();
+      await prisma.courseEnrollment.create({
+        data: { courseOfferingId: mathCourse.id, userId: student.id, role: 'STUDENT' },
+      });
+
+      const res = await request(unitAdminApp).delete(
+        `/api/admin/courses/${mathCourse.id}/enrollments/${student.id}`,
+      );
+      expect(res.status).toBe(403);
+    });
+
+    it('UNIT_ADMIN assigns TA role via PATCH …/role', async () => {
+      const student = makeStudent();
+      await prisma.courseEnrollment.create({
+        data: { courseOfferingId: coscCourse.id, userId: student.id, role: 'STUDENT' },
+      });
+
+      const res = await request(unitAdminApp)
+        .patch(`/api/admin/courses/${coscCourse.id}/enrollments/${student.id}/role`)
+        .send({ role: 'TA' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.role).toBe('TA');
+
+      const row = await prisma.courseEnrollment.findUnique({
+        where: { courseOfferingId_userId: { courseOfferingId: coscCourse.id, userId: student.id } },
+      });
+      expect(row.role).toBe('TA');
+    });
+
+    it('UNIT_ADMIN removes TA role (back to STUDENT) via PATCH …/role', async () => {
+      const ta = makeTA();
+      await prisma.courseEnrollment.create({
+        data: { courseOfferingId: coscCourse.id, userId: ta.id, role: 'TA' },
+      });
+
+      const res = await request(unitAdminApp)
+        .patch(`/api/admin/courses/${coscCourse.id}/enrollments/${ta.id}/role`)
+        .send({ role: 'STUDENT' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.role).toBe('STUDENT');
+    });
+
+    it('PATCH …/role returns 400 for invalid role value', async () => {
+      const student = makeStudent();
+      await prisma.courseEnrollment.create({
+        data: { courseOfferingId: coscCourse.id, userId: student.id, role: 'STUDENT' },
+      });
+
+      const res = await request(unitAdminApp)
+        .patch(`/api/admin/courses/${coscCourse.id}/enrollments/${student.id}/role`)
+        .send({ role: 'INSTRUCTOR' });
+
+      expect(res.status).toBe(400);
+    });
+
+    it('PATCH …/role returns 404 when enrollment does not exist', async () => {
+      const res = await request(unitAdminApp)
+        .patch(`/api/admin/courses/${coscCourse.id}/enrollments/nonexistent-user/role`)
+        .send({ role: 'TA' });
+      expect(res.status).toBe(404);
+    });
+
+    it('PATCH …/role returns 403 for course outside department', async () => {
+      const student = makeStudent();
+      await prisma.courseEnrollment.create({
+        data: { courseOfferingId: mathCourse.id, userId: student.id, role: 'STUDENT' },
+      });
+
+      const res = await request(unitAdminApp)
+        .patch(`/api/admin/courses/${mathCourse.id}/enrollments/${student.id}/role`)
+        .send({ role: 'TA' });
+      expect(res.status).toBe(403);
     });
   });
 });

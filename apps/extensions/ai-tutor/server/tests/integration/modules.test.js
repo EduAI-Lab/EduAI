@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
-import { makeProfessor, makeStudent, truncateAll, seedMinimalCourse, prisma } from '../helpers.js';
+import { makeProfessor, makeStudent, makeTA, makeUnitAdmin, truncateAll, seedMinimalCourse, prisma } from '../helpers.js';
 
 describe('Modules routes', () => {
   let prof;
@@ -23,9 +23,22 @@ describe('Modules routes', () => {
       data: {
         courseOfferingId: seed.course.id,
         userId: student.id,
+        role: 'STUDENT',
       },
     });
     return student;
+  }
+
+  async function enrollTa() {
+    const ta = makeTA();
+    await prisma.courseEnrollment.create({
+      data: {
+        courseOfferingId: seed.course.id,
+        userId: ta.id,
+        role: 'TA',
+      },
+    });
+    return ta;
   }
 
   // ── GET /api/courses/:courseId/modules ─────────────────────────────
@@ -86,6 +99,42 @@ describe('Modules routes', () => {
       );
     });
 
+    it('TA sees all modules including unpublished (no progress object)', async () => {
+      const unpublishedModule = await prisma.module.create({
+        data: {
+          title: 'Unpublished Module',
+          description: 'Draft',
+          position: 1,
+          isPublished: false,
+          courseOfferingId: seed.course.id,
+        },
+      });
+
+      const ta = await enrollTa();
+      const taApp = await createApp({ mockUser: ta });
+
+      const res = await request(taApp).get(`/api/courses/${seed.course.id}/modules`);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(2);
+      const ids = res.body.map((m) => m.id);
+      expect(ids).toContain(seed.module.id);
+      expect(ids).toContain(unpublishedModule.id);
+      // TAs have no progress object (elevated access, not student)
+      expect(res.body[0].progress).toBeUndefined();
+    });
+
+    it('TA cannot POST (create) a module', async () => {
+      const ta = await enrollTa();
+      const taApp = await createApp({ mockUser: ta });
+
+      const res = await request(taApp)
+        .post(`/api/courses/${seed.course.id}/modules`)
+        .send({ title: 'TA Module', position: 5 });
+
+      expect(res.status).toBe(403);
+    });
+
     it('returns 403 for non-member', async () => {
       const otherProf = makeProfessor();
       const otherApp = await createApp({ mockUser: otherProf });
@@ -94,22 +143,19 @@ describe('Modules routes', () => {
 
       expect(res.status).toBe(403);
     });
-  });
 
-  // ── POST /api/courses/:courseId/modules ────────────────────────────
+    it('returns 403 for TA not enrolled in this course', async () => {
+      const otherSeed = await seedMinimalCourse(null);
+      const ta = makeTA();
+      await prisma.courseEnrollment.create({
+        data: { courseOfferingId: otherSeed.course.id, userId: ta.id, role: 'TA' },
+      });
+      const taApp = await createApp({ mockUser: ta });
 
-  describe('POST /api/courses/:courseId/modules', () => {
-    it('creates a module', async () => {
-      const res = await request(profApp)
-        .post(`/api/courses/${seed.course.id}/modules`)
-        .send({ title: 'New Module', description: 'Module desc', position: 5 });
+      // TA is enrolled in otherCourse but NOT this course
+      const res = await request(taApp).get(`/api/courses/${seed.course.id}/modules`);
 
-      expect(res.status).toBe(201);
-      expect(res.body.title).toBe('New Module');
-      expect(res.body.description).toBe('Module desc');
-      expect(res.body.position).toBe(5);
-      expect(res.body.isPublished).toBe(false);
-      expect(res.body.courseOfferingId).toBe(seed.course.id);
+      expect(res.status).toBe(403);
     });
   });
 
@@ -123,6 +169,27 @@ describe('Modules routes', () => {
       expect(res.body.id).toBe(seed.module.id);
       expect(res.body.title).toBe('Test Module');
       expect(res.body.courseOfferingId).toBe(seed.course.id);
+    });
+
+    it('TA sees unpublished module', async () => {
+      await prisma.module.update({ where: { id: seed.module.id }, data: { isPublished: false } });
+      const ta = await enrollTa();
+      const taApp = await createApp({ mockUser: ta });
+
+      const res = await request(taApp).get(`/api/modules/${seed.module.id}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.isPublished).toBe(false);
+    });
+
+    it('student gets 403 on unpublished module', async () => {
+      await prisma.module.update({ where: { id: seed.module.id }, data: { isPublished: false } });
+      const student = await enrollStudent();
+      const studentApp = await createApp({ mockUser: student });
+
+      const res = await request(studentApp).get(`/api/modules/${seed.module.id}`);
+
+      expect(res.status).toBe(403);
     });
   });
 
@@ -140,6 +207,16 @@ describe('Modules routes', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.isPublished).toBe(true);
+    });
+
+    it('TA cannot publish a module', async () => {
+      await prisma.module.update({ where: { id: seed.module.id }, data: { isPublished: false } });
+      const ta = await enrollTa();
+      const taApp = await createApp({ mockUser: ta });
+
+      const res = await request(taApp).patch(`/api/modules/${seed.module.id}/publish`);
+
+      expect(res.status).toBe(403);
     });
 
     it('returns 400 when parent course is not published', async () => {
@@ -174,6 +251,85 @@ describe('Modules routes', () => {
         where: { id: seed.lesson.id },
       });
       expect(updatedLesson.isPublished).toBe(false);
+    });
+
+    it('TA cannot unpublish a module', async () => {
+      const ta = await enrollTa();
+      const taApp = await createApp({ mockUser: ta });
+
+      const res = await request(taApp).patch(`/api/modules/${seed.module.id}/unpublish`);
+
+      expect(res.status).toBe(403);
+    });
+  });
+
+  // ── UNIT_ADMIN access ─────────────────────────────────────────────
+
+  describe('UNIT_ADMIN access', () => {
+    let coscCourse;
+    let mathCourse;
+    let unitAdmin;
+    let unitAdminApp;
+
+    beforeEach(async () => {
+      coscCourse = await prisma.courseOffering.create({
+        data: { title: 'COSC Course', isPublished: true, department: 'COSC' },
+      });
+      mathCourse = await prisma.courseOffering.create({
+        data: { title: 'MATH Course', isPublished: true, department: 'MATH' },
+      });
+      await prisma.module.create({
+        data: { title: 'COSC Module', position: 0, isPublished: true, courseOfferingId: coscCourse.id },
+      });
+      await prisma.module.create({
+        data: { title: 'MATH Module', position: 0, isPublished: true, courseOfferingId: mathCourse.id },
+      });
+      unitAdmin = makeUnitAdmin(['COSC']);
+      unitAdminApp = await createApp({ mockUser: unitAdmin });
+    });
+
+    it('sees modules for a course in their authorizedUnits', async () => {
+      const res = await request(unitAdminApp).get(`/api/courses/${coscCourse.id}/modules`);
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(1);
+      expect(res.body[0].progress).toBeUndefined();
+    });
+
+    it('gets 403 for a course outside their authorizedUnits', async () => {
+      const res = await request(unitAdminApp).get(`/api/courses/${mathCourse.id}/modules`);
+      expect(res.status).toBe(403);
+    });
+
+    it('creates a module on a COSC course (issue #307 integration spec)', async () => {
+      const res = await request(unitAdminApp)
+        .post(`/api/courses/${coscCourse.id}/modules`)
+        .send({ title: 'New COSC Module', position: 1 });
+      expect(res.status).toBe(201);
+      expect(res.body.title).toBe('New COSC Module');
+    });
+
+    it('gets 403 when creating a module on a MATH course', async () => {
+      const res = await request(unitAdminApp)
+        .post(`/api/courses/${mathCourse.id}/modules`)
+        .send({ title: 'New MATH Module', position: 1 });
+      expect(res.status).toBe(403);
+    });
+
+    it('UNIT_ADMIN with no authorizedUnits gets 403 on any course', async () => {
+      const emptyAdmin = makeUnitAdmin([]);
+      const emptyAdminApp = await createApp({ mockUser: emptyAdmin });
+      const res = await request(emptyAdminApp).get(`/api/courses/${coscCourse.id}/modules`);
+      expect(res.status).toBe(403);
+    });
+
+    it('UNIT_ADMIN cannot POST to a course with no department set', async () => {
+      const noDeptCourse = await prisma.courseOffering.create({
+        data: { title: 'No Dept Course', isPublished: true },
+      });
+      const res = await request(unitAdminApp)
+        .post(`/api/courses/${noDeptCourse.id}/modules`)
+        .send({ title: 'Module', position: 0 });
+      expect(res.status).toBe(403);
     });
   });
 });
