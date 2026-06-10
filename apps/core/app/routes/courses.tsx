@@ -28,6 +28,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
     authorizedUnits = dbUser?.authorizedUnits ?? []
   }
 
+  // Fetch instructors for course creation forms (ADMIN and UNIT_ADMIN only)
+  let instructors: { id: string; name: string | null; email: string }[] = []
+  if (session.user.role === 'ADMIN' || session.user.role === 'UNIT_ADMIN') {
+    instructors = await prisma.user.findMany({
+      where: { role: 'INSTRUCTOR', isActive: true },
+      select: { id: true, name: true, email: true },
+      orderBy: { name: 'asc' },
+    })
+  }
+
   // Scope list to assignments so detail loader access matches visible cards (§5 list gate)
   let taCourseIds: string[] = []
   let enrolledCourseIds: string[] = []
@@ -46,11 +56,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
     enrolledCourseIds = rows.map((r) => r.courseId)
   }
 
-  return { user: session.user, authorizedUnits, taCourseIds, enrolledCourseIds }
+  return { user: session.user, authorizedUnits, taCourseIds, enrolledCourseIds, instructors }
 }
 
 export default function CoursesPage() {
-  const { user, authorizedUnits, taCourseIds, enrolledCourseIds } = useLoaderData<typeof loader>()
+  const { user, authorizedUnits, taCourseIds, enrolledCourseIds, instructors } = useLoaderData<typeof loader>()
   const [searchParams, setSearchParams] = useSearchParams()
   const accessDenied = searchParams.get('access') === 'denied'
   const { courses, loading, createCourse, updateCourse, deleteCourse } = useCourses()
@@ -95,6 +105,7 @@ export default function CoursesPage() {
         {isAdmin ? (
           <CoursesAdminView
             courses={courses}
+            instructors={instructors}
             onCreateCourse={async (data) => { await createCourse(data) }}
             onEditCourse={async (id, data) => { await updateCourse(id, data) }}
             onDeleteCourse={async (id) => { await deleteCourse(id) }}
@@ -106,6 +117,7 @@ export default function CoursesPage() {
               (c) => c.department !== null && authorizedUnits.includes(c.department)
             )}
             authorizedUnits={authorizedUnits}
+            instructors={instructors}
             onCreateCourse={async (data) => { await createCourse(data) }}
             onEditCourse={async (id, data) => { await updateCourse(id, data) }}
             onDeleteCourse={async (id) => { await deleteCourse(id) }}

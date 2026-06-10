@@ -12,9 +12,16 @@ import { Textarea } from '~/components/ui/textarea'
 import { DEPARTMENTS, getDepartmentLabel } from '~/lib/departments'
 import type { Course, CreateCourseInput, UpdateCourseInput } from '~/hooks/api/use-courses'
 
+interface Instructor {
+  id: string
+  name: string | null
+  email: string
+}
+
 interface Props {
   courses: Course[]         // already filtered to this unit's courses by the route
   authorizedUnits: string[] // e.g. ['COSC', 'MATH']
+  instructors: Instructor[]
   onCreateCourse: (data: CreateCourseInput) => Promise<void>
   onEditCourse: (id: string, data: UpdateCourseInput) => Promise<void>
   onDeleteCourse: (id: string) => Promise<void>
@@ -26,28 +33,32 @@ function useAuthorizedDepts(authorizedUnits: string[]) {
   return DEPARTMENTS.filter((d) => authorizedUnits.includes(d.code))
 }
 
-export function CoursesUnitAdminView({ courses, authorizedUnits, onCreateCourse, onEditCourse, onDeleteCourse, onPublishToggle }: Props) {
+export function CoursesUnitAdminView({ courses, authorizedUnits, instructors, onCreateCourse, onEditCourse, onDeleteCourse, onPublishToggle }: Props) {
   const [createOpen, setCreateOpen] = useState(false)
   const [editingCourse, setEditingCourse] = useState<Course | null>(null)
   const [deletingCourse, setDeletingCourse] = useState<Course | null>(null)
   const authorizedDepts = useAuthorizedDepts(authorizedUnits)
   const [selectedDept, setSelectedDept] = useState<string>(authorizedDepts[0]?.code ?? '')
+  const [selectedInstructor, setSelectedInstructor] = useState<string>('')
 
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     const fd = new FormData(e.currentTarget)
     const dept = fd.get('department') as string
     const codeSuffix = (fd.get('codeSuffix') as string).trim()
-    // Combine dept prefix + suffix into canonical course code (e.g. "COSC 101")
     const code = dept ? `${dept} ${codeSuffix}` : codeSuffix
     await onCreateCourse({
       name: fd.get('name') as string,
       code,
+      section: fd.get('section') as string,
       term: fd.get('term') as string,
       year: parseInt(fd.get('year') as string),
+      startDate: fd.get('startDate') as string,
       department: dept || undefined,
       aiInstructions: (fd.get('aiInstructions') as string) || undefined,
+      instructorUserIds: selectedInstructor ? [selectedInstructor] : [],
     })
+    setSelectedInstructor('')
     setCreateOpen(false)
   }
 
@@ -146,6 +157,16 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, onCreateCourse,
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
+                  <Label>Section</Label>
+                  <Input name="section" placeholder="01" defaultValue="01" required />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Start Date</Label>
+                  <Input name="startDate" type="date" required />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
                   <Label>Term</Label>
                   <Select name="term" defaultValue="Fall">
                     <SelectTrigger><SelectValue /></SelectTrigger>
@@ -163,12 +184,23 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, onCreateCourse,
                 </div>
               </div>
               <div className="grid gap-2">
+                <Label>Instructor</Label>
+                <Select value={selectedInstructor} onValueChange={setSelectedInstructor} required>
+                  <SelectTrigger><SelectValue placeholder="Select instructor" /></SelectTrigger>
+                  <SelectContent>
+                    {instructors.map((i) => (
+                      <SelectItem key={i.id} value={i.id}>{i.name ?? i.email}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
                 <Label>AI Instructions</Label>
                 <Textarea name="aiInstructions" rows={2} />
               </div>
               <div className="flex justify-end gap-2">
                 <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
-                <Button type="submit">Create Course</Button>
+                <Button type="submit" disabled={!selectedInstructor}>Create Course</Button>
               </div>
             </form>
           </DialogContent>
