@@ -25,11 +25,15 @@ export async function resolveCourseAccess(
   })
   if (ta) return 'ta'
 
-  // Student via Enrollment
+  // Resolve role from Enrollment — covers enrollment-based instructors/TAs
   const enrollment = await prisma.enrollment.findFirst({
     where: { courseId: course.id, userId: user.id, isActive: true },
   })
-  if (enrollment) return 'student'
+  if (enrollment) {
+    if (enrollment.role === 'INSTRUCTOR') return 'instructor'
+    if (enrollment.role === 'TA') return 'ta'
+    return 'student'
+  }
 
   return null
 }
