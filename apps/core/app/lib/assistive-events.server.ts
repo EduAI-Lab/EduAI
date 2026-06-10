@@ -52,9 +52,13 @@ export type ResponseComplianceExtras = {
   promptTokens?: number;
   completionTokens?: number;
   durationMs?: number;
+  wordCap?: number;
   oversightRewritten?: boolean;
-  oversightMethod?: "none" | "deterministic" | "llm";
+  oversightMethod?: "none" | "deterministic" | "llm" | "llm_failed";
   preStructuralPass?: boolean;
+  oversightDurationMs?: number;
+  oversightPromptTokens?: number;
+  oversightCompletionTokens?: number;
 };
 
 export async function recordResponseComplianceEvent(args: {
@@ -64,7 +68,11 @@ export async function recordResponseComplianceEvent(args: {
   assistantText: string;
   extras?: ResponseComplianceExtras;
 }): Promise<void> {
-  const metrics = withStructuralPass(computeAdhdResponseMetrics(args.assistantText));
+  const metrics = withStructuralPass(
+    computeAdhdResponseMetrics(args.assistantText, {
+      wordCap: args.extras?.wordCap,
+    }),
+  );
   const payload: Prisma.InputJsonValue = {
     ...metrics,
     model: args.extras?.model ?? null,
@@ -75,6 +83,9 @@ export async function recordResponseComplianceEvent(args: {
     oversightRewritten: args.extras?.oversightRewritten ?? null,
     oversightMethod: args.extras?.oversightMethod ?? null,
     preStructuralPass: args.extras?.preStructuralPass ?? null,
+    oversightDurationMs: args.extras?.oversightDurationMs ?? null,
+    oversightPromptTokens: args.extras?.oversightPromptTokens ?? null,
+    oversightCompletionTokens: args.extras?.oversightCompletionTokens ?? null,
   };
 
   await recordAssistiveEvent({
