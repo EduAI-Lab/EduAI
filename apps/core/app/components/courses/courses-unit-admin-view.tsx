@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router'
 import { IconPlus, IconEdit, IconTrash, IconBook, IconCalendar, IconEye, IconEyeOff } from '@tabler/icons-react'
 import { Button } from '~/components/ui/button'
@@ -42,6 +42,11 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, instructors = [
   const [selectedDept, setSelectedDept] = useState<string>(authorizedDepts[0]?.code ?? '')
   const [selectedTerm, setSelectedTerm] = useState<string>('Fall')
   const [selectedInstructor, setSelectedInstructor] = useState<string>('')
+  const [editDept, setEditDept] = useState<string>('')
+
+  useEffect(() => {
+    setEditDept(editingCourse?.department ?? '')
+  }, [editingCourse])
 
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -72,6 +77,7 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, instructors = [
     await onEditCourse(editingCourse.id, {
       name: fd.get('name') as string,
       code: fd.get('code') as string,
+      department: editDept || null,
       aiInstructions: (fd.get('aiInstructions') as string) || undefined,
     })
     setEditingCourse(null)
@@ -314,6 +320,15 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, instructors = [
               <div className="grid gap-2">
                 <Label>Code</Label>
                 <Input name="code" defaultValue={editingCourse.code} required />
+              </div>
+              <div className="grid gap-2">
+                <Label>Department</Label>
+                <DepartmentCombobox
+                  departments={authorizedDepts}
+                  value={editDept}
+                  onValueChange={setEditDept}
+                  placeholder="No department"
+                />
               </div>
               <div className="grid gap-2">
                 <Label>AI Instructions</Label>
