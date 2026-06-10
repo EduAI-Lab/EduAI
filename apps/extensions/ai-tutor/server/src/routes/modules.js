@@ -280,4 +280,39 @@ router.patch('/modules/:moduleId/unpublish', requireRole(['INSTRUCTOR', 'UNIT_AD
   }
 });
 
+router.delete('/modules/:moduleId', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
+  const authUser = req.user;
+  const moduleId = Number(req.params.moduleId);
+  if (!Number.isFinite(moduleId)) {
+    return res.status(400).json({ error: 'Invalid module id' });
+  }
+
+  try {
+    const module = await prisma.module.findUnique({
+      where: { id: moduleId },
+      include: {
+        courseOffering: {
+          include: { instructors: { select: { userId: true } } },
+        },
+      },
+    });
+
+    if (!module) {
+      return res.status(404).json({ error: 'Module not found' });
+    }
+
+    const isInstructor = module.courseOffering.instructors.some((i) => i.userId === authUser.id);
+    const unitAdmin = isUnitAdminForCourse(authUser, module.courseOffering);
+    const isAdmin = authUser.role === 'ADMIN';
+    if (!isInstructor && !unitAdmin && !isAdmin) {
+      return res.status(403).json({ error: 'Not authorized for this module' });
+    }
+
+    await prisma.module.delete({ where: { id: moduleId } });
+    res.status(204).end();
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
 export default router;

@@ -288,4 +288,99 @@ router.patch('/lessons/:lessonId/unpublish', requireRole(['INSTRUCTOR', 'UNIT_AD
   }
 });
 
+router.delete('/lessons/:lessonId', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
+  const authUser = req.user;
+  const lessonId = Number(req.params.lessonId);
+  if (!Number.isFinite(lessonId)) {
+    return res.status(400).json({ error: 'Invalid lesson id' });
+  }
+
+  try {
+    const lesson = await prisma.lesson.findUnique({
+      where: { id: lessonId },
+      include: {
+        module: {
+          include: {
+            courseOffering: {
+              include: { instructors: { select: { userId: true } } },
+            },
+          },
+        },
+      },
+    });
+
+    if (!lesson) {
+      return res.status(404).json({ error: 'Lesson not found' });
+    }
+
+    const isInstructor = lesson.module.courseOffering.instructors.some(
+      (i) => i.userId === authUser.id,
+    );
+    const unitAdmin = isUnitAdminForCourse(authUser, lesson.module.courseOffering);
+    const isAdmin = authUser.role === 'ADMIN';
+    if (!isInstructor && !unitAdmin && !isAdmin) {
+      return res.status(403).json({ error: 'Not authorized for this lesson' });
+    }
+
+    await prisma.lesson.delete({ where: { id: lessonId } });
+    res.status(204).end();
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+router.patch('/lessons/:lessonId', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
+  const authUser = req.user;
+  const lessonId = Number(req.params.lessonId);
+  if (!Number.isFinite(lessonId)) {
+    return res.status(400).json({ error: 'Invalid lesson id' });
+  }
+
+  const { title, contentMd, position } = req.body || {};
+  if (title === undefined && contentMd === undefined && position === undefined) {
+    return res.status(400).json({ error: 'Nothing to update' });
+  }
+
+  try {
+    const lesson = await prisma.lesson.findUnique({
+      where: { id: lessonId },
+      include: {
+        module: {
+          include: {
+            courseOffering: {
+              include: { instructors: { select: { userId: true } } },
+            },
+          },
+        },
+      },
+    });
+
+    if (!lesson) {
+      return res.status(404).json({ error: 'Lesson not found' });
+    }
+
+    const isInstructor = lesson.module.courseOffering.instructors.some(
+      (i) => i.userId === authUser.id,
+    );
+    const unitAdmin = isUnitAdminForCourse(authUser, lesson.module.courseOffering);
+    const isAdmin = authUser.role === 'ADMIN';
+    if (!isInstructor && !unitAdmin && !isAdmin) {
+      return res.status(403).json({ error: 'Not authorized for this lesson' });
+    }
+
+    const updated = await prisma.lesson.update({
+      where: { id: lessonId },
+      data: {
+        title: title ?? undefined,
+        contentMd: contentMd ?? undefined,
+        position: typeof position === 'number' ? position : undefined,
+      },
+    });
+
+    res.json(mapLesson(updated));
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
 export default router;

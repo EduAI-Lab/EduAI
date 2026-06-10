@@ -679,4 +679,148 @@ router.patch('/courses/:courseId/unpublish', requireRole('INSTRUCTOR'), async (r
   }
 });
 
+// ── Course-level analytics (§310) ─────────────────────────────────
+
+function isCourseAnalyticsAdmin(authUser, course) {
+  if (authUser.role === 'ADMIN') return true;
+  if (isUnitAdminForCourse(authUser, course)) return true;
+  if (authUser.role === 'INSTRUCTOR' && course.instructors.some((i) => i.userId === authUser.id)) return true;
+  return false;
+}
+
+/**
+ * GET /courses/:courseId/submissions — all submissions in the course.
+ *
+ * Auth: ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C) / TA(C).
+ * Query params: activityId, studentId, take (default 50, max 200), skip (default 0).
+ */
+router.get('/courses/:courseId/submissions', async (req, res) => {
+  const authUser = req.user;
+  if (!authUser) return res.status(401).json({ error: 'Authentication required' });
+  const courseId = Number(req.params.courseId);
+  if (!Number.isFinite(courseId)) return res.status(400).json({ error: 'Invalid course id' });
+
+  try {
+    const course = await prisma.courseOffering.findUnique({
+      where: { id: courseId },
+      include: {
+        instructors: { select: { userId: true } },
+        enrollments: { select: { userId: true, role: true } },
+      },
+    });
+    if (!course) return res.status(404).json({ error: 'Course not found' });
+
+    const isAdmin = isCourseAnalyticsAdmin(authUser, course);
+    const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
+    const isTa = enrollment?.role === 'TA';
+    if (!isAdmin && !isTa) {
+      return res.status(403).json({ error: 'Not authorized for this course' });
+    }
+
+    const { activityId, studentId } = req.query;
+    const take = Math.min(Number(req.query.take) || 50, 200);
+    const skip = Number(req.query.skip) || 0;
+
+    const where = {
+      activity: { lesson: { module: { courseOfferingId: courseId } } },
+    };
+    if (activityId) where.activityId = Number(activityId);
+    if (studentId) where.userId = studentId;
+
+    const submissions = await prisma.submission.findMany({
+      where,
+      orderBy: [{ activityId: 'asc' }, { userId: 'asc' }, { attemptNumber: 'asc' }],
+      take,
+      skip,
+    });
+
+    res.json(submissions);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+/**
+ * GET /courses/:courseId/student-metrics — per-student aggregated metrics.
+ *
+ * Auth: ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C). TA not admitted per §15.
+ */
+router.get('/courses/:courseId/student-metrics', async (req, res) => {
+  const authUser = req.user;
+  if (!authUser) return res.status(401).json({ error: 'Authentication required' });
+  const courseId = Number(req.params.courseId);
+  if (!Number.isFinite(courseId)) return res.status(400).json({ error: 'Invalid course id' });
+
+  try {
+    const course = await prisma.courseOffering.findUnique({
+      where: { id: courseId },
+      include: { instructors: { select: { userId: true } } },
+    });
+    if (!course) return res.status(404).json({ error: 'Course not found' });
+
+    if (!isCourseAnalyticsAdmin(authUser, course)) {
+      return res.status(403).json({ error: 'Not authorized for this course' });
+    }
+
+    const rawMetrics = await prisma.activityStudentMetric.findMany({
+      where: { activity: { lesson: { module: { courseOfferingId: courseId } } } },
+    });
+
+    const byStudent = {};
+    for (const m of rawMetrics) {
+      if (!byStudent[m.userId]) {
+        byStudent[m.userId] = {
+          userId: m.userId,
+          submissionCount: 0,
+          correctSubmissionCount: 0,
+          incorrectSubmissionCount: 0,
+          helpRequestCount: 0,
+        };
+      }
+      byStudent[m.userId].submissionCount += m.submissionCount;
+      byStudent[m.userId].correctSubmissionCount += m.correctSubmissionCount;
+      byStudent[m.userId].incorrectSubmissionCount += m.incorrectSubmissionCount;
+      byStudent[m.userId].helpRequestCount += m.helpRequestCount;
+    }
+
+    res.json(Object.values(byStudent));
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+/**
+ * GET /courses/:courseId/analytics — per-activity aggregate analytics.
+ *
+ * Auth: ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C). TA not admitted per §15.
+ */
+router.get('/courses/:courseId/analytics', async (req, res) => {
+  const authUser = req.user;
+  if (!authUser) return res.status(401).json({ error: 'Authentication required' });
+  const courseId = Number(req.params.courseId);
+  if (!Number.isFinite(courseId)) return res.status(400).json({ error: 'Invalid course id' });
+
+  try {
+    const course = await prisma.courseOffering.findUnique({
+      where: { id: courseId },
+      include: { instructors: { select: { userId: true } } },
+    });
+    if (!course) return res.status(404).json({ error: 'Course not found' });
+
+    if (!isCourseAnalyticsAdmin(authUser, course)) {
+      return res.status(403).json({ error: 'Not authorized for this course' });
+    }
+
+    const analytics = await prisma.activityAnalytics.findMany({
+      where: { activity: { lesson: { module: { courseOfferingId: courseId } } } },
+      include: { activity: { select: { id: true, title: true, lessonId: true } } },
+      orderBy: { activityId: 'asc' },
+    });
+
+    res.json(analytics);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
 export default router;

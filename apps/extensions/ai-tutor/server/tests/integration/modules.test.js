@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
-import { makeProfessor, makeStudent, makeTA, makeUnitAdmin, truncateAll, seedMinimalCourse, prisma } from '../helpers.js';
+import { makeProfessor, makeAdmin, makeStudent, makeTA, makeUnitAdmin, truncateAll, seedMinimalCourse, prisma } from '../helpers.js';
 
 describe('Modules routes', () => {
   let prof;
@@ -260,6 +260,50 @@ describe('Modules routes', () => {
       const res = await request(taApp).patch(`/api/modules/${seed.module.id}/unpublish`);
 
       expect(res.status).toBe(403);
+    });
+  });
+
+  // ── DELETE /api/modules/:id ───────────────────────────────────────
+
+  describe('DELETE /api/modules/:id', () => {
+    it('professor can delete their own module', async () => {
+      const res = await request(profApp).delete(`/api/modules/${seed.module.id}`);
+      expect(res.status).toBe(204);
+      const found = await prisma.module.findUnique({ where: { id: seed.module.id } });
+      expect(found).toBeNull();
+    });
+
+    it('deleting a module cascades to its lessons', async () => {
+      const res = await request(profApp).delete(`/api/modules/${seed.module.id}`);
+      expect(res.status).toBe(204);
+      const lesson = await prisma.lesson.findUnique({ where: { id: seed.lesson.id } });
+      expect(lesson).toBeNull();
+    });
+
+    it('TA cannot delete a module', async () => {
+      const ta = await enrollTa();
+      const taApp = await createApp({ mockUser: ta });
+      const res = await request(taApp).delete(`/api/modules/${seed.module.id}`);
+      expect(res.status).toBe(403);
+    });
+
+    it('non-instructor cannot delete', async () => {
+      const otherProf = makeProfessor();
+      const otherApp = await createApp({ mockUser: otherProf });
+      const res = await request(otherApp).delete(`/api/modules/${seed.module.id}`);
+      expect(res.status).toBe(403);
+    });
+
+    it('ADMIN can delete any module', async () => {
+      const admin = makeAdmin();
+      const adminApp = await createApp({ mockUser: admin });
+      const res = await request(adminApp).delete(`/api/modules/${seed.module.id}`);
+      expect(res.status).toBe(204);
+    });
+
+    it('returns 404 for non-existent module', async () => {
+      const res = await request(profApp).delete('/api/modules/9999999');
+      expect(res.status).toBe(404);
     });
   });
 
