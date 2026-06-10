@@ -10,6 +10,7 @@ export default [
   route("/auth/register", "routes/auth/register.tsx"),
   route("/auth/logout", "routes/auth/logout.tsx"),
   route("/dashboard", "routes/dashboard.tsx"),
+  route("/onboarding/student-id", "routes/onboarding.student-id.tsx"),
   route("/chat", "routes/chat.tsx"),
   route("/settings", "routes/settings.tsx"),
   route("/api/canvas/*", "routes/api/canvas.$.ts"),

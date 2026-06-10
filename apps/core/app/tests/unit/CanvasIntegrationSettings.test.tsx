@@ -51,6 +51,7 @@ describe("CanvasIntegrationSettings — rendering", () => {
 
     expect(screen.getByDisplayValue("http://localhost:8080")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Update connection" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sync courses" })).not.toBeInTheDocument();
   });
 });
 

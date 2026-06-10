@@ -93,3 +93,60 @@ export function studentIdsMatchFilter(normalizedStudentIds: string[]) {
     ],
   };
 }
+
+/** Encrypts a normalized Canvas sis_user_id for roster staging at rest. */
+export function prepareRosterSisUserIdStorage(normalizedStudentId: string): {
+  sisUserId: string;
+  sisUserIdLookup: string;
+} {
+  const prepared = prepareStudentIdStorage(normalizedStudentId);
+  return {
+    sisUserId: prepared.studentId,
+    sisUserIdLookup: prepared.studentIdLookup,
+  };
+}
+
+export function clearRosterSisUserIdStorage(): {
+  sisUserId: null;
+  sisUserIdLookup: null;
+} {
+  return {
+    sisUserId: null,
+    sisUserIdLookup: null,
+  };
+}
+
+/** Prisma filter matching roster rows by normalized student number. */
+export function rosterSisUserIdMatchFilter(normalizedStudentId: string) {
+  return {
+    OR: [
+      { sisUserIdLookup: studentIdLookupKey(normalizedStudentId) },
+      { sisUserId: normalizedStudentId, sisUserIdLookup: null },
+    ],
+  };
+}
+
+/** Prisma filter matching roster rows for a user who already has a lookup key set. */
+export function rosterSisUserIdMatchForUser(input: {
+  studentIdLookup: string | null | undefined;
+  studentId: string | null | undefined;
+}) {
+  const normalizedStudentId = readStoredStudentId(input.studentId);
+
+  if (input.studentIdLookup) {
+    return {
+      OR: [
+        { sisUserIdLookup: input.studentIdLookup },
+        ...(normalizedStudentId
+          ? [{ sisUserId: normalizedStudentId, sisUserIdLookup: null }]
+          : []),
+      ],
+    };
+  }
+
+  if (!normalizedStudentId) {
+    return { id: { in: [] as string[] } };
+  }
+
+  return rosterSisUserIdMatchFilter(normalizedStudentId);
+}

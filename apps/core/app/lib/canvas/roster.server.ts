@@ -8,6 +8,10 @@ import {
   normalizeRosterEmail,
   normalizeStudentId,
 } from "~/lib/canvas/enrollment-link.server";
+import {
+  clearRosterSisUserIdStorage,
+  prepareRosterSisUserIdStorage,
+} from "~/lib/canvas/student-id.server";
 import prisma from "~/lib/prisma.server";
 
 type RosterSyncInput = {
@@ -23,6 +27,19 @@ function mapCanvasRole(enrollmentType: "student" | "ta"): EnrollmentRole {
   return enrollmentType === "ta" ? EnrollmentRole.TA : EnrollmentRole.STUDENT;
 }
 
+function rosterUpsertError(error: unknown, canvasUserId: string): Error {
+  if (error instanceof Error) {
+    const message = error.message;
+    if (message.includes("sisUserIdLookup") || message.includes("Unknown argument")) {
+      return new Error(
+        `Roster sync failed for Canvas user ${canvasUserId}: the app database client is out of date. Run npx prisma migrate deploy and npx prisma generate, then restart the dev server.`,
+      );
+    }
+    return new Error(`Roster sync failed for Canvas user ${canvasUserId}: ${message}`);
+  }
+  return new Error(`Roster sync failed for Canvas user ${canvasUserId}`);
+}
+
 async function upsertRosterMembers(
   rows: CanvasCourseUserApi[],
   role: EnrollmentRole,
@@ -31,34 +48,44 @@ async function upsertRosterMembers(
   let synced = 0;
 
   for (const row of rows) {
-    await prisma.canvasRosterMember.upsert({
-      where: {
-        courseId_canvasUserId_role: {
+    const normalizedSisUserId = normalizeStudentId(row.sis_user_id);
+    const sisUserIdStorage = normalizedSisUserId
+      ? prepareRosterSisUserIdStorage(normalizedSisUserId)
+      : clearRosterSisUserIdStorage();
+    const seenAt = new Date();
+
+    try {
+      await prisma.canvasRosterMember.upsert({
+        where: {
+          courseId_canvasUserId_role: {
+            courseId: input.coreCourseId,
+            canvasUserId: String(row.id),
+            role,
+          },
+        },
+        create: {
           courseId: input.coreCourseId,
           canvasUserId: String(row.id),
+          ...sisUserIdStorage,
+          email: normalizeRosterEmail(row.email),
+          displayName: row.name?.trim() || null,
           role,
+          syncedByUserId: input.syncedByUserId,
+          isActive: true,
+          lastSeenAt: seenAt,
         },
-      },
-      create: {
-        courseId: input.coreCourseId,
-        canvasUserId: String(row.id),
-        sisUserId: normalizeStudentId(row.sis_user_id),
-        email: normalizeRosterEmail(row.email),
-        displayName: row.name?.trim() || null,
-        role,
-        syncedByUserId: input.syncedByUserId,
-        isActive: true,
-        lastSeenAt: input.syncStartedAt,
-      },
-      update: {
-        sisUserId: normalizeStudentId(row.sis_user_id),
-        email: normalizeRosterEmail(row.email),
-        displayName: row.name?.trim() || null,
-        syncedByUserId: input.syncedByUserId,
-        isActive: true,
-        lastSeenAt: input.syncStartedAt,
-      },
-    });
+        update: {
+          ...sisUserIdStorage,
+          email: normalizeRosterEmail(row.email),
+          displayName: row.name?.trim() || null,
+          syncedByUserId: input.syncedByUserId,
+          isActive: true,
+          lastSeenAt: seenAt,
+        },
+      });
+    } catch (error) {
+      throw rosterUpsertError(error, String(row.id));
+    }
     synced += 1;
   }
 
@@ -79,6 +106,19 @@ export async function syncCourseRoster(input: RosterSyncInput): Promise<number> 
     input,
   );
   const taCount = await upsertRosterMembers(tas, mapCanvasRole("ta"), input);
+  const syncedCount = studentCount + taCount;
+
+  console.info(
+    JSON.stringify({
+      event: "canvas_roster_sync",
+      courseId: input.coreCourseId,
+      canvasCourseId: input.canvasCourseId,
+      studentsFetched: students.length,
+      tasFetched: tas.length,
+      rosterMembersSynced: syncedCount,
+      at: new Date().toISOString(),
+    }),
+  );
 
   await prisma.canvasRosterMember.updateMany({
     where: {
@@ -89,7 +129,7 @@ export async function syncCourseRoster(input: RosterSyncInput): Promise<number> 
     data: { isActive: false },
   });
 
-  return studentCount + taCount;
+  return syncedCount;
 }
 
 /** Deactivates all roster staging rows for a course. */

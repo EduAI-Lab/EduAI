@@ -15,10 +15,21 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] api: Add Canvas sync services — paginated Canvas REST client (`listTeacherCanvasCourses`, roster fetch), course field mapping, roster upsert/deactivate, enrollment linking from staging (`enrollment-link.server.ts`, `resolveCanvasEnrollmentsForUser`), sync delta (`computeCanvasSyncDelta`), instructor course-access validation, sync rate limit (1 per 30s), and link-roster rate limit (10 per 15 min). (#511, @GlowyBlack, 2026-06-08)
 - [core] api: Wire admin `PATCH /api/users/:id` to accept `studentId` and trigger `resolveCanvasEnrollmentsForUser` when a student number is set. (#511, @GlowyBlack, 2026-06-08)
 - [core] tests: Add Canvas sync test coverage — 8 unit files (`canvas-client`, `canvas-encryption`, `canvas-schemas`, `canvas-sync-services`, `canvas-sync-delta`, `canvas-enrollment-link`, `canvas-guards`, `canvas-link-roster`) and `canvas.integration.test.ts` (26 integration tests for connect, courses picker, sync/unsync, link-roster, auth guards, and rate limits); document in `TESTS.md`. (#511, @GlowyBlack, 2026-06-08)
+- [core] ui: Add Canvas dashboard sync card and course picker dialog — instructors select Canvas courses to sync/unsync from the dashboard; shows roster staging counts and sync errors; sync removed from settings (connect-only there). (#511, @GlowyBlack, 2026-06-10)
+- [core] ui: Add post-signup student-ID onboarding — `/onboarding/student-id` prompts STUDENT/TA users to link their Canvas student number via `POST /api/canvas/link-roster` or skip; dashboard redirects until linked or skipped. (#511, @GlowyBlack, 2026-06-10)
+- [core] db: Encrypt `CanvasRosterMember.sisUserId` at rest and add `sisUserIdLookup` HMAC for roster-to-user matching; migration `20260611120000_roster_sis_user_id_lookup`. (#511, @GlowyBlack, 2026-06-10)
+- [core] tests: Add Canvas UI and onboarding unit tests (`CanvasCourseSyncDialog`, `CanvasDashboardCard`, `student-id-onboarding-form`, `canvas-onboarding`); extend `canvas-enrollment-link` and `canvas-student-id` for encrypted roster matching; integration test harness reuses dev Postgres host/port on Windows (`test-database-url.ts`). (#511, @GlowyBlack, 2026-06-10)
+
+### Changed
+
+- [core] api: Auto-publish Canvas-synced courses (`isPublished: true`) so linked students can list them under the student publish gate. (#511, @GlowyBlack, 2026-06-10)
 
 ### Fixed
 
 - [core] api: Validate Canvas URL with `parseAndValidateCanvasUrl` before saving integration credentials so non-local HTTP hosts are rejected even when credential verification is mocked in tests. (#511, @GlowyBlack, 2026-06-08)
+- [core] api: Fix roster enrollment linking after `sisUserId` encryption — decrypt roster values in `linkEnrollmentsFromStagingForCourse` so re-sync reactivates student enrollments; backfill missing `studentIdLookup` before resolving enrollments. (#511, @GlowyBlack, 2026-06-10)
+- [core] api: Harden roster sync upserts (`lastSeenAt` per row, clearer Prisma schema errors) so `canvas_roster_members` populate reliably after migration. (#511, @GlowyBlack, 2026-06-10)
+- [core] tests: Point integration tests at `eduai_test` on the same Postgres instance as local dev (reuse `apps/core/.env` host/port); document Windows workflow in `docs/implementations/windows-dev-database.md`. (#511, @GlowyBlack, 2026-06-10)
 
 ---
 

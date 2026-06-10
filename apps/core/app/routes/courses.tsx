@@ -47,8 +47,10 @@ type Course = {
   term: string
   year: number
   isActive: boolean
+  isPublished: boolean
   aiInstructions: string
-  professorId: string
+  externalSource: string | null
+  externalId: string | null
   createdAt: string
   updatedAt: string
 }
@@ -84,15 +86,6 @@ export default function CoursesPage() {
 
     fetchCourses()
   }, [])
-
-  // Filter courses based on role (client-side filtering since API doesn't filter)
-  const filteredCourses = courses.filter(course => {
-    if (isAdmin) return true
-    if (isInstructor) return course.professorId === user.id
-    // For TA and STUDENT, we'd need enrollment data from the API
-    // For now, showing all courses since API doesn't provide filtering
-    return true
-  })
 
   const handleCreateCourse = async (formData: FormData) => {
     try {
@@ -157,7 +150,7 @@ export default function CoursesPage() {
       )
     }
 
-    if (isInstructor && course.professorId === user.id) {
+    if (isInstructor) {
       return (
         <div onClick={(e) => e.stopPropagation()}>
           <Button
@@ -300,7 +293,7 @@ export default function CoursesPage() {
                   <div className="flex items-center justify-center py-8">
                     <div className="text-muted-foreground">Loading courses...</div>
                   </div>
-                ) : filteredCourses.length === 0 ? (
+                ) : courses.length === 0 ? (
                   <Card>
                     <CardContent className="flex flex-col items-center justify-center py-8">
                       <IconBook className="w-12 h-12 text-muted-foreground mb-4" />
@@ -317,7 +310,7 @@ export default function CoursesPage() {
                   </Card>
                 ) : (
                   <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                    {filteredCourses.map((course) => (
+                    {courses.map((course) => (
                       <Card key={course.id} className="hover:shadow-md transition-shadow">
                         <Link to={`/courses/${course.id}`} className="block">
                         <CardHeader className="pb-3">

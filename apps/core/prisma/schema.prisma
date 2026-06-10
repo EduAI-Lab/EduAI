@@ -455,11 +455,12 @@ model CanvasIntegration {
 
 /// Staging table for Canvas roster members before they link to an EduAI User.
 model CanvasRosterMember {
-  id             String         @id @default(cuid())
-  courseId       String
-  canvasUserId   String
-  sisUserId      String?
-  email          String?
+  id              String         @id @default(cuid())
+  courseId        String
+  canvasUserId    String
+  sisUserId       String?
+  sisUserIdLookup String?
+  email           String?
   displayName    String?
   role           EnrollmentRole
   syncedByUserId String
@@ -472,7 +473,7 @@ model CanvasRosterMember {
 
   @@unique([courseId, canvasUserId, role])
   @@index([email])
-  @@index([sisUserId])
+  @@index([sisUserIdLookup])
   @@index([canvasUserId])
   @@map("canvas_roster_members")
 }
