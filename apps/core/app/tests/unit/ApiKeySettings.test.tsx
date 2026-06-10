@@ -26,10 +26,11 @@ const makeProps = (overrides: Record<string, any> = {}) => ({
 // ---------------------------------------------------------------------------
 
 describe("ApiKeySettings — rendering", () => {
-  it("renders all three provider card labels when open", () => {
+  it("renders all four provider card labels when open", () => {
     render(<ApiKeySettings {...makeProps()} />);
     expect(screen.getByText("OpenAI API Key")).toBeInTheDocument();
     expect(screen.getByText("Google AI API Key")).toBeInTheDocument();
+    expect(screen.getByText("OpenRouter API Key")).toBeInTheDocument();
     expect(screen.getByText("Ollama (Local)")).toBeInTheDocument();
   });
 
