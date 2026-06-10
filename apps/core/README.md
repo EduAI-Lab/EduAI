@@ -24,6 +24,7 @@ A production-ready chat platform with Retrieval-Augmented Generation (RAG) capab
 - **Vector Storage**: PGVector-powered embeddings on PostgreSQL for efficient similarity search
 - **Role-based Access**: Support for students, professors, and administrators
 - **Persisted Chat Preferences**: Assistive mode and the selected course are saved per user, restored on every page load and new chat, and cleared on logout
+- **Account-level Assistive Mode**: Shell-wide `AssistiveUiProvider` sets `data-assistive` on `<html>` when ON (absent when OFF so baseline CSS is unchanged); preference persists via `UserPreference.assistDefault` and syncs with the `/chat` header toggle
 
 ## Prerequisites
 
@@ -81,8 +82,11 @@ DATABASE_URL="postgresql://USER:PASSWORD@HOST:PORT/DATABASE?schema=public"
 BETTER_AUTH_SECRET="" # REQUIRED: Generate a strong random secret (e.g., `openssl rand -base64 32`)
 BETTER_AUTH_URL="http://localhost:5173" # Base URL of your app
 
-OPENROUTER_API_KEY="" # Embeddings via OpenRouter (recommended if you have one key for many models)
-GOOGLE_GENERATIVE_AI_API_KEY="" # Direct Gemini embeddings (used when OPENROUTER_API_KEY is unset)
+OPENROUTER_API_KEY="" # Embeddings — see docs/rag-ai/EMBEDDINGS.md (local Ollama or cloud 1024-dim)
+GOOGLE_GENERATIVE_AI_API_KEY="" # Direct Gemini embeddings (legacy 3072 path only)
+EMBEDDING_PROVIDER="local" # local | cloud — dev server uses Ollama mxbai-embed-large
+EMBEDDING_DIMENSION="1024" # Must match pgvector column (LOCAL-EMBEDDINGS)
+OLLAMA_EMBEDDING_MODEL="mxbai-embed-large"
 OLLAMA_BASE_URL="http://localhost:11434/"
 FIRECRAWL_API_KEY="" # Required for Firecrawl web search tool. If not set, web search is unavailable.
 
@@ -352,6 +356,32 @@ curl -X DELETE "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" \
     "topicId": "TOPIC_ID"
   }'
 ```
+
+### User Preferences Endpoints
+
+Read and update the authenticated user's UI preferences (`UserPreference` row). Requires a Better Auth **session cookie** — not `x-api-key`. Used by `AssistiveUiProvider` in the app shell and the `/chat` assist toggle.
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| `GET` | `/api/preferences` | Returns `{ assistDefault, lastCourseCode }` — defaults to `{ assistDefault: false, lastCourseCode: null }` when no row exists |
+| `PATCH` | `/api/preferences` | Partial update; accepts `assistDefault` (boolean) and/or `lastCourseCode` (string or `null` to clear) |
+
+When `assistDefault` is `true`, the root layout sets `data-assistive="true"` on `<html>` for CSS scoping; when `false`, the attribute is **absent** (not `"false"`) so baseline styles are unchanged.
+
+**Assistive reading typography:** Elements marked with the `reading-surface` class (chat messages, course overview text, etc.) pick up spacing-only typography under `[data-assistive]` — 16px base, ~1.625 line-height, 65ch max measure, increased paragraph/letter spacing. No font-family swap; OFF state is pixel-identical because the attribute is absent.
+
+**Example** (browser session — toggle Assistive Mode on):
+
+```javascript
+fetch("/api/preferences", {
+  method: "PATCH",
+  credentials: "include",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ assistDefault: true }),
+});
+```
+
+The Settings Accessibility tab (motion, density, theme) is tracked separately in GitHub issue #530 and is blocked on the Settings shell rewrite (PR #491).
 
 ### Canvas Integration Endpoints
 

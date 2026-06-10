@@ -107,15 +107,42 @@ model Course {
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
   aiInstructions String           @default("")
+  /// Per-course override: `local` | `ollama` | `cloud`; null uses server env.
+  embeddingProvider    String?
+  /// Per-course model id (Ollama or OpenRouter/OpenAI); null uses server default for provider.
+  embeddingModel       String?
+  lastEmbeddedAt       DateTime?
+  embeddedWithProvider String?
+  embeddedWithModel    String?
   aiInteractions AIInteraction[]
   enrollments    Enrollment[]
   materials      CourseMaterial[]
+  reEmbedJobs    CourseReEmbedJob[]
   topics         CourseTopic[]
   questions      Question[]
 
   @@unique([code, startDate, section])
   @@index([externalSource, externalId])
   @@map("courses")
+}
+
+model CourseReEmbedJob {
+  id                   String           @id @default(cuid())
+  courseId             String
+  status               ReEmbedJobStatus @default(PENDING)
+  totalMaterials       Int              @default(0)
+  processedCount       Int              @default(0)
+  failedMaterialIds    String[]         @default([])
+  currentMaterialTitle String?
+  errorMessage         String?
+  startedAt            DateTime?
+  completedAt          DateTime?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+  course               Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@index([courseId, status])
+  @@map("course_re_embed_jobs")
 }
 
 model Enrollment {
@@ -370,7 +397,7 @@ model MaterialChunk {
 model MaterialEmbedding {
   id        String                      @id @default(cuid())
   chunkId   String                      @unique
-  embedding Unsupported("vector(3072)")
+  embedding Unsupported("vector(1024)")
   createdAt DateTime                    @default(now())
   chunk     MaterialChunk               @relation(fields: [chunkId], references: [id], onDelete: Cascade)
 
@@ -555,5 +582,13 @@ enum EnergyMeasurementSource {
 enum MaterialStatus {
   PROCESSING
   READY
+  FAILED
+}
+
+enum ReEmbedJobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  PARTIAL
   FAILED
 }
