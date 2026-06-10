@@ -3,7 +3,11 @@ import { describe, it, expect } from "vitest";
 import {
   computeAdhdResponseMetrics,
   isStructuralCompliancePass,
+  resolveAdhdResponseWordCap,
   withStructuralPass,
+  ADHD_CLARIFICATION_WORD_CAP,
+  ADHD_CLARIFICATION_USER_WORD_THRESHOLD,
+  ADHD_TUTORING_WORD_CAP,
 } from "~/lib/ai/adhd-metrics";
 
 describe("computeAdhdResponseMetrics", () => {
@@ -46,5 +50,17 @@ Next? Want to know more?`;
       oneTopic: null,
     });
     expect(metrics.structuralPass).toBe(true);
+  });
+});
+
+describe("resolveAdhdResponseWordCap", () => {
+  it("uses clarification cap for short follow-up turns", () => {
+    const short = Array(ADHD_CLARIFICATION_USER_WORD_THRESHOLD).fill("word").join(" ");
+    expect(resolveAdhdResponseWordCap(short)).toBe(ADHD_CLARIFICATION_WORD_CAP);
+  });
+
+  it("uses tutoring cap for longer user turns", () => {
+    const long = Array(ADHD_CLARIFICATION_USER_WORD_THRESHOLD + 1).fill("word").join(" ");
+    expect(resolveAdhdResponseWordCap(long)).toBe(ADHD_TUTORING_WORD_CAP);
   });
 });
