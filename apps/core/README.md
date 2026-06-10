@@ -23,6 +23,7 @@ A production-ready chat platform with Retrieval-Augmented Generation (RAG) capab
 - **Simple Integration**: Clean REST API endpoints for easy integration
 - **Vector Storage**: PGVector-powered embeddings on PostgreSQL for efficient similarity search
 - **Role-based Access**: Support for students, professors, and administrators
+- **Persisted Chat Preferences**: Assistive mode and the selected course are saved per user, restored on every page load and new chat, and cleared on logout
 
 ## Prerequisites
 
@@ -80,10 +81,16 @@ DATABASE_URL="postgresql://USER:PASSWORD@HOST:PORT/DATABASE?schema=public"
 BETTER_AUTH_SECRET="" # REQUIRED: Generate a strong random secret (e.g., `openssl rand -base64 32`)
 BETTER_AUTH_URL="http://localhost:5173" # Base URL of your app
 
-OPENROUTER_API_KEY="" # Embeddings via OpenRouter (recommended if you have one key for many models)
-GOOGLE_GENERATIVE_AI_API_KEY="" # Direct Gemini embeddings (used when OPENROUTER_API_KEY is unset)
+OPENROUTER_API_KEY="" # Embeddings — see docs/rag-ai/EMBEDDINGS.md (local Ollama or cloud 1024-dim)
+GOOGLE_GENERATIVE_AI_API_KEY="" # Direct Gemini embeddings (legacy 3072 path only)
+EMBEDDING_PROVIDER="local" # local | cloud — dev server uses Ollama mxbai-embed-large
+EMBEDDING_DIMENSION="1024" # Must match pgvector column (LOCAL-EMBEDDINGS)
+OLLAMA_EMBEDDING_MODEL="mxbai-embed-large"
 OLLAMA_BASE_URL="http://localhost:11434/"
 FIRECRAWL_API_KEY="" # Required for Firecrawl web search tool. If not set, web search is unavailable.
+
+# Canvas instructor API tokens (AES-256-GCM; same format as Question Maker ENCRYPTION_KEY)
+ENCRYPTION_KEY="" # REQUIRED for POST /api/canvas/connect — generate e.g. openssl rand -hex 32
 ```
 
 ## Usage
@@ -347,6 +354,54 @@ curl -X DELETE "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" \
   -d '{
     "topicId": "TOPIC_ID"
   }'
+```
+
+### Canvas Integration Endpoints
+
+Store an instructor's Canvas personal access token on Core (encrypted at rest). Used for future roster sync and Canvas REST calls. Requires a Better Auth **session cookie** — not `x-api-key`. Only users with role **`INSTRUCTOR`** or **`ADMIN`** may connect.
+
+Set `ENCRYPTION_KEY` in `apps/core/.env` before calling connect (see [Configuration](#configuration)). Token format and local Canvas setup: [`docs/implementations/canvas-api-integration-guide.md`](../../docs/implementations/canvas-api-integration-guide.md) and [`docs/CANVAS.md`](../../docs/CANVAS.md).
+
+On connect (non–test mode), Core probes `GET {canvasUrl}/api/v1/users/self/profile` before saving. Invalid tokens return `400`; unreachable Canvas returns `502`.
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| `GET` | `/api/canvas/integration` | Connection status (`canvasUrl`, `isTestMode`, `isConnected`) — **never returns the token** |
+| `POST` | `/api/canvas/connect` | Save or update integration |
+| `DELETE` | `/api/canvas/disconnect` | Remove integration |
+
+**Connect body** (`POST /api/canvas/connect`):
+
+```json
+{
+  "canvasUrl": "http://localhost:8080",
+  "apiKey": "1234~your-personal-access-token",
+  "isTestMode": false
+}
+```
+
+In **test mode**, `apiKey` is optional (mock flows only).
+
+#### Connect (browser console, logged in as instructor)
+
+```javascript
+fetch("/api/canvas/connect", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  credentials: "include",
+  body: JSON.stringify({
+    canvasUrl: "http://localhost:8080",
+    apiKey: "YOUR_CANVAS_TOKEN",
+  }),
+}).then((r) => r.json()).then(console.log);
+```
+
+#### Check status
+
+```javascript
+fetch("/api/canvas/integration", { credentials: "include" })
+  .then((r) => r.json())
+  .then(console.log);
 ```
 
 ## Testing

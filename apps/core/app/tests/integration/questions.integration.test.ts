@@ -8,8 +8,9 @@ vi.mock("~/lib/auth/server", () => ({
 // --- Prisma mock ---
 vi.mock("~/lib/prisma.server", () => {
   const mock = {
-    course: { findUnique: vi.fn() },
+    course: { findUnique: vi.fn(), findFirst: vi.fn() },
     courseTopic: { findUnique: vi.fn(), findMany: vi.fn() },
+    enrollment: { findUnique: vi.fn() },
     question: {
       findUnique: vi.fn(),
       findFirst: vi.fn(),
@@ -31,8 +32,9 @@ import { loader as getLoader, action as patchAction } from "~/routes/api/questio
 
 const mockGetSession = auth.api.getSession as ReturnType<typeof vi.fn>;
 const db = prisma as unknown as {
-  course: { findUnique: ReturnType<typeof vi.fn> };
+  course: { findUnique: ReturnType<typeof vi.fn>; findFirst: ReturnType<typeof vi.fn> };
   courseTopic: { findUnique: ReturnType<typeof vi.fn>; findMany: ReturnType<typeof vi.fn> };
+  enrollment: { findUnique: ReturnType<typeof vi.fn> };
   question: {
     findUnique: ReturnType<typeof vi.fn>;
     findFirst: ReturnType<typeof vi.fn>;
@@ -142,6 +144,16 @@ const validPostBody = {
   secondaryTopicIds: [],
 };
 
+const COURSE_ROW = { id: COURSE_ID, isPublished: true, department: null, deletedAt: null };
+
+/** Mock the resolveCourseAccess queries for a user-path caller (#301). */
+function mockCourseAccess(enrollmentRole: string | null) {
+  db.course.findFirst.mockResolvedValue(COURSE_ROW);
+  db.enrollment.findUnique.mockResolvedValue(
+    enrollmentRole ? { role: enrollmentRole, isActive: true } : null,
+  );
+}
+
 beforeEach(() => {
   vi.stubEnv("EDUAI_API_KEY", VALID_KEY);
   vi.clearAllMocks();
@@ -172,11 +184,19 @@ describe("GET /api/questions", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns 403 for STUDENT session", async () => {
+  it("returns 403 for an enrolled STUDENT session (§9 — students never read questions)", async () => {
     mockGetSession.mockResolvedValue({ user: { id: "u1", role: "STUDENT" } });
+    mockCourseAccess("STUDENT");
     const res = await listLoader(makeListArgs({ courseId: COURSE_ID }, undefined, "session=abc"));
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: "Forbidden" });
+  });
+
+  it("returns 403 for an INSTRUCTOR not enrolled in the course (#301 course scoping)", async () => {
+    mockGetSession.mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } });
+    mockCourseAccess(null);
+    const res = await listLoader(makeListArgs({ courseId: COURSE_ID }, undefined, "session=abc"));
+    expect(res.status).toBe(403);
   });
 
   it("returns 404 COURSE_NOT_FOUND via service key", async () => {
@@ -198,9 +218,9 @@ describe("GET /api/questions", () => {
     expect(body.questions).toHaveLength(1);
   });
 
-  it("returns 200 via INSTRUCTOR session", async () => {
+  it("returns 200 via enrolled INSTRUCTOR session", async () => {
     mockGetSession.mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } });
-    db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
+    mockCourseAccess("INSTRUCTOR");
     db.question.findMany.mockResolvedValue([fakeQuestion]);
     db.question.count.mockResolvedValue(1);
 
@@ -227,14 +247,36 @@ describe("POST /api/questions", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns 403 for STUDENT role", async () => {
+  it("returns 403 for an enrolled STUDENT role", async () => {
     mockGetSession.mockResolvedValue({ user: { id: "u1", role: "STUDENT" } });
+    mockCourseAccess("STUDENT");
     const res = await postAction(makePostArgs(validPostBody, "session=abc"));
     expect(res.status).toBe(403);
   });
 
+  it("returns 403 for an INSTRUCTOR not enrolled in the course (#301 course scoping)", async () => {
+    mockGetSession.mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } });
+    mockCourseAccess(null);
+    const res = await postAction(makePostArgs(validPostBody, "session=abc"));
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 201 for an enrolled TA (§9 — TAs can author questions)", async () => {
+    mockGetSession.mockResolvedValue({ user: { id: "u-ta", role: "STUDENT" } });
+    mockCourseAccess("TA");
+    db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
+    db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, deletedAt: null });
+    db.$transaction.mockImplementation(async (fn: (tx: typeof db) => unknown) => {
+      db.question.create.mockResolvedValue({ id: QUESTION_ID });
+      return fn(db);
+    });
+    const res = await postAction(makePostArgs(validPostBody, "session=abc"));
+    expect(res.status).toBe(201);
+  });
+
   it("returns 404 COURSE_NOT_FOUND", async () => {
     mockGetSession.mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } });
+    db.course.findFirst.mockResolvedValue(null);
     db.course.findUnique.mockResolvedValue(null);
     const res = await postAction(makePostArgs(validPostBody, "session=abc"));
     expect(res.status).toBe(404);
@@ -243,6 +285,7 @@ describe("POST /api/questions", () => {
 
   it("returns 404 TOPIC_NOT_FOUND when primary topic does not exist", async () => {
     mockGetSession.mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } });
+    mockCourseAccess("INSTRUCTOR");
     db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
     db.courseTopic.findUnique.mockResolvedValue(null);
     const res = await postAction(makePostArgs(validPostBody, "session=abc"));
@@ -250,8 +293,9 @@ describe("POST /api/questions", () => {
     expect(await res.json()).toEqual({ error: "TOPIC_NOT_FOUND" });
   });
 
-  it("returns 201 with ADMIN role (ADMIN is in the allowlist)", async () => {
+  it("returns 201 with ADMIN role (no enrollment required)", async () => {
     mockGetSession.mockResolvedValue({ user: { id: "u1", role: "ADMIN" } });
+    db.course.findFirst.mockResolvedValue(COURSE_ROW);
     db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
     db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, deletedAt: null });
     db.$transaction.mockImplementation(async (fn: (tx: typeof db) => unknown) => {
@@ -264,6 +308,7 @@ describe("POST /api/questions", () => {
 
   it("returns 422 DUPLICATE_TOPIC", async () => {
     mockGetSession.mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } });
+    mockCourseAccess("INSTRUCTOR");
     db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
     db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, deletedAt: null });
     const res = await postAction(
@@ -275,6 +320,7 @@ describe("POST /api/questions", () => {
 
   it("returns 422 INVALID_TOPIC_IDS for soft-deleted secondary topic", async () => {
     mockGetSession.mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } });
+    mockCourseAccess("INSTRUCTOR");
     db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
     db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, deletedAt: null });
     db.courseTopic.findMany.mockResolvedValue([{ id: "sec-topic", deletedAt: new Date() }]);
@@ -287,6 +333,7 @@ describe("POST /api/questions", () => {
 
   it("returns 201 with id on success and sets createdBy from session", async () => {
     mockGetSession.mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } });
+    mockCourseAccess("INSTRUCTOR");
     db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
     db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, deletedAt: null });
     db.$transaction.mockImplementation(async (fn: (tx: typeof db) => unknown) => {
@@ -301,6 +348,7 @@ describe("POST /api/questions", () => {
 
   it("returns same id on idempotency key replay", async () => {
     mockGetSession.mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } });
+    mockCourseAccess("INSTRUCTOR");
     db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
     db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, deletedAt: null });
     db.question.findUnique.mockResolvedValue({ id: QUESTION_ID });
@@ -342,11 +390,21 @@ describe("GET /api/questions/:id", () => {
     expect(Array.isArray(body.secondaryTopics)).toBe(true);
   });
 
-  it("returns 200 via user session (any role)", async () => {
+  it("returns 403 via an enrolled STUDENT session (§9 — students never read questions)", async () => {
     mockGetSession.mockResolvedValue({ user: { id: "u1", role: "STUDENT" } });
+    mockCourseAccess("STUDENT");
     db.question.findFirst.mockResolvedValue(fakeQuestion);
     const res = await getLoader(makeGetByIdArgs(QUESTION_ID, undefined, "session=abc"));
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 200 with answer preserved via an enrolled TA session", async () => {
+    mockGetSession.mockResolvedValue({ user: { id: "u-ta", role: "STUDENT" } });
+    mockCourseAccess("TA");
+    db.question.findFirst.mockResolvedValue({ ...fakeQuestion, answer: "42" });
+    const res = await getLoader(makeGetByIdArgs(QUESTION_ID, undefined, "session=abc"));
     expect(res.status).toBe(200);
+    expect((await res.json()).answer).toBe("42");
   });
 });
 
@@ -402,8 +460,10 @@ describe("PATCH /api/questions/:id", () => {
     expect(await res.json()).toEqual({ id: QUESTION_ID, testable: true });
   });
 
-  it("returns 200 via INSTRUCTOR session", async () => {
+  it("returns 200 via enrolled INSTRUCTOR session", async () => {
     mockGetSession.mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } });
+    mockCourseAccess("INSTRUCTOR");
+    db.question.findFirst.mockResolvedValue(fakeQuestion);
     db.question.update.mockResolvedValue({ id: QUESTION_ID, testable: true });
     const res = await patchAction(
       makePatchArgs(QUESTION_ID, { testable: true }, undefined, "session=abc")
@@ -411,8 +471,31 @@ describe("PATCH /api/questions/:id", () => {
     expect(res.status).toBe(200);
   });
 
-  it("returns 403 via STUDENT session", async () => {
+  it("returns 403 via enrolled STUDENT session", async () => {
     mockGetSession.mockResolvedValue({ user: { id: "u1", role: "STUDENT" } });
+    mockCourseAccess("STUDENT");
+    db.question.findFirst.mockResolvedValue(fakeQuestion);
+    const res = await patchAction(
+      makePatchArgs(QUESTION_ID, { testable: true }, undefined, "session=abc")
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 200 for a TA editing their OWN question (#301 own-only)", async () => {
+    mockGetSession.mockResolvedValue({ user: { id: "u-ta", role: "STUDENT" } });
+    mockCourseAccess("TA");
+    db.question.findFirst.mockResolvedValue({ ...fakeQuestion, createdBy: "u-ta" });
+    db.question.update.mockResolvedValue({ id: QUESTION_ID, testable: true });
+    const res = await patchAction(
+      makePatchArgs(QUESTION_ID, { testable: true }, undefined, "session=abc")
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it("returns 403 for a TA editing another user's question (#301 own-only)", async () => {
+    mockGetSession.mockResolvedValue({ user: { id: "u-ta", role: "STUDENT" } });
+    mockCourseAccess("TA");
+    db.question.findFirst.mockResolvedValue({ ...fakeQuestion, createdBy: "someone-else" });
     const res = await patchAction(
       makePatchArgs(QUESTION_ID, { testable: true }, undefined, "session=abc")
     );
@@ -428,6 +511,7 @@ describe("end-to-end: POST → GET list → PATCH → GET /:id", () => {
     mockGetSession.mockResolvedValue(instructorSession);
 
     // POST
+    mockCourseAccess("INSTRUCTOR");
     db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
     db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, deletedAt: null });
     db.question.findUnique.mockResolvedValue(null);

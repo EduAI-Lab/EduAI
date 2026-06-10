@@ -1,6 +1,36 @@
-import type { ActionFunctionArgs } from "react-router";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
+import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
-import { createBugReport } from "~/lib/bug-reports/server";
+import { createBugReport, listOwnBugReports } from "~/lib/bug-reports/server";
+
+/**
+ * GET /api/bug-reports?mine=true (#304, §11) — own submitted reports for any
+ * authenticated user (own-resource fallback, §19).
+ */
+export async function loader({ request }: LoaderFunctionArgs) {
+  const url = new URL(request.url);
+  if (url.searchParams.get("mine") !== "true") {
+    // The cross-user listing lives at /api/admin/bug-reports (ADMIN-only).
+    return new Response(JSON.stringify({ error: "MINE_PARAM_REQUIRED" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const session = await auth.api.getSession(request);
+  if (!session?.user) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const reports = await listOwnBugReports(session.user.id);
+  return new Response(JSON.stringify({ reports }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+}
 
 export async function action({ request }: ActionFunctionArgs) {
   const guard = await requireServiceKey(request);
