@@ -12,9 +12,10 @@ import { modelSupportsTools } from "~/lib/ai/providers.server";
 import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
 import {
   auditAndMaybeRewrite,
+  emptyOversightAuditResult,
   isAdhdOversightEnabled,
-  resolveAdhdWordCap,
 } from "~/lib/ai/adhd-oversight";
+import { resolveAdhdResponseWordCap } from "~/lib/ai/adhd-metrics";
 import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
 import { findRelevantContent } from "~/lib/ai/embedding";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
@@ -835,7 +836,7 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
     const lastUserText = extractMessageText(
       [...trimmedMessages].reverse().find((message) => message.role === "user"),
     );
-    const adhdWordCap = resolveAdhdWordCap(lastUserText);
+    const adhdWordCap = resolveAdhdResponseWordCap(lastUserText);
 
     const logResponseCompliance = (
       assistantText: string,
@@ -844,8 +845,11 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
         promptTokens?: number;
         completionTokens?: number;
         oversightRewritten?: boolean;
-        oversightMethod?: "none" | "deterministic" | "llm";
+        oversightMethod?: "none" | "deterministic" | "llm" | "llm_failed";
         preStructuralPass?: boolean;
+        oversightDurationMs?: number;
+        oversightPromptTokens?: number;
+        oversightCompletionTokens?: number;
       },
     ) => {
       const trimmed = assistantText?.trim();
@@ -857,6 +861,7 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
         assistantText: trimmed,
         extras: {
           model,
+          wordCap: adhdWordCap,
           durationMs: Date.now() - streamStartedAt,
           finishReason: extras?.finishReason ?? null,
           promptTokens: extras?.promptTokens,
@@ -864,6 +869,9 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
           oversightRewritten: extras?.oversightRewritten,
           oversightMethod: extras?.oversightMethod,
           preStructuralPass: extras?.preStructuralPass,
+          oversightDurationMs: extras?.oversightDurationMs,
+          oversightPromptTokens: extras?.oversightPromptTokens,
+          oversightCompletionTokens: extras?.oversightCompletionTokens,
         },
       }).catch((err) => {
         console.error("[assistive-events] response_compliance log failed", err);
@@ -910,27 +918,7 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
               model: aiModel,
               wordCap: adhdWordCap,
             })
-          : {
-              text: "",
-              rewritten: false,
-              method: "none" as const,
-              beforeMetrics: {
-                wordCount: 0,
-                topSummary: false,
-                nextLine: false,
-                underCap: true,
-                oneTopic: null,
-                structuralPass: false,
-              },
-              afterMetrics: {
-                wordCount: 0,
-                topSummary: false,
-                nextLine: false,
-                underCap: true,
-                oneTopic: null,
-                structuralPass: false,
-              },
-            };
+          : emptyOversightAuditResult();
 
         const finalText = audited.text;
         logResponseCompliance(finalText, {
@@ -940,6 +928,9 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
           oversightRewritten: audited.rewritten,
           oversightMethod: audited.method,
           preStructuralPass: audited.beforeMetrics.structuralPass,
+          oversightDurationMs: audited.oversightDurationMs,
+          oversightPromptTokens: audited.oversightUsage?.promptTokens,
+          oversightCompletionTokens: audited.oversightUsage?.completionTokens,
         });
 
         if (streaming) {
@@ -950,6 +941,16 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
           };
           if (chat?.id) {
             headers["X-Chat-Id"] = chat.id;
+          }
+
+          if (finalText) {
+            await appendMessages([
+              {
+                id: randomUUID(),
+                role: "assistant",
+                content: finalText,
+              },
+            ]);
           }
 
           return createDataStreamResponse({
