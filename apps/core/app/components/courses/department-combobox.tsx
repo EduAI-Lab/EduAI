@@ -86,8 +86,9 @@ export function DepartmentCombobox({
                 <CommandItem
                   key={d.code}
                   value={d.code}
-                  onSelect={(v) => {
-                    onValueChange(v)
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    onValueChange(d.code)
                     setOpen(false)
                     setSearch('')
                   }}
