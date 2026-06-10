@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { IconTrash, IconPlus, IconUsers, IconCalendar, IconUserCheck } from '@tabler/icons-react'
+import { IconTrash, IconPlus, IconUsers, IconCalendar, IconUserCheck, IconArrowsExchange } from '@tabler/icons-react'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { Badge } from '~/components/ui/badge'
@@ -94,7 +94,7 @@ export function CourseDetailManagerView({
     setStaffSuccess(null)
     try {
       await onAssignInstructor(selectedInstructorId)
-      setStaffSuccess('Instructor assigned successfully')
+      setStaffSuccess(course.instructor ? 'Instructor replaced successfully' : 'Instructor assigned successfully')
       setSelectedInstructorId('')
     } catch (e) {
       setStaffError(e instanceof Error ? e.message : 'Failed to assign instructor')
@@ -280,37 +280,74 @@ export function CourseDetailManagerView({
               {/* Instructor assignment */}
               <div className="flex flex-col gap-3">
                 <p className="text-sm font-medium">Instructor</p>
-                {course.instructor && (
-                  <Card>
-                    <CardContent className="flex items-center justify-between py-3">
-                      <div>
-                        <span className="text-sm font-medium">{course.instructor.name}</span>
-                        <span className="text-xs text-muted-foreground ml-2">{course.instructor.email}</span>
+                {course.instructor ? (
+                  <>
+                    <Card>
+                      <CardContent className="flex items-center justify-between py-3">
+                        <div>
+                          <span className="text-sm font-medium">{course.instructor.name}</span>
+                          <span className="text-xs text-muted-foreground ml-2">{course.instructor.email}</span>
+                        </div>
+                        <Badge>Current</Badge>
+                      </CardContent>
+                    </Card>
+                    {availableInstructors.length > 0 ? (
+                      <div className="flex flex-col gap-2">
+                        <p className="text-xs text-muted-foreground">
+                          Selecting a new instructor will replace the current one.
+                        </p>
+                        <div className="flex gap-2">
+                          <Select value={selectedInstructorId} onValueChange={setSelectedInstructorId}>
+                            <SelectTrigger className="flex-1">
+                              <SelectValue placeholder="Select replacement instructor" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {availableInstructors.map((p) => (
+                                <SelectItem key={p.id} value={p.id}>
+                                  {p.name} ({p.email})
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Button
+                            variant="outline"
+                            onClick={handleAssignInstructor}
+                            disabled={!selectedInstructorId}
+                          >
+                            <IconArrowsExchange className="w-4 h-4 mr-1" />
+                            Replace
+                          </Button>
+                        </div>
                       </div>
-                      <Badge>Current</Badge>
-                    </CardContent>
-                  </Card>
-                )}
-                {availableInstructors.length > 0 ? (
-                  <div className="flex gap-2">
-                    <Select value={selectedInstructorId} onValueChange={setSelectedInstructorId}>
-                      <SelectTrigger className="flex-1">
-                        <SelectValue placeholder="Select an instructor to assign" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {availableInstructors.map((p) => (
-                          <SelectItem key={p.id} value={p.id}>
-                            {p.name} ({p.email})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Button onClick={handleAssignInstructor} disabled={!selectedInstructorId}>
-                      Assign
-                    </Button>
-                  </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No other instructors available.</p>
+                    )}
+                  </>
                 ) : (
-                  <p className="text-sm text-muted-foreground">No other instructors available to assign.</p>
+                  <>
+                    <p className="text-xs text-muted-foreground">No instructor assigned yet.</p>
+                    {availableInstructors.length > 0 ? (
+                      <div className="flex gap-2">
+                        <Select value={selectedInstructorId} onValueChange={setSelectedInstructorId}>
+                          <SelectTrigger className="flex-1">
+                            <SelectValue placeholder="Select an instructor to assign" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {availableInstructors.map((p) => (
+                              <SelectItem key={p.id} value={p.id}>
+                                {p.name} ({p.email})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Button onClick={handleAssignInstructor} disabled={!selectedInstructorId}>
+                          Assign
+                        </Button>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No instructors available to assign.</p>
+                    )}
+                  </>
                 )}
               </div>
 
