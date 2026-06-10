@@ -43,3 +43,4 @@ export const SPLITS_PATH = join(SUITE_DIR, "splits.json");
 export const DEFAULT_BOTH_TIER_OUT = join(RUNS_DIR, "both-tier.v1.jsonl");
 export const DEFAULT_BOTH_TIER_IN = DEFAULT_BOTH_TIER_OUT;
 export const DEFAULT_LABELS_OUT = join(RUNS_DIR, "labels.v1.jsonl");
+export const DEFAULT_POLICY_OUT = join(RUNS_DIR, "policy-runs.v1.jsonl");

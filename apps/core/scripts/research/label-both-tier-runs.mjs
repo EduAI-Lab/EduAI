@@ -2,26 +2,12 @@
 /**
  * Step 4b — LLM-judge labeling for both-tier baseline runs.
  *
- * Reads paired 7B/32B responses and writes labels.v1.jsonl with:
- *   min_adequate_tier, tier_sensitive, tier*_adequacy, quality_delta, judge_rationale
- *
- * Required:
- *   RESEARCH_JUDGE_API_KEY
- *
- * Optional:
- *   RESEARCH_LABEL_IN          default docs/research/data/runs/both-tier.v1.jsonl
- *   RESEARCH_LABEL_OUT         default docs/research/data/runs/labels.v1.jsonl
- *   RESEARCH_JUDGE_MODEL       default gpt-4o-mini
- *   RESEARCH_JUDGE_BASE_URL    default https://api.openai.com/v1
- *   RESEARCH_LABEL_LIMIT       max prompts to label
- *   RESEARCH_LABEL_IDS         comma-separated ts-### filter
- *   RESEARCH_LABEL_SLEEP_MS    delay between judge calls (default 300)
- *   RESEARCH_LABEL_DRY_RUN=1   pair + print stats only, no API calls
- *
- * Usage:
- *   cd apps/core && npm run research:label-both-tier
+ * Judge backends:
+ *   RESEARCH_JUDGE_VIA_EDUAI=1  — reuse RESEARCH_RUN_* creds (32B on dev)
+ *   RESEARCH_JUDGE_API_KEY      — OpenAI-compatible API
  */
-import { appendFileSync, mkdirSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { performance } from "node:perf_hooks";
 import {
@@ -33,6 +19,14 @@ import {
 import { DEFAULT_BOTH_TIER_IN, DEFAULT_LABELS_OUT } from "./paths.mjs";
 
 const ADEQUACY = new Set(["adequate", "degraded", "insufficient"]);
+const DELTA_ALIASES = {
+  tier1_better: "7b_better",
+  tier3_better: "32b_better",
+  "7b_better": "7b_better",
+  "32b_better": "32b_better",
+  equivalent: "equivalent",
+  incomparable: "incomparable",
+};
 
 const JUDGE_SYSTEM = `You are an expert evaluator for educational AI tutoring responses.
 
@@ -55,9 +49,12 @@ Return ONLY valid JSON (no markdown fences) with this shape:
 
 If tier 3 response is missing or marked unavailable, set tier3_adequacy to "not_available" and quality_delta to "incomparable".`;
 
-function readEnv(name) {
-  const v = process.env[name];
-  return v !== undefined && v !== "" ? v : undefined;
+function readEnv(primary, alias) {
+  for (const name of [primary, alias]) {
+    const v = process.env[name];
+    if (v !== undefined && v !== "") return v;
+  }
+  return undefined;
 }
 
 function sleep(ms) {
@@ -120,6 +117,41 @@ function buildUserPrompt(meta, tier1Row, tier3Row) {
   ].join("\n");
 }
 
+function repairJsonSlice(slice) {
+  let s = slice
+    .replace(/\btier1_better\b/g, "7b_better")
+    .replace(/\btier3_better\b/g, "32b_better");
+
+  try {
+    return JSON.parse(s);
+  } catch {
+    /* fall through */
+  }
+
+  // vLLM judges often emit LaTeX/backslashes that break JSON.parse
+  s = s.replace(/\\(?![\\/"bfnrtu])/g, "\\\\");
+  try {
+    return JSON.parse(s);
+  } catch {
+    /* fall through */
+  }
+
+  const pick = (key) => {
+    const re = new RegExp(`"${key}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"`);
+    const m = s.match(re);
+    return m ? m[1].replace(/\\"/g, '"').replace(/\\\\/g, "\\") : null;
+  };
+
+  const tier1 = pick("tier1_adequacy");
+  const tier3 = pick("tier3_adequacy");
+  const delta = pick("quality_delta");
+  const rationale = pick("rationale");
+  if (!tier1 || !tier3 || !delta || !rationale) {
+    throw new Error(`Judge returned non-JSON: ${slice.slice(0, 200)}`);
+  }
+  return { tier1_adequacy: tier1, tier3_adequacy: tier3, quality_delta: delta, rationale };
+}
+
 function parseJudgeJson(text) {
   const trimmed = text.trim();
   const start = trimmed.indexOf("{");
@@ -127,7 +159,9 @@ function parseJudgeJson(text) {
   if (start === -1 || end === -1) {
     throw new Error(`Judge returned non-JSON: ${trimmed.slice(0, 200)}`);
   }
-  const parsed = JSON.parse(trimmed.slice(start, end + 1));
+
+  const parsed = repairJsonSlice(trimmed.slice(start, end + 1));
+
   if (!ADEQUACY.has(parsed.tier1_adequacy)) {
     throw new Error(`Invalid tier1_adequacy: ${parsed.tier1_adequacy}`);
   }
@@ -135,17 +169,35 @@ function parseJudgeJson(text) {
   if (t3 !== "not_available" && !ADEQUACY.has(t3)) {
     throw new Error(`Invalid tier3_adequacy: ${t3}`);
   }
-  const delta = parsed.quality_delta;
+
+  const rawDelta = String(parsed.quality_delta ?? "").trim();
+  const delta = DELTA_ALIASES[rawDelta] ?? rawDelta;
   if (!["equivalent", "7b_better", "32b_better", "incomparable"].includes(delta)) {
-    throw new Error(`Invalid quality_delta: ${delta}`);
+    throw new Error(`Invalid quality_delta: ${parsed.quality_delta}`);
   }
+
   if (typeof parsed.rationale !== "string" || !parsed.rationale.trim()) {
     throw new Error("Missing rationale");
   }
-  return parsed;
+
+  return { ...parsed, quality_delta: delta };
 }
 
-async function callJudge({ baseUrl, apiKey, model, userPrompt }) {
+function extractResponseText(json) {
+  if (!json || typeof json !== "object") return "";
+  if (typeof json.content === "string") return json.content;
+  if (typeof json.text === "string") return json.text;
+  if (typeof json.response === "string") return json.response;
+  return "";
+}
+
+function loadApiKeysJson() {
+  const file = readEnv("RESEARCH_RUN_API_KEYS_FILE", "CHAT_BENCH_API_KEYS_FILE");
+  if (file) return readFileSync(file, "utf8").trim();
+  return readEnv("RESEARCH_RUN_API_KEYS", "CHAT_BENCH_API_KEYS");
+}
+
+async function callJudgeOpenAI({ baseUrl, apiKey, model, userPrompt }) {
   const url = `${baseUrl.replace(/\/$/, "")}/chat/completions`;
   const res = await fetch(url, {
     method: "POST",
@@ -166,20 +218,47 @@ async function callJudge({ baseUrl, apiKey, model, userPrompt }) {
   });
 
   const text = await res.text();
-  if (!res.ok) {
-    throw new Error(`Judge HTTP ${res.status}: ${text.slice(0, 300)}`);
-  }
+  if (!res.ok) throw new Error(`Judge HTTP ${res.status}: ${text.slice(0, 300)}`);
+
+  const json = JSON.parse(text);
+  const content = json?.choices?.[0]?.message?.content;
+  if (typeof content !== "string") throw new Error("Judge response missing message content");
+  return parseJudgeJson(content);
+}
+
+async function callJudgeViaEduai({ url, headers, apiKeys, model, userPrompt }) {
+  const judgePrompt = `${JUDGE_SYSTEM}\n\n${userPrompt}\n\nRespond with JSON only.`;
+  const timeoutMs = Math.max(
+    30_000,
+    Number(readEnv("RESEARCH_LABEL_TIMEOUT_MS", "180000")) || 180_000,
+  );
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      model,
+      apiKeys,
+      messages: [{ id: randomUUID(), role: "user", content: judgePrompt }],
+      streaming: false,
+      forceHybridRag: true,
+    }),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+
+  const text = await res.text();
+  if (!res.ok) throw new Error(`EduAI judge HTTP ${res.status}: ${text.slice(0, 300)}`);
 
   let json;
   try {
     json = JSON.parse(text);
   } catch {
-    throw new Error(`Judge returned non-JSON body: ${text.slice(0, 200)}`);
+    throw new Error(`EduAI judge non-JSON body: ${text.slice(0, 200)}`);
   }
 
-  const content = json?.choices?.[0]?.message?.content;
-  if (typeof content !== "string") {
-    throw new Error("Judge response missing message content");
+  const content = extractResponseText(json);
+  if (!content) {
+    throw new Error(`EduAI judge empty response (finish=${json?.finishReason ?? "?"})`);
   }
   return parseJudgeJson(content);
 }
@@ -187,9 +266,12 @@ async function callJudge({ baseUrl, apiKey, model, userPrompt }) {
 async function main() {
   const inPath = readEnv("RESEARCH_LABEL_IN") ?? DEFAULT_BOTH_TIER_IN;
   const outPath = readEnv("RESEARCH_LABEL_OUT") ?? DEFAULT_LABELS_OUT;
-  const judgeModel = readEnv("RESEARCH_JUDGE_MODEL") ?? "gpt-4o-mini";
+  const viaEduai = readEnv("RESEARCH_JUDGE_VIA_EDUAI") === "1";
+  const judgeModel =
+    readEnv("RESEARCH_JUDGE_MODEL") ??
+    (viaEduai ? "vllm:qwen2.5-32b-instruct" : "gpt-4o-mini");
   const judgeBaseUrl = readEnv("RESEARCH_JUDGE_BASE_URL") ?? "https://api.openai.com/v1";
-  const judgeApiKey = readEnv("RESEARCH_JUDGE_API_KEY");
+  const judgeApiKey = readEnv("RESEARCH_JUDGE_API_KEY", "OPENAI_API_KEY");
   const dryRun = readEnv("RESEARCH_LABEL_DRY_RUN") === "1";
   const limitRaw = readEnv("RESEARCH_LABEL_LIMIT");
   const limit = limitRaw ? Math.max(1, Number(limitRaw) || 0) : undefined;
@@ -197,8 +279,33 @@ async function main() {
   const sleepMs = Math.max(0, Number(readEnv("RESEARCH_LABEL_SLEEP_MS", "300")) || 0);
   const labelVersion = readEnv("RESEARCH_LABEL_VERSION") ?? "v1";
 
-  if (!dryRun && !judgeApiKey) {
-    console.error("Need RESEARCH_JUDGE_API_KEY (or set RESEARCH_LABEL_DRY_RUN=1).");
+  let eduaiConfig = null;
+  if (viaEduai) {
+    const url = readEnv("RESEARCH_RUN_URL", "CHAT_BENCH_URL");
+    const apiKeysJson = loadApiKeysJson();
+    const xApiKey = readEnv("RESEARCH_RUN_X_API_KEY", "CHAT_BENCH_X_API_KEY");
+    const cookie = readEnv("RESEARCH_RUN_COOKIE", "CHAT_BENCH_COOKIE");
+    if (!url || !apiKeysJson) {
+      console.error("RESEARCH_JUDGE_VIA_EDUAI=1 needs RESEARCH_RUN_URL and RESEARCH_RUN_API_KEYS(_FILE).");
+      process.exit(1);
+    }
+    if (!xApiKey && !cookie) {
+      console.error("RESEARCH_JUDGE_VIA_EDUAI=1 needs RESEARCH_RUN_X_API_KEY or RESEARCH_RUN_COOKIE.");
+      process.exit(1);
+    }
+    eduaiConfig = {
+      url,
+      headers: {
+        "Content-Type": "application/json",
+        ...(xApiKey ? { "x-api-key": xApiKey } : {}),
+        ...(cookie ? { Cookie: cookie } : {}),
+      },
+      apiKeys: JSON.parse(apiKeysJson),
+    };
+  } else if (!dryRun && !judgeApiKey) {
+    console.error(
+      "Need RESEARCH_JUDGE_API_KEY, RESEARCH_JUDGE_VIA_EDUAI=1, or RESEARCH_LABEL_DRY_RUN=1.",
+    );
     process.exit(1);
   }
 
@@ -223,19 +330,16 @@ async function main() {
 
   candidates = candidates.filter(({ promptId }) => !existingIds.has(promptId));
 
-  if (limit) {
-    candidates = candidates.slice(0, limit);
-  }
+  if (limit) candidates = candidates.slice(0, limit);
 
   const bothOk = candidates.filter(({ t1, t3 }) => isOkRow(t1) && isOkRow(t3)).length;
-  const tier3Missing = candidates.length - bothOk;
 
   console.log("=== both-tier LLM judge ===");
   console.log("input:", inPath);
   console.log("output:", outPath);
   console.log("judge:", judgeModel);
-  console.log("dry_run:", dryRun);
-  console.log("candidates:", candidates.length, `(both OK: ${bothOk}, tier3 missing: ${tier3Missing})`);
+  console.log("backend:", viaEduai ? "eduai" : "openai-compatible");
+  console.log("candidates:", candidates.length, `(both OK: ${bothOk})`);
   console.log("skip already labeled:", existingIds.size);
   console.log("");
 
@@ -249,9 +353,7 @@ async function main() {
       console.log(
         promptId,
         t1.stratum,
-        t1.category,
-        `7B:${t1.response.length}ch`,
-        isOkRow(t3) ? `32B:${t3.response.length}ch` : "32B:MISSING",
+        isOkRow(t3) ? "paired" : "tier3-missing",
       );
     }
     return;
@@ -265,21 +367,20 @@ async function main() {
   for (let i = 0; i < candidates.length; i++) {
     const { promptId, t1, t3, meta } = candidates[i];
     const tier3Missing = !t3 || !isOkRow(t3);
-    console.log(
-      `[${i + 1}/${candidates.length}] ${promptId} (${meta.stratum}, ${meta.category})` +
-        (tier3Missing ? " — tier3 missing" : ""),
-    );
+    console.log(`[${i + 1}/${candidates.length}] ${promptId} (${meta.stratum})`);
 
     const userPrompt = buildUserPrompt(meta, t1, t3);
     const t0 = performance.now();
 
     try {
-      const judge = await callJudge({
-        baseUrl: judgeBaseUrl,
-        apiKey: judgeApiKey,
-        model: judgeModel,
-        userPrompt,
-      });
+      const judge = viaEduai
+        ? await callJudgeViaEduai({ ...eduaiConfig, model: judgeModel, userPrompt })
+        : await callJudgeOpenAI({
+            baseUrl: judgeBaseUrl,
+            apiKey: judgeApiKey,
+            model: judgeModel,
+            userPrompt,
+          });
 
       const tier3Adequacy =
         tier3Missing || judge.tier3_adequacy === "not_available"
@@ -292,57 +393,50 @@ async function main() {
         tier3Missing,
       });
 
-      const record = {
-        label_version: labelVersion,
-        labeled_at: new Date().toISOString(),
-        run_label: t1.run_label ?? t3?.run_label ?? null,
-        prompt_id: promptId,
-        stratum: meta.stratum,
-        category: meta.category,
-        split: meta.split,
-        rag_context: meta.rag_context,
-        tools_expected: meta.tools_expected,
-        course_code: meta.course_code ?? null,
-        prompt: meta.prompt,
-        tier1_adequacy: judge.tier1_adequacy,
-        tier3_adequacy: tier3Adequacy,
-        min_adequate_tier: derived.min_adequate_tier,
-        tier_sensitive: derived.tier_sensitive,
-        quality_delta: tier3Missing ? "incomparable" : judge.quality_delta,
-        judge_rationale: judge.rationale.trim(),
-        judge_model: judgeModel,
-        tier3_missing: tier3Missing,
-        tier1_duration_ms: t1.duration_ms ?? null,
-        tier3_duration_ms: tier3Missing ? null : t3.duration_ms ?? null,
-        judge_duration_ms: Math.round(performance.now() - t0),
-      };
-
-      appendFileSync(outPath, `${JSON.stringify(record)}\n`, "utf8");
+      appendFileSync(
+        outPath,
+        `${JSON.stringify({
+          label_version: labelVersion,
+          labeled_at: new Date().toISOString(),
+          run_label: t1.run_label ?? t3?.run_label ?? null,
+          prompt_id: promptId,
+          stratum: meta.stratum,
+          category: meta.category,
+          split: meta.split,
+          rag_context: meta.rag_context,
+          tools_expected: meta.tools_expected,
+          course_code: meta.course_code ?? null,
+          prompt: meta.prompt,
+          tier1_adequacy: judge.tier1_adequacy,
+          tier3_adequacy: tier3Adequacy,
+          min_adequate_tier: derived.min_adequate_tier,
+          tier_sensitive: derived.tier_sensitive,
+          quality_delta: tier3Missing ? "incomparable" : judge.quality_delta,
+          judge_rationale: judge.rationale.trim(),
+          judge_model: judgeModel,
+          judge_backend: viaEduai ? "eduai" : "openai-compatible",
+          tier3_missing: tier3Missing,
+          tier1_duration_ms: t1.duration_ms ?? null,
+          tier3_duration_ms: tier3Missing ? null : t3.duration_ms ?? null,
+          judge_duration_ms: Math.round(performance.now() - t0),
+        })}\n`,
+        "utf8",
+      );
       labeled++;
       console.log(
-        `  min_tier=${derived.min_adequate_tier ?? "null"} sensitive=${derived.tier_sensitive} ` +
-          `(7B:${judge.tier1_adequacy}, 32B:${tier3Adequacy})`,
+        `  min_tier=${derived.min_adequate_tier ?? "null"} sensitive=${derived.tier_sensitive}`,
       );
     } catch (e) {
       errors++;
-      const message = e instanceof Error ? e.message : String(e);
-      console.log(`  ERROR: ${message.slice(0, 160)}`);
+      console.log(`  ERROR: ${(e instanceof Error ? e.message : String(e)).slice(0, 160)}`);
     }
 
-    if (sleepMs && i + 1 < candidates.length) {
-      await sleep(sleepMs);
-    }
+    if (sleepMs && i + 1 < candidates.length) await sleep(sleepMs);
   }
 
-  console.log("");
-  console.log("=== done ===");
-  console.log("labeled:", labeled);
-  console.log("errors:", errors);
-  console.log("output:", outPath);
-
-  if (errors > 0) {
-    process.exit(1);
-  }
+  console.log("\n=== done ===");
+  console.log("labeled:", labeled, "errors:", errors, "output:", outPath);
+  if (errors > 0) process.exit(1);
 }
 
 main().catch((e) => {

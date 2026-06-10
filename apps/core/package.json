@@ -29,6 +29,8 @@
     "research:summarize-both-tier": "node ./scripts/research/summarize-both-tier-runs.mjs",
     "research:label-both-tier": "node ./scripts/research/label-both-tier-runs.mjs",
     "research:summarize-labels": "node ./scripts/research/summarize-both-tier-labels.mjs",
+    "research:run-policy": "node ./scripts/research/run-policy-comparison.mjs",
+    "research:summarize-policy": "node ./scripts/research/summarize-policy-runs.mjs",
     "test:embedding": "tsx scripts/test-embedding.ts"
   },
   "dependencies": {
