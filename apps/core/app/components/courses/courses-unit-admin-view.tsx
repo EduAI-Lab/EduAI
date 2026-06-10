@@ -10,6 +10,7 @@ import { Label } from '~/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select'
 import { Textarea } from '~/components/ui/textarea'
 import { DEPARTMENTS, getDepartmentLabel } from '~/lib/departments'
+import { DepartmentCombobox } from '~/components/courses/department-combobox'
 import type { Course, CreateCourseInput, UpdateCourseInput } from '~/hooks/api/use-courses'
 
 interface Instructor {
@@ -122,21 +123,12 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, instructors = [
                     />
                   </>
                 ) : (
-                  <Select
-                    name="department"
+                  <DepartmentCombobox
+                    departments={authorizedDepts}
                     value={selectedDept}
                     onValueChange={setSelectedDept}
-                    required
-                  >
-                    <SelectTrigger id="ua-dept"><SelectValue placeholder="Select department" /></SelectTrigger>
-                    <SelectContent>
-                      {authorizedDepts.map((d) => (
-                        <SelectItem key={d.code} value={d.code}>
-                          {d.label} ({d.code})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    placeholder="Select department"
+                  />
                 )}
               </div>
               <div className="grid gap-2">
@@ -202,7 +194,12 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, instructors = [
               </div>
               <div className="flex justify-end gap-2">
                 <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
-                <Button type="submit" disabled={!selectedInstructor}>Create Course</Button>
+                <Button
+                  type="submit"
+                  disabled={!selectedInstructor || (authorizedDepts.length > 1 && !selectedDept)}
+                >
+                  Create Course
+                </Button>
               </div>
             </form>
           </DialogContent>
