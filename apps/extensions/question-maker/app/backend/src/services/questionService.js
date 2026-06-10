@@ -175,7 +175,8 @@ export const createQuestion = async (userId, questionData) => {
       primaryTopicId: parsedPrimaryTopicId,
       type: normalizedType,
       description: normalizedDescription,
-      questionOrder: questionOrder && typeof questionOrder === 'object' ? questionOrder : {}
+      questionOrder: questionOrder && typeof questionOrder === 'object' ? questionOrder : {},
+      createdBy: questionData.createdBy ?? null
     });
 
     return question;
@@ -397,7 +398,8 @@ export const createMultipleQuestions = async (userId, questionsData) => {
         courseId,
         primaryTopicId,
         type,
-        questionOrder
+        questionOrder,
+        createdBy: q.createdBy ?? null
       });
 
       createdQuestions.push(question);
@@ -411,7 +413,7 @@ export const createMultipleQuestions = async (userId, questionsData) => {
 
 /** Persists extracted questions/variants and optionally creates assessments/sections for them. */
 export const saveExtractedQuestions = async (userId, payload) => {
-  const { courseId, primaryTopicId, topicName, questions, assessment, isAiGenerated = false } = payload;
+  const { courseId, primaryTopicId, topicName, questions, assessment, isAiGenerated = false, createdBy = null } = payload;
 
   if (!courseId) {
     throw new Error('courseId is required');
@@ -568,7 +570,8 @@ export const saveExtractedQuestions = async (userId, payload) => {
         courseId,
         primaryTopicId: primaryTopicForQuestion,
         type: questionType,
-        questionOrder: createdAssessment ? { [createdAssessment.id]: orderCounter } : {}
+        questionOrder: createdAssessment ? { [createdAssessment.id]: orderCounter } : {},
+        createdBy
       }, { transaction });
 
       // Handle choices for MCQ questions
@@ -601,7 +604,8 @@ export const saveExtractedQuestions = async (userId, payload) => {
         secondaryTopicsId: secondaryTopics,
         referenceId: null,
         isAiGenerated: Boolean(isAiGenerated),
-        isDraft: true // All new variants start as drafts
+        isDraft: true, // All new variants start as drafts
+        createdBy
       }, { transaction });
 
       // Link variant to section if assessment and section were created
@@ -817,7 +821,8 @@ export const createVariant = async (questionId, variantData, userId) => {
       choices,
       referenceId: variantData.referenceId || null,
       isAiGenerated: variantData.isAiGenerated !== undefined ? Boolean(variantData.isAiGenerated) : false,
-      isDraft: variantData.isDraft !== undefined ? Boolean(variantData.isDraft) : true
+      isDraft: variantData.isDraft !== undefined ? Boolean(variantData.isDraft) : true,
+      createdBy: variantData.createdBy ?? null
     });
 
     return variant;
