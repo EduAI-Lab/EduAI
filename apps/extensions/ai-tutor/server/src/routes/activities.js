@@ -1016,21 +1016,33 @@ router.post('/activities/:activityId/teach', async (req, res) => {
     return res.status(401).json({ error: 'Authentication required' });
   }
 
-  let payload;
-  try {
-    payload = TeachRequestSchema.parse(req.body || {});
-  } catch (error) {
-    return res
-      .status(400)
-      .json({ error: 'Invalid payload', details: error?.errors || String(error) });
-  }
-
   try {
     const activity = await loadActivityForChat(activityId);
 
     if (!activity) {
       return res.status(404).json({ error: 'Activity not found' });
     }
+
+    // Auth check before schema parse: unauthorized callers get 403, not 400
+    const course = activity.lesson?.module?.courseOffering;
+    if (!course) return res.status(500).json({ error: 'Activity course context missing' });
+    if (authUser.role !== 'STUDENT')
+      return res.status(403).json({ error: 'Only students can use AI tutoring' });
+    if (!course.enrollments.some((e) => e.userId === authUser.id))
+      return res.status(403).json({ error: 'Not enrolled in this course' });
+    const lesson = activity.lesson;
+    if (!course.isPublished || !lesson?.module?.isPublished || !lesson?.isPublished)
+      return res.status(403).json({ error: 'Activity is not available' });
+
+    let payload;
+    try {
+      payload = TeachRequestSchema.parse(req.body || {});
+    } catch (error) {
+      return res
+        .status(400)
+        .json({ error: 'Invalid payload', details: error?.errors || String(error) });
+    }
+
     const topicName = resolveTopicName(activity, payload.topicId);
     return handleAiInteraction({
       req,
@@ -1075,21 +1087,33 @@ router.post('/activities/:activityId/guide', async (req, res) => {
     return res.status(401).json({ error: 'Authentication required' });
   }
 
-  let payload;
-  try {
-    payload = GuideRequestSchema.parse(req.body || {});
-  } catch (error) {
-    return res
-      .status(400)
-      .json({ error: 'Invalid payload', details: error?.errors || String(error) });
-  }
-
   try {
     const activity = await loadActivityForChat(activityId);
 
     if (!activity) {
       return res.status(404).json({ error: 'Activity not found' });
     }
+
+    // Auth check before schema parse: unauthorized callers get 403, not 400
+    const course = activity.lesson?.module?.courseOffering;
+    if (!course) return res.status(500).json({ error: 'Activity course context missing' });
+    if (authUser.role !== 'STUDENT')
+      return res.status(403).json({ error: 'Only students can use AI tutoring' });
+    if (!course.enrollments.some((e) => e.userId === authUser.id))
+      return res.status(403).json({ error: 'Not enrolled in this course' });
+    const lesson = activity.lesson;
+    if (!course.isPublished || !lesson?.module?.isPublished || !lesson?.isPublished)
+      return res.status(403).json({ error: 'Activity is not available' });
+
+    let payload;
+    try {
+      payload = GuideRequestSchema.parse(req.body || {});
+    } catch (error) {
+      return res
+        .status(400)
+        .json({ error: 'Invalid payload', details: error?.errors || String(error) });
+    }
+
     return handleAiInteraction({
       req,
       res,
@@ -1133,21 +1157,23 @@ router.post('/activities/:activityId/custom', async (req, res) => {
     return res.status(401).json({ error: 'Authentication required' });
   }
 
-  let payload;
-  try {
-    payload = CustomRequestSchema.parse(req.body || {});
-  } catch (error) {
-    return res
-      .status(400)
-      .json({ error: 'Invalid payload', details: error?.errors || String(error) });
-  }
-
   try {
     const activity = await loadActivityForChat(activityId);
 
     if (!activity) {
       return res.status(404).json({ error: 'Activity not found' });
     }
+
+    // Auth check before schema parse: unauthorized callers get 403, not 400
+    const course = activity.lesson?.module?.courseOffering;
+    if (!course) return res.status(500).json({ error: 'Activity course context missing' });
+    if (authUser.role !== 'STUDENT')
+      return res.status(403).json({ error: 'Only students can use AI tutoring' });
+    if (!course.enrollments.some((e) => e.userId === authUser.id))
+      return res.status(403).json({ error: 'Not enrolled in this course' });
+    const lesson = activity.lesson;
+    if (!course.isPublished || !lesson?.module?.isPublished || !lesson?.isPublished)
+      return res.status(403).json({ error: 'Activity is not available' });
 
     // Check if custom mode is enabled and has a prompt
     if (!activity.enableCustomMode) {
@@ -1156,6 +1182,15 @@ router.post('/activities/:activityId/custom', async (req, res) => {
 
     if (!activity.customPrompt) {
       return res.status(400).json({ error: 'No custom prompt configured for this activity' });
+    }
+
+    let payload;
+    try {
+      payload = CustomRequestSchema.parse(req.body || {});
+    } catch (error) {
+      return res
+        .status(400)
+        .json({ error: 'Invalid payload', details: error?.errors || String(error) });
     }
 
     const topicName = resolveTopicName(activity, payload.topicId);
@@ -1411,6 +1446,46 @@ router.post('/activities/:activityId/feedback', async (req, res) => {
     }
     console.error('Error recording activity feedback:', error);
     res.status(500).json({ error: String(error) });
+  }
+});
+
+/**
+ * GET /me/submissions — own-resource: caller's submissions regardless of enrollment status.
+ *
+ * Auth: any authenticated user. No enrollment check so inactive students retain access.
+ */
+router.get('/me/submissions', async (req, res) => {
+  const authUser = req.user;
+  if (!authUser) return res.status(401).json({ error: 'Authentication required' });
+
+  try {
+    const submissions = await prisma.submission.findMany({
+      where: { userId: authUser.id },
+      orderBy: [{ activityId: 'asc' }, { attemptNumber: 'asc' }],
+    });
+    res.json(submissions);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+/**
+ * GET /me/feedback — own-resource: caller's activity feedback regardless of enrollment status.
+ *
+ * Auth: any authenticated user. No enrollment check so inactive students retain access.
+ */
+router.get('/me/feedback', async (req, res) => {
+  const authUser = req.user;
+  if (!authUser) return res.status(401).json({ error: 'Authentication required' });
+
+  try {
+    const feedback = await prisma.activityFeedback.findMany({
+      where: { userId: authUser.id },
+      orderBy: { createdAt: 'asc' },
+    });
+    res.json(feedback);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
   }
 });
 

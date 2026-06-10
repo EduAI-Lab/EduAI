@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
-import { makeProfessor, makeStudent, makeTA, truncateAll, seedMinimalCourse, prisma } from '../helpers.js';
+import { makeProfessor, makeAdmin, makeStudent, makeTA, truncateAll, seedMinimalCourse, prisma } from '../helpers.js';
 
 describe('Lessons routes', () => {
   let prof;
@@ -261,6 +261,104 @@ describe('Lessons routes', () => {
       const res = await request(taApp).patch(`/api/lessons/${seed.lesson.id}/unpublish`);
 
       expect(res.status).toBe(403);
+    });
+  });
+
+  // ── DELETE /api/lessons/:id ───────────────────────────────────────
+
+  describe('DELETE /api/lessons/:id', () => {
+    it('professor can delete their own lesson', async () => {
+      const res = await request(profApp).delete(`/api/lessons/${seed.lesson.id}`);
+      expect(res.status).toBe(204);
+      const found = await prisma.lesson.findUnique({ where: { id: seed.lesson.id } });
+      expect(found).toBeNull();
+    });
+
+    it('TA cannot delete a lesson', async () => {
+      const ta = await enrollTa();
+      const taApp = await createApp({ mockUser: ta });
+      const res = await request(taApp).delete(`/api/lessons/${seed.lesson.id}`);
+      expect(res.status).toBe(403);
+    });
+
+    it('non-instructor cannot delete', async () => {
+      const otherProf = makeProfessor();
+      const otherApp = await createApp({ mockUser: otherProf });
+      const res = await request(otherApp).delete(`/api/lessons/${seed.lesson.id}`);
+      expect(res.status).toBe(403);
+    });
+
+    it('ADMIN can delete any lesson', async () => {
+      const admin = makeAdmin();
+      const adminApp = await createApp({ mockUser: admin });
+      const res = await request(adminApp).delete(`/api/lessons/${seed.lesson.id}`);
+      expect(res.status).toBe(204);
+    });
+
+    it('returns 404 for non-existent lesson', async () => {
+      const res = await request(profApp).delete('/api/lessons/9999999');
+      expect(res.status).toBe(404);
+    });
+  });
+
+  // ── PATCH /api/lessons/:id ────────────────────────────────────────
+
+  describe('PATCH /api/lessons/:id', () => {
+    it('professor can update lesson title', async () => {
+      const res = await request(profApp)
+        .patch(`/api/lessons/${seed.lesson.id}`)
+        .send({ title: 'Updated Title' });
+      expect(res.status).toBe(200);
+      expect(res.body.title).toBe('Updated Title');
+    });
+
+    it('professor can update contentMd and position', async () => {
+      const res = await request(profApp)
+        .patch(`/api/lessons/${seed.lesson.id}`)
+        .send({ contentMd: 'New content', position: 5 });
+      expect(res.status).toBe(200);
+      expect(res.body.contentMd).toBe('New content');
+      expect(res.body.position).toBe(5);
+    });
+
+    it('TA cannot PATCH a lesson', async () => {
+      const ta = await enrollTa();
+      const taApp = await createApp({ mockUser: ta });
+      const res = await request(taApp)
+        .patch(`/api/lessons/${seed.lesson.id}`)
+        .send({ title: 'TA Patch' });
+      expect(res.status).toBe(403);
+    });
+
+    it('non-instructor cannot PATCH', async () => {
+      const otherProf = makeProfessor();
+      const otherApp = await createApp({ mockUser: otherProf });
+      const res = await request(otherApp)
+        .patch(`/api/lessons/${seed.lesson.id}`)
+        .send({ title: 'Other Patch' });
+      expect(res.status).toBe(403);
+    });
+
+    it('ADMIN can PATCH any lesson', async () => {
+      const admin = makeAdmin();
+      const adminApp = await createApp({ mockUser: admin });
+      const res = await request(adminApp)
+        .patch(`/api/lessons/${seed.lesson.id}`)
+        .send({ title: 'Admin Edited' });
+      expect(res.status).toBe(200);
+      expect(res.body.title).toBe('Admin Edited');
+    });
+
+    it('returns 400 when nothing to update', async () => {
+      const res = await request(profApp).patch(`/api/lessons/${seed.lesson.id}`).send({});
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 404 for non-existent lesson', async () => {
+      const res = await request(profApp)
+        .patch('/api/lessons/9999999')
+        .send({ title: 'Ghost' });
+      expect(res.status).toBe(404);
     });
   });
 });

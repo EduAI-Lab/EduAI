@@ -18,9 +18,14 @@ import { prisma } from './config/database.js';
 function isAllowedAdminPath(path) {
   return (
     path === '/me' ||
+    path.startsWith('/me/') ||
     path.startsWith('/admin/') ||
     path === '/ai-models' ||
-    path.startsWith('/ai-models/')
+    path.startsWith('/ai-models/') ||
+    path === '/bug-reports' ||
+    path.startsWith('/modules/') ||
+    path.startsWith('/lessons/') ||
+    path.startsWith('/courses/')
   );
 }
 
