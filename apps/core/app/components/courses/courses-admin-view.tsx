@@ -32,19 +32,20 @@ export function CoursesAdminView({ courses, instructors = [], onCreateCourse, on
   const [editingCourse, setEditingCourse] = useState<Course | null>(null)
   const [deletingCourse, setDeletingCourse] = useState<Course | null>(null)
   const [createDept, setCreateDept] = useState<string>('')
+  const [selectedTerm, setSelectedTerm] = useState<string>('Fall')
   const [selectedInstructor, setSelectedInstructor] = useState<string>('')
 
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     const fd = new FormData(e.currentTarget)
-    const dept = (fd.get('department') as string) || undefined
+    const dept = createDept || undefined
     const codeSuffix = (fd.get('codeSuffix') as string | null)?.trim() ?? ''
     const code = dept && codeSuffix ? `${dept} ${codeSuffix}` : (fd.get('code') as string)
     await onCreateCourse({
       name: fd.get('name') as string,
       code,
       section: fd.get('section') as string,
-      term: fd.get('term') as string,
+      term: selectedTerm,
       year: parseInt(fd.get('year') as string),
       startDate: fd.get('startDate') as string,
       department: dept,
@@ -52,6 +53,7 @@ export function CoursesAdminView({ courses, instructors = [], onCreateCourse, on
       instructorUserIds: selectedInstructor ? [selectedInstructor] : [],
     })
     setCreateDept('')
+    setSelectedTerm('Fall')
     setSelectedInstructor('')
     setCreateOpen(false)
   }
@@ -135,7 +137,7 @@ export function CoursesAdminView({ courses, instructors = [], onCreateCourse, on
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
                   <Label>Term</Label>
-                  <Select name="term" defaultValue="Fall">
+                  <Select value={selectedTerm} onValueChange={setSelectedTerm}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="Fall">Fall</SelectItem>
