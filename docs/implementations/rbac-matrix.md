@@ -426,6 +426,7 @@ QM's authoring model: `question_metadata` is an internal container that groups r
 
 **Notes:**
 - TAs can create and edit variants they authored (`O` within their enrolled course). Only instructors can approve variants and push them to Core.
+- `View` (`C`) is course-scoped, not own-scoped: an enrolled TA (or co-instructor) sees the **entire** course bank — every `question_metadata` and `Variant` in the course — not only the ones they created. The course-bank list endpoint (`GET /api/questions?courseId=`) resolves course access and scopes by the course owner so non-owner viewers see the full set; the edit/delete restriction (`O`) is what narrows a TA to their own rows.
 - Once a variant is approved (`isDraft=false`), it is locked for editing. An instructor must revert it to draft before edits are possible.
 - `core_question_id` on a variant is populated by QM's backend on approval — it is not a user-settable field.
 
@@ -446,6 +447,7 @@ An `Assessment` assembles a set of approved variants into a deliverable (A/B/C v
 
 **Notes:**
 - Assessment authoring (assembling variants into sections, generating A/B/C forms, running the AI review) is an instructor-only workflow. TAs can view assembled assessments but cannot modify them.
+- `View` (`C`) is course-scoped: the assessment-list endpoint (`GET /api/assessments?courseId=`) resolves course access and scopes by the course owner, so an enrolled TA browses **all** of the course's assessments, not only their own. Without a `courseId` the list stays caller-scoped to the user's own courses.
 
 ---
 
@@ -688,11 +690,18 @@ Not previously audited. Enforcement in `server/src/routes/activities.js`.
 
 ### 20.12 Question Maker — Role Architecture
 
-Question Maker uses **JWT authentication only** (`app/backend/src/middleware/auth.js`). There is **no role-based access control** — authorization is ownership-based (`req.user.id === resource.userId`). No role enum (`ADMIN`, `INSTRUCTOR`, `TA`, `STUDENT`, `UNIT_ADMIN`) exists or is checked anywhere in Question Maker.
+**Sections 16–18 are implemented** (#296, #311, #312, #313, #314). Question Maker validates the session cookie against Core's `POST /api/sessions/validate`, populates `req.user = {id, email, name, role}`, and normalizes unknown roles to `STUDENT` (least-privilege). Authorization is no longer ownership-only.
 
-Bug report admin access is gated by a hardcoded email allowlist (`BUG_REPORT_ADMIN_EMAILS` env var), not by role.
+**Per-course access** (`app/backend/src/middleware/courseAccess.js`) implements the [§3](#3-middleware-enforcement-pattern) shared contract in JS, sourcing data over HTTP rather than Prisma: enrollments and `course.department` via the service key (`GET /api/courses/:id/enrollments`, `GET /api/courses/:id`), and `authorizedUnits` via the caller's session on `GET /api/me` (the only caller-scoped source). `resolveCourseAccess` returns the same `{ level, rank }` shape; `requireCourseAccess` / the resource loaders in `resourceAccess.js` gate routes and attach `req.courseAccess` + `req.qmCourse`. A QM `Course` is 1:1 with a Core course (`core_course_id`); access is resolved against Core enrollment/unit data, except for courses not yet linked to Core, which fall back to owner-only instructor access.
 
-**All target matrices for Question Maker (Sections 16–18) are entirely unimplemented** from a role-permission standpoint. Current behavior: any authenticated user can perform any operation on any resource they own. Role distinctions (instructor-only approval, TA own-resource restriction, etc.) are not enforced.
+Enforcement against the target matrices:
+- **§16 question_metadata + Variant** — flat role gate blocks `STUDENT`; create/view admit ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C) / TA(C). New nullable `created_by` columns on both tables back the `O` rules: TA may edit/delete only rows they created (null `created_by` = no owner → instructor-and-up only); approval (`isDraft=false`) is instructor-and-up; an approved variant is `409 VARIANT_LOCKED` except for an instructor reverting it to draft.
+- **§17 Assessments** — writes (create/edit/delete/sections/section-variants/assemble/generate-bank/AI-review/Canvas export) are instructor-and-up; reads are TA-viewable. The course-bank list endpoints scope by course owner so an enrolled TA browses the whole course.
+- **§18 Canvas** — `canvas_integrations` are personal/own-only and role-gated to ADMIN/UNIT_ADMIN/INSTRUCTOR (TA/STUDENT rejected); `canvas_course_mappings` + export/import are course-scoped (C/D) and keyed to the course owner, while the personal Canvas credentials remain the caller's.
+
+Authorization is the middleware's job; the service layer scopes course-owned resources by the authorized course's owner id (`req.qmCourse.userId`) and, for section/variant/question writes reached via a parent route, also pins the child resource to the authorized course id (`req.qmCourse.id`) so a resource from another course the same user owns can't be mutated cross-course — defense-in-depth, not the gate. Bug-report triage access is now role-based (`ADMIN` only), replacing the `BUG_REPORT_ADMIN_EMAILS` email allowlist.
+
+Known limitations: list/aggregate endpoints without a `courseId` (e.g. the cross-course "all my questions" view, `GET /api/questions/stats`) remain caller-scoped to the user's own courses. No answer-key serializer exists in QM because `STUDENT` is blocked from every authoring surface (the [§19](#19-cross-cutting-rules) answer-strip rule is a Core/§9 concern).
 
 ---
 
@@ -709,7 +718,7 @@ Bug report admin access is gated by a hardcoded email allowlist (`BUG_REPORT_ADM
 | AI provider / model GET endpoints are public | Core | Medium — model metadata visible without auth |
 | Students can upload course materials | Core | Medium — contradicts target (`—` for students) |
 | Instructors cannot create topics in Core | Core | Medium — only ADMIN can; target allows INSTRUCTOR(C) |
-| Question Maker has no RBAC at all | Question Maker | High — all Sections 16–18 are unimplemented |
+| ~~Question Maker has no RBAC at all~~ | Question Maker | Resolved — Sections 16–18 enforced via session-role + course-access middleware (#296, #311–#314); see [§20.12](#2012-question-maker--role-architecture) |
 | Core chat endpoint has no course enrollment or publish check | Core | Medium — any authenticated user can start a chat in any course |
 | AI Tutor student submission routes have no role or enrollment gate | AI Tutor | Medium — any non-admin user can submit answers and invoke AI tutoring |
 | Module and lesson DELETE not implemented in AI Tutor | AI Tutor | Medium — instructors cannot delete modules or lessons; only activities can be deleted |
