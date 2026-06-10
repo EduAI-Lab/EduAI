@@ -50,6 +50,13 @@ describe("linkEnrollmentsFromStagingForCourse", () => {
     const linked = await linkEnrollmentsFromStagingForCourse("course-1");
 
     expect(linked).toBe(1);
+    expect(prisma.user.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: expect.any(Array),
+        }),
+      }),
+    );
     expect(prisma.enrollment.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { courseId_userId: { courseId: "course-1", userId: "user-1" } },

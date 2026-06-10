@@ -1,15 +1,13 @@
 import { EnrollmentRole } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 import { CANVAS_EXTERNAL_SOURCE } from "~/lib/canvas/client.server";
+import {
+  normalizeStudentId,
+  readStoredStudentId,
+  studentIdsMatchFilter,
+} from "~/lib/canvas/student-id.server";
 
-/** Normalizes a student number / Canvas sis_user_id for comparison. */
-export function normalizeStudentId(value: string | null | undefined): string | null {
-  if (value == null) {
-    return null;
-  }
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
+export { normalizeStudentId };
 
 export function normalizeRosterEmail(value: string | null | undefined): string | null {
   if (value == null) {
@@ -50,13 +48,13 @@ export async function linkEnrollmentsFromStagingForCourse(courseId: string): Pro
   ];
 
   const users = await prisma.user.findMany({
-    where: { studentId: { in: sisIds } },
+    where: studentIdsMatchFilter(sisIds),
     select: { id: true, studentId: true },
   });
 
   const userByStudentId = new Map(
     users
-      .map((user) => [normalizeStudentId(user.studentId), user.id] as const)
+      .map((user) => [readStoredStudentId(user.studentId), user.id] as const)
       .filter((entry): entry is [string, string] => entry[0] != null),
   );
 
@@ -108,7 +106,7 @@ export async function resolveCanvasEnrollmentsForUser(userId: string): Promise<n
     select: { studentId: true },
   });
 
-  const studentId = normalizeStudentId(user?.studentId);
+  const studentId = readStoredStudentId(user?.studentId);
   if (!studentId) {
     return 0;
   }
@@ -179,7 +177,7 @@ export async function deactivateDroppedCanvasEnrollments(courseId: string): Prom
   });
 
   const toDeactivate = canvasEnrollments.filter((enrollment) => {
-    const studentId = normalizeStudentId(enrollment.user.studentId);
+    const studentId = readStoredStudentId(enrollment.user.studentId);
     if (!studentId) {
       return false;
     }
