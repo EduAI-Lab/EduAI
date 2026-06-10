@@ -33,6 +33,7 @@
     "research:summarize-policy": "node ./scripts/research/summarize-policy-runs.mjs",
     "research:spot-check-labels": "node ./scripts/research/spot-check-hard-labels.mjs",
     "research:merge-policy-v3": "node ./scripts/research/merge-policy-v3.mjs",
+    "research:run-classroom": "node ./scripts/research/run-classroom-sim.mjs",
     "test:embedding": "tsx scripts/test-embedding.ts"
   },
   "dependencies": {
