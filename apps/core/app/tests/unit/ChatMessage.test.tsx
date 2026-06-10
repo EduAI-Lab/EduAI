@@ -43,6 +43,11 @@ describe("ChatMessage — user message", () => {
     render(<ChatMessage message={userMessage} />);
     expect(screen.getByText("U")).toBeInTheDocument();
   });
+
+  it("marks user message text as a reading surface", () => {
+    const { container } = render(<ChatMessage message={userMessage} />);
+    expect(container.querySelector(".reading-surface")).toBeInTheDocument();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -63,6 +68,11 @@ describe("ChatMessage — AI message", () => {
   it("renders a copy button", () => {
     render(<ChatMessage message={aiMessage} />);
     expect(screen.getByRole("button")).toBeInTheDocument();
+  });
+
+  it("marks AI message content as a reading surface", () => {
+    const { container } = render(<ChatMessage message={aiMessage} />);
+    expect(container.querySelector(".reading-surface")).toBeInTheDocument();
   });
 });
 
