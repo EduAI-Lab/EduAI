@@ -9,6 +9,15 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ## [Week 6 — June 8–12, 2026]
 
 ### Added
+- [core] ui: Mount sonner `Toaster` in `root.tsx` for standardized non-blocking toast feedback platform-wide; swap Inter → Outfit Google Fonts link to match `--font-sans` declared in `app.css`. (#PR, @yta3216, 2026-06-09)
+- [core] css: Add global `prefers-reduced-motion` support — collapses all animations and transitions to near-zero for users who have system reduce-motion enabled (W3C COGA Obj. 5 / WCAG 2.3.3). (#PR, @yta3216, 2026-06-09)
+
+### Fixed
+- [core] nav: Remove non-functional Quick Create button and Inbox icon from `nav-main.tsx`; remove stub Account/Billing/Notifications items from `nav-user.tsx` — false affordances per W3C COGA Obj. 5. (#PR, @yta3216, 2026-06-09)
+- [core] css: Restore visible scrollbars (were fully transparent/invisible); increase thumb width to 12px for WCAG 2.5.8 minimum target compliance. (#PR, @yta3216, 2026-06-09)
+- [core] css: Align `@theme` font-sans declaration to Outfit — was referencing Inter while `@theme inline`, `:root`, and `.dark` all declared Outfit, causing a font mismatch. (#PR, @yta3216, 2026-06-09)
+
+### Added
 - [core] api: Add TA management (`GET`/`POST`/`DELETE /api/courses/:courseId/tas`) and instructor reassignment (`PATCH /api/courses/:id`) for `ADMIN`/`UNIT_ADMIN`. (#491, @yta3216, 2026-06-08)
 - [core] ui: Add Staff tab to Course Detail with `useCourseTAs` hook — lists current instructor and TAs with reassignment controls for admin/unit admin. (#491, @yta3216, 2026-06-08)
 - [core] feat: Add account-level Assistive Mode shell — `AssistiveUiProvider` syncs `data-assistive` on `<html>` (SSR + client), `GET`/`PATCH /api/preferences` for `UserPreference.assistDefault`, and the `/chat` assist toggle writes through the provider so the preference persists platform-wide. Settings Accessibility tab deferred to #530 (blocked on #491). (#520, #531, @ebabar5, 2026-06-09)
