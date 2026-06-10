@@ -1,4 +1,5 @@
 import { lazy, Suspense } from 'react';
+import { READING_SURFACE_CLASS } from '~/components/assistive/reading-surface';
 import { cn } from '~/lib/utils';
 
 // Lazy load Streamdown to avoid SSR issues with KaTeX CSS
@@ -11,7 +12,7 @@ export interface MarkdownRendererProps {
 
 export function MarkdownRenderer({ content, className }: MarkdownRendererProps) {
   return (
-    <div className={cn("prose prose-sm max-w-none", className)}>
+    <div className={cn("prose prose-sm max-w-none", READING_SURFACE_CLASS, className)}>
       <Suspense fallback={<div className="animate-pulse">{content}</div>}>
         <Streamdown
           parseIncompleteMarkdown={true}
