@@ -1,26 +1,29 @@
 /**
  * Route-level integration tests for variant approval → Core push.
  *
- * questionService and coreWiringService are fully mocked so no DB or live Core is needed.
- * Verifies the PUT /variants/:id handler's push-gating, 422 error shapes, and
- * re-approval after INVALID_TOPIC_IDS recovery.
+ * questionService, coreWiringService, and the RBAC Core reads (coreApiService)
+ * are mocked so no DB or live Core is needed. The variant the access middleware
+ * loads is a DRAFT (pre-update); updateVariant returns the approved row used for
+ * the push gate. Verifies the PUT handler's push-gating, 422 error shapes, and
+ * re-approval after INVALID_TOPIC_IDS recovery, for an enrolled INSTRUCTOR.
  */
 import { vi, describe, it, expect, afterEach } from 'vitest';
 import request from 'supertest';
 
-// vi.hoisted ensures these are defined before vi.mock factories run
 const {
   mockUpdateVariant,
   mockVariantUpdate,
   mockTopicsUpdate,
   mockPushVariantToCore,
   mockVariantsFindOne,
+  mockEnrollments,
 } = vi.hoisted(() => ({
   mockUpdateVariant: vi.fn(),
   mockVariantUpdate: vi.fn().mockResolvedValue(undefined),
   mockTopicsUpdate: vi.fn().mockResolvedValue([1]),
   mockPushVariantToCore: vi.fn(),
   mockVariantsFindOne: vi.fn(),
+  mockEnrollments: vi.fn(),
 }));
 
 vi.mock('../../src/services/authService.js', () => ({
@@ -62,6 +65,14 @@ vi.mock('../../src/services/coreWiringService.js', () => ({
   pushVariantToCore: mockPushVariantToCore,
 }));
 
+// RBAC reads used by the course-access middleware.
+vi.mock('../../src/services/coreApiService.js', () => ({
+  getCourseEnrollmentsFromCore: mockEnrollments,
+  getCourseFromCore: vi.fn().mockResolvedValue({ id: 'cuid-core-course', department: 'COSC' }),
+  getMyProfileFromCore: vi.fn().mockResolvedValue({ authorizedUnits: [] }),
+  patchQuestionTestableOnCore: vi.fn(),
+}));
+
 vi.mock('../../src/schema/index.js', () => ({
   Variants: {
     findByPk: vi.fn(),
@@ -69,6 +80,8 @@ vi.mock('../../src/schema/index.js', () => ({
     update: mockTopicsUpdate,
   },
   Question_Metadata: {},
+  Assessments: {},
+  AssessmentSections: {},
   Course: {},
   Topics: { update: mockTopicsUpdate },
   sequelize: { define: vi.fn(), authenticate: vi.fn(), sync: vi.fn() },
@@ -82,32 +95,49 @@ function sessionOk() {
   return { ok: true, json: () => Promise.resolve({ user: INSTRUCTOR }) };
 }
 
-afterEach(() => {
-  vi.clearAllMocks();
-  vi.restoreAllMocks();
-});
+// The course the variant belongs to (owner id + coreCourseId drive scoping + push).
+const COURSE = { id: 1, userId: 'cuid-owner', coreCourseId: 'cuid-core-course' };
 
-// Returns a variant Sequelize-like instance with a real .update spy
+// What the access middleware loads: a DRAFT variant pending approval.
+function loadedDraft() {
+  return {
+    id: 42,
+    isDraft: true,
+    coreQuestionId: null,
+    createdBy: INSTRUCTOR.id,
+    update: mockVariantUpdate,
+    questionMetadata: { type: 'SA', primaryTopicId: 'local-t1', course: COURSE },
+  };
+}
+
+// What updateVariant returns: the approved row used by the push gate.
 function makeVariant({ isDraft = false, coreQuestionId = null } = {}) {
   return {
     id: 42,
     isDraft,
     coreQuestionId,
     update: mockVariantUpdate,
-    questionMetadata: {
-      type: 'SA',
-      primaryTopicId: 'local-t1',
-      course: { id: 1, coreCourseId: 'cuid-core-course' },
-    },
+    questionMetadata: { type: 'SA', primaryTopicId: 'local-t1', course: COURSE },
   };
 }
 
+function setup({ updated } = {}) {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sessionOk()));
+  mockVariantsFindOne.mockResolvedValue(loadedDraft());
+  mockEnrollments.mockResolvedValue({
+    enrollments: [{ studentId: INSTRUCTOR.id, role: 'INSTRUCTOR', isActive: true }],
+  });
+  if (updated) mockUpdateVariant.mockResolvedValue(updated);
+}
+
+afterEach(() => {
+  vi.clearAllMocks();
+  vi.restoreAllMocks();
+});
+
 describe('PUT /api/questions/variants/:id — Core push on approval', () => {
   it('pushes to Core when isDraft=false and no coreQuestionId, stores returned id', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(sessionOk()));
-    const v = makeVariant({ isDraft: false, coreQuestionId: null });
-    mockUpdateVariant.mockResolvedValueOnce(v);
-    mockVariantsFindOne.mockResolvedValueOnce(v);
+    setup({ updated: makeVariant({ isDraft: false, coreQuestionId: null }) });
     mockPushVariantToCore.mockResolvedValueOnce({ coreQuestionId: 'cuid-core-q' });
 
     const res = await request(app)
@@ -122,8 +152,7 @@ describe('PUT /api/questions/variants/:id — Core push on approval', () => {
   });
 
   it('does NOT push when isDraft is not explicitly false in the request body', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(sessionOk()));
-    mockUpdateVariant.mockResolvedValueOnce(makeVariant({ isDraft: false, coreQuestionId: null }));
+    setup({ updated: makeVariant({ isDraft: false, coreQuestionId: null }) });
 
     const res = await request(app)
       .put('/api/questions/variants/42')
@@ -135,8 +164,7 @@ describe('PUT /api/questions/variants/:id — Core push on approval', () => {
   });
 
   it('does NOT push when variant already has coreQuestionId (already linked)', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(sessionOk()));
-    mockUpdateVariant.mockResolvedValueOnce(makeVariant({ isDraft: false, coreQuestionId: 'existing-cuid' }));
+    setup({ updated: makeVariant({ isDraft: false, coreQuestionId: 'existing-cuid' }) });
 
     const res = await request(app)
       .put('/api/questions/variants/42')
@@ -153,10 +181,7 @@ describe('PUT /api/questions/variants/:id — Core push on approval', () => {
       status: 422,
       body: { error: 'INVALID_TOPIC_IDS', deletedTopicIds, conflictingWithPrimary: [] },
     });
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sessionOk()));
-    const v = makeVariant({ isDraft: false, coreQuestionId: null });
-    mockUpdateVariant.mockResolvedValue(v);
-    mockVariantsFindOne.mockResolvedValue(v);
+    setup({ updated: makeVariant({ isDraft: false, coreQuestionId: null }) });
     mockPushVariantToCore.mockRejectedValueOnce(coreErr);
 
     const res = await request(app)
@@ -177,10 +202,7 @@ describe('PUT /api/questions/variants/:id — Core push on approval', () => {
       status: 422,
       body: { error: 'INVALID_TOPIC_IDS', deletedTopicIds, conflictingWithPrimary: [] },
     });
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sessionOk()));
-    const v = makeVariant({ isDraft: false, coreQuestionId: null });
-    mockUpdateVariant.mockResolvedValue(v);
-    mockVariantsFindOne.mockResolvedValue(v);
+    setup({ updated: makeVariant({ isDraft: false, coreQuestionId: null }) });
 
     // First approval → 422
     mockPushVariantToCore.mockRejectedValueOnce(coreErr);
@@ -207,10 +229,7 @@ describe('PUT /api/questions/variants/:id — Core push on approval', () => {
       status: 422,
       body: { error: 'DUPLICATE_TOPIC', conflictingIds: ['cuid-t1'] },
     });
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(sessionOk()));
-    const v = makeVariant({ isDraft: false, coreQuestionId: null });
-    mockUpdateVariant.mockResolvedValueOnce(v);
-    mockVariantsFindOne.mockResolvedValueOnce(v);
+    setup({ updated: makeVariant({ isDraft: false, coreQuestionId: null }) });
     mockPushVariantToCore.mockRejectedValueOnce(coreErr);
 
     const res = await request(app)
@@ -224,10 +243,7 @@ describe('PUT /api/questions/variants/:id — Core push on approval', () => {
   });
 
   it('approves locally (200) when Core is unreachable, logs warning', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(sessionOk()));
-    const v = makeVariant({ isDraft: false, coreQuestionId: null });
-    mockUpdateVariant.mockResolvedValueOnce(v);
-    mockVariantsFindOne.mockResolvedValueOnce(v);
+    setup({ updated: makeVariant({ isDraft: false, coreQuestionId: null }) });
     mockPushVariantToCore.mockRejectedValueOnce(new Error('ECONNREFUSED'));
 
     const res = await request(app)

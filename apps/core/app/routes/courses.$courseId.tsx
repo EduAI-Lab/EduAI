@@ -13,6 +13,8 @@ import { SiteHeader } from "~/components/site-header"
 import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar"
 import { CourseMaterialsUpload } from "~/components/course-materials-upload"
 import type { CourseMaterial } from "~/components/course-materials-upload"
+import { READING_SURFACE_CLASS } from "~/components/assistive/reading-surface"
+import { cn } from "~/lib/utils"
 import { useApiKeys } from "~/hooks/use-api-keys"
 import { readJsonResponse } from "~/lib/api/client"
 import {
@@ -284,7 +286,7 @@ export default function CourseDetailPage() {
                           <div className="grid gap-4">
                             <div>
                               <h3 className="font-medium">Description</h3>
-                              <p className="text-muted-foreground mt-1">
+                              <p className={cn("text-muted-foreground mt-1", READING_SURFACE_CLASS)}>
                                 {course.description || "No description available."}
                               </p>
                             </div>
@@ -303,7 +305,9 @@ export default function CourseDetailPage() {
                             {course.aiInstructions && (
                               <div>
                                 <h3 className="font-medium">AI Instructions</h3>
-                                <p className="text-muted-foreground mt-1">{course.aiInstructions}</p>
+                                <p className={cn("text-muted-foreground mt-1", READING_SURFACE_CLASS)}>
+                                  {course.aiInstructions}
+                                </p>
                               </div>
                             )}
                           </div>
