@@ -1,0 +1,46 @@
+=== Policy comparison v3 (tool stratum fixed via hybrid prefetch) ===
+Generated: 2026-06-10T04:10:32.952Z
+
+--- Test split ---
+P0: n=24 mean_latency_ms=11746
+P1: n=24 mean_latency_ms=11235
+  routing_tier: tier1=6 tier3=18
+tool_stratum: 2/2 OK mean_ms=10321 modes=hybrid_prefetch
+
+--- P1 dev ---
+P1: n=96 mean_latency_ms=8777
+  routing_tier: tier1=32 tier3=64
+tool_stratum: 5/5 OK mean_ms=3672 modes=hybrid_prefetch
+
+P1 dev oracle gap:
+  matched=96 correct=32 (33.3%)
+  over-routed=64 under-routed=0
+
+--- v2 → v3 tool fix ---
+test rows: 48 (was 48, tool ts-043 replaced)
+p1 dev rows: 96 (was 96, 5 tool prompts replaced)
+
+Files:
+  C:\Users\SyedS\Documents\UBCO Courses\URA\EduAICoreLearning\docs\research\data\runs\policy-runs-test.v3.jsonl
+  C:\Users\SyedS\Documents\UBCO Courses\URA\EduAICoreLearning\docs\research\data\runs\policy-runs-p1-dev.v3.jsonl
+
+--- Strict hard-prompt spot-check ---
+=== Hard prompt spot-check (strict judge) ===
+Generated: 2026-06-10T04:09:16.008Z
+prompts: 10
+
+ts-037: prior_tier=1 strict_tier=3 strict_sensitive=true
+ts-038: prior_tier=1 strict_tier=1 strict_sensitive=false
+ts-039: prior_tier=1 strict_tier=1 strict_sensitive=false
+ts-041: prior_tier=1 strict_tier=1 strict_sensitive=false
+ts-042: prior_tier=1 strict_tier=1 strict_sensitive=false
+ts-045: prior_tier=1 strict_tier=1 strict_sensitive=false
+ts-106: prior_tier=1 strict_tier=1 strict_sensitive=false
+ts-111: prior_tier=1 strict_tier=1 strict_sensitive=false
+ts-112: prior_tier=1 strict_tier=1 strict_sensitive=false
+ts-118: prior_tier=1 strict_tier=1 strict_sensitive=true
+
+agree min_adequate_tier: 9/10
+disagree: 1
+strict tier_sensitive: 2/10
+output: /tmp/hard-spot-check.v1.jsonl

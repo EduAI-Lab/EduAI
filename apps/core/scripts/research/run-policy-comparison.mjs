@@ -15,6 +15,10 @@ import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { performance } from "node:perf_hooks";
 import { DEFAULT_POLICY_OUT, PROMPTS_PATH } from "./paths.mjs";
+import {
+  resolveResearchChatFlags,
+  resolveResearchTimeoutMs,
+} from "./research-chat-body.mjs";
 
 const POLICIES = {
   P0: {
@@ -74,7 +78,17 @@ function inferTierFromModel(modelId) {
   return null;
 }
 
-async function postChat({ url, headers, apiKeys, model, prompt, courseCode, forceHybridRag }) {
+async function postChat({
+  url,
+  headers,
+  apiKeys,
+  model,
+  prompt,
+  courseCode,
+  forceHybridRag,
+  hybridWebTools,
+  timeoutMs,
+}) {
   const body = {
     model,
     apiKeys,
@@ -82,12 +96,8 @@ async function postChat({ url, headers, apiKeys, model, prompt, courseCode, forc
     streaming: false,
     ...(courseCode ? { courseCode } : {}),
     ...(forceHybridRag ? { forceHybridRag: true } : {}),
+    ...(hybridWebTools ? { hybridWebTools: true } : {}),
   };
-
-  const timeoutMs = Math.max(
-    30_000,
-    Number(readEnv("RESEARCH_RUN_TIMEOUT_MS", "180000")) || 180_000,
-  );
 
   const t0 = performance.now();
   let res;
@@ -222,9 +232,7 @@ async function main() {
         `[${callIndex}/${totalCalls}] ${policy.policy} ${row.id} — ${preview}`,
       );
 
-      const forceHybridRag =
-        forceHybridAll ||
-        (row.tools_expected !== "webSearch" && row.tools_expected !== "fetchPage");
+      const hybridFlags = resolveResearchChatFlags(row, { forceHybridAll });
 
       const result = await postChat({
         url,
@@ -233,7 +241,9 @@ async function main() {
         model: policy.requested_model,
         prompt: row.prompt,
         courseCode: row.course_code ?? undefined,
-        forceHybridRag,
+        forceHybridRag: hybridFlags.forceHybridRag,
+        hybridWebTools: hybridFlags.hybridWebTools,
+        timeoutMs: resolveResearchTimeoutMs(readEnv, row),
       });
 
       if (result.httpStatus >= 400 || result.error) {
@@ -266,7 +276,9 @@ async function main() {
           tools_expected: row.tools_expected,
           course_code: row.course_code,
           prompt: row.prompt,
-          force_hybrid_rag: forceHybridRag,
+          force_hybrid_rag: hybridFlags.forceHybridRag,
+          hybrid_web_tools: hybridFlags.hybridWebTools,
+          tool_execution_mode: hybridFlags.tool_execution_mode,
           routed_model: result.routedModel,
           routing_tier: result.routingTier,
           duration_ms: result.durationMs,

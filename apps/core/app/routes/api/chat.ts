@@ -18,6 +18,11 @@ import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { auth } from "~/lib/auth/server";
 import type { ActionFunctionArgs } from "react-router";
 import { z } from "zod";
+import {
+  appendHybridWebContext,
+  buildHybridWebToolContext,
+  inferHybridWebToolMode,
+} from "~/lib/ai/hybrid-web-tools";
 import { webSearch, fetchPage } from "~/lib/ai/tools";
 import prisma from "~/lib/prisma.server";
 import { chatApiDebug } from "~/lib/chat-api-log";
@@ -373,6 +378,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const courseCode = typeof body.courseCode === "string" ? body.courseCode : undefined;
     const streaming = body.streaming === undefined ? true : Boolean(body.streaming);
     const forceHybridRag = body.forceHybridRag === true;
+    const hybridWebTools = body.hybridWebTools === true;
     const chatId = typeof body.chatId === "string" ? body.chatId : undefined;
     const proxyUserPayload =
       body.proxyUser && typeof body.proxyUser === "object" ? (body.proxyUser as ProxyUserPayload) : null;
@@ -833,6 +839,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const useToolCalling = supportsTools && !forceHybridRag;
 
     let streamConfig;
+    let shouldPrefetchWebTools = false;
 
     const resolvedSystemPrompt = trimmedSystemPrompt ?? chat.systemPrompt ?? null;
 
@@ -841,6 +848,20 @@ export async function action({ request }: ActionFunctionArgs) {
       const lastUserMessage = [...trimmedMessages].reverse().find((message) => message.role === "user");
       const userQuestion = extractMessageText(lastUserMessage);
       const messageContentLower = userQuestion.toLowerCase();
+
+      shouldPrefetchWebTools =
+        hybridWebTools || (forceHybridRag && inferHybridWebToolMode(userQuestion) !== null);
+      let hybridWebContextText = "";
+      if (shouldPrefetchWebTools) {
+        const webToolResult = await buildHybridWebToolContext(userQuestion);
+        hybridWebContextText = webToolResult.context;
+        if (webToolResult.error) {
+          chatApiDebug("Hybrid web tool prefetch issue", {
+            mode: webToolResult.mode,
+            error: webToolResult.error,
+          });
+        }
+      }
 
       // Check if hybrid RAG should always be used with course
       // regex method might not be the best method to determine if RAG is needed. Consider using a small LLM or alternatives.
@@ -900,7 +921,7 @@ Based on this information, provide a comprehensive answer to the user's question
             messages: modelMessages,
             temperature: 0.6,
             maxTokens: 8192,
-            system: systemWithRAG,
+            system: appendHybridWebContext(systemWithRAG, hybridWebContextText),
           };
         } catch (error) {
           console.error("Error finding relevant content for model without tool support:", error);
@@ -917,7 +938,7 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
             messages: modelMessages,
             temperature: 0.6,
             maxTokens: 8192,
-            system: defaultSystemPrompt,
+            system: appendHybridWebContext(defaultSystemPrompt, hybridWebContextText),
           };
         }
       } else {
@@ -934,7 +955,7 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
           messages: modelMessages,
           temperature: 0.6,
           maxTokens: 8192,
-          system: defaultSystemPrompt,
+          system: appendHybridWebContext(defaultSystemPrompt, hybridWebContextText),
         };
       }
     } else {
@@ -984,6 +1005,7 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
       routedByAuto: wasAuto,
       approach: useToolCalling ? "tool_calling" : "hybrid_rag",
       forceHybridRag,
+      hybridWebTools: shouldPrefetchWebTools ?? false,
       ...llmPromptSizeHints(streamConfig.system, modelMessages),
     });
 
