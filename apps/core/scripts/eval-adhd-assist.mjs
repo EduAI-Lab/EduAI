@@ -62,21 +62,6 @@ const SCENARIOS = {
   ],
 };
 
-/**
- * Contextual shape expectations for Form A qual scoring.
- * Dean (Phase 3 v2) would classify turn type; eval uses these until then.
- */
-const TURN_SHAPE = {
-  "S1.t1": { expectFullStructure: true, label: "tutoring answer" },
-  "S2.t1": { expectFullStructure: true, label: "step ladder" },
-  "S2.t2": { expectFullStructure: false, label: "redirect / one-topic boundary" },
-  "S2.t3": { expectFullStructure: true, label: "focused step answer" },
-  "S3.t1": { expectFullStructure: true, label: "plan + step ladder" },
-  "S3.t2": { expectFullStructure: true, label: "plan continuation" },
-  "S5.t1": { expectFullStructure: true, label: "brief clarification" },
-  "S5.t2": { expectFullStructure: true, label: "rephrase consistency check" },
-};
-
 const USAGE = `Usage: node scripts/eval-adhd-assist.mjs [options]
 
 Options:
@@ -84,7 +69,6 @@ Options:
   --include-s5       Also run scenario S5
   --include-s4       Also run scenario S4 (Phase 2.5 tool-heavy validation)
   --mode <m>         off | on | both  (default: both)
-  --label <name>     Run label in meta (e.g. phase3-after-oversight)
   --out <dir>        Output directory (default: eval-runs/<ISO>)
   --no-write         Skip writing transcripts; print table only
   --help             Show this help and exit
@@ -96,18 +80,6 @@ Required environment variables:
 Optional environment variables:
   EDUAI_BASE_URL        Default http://localhost:5173 (core dev: http://localhost:3000)
   EDUAI_MODEL           Default openai:gpt-4o-mini
-
-Phase 3 after-capture (oversight ON on server):
-  EDUAI_BASE_URL=http://localhost:3000 \\
-  EDUAI_COOKIE='...' \\
-  EDUAI_MODEL=google:gemini-2.5-flash \\
-  EDUAI_API_KEYS_JSON='{"google":{...}}' \\
-  npm run eval:adhd -- --only S1,S2,S3,S5 --mode on --label phase3-after-oversight
-
-Then record Form A:
-  npx tsx ../../eduai-summer-2026/reports/scripts/record-form-a-phase3.mjs \\
-    --baseline ../../eval-runs/2026-06-09T21-14-53-136Z \\
-    --after ../../eval-runs/<AFTER_STAMP>
 `;
 
 function parseCliArgs() {
@@ -117,7 +89,6 @@ function parseCliArgs() {
       "include-s5": { type: "boolean", default: false },
       "include-s4": { type: "boolean", default: false },
       mode: { type: "string", default: "both" },
-      label: { type: "string" },
       out: { type: "string" },
       "no-write": { type: "boolean", default: false },
       help: { type: "boolean", default: false },
@@ -175,46 +146,9 @@ function resolveConfig(cli) {
     apiKeys,
     scenarioIds,
     modes,
-    label: cli.label?.trim() || null,
     outDir,
     write: !cli["no-write"],
     isoStamp,
-  };
-}
-
-function turnKey(scenarioId, turnIndex) {
-  return `${scenarioId}.t${turnIndex + 1}`;
-}
-
-function oversightMetaFromEnv() {
-  const raw = process.env.ADHD_ASSIST_OVERSIGHT?.trim().toLowerCase();
-  const disabled =
-    raw === "false" || raw === "0" || raw === "no" || raw === "off";
-  return {
-    enabled: !disabled,
-    envValue: process.env.ADHD_ASSIST_OVERSIGHT ?? "(default on)",
-  };
-}
-
-/** Qual pass: structure only when the turn expects a full tutoring block. */
-function evaluateContextualPass(turnRef, metrics, assistantText) {
-  const shape = TURN_SHAPE[turnRef];
-  if (!shape) {
-    return { expectedShape: "unknown", contextualPass: null };
-  }
-  if (shape.expectFullStructure) {
-    return {
-      expectedShape: shape.label,
-      contextualPass: isStructuralCompliancePass(metrics),
-    };
-  }
-  const hasRedirectCue = /separate question|one topic|come back|switch now/i.test(
-    assistantText,
-  );
-  const overStructured = metrics.topSummary && metrics.wordCount > 60;
-  return {
-    expectedShape: shape.label,
-    contextualPass: !overStructured && (hasRedirectCue || !metrics.topSummary),
   };
 }
 
@@ -263,7 +197,6 @@ async function runScenarioMode({ config, scenarioId, mode }) {
   const turns = SCENARIOS[scenarioId];
   const adhdAssist = mode === "on";
   const transcript = [];
-  const turnResults = [];
   let chatId;
   let lastAssistantText = "";
   let lastResponseMeta = null;
@@ -272,7 +205,6 @@ async function runScenarioMode({ config, scenarioId, mode }) {
   for (let i = 0; i < turns.length; i++) {
     const userText = turns[i];
     const tStart = Date.now();
-    const turnRef = turnKey(scenarioId, i);
     try {
       const resp = await postChat({
         baseUrl: config.baseUrl,
@@ -292,27 +224,9 @@ async function runScenarioMode({ config, scenarioId, mode }) {
         model: resp.model ?? config.model,
         responseId: resp.responseId ?? null,
       };
-      const metrics = computeMetrics(lastAssistantText);
-      const structuralPass = isStructuralCompliancePass(metrics);
-      const { expectedShape, contextualPass } = evaluateContextualPass(
-        turnRef,
-        metrics,
-        lastAssistantText,
-      );
-      turnResults.push({
-        scenarioId,
-        mode,
-        turn: i + 1,
-        turnRef,
-        elapsedMs: elapsed,
-        metrics,
-        structuralPass,
-        expectedShape,
-        contextualPass,
-      });
-      transcript.push({ userText, assistantText: lastAssistantText, turnRef, metrics, structuralPass, expectedShape, contextualPass });
+      transcript.push({ userText, assistantText: lastAssistantText });
       process.stderr.write(
-        `[${scenarioId}.t${i + 1} mode=${mode}] struct=${structuralPass ? "Y" : "N"} ctx=${contextualPass === null ? "-" : contextualPass ? "Y" : "N"} ${lastAssistantText.length} chars in ${elapsed} ms\n`,
+        `[${scenarioId}.t${i + 1} mode=${mode}] ${lastAssistantText.length} chars in ${elapsed} ms\n`,
       );
     } catch (err) {
       const elapsed = Date.now() - tStart;
@@ -320,19 +234,7 @@ async function runScenarioMode({ config, scenarioId, mode }) {
       process.stderr.write(
         `[${scenarioId}.t${i + 1} mode=${mode}] ERROR in ${elapsed} ms: ${errorForTurn}\n`,
       );
-      transcript.push({ userText, assistantText: `<<ERROR: ${errorForTurn}>>`, turnRef, metrics: null, structuralPass: false, expectedShape: null, contextualPass: false });
-      turnResults.push({
-        scenarioId,
-        mode,
-        turn: i + 1,
-        turnRef,
-        elapsedMs: elapsed,
-        metrics: null,
-        structuralPass: false,
-        expectedShape: TURN_SHAPE[turnRef]?.label ?? null,
-        contextualPass: false,
-        error: errorForTurn,
-      });
+      transcript.push({ userText, assistantText: `<<ERROR: ${errorForTurn}>>` });
       break;
     }
   }
@@ -343,7 +245,6 @@ async function runScenarioMode({ config, scenarioId, mode }) {
     mode,
     chatId: chatId ?? null,
     transcript,
-    turnResults,
     metrics,
     meta: lastResponseMeta,
     error: errorForTurn,
@@ -351,44 +252,19 @@ async function runScenarioMode({ config, scenarioId, mode }) {
 }
 
 function formatTable(results) {
-  const header = `| Scenario | Mode | Turn | Words | TopSummary | Next? | UnderCap | Strict | Contextual |\n| --- | --- | ---: | ---: | :---: | :---: | :---: | :---: | :---: |`;
-  const rows = [];
-  for (const r of results) {
-    if (r.error) {
-      rows.push(`| ${r.scenarioId} | ${r.mode} | — | — | — | — | — | ERROR | ERROR |`);
-      continue;
-    }
-    for (const t of r.turnResults ?? []) {
-      const m = t.metrics ?? { wordCount: 0, topSummary: false, nextLine: false, underCap: false };
-      rows.push(
-        `| ${r.scenarioId} | ${r.mode} | ${t.turn} | ${m.wordCount} | ${m.topSummary ? "Y" : "N"} | ${m.nextLine ? "Y" : "N"} | ${m.underCap ? "Y" : "N"} | ${t.structuralPass ? "Y" : "N"} | ${t.contextualPass === null ? "-" : t.contextualPass ? "Y" : "N"} |`,
-      );
-    }
-  }
+  const header = `| Scenario | Mode | Words | TopSummary | Next? | UnderCap |\n| --- | --- | ---: | :---: | :---: | :---: |`;
+  const rows = results.map((r) => {
+    const m = r.metrics;
+    return `| ${r.scenarioId} | ${r.mode} | ${m.wordCount} | ${m.topSummary ? "Y" : "N"} | ${m.nextLine ? "Y" : "N"} | ${m.underCap ? "Y" : "N"} |`;
+  });
   return [header, ...rows].join("\n");
 }
 
-function summarizeTurnPasses(results) {
-  const turns = results.flatMap((r) => r.turnResults ?? []);
-  const onTurns = turns.filter((t) => t.mode === "on" && !t.error);
-  const strictPass = onTurns.filter((t) => t.structuralPass).length;
-  const ctxPass = onTurns.filter((t) => t.contextualPass).length;
-  const ctxScored = onTurns.filter((t) => t.contextualPass !== null).length;
-  return { onTurns, strictPass, ctxPass, ctxScored };
-}
-
-function passRateLines(results) {
-  const { onTurns, strictPass, ctxPass, ctxScored } = summarizeTurnPasses(results);
-  if (onTurns.length === 0) {
-    return [
-      "ADHD Assist ON strict structural pass: 0/0 turns.",
-      "ADHD Assist ON contextual shape pass: 0/0 turns.",
-    ];
-  }
-  return [
-    `ADHD Assist ON strict structural pass: ${strictPass}/${onTurns.length} turns (TopSummary && Next? && UnderCap).`,
-    `ADHD Assist ON contextual shape pass: ${ctxPass}/${ctxScored} scored turns (see TURN_SHAPE in eval script).`,
-  ];
+function passRateLine(results) {
+  const onResults = results.filter((r) => r.mode === "on" && !r.error);
+  if (onResults.length === 0) return `ADHD Assist ON pass rate: 0/0 scenarios met all structural checks (TopSummary && Next? && UnderCap).`;
+  const pass = onResults.filter((r) => isStructuralCompliancePass(r.metrics)).length;
+  return `ADHD Assist ON pass rate: ${pass}/${onResults.length} scenarios met all structural checks (TopSummary && Next? && UnderCap).`;
 }
 
 function gitSha() {
@@ -413,13 +289,6 @@ function buildTranscriptMd(result) {
     lines.push(t.userText);
     lines.push("");
     lines.push(`## Turn ${i + 1} (assistant)`);
-    if (t.metrics) {
-      lines.push("");
-      lines.push(`- turnRef: ${t.turnRef}`);
-      lines.push(`- strict structural pass: ${t.structuralPass ? "Y" : "N"}`);
-      lines.push(`- expected shape: ${t.expectedShape ?? "—"}`);
-      lines.push(`- contextual pass: ${t.contextualPass === null ? "—" : t.contextualPass ? "Y" : "N"}`);
-    }
     lines.push("");
     lines.push(t.assistantText);
     lines.push("");
@@ -433,105 +302,59 @@ function buildCsv(results, outDir) {
     "Scenario",
     "Platform",
     "Condition",
-    "Turn",
     "Turn script ref",
     "Output link",
     "Quant: word count",
     "Quant: Top summary Y/N",
     "Quant: Next? Y/N",
-    "Quant: strict pass Y/N",
-    "Quant: contextual pass Y/N",
-    "Qual: expected shape",
+    "Quant: est. tokens",
+    "Qual: one-topic",
     "Qual: notes",
   ];
   const lines = [headers.map(escapeCsv).join(",")];
   for (const r of results) {
     const fileBase = `${r.scenarioId}-${r.mode}.md`;
     const rel = path.relative(outDir, path.join(outDir, fileBase));
-    for (const t of r.turnResults ?? []) {
-      const m = t.metrics ?? { wordCount: "", topSummary: false, nextLine: false };
-      lines.push(
-        [
-          `${r.scenarioId}-${r.mode}-t${t.turn}`,
-          r.scenarioId,
-          "EduAI /chat",
-          r.mode === "on" ? "ADHD Assist" : "Baseline",
-          t.turn,
-          `form-a-scenario-test-sheet.md#${r.scenarioId}`,
-          rel,
-          m.wordCount,
-          m.topSummary ? "Y" : "N",
-          m.nextLine ? "Y" : "N",
-          t.structuralPass ? "Y" : "N",
-          t.contextualPass === null ? "" : t.contextualPass ? "Y" : "N",
-          t.expectedShape ?? "",
-          "",
-        ].map(escapeCsv).join(","),
-      );
-    }
-  }
-  return lines.join("\n") + "\n";
-}
-
-function buildFormASnapshot({ config, results }) {
-  const { onTurns, strictPass, ctxPass, ctxScored } = summarizeTurnPasses(results);
-  const lines = [];
-  lines.push("# Form A eval snapshot (single run)");
-  lines.push("");
-  lines.push(`- label: ${config.label ?? "(none)"}`);
-  lines.push(`- gitSha: ${gitSha() ?? "?"}`);
-  lines.push(`- model: ${config.model}`);
-  lines.push(`- oversight: ${JSON.stringify(oversightMetaFromEnv())}`);
-  lines.push(`- scenarios: ${config.scenarioIds.join(", ")}`);
-  lines.push(`- modes: ${config.modes.join(", ")}`);
-  lines.push("");
-  lines.push("## Assist ON turn scores");
-  lines.push("");
-  lines.push(`- strict structural: ${strictPass}/${onTurns.length}`);
-  lines.push(`- contextual shape: ${ctxPass}/${ctxScored}`);
-  lines.push("");
-  lines.push("| Turn | Strict | Contextual | Expected shape |");
-  lines.push("| --- | :---: | :---: | --- |");
-  for (const t of onTurns) {
+    const totalTokens = r.meta?.usage?.totalTokens ?? r.meta?.usage?.total_tokens ?? "";
     lines.push(
-      `| ${t.turnRef} | ${t.structuralPass ? "Y" : "N"} | ${t.contextualPass === null ? "—" : t.contextualPass ? "Y" : "N"} | ${t.expectedShape ?? "—"} |`,
+      [
+        `${r.scenarioId}-${r.mode}`,
+        r.scenarioId,
+        "EduAI /chat",
+        r.mode === "on" ? "ADHD Assist" : "Baseline",
+        `form-a-scenario-test-sheet.md#${r.scenarioId}`,
+        rel,
+        r.metrics.wordCount,
+        r.metrics.topSummary ? "Y" : "N",
+        r.metrics.nextLine ? "Y" : "N",
+        totalTokens,
+        "",
+        "",
+      ].map(escapeCsv).join(","),
     );
   }
-  lines.push("");
-  lines.push("Pair with baseline via `record-form-a-phase3.mjs` for IURA Form A before/after table.");
-  lines.push("");
-  return lines.join("\n");
+  return lines.join("\n") + "\n";
 }
 
 async function writeOutputs({ config, results }) {
   if (!config.write) return;
   await mkdir(config.outDir, { recursive: true });
 
-  const oversight = oversightMetaFromEnv();
   const meta = {
     timestamp: new Date().toISOString(),
     gitSha: gitSha(),
     baseUrl: config.baseUrl,
     model: config.model,
-    label: config.label,
     scenarios: config.scenarioIds,
     modes: config.modes,
-    oversight,
     env: {
       EDUAI_COOKIE_present: Boolean(process.env.EDUAI_COOKIE),
       EDUAI_API_KEYS_JSON_present: Boolean(process.env.EDUAI_API_KEYS_JSON),
       EDUAI_BASE_URL_present: Boolean(process.env.EDUAI_BASE_URL),
       EDUAI_MODEL_present: Boolean(process.env.EDUAI_MODEL),
-      ADHD_ASSIST_OVERSIGHT: process.env.ADHD_ASSIST_OVERSIGHT ?? null,
     },
   };
   await writeFile(path.join(config.outDir, "run-meta.json"), JSON.stringify(meta, null, 2));
-
-  const allTurnResults = results.flatMap((r) => r.turnResults ?? []);
-  await writeFile(
-    path.join(config.outDir, "turn-results.json"),
-    JSON.stringify(allTurnResults, null, 2),
-  );
 
   for (const r of results) {
     const file = path.join(config.outDir, `${r.scenarioId}-${r.mode}.md`);
@@ -539,10 +362,6 @@ async function writeOutputs({ config, results }) {
   }
 
   await writeFile(path.join(config.outDir, "results.csv"), buildCsv(results, config.outDir));
-  await writeFile(
-    path.join(config.outDir, "form-a-snapshot.md"),
-    buildFormASnapshot({ config, results }),
-  );
 }
 
 let activeResults = [];
@@ -593,9 +412,7 @@ async function main() {
 
   const table = formatTable(activeResults);
   process.stdout.write(table + "\n\n");
-  for (const line of passRateLines(activeResults)) {
-    process.stdout.write(line + "\n");
-  }
+  process.stdout.write(passRateLine(activeResults) + "\n");
   if (config.write) {
     process.stdout.write(`\nOutputs written to: ${config.outDir}\n`);
   }
