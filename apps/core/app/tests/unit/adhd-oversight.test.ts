@@ -7,14 +7,19 @@ vi.mock("ai", () => ({
 
 import { generateText } from "ai";
 import {
+  applyNextLineAnchor,
   auditAndMaybeRewrite,
+  extractNextPromptCandidate,
   isAdhdOversightEnabled,
+  isOversightEligibleDraft,
   tryDeterministicStructuralFix,
 } from "~/lib/ai/adhd-oversight";
-
-const S1_ON_DRAFT = `Gradient descent is like **walking down a hill blindfolded** to find the lowest point. In machine learning, it's an algorithm that helps a model learn by **adjusting its parameters** (like the steps you take) to minimize errors (reaching the bottom of the hill). It repeatedly moves in the direction of the **steepest decline** until it finds the best possible set of parameters, where the errors are as small as they can get.
-
-Next? Want to know how it's used in practice?`;
+import { isStructuralCompliancePass, computeAdhdResponseMetrics } from "~/lib/ai/adhd-metrics";
+import {
+  S1_ON_ASSISTANT,
+  S2_ON_T2_ASSISTANT,
+  S3_ON_T1_ASSISTANT,
+} from "~/tests/fixtures/adhd-baseline-transcripts";
 
 const mockModel = { modelId: "mock" } as never;
 
@@ -37,16 +42,57 @@ describe("isAdhdOversightEnabled", () => {
   });
 });
 
-describe("tryDeterministicStructuralFix", () => {
-  it("fixes the archived S1-on drift case without an LLM", () => {
-    const fixed = tryDeterministicStructuralFix(S1_ON_DRAFT);
-    expect(fixed).not.toBeNull();
-    expect(fixed!.startsWith("**Top summary**")).toBe(true);
-    expect(/\*\*Next\?\*\*/.test(fixed!.split(/\r?\n/).slice(-3).join("\n"))).toBe(true);
+describe("isOversightEligibleDraft", () => {
+  it("rejects empty and non-prose drafts", () => {
+    expect(isOversightEligibleDraft("")).toBe(false);
+    expect(isOversightEligibleDraft("   ")).toBe(false);
+    expect(isOversightEligibleDraft("{}")).toBe(false);
   });
 
-  it("returns null when draft is empty", () => {
-    expect(tryDeterministicStructuralFix("   ")).toBeNull();
+  it("accepts normal assistant prose", () => {
+    expect(isOversightEligibleDraft("Hello world")).toBe(true);
+  });
+});
+
+describe("extractNextPromptCandidate", () => {
+  it("preserves redirect questions from baseline S2 turn 2", () => {
+    expect(extractNextPromptCandidate(S2_ON_T2_ASSISTANT)).toBe(
+      "Want to come back to the dishwashing steps first, or switch now to learn about marginal income tax brackets?",
+    );
+  });
+});
+
+describe("applyNextLineAnchor", () => {
+  it("promotes S2 redirect without generic filler", () => {
+    const fixed = applyNextLineAnchor(S2_ON_T2_ASSISTANT);
+    expect(fixed).toContain("**Next?** Want to come back to the dishwashing steps first");
+    expect(fixed).not.toContain("Want me to expand on any part of this");
+  });
+});
+
+describe("tryDeterministicStructuralFix", () => {
+  it("fixes archived S1-on drift without an LLM", () => {
+    const fixed = tryDeterministicStructuralFix(S1_ON_ASSISTANT);
+    expect(fixed).not.toBeNull();
+    expect(fixed!.startsWith("**Top summary**")).toBe(true);
+    expect(isStructuralCompliancePass(computeAdhdResponseMetrics(fixed!))).toBe(true);
+  });
+
+  it("fixes archived S3-on turn 1", () => {
+    const fixed = tryDeterministicStructuralFix(S3_ON_T1_ASSISTANT);
+    expect(fixed).not.toBeNull();
+    expect(isStructuralCompliancePass(computeAdhdResponseMetrics(fixed!))).toBe(true);
+  });
+
+  it("fixes archived S2-on turn 2 redirect turn", () => {
+    const fixed = tryDeterministicStructuralFix(S2_ON_T2_ASSISTANT);
+    expect(fixed).not.toBeNull();
+    expect(fixed).toContain("**Next?** Want to come back to the dishwashing steps first");
+    expect(isStructuralCompliancePass(computeAdhdResponseMetrics(fixed!))).toBe(true);
+  });
+
+  it("returns null when no Next? candidate exists", () => {
+    expect(tryDeterministicStructuralFix("Short answer without a question.")).toBeNull();
   });
 });
 
@@ -68,7 +114,7 @@ describe("auditAndMaybeRewrite", () => {
   });
 
   it("uses deterministic fix for S1-on baseline drift", async () => {
-    const result = await auditAndMaybeRewrite({ draft: S1_ON_DRAFT, model: mockModel });
+    const result = await auditAndMaybeRewrite({ draft: S1_ON_ASSISTANT, model: mockModel });
     expect(result.rewritten).toBe(true);
     expect(result.method).toBe("deterministic");
     expect(result.afterMetrics.structuralPass).toBe(true);
@@ -81,11 +127,24 @@ describe("auditAndMaybeRewrite", () => {
 - Still on topic
 
 **Next?** Continue?`,
+      usage: { promptTokens: 10, completionTokens: 20 },
     } as never);
 
     const messy = Array(300).fill("word").join(" ");
     const result = await auditAndMaybeRewrite({ draft: messy, model: mockModel, wordCap: 250 });
     expect(result.method).toBe("llm");
+    expect(result.oversightDurationMs).toBeGreaterThanOrEqual(0);
+    expect(result.oversightUsage?.completionTokens).toBe(20);
     expect(generateText).toHaveBeenCalledOnce();
+  });
+
+  it("returns draft when LLM rewrite fails", async () => {
+    vi.mocked(generateText).mockRejectedValue(new Error("provider down"));
+
+    const messy = Array(300).fill("word").join(" ");
+    const result = await auditAndMaybeRewrite({ draft: messy, model: mockModel, wordCap: 250 });
+    expect(result.method).toBe("llm_failed");
+    expect(result.text).toBe(messy);
+    expect(result.rewritten).toBe(false);
   });
 });
