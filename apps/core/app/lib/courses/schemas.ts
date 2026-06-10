@@ -35,7 +35,6 @@ export const UpdateCourseSchema = z.object({
   isPublished: z.coerce.boolean().optional(),
   isActive: z.coerce.boolean().optional(),
   aiInstructions: z.string().optional(),
-  isPublished: z.boolean().optional(),
   instructorId: z.string().min(1).optional(),
 });
 
