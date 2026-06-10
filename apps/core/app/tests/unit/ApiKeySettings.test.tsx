@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { ApiKeySettings } from "~/components/chat/api-key-settings";
-import type { UserProviderSettings } from "~/lib/ai/providers";
+import type { UserProviderSettings } from "~/lib/ai/providers.shared";
 
 const noKeys: UserProviderSettings = {};
 const withOpenAIKey: UserProviderSettings = {

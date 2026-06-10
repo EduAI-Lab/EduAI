@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Badge } from "~/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Key, Eye, EyeOff, ExternalLink, Shield, Trash2 } from "lucide-react";
-import type { UserProviderSettings } from "~/lib/ai/providers";
+import type { UserProviderSettings } from "~/lib/ai/providers.shared";
 
 type Provider = "openai" | "google" | "ollama" | "openrouter";
 

@@ -18,7 +18,7 @@ import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { getUserPreference, saveUserPreference } from "~/lib/user-preferences.server";
 import { getAccessibleCourseCodes } from "~/lib/courses/server";
-import { filterModelsForApiKeys } from "~/lib/ai/providers";
+import { filterModelsForApiKeys } from "~/lib/ai/providers.shared";
 import { parsePreferenceUpdates, resolveSelectedCourse } from "~/lib/user-preferences";
 
 interface ChatModel {

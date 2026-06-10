@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { UserProviderSettings } from '~/lib/ai/providers';
+import type { UserProviderSettings } from '~/lib/ai/providers.shared';
 
 export interface ApiKeyData {
   providerId: string;

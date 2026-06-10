@@ -9,7 +9,6 @@ vi.mock("@ai-sdk/google", () => ({ createGoogleGenerativeAI: vi.fn() }));
 vi.mock("ollama-ai-provider", () => ({ createOllama: vi.fn() }));
 
 import {
-  createAIProviderRegistry,
   getModelIdentifier,
   parseModelIdentifier,
   validateProviderConfig,
@@ -17,7 +16,8 @@ import {
   getAvailableProviders,
   filterModelsForApiKeys,
   PROVIDER_CONFIGS,
-} from "~/lib/ai/providers";
+} from "~/lib/ai/providers.shared";
+import { createAIProviderRegistry } from "~/lib/ai/providers";
 
 describe("parseModelIdentifier", () => {
   it("parses openrouter models with slashes in model id", () => {
