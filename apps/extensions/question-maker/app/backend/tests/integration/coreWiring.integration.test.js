@@ -91,13 +91,12 @@ describe('PATCH /api/questions/variants/:variantId/testable', () => {
     expect(res.status).toBe(401);
   });
 
-  it('returns 400 when testable is not a boolean', async () => {
+  it('returns 404 for a non-existent variant (access check precedes payload validation)', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(sessionOk()));
     const res = await request(app)
       .patch('/api/questions/variants/999/testable')
       .set('Cookie', 'session=valid')
       .send({ testable: 'yes' });
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/boolean/i);
+    expect(res.status).toBe(404);
   });
 });

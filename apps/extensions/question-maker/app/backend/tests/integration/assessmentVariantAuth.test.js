@@ -15,7 +15,7 @@ describe('GET /api/assessment-variant/* without token', () => {
     expect401(res);
   });
 
-  it('rejects variant-readiness without courseId', async () => {
+  it('rejects variant-readiness', async () => {
     const res = await request(app).get('/api/assessment-variant/assessments/1/variant-readiness');
     expect401(res);
   });
