@@ -39,3 +39,16 @@ Closes #
 ## Reviewer Notes
 
 <!-- Add migration notes, rollout risks, follow-up work, or anything reviewers should pay special attention to. -->
+
+<details>
+<summary>Screenshots / Before and After Results, if applicable</summary>
+
+<!-- For UI changes, add before and after screenshots, recordings, or notes showing the visible result. -->
+
+### Before
+
+
+### After
+
+
+</details>
