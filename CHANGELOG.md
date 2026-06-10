@@ -11,9 +11,11 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ### Added
 - [core] feat: ADHD Assist telemetry (#521, #532) — `AssistiveEvent` Prisma model + migration (`assistive_events`) stores derived compliance metrics only (word count, `topSummary`, `nextLine`, `underCap`, `structuralPass`, model/tokens/duration); never message text (BREB-consistent). Shared `apps/core/app/lib/ai/adhd-metrics.ts` used by chat `onFinish` logging and `eval:adhd`. `POST /api/assistive-events` accepts sanitized client UI events (`mode_toggled`, `expand_click`, `task_initiation`, `re_orientation`, `session_completion`). Research report script at `eduai-summer-2026/reports/scripts/report-adhd-metrics.ts` (Cohen's d OFF vs ON; run from `apps/core`). (#521, #532, @Ayyhab, 2026-06-09)
 - [core] tests: Unit tests for `computeAdhdResponseMetrics` / structural pass heuristics (`adhd-metrics.test.ts`, 4 cases) and assistive event persistence + client metric sanitization (`assistive-events.server.test.ts`, 3 cases). (#521, #532, @Ayyhab, 2026-06-09)
+- [core] tests: Route-level tests for `POST /api/assistive-events` (`assistive-events.route.test.ts`, 8 cases) — auth (401), method (405), invalid JSON / schema / non-client event type (422), chat ownership (404), and sanitized create (201). (#521, #532, @Ayyhab, 2026-06-10)
 
 ### Changed
 - [core] refactor: `eval-adhd-assist.mjs` imports shared `adhd-metrics.ts` instead of duplicating compliance scoring; `eval:adhd` runs via `tsx`. (#521, #532, @Ayyhab, 2026-06-09)
+- [core] fix: `report-adhd-metrics.ts` now reports the `task_initiation` / `re_orientation` / `session_completion` behavioural events alongside `response_compliance`, and renders `—` instead of `NaN` for empty cohorts or an under-powered Cohen's d (< 2 samples per side). (#521, #532, @Ayyhab, 2026-06-10)
 
 ---
 
