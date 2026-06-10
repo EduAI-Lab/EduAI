@@ -9,6 +9,7 @@ import { ChatTypingIndicator } from "~/components/chat/chat-typing-indicator";
 import { ChatHeaderControls } from "~/components/chat/chat-header-controls";
 import { ApiKeySettings } from "~/components/chat/api-key-settings";
 import { useApiKeys } from "~/hooks/use-api-keys";
+import { useAssistiveUi } from "~/components/assistive/assistive-ui-provider";
 import { AppSidebar } from "~/components/app-sidebar";
 import { SiteHeader } from "~/components/site-header";
 import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
@@ -98,13 +99,17 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function Chat() {
-  const { chatModels, user, assistDefault, lastCourseCode } = useLoaderData<typeof loader>();
+  const { chatModels, user, lastCourseCode } = useLoaderData<typeof loader>();
+  const { assistive, setAssistive } = useAssistiveUi();
   const [selectedModel, setSelectedModel] = useState(chatModels.length > 0 ? chatModels[0].id : '');
   const [selectedCourseCode, setSelectedCourseCode] = useState<string | null>(lastCourseCode);
   const [availableCourses, setAvailableCourses] = useState<Array<{ id: string; name: string; code: string }>>([]);
   const [chatId, setChatId] = useState<string | null>(null);
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
-  const [adhdAssist, setAdhdAssist] = useState(assistDefault);
+  // Per-chat assist state: seeded from the account-level preference for new
+  // chats; restored from the chat's own adhdAssist when opening an old chat
+  // (without rewriting the account preference).
+  const [adhdAssist, setAdhdAssist] = useState(assistive);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { apiKeys, getValidApiKeys, updateProviderSettings, removeProviderSettings, isProviderConfigured } = useApiKeys();
   const prefsFetcher = useFetcher();
@@ -122,9 +127,11 @@ export default function Chat() {
   const handleAssistChange = useCallback(
     (checked: boolean) => {
       setAdhdAssist(checked);
-      persistPreference({ assistDefault: checked });
+      // Manual toggle updates the account-level preference too (and persists
+      // via the provider), so data-assistive flips platform-wide immediately.
+      setAssistive(checked);
     },
-    [persistPreference],
+    [setAssistive],
   );
 
   const handleCourseChange = useCallback(
