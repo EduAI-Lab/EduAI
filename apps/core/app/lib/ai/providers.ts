@@ -206,6 +206,17 @@ export function parseModelIdentifier(identifier: string): { providerId: Supporte
   return { providerId: providerId as SupportedProvider, modelId };
 }
 
+/** Keep chat model options limited to providers the user has configured. */
+export function filterModelsForApiKeys<T extends { id: string }>(
+  models: T[],
+  userSettings: UserProviderSettings,
+): T[] {
+  return models.filter((model) => {
+    const parsed = parseModelIdentifier(model.id);
+    return parsed !== null && isProviderConfigured(parsed.providerId, userSettings);
+  });
+}
+
 /**
  * Check if a model supports tool calling
  * @param modelIdentifier - The model identifier in format "provider:modelId"

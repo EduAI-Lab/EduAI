@@ -2,7 +2,7 @@ import type { Prisma, User } from "@prisma/client";
 import { UserRole } from "@prisma/client";
 import { randomUUID } from "crypto";
 import { streamText, tool } from "ai";
-import { createAIProviderRegistry, modelSupportsTools } from "~/lib/ai/providers";
+import { createAIProviderRegistry, modelSupportsTools, parseModelIdentifier, isProviderConfigured } from "~/lib/ai/providers";
 import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
 import { findRelevantContent } from "~/lib/ai/embedding";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
@@ -524,6 +524,23 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
     const validatedApiKeys = toUserProviderSettings(apiKeysParsed.data);
+
+    const parsedModel = parseModelIdentifier(model);
+    if (!parsedModel) {
+      return new Response(
+        JSON.stringify({ error: "Invalid model identifier", model }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    if (!isProviderConfigured(parsedModel.providerId, validatedApiKeys)) {
+      return new Response(
+        JSON.stringify({
+          error: `Provider "${parsedModel.providerId}" is not configured. Add an API key in Settings or choose a model for a configured provider.`,
+        }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
 
     const existingMessageIds = new Set(storedMessages.map((message) => message.id).filter(isNonEmptyString));
     const appendMessages = async (messages: GenericMessage[]) => {

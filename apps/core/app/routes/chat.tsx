@@ -1,5 +1,5 @@
 import { useChat } from '@ai-sdk/react';
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { redirect, useLoaderData, useFetcher } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { ChatWelcome } from "~/components/chat/chat-welcome";
@@ -18,6 +18,7 @@ import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { getUserPreference, saveUserPreference } from "~/lib/user-preferences.server";
 import { getAccessibleCourseCodes } from "~/lib/courses/server";
+import { filterModelsForApiKeys } from "~/lib/ai/providers";
 import { parsePreferenceUpdates, resolveSelectedCourse } from "~/lib/user-preferences";
 
 interface ChatModel {
@@ -111,8 +112,20 @@ export default function Chat() {
   // (without rewriting the account preference).
   const [adhdAssist, setAdhdAssist] = useState(assistive);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const { apiKeys, getValidApiKeys, updateProviderSettings, removeProviderSettings, isProviderConfigured } = useApiKeys();
+  const { apiKeys, getValidApiKeys, updateProviderSettings, removeProviderSettings, isProviderConfigured, isLoading: apiKeysLoading } = useApiKeys();
   const prefsFetcher = useFetcher();
+
+  const availableChatModels = useMemo(
+    () => filterModelsForApiKeys(chatModels, apiKeys),
+    [chatModels, apiKeys],
+  );
+
+  useEffect(() => {
+    if (apiKeysLoading || availableChatModels.length === 0) return;
+    if (!availableChatModels.some((model) => model.id === selectedModel)) {
+      setSelectedModel(availableChatModels[0].id);
+    }
+  }, [apiKeysLoading, availableChatModels, selectedModel]);
 
   const persistPreference = useCallback(
     (updates: { assistDefault?: boolean; lastCourseCode?: string | null }) => {
@@ -202,7 +215,7 @@ export default function Chat() {
     },
   });
 
-  const selectedModelInfo = chatModels.find((model: any) => model.id === selectedModel);
+  const selectedModelInfo = availableChatModels.find((model: any) => model.id === selectedModel);
 
   const handleSystemPromptSave = async (prompt: string | null) => {
     setSystemPrompt(prompt);
@@ -319,7 +332,7 @@ export default function Chat() {
             availableCourses={availableCourses}
             selectedModel={selectedModel}
             setSelectedModel={setSelectedModel}
-            chatModels={chatModels}
+            chatModels={availableChatModels}
             selectedModelInfo={selectedModelInfo}
           />
           <ApiKeySettings

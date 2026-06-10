@@ -15,6 +15,7 @@ import {
   validateProviderConfig,
   isProviderConfigured,
   getAvailableProviders,
+  filterModelsForApiKeys,
   PROVIDER_CONFIGS,
 } from "~/lib/ai/providers";
 
@@ -82,6 +83,21 @@ describe("getAvailableProviders", () => {
     const ids = getAvailableProviders().map((p) => p.id);
     expect(ids).toContain("openrouter");
     expect(PROVIDER_CONFIGS.openrouter.envVarName).toBe("OPENROUTER_API_KEY");
+  });
+});
+
+describe("filterModelsForApiKeys", () => {
+  const models = [
+    { id: "google:gemini-2.5-flash", name: "Gemini" },
+    { id: "openrouter:google/gemini-2.5-flash", name: "Gemini OR" },
+    { id: "ollama:llama3", name: "Llama" },
+  ];
+
+  it("returns only models for configured providers", () => {
+    const filtered = filterModelsForApiKeys(models, {
+      openrouter: { isEnabled: true, apiKey: "sk-or-test" },
+    });
+    expect(filtered.map((m) => m.id)).toEqual(["openrouter:google/gemini-2.5-flash"]);
   });
 });
 
