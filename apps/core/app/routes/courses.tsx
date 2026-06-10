@@ -113,12 +113,12 @@ export default function CoursesPage() {
           />
         ) : isInstructor ? (
           <CoursesInstructorView
-            courses={courses.filter((c) => c.instructorId === user.id)}
+            courses={courses}
             onEditCourse={async (id, data) => { await updateCourse(id, data) }}
             onPublishToggle={handlePublishToggle}
           />
         ) : isTA ? (
-          <CoursesTaView courses={courses.filter((c) => taCourseIds.includes(c.id))} />
+          <CoursesTaView courses={courses} />
         ) : (
           <CoursesStudentView
             courses={courses.filter(
