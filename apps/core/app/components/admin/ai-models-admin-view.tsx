@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { IconFilter, IconPlus, IconSearch } from "@tabler/icons-react";
 
 import { AIModelsTable } from "~/components/admin/ai-models-table";
@@ -17,6 +17,7 @@ import {
 } from "~/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import type { AIModel, AIProvider } from "~/hooks/api/types";
+import type { OllamaModel } from "~/components/admin/model-form-dialog";
 
 export type AiModelsAdminViewProps = {
   providers: AIProvider[];
@@ -53,6 +54,24 @@ export function AiModelsAdminView({
   const [providerDialogOpen, setProviderDialogOpen] = useState(false);
   const [editingModel, setEditingModel] = useState<AIModel | null>(null);
   const [editingProvider, setEditingProvider] = useState<AIProvider | null>(null);
+  const [ollamaModels, setOllamaModels] = useState<OllamaModel[]>([]);
+  const [fetchingOllamaModels, setFetchingOllamaModels] = useState(false);
+  const [ollamaError, setOllamaError] = useState<string | null>(null);
+
+  const handleFetchOllamaModels = useCallback(async () => {
+    setFetchingOllamaModels(true);
+    setOllamaError(null);
+    try {
+      const res = await fetch("/api/ollama-models");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to fetch Ollama models");
+      setOllamaModels(data.models ?? []);
+    } catch (err) {
+      setOllamaError(err instanceof Error ? err.message : "Failed to fetch Ollama models");
+    } finally {
+      setFetchingOllamaModels(false);
+    }
+  }, []);
 
   const filteredModels = useMemo(
     () =>
@@ -274,6 +293,10 @@ export function AiModelsAdminView({
         model={editingModel}
         providers={providers}
         onSubmit={handleModelSubmit}
+        ollamaModels={ollamaModels}
+        fetchingOllamaModels={fetchingOllamaModels}
+        ollamaError={ollamaError}
+        onFetchOllamaModels={handleFetchOllamaModels}
       />
 
       <ProviderFormDialog
