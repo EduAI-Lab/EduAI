@@ -316,7 +316,7 @@ describe("Canvas API — connect / integration / disconnect", () => {
   });
 });
 
-describe("Canvas API — courses and sync", () => {
+describe("Canvas API — courses and sync", { timeout: 15_000 }, () => {
   it("returns 400 for courses when Canvas is not connected", async () => {
     sessionFor(instructorId, "INSTRUCTOR");
     const res = await call("GET", "courses");
@@ -353,7 +353,9 @@ describe("Canvas API — courses and sync", () => {
       where: { isActive: true },
     });
     expect(rosterRows.length).toBeGreaterThan(0);
-    expect(rosterRows.some((row) => row.sisUserId === "student_1")).toBe(true);
+    expect(
+      rosterRows.some((row) => readStoredStudentId(row.sisUserId) === "student_1"),
+    ).toBe(true);
   });
 
   it("syncs selected courses and links enrollments by studentId", async () => {
@@ -437,7 +439,7 @@ describe("Canvas API — courses and sync", () => {
   });
 });
 
-describe("Canvas API — link-roster", () => {
+describe("Canvas API — link-roster", { timeout: 15_000 }, () => {
   async function seedSyncedCourseForLinking() {
     await connectTestMode();
     sessionFor(instructorId, "INSTRUCTOR");

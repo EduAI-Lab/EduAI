@@ -25,6 +25,7 @@ export class InvalidCanvasCourseAccessError extends Error {
   }
 }
 
+/* TODO: Edit this once we know the proper term mapping */
 function termFromDate(date: Date): string {
   const month = date.getMonth() + 1;
   if (month >= 1 && month <= 4) return "W1";
@@ -49,6 +50,8 @@ export function mapCanvasCourseToCoreFields(canvasCourse: CanvasCourseApi) {
     lastSyncedAt: new Date(),
     deletedAt: null as Date | null,
     isActive: true,
+    // Canvas-synced courses are visible to linked students once roster enrollments exist.
+    isPublished: true,
   };
 }
 
@@ -145,6 +148,7 @@ export async function upsertCoreCourseFromCanvas(canvasCourse: CanvasCourseApi) 
         lastSyncedAt: fields.lastSyncedAt,
         deletedAt: null,
         isActive: true,
+        isPublished: true,
       },
     });
   }

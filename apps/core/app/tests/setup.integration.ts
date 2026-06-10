@@ -1,14 +1,7 @@
-import { config } from 'dotenv';
-import { resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { resolveIntegrationTestDatabaseUrl } from './test-database-url';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
-// Load .env.test BEFORE any app imports so the Prisma singleton connects to the test DB
-config({ path: resolve(__dirname, '..', '..', '.env.test'), override: true });
-
-// Serialize all DB operations through a single connection to avoid FK-race flakiness
-const url = process.env.DATABASE_URL ?? '';
+// Load test env BEFORE any app imports so the Prisma singleton connects to the test DB
+const url = resolveIntegrationTestDatabaseUrl();
 if (!url.includes('connection_limit=')) {
   process.env.DATABASE_URL = url.includes('?')
     ? `${url}&connection_limit=1`

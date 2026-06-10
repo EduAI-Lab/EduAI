@@ -7,6 +7,7 @@ import {
   isLegacyPlaintextStudentId,
   prepareStudentIdStorage,
   readStoredStudentId,
+  rosterSisUserIdMatchFilter,
   studentIdMatchFilter,
 } from "~/lib/canvas/student-id.server";
 
@@ -87,7 +88,7 @@ export async function linkCanvasRoster(
   const stagingCount = await prisma.canvasRosterMember.count({
     where: {
       isActive: true,
-      sisUserId: normalized,
+      ...rosterSisUserIdMatchFilter(normalized),
     },
   });
 

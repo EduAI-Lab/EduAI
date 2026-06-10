@@ -3,7 +3,9 @@ import prisma from "~/lib/prisma.server";
 import { CANVAS_EXTERNAL_SOURCE } from "~/lib/canvas/client.server";
 import {
   normalizeStudentId,
+  prepareStudentIdStorage,
   readStoredStudentId,
+  rosterSisUserIdMatchForUser,
   studentIdsMatchFilter,
 } from "~/lib/canvas/student-id.server";
 
@@ -25,7 +27,7 @@ export async function linkEnrollmentsFromStagingForCourse(courseId: string): Pro
     where: {
       courseId,
       isActive: true,
-      sisUserId: { not: null },
+      OR: [{ sisUserIdLookup: { not: null } }, { sisUserId: { not: null } }],
     },
     select: {
       id: true,
@@ -42,7 +44,7 @@ export async function linkEnrollmentsFromStagingForCourse(courseId: string): Pro
   const sisIds = [
     ...new Set(
       stagingRows
-        .map((row) => normalizeStudentId(row.sisUserId))
+        .map((row) => readStoredStudentId(row.sisUserId))
         .filter((id): id is string => id != null),
     ),
   ];
@@ -61,7 +63,7 @@ export async function linkEnrollmentsFromStagingForCourse(courseId: string): Pro
   let linked = 0;
 
   for (const row of stagingRows) {
-    const sisUserId = normalizeStudentId(row.sisUserId);
+    const sisUserId = readStoredStudentId(row.sisUserId);
     if (!sisUserId) {
       continue;
     }
@@ -100,21 +102,41 @@ export async function linkEnrollmentsFromStagingForCourse(courseId: string): Pro
 /**
  * Links all active staging rows for a user after studentId is set or updated.
  */
-export async function resolveCanvasEnrollmentsForUser(userId: string): Promise<number> {
+async function ensureUserStudentIdLookup(userId: string) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { studentId: true },
+    select: { studentId: true, studentIdLookup: true },
   });
 
-  const studentId = readStoredStudentId(user?.studentId);
-  if (!studentId) {
+  if (!user?.studentId || user.studentIdLookup) {
+    return user;
+  }
+
+  const normalized = readStoredStudentId(user.studentId);
+  if (!normalized) {
+    return user;
+  }
+
+  const prepared = prepareStudentIdStorage(normalized);
+  await prisma.user.update({
+    where: { id: userId },
+    data: prepared,
+  });
+
+  return prepared;
+}
+
+export async function resolveCanvasEnrollmentsForUser(userId: string): Promise<number> {
+  const user = await ensureUserStudentIdLookup(userId);
+
+  if (!user?.studentId && !user?.studentIdLookup) {
     return 0;
   }
 
   const stagingRows = await prisma.canvasRosterMember.findMany({
     where: {
       isActive: true,
-      sisUserId: studentId,
+      ...rosterSisUserIdMatchForUser(user),
     },
     select: {
       courseId: true,
@@ -160,7 +182,7 @@ export async function deactivateDroppedCanvasEnrollments(courseId: string): Prom
 
   const activeStudentIds = new Set(
     activeStaging
-      .map((row) => normalizeStudentId(row.sisUserId))
+      .map((row) => readStoredStudentId(row.sisUserId))
       .filter((id): id is string => id != null),
   );
 
