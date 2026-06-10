@@ -46,6 +46,7 @@ model CourseOffering {
   id               Int       @id @default(autoincrement())
   title            String
   description      String?
+  department       String?
   startDate        DateTime?
   endDate          DateTime?
   isPublished      Boolean   @default(false)
@@ -76,11 +77,13 @@ model CourseInstructor {
   @@id([userId, courseOfferingId])
 }
 
-/// Student enrollment for a course offering.
-/// `userId` is the Core CUID of the student; no local FK — User table is owned by Core.
+/// Student or TA enrollment for a course offering.
+/// `role` mirrors Core's EnrollmentRole: "STUDENT", "TA", or "INSTRUCTOR".
+/// `userId` is the Core CUID of the enrollee; no local FK — User table is owned by Core.
 model CourseEnrollment {
   userId           String
   courseOfferingId Int
+  role             String         @default("STUDENT")
   createdAt        DateTime       @default(now())
   courseOffering   CourseOffering @relation(fields: [courseOfferingId], references: [id], onDelete: Cascade)
 

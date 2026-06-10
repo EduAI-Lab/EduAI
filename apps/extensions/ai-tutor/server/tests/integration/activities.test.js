@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
-import { makeProfessor, makeStudent, truncateAll, seedMinimalCourse, prisma } from '../helpers.js';
+import { makeProfessor, makeStudent, makeTA, truncateAll, seedMinimalCourse, prisma } from '../helpers.js';
 
 describe('Activities routes', () => {
   let prof;
@@ -43,9 +43,22 @@ describe('Activities routes', () => {
       data: {
         courseOfferingId: seed.course.id,
         userId: student.id,
+        role: 'STUDENT',
       },
     });
     return student;
+  }
+
+  async function enrollTa() {
+    const ta = makeTA();
+    await prisma.courseEnrollment.create({
+      data: {
+        courseOfferingId: seed.course.id,
+        userId: ta.id,
+        role: 'TA',
+      },
+    });
+    return ta;
   }
 
   // ── GET /api/lessons/:lessonId/activities ──────────────────────────
@@ -93,6 +106,20 @@ describe('Activities routes', () => {
 
       expect(res.status).toBe(403);
       expect(res.body.error).toMatch(/not published/i);
+    });
+
+    it('TA sees activities even when lesson is unpublished (no completionStatus)', async () => {
+      await createActivityInDb();
+      await prisma.lesson.update({ where: { id: seed.lesson.id }, data: { isPublished: false } });
+
+      const ta = await enrollTa();
+      const taApp = await createApp({ mockUser: ta });
+
+      const res = await request(taApp).get(`/api/lessons/${seed.lesson.id}/activities`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.length).toBe(1);
+      expect(res.body[0].completionStatus).toBeUndefined();
     });
 
     it('returns 403 for non-member', async () => {
@@ -317,6 +344,208 @@ describe('Activities routes', () => {
         .send({ answerOption: 1 });
 
       expect(res.status).toBe(403);
+    });
+  });
+
+  // ── GET /api/activities/:id/submissions ──────────────────────────
+
+  describe('GET /api/activities/:activityId/submissions', () => {
+    let activity;
+
+    beforeEach(async () => {
+      activity = await createActivityInDb();
+    });
+
+    it('instructor gets all submissions', async () => {
+      const student = await enrollStudent();
+      const studentApp = await createApp({ mockUser: student });
+      await request(studentApp)
+        .post(`/api/questions/${activity.id}/answer`)
+        .send({ answerOption: 1 });
+
+      const res = await request(profApp).get(`/api/activities/${activity.id}/submissions`);
+
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.body)).toBe(true);
+      expect(res.body.length).toBe(1);
+      expect(res.body[0].activityId).toBe(activity.id);
+    });
+
+    it('TA enrolled in the course gets all submissions', async () => {
+      const student = await enrollStudent();
+      const studentApp = await createApp({ mockUser: student });
+      await request(studentApp)
+        .post(`/api/questions/${activity.id}/answer`)
+        .send({ answerOption: 1 });
+
+      const ta = await enrollTa();
+      const taApp = await createApp({ mockUser: ta });
+
+      const res = await request(taApp).get(`/api/activities/${activity.id}/submissions`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.length).toBe(1);
+    });
+
+    it('student gets 403', async () => {
+      const student = await enrollStudent();
+      const studentApp = await createApp({ mockUser: student });
+
+      const res = await request(studentApp).get(`/api/activities/${activity.id}/submissions`);
+
+      expect(res.status).toBe(403);
+    });
+
+    it('non-member gets 403', async () => {
+      const outsider = makeStudent();
+      const outsiderApp = await createApp({ mockUser: outsider });
+
+      const res = await request(outsiderApp).get(`/api/activities/${activity.id}/submissions`);
+
+      expect(res.status).toBe(403);
+    });
+
+    it('TA in a different course gets 403', async () => {
+      const otherSeed = await seedMinimalCourse(null);
+      const ta = makeTA();
+      await prisma.courseEnrollment.create({
+        data: { courseOfferingId: otherSeed.course.id, userId: ta.id, role: 'TA' },
+      });
+      const taApp = await createApp({ mockUser: ta });
+
+      const res = await request(taApp).get(`/api/activities/${activity.id}/submissions`);
+
+      expect(res.status).toBe(403);
+    });
+  });
+
+  // ── GET /api/activities/:id/feedback ─────────────────────────────
+
+  describe('GET /api/activities/:activityId/feedback (instructor view)', () => {
+    let activity;
+
+    beforeEach(async () => {
+      activity = await createActivityInDb();
+    });
+
+    it('instructor gets all feedback', async () => {
+      const student = await enrollStudent();
+      const studentApp = await createApp({ mockUser: student });
+      await request(studentApp)
+        .post(`/api/questions/${activity.id}/answer`)
+        .send({ answerOption: 1 });
+      await request(studentApp)
+        .post(`/api/activities/${activity.id}/feedback`)
+        .send({ rating: 4, note: 'Good' });
+
+      const res = await request(profApp).get(`/api/activities/${activity.id}/feedback`);
+
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.body)).toBe(true);
+      expect(res.body.length).toBe(1);
+      expect(res.body[0].rating).toBe(4);
+    });
+
+    it('TA enrolled in the course gets all feedback', async () => {
+      const student = await enrollStudent();
+      const studentApp = await createApp({ mockUser: student });
+      await request(studentApp)
+        .post(`/api/questions/${activity.id}/answer`)
+        .send({ answerOption: 1 });
+      await request(studentApp)
+        .post(`/api/activities/${activity.id}/feedback`)
+        .send({ rating: 5, note: 'Great' });
+
+      const ta = await enrollTa();
+      const taApp = await createApp({ mockUser: ta });
+
+      const res = await request(taApp).get(`/api/activities/${activity.id}/feedback`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.length).toBe(1);
+    });
+
+    it('student gets 403', async () => {
+      const student = await enrollStudent();
+      const studentApp = await createApp({ mockUser: student });
+
+      const res = await request(studentApp).get(`/api/activities/${activity.id}/feedback`);
+
+      expect(res.status).toBe(403);
+    });
+
+    it('non-member gets 403', async () => {
+      const outsider = makeStudent();
+      const outsiderApp = await createApp({ mockUser: outsider });
+
+      const res = await request(outsiderApp).get(`/api/activities/${activity.id}/feedback`);
+
+      expect(res.status).toBe(403);
+    });
+
+    it('TA in a different course gets 403', async () => {
+      const otherSeed = await seedMinimalCourse(null);
+      const ta = makeTA();
+      await prisma.courseEnrollment.create({
+        data: { courseOfferingId: otherSeed.course.id, userId: ta.id, role: 'TA' },
+      });
+      const taApp = await createApp({ mockUser: ta });
+
+      const res = await request(taApp).get(`/api/activities/${activity.id}/feedback`);
+
+      expect(res.status).toBe(403);
+    });
+  });
+
+  // ── Cross-course TA scoping (§19) ─────────────────────────────────
+
+  describe('TA scoped to enrolled course only', () => {
+    it('TA in course A cannot access activities in course B as TA', async () => {
+      // Course A — ta enrolled as TA
+      const ta = makeTA();
+      await prisma.courseEnrollment.create({
+        data: { courseOfferingId: seed.course.id, userId: ta.id, role: 'TA' },
+      });
+      const taApp = await createApp({ mockUser: ta });
+
+      // Course B — ta enrolled as STUDENT
+      const seedB = await seedMinimalCourse(null);
+      await prisma.courseEnrollment.create({
+        data: { courseOfferingId: seedB.course.id, userId: ta.id, role: 'STUDENT' },
+      });
+      const activityInB = await prisma.activity.create({
+        data: {
+          lessonId: seedB.lesson.id,
+          mainTopicId: seedB.topic.id,
+          instructionsMd: 'Course B activity',
+          config: {
+            question: 'B?',
+            questionType: 'MCQ',
+            options: ['A', 'B'],
+            answer: 0,
+            hints: [],
+          },
+        },
+      });
+
+      // TA access to submissions in course B must be denied (enrolled as STUDENT, not TA)
+      const res = await request(taApp).get(`/api/activities/${activityInB.id}/submissions`);
+      expect(res.status).toBe(403);
+    });
+
+    it('TA in course A can access modules/lessons/activities in course A', async () => {
+      const ta = makeTA();
+      await prisma.courseEnrollment.create({
+        data: { courseOfferingId: seed.course.id, userId: ta.id, role: 'TA' },
+      });
+      const taApp = await createApp({ mockUser: ta });
+
+      await prisma.lesson.update({ where: { id: seed.lesson.id }, data: { isPublished: false } });
+      const activity = await createActivityInDb();
+
+      const res = await request(taApp).get(`/api/lessons/${seed.lesson.id}/activities`);
+      expect(res.status).toBe(200);
+      expect(res.body.some((a) => a.id === activity.id)).toBe(true);
     });
   });
 

@@ -1,6 +1,6 @@
 import express from 'express';
 import { prisma } from '../config/database.js';
-import { requireRole } from '../middleware/auth.js';
+import { requireRole, isUnitAdminForCourse } from '../middleware/auth.js';
 import { mapLesson, mapProgressData } from '../utils/mappers.js';
 import { calculateLessonProgress } from '../services/progressCalculation.js';
 
@@ -24,7 +24,7 @@ router.get('/modules/:moduleId/lessons', async (req, res) => {
         courseOffering: {
           include: {
             instructors: { select: { userId: true } },
-            enrollments: { select: { userId: true } },
+            enrollments: { select: { userId: true, role: true } },
           },
         },
       },
@@ -34,25 +34,30 @@ router.get('/modules/:moduleId/lessons', async (req, res) => {
       return res.status(404).json({ error: 'Module not found' });
     }
 
-    const isInstructor = module.courseOffering.instructors.some(
-      (assignment) => assignment.userId === authUser.id,
-    );
-    const isStudent = module.courseOffering.enrollments.some(
-      (enrollment) => enrollment.userId === authUser.id,
-    );
+    const isInstructor = module.courseOffering.instructors.some((i) => i.userId === authUser.id);
+    const enrollment = module.courseOffering.enrollments.find((e) => e.userId === authUser.id);
+    const isTa = enrollment?.role === 'TA';
+    const isStudent = enrollment?.role === 'STUDENT';
+    const unitAdmin = isUnitAdminForCourse(authUser, module.courseOffering);
+    const hasElevatedAccess = isInstructor || isTa || unitAdmin;
+    const isMember = hasElevatedAccess || isStudent;
 
     if (authUser.role === 'INSTRUCTOR' && !isInstructor) {
       return res.status(403).json({ error: 'Not authorized for this module' });
     }
-    if (authUser.role === 'STUDENT' && !isStudent) {
+    if (authUser.role === 'UNIT_ADMIN' && !unitAdmin) {
       return res.status(403).json({ error: 'Not authorized for this module' });
     }
-    if (authUser.role !== 'INSTRUCTOR' && authUser.role !== 'STUDENT') {
+    if (!isMember) {
+      return res.status(403).json({ error: 'Not authorized for this module' });
+    }
+    if (!['INSTRUCTOR', 'TA', 'STUDENT', 'UNIT_ADMIN'].includes(authUser.role)) {
       return res.status(403).json({ error: 'Role is not supported in AI Tutor' });
     }
 
-    const whereClause =
-      authUser.role === 'STUDENT' ? { moduleId, isPublished: true } : { moduleId };
+    const whereClause = hasElevatedAccess
+      ? { moduleId }
+      : { moduleId, isPublished: true };
 
     const lessons = await prisma.lesson.findMany({
       where: whereClause,
@@ -60,7 +65,7 @@ router.get('/modules/:moduleId/lessons', async (req, res) => {
     });
 
     // For students, add progress to each lesson
-    if (authUser.role === 'STUDENT') {
+    if (isStudent && !hasElevatedAccess) {
       const lessonsWithProgress = await Promise.all(
         lessons.map(async (lesson) => {
           const progress = await calculateLessonProgress(lesson.id, authUser.id);
@@ -79,7 +84,8 @@ router.get('/modules/:moduleId/lessons', async (req, res) => {
   }
 });
 
-router.post('/modules/:moduleId/lessons', requireRole('INSTRUCTOR'), async (req, res) => {
+router.post('/modules/:moduleId/lessons', requireRole(['INSTRUCTOR', 'UNIT_ADMIN']), async (req, res) => {
+  const authUser = req.user;
   const moduleId = Number(req.params.moduleId);
   if (!Number.isFinite(moduleId)) {
     return res.status(400).json({ error: 'Invalid module id' });
@@ -89,6 +95,18 @@ router.post('/modules/:moduleId/lessons', requireRole('INSTRUCTOR'), async (req,
   if (!title) return res.status(400).json({ error: 'title required' });
 
   try {
+    const module = await prisma.module.findUnique({
+      where: { id: moduleId },
+      include: { courseOffering: { include: { instructors: { select: { userId: true } } } } },
+    });
+    if (!module) return res.status(404).json({ error: 'Module not found' });
+
+    const isInstructor = module.courseOffering.instructors.some((i) => i.userId === authUser.id);
+    const unitAdmin = isUnitAdminForCourse(authUser, module.courseOffering);
+    if (!isInstructor && !unitAdmin) {
+      return res.status(403).json({ error: 'Not authorized for this module' });
+    }
+
     const lesson = await prisma.lesson.create({
       data: {
         title,
@@ -123,7 +141,7 @@ router.get('/lessons/:lessonId', async (req, res) => {
             courseOffering: {
               include: {
                 instructors: { select: { userId: true } },
-                enrollments: { select: { userId: true } },
+                enrollments: { select: { userId: true, role: true } },
               },
             },
           },
@@ -133,25 +151,31 @@ router.get('/lessons/:lessonId', async (req, res) => {
     if (!lesson) return res.status(404).json({ error: 'Lesson not found' });
 
     const isInstructor = lesson.module.courseOffering.instructors.some(
-      (assignment) => assignment.userId === authUser.id,
+      (i) => i.userId === authUser.id,
     );
-    const isStudent = lesson.module.courseOffering.enrollments.some(
-      (enrollment) => enrollment.userId === authUser.id,
+    const enrollment = lesson.module.courseOffering.enrollments.find(
+      (e) => e.userId === authUser.id,
     );
+    const isTa = enrollment?.role === 'TA';
+    const isStudent = enrollment?.role === 'STUDENT';
+    const unitAdmin = isUnitAdminForCourse(authUser, lesson.module.courseOffering);
+    const hasElevatedAccess = isInstructor || isTa || unitAdmin;
+    const isMember = hasElevatedAccess || isStudent;
 
     if (authUser.role === 'INSTRUCTOR' && !isInstructor) {
       return res.status(403).json({ error: 'Not authorized for this lesson' });
     }
-    if (authUser.role === 'STUDENT') {
-      if (!isStudent) {
-        return res.status(403).json({ error: 'Not authorized for this lesson' });
-      }
-      if (!lesson.isPublished) {
-        return res.status(403).json({ error: 'Lesson is not published' });
-      }
+    if (authUser.role === 'UNIT_ADMIN' && !unitAdmin) {
+      return res.status(403).json({ error: 'Not authorized for this lesson' });
     }
-    if (authUser.role !== 'INSTRUCTOR' && authUser.role !== 'STUDENT') {
+    if (!isMember) {
+      return res.status(403).json({ error: 'Not authorized for this lesson' });
+    }
+    if (!['INSTRUCTOR', 'TA', 'STUDENT', 'UNIT_ADMIN'].includes(authUser.role)) {
       return res.status(403).json({ error: 'Role is not supported in AI Tutor' });
+    }
+    if (isStudent && !hasElevatedAccess && !lesson.isPublished) {
+      return res.status(403).json({ error: 'Lesson is not published' });
     }
 
     res.json(mapLesson(lesson));
@@ -161,7 +185,7 @@ router.get('/lessons/:lessonId', async (req, res) => {
 });
 
 // Publish a lesson (requires parent module AND course to be published)
-router.patch('/lessons/:lessonId/publish', requireRole('INSTRUCTOR'), async (req, res) => {
+router.patch('/lessons/:lessonId/publish', requireRole(['INSTRUCTOR', 'UNIT_ADMIN']), async (req, res) => {
   const instructor = req.user;
   const lessonId = Number(req.params.lessonId);
   if (!Number.isFinite(lessonId)) {
@@ -189,7 +213,8 @@ router.patch('/lessons/:lessonId/publish', requireRole('INSTRUCTOR'), async (req
     const isInstructor = lesson.module.courseOffering.instructors.some(
       (i) => i.userId === instructor.id,
     );
-    if (!isInstructor) {
+    const unitAdmin = isUnitAdminForCourse(instructor, lesson.module.courseOffering);
+    if (!isInstructor && !unitAdmin) {
       return res.status(403).json({ error: 'Not authorized for this lesson' });
     }
 
@@ -219,7 +244,7 @@ router.patch('/lessons/:lessonId/publish', requireRole('INSTRUCTOR'), async (req
 });
 
 // Unpublish a lesson (no cascading, lessons have no children)
-router.patch('/lessons/:lessonId/unpublish', requireRole('INSTRUCTOR'), async (req, res) => {
+router.patch('/lessons/:lessonId/unpublish', requireRole(['INSTRUCTOR', 'UNIT_ADMIN']), async (req, res) => {
   const instructor = req.user;
   const lessonId = Number(req.params.lessonId);
   if (!Number.isFinite(lessonId)) {
@@ -247,7 +272,8 @@ router.patch('/lessons/:lessonId/unpublish', requireRole('INSTRUCTOR'), async (r
     const isInstructor = lesson.module.courseOffering.instructors.some(
       (i) => i.userId === instructor.id,
     );
-    if (!isInstructor) {
+    const unitAdmin = isUnitAdminForCourse(instructor, lesson.module.courseOffering);
+    if (!isInstructor && !unitAdmin) {
       return res.status(403).json({ error: 'Not authorized for this lesson' });
     }
 

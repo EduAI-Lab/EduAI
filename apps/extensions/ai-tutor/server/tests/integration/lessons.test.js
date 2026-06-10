@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
-import { makeProfessor, makeStudent, truncateAll, seedMinimalCourse, prisma } from '../helpers.js';
+import { makeProfessor, makeStudent, makeTA, truncateAll, seedMinimalCourse, prisma } from '../helpers.js';
 
 describe('Lessons routes', () => {
   let prof;
@@ -23,9 +23,22 @@ describe('Lessons routes', () => {
       data: {
         courseOfferingId: seed.course.id,
         userId: student.id,
+        role: 'STUDENT',
       },
     });
     return student;
+  }
+
+  async function enrollTa() {
+    const ta = makeTA();
+    await prisma.courseEnrollment.create({
+      data: {
+        courseOfferingId: seed.course.id,
+        userId: ta.id,
+        role: 'TA',
+      },
+    });
+    return ta;
   }
 
   // ── GET /api/modules/:moduleId/lessons ────────────────────────────
@@ -86,6 +99,41 @@ describe('Lessons routes', () => {
       );
     });
 
+    it('TA sees all lessons including unpublished', async () => {
+      const unpublishedLesson = await prisma.lesson.create({
+        data: {
+          title: 'Unpublished Lesson',
+          contentMd: 'Draft content',
+          position: 1,
+          isPublished: false,
+          moduleId: seed.module.id,
+        },
+      });
+
+      const ta = await enrollTa();
+      const taApp = await createApp({ mockUser: ta });
+
+      const res = await request(taApp).get(`/api/modules/${seed.module.id}/lessons`);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(2);
+      const ids = res.body.map((l) => l.id);
+      expect(ids).toContain(seed.lesson.id);
+      expect(ids).toContain(unpublishedLesson.id);
+      expect(res.body[0].progress).toBeUndefined();
+    });
+
+    it('TA cannot create a lesson', async () => {
+      const ta = await enrollTa();
+      const taApp = await createApp({ mockUser: ta });
+
+      const res = await request(taApp)
+        .post(`/api/modules/${seed.module.id}/lessons`)
+        .send({ title: 'TA Lesson', contentMd: '# TA', position: 1 });
+
+      expect(res.status).toBe(403);
+    });
+
     it('returns 403 for non-member', async () => {
       const otherProf = makeProfessor();
       const otherApp = await createApp({ mockUser: otherProf });
@@ -123,6 +171,27 @@ describe('Lessons routes', () => {
       expect(res.body.id).toBe(seed.lesson.id);
       expect(res.body.title).toBe('Test Lesson');
     });
+
+    it('TA sees unpublished lesson', async () => {
+      await prisma.lesson.update({ where: { id: seed.lesson.id }, data: { isPublished: false } });
+      const ta = await enrollTa();
+      const taApp = await createApp({ mockUser: ta });
+
+      const res = await request(taApp).get(`/api/lessons/${seed.lesson.id}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.isPublished).toBe(false);
+    });
+
+    it('student gets 403 on unpublished lesson', async () => {
+      await prisma.lesson.update({ where: { id: seed.lesson.id }, data: { isPublished: false } });
+      const student = await enrollStudent();
+      const studentApp = await createApp({ mockUser: student });
+
+      const res = await request(studentApp).get(`/api/lessons/${seed.lesson.id}`);
+
+      expect(res.status).toBe(403);
+    });
   });
 
   // ── PATCH /api/lessons/:id/publish ────────────────────────────────
@@ -139,6 +208,16 @@ describe('Lessons routes', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.isPublished).toBe(true);
+    });
+
+    it('TA cannot publish a lesson', async () => {
+      await prisma.lesson.update({ where: { id: seed.lesson.id }, data: { isPublished: false } });
+      const ta = await enrollTa();
+      const taApp = await createApp({ mockUser: ta });
+
+      const res = await request(taApp).patch(`/api/lessons/${seed.lesson.id}/publish`);
+
+      expect(res.status).toBe(403);
     });
 
     it('returns 400 when parent module is not published', async () => {
@@ -173,6 +252,15 @@ describe('Lessons routes', () => {
         where: { id: seed.lesson.id },
       });
       expect(updatedLesson.isPublished).toBe(false);
+    });
+
+    it('TA cannot unpublish a lesson', async () => {
+      const ta = await enrollTa();
+      const taApp = await createApp({ mockUser: ta });
+
+      const res = await request(taApp).patch(`/api/lessons/${seed.lesson.id}/unpublish`);
+
+      expect(res.status).toBe(403);
     });
   });
 });

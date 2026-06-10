@@ -26,7 +26,7 @@
 import { randomUUID } from 'crypto';
 import express from 'express';
 import { prisma } from '../config/database.js';
-import { requireRole } from '../middleware/auth.js';
+import { requireRole, isUnitAdminForCourse } from '../middleware/auth.js';
 import { mapActivity } from '../utils/mappers.js';
 import { evaluateQuestion } from '../services/activityEvaluation.js';
 import { getActivityCompletionStatuses } from '../services/progressCalculation.js';
@@ -350,7 +350,7 @@ router.get('/lessons/:lessonId/activities', async (req, res) => {
             courseOffering: {
               include: {
                 instructors: { select: { userId: true } },
-                enrollments: { select: { userId: true } },
+                enrollments: { select: { userId: true, role: true } },
               },
             },
           },
@@ -363,25 +363,31 @@ router.get('/lessons/:lessonId/activities', async (req, res) => {
     }
 
     const isInstructor = lesson.module.courseOffering.instructors.some(
-      (assignment) => assignment.userId === authUser.id,
+      (i) => i.userId === authUser.id,
     );
-    const isStudent = lesson.module.courseOffering.enrollments.some(
-      (enrollment) => enrollment.userId === authUser.id,
+    const enrollment = lesson.module.courseOffering.enrollments.find(
+      (e) => e.userId === authUser.id,
     );
+    const isTa = enrollment?.role === 'TA';
+    const isStudent = enrollment?.role === 'STUDENT';
+    const unitAdmin = isUnitAdminForCourse(authUser, lesson.module.courseOffering);
+    const hasElevatedAccess = isInstructor || isTa || unitAdmin;
+    const isMember = hasElevatedAccess || isStudent;
 
     if (authUser.role === 'INSTRUCTOR' && !isInstructor) {
       return res.status(403).json({ error: 'Not authorized for this lesson' });
     }
-    if (authUser.role === 'STUDENT') {
-      if (!isStudent) {
-        return res.status(403).json({ error: 'Not authorized for this lesson' });
-      }
-      if (!lesson.isPublished) {
-        return res.status(403).json({ error: 'Lesson is not published' });
-      }
+    if (authUser.role === 'UNIT_ADMIN' && !unitAdmin) {
+      return res.status(403).json({ error: 'Not authorized for this lesson' });
     }
-    if (authUser.role !== 'INSTRUCTOR' && authUser.role !== 'STUDENT') {
+    if (!isMember) {
+      return res.status(403).json({ error: 'Not authorized for this lesson' });
+    }
+    if (!['INSTRUCTOR', 'TA', 'STUDENT', 'UNIT_ADMIN'].includes(authUser.role)) {
       return res.status(403).json({ error: 'Role is not supported in AI Tutor' });
+    }
+    if (isStudent && !hasElevatedAccess && !lesson.isPublished) {
+      return res.status(403).json({ error: 'Lesson is not published' });
     }
 
     const activities = await prisma.activity.findMany({
@@ -397,7 +403,7 @@ router.get('/lessons/:lessonId/activities', async (req, res) => {
     });
 
     // For students, add completion status to each activity
-    if (authUser.role === 'STUDENT') {
+    if (isStudent && !hasElevatedAccess) {
       const activityIds = activities.map((a) => a.id);
       const statusMap = await getActivityCompletionStatuses(activityIds, authUser.id);
 
@@ -424,7 +430,8 @@ router.get('/lessons/:lessonId/activities', async (req, res) => {
  * Why: at-least-one-mode invariant is enforced here (and in PATCH) so the
  * frontend never has to render a tutor screen with no available modes.
  */
-router.post('/lessons/:lessonId/activities', requireRole('INSTRUCTOR'), async (req, res) => {
+router.post('/lessons/:lessonId/activities', requireRole(['INSTRUCTOR', 'UNIT_ADMIN']), async (req, res) => {
+  const authUser = req.user;
   const lessonId = Number(req.params.lessonId);
   if (!Number.isFinite(lessonId)) {
     return res.status(400).json({ error: 'Invalid lesson id' });
@@ -449,7 +456,11 @@ router.post('/lessons/:lessonId/activities', requireRole('INSTRUCTOR'), async (r
     const lesson = await prisma.lesson.findUnique({
       where: { id: lessonId },
       include: {
-        module: { select: { courseOfferingId: true } },
+        module: {
+          include: {
+            courseOffering: { include: { instructors: { select: { userId: true } } } },
+          },
+        },
       },
     });
 
@@ -457,7 +468,15 @@ router.post('/lessons/:lessonId/activities', requireRole('INSTRUCTOR'), async (r
       return res.status(404).json({ error: 'Lesson not found' });
     }
 
-    const courseOfferingId = lesson.module.courseOfferingId;
+    const isInstructor = lesson.module.courseOffering.instructors.some(
+      (i) => i.userId === authUser.id,
+    );
+    const unitAdmin = isUnitAdminForCourse(authUser, lesson.module.courseOffering);
+    if (!isInstructor && !unitAdmin) {
+      return res.status(403).json({ error: 'Not authorized for this lesson' });
+    }
+
+    const courseOfferingId = lesson.module.courseOffering.id;
 
     const mainTopic = await prisma.topic.findUnique({ where: { id: payload.mainTopicId } });
     if (!mainTopic || mainTopic.courseOfferingId !== courseOfferingId) {
@@ -540,7 +559,7 @@ router.post('/lessons/:lessonId/activities', requireRole('INSTRUCTOR'), async (r
  * column, so the handler reads-modifies-writes that blob whenever any of those
  * fields appear, leaving other config keys untouched.
  */
-router.patch('/activities/:activityId', requireRole('INSTRUCTOR'), async (req, res) => {
+router.patch('/activities/:activityId', requireRole(['INSTRUCTOR', 'UNIT_ADMIN']), async (req, res) => {
   const instructor = req.user;
   const activityId = Number(req.params.activityId);
   if (!Number.isFinite(activityId)) {
@@ -600,8 +619,9 @@ router.patch('/activities/:activityId', requireRole('INSTRUCTOR'), async (req, r
     const isInstructor = activity.lesson.module.courseOffering.instructors.some(
       (assignment) => assignment.userId === instructor.id,
     );
+    const unitAdmin = isUnitAdminForCourse(instructor, activity.lesson.module.courseOffering);
 
-    if (!isInstructor) {
+    if (!isInstructor && !unitAdmin) {
       return res.status(403).json({ error: 'Not authorized for this activity' });
     }
 
@@ -804,7 +824,7 @@ router.patch('/activities/:activityId', requireRole('INSTRUCTOR'), async (req, r
   }
 });
 
-router.delete('/activities/:activityId', requireRole('INSTRUCTOR'), async (req, res) => {
+router.delete('/activities/:activityId', requireRole(['INSTRUCTOR', 'UNIT_ADMIN']), async (req, res) => {
   const instructor = req.user;
   const activityId = Number(req.params.activityId);
   if (!Number.isFinite(activityId)) {
@@ -836,8 +856,9 @@ router.delete('/activities/:activityId', requireRole('INSTRUCTOR'), async (req, 
     const isInstructor = activity.lesson.module.courseOffering.instructors.some(
       (assignment) => assignment.userId === instructor.id,
     );
+    const unitAdmin = isUnitAdminForCourse(instructor, activity.lesson.module.courseOffering);
 
-    if (!isInstructor) {
+    if (!isInstructor && !unitAdmin) {
       return res.status(403).json({ error: 'Not authorized for this activity' });
     }
 
@@ -1145,6 +1166,132 @@ router.post('/activities/:activityId/custom', async (req, res) => {
     });
   } catch (e) {
     console.error('Error generating custom response:', e);
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+/**
+ * GET /activities/:activityId/submissions — list all submissions for an activity.
+ *
+ * Auth: INSTRUCTOR of the course or TA enrolled in the course (TA(C) per §15).
+ * Returns: all Submission rows for the activity, ordered by userId then attemptNumber.
+ */
+router.get('/activities/:activityId/submissions', async (req, res) => {
+  const authUser = req.user;
+  const activityId = Number(req.params.activityId);
+
+  if (!Number.isFinite(activityId)) {
+    return res.status(400).json({ error: 'Invalid activity id' });
+  }
+  if (!authUser) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
+  try {
+    const activity = await prisma.activity.findUnique({
+      where: { id: activityId },
+      include: {
+        lesson: {
+          include: {
+            module: {
+              include: {
+                courseOffering: {
+                  include: {
+                    instructors: { select: { userId: true } },
+                    enrollments: { select: { userId: true, role: true } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!activity) return res.status(404).json({ error: 'Activity not found' });
+
+    const course = activity.lesson?.module?.courseOffering;
+    if (!course) return res.status(500).json({ error: 'Activity course context missing' });
+
+    const isInstructor = course.instructors.some((i) => i.userId === authUser.id);
+    const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
+    const isTa = enrollment?.role === 'TA';
+    const unitAdmin = isUnitAdminForCourse(authUser, course);
+
+    if (!isInstructor && !isTa && !unitAdmin) {
+      return res.status(403).json({ error: 'Not authorized for this activity' });
+    }
+
+    const submissions = await prisma.submission.findMany({
+      where: { activityId },
+      orderBy: [{ userId: 'asc' }, { attemptNumber: 'asc' }],
+    });
+
+    res.json(submissions);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+/**
+ * GET /activities/:activityId/feedback — list all feedback for an activity.
+ *
+ * Auth: INSTRUCTOR of the course or TA enrolled in the course (TA(C) per §15).
+ * Returns: all ActivityFeedback rows for the activity, ordered by creation date.
+ */
+router.get('/activities/:activityId/feedback', async (req, res) => {
+  const authUser = req.user;
+  const activityId = Number(req.params.activityId);
+
+  if (!Number.isFinite(activityId)) {
+    return res.status(400).json({ error: 'Invalid activity id' });
+  }
+  if (!authUser) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
+  try {
+    const activity = await prisma.activity.findUnique({
+      where: { id: activityId },
+      include: {
+        lesson: {
+          include: {
+            module: {
+              include: {
+                courseOffering: {
+                  include: {
+                    instructors: { select: { userId: true } },
+                    enrollments: { select: { userId: true, role: true } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!activity) return res.status(404).json({ error: 'Activity not found' });
+
+    const course = activity.lesson?.module?.courseOffering;
+    if (!course) return res.status(500).json({ error: 'Activity course context missing' });
+
+    const isInstructor = course.instructors.some((i) => i.userId === authUser.id);
+    const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
+    const isTa = enrollment?.role === 'TA';
+    const unitAdmin = isUnitAdminForCourse(authUser, course);
+
+    if (!isInstructor && !isTa && !unitAdmin) {
+      return res.status(403).json({ error: 'Not authorized for this activity' });
+    }
+
+    const feedback = await prisma.activityFeedback.findMany({
+      where: { activityId },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    res.json(feedback);
+  } catch (e) {
     res.status(500).json({ error: String(e) });
   }
 });

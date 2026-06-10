@@ -26,7 +26,7 @@
 
 import express from 'express';
 import { prisma } from '../config/database.js';
-import { requireRole } from '../middleware/auth.js';
+import { requireRole, isUnitAdminForCourse } from '../middleware/auth.js';
 import { mapCourseOffering, mapProgressData } from '../utils/mappers.js';
 import { cloneCourseContent, cloneLessonsFromOffering } from '../services/courseCloning.js';
 import { calculateCourseProgress } from '../services/progressCalculation.js';
@@ -37,7 +37,7 @@ import { syncCourseEnrollments } from '../services/enrollmentSync.js';
 const router = express.Router();
 
 function isSupportedCourseRole(role) {
-  return role === 'INSTRUCTOR' || role === 'STUDENT';
+  return role === 'INSTRUCTOR' || role === 'STUDENT' || role === 'TA' || role === 'UNIT_ADMIN';
 }
 
 /**
@@ -105,6 +105,52 @@ router.get('/courses', async (req, res) => {
         orderBy: { createdAt: 'desc' },
       });
       res.json(courses.map(mapCourseOffering));
+    } else if (authUser.role === 'UNIT_ADMIN') {
+      // UNIT_ADMINs see all courses in their authorized units regardless of publish state (no progress).
+      const units = Array.isArray(authUser.authorizedUnits) ? authUser.authorizedUnits : [];
+      const courses = units.length > 0
+        ? await prisma.courseOffering.findMany({
+            where: { department: { in: units } },
+            orderBy: { createdAt: 'desc' },
+          })
+        : [];
+      res.json(courses.map(mapCourseOffering));
+    } else if (authUser.role === 'TA') {
+      // TAs see all TA-enrolled courses regardless of publish state (no progress),
+      // plus published student-enrolled courses (with progress).
+      const allEnrollments = await prisma.courseEnrollment.findMany({
+        where: { userId: authUser.id },
+        select: { courseOfferingId: true, role: true },
+      });
+      const taOfferingIds = allEnrollments
+        .filter((e) => e.role === 'TA')
+        .map((e) => e.courseOfferingId);
+      const studentOfferingIds = allEnrollments
+        .filter((e) => e.role === 'STUDENT')
+        .map((e) => e.courseOfferingId);
+
+      const taCourses = taOfferingIds.length > 0
+        ? await prisma.courseOffering.findMany({
+            where: { id: { in: taOfferingIds } },
+            orderBy: { createdAt: 'desc' },
+          })
+        : [];
+
+      const studentCourses = studentOfferingIds.length > 0
+        ? await prisma.courseOffering.findMany({
+            where: { id: { in: studentOfferingIds }, isPublished: true },
+            orderBy: { createdAt: 'desc' },
+          })
+        : [];
+
+      const studentCoursesWithProgress = await Promise.all(
+        studentCourses.map(async (course) => {
+          const progress = await calculateCourseProgress(course.id, authUser.id);
+          return { ...mapCourseOffering(course), progress: mapProgressData(progress) };
+        }),
+      );
+
+      res.json([...taCourses.map(mapCourseOffering), ...studentCoursesWithProgress]);
     } else {
       // Students only see published courses they're enrolled in (with progress)
       const courses = await prisma.courseOffering.findMany({
@@ -245,7 +291,7 @@ router.get('/courses/:courseId', async (req, res) => {
       where: { id: courseId },
       include: {
         instructors: { select: { userId: true } },
-        enrollments: { select: { userId: true } },
+        enrollments: { select: { userId: true, role: true } },
       },
     });
 
@@ -254,9 +300,11 @@ router.get('/courses/:courseId', async (req, res) => {
     }
 
     const isInstructor = course.instructors.some((i) => i.userId === authUser.id);
-    const isStudent = course.enrollments.some((e) => e.userId === authUser.id);
+    const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
+    const unitAdmin = isUnitAdminForCourse(authUser, course);
+    const isMember = isInstructor || enrollment != null || unitAdmin;
 
-    if (!isInstructor && !isStudent) {
+    if (!isMember) {
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
 
