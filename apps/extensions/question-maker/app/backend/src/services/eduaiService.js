@@ -48,7 +48,7 @@ class EduAIService {
     try {
       const requestPayload = {
         messages: params.messages || [],
-        model: params.model || "google:gemini-2.5-flash",
+        model: params.model || "openrouter:google/gemini-2.5-flash",
         apiKeys: params.apiKeys || {},
         courseCode: params.courseCode,
         streaming: params.streaming || false,
@@ -164,7 +164,7 @@ class EduAIService {
     const {
       prompt,
       courseCode,
-      model = "google:gemini-2.5-flash",
+      model = "openrouter:google/gemini-2.5-flash",
       apiKeys = {},
       numQuestions = 5,
       difficultyDistribution = { easy: 1, medium: 2, hard: 2 },

@@ -11,9 +11,10 @@
  *   import `_testExports` for unit-level coverage of the pure helpers.
  * Gotchas:
  *   - Per-user provider API keys (apiKeys[provider]) are forwarded to EduAI on
- *     every request and never persisted server-side. The user's Core session
- *     cookie is forwarded as the `Cookie` header — both must be present or
- *     `callEduAI` throws.
+ *     every request and never persisted server-side, except for OpenRouter
+ *     models (`openrouter:...`) where Core may bill via `OPENROUTER_API_KEY`.
+ *     The user's Core session cookie is forwarded as the `Cookie` header — it
+ *     must be present; a user API key is required only for non-OpenRouter models.
  *   - Prompt templates `learning-prompt`, `exercise-prompt`, and
  *     `supervisor-prompt` MUST exist as `PromptTemplate` rows; missing rows
  *     throw and surface as a user-visible error in the catch blocks.
@@ -42,6 +43,12 @@ const SUPERVISOR_ERROR_MESSAGE =
 const FALLBACK_MESSAGE =
   "I'm having trouble formulating a helpful response right now. Please try rephrasing your question, or ask your instructor for guidance.";
 
+const DEFAULT_EDUAI_MODEL = 'openrouter:google/gemini-2.5-flash';
+
+function usesServerManagedOpenRouter(modelId) {
+  return String(modelId || '').startsWith('openrouter:');
+}
+
 /**
  * Single round-trip to the EduAI chat completion endpoint.
  *
@@ -62,7 +69,8 @@ async function callEduAI({
   courseCode = null,
 }) {
   const endpoint = getEduAiChatUrl();
-  const model = modelId || process.env.EDUAI_MODEL || 'google:gemini-2.5-flash';
+  const model = modelId || process.env.EDUAI_MODEL || DEFAULT_EDUAI_MODEL;
+  const serverManagedOpenRouter = usesServerManagedOpenRouter(model);
 
   if (!cookie) {
     console.error('[aiGuidance] Missing session cookie for EduAI call');
@@ -71,14 +79,14 @@ async function callEduAI({
     throw error;
   }
 
-  if (!userApiKey) {
+  if (!userApiKey && !serverManagedOpenRouter) {
     console.error('[aiGuidance] Missing user API key');
     const error = new Error('API key is required');
     error.status = 400;
     throw error;
   }
 
-  // Model IDs are namespaced "provider:model" (e.g. "google:gemini-2.5-flash");
+  // Model IDs are namespaced "provider:model" (e.g. "openrouter:google/gemini-2.5-flash");
   // the provider half indexes into the apiKeys map sent to EduAI.
   const [provider] = model.split(':');
   if (!provider) {
@@ -87,12 +95,14 @@ async function callEduAI({
   }
 
   const userMessageId = messageId || randomUUID();
-  const apiKeys = {
-    [provider]: {
-      apiKey: userApiKey,
-      isEnabled: true,
-    },
-  };
+  const apiKeys = serverManagedOpenRouter
+    ? { openrouter: { isEnabled: true } }
+    : {
+        [provider]: {
+          apiKey: userApiKey,
+          isEnabled: true,
+        },
+      };
 
   const requestBody = {
     messages: [{ id: userMessageId, role: 'user', content: userMessage }],

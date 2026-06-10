@@ -6,7 +6,7 @@
 const STORAGE_KEY_PREFIX = 'eduai_api_key_';
 const ENCRYPTION_KEY_NAME = 'eduai_encryption_key';
 
-export type AIProvider = 'google' | 'openai' | 'deepseek' | 'anthropic';
+export type AIProvider = 'google' | 'openai' | 'deepseek' | 'anthropic' | 'openrouter';
 
 /** Generates or retrieves a derived AES-GCM key for encrypting provider secrets in this browser. */
 async function getEncryptionKey(): Promise<CryptoKey> {
@@ -125,18 +125,18 @@ export const apiKeyStorage = {
     return keys;
   },
 
-  /** Derives provider name from a model ID prefix (e.g., google:gemini → google). */
+  /** Derives provider name from a model ID prefix (e.g., openrouter:google/gemini → openrouter). */
   getProviderFromModel(modelId: string): AIProvider | null {
     const provider = modelId.split(':')[0].toLowerCase();
-    if (['google', 'openai', 'deepseek', 'anthropic'].includes(provider)) {
+    if (['google', 'openai', 'deepseek', 'anthropic', 'openrouter'].includes(provider)) {
       return provider as AIProvider;
     }
     return null;
   },
 
-  /** Returns true when the selected model requires a provider API key (i.e., not ollama). */
+  /** Returns true when the selected model requires a user-provided provider API key. */
   requiresApiKey(modelId: string): boolean {
-    return !modelId.startsWith('ollama');
+    return !modelId.startsWith('ollama') && !modelId.startsWith('openrouter:');
   },
 
   /** Builds the apiKeys payload expected by the AI service based on the chosen model and stored keys. */
@@ -144,6 +144,14 @@ export const apiKeyStorage = {
     if (modelId.startsWith('ollama')) {
       return {
         ollama: {
+          isEnabled: true
+        }
+      };
+    }
+
+    if (modelId.startsWith('openrouter:')) {
+      return {
+        openrouter: {
           isEnabled: true
         }
       };

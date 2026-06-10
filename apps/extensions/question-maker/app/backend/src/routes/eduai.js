@@ -36,7 +36,7 @@ router.post('/chat', authenticateToken, async (req, res) => {
     // Call EduAI service
     const response = await eduaiService.chat({
       messages,
-      model: model || 'google:gemini-2.5-flash',
+      model: model || 'openrouter:google/gemini-2.5-flash',
       apiKeys: apiKeys || {},
       courseCode,
       streaming: streaming || false
@@ -100,7 +100,7 @@ router.post('/generate-questions', authenticateToken, async (req, res) => {
     const questions = await eduaiService.generateQuestions({
       prompt,
       courseCode,
-      model: model || 'google:gemini-2.5-flash',
+      model: model || 'openrouter:google/gemini-2.5-flash',
       apiKeys: apiKeys || {},
       numQuestions: numQuestions || 5,
       difficultyDistribution: difficultyDistribution || { easy: 1, medium: 2, hard: 2 },

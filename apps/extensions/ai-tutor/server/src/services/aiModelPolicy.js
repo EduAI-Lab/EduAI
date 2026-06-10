@@ -32,7 +32,7 @@
 import { listEduAiModels } from './eduaiClient.js';
 import { SYSTEM_SETTING_KEYS, getSystemSetting, setSystemSetting } from './systemSettings.js';
 
-export const DEFAULT_TUTOR_MODEL = 'google:gemini-2.5-flash';
+export const DEFAULT_TUTOR_MODEL = 'openrouter:google/gemini-2.5-flash';
 export const DEFAULT_MAX_SUPERVISOR_ITERATIONS = 3;
 // Hard floor/ceiling for supervisor iterations: 0 would disable supervision
 // (use dualLoopEnabled instead), >5 risks runaway cost on a per-request basis.

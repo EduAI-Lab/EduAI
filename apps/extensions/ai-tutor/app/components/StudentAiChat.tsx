@@ -84,9 +84,17 @@ type StudentAiChatProps = {
   studentAnswer: number | string | null;
 };
 
-const DEFAULT_MODEL_ID = 'google:gemini-2.5-flash';
+const DEFAULT_MODEL_ID = 'openrouter:google/gemini-2.5-flash';
 const API_KEYS_STORAGE_KEY = 'ai-provider-keys';
-const PROVIDER_LABELS: Record<string, string> = { google: 'Gemini', openai: 'OpenAI' };
+const PROVIDER_LABELS: Record<string, string> = {
+  google: 'Gemini',
+  openai: 'OpenAI',
+  openrouter: 'OpenRouter',
+};
+
+function usesServerManagedOpenRouter(modelId: string): boolean {
+  return modelId.startsWith('openrouter:');
+}
 
 // Detects whether the API has decorated this model with any student-policy field.
 // Presence of ANY policy field on ANY model flips the whole list into filtered mode.
@@ -217,7 +225,8 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
 
   const currentProvider = getProviderFromModelId(selectedModelId);
   const currentApiKey = providerApiKeys[currentProvider] || '';
-  const hasApiKey = apiKeysLoaded && Boolean(currentApiKey);
+  const serverManagedModel = usesServerManagedOpenRouter(selectedModelId);
+  const hasApiKey = apiKeysLoaded && (Boolean(currentApiKey) || serverManagedModel);
   const setupComplete = hasApiKey && Boolean(knowledgeLevel);
 
   const availableTabs = useMemo<{ value: ChatTab; label: string; tooltip: string }[]>(() => {
@@ -342,8 +351,9 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
 
       // The provider id is encoded as the prefix of the modelId ("google:gemini-..."); look up its key.
       const provider = getProviderFromModelId(selectedModelId);
-      const apiKey = providerApiKeys[provider];
-      if (!apiKey) {
+      const serverManaged = usesServerManagedOpenRouter(selectedModelId);
+      const apiKey = serverManaged ? '' : providerApiKeys[provider];
+      if (!serverManaged && !apiKey) {
         console.warn('No API key for provider:', provider);
         return;
       }
@@ -649,7 +659,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         )}
       </div>
 
-      {/* Step 2: API Key */}
+      {/* Step 2: API Key (skipped for server-managed OpenRouter models) */}
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <span
@@ -672,10 +682,14 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
             )}
           </span>
           <span className="text-sm font-semibold text-foreground">
-            {getProviderLabel(currentProvider)} API Key
+            {serverManagedModel ? 'AI access' : `${getProviderLabel(currentProvider)} API Key`}
           </span>
         </div>
-        {hasApiKey ? (
+        {serverManagedModel ? (
+          <div className="px-4 py-3 rounded-xl border-2 border-border bg-card text-sm text-muted-foreground">
+            Provided by EduAI — no personal API key needed.
+          </div>
+        ) : hasApiKey ? (
           <button
             type="button"
             onClick={handleOpenApiKeyDialog}
@@ -769,13 +783,17 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
             >
               {titleCase(knowledgeLevel!)}
             </button>
-            <button
-              type="button"
-              onClick={handleOpenApiKeyDialog}
-              className="tag font-mono hover:bg-muted transition"
-            >
-              {maskApiKey(currentApiKey)}
-            </button>
+            {serverManagedModel ? (
+              <span className="tag text-muted-foreground">EduAI</span>
+            ) : (
+              <button
+                type="button"
+                onClick={handleOpenApiKeyDialog}
+                className="tag font-mono hover:bg-muted transition"
+              >
+                {maskApiKey(currentApiKey)}
+              </button>
+            )}
           </div>
         )}
       </div>

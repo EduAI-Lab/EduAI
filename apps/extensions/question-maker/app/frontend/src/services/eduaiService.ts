@@ -265,7 +265,7 @@ class EduAIService {
         return {
             prompt,
             courseCode,
-            model: 'google:gemini-2.5-flash',
+            model: 'openrouter:google/gemini-2.5-flash',
             numQuestions: 5,
             difficultyDistribution: { easy: 1, medium: 2, hard: 2 },
             reasoningDistribution: { factual: 40, analytical: 30, application: 30 },
@@ -284,7 +284,7 @@ class EduAIService {
         return {
             messages,
             courseCode,
-            model: 'google:gemini-2.5-flash',
+            model: 'openrouter:google/gemini-2.5-flash',
             streaming: false,
             ...options
         };
