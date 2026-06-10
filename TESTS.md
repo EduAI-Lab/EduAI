@@ -304,6 +304,8 @@ Each section should use this format:
 | `extraction.test.js` | Question text is split into individual blocks at numbered boundaries and chunked so multipart questions are never split across chunks |
 | `errorHandler.test.js` | `notFound` and `errorHandler` Express middleware return the correct status codes and JSON error envelopes |
 | `generateBankVariants.test.js` | `generateBankVariantsForQuestions` — validation guards, per-question orchestration, and MCQ choice-count retry |
+| `courseAccess.test.js` | `resolveCourseAccess` derives the caller's access level (ADMIN/UNIT_ADMIN/INSTRUCTOR/TA/STUDENT) from course ownership, Core enrollments, and unit-department matching, and the `requireCourseAccess` middleware enforces a minimum rank — 401 unauthenticated, 404 missing course, 403 below the required rank. |
+| `resourceAccessIdGuard.test.js` | The resource-access loaders (`requireVariantAccess`/`requireQuestionAccess`/`requireAssessmentAccess`) reject a non-integer id with 404 before any DB query, so a `NaN` never reaches the INTEGER PK and leaks a 500. |
 
 ---
 
@@ -334,6 +336,16 @@ Each section should use this format:
 | `saveExtractedQuestions.integration.test.js` | `POST /extract/save` — topic fallback resolution, MCQ questions, and saving with an assessment payload |
 | `syncTopicsCounter.integration.test.js` | `POST /api/course/:id/sync-topics` returns the correct synced counter, including name-updated topics |
 | `variantApproval.integration.test.js` | `PUT /api/questions/variants/:id` pushes the approved variant to Core on approval |
+| `assessmentRbac.test.js` | Assessment route RBAC: STUDENT is 403 on every operation, TA may GET (200) but is blocked on all writes (POST/PUT/DELETE/PATCH → 403), INSTRUCTOR has full create/update/delete authoring plus variant assembly, and section/variant write routes forward the authorized course id (`req.qmCourse.id`) to the service. |
+| `authMeBugReport.test.js` | `GET /api/auth/me` returns `isBugReportAdmin=true` only for ADMIN, with the legacy `BUG_REPORT_ADMIN_EMAILS` allowlist ignored so UNIT_ADMIN/INSTRUCTOR/TA/STUDENT all resolve to false. |
+| `canvasRbac.test.js` | Canvas RBAC: integration save/get/delete are INSTRUCTOR-only own-scoped (TA/STUDENT → 403), and course-mapping reads and assessment export are course-scoped INSTRUCTOR-only (TA → 403). |
+| `questionRbac.test.js` | Question route RBAC: STUDENT blocked from all writes (403), TA may view the whole course bank but edit/delete only their own questions (`createdBy`, else 403), and INSTRUCTOR may create/edit/delete any question in the course. |
+| `variantRbac.test.js` | Variant route RBAC: STUDENT blocked from edits/deletes/creates (403), TA own-only draft edit/delete (`createdBy`, else 403), INSTRUCTOR-only approval and draft-revert (TA → 403/409), approved variants locked against edits (409 `VARIANT_LOCKED`), and `PATCH` testable INSTRUCTOR-gated ahead of payload validation. |
+| `crossCourseScoping.integration.test.js` | Section/variant/question write services reject a child resource from a different course owned by the same user (cross-course linking, section/variant hijack, and `addQuestionToAssessment`/`removeQuestionFromAssessment`), while same-course writes still succeed. |
+| `questionOrderRbac.test.js` | Question-order routes (`PUT /:id/order`, `DELETE /:id/order/:assessmentId`) are instructor-only (TA → 403, §17) and reject an `assessmentId` from a different course than the question (→ 404). |
+| `approveTopicValidation.test.js` | `POST /api/questions/approve` rejects a question with no/invalid `primaryTopicId` with 400 before reaching the service, and forwards a real CUID topic id unchanged. |
+| `canvasImportSkip.integration.test.js` | `importQuizFromCanvas` skips a question whose persistence fails (recording it in `skippedQuestions`) instead of aborting the whole import with a `ReferenceError` from the catch block. |
+| `variantReadinessScope.test.js` | `GET /api/assessment-variant/assessments/:id/variant-readiness` derives `courseId` from the authorized assessment's course, ignoring a mismatched `?courseId=` and no longer requiring the query param. |
 
 ---
 
