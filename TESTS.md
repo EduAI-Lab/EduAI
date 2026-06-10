@@ -165,7 +165,7 @@ Each section should use this format:
 | `canvas-schemas.test.ts` | `ConnectCanvasSchema` validates canvasUrl normalization, requires apiKey outside test mode, allows test mode without apiKey, and rejects invalid URLs. |
 | `courses.enrollments.test.ts` | `GET /api/courses/:id/enrollments` loader: 400 missing id, 401 no session, 403 invalid service key, 403 user not enrolled, 404 course not found (both auth paths), 200 via service key and user OAuth (STUDENT/INSTRUCTOR), role mapping, null `enrolledAt`, active + inactive returned together, and empty enrollment list. |
 | `courses.materials.test.ts` | `GET /api/courses/:courseId/materials` loader and `POST /api/courses/:courseId/materials` action: auth, status codes, and material list/upload behaviour. |
-| `courses-schemas.test.ts`| Tests that course schemas require non-empty fields, reject fractional years, and enforce that topic deletion specifies at least one identifier. |
+| `courses-schemas.test.ts`| Tests that course schemas require non-empty fields, reject fractional years, enforce that topic deletion specifies at least one identifier, and validate per-course RAG overrides (`UpdateCourseRagSettingsSchema`: range bounds, null clears, empty patch). |
 | `courses.server.test.ts` | `getCourses`, `createCourse`, `updateCourse`, `getCourse`, `getCourseTopics`, `getCourseTopic`, and `deleteCourseTopic` — verifies ADMIN scoping, instructor-enrollment creation in a transaction, `deletedAt: null` queries, and soft-delete updates. |
 | `courses.id.test.ts` | `courses.id` loader: 400/401/403, service-key and session auth, 404 `COURSE_NOT_FOUND`, 200 flat course. |
 | `courses.topics.test.ts` | Topics `loader` and `action` unit tests: GET list/by-id and POST/DELETE auth, status codes, and error bodies (mocked server + auth). |
@@ -206,6 +206,8 @@ Each section should use this format:
 
 | Test file | What it tests |
 |-----------|---------------|
+| `courses.rag-settings.integration.test.ts` | `GET`/`PATCH /api/courses/:id/rag-settings on the test DB: auth (401/403), validation (422 out-of-range), persist and read back `ragTopK`/`ragSimilarityThreshold`, null clears overrides, 404 for unknown courses. |
+| `courses.embedding-settings.integration.test.ts` | `GET`/`PATCH /api/courses/:courseId/embedding-settings on the test DB: manage-materials RBAC (401/404 for students), instructor read/write of provider+model, reject unknown providers and disallowed models, null clears overrides. |
 | `courses.materials.integration.test.ts` | Materials RBAC on the test DB: an INSTRUCTOR upload → list → DELETE cycle, TA deleting their own upload vs another's (403), and the student upload block. |
 | `me.integration.test.ts` | `GET`/`PATCH /api/me` round-trip against the test DB for each role (STUDENT/INSTRUCTOR/UNIT_ADMIN/ADMIN): profile shape and a name update persisting while role/isActive stay untouched. |
 | `preferences.integration.test.ts` | Assistive preference round-trip against the test DB: defaults OFF, PATCH ON persists and root loader reports assistive, PATCH OFF returns baseline, per-account isolation, guest baseline + 401 on PATCH, and `assistDefault` updates do not clobber `lastCourseCode`. |
