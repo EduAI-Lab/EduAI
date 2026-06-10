@@ -63,6 +63,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   // No access at all — redirect (e.g. TA opened a course they do not assist)
   if (!access) return redirect('/courses?access=denied')
 
+  // Students cannot view unpublished courses by direct URL
+  if (access === 'student' && !course.isPublished) return redirect('/courses')
+
   const canManageStaff = access === 'admin' || access === 'unit'
   const [instructors, taUsers] = canManageStaff
     ? await Promise.all([
