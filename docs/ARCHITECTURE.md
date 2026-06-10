@@ -107,38 +107,32 @@ Model IDs look like `google:gemini-2.5-flash` or `ollama:gpt-oss:120b` — provi
 
 ### B) Embeddings for RAG (course materials)
 
-**Purpose:** Turn each **chunk of course text** into a  **3072-dimensional vector** stored in Postgres (`material_embeddings`), and embed **user queries** at search time for similarity search.
+**Purpose:** Turn each **chunk of course text** into a **1024-dimensional vector** stored in Postgres (`material_embeddings`), and embed **user queries** at search time for similarity search.
 
-**Where configured:** `app/lib/ai/embedding.ts` — `getEmbeddingModel()`.
+**Where configured:** `app/lib/ai/embedding.ts` — provider resolution (logged as `[embedding]`).
 
-- If `OPENROUTER_API_KEY` is set, embeddings use **OpenRouter** with model `google/gemini-embedding-001` (3072-dim, matches pgvector).
-- Else if `GOOGLE_GENERATIVE_AI_API_KEY` is set, embeddings use **Google** direct with `gemini-embedding-001`.
-- Else if `OPENAI_API_KEY` is set, embeddings use `text-embedding-3-small` (1536-dim; requires migration if used with existing 3072-dim data).
-- If none are set, ingestion/search that needs embeddings **throws an error**.
+- If `EMBEDDING_PROVIDER=local` (dev server default), embeddings use **Ollama** (`OLLAMA_BASE_URL` + `mxbai-embed-large`); on failure, fall back to cloud.
+- Cloud path (`EMBEDDING_PROVIDER=cloud` or unset): **OpenRouter** `openai/text-embedding-3-small` @ 1024 dims → **OpenAI** direct with `dimensions: 1024`.
+- Legacy `EMBEDDING_DIMENSION=3072`: OpenRouter/Google Gemini path (pre–LOCAL-EMBEDDINGS).
+- If no provider is available, ingestion/search **throws an error**.
 
-**Important:** Embedding calls **do not** use the `apiKeys` object from the chat request. They **only** read `process.env`. OpenRouter is the recommended dev path when you already use one key for multiple models.
+**Important:** Embedding calls **do not** use the `apiKeys` object from the chat request. They **only** read `process.env`.
 
-**Team guide (indexing, hosting, failures):** [docs/rag-ai/EMBEDDINGS.md](rag-ai/EMBEDDINGS.md).
+**Decision record:** [docs/rag-ai/LOCAL-EMBEDDINGS.md](rag-ai/LOCAL-EMBEDDINGS.md). **Team guide:** [docs/rag-ai/EMBEDDINGS.md](rag-ai/EMBEDDINGS.md).
 
 ```mermaid
 flowchart TD
   Upload[Upload course file]
   Chunk[generateChunks text]
-  Env{OPENROUTER_API_KEY set?}
-  Google{Else GOOGLE_GENERATIVE_AI_API_KEY?}
-  OpenAI{Else OPENAI_API_KEY?}
-  OR[OpenRouter gemini-embedding-001]
-  Gem[Google gemini-embedding-001]
-  Te3[OpenAI text-embedding-3-small]
+  Mode{EMBEDDING_PROVIDER local?}
+  Ollama[Ollama mxbai-embed-large]
+  Cloud[OpenRouter or OpenAI 1024-dim]
   Many[embedMany from ai SDK]
-  PG[(material_embeddings pgvector)]
-  Upload --> Chunk --> Env
-  Env -->|yes| OR --> Many
-  Env -->|no| Google
-  Google -->|yes| Gem --> Many
-  Google -->|no| OpenAI
-  OpenAI -->|yes| Te3 --> Many
-  OpenAI -->|no| Err[Error: no embedding provider]
+  PG[(material_embeddings vector 1024)]
+  Upload --> Chunk --> Mode
+  Mode -->|yes| Ollama --> Many
+  Mode -->|no| Cloud --> Many
+  Ollama -.->|on failure| Cloud
   Many --> PG
 ```
 

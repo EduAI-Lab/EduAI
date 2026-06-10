@@ -36,7 +36,8 @@ Team documentation for **course-aware retrieval**, the **`POST /api/chat`** pipe
 | File | Brief description |
 | ---- | ----------------- |
 | [`CHAT_RAG_PIPELINE.md`](./CHAT_RAG_PIPELINE.md) | **Architecture reference** — Mermaid flow of `/api/chat`, hybrid vs tool-calling RAG, `findRelevantContent`, and response paths. Match to `apps/core` on merge. |
-| [`EMBEDDINGS.md`](./EMBEDDINGS.md) | **Embeddings & storage** — index vs query lifecycle, server vs chat API keys, pgvector tables, hosting, failures, env vars. |
+| [`EMBEDDINGS.md`](./EMBEDDINGS.md) | **Embeddings & storage** — index vs query lifecycle, local Ollama + cloud fallback, server vs chat API keys, pgvector tables, hosting, failures, env vars. |
+| [`LOCAL-EMBEDDINGS.md`](./LOCAL-EMBEDDINGS.md) | **Architecture decision** — local model (`mxbai-embed-large`), `vector(1024)` migration, re-embed strategy ([#361](https://github.com/EduAI-Lab/EduAI/issues/361)). |
 | [`HOW_TO_USE_DEV_SERVER.md`](./HOW_TO_USE_DEV_SERVER.md) | **Ops runbook** — VPN, SSH, branch checkout, `tmux`, Docker DB, and Turbo dev on the shared UBCO host (`dev.eduai.ok.ubc.ca`). |
 | [`eduai-summer-2026/EDUAI_HELPME_ANALYSIS.md`](./eduai-summer-2026/EDUAI_HELPME_ANALYSIS.md) | **Research / borrow list** — What to port from the legacy HelpMe chatbot (caching, chunking, local embeds) vs what stays in EduAI’s stack. Related to #195–#196. |
 
@@ -82,6 +83,7 @@ Team documentation for **course-aware retrieval**, the **`POST /api/chat`** pipe
 ```text
 docs/rag-ai/
 ├── README.md                          ← this index
+├── LOCAL-EMBEDDINGS.md
 ├── CHAT_RAG_PIPELINE.md
 ├── EMBEDDINGS.md
 ├── VLLM.md
