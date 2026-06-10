@@ -33,11 +33,26 @@ export function DepartmentCombobox({
   placeholder = 'Select department',
 }: DepartmentComboboxProps) {
   const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
 
   const selected = departments.find((d) => d.code === value)
 
+  const filtered =
+    search.trim() === ''
+      ? departments
+      : departments.filter((d) => {
+          const q = search.toLowerCase()
+          return d.code.toLowerCase().includes(q) || d.label.toLowerCase().includes(q)
+        })
+
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (!next) setSearch('')
+      }}
+    >
       <PopoverTrigger asChild>
         <Button
           variant="outline"
@@ -57,28 +72,24 @@ export function DepartmentCombobox({
           <ChevronsUpDownIcon className="ml-2 size-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-        <Command
-          filter={(itemValue, search) => {
-            const dept = departments.find((d) => d.code === itemValue)
-            if (!dept) return 0
-            const q = search.toLowerCase()
-            return dept.code.toLowerCase().includes(q) || dept.label.toLowerCase().includes(q)
-              ? 1
-              : 0
-          }}
-        >
-          <CommandInput placeholder="Search departments..." />
+      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+        <Command shouldFilter={false}>
+          <CommandInput
+            placeholder="Search departments..."
+            value={search}
+            onValueChange={setSearch}
+          />
           <CommandList>
             <CommandEmpty>No department found.</CommandEmpty>
             <CommandGroup>
-              {departments.map((d) => (
+              {filtered.map((d) => (
                 <CommandItem
                   key={d.code}
                   value={d.code}
                   onSelect={(v) => {
                     onValueChange(v)
                     setOpen(false)
+                    setSearch('')
                   }}
                 >
                   <CheckIcon
