@@ -282,7 +282,7 @@ This clears chunks/embeddings per material, re-runs `processMaterialEmbeddings`,
 | --------- | ----- | ----- |
 | **Vectors + chunk text** | Campus / project Postgres (pgvector) | See `docker-compose.dev.yml` → `eduai-db`; [DEPLOYMENT.md](../DEPLOYMENT.md) for dev/prod |
 | **Embedding computation** | **Ollama on cmps01** (local) or **cloud** (laptop fallback) | Chunk text sent to provider at index + per RAG query |
-| **Chat LLM** | `cmps01` Ollama and/or cloud chat APIs | Separate from embeddings; usually dominates latency |
+| **Chat LLM** | `cmps01` Ollama (`:11434`) and/or vLLM (`:8001`, optional) and/or cloud chat APIs | Separate from embeddings; usually dominates latency. See [ARCHITECTURE.md](../ARCHITECTURE.md#cmps01-gpu-inference-host). |
 
 **Classroom scale:** Indexing bursts at upload week (`embedMany`); during term one embed per RAG turn plus a cheap DB search; vectors written once per chunk.
 
