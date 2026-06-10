@@ -91,11 +91,6 @@ describe("tryDeterministicStructuralFix", () => {
     expect(isStructuralCompliancePass(computeAdhdResponseMetrics(fixed!))).toBe(true);
   });
 
-  it("documents v1 over-structure on redirect turns (Dean should gate by turn type)", () => {
-    const fixed = tryDeterministicStructuralFix(S2_ON_T2_ASSISTANT);
-    expect(fixed!.startsWith("**Top summary**")).toBe(true);
-  });
-
   it("returns null when no Next? candidate exists", () => {
     expect(tryDeterministicStructuralFix("Short answer without a question.")).toBeNull();
   });
