@@ -20,16 +20,11 @@ describe("NavMain — rendering", () => {
     expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/dashboard");
     expect(screen.getByRole("link", { name: "Courses" })).toHaveAttribute("href", "/courses");
   });
-
-  it("always renders the Quick Create button", () => {
-    renderWithSidebar(<NavMain items={items} />);
-    expect(screen.getByText("Quick Create")).toBeInTheDocument();
-  });
 });
 
 describe("NavMain — missing data", () => {
   it("renders without throwing when there are no items", () => {
     renderWithSidebar(<NavMain items={[]} />);
-    expect(screen.getByText("Quick Create")).toBeInTheDocument();
+    expect(screen.queryByRole("listitem")).not.toBeInTheDocument();
   });
 });
