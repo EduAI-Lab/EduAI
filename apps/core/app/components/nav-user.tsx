@@ -54,42 +54,42 @@ export function NavUser({ user }: NavUserProps) {
     switch (role) {
       case "ADMIN":
         return (
-          <Badge variant="outline" className="bg-red-500 text-white border-red-500 h-5 px-1.5 gap-1">
+          <Badge variant="outline" className="bg-red-500 text-white border-red-500 h-5 px-1.5 gap-1 shrink-0">
             <IconShield className="h-3 w-3" />
             <span className="text-xs">Admin</span>
           </Badge>
         )
       case "UNIT_ADMIN":
         return (
-          <Badge variant="outline" className="bg-orange-500 text-white border-orange-500 h-5 px-1.5 gap-1">
+          <Badge variant="outline" className="bg-orange-500 text-white border-orange-500 h-5 px-1.5 gap-1 shrink-0 whitespace-nowrap">
             <IconShield className="h-3 w-3" />
             <span className="text-xs">Unit Admin</span>
           </Badge>
         )
       case "INSTRUCTOR":
         return (
-          <Badge variant="outline" className="bg-blue-500 text-white border-blue-500 h-5 px-1.5 gap-1">
+          <Badge variant="outline" className="bg-blue-500 text-white border-blue-500 h-5 px-1.5 gap-1 shrink-0">
             <IconSchool className="h-3 w-3" />
             <span className="text-xs">Instructor</span>
           </Badge>
         )
       case "TA":
         return (
-          <Badge variant="outline" className="bg-green-500 text-white border-green-500 h-5 px-1.5 gap-1">
+          <Badge variant="outline" className="bg-green-500 text-white border-green-500 h-5 px-1.5 gap-1 shrink-0">
             <IconUsers className="h-3 w-3" />
             <span className="text-xs">TA</span>
           </Badge>
         )
       case "STUDENT":
         return (
-          <Badge variant="outline" className="bg-gray-500 text-white border-gray-500 h-5 px-1.5 gap-1">
+          <Badge variant="outline" className="bg-gray-500 text-white border-gray-500 h-5 px-1.5 gap-1 shrink-0">
             <IconUser className="h-3 w-3" />
             <span className="text-xs">Student</span>
           </Badge>
         )
       default:
         return (
-          <Badge variant="outline" className="bg-gray-500 text-white border-gray-500 h-5 px-1.5 gap-1">
+          <Badge variant="outline" className="bg-gray-500 text-white border-gray-500 h-5 px-1.5 gap-1 shrink-0">
             <IconUser className="h-3 w-3" />
             <span className="text-xs">Student</span>
           </Badge>
@@ -113,8 +113,8 @@ export function NavUser({ user }: NavUserProps) {
                 </AvatarFallback>
               </Avatar>
               <div className="grid flex-1 text-left text-sm leading-tight">
-                <div className="flex items-center gap-2">
-                  <span className="truncate font-medium">{user.name}</span>
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="truncate font-medium min-w-0">{user.name}</span>
                   {getRoleBadge(user.role || "STUDENT")}
                 </div>
                 <span className="text-muted-foreground truncate text-xs">
