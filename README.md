@@ -30,7 +30,7 @@ EduAI/
 
 ### [EduAI](apps/core/)
 
-RAG-powered chat platform and the central API layer for the EduAI ecosystem. Handles AI provider routing, course-aware retrieval, auth, and exposes the API that AI Tutor and Question Maker integrate with.
+RAG-powered chat platform and the central API layer for the EduAI ecosystem. Handles AI provider routing, course-aware retrieval, auth, account-level Assistive Mode (`data-assistive` gating), and exposes the API that AI Tutor and Question Maker integrate with.
 
 ### [AI Tutor](apps/extensions/ai-tutor/)
 

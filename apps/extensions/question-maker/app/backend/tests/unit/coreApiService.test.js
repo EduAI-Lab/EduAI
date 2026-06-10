@@ -17,6 +17,9 @@ const {
   pushTopicToCore,
   pushQuestionToCore,
   patchQuestionTestableOnCore,
+  getCourseEnrollmentsFromCore,
+  getCourseFromCore,
+  getMyProfileFromCore,
 } = await import('../../src/services/coreApiService.js');
 
 const ok = (data, status = 200) => ({
@@ -183,5 +186,69 @@ describe('patchQuestionTestableOnCore', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(ok({ error: 'Unauthorized' }, 401)));
 
     await expect(patchQuestionTestableOnCore('cuid-q', true)).rejects.toMatchObject({ status: 401 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// RBAC read helpers (service key / cookie)
+// ---------------------------------------------------------------------------
+describe('getCourseEnrollmentsFromCore', () => {
+  it('returns the enrollment list with the service-key header', async () => {
+    const enrollments = [{ studentId: 'u1', role: 'TA', isActive: true }];
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(ok({ enrollments })));
+
+    const result = await getCourseEnrollmentsFromCore('core-c1');
+
+    expect(result).toEqual({ enrollments });
+    const [url, opts] = fetch.mock.calls[0];
+    expect(url).toBe('http://core.test/api/courses/core-c1/enrollments');
+    expect(opts.headers.Authorization).toBe('Bearer test-service-key');
+  });
+
+  it('returns an empty list when the course is gone (404)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(ok({ error: 'COURSE_NOT_FOUND' }, 404)));
+    await expect(getCourseEnrollmentsFromCore('gone')).resolves.toEqual({ enrollments: [] });
+  });
+
+  it('throws on other non-ok responses', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(ok({ error: 'boom' }, 500)));
+    await expect(getCourseEnrollmentsFromCore('c')).rejects.toMatchObject({ status: 500 });
+  });
+});
+
+describe('getCourseFromCore', () => {
+  it('returns the course row with the service-key header', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(ok({ id: 'core-c1', department: 'COSC' })));
+
+    const result = await getCourseFromCore('core-c1');
+
+    expect(result).toEqual({ id: 'core-c1', department: 'COSC' });
+    const [url, opts] = fetch.mock.calls[0];
+    expect(url).toBe('http://core.test/api/courses/core-c1');
+    expect(opts.headers.Authorization).toBe('Bearer test-service-key');
+  });
+
+  it('returns null when the course is gone (404)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(ok({ error: 'COURSE_NOT_FOUND' }, 404)));
+    await expect(getCourseFromCore('gone')).resolves.toBeNull();
+  });
+});
+
+describe('getMyProfileFromCore', () => {
+  it('forwards the caller cookie (no service key) and returns the profile', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(ok({ role: 'UNIT_ADMIN', authorizedUnits: ['COSC'] })));
+
+    const result = await getMyProfileFromCore('session=abc');
+
+    expect(result).toEqual({ role: 'UNIT_ADMIN', authorizedUnits: ['COSC'] });
+    const [url, opts] = fetch.mock.calls[0];
+    expect(url).toBe('http://core.test/api/me');
+    expect(opts.headers.cookie).toBe('session=abc');
+    expect(opts.headers.Authorization).toBeUndefined();
+  });
+
+  it('throws on a 401 (no/invalid session)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(ok({ error: 'Unauthorized' }, 401)));
+    await expect(getMyProfileFromCore('')).rejects.toMatchObject({ status: 401 });
   });
 });
