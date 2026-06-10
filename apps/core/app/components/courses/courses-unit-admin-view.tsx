@@ -39,25 +39,27 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, instructors = [
   const [deletingCourse, setDeletingCourse] = useState<Course | null>(null)
   const authorizedDepts = useAuthorizedDepts(authorizedUnits)
   const [selectedDept, setSelectedDept] = useState<string>(authorizedDepts[0]?.code ?? '')
+  const [selectedTerm, setSelectedTerm] = useState<string>('Fall')
   const [selectedInstructor, setSelectedInstructor] = useState<string>('')
 
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     const fd = new FormData(e.currentTarget)
-    const dept = fd.get('department') as string
+    const dept = selectedDept
     const codeSuffix = (fd.get('codeSuffix') as string).trim()
     const code = dept ? `${dept} ${codeSuffix}` : codeSuffix
     await onCreateCourse({
       name: fd.get('name') as string,
       code,
       section: fd.get('section') as string,
-      term: fd.get('term') as string,
+      term: selectedTerm,
       year: parseInt(fd.get('year') as string),
       startDate: fd.get('startDate') as string,
       department: dept || undefined,
       aiInstructions: (fd.get('aiInstructions') as string) || undefined,
       instructorUserIds: selectedInstructor ? [selectedInstructor] : [],
     })
+    setSelectedTerm('Fall')
     setSelectedInstructor('')
     setCreateOpen(false)
   }
@@ -168,7 +170,7 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, instructors = [
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
                   <Label>Term</Label>
-                  <Select name="term" defaultValue="Fall">
+                  <Select value={selectedTerm} onValueChange={setSelectedTerm}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="Fall">Fall</SelectItem>
