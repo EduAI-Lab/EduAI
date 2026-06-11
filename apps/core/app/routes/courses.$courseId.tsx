@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import { redirect, useLoaderData, useRevalidator } from 'react-router'
+import { Link, redirect, useLoaderData, useRevalidator } from 'react-router'
 import type { LoaderFunctionArgs } from 'react-router'
 
 import { auth } from '~/lib/auth/server'
@@ -15,6 +15,14 @@ import { useCourseEnrollments } from '~/hooks/api/use-course-enrollments'
 import { useCourseMaterials } from '~/hooks/api/use-course-materials'
 import { useCourseTAs } from '~/hooks/api/use-course-tas'
 import { useApiKeys } from '~/hooks/use-api-keys'
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from '~/components/ui/breadcrumb'
 import type { CourseMaterial as UploadMaterial } from '~/components/course-materials-upload'
 import { resolveCourseAccess } from '~/lib/rbac/resolve-course-access.server'
 import type { RbacUser } from '~/lib/rbac'
@@ -152,7 +160,25 @@ export default function CourseDetailPage() {
     >
       <AppSidebar variant="inset" user={user} />
       <SidebarInset>
-        <SiteHeader />
+        <SiteHeader
+          breadcrumbs={
+            <Breadcrumb>
+              <BreadcrumbList>
+                <BreadcrumbItem>
+                  <BreadcrumbLink asChild><Link to="/dashboard">Home</Link></BreadcrumbLink>
+                </BreadcrumbItem>
+                <BreadcrumbSeparator />
+                <BreadcrumbItem>
+                  <BreadcrumbLink asChild><Link to="/courses">Courses</Link></BreadcrumbLink>
+                </BreadcrumbItem>
+                <BreadcrumbSeparator />
+                <BreadcrumbItem>
+                  <BreadcrumbPage>{course.name}</BreadcrumbPage>
+                </BreadcrumbItem>
+              </BreadcrumbList>
+            </Breadcrumb>
+          }
+        />
         <div className="flex flex-1 flex-col">
           <div className="px-4 lg:px-6 py-6">
             {access === 'admin' || access === 'unit' || access === 'instructor' ? (
