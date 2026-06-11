@@ -155,7 +155,7 @@ export default function Chat() {
       setAdhdAssist(Boolean(session.adhdAssist));
       setAssistive(Boolean(session.adhdAssist));
     })();
-  }, [chatId, systemPrompt]);
+  }, [chatId, systemPrompt, setAssistive]);
 
   const { messages, input, handleInputChange, handleSubmit, isLoading, stop } =
     useChat({
