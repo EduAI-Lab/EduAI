@@ -24,7 +24,7 @@ describe("computeAdhdResponseMetrics", () => {
     expect(isStructuralCompliancePass(metrics)).toBe(true);
   });
 
-  it("fails when Next? is inline but not in the last three lines as a marked block", () => {
+  it("fails when Next? anchor lacks bold markers", () => {
     const text = `Gradient descent is like walking down a hill.
 
 Next? Want to know more?`;
