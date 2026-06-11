@@ -36,6 +36,14 @@ class EduAIService {
     return !!this.apiKey;
   }
 
+  /** Headers for server-to-server Core calls (Bearer EDUAI_API_KEY). */
+  serviceAuthHeaders() {
+    return {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${this.apiKey}`,
+    };
+  }
+
   /** Sends a chat payload to EduAI, handling logging, timeouts, and API error translation. */
   async chat(params) {
     if (!this.isConfigured()) {
@@ -71,10 +79,7 @@ class EduAIService {
         `${this.baseURL}/api/chat`,
         requestPayload,
         {
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": this.apiKey,
-          },
+          headers: this.serviceAuthHeaders(),
           timeout: timeoutMs,
         }
       );
@@ -552,10 +557,7 @@ Please ensure the questions are appropriate for the course level and cover the k
 
     try {
       const response = await axios.get(url, {
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": this.apiKey,
-        },
+        headers: this.serviceAuthHeaders(),
         timeout: 60000, // 60 second timeout
       });
 
@@ -621,10 +623,7 @@ Please ensure the questions are appropriate for the course level and cover the k
 
     try {
       const response = await axios.get(url, {
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": this.apiKey,
-        },
+        headers: this.serviceAuthHeaders(),
         timeout: 60000, // 60 second timeout
       });
 
@@ -665,10 +664,7 @@ Please ensure the questions are appropriate for the course level and cover the k
 
     try {
       const response = await axios.get(url, {
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": this.apiKey,
-        },
+        headers: this.serviceAuthHeaders(),
         timeout: 60000, // 60 second timeout
       });
 
@@ -707,23 +703,15 @@ Please ensure the questions are appropriate for the course level and cover the k
     }
 
     try {
-      // Test the API key by making a minimal chat request with Ollama
-      const response = await this.chat({
-        messages: [{ role: "user", content: "test" }],
-        model: "ollama:gpt-oss:120b", // Use Ollama which doesn't need API key
-        apiKeys: {
-          ollama: {
-            isEnabled: true,
-          },
-        },
-        courseCode: "COSC 121",
-        streaming: false,
+      const response = await axios.get(`${this.baseURL}/api/courses`, {
+        headers: this.serviceAuthHeaders(),
+        timeout: 15000,
       });
 
       return {
         success: true,
         message: "API key is valid",
-        response: response,
+        response: response.data,
       };
     } catch (error) {
       if (

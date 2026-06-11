@@ -83,7 +83,7 @@ describe('chat', () => {
     const [url, payload, opts] = axios.post.mock.calls[0];
     expect(url).toBe('http://eduai.test/api/chat');
     expect(payload.courseCode).toBe('CS 101');
-    expect(opts.headers['x-api-key']).toBe('test-key-123456');
+    expect(opts.headers.Authorization).toBe('Bearer test-key-123456');
     expect(opts.timeout).toBe(60000);
   });
 
@@ -381,34 +381,27 @@ describe('testApiKey', () => {
     expect(out).toEqual({ success: false, error: 'EduAI API key not configured' });
   });
 
-  it('returns success when the chat call works', async () => {
-    axios.post.mockResolvedValue({ status: 200, data: { content: 'pong' } });
+  it('returns success when the courses call works', async () => {
+    axios.get.mockResolvedValue({ status: 200, data: { courses: [] } });
     const out = await eduaiService.testApiKey();
     expect(out.success).toBe(true);
     expect(out.message).toMatch(/valid/i);
   });
 
   it('flags an invalid key on a 401', async () => {
-    axios.post.mockRejectedValue(responseError({ status: 401, statusText: 'Unauthorized', data: {} }));
+    axios.get.mockRejectedValue(responseError({ status: 401, statusText: 'Unauthorized', data: {} }));
     const out = await eduaiService.testApiKey();
     expect(out).toEqual({ success: false, error: 'Invalid EduAI API key - authentication failed' });
   });
 
   it('flags forbidden access on a 403', async () => {
-    axios.post.mockRejectedValue(responseError({ status: 403, statusText: 'Forbidden', data: {} }));
+    axios.get.mockRejectedValue(responseError({ status: 403, statusText: 'Forbidden', data: {} }));
     const out = await eduaiService.testApiKey();
     expect(out).toEqual({ success: false, error: 'EduAI API key access forbidden' });
   });
 
-  it('treats a provider-key failure as a valid EduAI key', async () => {
-    axios.post.mockRejectedValue(responseError({ status: 400, data: { error: 'Invalid API key for provider' } }));
-    const out = await eduaiService.testApiKey();
-    expect(out.success).toBe(true);
-    expect(out.note).toMatch(/provider API keys/i);
-  });
-
   it('returns a generic failure for other errors', async () => {
-    axios.post.mockRejectedValue(responseError({ status: 500, statusText: 'ISE', data: {} }));
+    axios.get.mockRejectedValue(responseError({ status: 500, statusText: 'ISE', data: {} }));
     const out = await eduaiService.testApiKey();
     expect(out.success).toBe(false);
     expect(out.error).toMatch(/API key test failed/);

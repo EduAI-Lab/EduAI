@@ -6,7 +6,7 @@ import { createAIProviderRegistry, modelSupportsTools } from "~/lib/ai/providers
 import { parseModelIdentifier, isProviderConfigured, mergeServerOpenRouterApiKey } from "~/lib/ai/providers.shared";
 import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
 import { findRelevantContent } from "~/lib/ai/embedding";
-import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
+import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { auth } from "~/lib/auth/server";
 import type { ActionFunctionArgs } from "react-router";
@@ -262,7 +262,27 @@ export async function action({ request }: ActionFunctionArgs) {
     const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
     if (apiKeyGuard) return apiKeyGuard;
 
-    const session = apiKeySession ?? (await auth.api.getSession(request));
+    let session = apiKeySession ?? (await auth.api.getSession(request));
+
+    // Extension backends (Question Maker, etc.) call chat with Authorization: Bearer EDUAI_API_KEY.
+    if (!session?.user && request.headers.get("Authorization")?.startsWith("Bearer ")) {
+      const serviceKeyGuard = await requireServiceKey(request);
+      if (serviceKeyGuard) return serviceKeyGuard;
+
+      const adminUser = await prisma.user.findFirst({
+        where: { role: UserRole.ADMIN, isActive: true },
+        orderBy: { createdAt: "asc" },
+      });
+      if (!adminUser) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      session = { user: adminUser, session: { id: "service-key", userId: adminUser.id } } as typeof session;
+    }
+
     if (!session?.user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
