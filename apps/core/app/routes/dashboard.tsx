@@ -1,5 +1,11 @@
 import { redirect, useLoaderData } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbList,
+  BreadcrumbPage,
+} from "~/components/ui/breadcrumb"
 
 import { AppSidebar } from "~/components/app-sidebar";
 import { DashboardAdminView } from "~/components/dashboard/dashboard-admin-view";
@@ -54,7 +60,17 @@ export default function Page() {
     >
       <AppSidebar variant="inset" user={user} />
       <SidebarInset>
-        <SiteHeader title="Dashboard" />
+        <SiteHeader
+          breadcrumbs={
+            <Breadcrumb>
+              <BreadcrumbList>
+                <BreadcrumbItem>
+                  <BreadcrumbPage>Home</BreadcrumbPage>
+                </BreadcrumbItem>
+              </BreadcrumbList>
+            </Breadcrumb>
+          }
+        />
         <DashboardContent user={user} />
       </SidebarInset>
     </SidebarProvider>
