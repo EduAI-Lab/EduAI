@@ -145,7 +145,7 @@ Each section should use this format:
 |-----------|---------------|
 | `invitation-token.test.ts` | `hashToken` determinism and 64-char sha256 hex output, distinct tokens hashing to distinct values, and `generateInviteToken` returning a URL-safe token whose hash matches `hashToken` and is fresh on every call. |
 | `invitation-schemas.test.ts` | `createInvitationSchema` — INSTRUCTOR/ADMIN/UNIT_ADMIN accepted, TA and STUDENT rejected as non-invitable, units required for UNIT_ADMIN and rejected for other roles, invalid email / unknown unit code rejection — and `acceptInvitationSchema` min-8 password, confirmPassword match, and required token/name. |
-| `course-access.server.test.ts` | The RBAC keystone helpers: `resolveCourseAccess` / `resolveCourseAccessWithCourse` resolution for every role (ADMIN bypass, UNIT_ADMIN unit lock incl. null-department courses, lazy `authorizedUnits` fetch, active vs inactive enrollment, no relationship), 404-vs-403 course fetch split, `buildCourseListFilter` per-enrollment-role publish gating (grad-TA mixed case), and `stripAnswerForStudents` answer visibility per access level. |
+| `course-access.server.test.ts` | The RBAC keystone helpers: `resolveCourseAccess` / `resolveCourseAccessWithCourse` resolution for every role (ADMIN bypass, UNIT_ADMIN unit lock incl. null-department courses, lazy `authorizedUnits` fetch, enrollment.role→access mapping — INSTRUCTOR enrollment returns `instructor`, TA enrollment returns `ta`, other returns `student` — active vs inactive enrollment, no relationship), 404-vs-403 course fetch split, `buildCourseListFilter` per-enrollment-role publish gating (grad-TA mixed case), and `stripAnswerForStudents` answer visibility per access level. |
 | `units.test.ts` | `UnitSchema` accepts the canonical subject codes (and confirms each has a `UNIT_LABELS` entry) and rejects unknown codes, wrong casing, and empty values. |
 | `enrollments.server.test.ts` | `addEnrollment`, `updateEnrollmentRole`, and `deactivateEnrollment`: the §6 permission matrix (INSTRUCTOR may add STUDENT/TA but never a fellow INSTRUCTOR), `ALREADY_ENROLLED` / `USER_NOT_FOUND` errors, and the transactional instructor-floor invariant — any demotion or deactivation leaving a course with zero active instructors is rejected with 409, with no ADMIN override. |
 | `courses.enrollments.enrollmentId.test.ts` | `PATCH` and `DELETE /api/courses/:id/enrollments/:enrollmentId` routes: auth and role gates per caller, INSTRUCTOR-enrollment changes restricted to ADMIN/UNIT_ADMIN, instructor-floor 409 surfaced through the route, 404s, and soft removal via `isActive=false`. |
@@ -201,6 +201,9 @@ Each section should use this format:
 | [`preferences.test.ts`](apps/core/app/tests/unit/preferences.test.ts) | Tests `GET`/`PATCH /api/preferences`: 401 when unauthenticated, GET defaults when no row exists, PATCH persists `assistDefault` and returns saved values, 405 for unsupported methods, 400 for invalid or empty payloads, and malformed JSON bodies. |
 | [`AssistiveUiProvider.test.tsx`](apps/core/app/tests/unit/AssistiveUiProvider.test.tsx) | Tests the shell-wide assistive context: `data-assistive` is absent on `<html>` when OFF (baseline untouched), present when ON, toggling ON/OFF updates the DOM and PATCHes `/api/preferences`, and `useAssistiveUi` throws outside the provider. |
 | [`assistive-reading.test.ts`](apps/core/app/tests/unit/assistive-reading.test.ts) | Verifies `READING_SURFACE_CLASS` matches assistive-reading.css hooks and that typography rules are scoped under `[data-assistive]` with spacing-based defaults (16px base, 1.625 line-height, 65ch measure, no font-family swap). |
+| [`ChatViews.test.tsx`](apps/core/app/tests/unit/ChatViews.test.tsx) | Verifies `ChatGlobalView` and `ChatCourseScopedView` render their role-specific banner text, and that clicking the Assistive Mode switch calls `onAssistChange` with the toggled boolean. |
+| [`NavMain.test.tsx`](apps/core/app/tests/unit/NavMain.test.tsx) | Verifies nav items render as SPA `<Link>` elements, the active item receives `aria-current="page"` based on the current pathname, child routes (e.g. `/courses/abc`) also activate the parent nav item, and an empty items list renders without throwing. |
+| [`SiteHeader.test.tsx`](apps/core/app/tests/unit/SiteHeader.test.tsx) | Verifies the header renders an explicit `title` prop, derives the page title from the current route when no prop is passed, renders optional action slots, and replaces the `<h1>` with the `breadcrumbs` node when that prop is provided. |
 
 ---
 
@@ -237,6 +240,8 @@ Each section should use this format:
 | `BugReportsTab.test.tsx` | Admins can view, update status, and copy bug reports; anonymous submissions hide reporter identity in the copied output |
 | `Nav.test.tsx` | The Report Bug button is visible to students and professors but hidden from admins |
 | `useLocalUser.test.tsx` | Users can log in, log out, and have their session available across the app; accessing the session outside its provider throws an error |
+
+> **Coverage gap:** `home.tsx` role-based routing (STUDENT→/student, INSTRUCTOR→/instructor, TA/UNIT_ADMIN→/unsupported-role, ADMIN→/admin) and `unsupported-role.tsx` role guard (UNIT_ADMIN and TA stay on page; other roles are redirected to their correct route) are not currently covered by unit tests.
 
 ---
 
