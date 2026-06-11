@@ -5,6 +5,22 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
 
+### Added
+
+- [core] feat: Add account-level Assistive Mode shell — `AssistiveUiProvider` syncs `data-assistive` on `<html>` (SSR + client), `GET`/`PATCH /api/preferences` for `UserPreference.assistDefault`, and the `/chat` assist toggle writes through the provider so the preference persists platform-wide. Settings Accessibility tab deferred to #530 (blocked on #491). (#520, #531, @ebabar5, 2026-06-09)
+- [core] ui: Add assistive reading typography gated by `[data-assistive]` — `.reading-surface` on chat messages, markdown, reasoning, and course overview text; 16px base, 1.625 line-height, 65ch measure, increased letter/word and paragraph spacing (no font swap). (#523, #539, @ebabar5, 2026-06-10)
+- [core] tests: Unit tests for `/api/preferences` and `AssistiveUiProvider`; integration tests for assistive preference round-trip, per-account isolation, and guest 401 on PATCH. (#520, #531, @ebabar5, 2026-06-09)
+- [core] tests: Unit tests for `assistive-reading.css` contract and `.reading-surface` class on chat/markdown components. (#523, #539, @ebabar5, 2026-06-10)
+- [core] feat: ADHD Assist telemetry (#521, #532) — `AssistiveEvent` Prisma model + migration (`assistive_events`) stores derived compliance metrics only (word count, `topSummary`, `nextLine`, `underCap`, `structuralPass`, model/tokens/duration); never message text (BREB-consistent). Shared `apps/core/app/lib/ai/adhd-metrics.ts` used by chat `onFinish` logging and `eval:adhd`. `POST /api/assistive-events` accepts sanitized client UI events (`mode_toggled`, `expand_click`, `task_initiation`, `re_orientation`, `session_completion`). Research report script at `eduai-summer-2026/reports/scripts/report-adhd-metrics.ts` (Cohen's d OFF vs ON; run from `apps/core`). (#521, #532, @Ayyhab, 2026-06-09)
+- [core] tests: Unit tests for `computeAdhdResponseMetrics` / structural pass heuristics (`adhd-metrics.test.ts`, 4 cases) and assistive event persistence + client metric sanitization (`assistive-events.server.test.ts`, 3 cases). (#521, #532, @Ayyhab, 2026-06-09)
+- [core] tests: Route-level tests for `POST /api/assistive-events` (`assistive-events.route.test.ts`, 8 cases) — auth (401), method (405), invalid JSON / schema / non-client event type (422), chat ownership (404), and sanitized create (201). (#521, #532, @Ayyhab, 2026-06-10)
+
+### Changed
+
+- [core] refactor: `eval-adhd-assist.mjs` imports shared `adhd-metrics.ts` instead of duplicating compliance scoring; `eval:adhd` runs via `tsx`. (#521, #532, @Ayyhab, 2026-06-09)
+- [core] fix: `report-adhd-metrics.ts` now reports the `task_initiation` / `re_orientation` / `session_completion` behavioural events alongside `response_compliance`, and renders `—` instead of `NaN` for empty cohorts or an under-powered Cohen's d (< 2 samples per side). (#521, #532, @Ayyhab, 2026-06-10)
+
+---
 
 ## [Week 6 — June 8–12, 2026]
 
@@ -13,7 +29,9 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] api: Add TA management (`GET`/`POST`/`DELETE /api/courses/:courseId/tas`) and instructor reassignment (`PATCH /api/courses/:id`) for `ADMIN`/`UNIT_ADMIN`. (#491, @yta3216, 2026-06-08)
 - [core] ui: Add Staff tab to Course Detail with `useCourseTAs` hook — lists current instructor and TAs with reassignment controls for admin/unit admin. (#491, @yta3216, 2026-06-08)
 - [core] feat: Add account-level Assistive Mode shell — `AssistiveUiProvider` syncs `data-assistive` on `<html>` (SSR + client), `GET`/`PATCH /api/preferences` for `UserPreference.assistDefault`, and the `/chat` assist toggle writes through the provider so the preference persists platform-wide. Settings Accessibility tab deferred to #530 (blocked on #491). (#520, #531, @ebabar5, 2026-06-09)
+- [core] ui: Add assistive reading typography gated by `[data-assistive]` — `.reading-surface` on chat messages, markdown, reasoning, and course overview text; 16px base, 1.625 line-height, 65ch measure, increased letter/word and paragraph spacing (no font swap). (#523, #539, @ebabar5, 2026-06-10)
 - [core] tests: Unit tests for `/api/preferences` and `AssistiveUiProvider`; integration tests for assistive preference round-trip, per-account isolation, and guest 401 on PATCH. (#520, #531, @ebabar5, 2026-06-09)
+- [core] tests: Unit tests for `assistive-reading.css` contract and `.reading-surface` class on chat/markdown components. (#523, #539, @ebabar5, 2026-06-10)
 - [question-maker] api: Enforce the §16–§18 RBAC matrices — session-role gates, per-course access middleware, `createdBy` TA own-only authoring, instructor-only approval/assessments, owner-keyed Canvas mappings, and ADMIN-only bug-report triage. (#518, @abdullahmoh21, 2026-06-08)
 - [question-maker] tests: Add RBAC coverage — `courseAccess` unit tests plus role×route matrix tests across questions, variants, assessments, and Canvas. (#518, @abdullahmoh21, 2026-06-08)
 
@@ -36,6 +54,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] ui: Add publish toggle, department dropdown, and `authorizedUnits` DB fetch to course views; improve course code UX with department prefix. (#491, @yta3216, 2026-06-03)
 - [core] feat: Add course delete with confirmation modal, `DELETE /api/courses/:id`, and `UNIT_ADMIN` delete permission scoped to authorized units. (#491, @yta3216, 2026-06-04)
 - [core] ui: Person B RBAC platform UI — role-aware components, hooks, and tests. (#491, @ebabar5, 2026-06-03)
+- [core] feat: vLLM local inference provider — OpenAI-compatible `vllm` provider on cmps01 (`VLLM_BASE_URL`, port **8001**), `mergeLocalInferenceFromEnv()`, Admin-registered models (provider seeded, same pattern as Ollama), `npm run vllm:smoke`, and `providers.server.ts` split for Vite client/server boundary. Stress-tested on dev: **~15× faster** than Ollama under 5-way parallel load; warm direct **~57 ms**, 10 parallel **~320–380 ms**, EduAI full stack median **~211 ms**. Docs: [`docs/rag-ai/VLLM.md`](docs/rag-ai/VLLM.md). ([#449](https://github.com/EduAI-Lab/EduAI/pull/449), Closes #435, #394)
 - [core] feat: Local Ollama embedding provider for RAG — `EMBEDDING_PROVIDER=local` routes index and query embeds through Ollama (`mxbai-embed-large`, 1024-dim); fails fast when Ollama is unavailable (no silent cloud fallback); dimension validation and `[embedding]` provider logging in `embedding.ts`. (#361, #370, #441)
 - [core] docs: LOCAL-EMBEDDINGS decision — `vector(1024)` migration, default local model, re-embed strategy in [`docs/rag-ai/LOCAL-EMBEDDINGS.md`](docs/rag-ai/LOCAL-EMBEDDINGS.md). (#369)
 - [core] tooling: `npm run re-embed:course -- <courseId>` and `reEmbedCourseMaterials()` to re-index course materials after provider/dimension changes. (#373)
