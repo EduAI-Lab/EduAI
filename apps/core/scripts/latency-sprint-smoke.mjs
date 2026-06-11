@@ -9,7 +9,6 @@
  *
  * Optional:
  *   CHAT_SMOKE_TOOL_MODEL=vllm:qwen2.5-32b-instruct
- *   CHAT_SMOKE_SMALL_MODEL=vllm:qwen2.5-7b-instruct  (expected X-Routed-Model when tier routing on)
  *   CHAT_SMOKE_COURSE_CODE="COSC 121"
  */
 import { randomUUID } from "node:crypto";
@@ -19,7 +18,6 @@ const BASE = (process.env.CHAT_SMOKE_URL || "https://dev.eduai.ok.ubc.ca").repla
 const EMAIL = process.env.CHAT_SMOKE_EMAIL || "admin@eduai.local";
 const PASSWORD = process.env.CHAT_SMOKE_PASSWORD;
 const TOOL_MODEL = process.env.CHAT_SMOKE_TOOL_MODEL || "vllm:qwen2.5-32b-instruct";
-const EXPECTED_SMALL = process.env.CHAT_SMOKE_SMALL_MODEL || "vllm:qwen2.5-7b-instruct";
 const COURSE_CODE = process.env.CHAT_SMOKE_COURSE_CODE || "COSC 121";
 
 const MAGIC_PHRASES = [
@@ -125,7 +123,7 @@ async function checkWebToolsHeader(cookie) {
   return pass(`X-Web-Tools-Enabled=0 on chat stream (${ms} ms)`);
 }
 
-async function checkTierRouting(cookie) {
+async function checkSelectedModelUsed(cookie) {
   const { res, ms } = await postChat(
     cookie,
     {
@@ -141,17 +139,12 @@ async function checkTierRouting(cookie) {
     },
     { streaming: true, timeoutMs: 90_000 },
   );
-  if (res.status !== 200) return fail(`S1-dev chat HTTP ${res.status}`);
+  if (res.status !== 200) return fail(`chat-only HTTP ${res.status}`);
   const routed = res.headers.get("X-Routed-Model");
-  if (!routed) {
-    return skip(
-      `No X-Routed-Model header (${ms} ms) — CHAT_SMALL_MODEL may be unset or tier routing disabled on server`,
-    );
+  if (routed) {
+    return fail(`X-Routed-Model=${routed} (server should use the selected model, not route elsewhere)`);
   }
-  if (routed !== EXPECTED_SMALL) {
-    return fail(`X-Routed-Model=${routed} (expected ${EXPECTED_SMALL})`);
-  }
-  return pass(`S1-dev routed to ${routed} (${ms} ms)`);
+  return pass(`Selected model used with no tier override (${ms} ms)`);
 }
 
 async function checkC1AutoRag(cookie) {
@@ -194,7 +187,7 @@ async function main() {
   const checks = [
     ["L13 — webToolsEnabled default OFF (API)", checkWebToolsToggle],
     ["L13 — X-Web-Tools-Enabled header", checkWebToolsHeader],
-    ["L10 — S1-dev tier routing", checkTierRouting],
+    ["L10 — selected model (no tier routing)", checkSelectedModelUsed],
     ["L03 — C1 auto-RAG (no magic phrase)", checkC1AutoRag],
   ];
 

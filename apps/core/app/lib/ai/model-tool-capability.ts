@@ -16,9 +16,8 @@ export function isSmallModelSlug(modelId: string): boolean {
   return SMALL_MODEL_PATTERNS.some((pattern) => pattern.test(modelId));
 }
 
-/** Admin UI: only CHAT models above the small-model threshold may toggle supportsTools. */
-export function allowsSupportsToolsToggle(modelId: string, type: string): boolean {
+/** Admin UI: only CHAT models may toggle supportsTools (small models get a warning, not a hard block). */
+export function allowsSupportsToolsToggle(_modelId: string, type: string): boolean {
   if (type !== "CHAT") return false;
-  if (!modelId.trim()) return false;
-  return !isSmallModelSlug(modelId);
+  return true;
 }

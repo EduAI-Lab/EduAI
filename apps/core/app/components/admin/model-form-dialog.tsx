@@ -7,9 +7,19 @@ import { Textarea } from "~/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import { Switch } from "~/components/ui/switch";
 import { Alert, AlertDescription } from "~/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "~/components/ui/alert-dialog";
 import { Loader } from "~/components/ui/loader";
 import type { AIProvider, AIModel } from "~/types/ai";
-import { allowsSupportsToolsToggle } from "~/lib/ai/model-tool-capability";
+import { allowsSupportsToolsToggle, isSmallModelSlug } from "~/lib/ai/model-tool-capability";
 
 export type OllamaModel = {
   name: string;
@@ -89,6 +99,7 @@ export function ModelFormDialog({
 
   const [selectedOllamaModel, setSelectedOllamaModel] = useState<string>("");
   const [selectedVllmModel, setSelectedVllmModel] = useState<string>("");
+  const [smallModelToolsWarningOpen, setSmallModelToolsWarningOpen] = useState(false);
 
   useEffect(() => {
     if (model) {
@@ -135,6 +146,19 @@ export function ModelFormDialog({
   const isVllmProvider = providerName === "vllm";
   const showSupportsToolsToggle = allowsSupportsToolsToggle(formData.modelId, formData.type);
 
+  const handleSupportsToolsChange = (checked: boolean) => {
+    if (checked && isSmallModelSlug(formData.modelId)) {
+      setSmallModelToolsWarningOpen(true);
+      return;
+    }
+    setFormData({ ...formData, supportsTools: checked });
+  };
+
+  const confirmSmallModelTools = () => {
+    setFormData((prev) => ({ ...prev, supportsTools: true }));
+    setSmallModelToolsWarningOpen(false);
+  };
+
   useEffect(() => {
     if (!open || !isVllmProvider || !onFetchVllmModels || vllmFetched) return;
     if (fetchingVllmModels || vllmModels.length > 0) return;
@@ -161,19 +185,13 @@ export function ModelFormDialog({
         type: "CHAT",
         maxTokens: "",
         supportsImages: selected.name.toLowerCase().includes("vision") || selected.name.toLowerCase().includes("llava"),
-        supportsTools: allowsSupportsToolsToggle(selected.name, "CHAT"),
+        supportsTools: false,
         supportsStreaming: true,
         inputPricing: "0",
         outputPricing: "0",
       }));
     }
   };
-
-  useEffect(() => {
-    if (!showSupportsToolsToggle && formData.supportsTools) {
-      setFormData((prev) => ({ ...prev, supportsTools: false }));
-    }
-  }, [showSupportsToolsToggle, formData.supportsTools]);
 
   const handleVllmModelSelect = (modelId: string) => {
     setSelectedVllmModel(modelId);
@@ -490,7 +508,7 @@ export function ModelFormDialog({
                   <Switch
                     id="supportsTools"
                     checked={formData.supportsTools}
-                    onCheckedChange={(checked) => setFormData({ ...formData, supportsTools: checked })}
+                    onCheckedChange={handleSupportsToolsChange}
                   />
                   <Label htmlFor="supportsTools">Supports Tools</Label>
                 </div>
@@ -527,6 +545,24 @@ export function ModelFormDialog({
             </Button>
           </div>
         </form>
+
+        <AlertDialog open={smallModelToolsWarningOpen} onOpenChange={setSmallModelToolsWarningOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Enable tools on a small model?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Models around 3B parameters or smaller often struggle with reliable tool calling.
+                You can still enable this if you need it for testing or a specific deployment.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={confirmSmallModelTools}>
+                Enable anyway
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </DialogContent>
     </Dialog>
   );
