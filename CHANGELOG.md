@@ -7,8 +7,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
-- [core] feat: Add Settings Accessibility tab — Assistive Mode (`useAssistiveUi`), reduce motion, density (comfortable/compact), and theme (system/light/dark) with account persistence via `UiPreferencesProvider` and html hooks that stay absent at baseline. (#530, @ebabar5, 2026-06-10)
-- [core] tests: Unit tests for Settings Accessibility tab, `UiPreferencesProvider`, and extended `/api/preferences` UI fields. (#530, @ebabar5, 2026-06-10)
+- [core] feat: Add Settings Accessibility tab — Assistive Mode (`useAssistiveUi`), reduce motion, density (comfortable/compact), and theme (system/light/dark) with account persistence via `UiPreferencesProvider` and html hooks that stay absent at baseline. (#530, #560, @ebabar5, 2026-06-10)
+- [core] tests: Unit tests for Settings Accessibility tab, `UiPreferencesProvider`, and extended `/api/preferences` UI fields. (#530, #560, @ebabar5, 2026-06-10)
 - [core] feat: Add account-level Assistive Mode shell — `AssistiveUiProvider` syncs `data-assistive` on `<html>` (SSR + client), `GET`/`PATCH /api/preferences` for `UserPreference.assistDefault`, and the `/chat` assist toggle writes through the provider so the preference persists platform-wide. (#520, #531, @ebabar5, 2026-06-09)
 - [core] ui: Add assistive reading typography gated by `[data-assistive]` — `.reading-surface` on chat messages, markdown, reasoning, and course overview text; 16px base, 1.625 line-height, 65ch measure, increased letter/word and paragraph spacing (no font swap). (#523, #539, @ebabar5, 2026-06-10)
 - [core] tests: Unit tests for `/api/preferences` and `AssistiveUiProvider`; integration tests for assistive preference round-trip, per-account isolation, and guest 401 on PATCH. (#520, #531, @ebabar5, 2026-06-09)
