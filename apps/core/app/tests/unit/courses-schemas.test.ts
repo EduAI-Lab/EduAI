@@ -15,6 +15,7 @@ describe("CreateCourseSchema", () => {
       term: "Fall",
       year: 2025,
       startDate: "2025-09-01",
+      department: "COSC",
       instructorUserIds: ["user-1"],
     });
     expect(r.success).toBe(true);

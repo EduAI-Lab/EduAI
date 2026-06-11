@@ -43,11 +43,14 @@ async function handleRequest(request: Request) {
           role: true,
           isActive: true,
           emailVerified: true,
+          authorizedUnits: true,
           createdAt: true,
           updatedAt: true,
           _count: {
             select: {
               enrollments: true,
+              courseTAs: true,
+              taughtCourses: true,
               aiInteractions: true,
             },
           },
@@ -55,7 +58,17 @@ async function handleRequest(request: Request) {
         orderBy: { createdAt: 'desc' }
       });
 
-      return new Response(JSON.stringify(users), {
+      const mapped = users.map(({ _count, ...u }) => ({
+        ...u,
+        _count: {
+          enrolledCourses: _count.enrollments,
+          assistedCourses: _count.courseTAs,
+          taughtCourses: _count.taughtCourses,
+          aiInteractions: _count.aiInteractions,
+        },
+      }));
+
+      return new Response(JSON.stringify(mapped), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -81,7 +94,7 @@ async function handleRequest(request: Request) {
       }
 
       try {
-        const user = await prisma.user.create({
+        const { _count, ...created } = await prisma.user.create({
           data: {
             ...result.data,
             emailVerified: false, // New users need to verify their email
@@ -99,11 +112,23 @@ async function handleRequest(request: Request) {
             _count: {
               select: {
                 enrollments: true,
+                courseTAs: true,
+                taughtCourses: true,
                 aiInteractions: true,
               },
             },
           },
         });
+
+        const user = {
+          ...created,
+          _count: {
+            enrolledCourses: _count.enrollments,
+            assistedCourses: _count.courseTAs,
+            taughtCourses: _count.taughtCourses,
+            aiInteractions: _count.aiInteractions,
+          },
+        };
 
         return new Response(JSON.stringify(user), {
           status: 201,
@@ -210,7 +235,7 @@ async function handleRequest(request: Request) {
           }
         }
 
-        const user = await prisma.user.update({
+        const { _count, ...updated } = await prisma.user.update({
           where: { id: userId },
           data: updateData,
           select: {
@@ -228,6 +253,8 @@ async function handleRequest(request: Request) {
             _count: {
               select: {
                 enrollments: true,
+                courseTAs: true,
+                taughtCourses: true,
                 aiInteractions: true,
               },
             },
@@ -238,16 +265,21 @@ async function handleRequest(request: Request) {
           await applyStudentIdAndResolveEnrollments(userId, studentIdInput);
         }
 
-        return new Response(
-          JSON.stringify({
-            ...user,
-            studentId: readStoredStudentId(user.studentId),
-          }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
+        const user = {
+          ...updated,
+          studentId: readStoredStudentId(updated.studentId),
+          _count: {
+            enrolledCourses: _count.enrollments,
+            assistedCourses: _count.courseTAs,
+            taughtCourses: _count.taughtCourses,
+            aiInteractions: _count.aiInteractions,
           },
-        );
+        };
+
+        return new Response(JSON.stringify(user), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
       } catch (error: any) {
         if (error.code === 'P2025') {
           return new Response("User not found", { status: 404 });

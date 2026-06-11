@@ -1,3 +1,4 @@
+/** @vitest-environment node */
 import { describe, it, expect } from "vitest";
 import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
 
