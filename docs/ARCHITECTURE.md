@@ -1,6 +1,6 @@
 # EduAI — Architecture guide
 
-**Last updated:** 2026-05-25
+**Last updated:** 2026-06-02
 
 This document explains **what runs inside this repo (Core)** versus **what lives outside it (hosted services & integrations)**, how **AI providers and keys** work (including `OPENROUTER_API_KEY` / `GOOGLE_GENERATIVE_AI_API_KEY` for embeddings), and how the **codebase fits together**. Use it as the single place to orient yourself; export to PDF when you want a printable copy (see [Saving as PDF](#8-saving-as-pdf)).
 
@@ -30,7 +30,7 @@ This document explains **what runs inside this repo (Core)** versus **what lives
 | Term in this doc             | Meaning                                                                                                                                                                             |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Core (owned)**             | The EduAI application in *this repository*: the web UI, all `/api/`* routes, PostgreSQL data, auth, RAG (chunking + vectors + search), chat persistence. You deploy and operate it. |
-| **Hosted / external**        | Services you call over the network but do *not* ship as part of this repo: Google AI, OpenAI, Ollama, optional Firecrawl, etc. They hold the actual language/embedding models.      |
+| **Hosted / external**        | Services you call over the network but do *not* ship as part of this repo: Google AI, OpenAI, Ollama, vLLM (optional on cmps01), optional Firecrawl, etc. They hold the actual language/embedding models.      |
 | **Extensions (integrators)** | Other products (e.g. a campus "tutor" app) that **call EduAI's HTTP API** with an admin API key and optional `proxyUser`. They are clients of Core, not code inside Core.           |
 
 
@@ -46,12 +46,14 @@ flowchart LR
   subgraph Hosted["Hosted / external"]
     G[Google AI]
     O[OpenAI]
-    L[Ollama]
-    F[Firecrawl optional]
+    L[Ollama cmps01 :11434]
+    V[vLLM cmps01 :8001]
+    F[Firecrawl]
   end
   API --> G
   API --> O
   API --> L
+  API -.-> V
   API -.-> F
   Ext[Extension apps e.g. AITutor] -->|HTTPS + API key| API
 ```
@@ -65,7 +67,7 @@ flowchart LR
 In this project you will see npm packages:
 
 - `ai` — the main Vercel AI SDK runtime. It gives unified helpers such as `streamText`, `generateText`, `embed`, and `embedMany` so application code talks to models in a consistent way.
-- `@ai-sdk/google`, `@ai-sdk/openai`, `ollama-ai-provider` — **provider adapters**. Each one knows how to format requests/responses for that vendor's HTTP API.
+- `@ai-sdk/google`, `@ai-sdk/openai`, `ollama-ai-provider` — **provider adapters** for chat. **vLLM** uses the OpenAI adapter against a local OpenAI-compatible base URL (`/v1/chat/completions`).
 
 Think of it as two layers:
 
@@ -96,7 +98,7 @@ flowchart TD
   Req --> Reg
   Parse --> SDK
   Reg --> SDK
-  SDK --> Vendor[Google / OpenAI / Ollama APIs]
+  SDK --> Vendor[Google / OpenAI / Ollama / vLLM APIs]
 ```
 
 
@@ -105,38 +107,32 @@ Model IDs look like `google:gemini-2.5-flash` or `ollama:gpt-oss:120b` — provi
 
 ### B) Embeddings for RAG (course materials)
 
-**Purpose:** Turn each **chunk of course text** into a  **3072-dimensional vector** stored in Postgres (`material_embeddings`), and embed **user queries** at search time for similarity search.
+**Purpose:** Turn each **chunk of course text** into a **1024-dimensional vector** stored in Postgres (`material_embeddings`), and embed **user queries** at search time for similarity search.
 
-**Where configured:** `app/lib/ai/embedding.ts` — `getEmbeddingModel()`.
+**Where configured:** `app/lib/ai/embedding.ts` — provider resolution (logged as `[embedding]`).
 
-- If `OPENROUTER_API_KEY` is set, embeddings use **OpenRouter** with model `google/gemini-embedding-001` (3072-dim, matches pgvector).
-- Else if `GOOGLE_GENERATIVE_AI_API_KEY` is set, embeddings use **Google** direct with `gemini-embedding-001`.
-- Else if `OPENAI_API_KEY` is set, embeddings use `text-embedding-3-small` (1536-dim; requires migration if used with existing 3072-dim data).
-- If none are set, ingestion/search that needs embeddings **throws an error**.
+- If `EMBEDDING_PROVIDER=local` (dev server default), embeddings use **Ollama** (`OLLAMA_BASE_URL` + `mxbai-embed-large`); on failure, fall back to cloud.
+- Cloud path (`EMBEDDING_PROVIDER=cloud` or unset): **OpenRouter** `openai/text-embedding-3-small` @ 1024 dims → **OpenAI** direct with `dimensions: 1024`.
+- Legacy `EMBEDDING_DIMENSION=3072`: OpenRouter/Google Gemini path (pre–LOCAL-EMBEDDINGS).
+- If no provider is available, ingestion/search **throws an error**.
 
-**Important:** Embedding calls **do not** use the `apiKeys` object from the chat request. They **only** read `process.env`. OpenRouter is the recommended dev path when you already use one key for multiple models.
+**Important:** Embedding calls **do not** use the `apiKeys` object from the chat request. They **only** read `process.env`.
 
-**Team guide (indexing, hosting, failures):** [docs/rag-ai/EMBEDDINGS.md](rag-ai/EMBEDDINGS.md).
+**Decision record:** [docs/rag-ai/LOCAL-EMBEDDINGS.md](rag-ai/LOCAL-EMBEDDINGS.md). **Team guide:** [docs/rag-ai/EMBEDDINGS.md](rag-ai/EMBEDDINGS.md).
 
 ```mermaid
 flowchart TD
   Upload[Upload course file]
   Chunk[generateChunks text]
-  Env{OPENROUTER_API_KEY set?}
-  Google{Else GOOGLE_GENERATIVE_AI_API_KEY?}
-  OpenAI{Else OPENAI_API_KEY?}
-  OR[OpenRouter gemini-embedding-001]
-  Gem[Google gemini-embedding-001]
-  Te3[OpenAI text-embedding-3-small]
+  Mode{EMBEDDING_PROVIDER local?}
+  Ollama[Ollama mxbai-embed-large]
+  Cloud[OpenRouter or OpenAI 1024-dim]
   Many[embedMany from ai SDK]
-  PG[(material_embeddings pgvector)]
-  Upload --> Chunk --> Env
-  Env -->|yes| OR --> Many
-  Env -->|no| Google
-  Google -->|yes| Gem --> Many
-  Google -->|no| OpenAI
-  OpenAI -->|yes| Te3 --> Many
-  OpenAI -->|no| Err[Error: no embedding provider]
+  PG[(material_embeddings vector 1024)]
+  Upload --> Chunk --> Mode
+  Mode -->|yes| Ollama --> Many
+  Mode -->|no| Cloud --> Many
+  Ollama -.->|on failure| Cloud
   Many --> PG
 ```
 
@@ -153,7 +149,9 @@ flowchart TD
 | `GOOGLE_GENERATIVE_AI_API_KEY`                            | **Embeddings** direct Gemini when OpenRouter unset             | Server `.env` only (`embedding.ts`)                                                 |
 | `OPENAI_API_KEY`                                          | Embeddings fallback if neither above set                       | Server `.env` only                                                                  |
 | `apiKeys.google.apiKey` (and similar) in `/api/chat` body | **Chat** completions for that request                          | Client/request (often admin/API); merged with UI session settings in app code paths |
-| `OLLAMA_BASE_URL`                                         | Local Ollama base URL for **chat** registry                    | Env + optional override in user settings                                            |
+| `OLLAMA_BASE_URL`                                         | Ollama on **cmps01** for **chat** (`:11434`)                   | Env + optional override in user settings                                            |
+| `VLLM_BASE_URL`                                           | vLLM OpenAI-compatible API on **cmps01** (`:8001`, `VLLM_PORT`) | Env + optional override; see [cmps01 inference](#cmps01-gpu-inference-host)          |
+| `VLLM_API_KEY`                                            | Placeholder for vLLM (often `vllm-local`)                      | Env                                                                                 |
 | `BETTER_AUTH_`*                                           | Sessions and API keys for EduAI accounts                       | Env                                                                                 |
 | `FIRECRAWL_API_KEY`                                       | Optional web search tool                                       | Env (see README)                                                                    |
 
@@ -257,7 +255,45 @@ Section [5.3](#sec-53-chat-with-course-context) shows the high-level chat path. 
 
 Retrieval itself is always the same function: **`findRelevantContent`** in `embedding.ts` (server env embeddings + pgvector over `material_embeddings`). That is independent of which chat provider the user picked in the UI.
 
-AI models are hosted on [cmps01.ok.ubc.ca](http://cmps01.ok.ubc.ca). EduAI (hosted on [my.eduai.ok.ubc.ca](http://my.eduai.ok.ubc.ca)) and its respective dev app ([dev.eduai.ok.ubc.ca](http://dev.eduai.ok.ubc.ca)) both connect to cmps01 ollama port to send and recieve AI prompts and responses respectively.
+### cmps01 GPU inference host
+
+Local **chat** models run on **[cmps01.ok.ubc.ca](http://cmps01.ok.ubc.ca)** (shared UBC GPU server). EduAI app servers call cmps01 over **HTTP** — they do not run inference inside the Node process.
+
+| Service | Port (host) | Provider id in EduAI | Role |
+| ------- | ----------- | -------------------- | ---- |
+| **Ollama** | **11434** | `ollama` | Default local path; GGUF models; hybrid + tool paths per `supportsTools` |
+| **vLLM** | **8001** | `vllm` | **LiteLLM proxy** (`network_mode: host`) → backends `127.0.0.1:18001` (7B) / `:18002` (32B AWQ); OpenAI-compatible `/v1`; see [`infra/cmps01/README.md`](../infra/cmps01/README.md) |
+
+**Embeddings for RAG** are still **cloud** (OpenRouter / Google / OpenAI env keys) — not served from cmps01 today. See [EMBEDDINGS.md](rag-ai/EMBEDDINGS.md).
+
+```mermaid
+flowchart LR
+  subgraph Apps["EduAI app hosts"]
+    Dev[dev.eduai.ok.ubc.ca s378]
+    Prod[my.eduai.ok.ubc.ca]
+  end
+  subgraph CMPS01["cmps01.ok.ubc.ca GPU"]
+    Oll[:11434 Ollama]
+    Proxy[:8001 LiteLLM proxy]
+    B7[:18001 vLLM 7B]
+    B32[:18002 vLLM 32B]
+    Proxy --> B7
+    Proxy --> B32
+  end
+  Dev -->|HTTP| Oll
+  Dev -->|HTTP :8001| Proxy
+  Prod --> Oll
+```
+
+**Network (dev → cmps01):**
+
+- **HTTP :11434** (Ollama) — allowed from s378.
+- **HTTP :8001** (LiteLLM / vLLM) — open dev → cmps01 (Jun 2026). Backends `:18001`/`:18002` are host-local only; IT does **not** need `:8002`.
+- **SSH :22** (s378 → cmps01) — **not** available (connection timed out in testing). Do **not** rely on SSH port-forward from dev to cmps01; use direct HTTP once 8001 is open.
+
+**Setup / ops:** [rag-ai/VLLM.md](rag-ai/VLLM.md) · [infra/cmps01/README.md](../infra/cmps01/README.md) · [HOW_TO_USE_DEV_SERVER.md](rag-ai/HOW_TO_USE_DEV_SERVER.md)
+
+**Code:** `app/lib/ai/providers.ts` (`ollama`, `vllm`); local inference enabled when `OLLAMA_BASE_URL` / `VLLM_BASE_URL` are set in server `.env`.
 
 ---
 
@@ -424,4 +460,4 @@ Mermaid diagrams render in GitHub and many Markdown previews; some PDF tools nee
 
 ## 11. One-page mental model
 
-**Core** is one app + one DB. **Hosted APIs** supply brains (chat + embeddings). **Embeddings for RAG** always use **server env** (`OPENROUTER_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` preferred). **Chat** uses the **AI SDK + provider registry** with keys from **request/UI settings**. **Extensions** call your APIs; they are not inside this repo.
+**Core** is one app + one DB. **Hosted APIs** supply brains (chat + embeddings). **Embeddings for RAG** always use **server env** (`OPENROUTER_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` preferred). **Chat** uses the **AI SDK + provider registry** with keys from **request/UI settings** (cloud + `ollama:` / `vllm:` on cmps01). **Extensions** call your APIs; they are not inside this repo. **cmps01** serves local chat over HTTP (**11434** Ollama, **8001** vLLM when deployed).

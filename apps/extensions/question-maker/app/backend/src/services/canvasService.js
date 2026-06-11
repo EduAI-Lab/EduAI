@@ -161,17 +161,24 @@ export const getCanvasCourses = async (userId) => {
   }
 };
 
-/** Exports an assessment’s sections/variants to Canvas as a quiz and stores the mapping. */
-export const exportAssessmentToCanvas = async (userId, assessmentId, canvasCourseId) => {
+/**
+ * Exports an assessment’s sections/variants to Canvas as a quiz and stores the mapping.
+ *
+ * `callerId` owns the personal Canvas integration (credentials are per-user, §18);
+ * `ownerId` (the authorized course's owner) scopes the assessment lookup and the
+ * stored course mapping, so a non-owner instructor/UNIT_ADMIN can export into a
+ * course they have access to without their personal creds leaking into the mapping.
+ */
+export const exportAssessmentToCanvas = async (callerId, assessmentId, canvasCourseId, ownerId = callerId) => {
   try {
-    const integration = await getCanvasIntegration(userId);
-    
+    const integration = await getCanvasIntegration(callerId);
+
     if (!integration) {
       throw new Error('Canvas integration not configured. Please connect your Canvas account first.');
     }
 
     // Get the assessment with all its questions
-    const assessment = await getAssessmentById(assessmentId, userId);
+    const assessment = await getAssessmentById(assessmentId, ownerId);
     
     if (!assessment) {
       throw new Error('Assessment not found');
@@ -241,17 +248,17 @@ export const exportAssessmentToCanvas = async (userId, assessmentId, canvasCours
       createdQuestions.push(questionResponse.data);
     }
 
-    // Save course mapping if it doesn't exist
+    // Save course mapping if it doesn't exist (mapping is course-scoped → owner-keyed).
     const courseMapping = await CanvasCourseMapping.findOne({
       where: {
-        userId,
+        userId: ownerId,
         localCourseId: assessment.courseId
       }
     });
 
     if (!courseMapping) {
       await CanvasCourseMapping.create({
-        userId,
+        userId: ownerId,
         localCourseId: assessment.courseId,
         canvasCourseId,
         canvasCourseName: integration.isTestMode ? 'Test Course' : undefined
@@ -694,18 +701,25 @@ const convertCanvasQuestionToVariant = (canvasQuestion) => {
   throw new Error(`Unsupported question type: ${questionTypeRaw ?? 'unknown'}`);
 };
 
-/** Imports a Canvas quiz into a local assessment, creating sections/questions/variants. */
-export const importQuizFromCanvas = async (userId, canvasCourseId, quizId, localCourseId, options = {}) => {
+/**
+ * Imports a Canvas quiz into a local assessment, creating sections/questions/variants.
+ *
+ * `callerId` owns the personal Canvas integration and authors the imported rows
+ * (`createdBy`); `ownerId` (the authorized course's owner) scopes the local-course
+ * lookup and the created assessment/section, so a non-owner instructor can import
+ * into a course they have access to.
+ */
+export const importQuizFromCanvas = async (callerId, canvasCourseId, quizId, localCourseId, options = {}, ownerId = callerId) => {
   try {
-    const integration = await getCanvasIntegration(userId);
-    
+    const integration = await getCanvasIntegration(callerId);
+
     if (!integration) {
       throw new Error('Canvas integration not configured. Please connect your Canvas account first.');
     }
 
-    // Verify local course exists and belongs to user
+    // Verify local course exists and is accessible (owner-scoped).
     const course = await Course.findOne({
-      where: { id: localCourseId, userId },
+      where: { id: localCourseId, userId: ownerId },
       attributes: ['id', 'name']
     });
 
@@ -722,7 +736,7 @@ export const importQuizFromCanvas = async (userId, canvasCourseId, quizId, local
     const quiz = quizResponse.data;
 
     // Get quiz questions
-    const canvasQuestions = await getCanvasQuizQuestions(userId, canvasCourseId, quizId);
+    const canvasQuestions = await getCanvasQuizQuestions(callerId, canvasCourseId, quizId);
 
     if (canvasQuestions.length === 0) {
       throw new Error('Quiz has no questions to import');
@@ -733,8 +747,8 @@ export const importQuizFromCanvas = async (userId, canvasCourseId, quizId, local
     const assessmentName = options.assessmentName || quiz.title || 'Imported Quiz';
     const semester = options.semester || new Date().getFullYear().toString();
 
-    // Create assessment
-    const assessment = await createAssessment(userId, {
+    // Create assessment (owner-scoped)
+    const assessment = await createAssessment(ownerId, {
       type: assessmentType,
       name: assessmentName,
       semester: semester,
@@ -743,7 +757,7 @@ export const importQuizFromCanvas = async (userId, canvasCourseId, quizId, local
     });
 
     // Create a default section for all questions
-    const section = await createAssessmentSection(assessment.id, userId, {
+    const section = await createAssessmentSection(assessment.id, ownerId, {
       name: 'Imported Questions',
       description: 'Questions imported from Canvas',
       position: 0
@@ -764,12 +778,14 @@ export const importQuizFromCanvas = async (userId, canvasCourseId, quizId, local
 
       console.log(`${DEBUG_PREFIX} importQuizFromCanvas: processing question ${i + 1}/${canvasQuestions.length} id=${questionId} type=${listItem.question_type} listItem.answers length=${listItem?.answers?.length ?? 'N/A'}`);
 
+      // Declared outside the try so the catch can still describe the question it skipped.
+      let canvasQuestion = listItem;
+
       try {
         // Fetch full question by ID so we get the answers array (list endpoint often returns answers: null)
-        let canvasQuestion = listItem;
         if (questionId != null) {
           try {
-            canvasQuestion = await getCanvasQuizQuestionById(userId, canvasCourseId, quizId, questionId);
+            canvasQuestion = await getCanvasQuizQuestionById(callerId, canvasCourseId, quizId, questionId);
             // Preserve position from list if full question doesn't have it
             if (canvasQuestion.position == null && listItem.position != null) {
               canvasQuestion = { ...canvasQuestion, position: listItem.position };
@@ -792,7 +808,8 @@ export const importQuizFromCanvas = async (userId, canvasCourseId, quizId, local
           primaryTopicId: primaryTopicId,
           type: converted.type,
           description: converted.description,
-          questionOrder: {}
+          questionOrder: {},
+          createdBy: callerId
         });
 
         // Create variant
@@ -806,7 +823,8 @@ export const importQuizFromCanvas = async (userId, canvasCourseId, quizId, local
           assessmentId: assessment.id,
           secondaryTopicsId: [],
           isAiGenerated: false,
-          isDraft: true // Mark as draft for review
+          isDraft: true, // Mark as draft for review
+          createdBy: callerId
         });
 
         // Link variant to section
@@ -840,17 +858,17 @@ export const importQuizFromCanvas = async (userId, canvasCourseId, quizId, local
       throw new Error('No questions could be imported. All question types may be unsupported.');
     }
 
-    // Save course mapping if it doesn't exist
+    // Save course mapping if it doesn't exist (mapping is course-scoped → owner-keyed).
     const courseMapping = await CanvasCourseMapping.findOne({
       where: {
-        userId,
+        userId: ownerId,
         localCourseId: localCourseId
       }
     });
 
     if (!courseMapping) {
       await CanvasCourseMapping.create({
-        userId,
+        userId: ownerId,
         localCourseId: localCourseId,
         canvasCourseId: canvasCourseId,
         canvasCourseName: integration.isTestMode ? 'Test Course' : undefined

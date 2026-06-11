@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useLoaderData, useParams, redirect } from "react-router"
 import type { LoaderFunctionArgs } from "react-router"
 import { IconBook, IconUpload, IconUsers, IconCalendar, IconSettings } from "@tabler/icons-react"
@@ -13,7 +13,15 @@ import { SiteHeader } from "~/components/site-header"
 import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar"
 import { CourseMaterialsUpload } from "~/components/course-materials-upload"
 import type { CourseMaterial } from "~/components/course-materials-upload"
+import { READING_SURFACE_CLASS } from "~/components/assistive/reading-surface"
+import { cn } from "~/lib/utils"
 import { useApiKeys } from "~/hooks/use-api-keys"
+import { readJsonResponse } from "~/lib/api/client"
+import {
+  formatReEmbedJobMessage,
+  pollReEmbedJobUntilDone,
+  type ReEmbedJobResponse,
+} from "~/lib/api/re-embed-job.client"
 import prisma from "~/lib/prisma.server"
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
@@ -62,8 +70,11 @@ export default function CourseDetailPage() {
 
   const [materials, setMaterials] = useState<CourseMaterial[]>([])
   const [isUploading, setIsUploading] = useState(false)
+  const [isReEmbedding, setIsReEmbedding] = useState(false)
+  const [reEmbedProgress, setReEmbedProgress] = useState<string | null>(null)
   const [materialsError, setMaterialsError] = useState<string | null>(null)
   const [materialsSuccess, setMaterialsSuccess] = useState<string | null>(null)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const isAdmin = user.role === "ADMIN"
   const isInstructor = course.enrollments.some((e) => e.role === "INSTRUCTOR")
@@ -75,20 +86,38 @@ export default function CourseDetailPage() {
 
   const canManageMaterials = isAdmin || isInstructor
 
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current)
+      pollRef.current = null
+    }
+  }, [])
+
   const loadMaterials = useCallback(async () => {
     try {
       const response = await fetch(`/api/courses/${courseId}/materials`)
-      const result = await response.json()
+      const parsed = await readJsonResponse<{ materials?: CourseMaterial[]; error?: string }>(response)
 
-      if (!response.ok) {
-        throw new Error(result.error || "Failed to load materials")
+      if (!parsed.ok) {
+        throw new Error(parsed.error)
       }
 
-      setMaterials(result.materials || [])
+      if (!response.ok) {
+        throw new Error(parsed.data.error || "Failed to load materials")
+      }
+
+      setMaterials(parsed.data.materials || [])
     } catch (err) {
       console.error("Failed to load materials:", err)
     }
   }, [courseId])
+
+  const startPolling = useCallback(() => {
+    stopPolling()
+    pollRef.current = setInterval(() => {
+      void loadMaterials()
+    }, 2000)
+  }, [stopPolling, loadMaterials])
 
   const handleFileSelect = async (file: File) => {
     setIsUploading(true)
@@ -120,11 +149,71 @@ export default function CourseDetailPage() {
     }
   }
 
+  const handleReEmbed = async () => {
+    if (!courseId) return
+
+    setIsReEmbedding(true)
+    setReEmbedProgress(null)
+    setMaterialsError(null)
+    setMaterialsSuccess(null)
+    startPolling()
+
+    try {
+      const response = await fetch(`/api/courses/${courseId}/re-embed`, {
+        method: "POST",
+      })
+      const parsed = await readJsonResponse<{
+        job?: { id: string }
+        error?: string
+        hint?: string
+      }>(response)
+
+      if (!parsed.ok) {
+        throw new Error(parsed.error)
+      }
+
+      if (!response.ok || !parsed.data.job?.id) {
+        throw new Error(
+          [parsed.data.error, parsed.data.hint].filter(Boolean).join(" ") || "Re-index failed",
+        )
+      }
+
+      const jobId = parsed.data.job.id
+      const formatProgress = (job: ReEmbedJobResponse) => {
+        if (job.currentMaterialTitle) {
+          return `Re-indexing: ${job.processedCount + 1} of ${job.totalMaterials} — ${job.currentMaterialTitle}`
+        }
+        if (job.totalMaterials > 0) {
+          return `Re-indexing: ${job.processedCount} of ${job.totalMaterials} complete`
+        }
+        return "Re-indexing materials…"
+      }
+
+      const finalJob = await pollReEmbedJobUntilDone(courseId, jobId, {
+        onUpdate: (job) => setReEmbedProgress(formatProgress(job)),
+      })
+
+      await loadMaterials()
+      if (finalJob.status === "FAILED") {
+        throw new Error(finalJob.errorMessage || "Re-index failed")
+      }
+      setMaterialsSuccess(formatReEmbedJobMessage(finalJob))
+    } catch (err) {
+      setMaterialsError(err instanceof Error ? err.message : "Re-index failed")
+    } finally {
+      setIsReEmbedding(false)
+      setReEmbedProgress(null)
+      stopPolling()
+      await loadMaterials()
+    }
+  }
+
   useEffect(() => {
     if (canManageMaterials) {
       loadMaterials()
     }
-  }, [canManageMaterials, loadMaterials])
+    return () => stopPolling()
+  }, [canManageMaterials, loadMaterials, stopPolling])
 
   if (!hasAccess) {
     return (
@@ -197,7 +286,7 @@ export default function CourseDetailPage() {
                           <div className="grid gap-4">
                             <div>
                               <h3 className="font-medium">Description</h3>
-                              <p className="text-muted-foreground mt-1">
+                              <p className={cn("text-muted-foreground mt-1", READING_SURFACE_CLASS)}>
                                 {course.description || "No description available."}
                               </p>
                             </div>
@@ -216,7 +305,9 @@ export default function CourseDetailPage() {
                             {course.aiInstructions && (
                               <div>
                                 <h3 className="font-medium">AI Instructions</h3>
-                                <p className="text-muted-foreground mt-1">{course.aiInstructions}</p>
+                                <p className={cn("text-muted-foreground mt-1", READING_SURFACE_CLASS)}>
+                                  {course.aiInstructions}
+                                </p>
                               </div>
                             )}
                           </div>
@@ -233,6 +324,13 @@ export default function CourseDetailPage() {
                         error={materialsError}
                         success={materialsSuccess}
                         onFileSelect={handleFileSelect}
+                        courseId={courseId}
+                        onMaterialsRefresh={() => {
+                          void loadMaterials()
+                        }}
+                        onReEmbed={handleReEmbed}
+                        isReEmbedding={isReEmbedding}
+                        reEmbedProgress={reEmbedProgress}
                       />
                     ) : (
                       <Card>

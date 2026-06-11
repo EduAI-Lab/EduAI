@@ -21,6 +21,13 @@ import { VariantSelectionCursor } from './VariantSelectionCursor.js';
 User.hasMany(Course, { foreignKey: 'userId', as: 'courses' });
 Course.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 
+// Creator (RBAC §16/§19 TA own-only) associations
+User.hasMany(Question_Metadata, { foreignKey: 'createdBy', as: 'createdQuestions' });
+Question_Metadata.belongsTo(User, { foreignKey: 'createdBy', as: 'creator' });
+
+User.hasMany(Variants, { foreignKey: 'createdBy', as: 'createdVariants' });
+Variants.belongsTo(User, { foreignKey: 'createdBy', as: 'creator' });
+
 // Course associations
 Course.hasMany(Topics, { foreignKey: 'courseId', as: 'topics' });
 Topics.belongsTo(Course, { foreignKey: 'courseId', as: 'course' });

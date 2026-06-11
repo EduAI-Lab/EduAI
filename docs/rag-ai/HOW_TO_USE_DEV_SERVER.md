@@ -3,7 +3,7 @@
 ## Prerequisites
 - UBC VPN (or campus network)
 - SSH: `ssh YOUR_CWL@dev.eduai.ok.ubc.ca`
-- RAG embeddings: set **`OPENROUTER_API_KEY`** (recommended) or **`GOOGLE_GENERATIVE_AI_API_KEY`** in `apps/core/.env` on the server. Verify with `npm run test:embedding` from `apps/core`. See [`EMBEDDINGS.md`](./EMBEDDINGS.md).
+- RAG embeddings: set **`EMBEDDING_PROVIDER=local`**, **`OLLAMA_EMBEDDING_MODEL=mxbai-embed-large`**, and **`OLLAMA_BASE_URL`** in `apps/core/.env` (Ollama runs on cmps01). Pull the model once: `ollama pull mxbai-embed-large`. For laptop dev without Ollama, use **`EMBEDDING_PROVIDER=cloud`** plus **`OPENROUTER_API_KEY`** or **`OPENAI_API_KEY`** (local mode does not silently fall back to cloud). Verify with `npm run test:embedding` from `apps/core`. After the LOCAL-EMBEDDINGS migration, re-embed courses with `npm run re-embed:course -- <courseId>`. See [`EMBEDDINGS.md`](./EMBEDDINGS.md) and [`LOCAL-EMBEDDINGS.md`](./LOCAL-EMBEDDINGS.md).
 
 ## Use the app
 Open https://dev.eduai.ok.ubc.ca
@@ -24,9 +24,12 @@ git fetch origin
 git checkout [your-feature-branch]      # or your feature branch merged with development
 git pull origin [your-feature-branch]
 npm install   # if dependencies changed
+cd apps/core && npx prisma generate && npx prisma migrate deploy
 ```
 
-After switching branches, refresh your browser tab changes should reflect because 
+**Changing embedding dimension on the shared dev server:** if your branch uses a different `vector(N)` than the DB currently has, follow [How to change vector dimensionality](./EMBEDDINGS.md#how-to-change-vector-dimensionality) before re-embedding.
+
+After switching branches, refresh your browser tab changes should reflect because
 there is not reload
 
 If it doesn't however, follow these steps
@@ -56,6 +59,34 @@ The server process **dies when your SSH session ends**. Use `tmux` so it survive
 | `Ctrl+C` (inside tmux)       | Stop the dev process                 |
 
 Apache proxies `https://dev.eduai.ok.ubc.ca` → `http://127.0.0.1:3000`.
+
+#### cmps01 inference (Ollama + vLLM)
+
+Local **chat** models run on **cmps01**; the dev app calls them over **HTTP** (not SSH). See [ARCHITECTURE.md](../ARCHITECTURE.md#cmps01-gpu-inference-host).
+
+Add to `apps/core/.env` on **s378**:
+
+```env
+# Ollama — works today from dev
+OLLAMA_BASE_URL="http://cmps01.ok.ubc.ca:11434"
+
+# vLLM — LiteLLM proxy on cmps01 (TCP 8001 open dev → cmps01)
+VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"
+VLLM_API_KEY="vllm-local"
+```
+
+Restart dev server (tmux) after editing `.env`.
+
+| Check | Command (on dev) |
+| ----- | ---------------- |
+| Ollama reachable | `curl -s http://cmps01.ok.ubc.ca:11434/api/tags \| head` |
+| vLLM models | `curl -s http://cmps01.ok.ubc.ca:8001/v1/models -H "Authorization: Bearer vllm-local" \| jq '.data[].id'` |
+| vLLM chat smoke | `cd apps/core && npm run vllm:smoke` |
+| SSH dev → cmps01 | **Fails** (port 22 timeout) — **do not** use SSH tunnel from s378 |
+
+**vLLM ops on cmps01 (LiteLLM + two backends):** [`VLLM.md`](./VLLM.md) · [`infra/cmps01/README.md`](../../infra/cmps01/README.md)
+
+In the app: pick **`vllm:qwen2.5-7b-instruct`** or **`vllm:qwen2.5-32b-instruct`** in chat (no browser enable step). Register models in **Admin → AI Models** (vLLM provider → **Refresh list**); `npx prisma db seed` only adds the `vllm` provider row.
 
 #### Auth / login troubleshooting
 
@@ -103,7 +134,10 @@ git checkout development
 git pull origin development
 npm install
 npm run docker:dev:db:eduai
+cd apps/core && npx prisma generate && npx prisma migrate deploy
 npx turbo run dev --filter=edu-ai
 ```
+
+If your branch changed embedding dimension, revert the shared DB and `.env` for the branch you return to — see [How to change vector dimensionality](./EMBEDDINGS.md#how-to-change-vector-dimensionality) (section **Switching back**).
 
 Detach again with `Ctrl+B`, `D`.

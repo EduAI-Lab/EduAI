@@ -1,0 +1,122 @@
+name: EduAI Task Issue
+description: Create a tracked EduAI implementation, documentation, research, or maintenance task.
+title: "S: Week N - Task"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for every EduAI work item.
+
+        Title format:
+        `Size: Week N - Task`
+
+        Size:
+        - `S` = 0 to 4 hours
+        - `M` = 4 to 8 hours
+        - `L` = 8 to 16 hours
+
+        Split the issue if the task exceeds 16 hours.
+
+        Week examples:
+        - `Week 1`
+        - `Week 2`
+        - `Week 1, Week 2`
+        - `Week 1-2`
+        - `Week 1-4`
+
+        Hours format:
+        `Hours to complete (Week N): X hours [github-handle]`
+
+        Use one hours line per week per contributor. Use bracketed GitHub handles only.
+
+  - type: dropdown
+    id: size
+    attributes:
+      label: Size
+      description: Estimated effort for this issue.
+      options:
+        - S - 0 to 4 hours
+        - M - 4 to 8 hours
+        - L - 8 to 16 hours
+    validations:
+      required: true
+
+  - type: input
+    id: week
+    attributes:
+      label: Week
+      description: Use `Week N`, `Week N, Week M`, or `Week N-M`. Add matching week labels after creating the issue.
+      placeholder: "Week 1-3"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Briefly explain what needs to be done and why.
+      placeholder: "Implement X so that Y can happen."
+    validations:
+      required: true
+
+  - type: textarea
+    id: hours
+    attributes:
+      label: Hours to complete
+      description: |
+        Required for every issue.
+
+        Use one line per contributor per week.
+
+        Exact required format:
+        Hours to complete (Week N): X hours [github-handle]
+
+        Single-week example:
+        Hours to complete (Week 1): 3 hours [Whiteknight07]
+        Hours to complete (Week 1): 4 hours [evanbones]
+
+        Multi-week example:
+        Hours to complete (Week 1): 3 hours [Whiteknight07]
+        Hours to complete (Week 1): 4 hours [evanbones]
+        Hours to complete (Week 2): 2 hours [Whiteknight07]
+
+        Do not use plain names. Use bracketed GitHub handles only.
+      placeholder: |
+        Hours to complete (Week 1): 3 hours [Whiteknight07]
+        Hours to complete (Week 1): 4 hours [evanbones]
+        Hours to complete (Week 2): 2 hours [Whiteknight07]
+    validations:
+      required: true
+
+  - type: input
+    id: epic
+    attributes:
+      label: Epic link
+      description: Every issue must link to a parent epic.
+      placeholder: "EPIC: https://github.com/EduAI-Lab/EduAI/issues/123"
+    validations:
+      required: true
+
+  - type: input
+    id: parent_issue
+    attributes:
+      label: Parent issue, if applicable
+      description: Add the parent issue or sprint issue if this task belongs to one.
+      placeholder: "Parent Issue: #340"
+
+  - type: checkboxes
+    id: setup
+    attributes:
+      label: Required setup
+      description: Complete these after creating the issue.
+      options:
+        - label: I will assign everyone working on this issue.
+          required: true
+        - label: I will add the matching `Week N` label or labels.
+          required: true
+        - label: I will add this issue to the Edu AI Core Summer 2026 project board.
+          required: true
+        - label: I confirm this issue is linked to an epic.
+          required: true
+        - label: "I used one hours line per week per contributor in the format `Hours to complete (Week N): X hours [github-handle]`."
+          required: true
