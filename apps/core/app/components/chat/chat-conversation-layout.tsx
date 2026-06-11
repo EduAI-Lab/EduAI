@@ -30,7 +30,7 @@ export function ChatConversationLayout({
   input,
   isLoading,
   adhdAssist,
-  setAdhdAssist,
+  onAssistChange,
   systemPrompt,
   onSystemPromptSave,
   onInputChange,
@@ -54,7 +54,7 @@ export function ChatConversationLayout({
                   <Switch
                     id="adhd-assist"
                     checked={adhdAssist}
-                    onCheckedChange={(checked) => setAdhdAssist(Boolean(checked))}
+                    onCheckedChange={(checked) => onAssistChange(Boolean(checked))}
                     aria-label="Assistive mode"
                   />
                   <Label htmlFor="adhd-assist" className="text-sm">
