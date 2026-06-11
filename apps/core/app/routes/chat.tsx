@@ -22,6 +22,7 @@ import prisma from "~/lib/prisma.server";
 import { getUserPreference, saveUserPreference } from "~/lib/user-preferences.server";
 import { getAccessibleCourseCodes } from "~/lib/courses/server";
 import { parsePreferenceUpdates } from "~/lib/user-preferences";
+import { useAssistiveUi } from "~/components/assistive/assistive-ui-provider";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request);
@@ -106,6 +107,7 @@ export default function Chat() {
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
   const [adhdAssist, setAdhdAssist] = useState(assistDefault ?? false);
   const { getValidApiKeys } = useApiKeys();
+  const { setAssistive } = useAssistiveUi();
   const prefsFetcher = useFetcher();
 
   const persistPreference = useCallback(
@@ -114,6 +116,16 @@ export default function Chat() {
     },
     [prefsFetcher],
   );
+
+  const handleAssistChange = useCallback((checked: boolean) => {
+    setAdhdAssist(checked);
+    setAssistive(checked);
+  }, [setAdhdAssist, setAssistive]);
+
+  const handleCourseChange = useCallback((code: string | null) => {
+    setSelectedCourseCode(code);
+    persistPreference({ lastCourseCode: code });
+  }, [setSelectedCourseCode, persistPreference]);
 
   useEffect(() => {
     if (isGlobalChat) setSelectedCourseCode(null);
@@ -209,13 +221,13 @@ export default function Chat() {
     setSelectedModel,
     selectedModelInfo,
     selectedCourseCode,
-    setSelectedCourseCode,
+    setSelectedCourseCode: handleCourseChange,
     availableCourses,
     messages,
     input,
     isLoading,
     adhdAssist,
-    setAdhdAssist,
+    onAssistChange: handleAssistChange,
     systemPrompt,
     onSystemPromptSave: handleSystemPromptSave,
     onInputChange: handleInputChange,
