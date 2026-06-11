@@ -143,6 +143,8 @@ Each section should use this format:
 
 | Test file | What it tests |
 |-----------|---------------|
+| `invitation-token.test.ts` | `hashToken` determinism and 64-char sha256 hex output, distinct tokens hashing to distinct values, and `generateInviteToken` returning a URL-safe token whose hash matches `hashToken` and is fresh on every call. |
+| `invitation-schemas.test.ts` | `createInvitationSchema` — INSTRUCTOR/ADMIN/UNIT_ADMIN accepted, TA and STUDENT rejected as non-invitable, units required for UNIT_ADMIN and rejected for other roles, invalid email / unknown unit code rejection — and `acceptInvitationSchema` min-8 password, confirmPassword match, and required token/name. |
 | `course-access.server.test.ts` | The RBAC keystone helpers: `resolveCourseAccess` / `resolveCourseAccessWithCourse` resolution for every role (ADMIN bypass, UNIT_ADMIN unit lock incl. null-department courses, lazy `authorizedUnits` fetch, active vs inactive enrollment, no relationship), 404-vs-403 course fetch split, `buildCourseListFilter` per-enrollment-role publish gating (grad-TA mixed case), and `stripAnswerForStudents` answer visibility per access level. |
 | `units.test.ts` | `UnitSchema` accepts the canonical subject codes (and confirms each has a `UNIT_LABELS` entry) and rejects unknown codes, wrong casing, and empty values. |
 | `enrollments.server.test.ts` | `addEnrollment`, `updateEnrollmentRole`, and `deactivateEnrollment`: the §6 permission matrix (INSTRUCTOR may add STUDENT/TA but never a fellow INSTRUCTOR), `ALREADY_ENROLLED` / `USER_NOT_FOUND` errors, and the transactional instructor-floor invariant — any demotion or deactivation leaving a course with zero active instructors is rejected with 409, with no ADMIN override. |
@@ -208,6 +210,7 @@ Each section should use this format:
 
 | Test file | What it tests |
 |-----------|---------------|
+| `invitations.integration.test.ts` | The admin invitation workflow on the test DB with the real Better Auth handler: create (admin-only, stores only the token hash, emails the accept link, supersedes prior PENDING invites for the email, 409 when the user exists), list hiding `tokenHash`, revoke and resend (token rotation kills the old link; 404/409 guards), and the accept flow — a real logged-in account with the invited role and `authorizedUnits`, invalid/expired/revoked token rejection (incl. the `INVITATION_REVOKED` code), squatted-email 409, and sign-up rollback when the promote step fails so the same invite link still works on retry. |
 | `courses.materials.integration.test.ts` | Materials RBAC on the test DB: an INSTRUCTOR upload → list → DELETE cycle, TA deleting their own upload vs another's (403), and the student upload block. |
 | `me.integration.test.ts` | `GET`/`PATCH /api/me` round-trip against the test DB for each role (STUDENT/INSTRUCTOR/UNIT_ADMIN/ADMIN): profile shape and a name update persisting while role/isActive stay untouched. |
 | `preferences.integration.test.ts` | Assistive preference round-trip against the test DB: defaults OFF, PATCH ON persists and root loader reports assistive, PATCH OFF returns baseline, per-account isolation, guest baseline + 401 on PATCH, and `assistDefault` updates do not clobber `lastCourseCode`. |
