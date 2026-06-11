@@ -2,6 +2,20 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { ChatInput } from "~/components/chat/chat-input";
 
+vi.mock("~/components/chat/api-key-settings", () => ({
+  ApiKeySettings: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="api-key-settings">API Key Settings</div> : null,
+}));
+
+vi.mock("~/hooks/use-api-keys", () => ({
+  useApiKeys: () => ({
+    apiKeys: {},
+    isProviderConfigured: vi.fn(),
+    updateProviderSettings: vi.fn(),
+    removeProviderSettings: vi.fn(),
+  }),
+}));
+
 const baseModel = {
   id: "m1",
   name: "GPT-4o",
@@ -14,7 +28,6 @@ const makeProps = (overrides: Record<string, any> = {}) => ({
   isLoading: false,
   onInputChange: vi.fn(),
   onSubmit: vi.fn(),
-  onOpenSettings: vi.fn(),
   selectedCourseId: null,
   setSelectedCourseId: vi.fn(),
   availableCourses: [],
@@ -47,12 +60,11 @@ describe("ChatInput — rendering", () => {
 // ---------------------------------------------------------------------------
 
 describe("ChatInput — settings button", () => {
-  it("calls onOpenSettings when the settings gear button is clicked", () => {
-    const onOpenSettings = vi.fn();
-    render(<ChatInput {...makeProps({ onOpenSettings })} />);
+  it("opens API key settings when the settings gear button is clicked", () => {
+    render(<ChatInput {...makeProps()} />);
     const [settingsBtn] = screen.getAllByRole("button");
     fireEvent.click(settingsBtn);
-    expect(onOpenSettings).toHaveBeenCalled();
+    expect(screen.getByTestId("api-key-settings")).toBeInTheDocument();
   });
 });
 

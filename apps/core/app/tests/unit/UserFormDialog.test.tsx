@@ -10,6 +10,7 @@ const baseUser: User = {
   role: "STUDENT",
   isActive: true,
   emailVerified: true,
+  authorizedUnits: [] as string[],
   createdAt: "2024-01-01T00:00:00.000Z",
   updatedAt: "2024-01-01T00:00:00.000Z",
   _count: {

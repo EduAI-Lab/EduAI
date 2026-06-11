@@ -143,7 +143,7 @@ Each section should use this format:
 
 | Test file | What it tests |
 |-----------|---------------|
-| `course-access.server.test.ts` | The RBAC keystone helpers: `resolveCourseAccess` / `resolveCourseAccessWithCourse` resolution for every role (ADMIN bypass, UNIT_ADMIN unit lock incl. null-department courses, lazy `authorizedUnits` fetch, active vs inactive enrollment, no relationship), 404-vs-403 course fetch split, `buildCourseListFilter` per-enrollment-role publish gating (grad-TA mixed case), and `stripAnswerForStudents` answer visibility per access level. |
+| `course-access.server.test.ts` | The RBAC keystone helpers: `resolveCourseAccess` / `resolveCourseAccessWithCourse` resolution for every role (ADMIN bypass, UNIT_ADMIN unit lock incl. null-department courses, lazy `authorizedUnits` fetch, enrollment.role→access mapping — INSTRUCTOR enrollment returns `instructor`, TA enrollment returns `ta`, other returns `student` — active vs inactive enrollment, no relationship), 404-vs-403 course fetch split, `buildCourseListFilter` per-enrollment-role publish gating (grad-TA mixed case), and `stripAnswerForStudents` answer visibility per access level. |
 | `units.test.ts` | `UnitSchema` accepts the canonical subject codes (and confirms each has a `UNIT_LABELS` entry) and rejects unknown codes, wrong casing, and empty values. |
 | `enrollments.server.test.ts` | `addEnrollment`, `updateEnrollmentRole`, and `deactivateEnrollment`: the §6 permission matrix (INSTRUCTOR may add STUDENT/TA but never a fellow INSTRUCTOR), `ALREADY_ENROLLED` / `USER_NOT_FOUND` errors, and the transactional instructor-floor invariant — any demotion or deactivation leaving a course with zero active instructors is rejected with 409, with no ADMIN override. |
 | `courses.enrollments.enrollmentId.test.ts` | `PATCH` and `DELETE /api/courses/:id/enrollments/:enrollmentId` routes: auth and role gates per caller, INSTRUCTOR-enrollment changes restricted to ADMIN/UNIT_ADMIN, instructor-floor 409 surfaced through the route, 404s, and soft removal via `isActive=false`. |
@@ -234,6 +234,8 @@ Each section should use this format:
 | `BugReportsTab.test.tsx` | Admins can view, update status, and copy bug reports; anonymous submissions hide reporter identity in the copied output |
 | `Nav.test.tsx` | The Report Bug button is visible to students and professors but hidden from admins |
 | `useLocalUser.test.tsx` | Users can log in, log out, and have their session available across the app; accessing the session outside its provider throws an error |
+
+> **Coverage gap:** `home.tsx` role-based routing (STUDENT→/student, INSTRUCTOR→/instructor, TA/UNIT_ADMIN→/unsupported-role, ADMIN→/admin) and `unsupported-role.tsx` role guard (UNIT_ADMIN and TA stay on page; other roles are redirected to their correct route) are not currently covered by unit tests.
 
 ---
 
