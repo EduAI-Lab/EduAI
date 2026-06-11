@@ -16,7 +16,7 @@ function routeForRole(role: Role) {
   if (role === 'STUDENT') return '/student';
   if (role === 'INSTRUCTOR') return '/instructor';
   if (role === 'TA') return '/unsupported-role';
-  if (role === 'UNIT_ADMIN') return '/unsupported-role';
+  if (role === 'UNIT_ADMIN') return '/instructor';
   return '/admin';
 }
 
