@@ -153,6 +153,7 @@ export default function Chat() {
         setSystemPrompt(session.systemPrompt);
       }
       setAdhdAssist(Boolean(session.adhdAssist));
+      setAssistive(Boolean(session.adhdAssist));
     })();
   }, [chatId, systemPrompt]);
 
