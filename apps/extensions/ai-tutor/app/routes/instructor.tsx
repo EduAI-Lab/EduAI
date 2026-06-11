@@ -31,7 +31,7 @@ import { requireClientUser } from '~/lib/client-auth';
  * authenticated user's role, so this is the full set the instructor can act on.
  */
 export async function clientLoader(_: Route.ClientLoaderArgs) {
-  await requireClientUser('INSTRUCTOR');
+  await requireClientUser(['INSTRUCTOR', 'UNIT_ADMIN']);
   const courses = (await api.listCourses()) as Course[];
   return { courses };
 }

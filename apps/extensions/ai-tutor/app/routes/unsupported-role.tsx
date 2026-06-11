@@ -19,7 +19,7 @@ export default function UnsupportedRolePage() {
       return;
     }
 
-    if (user.role !== 'TA' && user.role !== 'UNIT_ADMIN') {
+    if (user.role !== 'TA') {
       navigate(routeForRole(user.role), { replace: true });
     }
   }, [navigate, user]);
