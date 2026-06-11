@@ -15,7 +15,7 @@ const baseProps = {
   input: "",
   isLoading: false,
   adhdAssist: false,
-  setAdhdAssist: () => {},
+  onAssistChange: () => {},
   systemPrompt: null,
   onSystemPromptSave: async () => {},
   onInputChange: () => {},
