@@ -279,6 +279,7 @@ const VALID_COURSE_FIELDS = {
   term: "Fall",
   year: "2025",
   startDate: "2025-09-01",
+  department: "COSC",
   instructorUserIds: "user-1",
 };
 
@@ -312,11 +313,12 @@ describe("createCourse", () => {
     expect(prismaMock.course.create).not.toHaveBeenCalled();
   });
 
-  it("returns 403 when UNIT_ADMIN creates with no department (§19 null is never a match)", async () => {
+  it("returns 400 when no department is provided (required field since §19 overhaul)", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "UNIT_ADMIN" } } as any);
     prismaMock.user.findUnique.mockResolvedValue({ authorizedUnits: ["MATH"] });
-    const res = await createCourse(makePostRequest(VALID_COURSE_FIELDS));
-    expect(res.status).toBe(403);
+    const { department: _omit, ...fieldsWithoutDept } = VALID_COURSE_FIELDS;
+    const res = await createCourse(makePostRequest(fieldsWithoutDept));
+    expect(res.status).toBe(400);
   });
 
   it("returns 201 when UNIT_ADMIN creates inside their authorized units (#298)", async () => {

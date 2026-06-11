@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router'
 import { IconPlus, IconEdit, IconTrash, IconBook, IconCalendar, IconEye, IconEyeOff } from '@tabler/icons-react'
 import { Button } from '~/components/ui/button'
@@ -10,6 +10,7 @@ import { Label } from '~/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select'
 import { Textarea } from '~/components/ui/textarea'
 import { DEPARTMENTS, getDepartmentLabel } from '~/lib/departments'
+import { DepartmentCombobox } from '~/components/courses/department-combobox'
 import type { Course, CreateCourseInput, UpdateCourseInput } from '~/hooks/api/use-courses'
 
 interface Instructor {
@@ -41,6 +42,11 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, instructors = [
   const [selectedDept, setSelectedDept] = useState<string>(authorizedDepts[0]?.code ?? '')
   const [selectedTerm, setSelectedTerm] = useState<string>('Fall')
   const [selectedInstructor, setSelectedInstructor] = useState<string>('')
+  const [editDept, setEditDept] = useState<string>('')
+
+  useEffect(() => {
+    setEditDept(editingCourse?.department ?? '')
+  }, [editingCourse])
 
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -71,6 +77,7 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, instructors = [
     await onEditCourse(editingCourse.id, {
       name: fd.get('name') as string,
       code: fd.get('code') as string,
+      department: editDept || null,
       aiInstructions: (fd.get('aiInstructions') as string) || undefined,
     })
     setEditingCourse(null)
@@ -122,21 +129,12 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, instructors = [
                     />
                   </>
                 ) : (
-                  <Select
-                    name="department"
+                  <DepartmentCombobox
+                    departments={authorizedDepts}
                     value={selectedDept}
                     onValueChange={setSelectedDept}
-                    required
-                  >
-                    <SelectTrigger id="ua-dept"><SelectValue placeholder="Select department" /></SelectTrigger>
-                    <SelectContent>
-                      {authorizedDepts.map((d) => (
-                        <SelectItem key={d.code} value={d.code}>
-                          {d.label} ({d.code})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    placeholder="Select department"
+                  />
                 )}
               </div>
               <div className="grid gap-2">
@@ -202,7 +200,12 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, instructors = [
               </div>
               <div className="flex justify-end gap-2">
                 <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
-                <Button type="submit" disabled={!selectedInstructor}>Create Course</Button>
+                <Button
+                  type="submit"
+                  disabled={!selectedInstructor || (authorizedDepts.length > 1 && !selectedDept)}
+                >
+                  Create Course
+                </Button>
               </div>
             </form>
           </DialogContent>
@@ -317,6 +320,15 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, instructors = [
               <div className="grid gap-2">
                 <Label>Code</Label>
                 <Input name="code" defaultValue={editingCourse.code} required />
+              </div>
+              <div className="grid gap-2">
+                <Label>Department</Label>
+                <DepartmentCombobox
+                  departments={authorizedDepts}
+                  value={editDept}
+                  onValueChange={setEditDept}
+                  placeholder="No department"
+                />
               </div>
               <div className="grid gap-2">
                 <Label>AI Instructions</Label>
