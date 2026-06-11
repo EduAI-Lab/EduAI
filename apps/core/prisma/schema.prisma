@@ -12,35 +12,36 @@ datasource db {
 }
 
 model User {
-  id                         String                 @id @default(cuid())
-  email                      String                 @unique
-  name                       String
-  image                      String?
-  role                       UserRole
-  studentId                  String?
-  studentIdLookup            String?                @unique
-  isActive                   Boolean                @default(true)
-  createdAt                  DateTime               @default(now())
-  updatedAt                  DateTime               @updatedAt
-  emailVerified              Boolean                @default(false)
-  authorizedUnits            String[]
-  accounts                   Account[]
-  aiInteractions             AIInteraction[]
-  enrollments                Enrollment[]
-  questions                  Question[]
-  sessions                   Session[]
-  providerSettings           UserProviderSettings[]
-  apiKeys                    apikey[]
-  chats                      Chat[]
-  externalUsers              ExternalUser[]
-  preference                 UserPreference?
-  bugReports                 BugReport[]
+  id                String                 @id @default(cuid())
+  email             String                 @unique
+  name              String
+  image             String?
+  role              UserRole
+  studentId         String?
+  studentIdLookup   String?                @unique
+  isActive          Boolean                @default(true)
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  emailVerified     Boolean                @default(false)
+  authorizedUnits   String[]
+  accounts          Account[]
+  aiInteractions    AIInteraction[]
+  enrollments       Enrollment[]
+  questions         Question[]
+  sessions          Session[]
+  providerSettings  UserProviderSettings[]
+  apiKeys           apikey[]
+  chats             Chat[]
+  externalUsers     ExternalUser[]
+  preference        UserPreference?
+  bugReports        BugReport[]
   assistiveEvents   AssistiveEvent[]
-  uploadedMaterials          CourseMaterial[]       @relation("MaterialUploader")
-  createdTopics              CourseTopic[]          @relation("TopicCreator")
-  canvasIntegration          CanvasIntegration?
-  syncedCanvasRosterMembers  CanvasRosterMember[]
-
+  uploadedMaterials CourseMaterial[]       @relation("MaterialUploader")
+  createdTopics     CourseTopic[]          @relation("TopicCreator")
+  canvasIntegration         CanvasIntegration?
+  syncedCanvasRosterMembers CanvasRosterMember[]
+  taughtCourses             Course[]           @relation("CourseInstructor")
+  courseTAs                 CourseTA[]
 
   @@map("user")
 }
@@ -103,6 +104,7 @@ model Course {
   isPublished    Boolean          @default(false)
   startDate      DateTime
   endDate        DateTime?
+  instructorId   String?
   externalId     String?
   externalSource String?
   lastSyncedAt   DateTime?
@@ -111,6 +113,7 @@ model Course {
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
   aiInstructions String           @default("")
+  instructor     User?            @relation("CourseInstructor", fields: [instructorId], references: [id])
   /// Per-course override: `local` | `ollama` | `cloud`; null uses server env.
   embeddingProvider    String?
   /// Per-course model id (Ollama or OpenRouter/OpenAI); null uses server default for provider.
@@ -120,11 +123,12 @@ model Course {
   embeddedWithModel    String?
   aiInteractions AIInteraction[]
   enrollments    Enrollment[]
-  materials      CourseMaterial[]
+  tas                 CourseTA[]
+  canvasRosterMembers CanvasRosterMember[]
+  materials           CourseMaterial[]
   reEmbedJobs    CourseReEmbedJob[]
   topics         CourseTopic[]
   questions      Question[]
-  canvasRosterMembers CanvasRosterMember[]
 
   @@unique([code, startDate, section])
   @@index([externalSource, externalId])
@@ -167,6 +171,18 @@ model Enrollment {
   @@index([userId])
   @@index([externalSource, externalId])
   @@map("enrollments")
+}
+
+model CourseTA {
+  id        String   @id @default(cuid())
+  courseId  String
+  userId    String
+  createdAt DateTime @default(now())
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, userId])
+  @@map("course_tas")
 }
 
 model AIInteraction {
@@ -509,15 +525,15 @@ model CanvasRosterMember {
   sisUserId       String?
   sisUserIdLookup String?
   email           String?
-  displayName    String?
-  role           EnrollmentRole
-  syncedByUserId String
-  isActive       Boolean        @default(true)
-  lastSeenAt     DateTime
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
-  course         Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  syncedBy       User           @relation(fields: [syncedByUserId], references: [id])
+  displayName     String?
+  role            EnrollmentRole
+  syncedByUserId  String
+  isActive        Boolean        @default(true)
+  lastSeenAt      DateTime
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  course          Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  syncedBy        User           @relation(fields: [syncedByUserId], references: [id])
 
   @@unique([courseId, canvasUserId, role])
   @@index([email])
@@ -544,10 +560,10 @@ model ExternalUser {
 
 enum UserRole {
   ADMIN
+  UNIT_ADMIN
   INSTRUCTOR
   TA
   STUDENT
-  UNIT_ADMIN
 }
 
 enum EnrollmentRole {
