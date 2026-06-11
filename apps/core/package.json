@@ -35,6 +35,8 @@
     "research:merge-policy-v3": "node ./scripts/research/merge-policy-v3.mjs",
     "research:run-classroom": "node ./scripts/research/run-classroom-sim.mjs",
     "research:summarize-classroom-replicates": "node ./scripts/research/summarize-classroom-replicates.mjs",
+    "research:backfill-energy": "node ./scripts/research/backfill-interaction-energy.mjs",
+    "research:export-human-check": "node ./scripts/research/export-human-spot-check.mjs",
     "test:embedding": "tsx scripts/test-embedding.ts"
   },
   "dependencies": {

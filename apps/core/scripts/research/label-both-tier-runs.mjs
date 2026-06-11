@@ -49,6 +49,32 @@ Return ONLY valid JSON (no markdown fences) with this shape:
 
 If tier 3 response is missing or marked unavailable, set tier3_adequacy to "not_available" and quality_delta to "incomparable".`;
 
+const STRICT_JUDGE_SYSTEM = `You are a strict expert evaluator for educational AI tutoring.
+
+Compare tier-1 (7B) and tier-3 (32B) answers to the same student prompt.
+
+Scoring rules (be conservative — prefer tier 3 when quality differs):
+- "adequate" — correct, complete, and trustworthy for university learning
+- "degraded" — usable but with meaningful gaps or imprecision
+- "insufficient" — wrong, hollow, or unsafe to rely on
+
+For min_adequate_tier: use 1 ONLY if tier-1 is adequate on its own; use 3 if tier-3 is needed for adequacy.
+Mark tier_sensitive=true when the better tier is not "equivalent" AND at least one tier is adequate.
+
+Return ONLY valid JSON:
+{
+  "tier1_adequacy": "adequate" | "degraded" | "insufficient",
+  "tier3_adequacy": "adequate" | "degraded" | "insufficient" | "not_available",
+  "quality_delta": "equivalent" | "7b_better" | "32b_better" | "incomparable",
+  "min_adequate_tier": 1 | 3,
+  "tier_sensitive": true | false,
+  "rationale": "2-4 sentences"
+}`;
+
+function judgeSystemPrompt() {
+  return process.env.RESEARCH_JUDGE_STRICT === "1" ? STRICT_JUDGE_SYSTEM : JUDGE_SYSTEM;
+}
+
 function readEnv(primary, alias) {
   for (const name of [primary, alias]) {
     const v = process.env[name];
@@ -210,7 +236,7 @@ async function callJudgeOpenAI({ baseUrl, apiKey, model, userPrompt }) {
       temperature: 0.2,
       response_format: { type: "json_object" },
       messages: [
-        { role: "system", content: JUDGE_SYSTEM },
+        { role: "system", content: judgeSystemPrompt() },
         { role: "user", content: userPrompt },
       ],
     }),
@@ -227,7 +253,7 @@ async function callJudgeOpenAI({ baseUrl, apiKey, model, userPrompt }) {
 }
 
 async function callJudgeViaEduai({ url, headers, apiKeys, model, userPrompt }) {
-  const judgePrompt = `${JUDGE_SYSTEM}\n\n${userPrompt}\n\nRespond with JSON only.`;
+  const judgePrompt = `${judgeSystemPrompt()}\n\n${userPrompt}\n\nRespond with JSON only.`;
   const timeoutMs = Math.max(
     30_000,
     Number(readEnv("RESEARCH_LABEL_TIMEOUT_MS", "180000")) || 180_000,
@@ -277,7 +303,9 @@ async function main() {
   const limit = limitRaw ? Math.max(1, Number(limitRaw) || 0) : undefined;
   const idsFilter = readEnv("RESEARCH_LABEL_IDS");
   const sleepMs = Math.max(0, Number(readEnv("RESEARCH_LABEL_SLEEP_MS", "300")) || 0);
-  const labelVersion = readEnv("RESEARCH_LABEL_VERSION") ?? "v1";
+  const strictJudge = readEnv("RESEARCH_JUDGE_STRICT") === "1";
+  const labelVersion =
+    readEnv("RESEARCH_LABEL_VERSION") ?? (strictJudge ? "strict-v1" : "v1");
 
   let eduaiConfig = null;
   if (viaEduai) {
@@ -338,6 +366,7 @@ async function main() {
   console.log("input:", inPath);
   console.log("output:", outPath);
   console.log("judge:", judgeModel);
+  console.log("strict:", strictJudge);
   console.log("backend:", viaEduai ? "eduai" : "openai-compatible");
   console.log("candidates:", candidates.length, `(both OK: ${bothOk})`);
   console.log("skip already labeled:", existingIds.size);
@@ -393,6 +422,15 @@ async function main() {
         tier3Missing,
       });
 
+      const minAdequateTier =
+        strictJudge && judge.min_adequate_tier != null
+          ? judge.min_adequate_tier
+          : derived.min_adequate_tier;
+      const tierSensitive =
+        strictJudge && judge.tier_sensitive != null
+          ? judge.tier_sensitive
+          : derived.tier_sensitive;
+
       appendFileSync(
         outPath,
         `${JSON.stringify({
@@ -409,8 +447,8 @@ async function main() {
           prompt: meta.prompt,
           tier1_adequacy: judge.tier1_adequacy,
           tier3_adequacy: tier3Adequacy,
-          min_adequate_tier: derived.min_adequate_tier,
-          tier_sensitive: derived.tier_sensitive,
+          min_adequate_tier: minAdequateTier,
+          tier_sensitive: tierSensitive,
           quality_delta: tier3Missing ? "incomparable" : judge.quality_delta,
           judge_rationale: judge.rationale.trim(),
           judge_model: judgeModel,
@@ -424,7 +462,7 @@ async function main() {
       );
       labeled++;
       console.log(
-        `  min_tier=${derived.min_adequate_tier ?? "null"} sensitive=${derived.tier_sensitive}`,
+        `  min_tier=${minAdequateTier ?? "null"} sensitive=${tierSensitive}`,
       );
     } catch (e) {
       errors++;

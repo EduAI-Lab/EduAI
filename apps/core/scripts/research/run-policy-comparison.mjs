@@ -16,6 +16,11 @@ import { dirname } from "node:path";
 import { performance } from "node:perf_hooks";
 import { DEFAULT_POLICY_OUT, PROMPTS_PATH } from "./paths.mjs";
 import {
+  flattenEnergyFields,
+  isEnergyMeasurementEnabled,
+  withEnergyMeasurement,
+} from "./energy-sidecar.mjs";
+import {
   resolveResearchChatFlags,
   resolveResearchTimeoutMs,
 } from "./research-chat-body.mjs";
@@ -141,6 +146,10 @@ async function postChat({
     ? Number(routingTierHeader)
     : inferTierFromModel(routedModel);
 
+  const usage = json?.usage ?? null;
+  const promptTokens = usage?.promptTokens ?? usage?.inputTokens ?? null;
+  const completionTokens = usage?.completionTokens ?? usage?.outputTokens ?? null;
+
   return {
     httpStatus: res.status,
     durationMs,
@@ -149,6 +158,8 @@ async function postChat({
     error: json?.error ?? (res.status >= 400 ? text.slice(0, 200) : null),
     routedModel,
     routingTier: Number.isFinite(routingTier) ? routingTier : null,
+    promptTokens,
+    completionTokens,
   };
 }
 
@@ -166,6 +177,11 @@ async function main() {
   const sleepMs = Math.max(0, Number(readEnv("RESEARCH_RUN_SLEEP_MS", "500")) || 0);
   const runLabel = readEnv("RESEARCH_RUN_LABEL") ?? "policy-v1";
   const forceHybridAll = readEnv("RESEARCH_FORCE_HYBRID") === "1";
+  const replicateCount = Math.max(
+    1,
+    Number(readEnv("RESEARCH_REPLICATE", "RESEARCH_REPLICATE_COUNT") ?? "1") || 1,
+  );
+  const measureEnergy = isEnergyMeasurementEnabled();
 
   if (!url || !apiKeysJson) {
     console.error("Need RESEARCH_RUN_URL and RESEARCH_RUN_API_KEYS(_FILE).");
@@ -209,7 +225,6 @@ async function main() {
   mkdirSync(dirname(outPath), { recursive: true });
 
   const runStarted = new Date().toISOString();
-  const totalCalls = prompts.length * policies.length;
 
   console.log("=== policy comparison run ===");
   console.log("label:", runLabel);
@@ -218,79 +233,114 @@ async function main() {
   console.log("policies:", policies.map((p) => p.policy).join(", "));
   console.log("prompts:", prompts.length);
   console.log("output:", outPath);
+  const totalCalls = prompts.length * policies.length * replicateCount;
+  console.log("replicates:", replicateCount);
+  console.log("measure energy:", measureEnergy ? "yes" : "no");
   console.log("total HTTP calls:", totalCalls);
   console.log("");
 
   let callIndex = 0;
   let errors = 0;
 
-  for (const row of prompts) {
-    for (const policy of policies) {
-      callIndex++;
-      const preview = row.prompt.length > 55 ? `${row.prompt.slice(0, 52)}…` : row.prompt;
-      console.log(
-        `[${callIndex}/${totalCalls}] ${policy.policy} ${row.id} — ${preview}`,
-      );
-
-      const hybridFlags = resolveResearchChatFlags(row, { forceHybridAll });
-
-      const result = await postChat({
-        url,
-        headers,
-        apiKeys,
-        model: policy.requested_model,
-        prompt: row.prompt,
-        courseCode: row.course_code ?? undefined,
-        forceHybridRag: hybridFlags.forceHybridRag,
-        hybridWebTools: hybridFlags.hybridWebTools,
-        timeoutMs: resolveResearchTimeoutMs(readEnv, row),
-      });
-
-      if (result.httpStatus >= 400 || result.error) {
-        errors++;
-        console.log(`  ERROR HTTP ${result.httpStatus}: ${String(result.error).slice(0, 100)}`);
-      } else if (!result.responseText) {
-        errors++;
-        console.log(`  WARN empty response (${result.durationMs} ms)`);
-      } else {
+  for (let rep = 1; rep <= replicateCount; rep++) {
+    for (const row of prompts) {
+      for (const policy of policies) {
+        callIndex++;
+        const preview = row.prompt.length > 55 ? `${row.prompt.slice(0, 52)}…` : row.prompt;
         console.log(
-          `  OK ${result.durationMs} ms, ${result.responseText.length} chars` +
-            ` routed=${result.routedModel ?? "?"} tier=${result.routingTier ?? "?"}`,
+          `[${callIndex}/${totalCalls}] r${rep} ${policy.policy} ${row.id} — ${preview}`,
         );
+
+        const hybridFlags = resolveResearchChatFlags(row, { forceHybridAll });
+        const energyTag = `${runLabel}-${policy.policy}-${row.id}-r${rep}`;
+
+        let result;
+        let energy = null;
+        try {
+          const wrapped = await withEnergyMeasurement(energyTag, () =>
+            postChat({
+              url,
+              headers,
+              apiKeys,
+              model: policy.requested_model,
+              prompt: row.prompt,
+              courseCode: row.course_code ?? undefined,
+              forceHybridRag: hybridFlags.forceHybridRag,
+              hybridWebTools: hybridFlags.hybridWebTools,
+              timeoutMs: resolveResearchTimeoutMs(readEnv, row),
+            }),
+          );
+          result = wrapped.result;
+          energy = wrapped.energy;
+        } catch (e) {
+          result = {
+            httpStatus: 0,
+            durationMs: 0,
+            responseText: "",
+            finishReason: null,
+            error: e instanceof Error ? e.message : String(e),
+            routedModel: null,
+            routingTier: null,
+            promptTokens: null,
+            completionTokens: null,
+          };
+        }
+
+        if (result.httpStatus >= 400 || result.error) {
+          errors++;
+          console.log(`  ERROR HTTP ${result.httpStatus}: ${String(result.error).slice(0, 100)}`);
+        } else if (!result.responseText) {
+          errors++;
+          console.log(`  WARN empty response (${result.durationMs} ms)`);
+        } else {
+          const energyNote =
+            energy?.energyJoules != null
+              ? ` energy=${energy.energyJoules.toFixed(2)}J`
+              : "";
+          console.log(
+            `  OK ${result.durationMs} ms, ${result.responseText.length} chars` +
+              ` routed=${result.routedModel ?? "?"} tier=${result.routingTier ?? "?"}${energyNote}`,
+          );
+        }
+
+        appendFileSync(
+          outPath,
+          `${JSON.stringify({
+            run_label: runLabel,
+            run_started: runStarted,
+            recorded_at: new Date().toISOString(),
+            replicate: rep,
+            policy: policy.policy,
+            policy_description: policy.description,
+            requested_model: policy.requested_model,
+            prompt_id: row.id,
+            stratum: row.stratum,
+            category: row.category,
+            split: row.split,
+            rag_context: row.rag_context,
+            tools_expected: row.tools_expected,
+            course_code: row.course_code,
+            prompt: row.prompt,
+            force_hybrid_rag: hybridFlags.forceHybridRag,
+            hybrid_web_tools: hybridFlags.hybridWebTools,
+            tool_execution_mode: hybridFlags.tool_execution_mode,
+            routed_model: result.routedModel,
+            routing_tier: result.routingTier,
+            duration_ms: result.durationMs,
+            prompt_tokens: result.promptTokens,
+            completion_tokens: result.completionTokens,
+            http_status: result.httpStatus,
+            finish_reason: result.finishReason,
+            response: result.responseText,
+            error: result.error,
+            measure_energy: measureEnergy,
+            ...flattenEnergyFields(energy),
+          })}\n`,
+          "utf8",
+        );
+
+        if (sleepMs && callIndex < totalCalls) await sleep(sleepMs);
       }
-
-      appendFileSync(
-        outPath,
-        `${JSON.stringify({
-          run_label: runLabel,
-          run_started: runStarted,
-          recorded_at: new Date().toISOString(),
-          policy: policy.policy,
-          policy_description: policy.description,
-          requested_model: policy.requested_model,
-          prompt_id: row.id,
-          stratum: row.stratum,
-          category: row.category,
-          split: row.split,
-          rag_context: row.rag_context,
-          tools_expected: row.tools_expected,
-          course_code: row.course_code,
-          prompt: row.prompt,
-          force_hybrid_rag: hybridFlags.forceHybridRag,
-          hybrid_web_tools: hybridFlags.hybridWebTools,
-          tool_execution_mode: hybridFlags.tool_execution_mode,
-          routed_model: result.routedModel,
-          routing_tier: result.routingTier,
-          duration_ms: result.durationMs,
-          http_status: result.httpStatus,
-          finish_reason: result.finishReason,
-          response: result.responseText,
-          error: result.error,
-        })}\n`,
-        "utf8",
-      );
-
-      if (sleepMs && callIndex < totalCalls) await sleep(sleepMs);
     }
   }
 
