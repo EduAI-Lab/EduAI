@@ -27,15 +27,20 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] ui: Add post-signup student-ID onboarding — `/onboarding/student-id` prompts STUDENT/TA users to link their Canvas student number via `POST /api/canvas/link-roster` or skip; dashboard redirects until linked or skipped. (#511, @GlowyBlack, 2026-06-10)
 - [core] db: Encrypt `CanvasRosterMember.sisUserId` at rest and add `sisUserIdLookup` HMAC for roster-to-user matching; migration `20260611120000_roster_sis_user_id_lookup`. (#511, @GlowyBlack, 2026-06-10)
 - [core] tests: Add Canvas UI and onboarding unit tests (`CanvasCourseSyncDialog`, `CanvasDashboardCard`, `student-id-onboarding-form`, `canvas-onboarding`); extend `canvas-enrollment-link` and `canvas-student-id` for encrypted roster matching; integration test harness reuses dev Postgres host/port on Windows (`test-database-url.ts`). (#511, @GlowyBlack, 2026-06-10)
+- [core] api: Add TA management (`GET`/`POST`/`DELETE /api/courses/:courseId/tas`) and instructor reassignment (`PATCH /api/courses/:id`) for `ADMIN`/`UNIT_ADMIN`. (#491, @yta3216, 2026-06-08)
+- [core] ui: Add Staff tab to Course Detail with `useCourseTAs` hook — lists current instructor and TAs with reassignment controls for admin/unit admin. (#491, @yta3216, 2026-06-08)
 
 ### Changed
 
 - [core] api: Auto-publish Canvas-synced courses (`isPublished: true`) so linked students can list them under the student publish gate. (#511, @GlowyBlack, 2026-06-10)
+- [monorepo] docs: Mark Question Maker §16–§18 as implemented in `rbac-matrix.md`. (#518, @abdullahmoh21, 2026-06-08)
 - [question-maker] api: Enforce the §16–§18 RBAC matrices — session-role gates, per-course access middleware, `createdBy` TA own-only authoring, instructor-only approval/assessments, owner-keyed Canvas mappings, and ADMIN-only bug-report triage. (#518, @abdullahmoh21, 2026-06-08)
 - [question-maker] tests: Add RBAC coverage — `courseAccess` unit tests plus role×route matrix tests across questions, variants, assessments, and Canvas. (#518, @abdullahmoh21, 2026-06-08)
 
 ### Fixed
 
+- [core] fix: Fix instructors and TAs not seeing assigned courses, admins unable to upload materials, instructors unable to add topics, and the same material being blocked from upload to two different courses. (#491, @yta3216, 2026-06-08)
+- [core] fix: Fix admin user management showing `NaN` for course count and unit admin unable to reassign instructors/TAs to courses. (#491, @yta3216, 2026-06-08)
 - [core] api: Validate Canvas URL with `parseAndValidateCanvasUrl` before saving integration credentials so non-local HTTP hosts are rejected even when credential verification is mocked in tests. (#511, @GlowyBlack, 2026-06-08)
 - [core] api: Fix roster enrollment linking after `sisUserId` encryption — decrypt roster values in `linkEnrollmentsFromStagingForCourse` so re-sync reactivates student enrollments; backfill missing `studentIdLookup` before resolving enrollments. (#511, @GlowyBlack, 2026-06-10)
 - [core] api: Harden roster sync upserts (`lastSeenAt` per row, clearer Prisma schema errors) so `canvas_roster_members` populate reliably after migration. (#511, @GlowyBlack, 2026-06-10)
@@ -48,6 +53,11 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
+- [core] feat: Add RBAC platform UI layer — permissions matrix, access resolver, nav helpers, role-gated course list/detail components, and course API hooks for courses, materials, topics, and enrollments. (#491, @yta3216, 2026-06-03)
+- [core] feat: Add `UNIT_ADMIN` role — schema migration, unit-scoped view, seed personas, `authorizedUnits` in auth session, `isPublished` on Course schema, departments enum, and `UNIT_ADMIN` support in user management UI and API. (#491, @yta3216, 2026-06-03)
+- [core] ui: Add publish toggle, department dropdown, and `authorizedUnits` DB fetch to course views; improve course code UX with department prefix. (#491, @yta3216, 2026-06-03)
+- [core] feat: Add course delete with confirmation modal, `DELETE /api/courses/:id`, and `UNIT_ADMIN` delete permission scoped to authorized units. (#491, @yta3216, 2026-06-04)
+- [core] ui: Person B RBAC platform UI — role-aware components, hooks, and tests. (#491, @ebabar5, 2026-06-03)
 - [core] feat: vLLM local inference provider — OpenAI-compatible `vllm` provider on cmps01 (`VLLM_BASE_URL`, port **8001**), `mergeLocalInferenceFromEnv()`, Admin-registered models (provider seeded, same pattern as Ollama), `npm run vllm:smoke`, and `providers.server.ts` split for Vite client/server boundary. Stress-tested on dev: **~15× faster** than Ollama under 5-way parallel load; warm direct **~57 ms**, 10 parallel **~320–380 ms**, EduAI full stack median **~211 ms**. Docs: [`docs/rag-ai/VLLM.md`](docs/rag-ai/VLLM.md). ([#449](https://github.com/EduAI-Lab/EduAI/pull/449), Closes #435, #394)
 - [core] feat: Local Ollama embedding provider for RAG — `EMBEDDING_PROVIDER=local` routes index and query embeds through Ollama (`mxbai-embed-large`, 1024-dim); fails fast when Ollama is unavailable (no silent cloud fallback); dimension validation and `[embedding]` provider logging in `embedding.ts`. (#361, #370, #441)
 - [core] docs: LOCAL-EMBEDDINGS decision — `vector(1024)` migration, default local model, re-embed strategy in [`docs/rag-ai/LOCAL-EMBEDDINGS.md`](docs/rag-ai/LOCAL-EMBEDDINGS.md). (#369)
@@ -88,7 +98,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Changed
 
-- [monorepo] docs: Mark Question Maker §16–§18 as implemented in `rbac-matrix.md`. (#518, @abdullahmoh21, 2026-06-08)
+- [core] refactor: Wire RBAC into courses routes with session-based access control; allow `UNIT_ADMIN` to create/edit courses; add `department`+`isPublished` to API; replace `authorizedUnits` freetext with department checkboxes. (#491, @yta3216, 2026-06-03)
 - [core] infra: Prisma migration `20260522130000_local_embeddings_vector_1024` — `material_embeddings.embedding` from `vector(3072)` to `vector(1024)` (clears incompatible rows; re-embed required). (#373, #441)
 - [core] docs: Update [`EMBEDDINGS.md`](docs/rag-ai/EMBEDDINGS.md), [`ARCHITECTURE.md`](docs/ARCHITECTURE.md), `apps/core/.env.example`, and README for local embed env vars. (#370)
 - [core] refactor: Move data fetching out of domain components into parent routes — `courses.$courseId` owns materials load/upload; `chat` owns `useApiKeys` / `ApiKeySettings`; `admin.ai-models` owns Ollama model fetch for `ModelFormDialog`. (#437, #438, 2026-06-03)
@@ -106,6 +116,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
+- [core] fix: Unblock vitest and align CoursesList unit-admin tests. (#491, @Ayyhab, 2026-06-04)
 - [core] rag: Replace per-chunk sequential INSERT with `createManyAndReturn` + batched transaction on material embed path — chunk creation now costs 1 DB round-trip regardless of document size (down from N); embedding inserts remain individual raw SQL due to the pgvector type but run inside the same transaction. (#364, @ammaarm128, 2026-06-06)
 - [core] rag: Eliminate double-split on material ingest path — `processMaterialEmbeddings` now detects `SEMANTIC_CHUNK_SEPARATOR` written by `processUploadedFile` and splits on it directly, preserving semantic chunks from `applySemanticChunking`; falls back to `generateChunks` for content that did not pass through the upload path. Previously, every uploaded file was semantically chunked in `file-processing.ts` and then immediately re-split by a naive sentence splitter in `embedding.ts`, destroying section boundaries. Re-upload existing materials to benefit. (#360, @ammaarm128, 2026-06-06)
 - [core] tests: Add unit tests for `resolveMaterialChunks` — covers separator-preserving split, `generateChunks` fallback, and empty separator-only input. (#360, @ammaarm128, 2026-06-06)
