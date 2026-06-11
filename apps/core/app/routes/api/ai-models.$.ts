@@ -1,7 +1,6 @@
 import prisma from "~/lib/prisma.server";
 import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
-import { allowsSupportsToolsToggle } from "~/lib/ai/model-tool-capability";
 import { CreateAIModelSchema, UpdateAIModelSchema } from "~/lib/ai/schemas";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 
@@ -68,12 +67,9 @@ async function handleRequest(request: Request) {
         );
       }
 
-      if (
-        result.data.supportsTools &&
-        !allowsSupportsToolsToggle(result.data.modelId, result.data.type)
-      ) {
+      if (result.data.supportsTools && result.data.type !== "CHAT") {
         return new Response(
-          JSON.stringify({ error: "Small or non-chat models cannot have supportsTools enabled" }),
+          JSON.stringify({ error: "Only CHAT models can have supportsTools enabled" }),
           { status: 400, headers: { "Content-Type": "application/json" } },
         );
       }
@@ -138,13 +134,12 @@ async function handleRequest(request: Request) {
         return new Response("Model not found", { status: 404 });
       }
 
-      const nextModelId = result.data.modelId ?? existingModel.modelId;
       const nextType = result.data.type ?? existingModel.type;
       const nextSupportsTools = result.data.supportsTools ?? existingModel.supportsTools;
 
-      if (nextSupportsTools && !allowsSupportsToolsToggle(nextModelId, nextType)) {
+      if (nextSupportsTools && nextType !== "CHAT") {
         return new Response(
-          JSON.stringify({ error: "Small or non-chat models cannot have supportsTools enabled" }),
+          JSON.stringify({ error: "Only CHAT models can have supportsTools enabled" }),
           { status: 400, headers: { "Content-Type": "application/json" } },
         );
       }

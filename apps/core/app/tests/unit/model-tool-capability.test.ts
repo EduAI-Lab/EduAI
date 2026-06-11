@@ -23,8 +23,8 @@ describe("allowsSupportsToolsToggle", () => {
     expect(allowsSupportsToolsToggle("text-embedding-3-small", "EMBEDDING")).toBe(false);
   });
 
-  it("hides toggle for small CHAT models", () => {
-    expect(allowsSupportsToolsToggle("qwen2.5:1.5b", "CHAT")).toBe(false);
+  it("shows toggle for small CHAT models (with runtime warning in UI)", () => {
+    expect(allowsSupportsToolsToggle("qwen2.5:1.5b", "CHAT")).toBe(true);
   });
 
   it("shows toggle for tool-capable CHAT models", () => {

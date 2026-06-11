@@ -628,20 +628,9 @@ export async function action({ request }: ActionFunctionArgs) {
     const hasCourse = Boolean(effectiveCourseId);
     const courseRagNeeded = needsCourseRag(userQuestion, hasCourse);
 
-    const smallModelSlug = process.env.CHAT_SMALL_MODEL?.trim();
-    const tierRoutingEnabled = process.env.CHAT_TIER_ROUTING_ENABLED !== "0";
-    const forceModel = body.forceModel === true;
-    let resolvedModelSlug = model;
-    let routedToSmallModel = false;
-
-    if (tierRoutingEnabled && smallModelSlug && !forceModel && !courseRagNeeded) {
-      resolvedModelSlug = smallModelSlug;
-      routedToSmallModel = true;
-    }
-
     let aiModel;
     try {
-      aiModel = registry.languageModel(resolvedModelSlug);
+      aiModel = registry.languageModel(model);
     } catch (err: unknown) {
       const available =
         typeof err === "object" &&
@@ -652,7 +641,7 @@ export async function action({ request }: ActionFunctionArgs) {
           : enabledProviders.join(", ");
       return new Response(
         JSON.stringify({
-          error: `Model "${resolvedModelSlug}" could not be loaded (providers on server: ${available}). For vLLM set VLLM_BASE_URL in .env and deploy the feat/VLLM provider code.`,
+          error: `Model "${model}" could not be loaded (providers on server: ${available}). For vLLM set VLLM_BASE_URL in .env and deploy the feat/VLLM provider code.`,
         }),
         {
           status: 503,
@@ -664,7 +653,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const webToolsEnabled = await getWebToolsEnabled();
     const tools = buildChatToolRegistry({ effectiveCourseId, webToolsEnabled });
 
-    const supportsTools = await modelSupportsTools(resolvedModelSlug);
+    const supportsTools = await modelSupportsTools(model);
     const useToolCalling = supportsTools && !forceHybridRag;
 
     let streamConfig;
@@ -843,9 +832,7 @@ Based on this information, provide a comprehensive answer. Use getInformation on
 
     // Log the LLM stream configuration
     chatApiDebug("Starting LLM stream", {
-      model: resolvedModelSlug,
-      requestedModel: model,
-      routedToSmallModel,
+      model,
       courseRagNeeded,
       webToolsEnabled,
       forceHybridRag,
@@ -873,9 +860,6 @@ Based on this information, provide a comprehensive answer. Use getInformation on
         headers["X-Chat-Id"] = chat.id;
       }
       headers["X-Web-Tools-Enabled"] = webToolsEnabled ? "1" : "0";
-      if (resolvedModelSlug !== model) {
-        headers["X-Routed-Model"] = resolvedModelSlug;
-      }
       return result.toDataStreamResponse({ headers });
     } else {
       try {
