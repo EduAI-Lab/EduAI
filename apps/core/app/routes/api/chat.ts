@@ -1025,6 +1025,29 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
         console.error("Error in ADHD oversight response:", error);
         const fallbackText = finalText || draft;
         if (fallbackText) {
+          if (streaming) {
+            const headers: Record<string, string> = {
+              "Content-Encoding": "none",
+              "Transfer-Encoding": "chunked",
+              Connection: "keep-alive",
+            };
+            if (chat?.id) {
+              headers["X-Chat-Id"] = chat.id;
+            }
+
+            return createDataStreamResponse({
+              headers,
+              execute: (dataStream) => {
+                dataStream.write(formatDataStreamPart("text", fallbackText));
+                dataStream.write(
+                  formatDataStreamPart("finish_message", {
+                    finishReason: finishReason ?? "stop",
+                  }),
+                );
+              },
+            });
+          }
+
           return new Response(
             JSON.stringify({
               content: fallbackText,

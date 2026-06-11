@@ -7,6 +7,7 @@ vi.mock("ai", () => ({
 
 import { generateText } from "ai";
 import {
+  ADHD_OVERSIGHT_REWRITE_SYSTEM,
   applyNextLineAnchor,
   auditAndMaybeRewrite,
   extractNextPromptCandidate,
@@ -14,7 +15,12 @@ import {
   isOversightEligibleDraft,
   tryDeterministicStructuralFix,
 } from "~/lib/ai/adhd-oversight";
-import { isStructuralCompliancePass, computeAdhdResponseMetrics } from "~/lib/ai/adhd-metrics";
+import {
+  ADHD_CLARIFICATION_WORD_CAP,
+  ADHD_TUTORING_WORD_CAP,
+  computeAdhdResponseMetrics,
+  isStructuralCompliancePass,
+} from "~/lib/ai/adhd-metrics";
 import {
   S1_ON_ASSISTANT,
   S2_ON_T2_ASSISTANT,
@@ -22,6 +28,14 @@ import {
 } from "~/tests/fixtures/adhd-baseline-transcripts";
 
 const mockModel = { modelId: "mock" } as never;
+
+describe("ADHD_OVERSIGHT_REWRITE_SYSTEM", () => {
+  it("references shared word-cap constants instead of hardcoded values", () => {
+    expect(ADHD_OVERSIGHT_REWRITE_SYSTEM).toContain(
+      `Hard cap ${ADHD_TUTORING_WORD_CAP} words for tutoring answers; ${ADHD_CLARIFICATION_WORD_CAP} for brief clarifications.`,
+    );
+  });
+});
 
 describe("isAdhdOversightEnabled", () => {
   const original = process.env.ADHD_ASSIST_OVERSIGHT;
