@@ -91,7 +91,7 @@ router.get('/courses/:courseId/modules', async (req, res) => {
   }
 });
 
-router.post('/courses/:courseId/modules', requireRole(['INSTRUCTOR', 'UNIT_ADMIN']), async (req, res) => {
+router.post('/courses/:courseId/modules', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
   const authUser = req.user;
   const courseId = Number(req.params.courseId);
   if (!Number.isFinite(courseId)) {
@@ -110,7 +110,7 @@ router.post('/courses/:courseId/modules', requireRole(['INSTRUCTOR', 'UNIT_ADMIN
 
     const isInstructor = course.instructors.some((i) => i.userId === authUser.id);
     const unitAdmin = isUnitAdminForCourse(authUser, course);
-    if (!isInstructor && !unitAdmin) {
+    if (!isInstructor && !unitAdmin && authUser.role !== 'ADMIN') {
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
 
@@ -184,7 +184,7 @@ router.get('/modules/:moduleId', async (req, res) => {
 });
 
 // Publish a module (requires parent course to be published)
-router.patch('/modules/:moduleId/publish', requireRole(['INSTRUCTOR', 'UNIT_ADMIN']), async (req, res) => {
+router.patch('/modules/:moduleId/publish', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
   const instructor = req.user;
   const moduleId = Number(req.params.moduleId);
   if (!Number.isFinite(moduleId)) {
@@ -207,7 +207,7 @@ router.patch('/modules/:moduleId/publish', requireRole(['INSTRUCTOR', 'UNIT_ADMI
 
     const isInstructor = module.courseOffering.instructors.some((i) => i.userId === instructor.id);
     const unitAdmin = isUnitAdminForCourse(instructor, module.courseOffering);
-    if (!isInstructor && !unitAdmin) {
+    if (!isInstructor && !unitAdmin && instructor.role !== 'ADMIN') {
       return res.status(403).json({ error: 'Not authorized for this module' });
     }
 
@@ -230,7 +230,7 @@ router.patch('/modules/:moduleId/publish', requireRole(['INSTRUCTOR', 'UNIT_ADMI
 });
 
 // Unpublish a module (cascades to all lessons)
-router.patch('/modules/:moduleId/unpublish', requireRole(['INSTRUCTOR', 'UNIT_ADMIN']), async (req, res) => {
+router.patch('/modules/:moduleId/unpublish', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
   const instructor = req.user;
   const moduleId = Number(req.params.moduleId);
   if (!Number.isFinite(moduleId)) {
@@ -253,7 +253,7 @@ router.patch('/modules/:moduleId/unpublish', requireRole(['INSTRUCTOR', 'UNIT_AD
 
     const isInstructor = module.courseOffering.instructors.some((i) => i.userId === instructor.id);
     const unitAdmin = isUnitAdminForCourse(instructor, module.courseOffering);
-    if (!isInstructor && !unitAdmin) {
+    if (!isInstructor && !unitAdmin && instructor.role !== 'ADMIN') {
       return res.status(403).json({ error: 'Not authorized for this module' });
     }
 

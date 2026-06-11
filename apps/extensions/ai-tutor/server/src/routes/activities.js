@@ -437,7 +437,7 @@ router.get('/lessons/:lessonId/activities', async (req, res) => {
  * Why: at-least-one-mode invariant is enforced here (and in PATCH) so the
  * frontend never has to render a tutor screen with no available modes.
  */
-router.post('/lessons/:lessonId/activities', requireRole(['INSTRUCTOR', 'UNIT_ADMIN']), async (req, res) => {
+router.post('/lessons/:lessonId/activities', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
   const authUser = req.user;
   const lessonId = Number(req.params.lessonId);
   if (!Number.isFinite(lessonId)) {
@@ -479,7 +479,7 @@ router.post('/lessons/:lessonId/activities', requireRole(['INSTRUCTOR', 'UNIT_AD
       (i) => i.userId === authUser.id,
     );
     const unitAdmin = isUnitAdminForCourse(authUser, lesson.module.courseOffering);
-    if (!isInstructor && !unitAdmin) {
+    if (!isInstructor && !unitAdmin && authUser.role !== 'ADMIN') {
       return res.status(403).json({ error: 'Not authorized for this lesson' });
     }
 
@@ -566,7 +566,7 @@ router.post('/lessons/:lessonId/activities', requireRole(['INSTRUCTOR', 'UNIT_AD
  * column, so the handler reads-modifies-writes that blob whenever any of those
  * fields appear, leaving other config keys untouched.
  */
-router.patch('/activities/:activityId', requireRole(['INSTRUCTOR', 'UNIT_ADMIN']), async (req, res) => {
+router.patch('/activities/:activityId', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
   const instructor = req.user;
   const activityId = Number(req.params.activityId);
   if (!Number.isFinite(activityId)) {
@@ -628,7 +628,7 @@ router.patch('/activities/:activityId', requireRole(['INSTRUCTOR', 'UNIT_ADMIN']
     );
     const unitAdmin = isUnitAdminForCourse(instructor, activity.lesson.module.courseOffering);
 
-    if (!isInstructor && !unitAdmin) {
+    if (!isInstructor && !unitAdmin && instructor.role !== 'ADMIN') {
       return res.status(403).json({ error: 'Not authorized for this activity' });
     }
 
@@ -831,7 +831,7 @@ router.patch('/activities/:activityId', requireRole(['INSTRUCTOR', 'UNIT_ADMIN']
   }
 });
 
-router.delete('/activities/:activityId', requireRole(['INSTRUCTOR', 'UNIT_ADMIN']), async (req, res) => {
+router.delete('/activities/:activityId', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
   const instructor = req.user;
   const activityId = Number(req.params.activityId);
   if (!Number.isFinite(activityId)) {
@@ -865,7 +865,7 @@ router.delete('/activities/:activityId', requireRole(['INSTRUCTOR', 'UNIT_ADMIN'
     );
     const unitAdmin = isUnitAdminForCourse(instructor, activity.lesson.module.courseOffering);
 
-    if (!isInstructor && !unitAdmin) {
+    if (!isInstructor && !unitAdmin && instructor.role !== 'ADMIN') {
       return res.status(403).json({ error: 'Not authorized for this activity' });
     }
 

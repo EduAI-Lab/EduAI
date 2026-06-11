@@ -25,7 +25,8 @@ function isAllowedAdminPath(path) {
     path === '/bug-reports' ||
     path.startsWith('/modules/') ||
     path.startsWith('/lessons/') ||
-    path.startsWith('/courses/')
+    path.startsWith('/courses/') ||
+    path.startsWith('/activities/')
   );
 }
 
