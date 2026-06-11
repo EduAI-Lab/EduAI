@@ -37,6 +37,11 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 - [core] nav/css: Remove dead nav controls (Quick Create, Inbox, stub menu items); fix Outfit/Inter font mismatch; restore visible scrollbars at WCAG 2.5.8-compliant 12px width. (#543, @yta3216, 2026-06-09)
+- [core] chat: Wire Assistive Mode toggle in chat to `AssistiveUiProvider` so the switch immediately updates `data-assistive` on `<html>` and persists via the provider (single write — no double-persist); also persist `lastCourseCode` on course selection change. (#546, @yta3216, 2026-06-10)
+
+### Added
+- [core] ui: Wayfinding — replace `<a href>` with SPA `<Link>` in nav, add route-aware active state with `aria-current="page"`, derive page titles from pathname when no explicit title prop is passed, and wire breadcrumb navigation (Home > Courses > [name], Home > Admin > [page]) on courses and admin routes. (#522, @yta3216, 2026-06-10)
+- [core] tests: Add `ChatViews`, `NavMain`, and `SiteHeader` unit tests — assistive toggle callback, nav active state per pathname, child-route activation, route-derived titles, and breadcrumbs-replace-h1 behaviour. (#519, #522, #546, @yta3216, 2026-06-10)
 - [core] fix: Fix instructors and TAs not seeing assigned courses, admins unable to upload materials, instructors unable to add topics, and the same material being blocked from upload to two different courses. (#491, @yta3216, 2026-06-08)
 - [core] fix: Fix admin user management showing `NaN` for course count and unit admin unable to reassign instructors/TAs to courses. (#491, @yta3216, 2026-06-08)
 
