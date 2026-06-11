@@ -163,6 +163,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
         return forbidden();
       }
 
+
       const body = await request.json();
       const result = await createCourseTopic(courseId, body, session?.user.id ?? null);
 
@@ -213,6 +214,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       ) {
         return forbidden();
       }
+
 
       const body = await request.json();
       const result = await updateCourseTopic(courseId, topicId, body);

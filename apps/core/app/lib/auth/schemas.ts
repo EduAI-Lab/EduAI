@@ -59,6 +59,7 @@ export const createUserSchema = z.object({
     required_error: "Please select a role",
   }),
   isActive: z.boolean().default(true),
+  authorizedUnits: z.array(z.string()).optional(),
 });
 
 export const updateUserSchema = z.object({

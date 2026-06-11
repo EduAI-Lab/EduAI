@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { UserProviderSettings } from "~/lib/ai/providers.shared";
+import type { UserProviderSettings } from "~/lib/ai/provider-types";
 
 /** Body `apiKeys` from the client (localStorage-backed provider toggles + keys). */
 export const clientApiKeysBodySchema = z.record(

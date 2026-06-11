@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/com
 import { Key, Eye, EyeOff, ExternalLink, Shield, Trash2 } from "lucide-react";
 import type { UserProviderSettings } from "~/lib/ai/providers.shared";
 
-type Provider = "openai" | "google" | "ollama" | "openrouter";
+type Provider = "openai" | "google" | "openrouter";
 
 export interface ApiKeySettingsProps {
   open: boolean;
@@ -31,14 +31,10 @@ export function ApiKeySettings({
   const [tempKeys, setTempKeys] = useState<Record<string, string>>({});
 
   const handleSaveKey = (provider: Provider) => {
-    if (provider === "ollama") {
-      onUpdateProvider(provider, { isEnabled: true });
-    } else {
-      const key = tempKeys[provider]?.trim();
-      if (key) {
-        onUpdateProvider(provider, { apiKey: key, isEnabled: true });
-        setTempKeys(prev => ({ ...prev, [provider]: "" }));
-      }
+    const key = tempKeys[provider]?.trim();
+    if (key) {
+      onUpdateProvider(provider, { apiKey: key, isEnabled: true });
+      setTempKeys(prev => ({ ...prev, [provider]: "" }));
     }
   };
 
@@ -64,7 +60,6 @@ export function ApiKeySettings({
     placeholder: string;
     learnMoreLabel: string;
     learnMoreHref: string;
-    noKey?: boolean;
   }> = [
     {
       id: "openai",
@@ -89,15 +84,6 @@ export function ApiKeySettings({
       placeholder: "sk-or-...",
       learnMoreLabel: "OpenRouter",
       learnMoreHref: "https://openrouter.ai/keys",
-    },
-    {
-      id: "ollama",
-      label: "Ollama (Local)",
-      description: "For local models running on Ollama",
-      placeholder: "",
-      learnMoreLabel: "Learn more",
-      learnMoreHref: "https://ollama.com/",
-      noKey: true,
     },
   ];
 
@@ -134,85 +120,55 @@ export function ApiKeySettings({
               <CardContent className="space-y-3">
                 {isProviderConfigured(p.id) ? (
                   <div className="space-y-2">
-                    {p.noKey ? (
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-muted-foreground">Ollama provider is enabled</span>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleRemoveKey(p.id)}
-                          className="px-3 text-destructive hover:text-destructive"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <Input
-                          type={showKeys[p.id] ? "text" : "password"}
-                          value={showKeys[p.id] ? (apiKeys[p.id]?.apiKey || "") : maskKey(apiKeys[p.id]?.apiKey || "")}
-                          readOnly
-                          className="text-sm"
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => toggleShowKey(p.id)}
-                          className="px-3"
-                        >
-                          {showKeys[p.id] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleRemoveKey(p.id)}
-                          className="px-3 text-destructive hover:text-destructive"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    )}
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type={showKeys[p.id] ? "text" : "password"}
+                        value={showKeys[p.id] ? (apiKeys[p.id]?.apiKey || "") : maskKey(apiKeys[p.id]?.apiKey || "")}
+                        readOnly
+                        className="text-sm"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => toggleShowKey(p.id)}
+                        className="px-3"
+                      >
+                        {showKeys[p.id] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleRemoveKey(p.id)}
+                        className="px-3 text-destructive hover:text-destructive"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {p.noKey ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={() => handleSaveKey(p.id)}
-                        className="w-full"
-                      >
-                        Enable Ollama
-                      </Button>
-                    ) : (
-                      <>
-                        <Input
-                          type="password"
-                          placeholder={p.placeholder}
-                          value={tempKeys[p.id] || ""}
-                          onChange={(e) => setTempKeys(prev => ({ ...prev, [p.id]: e.target.value }))}
-                          className="text-sm"
-                        />
-                        <Button
-                          type="button"
-                          size="sm"
-                          onClick={() => handleSaveKey(p.id)}
-                          disabled={!tempKeys[p.id]?.trim()}
-                          className="w-full"
-                        >
-                          Save {p.label.split(" ")[0]} Key
-                        </Button>
-                      </>
-                    )}
+                    <Input
+                      type="password"
+                      placeholder={p.placeholder}
+                      value={tempKeys[p.id] || ""}
+                      onChange={(e) => setTempKeys(prev => ({ ...prev, [p.id]: e.target.value }))}
+                      className="text-sm"
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => handleSaveKey(p.id)}
+                      disabled={!tempKeys[p.id]?.trim()}
+                      className="w-full"
+                    >
+                      Save {p.label.split(" ")[0]} Key
+                    </Button>
                   </div>
                 )}
                 <p className="text-xs text-muted-foreground">
-                  {p.noKey
-                    ? "No API key required. Base URL configured via OLLAMA_BASE_URL environment variable. "
-                    : `Get your API key from `}
+                  Get your API key from{" "}
                   <a
                     href={p.learnMoreHref}
                     target="_blank"
@@ -226,6 +182,16 @@ export function ApiKeySettings({
               </CardContent>
             </Card>
           ))}
+
+          <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+            <p className="text-sm text-muted-foreground">
+              Managed on the server via <code>OLLAMA_BASE_URL</code> and <code>VLLM_BASE_URL</code> in{" "}
+              <code>apps/core/.env</code>. No browser toggle — pick <code>ollama:</code> or <code>vllm:</code> models in chat when configured.
+            </p>
+            <p className="text-sm text-muted-foreground">
+              See repo docs: <code>docs/rag-ai/VLLM.md</code>, <code>docs/rag-ai/HOW_TO_USE_DEV_SERVER.md</code>
+            </p>
+          </div>
 
           <div className="bg-muted/50 p-3 rounded-lg">
             <p className="text-xs text-muted-foreground">

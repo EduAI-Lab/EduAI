@@ -1,35 +1,37 @@
-import { useChat } from '@ai-sdk/react';
-import { useState, useEffect, useCallback, useMemo } from "react";
-import { redirect, useLoaderData, useFetcher } from "react-router";
+import { useChat } from "@ai-sdk/react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, redirect, useLoaderData, useFetcher } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import { ChatWelcome } from "~/components/chat/chat-welcome";
-import { ChatMessage } from "~/components/chat/chat-message";
-import { ChatInput } from "~/components/chat/chat-input";
-import { ChatTypingIndicator } from "~/components/chat/chat-typing-indicator";
-import { ChatHeaderControls } from "~/components/chat/chat-header-controls";
-import { ApiKeySettings } from "~/components/chat/api-key-settings";
-import { useApiKeys } from "~/hooks/use-api-keys";
-import { useAssistiveUi } from "~/components/assistive/assistive-ui-provider";
+
+
 import { AppSidebar } from "~/components/app-sidebar";
+import { ChatCourseScopedView } from "~/components/chat/chat-course-scoped-view";
+import { ChatGlobalView } from "~/components/chat/chat-global-view";
+import type {
+  ChatCourseOption,
+  ChatModelOption,
+} from "~/components/chat/chat-view-types";
 import { SiteHeader } from "~/components/site-header";
 import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
-
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "~/components/ui/breadcrumb"
+import { fetchChatSession } from "~/hooks/api/use-chat-sessions";
+import { useCourses } from "~/hooks/api/use-courses";
+import { useApiKeys } from "~/hooks/use-api-keys";
 import { auth } from "~/lib/auth/server";
+import { usesGlobalChat } from "~/lib/rbac";
 import prisma from "~/lib/prisma.server";
 import { getUserPreference, saveUserPreference } from "~/lib/user-preferences.server";
 import { getAccessibleCourseCodes } from "~/lib/courses/server";
+import { parsePreferenceUpdates } from "~/lib/user-preferences";
+import { useAssistiveUi } from "~/components/assistive/assistive-ui-provider";
 import { filterModelsForApiKeys } from "~/lib/ai/providers.shared";
-import { parsePreferenceUpdates, resolveSelectedCourse } from "~/lib/user-preferences";
-
-interface ChatModel {
-  id: string;
-  name: string;
-  description: string;
-  provider: string;
-  maxTokens?: number;
-  supportsImages?: boolean;
-  supportsTools?: boolean;
-}
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request);
@@ -38,20 +40,18 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return redirect("/auth/login");
   }
 
-  // Fetch AI models from database
   const dbModels = await prisma.aIModel.findMany({
     where: { isActive: true },
     include: {
       provider: true,
     },
     orderBy: [
-      { provider: { name: 'asc' } },
-      { name: 'asc' }
-    ]
+      { provider: { name: "asc" } },
+      { name: "asc" },
+    ],
   });
 
-  // Transform database models to match our interface
-  const chatModels: ChatModel[] = dbModels.map((model: any) => ({
+  const chatModels: ChatModelOption[] = dbModels.map((model) => ({
     id: `${model.provider.name}:${model.modelId}`,
     name: model.name,
     description: model.description,
@@ -101,20 +101,25 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function Chat() {
-  const { chatModels, serverOpenRouterAvailable, user, lastCourseCode } = useLoaderData<typeof loader>();
-  const { assistive, setAssistive } = useAssistiveUi();
-  const [selectedModel, setSelectedModel] = useState("");
-  const [selectedCourseCode, setSelectedCourseCode] = useState<string | null>(lastCourseCode);
-  const [availableCourses, setAvailableCourses] = useState<Array<{ id: string; name: string; code: string }>>([]);
+  const { chatModels, serverOpenRouterAvailable, user, assistDefault, lastCourseCode } =
+    useLoaderData<typeof loader>();
+  const isGlobalChat = usesGlobalChat(user);
+  const { courses } = useCourses();
+  const availableCourses: ChatCourseOption[] = isGlobalChat
+    ? []
+    : courses.map((c) => ({ id: c.id, name: c.name, code: c.code }));
+  const [selectedModel, setSelectedModel] = useState(
+    chatModels.length > 0 ? chatModels[0].id : "",
+  );
+  const [selectedCourseCode, setSelectedCourseCode] = useState<string | null>(
+    lastCourseCode ?? null,
+  );
   const [chatId, setChatId] = useState<string | null>(null);
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
   const [chatError, setChatError] = useState<string | null>(null);
-  // Per-chat assist state: seeded from the account-level preference for new
-  // chats; restored from the chat's own adhdAssist when opening an old chat
-  // (without rewriting the account preference).
-  const [adhdAssist, setAdhdAssist] = useState(assistive);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const { apiKeys, getValidApiKeys, updateProviderSettings, removeProviderSettings, isProviderConfigured, isLoading: apiKeysLoading } = useApiKeys();
+  const [adhdAssist, setAdhdAssist] = useState(assistDefault ?? false);
+  const { apiKeys, getValidApiKeys, isLoading: apiKeysLoading } = useApiKeys();
+  const { setAssistive } = useAssistiveUi();
   const prefsFetcher = useFetcher();
 
   const availableChatModels = useMemo(
@@ -137,121 +142,97 @@ export default function Chat() {
 
   const persistPreference = useCallback(
     (updates: { assistDefault?: boolean; lastCourseCode?: string | null }) => {
-      prefsFetcher.submit(updates, {
-        method: "post",
-        encType: "application/json",
-      });
+      prefsFetcher.submit(updates, { method: "post", encType: "application/json" });
     },
     [prefsFetcher],
   );
 
-  const handleAssistChange = useCallback(
-    (checked: boolean) => {
-      setAdhdAssist(checked);
-      // Manual toggle updates the account-level preference too (and persists
-      // via the provider), so data-assistive flips platform-wide immediately.
-      setAssistive(checked);
-    },
-    [setAssistive],
-  );
+  const handleAssistChange = useCallback((checked: boolean) => {
+    setAdhdAssist(checked);
+    setAssistive(checked);
+  }, [setAdhdAssist, setAssistive]);
 
-  const handleCourseChange = useCallback(
-    (code: string | null) => {
-      setSelectedCourseCode(code);
-      persistPreference({ lastCourseCode: code });
-    },
-    [persistPreference],
-  );
+  const handleCourseChange = useCallback((code: string | null) => {
+    setSelectedCourseCode(code);
+    persistPreference({ lastCourseCode: code });
+  }, [setSelectedCourseCode, persistPreference]);
 
-  // Fetch available courses
   useEffect(() => {
-    const fetchCourses = async () => {
-      try {
-        const response = await fetch('/api/courses');
-        const data = await response.json();
-        const courses: Array<{ id: string; name: string; code: string }> = data.courses || [];
-        const courseCodes = courses.map((c) => c.code);
-        setAvailableCourses(courses);
-        setSelectedCourseCode((current) => {
-          const resolved = resolveSelectedCourse(current, courseCodes);
-          if (current && resolved === null) {
-            persistPreference({ lastCourseCode: null });
-          }
-          return resolved;
-        });
-      } catch (error) {
-        console.error('Failed to fetch courses:', error);
-      }
-    };
-    fetchCourses();
-  }, [persistPreference]);
+    if (isGlobalChat) setSelectedCourseCode(null);
+  }, [isGlobalChat]);
 
-  // Load system prompt when chatId is set
   useEffect(() => {
-    if (chatId && !systemPrompt) {
-      fetch(`/api/chats/${chatId}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.systemPrompt) {
-            setSystemPrompt(data.systemPrompt);
-          }
-          setAdhdAssist(Boolean(data.adhdAssist));
-        })
-        .catch(console.error);
+    if (!chatId || systemPrompt) {
+      return;
     }
-  }, [chatId]);
 
-  const { messages, input, handleInputChange, handleSubmit, isLoading, stop } = useChat({
-    api: "/api/chat",
-    body: {
-      model: selectedModel,
-      apiKeys: requestApiKeys,
-      courseCode: selectedCourseCode || undefined,
-      chatId: chatId || undefined,
-      systemPrompt: systemPrompt || undefined,
-      adhdAssist,
-    },
-    onResponse: async (response) => {
-      if (!response.ok) {
-        const text = await response.text();
-        try {
-          const data = JSON.parse(text);
-          setChatError(data.error || `Chat failed (${response.status})`);
-        } catch {
-          setChatError(text || `Chat failed (${response.status})`);
-        }
+    void (async () => {
+      const session = await fetchChatSession(chatId);
+      if (!session) {
         return;
       }
-      setChatError(null);
-      const chatIdHeader = response.headers.get('X-Chat-Id');
-      if (chatIdHeader && !chatId) {
-        setChatId(chatIdHeader);
+      if (session.systemPrompt) {
+        setSystemPrompt(session.systemPrompt);
       }
-    },
-    onError: (error) => {
-      setChatError(error.message || "Chat request failed");
-    },
-    onFinish: async () => {
-      setChatError(null);
-    },
-  });
+      setAdhdAssist(Boolean(session.adhdAssist));
+      setAssistive(Boolean(session.adhdAssist));
+    })();
+  }, [chatId, systemPrompt, setAssistive]);
 
-  const selectedModelInfo = availableChatModels.find((model: any) => model.id === selectedModel);
+  const { messages, input, handleInputChange, handleSubmit, isLoading, stop } =
+    useChat({
+      api: "/api/chat",
+      body: {
+        model: selectedModel,
+        apiKeys: requestApiKeys,
+        courseCode: isGlobalChat ? undefined : selectedCourseCode || undefined,
+        chatId: chatId || undefined,
+        systemPrompt: systemPrompt || undefined,
+        adhdAssist,
+      },
+      onResponse: async (response) => {
+        if (!response.ok) {
+          const text = await response.text();
+          try {
+            const data = JSON.parse(text);
+            setChatError(data.error || `Chat failed (${response.status})`);
+          } catch {
+            setChatError(text || `Chat failed (${response.status})`);
+          }
+          return;
+        }
+        setChatError(null);
+        const chatIdHeader = response.headers.get("X-Chat-Id");
+        if (chatIdHeader && !chatId) {
+          setChatId(chatIdHeader);
+        }
+      },
+      onError: (error) => {
+        setChatError(error.message || "Chat request failed");
+      },
+      onFinish: async () => {
+        setChatError(null);
+      },
+    });
+
+  const selectedModelInfo = availableChatModels.find(
+    (model) => model.id === selectedModel,
+  );
 
   const handleSystemPromptSave = async (prompt: string | null) => {
     setSystemPrompt(prompt);
 
     try {
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           chatId: chatId || undefined,
           systemPrompt: prompt,
           messages: messages.length > 0 ? messages : [],
           model: selectedModel,
-          apiKeys: getValidApiKeys(),
-          courseCode: selectedCourseCode || undefined,
+          apiKeys: requestApiKeys,
+          courseCode: isGlobalChat ? undefined : selectedCourseCode || undefined,
           adhdAssist,
           streaming: false,
         }),
@@ -261,27 +242,48 @@ export default function Chat() {
         setChatId(data.chatId);
       }
     } catch (error) {
-      console.error('Failed to save system prompt:', error);
+      console.error("Failed to save system prompt:", error);
     }
   };
 
   const handlePromptSelect = (prompt: string) => {
-    // Create proper synthetic events
     const inputEvent = {
       target: { value: prompt },
-      currentTarget: { value: prompt }
+      currentTarget: { value: prompt },
     } as React.ChangeEvent<HTMLInputElement>;
 
     handleInputChange(inputEvent);
 
-    // Use requestAnimationFrame for better timing
     requestAnimationFrame(() => {
       const formEvent = {
         preventDefault: () => {},
-        currentTarget: {} as HTMLFormElement
+        currentTarget: {} as HTMLFormElement,
       } as React.FormEvent<HTMLFormElement>;
       handleSubmit(formEvent);
     });
+  };
+
+  const sharedViewProps = {
+    chatModels: availableChatModels,
+    selectedModel,
+    setSelectedModel,
+    selectedModelInfo,
+    selectedCourseCode,
+    setSelectedCourseCode: handleCourseChange,
+    availableCourses,
+    messages,
+    input,
+    isLoading,
+    adhdAssist,
+    onAssistChange: handleAssistChange,
+    systemPrompt,
+    onSystemPromptSave: handleSystemPromptSave,
+    onInputChange: handleInputChange,
+    onSubmit: handleSubmit,
+    onStop: stop,
+    onSelectPrompt: handlePromptSelect,
+    chatError,
+    noModelsConfigured: !apiKeysLoading && availableChatModels.length === 0,
   };
 
   return (
@@ -289,92 +291,32 @@ export default function Chat() {
       style={
         {
           "--sidebar-width": "calc(var(--spacing) * 72)",
-          "--header-height": "calc(var(--spacing) * 14)",
+          "--header-height": "calc(var(--spacing) * 12)",
         } as React.CSSProperties
       }
     >
       <AppSidebar variant="inset" user={user} />
       <SidebarInset>
         <SiteHeader
-          title="Chat"
-          actions={
-            <ChatHeaderControls
-              adhdAssist={adhdAssist}
-              onAdhdAssistChange={handleAssistChange}
-              systemPrompt={systemPrompt}
-              onSystemPromptSave={handleSystemPromptSave}
-            />
+          breadcrumbs={
+            <Breadcrumb>
+              <BreadcrumbList>
+                <BreadcrumbItem>
+                  <BreadcrumbLink asChild><Link to="/dashboard">Home</Link></BreadcrumbLink>
+                </BreadcrumbItem>
+                <BreadcrumbSeparator />
+                <BreadcrumbItem>
+                  <BreadcrumbPage>Chat</BreadcrumbPage>
+                </BreadcrumbItem>
+              </BreadcrumbList>
+            </Breadcrumb>
           }
         />
-        <div className="flex flex-col h-[calc(100vh-var(--header-height))] bg-gradient-to-br from-background via-background to-muted/20">
-          {/* Main content area */}
-          <div className="flex-1 flex flex-col min-h-0 relative">
-            <div className="h-full overflow-y-auto scrollbar-hover">
-              <div className="px-4 py-6">
-                <div className="max-w-4xl mx-auto space-y-6">
-                  {chatError && (
-                    <div className="rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-                      {chatError}
-                    </div>
-                  )}
-                  {!apiKeysLoading && availableChatModels.length === 0 && (
-                    <div className="rounded-lg border border-amber-500/50 bg-amber-500/10 px-4 py-3 text-sm">
-                      No model providers are configured. Open API key settings and add an OpenRouter key, or ask an admin to set <code>OPENROUTER_API_KEY</code> on the server.
-                    </div>
-                  )}
-                  {messages.length === 0 ? (
-                    <ChatWelcome
-                      selectedModelInfo={selectedModelInfo}
-                      onSelectPrompt={handlePromptSelect}
-                    />
-                  ) : (
-                    <>
-                      {messages.map((message, index) => {
-                        const isLastMessage = index === messages.length - 1;
-                        const isStreamingMessage = isLastMessage && isLoading;
-
-                        return (
-                          <ChatMessage
-                            key={message.id}
-                            message={message}
-                            isStreaming={isStreamingMessage}
-                          />
-                        );
-                      })}
-
-                      {isLoading && <ChatTypingIndicator />}
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Sticky input at bottom with integrated selectors */}
-          <ChatInput
-            input={input}
-            isLoading={isLoading}
-            onInputChange={handleInputChange}
-            onSubmit={handleSubmit}
-            onStop={stop}
-            onOpenSettings={() => setSettingsOpen(true)}
-            selectedCourseId={selectedCourseCode}
-            setSelectedCourseId={handleCourseChange}
-            availableCourses={availableCourses}
-            selectedModel={selectedModel}
-            setSelectedModel={setSelectedModel}
-            chatModels={availableChatModels}
-            selectedModelInfo={selectedModelInfo}
-          />
-          <ApiKeySettings
-            open={settingsOpen}
-            onOpenChange={setSettingsOpen}
-            apiKeys={apiKeys}
-            isProviderConfigured={isProviderConfigured}
-            onUpdateProvider={updateProviderSettings}
-            onRemoveProvider={removeProviderSettings}
-          />
-        </div>
+        {isGlobalChat ? (
+          <ChatGlobalView {...sharedViewProps} />
+        ) : (
+          <ChatCourseScopedView {...sharedViewProps} />
+        )}
       </SidebarInset>
     </SidebarProvider>
   );

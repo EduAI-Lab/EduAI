@@ -33,9 +33,12 @@ model User {
   externalUsers     ExternalUser[]
   preference        UserPreference?
   bugReports        BugReport[]
+  assistiveEvents   AssistiveEvent[]
   uploadedMaterials CourseMaterial[]       @relation("MaterialUploader")
   createdTopics     CourseTopic[]          @relation("TopicCreator")
   canvasIntegration CanvasIntegration?
+  taughtCourses     Course[]           @relation("CourseInstructor")
+  courseTAs         CourseTA[]
 
   @@map("user")
 }
@@ -98,6 +101,7 @@ model Course {
   isPublished    Boolean          @default(false)
   startDate      DateTime
   endDate        DateTime?
+  instructorId   String?
   externalId     String?
   externalSource String?
   lastSyncedAt   DateTime?
@@ -106,6 +110,7 @@ model Course {
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
   aiInstructions String           @default("")
+  instructor     User?            @relation("CourseInstructor", fields: [instructorId], references: [id])
   /// Per-course override: `local` | `ollama` | `cloud`; null uses server env.
   embeddingProvider    String?
   /// Per-course model id (Ollama or OpenRouter/OpenAI); null uses server default for provider.
@@ -115,6 +120,7 @@ model Course {
   embeddedWithModel    String?
   aiInteractions AIInteraction[]
   enrollments    Enrollment[]
+  tas            CourseTA[]
   materials      CourseMaterial[]
   reEmbedJobs    CourseReEmbedJob[]
   topics         CourseTopic[]
@@ -161,6 +167,18 @@ model Enrollment {
   @@index([userId])
   @@index([externalSource, externalId])
   @@map("enrollments")
+}
+
+model CourseTA {
+  id        String   @id @default(cuid())
+  courseId  String
+  userId    String
+  createdAt DateTime @default(now())
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, userId])
+  @@map("course_tas")
 }
 
 model AIInteraction {
@@ -439,11 +457,30 @@ model Chat {
   adhdAssist   Boolean  @default(false)
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  messages     ChatMessage[]
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages        ChatMessage[]
+  assistiveEvents AssistiveEvent[]
 
   @@index([userId])
   @@map("chats")
+}
+
+model AssistiveEvent {
+  id          String   @id @default(cuid())
+  userId      String
+  chatId      String?
+  adhdAssist  Boolean  @default(false)
+  eventType   String
+  metricsJson Json
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chat        Chat?    @relation(fields: [chatId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([eventType, createdAt])
+  @@index([adhdAssist, createdAt])
+  @@index([chatId])
+  @@map("assistive_events")
 }
 
 model ChatMessage {
@@ -494,10 +531,10 @@ model ExternalUser {
 
 enum UserRole {
   ADMIN
+  UNIT_ADMIN
   INSTRUCTOR
   TA
   STUDENT
-  UNIT_ADMIN
 }
 
 enum EnrollmentRole {

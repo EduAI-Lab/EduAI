@@ -7,27 +7,23 @@ import { createProviderRegistry } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOllama } from 'ollama-ai-provider';
-
-export type {
-  SupportedProvider,
-  UserProviderSettings,
-  ProviderConfig,
-} from './providers.shared';
-
-export {
-  PROVIDER_CONFIGS,
-  validateProviderConfig,
-  getAvailableProviders,
-  getProviderConfig,
-  isProviderConfigured,
-  getModelIdentifier,
+import {
+  LOCAL_INFERENCE_PROVIDERS,
+  mergeLocalInferenceFromEnv,
   parseModelIdentifier,
-  filterModelsForApiKeys,
-  mergeServerOpenRouterApiKey,
-} from './providers.shared';
+  PROVIDER_CONFIGS,
+  type ProviderConfig,
+  type SupportedProvider,
+  type UserProviderSettings,
+} from './provider-types';
 
-import type { UserProviderSettings } from './providers.shared';
-import { parseModelIdentifier } from './providers.shared';
+export type { ProviderConfig, SupportedProvider, UserProviderSettings };
+export {
+  LOCAL_INFERENCE_PROVIDERS,
+  mergeLocalInferenceFromEnv,
+  parseModelIdentifier,
+  PROVIDER_CONFIGS,
+};
 
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 
@@ -47,6 +43,9 @@ function createOpenRouterClient(apiKey: string) {
   });
 }
 
+/**
+ * Creates a dynamic provider registry with user-provided settings
+ */
 export function createAIProviderRegistry(userSettings: UserProviderSettings) {
   const providers: Record<string, any> = {};
 
@@ -80,39 +79,87 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
     });
   }
 
+  // vLLM (OpenAI-compatible /v1 — see docs/rag-ai/VLLM.md)
+  if (userSettings.vllm?.isEnabled) {
+    const vllmPort = process.env.VLLM_PORT || '8001';
+    let baseURL =
+      userSettings.vllm?.baseUrl ||
+      process.env.VLLM_BASE_URL ||
+      `http://localhost:${vllmPort}`;
+
+    baseURL = baseURL.replace(/\/$/, '');
+    if (!baseURL.endsWith('/v1')) {
+      baseURL = `${baseURL}/v1`;
+    }
+
+    const apiKey =
+      userSettings.vllm?.apiKey ||
+      process.env.VLLM_API_KEY ||
+      'vllm-local';
+
+    providers.vllm = createOpenAI({
+      apiKey,
+      baseURL,
+    });
+  }
+
   return createProviderRegistry(providers, { separator: ':' });
 }
 
-export async function modelSupportsTools(modelIdentifier: string): Promise<boolean> {
-  try {
-    const { default: prisma } = await import('../prisma.server');
+export function validateProviderConfig(
+  providerId: SupportedProvider,
+  settings: { apiKey?: string; baseUrl?: string },
+): { isValid: boolean; error?: string } {
+  const config = PROVIDER_CONFIGS[providerId];
 
-    const parsed = parseModelIdentifier(modelIdentifier);
-    if (!parsed) {
-      console.log(`Invalid model identifier: ${modelIdentifier}`);
-      return false;
-    }
+  if (!config) {
+    return { isValid: false, error: 'Unsupported provider' };
+  }
 
-    const model = await prisma.aIModel.findFirst({
-      where: {
-        modelId: parsed.modelId,
-        provider: {
-          name: parsed.providerId,
-        },
-        isActive: true,
-      },
-      orderBy: { updatedAt: "desc" },
-      select: {
-        supportsTools: true,
-        name: true,
-      },
-    });
+  if (config.requiresApiKey && !settings.apiKey) {
+    return { isValid: false, error: 'API key is required for this provider' };
+  }
 
-    const supportsTools = model?.supportsTools ?? false;
-    console.log(`Model ${modelIdentifier} (${model?.name || 'unknown'}) supports tools: ${supportsTools}`);
-    return supportsTools;
-  } catch (error) {
-    console.error('Error checking model tool support:', error);
+  return { isValid: true };
+}
+
+export function getAvailableProviders(): ProviderConfig[] {
+  return Object.values(PROVIDER_CONFIGS);
+}
+
+export function getProviderConfig(providerId: SupportedProvider): ProviderConfig | null {
+  return PROVIDER_CONFIGS[providerId] || null;
+}
+
+export function isProviderConfigured(
+  providerId: SupportedProvider,
+  userSettings: UserProviderSettings,
+): boolean {
+  const userConfig = userSettings[providerId];
+  const providerConfig = PROVIDER_CONFIGS[providerId];
+
+  if (!userConfig?.isEnabled) return false;
+
+  if (providerConfig?.requiresApiKey && !userConfig.apiKey) {
     return false;
   }
+
+  return true;
+}
+
+export function getModelIdentifier(providerId: SupportedProvider, modelId: string): string {
+  return `${providerId}:${modelId}`;
+}
+
+/** Providers that would be registered from current settings (for error messages). */
+export function listEnabledRegistryProviders(
+  userSettings: UserProviderSettings,
+): string[] {
+  const ids: string[] = [];
+  if (userSettings.openai?.isEnabled && userSettings.openai?.apiKey) ids.push('openai');
+  if (userSettings.google?.isEnabled && userSettings.google?.apiKey) ids.push('google');
+  if (userSettings.openrouter?.isEnabled && userSettings.openrouter?.apiKey) ids.push('openrouter');
+  if (userSettings.ollama?.isEnabled) ids.push('ollama');
+  if (userSettings.vllm?.isEnabled) ids.push('vllm');
+  return ids;
 }

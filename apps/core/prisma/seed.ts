@@ -892,6 +892,20 @@ async function seedAIProvidersAndModels() {
     },
   });
 
+  await prisma.aIProvider.upsert({
+    where: { name: 'vllm' },
+    update: {},
+    create: {
+      name: 'vllm',
+      displayName: 'vLLM',
+      description: 'Local OpenAI-compatible inference (vLLM on cmps01 or tunnel)',
+      requiresApiKey: false,
+      defaultBaseUrl: 'http://localhost:8001/v1',
+      envVarName: 'VLLM_BASE_URL',
+      isActive: true,
+    },
+  });
+
   const openaiModels = [
     { modelId: 'gpt-4.1', name: 'GPT-4.1', description: 'Advanced GPT-4.1', maxTokens: 128000, inputPricing: 5, outputPricing: 15 },
     { modelId: 'gpt-4o', name: 'GPT-4o', description: 'Multimodal flagship', maxTokens: 128000, inputPricing: 2.5, outputPricing: 10 },
