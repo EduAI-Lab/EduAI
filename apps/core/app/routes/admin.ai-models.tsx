@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { useLoaderData, redirect } from "react-router";
+import { Link, useLoaderData, redirect } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 
 import { AiModelsAdminView } from "~/components/admin/ai-models-admin-view";
@@ -8,6 +8,14 @@ import { SiteHeader } from "~/components/site-header";
 import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
 import { useAiModels } from "~/hooks/api/use-ai-models";
 import { useAiProviders } from "~/hooks/api/use-ai-providers";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "~/components/ui/breadcrumb";
 import { auth } from "~/lib/auth/server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -86,7 +94,25 @@ export default function AIModelsPage() {
     >
       <AppSidebar variant="inset" user={user} />
       <SidebarInset>
-        <SiteHeader user={user} />
+        <SiteHeader
+          breadcrumbs={
+            <Breadcrumb>
+              <BreadcrumbList>
+                <BreadcrumbItem>
+                  <BreadcrumbLink asChild><Link to="/dashboard">Home</Link></BreadcrumbLink>
+                </BreadcrumbItem>
+                <BreadcrumbSeparator />
+                <BreadcrumbItem>
+                  <BreadcrumbPage>Admin</BreadcrumbPage>
+                </BreadcrumbItem>
+                <BreadcrumbSeparator />
+                <BreadcrumbItem>
+                  <BreadcrumbPage>AI Models</BreadcrumbPage>
+                </BreadcrumbItem>
+              </BreadcrumbList>
+            </Breadcrumb>
+          }
+        />
         <AiModelsAdminView
           providers={providers}
           models={models}
