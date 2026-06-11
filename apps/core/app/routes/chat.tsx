@@ -1,6 +1,6 @@
 import { useChat } from "@ai-sdk/react";
 import { useCallback, useEffect, useState } from "react";
-import { redirect, useLoaderData, useFetcher } from "react-router";
+import { Link, redirect, useLoaderData, useFetcher } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
 
@@ -13,6 +13,14 @@ import type {
 } from "~/components/chat/chat-view-types";
 import { SiteHeader } from "~/components/site-header";
 import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "~/components/ui/breadcrumb"
 import { fetchChatSession } from "~/hooks/api/use-chat-sessions";
 import { useCourses } from "~/hooks/api/use-courses";
 import { useApiKeys } from "~/hooks/use-api-keys";
@@ -241,13 +249,27 @@ export default function Chat() {
       style={
         {
           "--sidebar-width": "calc(var(--spacing) * 72)",
-          "--header-height": "calc(var(--spacing) * 14)",
+          "--header-height": "calc(var(--spacing) * 12)",
         } as React.CSSProperties
       }
     >
       <AppSidebar variant="inset" user={user} />
       <SidebarInset>
-        <SiteHeader title="Chat" />
+        <SiteHeader
+          breadcrumbs={
+            <Breadcrumb>
+              <BreadcrumbList>
+                <BreadcrumbItem>
+                  <BreadcrumbLink asChild><Link to="/dashboard">Home</Link></BreadcrumbLink>
+                </BreadcrumbItem>
+                <BreadcrumbSeparator />
+                <BreadcrumbItem>
+                  <BreadcrumbPage>Chat</BreadcrumbPage>
+                </BreadcrumbItem>
+              </BreadcrumbList>
+            </Breadcrumb>
+          }
+        />
         {isGlobalChat ? (
           <ChatGlobalView {...sharedViewProps} />
         ) : (
