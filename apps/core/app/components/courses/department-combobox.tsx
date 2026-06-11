@@ -47,14 +47,24 @@ export function DepartmentCombobox({
 
   useEffect(() => {
     if (!open) return
-    const handler = (e: MouseEvent) => {
+    const handleMouse = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setOpen(false)
         setSearch('')
       }
     }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setOpen(false)
+        setSearch('')
+      }
+    }
+    document.addEventListener('mousedown', handleMouse)
+    document.addEventListener('keydown', handleKey)
+    return () => {
+      document.removeEventListener('mousedown', handleMouse)
+      document.removeEventListener('keydown', handleKey)
+    }
   }, [open])
 
   return (
@@ -85,6 +95,7 @@ export function DepartmentCombobox({
               placeholder="Search departments..."
               value={search}
               onValueChange={setSearch}
+              autoFocus
             />
             <CommandList>
               <CommandEmpty>No department found.</CommandEmpty>
@@ -94,6 +105,11 @@ export function DepartmentCombobox({
                     key={d.code}
                     value={d.code}
                     className="cursor-pointer"
+                    onSelect={(val) => {
+                      onValueChange(val)
+                      setOpen(false)
+                      setSearch('')
+                    }}
                     onMouseDown={(e) => {
                       e.preventDefault()
                       onValueChange(d.code)
