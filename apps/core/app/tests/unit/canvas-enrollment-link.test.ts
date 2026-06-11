@@ -1,6 +1,8 @@
 // @vitest-environment node
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const TEST_ENCRYPTION_KEY = "test-encryption-key-32bytes!!";
 
 vi.mock("~/lib/prisma.server", () => ({
   default: {
@@ -31,6 +33,11 @@ import {
 describe("linkEnrollmentsFromStagingForCourse", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv("ENCRYPTION_KEY", TEST_ENCRYPTION_KEY);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   it("upserts enrollments for users with matching studentId", async () => {
@@ -79,7 +86,6 @@ describe("linkEnrollmentsFromStagingForCourse", () => {
   });
 
   it("links enrollments when roster sisUserId is encrypted at rest", async () => {
-    vi.stubEnv("ENCRYPTION_KEY", "test-encryption-key-32bytes!!");
     const { prepareRosterSisUserIdStorage, prepareStudentIdStorage } = await import(
       "~/lib/canvas/student-id.server"
     );
@@ -107,13 +113,17 @@ describe("linkEnrollmentsFromStagingForCourse", () => {
         update: expect.objectContaining({ isActive: true }),
       }),
     );
-    vi.unstubAllEnvs();
   });
 });
 
 describe("resolveCanvasEnrollmentsForUser", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv("ENCRYPTION_KEY", TEST_ENCRYPTION_KEY);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   it("links all active staging rows for the user's studentId", async () => {
@@ -121,6 +131,7 @@ describe("resolveCanvasEnrollmentsForUser", () => {
       studentId: "student_2",
       studentIdLookup: null,
     } as never);
+    vi.mocked(prisma.user.update).mockResolvedValue({} as never);
     vi.mocked(prisma.canvasRosterMember.findMany).mockResolvedValue([
       { courseId: "course-a", role: "STUDENT", canvasUserId: "202" },
       { courseId: "course-b", role: "TA", canvasUserId: "202" },
