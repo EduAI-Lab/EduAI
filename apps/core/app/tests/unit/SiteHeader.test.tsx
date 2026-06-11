@@ -10,7 +10,7 @@ function renderWithSidebar(ui: React.ReactElement) {
 describe("SiteHeader — rendering", () => {
   it("renders the default title", () => {
     renderWithSidebar(<SiteHeader />);
-    expect(screen.getByRole("heading", { name: "Dashboard" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "EduAI" })).toBeInTheDocument();
   });
 
   it("renders a custom title when provided", () => {
