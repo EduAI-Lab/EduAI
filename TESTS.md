@@ -238,7 +238,7 @@ Each section should use this format:
 | `Nav.test.tsx` | The Report Bug button is visible to students and professors but hidden from admins |
 | `useLocalUser.test.tsx` | Users can log in, log out, and have their session available across the app; accessing the session outside its provider throws an error |
 
-> **Coverage gap:** `home.tsx` role-based routing (STUDENT→/student, INSTRUCTOR→/instructor, TA/UNIT_ADMIN→/unsupported-role, ADMIN→/admin) and `unsupported-role.tsx` role guard (UNIT_ADMIN and TA stay on page; other roles are redirected to their correct route) are not currently covered by unit tests.
+> **Coverage gap:** `home.tsx` role-based routing (STUDENT→/student, INSTRUCTOR→/instructor, UNIT_ADMIN→/instructor, TA→/unsupported-role, ADMIN→/admin) and `unsupported-role.tsx` role guard (TA stays on page; other roles are redirected to their correct route) are not currently covered by unit tests.
 
 ---
 
@@ -260,7 +260,7 @@ Each section should use this format:
 | `activityEvaluation.test.js` | Student answers are marked correct or incorrect for multiple-choice and short-answer questions, and missing questions or answers return a null result rather than crashing |
 | `aiGuidance.test.js` | Tutor prompts include the right question, options, and student answer for each question type; topic and knowledge-level placeholders are replaced correctly; and supervisor verdicts normalize missing or malformed fields to safe defaults |
 | `aiModelPolicy.test.js` | Only models that are actually available can be selected, defaults fall back gracefully when the preferred model is missing, and the number of supervisor loop iterations is kept within a safe range |
-| `auth.middleware.test.js` | `requireAuth` populates `req.user` from Core's session validation response, returns 401 on invalid or missing sessions and when Core is unreachable, forwards the cookie header exactly, normalizes unknown roles to `STUDENT`, and preserves all five valid roles; `requireRole` calls next for permitted roles, returns 403 for the wrong role, returns 401 when no user is set, and includes the required roles in the error; `requireRoles` is the same function reference as `requireRole` |
+| `auth.middleware.test.js` | `requireAuth` populates `req.user` from Core's session validation response, returns 401 on invalid or missing sessions and when Core is unreachable, forwards the cookie header exactly, normalizes unknown roles to `STUDENT`, and preserves all five valid roles; `requireRole` calls next for permitted roles, returns 403 for the wrong role, returns 401 when no user is set, and includes the required roles in the error; `requireRoles` is the same function reference as `requireRole`; `isUnitAdminForCourse` returns true only when role is UNIT_ADMIN and the course department is in `authorizedUnits`, and false for non-matching departments, empty/non-array `authorizedUnits`, null department, non-UNIT_ADMIN roles, and null user or course |
 | `mappers.test.js` | Sensitive fields like passwords are stripped before data leaves the server, IDs resolve correctly whether stored flat or nested, and missing optional fields default to safe values |
 | `eduai.schemas.test.js` | `EduAiEnrollmentSchema` and related EduAI response schemas validate and parse Core payloads and reject malformed shapes |
 | `eduaiClient.testableQuestions.test.js` | `listCourseTestableQuestions` fetches a course's testable questions from Core with the service key and maps/handles the response and error cases |
@@ -274,7 +274,7 @@ Each section should use this format:
 
 | Test file | What it tests |
 |-----------|---------------|
-| `activities.test.js` | Students see completion status on activities while professors do not, answers are graded correctly, feedback requires a prior submission, and non-members and unenrolled users are blocked |
+| `activities.test.js` | Students see completion status on activities while professors do not; TA sees activities even when unpublished; answer submission (§308) enforces STUDENT-only + active enrollment + full ancestor publish chain (403 for INSTRUCTOR/TA, unenrolled student, and unpublished lesson/module/course); `GET /activities/:id/submissions` and `GET /activities/:id/feedback` admit INSTRUCTOR and course-enrolled TA but 403 students and TAs in a different course; cross-course TA isolation confirmed (TA in course A cannot access course B); teach/guide/custom endpoints enforce the same STUDENT + enrollment + publish gate |
 | `admin.test.js` | Admins can list courses and view API key status; role-update returns 410 (managed by EduAI); all admin endpoints reject non-admin users with 403 |
 | `analytics.test.js` | `GET /courses/:id/submissions` (INSTRUCTOR/UNIT_ADMIN/TA/ADMIN get 200; student gets 403), filterable by activityId and studentId; `GET /courses/:id/student-metrics` and `GET /courses/:id/analytics` (INSTRUCTOR/UNIT_ADMIN/ADMIN get 200; TA and student get 403); `GET /me/submissions` and `GET /me/feedback` own-resource endpoints return the user's own data with no enrollment check (inactive students retain access) |
 | `auth.test.js` | The current user is returned without their password field; admins are blocked from non-admin endpoints while retaining access to `/api/me` |
