@@ -5,13 +5,21 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
 
-
-## [Week 6 — June 8–13, 2026]
+## [Week 6 — June 8–14, 2026]
 
 ### Added
 
-- [core] db: Add Canvas roster sync schema — optional unique `User.studentId` (UBC student number) and `CanvasRosterMember` staging table (`canvas_roster_members`) keyed by course + Canvas user id; migration `20260608200000_canvas_roster_sync_schema`. (#511, @GlowyBlack, 2026-06-08)
-- [core] api: Add Canvas course sync backend — `GET /api/canvas/courses` (instructor picker with `isSynced` state), `POST /api/canvas/sync` (selective sync/unsync from checked Canvas course ids: upsert Core `Course`, instructor `Enrollment`, roster staging, and student `Enrollment` when `sis_user_id` matches `User.studentId`), and `POST /api/canvas/link-roster` (STUDENT/TA links account by student number); extend catch-all `canvas.$.ts` routing. (#511, @GlowyBlack, 2026-06-08)
+- [core] db: Add Canvas roster sync schema — optional unique `User.studentId` (UBC student number) and `CanvasRosterMember` staging table (`canvas_roster_members`) keyed by course + Canvas user id; migration `20260608200000_canvas_roster_sync_schema`. (#511, @GlowyBlack, 2026-06-10)
+- [core] api: Add Canvas course sync backend — `GET /api/canvas/courses` (instructor picker with `isSynced` state), `POST /api/canvas/sync` (selective sync/unsync from checked Canvas course ids: upsert Core `Course`, instructor `Enrollment`, roster staging, and student `Enrollment` when `sis_user_id` matches `User.studentId`), and `POST /api/canvas/link-roster` (STUDENT/TA links account by student number); extend catch-all `canvas.$.ts` routing. (#511, @GlowyBlack, 2026-06-10)
+- [core] feat: Add account-level Assistive Mode shell — `AssistiveUiProvider` syncs `data-assistive` on `<html>` (SSR + client), `GET`/`PATCH /api/preferences` for `UserPreference.assistDefault`, and the `/chat` assist toggle writes through the provider so the preference persists platform-wide. Settings Accessibility tab deferred to #530 (blocked on #491). (#520, #531, @ebabar5, 2026-06-09)
+- [core] ui: Add assistive reading typography gated by `[data-assistive]` — `.reading-surface` on chat messages, markdown, reasoning, and course overview text; 16px base, 1.625 line-height, 65ch measure, increased letter/word and paragraph spacing (no font swap). (#523, #539, @ebabar5, 2026-06-10)
+- [core] tests: Unit tests for `/api/preferences` and `AssistiveUiProvider`; integration tests for assistive preference round-trip, per-account isolation, and guest 401 on PATCH. (#520, #531, @ebabar5, 2026-06-09)
+- [core] tests: Unit tests for `assistive-reading.css` contract and `.reading-surface` class on chat/markdown components. (#523, #539, @ebabar5, 2026-06-10)
+- [core] feat: ADHD Assist telemetry (#521, #532) — `AssistiveEvent` Prisma model + migration (`assistive_events`) stores derived compliance metrics only (word count, `topSummary`, `nextLine`, `underCap`, `structuralPass`, model/tokens/duration); never message text (BREB-consistent). Shared `apps/core/app/lib/ai/adhd-metrics.ts` used by chat `onFinish` logging and `eval:adhd`. `POST /api/assistive-events` accepts sanitized client UI events (`mode_toggled`, `expand_click`, `task_initiation`, `re_orientation`, `session_completion`). Research report script at `eduai-summer-2026/reports/scripts/report-adhd-metrics.ts` (Cohen's d OFF vs ON; run from `apps/core`). (#521, #532, @Ayyhab, 2026-06-09)
+- [core] tests: Unit tests for `computeAdhdResponseMetrics` / structural pass heuristics (`adhd-metrics.test.ts`, 4 cases) and assistive event persistence + client metric sanitization (`assistive-events.server.test.ts`, 3 cases). (#521, #532, @Ayyhab, 2026-06-09)
+- [core] tests: Route-level tests for `POST /api/assistive-events` (`assistive-events.route.test.ts`, 8 cases) — auth (401), method (405), invalid JSON / schema / non-client event type (422), chat ownership (404), and sanitized create (201). (#521, #532, @Ayyhab, 2026-06-10)
+- [core] refactor: `eval-adhd-assist.mjs` imports shared `adhd-metrics.ts` instead of duplicating compliance scoring; `eval:adhd` runs via `tsx`. (#521, #532, @Ayyhab, 2026-06-09)
+- [core] fix: `report-adhd-metrics.ts` now reports the `task_initiation` / `re_orientation` / `session_completion` behavioural events alongside `response_compliance`, and renders `—` instead of `NaN` for empty cohorts or an under-powered Cohen's d (< 2 samples per side). (#521, #532, @Ayyhab, 2026-06-10)
 - [core] api: Add Canvas sync services — paginated Canvas REST client (`listTeacherCanvasCourses`, roster fetch), course field mapping, roster upsert/deactivate, enrollment linking from staging (`enrollment-link.server.ts`, `resolveCanvasEnrollmentsForUser`), sync delta (`computeCanvasSyncDelta`), instructor course-access validation, sync rate limit (1 per 30s), and link-roster rate limit (10 per 15 min). (#511, @GlowyBlack, 2026-06-08)
 - [core] api: Wire admin `PATCH /api/users/:id` to accept `studentId` and trigger `resolveCanvasEnrollmentsForUser` when a student number is set. (#511, @GlowyBlack, 2026-06-08)
 - [core] tests: Add Canvas sync test coverage — 8 unit files (`canvas-client`, `canvas-encryption`, `canvas-schemas`, `canvas-sync-services`, `canvas-sync-delta`, `canvas-enrollment-link`, `canvas-guards`, `canvas-link-roster`) and `canvas.integration.test.ts` (26 integration tests for connect, courses picker, sync/unsync, link-roster, auth guards, and rate limits); document in `TESTS.md`. (#511, @GlowyBlack, 2026-06-08)
@@ -23,6 +31,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ### Changed
 
 - [core] api: Auto-publish Canvas-synced courses (`isPublished: true`) so linked students can list them under the student publish gate. (#511, @GlowyBlack, 2026-06-10)
+- [question-maker] api: Enforce the §16–§18 RBAC matrices — session-role gates, per-course access middleware, `createdBy` TA own-only authoring, instructor-only approval/assessments, owner-keyed Canvas mappings, and ADMIN-only bug-report triage. (#518, @abdullahmoh21, 2026-06-08)
+- [question-maker] tests: Add RBAC coverage — `courseAccess` unit tests plus role×route matrix tests across questions, variants, assessments, and Canvas. (#518, @abdullahmoh21, 2026-06-08)
 
 ### Fixed
 
@@ -33,10 +43,18 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ---
 
-## [Week 5 — June 2–6, 2026]
+## [Week 5 — June 1–7, 2026]
+
 
 ### Added
 
+- [core] feat: vLLM local inference provider — OpenAI-compatible `vllm` provider on cmps01 (`VLLM_BASE_URL`, port **8001**), `mergeLocalInferenceFromEnv()`, Admin-registered models (provider seeded, same pattern as Ollama), `npm run vllm:smoke`, and `providers.server.ts` split for Vite client/server boundary. Stress-tested on dev: **~15× faster** than Ollama under 5-way parallel load; warm direct **~57 ms**, 10 parallel **~320–380 ms**, EduAI full stack median **~211 ms**. Docs: [`docs/rag-ai/VLLM.md`](docs/rag-ai/VLLM.md). ([#449](https://github.com/EduAI-Lab/EduAI/pull/449), Closes #435, #394)
+- [core] feat: Local Ollama embedding provider for RAG — `EMBEDDING_PROVIDER=local` routes index and query embeds through Ollama (`mxbai-embed-large`, 1024-dim); fails fast when Ollama is unavailable (no silent cloud fallback); dimension validation and `[embedding]` provider logging in `embedding.ts`. (#361, #370, #441)
+- [core] docs: LOCAL-EMBEDDINGS decision — `vector(1024)` migration, default local model, re-embed strategy in [`docs/rag-ai/LOCAL-EMBEDDINGS.md`](docs/rag-ai/LOCAL-EMBEDDINGS.md). (#369)
+- [core] tooling: `npm run re-embed:course -- <courseId>` and `reEmbedCourseMaterials()` to re-index course materials after provider/dimension changes. (#373)
+- [core] tests: Unit tests for `getExpectedEmbeddingDimension` and `wantsLocalEmbeddingProvider` in `embedding.test.ts`. (#361)
+- [core] feat: Per-course embedding settings and re-index UI — `Course` embedding fields, `GET/PATCH /api/courses/:courseId/embedding-settings`, async `POST /api/courses/:courseId/re-embed` + `GET .../re-embed/:jobId` with progress polling, Materials tab controls, and `embedding-config.test.ts`. (#373, #441)
+- [core] feat: Background `CourseReEmbedJob` for re-index — non-blocking HTTP, per-material progress, partial-failure handling; `re-embed-job.test.ts`. (#441)
 - [core] api: Add ADMIN-only bug-report list/triage endpoints with anonymity masking, plus `GET /api/bug-reports?mine=true` for own reports (§11). (#304, #478, @abdullahmoh21, 2026-06-05)
 - [core] auth: Make `GET /api/ai-providers` and `GET /api/ai-models` ADMIN-only (§13). (#303, #478, @abdullahmoh21, 2026-06-05)
 - [core] api: Add `GET`/`PATCH /api/me`, block self-role-changes, and support `authorizedUnits` assignment for UNIT_ADMINs (§4). (#297, #478, @abdullahmoh21, 2026-06-05)
@@ -69,6 +87,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [question-maker] tests: Add unit + integration coverage for Core wiring (`coreWiringService.test.js`, `coreApiService.test.js`, `coreWiring.integration.test.js`, `coreWiringDb.integration.test.js`, `syncTopicsCounter.integration.test.js`, `variantApproval.integration.test.js`), variant utils / bank generation / error handler (`assessmentVariantUtils.test.js`, `generateBankVariants.test.js`, `errorHandler.test.js`), assessment service gaps (`assessmentServiceGaps.integration.test.js`, `assessmentVariantService.integration.test.js`), AI generation (`eduaiService.test.js`, `aiServiceGenerate.test.js`), canvas converters (`canvasServiceConvert.test.js`), assessment sections (`assessmentSectionService.integration.test.js`), Canvas import/export (`canvasImportExport.integration.test.js`), and extracted-question saving (`saveExtractedQuestions.integration.test.js`); point QM backend `test:coverage` at a dedicated `vitest.coverage.config.js` that runs the unit and integration suites together over `src/**`, with a `globalSetup` that syncs the test-DB schema once up front for deterministic shared-worker runs. (#430, @abdullahmoh21, 2026-06-01)
 
 ### Changed
+
+- [monorepo] docs: Mark Question Maker §16–§18 as implemented in `rbac-matrix.md`. (#518, @abdullahmoh21, 2026-06-08)
+- [core] infra: Prisma migration `20260522130000_local_embeddings_vector_1024` — `material_embeddings.embedding` from `vector(3072)` to `vector(1024)` (clears incompatible rows; re-embed required). (#373, #441)
+- [core] docs: Update [`EMBEDDINGS.md`](docs/rag-ai/EMBEDDINGS.md), [`ARCHITECTURE.md`](docs/ARCHITECTURE.md), `apps/core/.env.example`, and README for local embed env vars. (#370)
 - [core] refactor: Move data fetching out of domain components into parent routes — `courses.$courseId` owns materials load/upload; `chat` owns `useApiKeys` / `ApiKeySettings`; `admin.ai-models` owns Ollama model fetch for `ModelFormDialog`. (#437, #438, 2026-06-03)
 - [core] docs: Update `apps/core/README.md` — monorepo install from root, component architecture section, and expanded component test inventory. (#385, @Ayyhab, 2026-06-03)
 - [monorepo] docs: Update root `README.md` with EduAI component skeleton overview and link to `apps/core/docs/`. (#385, @Ayyhab, 2026-06-03)
@@ -83,11 +105,18 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [monorepo] infra: Unify shared infrastructure dependencies — pin `react`, `react-dom`, `zod`, `clsx`, and `class-variance-authority` via root npm `overrides` so they resolve to a single copy across all workspaces; hoist `typescript ^5.8.3`, `@types/node ^22`, `tsx ^4.19.4`, `nodemon ^3.1.10` to root `devDependencies` and remove per-workspace declarations from `edu-ai`, `ai-tutor`, `ai-tutor-server`, `question-maker-frontend`, and `question-maker-backend`; add `syncpack ^13` for ongoing version-drift detection. (@evanbones, 2026-06-03)
 
 ### Fixed
+
+- [core] rag: Replace per-chunk sequential INSERT with `createManyAndReturn` + batched transaction on material embed path — chunk creation now costs 1 DB round-trip regardless of document size (down from N); embedding inserts remain individual raw SQL due to the pgvector type but run inside the same transaction. (#364, @ammaarm128, 2026-06-06)
+- [core] rag: Eliminate double-split on material ingest path — `processMaterialEmbeddings` now detects `SEMANTIC_CHUNK_SEPARATOR` written by `processUploadedFile` and splits on it directly, preserving semantic chunks from `applySemanticChunking`; falls back to `generateChunks` for content that did not pass through the upload path. Previously, every uploaded file was semantically chunked in `file-processing.ts` and then immediately re-split by a naive sentence splitter in `embedding.ts`, destroying section boundaries. Re-upload existing materials to benefit. (#360, @ammaarm128, 2026-06-06)
+- [core] tests: Add unit tests for `resolveMaterialChunks` — covers separator-preserving split, `generateChunks` fallback, and empty separator-only input. (#360, @ammaarm128, 2026-06-06)
+- [core] fix: Local Ollama re-embed for large slide decks — use native `POST /api/embed`, smaller char-based chunks when PDF text has no sentence breaks (avoids `mxbai-embed-large` context-length 400), and batched embed with split-on-400; verified 7/7 materials on dev COSC 315. (#441)
 - [core] fix: Scope persisted-course validation to the current user (#420 review) — the `/chat` loader now restores `lastCourseCode` against the courses the user can actually access (courses they teach, TA, or are actively enrolled in; admins see all) via new `getAccessibleCourseCodes` in `apps/core/app/lib/courses/server.ts`, instead of every course in the database. A course the user can no longer access is dropped on restore rather than treated as valid just because it still exists globally. Adds `apps/core/app/tests/unit/courses-server.test.ts`. (#420, review feedback from @Whiteknight07, @Ayyhab, 2026-06-05)
 - [monorepo] infra: Replace em dash with hyphen in `scripts/dev-db.sh` Docker startup message to avoid PowerShell parse errors on Windows. (#438, @yta3216, 2026-06-03)
 - [question-maker] api: Fix variant push to Core — support CUID string primary topic ids, lowercase `difficulty` / `reasoningLevel` enum values, return Core topic ids in the `INVALID_TOPIC_IDS` response, count name-updated topics in the sync-topics synced total, query JSON `question_order` with the `->>` operator, and wrap the cursor insert in a savepoint to survive a unique-key race. (#453, @abdullahmoh21, 2026-06-01)
 - [question-maker] ui: Remove the local admin bug-reports page (`BugReportsAdminPage`, `/admin/bug-reports` route) and all navigation entry-points (`ProfileCoursesDialog`, `TopNavigation`) — the local Sequelize `BugReport` model was removed as part of centralization; reports are now written exclusively to Core, so the GET/PATCH admin routes no longer exist and the page was unreachable. (@evanbones, 2026-06-03)
 - [ai-tutor] infra: Add `resolve.dedupe: ['react-router', 'react', 'react-dom']` to `apps/extensions/ai-tutor/vite.config.ts` to fix `Application Error` crash at `localhost:3001` — `useFrameworkContext` at `Meta` returned `undefined` because two copies of `react-router` were loaded (root `node_modules` has `7.6.1` for Core; AI Tutor local has `7.15.0`), giving `@react-router/dev`'s `FrameworkContext` provider and `Meta`'s `useContext` call different React Context object identities. (@evanbones, 2026-06-03)
+
+
 ---
 
 

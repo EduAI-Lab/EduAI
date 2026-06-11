@@ -1,3 +1,4 @@
+import { READING_SURFACE_CLASS } from "~/components/assistive/reading-surface"
 import { cn } from "~/lib/utils"
 import { ChevronDownIcon } from "lucide-react"
 import React, {
@@ -168,6 +169,7 @@ function ReasoningContent({
         ref={innerRef}
         className={cn(
           "text-muted-foreground prose prose-sm dark:prose-invert",
+          READING_SURFACE_CLASS,
           contentClassName
         )}
       >

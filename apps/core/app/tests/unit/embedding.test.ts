@@ -1,12 +1,20 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 
-// Mock all server-side and external dependencies so only generateChunks is exercised.
+// Mock all server-side and external dependencies so only chunk helpers are exercised.
 vi.mock("~/lib/prisma.server", () => ({ default: {} }));
 vi.mock("ai", () => ({ embed: vi.fn(), embedMany: vi.fn() }));
 vi.mock("@ai-sdk/openai", () => ({ createOpenAI: vi.fn() }));
 vi.mock("@ai-sdk/google", () => ({ createGoogleGenerativeAI: vi.fn() }));
+vi.mock("ollama-ai-provider", () => ({ createOllama: vi.fn() }));
 
-const { generateChunks } = await import("~/lib/ai/embedding");
+const {
+  generateChunks,
+  resolveMaterialChunks,
+  getExpectedEmbeddingDimension,
+  wantsLocalEmbeddingProvider,
+  DEFAULT_EMBEDDING_DIMENSION,
+} = await import("~/lib/ai/embedding");
+const { SEMANTIC_CHUNK_SEPARATOR, joinSemanticChunks } = await import("~/lib/ai/file-processing");
 
 // ---------------------------------------------------------------------------
 // generateChunks
@@ -43,10 +51,98 @@ describe("generateChunks", () => {
     expect(() => generateChunks("no punctuation here at all", 800)).not.toThrow();
   });
 
+  it("splits slide-deck text without punctuation into bounded chunks", () => {
+    const slides = "Topic line without periods\n".repeat(400);
+    const chunks = generateChunks(slides, 200, 40);
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const chunk of chunks) {
+      expect(chunk.length).toBeLessThanOrEqual(200);
+    }
+  });
+
   it("trims whitespace from each chunk", () => {
     const chunks = generateChunks("  Hello world.  Goodbye world.  ", 800);
     for (const chunk of chunks) {
       expect(chunk).toBe(chunk.trim());
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveMaterialChunks
+// ---------------------------------------------------------------------------
+
+describe("resolveMaterialChunks", () => {
+  it("preserves semantic chunks when the upload-path separator is present", () => {
+    const semantic = ["# Section 1\n\nIntro text.", "# Section 2\n\nMore text."];
+    const content = joinSemanticChunks(semantic);
+
+    expect(resolveMaterialChunks(content)).toEqual(semantic);
+  });
+
+  it("falls back to generateChunks when no separator is present", () => {
+    const content = "Short sentence.";
+    expect(resolveMaterialChunks(content)).toEqual(generateChunks(content));
+  });
+
+  it("returns an empty array when content is only separators and whitespace", () => {
+    const content = joinSemanticChunks(["", "   "]);
+    expect(resolveMaterialChunks(content)).toEqual([]);
+  });
+
+  it("uses the shared separator constant from file-processing", () => {
+    expect(SEMANTIC_CHUNK_SEPARATOR).toBe("--- CHUNK SEPARATOR ---");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// embedding provider config helpers
+// ---------------------------------------------------------------------------
+
+describe("getExpectedEmbeddingDimension", () => {
+  const original = process.env.EMBEDDING_DIMENSION;
+
+  afterEach(() => {
+    if (original === undefined) delete process.env.EMBEDDING_DIMENSION;
+    else process.env.EMBEDDING_DIMENSION = original;
+  });
+
+  it("defaults to 1024 (local embedding dimension)", () => {
+    delete process.env.EMBEDDING_DIMENSION;
+    expect(getExpectedEmbeddingDimension()).toBe(DEFAULT_EMBEDDING_DIMENSION);
+    expect(DEFAULT_EMBEDDING_DIMENSION).toBe(1024);
+  });
+
+  it("reads EMBEDDING_DIMENSION from env", () => {
+    process.env.EMBEDDING_DIMENSION = "768";
+    expect(getExpectedEmbeddingDimension()).toBe(768);
+  });
+
+  it("falls back when env is invalid", () => {
+    process.env.EMBEDDING_DIMENSION = "not-a-number";
+    expect(getExpectedEmbeddingDimension()).toBe(1024);
+  });
+});
+
+describe("wantsLocalEmbeddingProvider", () => {
+  const original = process.env.EMBEDDING_PROVIDER;
+
+  afterEach(() => {
+    if (original === undefined) delete process.env.EMBEDDING_PROVIDER;
+    else process.env.EMBEDDING_PROVIDER = original;
+  });
+
+  it("returns true for local and ollama", () => {
+    process.env.EMBEDDING_PROVIDER = "local";
+    expect(wantsLocalEmbeddingProvider()).toBe(true);
+    process.env.EMBEDDING_PROVIDER = "ollama";
+    expect(wantsLocalEmbeddingProvider()).toBe(true);
+  });
+
+  it("returns false for cloud or unset", () => {
+    process.env.EMBEDDING_PROVIDER = "cloud";
+    expect(wantsLocalEmbeddingProvider()).toBe(false);
+    delete process.env.EMBEDDING_PROVIDER;
+    expect(wantsLocalEmbeddingProvider()).toBe(false);
   });
 });

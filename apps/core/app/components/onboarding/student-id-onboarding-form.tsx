@@ -47,7 +47,9 @@ export function StudentIdOnboardingForm({
             disabled={isLoading}
             className={fieldError ? "border-destructive" : undefined}
           />
-          {fieldError && <p className="text-sm text-destructive">{fieldError}</p>}
+          {fieldError && (
+            <p className="text-sm text-destructive">{fieldError}</p>
+          )}
           <p className="text-xs text-muted-foreground">
             This must match your student ID.
           </p>
@@ -72,7 +74,8 @@ export function StudentIdOnboardingForm({
       </Form>
 
       <p className="text-center text-xs text-muted-foreground">
-        Ask your instructor to sync Canvas first if linking fails. You can try again later.
+        Ask your instructor to sync Canvas first if linking fails. You can try
+        again later.
       </p>
     </div>
   );

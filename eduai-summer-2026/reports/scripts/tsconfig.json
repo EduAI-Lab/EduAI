@@ -1,0 +1,16 @@
+{
+  "$comment": "Editor/typecheck config for the tsx research scripts in this folder. They run via `tsx` from apps/core and are not part of the app build; this just loads Node types so process/node:* / import.meta resolve.",
+  "compilerOptions": {
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "target": "es2022",
+    "lib": ["es2022"],
+    "types": ["node"],
+    "strict": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "noEmit": true
+  },
+  "include": ["*.ts"]
+}
