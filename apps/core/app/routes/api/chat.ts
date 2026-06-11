@@ -947,6 +947,30 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
           oversightCompletionTokens: audited.oversightUsage?.completionTokens,
         });
 
+        const persistOverseenAssistantMessages = async (text: string) => {
+          if (response?.messages?.length) {
+            const assistantMessages = response.messages.filter((message) => message.role === "assistant");
+            if (assistantMessages.length > 0 && text) {
+              const persisted = assistantMessages.map((message, index) =>
+                index === assistantMessages.length - 1
+                  ? { ...message, content: text }
+                  : message,
+              );
+              await appendMessages(persisted);
+            } else {
+              await appendMessages(assistantMessages);
+            }
+          } else if (text) {
+            await appendMessages([
+              {
+                id: randomUUID(),
+                role: "assistant",
+                content: text,
+              },
+            ]);
+          }
+        };
+
         if (streaming) {
           const headers: Record<string, string> = {
             "Content-Encoding": "none",
@@ -957,15 +981,7 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
             headers["X-Chat-Id"] = chat.id;
           }
 
-          if (finalText) {
-            await appendMessages([
-              {
-                id: randomUUID(),
-                role: "assistant",
-                content: finalText,
-              },
-            ]);
-          }
+          await persistOverseenAssistantMessages(finalText);
 
           return createDataStreamResponse({
             headers,
@@ -982,27 +998,7 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
           });
         }
 
-        if (response?.messages?.length) {
-          const assistantMessages = response.messages.filter((message) => message.role === "assistant");
-          if (assistantMessages.length > 0 && finalText) {
-            const persisted = assistantMessages.map((message, index) =>
-              index === assistantMessages.length - 1
-                ? { ...message, content: finalText }
-                : message,
-            );
-            await appendMessages(persisted);
-          } else {
-            await appendMessages(assistantMessages);
-          }
-        } else if (finalText) {
-          await appendMessages([
-            {
-              id: randomUUID(),
-              role: "assistant",
-              content: finalText,
-            },
-          ]);
-        }
+        await persistOverseenAssistantMessages(finalText);
 
         return new Response(
           JSON.stringify({
