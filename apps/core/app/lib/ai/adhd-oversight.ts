@@ -18,7 +18,7 @@ REQUIRED MARKDOWN STRUCTURE:
 3) If steps are needed, add a "### Step ladder" section with at most 5 numbered steps.
 4) End with a standalone line: **Next?** <one short continuation offer>
 
-LENGTH: Hard cap 250 words for tutoring answers; 120 for brief clarifications.
+LENGTH: Hard cap ${ADHD_TUTORING_WORD_CAP} words for tutoring answers; ${ADHD_CLARIFICATION_WORD_CAP} for brief clarifications.
 No emojis. No filler ("Great question!", "Certainly!").
 Return ONLY the rewritten response.`;
 
