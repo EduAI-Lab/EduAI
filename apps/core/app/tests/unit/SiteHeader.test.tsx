@@ -15,12 +15,12 @@ function renderWithSidebar(ui: React.ReactElement, { path = "/" } = {}) {
 describe("SiteHeader — rendering", () => {
   it("renders the default title", () => {
     renderWithSidebar(<SiteHeader />);
-    expect(screen.getByRole("heading", { name: "EduAI" })).toBeInTheDocument();
+    expect(screen.getByText("EduAI")).toBeInTheDocument();
   });
 
   it("renders a custom title when provided", () => {
     renderWithSidebar(<SiteHeader title="Courses" />);
-    expect(screen.getByRole("heading", { name: "Courses" })).toBeInTheDocument();
+    expect(screen.getByText("Courses")).toBeInTheDocument();
   });
 
   it("renders optional actions on the right side of the header", () => {
@@ -35,14 +35,14 @@ describe("SiteHeader — rendering", () => {
 
   it("derives title from route when no title prop is passed", () => {
     renderWithSidebar(<SiteHeader />, { path: "/dashboard" });
-    expect(screen.getByRole("heading", { name: "Dashboard" })).toBeInTheDocument();
+    expect(screen.getByText("Dashboard")).toBeInTheDocument();
   });
 
-  it("renders breadcrumbs instead of h1 when breadcrumbs prop provided", () => {
+  it("renders breadcrumbs instead of title span when breadcrumbs prop provided", () => {
     renderWithSidebar(
       <SiteHeader breadcrumbs={<nav aria-label="breadcrumb">Home</nav>} />,
     );
     expect(screen.getByRole("navigation", { name: "breadcrumb" })).toBeInTheDocument();
-    expect(screen.queryByRole("heading")).not.toBeInTheDocument();
+    expect(screen.queryByText("EduAI")).not.toBeInTheDocument();
   });
 });
