@@ -32,7 +32,7 @@ export function SiteHeader({ title, actions, breadcrumbs }: SiteHeaderProps) {
           orientation="vertical"
           className="mx-2 data-[orientation=vertical]:h-4"
         />
-        {breadcrumbs ?? <h1 className="text-base font-medium">{resolvedTitle}</h1>}
+        {breadcrumbs ?? <span className="text-sm font-normal text-foreground">{resolvedTitle}</span>}
         <div className="ml-auto flex h-full items-center gap-3 sm:gap-4">
           {actions}
           <BugReportSubmitDialog />
