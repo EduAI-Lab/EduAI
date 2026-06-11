@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { UserProviderSettings } from '~/lib/ai/providers';
+import type { UserProviderSettings } from '~/lib/ai/provider-types';
+import { LOCAL_INFERENCE_PROVIDERS } from '~/lib/ai/provider-types';
 
 export interface ApiKeyData {
   providerId: string;
@@ -60,8 +61,7 @@ export function useApiKeys() {
     const validKeys: UserProviderSettings = {};
 
     Object.entries(apiKeys).forEach(([providerId, settings]) => {
-      // Ollama doesn't require an API key, just needs to be enabled
-      if (providerId === 'ollama') {
+      if (LOCAL_INFERENCE_PROVIDERS.includes(providerId as (typeof LOCAL_INFERENCE_PROVIDERS)[number])) {
         if (settings.isEnabled) {
           validKeys[providerId] = settings;
         }
@@ -78,8 +78,7 @@ export function useApiKeys() {
 
   // Check if a provider is configured
   const isProviderConfigured = useCallback((providerId: string) => {
-    // Ollama doesn't require an API key, just needs to be enabled
-    if (providerId === 'ollama') {
+    if (LOCAL_INFERENCE_PROVIDERS.includes(providerId as (typeof LOCAL_INFERENCE_PROVIDERS)[number])) {
       return !!(apiKeys[providerId]?.isEnabled);
     }
     return !!(apiKeys[providerId]?.isEnabled && apiKeys[providerId]?.apiKey);
