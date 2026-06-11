@@ -365,10 +365,12 @@ Read and update the authenticated user's UI preferences (`UserPreference` row). 
 
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
-| `GET` | `/api/preferences` | Returns `{ assistDefault, lastCourseCode }` — defaults to `{ assistDefault: false, lastCourseCode: null }` when no row exists |
-| `PATCH` | `/api/preferences` | Partial update; accepts `assistDefault` (boolean) and/or `lastCourseCode` (string or `null` to clear) |
+| `GET` | `/api/preferences` | Returns `{ assistDefault, lastCourseCode, motionReduced, density, theme }` — defaults to `{ assistDefault: false, lastCourseCode: null, motionReduced: false, density: "comfortable", theme: "system" }` when no row exists |
+| `PATCH` | `/api/preferences` | Partial update; accepts `assistDefault` (boolean), `lastCourseCode` (string or `null`), `motionReduced` (boolean), `density` (`comfortable` \| `compact`), and/or `theme` (`system` \| `light` \| `dark`) |
 
-When `assistDefault` is `true`, the root layout sets `data-assistive="true"` on `<html>` for CSS scoping; when `false`, the attribute is **absent** (not `"false"`) so baseline styles are unchanged.
+When `assistDefault` is `true`, the root layout sets `data-assistive="true"` on `<html>` for CSS scoping; when `false`, the attribute is **absent** (not `"false"`) so baseline styles are unchanged. Non-default `motionReduced`, `density`, and `theme` values set `data-reduce-motion`, `data-density="compact"`, or `light`/`dark` classes on `<html>`; defaults remove those hooks so OFF states stay pixel-identical.
+
+**Settings → Accessibility tab:** `/settings` exposes Assistive Mode, reduce motion, density, and theme controls. Assistive Mode uses `AssistiveUiProvider`; motion/density/theme use `UiPreferencesProvider`. Both persist through `/api/preferences`.
 
 **Assistive reading typography:** Elements marked with the `reading-surface` class (chat messages, course overview text, etc.) pick up spacing-only typography under `[data-assistive]` — 16px base, ~1.625 line-height, 65ch max measure, increased paragraph/letter spacing. No font-family swap; OFF state is pixel-identical because the attribute is absent.
 
@@ -383,7 +385,7 @@ fetch("/api/preferences", {
 });
 ```
 
-The Settings Accessibility tab (motion, density, theme) is tracked separately in GitHub issue #530 and is blocked on the Settings shell rewrite (PR #491).
+The Settings Accessibility tab ships in #530 (`/settings` → Accessibility).
 
 ### Canvas Integration Endpoints
 

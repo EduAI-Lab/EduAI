@@ -15,6 +15,9 @@ import "./app.css";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { AssistiveUiProvider } from "~/components/assistive/assistive-ui-provider";
+import { UiPreferencesProvider } from "~/components/assistive/ui-preferences-provider";
+import { DEFAULT_ACCOUNT_PREFERENCES } from "~/lib/user-preferences";
+import { isUiDensity, isUiTheme, resolveThemeHtmlClass } from "~/lib/ui-preferences";
 
 export const links: Route.LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -29,33 +32,54 @@ export const links: Route.LinksFunction = () => [
   },
 ];
 
+const GUEST_ROOT_PREFERENCES = {
+  assistive: false,
+  motionReduced: false,
+  density: DEFAULT_ACCOUNT_PREFERENCES.density,
+  theme: DEFAULT_ACCOUNT_PREFERENCES.theme,
+} as const;
+
 /**
- * Resolves the account-level Assistive Mode flag for every page render.
- * Guests always get `false`, guaranteeing baseline UI on public pages.
- * Deliberately a single cheap select — not getUserPreference, whose course
- * validation is too heavy to run on every navigation.
+ * Resolves account-level UI preferences for every page render.
+ * Guests always get defaults, guaranteeing baseline UI on public pages.
  */
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request);
   if (!session?.user) {
-    return { assistive: false };
+    return GUEST_ROOT_PREFERENCES;
   }
 
   const row = await prisma.userPreference.findUnique({
     where: { userId: session.user.id },
-    select: { assistDefault: true },
+    select: {
+      assistDefault: true,
+      motionReduced: true,
+      density: true,
+      theme: true,
+    },
   });
 
-  return { assistive: row?.assistDefault ?? false };
+  return {
+    assistive: row?.assistDefault ?? false,
+    motionReduced: row?.motionReduced ?? false,
+    density: isUiDensity(row?.density) ? row.density : DEFAULT_ACCOUNT_PREFERENCES.density,
+    theme: isUiTheme(row?.theme) ? row.theme : DEFAULT_ACCOUNT_PREFERENCES.theme,
+  };
 }
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const data = useRouteLoaderData<typeof loader>("root");
+  const themeClass = data ? resolveThemeHtmlClass(data.theme) : undefined;
 
   return (
-    // data-assistive is only ever present when ON — absent (not "false") when
-    // OFF so the baseline state cannot match [data-assistive] CSS selectors.
-    <html lang="en" {...(data?.assistive ? { "data-assistive": "true" } : {})}>
+    // Non-default hooks only — absent attributes/classes keep baseline pixel-identical.
+    <html
+      lang="en"
+      className={themeClass}
+      {...(data?.assistive ? { "data-assistive": "true" } : {})}
+      {...(data?.motionReduced ? { "data-reduce-motion": "true" } : {})}
+      {...(data?.density === "compact" ? { "data-density": "compact" } : {})}
+    >
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -73,9 +97,15 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
 export default function App({ loaderData }: Route.ComponentProps) {
   return (
-    <AssistiveUiProvider initialAssistive={loaderData?.assistive ?? false}>
-      <Outlet />
-    </AssistiveUiProvider>
+    <UiPreferencesProvider
+      initialMotionReduced={loaderData?.motionReduced ?? false}
+      initialDensity={loaderData?.density ?? DEFAULT_ACCOUNT_PREFERENCES.density}
+      initialTheme={loaderData?.theme ?? DEFAULT_ACCOUNT_PREFERENCES.theme}
+    >
+      <AssistiveUiProvider initialAssistive={loaderData?.assistive ?? false}>
+        <Outlet />
+      </AssistiveUiProvider>
+    </UiPreferencesProvider>
   );
 }
 
