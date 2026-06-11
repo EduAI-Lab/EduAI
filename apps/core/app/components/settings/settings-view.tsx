@@ -2,7 +2,9 @@ import { Form } from "react-router";
 import { useEffect, useState } from "react";
 
 import { CanvasIntegrationSettings } from "~/components/canvas/CanvasIntegrationSettings";
+import { AccessibilitySettingsTab } from "~/components/settings/accessibility-settings-tab";
 import {
+  Accessibility,
   CheckCircle2,
   Copy,
   Globe,
@@ -50,7 +52,7 @@ export function SettingsView({ role }: SettingsViewProps) {
     removeProviderSettings,
     isProviderConfigured,
   } = useApiKeys();
-  const [activeTab, setActiveTab] = useState("api-keys");
+  const [activeTab, setActiveTab] = useState("accessibility");
   const [serverKeys, setServerKeys] = useState<ServerApiKey[]>([]);
   const [creating, setCreating] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
@@ -117,10 +119,13 @@ export function SettingsView({ role }: SettingsViewProps) {
     <div className="px-4 py-6 max-w-4xl mx-auto w-full">
       <h1 className="text-2xl font-bold mb-2">Settings</h1>
       <p className="text-sm text-muted-foreground mb-4">
-        Manage server API keys and local model provider configuration.
+        Manage account preferences, API keys, and local model provider configuration.
       </p>
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
+          <TabsTrigger value="accessibility">
+            <Accessibility className="h-4 w-4" /> Accessibility
+          </TabsTrigger>
           <TabsTrigger value="api-keys">
             <Key className="h-4 w-4" /> API Keys
           </TabsTrigger>
@@ -128,6 +133,10 @@ export function SettingsView({ role }: SettingsViewProps) {
             <Globe className="h-4 w-4" /> Providers
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="accessibility">
+          <AccessibilitySettingsTab />
+        </TabsContent>
 
         <TabsContent value="api-keys" className="mt-6 space-y-6">
           <Card>
