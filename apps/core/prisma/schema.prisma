@@ -37,6 +37,7 @@ model User {
   uploadedMaterials CourseMaterial[]       @relation("MaterialUploader")
   createdTopics     CourseTopic[]          @relation("TopicCreator")
   canvasIntegration CanvasIntegration?
+  invitationsSent   Invitation[]           @relation("InvitationsSent")
 
   @@map("user")
 }
@@ -524,6 +525,38 @@ enum EnrollmentRole {
   STUDENT
   TA
   INSTRUCTOR
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+}
+
+/// Admin-issued invitation to onboard a privileged, non-self-serve platform
+/// user (ADMIN / UNIT_ADMIN / INSTRUCTOR). The invitee follows a tokenized
+/// link, sets a password, and gets a real account with the invited role.
+model Invitation {
+  id              String           @id @default(cuid())
+  email           String
+  name            String?
+  role            UserRole
+  authorizedUnits String[]         @default([])
+  /// sha256 of the raw token; the raw token only ever lives in the email link.
+  tokenHash       String           @unique
+  status          InvitationStatus @default(PENDING)
+  /// Null when the inviting admin's account has since been deleted.
+  invitedById     String?
+  invitedBy       User?            @relation("InvitationsSent", fields: [invitedById], references: [id], onDelete: SetNull)
+  acceptedUserId  String?
+  expiresAt       DateTime
+  acceptedAt      DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([email])
+  @@index([status])
+  @@map("invitations")
 }
 
 enum QuestionType {
