@@ -262,19 +262,17 @@ export default function SettingsPage() {
                       )}
                     </div>
 
-                    <div className="space-y-2">
-                      <Label className="mb-1">Ollama (Local)</Label>
-                      {isProviderConfigured('ollama') ? (
-                        <div className="flex items-center gap-2">
-                          <Badge variant="secondary">Enabled</Badge>
-                          <Button size="sm" variant="outline" onClick={()=>removeProviderSettings('ollama')} className="text-red-600 hover:text-red-700">Disable</Button>
-                        </div>
-                      ) : (
-                        <div className="flex gap-2">
-                          <Button size="sm" onClick={()=>updateProviderSettings('ollama',{ isEnabled: true })}>Enable Ollama</Button>
-                        </div>
-                      )}
-                      <p className="text-xs text-muted-foreground">No API key required. Configure base URL via environment or provider settings.</p>
+                    <div className="rounded-lg border bg-muted/30 p-4">
+                      <p className="text-sm text-muted-foreground">
+                        Managed on the server via <code className="text-xs">OLLAMA_BASE_URL</code> and{" "}
+                        <code className="text-xs">VLLM_BASE_URL</code> in{" "}
+                        <code className="text-xs">apps/core/.env</code>. No browser toggle — pick{" "}
+                        <code className="text-xs">ollama:</code> or <code className="text-xs">vllm:</code> models in chat when configured.
+                      </p>
+                      <p className="text-sm text-muted-foreground mt-2">
+                        See repo docs: <code className="text-xs">docs/rag-ai/VLLM.md</code>,{" "}
+                        <code className="text-xs">docs/rag-ai/HOW_TO_USE_DEV_SERVER.md</code>
+                      </p>
                     </div>
                   </CardContent>
                 </Card>

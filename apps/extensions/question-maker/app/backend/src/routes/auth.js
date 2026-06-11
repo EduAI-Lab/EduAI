@@ -4,12 +4,9 @@ import { config } from '../config/settings.js';
 
 const router = express.Router();
 
-const BUG_REPORT_ADMIN_ROLES = new Set(['ADMIN', 'UNIT_ADMIN']);
-
+// §11: bug-report triage is ADMIN-only (role-based, replacing the prior email allowlist).
 router.get('/auth/me', requireAuth, (req, res) => {
-  const isBugReportAdmin =
-    BUG_REPORT_ADMIN_ROLES.has(req.user.role) ||
-    config.bugReportAdminEmails.includes(req.user.email);
+  const isBugReportAdmin = req.user.role === 'ADMIN';
 
   res.json({ user: { ...req.user, isBugReportAdmin } });
 });

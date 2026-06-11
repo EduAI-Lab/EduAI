@@ -7,53 +7,22 @@ import { createProviderRegistry } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOllama } from 'ollama-ai-provider';
+import {
+  LOCAL_INFERENCE_PROVIDERS,
+  mergeLocalInferenceFromEnv,
+  parseModelIdentifier,
+  PROVIDER_CONFIGS,
+  type ProviderConfig,
+  type SupportedProvider,
+  type UserProviderSettings,
+} from './provider-types';
 
-// Supported provider types
-export type SupportedProvider = 'openai' | 'google' | 'ollama';
-
-// User provider settings interface
-export interface UserProviderSettings {
-  [key: string]: {
-    apiKey?: string;
-    isEnabled: boolean;
-    baseUrl?: string;
-  };
-}
-
-// Provider configuration interface
-export interface ProviderConfig {
-  id: SupportedProvider;
-  name: string;
-  description: string;
-  requiresApiKey: boolean;
-  defaultBaseUrl?: string;
-  envVarName?: string;
-}
-
-// Provider configurations (static metadata only)
-export const PROVIDER_CONFIGS: Record<SupportedProvider, ProviderConfig> = {
-  openai: {
-    id: 'openai',
-    name: 'OpenAI',
-    description: 'Advanced AI models including GPT-4, GPT-4o, and o1',
-    requiresApiKey: true,
-    envVarName: 'OPENAI_API_KEY'
-  },
-  google: {
-    id: 'google',
-    name: 'Google AI',
-    description: 'Gemini models for multimodal AI applications',
-    requiresApiKey: true,
-    envVarName: 'GOOGLE_GENERATIVE_AI_API_KEY'
-  },
-  ollama: {
-    id: 'ollama',
-    name: 'Ollama',
-    description: 'Local AI models running on Ollama',
-    requiresApiKey: false,
-    defaultBaseUrl: 'http://localhost:11434/api',
-    envVarName: 'OLLAMA_BASE_URL'
-  }
+export type { ProviderConfig, SupportedProvider, UserProviderSettings };
+export {
+  LOCAL_INFERENCE_PROVIDERS,
+  mergeLocalInferenceFromEnv,
+  parseModelIdentifier,
+  PROVIDER_CONFIGS,
 };
 
 /**
@@ -88,6 +57,30 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
     }
 
     providers.ollama = createOllama({
+      baseURL,
+    });
+  }
+
+  // vLLM (OpenAI-compatible /v1 — see docs/rag-ai/VLLM.md)
+  if (userSettings.vllm?.isEnabled) {
+    const vllmPort = process.env.VLLM_PORT || '8001';
+    let baseURL =
+      userSettings.vllm?.baseUrl ||
+      process.env.VLLM_BASE_URL ||
+      `http://localhost:${vllmPort}`;
+
+    baseURL = baseURL.replace(/\/$/, '');
+    if (!baseURL.endsWith('/v1')) {
+      baseURL = `${baseURL}/v1`;
+    }
+
+    const apiKey =
+      userSettings.vllm?.apiKey ||
+      process.env.VLLM_API_KEY ||
+      'vllm-local';
+
+    providers.vllm = createOpenAI({
+      apiKey,
       baseURL,
     });
   }
@@ -157,60 +150,15 @@ export function getModelIdentifier(providerId: SupportedProvider, modelId: strin
   return `${providerId}:${modelId}`;
 }
 
-/**
- * Parse model identifier to extract provider and model IDs
- */
-export function parseModelIdentifier(identifier: string): { providerId: SupportedProvider; modelId: string } | null {
-  if (!identifier || typeof identifier !== 'string') return null;
-
-  // Allow additional colons in modelId (e.g., "ollama:gpt-oss:120b") by splitting on the first colon only
-  const firstColonIndex = identifier.indexOf(':');
-  if (firstColonIndex === -1) return null;
-
-  const providerId = identifier.slice(0, firstColonIndex);
-  const modelId = identifier.slice(firstColonIndex + 1);
-
-  if (!providerId || !modelId) return null;
-  if (!Object.keys(PROVIDER_CONFIGS).includes(providerId)) return null;
-
-  return { providerId: providerId as SupportedProvider, modelId };
+/** Providers that would be registered from current settings (for error messages). */
+export function listEnabledRegistryProviders(
+  userSettings: UserProviderSettings,
+): string[] {
+  const ids: string[] = [];
+  if (userSettings.openai?.isEnabled && userSettings.openai?.apiKey) ids.push('openai');
+  if (userSettings.google?.isEnabled && userSettings.google?.apiKey) ids.push('google');
+  if (userSettings.ollama?.isEnabled) ids.push('ollama');
+  if (userSettings.vllm?.isEnabled) ids.push('vllm');
+  return ids;
 }
 
-/**
- * Check if a model supports tool calling
- * @param modelIdentifier - The model identifier in format "provider:modelId"
- * @returns Promise<boolean> - Whether the model supports tool calling
- */
-export async function modelSupportsTools(modelIdentifier: string): Promise<boolean> {
-  try {
-    // Import prisma here to avoid circular dependencies
-    const { default: prisma } = await import('../prisma.server');
-
-    const parsed = parseModelIdentifier(modelIdentifier);
-    if (!parsed) {
-      console.log(`Invalid model identifier: ${modelIdentifier}`);
-      return false;
-    }
-
-    const model = await prisma.aIModel.findFirst({
-      where: {
-        modelId: parsed.modelId,
-        provider: {
-          name: parsed.providerId
-        },
-        isActive: true
-      },
-      select: {
-        supportsTools: true,
-        name: true
-      }
-    });
-
-    const supportsTools = model?.supportsTools ?? false;
-    console.log(`Model ${modelIdentifier} (${model?.name || 'unknown'}) supports tools: ${supportsTools}`);
-    return supportsTools;
-  } catch (error) {
-    console.error('Error checking model tool support:', error);
-    return false;
-  }
-}
