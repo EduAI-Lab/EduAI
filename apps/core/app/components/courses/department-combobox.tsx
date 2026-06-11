@@ -94,6 +94,11 @@ export function DepartmentCombobox({
                     key={d.code}
                     value={d.code}
                     className="cursor-pointer"
+                    onSelect={(val) => {
+                      onValueChange(val)
+                      setOpen(false)
+                      setSearch('')
+                    }}
                     onMouseDown={(e) => {
                       e.preventDefault()
                       onValueChange(d.code)
