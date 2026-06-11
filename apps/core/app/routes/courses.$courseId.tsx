@@ -161,6 +161,7 @@ export default function CourseDetailPage() {
       <AppSidebar variant="inset" user={user} />
       <SidebarInset>
         <SiteHeader
+          title={course.name}
           breadcrumbs={
             <Breadcrumb>
               <BreadcrumbList>
