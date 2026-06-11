@@ -3,7 +3,7 @@ import { apiKey } from "better-auth/plugins";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import prisma from "../prisma.server";
 
-const authBaseURL =
+export const authBaseURL =
   process.env.BETTER_AUTH_URL?.trim() ||
   import.meta.env.BETTER_AUTH_URL?.trim() ||
   "http://localhost:3000";

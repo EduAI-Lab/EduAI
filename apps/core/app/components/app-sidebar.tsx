@@ -14,6 +14,7 @@ import {
   IconReport,
   IconSearch,
   IconSettings,
+  IconMail,
   IconUsers,
   IconMessageCircle,
   IconRobot,
@@ -59,6 +60,11 @@ const data = {
       title: "User Management",
       url: "/admin/users",
       icon: IconUsers,
+    },
+    {
+      title: "Invitations",
+      url: "/admin/invitations",
+      icon: IconMail,
     },
     {
       title: "Chatbot",
@@ -198,10 +204,9 @@ export function AppSidebar({
   showDocuments = false,
   ...props
 }: AppSidebarProps) {
+  const adminOnlyTitles = ["AI Management", "User Management", "Invitations"]
   const visibleNavMain = navMain.filter(
-    (item) =>
-      (item.title !== "AI Management" && item.title !== "User Management") ||
-      user.role === "ADMIN"
+    (item) => !adminOnlyTitles.includes(item.title) || user.role === "ADMIN"
   )
 
   return (
