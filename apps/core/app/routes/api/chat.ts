@@ -1003,6 +1003,15 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
 
     const requestStartMs = Date.now();
 
+    let finishSnapshot: {
+      usage?: Record<string, unknown>;
+      finishReason?: string;
+    } | null = null;
+    let resolveFinishSnapshot: (() => void) | null = null;
+    const finishSnapshotReady = new Promise<void>((resolve) => {
+      resolveFinishSnapshot = resolve;
+    });
+
     chatApiDebug("Starting LLM stream", {
       model: resolvedModelId,
       routedByAuto: wasAuto,
@@ -1015,14 +1024,19 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
     const result = await streamText({
       ...(streamConfig as Parameters<typeof streamText>[0]),
       onFinish: async ({ usage, finishReason, text }) => {
-        void persistAiInteractionTelemetry({
+        finishSnapshot = {
+          usage: usage as Record<string, unknown> | undefined,
+          finishReason: String(finishReason ?? ""),
+        };
+        resolveFinishSnapshot?.();
+        await persistAiInteractionTelemetry({
           userId: actingUser.id,
           courseId: effectiveCourseId,
           resolvedModelId,
           query: lastUserMessageTextForTelemetry,
           responseText: text ?? "",
           usage,
-          finishReason: String(finishReason ?? ""),
+          finishReason: finishSnapshot.finishReason,
           durationMs: Date.now() - requestStartMs,
           wasAuto,
           routingTier,
@@ -1046,6 +1060,7 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
     } else {
       try {
         await result.consumeStream();
+        await finishSnapshotReady;
 
         const [text, usage, finishReason, sources, reasoning, response] = await Promise.all([
           result.text,
@@ -1070,15 +1085,18 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
         }
 
         const normalizedUsage = normalizeTokenUsage(
-          usage as Record<string, unknown> | undefined,
+          finishSnapshot?.usage ??
+            (usage as Record<string, unknown> | undefined),
         );
+        const resolvedFinishReason =
+          finishSnapshot?.finishReason ?? String(finishReason ?? "");
 
         return new Response(
           JSON.stringify({
             content: text,
             model: resolvedModelId,
             usage: normalizedUsage,
-            finishReason,
+            finishReason: resolvedFinishReason,
             sources: sources || [],
             reasoning,
             responseId: response?.id,
