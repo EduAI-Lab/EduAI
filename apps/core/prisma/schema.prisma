@@ -17,6 +17,8 @@ model User {
   name              String
   image             String?
   role              UserRole
+  studentId         String?
+  studentIdLookup   String?                @unique
   isActive          Boolean                @default(true)
   createdAt         DateTime               @default(now())
   updatedAt         DateTime               @updatedAt
@@ -36,9 +38,10 @@ model User {
   assistiveEvents   AssistiveEvent[]
   uploadedMaterials CourseMaterial[]       @relation("MaterialUploader")
   createdTopics     CourseTopic[]          @relation("TopicCreator")
-  canvasIntegration CanvasIntegration?
-  taughtCourses     Course[]           @relation("CourseInstructor")
-  courseTAs         CourseTA[]
+  canvasIntegration         CanvasIntegration?
+  syncedCanvasRosterMembers CanvasRosterMember[]
+  taughtCourses             Course[]           @relation("CourseInstructor")
+  courseTAs                 CourseTA[]
 
   @@map("user")
 }
@@ -120,8 +123,9 @@ model Course {
   embeddedWithModel    String?
   aiInteractions AIInteraction[]
   enrollments    Enrollment[]
-  tas            CourseTA[]
-  materials      CourseMaterial[]
+  tas                 CourseTA[]
+  canvasRosterMembers CanvasRosterMember[]
+  materials           CourseMaterial[]
   reEmbedJobs    CourseReEmbedJob[]
   topics         CourseTopic[]
   questions      Question[]
@@ -511,6 +515,31 @@ model CanvasIntegration {
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("canvas_integrations")
+}
+
+/// Staging table for Canvas roster members before they link to an EduAI User.
+model CanvasRosterMember {
+  id              String         @id @default(cuid())
+  courseId        String
+  canvasUserId    String
+  sisUserId       String?
+  sisUserIdLookup String?
+  email           String?
+  displayName     String?
+  role            EnrollmentRole
+  syncedByUserId  String
+  isActive        Boolean        @default(true)
+  lastSeenAt      DateTime
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  course          Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  syncedBy        User           @relation(fields: [syncedByUserId], references: [id])
+
+  @@unique([courseId, canvasUserId, role])
+  @@index([email])
+  @@index([sisUserIdLookup])
+  @@index([canvasUserId])
+  @@map("canvas_roster_members")
 }
 
 model ExternalUser {
