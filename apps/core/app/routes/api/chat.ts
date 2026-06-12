@@ -33,13 +33,13 @@ import { chatApiDebug } from "~/lib/chat-api-log";
 import { clientApiKeysBodySchema, toUserProviderSettings } from "~/lib/chat-api-keys.schema";
 import {
   buildCappedRagContextText,
+  buildRagSystemBlock,
   capRagHitsForTool,
   capToolResultsInMessages,
   estimateMessageCharsForModel,
   extractMessageText,
   prepareBoundedSessionContext,
   resolveMaxContextMessages,
-  RAG_COURSE_GROUNDING_INSTRUCTION,
   HYBRID_RAG_MAX_CHUNKS,
   HYBRID_RAG_MAX_CONTEXT_CHARS,
 } from "~/lib/chat-rag";
@@ -899,12 +899,10 @@ Always be helpful, accurate, and cite the course materials when using them in yo
           const systemWithRAG = contextText
             ? `${baseSystemPrompt}
 
-${contextText ? `Here are relevant excerpts from the course materials to help answer the user's question:
+${buildRagSystemBlock(contextText)}`
+            : `${baseSystemPrompt}
 
-${contextText}
-
-${RAG_COURSE_GROUNDING_INSTRUCTION} Based on this information, provide a comprehensive answer to the user's question. If the provided content doesn't fully answer their question, say what the materials cover and what is missing.` : "I don't have access to specific course materials for this question, but I can provide general educational assistance."}`
-            : baseSystemPrompt;
+I don't have access to specific course materials for this question, but I can provide general educational assistance.`;
 
           streamConfig = {
             model: aiModel,
@@ -999,11 +997,7 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
       if (preloadedRagContext) {
         defaultSystemPrompt = `${defaultSystemPrompt}
 
-Here are relevant excerpts from the course materials to help answer the user's question:
-
-${preloadedRagContext}
-
-${RAG_COURSE_GROUNDING_INSTRUCTION} Based on this information, provide a comprehensive answer. Use getInformation only if these excerpts are insufficient.`;
+${buildRagSystemBlock(preloadedRagContext, { toolPath: true })}`;
       }
 
       streamConfig = {
