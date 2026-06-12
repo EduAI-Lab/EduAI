@@ -201,6 +201,7 @@ export default function CourseDetailPage() {
                 onAssignInstructor={handleAssignInstructor}
                 onAddTA={addTA}
                 onRemoveTA={removeTA}
+                courseId={course.id}
               />
             ) : access === 'ta' ? (
               <CourseDetailTaView
