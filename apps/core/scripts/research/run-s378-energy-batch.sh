@@ -2,7 +2,7 @@
 # Run on s378: measured policy + strict re-label
 set -euo pipefail
 CORE=/srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore/apps/core
-METER=/srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore/tools/energy-meter
+ENERGY_METER_DIR=/srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore/tools/energy-meter
 LOG=/tmp/ura-research-batch.log
 
 exec >>"$LOG" 2>&1
@@ -16,7 +16,7 @@ set +a
 # Energy sidecar
 pkill -f 'energy-meter/server.mjs' 2>/dev/null || true
 sleep 1
-cd "$METER"
+cd "$ENERGY_METER_DIR"
 nohup node server.mjs >>/tmp/energy-meter.log 2>&1 &
 sleep 2
 curl -s http://127.0.0.1:9100/health || { echo "sidecar failed"; exit 1; }
