@@ -5,12 +5,12 @@ import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { cn } from "~/lib/utils";
 
-export interface StudentIdOnboardingFormProps {
-  formError?: string;
-  fieldError?: string;
+export type StudentIdOnboardingFormProps = {
+  formError?: string | null;
+  fieldError?: string | null;
   isLoading?: boolean;
   className?: string;
-}
+};
 
 export function StudentIdOnboardingForm({
   formError,
@@ -23,7 +23,8 @@ export function StudentIdOnboardingForm({
       <div className="flex flex-col items-center gap-2 text-center">
         <h1 className="text-2xl font-bold">Link your student number</h1>
         <p className="text-muted-foreground text-sm text-balance">
-          Enter your student number so we can match you to your courses.
+          Enter your student number so we can match you to your courses when your
+          instructor syncs Canvas.
         </p>
       </div>
 
@@ -51,32 +52,15 @@ export function StudentIdOnboardingForm({
             <p className="text-sm text-destructive">{fieldError}</p>
           )}
           <p className="text-xs text-muted-foreground">
-            This must match your student ID.
+            This must match your student ID in Canvas. You can link before your
+            instructor syncs; enrollments appear after they sync the course.
           </p>
         </div>
 
-        <Button type="submit" name="intent" value="link" disabled={isLoading}>
+        <Button type="submit" disabled={isLoading}>
           {isLoading ? "Linking…" : "Continue"}
         </Button>
       </Form>
-
-      <Form method="post">
-        <Button
-          type="submit"
-          name="intent"
-          value="skip"
-          variant="ghost"
-          className="w-full"
-          disabled={isLoading}
-        >
-          Skip for now
-        </Button>
-      </Form>
-
-      <p className="text-center text-xs text-muted-foreground">
-        Ask your instructor to sync Canvas first if linking fails. You can try
-        again later.
-      </p>
     </div>
   );
 }
