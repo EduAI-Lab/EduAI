@@ -4,7 +4,7 @@ import { describe, it, expect } from "vitest";
 import { DEPARTMENTS, DepartmentSchema } from "~/lib/departments";
 
 describe("DepartmentSchema", () => {
-  it.each([...DEPARTMENTS])("accepts known subject code %s", (code) => {
+  it.each(DEPARTMENTS.map((d) => d.code))("accepts known subject code %s", (code) => {
     expect(DepartmentSchema.parse(code)).toBe(code);
   });
 
