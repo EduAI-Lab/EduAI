@@ -48,6 +48,7 @@ interface Props {
   onAssignInstructor: (instructorId: string) => Promise<void>
   onAddTA: (userId: string) => Promise<void>
   onRemoveTA: (userId: string) => Promise<void>
+  courseId?: string
 }
 
 export function CourseDetailManagerView({
@@ -68,6 +69,7 @@ export function CourseDetailManagerView({
   onAssignInstructor,
   onAddTA,
   onRemoveTA,
+  courseId,
 }: Props) {
   const [newTopic, setNewTopic] = useState('')
   const [staffError, setStaffError] = useState<string | null>(null)
@@ -198,6 +200,7 @@ export function CourseDetailManagerView({
             error={materialsError}
             success={materialsSuccess}
             onFileSelect={onFileSelect}
+            courseId={courseId}
           />
         </TabsContent>
 
