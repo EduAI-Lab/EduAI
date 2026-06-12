@@ -14,9 +14,15 @@ import { Tool } from "~/components/ui/tool";
 export interface ChatMessageProps {
   message: Message;
   isStreaming?: boolean;
+  /** Human-readable model name when Auto routing resolved the backend model. */
+  answeredByLabel?: string | null;
 }
 
-export function ChatMessage({ message, isStreaming = false }: ChatMessageProps) {
+export function ChatMessage({
+  message,
+  isStreaming = false,
+  answeredByLabel,
+}: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -130,6 +136,12 @@ export function ChatMessage({ message, isStreaming = false }: ChatMessageProps) 
             >
               {textContent}
             </MessageContent>
+
+            {answeredByLabel ? (
+              <p className="text-xs text-muted-foreground px-1">
+                Answered by {answeredByLabel}
+              </p>
+            ) : null}
 
             <MessageActions className="opacity-0 group-hover:opacity-100 transition-opacity">
               <MessageAction tooltip="Copy message">

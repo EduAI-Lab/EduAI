@@ -34,3 +34,11 @@ export function defaultChatModelId(
   if (routerAutoEnabled) return AUTO_MODEL_ID;
   return models[0]?.id ?? "";
 }
+
+/** Human-readable model name for a registry id (`provider:modelId`). */
+export function displayNameForRegistryId(
+  registryId: string,
+  models: ChatModelOption[],
+): string {
+  return models.find((m) => m.id === registryId)?.name ?? registryId;
+}

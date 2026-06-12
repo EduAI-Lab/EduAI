@@ -16,8 +16,10 @@ import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import {
+  AUTO_MODEL_ID,
   type ChatModelOption,
   defaultChatModelId,
+  displayNameForRegistryId,
   withAutoChatModel,
 } from "~/lib/chat-auto-model";
 import { routerAutoDefaultEnabled } from "~/lib/router-env.server";
@@ -110,6 +112,15 @@ export default function Chat() {
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
   const [adhdAssist, setAdhdAssist] = useState(assistDefault);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  /** Registry ids from `X-Routed-Model`, keyed by assistant message id after each turn. */
+  const [routedModelByMessageId, setRoutedModelByMessageId] = useState<
+    Record<string, string>
+  >({});
+  /** Latest streamed response registry id (shown on the in-flight assistant bubble). */
+  const [streamingRoutedRegistryId, setStreamingRoutedRegistryId] = useState<
+    string | null
+  >(null);
+  const pendingRoutedRegistryIdRef = useRef<string | null>(null);
   const { apiKeys, getValidApiKeys, updateProviderSettings, removeProviderSettings, isProviderConfigured } = useApiKeys();
   const prefsFetcher = useFetcher();
 
@@ -191,14 +202,30 @@ export default function Chat() {
         const text = await response.clone().text().catch(() => "");
         console.error("[chat] request failed", response.status, text);
       }
-      // Extract chatId from response headers
-      const chatIdHeader = response.headers.get('X-Chat-Id');
+
+      const routedHeader = response.headers.get("X-Routed-Model")?.trim();
+      const routed =
+        routedHeader && routedHeader.length > 0 ? routedHeader : null;
+      pendingRoutedRegistryIdRef.current = routed;
+      setStreamingRoutedRegistryId(routed);
+
+      const chatIdHeader = response.headers.get("X-Chat-Id");
       if (chatIdHeader && !chatId) {
         setChatId(chatIdHeader);
       }
     },
+    onFinish: (message) => {
+      const routed = pendingRoutedRegistryIdRef.current;
+      if (message.role === "assistant" && routed) {
+        setRoutedModelByMessageId((prev) => ({ ...prev, [message.id]: routed }));
+      }
+      pendingRoutedRegistryIdRef.current = null;
+      setStreamingRoutedRegistryId(null);
+    },
     onError: (error) => {
       console.error("[chat] stream error", error);
+      pendingRoutedRegistryIdRef.current = null;
+      setStreamingRoutedRegistryId(null);
     },
   });
 
@@ -334,11 +361,22 @@ export default function Chat() {
                         const isLastMessage = index === messages.length - 1;
                         const isStreamingMessage = isLastMessage && isLoading;
 
+                        const routedRegistryId =
+                          message.role === "assistant"
+                            ? (routedModelByMessageId[message.id] ??
+                              (isStreamingMessage ? streamingRoutedRegistryId : null))
+                            : null;
+                        const answeredByLabel =
+                          selectedModel === AUTO_MODEL_ID && routedRegistryId
+                            ? displayNameForRegistryId(routedRegistryId, chatModels)
+                            : undefined;
+
                         return (
                           <ChatMessage
                             key={message.id}
                             message={message}
                             isStreaming={isStreamingMessage}
+                            answeredByLabel={answeredByLabel}
                           />
                         );
                       })}

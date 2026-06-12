@@ -1094,6 +1094,7 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
           JSON.stringify({
             content: text,
             model: resolvedModelId,
+            routedModel: resolvedModelId,
             usage: normalizedUsage,
             finishReason: resolvedFinishReason,
             sources: sources || [],
@@ -1104,7 +1105,10 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
           }),
           {
             status: 200,
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              "X-Routed-Model": resolvedModelId,
+            },
           },
         );
       } catch (error) {
