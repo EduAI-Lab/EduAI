@@ -2,7 +2,6 @@
 # Run on s378: measured policy + strict re-label
 set -euo pipefail
 CORE=/srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore/apps/core
-ENERGY_METER_DIR=/srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore/tools/energy-meter
 LOG=/tmp/ura-research-batch.log
 
 exec >>"$LOG" 2>&1
@@ -12,6 +11,9 @@ cd "$CORE"
 set -a
 source .env
 set +a
+
+# After .env — avoid clobbering by any METER= in .env
+ENERGY_METER_DIR=/srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore/tools/energy-meter
 
 # Energy sidecar
 pkill -f 'energy-meter/server.mjs' 2>/dev/null || true
