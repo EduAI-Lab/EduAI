@@ -14,19 +14,36 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // Mocks — must be hoisted before any imports that pull in the modules
 // ---------------------------------------------------------------------------
 
-const prismaMock = vi.hoisted(() => ({
-  course: { findUnique: vi.fn(), update: vi.fn() },
-  $queryRaw: vi.fn(),
+// Mock getCourseRagSettings directly — this keeps the embedding tests isolated
+// from the cache layer and avoids cross-test state bleed through the module-level Map.
+const getCourseRagSettingsMock = vi.hoisted(() => vi.fn());
+
+vi.mock("~/lib/courses/server", () => ({
+  getCourseRagSettings: getCourseRagSettingsMock,
 }));
 
-const mockEmbedding = vi.hoisted(() => new Array(1024).fill(0.1));
+const queryRawMock = vi.hoisted(() => vi.fn());
+const courseFindUniqueMock = vi.hoisted(() => vi.fn());
 
-vi.mock("~/lib/prisma.server", () => ({ default: prismaMock }));
+vi.mock("~/lib/prisma.server", () => ({
+  default: {
+    $queryRaw: queryRawMock,
+    // loadEffectiveEmbeddingSettings inside generateEmbedding also hits prisma.course.findUnique
+    // (for embeddingProvider / embeddingModel). Return null so it falls through to server defaults.
+    course: { findUnique: courseFindUniqueMock },
+  },
+}));
 
 // Mock the AI SDK so generateEmbedding never hits the network.
 vi.mock("ai", () => ({
-  embed: vi.fn().mockResolvedValue({ embedding: mockEmbedding }),
+  embed: vi.fn().mockResolvedValue({ embedding: [0.1, 0.2, 0.3] }),
   embedMany: vi.fn(),
+}));
+
+vi.mock("@ai-sdk/google", () => ({
+  createGoogleGenerativeAI: vi.fn(() => ({
+    embedding: vi.fn(() => ({ provider: "google-mock", modelId: "gemini-embedding-001" })),
+  })),
 }));
 
 vi.mock("@ai-sdk/openai", () => ({
@@ -35,9 +52,12 @@ vi.mock("@ai-sdk/openai", () => ({
   })),
 }));
 
-// 1024-dim cloud path prefers OpenRouter/OpenAI over Google.
-process.env.OPENROUTER_API_KEY = "test-openrouter-key";
-delete process.env.EMBEDDING_PROVIDER;
+// Provide a fake API key so getEmbeddingModel() takes the Google branch.
+// EMBEDDING_DIMENSION=3 keeps the expected dimension in sync with our 3-value mock
+// embedding and forces getCloudEmbeddingModel into the non-1024 branch that actually
+// uses Google (the 1024 branch only accepts OpenRouter / OpenAI).
+process.env.GOOGLE_GENERATIVE_AI_API_KEY = "test-google-key";
+process.env.EMBEDDING_DIMENSION = "3";
 
 import { findRelevantContent } from "~/lib/ai/embedding";
 
@@ -45,35 +65,18 @@ import { findRelevantContent } from "~/lib/ai/embedding";
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Default course row returned by prisma — covers RAG + embedding settings lookups. */
-function mockCourseRow(
-  overrides: {
-    ragTopK?: number | null;
-    ragSimilarityThreshold?: number | null;
-  } = {},
-) {
-  prismaMock.course.findUnique.mockResolvedValue({
-    ragTopK: null,
-    ragSimilarityThreshold: null,
-    embeddingProvider: null,
-    embeddingModel: null,
-    embeddedWithProvider: null,
-    embeddedWithModel: null,
-    lastEmbeddedAt: null,
-    ...overrides,
-  });
-}
-
 /** Pull the interpolated values out of a tagged-template mock call. */
 function getQueryArgs(callIndex = 0): unknown[] {
   // When $queryRaw is called as a tagged template literal,
   // mock.calls[n][0] is the TemplateStringsArray, and [1..n] are the interpolations.
-  return prismaMock.$queryRaw.mock.calls[callIndex].slice(1);
+  return queryRawMock.mock.calls[callIndex].slice(1);
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
-  prismaMock.$queryRaw.mockResolvedValue([]);
+  queryRawMock.mockResolvedValue([]);
+  // loadEffectiveEmbeddingSettings needs a course row; null = use server-level defaults.
+  courseFindUniqueMock.mockResolvedValue(null);
 });
 
 // ---------------------------------------------------------------------------
@@ -82,7 +85,10 @@ beforeEach(() => {
 
 describe("findRelevantContent — ragTopK", () => {
   it("uses course ragTopK when set, ignoring the caller-supplied limit", async () => {
-    mockCourseRow({ ragTopK: 3, ragSimilarityThreshold: null });
+    getCourseRagSettingsMock.mockResolvedValue({
+      ragTopK: 3,
+      ragSimilarityThreshold: null,
+    });
 
     await findRelevantContent("test query", "course-1", 6);
 
@@ -93,7 +99,10 @@ describe("findRelevantContent — ragTopK", () => {
   });
 
   it("falls back to the caller-supplied limit when course ragTopK is null", async () => {
-    mockCourseRow();
+    getCourseRagSettingsMock.mockResolvedValue({
+      ragTopK: null,
+      ragSimilarityThreshold: null,
+    });
 
     await findRelevantContent("test query", "course-1", 8);
 
@@ -103,7 +112,10 @@ describe("findRelevantContent — ragTopK", () => {
   });
 
   it("falls back to the default limit (6) when course ragTopK is null and no limit passed", async () => {
-    mockCourseRow();
+    getCourseRagSettingsMock.mockResolvedValue({
+      ragTopK: null,
+      ragSimilarityThreshold: null,
+    });
 
     await findRelevantContent("test query", "course-1");
 
@@ -113,7 +125,7 @@ describe("findRelevantContent — ragTopK", () => {
   });
 
   it("falls back gracefully when the course row does not exist (null from DB)", async () => {
-    prismaMock.course.findUnique.mockResolvedValue(null);
+    getCourseRagSettingsMock.mockResolvedValue(null);
 
     await findRelevantContent("test query", "missing-course", 4);
 
@@ -129,7 +141,10 @@ describe("findRelevantContent — ragTopK", () => {
 
 describe("findRelevantContent — ragSimilarityThreshold", () => {
   it("uses course ragSimilarityThreshold when set", async () => {
-    mockCourseRow({ ragSimilarityThreshold: 0.7 });
+    getCourseRagSettingsMock.mockResolvedValue({
+      ragTopK: null,
+      ragSimilarityThreshold: 0.7,
+    });
 
     await findRelevantContent("test query", "course-1");
 
@@ -141,7 +156,10 @@ describe("findRelevantContent — ragSimilarityThreshold", () => {
   });
 
   it("falls back to the caller-supplied threshold when course value is null", async () => {
-    mockCourseRow();
+    getCourseRagSettingsMock.mockResolvedValue({
+      ragTopK: null,
+      ragSimilarityThreshold: null,
+    });
 
     await findRelevantContent("test query", "course-1", 6, 0.8);
 
@@ -151,7 +169,10 @@ describe("findRelevantContent — ragSimilarityThreshold", () => {
   });
 
   it("falls back to the global env default (0.5) when course value and caller arg are both absent", async () => {
-    mockCourseRow();
+    getCourseRagSettingsMock.mockResolvedValue({
+      ragTopK: null,
+      ragSimilarityThreshold: null,
+    });
     delete process.env.RAG_SIMILARITY_THRESHOLD;
 
     await findRelevantContent("test query", "course-1");
@@ -162,7 +183,10 @@ describe("findRelevantContent — ragSimilarityThreshold", () => {
   });
 
   it("reads RAG_SIMILARITY_THRESHOLD env var when course and caller values are absent", async () => {
-    mockCourseRow();
+    getCourseRagSettingsMock.mockResolvedValue({
+      ragTopK: null,
+      ragSimilarityThreshold: null,
+    });
     process.env.RAG_SIMILARITY_THRESHOLD = "0.65";
 
     await findRelevantContent("test query", "course-1");
@@ -181,19 +205,24 @@ describe("findRelevantContent — ragSimilarityThreshold", () => {
 
 describe("findRelevantContent — DB lookup", () => {
   it("calls prisma.course.findUnique with the correct courseId to fetch settings", async () => {
-    mockCourseRow();
+    getCourseRagSettingsMock.mockResolvedValue({
+      ragTopK: null,
+      ragSimilarityThreshold: null,
+    });
 
     await findRelevantContent("test query", "course-abc");
 
-    expect(prismaMock.course.findUnique).toHaveBeenCalledWith({
-      where: { id: "course-abc" },
-      select: { ragTopK: true, ragSimilarityThreshold: true },
-    });
+    // getCourseRagSettings is mocked at the module boundary; verify it was called
+    // with the correct courseId — the cache + DB logic is tested separately.
+    expect(getCourseRagSettingsMock).toHaveBeenCalledWith("course-abc");
   });
 
   it("maps DB results to { content, similarity, materialTitle }", async () => {
-    mockCourseRow();
-    prismaMock.$queryRaw.mockResolvedValue([
+    getCourseRagSettingsMock.mockResolvedValue({
+      ragTopK: null,
+      ragSimilarityThreshold: null,
+    });
+    queryRawMock.mockResolvedValue([
       { content: "hello world", similarity: 0.9, material_title: "Lecture 1" },
     ]);
 

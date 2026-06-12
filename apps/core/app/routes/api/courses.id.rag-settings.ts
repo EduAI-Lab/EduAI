@@ -12,7 +12,7 @@
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 
 import { auth } from "~/lib/auth/server";
-import { getCourseRagSettings } from "~/lib/courses/server";
+import { getCourseRagSettings, invalidateCourseRagSettingsCache } from "~/lib/courses/server";
 import { UpdateCourseRagSettingsSchema } from "~/lib/courses/schemas";
 import prisma from "~/lib/prisma.server";
 
@@ -119,6 +119,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
     data: result.data,
     select: { id: true, ragTopK: true, ragSimilarityThreshold: true },
   });
+
+  // Flush the in-memory cache so the next RAG query picks up the new settings immediately.
+  invalidateCourseRagSettingsCache(courseId);
 
   return new Response(JSON.stringify(updated), {
     status: 200,
