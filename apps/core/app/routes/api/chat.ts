@@ -15,6 +15,7 @@ import {
 } from "~/lib/ai/routing/telemetry";
 import { modelSupportsTools } from "~/lib/ai/providers.server";
 import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
+import { needsCourseRag } from "~/lib/ai/chat-intent";
 import { findRelevantContent } from "~/lib/ai/embedding";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
@@ -637,6 +638,8 @@ export async function action({ request }: ActionFunctionArgs) {
     const telemetryLastUser = [...trimmedMessages].reverse().find((m) => m.role === "user");
     const lastUserMessageTextForTelemetry = extractTextFromMessage(telemetryLastUser);
     const hasAttachments = userMessageHasImages(telemetryLastUser);
+    const hasCourse = Boolean(effectiveCourseId);
+    const courseRagNeeded = needsCourseRag(lastUserMessageTextForTelemetry, hasCourse);
 
     let ragTopSimilarity: number | null = null;
     let ragChunkCount: number | null = null;
@@ -848,9 +851,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
     if (!useToolCalling) {
       // MODELS WITHOUT TOOL SUPPORT: Use hybrid RAG approach
-      const lastUserMessage = [...trimmedMessages].reverse().find((message) => message.role === "user");
-      const userQuestion = extractMessageText(lastUserMessage);
-      const messageContentLower = userQuestion.toLowerCase();
+      const userQuestion = lastUserMessageTextForTelemetry;
 
       shouldPrefetchWebTools =
         hybridWebTools || (forceHybridRag && inferHybridWebToolMode(userQuestion) !== null);
@@ -866,29 +867,13 @@ export async function action({ request }: ActionFunctionArgs) {
         }
       }
 
-      // Check if hybrid RAG should always be used with course
-      // regex method might not be the best method to determine if RAG is needed. Consider using a small LLM or alternatives.
       const hybridRagAlwaysWithCourse = process.env.CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE === "1";
-      const isRAGQuery =
-        Boolean(effectiveCourseId) &&
-        (hybridRagAlwaysWithCourse ||
-          messageContentLower.includes("course") ||
-          messageContentLower.includes("material") ||
-          messageContentLower.includes("document") ||
-          messageContentLower.includes("chapter") ||
-          messageContentLower.includes("lecture") ||
-          messageContentLower.includes("assignment") ||
-          messageContentLower.includes("explain") ||
-          messageContentLower.includes("what is") ||
-          messageContentLower.includes("summarize") ||
-          messageContentLower.includes("summary") ||
-          messageContentLower.includes("content") ||
-          messageContentLower.includes("about"));
+      const isRAGQuery = hybridRagAlwaysWithCourse ? hasCourse : courseRagNeeded;
 
       if (isRAGQuery) {
         try {
           const relevantContent = await findRelevantContent(
-            userQuestion || messageContentLower,
+            userQuestion,
             effectiveCourseId!,
             HYBRID_RAG_MAX_CHUNKS,
           );
@@ -962,9 +947,36 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
         };
       }
     } else {
-      const defaultSystemPrompt = resolvedSystemPrompt || `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
+      const baseSystemPrompt = resolvedSystemPrompt || `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
 
-IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.
+IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.`;
+
+      let preloadedRagContext = "";
+      if (courseRagNeeded && effectiveCourseId) {
+        try {
+          const relevantContent = await findRelevantContent(
+            lastUserMessageTextForTelemetry,
+            effectiveCourseId,
+            HYBRID_RAG_MAX_CHUNKS,
+          );
+          preloadedRagContext =
+            relevantContent.length > 0
+              ? buildCappedRagContextText(
+                  relevantContent,
+                  HYBRID_RAG_MAX_CHUNKS,
+                  HYBRID_RAG_MAX_CONTEXT_CHARS,
+                )
+              : "";
+        } catch (error) {
+          console.error("Error pre-loading course context for tool path:", error);
+        }
+      }
+
+      const ragToolHint = preloadedRagContext
+        ? "Course excerpts are already included below. Use getInformation only if those excerpts are insufficient."
+        : "For course content questions, call getInformation first to retrieve relevant materials.";
+
+      let defaultSystemPrompt = `${baseSystemPrompt}
 
 You have access to two tools:
 - getInformation: searches uploaded course materials (syllabi, lectures, assignments, etc.)
@@ -972,7 +984,7 @@ You have access to two tools:
 - fetchPage: opens a URL and returns the main page content as markdown for deeper reading. If a page fails to load, try other sources. Try and give a correct response to the user's query even if the page fails to load.
 
 When answering questions:
-1. For course content questions, call getInformation first to retrieve relevant materials.
+1. ${ragToolHint}
 2. If the user asks for reviews, opinions, recent updates, or external information (e.g., "what do students say about this course?" or "latest developments"), call webSearch after checking course materials. Prefer queries that include "UBCO" with the course code/name and the professor name when known.
 3. After webSearch, call fetchPage on promising sources (e.g., RateMyProfessors, Reddit threads, official pages) to read the page content before answering. If the page fails to load, try other sources. Try and give a correct response to the user's query even if the page fails to load.
 4. You may call tools multiple times in sequence if needed to give a complete answer.
@@ -981,6 +993,16 @@ When answering questions:
 ${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ""}
 
 Be helpful, conversational, and accurate. Use markdown for formatting.`;
+
+      if (preloadedRagContext) {
+        defaultSystemPrompt = `${defaultSystemPrompt}
+
+Here are relevant excerpts from the course materials to help answer the user's question:
+
+${preloadedRagContext}
+
+Based on this information, provide a comprehensive answer. Use getInformation only if these excerpts are insufficient.`;
+      }
 
       streamConfig = {
         model: aiModel,
@@ -1019,6 +1041,7 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
       approach: useToolCalling ? "tool_calling" : "hybrid_rag",
       forceHybridRag,
       hybridWebTools: shouldPrefetchWebTools ?? false,
+      courseRagNeeded,
       ...llmPromptSizeHints(streamConfig.system, modelMessages),
     });
 
