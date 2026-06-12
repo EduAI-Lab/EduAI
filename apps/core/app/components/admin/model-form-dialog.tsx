@@ -21,6 +21,7 @@ import { Loader } from "~/components/ui/loader";
 import type { AIProvider, AIModel } from "~/types/ai";
 import { AlertTriangle } from "lucide-react";
 import { allowsSupportsToolsToggle } from "~/lib/ai/model-tool-capability";
+import { CHAT_TOOLS_TOOLTIP } from "~/lib/ai/tools-help";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 
 export type OllamaModel = {
@@ -512,7 +513,18 @@ export function ModelFormDialog({
                     checked={formData.supportsTools}
                     onCheckedChange={handleSupportsToolsChange}
                   />
-                  <Label htmlFor="supportsTools">Supports Tools</Label>
+                  <Label htmlFor="supportsTools" className="flex items-center gap-1">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="cursor-help underline decoration-dotted underline-offset-4">
+                          Supports Tools
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-xs">
+                        {CHAT_TOOLS_TOOLTIP}
+                      </TooltipContent>
+                    </Tooltip>
+                  </Label>
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <button
