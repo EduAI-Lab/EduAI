@@ -48,7 +48,7 @@ export async function syncCourseEnrollments(courseOfferingId, options = {}) {
   const toDelete = existing.filter((e) => !activeUserIds.has(e.userId));
   const toUpdate = activeEnrollments.filter((e) => {
     const local = existingByUserId.get(e.studentId);
-    return local && local.role !== (e.role ?? 'STUDENT');
+    return local && local.role !== 'TA' && local.role !== (e.role ?? 'STUDENT');
   });
 
   if (toCreate.length > 0) {

@@ -1,13 +1,7 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { useLocalUser } from '../hooks/useLocalUser';
-
-function routeForRole(role: string) {
-  if (role === 'STUDENT') return '/student';
-  if (role === 'INSTRUCTOR') return '/instructor';
-  if (role === 'ADMIN') return '/admin';
-  return '/';
-}
+import { routeForRole } from '../lib/role-routing';
 
 export default function UnsupportedRolePage() {
   const navigate = useNavigate();
@@ -19,9 +13,7 @@ export default function UnsupportedRolePage() {
       return;
     }
 
-    if (user.role !== 'TA') {
-      navigate(routeForRole(user.role), { replace: true });
-    }
+    navigate(routeForRole(user.role), { replace: true });
   }, [navigate, user]);
 
   const handleLogout = async () => {

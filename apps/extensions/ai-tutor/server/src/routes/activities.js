@@ -381,17 +381,8 @@ router.get('/lessons/:lessonId/activities', async (req, res) => {
     const hasElevatedAccess = isInstructor || isTa || unitAdmin;
     const isMember = hasElevatedAccess || isStudent;
 
-    if (authUser.role === 'INSTRUCTOR' && !isInstructor) {
-      return res.status(403).json({ error: 'Not authorized for this lesson' });
-    }
-    if (authUser.role === 'UNIT_ADMIN' && !unitAdmin) {
-      return res.status(403).json({ error: 'Not authorized for this lesson' });
-    }
     if (!isMember) {
       return res.status(403).json({ error: 'Not authorized for this lesson' });
-    }
-    if (!['INSTRUCTOR', 'TA', 'STUDENT', 'UNIT_ADMIN'].includes(authUser.role)) {
-      return res.status(403).json({ error: 'Role is not supported in AI Tutor' });
     }
     if (isStudent && !hasElevatedAccess && !lesson.isPublished) {
       return res.status(403).json({ error: 'Lesson is not published' });
