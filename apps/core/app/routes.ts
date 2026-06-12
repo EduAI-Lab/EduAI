@@ -23,6 +23,7 @@ export default [
   route("/api/courses/:courseId/re-embed/:jobId", "routes/api/courses.re-embed.$jobId.ts"),
   route("/api/courses/:courseId/embedding-settings", "routes/api/courses.embedding-settings.$.ts"),
   route("/api/courses/:courseId/topics", "routes/api/courses.topics.$.ts"),
+  route("/api/courses/:courseId/tas", "routes/api/courses.tas.$.ts"),
   route(
     "/api/courses/:courseId/topics/:topicId",
     "routes/api/courses.topics.$.ts",
@@ -38,6 +39,7 @@ export default [
   route("/api/questions/:id", "routes/api/questions.$id.ts"),
   route("/admin/ai-models", "routes/admin.ai-models.tsx"),
   route("/admin/users", "routes/admin.users.tsx"),
+  route("/admin/bug-reports", "routes/admin.bug-reports.tsx"),
   route("/api/ai-providers/*", "routes/api/ai-providers.$.ts"),
   route("/api/ai-models/*", "routes/api/ai-models.$.ts"),
   route("/api/me", "routes/api/me.ts"),

@@ -4,7 +4,8 @@ import { ChatMessage } from "~/components/chat/chat-message";
 import type { Message } from "ai";
 
 beforeAll(() => {
-  Object.assign(navigator, {
+  vi.stubGlobal("navigator", {
+    ...navigator,
     clipboard: { writeText: vi.fn().mockResolvedValue(undefined) },
   });
 });

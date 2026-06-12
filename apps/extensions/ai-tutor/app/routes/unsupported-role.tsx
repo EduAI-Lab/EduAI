@@ -19,7 +19,7 @@ export default function UnsupportedRolePage() {
       return;
     }
 
-    if (user.role !== 'TA') {
+    if (user.role !== 'TA' && user.role !== 'UNIT_ADMIN') {
       navigate(routeForRole(user.role), { replace: true });
     }
   }, [navigate, user]);
@@ -51,11 +51,11 @@ export default function UnsupportedRolePage() {
           </div>
 
           <h1 className="mb-3 font-display text-3xl font-bold text-foreground">
-            TA access is not available yet
+            Your role is not supported yet
           </h1>
           <p className="mb-4 text-base text-muted-foreground">
-            Your EduAI account was authenticated successfully, but AI Tutor does not support TA
-            access in this first release.
+            Your EduAI account was authenticated successfully, but AI Tutor does not support your
+            role ({user?.role}) in this release.
           </p>
           <p className="mb-8 text-sm text-muted-foreground">
             If you expected a different role, update it in EduAI and sign in again. Otherwise,
@@ -65,13 +65,6 @@ export default function UnsupportedRolePage() {
           <div className="flex flex-col gap-3 sm:flex-row">
             <button type="button" onClick={handleLogout} className="btn-primary">
               Sign out
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate('/', { replace: true })}
-              className="btn-ghost"
-            >
-              Back to home
             </button>
           </div>
         </div>

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { ModelFormDialog } from "~/components/admin/model-form-dialog";
 import type { AIProvider, AIModel } from "~/types/ai";
 
@@ -294,7 +294,7 @@ describe("ModelFormDialog — vLLM section", () => {
 // ---------------------------------------------------------------------------
 
 describe("ModelFormDialog — form actions", () => {
-  it("calls onSubmit with the form data when the submit button is clicked", () => {
+  it("calls onSubmit with the form data when the submit button is clicked", async () => {
     const onSubmit = vi.fn();
     render(
       <ModelFormDialog
@@ -305,10 +305,18 @@ describe("ModelFormDialog — form actions", () => {
         onSubmit={onSubmit}
       />
     );
-    fireEvent.click(screen.getByRole("button", { name: /update model/i }));
-    expect(onSubmit).toHaveBeenCalledWith(
-      expect.objectContaining({ modelId: "gpt-4o", name: "GPT-4o" })
-    );
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("gpt-4o")).toBeInTheDocument();
+    });
+    const submitButton = screen.getByRole("button", { name: /update model/i });
+    const form = submitButton.closest("form");
+    expect(form).not.toBeNull();
+    fireEvent.submit(form!);
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({ modelId: "gpt-4o", name: "GPT-4o" })
+      );
+    });
   });
 
   it("calls onOpenChange(false) when Cancel is clicked", () => {
