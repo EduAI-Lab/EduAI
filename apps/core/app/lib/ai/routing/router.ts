@@ -65,6 +65,7 @@ export type RouterInputContext = {
   ragTopSimilarity?: number | null;
   ragChunkCount?: number | null;
   ragContextTokenEstimate?: number | null;
+  courseRagNeeded?: boolean;
 };
 
 export type RouterDecision = {
@@ -99,6 +100,7 @@ function buildPhase1Context(
     ragTopSimilarity: ctx.ragTopSimilarity,
     ragChunkCount: ctx.ragChunkCount,
     ragContextTokenEstimate: ctx.ragContextTokenEstimate,
+    courseRagNeeded: ctx.courseRagNeeded,
   };
 }
 
@@ -184,6 +186,7 @@ async function finalizePick(
     ragTopSimilarity: meta.phaseCtx.ragTopSimilarity ?? null,
     ragChunkCount: meta.phaseCtx.ragChunkCount ?? null,
     ragContextTokenEstimate: meta.phaseCtx.ragContextTokenEstimate ?? null,
+    courseRagNeeded: meta.phaseCtx.courseRagNeeded ?? false,
     carbonPolicy: resolveCarbonPolicyMode({
       globalMode: parseCarbonPolicyMode(process.env.ROUTING_CARBON_MODE),
       courseCode: meta.context.courseCode,

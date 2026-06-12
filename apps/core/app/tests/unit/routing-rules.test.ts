@@ -35,6 +35,27 @@ describe("matchPhase1Rules", () => {
     expect(match.pick).toEqual({ kind: "exactTier", tier: 1, tieBreak: "energy" });
   });
 
+  it("rule 3: who-won / what-was prompts use tier 1 when short", () => {
+    expect(
+      matchPhase1Rules({ ...baseCtx, prompt: "Who won the 2026 world cup?" }).rule,
+    ).toBe("rule3_short_factual_tier_1");
+    expect(
+      matchPhase1Rules({ ...baseCtx, prompt: "What was the final score?" }).rule,
+    ).toBe("rule3_short_factual_tier_1");
+  });
+
+  it("rule 3b: course RAG hits with courseRagNeeded use tier 1", () => {
+    const match = matchPhase1Rules({
+      ...baseCtx,
+      prompt: "Who beat Morocco in the final?",
+      courseRagNeeded: true,
+      ragTopSimilarity: 0.72,
+      ragChunkCount: 4,
+    });
+    expect(match.rule).toBe("rule3b_course_rag_tier_1");
+    expect(match.pick).toEqual({ kind: "exactTier", tier: 1, tieBreak: "energy" });
+  });
+
   it("does not route web-search phrasing to a separate tools rule", () => {
     const match = matchPhase1Rules({
       ...baseCtx,
@@ -44,18 +65,28 @@ describe("matchPhase1Rules", () => {
     expect(match.rule).toBe("rule6_default_tier_2_carbon");
   });
 
-  it("rule 4: strong RAG hits use tier 1", () => {
+  it("rule 4: strong RAG hits use tier 1 (any chunk count)", () => {
     const match = matchPhase1Rules({
       ...baseCtx,
       ragTopSimilarity: 0.91,
-      ragChunkCount: 2,
+      ragChunkCount: 4,
     });
     expect(match.rule).toBe("rule4_strong_rag_tier_1");
+  });
+
+  it("rule 4b: moderate RAG with course uses tier 1", () => {
+    const match = matchPhase1Rules({
+      ...baseCtx,
+      ragTopSimilarity: 0.7,
+      ragChunkCount: 2,
+    });
+    expect(match.rule).toBe("rule4b_moderate_rag_tier_1");
   });
 
   it("rule 5: heavy RAG context uses tier 2 with carbon tie-break", () => {
     const match = matchPhase1Rules({
       ...baseCtx,
+      ragTopSimilarity: 0.55,
       ragChunkCount: 5,
       ragContextTokenEstimate: 2500,
     });

@@ -10,6 +10,10 @@ export { resolveToolResultMaxChars, truncateToMaxChars, TOOL_RAG_MAX_CHARS_PER_C
 
 export type HybridRagHit = { content: string; similarity: number; materialTitle: string };
 
+/** Injected when course excerpts are present — reduces parametric-knowledge overrides. */
+export const RAG_COURSE_GROUNDING_INSTRUCTION =
+  "Treat the course excerpts below as authoritative for this course. Answer from those excerpts only; do not contradict them with general world knowledge or guesses from earlier turns.";
+
 /** Hybrid RAG + tool `getInformation`: pgvector row cap (default was 6). */
 export const HYBRID_RAG_MAX_CHUNKS = 4;
 /** Max characters from excerpts injected into hybrid `system` (non-tool models). */

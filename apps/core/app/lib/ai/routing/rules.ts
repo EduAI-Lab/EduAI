@@ -42,6 +42,10 @@ export type Phase1RouterContext = {
 
   ragContextTokenEstimate?: number | null;
 
+  /** True when chat intent decided course-material RAG should run (see `needsCourseRag`). */
+
+  courseRagNeeded?: boolean;
+
 };
 
 
@@ -58,7 +62,30 @@ export type Phase1RuleMatch = {
 
 
 
-const SHORT_FACTUAL_PREFIXES = ["what is", "define", "who is", "when did"] as const;
+const SHORT_FACTUAL_PREFIXES = [
+  "what is",
+  "define",
+  "who is",
+  "when did",
+  "who won",
+  "what was",
+  "where was",
+  "when was",
+] as const;
+
+function routingRagStrongSimilarity(): number {
+  const raw = process.env.ROUTING_RAG_STRONG_SIM;
+  if (raw === undefined || raw === "") return 0.8;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 && n < 1 ? n : 0.8;
+}
+
+function routingRagTier1Similarity(): number {
+  const raw = process.env.ROUTING_RAG_TIER1_SIM;
+  if (raw === undefined || raw === "") return 0.65;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 && n < 1 ? n : 0.65;
+}
 
 
 
@@ -96,11 +123,15 @@ export function isShortFactualPrompt(prompt: string, lower: string): boolean {
 
  * 2. Short factual → Tier 1
 
- * 3. Strong RAG (top-1 similarity > 0.8 && ≤ 2 chunks) → Tier 1
+ * 3. Course RAG (material hits + `courseRagNeeded`) → Tier 1
 
- * 4. Long RAG (≥ 4 chunks && estimated context > 2k tokens) → Tier 2, lowest carbon
+ * 4. Strong RAG (top-1 similarity ≥ strong threshold, any hit count) → Tier 1
 
- * 5. Default → Tier 2, lowest carbon
+ * 5. Moderate RAG (course + top-1 ≥ tier-1 threshold) → Tier 1
+
+ * 6. Long RAG (≥ 4 chunks && estimated context > 2k tokens) → Tier 2, lowest carbon
+
+ * 7. Default → Tier 2, lowest carbon
 
  */
 
@@ -156,13 +187,35 @@ export function matchPhase1Rules(ctx: Phase1RouterContext): Phase1RuleMatch {
 
   if (
 
+    ctx.courseId &&
+
+    ctx.courseRagNeeded &&
+
+    chunks != null &&
+
+    chunks >= 1
+
+  ) {
+
+    return {
+
+      rule: "rule3b_course_rag_tier_1",
+
+      pick: { kind: "exactTier", tier: 1, tieBreak: "energy" },
+
+    };
+
+  }
+
+  if (
+
     top1 != null &&
 
     chunks != null &&
 
-    top1 > 0.8 &&
+    chunks >= 1 &&
 
-    chunks <= 2
+    top1 >= routingRagStrongSimilarity()
 
   ) {
 
@@ -176,7 +229,29 @@ export function matchPhase1Rules(ctx: Phase1RouterContext): Phase1RuleMatch {
 
   }
 
+  if (
 
+    ctx.courseId &&
+
+    top1 != null &&
+
+    chunks != null &&
+
+    chunks >= 1 &&
+
+    top1 >= routingRagTier1Similarity()
+
+  ) {
+
+    return {
+
+      rule: "rule4b_moderate_rag_tier_1",
+
+      pick: { kind: "exactTier", tier: 1, tieBreak: "energy" },
+
+    };
+
+  }
 
   const ctxTok = ctx.ragContextTokenEstimate;
 

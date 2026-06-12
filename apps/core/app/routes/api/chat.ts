@@ -39,6 +39,7 @@ import {
   extractMessageText,
   prepareBoundedSessionContext,
   resolveMaxContextMessages,
+  RAG_COURSE_GROUNDING_INSTRUCTION,
   HYBRID_RAG_MAX_CHUNKS,
   HYBRID_RAG_MAX_CONTEXT_CHARS,
 } from "~/lib/chat-rag";
@@ -650,7 +651,7 @@ export async function action({ request }: ActionFunctionArgs) {
         const ragPrefetch = await findRelevantContent(
           lastUserMessageTextForTelemetry,
           effectiveCourseId,
-          6,
+          HYBRID_RAG_MAX_CHUNKS,
         );
         ragChunkCount = ragPrefetch.length;
         ragTopSimilarity = ragPrefetch[0]?.similarity ?? null;
@@ -675,6 +676,7 @@ export async function action({ request }: ActionFunctionArgs) {
         ragTopSimilarity,
         ragChunkCount,
         ragContextTokenEstimate,
+        courseRagNeeded,
       });
       model = decision.modelId;
       wasAuto = true;
@@ -901,7 +903,7 @@ ${contextText ? `Here are relevant excerpts from the course materials to help an
 
 ${contextText}
 
-Based on this information, provide a comprehensive answer to the user's question. If the provided content doesn't fully answer their question, mention what you can answer based on the available materials and suggest what additional information might be helpful.` : "I don't have access to specific course materials for this question, but I can provide general educational assistance."}`
+${RAG_COURSE_GROUNDING_INSTRUCTION} Based on this information, provide a comprehensive answer to the user's question. If the provided content doesn't fully answer their question, say what the materials cover and what is missing.` : "I don't have access to specific course materials for this question, but I can provide general educational assistance."}`
             : baseSystemPrompt;
 
           streamConfig = {
@@ -1001,7 +1003,7 @@ Here are relevant excerpts from the course materials to help answer the user's q
 
 ${preloadedRagContext}
 
-Based on this information, provide a comprehensive answer. Use getInformation only if these excerpts are insufficient.`;
+${RAG_COURSE_GROUNDING_INSTRUCTION} Based on this information, provide a comprehensive answer. Use getInformation only if these excerpts are insufficient.`;
       }
 
       streamConfig = {
