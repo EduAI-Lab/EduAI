@@ -11,12 +11,12 @@ const SMALL_MODEL_PATTERNS = [
   /gemma:2b/i,
 ];
 
-/** Heuristic: sub-4B parameter models are not tool-capable in practice. */
+/** Legacy slug heuristic (migration backfill only — not used for admin gating). */
 export function isSmallModelSlug(modelId: string): boolean {
   return SMALL_MODEL_PATTERNS.some((pattern) => pattern.test(modelId));
 }
 
-/** Admin UI: only CHAT models may toggle supportsTools (small models get a warning, not a hard block). */
+/** Admin UI: only CHAT models may toggle supportsTools. */
 export function allowsSupportsToolsToggle(_modelId: string, type: string): boolean {
   if (type !== "CHAT") return false;
   return true;
