@@ -147,8 +147,10 @@ async function postChat({
     : inferTierFromModel(routedModel);
 
   const usage = json?.usage ?? null;
-  const promptTokens = usage?.promptTokens ?? usage?.inputTokens ?? null;
-  const completionTokens = usage?.completionTokens ?? usage?.outputTokens ?? null;
+  const promptTokens =
+    usage?.promptTokens ?? usage?.inputTokens ?? usage?.prompt_tokens ?? null;
+  const completionTokens =
+    usage?.completionTokens ?? usage?.outputTokens ?? usage?.completion_tokens ?? null;
 
   return {
     httpStatus: res.status,

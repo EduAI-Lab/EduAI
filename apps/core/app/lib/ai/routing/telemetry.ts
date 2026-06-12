@@ -25,9 +25,13 @@ export function normalizeTokenUsage(
     return { promptTokens: null, completionTokens: null, totalTokens: null };
   }
   const promptTokens =
-    asTokenCount(usage.promptTokens) ?? asTokenCount(usage.inputTokens);
+    asTokenCount(usage.promptTokens) ??
+    asTokenCount(usage.inputTokens) ??
+    asTokenCount(usage.prompt_tokens);
   const completionTokens =
-    asTokenCount(usage.completionTokens) ?? asTokenCount(usage.outputTokens);
+    asTokenCount(usage.completionTokens) ??
+    asTokenCount(usage.outputTokens) ??
+    asTokenCount(usage.completion_tokens);
   const totalTokens =
     asTokenCount(usage.totalTokens) ??
     (promptTokens != null && completionTokens != null
