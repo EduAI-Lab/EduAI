@@ -16,6 +16,7 @@ import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { AssistiveUiProvider } from "~/components/assistive/assistive-ui-provider";
 import { UiPreferencesProvider } from "~/components/assistive/ui-preferences-provider";
+import { Toaster } from "~/components/ui/sonner";
 import { DEFAULT_ACCOUNT_PREFERENCES } from "~/lib/user-preferences";
 import { isUiDensity, isUiTheme, resolveThemeHtmlClass } from "~/lib/ui-preferences";
 
@@ -28,7 +29,7 @@ export const links: Route.LinksFunction = () => [
   },
   {
     rel: "stylesheet",
-    href: "https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap",
+    href: "https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&display=swap",
   },
 ];
 
@@ -88,6 +89,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       </head>
       <body>
         {children}
+        <Toaster />
         <ScrollRestoration />
         <Scripts />
       </body>

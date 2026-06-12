@@ -202,6 +202,9 @@ Each section should use this format:
 | [`UiPreferencesProvider.test.tsx`](apps/core/app/tests/unit/UiPreferencesProvider.test.tsx) | Tests motion/density/theme html hooks (absent at defaults), client updates for non-default values, PATCH persistence, and provider guard rails. |
 | [`AccessibilitySettingsTab.test.tsx`](apps/core/app/tests/unit/AccessibilitySettingsTab.test.tsx) | Tests Settings Accessibility tab renders de-stigmatized copy/controls and wires Assistive Mode + reduce motion to shared providers. |
 | [`assistive-reading.test.ts`](apps/core/app/tests/unit/assistive-reading.test.ts) | Verifies `READING_SURFACE_CLASS` matches assistive-reading.css hooks and that typography rules are scoped under `[data-assistive]` with spacing-based defaults (16px base, 1.625 line-height, 65ch measure, no font-family swap). |
+| [`ChatViews.test.tsx`](apps/core/app/tests/unit/ChatViews.test.tsx) | Verifies `ChatGlobalView` and `ChatCourseScopedView` render their role-specific banner text, and that clicking the Assistive Mode switch calls `onAssistChange` with the toggled boolean. |
+| [`NavMain.test.tsx`](apps/core/app/tests/unit/NavMain.test.tsx) | Verifies nav items render as SPA `<Link>` elements, the active item receives `aria-current="page"` based on the current pathname, child routes (e.g. `/courses/abc`) also activate the parent nav item, and an empty items list renders without throwing. |
+| [`SiteHeader.test.tsx`](apps/core/app/tests/unit/SiteHeader.test.tsx) | Verifies the header renders an explicit `title` prop, derives the page title from the current route when no prop is passed, renders optional action slots, and replaces the `<h1>` with the `breadcrumbs` node when that prop is provided. |
 
 ---
 
