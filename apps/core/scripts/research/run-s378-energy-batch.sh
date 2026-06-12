@@ -27,8 +27,8 @@ export RESEARCH_MEASURE_ENERGY=1
 export RESEARCH_REPLICATE=3
 export RESEARCH_RUN_SPLIT=test
 export RESEARCH_POLICY=both
-export RESEARCH_RUN_LABEL=policy-energy-v1
-export RESEARCH_POLICY_OUT=/tmp/policy-runs-test.energy.v1.jsonl
+export RESEARCH_RUN_LABEL=policy-energy-v2
+export RESEARCH_POLICY_OUT=/tmp/policy-runs-test.energy.v2.jsonl
 export RESEARCH_RUN_SLEEP_MS=500
 unset RESEARCH_RUN_LIMIT
 

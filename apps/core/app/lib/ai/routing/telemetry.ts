@@ -7,6 +7,35 @@ import { measureTurnEnergy } from "~/lib/ai/energy/measurement.server";
 import { numToRouterTier } from "./tiers";
 import prisma from "~/lib/prisma.server";
 
+export type NormalizedTokenUsage = {
+  promptTokens: number | null;
+  completionTokens: number | null;
+  totalTokens: number | null;
+};
+
+function asTokenCount(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/** AI SDK / OpenAI-compatible providers may use promptTokens or inputTokens. */
+export function normalizeTokenUsage(
+  usage: Record<string, unknown> | undefined | null,
+): NormalizedTokenUsage {
+  if (!usage) {
+    return { promptTokens: null, completionTokens: null, totalTokens: null };
+  }
+  const promptTokens =
+    asTokenCount(usage.promptTokens) ?? asTokenCount(usage.inputTokens);
+  const completionTokens =
+    asTokenCount(usage.completionTokens) ?? asTokenCount(usage.outputTokens);
+  const totalTokens =
+    asTokenCount(usage.totalTokens) ??
+    (promptTokens != null && completionTokens != null
+      ? promptTokens + completionTokens
+      : null);
+  return { promptTokens, completionTokens, totalTokens };
+}
+
 export function splitRegistryModelId(
   identifier: string,
 ): { providerName: string; modelId: string } | null {
@@ -50,13 +79,9 @@ export async function persistAiInteractionTelemetry(params: {
         })
       : null;
 
-    const promptTokens = params.usage?.promptTokens ?? null;
-    const completionTokens = params.usage?.completionTokens ?? null;
-    const totalTokens =
-      params.usage?.totalTokens ??
-      (promptTokens != null && completionTokens != null
-        ? promptTokens + completionTokens
-        : null);
+    const { promptTokens, completionTokens, totalTokens } = normalizeTokenUsage(
+      params.usage as Record<string, unknown> | undefined,
+    );
 
     let estInputCostUsd: number | null = null;
     let estOutputCostUsd: number | null = null;

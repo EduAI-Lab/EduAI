@@ -19,11 +19,31 @@ pip install -r requirements.txt
 
 ## Run
 
+**Node (s378 — Python 3.6 too old for `server.py`):**
+
+```bash
+export ENERGY_METER_PORT=9100
+export LOCAL_GRID_GCO2_PER_KWH=12
+node server.mjs
+```
+
+**Python (cmps01 / GPU host with Python ≥3.7):**
+
 ```bash
 export ENERGY_METER_PORT=9100
 export LOCAL_GRID_GCO2_PER_KWH=12   # BC hydro ~12 g/kWh (adjust per run log)
-python server.py
+python3 server.py
 ```
+
+On **cmps01** (where vLLM runs), bind locally and point research at the inference host:
+
+```bash
+cd tools/energy-meter
+nohup node server.mjs >>/tmp/energy-meter.log 2>&1 &
+# apps/core/.env on s378: ENERGY_SIDECAR_URL=http://cmps01.ok.ubc.ca:9100
+```
+
+s378 has no RAPL/NVML — the sidecar there returns `energyJoules: null`; real Joules require cmps01.
 
 Health check: `curl http://127.0.0.1:9100/health`
 

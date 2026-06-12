@@ -9,7 +9,10 @@ import {
   parseModelIdentifier,
 } from "~/lib/ai/providers";
 import { activeRouterVersion, resolveRoutedModel } from "~/lib/ai/routing/router";
-import { persistAiInteractionTelemetry } from "~/lib/ai/routing/telemetry";
+import {
+  normalizeTokenUsage,
+  persistAiInteractionTelemetry,
+} from "~/lib/ai/routing/telemetry";
 import { modelSupportsTools } from "~/lib/ai/providers.server";
 import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
 import { findRelevantContent } from "~/lib/ai/embedding";
@@ -1066,11 +1069,15 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
           ]);
         }
 
+        const normalizedUsage = normalizeTokenUsage(
+          usage as Record<string, unknown> | undefined,
+        );
+
         return new Response(
           JSON.stringify({
             content: text,
             model: resolvedModelId,
-            usage,
+            usage: normalizedUsage,
             finishReason,
             sources: sources || [],
             reasoning,
