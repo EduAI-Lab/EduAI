@@ -49,17 +49,8 @@ router.get('/courses/:courseId/modules', async (req, res) => {
     const hasElevatedAccess = isInstructor || isTa || isUnitAdmin;
     const isMember = hasElevatedAccess || isStudent;
 
-    if (authUser.role === 'INSTRUCTOR' && !isInstructor) {
-      return res.status(403).json({ error: 'Not authorized for this course' });
-    }
-    if (authUser.role === 'UNIT_ADMIN' && !isUnitAdmin) {
-      return res.status(403).json({ error: 'Not authorized for this course' });
-    }
     if (!isMember) {
       return res.status(403).json({ error: 'Not authorized for this course' });
-    }
-    if (!['INSTRUCTOR', 'TA', 'STUDENT', 'UNIT_ADMIN'].includes(authUser.role)) {
-      return res.status(403).json({ error: 'Role is not supported in AI Tutor' });
     }
 
     const whereClause = hasElevatedAccess
@@ -161,17 +152,8 @@ router.get('/modules/:moduleId', async (req, res) => {
     const hasElevatedAccess = isInstructor || isTa || unitAdmin;
     const isMember = hasElevatedAccess || isStudent;
 
-    if (authUser.role === 'INSTRUCTOR' && !isInstructor) {
-      return res.status(403).json({ error: 'Not authorized for this module' });
-    }
-    if (authUser.role === 'UNIT_ADMIN' && !unitAdmin) {
-      return res.status(403).json({ error: 'Not authorized for this module' });
-    }
     if (!isMember) {
       return res.status(403).json({ error: 'Not authorized for this module' });
-    }
-    if (!['INSTRUCTOR', 'TA', 'STUDENT', 'UNIT_ADMIN'].includes(authUser.role)) {
-      return res.status(403).json({ error: 'Role is not supported in AI Tutor' });
     }
     if (isStudent && !hasElevatedAccess && !module.isPublished) {
       return res.status(403).json({ error: 'Module is not published' });

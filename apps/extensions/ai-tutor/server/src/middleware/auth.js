@@ -71,3 +71,16 @@ export function isUnitAdminForCourse(user, course) {
     user.authorizedUnits.includes(course.department)
   );
 }
+
+/**
+ * Returns true when the user has admin-level access to the course:
+ * ADMIN globally, UNIT_ADMIN scoped to their department, or INSTRUCTOR of the course.
+ * Requires course.instructors to be included.
+ */
+export function isCourseAdmin(user, course) {
+  if (user?.role === 'ADMIN') return true;
+  if (isUnitAdminForCourse(user, course)) return true;
+  if (user?.role === 'INSTRUCTOR' && course?.instructors?.some((i) => i.userId === user.id))
+    return true;
+  return false;
+}

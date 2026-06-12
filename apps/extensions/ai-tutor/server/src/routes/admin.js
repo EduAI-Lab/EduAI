@@ -22,7 +22,7 @@
 
 import express from 'express';
 import { prisma } from '../config/database.js';
-import { requireRole, isUnitAdminForCourse } from '../middleware/auth.js';
+import { requireRole, isCourseAdmin } from '../middleware/auth.js';
 import {
   SYSTEM_SETTING_KEYS,
   clearSystemSetting,
@@ -36,13 +36,6 @@ import { syncCourseEnrollments } from '../services/enrollmentSync.js';
 
 const router = express.Router();
 
-function isCourseAdmin(authUser, course) {
-  if (authUser.role === 'ADMIN') return true;
-  if (isUnitAdminForCourse(authUser, course)) return true;
-  if (authUser.role === 'INSTRUCTOR' && course.instructors.some((i) => i.userId === authUser.id))
-    return true;
-  return false;
-}
 
 router.get('/admin/users', requireRole('ADMIN'), async (_req, res) => {
   // User records live in Core; the AT schema has no local User table post-auth-migration.

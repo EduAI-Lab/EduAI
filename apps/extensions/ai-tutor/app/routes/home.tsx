@@ -3,21 +3,13 @@ import { useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { useLocalUser } from '../hooks/useLocalUser';
 import { BrainCircuit } from 'lucide-react';
-import type { Role } from '../lib/types';
+import { routeForRole } from '../lib/role-routing';
 
 export function meta({}: Route.MetaArgs) {
   return [
     { title: 'AI Tutor' },
     { name: 'description', content: 'AI Tutor — Loading' },
   ];
-}
-
-function routeForRole(role: Role) {
-  if (role === 'STUDENT') return '/student';
-  if (role === 'INSTRUCTOR') return '/instructor';
-  if (role === 'TA') return '/unsupported-role';
-  if (role === 'UNIT_ADMIN') return '/instructor';
-  return '/admin';
 }
 
 export default function Home() {
