@@ -14,7 +14,7 @@ const {
   wantsLocalEmbeddingProvider,
   DEFAULT_EMBEDDING_DIMENSION,
 } = await import("~/lib/ai/embedding");
-const { SEMANTIC_CHUNK_SEPARATOR, joinSemanticChunks } = await import("~/lib/ai/file-processing");
+const { SEMANTIC_CHUNK_SEPARATOR, joinSemanticChunks, applyChunkOverlap } = await import("~/lib/ai/file-processing");
 
 // ---------------------------------------------------------------------------
 // generateChunks
@@ -75,9 +75,27 @@ describe("generateChunks", () => {
 describe("resolveMaterialChunks", () => {
   it("preserves semantic chunks when the upload-path separator is present", () => {
     const semantic = ["# Section 1\n\nIntro text.", "# Section 2\n\nMore text."];
-    const content = joinSemanticChunks(semantic);
+    const overlapped = applyChunkOverlap(semantic);
+    const content = joinSemanticChunks(overlapped);
 
-    expect(resolveMaterialChunks(content)).toEqual(semantic);
+    expect(resolveMaterialChunks(content)).toEqual(overlapped);
+  });
+
+  it("round-trips overlapped upload chunks without breaking the separator", () => {
+    const semantic = [
+      "First chunk with enough words to produce meaningful overlap at the boundary.",
+      "Second chunk starts fresh but should receive overlap from the first chunk.",
+    ];
+    const overlapped = applyChunkOverlap(semantic, 80);
+    const content = joinSemanticChunks(overlapped);
+    const resolved = resolveMaterialChunks(content);
+
+    expect(resolved).toEqual(overlapped);
+    expect(resolved).toHaveLength(2);
+    if (resolved.length > 1) {
+      const endWord = semantic[0].split(" ").at(-1)!;
+      expect(resolved[1]).toContain(endWord);
+    }
   });
 
   it("falls back to generateChunks when no separator is present", () => {
