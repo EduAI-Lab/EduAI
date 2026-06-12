@@ -82,9 +82,25 @@ function routingRagStrongSimilarity(): number {
 
 function routingRagTier1Similarity(): number {
   const raw = process.env.ROUTING_RAG_TIER1_SIM;
-  if (raw === undefined || raw === "") return 0.65;
+  if (raw === undefined || raw === "") return 0.55;
   const n = Number(raw);
-  return Number.isFinite(n) && n > 0 && n < 1 ? n : 0.65;
+  return Number.isFinite(n) && n > 0 && n < 1 ? n : 0.55;
+}
+
+/** Default Auto tier when no escalation rule matches. `1` = prefer 7B (sustainability default). */
+export function routingDefaultTier(): 1 | 2 {
+  const raw = process.env.ROUTING_DEFAULT_TIER?.trim();
+  if (raw === "2") return 2;
+  return 1;
+}
+
+function defaultTierPick(): PickSpec {
+  const tier = routingDefaultTier();
+  return {
+    kind: "exactTier",
+    tier,
+    tieBreak: tier === 1 ? "energy" : "carbon",
+  };
 }
 
 
@@ -129,9 +145,9 @@ export function isShortFactualPrompt(prompt: string, lower: string): boolean {
 
  * 5. Moderate RAG (course + top-1 ≥ tier-1 threshold) → Tier 1
 
- * 6. Long RAG (≥ 4 chunks && estimated context > 2k tokens) → Tier 2, lowest carbon
+ * 6. Long RAG (≥ 4 chunks && estimated context > 2k tokens) → default tier (usually 1)
 
- * 7. Default → Tier 2, lowest carbon
+ * 7. Default → default tier (usually 1 / 7B on vLLM)
 
  */
 
@@ -185,26 +201,11 @@ export function matchPhase1Rules(ctx: Phase1RouterContext): Phase1RuleMatch {
 
   const chunks = ctx.ragChunkCount;
 
-  if (
-
-    ctx.courseId &&
-
-    ctx.courseRagNeeded &&
-
-    chunks != null &&
-
-    chunks >= 1
-
-  ) {
-
+  if (ctx.courseId && ctx.courseRagNeeded) {
     return {
-
       rule: "rule3b_course_rag_tier_1",
-
       pick: { kind: "exactTier", tier: 1, tieBreak: "energy" },
-
     };
-
   }
 
   if (
@@ -267,11 +268,13 @@ export function matchPhase1Rules(ctx: Phase1RouterContext): Phase1RuleMatch {
 
   ) {
 
+    const tier = routingDefaultTier();
+
     return {
 
-      rule: "rule5_long_rag_tier_2_carbon",
+      rule: tier === 1 ? "rule5_long_rag_tier_1_energy" : "rule5_long_rag_tier_2_carbon",
 
-      pick: { kind: "exactTier", tier: 2, tieBreak: "carbon" },
+      pick: defaultTierPick(),
 
     };
 
@@ -279,11 +282,13 @@ export function matchPhase1Rules(ctx: Phase1RouterContext): Phase1RuleMatch {
 
 
 
+  const tier = routingDefaultTier();
+
   return {
 
-    rule: "rule6_default_tier_2_carbon",
+    rule: tier === 1 ? "rule6_default_tier_1_energy" : "rule6_default_tier_2_carbon",
 
-    pick: { kind: "exactTier", tier: 2, tieBreak: "carbon" },
+    pick: defaultTierPick(),
 
   };
 

@@ -1,5 +1,9 @@
-import { describe, it, expect } from "vitest";
-import { isShortFactualPrompt, matchPhase1Rules } from "~/lib/ai/routing/rules";
+import { describe, it, expect, afterEach } from "vitest";
+import {
+  isShortFactualPrompt,
+  matchPhase1Rules,
+  routingDefaultTier,
+} from "~/lib/ai/routing/rules";
 
 const baseCtx = {
   prompt: "Explain the midterm grading rubric in detail.",
@@ -44,6 +48,16 @@ describe("matchPhase1Rules", () => {
     ).toBe("rule3_short_factual_tier_1");
   });
 
+  it("rule 3b: course + courseRagNeeded uses tier 1 even without RAG hits", () => {
+    const match = matchPhase1Rules({
+      ...baseCtx,
+      prompt: "Who beat Morocco in the final?",
+      courseRagNeeded: true,
+      ragChunkCount: 0,
+    });
+    expect(match.rule).toBe("rule3b_course_rag_tier_1");
+  });
+
   it("rule 3b: course RAG hits with courseRagNeeded use tier 1", () => {
     const match = matchPhase1Rules({
       ...baseCtx,
@@ -62,7 +76,8 @@ describe("matchPhase1Rules", () => {
       prompt: "Search the web for the latest syllabus updates",
     });
     expect(match.rule).not.toBe("rule2_tools_tier_ge_2");
-    expect(match.rule).toBe("rule6_default_tier_2_carbon");
+    expect(match.rule).toBe("rule6_default_tier_1_energy");
+    expect(match.pick.tier).toBe(1);
   });
 
   it("rule 4: strong RAG hits use tier 1 (any chunk count)", () => {
@@ -83,21 +98,33 @@ describe("matchPhase1Rules", () => {
     expect(match.rule).toBe("rule4b_moderate_rag_tier_1");
   });
 
-  it("rule 5: heavy RAG context uses tier 2 with carbon tie-break", () => {
+  it("rule 5: heavy RAG context uses default tier (1 by default)", () => {
     const match = matchPhase1Rules({
       ...baseCtx,
-      ragTopSimilarity: 0.55,
+      ragTopSimilarity: 0.4,
       ragChunkCount: 5,
       ragContextTokenEstimate: 2500,
     });
-    expect(match.rule).toBe("rule5_long_rag_tier_2_carbon");
-    expect(match.pick).toEqual({ kind: "exactTier", tier: 2, tieBreak: "carbon" });
+    expect(match.rule).toBe("rule5_long_rag_tier_1_energy");
+    expect(match.pick).toEqual({ kind: "exactTier", tier: 1, tieBreak: "energy" });
   });
 
-  it("rule 6: default path uses tier 2 with carbon tie-break", () => {
+  it("rule 6: default path prefers tier 1 (7B)", () => {
     const match = matchPhase1Rules(baseCtx);
-    expect(match.rule).toBe("rule6_default_tier_2_carbon");
-    expect(match.pick).toEqual({ kind: "exactTier", tier: 2, tieBreak: "carbon" });
+    expect(match.rule).toBe("rule6_default_tier_1_energy");
+    expect(match.pick).toEqual({ kind: "exactTier", tier: 1, tieBreak: "energy" });
+  });
+
+  describe("ROUTING_DEFAULT_TIER=2 legacy", () => {
+    afterEach(() => {
+      delete process.env.ROUTING_DEFAULT_TIER;
+    });
+
+    it("uses tier 2 for default and long RAG when explicitly configured", () => {
+      process.env.ROUTING_DEFAULT_TIER = "2";
+      expect(routingDefaultTier()).toBe(2);
+      expect(matchPhase1Rules(baseCtx).rule).toBe("rule6_default_tier_2_carbon");
+    });
   });
 
   it("images win over other signals when attachments present", () => {
