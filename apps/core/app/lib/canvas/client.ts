@@ -1,8 +1,10 @@
-export type CanvasIntegrationPublic = {
-  canvasUrl: string;
-  isTestMode: boolean;
-  isConnected: true;
-};
+import type {
+  CanvasCoursePickerItem,
+  CanvasIntegrationPublic,
+  SyncCanvasCoursesResult,
+} from "~/lib/canvas/schemas";
+
+export type { CanvasCoursePickerItem, CanvasIntegrationPublic, SyncCanvasCoursesResult };
 
 type CanvasApiBody<T = unknown> = {
   success: boolean;
@@ -58,4 +60,22 @@ export async function connectCanvas(input: {
 
 export async function disconnectCanvas(): Promise<void> {
   await canvasRequest("disconnect", { method: "DELETE" });
+}
+
+export async function listCanvasCourses(): Promise<CanvasCoursePickerItem[]> {
+  const body = await canvasRequest<{ courses: CanvasCoursePickerItem[] }>("courses");
+  return body.data?.courses ?? [];
+}
+
+export async function syncCanvasCourses(input: {
+  canvasCourseIds: string[];
+}): Promise<SyncCanvasCoursesResult> {
+  const body = await canvasRequest<SyncCanvasCoursesResult>("sync", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  if (!body.data) {
+    throw new Error("Canvas sync did not return result data");
+  }
+  return body.data;
 }
