@@ -1,6 +1,6 @@
 import { useChat } from "@ai-sdk/react";
 import { useCallback, useEffect, useState } from "react";
-import { redirect, useLoaderData, useFetcher } from "react-router";
+import { Link, redirect, useLoaderData, useFetcher } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
 
@@ -13,6 +13,14 @@ import type {
 } from "~/components/chat/chat-view-types";
 import { SiteHeader } from "~/components/site-header";
 import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "~/components/ui/breadcrumb"
 import { fetchChatSession } from "~/hooks/api/use-chat-sessions";
 import { useCourses } from "~/hooks/api/use-courses";
 import { useApiKeys } from "~/hooks/use-api-keys";
@@ -22,6 +30,7 @@ import prisma from "~/lib/prisma.server";
 import { getUserPreference, saveUserPreference } from "~/lib/user-preferences.server";
 import { getAccessibleCourseCodes } from "~/lib/courses/server";
 import { parsePreferenceUpdates } from "~/lib/user-preferences";
+import { useAssistiveUi } from "~/components/assistive/assistive-ui-provider";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request);
@@ -106,6 +115,7 @@ export default function Chat() {
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
   const [adhdAssist, setAdhdAssist] = useState(assistDefault ?? false);
   const { getValidApiKeys } = useApiKeys();
+  const { setAssistive } = useAssistiveUi();
   const prefsFetcher = useFetcher();
 
   const persistPreference = useCallback(
@@ -114,6 +124,16 @@ export default function Chat() {
     },
     [prefsFetcher],
   );
+
+  const handleAssistChange = useCallback((checked: boolean) => {
+    setAdhdAssist(checked);
+    setAssistive(checked);
+  }, [setAdhdAssist, setAssistive]);
+
+  const handleCourseChange = useCallback((code: string | null) => {
+    setSelectedCourseCode(code);
+    persistPreference({ lastCourseCode: code });
+  }, [setSelectedCourseCode, persistPreference]);
 
   useEffect(() => {
     if (isGlobalChat) setSelectedCourseCode(null);
@@ -133,8 +153,9 @@ export default function Chat() {
         setSystemPrompt(session.systemPrompt);
       }
       setAdhdAssist(Boolean(session.adhdAssist));
+      setAssistive(Boolean(session.adhdAssist));
     })();
-  }, [chatId, systemPrompt]);
+  }, [chatId, systemPrompt, setAssistive]);
 
   const { messages, input, handleInputChange, handleSubmit, isLoading, stop } =
     useChat({
@@ -209,13 +230,13 @@ export default function Chat() {
     setSelectedModel,
     selectedModelInfo,
     selectedCourseCode,
-    setSelectedCourseCode,
+    setSelectedCourseCode: handleCourseChange,
     availableCourses,
     messages,
     input,
     isLoading,
     adhdAssist,
-    setAdhdAssist,
+    onAssistChange: handleAssistChange,
     systemPrompt,
     onSystemPromptSave: handleSystemPromptSave,
     onInputChange: handleInputChange,
@@ -229,13 +250,27 @@ export default function Chat() {
       style={
         {
           "--sidebar-width": "calc(var(--spacing) * 72)",
-          "--header-height": "calc(var(--spacing) * 14)",
+          "--header-height": "calc(var(--spacing) * 12)",
         } as React.CSSProperties
       }
     >
       <AppSidebar variant="inset" user={user} />
       <SidebarInset>
-        <SiteHeader title="Chat" />
+        <SiteHeader
+          breadcrumbs={
+            <Breadcrumb>
+              <BreadcrumbList>
+                <BreadcrumbItem>
+                  <BreadcrumbLink asChild><Link to="/dashboard">Home</Link></BreadcrumbLink>
+                </BreadcrumbItem>
+                <BreadcrumbSeparator />
+                <BreadcrumbItem>
+                  <BreadcrumbPage>Chat</BreadcrumbPage>
+                </BreadcrumbItem>
+              </BreadcrumbList>
+            </Breadcrumb>
+          }
+        />
         {isGlobalChat ? (
           <ChatGlobalView {...sharedViewProps} />
         ) : (

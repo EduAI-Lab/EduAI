@@ -1,4 +1,4 @@
-import { redirect, useLoaderData, useSearchParams } from 'react-router'
+import { Link, redirect, useLoaderData, useSearchParams } from 'react-router'
 import type { LoaderFunctionArgs } from 'react-router'
 
 import { auth } from '~/lib/auth/server'
@@ -12,6 +12,14 @@ import { CoursesInstructorView } from '~/components/courses/courses-instructor-v
 import { CoursesTaView } from '~/components/courses/courses-ta-view'
 import { CoursesStudentView } from '~/components/courses/courses-student-view'
 import { useCourses } from '~/hooks/api/use-courses'
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from '~/components/ui/breadcrumb'
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request)
@@ -153,7 +161,21 @@ function Layout({ user, children }: { user: any; children: React.ReactNode }) {
     >
       <AppSidebar variant="inset" user={user} />
       <SidebarInset>
-        <SiteHeader />
+        <SiteHeader
+          breadcrumbs={
+            <Breadcrumb>
+              <BreadcrumbList>
+                <BreadcrumbItem>
+                  <BreadcrumbLink asChild><Link to="/dashboard">Home</Link></BreadcrumbLink>
+                </BreadcrumbItem>
+                <BreadcrumbSeparator />
+                <BreadcrumbItem>
+                  <BreadcrumbPage>Courses</BreadcrumbPage>
+                </BreadcrumbItem>
+              </BreadcrumbList>
+            </Breadcrumb>
+          }
+        />
         <div className="flex flex-1 flex-col">
           <div className="@container/main flex flex-1 flex-col gap-2">
             <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
