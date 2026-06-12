@@ -215,9 +215,15 @@ describe('Course publish state — Core write-through (#477)', () => {
       where: { id: seed.course.id },
       data: { coreOfferingId: CORE_OFFERING_ID, isPublished: false },
     });
+
+    // setCoreCoursePublishState and listEduAiCourses check for this key before calling fetch.
+    process.env.EDUAI_API_KEY = 'test-key';
   });
 
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    delete process.env.EDUAI_API_KEY;
+  });
 
   it('publish — calls Core publish endpoint and updates local isPublished', async () => {
     const mockFetch = vi.fn().mockResolvedValue({
