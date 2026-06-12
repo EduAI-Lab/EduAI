@@ -19,7 +19,9 @@ import {
 } from "~/components/ui/alert-dialog";
 import { Loader } from "~/components/ui/loader";
 import type { AIProvider, AIModel } from "~/types/ai";
-import { allowsSupportsToolsToggle, isSmallModelSlug } from "~/lib/ai/model-tool-capability";
+import { AlertTriangle } from "lucide-react";
+import { allowsSupportsToolsToggle } from "~/lib/ai/model-tool-capability";
+import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 
 export type OllamaModel = {
   name: string;
@@ -99,7 +101,7 @@ export function ModelFormDialog({
 
   const [selectedOllamaModel, setSelectedOllamaModel] = useState<string>("");
   const [selectedVllmModel, setSelectedVllmModel] = useState<string>("");
-  const [smallModelToolsWarningOpen, setSmallModelToolsWarningOpen] = useState(false);
+  const [toolsEnableWarningOpen, setToolsEnableWarningOpen] = useState(false);
 
   useEffect(() => {
     if (model) {
@@ -147,16 +149,16 @@ export function ModelFormDialog({
   const showSupportsToolsToggle = allowsSupportsToolsToggle(formData.modelId, formData.type);
 
   const handleSupportsToolsChange = (checked: boolean) => {
-    if (checked && isSmallModelSlug(formData.modelId)) {
-      setSmallModelToolsWarningOpen(true);
+    if (checked) {
+      setToolsEnableWarningOpen(true);
       return;
     }
-    setFormData({ ...formData, supportsTools: checked });
+    setFormData({ ...formData, supportsTools: false });
   };
 
-  const confirmSmallModelTools = () => {
+  const confirmEnableTools = () => {
     setFormData((prev) => ({ ...prev, supportsTools: true }));
-    setSmallModelToolsWarningOpen(false);
+    setToolsEnableWarningOpen(false);
   };
 
   useEffect(() => {
@@ -511,6 +513,20 @@ export function ModelFormDialog({
                     onCheckedChange={handleSupportsToolsChange}
                   />
                   <Label htmlFor="supportsTools">Supports Tools</Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex text-amber-600 hover:text-amber-700 dark:text-amber-500"
+                        aria-label="Tool calling requirement"
+                      >
+                        <AlertTriangle className="h-4 w-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-xs">
+                      Only enable if this model supports tool/function calling on its provider.
+                    </TooltipContent>
+                  </Tooltip>
                 </div>
               ) : null}
             </div>
@@ -546,19 +562,20 @@ export function ModelFormDialog({
           </div>
         </form>
 
-        <AlertDialog open={smallModelToolsWarningOpen} onOpenChange={setSmallModelToolsWarningOpen}>
+        <AlertDialog open={toolsEnableWarningOpen} onOpenChange={setToolsEnableWarningOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Enable tools on a small model?</AlertDialogTitle>
+              <AlertDialogTitle>Enable tool calling for this model?</AlertDialogTitle>
               <AlertDialogDescription>
-                Models around 3B parameters or smaller often struggle with reliable tool calling.
-                You can still enable this if you need it for testing or a specific deployment.
+                Confirm that {formData.modelId ? `"${formData.modelId}"` : "this model"} supports
+                tool/function calling on its provider. If it does not, chat may fail, skip tools, or
+                return unreliable results.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={confirmSmallModelTools}>
-                Enable anyway
+              <AlertDialogAction onClick={confirmEnableTools}>
+                Enable tools
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
