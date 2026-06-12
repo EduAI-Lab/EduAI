@@ -15,15 +15,18 @@ import {
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
+/** Provider hard limit (e.g. Google Gemini embedMany — "At most 100 requests per batch"). */
+const CLOUD_EMBED_MANY_MAX_BATCH_SIZE = 100;
+
 /** pgvector column dimension — must match LOCAL-EMBEDDINGS and `EMBEDDING_DIMENSION`. */
 export const DEFAULT_EMBEDDING_DIMENSION = 1024;
 
 /** Cloud Gemini default (legacy 3072 path — only if EMBEDDING_DIMENSION=3072). */
 const DEFAULT_OPENROUTER_GEMINI_MODEL = "google/gemini-embedding-001";
 
-/** Max inputs per `embedMany` batch for cloud providers. */
+/** Max inputs per `embedMany` batch for cloud providers (env override, capped at provider limit). */
 const CLOUD_EMBED_MANY_BATCH_SIZE = Math.min(
-  128,
+  CLOUD_EMBED_MANY_MAX_BATCH_SIZE,
   Math.max(8, Number(process.env.EMBED_MANY_BATCH_SIZE) || 64),
 );
 

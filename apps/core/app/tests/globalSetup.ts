@@ -2,7 +2,7 @@ import { execSync, execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { resolve, dirname, parse } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { config } from 'dotenv';
+import { resolveIntegrationTestDatabaseUrl } from './test-database-url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const appRoot = resolve(__dirname, '..', '..'); // apps/core
@@ -30,10 +30,7 @@ function execBin(bin: string, args: string[], opts: object): void {
 }
 
 export async function setup() {
-  // Load .env.test so DATABASE_URL points at the test database
-  config({ path: resolve(appRoot, '.env.test'), override: true });
-
-  const dbUrl = process.env.DATABASE_URL ?? '';
+  const dbUrl = resolveIntegrationTestDatabaseUrl();
   const parsedUrl = new URL(dbUrl);
   const dbName = parsedUrl.pathname.replace(/^\//, '').split('?')[0];
   const dbUser = decodeURIComponent(parsedUrl.username);
