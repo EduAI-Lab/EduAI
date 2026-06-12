@@ -170,7 +170,7 @@ Each section should use this format:
 | `canvas-sync-services.test.ts` | `normalizeStudentId`, `normalizeRosterEmail`, `mapCanvasCourseToCoreFields`, `SyncCanvasCoursesSchema` coercion, and test-mode `listTeacherCanvasCourses`. |
 | `canvas-sync-delta.test.ts` | `computeCanvasSyncDelta` check/uncheck logic: newly checked courses, omitted courses unsynced, empty selection unsyncs all. |
 | `canvas-enrollment-link.test.ts` | `linkEnrollmentsFromStagingForCourse` and `resolveCanvasEnrollmentsForUser` with mocked Prisma: matching `studentId` upserts enrollments (including encrypted roster `sisUserId` at rest with `isActive: true` on re-sync), no staging rows returns zero, missing `studentId` skips linking. |
-| `canvas-onboarding.test.ts` | `studentIdOnboardingSkipCookieHeader` sets a skip cookie the onboarding redirect helper recognizes. |
+| `canvas-onboarding.test.ts` | `userNeedsStudentIdOnboarding` returns true for STUDENT/TA without a linked student number and false once linked or for other roles. |
 | `CanvasCourseSyncDialog.test.tsx` | Canvas sync dialog: loads course picker, toggles checkboxes, calls sync API, and shows sync result summary including roster counts and errors. |
 | `CanvasDashboardCard.test.tsx` | Dashboard Canvas card: renders for instructors, hidden for students, opens sync dialog on button click. |
 | `student-id-onboarding-form.test.tsx` | Student-ID onboarding form: renders student number field and Continue/Skip actions; shows form-level errors. |
