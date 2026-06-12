@@ -1003,10 +1003,11 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
 
     const requestStartMs = Date.now();
 
-    let finishSnapshot: {
+    const finishMeta: {
+      ready: boolean;
       usage?: Record<string, unknown>;
-      finishReason?: string;
-    } | null = null;
+      finishReason: string;
+    } = { ready: false, finishReason: "" };
     let resolveFinishSnapshot: (() => void) | null = null;
     const finishSnapshotReady = new Promise<void>((resolve) => {
       resolveFinishSnapshot = resolve;
@@ -1024,10 +1025,9 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
     const result = await streamText({
       ...(streamConfig as Parameters<typeof streamText>[0]),
       onFinish: async ({ usage, finishReason, text }) => {
-        finishSnapshot = {
-          usage: usage as Record<string, unknown> | undefined,
-          finishReason: String(finishReason ?? ""),
-        };
+        finishMeta.usage = usage as Record<string, unknown> | undefined;
+        finishMeta.finishReason = String(finishReason ?? "");
+        finishMeta.ready = true;
         resolveFinishSnapshot?.();
         await persistAiInteractionTelemetry({
           userId: actingUser.id,
@@ -1036,7 +1036,7 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
           query: lastUserMessageTextForTelemetry,
           responseText: text ?? "",
           usage,
-          finishReason: finishSnapshot.finishReason,
+          finishReason: finishMeta.finishReason,
           durationMs: Date.now() - requestStartMs,
           wasAuto,
           routingTier,
@@ -1085,11 +1085,10 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
         }
 
         const normalizedUsage = normalizeTokenUsage(
-          finishSnapshot?.usage ??
-            (usage as Record<string, unknown> | undefined),
+          finishMeta.usage ?? (usage as Record<string, unknown> | undefined),
         );
         const resolvedFinishReason =
-          finishSnapshot?.finishReason ?? String(finishReason ?? "");
+          finishMeta.finishReason || String(finishReason ?? "");
 
         return new Response(
           JSON.stringify({
