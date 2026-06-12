@@ -1019,52 +1019,10 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
         );
       } catch (error) {
         console.error("Error in ADHD oversight response:", error);
-        const fallbackText = finalText || draft;
-        if (fallbackText) {
-          if (streaming) {
-            const headers: Record<string, string> = {
-              "Content-Encoding": "none",
-              "Transfer-Encoding": "chunked",
-              Connection: "keep-alive",
-            };
-            if (chat?.id) {
-              headers["X-Chat-Id"] = chat.id;
-            }
-
-            return createDataStreamResponse({
-              headers,
-              execute: (dataStream) => {
-                dataStream.write(formatDataStreamPart("text", fallbackText));
-                dataStream.write(
-                  formatDataStreamPart("finish_message", {
-                    finishReason: finishReason ?? "stop",
-                  }),
-                );
-              },
-            });
-          }
-
-          return new Response(
-            JSON.stringify({
-              content: fallbackText,
-              model,
-              usage,
-              finishReason,
-              sources: sources || [],
-              reasoning,
-              responseId: response?.id,
-              courseCode,
-              chatId: chat?.id,
-            }),
-            {
-              status: 200,
-              headers: { "Content-Type": "application/json" },
-            },
-          );
-        }
         return new Response(
           JSON.stringify({
             error: "Failed to generate overseen response",
+            details: error instanceof Error ? error.message : "Unknown error",
           }),
           {
             status: 500,
