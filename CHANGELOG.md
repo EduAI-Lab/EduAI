@@ -99,7 +99,6 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] tests: Add Canvas UI and onboarding unit tests (`CanvasCourseSyncDialog`, `CanvasDashboardCard`, `student-id-onboarding-form`, `canvas-onboarding`); extend `canvas-enrollment-link` and `canvas-student-id` for encrypted roster matching; integration test harness reuses dev Postgres host/port on Windows (`test-database-url.ts`). (#511, @GlowyBlack, 2026-06-10)
 - [core] ui: Add assistive reading typography gated by `[data-assistive]` — `.reading-surface` on chat messages, markdown, reasoning, and course overview text; 16px base, 1.625 line-height, 65ch measure, increased letter/word and paragraph spacing (no font swap). (#523, #539, @ebabar5, 2026-06-10)
 - [core] tests: Unit tests for `assistive-reading.css` contract and `.reading-surface` class on chat/markdown components. (#523, #539, @ebabar5, 2026-06-10)
-<<<<<<< HEAD
 - [core] fix: `report-adhd-metrics.ts` now reports the `task_initiation` / `re_orientation` / `session_completion` behavioural events alongside `response_compliance`, and renders `—` instead of `NaN` for empty cohorts or an under-powered Cohen's d (< 2 samples per side). (#521, #532, @Ayyhab, 2026-06-10)
 - [core] feat: Add account-level Assistive Mode shell — `AssistiveUiProvider` syncs `data-assistive` on `<html>` (SSR + client), `GET`/`PATCH /api/preferences` for `UserPreference.assistDefault`, and the `/chat` assist toggle writes through the provider so the preference persists platform-wide. Settings Accessibility tab deferred to #530 (blocked on #491). (#520, #531, @ebabar5, 2026-06-09)
 - [core] tests: Unit tests for `/api/preferences` and `AssistiveUiProvider`; integration tests for assistive preference round-trip, per-account isolation, and guest 401 on PATCH. (#520, #531, @ebabar5, 2026-06-09)
@@ -127,7 +126,6 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 - [question-maker] api: Enforce the §16–§18 RBAC matrices — session-role gates, per-course access middleware, `createdBy` TA own-only authoring, instructor-only approval/assessments, owner-keyed Canvas mappings, and ADMIN-only bug-report triage. (#518, @abdullahmoh21, 2026-06-08)
 - [question-maker] tests: Add RBAC coverage — `courseAccess` unit tests plus role×route matrix tests across questions, variants, assessments, and Canvas. (#518, @abdullahmoh21, 2026-06-08)
->>>>>>> aec2308 (docs(rag): add prior-question cache ADR (#367))
 
 ### Changed
 
@@ -168,7 +166,6 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [question-maker] tests: Add RBAC coverage — `courseAccess` unit tests plus role×route matrix tests across questions, variants, assessments, and Canvas. (#518, @abdullahmoh21, 2026-06-08)
 
 ### Fixed
-<<<<<<< HEAD
 
 - [core] fix: ADHD oversight review feedback (#493, #533) — document explicit 20-word clarification user-turn threshold (policy §3 heuristic); match last inline `Next?` anchor; promote only forward continuation offers, not comprehension-check questions. (#493, #533, @Ayyhab, 2026-06-13)
 - [core] fix: ADHD oversight adversarial tests and inline Next? guard (#493, #533) — reject `Next?`-prefixed comprehension checks in deterministic anchor promotion; extract `buildOverseenAssistantMessagesToPersist` for shared streaming/non-streaming persistence; add adversarial unit tests and `chat-oversight.route.test.ts` route coverage for save-first-then-show and persistence-failure 500 paths. (#493, #533, @Ayyhab, 2026-06-13)
@@ -191,11 +188,9 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ## [Week 5 — June 2–6, 2026]
 ## [Week 5 — June 1–7, 2026]
 
-=======
 - [core] rag: Replace per-chunk sequential INSERT with `createManyAndReturn` + batched transaction on material embed path — chunk creation now costs 1 DB round-trip regardless of document size (down from N); embedding inserts remain individual raw SQL due to the pgvector type but run inside the same transaction. (#364, , 2026-06-06)
 - [core] rag: Eliminate double-split on material ingest path — `processMaterialEmbeddings` now detects `SEMANTIC_CHUNK_SEPARATOR` written by `processUploadedFile` and splits on it directly, preserving semantic chunks from `applySemanticChunking`; falls back to `generateChunks` for content that did not pass through the upload path. Previously, every uploaded file was semantically chunked in `file-processing.ts` and then immediately re-split by a naive sentence splitter in `embedding.ts`, destroying section boundaries. Re-upload existing materials to benefit. (#360, @frostbitcactus, 2026-06-06)
 - [core] tests: Add unit tests for `resolveMaterialChunks` — covers separator-preserving split, `generateChunks` fallback, and empty separator-only input. (#360, @frostbitcactus, 2026-06-06)
->>>>>>> aec2308 (docs(rag): add prior-question cache ADR (#367))
 
 ### Added
 
