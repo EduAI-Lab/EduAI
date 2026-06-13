@@ -1,8 +1,4 @@
 // @vitest-environment node
-//
-// ADHD oversight route paths (#533): save-first-then-show persistence and
-// streaming/non-streaming overseen replies.
-
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("ai", async (importOriginal) => {
