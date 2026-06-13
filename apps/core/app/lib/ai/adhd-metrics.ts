@@ -6,10 +6,13 @@
 export const ADHD_TUTORING_WORD_CAP = 250;
 export const ADHD_CLARIFICATION_WORD_CAP = 120;
 
-/** User turns at or below this length use the clarification response cap (see policy §3). */
-export const ADHD_CLARIFICATION_USER_WORD_THRESHOLD = Math.floor(
-  ADHD_CLARIFICATION_WORD_CAP / 6,
-);
+/**
+ * User turns at or below this length use the clarification response cap.
+ * Policy §3 defines two assistant caps (120 clarification / 250 tutoring) but
+ * not how to classify the learner turn; we treat ≤20-word messages as brief
+ * confirmations or one-line follow-ups (e.g. "yes", "ok", "what about step 2?").
+ */
+export const ADHD_CLARIFICATION_USER_WORD_THRESHOLD = 20;
 
 export type AdhdResponseMetrics = {
   wordCount: number;

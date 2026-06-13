@@ -80,6 +80,51 @@ function lastNonEmptyLine(text: string): string | null {
   return lines.length > 0 ? lines[lines.length - 1] : null;
 }
 
+/** Policy §3 Next? / §5 redirect examples use forward offers, not comprehension checks. */
+const FORWARD_CONTINUATION_OFFER =
+  /^(?:want(?:\s+to|\s+me\b)|ready to|would you like|should we|shall we|need (?:a|to|help)|or switch|continue with|keep going|move on)/i;
+
+export function isForwardContinuationOffer(line: string): boolean {
+  const trimmed = (line ?? "").trim();
+  if (!trimmed.endsWith("?")) return false;
+  if (/^Next\?\s/i.test(trimmed)) {
+    const prompt = trimmed.replace(/^Next\?\s*/i, "").trim();
+    return prompt.length > 0 && FORWARD_CONTINUATION_OFFER.test(prompt);
+  }
+  return FORWARD_CONTINUATION_OFFER.test(trimmed);
+}
+
+type InlineNextMatch = { body: string; prompt: string };
+
+/** Match the last inline `Next?` prompt so quoted mid-text anchors are not stripped. */
+export function findLastInlineNextMatch(text: string): InlineNextMatch | null {
+  let bestIndex = -1;
+  let bestPrompt: string | null = null;
+
+  const scan = (pattern: RegExp) => {
+    pattern.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(text)) !== null) {
+      const prompt = match[1]?.trim();
+      if (!prompt) continue;
+      const index = match.index;
+      if (index >= bestIndex) {
+        bestIndex = index;
+        bestPrompt = prompt;
+      }
+    }
+  };
+
+  scan(/\nNext\?\s+(.+)/gi);
+  scan(/^Next\?\s+(.+)$/gim);
+
+  if (bestPrompt === null || bestIndex < 0) return null;
+  return {
+    body: text.slice(0, bestIndex).trimEnd(),
+    prompt: bestPrompt,
+  };
+}
+
 /** Prefer an existing trailing question (e.g. redirect prompts) over generic filler. */
 export function extractNextPromptCandidate(text: string): string | null {
   const last = lastNonEmptyLine(text);
@@ -88,7 +133,7 @@ export function extractNextPromptCandidate(text: string): string | null {
     const prompt = last.replace(/^Next\?\s*/i, "").trim();
     return prompt.length > 0 ? prompt : null;
   }
-  if (last.endsWith("?")) return last;
+  if (isForwardContinuationOffer(last)) return last;
   return null;
 }
 
@@ -100,11 +145,9 @@ export function applyNextLineAnchor(text: string): string | null {
   const trimmed = (text ?? "").trim();
   if (!trimmed) return null;
 
-  const inline =
-    trimmed.match(/\nNext\?\s+(.+)$/i) ?? trimmed.match(/^Next\?\s+(.+)$/im);
-  if (inline?.[1]) {
-    const body = trimmed.replace(/\n?Next\?\s+.+$/i, "").trimEnd();
-    return `${body}\n\n**Next?** ${inline[1].trim()}`;
+  const inline = findLastInlineNextMatch(trimmed);
+  if (inline) {
+    return `${inline.body}\n\n**Next?** ${inline.prompt}`;
   }
 
   const candidate = extractNextPromptCandidate(trimmed);
