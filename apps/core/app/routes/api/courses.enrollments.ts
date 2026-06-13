@@ -162,13 +162,20 @@ export async function action({ request, params }: ActionFunctionArgs) {
         headers: { "Content-Type": "application/json" },
       });
     case "422":
-      return new Response(JSON.stringify({ error: result.error }), {
-        status: 422,
-        headers: { "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify(
+          "fields" in result
+            ? { error: result.error, fields: result.fields }
+            : { error: result.error },
+        ),
+        {
+          status: 422,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
     default:
-      return new Response(JSON.stringify({ error: "Invalid input" }), {
-        status: 400,
+      return new Response(JSON.stringify({ error: "VALIDATION_ERROR", fields: { body: "invalid" } }), {
+        status: 422,
         headers: { "Content-Type": "application/json" },
       });
   }

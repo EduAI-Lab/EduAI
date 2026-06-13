@@ -60,13 +60,73 @@ async function requestEduAi(path, options = {}) {
  * Returns null on success (Core responds 201 no body).
  * Throws an Error with `status` set on HTTP failure.
  */
+function getCoreBaseUrl() {
+  const raw = process.env.CORE_URL || 'http://localhost:3000';
+  return raw.endsWith('/') ? raw.slice(0, -1) : raw;
+}
+
+/**
+ * Core API fetch with optional session cookie (admin user-scoped calls).
+ */
+async function requestCore(path, options = {}) {
+  const cookie = typeof options.cookie === 'string' ? options.cookie : '';
+  const url = `${getCoreBaseUrl()}${path.startsWith('/') ? path : `/${path}`}`;
+  const response = await fetch(url, {
+    method: options.method ?? 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(cookie ? { cookie } : {}),
+      ...options.headers,
+    },
+    body: options.body ? JSON.stringify(options.body) : undefined,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    const message = errorText || `Core request failed with status ${response.status}`;
+    const error = new Error(message);
+    error.status = response.status;
+    throw error;
+  }
+
+  if (response.status === 204) {
+    return null;
+  }
+
+  return response.json();
+}
+
+/**
+ * GET /api/admin/bug-reports on Core — requires ADMIN session cookie.
+ */
+export async function listCoreAdminBugReports(cookie, { source, status, limit, offset } = {}) {
+  const params = new URLSearchParams();
+  if (source) params.set('source', source);
+  if (status) params.set('status', status);
+  if (limit != null) params.set('limit', String(limit));
+  if (offset != null) params.set('offset', String(offset));
+  const qs = params.toString();
+  return requestCore(`/api/admin/bug-reports${qs ? `?${qs}` : ''}`, { cookie });
+}
+
+/**
+ * PATCH /api/admin/bug-reports/:id on Core — requires ADMIN session cookie.
+ */
+export async function patchCoreAdminBugReport(cookie, reportId, status) {
+  return requestCore(`/api/admin/bug-reports/${reportId}`, {
+    method: 'PATCH',
+    cookie,
+    body: { status },
+  });
+}
+
 export async function postCoreBugReport(userId, payload) {
   const serviceKey = process.env.EDUAI_API_KEY;
   if (!serviceKey) {
     throw new Error('EDUAI_API_KEY not configured');
   }
 
-  const url = `${process.env.CORE_URL || 'http://localhost:3000'}/api/bug-reports`;
+  const url = `${getCoreBaseUrl()}/api/bug-reports`;
   const body = {
     source: 'AI_TUTOR',
     userId,

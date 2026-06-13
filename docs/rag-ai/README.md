@@ -40,6 +40,7 @@ Team documentation for **course-aware retrieval**, the **`POST /api/chat`** pipe
 | [`EMBEDDINGS.md`](./EMBEDDINGS.md) | **Embeddings & storage** — index vs query lifecycle, local Ollama + cloud fallback, server vs chat API keys, pgvector tables, hosting, failures, env vars. |
 | [`LOCAL-EMBEDDINGS.md`](./LOCAL-EMBEDDINGS.md) | **Architecture decision** — local model (`mxbai-embed-large`), `vector(1024)` migration, re-embed strategy ([#361](https://github.com/EduAI-Lab/EduAI/issues/361)). |
 | [`MCP_INTEGRATION_PLAN.md`](./MCP_INTEGRATION_PLAN.md) | **MCP ADR** ([#570](https://github.com/EduAI-Lab/EduAI/issues/570)) — partial proceed, Phase 1 (course + RAG) vs Phase 2 (admin agent), auth/transport, full API inventory. |
+| [`openapi/mcp-v1.openapi.yaml`](./openapi/mcp-v1.openapi.yaml) | **MCP Phase 1 OpenAPI** ([#571](https://github.com/EduAI-Lab/EduAI/issues/571)) — REST contract for course context + model catalog tools. |
 | [`HOW_TO_USE_DEV_SERVER.md`](./HOW_TO_USE_DEV_SERVER.md) | **Ops runbook** — VPN, SSH, branch checkout, `tmux`, Docker DB, and Turbo dev on the shared UBCO host (`dev.eduai.ok.ubc.ca`). |
 | [`eduai-summer-2026/EDUAI_HELPME_ANALYSIS.md`](./eduai-summer-2026/EDUAI_HELPME_ANALYSIS.md) | **Research / borrow list** — What to port from the legacy HelpMe chatbot (caching, chunking, local embeds) vs what stays in EduAI’s stack. Related to #195–#196. |
 

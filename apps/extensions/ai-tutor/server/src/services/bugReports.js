@@ -21,7 +21,12 @@
  */
 
 import { prisma } from '../config/database.js';
-import { postCoreBugReport } from './eduaiClient.js';
+import {
+  listCoreAdminBugReports,
+  patchCoreAdminBugReport,
+  postCoreBugReport,
+} from './eduaiClient.js';
+import { mapAtStatusToCore, mapCoreStatusToAt } from '../utils/bugReportMappers.js';
 
 export const BUG_REPORT_STATUSES = ['unhandled', 'in progress', 'resolved'];
 const BUG_REPORT_STATUS_SET = new Set(BUG_REPORT_STATUSES);
@@ -301,9 +306,15 @@ export async function createBugReport(user, payload) {
  * Why: Admin triage needs the related course/module/lesson/activity labels in
  * one query so the UI can sort and inspect reports without N+1 follow-up calls.
  */
-export async function listAdminBugReports() {
-  // BugReport model lives in Core post-auth-migration; no local records exist.
-  return [];
+export async function listAdminBugReports(cookie, { source = 'AI_TUTOR', status, limit, offset } = {}) {
+  const coreStatus = status ? mapAtStatusToCore(status) : undefined;
+  const result = await listCoreAdminBugReports(cookie, {
+    source,
+    status: coreStatus,
+    limit,
+    offset,
+  });
+  return result.reports ?? [];
 }
 
 /**
@@ -329,13 +340,36 @@ export function validateBugReportStatus(status) {
  * helper preserves the same include shape as listing to let the UI refresh from
  * the PATCH response directly.
  */
-export async function updateBugReportStatus(bugReportId, nextStatus) {
+export async function updateBugReportStatus(cookie, bugReportId, nextStatus) {
   if (typeof bugReportId !== 'string' || bugReportId.trim().length === 0) {
     throw new BugReportError(400, 'Invalid bug report id');
   }
 
   validateBugReportStatus(nextStatus);
 
-  // BugReport model lives in Core post-auth-migration; no local records to update.
-  throw new BugReportError(404, 'Bug report not found');
+  try {
+    const result = await patchCoreAdminBugReport(
+      cookie,
+      bugReportId,
+      mapAtStatusToCore(nextStatus),
+    );
+    if (!result) {
+      throw new BugReportError(404, 'Bug report not found');
+    }
+    return {
+      id: result.id,
+      status: mapCoreStatusToAt(result.status),
+    };
+  } catch (error) {
+    if (error instanceof BugReportError) {
+      throw error;
+    }
+    if (error?.status === 404) {
+      throw new BugReportError(404, 'Bug report not found');
+    }
+    if (error?.status === 403) {
+      throw new BugReportError(403, 'Forbidden');
+    }
+    throw error;
+  }
 }

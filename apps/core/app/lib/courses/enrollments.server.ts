@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import type { EnrollmentRole } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 
@@ -61,17 +62,24 @@ async function instructorFloorViolation(
   return null;
 }
 
+export type AddEnrollmentPayload = {
+  userId?: unknown;
+  role?: unknown;
+  idempotencyKey?: unknown;
+};
+
 /**
  * POST /api/courses/:id/enrollments — add a user to a course with a role.
- * Promotions of existing rows go through updateEnrollmentRole (the unique
- * [courseId, userId] constraint 409s INSERTs by design, §6).
+ * Optional `idempotencyKey` makes retries safe (same pattern as questions).
  */
-export async function addEnrollment(
-  courseId: string,
-  payload: { userId?: unknown; role?: unknown },
-) {
+export async function addEnrollment(courseId: string, payload: AddEnrollmentPayload) {
+  const idempotencyKey =
+    typeof payload.idempotencyKey === "string" && payload.idempotencyKey.trim().length > 0
+      ? payload.idempotencyKey.trim()
+      : undefined;
+
   if (typeof payload.userId !== "string" || !payload.userId || !isEnrollmentRole(payload.role)) {
-    return { status: "400" } as const;
+    return { status: "422", error: "VALIDATION_ERROR", fields: { body: "userId and role required" } } as const;
   }
 
   const user = await prisma.user.findUnique({
@@ -82,13 +90,43 @@ export async function addEnrollment(
     return { status: "422", error: "USER_NOT_FOUND" } as const;
   }
 
+  if (idempotencyKey) {
+    const existing = await prisma.enrollment.findUnique({
+      where: { idempotencyKey },
+    });
+    if (existing) {
+      return { status: "201", enrollment: existing } as const;
+    }
+  }
+
   try {
     const enrollment = await prisma.enrollment.create({
-      data: { courseId, userId: payload.userId, role: payload.role, isActive: true },
+      data: {
+        courseId,
+        userId: payload.userId,
+        role: payload.role,
+        isActive: true,
+        ...(idempotencyKey ? { idempotencyKey } : {}),
+      },
     });
     return { status: "201", enrollment } as const;
-  } catch (error: any) {
-    if (error?.code === "P2002") {
+  } catch (error: unknown) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002" &&
+      idempotencyKey
+    ) {
+      const existing = await prisma.enrollment.findUnique({
+        where: { idempotencyKey },
+      });
+      if (existing) {
+        return { status: "201", enrollment: existing } as const;
+      }
+    }
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
       return { status: "409", error: "ALREADY_ENROLLED" } as const;
     }
     throw error;
@@ -106,7 +144,7 @@ export async function updateEnrollmentRole(
   payload: { role?: unknown },
 ) {
   if (!isEnrollmentRole(payload.role)) {
-    return { status: "400" } as const;
+    return { status: "422", error: "VALIDATION_ERROR", fields: { role: "invalid role" } } as const;
   }
 
   const role = payload.role;

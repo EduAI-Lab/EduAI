@@ -2,6 +2,7 @@ import prisma from "~/lib/prisma.server";
 import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { createUserSchema, updateUserSchema } from "~/lib/auth/schemas";
+import { apiError, jsonResponse, validationErrorFromZod } from "~/lib/api-error.server";
 import { applyStudentIdAndResolveEnrollments } from "~/lib/canvas/link-roster.server";
 import { normalizeStudentId } from "~/lib/canvas/enrollment-link.server";
 import {
@@ -31,7 +32,7 @@ async function handleRequest(request: Request) {
     case "GET": {
       const session = apiKeySession ?? await auth.api.getSession(request);
       if (!session?.user || session.user.role !== "ADMIN") {
-        return new Response("Forbidden: Admins only", { status: 403 });
+        return apiError(403, "Forbidden");
       }
 
       const users = await prisma.user.findMany({
@@ -77,20 +78,14 @@ async function handleRequest(request: Request) {
     case "POST": {
       const session = apiKeySession ?? await auth.api.getSession(request);
       if (!session?.user || session.user.role !== "ADMIN") {
-        return new Response("Forbidden: Admins only", { status: 403 });
+        return apiError(403, "Forbidden");
       }
 
       const body = await request.json();
       const result = createUserSchema.safeParse(body);
 
       if (!result.success) {
-        return new Response(
-          JSON.stringify({
-            error: "Invalid input",
-            details: result.error.flatten(),
-          }),
-          { status: 400, headers: { "Content-Type": "application/json" } }
-        );
+        return validationErrorFromZod(result.error);
       }
 
       try {
@@ -136,10 +131,7 @@ async function handleRequest(request: Request) {
         });
       } catch (error: any) {
         if (error.code === 'P2002') {
-          return new Response(
-            JSON.stringify({ error: "Email already exists" }),
-            { status: 409, headers: { "Content-Type": "application/json" } }
-          );
+          return apiError(409, "EMAIL_ALREADY_EXISTS");
         }
         throw error;
       }
@@ -150,12 +142,12 @@ async function handleRequest(request: Request) {
       const userId = idMatch?.[1];
 
       if (!userId) {
-        return new Response("Missing user ID", { status: 400 });
+        return apiError(400, "USER_ID_REQUIRED");
       }
 
       const session = apiKeySession ?? await auth.api.getSession(request);
       if (!session?.user || session.user.role !== "ADMIN") {
-        return new Response("Forbidden: Admins only", { status: 403 });
+        return apiError(403, "Forbidden");
       }
 
       const body = await request.json();
@@ -164,29 +156,17 @@ async function handleRequest(request: Request) {
       // change their own role (#297).
       if (userId === session.user.id) {
         if (body.isActive === false) {
-          return new Response(
-            JSON.stringify({ error: "Cannot deactivate your own account" }),
-            { status: 400, headers: { "Content-Type": "application/json" } }
-          );
+          return apiError(400, "CANNOT_DEACTIVATE_SELF");
         }
         if (body.role !== undefined && body.role !== session.user.role) {
-          return new Response(
-            JSON.stringify({ error: "Cannot change your own role" }),
-            { status: 403, headers: { "Content-Type": "application/json" } }
-          );
+          return apiError(403, "CANNOT_CHANGE_OWN_ROLE");
         }
       }
 
       const result = updateUserSchema.safeParse(body);
 
       if (!result.success) {
-        return new Response(
-          JSON.stringify({
-            error: "Invalid input",
-            details: result.error.flatten(),
-          }),
-          { status: 400, headers: { "Content-Type": "application/json" } }
-        );
+        return validationErrorFromZod(result.error);
       }
 
       // #297: authorizedUnits only makes sense on a UNIT_ADMIN — reject
@@ -198,14 +178,11 @@ async function handleRequest(request: Request) {
           select: { role: true },
         });
         if (!target) {
-          return new Response("User not found", { status: 404 });
+          return apiError(404, "USER_NOT_FOUND");
         }
         const effectiveRole = result.data.role ?? target.role;
         if (effectiveRole !== "UNIT_ADMIN") {
-          return new Response(JSON.stringify({ error: "ROLE_MISMATCH" }), {
-            status: 422,
-            headers: { "Content-Type": "application/json" },
-          });
+          return apiError(422, "ROLE_MISMATCH");
         }
       }
 
@@ -224,10 +201,7 @@ async function handleRequest(request: Request) {
               select: { id: true },
             });
             if (takenByOther) {
-              return new Response(
-                JSON.stringify({ error: "Student number is already linked to another account" }),
-                { status: 409, headers: { "Content-Type": "application/json" } },
-              );
+              return apiError(409, "STUDENT_ID_ALREADY_LINKED");
             }
             Object.assign(updateData, prepareStudentIdStorage(normalizedStudentId));
           } else {
@@ -282,7 +256,7 @@ async function handleRequest(request: Request) {
         });
       } catch (error: any) {
         if (error.code === 'P2025') {
-          return new Response("User not found", { status: 404 });
+          return apiError(404, "USER_NOT_FOUND");
         }
         if (error.code === 'P2002') {
           const field = error.meta?.target;
@@ -291,10 +265,7 @@ async function handleRequest(request: Request) {
             (field.includes("studentId") || field.includes("studentIdLookup"))
               ? "Student number is already linked to another account"
               : "Email already exists";
-          return new Response(
-            JSON.stringify({ error: message }),
-            { status: 409, headers: { "Content-Type": "application/json" } }
-          );
+          return apiError(409, message === "Email already exists" ? "EMAIL_ALREADY_EXISTS" : "STUDENT_ID_ALREADY_LINKED");
         }
         throw error;
       }
@@ -305,20 +276,17 @@ async function handleRequest(request: Request) {
       const userId = idMatch?.[1];
 
       if (!userId) {
-        return new Response("Missing user ID", { status: 400 });
+        return apiError(400, "USER_ID_REQUIRED");
       }
 
       const session = apiKeySession ?? await auth.api.getSession(request);
       if (!session?.user || session.user.role !== "ADMIN") {
-        return new Response("Forbidden: Admins only", { status: 403 });
+        return apiError(403, "Forbidden");
       }
 
       // Prevent admin from deleting themselves
       if (userId === session.user.id) {
-        return new Response(
-          JSON.stringify({ error: "Cannot delete your own account" }),
-          { status: 400, headers: { "Content-Type": "application/json" } }
-        );
+        return apiError(400, "CANNOT_DELETE_SELF");
       }
 
       try {
@@ -329,19 +297,16 @@ async function handleRequest(request: Request) {
         return new Response(null, { status: 204 });
       } catch (error: any) {
         if (error.code === 'P2025') {
-          return new Response("User not found", { status: 404 });
+          return apiError(404, "USER_NOT_FOUND");
         }
         if (error.code === 'P2003') {
-          return new Response(
-            JSON.stringify({ error: "Cannot delete user with existing data" }),
-            { status: 400, headers: { "Content-Type": "application/json" } }
-          );
+          return apiError(400, "CANNOT_DELETE_USER_WITH_DATA");
         }
         throw error;
       }
     }
 
     default:
-      return new Response("Method not allowed", { status: 405 });
+      return apiError(405, "METHOD_NOT_ALLOWED");
   }
 }
