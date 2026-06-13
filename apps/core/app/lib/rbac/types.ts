@@ -22,6 +22,7 @@ export type NavItemKey =
   | 'admin-users'
   | 'admin-ai'
   | 'admin-bugs'
+  | 'admin-chat'
   | 'settings'
 
 export type NavItem = {

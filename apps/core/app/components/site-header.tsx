@@ -11,6 +11,7 @@ const ROUTE_TITLES: Record<string, string> = {
   "/admin/users": "Users",
   "/admin/ai-models": "AI Models",
   "/admin/bug-reports": "Bug Reports",
+  "/admin/chat": "Admin Chatbot",
 }
 
 export interface SiteHeaderProps {

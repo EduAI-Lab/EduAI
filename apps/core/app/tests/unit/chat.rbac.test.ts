@@ -114,3 +114,18 @@ describe("POST /api/chat — §10 course gate (#302)", () => {
     expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
   });
 });
+
+describe("POST /api/chat — admin chatMode gate", () => {
+  it("returns 403 when non-admin requests admin chatMode", async () => {
+    const res = await action(makeArgs({ messages: [], chatMode: "admin" }));
+    expect(res.status).toBe(403);
+  });
+
+  it("admits ADMIN for admin chatMode without course context", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "a1", role: "ADMIN" },
+    } as never);
+    const res = await action(makeArgs({ messages: [], chatMode: "admin" }));
+    expect(res.status).toBe(200);
+  });
+});
