@@ -12,6 +12,7 @@ import { modelSupportsTools } from "~/lib/ai/providers.server";
 import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
 import {
   auditAndMaybeRewrite,
+  buildOverseenAssistantMessagesToPersist,
   emptyOversightAuditResult,
   isAdhdOversightEnabled,
 } from "~/lib/ai/adhd-oversight";
@@ -948,26 +949,9 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
         });
 
         const persistOverseenAssistantMessages = async (text: string) => {
-          if (response?.messages?.length) {
-            const assistantMessages = response.messages.filter((message) => message.role === "assistant");
-            if (assistantMessages.length > 0 && text) {
-              const persisted = assistantMessages.map((message, index) =>
-                index === assistantMessages.length - 1
-                  ? { ...message, content: text }
-                  : message,
-              );
-              await appendMessages(persisted);
-            } else {
-              await appendMessages(assistantMessages);
-            }
-          } else if (text) {
-            await appendMessages([
-              {
-                id: randomUUID(),
-                role: "assistant",
-                content: text,
-              },
-            ]);
+          const toPersist = buildOverseenAssistantMessagesToPersist(response?.messages, text);
+          if (toPersist.length > 0) {
+            await appendMessages(toPersist);
           }
         };
 
