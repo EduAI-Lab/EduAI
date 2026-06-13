@@ -45,22 +45,39 @@ export default function SignUp() {
   } | undefined;
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Create your account
-          </h2>
+    <div
+      className="min-h-svh flex flex-col items-center justify-center relative font-sans"
+      style={{ background: "var(--muted)" }}
+    >
+      {/* Gold top bar */}
+      <div className="fixed top-0 left-0 right-0 h-[3px] z-10" style={{ background: "var(--gold)" }} />
+
+      {/* Logo */}
+      <div className="flex items-center gap-2 mb-7">
+        <div
+          className="w-9 h-9 rounded-[9px] flex items-center justify-center"
+          style={{ background: "var(--primary)" }}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.75" strokeLinecap="round">
+            <circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18"/><path d="M3 12h18"/><path d="M12 3c2 2 3.5 5.5 3.5 9s-1.5 7-3.5 9"/>
+          </svg>
         </div>
-        <Form className="mt-8 space-y-6" method="post">
+        <span className="text-xl font-bold" style={{ color: "var(--primary)", letterSpacing: "-0.01em" }}>EduAI</span>
+      </div>
+
+      {/* Card */}
+      <div className="w-full max-w-[440px] mx-4 bg-card border rounded-[var(--radius-xl)] p-9 shadow-lg" style={{ boxShadow: "0 4px 24px rgba(0,0,0,0.08)" }}>
+        <h2 className="text-center text-2xl font-bold text-foreground mb-6">
+          Create your account
+        </h2>
+
+        <Form className="space-y-5" method="post">
           {actionData?.formError && (
-            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-              {actionData.formError}
-            </div>
+            <p className="text-sm text-destructive text-center">{actionData.formError}</p>
           )}
           <div className="space-y-4">
             <div>
-              <label htmlFor="name" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="name" className="block text-sm font-medium text-foreground mb-1">
                 Full Name
               </label>
               <input
@@ -68,22 +85,22 @@ export default function SignUp() {
                 name="name"
                 type="text"
                 required
-                className={`mt-1 appearance-none relative block w-full px-3 py-2 border placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm ${
+                className={`appearance-none block w-full px-3 py-2 border rounded-md text-sm text-foreground bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary ${
                   actionData?.fieldErrors?.name
-                    ? "border-red-300 focus:border-red-500 focus:ring-red-500"
-                    : "border-gray-300"
+                    ? "border-destructive focus:ring-destructive focus:border-destructive"
+                    : "border-border"
                 }`}
                 placeholder="Enter your full name"
                 autoComplete="name"
               />
               {actionData?.fieldErrors?.name && (
-                <p className="mt-1 text-sm text-red-600">
+                <p className="mt-1 text-sm text-destructive">
                   {actionData.fieldErrors.name}
                 </p>
               )}
             </div>
             <div>
-              <label htmlFor="email-address" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="email-address" className="block text-sm font-medium text-foreground mb-1">
                 Email Address
               </label>
               <input
@@ -92,21 +109,21 @@ export default function SignUp() {
                 type="email"
                 autoComplete="email"
                 required
-                className={`mt-1 appearance-none relative block w-full px-3 py-2 border placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm ${
+                className={`appearance-none block w-full px-3 py-2 border rounded-md text-sm text-foreground bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary ${
                   actionData?.fieldErrors?.email
-                    ? "border-red-300 focus:border-red-500 focus:ring-red-500"
-                    : "border-gray-300"
+                    ? "border-destructive focus:ring-destructive focus:border-destructive"
+                    : "border-border"
                 }`}
                 placeholder="Email address"
               />
               {actionData?.fieldErrors?.email && (
-                <p className="mt-1 text-sm text-red-600">
+                <p className="mt-1 text-sm text-destructive">
                   {actionData.fieldErrors.email}
                 </p>
               )}
             </div>
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="password" className="block text-sm font-medium text-foreground mb-1">
                 Password
               </label>
               <input
@@ -115,24 +132,24 @@ export default function SignUp() {
                 type="password"
                 autoComplete="new-password"
                 required
-                className={`mt-1 appearance-none relative block w-full px-3 py-2 border placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm ${
+                className={`appearance-none block w-full px-3 py-2 border rounded-md text-sm text-foreground bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary ${
                   actionData?.fieldErrors?.password
-                    ? "border-red-300 focus:border-red-500 focus:ring-red-500"
-                    : "border-gray-300"
+                    ? "border-destructive focus:ring-destructive focus:border-destructive"
+                    : "border-border"
                 }`}
                 placeholder="Password"
               />
               {actionData?.fieldErrors?.password && (
-                <p className="mt-1 text-sm text-red-600">
+                <p className="mt-1 text-sm text-destructive">
                   {actionData.fieldErrors.password}
                 </p>
               )}
-              <p className="mt-1 text-xs text-gray-500">
+              <p className="mt-1 text-xs text-muted-foreground">
                 Must be at least 8 characters
               </p>
             </div>
             <div>
-              <label htmlFor="confirm-password" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="confirm-password" className="block text-sm font-medium text-foreground mb-1">
                 Confirm Password
               </label>
               <input
@@ -141,38 +158,38 @@ export default function SignUp() {
                 type="password"
                 autoComplete="new-password"
                 required
-                className={`mt-1 appearance-none relative block w-full px-3 py-2 border placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm ${
+                className={`appearance-none block w-full px-3 py-2 border rounded-md text-sm text-foreground bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary ${
                   actionData?.fieldErrors?.confirmPassword
-                    ? "border-red-300 focus:border-red-500 focus:ring-red-500"
-                    : "border-gray-300"
+                    ? "border-destructive focus:ring-destructive focus:border-destructive"
+                    : "border-border"
                 }`}
                 placeholder="Confirm password"
               />
               {actionData?.fieldErrors?.confirmPassword && (
-                <p className="mt-1 text-sm text-red-600">
+                <p className="mt-1 text-sm text-destructive">
                   {actionData.fieldErrors.confirmPassword}
                 </p>
               )}
             </div>
           </div>
-          <div>
-            <button
-              type="submit"
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-            >
-              Create account
-            </button>
-          </div>
-          <div className="text-center">
-            <Link
-              to="/auth/signin"
-              className="font-medium text-indigo-600 hover:text-indigo-500"
-            >
-              Already have an account? Sign in
+
+          <button
+            type="submit"
+            className="w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-primary-foreground bg-primary hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-opacity"
+          >
+            Create account
+          </button>
+
+          <p className="text-center text-sm text-muted-foreground">
+            Already have an account?{" "}
+            <Link to="/auth/signin" className="font-medium text-primary hover:opacity-80">
+              Sign in
             </Link>
-          </div>
+          </p>
         </Form>
       </div>
+
+      <p className="mt-5 text-xs text-muted-foreground">University of British Columbia · EduAI Platform</p>
     </div>
   );
 }
