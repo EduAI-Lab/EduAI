@@ -10,6 +10,7 @@ import {
   ADHD_OVERSIGHT_REWRITE_SYSTEM,
   applyNextLineAnchor,
   auditAndMaybeRewrite,
+  buildOverseenAssistantMessagesToPersist,
   extractNextPromptCandidate,
   findLastInlineNextMatch,
   isAdhdOversightEnabled,
@@ -85,6 +86,12 @@ Do you understand why this matters?`;
     expect(extractNextPromptCandidate(text)).toBeNull();
   });
 
+  it("ignores Next?-prefixed comprehension checks", () => {
+    expect(
+      extractNextPromptCandidate("Next? Do you understand why this matters?"),
+    ).toBeNull();
+  });
+
   it("accepts policy-style forward continuation offers", () => {
     expect(extractNextPromptCandidate("Ready to try one yourself?")).toBe(
       "Ready to try one yourself?",
@@ -100,6 +107,14 @@ describe("isForwardContinuationOffer", () => {
 
   it("rejects comprehension-check questions", () => {
     expect(isForwardContinuationOffer("Do you understand why this matters?")).toBe(false);
+    expect(isForwardContinuationOffer("Next? Do you understand why this matters?")).toBe(
+      false,
+    );
+  });
+
+  it("rejects near-miss offers that lack forward-continuation phrasing", () => {
+    expect(isForwardContinuationOffer("Can you explain that again?")).toBe(false);
+    expect(isForwardContinuationOffer("What is marginal tax?")).toBe(false);
   });
 });
 
@@ -143,6 +158,34 @@ Next? Want to continue with step 2?`;
 Do you understand why this matters?`;
     expect(applyNextLineAnchor(draft)).toBeNull();
   });
+
+  it("does not promote Next?-prefixed comprehension checks", () => {
+    const draft = `**Top summary**
+- Key point
+
+Next? Do you understand why this matters?`;
+    expect(applyNextLineAnchor(draft)).toBeNull();
+  });
+
+  it("falls through to a trailing forward offer when the last inline Next? is a comprehension check", () => {
+    const draft = `Quoted prior turn: Next? Do you understand the old topic?
+
+**Top summary**
+- New answer
+
+Want to continue with step 2?`;
+    const fixed = applyNextLineAnchor(draft);
+    expect(fixed).toContain("**Next?** Want to continue with step 2?");
+    expect(fixed).toContain("Next? Do you understand the old topic?");
+  });
+
+  it("does not promote statements ending without a question mark", () => {
+    const draft = `**Top summary**
+- Key point
+
+Want to continue with step 2.`;
+    expect(applyNextLineAnchor(draft)).toBeNull();
+  });
 });
 
 describe("tryDeterministicStructuralFix", () => {
@@ -168,6 +211,49 @@ describe("tryDeterministicStructuralFix", () => {
 
   it("returns null when no Next? candidate exists", () => {
     expect(tryDeterministicStructuralFix("Short answer without a question.")).toBeNull();
+  });
+
+  it("returns null when only comprehension-check Next? anchors exist", () => {
+    const draft = `**Top summary**
+- Key point
+
+Next? Do you understand why this matters?`;
+    expect(tryDeterministicStructuralFix(draft)).toBeNull();
+  });
+});
+
+describe("buildOverseenAssistantMessagesToPersist", () => {
+  it("replaces only the final assistant message content with overseen text", () => {
+    const messages = [
+      { id: "tool-1", role: "assistant", content: [{ type: "tool-call" }] },
+      { id: "final-1", role: "assistant", content: "draft without anchors" },
+      { id: "user-1", role: "user", content: "hi" },
+    ];
+    const persisted = buildOverseenAssistantMessagesToPersist(
+      messages,
+      "**Top summary**\n- Fixed\n\n**Next?** Continue?",
+    );
+    expect(persisted).toHaveLength(2);
+    expect(persisted[0]).toEqual(messages[0]);
+    expect(persisted[1]).toMatchObject({
+      id: "final-1",
+      role: "assistant",
+      content: "**Top summary**\n- Fixed\n\n**Next?** Continue?",
+    });
+  });
+
+  it("creates a synthetic assistant message when response.messages is empty", () => {
+    const persisted = buildOverseenAssistantMessagesToPersist(undefined, "overseen", {
+      generateId: () => "synthetic-id",
+    });
+    expect(persisted).toEqual([
+      { id: "synthetic-id", role: "assistant", content: "overseen" },
+    ]);
+  });
+
+  it("returns assistant messages unchanged when overseen text is empty", () => {
+    const messages = [{ id: "tool-1", role: "assistant", content: "tool step" }];
+    expect(buildOverseenAssistantMessagesToPersist(messages, "")).toEqual(messages);
   });
 });
 
