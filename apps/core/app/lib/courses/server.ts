@@ -2,6 +2,7 @@ import { UserRole, type Prisma } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
+import { apiError, jsonResponse, validationErrorFromZod } from "~/lib/api-error.server";
 import {
   buildCourseListFilter,
   getAuthorizedUnits,
@@ -18,6 +19,66 @@ import {
   type DeleteCourseTopicInput,
 } from "./schemas";
 
+async function parseCreateCourseBody(request: Request) {
+  const contentType = request.headers.get("content-type") ?? "";
+
+  if (contentType.includes("application/json")) {
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return { ok: false as const, response: apiError(422, "VALIDATION_ERROR", { body: "invalid JSON" }) };
+    }
+    const parsed = CreateCourseSchema.safeParse(body);
+    if (!parsed.success) {
+      return { ok: false as const, response: validationErrorFromZod(parsed.error) };
+    }
+    return { ok: true as const, data: parsed.data };
+  }
+
+  const formData = await request.formData();
+  const instructorUserIds = formData
+    .getAll("instructorUserIds")
+    .map((value) => String(value))
+    .filter(Boolean);
+
+  if (instructorUserIds.length === 0) {
+    const rawInstructorUserIds = formData.get("instructorUserIds");
+    if (typeof rawInstructorUserIds === "string" && rawInstructorUserIds) {
+      try {
+        const parsed = JSON.parse(rawInstructorUserIds);
+        if (Array.isArray(parsed)) {
+          instructorUserIds.push(...parsed.map(String).filter(Boolean));
+        } else {
+          instructorUserIds.push(rawInstructorUserIds);
+        }
+      } catch {
+        instructorUserIds.push(rawInstructorUserIds);
+      }
+    }
+  }
+
+  const data = {
+    name: formData.get("name"),
+    code: formData.get("code"),
+    section: formData.get("section"),
+    term: formData.get("term"),
+    year: Number(formData.get("year")),
+    startDate: formData.get("startDate"),
+    endDate: formData.get("endDate") || undefined,
+    department: formData.get("department") || undefined,
+    description: formData.get("description") || undefined,
+    isPublished: formData.get("isPublished") ?? undefined,
+    aiInstructions: formData.get("aiInstructions") || "",
+    instructorUserIds,
+  };
+
+  const parsed = CreateCourseSchema.safeParse(data);
+  if (!parsed.success) {
+    return { ok: false as const, response: validationErrorFromZod(parsed.error) };
+  }
+  return { ok: true as const, data: parsed.data };
+}
 
 /**
  * GET /api/courses — list active courses.
@@ -71,70 +132,21 @@ export async function createCourse(request: Request) {
 
   const session = apiKeySession ?? (await auth.api.getSession(request));
   if (!session?.user || !["ADMIN", "UNIT_ADMIN"].includes(session.user.role ?? "")) {
-    return new Response(JSON.stringify({ error: "Forbidden" }), {
-      status: 403,
-      headers: { "Content-Type": "application/json" } as const,
-    });
+    return apiError(403, "Forbidden");
   }
 
-  const formData = await request.formData();
-  const instructorUserIds = formData
-    .getAll("instructorUserIds")
-    .map((value) => String(value))
-    .filter(Boolean);
-
-  if (instructorUserIds.length === 0) {
-    const rawInstructorUserIds = formData.get("instructorUserIds");
-    if (typeof rawInstructorUserIds === "string" && rawInstructorUserIds) {
-      try {
-        const parsed = JSON.parse(rawInstructorUserIds);
-        if (Array.isArray(parsed)) {
-          instructorUserIds.push(...parsed.map(String).filter(Boolean));
-        } else {
-          instructorUserIds.push(rawInstructorUserIds);
-        }
-      } catch {
-        instructorUserIds.push(rawInstructorUserIds);
-      }
-    }
+  const parsedBody = await parseCreateCourseBody(request);
+  if (!parsedBody.ok) {
+    return parsedBody.response;
   }
-
-  const data = {
-    name: formData.get("name"),
-    code: formData.get("code"),
-    section: formData.get("section"),
-    term: formData.get("term"),
-    year: Number(formData.get("year")),
-    startDate: formData.get("startDate"),
-    endDate: formData.get("endDate") || undefined,
-    department: formData.get("department") || undefined,
-    description: formData.get("description") || undefined,
-    isPublished: formData.get("isPublished") ?? undefined,
-    aiInstructions: formData.get("aiInstructions") || "",
-    instructorUserIds,
-  };
-
-  const result = CreateCourseSchema.safeParse(data);
-
-  if (!result.success) {
-    return new Response(
-      JSON.stringify({
-        error: "Invalid input",
-        details: result.error.flatten(),
-      }),
-      { status: 400, headers: { "Content-Type": "application/json" } as const, },
-    );
-  }
+  const result = { success: true as const, data: parsedBody.data };
 
   // §5/§19 unit lock: a UNIT_ADMIN can only create courses inside their
   // authorized units — a missing department is never a match.
   if (session.user.role === "UNIT_ADMIN") {
     const units = await getAuthorizedUnits(session.user);
     if (!result.data.department || !units.includes(result.data.department)) {
-      return new Response(JSON.stringify({ error: "DEPARTMENT_NOT_AUTHORIZED" }), {
-        status: 403,
-        headers: { "Content-Type": "application/json" } as const,
-      });
+      return apiError(403, "DEPARTMENT_NOT_AUTHORIZED");
     }
   }
 
@@ -147,10 +159,7 @@ export async function createCourse(request: Request) {
   });
 
   if (instructors.length !== result.data.instructorUserIds.length) {
-    return new Response(JSON.stringify({ error: "INVALID_INSTRUCTOR" }), {
-      status: 422,
-      headers: { "Content-Type": "application/json" } as const,
-    });
+    return apiError(422, "INVALID_INSTRUCTOR");
   }
 
   const course = await prisma.$transaction(async (tx) => {
@@ -175,7 +184,7 @@ export async function createCourse(request: Request) {
       data: result.data.instructorUserIds.map((userId) => ({
         courseId: created.id,
         userId,
-        role: "INSTRUCTOR",
+        role: "INSTRUCTOR" as const,
         isActive: true,
       })),
     });
@@ -183,10 +192,7 @@ export async function createCourse(request: Request) {
     return created;
   });
 
-  return new Response(JSON.stringify(course), {
-    status: 201,
-    headers: { "Content-Type": "application/json" } as const,
-  });
+  return jsonResponse(201, course);
 }
 
 /**
@@ -211,13 +217,7 @@ export async function updateCourse(request: Request, courseId: string) {
   const result = UpdateCourseSchema.safeParse(body);
 
   if (!result.success) {
-    return new Response(
-      JSON.stringify({
-        error: "Invalid input",
-        details: result.error.flatten(),
-      }),
-      { status: 400, headers: { "Content-Type": "application/json" } as const },
-    );
+    return validationErrorFromZod(result.error);
   }
 
   const { course, access } = await resolveCourseAccessWithCourse(user, courseId);

@@ -2,6 +2,7 @@ import prisma from "~/lib/prisma.server";
 import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { CreateAIModelSchema, UpdateAIModelSchema } from "~/lib/ai/schemas";
+import { apiError, jsonResponse, validationErrorFromZod } from "~/lib/api-error.server";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -51,20 +52,14 @@ async function handleRequest(request: Request) {
     case "POST": {
       const session = apiKeySession ?? await auth.api.getSession(request);
       if (!session?.user || session.user.role !== "ADMIN") {
-        return new Response("Forbidden: Admins only", { status: 403 });
+        return apiError(403, "Forbidden");
       }
 
       const body = await request.json();
       const result = CreateAIModelSchema.safeParse(body);
 
       if (!result.success) {
-        return new Response(
-          JSON.stringify({
-            error: "Invalid input",
-            details: result.error.flatten(),
-          }),
-          { status: 400, headers: { "Content-Type": "application/json" } }
-        );
+        return validationErrorFromZod(result.error);
       }
 
       try {
@@ -81,16 +76,10 @@ async function handleRequest(request: Request) {
         });
       } catch (error: any) {
         if (error.code === 'P2002') {
-          return new Response(
-            JSON.stringify({ error: "Model ID must be unique per provider" }),
-            { status: 409, headers: { "Content-Type": "application/json" } }
-          );
+          return apiError(409, "MODEL_ID_NOT_UNIQUE");
         }
         if (error.code === 'P2003') {
-          return new Response(
-            JSON.stringify({ error: "Provider not found" }),
-            { status: 400, headers: { "Content-Type": "application/json" } }
-          );
+          return apiError(400, "PROVIDER_NOT_FOUND");
         }
         throw error;
       }
@@ -101,25 +90,19 @@ async function handleRequest(request: Request) {
       const modelId = idMatch?.[1];
 
       if (!modelId) {
-        return new Response("Missing model ID", { status: 400 });
+        return apiError(400, "MODEL_ID_REQUIRED");
       }
 
       const session = apiKeySession ?? await auth.api.getSession(request);
       if (!session?.user || session.user.role !== "ADMIN") {
-        return new Response("Forbidden: Admins only", { status: 403 });
+        return apiError(403, "Forbidden");
       }
 
       const body = await request.json();
       const result = UpdateAIModelSchema.safeParse(body);
 
       if (!result.success) {
-        return new Response(
-          JSON.stringify({
-            error: "Invalid input",
-            details: result.error.flatten(),
-          }),
-          { status: 400, headers: { "Content-Type": "application/json" } }
-        );
+        return validationErrorFromZod(result.error);
       }
 
       try {
@@ -137,19 +120,13 @@ async function handleRequest(request: Request) {
         });
       } catch (error: any) {
         if (error.code === 'P2025') {
-          return new Response("Model not found", { status: 404 });
+          return apiError(404, "MODEL_NOT_FOUND");
         }
         if (error.code === 'P2002') {
-          return new Response(
-            JSON.stringify({ error: "Model ID must be unique per provider" }),
-            { status: 409, headers: { "Content-Type": "application/json" } }
-          );
+          return apiError(409, "MODEL_ID_NOT_UNIQUE");
         }
         if (error.code === 'P2003') {
-          return new Response(
-            JSON.stringify({ error: "Provider not found" }),
-            { status: 400, headers: { "Content-Type": "application/json" } }
-          );
+          return apiError(400, "PROVIDER_NOT_FOUND");
         }
         throw error;
       }
@@ -160,12 +137,12 @@ async function handleRequest(request: Request) {
       const modelId = idMatch?.[1];
 
       if (!modelId) {
-        return new Response("Missing model ID", { status: 400 });
+        return apiError(400, "MODEL_ID_REQUIRED");
       }
 
       const session = apiKeySession ?? await auth.api.getSession(request);
       if (!session?.user || session.user.role !== "ADMIN") {
-        return new Response("Forbidden: Admins only", { status: 403 });
+        return apiError(403, "Forbidden");
       }
 
       try {
@@ -176,13 +153,13 @@ async function handleRequest(request: Request) {
         return new Response(null, { status: 204 });
       } catch (error: any) {
         if (error.code === 'P2025') {
-          return new Response("Model not found", { status: 404 });
+          return apiError(404, "MODEL_NOT_FOUND");
         }
         throw error;
       }
     }
 
     default:
-      return new Response("Method not allowed", { status: 405 });
+      return apiError(405, "METHOD_NOT_ALLOWED");
   }
 }

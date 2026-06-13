@@ -1,0 +1,427 @@
+openapi: 3.1.0
+info:
+  title: EduAI MCP Phase 1 API subset
+  version: 1.0.0
+  description: |
+    OpenAPI contract for Core REST endpoints backing MCP Phase 1 tools
+    (see docs/rag-ai/MCP_INTEGRATION_PLAN.md, GitHub #571).
+
+    **In-process only (not HTTP):** `search_course_materials` maps to
+    `findRelevantContent()` in `apps/core/app/lib/ai/embedding.ts`.
+    The September MCP Host Server (#574) calls that function directly.
+
+    **Auth:**
+    - User-scoped tools: Better Auth session cookie
+    - Integrator/server tools: `Authorization: Bearer <EDUAI_API_KEY>`
+
+servers:
+  - url: http://localhost:3000
+    description: Local Core dev
+  - url: https://eduai.ok.ubc.ca
+    description: Production Core
+
+tags:
+  - name: courses
+    description: Course context (MCP Phase 1)
+  - name: ai-models
+    description: Model catalog
+  - name: in-process
+    description: MCP tools with no HTTP route (lib handlers)
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: better-auth.session_token
+      description: Better Auth session cookie (user-scoped RBAC)
+    serviceKey:
+      type: http
+      scheme: bearer
+      bearerFormat: EDUAI_API_KEY
+      description: Server-to-server service key
+
+  schemas:
+    ApiError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: Machine-readable error code
+        fields:
+          type: object
+          additionalProperties:
+            type: string
+          description: Field-level validation messages (422)
+
+    Course:
+      type: object
+      required: [id, name, code, section, term, year, isPublished, isActive]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        code:
+          type: string
+        section:
+          type: string
+        term:
+          type: string
+        year:
+          type: integer
+        department:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        startDate:
+          type: string
+          format: date-time
+        endDate:
+          type: string
+          format: date-time
+          nullable: true
+        isPublished:
+          type: boolean
+        isActive:
+          type: boolean
+        aiInstructions:
+          type: string
+
+    CourseList:
+      type: object
+      required: [courses]
+      properties:
+        courses:
+          type: array
+          items:
+            $ref: '#/components/schemas/Course'
+
+    CourseTopic:
+      type: object
+      required: [id, courseId, name]
+      properties:
+        id:
+          type: string
+        courseId:
+          type: string
+        name:
+          type: string
+        createdBy:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CourseTopicList:
+      type: object
+      required: [topics]
+      properties:
+        topics:
+          type: array
+          items:
+            $ref: '#/components/schemas/CourseTopic'
+
+    Enrollment:
+      type: object
+      required: [studentId, studentEmail, isActive, role]
+      properties:
+        studentId:
+          type: string
+        studentEmail:
+          type: string
+        studentName:
+          type: string
+          nullable: true
+        enrolledAt:
+          type: string
+          format: date-time
+          nullable: true
+        isActive:
+          type: boolean
+        role:
+          type: string
+          enum: [STUDENT, TA, INSTRUCTOR]
+
+    EnrollmentList:
+      type: object
+      required: [enrollments]
+      properties:
+        enrollments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Enrollment'
+
+    AIProvider:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+
+    AIModel:
+      type: object
+      required: [id, name, providerId]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        providerId:
+          type: string
+        provider:
+          $ref: '#/components/schemas/AIProvider'
+        supportsTools:
+          type: boolean
+        isEnabled:
+          type: boolean
+
+    RagSearchResult:
+      type: object
+      required: [content, similarity, materialTitle]
+      properties:
+        content:
+          type: string
+        similarity:
+          type: number
+          format: float
+        materialTitle:
+          type: string
+
+    SearchCourseMaterialsInput:
+      type: object
+      required: [courseId, query]
+      properties:
+        courseId:
+          type: string
+        query:
+          type: string
+          minLength: 1
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 20
+          default: 6
+        similarityThreshold:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: Defaults to RAG_SIMILARITY_THRESHOLD env when omitted
+
+paths:
+  /api/courses:
+    get:
+      operationId: list_courses
+      summary: List courses visible to the caller
+      tags: [courses]
+      security:
+        - sessionCookie: []
+        - serviceKey: []
+      responses:
+        '200':
+          description: Course list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CourseList'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: Forbidden (invalid service key)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  /api/courses/{courseId}:
+    get:
+      operationId: get_course
+      summary: Get a single course by id
+      tags: [courses]
+      security:
+        - sessionCookie: []
+        - serviceKey: []
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Course record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Course'
+        '404':
+          description: Course not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  /api/courses/{courseId}/topics:
+    get:
+      operationId: list_course_topics
+      summary: List topics for a course
+      tags: [courses]
+      security:
+        - sessionCookie: []
+        - serviceKey: []
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Topic list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CourseTopicList'
+        '404':
+          description: Course not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  /api/courses/{courseId}/topics/{topicId}:
+    get:
+      operationId: get_course_topic
+      summary: Get a single course topic
+      tags: [courses]
+      security:
+        - sessionCookie: []
+        - serviceKey: []
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: topicId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Topic record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CourseTopic'
+        '404':
+          description: Topic or course not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  /api/courses/{courseId}/enrollments:
+    get:
+      operationId: list_course_enrollments
+      summary: List enrollments for a course (Phase 2 admin tool; documented for completeness)
+      tags: [courses]
+      security:
+        - sessionCookie: []
+        - serviceKey: []
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Enrollment list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrollmentList'
+        '403':
+          description: Forbidden (e.g. STUDENT on cookie path)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Course not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  /api/ai-models:
+    get:
+      operationId: list_ai_models
+      summary: List configured AI models (ADMIN session required on cookie path)
+      tags: [ai-models]
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Model catalog
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AIModel'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: Forbidden (non-ADMIN)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  /in-process/search_course_materials:
+    post:
+      operationId: search_course_materials
+      summary: RAG similarity search over course materials (in-process handler)
+      description: |
+        **Not an HTTP route.** Implemented by `findRelevantContent()` in
+        `apps/core/app/lib/ai/embedding.ts`. The MCP Host Server (#574)
+        imports this function directly; external HTTP clients cannot call it
+        without a future dedicated route.
+      tags: [in-process]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchCourseMaterialsInput'
+      responses:
+        '200':
+          description: Ranked material chunks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RagSearchResult'

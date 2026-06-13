@@ -1,0 +1,13 @@
+{
+  "name": "eduai-mcp-spike",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "MCP stdio spike — (list_courses) via Core HTTP",
+  "scripts": {
+    "start": "node index.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1"
+  }
+}
