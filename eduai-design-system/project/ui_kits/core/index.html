@@ -1,0 +1,96 @@
+<!-- @startingPoint section="UI Kits" subtitle="EduAI Core portal — interactive login, dashboard, chat, courses" viewport="1440x900" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EduAI Core — UI Kit</title>
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script type="text/babel" src="./Sidebar.jsx"></script>
+<script type="text/babel" src="./Auth.jsx"></script>
+<script type="text/babel" src="./Onboarding.jsx"></script>
+<script type="text/babel" src="./Dashboard.jsx"></script>
+<script type="text/babel" src="./Chat.jsx"></script>
+<script type="text/babel" src="./Courses.jsx"></script>
+<script type="text/babel" src="./CourseDetail.jsx"></script>
+<script type="text/babel" src="./Settings.jsx"></script>
+<script type="text/babel" src="./AdminUsers.jsx"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body, #root { height: 100%; font-family: var(--font-sans); }
+  body { background: var(--background); color: var(--foreground); }
+  * { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+  *:hover { scrollbar-color: oklch(0.5 0 0 / 0.15) transparent; }
+</style>
+<link id="gfont-Open-Sans" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;500;600;700&amp;display=swap">
+</head>
+<body style="font-family: &quot;Outfit&quot;, sans-serif">
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+function App() {
+  const [screen, setScreen]   = useState("login");
+  const [user,   setUser]     = useState(null);
+
+  // Restore session from localStorage
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("eduai_kit_user");
+      if (saved) { const u = JSON.parse(saved); setUser(u); setScreen("dashboard"); }
+    } catch {}
+  }, []);
+
+  const handleLogin = (u) => {
+    setUser(u);
+    setScreen("dashboard");
+    try { localStorage.setItem("eduai_kit_user", JSON.stringify(u)); } catch {}
+  };
+
+  // Expose navigation for screenshots
+  useEffect(() => { window.__setScreen = setScreen; }, [setScreen]);
+
+  const handleNavigate = (s) => {
+    if (s === "help") return; // stub
+    if (s === "logout") {
+      setUser(null);
+      setScreen("login");
+      try { localStorage.removeItem("eduai_kit_user"); } catch {}
+      return;
+    }
+    setScreen(s);
+  };
+
+  const { Auth, Onboarding, Sidebar, Dashboard, Chat, Courses, CourseDetail, Settings, AdminUsers } = window.EduAIKit;
+
+  if (screen === "login") {
+    return <Auth onLogin={handleLogin} />;
+  }
+
+  if (screen === "onboarding") {
+    return <Onboarding user={user} onComplete={() => setScreen("dashboard")} />;
+  }
+
+  return (
+    <div style={{ display: "flex", height: "100vh", overflow: "hidden" }}>
+      <Sidebar currentScreen={screen} onNavigate={handleNavigate} user={user} />
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        {screen === "dashboard"    && <Dashboard user={user} onNavigate={handleNavigate} />}
+        {(screen === "chatbot" || screen === "chat") && <Chat user={user} />}
+        {screen === "courses"      && <Courses user={user} onNavigate={(s) => { if (s === "courseDetail") setScreen("courseDetail"); else handleNavigate(s); }} />}
+        {screen === "courseDetail" && <CourseDetail onBack={() => setScreen("courses")} onNavigateToChatbot={() => setScreen("chatbot")} user={user} />}
+        {screen === "settings"     && <Settings />}
+        {screen === "admin-users"  && <AdminUsers />}
+        {screen === "admin-ai"     && <AdminUsers />}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

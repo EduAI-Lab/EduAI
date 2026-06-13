@@ -1,0 +1,51 @@
+<!-- @dsCard group="Colors" viewport="700x160" name="Semantic Colors" subtitle="Destructive, success, warning — and the gold decorative accent" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; padding: 20px; font-family: var(--font-sans); background: var(--background); display: flex; gap: 12px; }
+  .group { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+  .row { display: flex; gap: 4px; border-radius: var(--radius-sm); overflow: hidden; height: 40px; }
+  .fill { flex: 2; }
+  .tint { flex: 1; }
+  .label { font-size: 11px; font-weight: 500; color: var(--muted-foreground); margin-top: 4px; }
+  .token { font-size: 10px; font-family: var(--font-mono); color: var(--muted-foreground); }
+</style>
+</head>
+<body>
+  <div class="group">
+    <div class="row">
+      <div class="fill" style="background:var(--destructive)"></div>
+      <div class="tint"  style="background:var(--color-error-100)"></div>
+    </div>
+    <div class="label">Error / Destructive</div>
+    <div class="token">--destructive · --color-error-500/100</div>
+  </div>
+  <div class="group">
+    <div class="row">
+      <div class="fill" style="background:var(--color-success-500)"></div>
+      <div class="tint"  style="background:var(--color-success-100)"></div>
+    </div>
+    <div class="label">Success</div>
+    <div class="token">--color-success-500/100</div>
+  </div>
+  <div class="group">
+    <div class="row">
+      <div class="fill" style="background:var(--color-warning-500)"></div>
+      <div class="tint"  style="background:var(--color-warning-100)"></div>
+    </div>
+    <div class="label">Warning</div>
+    <div class="token">--color-warning-500/100</div>
+  </div>
+  <div class="group">
+    <div class="row">
+      <div class="fill" style="background:var(--gold); border:1px solid #e0c000"></div>
+      <div class="tint"  style="background:var(--color-gold-100)"></div>
+    </div>
+    <div class="label">Gold ⚠ decorative only</div>
+    <div class="token">--gold · --color-gold-500</div>
+  </div>
+</body>
+</html>
