@@ -11,6 +11,7 @@ export default [
   route("/auth/logout", "routes/auth/logout.tsx"),
   route("/auth/accept-invitation", "routes/auth/accept-invitation.tsx"),
   route("/dashboard", "routes/dashboard.tsx"),
+  route("/onboarding/student-id", "routes/onboarding.student-id.tsx"),
   route("/chat", "routes/chat.tsx"),
   route("/settings", "routes/settings.tsx"),
   route("/api/canvas/*", "routes/api/canvas.$.ts"),
