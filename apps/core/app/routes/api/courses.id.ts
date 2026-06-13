@@ -4,6 +4,9 @@ import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { getCourse, updateCourse, deleteCourse } from "~/lib/courses/server";
+import { UpdateCourseSchema } from "~/lib/courses/schemas";
+import { fireAndForget, logAuditAction } from "~/lib/logging.server";
+import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const courseId = params.id;
@@ -77,11 +80,62 @@ export async function action({ request, params }: ActionFunctionArgs) {
     });
   }
 
+  const requestContext = getRequestContext(request);
+
   switch (request.method) {
-    case "PATCH":
-      return updateCourse(request, courseId);
-    case "DELETE":
-      return deleteCourse(request, courseId);
+    case "PATCH": {
+      // Read the validated field names from a clone so the service still owns the body.
+      const validated = await request
+        .clone()
+        .json()
+        .then((body) => UpdateCourseSchema.safeParse(body))
+        .catch(() => null);
+      const changedFields =
+        validated && validated.success ? Object.keys(validated.data) : [];
+
+      const response = await updateCourse(request, courseId);
+
+      if (response.status === 200) {
+        const session = await auth.api.getSession(request);
+        const updated = await response
+          .clone()
+          .json()
+          .catch(() => null);
+        fireAndForget(
+          logAuditAction({
+            ...getActorContext(session?.user ?? null),
+            ...requestContext,
+            actionCode: "COURSE_UPDATED",
+            category: "COURSE",
+            entityType: "Course",
+            entityId: updated?.id ?? courseId,
+            entityLabel: updated?.code ?? updated?.name ?? null,
+            details: { changedFields },
+          }),
+        );
+      }
+
+      return response;
+    }
+    case "DELETE": {
+      const response = await deleteCourse(request, courseId);
+
+      if (response.status === 204) {
+        const session = await auth.api.getSession(request);
+        fireAndForget(
+          logAuditAction({
+            ...getActorContext(session?.user ?? null),
+            ...requestContext,
+            actionCode: "COURSE_DELETED",
+            category: "COURSE",
+            entityType: "Course",
+            entityId: courseId,
+          }),
+        );
+      }
+
+      return response;
+    }
     default:
       return new Response(JSON.stringify({ error: "Method not allowed" }), {
         status: 405,

@@ -10,6 +10,8 @@ import {
   readStoredStudentId,
   studentIdMatchFilter,
 } from "~/lib/canvas/student-id.server";
+import { fireAndForget, logAuditAction, logSecurityEvent } from "~/lib/logging.server";
+import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -22,6 +24,19 @@ export async function action({ request }: ActionFunctionArgs) {
 
 async function handleRequest(request: Request) {
   const url = new URL(request.url);
+  const requestContext = getRequestContext(request);
+
+  // Records an admin-only access rejection so security triage can spot probing of the user API.
+  const logAdminDenied = (actor: { id: string; role?: string | null } | null) =>
+    fireAndForget(
+      logSecurityEvent({
+        ...getActorContext(actor),
+        ...requestContext,
+        actionCode: "ADMIN_ACCESS_DENIED",
+        outcome: "DENIED",
+        entityType: "User",
+      }),
+    );
 
   // If an API key is provided, only ADMIN users may proceed
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
@@ -31,6 +46,7 @@ async function handleRequest(request: Request) {
     case "GET": {
       const session = apiKeySession ?? await auth.api.getSession(request);
       if (!session?.user || session.user.role !== "ADMIN") {
+        logAdminDenied(session?.user ?? null);
         return new Response("Forbidden: Admins only", { status: 403 });
       }
 
@@ -77,6 +93,7 @@ async function handleRequest(request: Request) {
     case "POST": {
       const session = apiKeySession ?? await auth.api.getSession(request);
       if (!session?.user || session.user.role !== "ADMIN") {
+        logAdminDenied(session?.user ?? null);
         return new Response("Forbidden: Admins only", { status: 403 });
       }
 
@@ -130,6 +147,19 @@ async function handleRequest(request: Request) {
           },
         };
 
+        fireAndForget(
+          logAuditAction({
+            ...getActorContext(session.user),
+            ...requestContext,
+            actionCode: "USER_CREATED",
+            category: "USER",
+            entityType: "User",
+            entityId: created.id,
+            entityLabel: created.name,
+            details: { role: created.role },
+          }),
+        );
+
         return new Response(JSON.stringify(user), {
           status: 201,
           headers: { "Content-Type": "application/json" },
@@ -155,6 +185,7 @@ async function handleRequest(request: Request) {
 
       const session = apiKeySession ?? await auth.api.getSession(request);
       if (!session?.user || session.user.role !== "ADMIN") {
+        logAdminDenied(session?.user ?? null);
         return new Response("Forbidden: Admins only", { status: 403 });
       }
 
@@ -276,6 +307,28 @@ async function handleRequest(request: Request) {
           },
         };
 
+        // Pick the most specific action code so admins can filter role/deactivation changes directly.
+        const changedFields = Object.keys(result.data);
+        const actionCode =
+          result.data.role !== undefined
+            ? "USER_ROLE_CHANGED"
+            : result.data.isActive === false
+              ? "USER_DEACTIVATED"
+              : "USER_UPDATED";
+        fireAndForget(
+          logAuditAction({
+            ...getActorContext(session.user),
+            ...requestContext,
+            actionCode,
+            category: "USER",
+            entityType: "User",
+            entityId: updated.id,
+            entityLabel: updated.name,
+            // Field names only — never the changed values (avoids logging PII like email/studentId).
+            details: { changedFields, newRole: result.data.role },
+          }),
+        );
+
         return new Response(JSON.stringify(user), {
           status: 200,
           headers: { "Content-Type": "application/json" },
@@ -310,6 +363,7 @@ async function handleRequest(request: Request) {
 
       const session = apiKeySession ?? await auth.api.getSession(request);
       if (!session?.user || session.user.role !== "ADMIN") {
+        logAdminDenied(session?.user ?? null);
         return new Response("Forbidden: Admins only", { status: 403 });
       }
 
@@ -325,6 +379,17 @@ async function handleRequest(request: Request) {
         await prisma.user.delete({
           where: { id: userId },
         });
+
+        fireAndForget(
+          logAuditAction({
+            ...getActorContext(session.user),
+            ...requestContext,
+            actionCode: "USER_DELETED",
+            category: "USER",
+            entityType: "User",
+            entityId: userId,
+          }),
+        );
 
         return new Response(null, { status: 204 });
       } catch (error: any) {

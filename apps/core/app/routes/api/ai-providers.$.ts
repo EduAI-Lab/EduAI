@@ -2,6 +2,8 @@ import prisma from "~/lib/prisma.server";
 import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { CreateAIProviderSchema, UpdateAIProviderSchema } from "~/lib/ai/schemas";
+import { fireAndForget, logAuditAction, logSecurityEvent } from "~/lib/logging.server";
+import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -14,6 +16,19 @@ export async function action({ request }: ActionFunctionArgs) {
 
 async function handleRequest(request: Request) {
   const url = new URL(request.url);
+  const requestContext = getRequestContext(request);
+
+  // Records an admin-only access rejection so security triage can spot probing of the provider API.
+  const logAdminDenied = (actor: { id: string; role?: string | null } | null) =>
+    fireAndForget(
+      logSecurityEvent({
+        ...getActorContext(actor),
+        ...requestContext,
+        actionCode: "ADMIN_ACCESS_DENIED",
+        outcome: "DENIED",
+        entityType: "AIProvider",
+      }),
+    );
 
   // If an API key is provided, only ADMIN users may proceed
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
@@ -30,6 +45,7 @@ async function handleRequest(request: Request) {
         });
       }
       if (session.user.role !== "ADMIN") {
+        logAdminDenied(session?.user ?? null);
         return new Response(JSON.stringify({ error: "Forbidden" }), {
           status: 403,
           headers: { "Content-Type": "application/json" },
@@ -56,6 +72,7 @@ async function handleRequest(request: Request) {
     case "POST": {
       const session = apiKeySession ?? await auth.api.getSession(request);
       if (!session?.user || session.user.role !== "ADMIN") {
+        logAdminDenied(session?.user ?? null);
         return new Response("Forbidden: Admins only", { status: 403 });
       }
 
@@ -76,6 +93,18 @@ async function handleRequest(request: Request) {
         const provider = await prisma.aIProvider.create({
           data: result.data,
         });
+
+        fireAndForget(
+          logAuditAction({
+            ...getActorContext(session?.user ?? null),
+            ...requestContext,
+            actionCode: "AI_PROVIDER_CREATED",
+            category: "AI_CONFIG",
+            entityType: "AIProvider",
+            entityId: provider.id,
+            entityLabel: provider.name,
+          }),
+        );
 
         return new Response(JSON.stringify(provider), {
           status: 201,
@@ -102,6 +131,7 @@ async function handleRequest(request: Request) {
 
       const session = apiKeySession ?? await auth.api.getSession(request);
       if (!session?.user || session.user.role !== "ADMIN") {
+        logAdminDenied(session?.user ?? null);
         return new Response("Forbidden: Admins only", { status: 403 });
       }
 
@@ -123,6 +153,18 @@ async function handleRequest(request: Request) {
           where: { id: providerId },
           data: result.data,
         });
+
+        fireAndForget(
+          logAuditAction({
+            ...getActorContext(session?.user ?? null),
+            ...requestContext,
+            actionCode: "AI_PROVIDER_UPDATED",
+            category: "AI_CONFIG",
+            entityType: "AIProvider",
+            entityId: provider.id,
+            entityLabel: provider.name,
+          }),
+        );
 
         return new Response(JSON.stringify(provider), {
           status: 200,
@@ -152,13 +194,26 @@ async function handleRequest(request: Request) {
 
       const session = apiKeySession ?? await auth.api.getSession(request);
       if (!session?.user || session.user.role !== "ADMIN") {
+        logAdminDenied(session?.user ?? null);
         return new Response("Forbidden: Admins only", { status: 403 });
       }
 
       try {
-        await prisma.aIProvider.delete({
+        const provider = await prisma.aIProvider.delete({
           where: { id: providerId },
         });
+
+        fireAndForget(
+          logAuditAction({
+            ...getActorContext(session?.user ?? null),
+            ...requestContext,
+            actionCode: "AI_PROVIDER_DELETED",
+            category: "AI_CONFIG",
+            entityType: "AIProvider",
+            entityId: provider.id,
+            entityLabel: provider.name,
+          }),
+        );
 
         return new Response(null, { status: 204 });
       } catch (error: any) {

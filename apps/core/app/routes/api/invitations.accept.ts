@@ -2,6 +2,8 @@ import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 
 import { acceptInvitationSchema } from "~/lib/invitations/schemas";
 import { acceptInvitation, getInvitationByToken } from "~/lib/invitations/service.server";
+import { fireAndForget, logAuditAction } from "~/lib/logging.server";
+import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 
 function json(data: unknown, status = 200, headers?: HeadersInit): Response {
   const h = new Headers(headers);
@@ -35,6 +37,8 @@ export async function action({ request }: ActionFunctionArgs) {
     return new Response("Method not allowed", { status: 405 });
   }
 
+  const requestContext = getRequestContext(request);
+
   const body = await request.json().catch(() => null);
   const parsed = acceptInvitationSchema.safeParse(body);
   if (!parsed.success) {
@@ -45,6 +49,20 @@ export async function action({ request }: ActionFunctionArgs) {
   if (!result.ok) {
     return json({ error: result.error }, result.status);
   }
+
+  const emailDomain = result.user.email.split("@")[1] ?? null;
+  fireAndForget(
+    logAuditAction({
+      ...getActorContext(null),
+      ...requestContext,
+      actionCode: "INVITATION_ACCEPTED",
+      category: "INVITATION",
+      entityType: "Invitation",
+      entityId: result.user.id,
+      entityLabel: emailDomain ?? result.user.role,
+      details: { role: result.user.role, emailDomain },
+    }),
+  );
 
   return json({ user: result.user }, 201, result.headers);
 }
