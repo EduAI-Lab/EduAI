@@ -5,7 +5,7 @@ import { auth } from '~/lib/auth/server'
 import prisma from '~/lib/prisma.server'
 import { AppSidebar } from '~/components/app-sidebar'
 import { SiteHeader } from '~/components/site-header'
-import { SidebarInset, SidebarProvider } from '~/components/ui/sidebar'
+import { SidebarInset, SidebarProvider } from '@eduai/ui'
 import { CoursesAdminView } from '~/components/courses/courses-admin-view'
 import { CoursesUnitAdminView } from '~/components/courses/courses-unit-admin-view'
 import { CoursesInstructorView } from '~/components/courses/courses-instructor-view'
@@ -19,7 +19,7 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from '~/components/ui/breadcrumb'
+} from '@eduai/ui'
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request)
@@ -159,7 +159,7 @@ function Layout({ user, children }: { user: any; children: React.ReactNode }) {
         '--header-height': 'calc(var(--spacing) * 12)',
       } as React.CSSProperties}
     >
-      <AppSidebar variant="inset" user={user} />
+      <AppSidebar user={user} />
       <SidebarInset>
         <SiteHeader
           breadcrumbs={
