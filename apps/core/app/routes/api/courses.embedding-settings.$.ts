@@ -13,6 +13,8 @@ import {
   resolveEffectiveEmbeddingSettings,
   validateEmbeddingSettingsUpdate,
 } from "~/lib/ai/embedding";
+import { fireAndForget, logAuditAction } from "~/lib/logging.server";
+import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 
 async function requireManageSession(request: Request) {
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
@@ -76,6 +78,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 
   try {
+  const requestContext = getRequestContext(request);
   const authResult = await requireManageSession(request);
   if ("error" in authResult && authResult.error) return authResult.error;
 
@@ -147,6 +150,21 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 
   const refreshed = fields;
+
+  fireAndForget(
+    logAuditAction({
+      ...getActorContext(authResult.session?.user ?? null),
+      ...requestContext,
+      actionCode: "EMBEDDING_SETTINGS_CHANGED",
+      category: "AI_CONFIG",
+      entityType: "Course",
+      entityId: courseId,
+      details: {
+        embeddingProvider: validated.value.embeddingProvider,
+        embeddingModel: validated.value.embeddingModel,
+      },
+    }),
+  );
 
   return jsonResponse({
     success: true,

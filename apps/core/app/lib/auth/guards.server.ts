@@ -1,6 +1,8 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { Session } from "./server";
 import { auth } from "./server";
+import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
+import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 
 const ALLOWED_PROD_SUFFIX = ".eduai.ok.ubc.ca";
 const ALLOWED_PROD_APEX = "eduai.ok.ubc.ca";
@@ -41,6 +43,15 @@ export async function enforceAdminIfApiKey(request: Request): Promise<GuardResul
 
   const session = await auth.api.getSession(request);
   if (!session?.user || session.user.role !== "ADMIN") {
+    fireAndForget(
+      logSecurityEvent({
+        ...getActorContext(session?.user ?? null),
+        ...getRequestContext(request),
+        actionCode: "API_KEY_DENIED",
+        outcome: "DENIED",
+        entityType: "Auth",
+      }),
+    );
     return {
       response: new Response(
         JSON.stringify({ error: "Forbidden: x-api-key access restricted to admin users" }),
@@ -95,6 +106,15 @@ export async function requireServiceKey(request: Request): Promise<Response | nu
   const authHeader = request.headers.get("Authorization");
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    fireAndForget(
+      logSecurityEvent({
+        ...getActorContext(null),
+        ...getRequestContext(request),
+        actionCode: "SERVICE_KEY_MISSING",
+        outcome: "DENIED",
+        entityType: "Auth",
+      }),
+    );
     return new Response(
       JSON.stringify({ error: "MISSING_SERVICE_KEY" }),
       { status: 401, headers: { "Content-Type": "application/json" } }
@@ -105,6 +125,15 @@ export async function requireServiceKey(request: Request): Promise<Response | nu
   const envKey = process.env.EDUAI_API_KEY;
 
   if (!envKey) {
+    fireAndForget(
+      logSecurityEvent({
+        ...getActorContext(null),
+        ...getRequestContext(request),
+        actionCode: "SERVICE_KEY_INVALID",
+        outcome: "DENIED",
+        entityType: "Auth",
+      }),
+    );
     return new Response(
       JSON.stringify({ error: "INVALID_SERVICE_KEY" }),
       { status: 403, headers: { "Content-Type": "application/json" } }
@@ -115,6 +144,15 @@ export async function requireServiceKey(request: Request): Promise<Response | nu
   const keyHash   = createHash("sha256").update(envKey).digest();
 
   if (!timingSafeEqual(tokenHash, keyHash)) {
+    fireAndForget(
+      logSecurityEvent({
+        ...getActorContext(null),
+        ...getRequestContext(request),
+        actionCode: "SERVICE_KEY_INVALID",
+        outcome: "DENIED",
+        entityType: "Auth",
+      }),
+    );
     return new Response(
       JSON.stringify({ error: "INVALID_SERVICE_KEY" }),
       { status: 403, headers: { "Content-Type": "application/json" } }

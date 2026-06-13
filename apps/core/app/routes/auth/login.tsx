@@ -8,6 +8,8 @@ import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request"
 import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies"
 import { auth } from "~/lib/auth/server"
 import { validateRedirectUrl } from "~/lib/auth/guards.server"
+import { fireAndForget, logSecurityEvent } from "~/lib/logging.server"
+import { getActorContext, getRequestContext } from "~/lib/request-context.server"
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url);
@@ -22,12 +24,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
+  const requestContext = getRequestContext(request);
   const formData = Object.fromEntries(await request.formData());
   const redirectTo = validateRedirectUrl(String(formData.redirectTo || ""));
   const input = {
     email: String(formData.email || ""),
     password: String(formData.password || ""),
   };
+  // Only the domain segment is logged — never the full address (PII).
+  const emailDomain = input.email.split("@")[1] ?? null;
 
   const result = signInSchema.safeParse(input);
   if (!result.success) {
@@ -60,6 +65,16 @@ export async function action({ request }: ActionFunctionArgs) {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
+      fireAndForget(
+        logSecurityEvent({
+          ...getActorContext(null),
+          ...requestContext,
+          actionCode: "LOGIN_FAILED",
+          outcome: "FAILURE",
+          entityType: "Auth",
+          details: { emailDomain },
+        }),
+      );
       return {
         formError:
           (errorData as { message?: string }).message ||
@@ -71,12 +86,33 @@ export async function action({ request }: ActionFunctionArgs) {
     const headers = new Headers();
     appendAuthSetCookies(response, headers);
 
+    fireAndForget(
+      logSecurityEvent({
+        ...getActorContext(null),
+        ...requestContext,
+        actionCode: "LOGIN_SUCCESS",
+        outcome: "SUCCESS",
+        entityType: "Auth",
+        details: { emailDomain },
+      }),
+    );
+
     return redirect(redirectTo, { headers });
   } catch (err: unknown) {
     let message = "Sign in failed";
     if (typeof err === "object" && err && "message" in err) {
       message = String((err as { message?: string }).message ?? message);
     }
+    fireAndForget(
+      logSecurityEvent({
+        ...getActorContext(null),
+        ...requestContext,
+        actionCode: "LOGIN_FAILED",
+        outcome: "FAILURE",
+        entityType: "Auth",
+        details: { emailDomain },
+      }),
+    );
     return { formError: message };
   }
 }

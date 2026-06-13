@@ -6,6 +6,8 @@ import { getCourseTA, addCourseTA, removeCourseTA } from "~/lib/courses/tas.serv
 import prisma from "~/lib/prisma.server";
 import { resolveCourseAccess } from "~/lib/rbac/resolve-course-access.server";
 import { canManageInstructors } from "~/lib/rbac/permissions";
+import { fireAndForget, logAuditAction } from "~/lib/logging.server";
+import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
@@ -125,6 +127,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 
   const body = await request.json();
+  const requestContext = getRequestContext(request);
 
   switch (request.method) {
     case "POST": {
@@ -136,6 +139,17 @@ export async function action({ request, params }: ActionFunctionArgs) {
           headers: { "Content-Type": "application/json" },
         });
       }
+      fireAndForget(
+        logAuditAction({
+          ...getActorContext(session?.user ?? null),
+          ...requestContext,
+          actionCode: "COURSE_TA_ASSIGNED",
+          category: "ENROLLMENT",
+          entityType: "CourseTA",
+          entityId: result.ta.id,
+          details: { courseId, targetUserId: result.ta.userId },
+        }),
+      );
       return new Response(JSON.stringify(result.ta), {
         status: 201,
         headers: { "Content-Type": "application/json" },
@@ -151,6 +165,17 @@ export async function action({ request, params }: ActionFunctionArgs) {
           headers: { "Content-Type": "application/json" },
         });
       }
+      fireAndForget(
+        logAuditAction({
+          ...getActorContext(session?.user ?? null),
+          ...requestContext,
+          actionCode: "COURSE_TA_REMOVED",
+          category: "ENROLLMENT",
+          entityType: "CourseTA",
+          entityId: courseId,
+          details: { courseId, targetUserId: body?.userId },
+        }),
+      );
       return new Response(null, { status: 204 });
     }
 

@@ -20,6 +20,8 @@ import {
 import { LinkRosterError, linkCanvasRoster } from "~/lib/canvas/link-roster.server";
 import { ConnectCanvasSchema, LinkRosterSchema, SyncCanvasCoursesSchema } from "~/lib/canvas/schemas";
 import { syncCanvasCourses } from "~/lib/canvas/sync.server";
+import { fireAndForget, logAuditAction, logSecurityEvent } from "~/lib/logging.server";
+import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -49,12 +51,22 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
 
   const subpath = canvasSubpath(new URL(request.url).pathname);
   const userId = session.user.id;
+  const requestContext = getRequestContext(request);
 
   if (subpath === "link-roster") {
     return handleLinkRosterRequest(request, userId, session.user.role);
   }
 
   if (!canManageCanvasIntegration(session.user.role)) {
+    fireAndForget(
+      logSecurityEvent({
+        ...getActorContext(session?.user ?? null),
+        ...requestContext,
+        actionCode: "CANVAS_ACCESS_DENIED",
+        outcome: "DENIED",
+        entityType: "Canvas",
+      }),
+    );
     return json({ success: false, error: "Forbidden: instructors only" }, 403);
   }
 
@@ -104,6 +116,19 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
           }
 
           const integration = await saveCanvasIntegration(userId, result.data);
+
+          fireAndForget(
+            logAuditAction({
+              ...getActorContext(session?.user ?? null),
+              ...requestContext,
+              actionCode: "CANVAS_INTEGRATION_SAVED",
+              category: "CANVAS",
+              entityType: "CanvasIntegration",
+              entityId: userId,
+              details: { isTestMode: result.data.isTestMode },
+            }),
+          );
+
           return json({
             success: true,
             message: result.data.isTestMode
@@ -115,6 +140,15 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
 
         if (subpath === "sync") {
           if (isCanvasSyncRateLimited(userId)) {
+            fireAndForget(
+              logSecurityEvent({
+                ...getActorContext(session?.user ?? null),
+                ...requestContext,
+                actionCode: "RATE_LIMIT_EXCEEDED",
+                outcome: "DENIED",
+                entityType: "Canvas",
+              }),
+            );
             return json(
               { success: false, error: "Sync was requested too recently. Please wait and try again." },
               429,

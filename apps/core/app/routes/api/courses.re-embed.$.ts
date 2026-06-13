@@ -8,6 +8,8 @@ import {
   serializeReEmbedJob,
   startReEmbedJob,
 } from "~/lib/ai/re-embed-job.server";
+import { fireAndForget, logAuditAction } from "~/lib/logging.server";
+import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 
 export async function action({ request, params }: ActionFunctionArgs) {
   if (request.method !== "POST") {
@@ -22,6 +24,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
     return jsonResponse({ error: "Unauthorized" }, 401);
   }
 
+  const requestContext = getRequestContext(request);
+
   const courseId = params.courseId;
   if (!courseId) {
     return jsonResponse({ error: "Course ID is required" }, 400);
@@ -35,6 +39,18 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
     const existing = await findActiveReEmbedJob(courseId);
     const job = existing ?? (await startReEmbedJob(courseId));
+
+    fireAndForget(
+      logAuditAction({
+        ...getActorContext(session?.user ?? null),
+        ...requestContext,
+        actionCode: "RE_EMBED_JOB_CREATED",
+        category: "AI_CONFIG",
+        entityType: "ReEmbedJob",
+        entityId: job.id,
+        details: { courseId },
+      }),
+    );
 
     return jsonResponse(
       {
