@@ -454,9 +454,15 @@ model apikey {
   @@map("apiKey")
 }
 
+enum ChatbotType {
+  LEARNING
+  ADMIN
+}
+
 model Chat {
   id           String        @id @default(cuid())
   userId       String
+  chatbotType  ChatbotType   @default(LEARNING) @map("chatbot_type")
   systemPrompt String?
   title        String?
   adhdAssist   Boolean  @default(false)

@@ -161,6 +161,7 @@ export default function Chat() {
     useChat({
       api: "/api/chat",
       body: {
+        chatMode: "learning",
         model: selectedModel,
         apiKeys: getValidApiKeys(),
         courseCode: isGlobalChat ? undefined : selectedCourseCode || undefined,
@@ -188,6 +189,7 @@ export default function Chat() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          chatMode: "learning",
           chatId: chatId || undefined,
           systemPrompt: prompt,
           messages: messages.length > 0 ? messages : [],

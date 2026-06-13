@@ -4,6 +4,7 @@ import { ChatInput } from "~/components/chat/chat-input";
 import { ChatMessage } from "~/components/chat/chat-message";
 import { ChatTypingIndicator } from "~/components/chat/chat-typing-indicator";
 import { ChatWelcome } from "~/components/chat/chat-welcome";
+import type { ChatWelcomeProps } from "~/components/chat/chat-welcome";
 import { SystemPromptSettings } from "~/components/chat/system-prompt-settings";
 import type { ChatViewSharedProps } from "~/components/chat/chat-view-types";
 import { Label } from "~/components/ui/label";
@@ -13,6 +14,7 @@ type ChatConversationLayoutProps = ChatViewSharedProps & {
   bannerTitle: string;
   bannerDescription: string;
   showCourseSelector: boolean;
+  WelcomeComponent?: React.ComponentType<ChatWelcomeProps>;
 };
 
 export function ChatConversationLayout({
@@ -37,6 +39,7 @@ export function ChatConversationLayout({
   onSubmit,
   onStop,
   onSelectPrompt,
+  WelcomeComponent = ChatWelcome,
 }: ChatConversationLayoutProps) {
   return (
     <div className="flex flex-col h-[calc(100vh-var(--header-height))] bg-gradient-to-br from-background via-background to-muted/20">
@@ -68,7 +71,7 @@ export function ChatConversationLayout({
               </div>
 
               {messages.length === 0 ? (
-                <ChatWelcome
+                <WelcomeComponent
                   selectedModelInfo={selectedModelInfo}
                   onSelectPrompt={onSelectPrompt}
                 />
