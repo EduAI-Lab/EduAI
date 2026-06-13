@@ -19,12 +19,12 @@ describe("StudentIdOnboardingForm", () => {
     expect(screen.getByRole("heading", { name: /link your student number/i })).toBeInTheDocument();
     expect(screen.getByLabelText("Student number")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Continue" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Skip for now" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Skip for now" })).not.toBeInTheDocument();
   });
 
   it("shows a form error when provided", () => {
-    renderForm({ formError: "No Canvas enrollments found for this student number." });
+    renderForm({ formError: "This student number is already linked to another account." });
 
-    expect(screen.getByRole("alert")).toHaveTextContent("No Canvas enrollments found");
+    expect(screen.getByRole("alert")).toHaveTextContent("already linked");
   });
 });
