@@ -11,7 +11,9 @@ import {
   applyNextLineAnchor,
   auditAndMaybeRewrite,
   extractNextPromptCandidate,
+  findLastInlineNextMatch,
   isAdhdOversightEnabled,
+  isForwardContinuationOffer,
   isOversightEligibleDraft,
   tryDeterministicStructuralFix,
 } from "~/lib/ai/adhd-oversight";
@@ -74,6 +76,45 @@ describe("extractNextPromptCandidate", () => {
       "Want to come back to the dishwashing steps first, or switch now to learn about marginal income tax brackets?",
     );
   });
+
+  it("ignores pedagogical comprehension questions at the end", () => {
+    const text = `**Top summary**
+- Point one
+
+Do you understand why this matters?`;
+    expect(extractNextPromptCandidate(text)).toBeNull();
+  });
+
+  it("accepts policy-style forward continuation offers", () => {
+    expect(extractNextPromptCandidate("Ready to try one yourself?")).toBe(
+      "Ready to try one yourself?",
+    );
+  });
+});
+
+describe("isForwardContinuationOffer", () => {
+  it("accepts redirect and Next? continuation prompts", () => {
+    expect(isForwardContinuationOffer("Want to come back to dishwashing first?")).toBe(true);
+    expect(isForwardContinuationOffer("Next? Want me to expand step 2?")).toBe(true);
+  });
+
+  it("rejects comprehension-check questions", () => {
+    expect(isForwardContinuationOffer("Do you understand why this matters?")).toBe(false);
+  });
+});
+
+describe("findLastInlineNextMatch", () => {
+  it("returns the last inline Next? prompt when multiple appear", () => {
+    const draft = `Quoted prior turn: Next? old prompt here
+
+**Top summary**
+- New answer
+
+Next? Want to continue with step 2?`;
+    const match = findLastInlineNextMatch(draft);
+    expect(match?.prompt).toBe("Want to continue with step 2?");
+    expect(match?.body).toContain("Next? old prompt here");
+  });
 });
 
 describe("applyNextLineAnchor", () => {
@@ -81,6 +122,26 @@ describe("applyNextLineAnchor", () => {
     const fixed = applyNextLineAnchor(S2_ON_T2_ASSISTANT);
     expect(fixed).toContain("**Next?** Want to come back to the dishwashing steps first");
     expect(fixed).not.toContain("Want me to expand on any part of this");
+  });
+
+  it("uses the last inline Next? when multiple appear in the draft", () => {
+    const draft = `Quoted prior turn: Next? old prompt here
+
+**Top summary**
+- New answer
+
+Next? Want to continue with step 2?`;
+    const fixed = applyNextLineAnchor(draft);
+    expect(fixed).toContain("**Next?** Want to continue with step 2?");
+    expect(fixed).toContain("Next? old prompt here");
+  });
+
+  it("does not promote pedagogical questions to Next? anchors", () => {
+    const draft = `**Top summary**
+- Key point
+
+Do you understand why this matters?`;
+    expect(applyNextLineAnchor(draft)).toBeNull();
   });
 });
 
