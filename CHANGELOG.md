@@ -34,6 +34,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ### Changed
 
 - [core] rag: Cap cloud `embedMany` batch size at the provider limit of 100 (was 128) so `EMBED_MANY_BATCH_SIZE` env overrides cannot exceed Gemini's "At most 100 requests per batch" ceiling; add unit tests verifying 250-chunk materials split correctly and preserve order. (#52, #504, @ebabar5, 2026-06-10)
+- [core] ui: Wire course detail Enrollments tab to `GET /api/courses/:id/enrollments` via `useCourseEnrollments`; show enrolled users with name, email, student number, role, and active state. (#577, @GlowyBlack, 2026-06-12)
 - [core] api: Auto-publish Canvas-synced courses (`isPublished: true`) so linked students can list them under the student publish gate. (#511, @GlowyBlack, 2026-06-10)
 - [monorepo] docs: Mark Question Maker §16–§18 as implemented in `rbac-matrix.md`. (#518, @abdullahmoh21, 2026-06-08)
 - [question-maker] api: Enforce the §16–§18 RBAC matrices — session-role gates, per-course access middleware, `createdBy` TA own-only authoring, instructor-only approval/assessments, owner-keyed Canvas mappings, and ADMIN-only bug-report triage. (#518, @abdullahmoh21, 2026-06-08)
@@ -41,6 +42,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
+- [core] api: Allow students/TAs to link a student number via `POST /api/canvas/link-roster` before any instructor has synced Canvas; enrollments resolve automatically after sync. (#577, @GlowyBlack, 2026-06-12)
+- [core] ui: Remove skip-onboarding for student ID — student number is required for STUDENT/TA accounts. (#577, @GlowyBlack, 2026-06-12)
 - [core] chat: Wire Assistive Mode toggle in chat to `AssistiveUiProvider` so the switch immediately updates `data-assistive` on `<html>` and persists via the provider (single write — no double-persist); also persist `lastCourseCode` on course selection change. (#546, @yta3216, 2026-06-10)
 - [core] ui: Wayfinding — replace `<a href>` with SPA `<Link>` in nav, add route-aware active state with `aria-current="page"`, derive page titles from pathname when no explicit title prop is passed, and wire breadcrumb navigation (Home > Courses > [name], Home > Admin > [page]) on courses and admin routes. (#522, @yta3216, 2026-06-10)
 - [core] tests: Add `ChatViews`, `NavMain`, and `SiteHeader` unit tests — assistive toggle callback, nav active state per pathname, child-route activation, route-derived titles, and breadcrumbs-replace-h1 behaviour. (#519, #522, #546, @yta3216, 2026-06-10)
