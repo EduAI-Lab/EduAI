@@ -152,7 +152,6 @@ export function applyNextLineAnchor(text: string): string | null {
     if (isForwardContinuationOffer(inlineLine)) {
       return `${inline.body}\n\n**Next?** ${inline.prompt}`;
     }
-    // Non-forward inline Next? (e.g. comprehension checks) — fall through to trailing candidate.
   }
 
   const candidate = extractNextPromptCandidate(trimmed);
@@ -306,10 +305,6 @@ export type OverseenAssistantMessage = {
   content: unknown;
 };
 
-/**
- * Build assistant messages to persist after oversight.
- * Keeps tool-step assistant messages and replaces only the final assistant content.
- */
 export function buildOverseenAssistantMessagesToPersist(
   responseMessages: OverseenAssistantMessage[] | undefined,
   overseenText: string,
