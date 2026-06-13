@@ -63,4 +63,8 @@ describe("resolveAdhdResponseWordCap", () => {
     const long = Array(ADHD_CLARIFICATION_USER_WORD_THRESHOLD + 1).fill("word").join(" ");
     expect(resolveAdhdResponseWordCap(long)).toBe(ADHD_TUTORING_WORD_CAP);
   });
+
+  it("treats ≤20-word user turns as clarification context per policy §3 heuristic", () => {
+    expect(ADHD_CLARIFICATION_USER_WORD_THRESHOLD).toBe(20);
+  });
 });

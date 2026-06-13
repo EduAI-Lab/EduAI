@@ -77,6 +77,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
+- [core] fix: ADHD oversight review feedback (#493, #533) — document explicit 20-word clarification user-turn threshold (policy §3 heuristic); match last inline `Next?` anchor; promote only forward continuation offers, not comprehension-check questions. (#493, #533, @Ayyhab, 2026-06-13)
+- [core] fix: ADHD oversight edge cases from pre-PR review (#493, #533) — preserve ineligible draft text instead of empty responses; reject LLM rewrites that exceed word cap; persist all assistant tool-step messages with overseen text on the final turn; return 500 on oversight/persistence failures instead of unsaved fallback replies. (#493, #533, @Ayyhab, 2026-06-12)
 - [core] api: Allow students/TAs to link a student number via `POST /api/canvas/link-roster` before any instructor has synced Canvas; enrollments resolve automatically after sync. (#577, @GlowyBlack, 2026-06-12)
 - [core] ui: Remove skip-onboarding for student ID — student number is required for STUDENT/TA accounts. (#577, @GlowyBlack, 2026-06-12)
 - [core] chat: Wire Assistive Mode toggle in chat to `AssistiveUiProvider` so the switch immediately updates `data-assistive` on `<html>` and persists via the provider (single write — no double-persist); also persist `lastCourseCode` on course selection change. (#546, @yta3216, 2026-06-10)
