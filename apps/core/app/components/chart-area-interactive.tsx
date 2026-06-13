@@ -11,24 +11,24 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-} from "~/components/ui/card"
+} from "@eduai/ui"
 import {
   type ChartConfig,
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
-} from "~/components/ui/chart"
+} from "@eduai/ui"
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "~/components/ui/select"
+} from "@eduai/ui"
 import {
   ToggleGroup,
   ToggleGroupItem,
-} from "~/components/ui/toggle-group"
+} from "@eduai/ui"
 
 export const description = "An interactive area chart"
 

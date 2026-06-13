@@ -1,27 +1,31 @@
+import { useCourses } from "~/hooks/api/use-courses";
+import { useRecentChats } from "~/hooks/api/use-recent-chats";
 import { DashboardView } from "~/components/dashboard/dashboard-view";
+import type { DashboardStatDef } from "~/components/dashboard/dashboard-view";
 
 export function DashboardStudentView() {
+  const { courses, loading: coursesLoading } = useCourses();
+  const { chats, isLoading: chatsLoading } = useRecentChats();
+
+  const courseCount = coursesLoading ? "—" : String(courses.length);
+  // AI sessions this week derived from recent chats count as a proxy
+  const weeklyChats = chatsLoading ? "—" : String(chats.length);
+
+  const stats: DashboardStatDef[] = [
+    { label: "Courses enrolled", value: courseCount },
+    { label: "AI sessions / week", value: weeklyChats },
+    { label: "Materials accessed", value: "—" },
+    { label: "Avg. quiz score", value: "—" },
+  ];
+
   return (
     <DashboardView
-      heading="Student dashboard"
-      subheading="Access your enrolled courses and AI study tools."
-      actions={[
-        {
-          title: "My Courses",
-          description: "View published course materials and topics.",
-          href: "/courses",
-        },
-        {
-          title: "Course Chat",
-          description: "Ask questions in the context of your enrolled courses.",
-          href: "/chat",
-        },
-        {
-          title: "Settings",
-          description: "Manage your API keys and provider preferences.",
-          href: "/settings",
-        },
-      ]}
+      stats={stats}
+      courses={courses}
+      coursesLoading={coursesLoading}
+      leftPanelTitle="Your courses"
+      recentChats={chats}
+      recentChatsLoading={chatsLoading}
     />
   );
 }
