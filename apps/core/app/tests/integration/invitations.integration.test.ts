@@ -20,7 +20,7 @@ import { hashToken } from "~/lib/invitations/token.server";
 import { seedUser, cleanupRbac } from "../helpers/rbac";
 
 import { loader as listLoader, action as createAction } from "~/routes/api/invitations";
-import { action as revokeAction } from "~/routes/api/invitations.$id";
+import { action as invitationIdAction } from "~/routes/api/invitations.$id";
 import {
   loader as acceptLoader,
   action as acceptAction,
@@ -189,7 +189,7 @@ describe("DELETE /api/invitations/:id (revoke)", () => {
     const created = await (await createAction(createReq({ email, role: "INSTRUCTOR" }))).json();
     const id = created.invitation.id;
 
-    const ok = await revokeAction({
+    const ok = await invitationIdAction({
       request: new Request(`http://localhost/api/invitations/${id}`, { method: "DELETE" }),
       params: { id },
       ...ctx,
@@ -197,14 +197,14 @@ describe("DELETE /api/invitations/:id (revoke)", () => {
     expect(ok.status).toBe(200);
     expect((await prisma.invitation.findUnique({ where: { id } }))?.status).toBe("REVOKED");
 
-    const missing = await revokeAction({
+    const missing = await invitationIdAction({
       request: new Request("http://localhost/api/invitations/nope", { method: "DELETE" }),
       params: { id: "nope" },
       ...ctx,
     });
     expect(missing.status).toBe(404);
 
-    const again = await revokeAction({
+    const again = await invitationIdAction({
       request: new Request(`http://localhost/api/invitations/${id}`, { method: "DELETE" }),
       params: { id },
       ...ctx,
@@ -221,7 +221,7 @@ describe("POST /api/invitations/:id (resend)", () => {
     const id = created.invitation.id;
     const oldToken = tokenFromAcceptUrl(created.acceptUrl);
 
-    const res = await revokeAction({
+    const res = await invitationIdAction({
       request: new Request(`http://localhost/api/invitations/${id}`, { method: "POST" }),
       params: { id },
       ...ctx,
@@ -243,7 +243,7 @@ describe("POST /api/invitations/:id (resend)", () => {
     const id = created.invitation.id;
     await prisma.invitation.update({ where: { id }, data: { status: "REVOKED" } });
 
-    const res = await revokeAction({
+    const res = await invitationIdAction({
       request: new Request(`http://localhost/api/invitations/${id}`, { method: "POST" }),
       params: { id },
       ...ctx,

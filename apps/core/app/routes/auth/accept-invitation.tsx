@@ -74,9 +74,7 @@ export default function AcceptInvitationPage() {
   // Covers the action submission and the post-accept redirect; resets to
   // "idle" automatically when the action returns an error.
   const isSubmitting = navigation.state !== "idle";
-  const data = useLoaderData() as
-    | { ok: true; token: string; email: string; role: string; name: string | null }
-    | { ok: false; error: string };
+  const data = useLoaderData<typeof loader>();
   const actionData = useActionData() as
     | {
         fieldErrors?: Partial<Record<keyof AcceptInvitationInput, string>>;
@@ -162,6 +160,7 @@ export default function AcceptInvitationPage() {
                       id="password"
                       name="password"
                       type="password"
+                      autoComplete="new-password"
                       required
                       className="border-input flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-sm"
                     />
@@ -178,6 +177,7 @@ export default function AcceptInvitationPage() {
                       id="confirmPassword"
                       name="confirmPassword"
                       type="password"
+                      autoComplete="new-password"
                       required
                       className="border-input flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-sm"
                     />

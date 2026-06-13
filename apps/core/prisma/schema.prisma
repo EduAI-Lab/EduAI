@@ -38,6 +38,7 @@ model User {
   createdTopics     CourseTopic[]          @relation("TopicCreator")
   canvasIntegration CanvasIntegration?
   invitationsSent   Invitation[]           @relation("InvitationsSent")
+  invitationAccepted Invitation[]          @relation("InvitationAccepted")
   taughtCourses     Course[]               @relation("CourseInstructor")
   courseTAs         CourseTA[]
 
@@ -565,7 +566,9 @@ model Invitation {
   /// Null when the inviting admin's account has since been deleted.
   invitedById     String?
   invitedBy       User?            @relation("InvitationsSent", fields: [invitedById], references: [id], onDelete: SetNull)
+  /// Null until accepted; cleared if the accepted account is later deleted.
   acceptedUserId  String?
+  acceptedUser    User?            @relation("InvitationAccepted", fields: [acceptedUserId], references: [id], onDelete: SetNull)
   expiresAt       DateTime
   acceptedAt      DateTime?
   createdAt       DateTime         @default(now())

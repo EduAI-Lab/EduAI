@@ -23,6 +23,16 @@ import {
   DialogTitle,
 } from "~/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "~/components/ui/alert-dialog";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -114,6 +124,9 @@ export default function InvitationsPage() {
   const [notice, setNotice] = useState<{ message: string; link?: string } | null>(null);
   const [copied, setCopied] = useState(false);
 
+  // Invite pending cancellation; drives the confirmation dialog.
+  const [cancelTarget, setCancelTarget] = useState<Invitation | null>(null);
+
   const fetchInvites = async () => {
     const res = await fetch("/api/invitations");
     if (res.ok) setInvites(await res.json());
@@ -194,12 +207,11 @@ export default function InvitationsPage() {
     await fetchInvites();
   };
 
-  const handleCancel = async (invite: Invitation) => {
-    if (!window.confirm(`Cancel the invitation for ${invite.email}? The link will stop working.`)) {
-      return;
-    }
-    const res = await fetch(`/api/invitations/${invite.id}`, { method: "DELETE" });
+  const confirmCancel = async () => {
+    if (!cancelTarget) return;
+    const res = await fetch(`/api/invitations/${cancelTarget.id}`, { method: "DELETE" });
     if (res.ok) await fetchInvites();
+    setCancelTarget(null);
   };
 
   return (
@@ -325,7 +337,7 @@ export default function InvitationsPage() {
                                             Resend / copy link
                                           </DropdownMenuItem>
                                           <DropdownMenuItem
-                                            onClick={() => handleCancel(invite)}
+                                            onClick={() => setCancelTarget(invite)}
                                             className="text-destructive focus:text-destructive"
                                           >
                                             <IconBan className="mr-2 h-4 w-4" />
@@ -418,6 +430,26 @@ export default function InvitationsPage() {
             </form>
           </DialogContent>
         </Dialog>
+
+        {/* Cancel confirmation */}
+        <AlertDialog
+          open={!!cancelTarget}
+          onOpenChange={(open) => { if (!open) setCancelTarget(null); }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Cancel this invitation?</AlertDialogTitle>
+              <AlertDialogDescription>
+                The invitation for {cancelTarget?.email} will be cancelled and its link
+                will stop working. This cannot be undone — you can send a fresh invite later.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Keep invitation</AlertDialogCancel>
+              <AlertDialogAction onClick={confirmCancel}>Cancel invitation</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </SidebarInset>
     </SidebarProvider>
   );
