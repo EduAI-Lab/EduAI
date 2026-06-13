@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { generateText, type LanguageModel } from "ai";
 import {
   ADHD_CLARIFICATION_WORD_CAP,
@@ -131,7 +132,7 @@ export function extractNextPromptCandidate(text: string): string | null {
   if (!last) return null;
   if (/^Next\?\s/i.test(last)) {
     const prompt = last.replace(/^Next\?\s*/i, "").trim();
-    return prompt.length > 0 ? prompt : null;
+    return prompt.length > 0 && isForwardContinuationOffer(last) ? prompt : null;
   }
   if (isForwardContinuationOffer(last)) return last;
   return null;
@@ -147,7 +148,11 @@ export function applyNextLineAnchor(text: string): string | null {
 
   const inline = findLastInlineNextMatch(trimmed);
   if (inline) {
-    return `${inline.body}\n\n**Next?** ${inline.prompt}`;
+    const inlineLine = `Next? ${inline.prompt}`;
+    if (isForwardContinuationOffer(inlineLine)) {
+      return `${inline.body}\n\n**Next?** ${inline.prompt}`;
+    }
+    // Non-forward inline Next? (e.g. comprehension checks) — fall through to trailing candidate.
   }
 
   const candidate = extractNextPromptCandidate(trimmed);
@@ -293,6 +298,40 @@ export async function auditAndMaybeRewrite(args: {
       oversightUsage: null,
     };
   }
+}
+
+export type OverseenAssistantMessage = {
+  id?: string;
+  role: string;
+  content: unknown;
+};
+
+/**
+ * Build assistant messages to persist after oversight.
+ * Keeps tool-step assistant messages and replaces only the final assistant content.
+ */
+export function buildOverseenAssistantMessagesToPersist(
+  responseMessages: OverseenAssistantMessage[] | undefined,
+  overseenText: string,
+  options?: { generateId?: () => string },
+): OverseenAssistantMessage[] {
+  const generateId = options?.generateId ?? randomUUID;
+
+  if (responseMessages?.length) {
+    const assistantMessages = responseMessages.filter((message) => message.role === "assistant");
+    if (assistantMessages.length > 0 && overseenText) {
+      return assistantMessages.map((message, index) =>
+        index === assistantMessages.length - 1
+          ? { ...message, content: overseenText }
+          : message,
+      );
+    }
+    return assistantMessages;
+  }
+  if (overseenText) {
+    return [{ id: generateId(), role: "assistant", content: overseenText }];
+  }
+  return [];
 }
 
 /** @deprecated Use resolveAdhdResponseWordCap from adhd-metrics.ts */
