@@ -113,14 +113,17 @@ export function SettingsView({ role }: SettingsViewProps) {
   };
 
   return (
-    <div className="px-4 py-6 max-w-4xl mx-auto w-full">
-      <div className="mb-4">
-        <PageHeading
-          heading="Settings"
-          subheading="Manage server API keys and local model provider configuration."
-        />
-      </div>
-      <PageTabs value={activeTab} onValueChange={setActiveTab}>
+    <div className="flex flex-1 flex-col">
+      <div className="@container/main flex flex-1 flex-col gap-2">
+        <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+          <div className="px-4 lg:px-6">
+            <PageHeading
+              heading="Settings"
+              subheading="Manage server API keys and local model provider configuration."
+            />
+          </div>
+          <div className="px-4 lg:px-6">
+            <PageTabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <PageTabsList>
           <PageTabsTrigger value="api-keys">
             <IconKey className="h-4 w-4" /> API Keys
@@ -361,21 +364,26 @@ export function SettingsView({ role }: SettingsViewProps) {
             </CardContent>
           </Card>
         </PageTabsContent>
-      </PageTabs>
+            </PageTabs>
+          </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Account</CardTitle>
-          <CardDescription>Sign out of EduAI on this browser.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Form method="post" action="/auth/logout" replace>
-            <Button type="submit" variant="outline">
-              Log out
-            </Button>
-          </Form>
-        </CardContent>
-      </Card>
+          <div className="px-4 lg:px-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Account</CardTitle>
+                <CardDescription>Sign out of EduAI on this browser.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Form method="post" action="/auth/logout" replace>
+                  <Button type="submit" variant="outline">
+                    Log out
+                  </Button>
+                </Form>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
