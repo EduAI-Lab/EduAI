@@ -72,6 +72,36 @@ function wrap(ui: React.ReactElement) {
 
 // Manager view (admin / unit / instructor)
 describe('CourseDetailManagerView', () => {
+  it('shows enrolled users with student numbers when provided', () => {
+    wrap(
+      <CourseDetailManagerView
+        course={COURSE}
+        access="instructor"
+        topics={[]}
+        enrollments={[
+          {
+            id: 'e1',
+            courseId: 'c1',
+            userId: 'u1',
+            userEmail: 'student1@example.com',
+            userName: 'Student One',
+            studentNumber: 'student_1',
+            role: 'STUDENT',
+            isActive: true,
+            enrolledAt: '2025-01-01T00:00:00.000Z',
+          },
+        ]}
+        materials={[]}
+        onFileSelect={onFileSelect}
+        onCreateTopic={NOOP}
+        onDeleteTopic={NOOP}
+        {...STAFF_PROPS}
+      />
+    )
+    expect(screen.getByText('Student One')).toBeInTheDocument()
+    expect(screen.getByText(/Student number: student_1/i)).toBeInTheDocument()
+  })
+
   it('shows all four tabs including Enrollments', () => {
     wrap(
       <CourseDetailManagerView

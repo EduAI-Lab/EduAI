@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
-import { makeAdmin, makeProfessor, makeStudent } from '../helpers.js';
+import { makeAdmin, makeProfessor, makeStudent, makeTA } from '../helpers.js';
 
 // Mock the Core client so tests don't require a live Core instance.
 vi.mock('../../src/services/eduaiClient.js', async (importOriginal) => {
@@ -18,9 +18,11 @@ describe('Bug report routes', () => {
   let student;
   let professor;
   let admin;
+  let ta;
   let studentApp;
   let professorApp;
   let adminApp;
+  let taApp;
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -29,10 +31,12 @@ describe('Bug report routes', () => {
     student = makeStudent();
     professor = makeProfessor();
     admin = makeAdmin();
+    ta = makeTA();
 
     studentApp = await createApp({ mockUser: student });
     professorApp = await createApp({ mockUser: professor });
     adminApp = await createApp({ mockUser: admin });
+    taApp = await createApp({ mockUser: ta });
   });
 
   it('student can submit a page-level bug report', async () => {
@@ -62,13 +66,24 @@ describe('Bug report routes', () => {
     expect(postCoreBugReport).toHaveBeenCalledWith(professor.id, expect.any(Object));
   });
 
-  it('admin cannot submit to /api/bug-reports', async () => {
+  it('admin can submit a bug report (#309)', async () => {
     const res = await request(adminApp).post('/api/bug-reports').send({
-      description: 'Should not be allowed for admins.',
+      description: 'Admin-reported rendering glitch on the dashboard.',
     });
 
-    expect(res.status).toBe(403);
-    expect(postCoreBugReport).not.toHaveBeenCalled();
+    expect(res.status).toBe(201);
+    expect(res.body.ok).toBe(true);
+    expect(postCoreBugReport).toHaveBeenCalledOnce();
+  });
+
+  it('TA can submit a bug report (#309)', async () => {
+    const res = await request(taApp).post('/api/bug-reports').send({
+      description: 'TA found a broken activity link on the lesson page.',
+    });
+
+    expect(res.status).toBe(201);
+    expect(res.body.ok).toBe(true);
+    expect(postCoreBugReport).toHaveBeenCalledOnce();
   });
 
   it('unauthenticated requests are rejected with 401', async () => {
