@@ -1,7 +1,9 @@
 /** Platform hooks that have no Core API yet — use fixtures until backend lands. */
 export const STUB_ONLY = {
   bugReports: true,
-  deleteChat: true,
+  // DELETE /api/chats/:chatId is implemented (owner / admin). Chat-history UI
+  // wires it live.
+  deleteChat: false,
 } as const;
 
 export class ApiError extends Error {

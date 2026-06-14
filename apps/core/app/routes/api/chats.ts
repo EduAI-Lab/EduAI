@@ -1,11 +1,14 @@
 import type { LoaderFunctionArgs } from "react-router";
 import { auth } from "~/lib/auth/server";
-import prisma from "~/lib/prisma.server";
+import { listChats } from "~/lib/chat-history/server";
 
 /**
- * GET /api/chats?limit=N
- * Returns the authenticated user's most recent chats (newest first).
- * Used by the Dashboard "Recent Conversations" panel.
+ * GET /api/chats?limit=N&courseId=&userId=&scope=own|all
+ *
+ * Returns chats visible to the caller, newest-first (see lib/chat-history for
+ * the visibility contract). Used by the dashboard "Recent Conversations" panel,
+ * the chat-history sidebar (scope=own), the course-detail chat-history tab
+ * (courseId, optional userId), and admin per-user history (userId).
  */
 export async function loader({ request }: LoaderFunctionArgs) {
   try {
@@ -18,18 +21,19 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
 
     const url = new URL(request.url);
-    const limit = Math.min(Number(url.searchParams.get("limit") ?? "5"), 20);
+    const limit = Math.min(Number(url.searchParams.get("limit") ?? "30"), 100);
+    const courseId = url.searchParams.get("courseId") ?? undefined;
+    const userId = url.searchParams.get("userId") ?? undefined;
+    const scopeParam = url.searchParams.get("scope");
+    const scope = scopeParam === "own" ? "own" : scopeParam === "all" ? "all" : undefined;
 
-    const chats = await prisma.chat.findMany({
-      where: { userId: session.user.id },
-      orderBy: { updatedAt: "desc" },
-      take: limit,
-      select: {
-        id: true,
-        title: true,
-        updatedAt: true,
+    const chats = await listChats(
+      {
+        id: session.user.id,
+        role: session.user.role,
       },
-    });
+      { limit, courseId, userId, scope },
+    );
 
     return new Response(JSON.stringify({ chats }), {
       status: 200,

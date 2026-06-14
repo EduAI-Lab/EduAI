@@ -401,11 +401,21 @@ export async function action({ request }: ActionFunctionArgs) {
         chat = await prisma.chat.create({
           data: {
             userId: actingUser.id,
+            courseId: effectiveCourseId,
             systemPrompt: trimmedSystemPrompt,
             adhdAssist,
           },
         });
       }
+    }
+
+    // Backfill course context onto an existing chat that was created before a
+    // course was selected (e.g. user picked the course mid-conversation).
+    if (chat && effectiveCourseId && chat.courseId !== effectiveCourseId && !chat.courseId) {
+      chat = await prisma.chat.update({
+        where: { id: chat.id },
+        data: { courseId: effectiveCourseId },
+      });
     }
 
     if (hasAdhdAssistField && chat && chat.adhdAssist !== adhdAssist) {
@@ -435,6 +445,7 @@ export async function action({ request }: ActionFunctionArgs) {
       chat = await prisma.chat.create({
         data: {
           userId: actingUser.id,
+          courseId: effectiveCourseId,
           systemPrompt: trimmedSystemPrompt,
           adhdAssist,
         },
@@ -861,12 +872,27 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
     });
     const result = await streamText({
       ...(streamConfig as Parameters<typeof streamText>[0]),
-      onFinish: async ({ text, usage, finishReason }) => {
+      onFinish: async ({ text, usage, finishReason, response }) => {
         logResponseCompliance(text, {
           finishReason,
           promptTokens: usage?.promptTokens,
           completionTokens: usage?.completionTokens,
         });
+        // Persist the assistant response so chat history is complete.
+        if (response?.messages?.length) {
+          const assistantMessages = (response.messages as GenericMessage[]).filter(
+            (m) => m.role === "assistant",
+          );
+          await appendMessages(assistantMessages).catch((err) => {
+            console.error("[chat-api] failed to persist streaming assistant message", err);
+          });
+        } else if (text) {
+          await appendMessages([
+            { id: randomUUID(), role: "assistant", content: text },
+          ]).catch((err) => {
+            console.error("[chat-api] failed to persist streaming assistant message", err);
+          });
+        }
       },
     });
 
