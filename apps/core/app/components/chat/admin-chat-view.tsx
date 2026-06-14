@@ -9,7 +9,7 @@ export function AdminChatView(props: ChatViewSharedProps) {
       showCourseSelector
       WelcomeComponent={AdminChatWelcome}
       bannerTitle="Admin chatbot"
-      bannerDescription="Operational assistant for enrollments, users, bug reports, and course metadata. Read-only — use the admin UI for write actions."
+      bannerDescription="Operational assistant for enrollments, users, bug reports, and course metadata. Use a tool-capable model (e.g. vllm:qwen2.5-32b-instruct). The 7B vLLM model does not support admin tools on cmps01."
     />
   );
 }
