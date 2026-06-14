@@ -5,6 +5,8 @@ import { listBugReports } from "~/lib/bug-reports/server";
 
 type ToolError = { error: string; fields?: Record<string, string> };
 
+const DEFAULT_LIST_LIMIT = 200;
+
 function requirePlatformAdmin(user: RbacUser): ToolError | null {
   if (user.role !== "ADMIN") {
     return { error: "Forbidden" };
@@ -23,26 +25,100 @@ function parseOptionalDate(value: string | undefined, field: string): Date | nul
   return parsed;
 }
 
+function adminToolPayload<T extends Record<string, unknown>>(data: T) {
+  return {
+    dataSource: "database" as const,
+    queriedAt: new Date().toISOString(),
+    ...data,
+  };
+}
+
+/** Resolve a course id from id, code, or UI fallback (admin enrollment tools). */
+export async function resolveAdminCourseId(
+  user: RbacUser,
+  opts: {
+    courseId?: string;
+    courseCode?: string;
+    fallbackCourseId?: string | null;
+  },
+): Promise<{ courseId: string; courseCode: string } | ToolError> {
+  const tryId = async (id: string | undefined | null) => {
+    if (!id?.trim()) return null;
+    const gate = await getAccessibleCourse(user, id.trim());
+    if ("error" in gate) {
+      return gate;
+    }
+    return { courseId: gate.course.id, courseCode: gate.course.code };
+  };
+
+  const byId = await tryId(opts.courseId);
+  if (byId && "error" in byId) {
+    return byId;
+  }
+  if (byId) {
+    return byId;
+  }
+
+  const byFallback = await tryId(opts.fallbackCourseId);
+  if (byFallback && "error" in byFallback) {
+    return byFallback;
+  }
+  if (byFallback) {
+    return byFallback;
+  }
+
+  const code = opts.courseCode?.trim();
+  if (code) {
+    const course = await prisma.course.findFirst({
+      where: { code, deletedAt: null },
+      select: { id: true, code: true },
+      orderBy: { updatedAt: "desc" },
+    });
+    if (!course) {
+      return { error: "COURSE_NOT_FOUND" };
+    }
+    const gate = await getAccessibleCourse(user, course.id);
+    if ("error" in gate) {
+      return gate;
+    }
+    return { courseId: course.id, courseCode: course.code };
+  }
+
+  return { error: "courseId or courseCode required — select a course in the admin chat UI" };
+}
+
 /** ADMIN-only user directory (read-only). */
-export async function listAdminUsers(user: RbacUser) {
+export async function listAdminUsers(user: RbacUser, limit = DEFAULT_LIST_LIMIT) {
   const denied = requirePlatformAdmin(user);
   if (denied) return denied;
 
-  const users = await prisma.user.findMany({
-    select: {
-      id: true,
-      email: true,
-      name: true,
-      role: true,
-      isActive: true,
-      createdAt: true,
-      updatedAt: true,
-    },
-    orderBy: { createdAt: "desc" },
-    take: 200,
-  });
+  const clampedLimit = Math.min(Math.max(Math.floor(limit), 1), DEFAULT_LIST_LIMIT);
 
-  return { users, count: users.length };
+  const where = {};
+  const [users, total] = await Promise.all([
+    prisma.user.findMany({
+      where,
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+      orderBy: { createdAt: "desc" },
+      take: clampedLimit,
+    }),
+    prisma.user.count({ where }),
+  ]);
+
+  return adminToolPayload({
+    users,
+    count: users.length,
+    total,
+    truncated: users.length < total,
+  });
 }
 
 /** Course enrollments with optional enrolledAt window (TA+ course access). */
@@ -53,6 +129,7 @@ export async function listAdminCourseEnrollments(
     enrolledSince?: string;
     enrolledBefore?: string;
     isActive?: boolean;
+    limit?: number;
   } = {},
 ) {
   const enrolledSince = opts.enrolledSince
@@ -74,21 +151,30 @@ export async function listAdminCourseEnrollments(
     return gate;
   }
 
-  const enrollments = await prisma.enrollment.findMany({
-    where: {
-      courseId,
-      ...(typeof opts.isActive === "boolean" ? { isActive: opts.isActive } : {}),
-      ...(enrolledSince instanceof Date ? { enrolledAt: { gte: enrolledSince } } : {}),
-      ...(enrolledBefore instanceof Date ? { enrolledAt: { lte: enrolledBefore } } : {}),
-    },
-    include: {
-      user: { select: { email: true, name: true } },
-    },
-    orderBy: { enrolledAt: "desc" },
-    take: 200,
-  });
+  const clampedLimit = Math.min(Math.max(Math.floor(opts.limit ?? DEFAULT_LIST_LIMIT), 1), DEFAULT_LIST_LIMIT);
 
-  return {
+  const where = {
+    courseId,
+    ...(typeof opts.isActive === "boolean" ? { isActive: opts.isActive } : {}),
+    ...(enrolledSince instanceof Date ? { enrolledAt: { gte: enrolledSince } } : {}),
+    ...(enrolledBefore instanceof Date ? { enrolledAt: { lte: enrolledBefore } } : {}),
+  };
+
+  const [enrollments, total] = await Promise.all([
+    prisma.enrollment.findMany({
+      where,
+      include: {
+        user: { select: { email: true, name: true } },
+      },
+      orderBy: { enrolledAt: "desc" },
+      take: clampedLimit,
+    }),
+    prisma.enrollment.count({ where }),
+  ]);
+
+  return adminToolPayload({
+    courseId,
+    courseCode: gate.course.code,
     enrollments: enrollments.map((e) => ({
       enrollmentId: e.id,
       userId: e.userId,
@@ -99,7 +185,9 @@ export async function listAdminCourseEnrollments(
       enrolledAt: e.enrolledAt?.toISOString() ?? null,
     })),
     count: enrollments.length,
-  };
+    total,
+    truncated: enrollments.length < total,
+  });
 }
 
 /** ADMIN-only bug report triage list (read-only). */
@@ -121,7 +209,7 @@ export async function listAdminBugReportsForChat(
     offset: 0,
   });
 
-  return {
+  return adminToolPayload({
     reports: result.reports.map((r) => ({
       id: r.id,
       source: r.source,
@@ -132,8 +220,10 @@ export async function listAdminBugReportsForChat(
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
     })),
+    count: result.reports.length,
     total: result.total,
-  };
+    truncated: result.reports.length < result.total,
+  });
 }
 
 export { listAccessibleCourses, getAccessibleCourse };

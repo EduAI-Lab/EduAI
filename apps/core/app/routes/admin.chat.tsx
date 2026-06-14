@@ -65,9 +65,10 @@ export default function AdminChatPage() {
     code: c.code,
   }));
 
-  const [selectedModel, setSelectedModel] = useState(
-    chatModels.length > 0 ? chatModels[0].id : "",
-  );
+  const [selectedModel, setSelectedModel] = useState(() => {
+    const toolCapable = chatModels.find((m) => m.supportsTools);
+    return toolCapable?.id ?? (chatModels.length > 0 ? chatModels[0].id : "");
+  });
   const [selectedCourseCode, setSelectedCourseCode] = useState<string | null>(
     availableCourses[0]?.code ?? null,
   );

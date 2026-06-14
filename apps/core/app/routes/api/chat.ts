@@ -669,10 +669,16 @@ export async function action({ request }: ActionFunctionArgs) {
 
     await appendMessages(normalizedIncomingMessages);
 
+    const rbacUser = {
+      id: actingUser.id,
+      role: actingUser.role,
+    };
+
     const tools = createChatTools(
       {
-        user: actingUser,
+        user: rbacUser,
         effectiveCourseId,
+        effectiveCourseCode: courseCode ?? null,
       },
       chatMode,
     );
@@ -681,7 +687,11 @@ export async function action({ request }: ActionFunctionArgs) {
 
     const buildDefaultSystemPrompt = () =>
       chatMode === "admin"
-        ? buildAdminSystemPrompt({ courseCode, customPrompt: resolvedSystemPrompt })
+        ? buildAdminSystemPrompt({
+            courseCode,
+            effectiveCourseId,
+            customPrompt: resolvedSystemPrompt,
+          })
         : buildLearningSystemPrompt({ courseCode, customPrompt: resolvedSystemPrompt });
 
     const buildLearningNonToolSystemPrompt = (citeMaterials: boolean) =>
@@ -693,6 +703,19 @@ export async function action({ request }: ActionFunctionArgs) {
 
     // Check if the model supports tool calling
     const supportsTools = await modelSupportsTools(model);
+
+    if (chatMode === "admin" && !supportsTools) {
+      return new Response(
+        JSON.stringify({
+          error:
+            "Admin chatbot requires a model with tool support. Choose a tool-capable model in the model picker.",
+        }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
 
     let streamConfig;
 
@@ -787,7 +810,7 @@ Based on this information, provide a comprehensive answer to the user's question
       streamConfig = {
         model: aiModel,
         messages: modelMessages,
-        temperature: 0.6,
+        temperature: chatMode === "admin" ? 0.2 : 0.6,
         maxTokens: TOOL_MAX_TOKENS,
         maxSteps: TOOL_MAX_STEPS,
         tools,

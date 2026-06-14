@@ -13,6 +13,7 @@ export {
   listAdminBugReportsForChat,
   listAdminCourseEnrollments,
   listAdminUsers,
+  resolveAdminCourseId,
 } from "./admin-context.server";
 export {
   buildAdminSystemPrompt,

@@ -3,8 +3,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const prismaMock = vi.hoisted(() => ({
-  user: { findMany: vi.fn() },
-  enrollment: { findMany: vi.fn() },
+  user: { findMany: vi.fn(), count: vi.fn() },
+  enrollment: { findMany: vi.fn(), count: vi.fn() },
+  course: { findFirst: vi.fn() },
 }));
 
 vi.mock("~/lib/prisma.server", () => ({ default: prismaMock }));
@@ -28,6 +29,7 @@ import {
   listAdminBugReportsForChat,
   listAdminCourseEnrollments,
   listAdminUsers,
+  resolveAdminCourseId,
 } from "~/lib/agent-tools/admin-context.server";
 
 const ADMIN = { id: "a1", role: "ADMIN" };
@@ -45,8 +47,12 @@ describe("listAdminUsers", () => {
 
   it("returns users for admin", async () => {
     prismaMock.user.findMany.mockResolvedValue([{ id: "u1", email: "a@test.com" }]);
+    prismaMock.user.count.mockResolvedValue(1);
     const result = await listAdminUsers(ADMIN);
     expect(result.users).toHaveLength(1);
+    if ("total" in result) {
+      expect(result.total).toBe(1);
+    }
   });
 });
 
@@ -63,7 +69,9 @@ describe("listAdminCourseEnrollments", () => {
   });
 
   it("filters enrollments by date window", async () => {
-    vi.mocked(getAccessibleCourse).mockResolvedValue({ course: { id: "c1" } } as never);
+    vi.mocked(getAccessibleCourse).mockResolvedValue({
+      course: { id: "c1", code: "COSC 111" },
+    } as never);
     prismaMock.enrollment.findMany.mockResolvedValue([
       {
         id: "e1",
@@ -74,12 +82,25 @@ describe("listAdminCourseEnrollments", () => {
         user: { email: "s@test.com", name: "Student" },
       },
     ]);
+    prismaMock.enrollment.count.mockResolvedValue(1);
 
     const result = await listAdminCourseEnrollments(ADMIN, "c1", {
       enrolledSince: "2026-06-01T00:00:00.000Z",
     });
     expect(result.count).toBe(1);
     expect(prismaMock.enrollment.findMany).toHaveBeenCalled();
+  });
+});
+
+describe("resolveAdminCourseId", () => {
+  it("resolves by course code", async () => {
+    prismaMock.course.findFirst.mockResolvedValue({ id: "c1", code: "COSC 111" });
+    vi.mocked(getAccessibleCourse).mockResolvedValue({
+      course: { id: "c1", code: "COSC 111" },
+    } as never);
+
+    const result = await resolveAdminCourseId(ADMIN, { courseCode: "COSC 111" });
+    expect(result).toEqual({ courseId: "c1", courseCode: "COSC 111" });
   });
 });
 
