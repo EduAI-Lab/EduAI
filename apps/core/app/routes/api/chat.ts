@@ -9,8 +9,12 @@ import {
   parseModelIdentifier,
 } from "~/lib/ai/providers";
 import {
+  capMaxOutputTokensForPrompt,
+  estimateTokensFromChars,
   resolveActiveChatModel,
   resolveMaxOutputTokens,
+  resolveModelContextWindow,
+  ESTIMATED_CHARS_PER_TOKEN,
 } from "~/lib/ai/providers.server";
 import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
 import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
@@ -550,10 +554,8 @@ export async function action({ request }: ActionFunctionArgs) {
     });
 
     // Cap oversized tool results (#260), then digest older turns when the thread
-    // exceeds the char budget (#259). Budget accounting counts tool payloads.
-    const modelMessages = prepareBoundedSessionContext(
-      capToolResultsInMessages(trimmedMessages),
-    );
+    // exceeds the char budget (#259). Final bounds are applied after model lookup.
+    const historyForModel = capToolResultsInMessages(trimmedMessages);
 
     if (mergedMessages.length === 0) {
       return new Response(
@@ -739,16 +741,40 @@ export async function action({ request }: ActionFunctionArgs) {
     // Check if the model supports tool calling
     const activeChatModel = await resolveActiveChatModel(model);
     const supportsTools = activeChatModel?.supportsTools ?? false;
-    const maxOutputTokens = resolveMaxOutputTokens(
+    const contextWindow = resolveModelContextWindow(
       activeChatModel?.maxTokens,
       parsedModel.providerId,
+    );
+    const desiredMaxOutput = resolveMaxOutputTokens(
+      activeChatModel?.maxTokens,
+      parsedModel.providerId,
+    );
+
+    const adminSessionBudget =
+      chatMode === "admin" && contextWindow <= 32_768
+        ? Math.floor(contextWindow * ESTIMATED_CHARS_PER_TOKEN * 0.42)
+        : undefined;
+
+    const modelMessages = prepareBoundedSessionContext(
+      chatMode === "admin"
+        ? capToolResultsInMessages(trimmedMessages, 3000)
+        : historyForModel,
+      adminSessionBudget
+        ? {
+            charBudget: adminSessionBudget,
+            recentCount: 4,
+            digestMaxChars: 3000,
+          }
+        : undefined,
     );
 
     chatApiTrace("model capability check", {
       chatMode,
       model,
       supportsTools,
-      maxOutputTokens,
+      contextWindow,
+      desiredMaxOutput,
+      adminSessionBudget: adminSessionBudget ?? null,
       dbMaxTokens: activeChatModel?.maxTokens ?? null,
       chatId: chat?.id ?? null,
     });
@@ -855,7 +881,7 @@ Based on this information, provide a comprehensive answer to the user's question
         model: aiModel,
         messages: modelMessages,
         temperature: chatMode === "admin" ? 0.2 : 0.6,
-        maxTokens: maxOutputTokens,
+        maxTokens: desiredMaxOutput,
         maxSteps: TOOL_MAX_STEPS,
         tools,
         // vLLM tool-call streaming is unreliable on some served models.
@@ -870,6 +896,28 @@ Based on this information, provide a comprehensive answer to the user's question
       chatValue: chat.adhdAssist,
     });
     streamConfig.system = composeSystemPrompt(streamConfig.system ?? "", { adhdAssist: effectiveAdhdAssist });
+
+    const systemChars = typeof streamConfig.system === "string" ? streamConfig.system.length : 0;
+    let messageChars = 0;
+    for (const message of modelMessages) {
+      messageChars += estimateMessageCharsForModel(message);
+    }
+    const estimatedInputTokens = estimateTokensFromChars(systemChars + messageChars);
+    const effectiveMaxTokens = capMaxOutputTokensForPrompt({
+      contextWindow,
+      estimatedInputTokens,
+      desiredMaxOutput: supportsTools ? desiredMaxOutput : Math.min(desiredMaxOutput, 8192),
+    });
+    streamConfig.maxTokens = effectiveMaxTokens;
+
+    chatApiTrace("max output tokens capped", {
+      contextWindow,
+      estimatedInputTokens,
+      desiredMaxOutput,
+      effectiveMaxTokens,
+      systemChars,
+      messageChars,
+    });
 
     const streamStartedAt = Date.now();
     const logResponseCompliance = (

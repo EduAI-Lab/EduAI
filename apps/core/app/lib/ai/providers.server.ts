@@ -8,6 +8,9 @@ export type ActiveChatModel = {
   maxTokens: number | null;
 };
 
+/** Rough chars-per-token for budgeting when the provider has no tokenizer hook. */
+export const ESTIMATED_CHARS_PER_TOKEN = 4;
+
 /**
  * Resolve the active AIModel row for a provider:modelId chat identifier.
  */
@@ -43,9 +46,33 @@ export async function resolveActiveChatModel(
   };
 }
 
+/** Total context window (input + output) for budgeting. */
+export function resolveModelContextWindow(
+  dbMaxTokens: number | null | undefined,
+  providerId?: SupportedProvider,
+): number {
+  if (providerId === 'vllm') {
+    // Admin rows sometimes store 8192; cmps01 qwen2.5-32b is 16384 total.
+    if (!dbMaxTokens || dbMaxTokens <= 8192) {
+      return 16384;
+    }
+    return dbMaxTokens;
+  }
+
+  if (dbMaxTokens && dbMaxTokens > 0) {
+    return dbMaxTokens;
+  }
+
+  return 128_000;
+}
+
+export function estimateTokensFromChars(chars: number): number {
+  return Math.max(0, Math.ceil(chars / ESTIMATED_CHARS_PER_TOKEN));
+}
+
 /**
- * Cap completion tokens for tool-calling streams.
- * DB maxTokens is often the model context window (e.g. 16384 on vLLM), not a safe output limit.
+ * Desired completion cap before prompt-size adjustment.
+ * DB maxTokens is often the model context window, not a safe output limit.
  */
 export function resolveMaxOutputTokens(
   dbMaxTokens: number | null | undefined,
@@ -55,18 +82,37 @@ export function resolveMaxOutputTokens(
     128_000,
     Math.max(1024, Number(process.env.CHAT_TOOL_MAX_OUTPUT_TOKENS) || 8192),
   );
-  const defaultOutput = providerId === 'vllm' ? 4096 : 8192;
+  const defaultOutput = providerId === 'vllm' ? 2048 : 4096;
 
-  if (dbMaxTokens && dbMaxTokens > 0) {
-    // Values above env ceiling are usually total context — reserve room for the prompt.
-    if (dbMaxTokens > envCeiling) {
-      const fromContext = Math.floor(dbMaxTokens * 0.25);
-      return Math.min(envCeiling, Math.max(1024, Math.min(fromContext, defaultOutput)));
-    }
-    return Math.min(dbMaxTokens, envCeiling);
+  if (dbMaxTokens && dbMaxTokens > 0 && dbMaxTokens < 8192) {
+    return Math.min(dbMaxTokens, defaultOutput, envCeiling);
   }
 
   return Math.min(defaultOutput, envCeiling);
+}
+
+/** Fit completion tokens inside what remains after the prompt (+ safety buffer). */
+export function capMaxOutputTokensForPrompt(params: {
+  contextWindow: number;
+  estimatedInputTokens: number;
+  desiredMaxOutput: number;
+  minOutput?: number;
+  safetyBuffer?: number;
+}): number {
+  const minOutput = params.minOutput ?? 256;
+  const safetyBuffer = params.safetyBuffer ?? 384;
+  const toolDefinitionAllowance = 512;
+  const headroom =
+    params.contextWindow -
+    params.estimatedInputTokens -
+    safetyBuffer -
+    toolDefinitionAllowance;
+
+  if (headroom <= minOutput) {
+    return minOutput;
+  }
+
+  return Math.min(params.desiredMaxOutput, headroom);
 }
 
 /**
