@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { IconBug } from "@tabler/icons-react";
 
-import { Button } from "~/components/ui/button";
+import { Button } from "@eduai/ui";
 import {
   Dialog,
   DialogContent,
@@ -10,11 +10,11 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "~/components/ui/dialog";
-import { Input } from "~/components/ui/input";
-import { Label } from "~/components/ui/label";
-import { Textarea } from "~/components/ui/textarea";
-import { Switch } from "~/components/ui/switch";
+} from "@eduai/ui";
+import { Input } from "@eduai/ui";
+import { Label } from "@eduai/ui";
+import { Textarea } from "@eduai/ui";
+import { Switch } from "@eduai/ui";
 import { useSubmitBugReport } from "~/hooks/api/use-submit-bug-report";
 
 type BugReportSubmitDialogProps = {

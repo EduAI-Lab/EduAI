@@ -3,27 +3,26 @@ import { useEffect, useState } from "react";
 
 import { CanvasIntegrationSettings } from "~/components/canvas/CanvasIntegrationSettings";
 import {
-  CheckCircle2,
-  Copy,
-  Globe,
-  Key,
-  Plus,
-  Shield,
-  Trash2,
-} from "lucide-react";
+  IconCircleCheck,
+  IconCopy,
+  IconKey,
+  IconPlus,
+  IconWorld,
+} from "@tabler/icons-react";
 
-import { Badge } from "~/components/ui/badge";
-import { Button } from "~/components/ui/button";
+import { Badge } from "@eduai/ui";
+import { Button } from "@eduai/ui";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "~/components/ui/card";
-import { Input } from "~/components/ui/input";
-import { Label } from "~/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
+} from "@eduai/ui";
+import { Input } from "@eduai/ui";
+import { Label } from "@eduai/ui";
+import { PageTabs, PageTabsList, PageTabsTrigger, PageTabsContent } from "@eduai/ui";
+import { PageHeading } from "@eduai/ui";
 import { useApiKeys } from "~/hooks/use-api-keys";
 import { authClient } from "~/lib/auth/client";
 
@@ -115,21 +114,23 @@ export function SettingsView({ role }: SettingsViewProps) {
 
   return (
     <div className="px-4 py-6 max-w-4xl mx-auto w-full">
-      <h1 className="text-2xl font-bold mb-2">Settings</h1>
-      <p className="text-sm text-muted-foreground mb-4">
-        Manage server API keys and local model provider configuration.
-      </p>
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
-          <TabsTrigger value="api-keys">
-            <Key className="h-4 w-4" /> API Keys
-          </TabsTrigger>
-          <TabsTrigger value="providers">
-            <Globe className="h-4 w-4" /> Providers
-          </TabsTrigger>
-        </TabsList>
+      <div className="mb-4">
+        <PageHeading
+          heading="Settings"
+          subheading="Manage server API keys and local model provider configuration."
+        />
+      </div>
+      <PageTabs value={activeTab} onValueChange={setActiveTab}>
+        <PageTabsList>
+          <PageTabsTrigger value="api-keys">
+            <IconKey className="h-4 w-4" /> API Keys
+          </PageTabsTrigger>
+          <PageTabsTrigger value="providers">
+            <IconWorld className="h-4 w-4" /> Providers
+          </PageTabsTrigger>
+        </PageTabsList>
 
-        <TabsContent value="api-keys" className="mt-6 space-y-6">
+        <PageTabsContent value="api-keys" className="space-y-6">
           <Card>
             <CardHeader>
               <CardTitle>Server API Keys</CardTitle>
@@ -152,7 +153,7 @@ export function SettingsView({ role }: SettingsViewProps) {
                     className="flex-1"
                   />
                   <Button onClick={createServerKey} disabled={creating}>
-                    <Plus className="h-4 w-4 mr-1" /> Create
+                    <IconPlus className="h-4 w-4 mr-1" /> Create
                   </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
@@ -174,56 +175,54 @@ export function SettingsView({ role }: SettingsViewProps) {
                   </div>
                   <Button size="sm" variant="outline" onClick={copyCreatedKey}>
                     {copyOk ? (
-                      <CheckCircle2 className="h-4 w-4" />
+                      <IconCircleCheck className="h-4 w-4" />
                     ) : (
-                      <Copy className="h-4 w-4" />
+                      <IconCopy className="h-4 w-4" />
                     )}
                   </Button>
                 </div>
               )}
 
-              <div className="space-y-2">
+              <div className="flex flex-col rounded-lg border border-border overflow-hidden">
                 {serverKeys.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-sm text-muted-foreground px-5 py-4">
                     No API keys yet.
                   </p>
                 ) : (
-                  serverKeys.map((k) => (
+                  serverKeys.map((k, i) => (
                     <div
                       key={k.id}
-                      className="p-3 border rounded-md flex items-center justify-between"
+                      className="flex items-center gap-3.5 px-5 py-3.5 bg-card border-b border-border last:border-b-0"
                     >
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">
-                            {k.name || "Unnamed Key"}
-                          </span>
-                          {k.enabled ? (
-                            <Badge variant="secondary">
-                              <Shield className="h-3 w-3 mr-1" /> Active
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline">Disabled</Badge>
-                          )}
-                        </div>
-                        <div className="text-xs text-muted-foreground font-mono break-all">
-                          {k.prefix}-
-                          {k.start ? `${k.start.substring(0, 8)}...` : "******"}
-                        </div>
-                        {k.expiresAt && (
-                          <div className="text-xs text-muted-foreground">
-                            Expires:{" "}
-                            {new Date(k.expiresAt).toLocaleDateString()}
-                          </div>
-                        )}
+                      <div
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
+                        style={{ background: "color-mix(in oklch, var(--primary) 8%, var(--background))" }}
+                      >
+                        <IconKey className="h-4 w-4" style={{ color: "var(--primary)" }} />
                       </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium text-foreground">
+                          {k.name || "Unnamed Key"}
+                        </div>
+                        <div className="text-xs text-muted-foreground font-mono mt-0.5">
+                          {k.prefix}-{k.start ? `${k.start.substring(0, 8)}…` : "••••••••"}
+                        </div>
+                      </div>
+                      {k.expiresAt && (
+                        <div className="text-xs text-muted-foreground text-right shrink-0">
+                          Expires {new Date(k.expiresAt).toLocaleDateString()}
+                        </div>
+                      )}
+                      {!k.enabled && (
+                        <Badge variant="outline" className="shrink-0">Disabled</Badge>
+                      )}
                       <Button
                         size="sm"
                         variant="outline"
                         onClick={() => deleteServerKey(k.id)}
-                        className="text-red-600 hover:text-red-700"
+                        className="shrink-0 text-destructive hover:text-destructive border-border"
                       >
-                        <Trash2 className="h-4 w-4" />
+                        Revoke
                       </Button>
                     </div>
                   ))
@@ -250,9 +249,9 @@ export function SettingsView({ role }: SettingsViewProps) {
   -d '{"messages":[{"role":"user","content":"hello"}],"model":"google:gemini-2.0-flash","apiKeys":{"google":{"apiKey":"AIza-***","isEnabled":true}}}'`}</pre>
             </CardContent>
           </Card>
-        </TabsContent>
+        </PageTabsContent>
 
-        <TabsContent value="providers" className="mt-6">
+        <PageTabsContent value="providers">
           <Card>
             <CardHeader>
               <CardTitle>Model Providers</CardTitle>
@@ -361,8 +360,8 @@ export function SettingsView({ role }: SettingsViewProps) {
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
-      </Tabs>
+        </PageTabsContent>
+      </PageTabs>
 
       <Card>
         <CardHeader>
