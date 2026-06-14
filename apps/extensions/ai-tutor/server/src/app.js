@@ -18,9 +18,15 @@ import { prisma } from './config/database.js';
 function isAllowedAdminPath(path) {
   return (
     path === '/me' ||
+    path.startsWith('/me/') ||
     path.startsWith('/admin/') ||
     path === '/ai-models' ||
-    path.startsWith('/ai-models/')
+    path.startsWith('/ai-models/') ||
+    path === '/bug-reports' ||
+    path.startsWith('/modules/') ||
+    path.startsWith('/lessons/') ||
+    path.startsWith('/courses/') ||
+    path.startsWith('/activities/')
   );
 }
 
@@ -64,13 +70,20 @@ export async function createApp(options = {}) {
     });
   }
 
-  // Admins are intentionally isolated to admin-only endpoints
+  // Admins are intentionally isolated to admin-only endpoints.
+  // UNIT_ADMINs can reach /admin/courses/* (enrollment management) but not
+  // /admin/settings/* or /admin/users* (system config / user management).
   app.use('/api', (req, res, next) => {
     if (req.path === '/health') return next();
     if (!req.user) return next();
     if (req.user.role === 'ADMIN') {
       if (isAllowedAdminPath(req.path)) return next();
       return res.status(403).json({ error: 'Admins can only access admin endpoints' });
+    }
+    if (req.user.role === 'UNIT_ADMIN') {
+      if (req.path.startsWith('/admin/settings') || req.path.startsWith('/admin/users')) {
+        return res.status(403).json({ error: 'Unit admins cannot access system configuration' });
+      }
     }
     next();
   });

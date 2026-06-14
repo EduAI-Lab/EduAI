@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "courses" ADD COLUMN IF NOT EXISTS "isPublished" BOOLEAN NOT NULL DEFAULT false;

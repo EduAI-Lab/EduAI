@@ -15,6 +15,7 @@ A production-ready chat platform with Retrieval-Augmented Generation (RAG) capab
 
 ## Features
 
+- **Admin Invitations**: Admins onboard ADMIN / UNIT_ADMIN / INSTRUCTOR users via emailed one-time accept links (`/admin/invitations`) — the invitee sets a password and lands signed in with the invited role; links can be revoked or re-sent (token rotation)
 - **Multi-Provider AI Support**: Switch between Ollama (local), Google Gemini, and OpenAI with a single configuration change
 - **Retrieval-Augmented Generation**: Ground responses in course materials with source citations to minimize hallucinations
 - **Tool Calling**: Enhanced information retrieval through integrated RAG tools
@@ -87,11 +88,23 @@ GOOGLE_GENERATIVE_AI_API_KEY="" # Direct Gemini embeddings (legacy 3072 path onl
 EMBEDDING_PROVIDER="local" # local | cloud — dev server uses Ollama mxbai-embed-large
 EMBEDDING_DIMENSION="1024" # Must match pgvector column (LOCAL-EMBEDDINGS)
 OLLAMA_EMBEDDING_MODEL="mxbai-embed-large"
-OLLAMA_BASE_URL="http://localhost:11434/"
+OLLAMA_BASE_URL="http://localhost:11434/"  # dev server: http://cmps01.ok.ubc.ca:11434
+# VLLM_PORT=8001
+# VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"  # after IT firewall; see docs/rag-ai/VLLM.md
 FIRECRAWL_API_KEY="" # Required for Firecrawl web search tool. If not set, web search is unavailable.
 
 # Canvas instructor API tokens (AES-256-GCM; same format as Question Maker ENCRYPTION_KEY)
 ENCRYPTION_KEY="" # REQUIRED for POST /api/canvas/connect — generate e.g. openssl rand -hex 32
+
+# Invitation emails (optional — when SMTP_HOST is unset, the accept link is logged
+# to the console and shown in the admin UI instead of being emailed)
+SMTP_HOST=""
+SMTP_PORT="587"
+SMTP_SECURE="false" # true for implicit TLS (port 465)
+SMTP_USER=""
+SMTP_PASS=""
+EMAIL_FROM="EduAI <no-reply@eduai.local>"
+INVITE_EXPIRY_HOURS="72" # invitation link lifetime in hours
 ```
 
 ## Usage

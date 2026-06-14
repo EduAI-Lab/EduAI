@@ -15,7 +15,7 @@ export const CreateCourseSchema = z.object({
   startDate: z.coerce.date(),
   endDate: z.coerce.date().optional(),
   // §19: department writes are validated against the canonical subject codes
-  department: UnitSchema.optional(),
+  department: UnitSchema,
   description: z.string().optional(),
   isPublished: z.coerce.boolean().optional().default(false),
   aiInstructions: z.string().optional().default(""),
@@ -35,6 +35,7 @@ export const UpdateCourseSchema = z.object({
   isPublished: z.coerce.boolean().optional(),
   isActive: z.coerce.boolean().optional(),
   aiInstructions: z.string().optional(),
+  instructorId: z.string().min(1).optional(),
 });
 
 export const UpdateCourseRagSettingsSchema = z.object({
@@ -54,6 +55,17 @@ export const UpdateCourseRagSettingsSchema = z.object({
 });
 
 export type UpdateCourseRagSettingsInput = z.infer<typeof UpdateCourseRagSettingsSchema>;
+
+export const AddTASchema = z.object({
+  userId: z.string().min(1, "User ID is required"),
+});
+
+export const RemoveTASchema = z.object({
+  userId: z.string().min(1, "User ID is required"),
+});
+
+export type AddTAInput = z.infer<typeof AddTASchema>;
+export type RemoveTAInput = z.infer<typeof RemoveTASchema>;
 
 export const CreateCourseTopicSchema = z.object({
   name: z.string().min(1, "Topic name is required"),

@@ -17,6 +17,8 @@ model User {
   name              String
   image             String?
   role              UserRole
+  studentId         String?
+  studentIdLookup   String?                @unique
   isActive          Boolean                @default(true)
   createdAt         DateTime               @default(now())
   updatedAt         DateTime               @updatedAt
@@ -33,9 +35,15 @@ model User {
   externalUsers     ExternalUser[]
   preference        UserPreference?
   bugReports        BugReport[]
+  assistiveEvents   AssistiveEvent[]
   uploadedMaterials CourseMaterial[]       @relation("MaterialUploader")
   createdTopics     CourseTopic[]          @relation("TopicCreator")
-  canvasIntegration CanvasIntegration?
+  canvasIntegration         CanvasIntegration?
+  syncedCanvasRosterMembers CanvasRosterMember[]
+  invitationsSent           Invitation[]         @relation("InvitationsSent")
+  invitationAccepted        Invitation[]         @relation("InvitationAccepted")
+  taughtCourses             Course[]             @relation("CourseInstructor")
+  courseTAs                 CourseTA[]
 
   @@map("user")
 }
@@ -98,6 +106,7 @@ model Course {
   isPublished    Boolean          @default(false)
   startDate      DateTime
   endDate        DateTime?
+  instructorId   String?
   externalId     String?
   externalSource String?
   lastSyncedAt   DateTime?
@@ -110,6 +119,7 @@ model Course {
   ragTopK                Int?
   /// Per-course cosine-similarity threshold (0–1). Overrides RAG_SIMILARITY_THRESHOLD env when set.
   ragSimilarityThreshold Float?
+  instructor             User?            @relation("CourseInstructor", fields: [instructorId], references: [id])
   /// Per-course override: `local` | `ollama` | `cloud`; null uses server env.
   embeddingProvider      String?
   /// Per-course model id (Ollama or OpenRouter/OpenAI); null uses server default for provider.
@@ -119,7 +129,9 @@ model Course {
   embeddedWithModel      String?
   aiInteractions AIInteraction[]
   enrollments    Enrollment[]
-  materials      CourseMaterial[]
+  tas                 CourseTA[]
+  canvasRosterMembers CanvasRosterMember[]
+  materials           CourseMaterial[]
   reEmbedJobs    CourseReEmbedJob[]
   topics         CourseTopic[]
   questions      Question[]
@@ -165,6 +177,18 @@ model Enrollment {
   @@index([userId])
   @@index([externalSource, externalId])
   @@map("enrollments")
+}
+
+model CourseTA {
+  id        String   @id @default(cuid())
+  courseId  String
+  userId    String
+  createdAt DateTime @default(now())
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, userId])
+  @@map("course_tas")
 }
 
 model AIInteraction {
@@ -443,11 +467,30 @@ model Chat {
   adhdAssist   Boolean  @default(false)
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  messages     ChatMessage[]
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages        ChatMessage[]
+  assistiveEvents AssistiveEvent[]
 
   @@index([userId])
   @@map("chats")
+}
+
+model AssistiveEvent {
+  id          String   @id @default(cuid())
+  userId      String
+  chatId      String?
+  adhdAssist  Boolean  @default(false)
+  eventType   String
+  metricsJson Json
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chat        Chat?    @relation(fields: [chatId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([eventType, createdAt])
+  @@index([adhdAssist, createdAt])
+  @@index([chatId])
+  @@map("assistive_events")
 }
 
 model ChatMessage {
@@ -480,6 +523,31 @@ model CanvasIntegration {
   @@map("canvas_integrations")
 }
 
+/// Staging table for Canvas roster members before they link to an EduAI User.
+model CanvasRosterMember {
+  id              String         @id @default(cuid())
+  courseId        String
+  canvasUserId    String
+  sisUserId       String?
+  sisUserIdLookup String?
+  email           String?
+  displayName     String?
+  role            EnrollmentRole
+  syncedByUserId  String
+  isActive        Boolean        @default(true)
+  lastSeenAt      DateTime
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  course          Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  syncedBy        User           @relation(fields: [syncedByUserId], references: [id])
+
+  @@unique([courseId, canvasUserId, role])
+  @@index([email])
+  @@index([sisUserIdLookup])
+  @@index([canvasUserId])
+  @@map("canvas_roster_members")
+}
+
 model ExternalUser {
   id             String   @id @default(cuid())
   provider       String
@@ -498,16 +566,50 @@ model ExternalUser {
 
 enum UserRole {
   ADMIN
+  UNIT_ADMIN
   INSTRUCTOR
   TA
   STUDENT
-  UNIT_ADMIN
 }
 
 enum EnrollmentRole {
   STUDENT
   TA
   INSTRUCTOR
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+}
+
+/// Admin-issued invitation to onboard a privileged, non-self-serve platform
+/// user (ADMIN / UNIT_ADMIN / INSTRUCTOR). The invitee follows a tokenized
+/// link, sets a password, and gets a real account with the invited role.
+model Invitation {
+  id              String           @id @default(cuid())
+  email           String
+  name            String?
+  role            UserRole
+  authorizedUnits String[]         @default([])
+  /// sha256 of the raw token; the raw token only ever lives in the email link.
+  tokenHash       String           @unique
+  status          InvitationStatus @default(PENDING)
+  /// Null when the inviting admin's account has since been deleted.
+  invitedById     String?
+  invitedBy       User?            @relation("InvitationsSent", fields: [invitedById], references: [id], onDelete: SetNull)
+  /// Null until accepted; cleared if the accepted account is later deleted.
+  acceptedUserId  String?
+  acceptedUser    User?            @relation("InvitationAccepted", fields: [acceptedUserId], references: [id], onDelete: SetNull)
+  expiresAt       DateTime
+  acceptedAt      DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([email])
+  @@index([status])
+  @@map("invitations")
 }
 
 enum QuestionType {

@@ -58,3 +58,29 @@ export function requireRole(allowed) {
 }
 
 export const requireRoles = requireRole;
+
+/**
+ * Returns true when the user is a UNIT_ADMIN whose authorizedUnits includes
+ * the course's department. A null/missing department is never a match (§19 unit lock).
+ */
+export function isUnitAdminForCourse(user, course) {
+  return (
+    user?.role === 'UNIT_ADMIN' &&
+    course?.department != null &&
+    Array.isArray(user.authorizedUnits) &&
+    user.authorizedUnits.includes(course.department)
+  );
+}
+
+/**
+ * Returns true when the user has admin-level access to the course:
+ * ADMIN globally, UNIT_ADMIN scoped to their department, or INSTRUCTOR of the course.
+ * Requires course.instructors to be included.
+ */
+export function isCourseAdmin(user, course) {
+  if (user?.role === 'ADMIN') return true;
+  if (isUnitAdminForCourse(user, course)) return true;
+  if (user?.role === 'INSTRUCTOR' && course?.instructors?.some((i) => i.userId === user.id))
+    return true;
+  return false;
+}
