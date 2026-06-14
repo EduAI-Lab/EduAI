@@ -8,10 +8,12 @@ import {
   listAdminBugReportsForChat,
   listAdminCourseEnrollments,
   listAdminUsers,
+  resolveAdminCourseId,
 } from "./admin-context.server";
 
 /** Admin assistant tools — platform ops, no RAG. ADMIN-only tools are gated in handlers. */
-export function createAdminChatTools(ctx: ChatToolContext) {  const { user, effectiveCourseId } = ctx;
+export function createAdminChatTools(ctx: ChatToolContext) {
+  const { user, effectiveCourseId, effectiveCourseCode } = ctx;
 
   return {
     listCourses: tool({
@@ -30,12 +32,16 @@ export function createAdminChatTools(ctx: ChatToolContext) {  const { user, effe
 
     listCourseEnrollments: tool({
       description:
-        "List enrollments for a course. Filter by enrolledAt window to answer questions like who joined last week.",
+        "List enrollments for a course from the database. Filter by enrolledAt window for time-range questions.",
       parameters: z.object({
         courseId: z
           .string()
           .optional()
-          .describe("Course id; defaults to the selected course in the admin chat UI"),
+          .describe("Course id (CUID); defaults to the course selected in admin chat"),
+        courseCode: z
+          .string()
+          .optional()
+          .describe("Course code (e.g. COSC 111); use when course id is unknown"),
         enrolledSince: z
           .string()
           .optional()
@@ -45,30 +51,44 @@ export function createAdminChatTools(ctx: ChatToolContext) {  const { user, effe
           .optional()
           .describe("ISO date — include enrollments on or before this time"),
         isActive: z.boolean().optional().describe("Filter by active enrollment status"),
+        limit: z.number().int().min(1).max(200).optional(),
       }),
-      execute: async ({ courseId, enrolledSince, enrolledBefore, isActive }) => {
-        const id = courseId ?? effectiveCourseId;
-        if (!id) {
-          return { error: "courseId required — select a course or pass courseId" };
+      execute: async ({
+        courseId,
+        courseCode,
+        enrolledSince,
+        enrolledBefore,
+        isActive,
+        limit,
+      }) => {
+        const resolved = await resolveAdminCourseId(user, {
+          courseId,
+          courseCode: courseCode ?? effectiveCourseCode ?? undefined,
+          fallbackCourseId: effectiveCourseId,
+        });
+        if ("error" in resolved) {
+          return resolved;
         }
-        return listAdminCourseEnrollments(user, id, {
+        return listAdminCourseEnrollments(user, resolved.courseId, {
           enrolledSince,
           enrolledBefore,
           isActive,
+          limit,
         });
       },
     }),
 
     listUsers: tool({
-      description: "List platform users (ADMIN only). Returns id, email, name, role, active status.",
+      description:
+        "List platform users from the database (ADMIN only). Returns id, email, name, role, active status.",
       parameters: z.object({
         limit: z.number().int().min(1).max(200).optional(),
       }),
-      execute: async () => listAdminUsers(user),
+      execute: async ({ limit }) => listAdminUsers(user, limit),
     }),
 
     listBugReports: tool({
-      description: "List bug reports for triage (ADMIN only).",
+      description: "List bug reports for triage from the database (ADMIN only).",
       parameters: z.object({
         status: z.enum(["UNHANDLED", "IN_PROGRESS", "RESOLVED"]).optional(),
         source: z.enum(["CORE", "AI_TUTOR", "QUESTION_MAKER"]).optional(),
