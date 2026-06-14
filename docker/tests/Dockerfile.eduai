@@ -10,6 +10,7 @@ FROM node:20-alpine AS deps
 WORKDIR /app
 
 COPY package.json package-lock.json .npmrc ./
+COPY packages/ui/package.json                                 ./packages/ui/
 COPY apps/core/package.json                                   ./apps/core/
 COPY apps/extensions/ai-tutor/package.json                    ./apps/extensions/ai-tutor/
 COPY apps/extensions/ai-tutor/server/package.json             ./apps/extensions/ai-tutor/server/
@@ -25,6 +26,7 @@ WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
 
+COPY packages/ui                 ./packages/ui/
 COPY apps/core/app               ./apps/core/app
 COPY apps/core/prisma            ./apps/core/prisma
 COPY apps/core/vitest.config.ts  ./apps/core/
@@ -45,6 +47,7 @@ FROM node:20-alpine AS build
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
+COPY packages/ui ./packages/ui/
 COPY apps/core ./apps/core
 
 ENV PATH="/app/node_modules/.bin:${PATH}"
