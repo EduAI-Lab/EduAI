@@ -1,9 +1,13 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Mock all server-side and external dependencies so only chunk helpers are exercised.
 vi.mock("~/lib/prisma.server", () => ({ default: {} }));
 vi.mock("ai", () => ({ embed: vi.fn(), embedMany: vi.fn() }));
-vi.mock("@ai-sdk/openai", () => ({ createOpenAI: vi.fn() }));
+vi.mock("@ai-sdk/openai", () => ({
+  createOpenAI: vi.fn(() => ({
+    embedding: vi.fn(() => ({})),
+  })),
+}));
 vi.mock("@ai-sdk/google", () => ({ createGoogleGenerativeAI: vi.fn() }));
 vi.mock("ollama-ai-provider", () => ({ createOllama: vi.fn() }));
 
@@ -15,6 +19,17 @@ const {
   DEFAULT_EMBEDDING_DIMENSION,
 } = await import("~/lib/ai/embedding");
 const { SEMANTIC_CHUNK_SEPARATOR, joinSemanticChunks, applyChunkOverlap } = await import("~/lib/ai/file-processing");
+
+const sampleEmbedding = new Array(1024).fill(0);
+
+function mockIndexedEmbeddings(values: string[]) {
+  return values.map((value) => {
+    const embedding = [...sampleEmbedding];
+    const index = Number(String(value).replace("chunk-", ""));
+    embedding[0] = Number.isFinite(index) ? index : 0;
+    return embedding;
+  });
+}
 
 // ---------------------------------------------------------------------------
 // generateChunks
@@ -64,6 +79,125 @@ describe("generateChunks", () => {
     const chunks = generateChunks("  Hello world.  Goodbye world.  ", 800);
     for (const chunk of chunks) {
       expect(chunk).toBe(chunk.trim());
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// generateEmbeddings
+// ---------------------------------------------------------------------------
+
+describe("generateEmbeddings", () => {
+  const originalProvider = process.env.EMBEDDING_PROVIDER;
+  const originalOpenAiKey = process.env.OPENAI_API_KEY;
+  const originalGoogleKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+  const originalBatchSize = process.env.EMBED_MANY_BATCH_SIZE;
+
+  let generateEmbeddings: typeof import("~/lib/ai/embedding").generateEmbeddings;
+  let embedManyMock: Awaited<typeof import("ai")>["embedMany"];
+
+  async function reloadEmbeddingModule() {
+    vi.resetModules();
+    const aiMod = await import("ai");
+    const embeddingMod = await import("~/lib/ai/embedding");
+    embedManyMock = aiMod.embedMany;
+    generateEmbeddings = embeddingMod.generateEmbeddings;
+    vi.mocked(embedManyMock).mockImplementation(async ({ values }) => ({
+      embeddings: mockIndexedEmbeddings(values as string[]),
+    }));
+  }
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    process.env.EMBEDDING_PROVIDER = "cloud";
+    process.env.OPENAI_API_KEY = "test-key";
+    delete process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+    delete process.env.EMBED_MANY_BATCH_SIZE;
+    await reloadEmbeddingModule();
+  });
+
+  afterEach(() => {
+    vi.resetModules();
+    if (originalProvider === undefined) delete process.env.EMBEDDING_PROVIDER;
+    else process.env.EMBEDDING_PROVIDER = originalProvider;
+    if (originalOpenAiKey === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = originalOpenAiKey;
+    if (originalGoogleKey === undefined) delete process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+    else process.env.GOOGLE_GENERATIVE_AI_API_KEY = originalGoogleKey;
+    if (originalBatchSize === undefined) delete process.env.EMBED_MANY_BATCH_SIZE;
+    else process.env.EMBED_MANY_BATCH_SIZE = originalBatchSize;
+  });
+
+  it("returns an empty array for no chunks", async () => {
+    await expect(generateEmbeddings([])).resolves.toEqual([]);
+    expect(embedManyMock).not.toHaveBeenCalled();
+  });
+
+  it("never sends more than 100 chunks in a single embedMany call (provider limit)", async () => {
+    const chunks = Array.from({ length: 250 }, (_, i) => `chunk-${i}`);
+
+    const result = await generateEmbeddings(chunks);
+
+    expect(embedManyMock).toHaveBeenCalled();
+    for (const call of embedManyMock.mock.calls) {
+      expect(call[0].values.length).toBeLessThanOrEqual(100);
+    }
+    expect(embedManyMock.mock.calls.some((call) => call[0].values.length === 250)).toBe(false);
+    expect(result).toHaveLength(250);
+  });
+
+  it("splits 101 chunks using the default cloud batch size (64)", async () => {
+    const chunks = Array.from({ length: 101 }, (_, i) => `chunk-${i}`);
+
+    await generateEmbeddings(chunks);
+
+    expect(embedManyMock).toHaveBeenCalledTimes(2);
+    expect(embedManyMock.mock.calls[0][0].values).toHaveLength(64);
+    expect(embedManyMock.mock.calls[1][0].values).toHaveLength(37);
+  });
+
+  it("splits 101 chunks at the provider cap boundary (100 + 1)", async () => {
+    process.env.EMBED_MANY_BATCH_SIZE = "100";
+    await reloadEmbeddingModule();
+
+    const chunks = Array.from({ length: 101 }, (_, i) => `chunk-${i}`);
+
+    await generateEmbeddings(chunks);
+
+    expect(embedManyMock).toHaveBeenCalledTimes(2);
+    expect(embedManyMock.mock.calls[0][0].values).toHaveLength(100);
+    expect(embedManyMock.mock.calls[1][0].values).toHaveLength(1);
+  });
+
+  it("preserves chunk order across batches", async () => {
+    const chunks = Array.from({ length: 150 }, (_, i) => `chunk-${i}`);
+
+    const result = await generateEmbeddings(chunks);
+
+    expect(result[0]).toEqual({ embedding: mockIndexedEmbeddings(["chunk-0"])[0], content: "chunk-0" });
+    expect(result[64]).toEqual({
+      embedding: mockIndexedEmbeddings(["chunk-64"])[0],
+      content: "chunk-64",
+    });
+    expect(result[149]).toEqual({
+      embedding: mockIndexedEmbeddings(["chunk-149"])[0],
+      content: "chunk-149",
+    });
+  });
+
+  it("caps EMBED_MANY_BATCH_SIZE env override at the provider limit of 100", async () => {
+    process.env.EMBED_MANY_BATCH_SIZE = "128";
+    await reloadEmbeddingModule();
+
+    const chunks = Array.from({ length: 150 }, (_, i) => `chunk-${i}`);
+
+    await generateEmbeddings(chunks);
+
+    expect(embedManyMock).toHaveBeenCalledTimes(2);
+    expect(embedManyMock.mock.calls[0][0].values).toHaveLength(100);
+    expect(embedManyMock.mock.calls[1][0].values).toHaveLength(50);
+    for (const call of embedManyMock.mock.calls) {
+      expect(call[0].values.length).toBeLessThanOrEqual(100);
     }
   });
 });

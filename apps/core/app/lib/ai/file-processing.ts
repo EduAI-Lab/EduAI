@@ -34,6 +34,13 @@ export function isDocumentSectionBoundary(line: string): boolean {
   return false;
 }
 
+function isHeadingOnlySection(lines: string[]): boolean {
+  return lines.every((line) => {
+    const trimmed = line.trim();
+    return trimmed.length === 0 || isDocumentSectionBoundary(line);
+  });
+}
+
 function splitIntoDocumentSections(content: string): string[] {
   const lines = content.split('\n');
   const sections: string[] = [];
@@ -41,16 +48,26 @@ function splitIntoDocumentSections(content: string): string[] {
 
   for (const line of lines) {
     if (isDocumentSectionBoundary(line) && currentLines.length > 0) {
-      const section = currentLines.join('\n').trim();
-      if (section.length > 0) sections.push(section);
-      currentLines = [line];
+      if (isHeadingOnlySection(currentLines)) {
+        currentLines.push(line);
+      } else {
+        const section = currentLines.join('\n').trim();
+        if (section.length > 0) sections.push(section);
+        currentLines = [line];
+      }
     } else {
       currentLines.push(line);
     }
   }
 
   const last = currentLines.join('\n').trim();
-  if (last.length > 0) sections.push(last);
+  if (last.length > 0) {
+    if (isHeadingOnlySection(currentLines) && sections.length > 0) {
+      sections[sections.length - 1] += `\n\n${last}`;
+    } else {
+      sections.push(last);
+    }
+  }
 
   return sections;
 }
@@ -82,20 +99,32 @@ export function applyChunkOverlap(
 }
 
 function takeOverlapSuffix(text: string, targetChars: number): string {
-  if (text.length <= targetChars) return text;
+  const trimmed = text.trim();
+  if (!trimmed) return '';
 
-  const words = text.split(/\s+/);
+  if (trimmed.length <= targetChars && isDocumentSectionBoundary(trimmed)) {
+    return '';
+  }
+
+  const words = trimmed.split(/\s+/);
   const overlapWordCount = Math.max(1, Math.floor(targetChars / 5));
   let suffix = words.slice(-overlapWordCount).join(' ');
+
+  if (trimmed.length <= targetChars) {
+    const cap = Math.floor(trimmed.length * 0.5);
+    if (cap === 0) return '';
+    if (suffix.length > cap) suffix = suffix.slice(-cap);
+    return suffix.trim();
+  }
 
   if (suffix.length > targetChars * 1.5) {
     suffix = suffix.slice(-targetChars);
   }
 
-  return suffix;
+  return suffix.trim();
 }
 
-function enforceMaxChunkLength(chunks: string[], maxChunkSize: number): string[] {
+export function enforceMaxChunkLength(chunks: string[], maxChunkSize: number): string[] {
   const limit = Math.floor(maxChunkSize * 1.2);
   const result: string[] = [];
 
@@ -619,9 +648,12 @@ export async function processUploadedFile(file: File): Promise<FileInfo> {
         throw new Error(`Unsupported file type: ${file.type}`);
     }
 
-    // Enhanced semantic chunking for markdown content
-    const chunks = applySemanticChunking(content, 1500); // Larger chunks for markdown
-    const overlappedChunks = applyChunkOverlap(chunks, DEFAULT_SEMANTIC_CHUNK_OVERLAP);
+    const maxChunkSize = 1500;
+    const chunks = applySemanticChunking(content, maxChunkSize);
+    const overlappedChunks = enforceMaxChunkLength(
+      applyChunkOverlap(chunks, DEFAULT_SEMANTIC_CHUNK_OVERLAP),
+      maxChunkSize,
+    );
     const finalContent = joinSemanticChunks(overlappedChunks);
 
     // Extract file info with enhanced metadata
