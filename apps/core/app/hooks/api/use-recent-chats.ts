@@ -4,6 +4,10 @@ import { apiFetch } from "~/hooks/api/config";
 export interface RecentChat {
   id: string;
   title: string | null;
+  preview: string | null;
+  courseCode: string | null;
+  courseName: string | null;
+  userName: string | null;
   updatedAt: string;
 }
 
