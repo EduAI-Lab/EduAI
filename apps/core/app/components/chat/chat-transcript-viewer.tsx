@@ -33,13 +33,6 @@ export function ChatTranscriptViewer({
         <IconEye size={15} className="text-muted-foreground flex-shrink-0" stroke={1.7} />
         <p className="text-[13px] text-muted-foreground">
           Read-only transcript
-          {ownerName ? (
-            <>
-              {" — "}
-              <span className="font-medium text-foreground">{ownerName}</span>
-            </>
-          ) : null}
-          {courseCode ? <span className="text-muted-foreground"> · {courseCode}</span> : null}
         </p>
         <span className="ml-auto text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-background text-muted-foreground border border-border">
           View only
