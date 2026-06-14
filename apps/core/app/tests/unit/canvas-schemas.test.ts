@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ConnectCanvasSchema } from "~/lib/canvas/schemas";
+import { ConnectCanvasSchema, LinkRosterSchema, SyncCanvasCoursesSchema } from "~/lib/canvas/schemas";
 
 describe("ConnectCanvasSchema", () => {
   it("accepts canvasUrl and apiKey", () => {
@@ -35,5 +35,21 @@ describe("ConnectCanvasSchema", () => {
       apiKey: "key",
     });
     expect(result.success).toBe(false);
+  });
+});
+
+describe("SyncCanvasCoursesSchema", () => {
+  it("accepts an empty course list for unsync-all", () => {
+    expect(SyncCanvasCoursesSchema.safeParse({ canvasCourseIds: [] }).success).toBe(true);
+  });
+});
+
+describe("LinkRosterSchema", () => {
+  it("trims student numbers", () => {
+    const result = LinkRosterSchema.safeParse({ studentNumber: " 12345 " });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.studentNumber).toBe("12345");
+    }
   });
 });

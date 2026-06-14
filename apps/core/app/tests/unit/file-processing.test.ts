@@ -5,6 +5,7 @@ import {
   validateFile,
   applySemanticChunking,
   applyChunkOverlap,
+  enforceMaxChunkLength,
   isDocumentSectionBoundary,
   joinSemanticChunks,
   DEFAULT_SEMANTIC_CHUNK_OVERLAP,
@@ -239,6 +240,15 @@ describe("applyStandardChunking section splits", () => {
     expect(chunks.some((c) => c.includes("Slide 2"))).toBe(true);
   });
 
+  it("keeps consecutive heading lines with the following section body", () => {
+    const body = "Actual content about the introduction topic. ".repeat(20);
+    const content = `Chapter 1\n1.1 Introduction\n${body}`;
+    const chunks = applySemanticChunking(content, 500);
+    expect(chunks.some((c) => c.includes("Chapter 1") && c.includes("1.1 Introduction"))).toBe(true);
+    expect(chunks.some((c) => c.includes("Actual content"))).toBe(true);
+    expect(chunks.some((c) => c.trim() === "Chapter 1")).toBe(false);
+  });
+
   it("still splits on paragraph breaks when no section markers exist", () => {
     const para = "word ".repeat(200);
     const content = `${para}\n\n${para}`;
@@ -281,6 +291,28 @@ describe("applyChunkOverlap", () => {
     const joined = joinSemanticChunks(overlapped);
     expect(joined).toContain("--- CHUNK SEPARATOR ---");
     expect(joined.split("--- CHUNK SEPARATOR ---")).toHaveLength(2);
+  });
+
+  it("does not duplicate a short previous chunk as overlap", () => {
+    const shortHeading = "Chapter 1";
+    const second = "Long body content here. ".repeat(30);
+    const overlapped = applyChunkOverlap([shortHeading, second], DEFAULT_SEMANTIC_CHUNK_OVERLAP);
+    expect(overlapped[1]).toBe(second.trim());
+    expect(overlapped[1]).not.toContain("Chapter 1");
+  });
+
+  it("keeps overlapped chunks within the max size margin", () => {
+    const maxChunkSize = 500;
+    const nearLimit = "word ".repeat(115).trim();
+    const second = "term ".repeat(115).trim();
+    const overlapped = enforceMaxChunkLength(
+      applyChunkOverlap([nearLimit, second], DEFAULT_SEMANTIC_CHUNK_OVERLAP),
+      maxChunkSize,
+    );
+    const limit = Math.floor(maxChunkSize * 1.2);
+    for (const chunk of overlapped) {
+      expect(chunk.length).toBeLessThanOrEqual(limit);
+    }
   });
 });
 
