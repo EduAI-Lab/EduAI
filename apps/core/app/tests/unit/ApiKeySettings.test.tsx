@@ -28,8 +28,8 @@ const makeProps = (overrides: Record<string, any> = {}) => ({
 describe("ApiKeySettings — rendering", () => {
   it("renders OpenAI and Google provider cards when open", () => {
     render(<ApiKeySettings {...makeProps()} />);
-    expect(screen.getByText("OpenAI API Key")).toBeInTheDocument();
-    expect(screen.getByText("Google AI API Key")).toBeInTheDocument();
+    expect(screen.getByText("OpenAI API key")).toBeInTheDocument();
+    expect(screen.getByText("Google AI API key")).toBeInTheDocument();
     expect(screen.queryByText("Ollama (Local)")).not.toBeInTheDocument();
   });
 
@@ -41,7 +41,7 @@ describe("ApiKeySettings — rendering", () => {
 
   it("renders nothing when closed", () => {
     render(<ApiKeySettings {...makeProps({ open: false })} />);
-    expect(screen.queryByText("OpenAI API Key")).not.toBeInTheDocument();
+    expect(screen.queryByText("OpenAI API key")).not.toBeInTheDocument();
   });
 });
 

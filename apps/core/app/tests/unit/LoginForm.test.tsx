@@ -17,14 +17,9 @@ describe("LoginForm — rendering", () => {
     expect(screen.getByLabelText("Password")).toHaveAttribute("type", "password");
   });
 
-  it("renders the submit button with the text \"Login\"", () => {
+  it("renders the submit button with the text \"Sign in\"", () => {
     render(<LoginForm />);
-    expect(screen.getByRole("button", { name: "Login" })).toBeInTheDocument();
-  });
-
-  it("renders a \"Login with GitHub\" button", () => {
-    render(<LoginForm />);
-    expect(screen.getByRole("button", { name: /login with github/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeInTheDocument();
   });
 
   it("renders a link to /auth/register", () => {
@@ -46,7 +41,7 @@ describe("LoginForm — field errors", () => {
 
   it("applies the error border class to the email input when fieldErrors.email is set", () => {
     render(<LoginForm fieldErrors={{ email: "Invalid email address" }} />);
-    expect(screen.getByLabelText("Email")).toHaveClass("border-red-300");
+    expect(screen.getByLabelText("Email")).toHaveClass("border-destructive");
   });
 
   it("displays the password error message when fieldErrors.password is set", () => {

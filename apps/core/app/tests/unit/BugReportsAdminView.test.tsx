@@ -15,7 +15,7 @@ describe("BugReportsAdminView", () => {
       />,
     );
 
-    expect(screen.getByText("Bug Reports")).toBeInTheDocument();
+    expect(screen.getByText("Bug reports")).toBeInTheDocument();
     expect(screen.getByText("Chat session lost after refresh")).toBeInTheDocument();
     expect(screen.getByText("CORE")).toBeInTheDocument();
   });

@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 
 import { AppSidebar } from "~/components/app-sidebar";
-import { SidebarProvider } from "~/components/ui/sidebar";
+import { SidebarProvider } from "@eduai/ui";
 import type { User } from "~/lib/auth/types";
 
 beforeEach(() => {

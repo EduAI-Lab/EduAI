@@ -92,7 +92,7 @@ describe('CourseDetailManagerView', () => {
     expect(screen.getByRole('tab', { name: /enrollments/i })).toBeInTheDocument()
   })
 
-  it('renders CourseMaterialsUpload widget in Materials content', () => {
+  it('renders "Upload material" button in Materials content', () => {
     wrap(
       <CourseDetailManagerView
         course={COURSE}
@@ -106,7 +106,7 @@ describe('CourseDetailManagerView', () => {
         {...STAFF_PROPS}
       />
     )
-    expect(screen.getByTestId('upload-widget')).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /upload material/i }).length).toBeGreaterThan(0)
   })
 
   it('shows topic "Add" form in Topics content for instructor', () => {
@@ -160,7 +160,7 @@ describe('CourseDetailTaView', () => {
     expect(screen.queryByRole('tab', { name: /enrollments/i })).not.toBeInTheDocument()
   })
 
-  it('renders CourseMaterialsUpload widget in Materials content', () => {
+  it('renders "Upload material" button in Materials content', () => {
     wrap(
       <CourseDetailTaView
         course={COURSE}
@@ -169,7 +169,7 @@ describe('CourseDetailTaView', () => {
         onFileSelect={onFileSelect}
       />
     )
-    expect(screen.getByTestId('upload-widget')).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /upload material/i }).length).toBeGreaterThan(0)
   })
 
   it('does NOT show topic add form', () => {
@@ -193,7 +193,8 @@ describe('CourseDetailTaView', () => {
         onFileSelect={onFileSelect}
       />
     )
-    expect(screen.getByText('Variables')).toBeInTheDocument()
+    // Topic name appears in both the hero quick-chips and the Topics tab
+    expect(screen.getAllByText('Variables').length).toBeGreaterThan(0)
   })
 })
 

@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { IconSettings, IconHelp } from "@tabler/icons-react";
 import { NavSecondary } from "~/components/nav-secondary";
 import type { NavSecondaryItem } from "~/components/nav-secondary";
-import { SidebarProvider } from "~/components/ui/sidebar";
+import { SidebarProvider } from "@eduai/ui";
 
 const items: NavSecondaryItem[] = [
   { title: "Settings", url: "/settings", icon: IconSettings },
