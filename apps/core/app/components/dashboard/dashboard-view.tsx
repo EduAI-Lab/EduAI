@@ -1,11 +1,24 @@
+import { useState } from "react";
 import { Link } from "react-router";
 import {
-  IconArrowRight,
   IconMessageCircle,
   IconChevronRight,
+  IconBook,
+  IconUser,
+  IconLoader2,
 } from "@tabler/icons-react";
 
-import { StatCard, COURSE_COLORS } from "@eduai/ui";
+import {
+  StatCard,
+  COURSE_COLORS,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@eduai/ui";
+import { ChatTranscriptViewer } from "~/components/chat/chat-transcript-viewer";
+import { fetchChatTranscript, type ChatTranscript } from "~/hooks/api/use-chat-history";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -37,6 +50,10 @@ export type DashboardCourse = {
 export type DashboardRecentChat = {
   id: string;
   title: string | null;
+  preview: string | null;
+  courseCode: string | null;
+  courseName: string | null;
+  userName: string | null;
   updatedAt: string;
 };
 
@@ -173,6 +190,29 @@ function RecentChatsPanel({
   chats: DashboardRecentChat[];
   loading: boolean;
 }) {
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [selectedChat, setSelectedChat] = useState<DashboardRecentChat | null>(null);
+  const [transcript, setTranscript] = useState<ChatTranscript | null>(null);
+  const [transcriptLoading, setTranscriptLoading] = useState(false);
+
+  const handleOpen = async (chat: DashboardRecentChat) => {
+    setSelectedChat(chat);
+    setDialogOpen(true);
+    setTranscript(null);
+    setTranscriptLoading(true);
+    const data = await fetchChatTranscript(chat.id);
+    setTranscript(data);
+    setTranscriptLoading(false);
+  };
+
+  const handleClose = (open: boolean) => {
+    setDialogOpen(open);
+    if (!open) {
+      setSelectedChat(null);
+      setTranscript(null);
+    }
+  };
+
   if (loading) {
     return (
       <div className="rounded-[var(--radius-xl)] border border-border overflow-hidden shadow-[var(--shadow-2xs)] bg-card">
@@ -190,35 +230,78 @@ function RecentChatsPanel({
   }
 
   return (
-    <div className="rounded-[var(--radius-xl)] border border-border overflow-hidden shadow-[var(--shadow-2xs)] bg-card h-full flex flex-col">
-      {chats.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center px-5 py-8 text-center">
-          <IconMessageCircle size={24} className="mb-2 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">No conversations yet.</p>
-        </div>
-      ) : (
-        <div className="flex-1 overflow-y-auto">
-          {chats.map((chat, i) => (
-            <Link
-              key={chat.id}
-              to={`/chat?chatId=${chat.id}`}
-              className="block px-5 py-[14px] border-b border-border last:border-b-0 hover:bg-muted/40 transition-colors"
-            >
-              <div className="flex justify-between items-center mb-1">
-                <div className="flex items-center gap-1.5">
-                  <IconMessageCircle size={12} className="text-primary-text flex-shrink-0" />
-                  <span className="text-[11px] font-semibold text-primary-text">Chat</span>
+    <>
+      <div className="rounded-[var(--radius-xl)] border border-border overflow-hidden shadow-[var(--shadow-2xs)] bg-card h-full flex flex-col">
+        {chats.length === 0 ? (
+          <div className="flex flex-1 flex-col items-center justify-center px-5 py-8 text-center">
+            <IconMessageCircle size={24} className="mb-2 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">No conversations yet.</p>
+          </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto">
+            {chats.map((chat) => (
+              <button
+                key={chat.id}
+                type="button"
+                onClick={() => handleOpen(chat)}
+                className="w-full text-left block px-5 py-[14px] border-b border-border last:border-b-0 hover:bg-muted/40 transition-colors"
+              >
+                <div className="flex justify-between items-center mb-1">
+                  <div className="flex items-center gap-2 min-w-0">
+                    {chat.courseCode ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-primary-text flex-shrink-0">
+                        <IconBook size={11} />
+                        {chat.courseCode}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-muted-foreground flex-shrink-0">
+                        <IconMessageCircle size={11} />
+                        General
+                      </span>
+                    )}
+                    {chat.userName && (
+                      <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground truncate">
+                        <IconUser size={10} className="flex-shrink-0" />
+                        <span className="truncate">{chat.userName}</span>
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-[11px] text-muted-foreground flex-shrink-0 ml-2">{relativeTime(chat.updatedAt)}</span>
                 </div>
-                <span className="text-[11px] text-muted-foreground">{relativeTime(chat.updatedAt)}</span>
-              </div>
-              <p className="text-[13px] text-foreground leading-snug line-clamp-2">
-                {chat.title ?? `Conversation ${i + 1}`}
-              </p>
-            </Link>
-          ))}
-        </div>
-      )}
-    </div>
+                <p className="text-[13px] text-foreground leading-snug line-clamp-2">
+                  {chat.preview ?? chat.title ?? "New conversation"}
+                </p>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <Dialog open={dialogOpen} onOpenChange={handleClose}>
+        <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto rounded-[var(--radius-xl)]">
+          <DialogHeader>
+            <DialogTitle>
+              {selectedChat?.preview ?? selectedChat?.title ?? "Conversation"}
+            </DialogTitle>
+            <DialogDescription>
+              {selectedChat?.userName ? `${selectedChat.userName}'s conversation` : "Conversation"}
+              {selectedChat?.courseCode ? ` · ${selectedChat.courseCode}` : ""}
+            </DialogDescription>
+          </DialogHeader>
+          {transcriptLoading ? (
+            <div className="flex items-center justify-center py-16 text-muted-foreground">
+              <IconLoader2 size={20} className="animate-spin" />
+            </div>
+          ) : (
+            <ChatTranscriptViewer
+              messages={transcript?.messages ?? []}
+              ownerName={selectedChat?.userName}
+              courseCode={selectedChat?.courseCode}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -261,7 +344,7 @@ export function DashboardView({
             {!showQuickActions && (
               <Link
                 to="/courses"
-                className="flex items-center gap-0.5 text-xs font-medium text-primary-text-text hover:underline"
+                className="flex items-center gap-0.5 text-xs font-medium text-primary-text hover:underline"
               >
                 Browse all <IconChevronRight size={13} />
               </Link>
@@ -284,7 +367,7 @@ export function DashboardView({
             <h2 className="text-[15px] font-semibold text-foreground">Recent conversations</h2>
             <Link
               to="/chat"
-              className="flex items-center gap-0.5 text-xs font-medium text-primary-text-text hover:underline"
+              className="flex items-center gap-0.5 text-xs font-medium text-primary-text hover:underline"
             >
               New chat <IconChevronRight size={13} />
             </Link>
