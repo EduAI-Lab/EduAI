@@ -5,7 +5,6 @@ import {
   Outlet,
   Scripts,
   ScrollRestoration,
-  useRouteLoaderData,
 } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 
@@ -51,12 +50,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export function Layout({ children }: { children: React.ReactNode }) {
-  const data = useRouteLoaderData<typeof loader>("root");
-
   return (
-    // data-assistive is only ever present when ON — absent (not "false") when
-    // OFF so the baseline state cannot match [data-assistive] CSS selectors.
-    <html lang="en" {...(data?.assistive ? { "data-assistive": "true" } : {})}>
+    <html lang="en">
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
