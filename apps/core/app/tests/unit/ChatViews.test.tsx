@@ -24,13 +24,15 @@ const baseProps = {
 };
 
 describe("Chat views — role layouts", () => {
-  it("global view hides course selector banner text", () => {
+  it("global view shows Global indicator pill", () => {
     render(<ChatGlobalView {...baseProps} />);
-    expect(screen.getByText("Global chat")).toBeInTheDocument();
+    // Global view shows a "Global" indicator pill in the input area
+    expect(screen.getByText("Global")).toBeInTheDocument();
   });
 
-  it("course-scoped view shows course banner", () => {
+  it("course-scoped view shows course selector pill", () => {
     render(<ChatCourseScopedView {...baseProps} />);
-    expect(screen.getByText("Course-scoped chat")).toBeInTheDocument();
+    // Course-scoped view shows a course selector pill that says "Select course"
+    expect(screen.getByText("Select course")).toBeInTheDocument();
   });
 });

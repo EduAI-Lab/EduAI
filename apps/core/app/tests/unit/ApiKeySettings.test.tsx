@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { ApiKeySettings } from "~/components/chat/api-key-settings";
 import type { UserProviderSettings } from "~/lib/ai/providers";
 
@@ -33,11 +33,12 @@ describe("ApiKeySettings — rendering", () => {
     expect(screen.queryByText("Ollama (Local)")).not.toBeInTheDocument();
   });
 
-  it("switches to Google AI tab when clicked", () => {
+  it("switches to the Google AI panel when its tab is selected", async () => {
     render(<ApiKeySettings {...makeProps()} />);
-    const googleTab = screen.getByRole("button", { name: "Google AI" });
-    fireEvent.click(googleTab);
-    expect(screen.getByText("Google AI API key")).toBeInTheDocument();
+    fireEvent.focus(screen.getByRole("tab", { name: "Google AI" }));
+    await waitFor(() =>
+      expect(screen.getByText("Google AI API key")).toBeInTheDocument()
+    );
     expect(screen.queryByText("OpenAI API key")).not.toBeInTheDocument();
   });
 
@@ -89,11 +90,14 @@ describe("ApiKeySettings — unconfigured providers", () => {
     });
   });
 
-  it("shows the Save Google AI Key button when on the Google AI tab", () => {
+  it("shows the Save Google AI Key button after selecting the Google AI tab", async () => {
     render(<ApiKeySettings {...makeProps()} />);
-    const googleTab = screen.getByRole("button", { name: "Google AI" });
-    fireEvent.click(googleTab);
-    expect(screen.getByRole("button", { name: /save google ai key/i })).toBeInTheDocument();
+    fireEvent.focus(screen.getByRole("tab", { name: "Google AI" }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /save google ai key/i })
+      ).toBeInTheDocument()
+    );
   });
 });
 

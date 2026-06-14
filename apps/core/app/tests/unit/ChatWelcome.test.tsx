@@ -27,12 +27,14 @@ describe("ChatWelcome — rendering", () => {
     expect(screen.queryByText(/powered by/i)).not.toBeInTheDocument();
   });
 
-  it("renders all four suggestion cards", () => {
+  it("renders all six suggestion cards from SuggestedPrompts", () => {
     render(<ChatWelcome onSelectPrompt={vi.fn()} />);
-    expect(screen.getByText("Explain this concept step by step")).toBeInTheDocument();
-    expect(screen.getByText("Help me prepare for my exam")).toBeInTheDocument();
-    expect(screen.getByText("Summarize this week's lecture")).toBeInTheDocument();
-    expect(screen.getByText("Check my understanding")).toBeInTheDocument();
+    expect(screen.getByText("Build a study plan")).toBeInTheDocument();
+    expect(screen.getByText("Explain a concept")).toBeInTheDocument();
+    expect(screen.getByText("Generate practice problems")).toBeInTheDocument();
+    expect(screen.getByText("Review my essay")).toBeInTheDocument();
+    expect(screen.getByText("Debug my code")).toBeInTheDocument();
+    expect(screen.getByText("Summarize key points")).toBeInTheDocument();
   });
 });
 
@@ -44,18 +46,18 @@ describe("ChatWelcome — callbacks", () => {
   it("calls onSelectPrompt with the correct prompt when a suggestion is clicked", () => {
     const onSelectPrompt = vi.fn();
     render(<ChatWelcome onSelectPrompt={onSelectPrompt} />);
-    fireEvent.click(screen.getByText("Explain this concept step by step"));
+    fireEvent.click(screen.getByText("Build a study plan"));
     expect(onSelectPrompt).toHaveBeenCalledWith(
-      "Explain a concept from my course step by step, using examples from the course materials."
+      "Help me create a personalized study plan for my upcoming exam, including key topics to review and a day-by-day schedule."
     );
   });
 
   it("calls onSelectPrompt for each suggestion independently", () => {
     const onSelectPrompt = vi.fn();
     render(<ChatWelcome onSelectPrompt={onSelectPrompt} />);
-    fireEvent.click(screen.getByText("Help me prepare for my exam"));
+    fireEvent.click(screen.getByText("Debug my code"));
     expect(onSelectPrompt).toHaveBeenCalledWith(
-      "Help me create a study plan and review key concepts for my upcoming exam."
+      "Help me debug this code, explain what's going wrong, and suggest a clean fix with an explanation."
     );
   });
 });
