@@ -8,6 +8,7 @@ import {
 import { useRecentChats } from "~/hooks/api/use-recent-chats";
 import { useUsers } from "~/hooks/api/use-users";
 import { useCourses } from "~/hooks/api/use-courses";
+import { useDashboardStats } from "~/hooks/api/use-dashboard-stats";
 import { DashboardView } from "~/components/dashboard/dashboard-view";
 import type { DashboardStatDef, DashboardQuickAction } from "~/components/dashboard/dashboard-view";
 
@@ -46,20 +47,23 @@ export function DashboardAdminView() {
   const { users, isLoading: usersLoading } = useUsers();
   const { courses, loading: coursesLoading } = useCourses();
   const { chats, isLoading: chatsLoading } = useRecentChats();
+  const { stats, isLoading: statsLoading } = useDashboardStats();
 
   const totalUsers = usersLoading ? "—" : String(users.length);
   const activeCourses = coursesLoading ? "—" : String(courses.filter((c) => c.isActive).length);
+  const aiSessions = statsLoading ? "—" : String(stats?.chatCount ?? 0);
+  const materialsUploaded = statsLoading ? "—" : String(stats?.materialCount ?? 0);
 
-  const stats: DashboardStatDef[] = [
+  const statDefs: DashboardStatDef[] = [
     { label: "Total users", value: totalUsers },
     { label: "Active courses", value: activeCourses },
-    { label: "AI sessions", value: "—" },
-    { label: "Materials uploaded", value: "—" },
+    { label: "AI sessions", value: aiSessions },
+    { label: "Materials uploaded", value: materialsUploaded },
   ];
 
   return (
     <DashboardView
-      stats={stats}
+      stats={statDefs}
       quickActions={QUICK_ACTIONS}
       leftPanelTitle="Quick actions"
       recentChats={chats}

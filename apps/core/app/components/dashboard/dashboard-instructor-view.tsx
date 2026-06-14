@@ -1,25 +1,29 @@
 import { useCourses } from "~/hooks/api/use-courses";
 import { useRecentChats } from "~/hooks/api/use-recent-chats";
+import { useDashboardStats } from "~/hooks/api/use-dashboard-stats";
 import { DashboardView } from "~/components/dashboard/dashboard-view";
 import type { DashboardStatDef } from "~/components/dashboard/dashboard-view";
 
 export function DashboardInstructorView() {
   const { courses, loading: coursesLoading } = useCourses();
   const { chats, isLoading: chatsLoading } = useRecentChats();
+  const { stats, isLoading: statsLoading } = useDashboardStats();
 
-  // Count unique enrolled students and materials across instructor's courses
   const courseCount = coursesLoading ? "—" : String(courses.length);
+  const studentsEnrolled = statsLoading ? "—" : String(stats?.studentCount ?? 0);
+  const materialsUploaded = statsLoading ? "—" : String(stats?.materialCount ?? 0);
+  const aiInteractions = statsLoading ? "—" : String(stats?.chatCount ?? 0);
 
-  const stats: DashboardStatDef[] = [
+  const statDefs: DashboardStatDef[] = [
     { label: "Courses teaching", value: courseCount },
-    { label: "Students enrolled", value: "—" },
-    { label: "Materials uploaded", value: "—" },
-    { label: "AI interactions", value: "—" },
+    { label: "Students enrolled", value: studentsEnrolled },
+    { label: "Materials uploaded", value: materialsUploaded },
+    { label: "AI interactions", value: aiInteractions },
   ];
 
   return (
     <DashboardView
-      stats={stats}
+      stats={statDefs}
       courses={courses}
       coursesLoading={coursesLoading}
       leftPanelTitle="Your courses"
