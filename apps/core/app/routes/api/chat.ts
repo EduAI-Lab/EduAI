@@ -11,31 +11,26 @@ import {
 import { modelSupportsTools } from "~/lib/ai/providers.server";
 import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
 import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
-import { findRelevantContent } from "~/lib/ai/embedding";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { auth } from "~/lib/auth/server";
 import type { ActionFunctionArgs } from "react-router";
 import {
-  buildAdminSystemPrompt,
-  buildLearningAssistantSystemPrompt,
-  buildLearningSystemPrompt,
+  buildAdminChatStreamConfig,
+  buildLearningChatStreamConfig,
   chatbotTypeFromMode,
-  createChatTools,
+  createAdminChatTools,
+  createLearningChatTools,
   parseChatMode,
 } from "~/lib/agent-tools";
 import prisma from "~/lib/prisma.server";
 import { chatApiDebug } from "~/lib/chat-api-log";
 import { clientApiKeysBodySchema, toUserProviderSettings } from "~/lib/chat-api-keys.schema";
 import {
-  buildCappedRagContextText,
   capToolResultsInMessages,
   estimateMessageCharsForModel,
-  extractMessageText,
   prepareBoundedSessionContext,
   resolveMaxContextMessages,
-  HYBRID_RAG_MAX_CHUNKS,
-  HYBRID_RAG_MAX_CONTEXT_CHARS,
 } from "~/lib/chat-rag";
 
 const TOOL_MAX_STEPS = Math.min(
@@ -674,150 +669,38 @@ export async function action({ request }: ActionFunctionArgs) {
       role: actingUser.role,
     };
 
-    const tools = createChatTools(
-      {
-        user: rbacUser,
-        effectiveCourseId,
-        effectiveCourseCode: courseCode ?? null,
-      },
-      chatMode,
-    );
+    const toolContext = {
+      user: rbacUser,
+      effectiveCourseId,
+      effectiveCourseCode: courseCode ?? null,
+    };
 
     const resolvedSystemPrompt = trimmedSystemPrompt ?? chat.systemPrompt ?? null;
-
-    const buildDefaultSystemPrompt = () =>
-      chatMode === "admin"
-        ? buildAdminSystemPrompt({
-            courseCode,
-            effectiveCourseId,
-            customPrompt: resolvedSystemPrompt,
-          })
-        : buildLearningSystemPrompt({ courseCode, customPrompt: resolvedSystemPrompt });
-
-    const buildLearningNonToolSystemPrompt = (citeMaterials: boolean) =>
-      buildLearningAssistantSystemPrompt({
-        courseCode,
-        customPrompt: resolvedSystemPrompt,
-        citeMaterials,
-      });
-
-    // Check if the model supports tool calling
     const supportsTools = await modelSupportsTools(model);
 
-    if (chatMode === "admin" && !supportsTools) {
-      return new Response(
-        JSON.stringify({
-          error:
-            "Admin chatbot requires a model with tool support. Choose a tool-capable model in the model picker.",
-        }),
-        {
-          status: 400,
-          headers: { "Content-Type": "application/json" },
-        },
-      );
-    }
+    const streamInput = {
+      aiModel,
+      modelMessages,
+      streaming,
+      courseCode,
+      effectiveCourseId,
+      resolvedSystemPrompt,
+      toolMaxTokens: TOOL_MAX_TOKENS,
+      toolMaxSteps: TOOL_MAX_STEPS,
+    };
 
-    let streamConfig;
-
-    if (!supportsTools) {
-      // MODELS WITHOUT TOOL SUPPORT: learning chats may use hybrid RAG; admin never does.
-      if (chatMode === "admin") {
-        streamConfig = {
-          model: aiModel,
-          messages: modelMessages,
-          temperature: 0.6,
-          maxTokens: 8192,
-          system: buildDefaultSystemPrompt(),
-        };
-      } else {
-        const lastUserMessage = [...trimmedMessages].reverse().find((message) => message.role === "user");
-        const userQuestion = extractMessageText(lastUserMessage);
-        const messageContentLower = userQuestion.toLowerCase();
-
-        const hybridRagAlwaysWithCourse = process.env.CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE === "1";
-        const isRAGQuery =
-          Boolean(effectiveCourseId) &&
-          (hybridRagAlwaysWithCourse ||
-            messageContentLower.includes("course") ||
-            messageContentLower.includes("material") ||
-            messageContentLower.includes("document") ||
-            messageContentLower.includes("chapter") ||
-            messageContentLower.includes("lecture") ||
-            messageContentLower.includes("assignment") ||
-            messageContentLower.includes("explain") ||
-            messageContentLower.includes("what is") ||
-            messageContentLower.includes("summarize") ||
-            messageContentLower.includes("summary") ||
-            messageContentLower.includes("content") ||
-            messageContentLower.includes("about"));
-
-        if (isRAGQuery) {
-          try {
-            const relevantContent = await findRelevantContent(
-              userQuestion || messageContentLower,
-              effectiveCourseId!,
-              HYBRID_RAG_MAX_CHUNKS,
-            );
-            const contextText =
-              relevantContent.length > 0
-                ? buildCappedRagContextText(
-                    relevantContent,
-                    HYBRID_RAG_MAX_CHUNKS,
-                    HYBRID_RAG_MAX_CONTEXT_CHARS,
-                  )
-                : "";
-
-            const baseSystemPrompt = buildLearningNonToolSystemPrompt(true);
-
-            const systemWithRAG = contextText
-              ? `${baseSystemPrompt}
-
-${contextText ? `Here are relevant excerpts from the course materials to help answer the user's question:
-
-${contextText}
-
-Based on this information, provide a comprehensive answer to the user's question. If the provided content doesn't fully answer their question, mention what you can answer based on the available materials and suggest what additional information might be helpful.` : "I don't have access to specific course materials for this question, but I can provide general educational assistance."}`
-              : baseSystemPrompt;
-
-            streamConfig = {
-              model: aiModel,
-              messages: modelMessages,
-              temperature: 0.6,
-              maxTokens: 8192,
-              system: systemWithRAG,
-            };
-          } catch (error) {
-            console.error("Error finding relevant content for model without tool support:", error);
-            streamConfig = {
-              model: aiModel,
-              messages: modelMessages,
-              temperature: 0.6,
-              maxTokens: 8192,
-              system: buildLearningNonToolSystemPrompt(false),
-            };
-          }
-        } else {
-          streamConfig = {
-            model: aiModel,
-            messages: modelMessages,
-            temperature: 0.6,
-            maxTokens: 8192,
-            system: buildLearningNonToolSystemPrompt(false),
-          };
-        }
-      }
-    } else {
-      streamConfig = {
-        model: aiModel,
-        messages: modelMessages,
-        temperature: chatMode === "admin" ? 0.2 : 0.6,
-        maxTokens: TOOL_MAX_TOKENS,
-        maxSteps: TOOL_MAX_STEPS,
-        tools,
-        toolCallStreaming: streaming,
-        system: buildDefaultSystemPrompt(),
-      };
-    }
+    const { config: streamConfig, approach } =
+      chatMode === "admin"
+        ? buildAdminChatStreamConfig({
+            ...streamInput,
+            tools: createAdminChatTools(toolContext),
+          })
+        : await buildLearningChatStreamConfig({
+            ...streamInput,
+            trimmedMessages,
+            supportsTools,
+            tools: createLearningChatTools(toolContext),
+          });
 
     const effectiveAdhdAssist = resolveEffectiveAdhdAssist({
       hasField: hasAdhdAssistField,
@@ -857,7 +740,7 @@ Based on this information, provide a comprehensive answer to the user's question
     // Log the LLM stream configuration
     chatApiDebug("Starting LLM stream", {
       model,
-      approach: supportsTools ? "tool_calling" : "hybrid_rag",
+      approach,
       ...llmPromptSizeHints(streamConfig.system, modelMessages),
     });
     const result = await streamText({
