@@ -2,8 +2,8 @@ import { prisma } from '../config/database.js';
 import { listEduAiCourseEnrollmentsServiceKey } from './eduaiClient.js';
 
 /**
- * Sync active enrollments from Core into the local CourseEnrollment table,
- * preserving each enrollee's EnrollmentRole (STUDENT, TA, or INSTRUCTOR).
+ * Sync active student enrollments from Core into the local CourseEnrollment table.
+ * Only STUDENT rows are imported (#578); TA and INSTRUCTOR access is not mirrored locally.
  *
  * - Creates rows for users active in Core but missing locally.
  * - Updates the `role` for rows whose Core role changed.
@@ -31,7 +31,7 @@ export async function syncCourseEnrollments(courseOfferingId, options = {}) {
   const allEnrollments = await listEduAiCourseEnrollmentsServiceKey(course.externalId);
   // AI Tutor local enrollments represent student access only (#578).
   const activeEnrollments = allEnrollments.filter(
-    (e) => e.isActive && e.role === 'STUDENT',
+    (e) => e.isActive && (e.role ?? 'STUDENT') === 'STUDENT',
   );
 
   // Guard: empty upstream means "no data yet" — don't wipe local rows

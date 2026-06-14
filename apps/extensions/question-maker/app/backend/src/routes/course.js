@@ -37,7 +37,7 @@ async function ensureCoreCourseLink(course, cookie) {
 }
 
 /** Upserts Core course topics into the local QM topics table. */
-async function syncTopicsFromCoreForCourse(course, cookie) {
+async function syncTopicsFromCoreForCourse(course, cookie, { failOnCoreError = false } = {}) {
   if (!course?.coreCourseId) return 0;
 
   let coreTopics;
@@ -46,6 +46,7 @@ async function syncTopicsFromCoreForCourse(course, cookie) {
     coreTopics = Array.isArray(data?.topics) ? data.topics : Array.isArray(data) ? data : [];
   } catch (err) {
     logger.warn({ err, coreCourseId: course.coreCourseId }, 'Core topic sync skipped');
+    if (failOnCoreError) throw err;
     return 0;
   }
 
@@ -413,7 +414,15 @@ router.post('/:id/sync-topics', authenticateToken, async (req, res, next) => {
       return res.status(400).json({ success: false, error: 'Course is not linked to Core' });
     }
 
-    const synced = await syncTopicsFromCoreForCourse(course, cookie);
+    let synced;
+    try {
+      synced = await syncTopicsFromCoreForCourse(course, cookie, { failOnCoreError: true });
+    } catch (err) {
+      return res.status(502).json({
+        success: false,
+        error: err.message || 'Core request failed',
+      });
+    }
 
     res.json({ success: true, data: { synced } });
   } catch (error) {
