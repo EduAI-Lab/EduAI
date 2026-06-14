@@ -36,6 +36,7 @@ import {
   IconPlus,
   IconUserCheck,
   IconUserOff,
+  IconMessageCircle,
 } from "@tabler/icons-react";
 
 import { RoleBadge, Avatar as EduAvatar, StatusBadge } from "@eduai/ui";
@@ -118,6 +119,7 @@ export interface UsersTableProps {
   onEdit: (user: User) => void;
   onDelete: (id: string) => void;
   onToggleActive: (user: User) => void;
+  onViewChatHistory?: (user: User) => void;
   onCreateUser?: () => void;
 }
 
@@ -163,13 +165,15 @@ function RowActions({
   currentUserId,
   onEdit,
   onDelete,
-  onToggleActive
+  onToggleActive,
+  onViewChatHistory,
 }: {
   row: Row<User>;
   currentUserId: string;
   onEdit: (user: User) => void;
   onDelete: (id: string) => void;
   onToggleActive: (user: User) => void;
+  onViewChatHistory?: (user: User) => void;
 }) {
   const user = row.original;
   const isCurrentUser = user.id === currentUserId;
@@ -191,6 +195,12 @@ function RowActions({
           <IconEdit className="mr-2 h-4 w-4" />
           Edit
         </DropdownMenuItem>
+        {onViewChatHistory && (
+          <DropdownMenuItem onClick={() => onViewChatHistory(user)}>
+            <IconMessageCircle className="mr-2 h-4 w-4" />
+            View chat history
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem
           onClick={() => onToggleActive(user)}
           disabled={isCurrentUser}
@@ -222,6 +232,7 @@ export function UsersTable({
   onEdit,
   onDelete,
   onToggleActive,
+  onViewChatHistory,
   onCreateUser
 }: UsersTableProps) {
   const id = useId();
@@ -354,6 +365,7 @@ export function UsersTable({
             onEdit={onEdit}
             onDelete={onDelete}
             onToggleActive={onToggleActive}
+            onViewChatHistory={onViewChatHistory}
           />
         ),
         size: 60,
@@ -361,7 +373,7 @@ export function UsersTable({
         enableSorting: false,
       },
     ],
-    [currentUserId, onEdit, onDelete, onToggleActive]
+    [currentUserId, onEdit, onDelete, onToggleActive, onViewChatHistory]
   );
 
   const table = useReactTable({

@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { UserFormDialog } from "~/components/admin/user-form-dialog";
+import { UserChatHistoryDialog } from "~/components/admin/user-chat-history-dialog";
 import { UsersTable } from "~/components/admin/users-table";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, PageHeading } from "@eduai/ui";
 import type {
@@ -32,6 +33,7 @@ export function UsersAdminView({
 }: UsersAdminViewProps) {
   const [userDialogOpen, setUserDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<PlatformUser | null>(null);
+  const [historyUser, setHistoryUser] = useState<{ id: string; name: string } | null>(null);
 
   const handleSubmit = async (data: CreateUserInput | UpdateUserInput) => {
     try {
@@ -121,6 +123,9 @@ export function UsersAdminView({
                   }}
                   onDelete={handleDeleteUser}
                   onToggleActive={handleToggleUserActive}
+                  onViewChatHistory={(user) => {
+                    setHistoryUser({ id: user.id, name: user.name });
+                  }}
                   onCreateUser={() => {
                     setEditingUser(null);
                     setUserDialogOpen(true);
@@ -138,6 +143,15 @@ export function UsersAdminView({
         user={editingUser}
         onSubmit={handleSubmit}
       />
+
+      {historyUser && (
+        <UserChatHistoryDialog
+          open={!!historyUser}
+          onOpenChange={(open) => !open && setHistoryUser(null)}
+          userId={historyUser.id}
+          userName={historyUser.name}
+        />
+      )}
     </div>
   );
 }
