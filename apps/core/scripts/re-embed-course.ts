@@ -61,7 +61,9 @@ async function resolveCourse(ref: string) {
   });
   if (byId) return byId;
 
-  const byCode = await prisma.course.findUnique({
+  // `code` is not unique on its own (see @@unique([code, startDate, section])),
+  // so resolve the first course matching the code.
+  const byCode = await prisma.course.findFirst({
     where: { code: ref },
     select: { id: true, code: true, name: true },
   });
