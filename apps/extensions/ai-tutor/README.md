@@ -96,12 +96,13 @@ Each level supports publish/unpublish gating — unpublished parents hide their 
 
 ### Roles
 
-| Role          | Access                                               |
-| ------------- | ---------------------------------------------------- |
-| **Student**   | Enrolled courses, activities, AI chat modes          |
-| **Professor** | Full course management, content authoring, analytics |
-| **TA**        | Assigned course assistance                           |
-| **Admin**     | User management, system settings, AI model config    |
+| Role             | Access                                                              |
+| ---------------- | ------------------------------------------------------------------- |
+| **Student**      | Enrolled courses, activities, AI chat modes                         |
+| **Instructor**   | Full course management, content authoring, analytics                |
+| **TA**           | Assigned course assistance (read-only on content, submit bug reports) |
+| **Unit Admin**   | Department-scoped course management and enrollment admin            |
+| **Admin**        | User management, system settings, AI model config                   |
 
 ### AI Tutoring — Two-Agent Supervisor System
 
@@ -164,7 +165,7 @@ Frontend env var:
 
 ## Testing
 
-15 test files across unit and integration suites:
+21 test files across unit and integration suites:
 
 - **Unit tests** (`server/test/unit/`) — Pure function tests for mappers, evaluation logic, analytics, AI model policy, and AI guidance. No database required.
 - **Integration tests** (`server/test/integration/`) — Full HTTP tests via Supertest against a real PostgreSQL test database. Covers auth, CRUD for all entities, course cloning, progress calculation, and topic management.
