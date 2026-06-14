@@ -22,6 +22,7 @@ import { useApiKeys } from "~/hooks/use-api-keys";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { useAssistiveUi } from "~/components/assistive/assistive-ui-provider";
+import { logChatApiResponse, logChatUseChatError } from "~/lib/chat-client-log";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request);
@@ -65,9 +66,10 @@ export default function AdminChatPage() {
     code: c.code,
   }));
 
-  const [selectedModel, setSelectedModel] = useState(
-    chatModels.length > 0 ? chatModels[0].id : "",
-  );
+  const [selectedModel, setSelectedModel] = useState(() => {
+    const toolCapable = chatModels.find((m) => m.supportsTools);
+    return toolCapable?.id ?? (chatModels.length > 0 ? chatModels[0].id : "");
+  });
   const [selectedCourseCode, setSelectedCourseCode] = useState<string | null>(
     availableCourses[0]?.code ?? null,
   );
@@ -121,15 +123,13 @@ export default function AdminChatPage() {
       adhdAssist,
     },
     onResponse: async (response) => {
-      if (!response.ok) {
-        const body = await response.json().catch(() => null);
-        console.error("[admin-chat] API error", response.status, body);
-      }
+      await logChatApiResponse(response, "admin-chat");
       const chatIdHeader = response.headers.get("X-Chat-Id");
       if (chatIdHeader && !chatId) {
         setChatId(chatIdHeader);
       }
     },
+    onError: (error) => logChatUseChatError(error, "admin-chat"),
   });
 
   const selectedModelInfo = chatModels.find((model) => model.id === selectedModel);

@@ -31,6 +31,7 @@ import { getUserPreference, saveUserPreference } from "~/lib/user-preferences.se
 import { getAccessibleCourseCodes } from "~/lib/courses/server";
 import { parsePreferenceUpdates } from "~/lib/user-preferences";
 import { useAssistiveUi } from "~/components/assistive/assistive-ui-provider";
+import { logChatApiResponse, logChatUseChatError } from "~/lib/chat-client-log";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request);
@@ -170,11 +171,13 @@ export default function Chat() {
         adhdAssist,
       },
       onResponse: async (response) => {
+        await logChatApiResponse(response, "learning-chat");
         const chatIdHeader = response.headers.get("X-Chat-Id");
         if (chatIdHeader && !chatId) {
           setChatId(chatIdHeader);
         }
       },
+      onError: (error) => logChatUseChatError(error, "learning-chat"),
     });
 
   const selectedModelInfo = chatModels.find(
