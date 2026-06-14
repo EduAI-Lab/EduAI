@@ -12,6 +12,12 @@ import {
 } from "@eduai/ui";
 import { Badge } from "@eduai/ui";
 import {
+  PageTabs,
+  PageTabsList,
+  PageTabsTrigger,
+  PageTabsContent,
+} from "@eduai/ui";
+import {
   IconKey,
   IconEye,
   IconEyeOff,
@@ -43,7 +49,6 @@ export function ApiKeySettings({
   onUpdateProvider,
   onRemoveProvider,
 }: ApiKeySettingsProps) {
-  const [activeProvider, setActiveProvider] = useState<Provider>("openai");
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
   const [tempKeys, setTempKeys] = useState<Record<string, string>>({});
 
@@ -110,150 +115,136 @@ export function ApiKeySettings({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-5 py-1">
-          {/* Tab navigation */}
-          <div className="flex gap-0 border-b border-border">
+        <PageTabs defaultValue="openai" className="py-1">
+          <PageTabsList>
             {providers.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => setActiveProvider(p.id)}
-                type="button"
-                aria-selected={activeProvider === p.id}
-                className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-[1px] ${
-                  activeProvider === p.id
-                    ? "border-b-[var(--primary)] text-foreground"
-                    : "border-b-transparent text-muted-foreground hover:text-foreground"
-                }`}
-              >
+              <PageTabsTrigger key={p.id} value={p.id}>
                 {p.label}
-              </button>
+              </PageTabsTrigger>
             ))}
-          </div>
+          </PageTabsList>
 
-          {/* Tab content */}
           {providers.map((p) => {
-            if (activeProvider !== p.id) return null;
             const configured = isProviderConfigured(p.id);
             return (
-              <section
-                key={p.id}
-                className="space-y-3 rounded-[var(--radius-md)] border border-border bg-card p-4"
-              >
-                {/* Section header */}
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-semibold text-foreground leading-tight">
-                      {p.label} API key
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {p.description}
-                    </p>
-                  </div>
-                  {configured && (
-                    <Badge
-                      variant="secondary"
-                      className="shrink-0 gap-1 text-xs"
-                    >
-                      <IconShield className="h-3 w-3" />
-                      Active
-                    </Badge>
-                  )}
-                </div>
-
-                {/* Key input / display row */}
-                {configured ? (
-                  <div className="space-y-2">
-                    <Label className="sr-only" htmlFor={`key-display-${p.id}`}>
-                      {p.label} API key
-                    </Label>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        id={`key-display-${p.id}`}
-                        type={showKeys[p.id] ? "text" : "password"}
-                        value={
-                          showKeys[p.id]
-                            ? (apiKeys[p.id]?.apiKey ?? "")
-                            : maskKey(apiKeys[p.id]?.apiKey ?? "")
-                        }
-                        readOnly
-                        className="font-mono text-sm rounded-[var(--radius-md)] flex-1"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => toggleShowKey(p.id)}
-                        aria-label={
-                          showKeys[p.id] ? "Hide API key" : "Reveal API key"
-                        }
-                        className="inline-flex items-center justify-center h-11 w-11 shrink-0 rounded-[var(--radius-md)] border border-border bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        {showKeys[p.id] ? (
-                          <IconEyeOff className="h-4 w-4" />
-                        ) : (
-                          <IconEye className="h-4 w-4" />
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveKey(p.id)}
-                        aria-label={`Remove ${p.label} API key`}
-                        className="inline-flex items-center justify-center h-11 w-11 shrink-0 rounded-[var(--radius-md)] border border-border bg-background text-destructive transition-colors hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        <IconTrash className="h-4 w-4" />
-                      </button>
+              <PageTabsContent key={p.id} value={p.id}>
+                <section className="space-y-3 rounded-[var(--radius-md)] border border-border bg-card p-4">
+                  {/* Section header */}
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-semibold text-foreground leading-tight">
+                        {p.label} API key
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {p.description}
+                      </p>
                     </div>
+                    {configured && (
+                      <Badge
+                        variant="secondary"
+                        className="shrink-0 gap-1 text-xs"
+                      >
+                        <IconShield className="h-3 w-3" />
+                        Active
+                      </Badge>
+                    )}
                   </div>
-                ) : (
-                  <div className="space-y-2">
-                    <Label
-                      htmlFor={`key-input-${p.id}`}
-                      className="text-xs text-muted-foreground"
-                    >
-                      Paste your key
-                    </Label>
-                    <Input
-                      id={`key-input-${p.id}`}
-                      type="password"
-                      placeholder={p.placeholder}
-                      value={tempKeys[p.id] ?? ""}
-                      onChange={(e) =>
-                        setTempKeys((prev) => ({
-                          ...prev,
-                          [p.id]: e.target.value,
-                        }))
-                      }
-                      className="font-mono text-sm rounded-[var(--radius-md)]"
-                    />
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={() => handleSaveKey(p.id)}
-                      disabled={!tempKeys[p.id]?.trim()}
-                      className="w-full rounded-[var(--radius-base)]"
-                    >
-                      Save {p.label} key
-                    </Button>
-                  </div>
-                )}
 
-                {/* Provider link */}
-                <p className="text-xs text-muted-foreground">
-                  Get your key from{" "}
-                  <a
-                    href={p.learnMoreHref}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[var(--secondary)] hover:underline inline-flex items-center gap-0.5"
-                  >
-                    {p.learnMoreLabel}
-                    <IconExternalLink className="h-3 w-3" />
-                  </a>
-                </p>
-              </section>
+                  {/* Key input / display row */}
+                  {configured ? (
+                    <div className="space-y-2">
+                      <Label className="sr-only" htmlFor={`key-display-${p.id}`}>
+                        {p.label} API key
+                      </Label>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          id={`key-display-${p.id}`}
+                          type={showKeys[p.id] ? "text" : "password"}
+                          value={
+                            showKeys[p.id]
+                              ? (apiKeys[p.id]?.apiKey ?? "")
+                              : maskKey(apiKeys[p.id]?.apiKey ?? "")
+                          }
+                          readOnly
+                          className="font-mono text-sm rounded-[var(--radius-md)] flex-1"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => toggleShowKey(p.id)}
+                          aria-label={
+                            showKeys[p.id] ? "Hide API key" : "Reveal API key"
+                          }
+                          className="inline-flex items-center justify-center h-11 w-11 shrink-0 rounded-[var(--radius-md)] border border-border bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          {showKeys[p.id] ? (
+                            <IconEyeOff className="h-4 w-4" />
+                          ) : (
+                            <IconEye className="h-4 w-4" />
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveKey(p.id)}
+                          aria-label={`Remove ${p.label} API key`}
+                          className="inline-flex items-center justify-center h-11 w-11 shrink-0 rounded-[var(--radius-md)] border border-border bg-background text-destructive transition-colors hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          <IconTrash className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <Label
+                        htmlFor={`key-input-${p.id}`}
+                        className="text-xs text-muted-foreground"
+                      >
+                        Paste your key
+                      </Label>
+                      <Input
+                        id={`key-input-${p.id}`}
+                        type="password"
+                        placeholder={p.placeholder}
+                        value={tempKeys[p.id] ?? ""}
+                        onChange={(e) =>
+                          setTempKeys((prev) => ({
+                            ...prev,
+                            [p.id]: e.target.value,
+                          }))
+                        }
+                        className="font-mono text-sm rounded-[var(--radius-md)]"
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => handleSaveKey(p.id)}
+                        disabled={!tempKeys[p.id]?.trim()}
+                        className="w-full rounded-[var(--radius-base)]"
+                      >
+                        Save {p.label} key
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Provider link */}
+                  <p className="text-xs text-muted-foreground">
+                    Get your key from{" "}
+                    <a
+                      href={p.learnMoreHref}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[var(--secondary)] hover:underline inline-flex items-center gap-0.5"
+                    >
+                      {p.learnMoreLabel}
+                      <IconExternalLink className="h-3 w-3" />
+                    </a>
+                  </p>
+                </section>
+              </PageTabsContent>
             );
           })}
 
           {/* Self-hosted providers note */}
-          <div className="rounded-[var(--radius-md)] border border-border bg-muted/40 px-4 py-3 space-y-1.5">
+          <div className="mt-5 rounded-[var(--radius-md)] border border-border bg-muted/40 px-4 py-3 space-y-1.5">
             <p className="text-xs font-medium text-foreground">
               Self-hosted providers (Ollama, vLLM)
             </p>
@@ -275,14 +266,14 @@ export function ApiKeySettings({
           </div>
 
           {/* Security note */}
-          <div className="flex items-start gap-2 rounded-[var(--radius-md)] border border-border bg-muted/40 px-4 py-3">
+          <div className="mt-3 flex items-start gap-2 rounded-[var(--radius-md)] border border-border bg-muted/40 px-4 py-3">
             <IconShield className="h-4 w-4 shrink-0 mt-0.5 text-muted-foreground" />
             <p className="text-xs text-muted-foreground">
               API keys are stored locally in your browser and never sent to our
               servers.
             </p>
           </div>
-        </div>
+        </PageTabs>
 
         <DialogFooter>
           <Button
