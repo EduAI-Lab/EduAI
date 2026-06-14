@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   IconFileText,
   IconLoader,
@@ -87,6 +87,15 @@ export function CourseDetailTaView({
   const [uploadOpen, setUploadOpen] = useState(false)
   const [embeddingOpen, setEmbeddingOpen] = useState(false)
 
+  // Close upload modal when success arrives (not on file select — upload may fail)
+  const prevSuccessRef = useRef(materialsSuccess)
+  useEffect(() => {
+    if (materialsSuccess && materialsSuccess !== prevSuccessRef.current) {
+      setUploadOpen(false)
+    }
+    prevSuccessRef.current = materialsSuccess
+  }, [materialsSuccess])
+
   // B2: top-right hero badges
   const topRightBadges: string[] = [...(course.isActive ? ['Active'] : []), 'AI-enabled']
 
@@ -108,11 +117,7 @@ export function CourseDetailTaView({
             isUploading={isUploading}
             error={materialsError}
             success={materialsSuccess}
-            onFileSelect={(file) => {
-              onFileSelect(file)
-              // Close after initiating so user sees the list update
-              if (!isUploading) setUploadOpen(false)
-            }}
+            onFileSelect={onFileSelect}
           />
         </DialogContent>
       </Dialog>

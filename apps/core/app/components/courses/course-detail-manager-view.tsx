@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   IconTrash,
   IconPlus,
@@ -171,6 +171,15 @@ export function CourseDetailManagerView({
   const [uploadOpen, setUploadOpen] = useState(false);
   const [embeddingOpen, setEmbeddingOpen] = useState(false);
 
+  // Close upload modal when success arrives (not on file select — upload may fail)
+  const prevSuccessRef = useRef(materialsSuccess);
+  useEffect(() => {
+    if (materialsSuccess && materialsSuccess !== prevSuccessRef.current) {
+      setUploadOpen(false);
+    }
+    prevSuccessRef.current = materialsSuccess;
+  }, [materialsSuccess]);
+
   const canManage = canManageTopics(access);
   const canManageStaff = canManageInstructors(access);
 
@@ -277,10 +286,7 @@ export function CourseDetailManagerView({
             isUploading={isUploading}
             error={materialsError}
             success={materialsSuccess}
-            onFileSelect={(file) => {
-              onFileSelect(file);
-              if (!isUploading) setUploadOpen(false);
-            }}
+            onFileSelect={onFileSelect}
           />
         </DialogContent>
       </Dialog>
