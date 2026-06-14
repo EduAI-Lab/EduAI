@@ -8,7 +8,10 @@ import {
   mergeLocalInferenceFromEnv,
   parseModelIdentifier,
 } from "~/lib/ai/providers";
-import { modelSupportsTools } from "~/lib/ai/providers.server";
+import {
+  resolveActiveChatModel,
+  resolveMaxOutputTokens,
+} from "~/lib/ai/providers.server";
 import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
 import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
 import { findRelevantContent } from "~/lib/ai/embedding";
@@ -41,10 +44,6 @@ import {
 const TOOL_MAX_STEPS = Math.min(
   32,
   Math.max(1, Number(process.env.CHAT_TOOL_MAX_STEPS) || 12),
-);
-const TOOL_MAX_TOKENS = Math.min(
-  128_000,
-  Math.max(1024, Number(process.env.CHAT_TOOL_MAX_OUTPUT_TOKENS) || 32_000),
 );
 
 type GenericMessage = Record<string, any>;
@@ -738,12 +737,19 @@ export async function action({ request }: ActionFunctionArgs) {
       });
 
     // Check if the model supports tool calling
-    const supportsTools = await modelSupportsTools(model);
+    const activeChatModel = await resolveActiveChatModel(model);
+    const supportsTools = activeChatModel?.supportsTools ?? false;
+    const maxOutputTokens = resolveMaxOutputTokens(
+      activeChatModel?.maxTokens,
+      parsedModel.providerId,
+    );
 
     chatApiTrace("model capability check", {
       chatMode,
       model,
       supportsTools,
+      maxOutputTokens,
+      dbMaxTokens: activeChatModel?.maxTokens ?? null,
       chatId: chat?.id ?? null,
     });
 
@@ -849,10 +855,10 @@ Based on this information, provide a comprehensive answer to the user's question
         model: aiModel,
         messages: modelMessages,
         temperature: chatMode === "admin" ? 0.2 : 0.6,
-        maxTokens: TOOL_MAX_TOKENS,
+        maxTokens: maxOutputTokens,
         maxSteps: TOOL_MAX_STEPS,
         tools,
-        // vLLM tool-call streaming is unreliable on some served models (7B).
+        // vLLM tool-call streaming is unreliable on some served models.
         toolCallStreaming: streaming && parsedModel.providerId !== "vllm",
         system: buildDefaultSystemPrompt(),
       };
@@ -930,7 +936,7 @@ Based on this information, provide a comprehensive answer to the user's question
       logStreamError(error, streamTrace);
       const hint =
         chatMode === "admin" && parsedModel.providerId === "vllm"
-          ? " Admin chat on vLLM requires a tool-capable backend (e.g. qwen2.5-32b-instruct with tool flags on cmps01). The 7B model is for learning chat / hybrid RAG only."
+          ? " Pick a tool-capable vLLM model registered in Admin → AI Models."
           : "";
       return chatApiReject(
         502,
@@ -957,7 +963,7 @@ Based on this information, provide a comprehensive answer to the user's question
           logStreamError(error, streamTrace);
           const base = formatStreamError(error);
           if (chatMode === "admin" && parsedModel.providerId === "vllm") {
-            return `${base} — Try vllm:qwen2.5-32b-instruct for admin tools, or set supportsTools=false on the 7B model for learning chat only.`;
+            return `${base} — Check that the selected model supports tools and that max output tokens fit the vLLM context window.`;
           }
           return base;
         },
