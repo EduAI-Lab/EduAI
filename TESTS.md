@@ -276,7 +276,7 @@ Each section should use this format:
 | `mappers.test.js` | Sensitive fields like passwords are stripped before data leaves the server, IDs resolve correctly whether stored flat or nested, and missing optional fields default to safe values |
 | `eduai.schemas.test.js` | `EduAiEnrollmentSchema` and related EduAI response schemas validate and parse Core payloads and reject malformed shapes |
 | `eduaiClient.testableQuestions.test.js` | `listCourseTestableQuestions` fetches a course's testable questions from Core with the service key and maps/handles the response and error cases |
-| `enrollmentSync.test.js` | `syncCourseEnrollments` — early-return guards, the `options.course` shortcut, and the create path for syncing Core enrollments into AI Tutor |
+| `enrollmentSync.test.js` | `syncCourseEnrollments` — early-return guards, STUDENT-only active filter (#578), create/delete sync from Core, and error propagation |
 
 ---
 
@@ -291,7 +291,7 @@ Each section should use this format:
 | `auth.test.js` | The current user is returned without their password field; admins are blocked from non-admin endpoints while retaining access to `/api/me` |
 | `bugReports.test.js` | Students and professors can submit bug reports (201, `postCoreBugReport` called with correct userId); admins are rejected with 403; unauthenticated requests return 401; descriptions that are too short or too long return 400; anonymous reports still pass the real userId to Core; Core errors surface as 500 |
 | `courseCloning.test.js` | Cloning a course copies all modules, lessons, and activities in order, maps topics by name to the target course creating them when missing, and reuses existing topics on name collision |
-| `courses.test.js` | Professors and students see the correct courses for their role, courses can be created and edited, and unpublishing a course cascades to its modules and lessons |
+| `courses.test.js` | Professors and students see the correct courses for their role, courses can be created and edited, unpublishing cascades to modules/lessons, EduAI import is scoped to instructor Core enrollments (#578), and `POST /sync-enrollments` refreshes student rows from Core |
 | `lessons.test.js` | Professors see all lessons including drafts while students only see published ones, lessons can be created and published, and publishing is blocked when the parent module is unpublished |
 | `modules.test.js` | Professors see all modules including drafts while students only see published ones, modules can be created and published, and unpublishing cascades to lessons |
 | `progressCalculation.test.js` | A student's progress at course, module, and lesson level counts only correct answers against published content, and the latest attempt takes precedence over earlier ones |
@@ -316,7 +316,7 @@ Each section should use this format:
 | `canvasExport.test.js` | MCQ answer choices are parsed correctly from text, and question payloads are built in the format Canvas expects |
 | `canvasExportMocked.test.js` | Assessments are exported to Canvas correctly when the Canvas API, database, and integration lookup are replaced with fakes |
 | `canvasServiceConvert.test.js` | Pure canvas converters: `convertCanvasQuestionToVariant` (MCQ/true-false/essay/short-answer/text-fallback/unsupported), `convertVariantToCanvasQuestion`, `stripHtmlTags`, `parseChoicesFromQuestionText`, `normalizeCanvasQuestionType`, `parseMCQOptions` |
-| `coreApiService.test.js` | `getCourseTopicsFromCore`, `pushTopicToCore`, `pushQuestionToCore`, and `patchQuestionTestableOnCore` — request shape, service-key auth, and response/error handling against a mocked Core |
+| `coreApiService.test.js` | Core HTTP client — topics, questions, enrollments, profile, and scoped `listCoursesFromCore` / `isCoreCourseInScopedList` (#578) with cookie vs service-key auth |
 | `coreWiringService.test.js` | `pushVariantToCore` maps variant payloads to Core, lowercases enum values, handles CUID topic ids, and surfaces `INVALID_TOPIC_IDS` |
 | `eduaiService.test.js` | `EduAIService` (axios mocked): `chat` success/timeout/unreachable/reset/HTTP-error paths, `generateQuestions` parsing/normalization (MCQ choices, answer-letter, topic dedupe, error envelopes, retries), `listCourses`/`getCourseTopics`/`listAIModels` success and error handling, `testApiKey` outcomes |
 | `encryption.test.js` | Encrypted values round-trip back to the original string, and edge cases like empty input are handled without errors |
@@ -343,8 +343,8 @@ Each section should use this format:
 | `bugReports.integration.test.js` | Unauthenticated requests return 401; authenticated requests proxy to Core and return 201; QUESTION_MAKER source and userId are forwarded correctly; 422 validation errors from Core pass through; 502 is returned when Core is unreachable |
 | `canvasAuth.test.js` | All Canvas integration routes reject unauthenticated requests |
 | `canvasImportExport.integration.test.js` | `canvasService` stateful flows in Canvas test mode against the test DB: `saveCanvasIntegration`/`getCanvasIntegration`, the test-mode read endpoints, `importQuizFromCanvas` (assessment/section/variant creation, validation guards), `exportAssessmentToCanvas` round-trip, and `getCanvasCourseMapping` |
-| `coreWiring.integration.test.js` | `PATCH /api/course/:id/link-core`, `POST /api/course/:id/sync-topics`, and `PATCH /api/questions/variants/:variantId/testable` routes with Core mocked |
-| `coreWiringDb.integration.test.js` | Core wiring routes against the test DB — link-core, sync-topics, topic push, and variant testable toggle persist correctly |
+| `coreWiring.integration.test.js` | No-DB auth guards for `PATCH /api/course/:id/link-core`, `POST /api/course/:id/sync-topics`, and `PATCH /api/questions/variants/:variantId/testable` (Core session validate mocked via `fetch`) |
+| `coreWiringDb.integration.test.js` | Core wiring routes against the test DB — link-core (scoped Core list #578), sync-topics, topic push, variant testable toggle (including 404 before payload validation), persist correctly |
 | `eduaiAuth.test.js` | All EduAI proxy routes reject unauthenticated requests |
 | `eduaiHttpValidation.integration.test.js` | EduAI chat and question-generation routes reject requests with missing required fields |
 | `health.test.js` | The health and root endpoints respond correctly when the server is running |
