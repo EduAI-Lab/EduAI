@@ -54,7 +54,7 @@ export function DashboardAdminView() {
     { label: "Total users", value: totalUsers },
     { label: "Active courses", value: activeCourses },
     { label: "AI sessions", value: "—" },
-    { label: "Storage used", value: "—" },
+    { label: "Materials uploaded", value: "—" },
   ];
 
   return (
