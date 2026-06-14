@@ -5,6 +5,7 @@ import {
   makeProfessor,
   makeStudent,
   makeAdmin,
+  makeTA,
   truncateAll,
   seedMinimalCourse,
   prisma,
@@ -56,9 +57,22 @@ describe('Courses routes', () => {
       data: {
         courseOfferingId: seed.course.id,
         userId: student.id,
+        role: 'STUDENT',
       },
     });
     return student;
+  }
+
+  async function enrollTa() {
+    const ta = makeTA();
+    await prisma.courseEnrollment.create({
+      data: {
+        courseOfferingId: seed.course.id,
+        userId: ta.id,
+        role: 'TA',
+      },
+    });
+    return ta;
   }
 
   // ── GET /api/courses ──────────────────────────────────────────────
@@ -93,6 +107,32 @@ describe('Courses routes', () => {
       );
     });
 
+    it('TA sees TA-enrolled course (no progress, all publish states)', async () => {
+      await prisma.courseOffering.update({
+        where: { id: seed.course.id },
+        data: { isPublished: false },
+      });
+      const ta = await enrollTa();
+      const taApp = await createApp({ mockUser: ta });
+
+      const res = await request(taApp).get('/api/courses');
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(1);
+      expect(res.body[0].id).toBe(seed.course.id);
+      expect(res.body[0].progress).toBeUndefined();
+    });
+
+    it('TA sees zero courses when not enrolled in any', async () => {
+      const ta = makeTA();
+      const taApp = await createApp({ mockUser: ta });
+
+      const res = await request(taApp).get('/api/courses');
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(0);
+    });
+
     it('returns 403 for ADMIN role', async () => {
       const admin = makeAdmin();
       const adminApp = await createApp({ mockUser: admin });
@@ -113,6 +153,30 @@ describe('Courses routes', () => {
       expect(res.body.id).toBe(seed.course.id);
       expect(res.body.title).toBe('Test Course');
       expect(res.body.isPublished).toBe(true);
+    });
+
+    it('TA enrolled in course can access course details', async () => {
+      const ta = await enrollTa();
+      const taApp = await createApp({ mockUser: ta });
+
+      const res = await request(taApp).get(`/api/courses/${seed.course.id}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.id).toBe(seed.course.id);
+    });
+
+    it('TA enrolled in course sees it even when unpublished', async () => {
+      await prisma.courseOffering.update({
+        where: { id: seed.course.id },
+        data: { isPublished: false },
+      });
+      const ta = await enrollTa();
+      const taApp = await createApp({ mockUser: ta });
+
+      const res = await request(taApp).get(`/api/courses/${seed.course.id}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.isPublished).toBe(false);
     });
 
     it('returns 403 for non-member', async () => {

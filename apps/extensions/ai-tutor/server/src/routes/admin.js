@@ -22,7 +22,7 @@
 
 import express from 'express';
 import { prisma } from '../config/database.js';
-import { requireRole } from '../middleware/auth.js';
+import { requireRole, isCourseAdmin } from '../middleware/auth.js';
 import {
   SYSTEM_SETTING_KEYS,
   clearSystemSetting,
@@ -35,6 +35,7 @@ import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
 import { syncCourseEnrollments } from '../services/enrollmentSync.js';
 
 const router = express.Router();
+
 
 router.get('/admin/users', requireRole('ADMIN'), async (_req, res) => {
   // User records live in Core; the AT schema has no local User table post-auth-migration.
@@ -74,35 +75,47 @@ router.get('/admin/courses', requireRole('ADMIN'), async (_req, res) => {
  * render add/remove pickers without a second roundtrip; `availableStudents`
  * excludes anyone already enrolled.
  */
-router.get('/admin/courses/:courseId/enrollments', requireRole('ADMIN'), async (req, res) => {
-  const courseId = Number(req.params.courseId);
-  if (!Number.isFinite(courseId)) {
-    return res.status(400).json({ error: 'Invalid course id' });
-  }
-
-  try {
-    const course = await prisma.courseOffering.findUnique({
-      where: { id: courseId },
-      include: { enrollments: true },
-    });
-
-    if (!course) {
-      return res.status(404).json({ error: 'Course not found' });
+router.get(
+  '/admin/courses/:courseId/enrollments',
+  requireRole(['ADMIN', 'UNIT_ADMIN', 'INSTRUCTOR']),
+  async (req, res) => {
+    const authUser = req.user;
+    const courseId = Number(req.params.courseId);
+    if (!Number.isFinite(courseId)) {
+      return res.status(400).json({ error: 'Invalid course id' });
     }
 
-    // User records live in Core; return enrolled userIds with a stub shape.
-    // availableStudents cannot be populated without a Core user-list API.
-    res.json({
-      courseId,
-      enrolledStudents: course.enrollments
-        .toSorted((a, b) => a.userId.localeCompare(b.userId))
-        .map((e) => ({ id: e.userId, name: e.userId, email: '', role: 'STUDENT', createdAt: e.createdAt })),
-      availableStudents: [],
-    });
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+    try {
+      const course = await prisma.courseOffering.findUnique({
+        where: { id: courseId },
+        include: {
+          enrollments: true,
+          instructors: { select: { userId: true } },
+        },
+      });
+
+      if (!course) {
+        return res.status(404).json({ error: 'Course not found' });
+      }
+
+      if (!isCourseAdmin(authUser, course)) {
+        return res.status(403).json({ error: 'Not authorized for this course' });
+      }
+
+      // User records live in Core; return enrolled userIds with a stub shape.
+      // availableStudents cannot be populated without a Core user-list API.
+      res.json({
+        courseId,
+        enrolledStudents: course.enrollments
+          .toSorted((a, b) => a.userId.localeCompare(b.userId))
+          .map((e) => ({ id: e.userId, name: e.userId, email: '', role: e.role, createdAt: e.createdAt })),
+        availableStudents: [],
+      });
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  },
+);
 
 /**
  * POST /admin/courses/:courseId/enrollments — enroll a student in a course.
@@ -112,52 +125,69 @@ router.get('/admin/courses/:courseId/enrollments', requireRole('ADMIN'), async (
  *
  * Why: idempotent so accidental double-clicks in the admin UI don't error.
  */
-router.post('/admin/courses/:courseId/enrollments', requireRole('ADMIN'), async (req, res) => {
-  const courseId = Number(req.params.courseId);
-  const userId =
-    typeof req.body?.userId === 'string' && req.body.userId.trim().length > 0
-      ? req.body.userId.trim()
-      : null;
+router.post(
+  '/admin/courses/:courseId/enrollments',
+  requireRole(['ADMIN', 'UNIT_ADMIN', 'INSTRUCTOR']),
+  async (req, res) => {
+    const authUser = req.user;
+    const courseId = Number(req.params.courseId);
+    const userId =
+      typeof req.body?.userId === 'string' && req.body.userId.trim().length > 0
+        ? req.body.userId.trim()
+        : null;
+    const rawRole = req.body?.role;
+    const enrollmentRole =
+      rawRole === 'TA' || rawRole === 'STUDENT' ? rawRole : 'STUDENT';
 
-  if (!Number.isFinite(courseId)) {
-    return res.status(400).json({ error: 'Invalid course id' });
-  }
-
-  if (!userId) {
-    return res.status(400).json({ error: 'Invalid user id' });
-  }
-
-  try {
-    const course = await prisma.courseOffering.findUnique({ where: { id: courseId } });
-
-    if (!course) {
-      return res.status(404).json({ error: 'Course not found' });
+    if (!Number.isFinite(courseId)) {
+      return res.status(400).json({ error: 'Invalid course id' });
     }
 
-    await prisma.courseEnrollment.upsert({
-      where: {
-        courseOfferingId_userId: {
+    if (!userId) {
+      return res.status(400).json({ error: 'Invalid user id' });
+    }
+
+    try {
+      const course = await prisma.courseOffering.findUnique({
+        where: { id: courseId },
+        include: { instructors: { select: { userId: true } } },
+      });
+
+      if (!course) {
+        return res.status(404).json({ error: 'Course not found' });
+      }
+
+      if (!isCourseAdmin(authUser, course)) {
+        return res.status(403).json({ error: 'Not authorized for this course' });
+      }
+
+      await prisma.courseEnrollment.upsert({
+        where: {
+          courseOfferingId_userId: {
+            courseOfferingId: courseId,
+            userId,
+          },
+        },
+        update: { role: enrollmentRole },
+        create: {
           courseOfferingId: courseId,
           userId,
+          role: enrollmentRole,
         },
-      },
-      update: {},
-      create: {
-        courseOfferingId: courseId,
-        userId,
-      },
-    });
+      });
 
-    res.status(201).json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+      res.status(201).json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  },
+);
 
 router.delete(
   '/admin/courses/:courseId/enrollments/:userId',
-  requireRole('ADMIN'),
+  requireRole(['ADMIN', 'UNIT_ADMIN', 'INSTRUCTOR']),
   async (req, res) => {
+    const authUser = req.user;
     const courseId = Number(req.params.courseId);
     const userId = typeof req.params.userId === 'string' ? req.params.userId.trim() : '';
 
@@ -170,6 +200,19 @@ router.delete(
     }
 
     try {
+      const course = await prisma.courseOffering.findUnique({
+        where: { id: courseId },
+        include: { instructors: { select: { userId: true } } },
+      });
+
+      if (!course) {
+        return res.status(404).json({ error: 'Course not found' });
+      }
+
+      if (!isCourseAdmin(authUser, course)) {
+        return res.status(403).json({ error: 'Not authorized for this course' });
+      }
+
       await prisma.courseEnrollment.deleteMany({
         where: {
           courseOfferingId: courseId,
@@ -178,6 +221,71 @@ router.delete(
       });
 
       res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  },
+);
+
+/**
+ * PATCH /admin/courses/:courseId/enrollments/:userId/role — assign or remove TA role.
+ *
+ * Auth: ADMIN, UNIT_ADMIN (department-scoped), or INSTRUCTOR (course-scoped).
+ * Body: `{ role: 'STUDENT' | 'TA' }`.
+ * Side effects: updates the enrollment role in place.
+ *
+ * Why: dedicated endpoint so TA assignment doesn't require a delete+re-enroll
+ * cycle that would lose audit history on the enrollment row.
+ */
+router.patch(
+  '/admin/courses/:courseId/enrollments/:userId/role',
+  requireRole(['ADMIN', 'UNIT_ADMIN', 'INSTRUCTOR']),
+  async (req, res) => {
+    const authUser = req.user;
+    const courseId = Number(req.params.courseId);
+    const userId = typeof req.params.userId === 'string' ? req.params.userId.trim() : '';
+    const rawRole = req.body?.role;
+
+    if (!Number.isFinite(courseId)) {
+      return res.status(400).json({ error: 'Invalid course id' });
+    }
+
+    if (!userId) {
+      return res.status(400).json({ error: 'Invalid user id' });
+    }
+
+    if (rawRole !== 'STUDENT' && rawRole !== 'TA') {
+      return res.status(400).json({ error: 'role must be STUDENT or TA' });
+    }
+
+    try {
+      const course = await prisma.courseOffering.findUnique({
+        where: { id: courseId },
+        include: { instructors: { select: { userId: true } } },
+      });
+
+      if (!course) {
+        return res.status(404).json({ error: 'Course not found' });
+      }
+
+      if (!isCourseAdmin(authUser, course)) {
+        return res.status(403).json({ error: 'Not authorized for this course' });
+      }
+
+      const enrollment = await prisma.courseEnrollment.findUnique({
+        where: { courseOfferingId_userId: { courseOfferingId: courseId, userId } },
+      });
+
+      if (!enrollment) {
+        return res.status(404).json({ error: 'Enrollment not found' });
+      }
+
+      const updated = await prisma.courseEnrollment.update({
+        where: { courseOfferingId_userId: { courseOfferingId: courseId, userId } },
+        data: { role: rawRole },
+      });
+
+      res.json({ ok: true, role: updated.role });
     } catch (e) {
       res.status(500).json({ error: String(e) });
     }
