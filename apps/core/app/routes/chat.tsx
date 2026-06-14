@@ -12,7 +12,7 @@ import type {
   ChatModelOption,
 } from "~/components/chat/chat-view-types";
 import { SiteHeader } from "~/components/site-header";
-import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
+import { SidebarInset, SidebarProvider } from "@eduai/ui";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -20,7 +20,7 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from "~/components/ui/breadcrumb"
+} from "@eduai/ui"
 import { fetchChatSession } from "~/hooks/api/use-chat-sessions";
 import { useCourses } from "~/hooks/api/use-courses";
 import { useApiKeys } from "~/hooks/use-api-keys";
@@ -254,7 +254,7 @@ export default function Chat() {
         } as React.CSSProperties
       }
     >
-      <AppSidebar variant="inset" user={user} />
+      <AppSidebar user={user} />
       <SidebarInset>
         <SiteHeader
           breadcrumbs={

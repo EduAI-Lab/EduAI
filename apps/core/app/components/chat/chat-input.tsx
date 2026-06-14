@@ -1,15 +1,25 @@
-import { Button } from "~/components/ui/button";
-import { Settings } from "lucide-react";
+import { Button } from "@eduai/ui";
+import {
+  IconSettings,
+  IconBooks,
+  IconRobot,
+  IconChevronDown,
+  IconSend,
+  IconPlayerStop,
+} from "@tabler/icons-react";
 import { useState } from "react";
 import { ApiKeySettings } from "./api-key-settings";
 import { useApiKeys } from "~/hooks/use-api-keys";
 import {
   PromptInput,
   PromptInputTextarea,
-  PromptInputActions,
-  PromptInputAction
-} from "~/components/ui/prompt-input";
-import { Select, SelectContent, SelectItem, SelectTrigger } from "~/components/ui/select";
+} from "@eduai/ui";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@eduai/ui";
 
 interface ChatInputProps {
   input: string;
@@ -68,114 +78,143 @@ export function ChatInput({
     onSubmit(formEvent);
   };
 
+  const selectedCourseLabel = selectedCourseId
+    ? (availableCourses.find(c => c.code === selectedCourseId)?.code ?? selectedCourseId)
+    : null;
 
+  const canSend = !isLoading && input.trim().length > 0;
 
   return (
     <>
-      <div className="sticky bottom-0 p-4 bg-background/80 backdrop-blur-sm">
-        <div className="container max-w-4xl mx-auto">
-          <PromptInput
-            value={input}
-            onValueChange={handleValueChange}
-            onSubmit={handleSubmit}
-            isLoading={isLoading}
-            className="shadow-lg border-border/50"
-          >
-            <PromptInputTextarea
-              placeholder="Message EduAI..."
-              disabled={isLoading}
-              className="min-h-[60px] max-h-[200px] resize-none border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 text-base placeholder:text-muted-foreground/60"
-            />
-            <div className="flex items-center gap-2 pt-2">
-              <PromptInputActions>
-                <PromptInputAction
-                  tooltip="API Key Settings"
-                >
-                  <Button
+      {/* Bottom composer bar */}
+      <div className="border-t border-border bg-background flex-shrink-0">
+        <div className="max-w-[720px] mx-auto px-6 pt-3 pb-4">
+
+          {/* Selector pills row */}
+          <div className="flex items-center gap-2 mb-2.5">
+            {/* Course selector pill */}
+            {showCourseSelector && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
                     type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setSettingsOpen(true)}
-                    className="h-10 w-10 rounded-full hover:bg-muted/80 transition-colors"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full border border-border transition-all duration-150 cursor-pointer min-h-[28px]"
+                    style={{
+                      background: selectedCourseId ? "var(--primary)" : "var(--muted)",
+                      color: selectedCourseId ? "var(--primary-foreground)" : "var(--muted-foreground)",
+                    }}
                   >
-                    <Settings className="h-4 w-4" />
-                  </Button>
-                </PromptInputAction>
-              </PromptInputActions>
-              {showCourseSelector && (
-                <Select value={selectedCourseId || "none"} onValueChange={(value) => setSelectedCourseId(value === "none" ? null : value)}>
-                  <SelectTrigger className="w-[120px] h-8 text-xs">
-                    {selectedCourseId ? (availableCourses.find(c => c.code === selectedCourseId)?.code || 'No Course') : 'No Course'}
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No Course Selected</SelectItem>
-                    {availableCourses.map((course) => (
-                      <SelectItem key={course.code} value={course.code}>
-                        {course.code}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-              <Select value={selectedModel} onValueChange={setSelectedModel}>
-                <SelectTrigger className="w-[140px] h-8 text-xs">
-                  {selectedModelInfo?.name}
-                </SelectTrigger>
-                <SelectContent>
-                  {chatModels.map((model) => (
-                    <SelectItem key={model.id} value={model.id}>
-                      {model.name}
-                    </SelectItem>
+                    <IconBooks size={12} stroke={2} />
+                    {selectedCourseLabel ?? "Select course"}
+                    <IconChevronDown size={10} stroke={2.5} />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" side="top" className="min-w-[220px]">
+                  <DropdownMenuItem
+                    onSelect={() => setSelectedCourseId(null)}
+                    className={!selectedCourseId ? "bg-primary/5 font-medium" : ""}
+                  >
+                    No course (general)
+                  </DropdownMenuItem>
+                  {availableCourses.map((course) => (
+                    <DropdownMenuItem
+                      key={course.code}
+                      onSelect={() => setSelectedCourseId(course.code)}
+                      className={selectedCourseId === course.code ? "bg-primary/5" : ""}
+                    >
+                      <span className="font-semibold mr-1">{course.code}</span>
+                      <span className="text-muted-foreground truncate">— {course.name}</span>
+                    </DropdownMenuItem>
                   ))}
-                </SelectContent>
-              </Select>
-              <PromptInputActions className="ml-auto">
-                {isLoading && onStop ? (
-                  <PromptInputAction
-                    tooltip="Stop generating"
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+
+            {/* Model selector pill */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full border border-border bg-muted text-muted-foreground transition-all duration-150 cursor-pointer min-h-[28px] hover:text-foreground"
+                >
+                  <IconRobot size={12} stroke={2} />
+                  {selectedModelInfo?.name ?? "Select model"}
+                  <IconChevronDown size={10} stroke={2.5} />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" side="top" className="min-w-[200px]">
+                {chatModels.map((model) => (
+                  <DropdownMenuItem
+                    key={model.id}
+                    onSelect={() => setSelectedModel(model.id)}
+                    className={selectedModel === model.id ? "bg-primary/5" : ""}
                   >
-                    <Button
-                      type="button"
-                      onClick={onStop}
-                      size="sm"
-                      variant="outline"
-                      className="h-10 w-10 rounded-full border-border/50 hover:bg-muted/80 hover:border-primary/30 transition-all duration-200"
-                    >
-                      <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                    </Button>
-                  </PromptInputAction>
-                ) : (
-                  <PromptInputAction
-                    tooltip="Send message"
-                  >
-                    <Button
-                      type="button"
-                      onClick={handleSubmit}
-                      disabled={isLoading || !input.trim()}
-                      size="sm"
-                      className="h-10 w-10 rounded-full shadow-sm disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 transition-all duration-200 bg-gradient-to-r from-primary to-primary/90"
-                    >
-                      <svg
-                        className="h-4 w-4"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
-                        />
-                      </svg>
-                    </Button>
-                  </PromptInputAction>
-                )}
-              </PromptInputActions>
-            </div>
-          </PromptInput>
+                    <span className="font-semibold">{model.name}</span>
+                    <span className="text-muted-foreground text-[11px] ml-1.5">{model.provider}</span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* API key settings — right side */}
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setSettingsOpen(true)}
+              className="ml-auto h-7 w-7 p-0 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              aria-label="API key settings"
+            >
+              <IconSettings size={14} stroke={2} />
+            </Button>
+          </div>
+
+          {/* Textarea + send row */}
+          <div className="flex items-end gap-2.5">
+            <PromptInput
+              value={input}
+              onValueChange={handleValueChange}
+              onSubmit={handleSubmit}
+              isLoading={isLoading}
+              className="flex-1 border border-border rounded-[var(--radius-xl)] bg-background shadow-none p-0 cursor-text"
+            >
+              <PromptInputTextarea
+                placeholder={selectedCourseLabel ? `Ask about ${selectedCourseLabel} materials…` : "Ask anything…"}
+                disabled={isLoading}
+                className="min-h-[44px] max-h-[120px] resize-none border-none bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 text-sm placeholder:text-muted-foreground/60 px-3.5 py-2.5"
+              />
+            </PromptInput>
+
+            {/* Send / stop button — 44×44 min touch target */}
+            {isLoading && onStop ? (
+              <button
+                type="button"
+                onClick={onStop}
+                aria-label="Stop generating"
+                className="flex-shrink-0 flex items-center justify-center w-11 h-11 rounded-[var(--radius-xl)] border border-border bg-muted text-muted-foreground hover:bg-muted/80 hover:border-primary/30 transition-all duration-150 cursor-pointer"
+              >
+                <IconPlayerStop size={17} stroke={2} />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={!canSend}
+                aria-label="Send message"
+                className="flex-shrink-0 flex items-center justify-center w-11 h-11 rounded-[var(--radius-xl)] transition-all duration-150 cursor-pointer disabled:cursor-not-allowed"
+                style={{
+                  background: canSend ? "var(--primary)" : "var(--muted)",
+                  color: canSend ? "var(--primary-foreground)" : "var(--muted-foreground)",
+                }}
+              >
+                <IconSend size={17} stroke={2.5} />
+              </button>
+            )}
+          </div>
+
         </div>
       </div>
+
       <ApiKeySettings
         open={settingsOpen}
         onOpenChange={setSettingsOpen}

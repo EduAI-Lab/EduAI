@@ -1,6 +1,6 @@
 import { SystemPromptSettings } from "~/components/chat/system-prompt-settings";
-import { Switch } from "~/components/ui/switch";
-import { Label } from "~/components/ui/label";
+import { Switch } from "@eduai/ui";
+import { Label } from "@eduai/ui";
 
 export interface ChatHeaderControlsProps {
   adhdAssist: boolean;

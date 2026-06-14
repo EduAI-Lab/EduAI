@@ -1,6 +1,6 @@
 import { type Message } from "ai";
-import { Button } from "~/components/ui/button";
-import { Copy, Check } from "lucide-react";
+import { Button } from "@eduai/ui";
+import { IconCopy, IconCheck } from "@tabler/icons-react";
 import { useState } from "react";
 import {
   Message as BasicMessage,
@@ -8,9 +8,9 @@ import {
   MessageContent,
   MessageActions,
   MessageAction
-} from "~/components/ui/message";
+} from "@eduai/ui";
 import { READING_SURFACE_CLASS } from "~/components/assistive/reading-surface";
-import { Tool } from "~/components/ui/tool";
+import { Tool } from "@eduai/ui";
 import { cn } from "~/lib/utils";
 
 export interface ChatMessageProps {
@@ -80,7 +80,10 @@ export function ChatMessage({ message, isStreaming = false }: ChatMessageProps) 
     return (
       <div className="flex justify-end mb-4">
         <div className="flex items-end gap-3 max-w-[80%]">
-          <div className="rounded-lg px-4 py-3 bg-primary text-primary-foreground">
+          <div
+            className="px-4 py-3 bg-primary text-primary-foreground"
+            style={{ borderRadius: "16px 16px 4px 16px" }}
+          >
             <div className={cn("whitespace-pre-wrap", READING_SURFACE_CLASS)}>
               {textContent}
             </div>
@@ -130,7 +133,7 @@ export function ChatMessage({ message, isStreaming = false }: ChatMessageProps) 
           <div className="flex flex-col gap-2 flex-1 max-w-[80%]">
             <MessageContent
               markdown={true}
-              className="rounded-lg px-4 py-3 bg-muted/50 text-foreground"
+              className="px-4 py-3 bg-card border border-border text-foreground [border-radius:4px_16px_16px_16px]"
             >
               {textContent}
             </MessageContent>
@@ -144,9 +147,9 @@ export function ChatMessage({ message, isStreaming = false }: ChatMessageProps) 
                   className="h-8 w-8 p-0"
                 >
                   {copied ? (
-                    <Check className="h-4 w-4 text-green-600" />
+                    <IconCheck className="h-4 w-4 text-green-600 dark:text-green-400" />
                   ) : (
-                    <Copy className="h-4 w-4" />
+                    <IconCopy className="h-4 w-4" />
                   )}
                 </Button>
               </MessageAction>

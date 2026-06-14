@@ -1,5 +1,5 @@
-import { Bot } from "lucide-react";
-import { PromptSuggestion } from "~/components/ui/prompt-suggestion";
+import { IconRobot } from "@tabler/icons-react";
+import { PromptSuggestion } from "@eduai/ui";
 
 export interface ChatWelcomeProps {
   selectedModelInfo?: {
@@ -11,87 +11,71 @@ export interface ChatWelcomeProps {
 
 const suggestedPrompts = [
   {
-    title: "Creative Ideas",
-    description: "Brainstorm innovative solutions and concepts",
-    prompt: "Help me brainstorm creative solutions for organizing a virtual team building event"
+    course: "General",
+    text: "Explain this concept step by step",
+    prompt: "Explain a concept from my course step by step, using examples from the course materials.",
   },
   {
-    title: "Code Review",
-    description: "Get help with programming and development",
-    prompt: "Review my React component and suggest improvements for performance and readability"
+    course: "General",
+    text: "Help me prepare for my exam",
+    prompt: "Help me create a study plan and review key concepts for my upcoming exam.",
   },
   {
-    title: "Learning Path",
-    description: "Create personalized learning curricula",
-    prompt: "Create a 30-day learning plan for mastering TypeScript from beginner to intermediate level"
+    course: "General",
+    text: "Summarize this week's lecture",
+    prompt: "Summarize the key points from this week's lecture materials.",
   },
   {
-    title: "Problem Solving",
-    description: "Solve complex analytical problems",
-    prompt: "Walk me through solving this step-by-step: How to optimize database queries for better performance"
+    course: "General",
+    text: "Check my understanding",
+    prompt: "Quiz me on the main concepts from this course to check my understanding.",
   },
-  {
-    title: "Design Ideas",
-    description: "UI/UX and visual design concepts",
-    prompt: "Suggest modern design patterns for a dashboard interface with great user experience"
-  },
-  {
-    title: "Research & Analysis",
-    description: "Deep dive into topics and trends",
-    prompt: "Analyze the current trends in AI development and their potential impact on software engineering"
-  }
 ];
 
 export function ChatWelcome({ selectedModelInfo, onSelectPrompt }: ChatWelcomeProps) {
   return (
-    <div className="flex flex-col items-center justify-center min-h-[70vh] text-center space-y-12 px-4">
-      <div className="space-y-8">
-        <div className="space-y-6">
-          <div className="flex items-center justify-center mb-6">
-            <div className="bg-gradient-to-r from-primary to-primary/80 rounded-2xl p-4 shadow-lg">
-              <Bot className="h-8 w-8 text-primary-foreground" />
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <h1 className="text-4xl font-bold tracking-tight text-foreground">
-              Welcome to EduAI
-            </h1>
-            {selectedModelInfo && (
-              <p className="text-lg text-muted-foreground">
-                Powered by {selectedModelInfo.name}
-              </p>
-            )}
-          </div>
-        </div>
+    <div className="flex flex-col items-center justify-center min-h-[360px] text-center px-4 py-8">
+      <div
+        className="flex items-center justify-center mb-5 rounded-2xl"
+        style={{
+          width: 64,
+          height: 64,
+          background: "var(--primary)",
+          borderRadius: 16,
+        }}
+      >
+        <IconRobot className="h-8 w-8 text-primary-foreground" stroke={1.5} />
       </div>
 
-      <div className="w-full max-w-4xl">
-        <div className="text-center space-y-6 mb-8">
-          <h3 className="text-lg font-medium">Quick Start</h3>
-          <p className="text-sm text-muted-foreground">
-            Choose a category to begin, or type your own question below
-          </p>
-        </div>
+      <h2 className="text-xl font-bold text-foreground mb-1.5">
+        What would you like to know?
+      </h2>
+      {selectedModelInfo && (
+        <p className="text-sm text-muted-foreground mb-6">
+          Powered by {selectedModelInfo.name}
+        </p>
+      )}
+      {!selectedModelInfo && (
+        <p className="text-sm text-muted-foreground mb-6 max-w-sm leading-relaxed">
+          Select a course below to ground your questions in specific materials, or ask anything.
+        </p>
+      )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {suggestedPrompts.map((item, index) => (
-            <PromptSuggestion
-              key={index}
-              onClick={() => onSelectPrompt(item.prompt)}
-              className="h-auto p-4 text-left"
-            >
-              <div className="space-y-2">
-                <h4 className="font-medium text-sm">
-                  {item.title}
-                </h4>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  {item.description}
-                </p>
-              </div>
-            </PromptSuggestion>
-          ))}
-        </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 w-full max-w-[520px]">
+        {suggestedPrompts.map((item, index) => (
+          <PromptSuggestion
+            key={index}
+            onClick={() => onSelectPrompt(item.prompt)}
+            className="h-auto p-3.5 text-left border border-border rounded-xl hover:border-primary hover:shadow-sm transition-all"
+          >
+            <div>
+              <p className="text-[10px] font-bold text-secondary uppercase tracking-wide mb-1">
+                {item.course}
+              </p>
+              <p className="text-sm text-foreground leading-snug">{item.text}</p>
+            </div>
+          </PromptSuggestion>
+        ))}
       </div>
     </div>
   );

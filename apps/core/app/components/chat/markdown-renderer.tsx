@@ -12,7 +12,7 @@ export interface MarkdownRendererProps {
 
 export function MarkdownRenderer({ content, className }: MarkdownRendererProps) {
   return (
-    <div className={cn("prose prose-sm max-w-none", READING_SURFACE_CLASS, className)}>
+    <div className={cn("prose prose-sm max-w-none dark:prose-invert", READING_SURFACE_CLASS, className)}>
       <Suspense fallback={<div className="animate-pulse">{content}</div>}>
         <Streamdown
           parseIncompleteMarkdown={true}
