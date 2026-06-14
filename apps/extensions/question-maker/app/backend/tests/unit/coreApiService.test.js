@@ -19,7 +19,10 @@ const {
   patchQuestionTestableOnCore,
   getCourseEnrollmentsFromCore,
   getCourseFromCore,
+  listCoursesFromCore,
   getMyProfileFromCore,
+  isCoreCourseInScopedList,
+  findScopedCoreCourseByCode,
 } = await import('../../src/services/coreApiService.js');
 
 const ok = (data, status = 200) => ({
@@ -52,6 +55,20 @@ describe('getCourseTopicsFromCore', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(ok({ error: 'COURSE_NOT_FOUND' }, 404)));
 
     await expect(getCourseTopicsFromCore('bad-id')).rejects.toThrow('COURSE_NOT_FOUND');
+  });
+
+  it('prefers session cookie over service key when both are available', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(ok({ topics: [{ id: 'cuid-t1', name: 'Hardware' }] })),
+    );
+
+    const result = await getCourseTopicsFromCore('cuid-course-1', { cookie: 'session=abc' });
+
+    expect(result).toEqual({ topics: [{ id: 'cuid-t1', name: 'Hardware' }] });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch.mock.calls[0][1].headers.cookie).toBe('session=abc');
+    expect(fetch.mock.calls[0][1].headers.Authorization).toBeUndefined();
   });
 });
 
@@ -250,5 +267,73 @@ describe('getMyProfileFromCore', () => {
   it('throws on a 401 (no/invalid session)', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(ok({ error: 'Unauthorized' }, 401)));
     await expect(getMyProfileFromCore('')).rejects.toMatchObject({ status: 401 });
+  });
+});
+
+describe('listCoursesFromCore', () => {
+  it('forwards the caller cookie (no service key) and returns scoped courses', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(ok({ courses: [{ id: 'cuid-1', code: 'COSC 111' }] })),
+    );
+
+    const result = await listCoursesFromCore('session=abc');
+
+    expect(result).toEqual({ courses: [{ id: 'cuid-1', code: 'COSC 111' }] });
+    const [url, opts] = fetch.mock.calls[0];
+    expect(url).toBe('http://core.test/api/courses');
+    expect(opts.headers.cookie).toBe('session=abc');
+    expect(opts.headers.Authorization).toBeUndefined();
+  });
+
+  it('throws on a 401 (no/invalid session)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(ok({ error: 'Unauthorized' }, 401)));
+    await expect(listCoursesFromCore('')).rejects.toMatchObject({ status: 401 });
+  });
+});
+
+describe('isCoreCourseInScopedList', () => {
+  it('returns true when the course id is in the scoped list', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(
+        ok({ courses: [{ id: 'cuid-1', code: 'COSC 111' }, { id: 'cuid-2', code: 'MATH 101' }] }),
+      ),
+    );
+
+    await expect(isCoreCourseInScopedList('cuid-2', 'session=abc')).resolves.toBe(true);
+  });
+
+  it('returns false when the course id is not in the scoped list', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(ok({ courses: [{ id: 'cuid-1', code: 'COSC 111' }] })),
+    );
+
+    await expect(isCoreCourseInScopedList('cuid-missing', 'session=abc')).resolves.toBe(false);
+  });
+});
+
+describe('findScopedCoreCourseByCode', () => {
+  it('matches Core courses ignoring spaces and case', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(
+        ok({ courses: [{ id: 'cuid-1', code: 'COSC 121' }, { id: 'cuid-2', code: 'MATH 101' }] }),
+      ),
+    );
+
+    const result = await findScopedCoreCourseByCode('cosc121', 'session=abc');
+
+    expect(result).toEqual({ id: 'cuid-1', code: 'COSC 121' });
+  });
+
+  it('returns null when no code matches', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(ok({ courses: [{ id: 'cuid-1', code: 'COSC 111' }] })),
+    );
+
+    await expect(findScopedCoreCourseByCode('COSC 999', 'session=abc')).resolves.toBeNull();
   });
 });

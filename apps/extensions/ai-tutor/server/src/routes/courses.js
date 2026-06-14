@@ -31,6 +31,7 @@ import { mapCourseOffering, mapProgressData } from '../utils/mappers.js';
 import { cloneCourseContent, cloneLessonsFromOffering } from '../services/courseCloning.js';
 import { calculateCourseProgress } from '../services/progressCalculation.js';
 import { findEduAiCourseById, listEduAiCourses } from '../services/eduaiClient.js';
+import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
 import { syncExternalCourseTopics } from '../services/topicSync.js';
 import { syncCourseEnrollments } from '../services/enrollmentSync.js';
 
@@ -52,8 +53,8 @@ function isSupportedCourseRole(role) {
  */
 router.get('/eduai/courses', requireRole('INSTRUCTOR'), async (req, res) => {
   try {
-    // Fetch available courses from Core using the service key
-    const courses = await listEduAiCourses();
+    const cookie = getEduAiCookieForRequest(req);
+    const courses = await listEduAiCourses({ cookie });
 
     // Exclude any EduAI course already imported by this instructor
     // We identify imported ones via CourseOffering.externalId (source id) scoped to the instructor
@@ -154,9 +155,10 @@ router.post('/courses/import-external', requireRole('INSTRUCTOR'), async (req, r
   }
 
   try {
-    const externalCourse = await findEduAiCourseById(externalCourseId);
+    const cookie = getEduAiCookieForRequest(req);
+    const externalCourse = await findEduAiCourseById(externalCourseId, { cookie });
     if (!externalCourse) {
-      return res.status(404).json({ error: 'EduAI course not found' });
+      return res.status(403).json({ error: 'CORE_COURSE_NOT_AUTHORIZED' });
     }
 
     const alreadyImported = await prisma.courseOffering.findFirst({
@@ -263,6 +265,47 @@ router.get('/courses/:courseId', async (req, res) => {
     res.json(mapCourseOffering(course));
   } catch (e) {
     res.status(500).json({ error: String(e) });
+  }
+});
+
+/**
+ * POST /courses/:courseId/sync-enrollments — refresh student enrollments from Core (#578).
+ *
+ * Auth: INSTRUCTOR assigned to the course.
+ * Side effects: upserts local CourseEnrollment rows from Core STUDENT enrollments.
+ */
+router.post('/courses/:courseId/sync-enrollments', requireRole('INSTRUCTOR'), async (req, res) => {
+  const instructor = req.user;
+  const courseId = Number(req.params.courseId);
+  if (!Number.isFinite(courseId)) {
+    return res.status(400).json({ error: 'Invalid course id' });
+  }
+
+  try {
+    const course = await prisma.courseOffering.findUnique({
+      where: { id: courseId },
+      include: { instructors: { select: { userId: true } } },
+    });
+
+    if (!course) {
+      return res.status(404).json({ error: 'Course not found' });
+    }
+
+    const isAssigned = course.instructors.some((i) => i.userId === instructor.id);
+    if (!isAssigned) {
+      return res.status(403).json({ error: 'Not authorized for this course' });
+    }
+
+    if (!course.externalId || course.externalSource !== 'EDUAI') {
+      return res.status(400).json({ error: 'Course is not imported from EduAI' });
+    }
+
+    const result = await syncCourseEnrollments(courseId, { course });
+    res.json(result);
+  } catch (error) {
+    console.error('[eduai] Instructor enrollment sync failed', error);
+    const status = Number.isInteger(error?.status) ? error.status : 500;
+    res.status(status).json({ error: error.message || 'Enrollment sync failed' });
   }
 });
 

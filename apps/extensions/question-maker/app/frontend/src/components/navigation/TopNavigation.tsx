@@ -42,7 +42,7 @@ type TopNavigationProps = (
 
 export const TopNavigation = (props: TopNavigationProps) => {
   const {
-    courses,
+    courses = [],
     isLoadingCourses = false,
     onProfileClick
   } = props;
