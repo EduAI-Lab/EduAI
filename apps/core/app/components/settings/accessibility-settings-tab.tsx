@@ -12,7 +12,7 @@ import { RadioGroup, RadioGroupItem } from "~/components/ui/radio-group";
 import { Switch } from "~/components/ui/switch";
 
 const settingsChoiceClass =
-  "settings-choice flex items-center gap-2 rounded-md border border-border p-3 transition-colors has-[:data-state=checked]:border-primary has-[:data-state=checked]:bg-primary/10 has-[:data-state=checked]:ring-1 has-[:data-state=checked]:ring-primary/30 dark:has-[:data-state=checked]:bg-primary/25 dark:has-[:data-state=checked]:ring-primary/50";
+  "settings-choice flex items-center gap-2 rounded-md border border-border p-3 transition-colors has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/10 has-[[data-state=checked]]:ring-1 has-[[data-state=checked]]:ring-primary/30 dark:has-[[data-state=checked]]:bg-primary/25 dark:has-[[data-state=checked]]:ring-primary/50";
 
 const settingsSwitchClass =
   "data-[state=checked]:bg-primary dark:data-[state=unchecked]:border-border dark:data-[state=unchecked]:bg-muted";
