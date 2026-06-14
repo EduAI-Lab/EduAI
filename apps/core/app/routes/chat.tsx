@@ -132,6 +132,7 @@ export default function Chat() {
   const [chatId, setChatId] = useState<string | null>(null);
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
   const [adhdAssist, setAdhdAssist] = useState(assistDefault ?? false);
+  const [readOnlyTranscript, setReadOnlyTranscript] = useState<ChatTranscript | null>(null);
   const { getValidApiKeys } = useApiKeys();
   const { setAssistive } = useAssistiveUi();
   const prefsFetcher = useFetcher();
@@ -225,10 +226,14 @@ export default function Chat() {
   const restoreChat = useCallback(
     async (id: string): Promise<boolean> => {
       const transcript = await fetchChatTranscript(id);
-      // Only own (editable) chats load into the live composer. A non-owner's
-      // chat is viewed read-only elsewhere; never hydrate it here.
-      if (!transcript || !transcript.canEdit) {
+      // Non-owner chats open read-only; never hydrate them into the live composer.
+      if (!transcript) {
         window.sessionStorage.removeItem(ACTIVE_CHAT_KEY);
+        return false;
+      }
+      if (!transcript.canEdit) {
+        window.sessionStorage.removeItem(ACTIVE_CHAT_KEY);
+        setReadOnlyTranscript(transcript);
         return false;
       }
       setChatId(id);
@@ -403,6 +408,31 @@ export default function Chat() {
           onSelect={handleSelectChat}
           onNewChat={handleNewChat}
         />
+        {/* Read-only view for non-owned chats (deep links, dashboard recent chats) */}
+        <Sheet open={readOnlyTranscript !== null} onOpenChange={(open) => { if (!open) setReadOnlyTranscript(null); }}>
+          <SheetContent side="right" className="w-full sm:max-w-xl flex flex-col p-0">
+            <SheetHeader className="px-5 pt-5 pb-3 border-b border-border flex-shrink-0">
+              <SheetTitle className="text-[15px]">
+                {readOnlyTranscript?.chat.title ?? "Conversation"}
+              </SheetTitle>
+              <SheetDescription className="text-[13px]">
+                {readOnlyTranscript?.chat.ownerName
+                  ? `${readOnlyTranscript.chat.ownerName}'s conversation`
+                  : "Read-only conversation"}
+                {readOnlyTranscript?.chat.courseCode
+                  ? ` · ${readOnlyTranscript.chat.courseCode}`
+                  : null}
+              </SheetDescription>
+            </SheetHeader>
+            <div className="flex-1 overflow-y-auto px-5 py-4">
+              <ChatTranscriptViewer
+                messages={readOnlyTranscript?.messages ?? []}
+                ownerName={readOnlyTranscript?.chat.ownerName}
+                courseCode={readOnlyTranscript?.chat.courseCode}
+              />
+            </div>
+          </SheetContent>
+        </Sheet>
         {isGlobalChat ? (
           <ChatGlobalView {...sharedViewProps} />
         ) : (
