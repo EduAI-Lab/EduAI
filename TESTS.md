@@ -10,13 +10,14 @@
 6. [EduAI Full Platform End-to-End Tests](#eduai-full-platform-end-to-end-tests)
 7. [EduAI Unit Tests](#eduai-unit-tests)
 8. [EduAI Integration Tests](#eduai-integration-tests)
-9. [AI Tutor Unit Tests](#ai-tutor-unit-tests)
-10. [AI Tutor Integration Tests](#ai-tutor-integration-tests)
-11. [AI Tutor Server Unit Tests](#ai-tutor-server-unit-tests)
-12. [AI Tutor Server Integration Tests](#ai-tutor-server-integration-tests)
-13. [Question Maker Unit Tests](#question-maker-unit-tests)
-14. [Question Maker Integration Tests](#question-maker-integration-tests)
-15. [Extending This Document](#extending-this-document)
+9. [@eduai/ui Component Tests](#eduaiui-component-tests)
+10. [AI Tutor Unit Tests](#ai-tutor-unit-tests)
+11. [AI Tutor Integration Tests](#ai-tutor-integration-tests)
+12. [AI Tutor Server Unit Tests](#ai-tutor-server-unit-tests)
+13. [AI Tutor Server Integration Tests](#ai-tutor-server-integration-tests)
+14. [Question Maker Unit Tests](#question-maker-unit-tests)
+15. [Question Maker Integration Tests](#question-maker-integration-tests)
+16. [Extending This Document](#extending-this-document)
 
 ---
 
@@ -248,6 +249,26 @@ Each section should use this format:
 | `questions.integration.test.ts` | `GET /api/questions` (list/filter), `POST /api/questions` (validated create with idempotency-key dedupe), `GET /api/questions/:id`, and `PATCH /api/questions/:id` (testable toggle) against the test DB — now per §9: course-scoped access for enrolled vs non-enrolled users per role, STUDENT → 403, TA own-vs-other edits, and answer fields preserved for TA-and-up. |
 | `service-key.integration.test.ts` | Verifies that `requireServiceKey` correctly rejects (403) wrong-key Bearer requests and never calls downstream DB logic, accepts (200) correct-key requests and calls `getCourseTopics`, and that requests with no Authorization header fall through to session auth (401 Unauthorized) — all tested through the real `GET /api/courses/:id/topics` loader with DB and session layers mocked. |
 | `sessions-validate.integration.test.ts` | `POST /api/sessions/validate` contract: valid session cookie → 200 with correct user shape; missing or expired session → 401; rate-limited IP → 429; non-POST method → 405; `x-forwarded-for` IP extraction; `role` field defaults to `STUDENT` when absent from the session. |
+
+---
+
+## @eduai/ui Component Tests
+
+**Path:** `packages/ui/src/tests/`
+
+Unit tests for the shared design-system component library (`@eduai/ui`). Run with `npm test` from `packages/ui`, or via `turbo run test` from the repo root.
+
+| Test file | What it tests |
+|-----------|---------------|
+| [`role-badge.test.tsx`](packages/ui/src/tests/role-badge.test.tsx) | `RoleBadge` renders the human-readable label for each known role (Admin, Unit Admin, Instructor, TA, Student), falls back to the Student config for an unknown role, and applies a passed `className`. |
+| [`status-badge.test.tsx`](packages/ui/src/tests/status-badge.test.tsx) | `StatusBadge` renders active/inactive labels, applies defaults, shows the indicator dot, and applies custom classes/styling. |
+| [`avatar.test.tsx`](packages/ui/src/tests/avatar.test.tsx) | `Avatar` renders an image when given a src, falls back to initials, handles image load errors, and forwards custom props. |
+| [`stat-card.test.tsx`](packages/ui/src/tests/stat-card.test.tsx) | `StatCard` renders label and value (including numeric values) and renders positive / negative / zero trend states with their trend labels. |
+| [`course-card.test.tsx`](packages/ui/src/tests/course-card.test.tsx) | `CourseCard` renders course code/name/description, status and badges, the actions menu, and course links. |
+| [`course-hero-card.test.tsx`](packages/ui/src/tests/course-hero-card.test.tsx) | `CourseHeroCard` renders course code/term/year/name, descriptions, topics, badges, and handles year-type variations. |
+| [`course-color-bar.test.tsx`](packages/ui/src/tests/course-color-bar.test.tsx) | `CourseColorBar` applies the expected height, maps color indices, and cycles through `COURSE_COLORS`. |
+| [`page-heading.test.tsx`](packages/ui/src/tests/page-heading.test.tsx) | `PageHeading` renders the heading text and accent bar, and renders an optional subheading including React-node children. |
+| [`page-tabs.test.tsx`](packages/ui/src/tests/page-tabs.test.tsx) | `PageTabs` (List/Trigger/Content) renders the tab structure and default content, reflects active states, and applies custom classes. |
 
 ---
 
