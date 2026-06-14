@@ -9,6 +9,13 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
+- [question-maker] api: Scope `GET /api/eduai/courses` to the caller's Core enrollments via forwarded session cookie; guard `PATCH /api/course/:id/link-core` with `isCoreCourseInScopedList`; auto-link local courses by code and pull topics from Core. (#582, @GlowyBlack, 2026-06-13)
+- [question-maker] ui: Filter course nav to Core-linked and sandbox courses when the instructor has Core enrollments (`useDisplayCourses`, `courseDisplay.ts`). (#582, @GlowyBlack, 2026-06-13)
+- [ai-tutor] api: Scope `GET /api/eduai/courses` and `POST /api/courses/import-external` to instructor Core enrollments; add `POST /api/courses/:courseId/sync-enrollments` to pull active STUDENT rows from Core. (#582, @GlowyBlack, 2026-06-13)
+- [ai-tutor] ui: Add “Sync students from Core” on the instructor course page for EduAI-imported offerings. (#582, @GlowyBlack, 2026-06-13)
+- [core] db: Seed encrypted student numbers (`student_1`–`student_5`) on test student accounts so Canvas roster link works out of the box in dev. (#582, @GlowyBlack, 2026-06-13)
+- [question-maker] tests: Extend `coreApiService.test.js` and `coreWiringDb.integration.test.js` for scoped Core course listing, link-core authorization, and variant testable 404 guard (#578). (#582, @GlowyBlack, 2026-06-13)
+- [ai-tutor] tests: Add `#578` coverage in `courses.test.js` (scoped import, sync-enrollments) and `enrollmentSync.test.js` (STUDENT-only filter). (#582, @GlowyBlack, 2026-06-13)
 - [ai-tutor] feat: TA route assignments across content GET, submissions, materials, and chats — add `role` field to `CourseEnrollment` (migration + Prisma schema), update `enrollmentSync` to persist and update enrollment role from Core, extend module/lesson/activity GET handlers with `hasElevatedAccess = isInstructor || isTa` so TAs bypass the publish gate, add `GET /activities/:activityId/submissions` and `GET /activities/:activityId/feedback` routes (INSTRUCTOR+TA only), and verify that chat metrics and per-student analytics remain INSTRUCTOR-only (§10, §15 of RBAC matrix). (#TBD, @evanbones, 2026-06-09)
 - [ai-tutor] tests: Unit tests for enrollment role create/update/default paths in `enrollmentSync`; integration tests for TA admission on all newly-granted GET routes and TA rejection on mutation routes and cross-course scoping (TA in course A cannot access course B as TA). (#TBD, @evanbones, 2026-06-09)
 - [ai-tutor] feat: UNIT_ADMIN wiring across content and admin routes — add `department String?` to `CourseOffering` (migration), `isUnitAdminForCourse(user, course)` helper (D-scoped: `course.department in user.authorizedUnits`, null department never matches), extend module/lesson/activity GET and mutation handlers to admit UNIT_ADMIN alongside INSTRUCTOR, add enrollment-admin scoping (`GET/POST/DELETE /admin/courses/:id/enrollments` now accept ADMIN, UNIT_ADMIN(D), INSTRUCTOR(C)), new `PATCH /admin/courses/:courseId/enrollments/:userId/role` for TA assign/remove, and app-level fence blocking UNIT_ADMIN from `/admin/settings*` and `/admin/users*`; frontend: route UNIT_ADMIN to `/instructor` in `home.tsx`, extend `requireClientUser` to accept role arrays, update all instructor route loaders to admit `['INSTRUCTOR', 'UNIT_ADMIN']`, and restrict `unsupported-role.tsx` to TA only. (#TBD, @evanbones, 2026-06-11)
@@ -41,14 +48,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] tests: Add Canvas sync test coverage — 8 unit files (`canvas-client`, `canvas-encryption`, `canvas-schemas`, `canvas-sync-services`, `canvas-sync-delta`, `canvas-enrollment-link`, `canvas-guards`, `canvas-link-roster`) and `canvas.integration.test.ts` (26 integration tests for connect, courses picker, sync/unsync, link-roster, auth guards, and rate limits); document in `TESTS.md`. (#511, @GlowyBlack, 2026-06-08)
 - [core] api: Add TA management (`GET`/`POST`/`DELETE /api/courses/:courseId/tas`) and instructor reassignment (`PATCH /api/courses/:id`) for `ADMIN`/`UNIT_ADMIN`. (#491, @yta3216, 2026-06-08)
 - [core] ui: Add Staff tab to Course Detail with `useCourseTAs` hook — lists current instructor and TAs with reassignment controls for admin/unit admin. (#491, @yta3216, 2026-06-08)
-- [monorepo] docs: Add manual E2E guide for Canvas extension course alignment — Core Canvas sync → QM course picker → AI Tutor import/enrollment sync sign-off checklist. (#578, @GlowyBlack, 2026-06-11)
-- [question-maker] api: Scope `GET /api/eduai/courses` to the caller's Core enrollments via forwarded session cookie; guard `PATCH /api/course/:id/link-core` with `isCoreCourseInScopedList`; auto-link local courses by code and pull topics from Core. (#578, @GlowyBlack, 2026-06-11)
-- [question-maker] ui: Filter course nav to Core-linked and sandbox courses when the instructor has Core enrollments (`useDisplayCourses`, `courseDisplay.ts`). (#578, @GlowyBlack, 2026-06-11)
-- [ai-tutor] api: Scope `GET /api/eduai/courses` and `POST /api/courses/import-external` to instructor Core enrollments; add `POST /api/courses/:courseId/sync-enrollments` to pull active STUDENT rows from Core. (#578, @GlowyBlack, 2026-06-11)
-- [ai-tutor] ui: Add “Sync students from Core” on the instructor course page for EduAI-imported offerings. (#578, @GlowyBlack, 2026-06-11)
-- [core] db: Seed encrypted student numbers (`student_1`–`student_5`) on test student accounts so Canvas roster link works out of the box in dev. (#578, @GlowyBlack, 2026-06-11)
-- [question-maker] tests: Extend `coreApiService.test.js` and `coreWiringDb.integration.test.js` for scoped Core course listing, link-core authorization, and variant testable 404 guard (#578). (#578, @GlowyBlack, 2026-06-11)
-- [ai-tutor] tests: Add `#578` coverage in `courses.test.js` (scoped import, sync-enrollments) and `enrollmentSync.test.js` (STUDENT-only filter). (#578, @GlowyBlack, 2026-06-11)
+
 
 ### Changed
 
