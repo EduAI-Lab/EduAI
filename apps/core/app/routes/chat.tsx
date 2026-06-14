@@ -9,11 +9,12 @@ import { AppSidebar } from "~/components/app-sidebar";
 import { ChatCourseScopedView } from "~/components/chat/chat-course-scoped-view";
 import { ChatGlobalView } from "~/components/chat/chat-global-view";
 import { ChatHistoryPanel } from "~/components/chat/chat-history-panel";
+import { ChatTranscriptViewer } from "~/components/chat/chat-transcript-viewer";
 import type {
   ChatCourseOption,
   ChatModelOption,
 } from "~/components/chat/chat-view-types";
-import { fetchChatTranscript } from "~/hooks/api/use-chat-history";
+import { fetchChatTranscript, type ChatTranscript } from "~/hooks/api/use-chat-history";
 import { SiteHeader } from "~/components/site-header";
 import { Button, SidebarInset, SidebarProvider } from "@eduai/ui";
 import {
@@ -23,6 +24,13 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
+} from "@eduai/ui"
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
 } from "@eduai/ui"
 import { fetchChatSession } from "~/hooks/api/use-chat-sessions";
 import { useCourses } from "~/hooks/api/use-courses";

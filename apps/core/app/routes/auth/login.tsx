@@ -106,7 +106,7 @@ export default function LoginPage() {
             <circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18"/><path d="M3 12h18"/><path d="M12 3c2 2 3.5 5.5 3.5 9s-1.5 7-3.5 9"/>
           </svg>
         </div>
-        <span className="text-xl font-bold" style={{ color: "var(--primary)", letterSpacing: "-0.01em" }}>EduAI</span>
+        <span className="text-xl font-bold text-primary-text">EduAI</span>
       </div>
 
       {/* Card */}

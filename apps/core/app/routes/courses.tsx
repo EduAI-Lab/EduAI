@@ -94,7 +94,7 @@ export default function CoursesPage() {
 
   return (
     <Layout user={user}>
-      <div className="px-4 lg:px-6 py-4">
+      <div className="px-4 lg:px-6">
         {accessDenied && (
           <div
             role="alert"

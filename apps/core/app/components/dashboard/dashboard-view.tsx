@@ -102,7 +102,7 @@ function CourseListPanel({
     return (
       <div className="rounded-[var(--radius-xl)] border border-border bg-card shadow-[var(--shadow-2xs)] px-5 py-8 text-center">
         <p className="text-sm text-muted-foreground">No courses found.</p>
-        <Link to="/courses" className="mt-2 inline-block text-xs font-medium text-primary hover:underline">
+        <Link to="/courses" className="mt-2 inline-block text-xs font-medium text-primary-text hover:underline">
           Browse courses →
         </Link>
       </div>
@@ -129,7 +129,7 @@ function CourseListPanel({
             <div className="text-xs text-muted-foreground mt-0.5 truncate">{course.name}</div>
           </div>
           <Link
-            to="/chat"
+            to={`/chat?courseCode=${encodeURIComponent(course.code)}`}
             className="flex-shrink-0 px-3 py-1.5 text-xs font-medium text-white rounded-[var(--radius-md)] whitespace-nowrap"
             style={{ background: "var(--primary)" }}
           >
@@ -201,13 +201,13 @@ function RecentChatsPanel({
           {chats.map((chat, i) => (
             <Link
               key={chat.id}
-              to="/chat"
+              to={`/chat?chatId=${chat.id}`}
               className="block px-5 py-[14px] border-b border-border last:border-b-0 hover:bg-muted/40 transition-colors"
             >
               <div className="flex justify-between items-center mb-1">
                 <div className="flex items-center gap-1.5">
-                  <IconMessageCircle size={12} className="text-primary flex-shrink-0" />
-                  <span className="text-[11px] font-semibold text-primary">Chat</span>
+                  <IconMessageCircle size={12} className="text-primary-text flex-shrink-0" />
+                  <span className="text-[11px] font-semibold text-primary-text">Chat</span>
                 </div>
                 <span className="text-[11px] text-muted-foreground">{relativeTime(chat.updatedAt)}</span>
               </div>
@@ -261,7 +261,7 @@ export function DashboardView({
             {!showQuickActions && (
               <Link
                 to="/courses"
-                className="flex items-center gap-0.5 text-xs font-medium text-primary hover:underline"
+                className="flex items-center gap-0.5 text-xs font-medium text-primary-text-text hover:underline"
               >
                 Browse all <IconChevronRight size={13} />
               </Link>
@@ -284,7 +284,7 @@ export function DashboardView({
             <h2 className="text-[15px] font-semibold text-foreground">Recent conversations</h2>
             <Link
               to="/chat"
-              className="flex items-center gap-0.5 text-xs font-medium text-primary dark:text-secondary hover:underline"
+              className="flex items-center gap-0.5 text-xs font-medium text-primary-text-text hover:underline"
             >
               New chat <IconChevronRight size={13} />
             </Link>

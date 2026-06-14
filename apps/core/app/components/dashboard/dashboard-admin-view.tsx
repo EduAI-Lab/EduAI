@@ -21,7 +21,7 @@ const QUICK_ACTIONS: DashboardQuickAction[] = [
   },
   {
     label: "AI management",
-    description: "Configure providers and models for the whole platform.",
+    description: "Configure providers and models for the platform.",
     href: "/admin/ai-models",
     color: "var(--color-course-3)",
     icon: <IconBrain size={16} stroke={1.75} />,

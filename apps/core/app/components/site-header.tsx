@@ -43,7 +43,12 @@ export function SiteHeader({ title, actions, breadcrumbs }: SiteHeaderProps) {
         {breadcrumbs ? (
           <>
             <h1 className="sr-only">{resolvedTitle}</h1>
-            {breadcrumbs}
+            <div
+              className="min-w-0 flex-1 overflow-hidden"
+              style={{ maskImage: "linear-gradient(to right, black calc(100% - 3rem), transparent)" }}
+            >
+              {breadcrumbs}
+            </div>
           </>
         ) : (
           <h1 className="text-sm font-normal text-foreground">{resolvedTitle}</h1>

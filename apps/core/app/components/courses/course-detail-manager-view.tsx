@@ -904,7 +904,7 @@ export function CourseDetailManagerView({
           forceMount
           className="data-[state=inactive]:hidden flex-1 outline-none"
         >
-          <CourseChatHistory courseCode={course.code} />
+          <CourseChatHistory courseId={course.id} courseCode={course.code} />
         </PageTabsContent>
       </PageTabs>
     </div>

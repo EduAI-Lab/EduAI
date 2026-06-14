@@ -70,6 +70,7 @@
 
   --primary:                var(--color-blue-900);       /* UBC Blue */
   --primary-foreground:     var(--color-neutral-0);
+  --primary-text:           var(--primary);              /* adapts in dark mode → blue-500ish */
 
   --secondary:              var(--color-blue-600);       /* UBC Light Blue */
   --secondary-foreground:   var(--color-neutral-0);
@@ -119,6 +120,7 @@
 .dark {
   --background:             oklch(0.142 0.008 259);    /* deep blue-tinted dark */
   --foreground:             oklch(0.929 0.013 256);
+  --primary-text:           oklch(0.640 0.155 252);    /* lighter UBC blue for dark bg ~4.5:1 */
 
   --card:                   oklch(0.190 0.012 259);
   --card-foreground:        oklch(0.929 0.013 256);
