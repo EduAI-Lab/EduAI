@@ -11,26 +11,31 @@ import {
 import { modelSupportsTools } from "~/lib/ai/providers.server";
 import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
 import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
+import { findRelevantContent } from "~/lib/ai/embedding";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { auth } from "~/lib/auth/server";
 import type { ActionFunctionArgs } from "react-router";
 import {
-  buildAdminChatStreamConfig,
-  buildLearningChatStreamConfig,
+  buildAdminSystemPrompt,
+  buildLearningAssistantSystemPrompt,
+  buildLearningSystemPrompt,
   chatbotTypeFromMode,
-  createAdminChatTools,
-  createLearningChatTools,
+  createChatTools,
   parseChatMode,
 } from "~/lib/agent-tools";
 import prisma from "~/lib/prisma.server";
-import { chatApiDebug } from "~/lib/chat-api-log";
+import { chatApiDebug, chatApiReject, chatApiTrace } from "~/lib/chat-api-log";
 import { clientApiKeysBodySchema, toUserProviderSettings } from "~/lib/chat-api-keys.schema";
 import {
+  buildCappedRagContextText,
   capToolResultsInMessages,
   estimateMessageCharsForModel,
+  extractMessageText,
   prepareBoundedSessionContext,
   resolveMaxContextMessages,
+  HYBRID_RAG_MAX_CHUNKS,
+  HYBRID_RAG_MAX_CONTEXT_CHARS,
 } from "~/lib/chat-rag";
 
 const TOOL_MAX_STEPS = Math.min(
@@ -286,6 +291,19 @@ export async function action({ request }: ActionFunctionArgs) {
     const chatId = typeof body.chatId === "string" ? body.chatId : undefined;
     const chatMode = parseChatMode(body.chatMode);
     const expectedChatbotType = chatbotTypeFromMode(chatMode);
+
+    chatApiTrace("request received", {
+      chatMode,
+      chatbotType: expectedChatbotType,
+      chatId: chatId ?? null,
+      model: model ?? null,
+      courseCode: courseCode ?? null,
+      courseId: courseId ?? null,
+      messageCount: rawMessages.length,
+      streaming,
+      userId: session.user.id,
+      userRole: session.user.role,
+    });
     const proxyUserPayload =
       body.proxyUser && typeof body.proxyUser === "object" ? (body.proxyUser as ProxyUserPayload) : null;
 
@@ -321,12 +339,13 @@ export async function action({ request }: ActionFunctionArgs) {
         };
       } catch (error) {
         console.error("Failed to resolve proxy user:", error);
-        return new Response(
-          JSON.stringify({
+        return chatApiReject(
+          400,
+          {
             error: "Failed to resolve proxy user",
             details: error instanceof Error ? error.message : "Unknown error",
-          }),
-          { status: 400, headers: { "Content-Type": "application/json" } },
+          },
+          { chatMode, userId: actingUser.id },
         );
       }
     }
@@ -530,11 +549,14 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     if (!model || typeof apiKeys !== "object" || apiKeys === null) {
-      return new Response(
-        JSON.stringify({ error: "Missing required fields" }),
+      return chatApiReject(
+        400,
+        { error: "Missing required fields", code: "MISSING_MODEL_OR_API_KEYS" },
         {
-          status: 400,
-          headers: { "Content-Type": "application/json" },
+          chatMode,
+          chatId: chat?.id ?? null,
+          hasModel: Boolean(model),
+          hasApiKeys: typeof apiKeys === "object" && apiKeys !== null,
         },
       );
     }
@@ -542,28 +564,26 @@ export async function action({ request }: ActionFunctionArgs) {
     // Validate API keys
     const apiKeysParsed = clientApiKeysBodySchema.safeParse(apiKeys);
     if (!apiKeysParsed.success) {
-      return new Response(
-        JSON.stringify({
-          error: "Invalid apiKeys",
-          details: apiKeysParsed.error.flatten(),
-        }),
+      return chatApiReject(
+        400,
         {
-          status: 400,
-          headers: { "Content-Type": "application/json" },
+          error: "Invalid apiKeys",
+          code: "INVALID_API_KEYS",
+          details: apiKeysParsed.error.flatten(),
         },
+        { chatMode, model, chatId: chat?.id ?? null },
       );
     }
     const parsedModel = parseModelIdentifier(model);
     if (!parsedModel) {
-      return new Response(
-        JSON.stringify({
+      return chatApiReject(
+        400,
+        {
           error:
             'Invalid model id. Use provider:modelId (e.g. vllm:qwen2.5-7b-instruct). Check Admin → AI Models.',
-        }),
-        {
-          status: 400,
-          headers: { "Content-Type": "application/json" },
+          code: "INVALID_MODEL_ID",
         },
+        { chatMode, model, chatId: chat?.id ?? null },
       );
     }
 
@@ -579,14 +599,13 @@ export async function action({ request }: ActionFunctionArgs) {
           : parsedModel.providerId === "ollama"
             ? "OLLAMA_BASE_URL"
             : "provider API key";
-      return new Response(
-        JSON.stringify({
-          error: `Provider "${parsedModel.providerId}" is not available on this server. Set ${envHint} in apps/core/.env and restart the dev process.`,
-        }),
+      return chatApiReject(
+        400,
         {
-          status: 400,
-          headers: { "Content-Type": "application/json" },
+          error: `Provider "${parsedModel.providerId}" is not available on this server. Set ${envHint} in apps/core/.env and restart the dev process.`,
+          code: "PROVIDER_NOT_ENABLED",
         },
+        { chatMode, model, providerId: parsedModel.providerId, chatId: chat?.id ?? null },
       );
     }
 
@@ -669,38 +688,152 @@ export async function action({ request }: ActionFunctionArgs) {
       role: actingUser.role,
     };
 
-    const toolContext = {
-      user: rbacUser,
-      effectiveCourseId,
-      effectiveCourseCode: courseCode ?? null,
-    };
+    const tools = createChatTools(
+      {
+        user: rbacUser,
+        effectiveCourseId,
+        effectiveCourseCode: courseCode ?? null,
+      },
+      chatMode,
+    );
 
     const resolvedSystemPrompt = trimmedSystemPrompt ?? chat.systemPrompt ?? null;
+
+    const buildDefaultSystemPrompt = () =>
+      chatMode === "admin"
+        ? buildAdminSystemPrompt({
+            courseCode,
+            effectiveCourseId,
+            customPrompt: resolvedSystemPrompt,
+          })
+        : buildLearningSystemPrompt({ courseCode, customPrompt: resolvedSystemPrompt });
+
+    const buildLearningNonToolSystemPrompt = (citeMaterials: boolean) =>
+      buildLearningAssistantSystemPrompt({
+        courseCode,
+        customPrompt: resolvedSystemPrompt,
+        citeMaterials,
+      });
+
+    // Check if the model supports tool calling
     const supportsTools = await modelSupportsTools(model);
 
-    const streamInput = {
-      aiModel,
-      modelMessages,
-      streaming,
-      courseCode,
-      effectiveCourseId,
-      resolvedSystemPrompt,
-      toolMaxTokens: TOOL_MAX_TOKENS,
-      toolMaxSteps: TOOL_MAX_STEPS,
-    };
+    chatApiTrace("model capability check", {
+      chatMode,
+      model,
+      supportsTools,
+      chatId: chat?.id ?? null,
+    });
 
-    const { config: streamConfig, approach } =
-      chatMode === "admin"
-        ? buildAdminChatStreamConfig({
-            ...streamInput,
-            tools: createAdminChatTools(toolContext),
-          })
-        : await buildLearningChatStreamConfig({
-            ...streamInput,
-            trimmedMessages,
-            supportsTools,
-            tools: createLearningChatTools(toolContext),
-          });
+    if (chatMode === "admin" && !supportsTools) {
+      console.warn("[chat-api] admin chat using a model without tool support — DB queries disabled", {
+        model,
+        chatId: chat?.id ?? null,
+        code: "ADMIN_TOOLS_UNAVAILABLE",
+      });
+    }
+
+    let streamConfig;
+
+    if (!supportsTools) {
+      // MODELS WITHOUT TOOL SUPPORT: learning chats may use hybrid RAG; admin never does.
+      if (chatMode === "admin") {
+        streamConfig = {
+          model: aiModel,
+          messages: modelMessages,
+          temperature: 0.6,
+          maxTokens: 8192,
+          system: buildDefaultSystemPrompt(),
+        };
+      } else {
+        const lastUserMessage = [...trimmedMessages].reverse().find((message) => message.role === "user");
+        const userQuestion = extractMessageText(lastUserMessage);
+        const messageContentLower = userQuestion.toLowerCase();
+
+        const hybridRagAlwaysWithCourse = process.env.CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE === "1";
+        const isRAGQuery =
+          Boolean(effectiveCourseId) &&
+          (hybridRagAlwaysWithCourse ||
+            messageContentLower.includes("course") ||
+            messageContentLower.includes("material") ||
+            messageContentLower.includes("document") ||
+            messageContentLower.includes("chapter") ||
+            messageContentLower.includes("lecture") ||
+            messageContentLower.includes("assignment") ||
+            messageContentLower.includes("explain") ||
+            messageContentLower.includes("what is") ||
+            messageContentLower.includes("summarize") ||
+            messageContentLower.includes("summary") ||
+            messageContentLower.includes("content") ||
+            messageContentLower.includes("about"));
+
+        if (isRAGQuery) {
+          try {
+            const relevantContent = await findRelevantContent(
+              userQuestion || messageContentLower,
+              effectiveCourseId!,
+              HYBRID_RAG_MAX_CHUNKS,
+            );
+            const contextText =
+              relevantContent.length > 0
+                ? buildCappedRagContextText(
+                    relevantContent,
+                    HYBRID_RAG_MAX_CHUNKS,
+                    HYBRID_RAG_MAX_CONTEXT_CHARS,
+                  )
+                : "";
+
+            const baseSystemPrompt = buildLearningNonToolSystemPrompt(true);
+
+            const systemWithRAG = contextText
+              ? `${baseSystemPrompt}
+
+${contextText ? `Here are relevant excerpts from the course materials to help answer the user's question:
+
+${contextText}
+
+Based on this information, provide a comprehensive answer to the user's question. If the provided content doesn't fully answer their question, mention what you can answer based on the available materials and suggest what additional information might be helpful.` : "I don't have access to specific course materials for this question, but I can provide general educational assistance."}`
+              : baseSystemPrompt;
+
+            streamConfig = {
+              model: aiModel,
+              messages: modelMessages,
+              temperature: 0.6,
+              maxTokens: 8192,
+              system: systemWithRAG,
+            };
+          } catch (error) {
+            console.error("Error finding relevant content for model without tool support:", error);
+            streamConfig = {
+              model: aiModel,
+              messages: modelMessages,
+              temperature: 0.6,
+              maxTokens: 8192,
+              system: buildLearningNonToolSystemPrompt(false),
+            };
+          }
+        } else {
+          streamConfig = {
+            model: aiModel,
+            messages: modelMessages,
+            temperature: 0.6,
+            maxTokens: 8192,
+            system: buildLearningNonToolSystemPrompt(false),
+          };
+        }
+      }
+    } else {
+      streamConfig = {
+        model: aiModel,
+        messages: modelMessages,
+        temperature: chatMode === "admin" ? 0.2 : 0.6,
+        maxTokens: TOOL_MAX_TOKENS,
+        maxSteps: TOOL_MAX_STEPS,
+        tools,
+        toolCallStreaming: streaming,
+        system: buildDefaultSystemPrompt(),
+      };
+    }
 
     const effectiveAdhdAssist = resolveEffectiveAdhdAssist({
       hasField: hasAdhdAssistField,
@@ -740,7 +873,7 @@ export async function action({ request }: ActionFunctionArgs) {
     // Log the LLM stream configuration
     chatApiDebug("Starting LLM stream", {
       model,
-      approach,
+      approach: supportsTools ? "tool_calling" : "hybrid_rag",
       ...llmPromptSizeHints(streamConfig.system, modelMessages),
     });
     const result = await streamText({
@@ -822,10 +955,7 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     }
   } catch (error) {
-    console.error("Chat API error:", error);
-    return new Response(JSON.stringify({ error: "Internal server error" }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
+    console.error("[chat-api] unhandled error", error);
+    return chatApiReject(500, { error: "Internal server error", code: "INTERNAL_ERROR" });
   }
 }
