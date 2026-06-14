@@ -53,7 +53,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
-- [core] fix: Remove the root document layout's route-data hook so development pages no longer crash with an invalid hook error before the router context is available. (#591, #PR, @Whiteknight07, 2026-06-14)
+- [core] fix: Remove the root document layout's route-data hook so development pages no longer crash with an invalid hook error before the router context is available. (#591, #592, @Whiteknight07, 2026-06-14)
 - [core] fix: `re-embed-course` script resolves courses by code with `findFirst` since `code` alone is not unique. (#561, @abdullahmoh21, 2026-06-11)
 
 ---
