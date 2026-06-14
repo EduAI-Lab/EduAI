@@ -59,6 +59,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 export default function AdminChatPage() {
   const { chatModels, user } = useLoaderData<typeof loader>();
+  const toolCapableModels = chatModels.filter((m) => m.supportsTools);
+  const modelsForAdmin = toolCapableModels.length > 0 ? toolCapableModels : chatModels;
   const { courses } = useCourses();
   const availableCourses: ChatCourseOption[] = courses.map((c) => ({
     id: c.id,
@@ -67,7 +69,8 @@ export default function AdminChatPage() {
   }));
 
   const [selectedModel, setSelectedModel] = useState(() => {
-    const toolCapable = chatModels.find((m) => m.supportsTools);
+    const preferred32b = toolCapableModels.find((m) => m.id.includes("32b"));
+    const toolCapable = preferred32b ?? toolCapableModels[0];
     return toolCapable?.id ?? (chatModels.length > 0 ? chatModels[0].id : "");
   });
   const [selectedCourseCode, setSelectedCourseCode] = useState<string | null>(
@@ -132,7 +135,7 @@ export default function AdminChatPage() {
     onError: (error) => logChatUseChatError(error, "admin-chat"),
   });
 
-  const selectedModelInfo = chatModels.find((model) => model.id === selectedModel);
+  const selectedModelInfo = modelsForAdmin.find((model) => model.id === selectedModel);
 
   const handleSystemPromptSave = async (prompt: string | null) => {
     setSystemPrompt(prompt);
@@ -206,7 +209,7 @@ export default function AdminChatPage() {
           }
         />
         <AdminChatView
-          chatModels={chatModels}
+          chatModels={modelsForAdmin}
           selectedModel={selectedModel}
           setSelectedModel={setSelectedModel}
           selectedModelInfo={selectedModelInfo}

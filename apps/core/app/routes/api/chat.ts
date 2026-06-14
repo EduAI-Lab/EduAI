@@ -255,6 +255,28 @@ async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
   return user;
 }
 
+function formatStreamError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message || error.name;
+  }
+  if (typeof error === "string") {
+    return error;
+  }
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return "Unknown stream error";
+  }
+}
+
+function logStreamError(error: unknown, trace: Record<string, unknown>): void {
+  console.error("[chat-api] stream error", {
+    error: formatStreamError(error),
+    trace,
+    raw: error,
+  });
+}
+
 /**
  * POST /api/chat
  *
@@ -830,7 +852,8 @@ Based on this information, provide a comprehensive answer to the user's question
         maxTokens: TOOL_MAX_TOKENS,
         maxSteps: TOOL_MAX_STEPS,
         tools,
-        toolCallStreaming: streaming,
+        // vLLM tool-call streaming is unreliable on some served models (7B).
+        toolCallStreaming: streaming && parsedModel.providerId !== "vllm",
         system: buildDefaultSystemPrompt(),
       };
     }
@@ -872,20 +895,52 @@ Based on this information, provide a comprehensive answer to the user's question
 
     // Log the LLM stream configuration
     chatApiDebug("Starting LLM stream", {
+      chatMode,
+      supportsTools,
+      providerId: parsedModel.providerId,
       model,
       approach: supportsTools ? "tool_calling" : "hybrid_rag",
       ...llmPromptSizeHints(streamConfig.system, modelMessages),
     });
-    const result = await streamText({
-      ...(streamConfig as Parameters<typeof streamText>[0]),
-      onFinish: async ({ text, usage, finishReason }) => {
-        logResponseCompliance(text, {
-          finishReason,
-          promptTokens: usage?.promptTokens,
-          completionTokens: usage?.completionTokens,
-        });
-      },
-    });
+
+    const streamTrace = {
+      chatMode,
+      model,
+      chatId: chat.id,
+      supportsTools,
+      providerId: parsedModel.providerId,
+    };
+
+    let result;
+    try {
+      result = await streamText({
+        ...(streamConfig as Parameters<typeof streamText>[0]),
+        onFinish: async ({ text, usage, finishReason }) => {
+          logResponseCompliance(text, {
+            finishReason,
+            promptTokens: usage?.promptTokens,
+            completionTokens: usage?.completionTokens,
+          });
+        },
+        onError: ({ error }) => {
+          logStreamError(error, streamTrace);
+        },
+      });
+    } catch (error) {
+      logStreamError(error, streamTrace);
+      const hint =
+        chatMode === "admin" && parsedModel.providerId === "vllm"
+          ? " Admin chat on vLLM requires a tool-capable backend (e.g. qwen2.5-32b-instruct with tool flags on cmps01). The 7B model is for learning chat / hybrid RAG only."
+          : "";
+      return chatApiReject(
+        502,
+        {
+          error: `LLM stream failed: ${formatStreamError(error)}.${hint}`,
+          code: "LLM_STREAM_FAILED",
+        },
+        streamTrace,
+      );
+    }
 
     if (streaming) {
       const headers: Record<string, string> = {
@@ -896,7 +951,17 @@ Based on this information, provide a comprehensive answer to the user's question
       if (chat?.id) {
         headers["X-Chat-Id"] = chat.id;
       }
-      return result.toDataStreamResponse({ headers });
+      return result.toDataStreamResponse({
+        headers,
+        getErrorMessage: (error) => {
+          logStreamError(error, streamTrace);
+          const base = formatStreamError(error);
+          if (chatMode === "admin" && parsedModel.providerId === "vllm") {
+            return `${base} — Try vllm:qwen2.5-32b-instruct for admin tools, or set supportsTools=false on the 7B model for learning chat only.`;
+          }
+          return base;
+        },
+      });
     } else {
       try {
         await result.consumeStream();
