@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { ModelFormDialog } from "~/components/admin/model-form-dialog";
 import type { AIProvider, AIModel } from "~/types/ai";
 
@@ -66,6 +66,37 @@ const ollamaModel: AIModel = {
     name: "ollama",
     displayName: "Ollama",
     description: "Local models",
+    requiresApiKey: false,
+    isActive: true,
+    createdAt: "2024-01-01T00:00:00.000Z",
+    updatedAt: "2024-01-01T00:00:00.000Z",
+  },
+};
+
+const vllmProvider: AIProvider = {
+  id: "p-vllm",
+  name: "vllm",
+  displayName: "vLLM",
+  description: "Local vLLM inference",
+  requiresApiKey: false,
+  isActive: true,
+  createdAt: "2024-01-01T00:00:00.000Z",
+  updatedAt: "2024-01-01T00:00:00.000Z",
+  _count: { models: 0 },
+};
+
+const vllmModel: AIModel = {
+  ...baseModel,
+  id: "m3",
+  modelId: "qwen2.5-7b-instruct",
+  name: "Qwen2.5 7B Instruct",
+  supportsTools: false,
+  providerId: "p-vllm",
+  provider: {
+    id: "p-vllm",
+    name: "vllm",
+    displayName: "vLLM",
+    description: "Local vLLM inference",
     requiresApiKey: false,
     isActive: true,
     createdAt: "2024-01-01T00:00:00.000Z",
@@ -197,11 +228,73 @@ describe("ModelFormDialog — Ollama section", () => {
 });
 
 // ---------------------------------------------------------------------------
+// vLLM section visibility
+// ---------------------------------------------------------------------------
+
+describe("ModelFormDialog — vLLM section", () => {
+  it("does not render the vLLM section for a non-vLLM provider", () => {
+    render(
+      <ModelFormDialog
+        open={true}
+        onOpenChange={vi.fn()}
+        model={baseModel}
+        providers={[baseProvider]}
+        onSubmit={vi.fn()}
+      />
+    );
+    expect(screen.queryByText("Available vLLM Models")).not.toBeInTheDocument();
+  });
+
+  it("renders the vLLM section when the selected provider is vLLM", () => {
+    render(
+      <ModelFormDialog
+        open={true}
+        onOpenChange={vi.fn()}
+        model={vllmModel}
+        providers={[vllmProvider]}
+        onSubmit={vi.fn()}
+      />
+    );
+    expect(screen.getByText("Available vLLM Models")).toBeInTheDocument();
+  });
+
+  it("calls onFetchVllmModels when Refresh list is clicked", () => {
+    const onFetchVllmModels = vi.fn();
+    render(
+      <ModelFormDialog
+        open={true}
+        onOpenChange={vi.fn()}
+        model={vllmModel}
+        providers={[vllmProvider]}
+        onSubmit={vi.fn()}
+        onFetchVllmModels={onFetchVllmModels}
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: /refresh list/i }));
+    expect(onFetchVllmModels).toHaveBeenCalled();
+  });
+
+  it("renders the vLLM error alert when vllmError is set", () => {
+    render(
+      <ModelFormDialog
+        open={true}
+        onOpenChange={vi.fn()}
+        model={vllmModel}
+        providers={[vllmProvider]}
+        onSubmit={vi.fn()}
+        vllmError="Connection refused"
+      />
+    );
+    expect(screen.getByText("Connection refused")).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Form submit and cancel
 // ---------------------------------------------------------------------------
 
 describe("ModelFormDialog — form actions", () => {
-  it("calls onSubmit with the form data when the submit button is clicked", () => {
+  it("calls onSubmit with the form data when the submit button is clicked", async () => {
     const onSubmit = vi.fn();
     render(
       <ModelFormDialog
@@ -212,10 +305,18 @@ describe("ModelFormDialog — form actions", () => {
         onSubmit={onSubmit}
       />
     );
-    fireEvent.click(screen.getByRole("button", { name: /update model/i }));
-    expect(onSubmit).toHaveBeenCalledWith(
-      expect.objectContaining({ modelId: "gpt-4o", name: "GPT-4o" })
-    );
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("gpt-4o")).toBeInTheDocument();
+    });
+    const submitButton = screen.getByRole("button", { name: /update model/i });
+    const form = submitButton.closest("form");
+    expect(form).not.toBeNull();
+    fireEvent.submit(form!);
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({ modelId: "gpt-4o", name: "GPT-4o" })
+      );
+    });
   });
 
   it("calls onOpenChange(false) when Cancel is clicked", () => {

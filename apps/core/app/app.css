@@ -6,7 +6,7 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif,
+  --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif,
     "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
 }
 
@@ -209,15 +209,26 @@ body {
   }
 }
 
-/* Custom scrollbar styling - make scrollbars transparent/invisible */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Scrollbars — 12px width meets WCAG 2.5.8 minimum target guidance */
 * {
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
+  scrollbar-width: auto;
+  scrollbar-color: oklch(0.5 0 0 / 0.45) transparent;
 }
 
 *::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 12px;
+  height: 12px;
 }
 
 *::-webkit-scrollbar-track {
@@ -225,23 +236,17 @@ body {
 }
 
 *::-webkit-scrollbar-thumb {
-  background: transparent;
-  border-radius: 3px;
+  background: oklch(0.5 0 0 / 0.45);
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: content-box;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: transparent;
+  background: oklch(0.5 0 0 / 0.65);
+  background-clip: content-box;
 }
 
 *::-webkit-scrollbar-corner {
   background: transparent;
-}
-
-/* For better UX, show scrollbar on hover for interactive elements */
-.scrollbar-hover:hover::-webkit-scrollbar-thumb {
-  background: oklch(0.5 0 0 / 0.2);
-}
-
-.scrollbar-hover:hover::-webkit-scrollbar-thumb:hover {
-  background: oklch(0.5 0 0 / 0.3);
 }

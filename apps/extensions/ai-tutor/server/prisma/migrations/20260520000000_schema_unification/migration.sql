@@ -2,7 +2,7 @@
 CREATE SCHEMA IF NOT EXISTS "public";
 
 -- CreateTable
-CREATE TABLE "public"."PromptTemplate" (
+CREATE TABLE IF NOT EXISTS "public"."PromptTemplate" (
     "id" SERIAL NOT NULL,
     "name" TEXT NOT NULL,
     "slug" TEXT NOT NULL,
@@ -17,7 +17,7 @@ CREATE TABLE "public"."PromptTemplate" (
 );
 
 -- CreateTable
-CREATE TABLE "public"."CourseOffering" (
+CREATE TABLE IF NOT EXISTS "public"."CourseOffering" (
     "id" SERIAL NOT NULL,
     "title" TEXT NOT NULL,
     "description" TEXT,
@@ -35,7 +35,7 @@ CREATE TABLE "public"."CourseOffering" (
 );
 
 -- CreateTable
-CREATE TABLE "public"."Topic" (
+CREATE TABLE IF NOT EXISTS "public"."Topic" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "coreTopicId" TEXT,
@@ -47,7 +47,7 @@ CREATE TABLE "public"."Topic" (
 );
 
 -- CreateTable
-CREATE TABLE "public"."Module" (
+CREATE TABLE IF NOT EXISTS "public"."Module" (
     "id" SERIAL NOT NULL,
     "title" TEXT NOT NULL,
     "description" TEXT,
@@ -61,7 +61,7 @@ CREATE TABLE "public"."Module" (
 );
 
 -- CreateTable
-CREATE TABLE "public"."Lesson" (
+CREATE TABLE IF NOT EXISTS "public"."Lesson" (
     "id" SERIAL NOT NULL,
     "title" TEXT NOT NULL,
     "contentMd" TEXT,
@@ -75,7 +75,7 @@ CREATE TABLE "public"."Lesson" (
 );
 
 -- CreateTable
-CREATE TABLE "public"."Activity" (
+CREATE TABLE IF NOT EXISTS "public"."Activity" (
     "id" SERIAL NOT NULL,
     "title" TEXT,
     "instructionsMd" TEXT NOT NULL,
@@ -96,7 +96,7 @@ CREATE TABLE "public"."Activity" (
 );
 
 -- CreateTable
-CREATE TABLE "public"."Submission" (
+CREATE TABLE IF NOT EXISTS "public"."Submission" (
     "id" SERIAL NOT NULL,
     "attemptNumber" INTEGER NOT NULL DEFAULT 1,
     "response" JSONB,
@@ -111,7 +111,7 @@ CREATE TABLE "public"."Submission" (
 );
 
 -- CreateTable
-CREATE TABLE "public"."ActivitySecondaryTopic" (
+CREATE TABLE IF NOT EXISTS "public"."ActivitySecondaryTopic" (
     "activityId" INTEGER NOT NULL,
     "topicId" TEXT NOT NULL,
 
@@ -119,7 +119,7 @@ CREATE TABLE "public"."ActivitySecondaryTopic" (
 );
 
 -- CreateTable
-CREATE TABLE "public"."SystemPrompt" (
+CREATE TABLE IF NOT EXISTS "public"."SystemPrompt" (
     "id" SERIAL NOT NULL,
     "slug" TEXT NOT NULL,
     "content" TEXT NOT NULL,
@@ -130,7 +130,7 @@ CREATE TABLE "public"."SystemPrompt" (
 );
 
 -- CreateTable
-CREATE TABLE "public"."SystemSetting" (
+CREATE TABLE IF NOT EXISTS "public"."SystemSetting" (
     "key" TEXT NOT NULL,
     "value" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -140,7 +140,7 @@ CREATE TABLE "public"."SystemSetting" (
 );
 
 -- CreateTable
-CREATE TABLE "public"."ActivityFeedback" (
+CREATE TABLE IF NOT EXISTS "public"."ActivityFeedback" (
     "id" SERIAL NOT NULL,
     "rating" INTEGER NOT NULL,
     "note" TEXT,
@@ -154,7 +154,7 @@ CREATE TABLE "public"."ActivityFeedback" (
 );
 
 -- CreateTable
-CREATE TABLE "public"."ActivityStudentMetric" (
+CREATE TABLE IF NOT EXISTS "public"."ActivityStudentMetric" (
     "id" SERIAL NOT NULL,
     "helpRequestCount" INTEGER NOT NULL DEFAULT 0,
     "submissionCount" INTEGER NOT NULL DEFAULT 0,
@@ -169,7 +169,7 @@ CREATE TABLE "public"."ActivityStudentMetric" (
 );
 
 -- CreateTable
-CREATE TABLE "public"."ActivityAnalytics" (
+CREATE TABLE IF NOT EXISTS "public"."ActivityAnalytics" (
     "id" SERIAL NOT NULL,
     "helpRequestCount" INTEGER NOT NULL DEFAULT 0,
     "submissionCount" INTEGER NOT NULL DEFAULT 0,
@@ -188,7 +188,7 @@ CREATE TABLE "public"."ActivityAnalytics" (
 );
 
 -- CreateTable
-CREATE TABLE "public"."SuggestedPrompt" (
+CREATE TABLE IF NOT EXISTS "public"."SuggestedPrompt" (
     "id" SERIAL NOT NULL,
     "mode" TEXT NOT NULL,
     "text" TEXT NOT NULL,
@@ -201,7 +201,7 @@ CREATE TABLE "public"."SuggestedPrompt" (
 );
 
 -- CreateTable
-CREATE TABLE "public"."AiChatSession" (
+CREATE TABLE IF NOT EXISTS "public"."AiChatSession" (
     "id" SERIAL NOT NULL,
     "userId" TEXT NOT NULL,
     "activityId" INTEGER NOT NULL,
@@ -215,7 +215,7 @@ CREATE TABLE "public"."AiChatSession" (
 );
 
 -- CreateTable
-CREATE TABLE "public"."AiInteractionTrace" (
+CREATE TABLE IF NOT EXISTS "public"."AiInteractionTrace" (
     "id" SERIAL NOT NULL,
     "mode" TEXT NOT NULL,
     "knowledgeLevel" TEXT,
@@ -235,81 +235,159 @@ CREATE TABLE "public"."AiInteractionTrace" (
     CONSTRAINT "AiInteractionTrace_pkey" PRIMARY KEY ("id")
 );
 
--- CreateIndex
-CREATE UNIQUE INDEX "PromptTemplate_slug_key" ON "public"."PromptTemplate"("slug");
+-- EnsureColumns: add any columns missing from pre-existing tables
+ALTER TABLE IF EXISTS "public"."CourseOffering" ADD COLUMN IF NOT EXISTS "description" TEXT;
+ALTER TABLE IF EXISTS "public"."CourseOffering" ADD COLUMN IF NOT EXISTS "startDate" TIMESTAMP(3);
+ALTER TABLE IF EXISTS "public"."CourseOffering" ADD COLUMN IF NOT EXISTS "endDate" TIMESTAMP(3);
+ALTER TABLE IF EXISTS "public"."CourseOffering" ADD COLUMN IF NOT EXISTS "isPublished" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE IF EXISTS "public"."CourseOffering" ADD COLUMN IF NOT EXISTS "externalId" TEXT;
+ALTER TABLE IF EXISTS "public"."CourseOffering" ADD COLUMN IF NOT EXISTS "externalSource" TEXT;
+ALTER TABLE IF EXISTS "public"."CourseOffering" ADD COLUMN IF NOT EXISTS "externalMetadata" JSONB;
+ALTER TABLE IF EXISTS "public"."CourseOffering" ADD COLUMN IF NOT EXISTS "coreOfferingId" TEXT;
+
+ALTER TABLE IF EXISTS "public"."Topic" ADD COLUMN IF NOT EXISTS "coreTopicId" TEXT;
+ALTER TABLE IF EXISTS "public"."Topic" ADD COLUMN IF NOT EXISTS "courseOfferingId" INTEGER;
+
+ALTER TABLE IF EXISTS "public"."Activity" ADD COLUMN IF NOT EXISTS "title" TEXT;
+ALTER TABLE IF EXISTS "public"."Activity" ADD COLUMN IF NOT EXISTS "config" JSONB;
+ALTER TABLE IF EXISTS "public"."Activity" ADD COLUMN IF NOT EXISTS "promptTemplateId" INTEGER;
+ALTER TABLE IF EXISTS "public"."Activity" ADD COLUMN IF NOT EXISTS "customPrompt" TEXT;
+ALTER TABLE IF EXISTS "public"."Activity" ADD COLUMN IF NOT EXISTS "customPromptTitle" TEXT;
+ALTER TABLE IF EXISTS "public"."Activity" ADD COLUMN IF NOT EXISTS "mainTopicId" TEXT NOT NULL DEFAULT '';
+ALTER TABLE IF EXISTS "public"."Activity" ADD COLUMN IF NOT EXISTS "enableTeachMode" BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE IF EXISTS "public"."Activity" ADD COLUMN IF NOT EXISTS "enableGuideMode" BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE IF EXISTS "public"."Activity" ADD COLUMN IF NOT EXISTS "enableCustomMode" BOOLEAN NOT NULL DEFAULT false;
+
+ALTER TABLE IF EXISTS "public"."AiChatSession" ADD COLUMN IF NOT EXISTS "modelId" TEXT;
+
+ALTER TABLE IF EXISTS "public"."AiInteractionTrace" ADD COLUMN IF NOT EXISTS "knowledgeLevel" TEXT;
+ALTER TABLE IF EXISTS "public"."AiInteractionTrace" ADD COLUMN IF NOT EXISTS "chatId" TEXT;
+ALTER TABLE IF EXISTS "public"."AiInteractionTrace" ADD COLUMN IF NOT EXISTS "tutorModelId" TEXT;
+ALTER TABLE IF EXISTS "public"."AiInteractionTrace" ADD COLUMN IF NOT EXISTS "supervisorModelId" TEXT;
+ALTER TABLE IF EXISTS "public"."AiInteractionTrace" ADD COLUMN IF NOT EXISTS "aiChatSessionId" INTEGER;
 
 -- CreateIndex
-CREATE UNIQUE INDEX "CourseOffering_coreOfferingId_key" ON "public"."CourseOffering"("coreOfferingId");
+CREATE UNIQUE INDEX IF NOT EXISTS "PromptTemplate_slug_key" ON "public"."PromptTemplate"("slug");
 
 -- CreateIndex
-CREATE INDEX "CourseOffering_externalId_idx" ON "public"."CourseOffering"("externalId");
+CREATE UNIQUE INDEX IF NOT EXISTS "CourseOffering_coreOfferingId_key" ON "public"."CourseOffering"("coreOfferingId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Topic_coreTopicId_key" ON "public"."Topic"("coreTopicId");
+CREATE INDEX IF NOT EXISTS "CourseOffering_externalId_idx" ON "public"."CourseOffering"("externalId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Topic_courseOfferingId_name_key" ON "public"."Topic"("courseOfferingId", "name");
+CREATE UNIQUE INDEX IF NOT EXISTS "Topic_coreTopicId_key" ON "public"."Topic"("coreTopicId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "SystemPrompt_slug_key" ON "public"."SystemPrompt"("slug");
+CREATE UNIQUE INDEX IF NOT EXISTS "Topic_courseOfferingId_name_key" ON "public"."Topic"("courseOfferingId", "name");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "ActivityFeedback_userId_activityId_key" ON "public"."ActivityFeedback"("userId", "activityId");
+CREATE UNIQUE INDEX IF NOT EXISTS "SystemPrompt_slug_key" ON "public"."SystemPrompt"("slug");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "ActivityStudentMetric_userId_activityId_key" ON "public"."ActivityStudentMetric"("userId", "activityId");
+CREATE UNIQUE INDEX IF NOT EXISTS "ActivityFeedback_userId_activityId_key" ON "public"."ActivityFeedback"("userId", "activityId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "ActivityAnalytics_activityId_key" ON "public"."ActivityAnalytics"("activityId");
+CREATE UNIQUE INDEX IF NOT EXISTS "ActivityStudentMetric_userId_activityId_key" ON "public"."ActivityStudentMetric"("userId", "activityId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "AiChatSession_userId_activityId_mode_key" ON "public"."AiChatSession"("userId", "activityId", "mode");
+CREATE UNIQUE INDEX IF NOT EXISTS "ActivityAnalytics_activityId_key" ON "public"."ActivityAnalytics"("activityId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX IF NOT EXISTS "AiChatSession_userId_activityId_mode_key" ON "public"."AiChatSession"("userId", "activityId", "mode");
 
 -- AddForeignKey
-ALTER TABLE "public"."Topic" ADD CONSTRAINT "Topic_courseOfferingId_fkey" FOREIGN KEY ("courseOfferingId") REFERENCES "public"."CourseOffering"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "public"."Topic" ADD CONSTRAINT "Topic_courseOfferingId_fkey" FOREIGN KEY ("courseOfferingId") REFERENCES "public"."CourseOffering"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "public"."Module" ADD CONSTRAINT "Module_courseOfferingId_fkey" FOREIGN KEY ("courseOfferingId") REFERENCES "public"."CourseOffering"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "public"."Module" ADD CONSTRAINT "Module_courseOfferingId_fkey" FOREIGN KEY ("courseOfferingId") REFERENCES "public"."CourseOffering"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "public"."Lesson" ADD CONSTRAINT "Lesson_moduleId_fkey" FOREIGN KEY ("moduleId") REFERENCES "public"."Module"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "public"."Lesson" ADD CONSTRAINT "Lesson_moduleId_fkey" FOREIGN KEY ("moduleId") REFERENCES "public"."Module"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "public"."Activity" ADD CONSTRAINT "Activity_lessonId_fkey" FOREIGN KEY ("lessonId") REFERENCES "public"."Lesson"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "public"."Activity" ADD CONSTRAINT "Activity_lessonId_fkey" FOREIGN KEY ("lessonId") REFERENCES "public"."Lesson"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "public"."Activity" ADD CONSTRAINT "Activity_promptTemplateId_fkey" FOREIGN KEY ("promptTemplateId") REFERENCES "public"."PromptTemplate"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "public"."Activity" ADD CONSTRAINT "Activity_promptTemplateId_fkey" FOREIGN KEY ("promptTemplateId") REFERENCES "public"."PromptTemplate"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "public"."Activity" ADD CONSTRAINT "Activity_mainTopicId_fkey" FOREIGN KEY ("mainTopicId") REFERENCES "public"."Topic"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "public"."Activity" ADD CONSTRAINT "Activity_mainTopicId_fkey" FOREIGN KEY ("mainTopicId") REFERENCES "public"."Topic"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "public"."Submission" ADD CONSTRAINT "Submission_activityId_fkey" FOREIGN KEY ("activityId") REFERENCES "public"."Activity"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "public"."Submission" ADD CONSTRAINT "Submission_activityId_fkey" FOREIGN KEY ("activityId") REFERENCES "public"."Activity"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "public"."ActivitySecondaryTopic" ADD CONSTRAINT "ActivitySecondaryTopic_activityId_fkey" FOREIGN KEY ("activityId") REFERENCES "public"."Activity"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "public"."ActivitySecondaryTopic" ADD CONSTRAINT "ActivitySecondaryTopic_activityId_fkey" FOREIGN KEY ("activityId") REFERENCES "public"."Activity"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "public"."ActivitySecondaryTopic" ADD CONSTRAINT "ActivitySecondaryTopic_topicId_fkey" FOREIGN KEY ("topicId") REFERENCES "public"."Topic"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "public"."ActivitySecondaryTopic" ADD CONSTRAINT "ActivitySecondaryTopic_topicId_fkey" FOREIGN KEY ("topicId") REFERENCES "public"."Topic"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "public"."ActivityFeedback" ADD CONSTRAINT "ActivityFeedback_activityId_fkey" FOREIGN KEY ("activityId") REFERENCES "public"."Activity"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "public"."ActivityFeedback" ADD CONSTRAINT "ActivityFeedback_activityId_fkey" FOREIGN KEY ("activityId") REFERENCES "public"."Activity"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "public"."ActivityFeedback" ADD CONSTRAINT "ActivityFeedback_submissionId_fkey" FOREIGN KEY ("submissionId") REFERENCES "public"."Submission"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "public"."ActivityFeedback" ADD CONSTRAINT "ActivityFeedback_submissionId_fkey" FOREIGN KEY ("submissionId") REFERENCES "public"."Submission"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "public"."ActivityStudentMetric" ADD CONSTRAINT "ActivityStudentMetric_activityId_fkey" FOREIGN KEY ("activityId") REFERENCES "public"."Activity"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "public"."ActivityStudentMetric" ADD CONSTRAINT "ActivityStudentMetric_activityId_fkey" FOREIGN KEY ("activityId") REFERENCES "public"."Activity"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "public"."ActivityAnalytics" ADD CONSTRAINT "ActivityAnalytics_activityId_fkey" FOREIGN KEY ("activityId") REFERENCES "public"."Activity"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "public"."ActivityAnalytics" ADD CONSTRAINT "ActivityAnalytics_activityId_fkey" FOREIGN KEY ("activityId") REFERENCES "public"."Activity"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "public"."AiChatSession" ADD CONSTRAINT "AiChatSession_activityId_fkey" FOREIGN KEY ("activityId") REFERENCES "public"."Activity"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "public"."AiChatSession" ADD CONSTRAINT "AiChatSession_activityId_fkey" FOREIGN KEY ("activityId") REFERENCES "public"."Activity"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "public"."AiInteractionTrace" ADD CONSTRAINT "AiInteractionTrace_activityId_fkey" FOREIGN KEY ("activityId") REFERENCES "public"."Activity"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "public"."AiInteractionTrace" ADD CONSTRAINT "AiInteractionTrace_activityId_fkey" FOREIGN KEY ("activityId") REFERENCES "public"."Activity"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "public"."AiInteractionTrace" ADD CONSTRAINT "AiInteractionTrace_aiChatSessionId_fkey" FOREIGN KEY ("aiChatSessionId") REFERENCES "public"."AiChatSession"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
+DO $$ BEGIN
+  ALTER TABLE "public"."AiInteractionTrace" ADD CONSTRAINT "AiInteractionTrace_aiChatSessionId_fkey" FOREIGN KEY ("aiChatSessionId") REFERENCES "public"."AiChatSession"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;

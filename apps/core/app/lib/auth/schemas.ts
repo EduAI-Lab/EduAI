@@ -59,6 +59,7 @@ export const createUserSchema = z.object({
     required_error: "Please select a role",
   }),
   isActive: z.boolean().default(true),
+  authorizedUnits: z.array(z.string()).optional(),
 });
 
 export const updateUserSchema = z.object({
@@ -70,6 +71,12 @@ export const updateUserSchema = z.object({
   // #297: unit scoping for UNIT_ADMIN targets; values validated against the
   // canonical subject codes (§19).
   authorizedUnits: z.array(UnitSchema).optional(),
+  studentId: z
+    .union([
+      z.string().min(1).max(32).transform((value) => value.trim()),
+      z.null(),
+    ])
+    .optional(),
 });
 
 /** #297: self-service profile edits via /api/me — name and image only. */

@@ -1,23 +1,26 @@
 import { useState, useEffect } from "react";
 import { Button } from "~/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "~/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "~/components/ui/dialog";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "~/components/ui/form";
 import { Input } from "~/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import { Switch } from "~/components/ui/switch";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { Checkbox } from "~/components/ui/checkbox";
+import { Badge } from "~/components/ui/badge";
+import { useForm, useWatch } from "react-hook-form";
 import { createUserSchema, updateUserSchema } from "~/lib/auth/schemas";
+import { DEPARTMENTS } from "~/lib/departments";
 import type { z } from "zod";
 
 import type { User } from "~/components/admin/users-table";
 
 type CreateUserFormData = z.infer<typeof createUserSchema>;
 type UpdateUserFormData = z.infer<typeof updateUserSchema>;
+
 type FormData = {
   name: string;
   email: string;
-  role: "ADMIN" | "INSTRUCTOR" | "TA" | "STUDENT";
+  role: "ADMIN" | "UNIT_ADMIN" | "INSTRUCTOR" | "TA" | "STUDENT";
   isActive: boolean;
   emailVerified?: boolean;
 };
@@ -32,22 +35,28 @@ export interface UserFormDialogProps {
 const roleOptions = [
   { value: "STUDENT", label: "Student" },
   { value: "TA", label: "Teaching Assistant" },
-  { value: "INSTRUCTOR", label: "Professor" },
+  { value: "INSTRUCTOR", label: "Instructor" },
+  { value: "UNIT_ADMIN", label: "Unit Administrator" },
   { value: "ADMIN", label: "Administrator" },
 ];
 
 export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormDialogProps) {
   const isEditing = !!user;
 
+  // Authorized units selection managed separately (not in RHF) to avoid string[] typing complexity
+  const [selectedUnits, setSelectedUnits] = useState<string[]>([]);
+
   const form = useForm<FormData>({
     defaultValues: {
       name: "",
       email: "",
-      role: "STUDENT" as const,
+      role: "STUDENT",
       isActive: true,
       emailVerified: false,
     },
   });
+
+  const selectedRole = useWatch({ control: form.control, name: "role" });
 
   useEffect(() => {
     if (user) {
@@ -58,6 +67,7 @@ export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormD
         isActive: user.isActive,
         emailVerified: user.emailVerified,
       });
+      setSelectedUnits(user.authorizedUnits ?? []);
     } else {
       form.reset({
         name: "",
@@ -66,17 +76,29 @@ export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormD
         isActive: true,
         emailVerified: false,
       });
+      setSelectedUnits([]);
     }
   }, [user, form]);
 
+  const toggleUnit = (code: string) => {
+    setSelectedUnits((prev) =>
+      prev.includes(code) ? prev.filter((u) => u !== code) : [...prev, code]
+    );
+  };
+
   const handleSubmit = (data: FormData) => {
-    // Validate with the appropriate schema
+    const payload = {
+      ...data,
+      authorizedUnits: data.role === "UNIT_ADMIN" ? selectedUnits : [],
+    };
+
     const schema = isEditing ? updateUserSchema : createUserSchema;
-    const result = schema.safeParse(data);
+    const result = schema.safeParse(payload);
 
     if (result.success) {
       onSubmit(result.data);
       form.reset();
+      setSelectedUnits([]);
     }
   };
 
@@ -112,11 +134,7 @@ export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormD
                 <FormItem>
                   <FormLabel>Email</FormLabel>
                   <FormControl>
-                    <Input
-                      type="email"
-                      placeholder="Enter email address"
-                      {...field}
-                    />
+                    <Input type="email" placeholder="Enter email address" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -148,6 +166,39 @@ export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormD
               )}
             />
 
+            {selectedRole === "UNIT_ADMIN" && (
+              <FormItem>
+                <FormLabel>Authorized Departments</FormLabel>
+                <FormDescription>
+                  Select the departments this administrator can manage.
+                </FormDescription>
+                <div className="grid grid-cols-2 gap-2 rounded-md border p-3">
+                  {DEPARTMENTS.map((dept) => (
+                    <label
+                      key={dept.code}
+                      className="flex items-center gap-2 cursor-pointer select-none"
+                    >
+                      <Checkbox
+                        checked={selectedUnits.includes(dept.code)}
+                        onCheckedChange={() => toggleUnit(dept.code)}
+                      />
+                      <span className="text-sm">
+                        {dept.label}
+                        <span className="ml-1 text-xs text-muted-foreground">({dept.code})</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                {selectedUnits.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {selectedUnits.map((code) => (
+                      <Badge key={code} variant="secondary" className="text-xs">{code}</Badge>
+                    ))}
+                  </div>
+                )}
+              </FormItem>
+            )}
+
             <FormField
               control={form.control}
               name="isActive"
@@ -160,10 +211,7 @@ export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormD
                     </FormDescription>
                   </div>
                   <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                    />
+                    <Switch checked={field.value} onCheckedChange={field.onChange} />
                   </FormControl>
                 </FormItem>
               )}
@@ -182,10 +230,7 @@ export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormD
                       </FormDescription>
                     </div>
                     <FormControl>
-                      <Switch
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                      />
+                      <Switch checked={field.value} onCheckedChange={field.onChange} />
                     </FormControl>
                   </FormItem>
                 )}
@@ -193,11 +238,7 @@ export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormD
             )}
 
             <div className="flex justify-end space-x-2 pt-4">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-              >
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                 Cancel
               </Button>
               <Button type="submit">

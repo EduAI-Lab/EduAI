@@ -5,8 +5,9 @@ export default defineConfig({
   plugins: [tsconfigPaths()],
   test: {
     globals: true,
+    // happy-dom avoids jsdom@29 → html-encoding-sniffer → @exodus/bytes ERR_REQUIRE_ESM
+    environment: 'happy-dom',
     include: ['app/tests/unit/**/*.test.{ts,tsx}'],
-    environment: 'jsdom',
     fileParallelism: false,
     setupFiles: ['./app/tests/setup.ts'],
   },

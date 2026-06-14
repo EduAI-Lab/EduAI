@@ -2,8 +2,15 @@ import type { Prisma, User } from "@prisma/client";
 import { UserRole } from "@prisma/client";
 import { randomUUID } from "crypto";
 import { streamText, tool } from "ai";
-import { createAIProviderRegistry, modelSupportsTools } from "~/lib/ai/providers";
+import {
+  createAIProviderRegistry,
+  listEnabledRegistryProviders,
+  mergeLocalInferenceFromEnv,
+  parseModelIdentifier,
+} from "~/lib/ai/providers";
+import { modelSupportsTools } from "~/lib/ai/providers.server";
 import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
+import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
 import { findRelevantContent } from "~/lib/ai/embedding";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
@@ -523,7 +530,42 @@ export async function action({ request }: ActionFunctionArgs) {
         },
       );
     }
-    const validatedApiKeys = toUserProviderSettings(apiKeysParsed.data);
+    const parsedModel = parseModelIdentifier(model);
+    if (!parsedModel) {
+      return new Response(
+        JSON.stringify({
+          error:
+            'Invalid model id. Use provider:modelId (e.g. vllm:qwen2.5-7b-instruct). Check Admin → AI Models.',
+        }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    const validatedApiKeys = mergeLocalInferenceFromEnv(
+      toUserProviderSettings(apiKeysParsed.data),
+      model,
+    );
+
+    if (!validatedApiKeys[parsedModel.providerId]?.isEnabled) {
+      const envHint =
+        parsedModel.providerId === "vllm"
+          ? "VLLM_BASE_URL"
+          : parsedModel.providerId === "ollama"
+            ? "OLLAMA_BASE_URL"
+            : "provider API key";
+      return new Response(
+        JSON.stringify({
+          error: `Provider "${parsedModel.providerId}" is not available on this server. Set ${envHint} in apps/core/.env and restart the dev process.`,
+        }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
 
     const existingMessageIds = new Set(storedMessages.map((message) => message.id).filter(isNonEmptyString));
     const appendMessages = async (messages: GenericMessage[]) => {
@@ -559,9 +601,43 @@ export async function action({ request }: ActionFunctionArgs) {
     };
 
     const registry = createAIProviderRegistry(validatedApiKeys);
+    const enabledProviders = listEnabledRegistryProviders(validatedApiKeys);
 
-    // Get the AI model from registry
-    const aiModel = registry.languageModel(model);
+    if (!enabledProviders.includes(parsedModel.providerId)) {
+      const envVar =
+        parsedModel.providerId === "vllm" ? "VLLM_BASE_URL" : "OLLAMA_BASE_URL";
+      return new Response(
+        JSON.stringify({
+          error: `Provider "${parsedModel.providerId}" is not available on this server (active: ${enabledProviders.join(", ") || "none"}). Set ${envVar} in apps/core/.env and restart the dev process.`,
+        }),
+        {
+          status: 503,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    let aiModel;
+    try {
+      aiModel = registry.languageModel(model);
+    } catch (err: unknown) {
+      const available =
+        typeof err === "object" &&
+        err !== null &&
+        "availableProviders" in err &&
+        Array.isArray((err as { availableProviders?: string[] }).availableProviders)
+          ? (err as { availableProviders: string[] }).availableProviders.join(", ")
+          : enabledProviders.join(", ");
+      return new Response(
+        JSON.stringify({
+          error: `Model "${model}" could not be loaded (providers on server: ${available}). For vLLM set VLLM_BASE_URL in .env and deploy the feat/VLLM provider code.`,
+        }),
+        {
+          status: 503,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
 
     await appendMessages(normalizedIncomingMessages);
 
@@ -721,7 +797,7 @@ You have access to two tools:
 
 When answering questions:
 1. For course content questions, call getInformation first to retrieve relevant materials.
-2. If the user asks for reviews, opinions, recent updates, or external information (e.g., "what do students say about this course?" or "latest developments"), call webSearch after checking course materials. Prefer queries that include "UBCO" with the course code/name and the professor name when known.
+2. If the user asks for reviews, opinions, recent updates, or external information (e.g., "what do students say about this course?" or "latest developments"), call webSearch after checking course materials. Prefer queries that include "UBCO" with the course code/name and the instructor name when known.
 3. After webSearch, call fetchPage on promising sources (e.g., RateMyProfessors, Reddit threads, official pages) to read the page content before answering. If the page fails to load, try other sources. Try and give a correct response to the user's query even if the page fails to load.
 4. You may call tools multiple times in sequence if needed to give a complete answer.
 5. Always cite your sources: mention course material titles for RAG results and include URLs for web results.
@@ -749,13 +825,50 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
     });
     streamConfig.system = composeSystemPrompt(streamConfig.system ?? "", { adhdAssist: effectiveAdhdAssist });
 
+    const streamStartedAt = Date.now();
+    const logResponseCompliance = (
+      assistantText: string,
+      extras?: {
+        finishReason?: string | null;
+        promptTokens?: number;
+        completionTokens?: number;
+      },
+    ) => {
+      const trimmed = assistantText?.trim();
+      if (!trimmed) return;
+      void recordResponseComplianceEvent({
+        userId: actingUser.id,
+        chatId: chat.id,
+        adhdAssist: effectiveAdhdAssist,
+        assistantText: trimmed,
+        extras: {
+          model,
+          durationMs: Date.now() - streamStartedAt,
+          finishReason: extras?.finishReason ?? null,
+          promptTokens: extras?.promptTokens,
+          completionTokens: extras?.completionTokens,
+        },
+      }).catch((err) => {
+        console.error("[assistive-events] response_compliance log failed", err);
+      });
+    };
+
     // Log the LLM stream configuration
     chatApiDebug("Starting LLM stream", {
       model,
       approach: supportsTools ? "tool_calling" : "hybrid_rag",
       ...llmPromptSizeHints(streamConfig.system, modelMessages),
     });
-    const result = await streamText(streamConfig as Parameters<typeof streamText>[0]);
+    const result = await streamText({
+      ...(streamConfig as Parameters<typeof streamText>[0]),
+      onFinish: async ({ text, usage, finishReason }) => {
+        logResponseCompliance(text, {
+          finishReason,
+          promptTokens: usage?.promptTokens,
+          completionTokens: usage?.completionTokens,
+        });
+      },
+    });
 
     if (streaming) {
       const headers: Record<string, string> = {

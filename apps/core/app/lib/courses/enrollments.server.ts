@@ -23,6 +23,7 @@ export async function getCourseEnrollments(courseId: string) {
         select: {
           email: true,
           name: true,
+          studentId: true,
         },
       },
     },
