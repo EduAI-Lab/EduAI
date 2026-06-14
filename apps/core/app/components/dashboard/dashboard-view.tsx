@@ -129,9 +129,10 @@ function CourseListPanel({
   return (
     <div className="rounded-[var(--radius-xl)] border border-border overflow-hidden shadow-[var(--shadow-2xs)] bg-card">
       {courses.slice(0, 5).map((course, i) => (
-        <div
+        <Link
           key={course.id}
-          className="flex items-center gap-4 px-5 py-[14px] border-b border-border last:border-b-0"
+          to={`/courses/${course.id}`}
+          className="flex items-center gap-4 px-5 py-[14px] border-b border-border last:border-b-0 hover:bg-muted/40 transition-colors"
         >
           {/* color swatch */}
           <div
@@ -147,12 +148,13 @@ function CourseListPanel({
           </div>
           <Link
             to={`/chat?courseCode=${encodeURIComponent(course.code)}`}
+            onClick={(e) => e.stopPropagation()}
             className="flex-shrink-0 px-3 py-1.5 text-xs font-medium text-white rounded-[var(--radius-md)] whitespace-nowrap"
             style={{ background: "var(--primary)" }}
           >
             Chat
           </Link>
-        </div>
+        </Link>
       ))}
     </div>
   );
