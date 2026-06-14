@@ -95,7 +95,7 @@ export function CourseChatHistory({ courseId, courseCode }: CourseChatHistoryPro
           >
             <div className="flex-1 min-w-0">
               <p className="text-[13px] font-medium text-foreground truncate">
-                {chat.title || chat.preview || 'Conversation'}
+                {chat.preview || chat.title || 'New conversation'}
               </p>
               <p className="text-[12px] text-muted-foreground mt-1">
                 {chat.userName} · {relativeTime(chat.updatedAt)} · {chat.messageCount} msgs

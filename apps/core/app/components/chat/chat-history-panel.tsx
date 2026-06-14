@@ -45,7 +45,7 @@ function relativeTime(iso: string): string {
 }
 
 function rowLabel(chat: ChatHistoryItem): string {
-  return chat.title || chat.preview || "New conversation";
+  return chat.preview || chat.title || "New conversation";
 }
 
 export function ChatHistoryPanel({

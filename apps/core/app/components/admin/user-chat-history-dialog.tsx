@@ -128,7 +128,7 @@ export function UserChatHistoryDialog({
                   >
                     <div className="flex-1 min-w-0">
                       <div className="font-medium truncate">
-                        {chat.title || chat.preview || "Conversation"}
+                        {chat.preview || chat.title || "New conversation"}
                       </div>
                       <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
                         {chat.courseCode && (
