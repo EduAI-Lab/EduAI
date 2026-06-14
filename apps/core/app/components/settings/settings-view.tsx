@@ -122,7 +122,7 @@ export function SettingsView({ role }: SettingsViewProps) {
         Manage account preferences, API keys, and local model provider configuration.
       </p>
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
+        <TabsList className="settings-tabs">
           <TabsTrigger value="accessibility">
             <Accessibility className="h-4 w-4" /> Accessibility
           </TabsTrigger>

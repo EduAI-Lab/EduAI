@@ -4,10 +4,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
 import { StudentIdOnboardingForm } from "~/components/onboarding/student-id-onboarding-form";
 import { LinkRosterError, linkCanvasRoster } from "~/lib/canvas/link-roster.server";
-import {
-  studentIdOnboardingSkipCookieHeader,
-  userNeedsStudentIdOnboarding,
-} from "~/lib/canvas/onboarding.server";
+import { userNeedsStudentIdOnboarding } from "~/lib/canvas/onboarding.server";
 import { LinkRosterSchema } from "~/lib/canvas/schemas";
 import { auth } from "~/lib/auth/server";
 
@@ -40,14 +37,6 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   const formData = await request.formData();
-  const intent = String(formData.get("intent") ?? "link");
-
-  if (intent === "skip") {
-    return redirect("/dashboard", {
-      headers: { "Set-Cookie": studentIdOnboardingSkipCookieHeader() },
-    });
-  }
-
   const input = {
     studentNumber: String(formData.get("studentNumber") ?? ""),
   };
