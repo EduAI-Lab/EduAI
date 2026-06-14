@@ -1,7 +1,14 @@
 import { redirect, useLoaderData } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbList,
+  BreadcrumbPage,
+} from "~/components/ui/breadcrumb"
 
 import { AppSidebar } from "~/components/app-sidebar";
+import { CanvasDashboardCard } from "~/components/canvas/CanvasDashboardCard";
 import { DashboardAdminView } from "~/components/dashboard/dashboard-admin-view";
 import { DashboardInstructorView } from "~/components/dashboard/dashboard-instructor-view";
 import { DashboardStudentView } from "~/components/dashboard/dashboard-student-view";
@@ -9,6 +16,7 @@ import { DashboardTaView } from "~/components/dashboard/dashboard-ta-view";
 import { DashboardUnitAdminView } from "~/components/dashboard/dashboard-unit-admin-view";
 import { SiteHeader } from "~/components/site-header";
 import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
+import { redirectToStudentIdOnboardingIfNeeded } from "~/lib/canvas/onboarding.server";
 import { auth } from "~/lib/auth/server";
 import type { User } from "~/lib/auth/types";
 
@@ -19,25 +27,55 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return redirect("/auth/login");
   }
 
+  const onboardingRedirect = await redirectToStudentIdOnboardingIfNeeded(
+    session.user.id,
+    session.user.role,
+    request,
+  );
+  if (onboardingRedirect) {
+    return onboardingRedirect;
+  }
+
   return {
     user: session.user,
   };
 }
 
+const CANVAS_SYNC_ROLES = new Set(["INSTRUCTOR", "ADMIN"]);
+
 function DashboardContent({ user }: { user: User }) {
+  const showCanvasSync = CANVAS_SYNC_ROLES.has(user.role ?? "");
+
+  let view;
   switch (user.role) {
     case "ADMIN":
-      return <DashboardAdminView />;
+      view = <DashboardAdminView />;
+      break;
     case "UNIT_ADMIN":
-      return <DashboardUnitAdminView />;
+      view = <DashboardUnitAdminView />;
+      break;
     case "INSTRUCTOR":
-      return <DashboardInstructorView />;
+      view = <DashboardInstructorView />;
+      break;
     case "TA":
-      return <DashboardTaView />;
+      view = <DashboardTaView />;
+      break;
     case "STUDENT":
     default:
-      return <DashboardStudentView />;
+      view = <DashboardStudentView />;
+      break;
   }
+
+  return (
+    <>
+      {view}
+      {showCanvasSync && (
+        <div className="px-4 lg:px-6 pb-6">
+          <CanvasDashboardCard />
+        </div>
+      )}
+    </>
+  );
 }
 
 export default function Page() {
@@ -54,7 +92,17 @@ export default function Page() {
     >
       <AppSidebar variant="inset" user={user} />
       <SidebarInset>
-        <SiteHeader title="Dashboard" />
+        <SiteHeader
+          breadcrumbs={
+            <Breadcrumb>
+              <BreadcrumbList>
+                <BreadcrumbItem>
+                  <BreadcrumbPage>Home</BreadcrumbPage>
+                </BreadcrumbItem>
+              </BreadcrumbList>
+            </Breadcrumb>
+          }
+        />
         <DashboardContent user={user} />
       </SidebarInset>
     </SidebarProvider>
