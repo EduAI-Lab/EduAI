@@ -4,6 +4,7 @@ import { useState } from "react"
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router"
 
 import { RegisterForm } from "~/components/register-form"
+import { redirectToStudentIdOnboardingIfNeeded } from "~/lib/canvas/onboarding.server"
 import { signUpSchema, type SignUpInput } from "~/lib/auth"
 import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request"
 import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies"
@@ -13,6 +14,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request);
 
   if (session?.user) {
+    const onboardingRedirect = await redirectToStudentIdOnboardingIfNeeded(
+      session.user.id,
+      session.user.role,
+      request,
+    );
+    if (onboardingRedirect) {
+      return onboardingRedirect;
+    }
     return redirect("/dashboard");
   }
 
@@ -69,7 +78,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const headers = new Headers();
     appendAuthSetCookies(response, headers);
 
-    return redirect("/dashboard", { headers });
+    return redirect("/onboarding/student-id", { headers });
   } catch (err: unknown) {
     let message = "Sign up failed";
     if (typeof err === "object" && err && "message" in err) {
