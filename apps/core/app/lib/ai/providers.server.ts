@@ -23,10 +23,24 @@ export async function modelSupportsTools(modelIdentifier: string): Promise<boole
       select: {
         supportsTools: true,
         name: true,
+        provider: { select: { name: true } },
       },
     });
 
-    const supportsTools = model?.supportsTools ?? false;
+    if (!model) {
+      console.log(`Model ${modelIdentifier} not found in DB`);
+      return false;
+    }
+
+    // vllm/ollama often support tools even when the DB flag was never toggled on.
+    if (
+      (parsed.providerId === "vllm" || parsed.providerId === "ollama") &&
+      !model.supportsTools
+    ) {
+      return true;
+    }
+
+    const supportsTools = model.supportsTools;
     console.log(
       `Model ${modelIdentifier} (${model?.name || 'unknown'}) supports tools: ${supportsTools}`,
     );

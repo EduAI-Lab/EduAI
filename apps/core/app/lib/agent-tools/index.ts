@@ -15,16 +15,23 @@ export {
   listAdminUsers,
   resolveAdminCourseId,
 } from "./admin-context.server";
+export { buildAdminChatStreamConfig } from "./admin-chat-stream.server";
+export { buildLearningChatStreamConfig } from "./learning-chat-stream.server";
+export { buildAdminSystemPrompt } from "./admin-chat-prompts";
 export {
-  buildAdminSystemPrompt,
   buildLearningAssistantSystemPrompt,
   buildLearningSystemPrompt,
+} from "./learning-chat-prompts";
+export {
   chatbotTypeFromMode,
   parseChatMode,
   type ChatMode,
   type ChatToolContext,
 } from "./chat-mode";
+export { createAdminChatTools } from "./create-admin-chat-tools";
+export { createLearningChatTools } from "./create-learning-chat-tools";
 
+/** @deprecated Prefer createLearningChatTools / createAdminChatTools directly. */
 export function createChatTools(ctx: ChatToolContext, mode: ChatMode) {
   return mode === "admin" ? createAdminChatTools(ctx) : createLearningChatTools(ctx);
 }
