@@ -1,11 +1,14 @@
-import { Input } from '@eduai/ui'
-import { Label } from '@eduai/ui'
+import { useRef, useState } from 'react'
+import { cn } from '@eduai/ui'
+import { Alert, AlertDescription } from '@eduai/ui'
 import {
+  IconUpload,
+  IconFile,
   IconAlertCircle,
   IconCircleCheck,
   IconLoader,
+  IconX,
 } from '@tabler/icons-react'
-import { Alert, AlertDescription } from '@eduai/ui'
 
 export interface CourseMaterial {
   id: string
@@ -24,6 +27,9 @@ export interface CourseMaterialsUploadProps {
   onFileSelect: (file: File) => void
 }
 
+const ACCEPTED =
+  '.pdf,.docx,.pptx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain,text/markdown'
+
 // ── component ─────────────────────────────────────────────────────────────────
 
 export function CourseMaterialsUpload({
@@ -32,33 +38,117 @@ export function CourseMaterialsUpload({
   success = null,
   onFileSelect,
 }: CourseMaterialsUploadProps) {
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file) onFileSelect(file)
-    event.target.value = ''
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
+
+  const triggerPick = () => {
+    if (!isUploading) inputRef.current?.click()
   }
 
+  const processFile = (file: File) => {
+    setSelectedFile(file)
+    onFileSelect(file)
+  }
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) processFile(file)
+    e.target.value = ''
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragging(false)
+    if (isUploading) return
+    const file = e.dataTransfer.files?.[0]
+    if (file) processFile(file)
+  }
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    if (!isUploading) setIsDragging(true)
+  }
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDragging(false)
+  }
+
+  const clearFile = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setSelectedFile(null)
+  }
+
+  const showFile = selectedFile && !isUploading && !success && !error
+
   return (
-    <div className="space-y-4">
-      <div>
-        <Label htmlFor="file-upload">Select file</Label>
-        <p className="text-[12px] text-muted-foreground mt-0.5 mb-2">
-          Supported formats: PDF, DOCX, PPTX, TXT, MD
-        </p>
-        <Input
-          id="file-upload"
+    <div className="space-y-3">
+      {/* Drop zone */}
+      <div
+        role="button"
+        tabIndex={isUploading ? -1 : 0}
+        aria-disabled={isUploading}
+        onClick={triggerPick}
+        onKeyDown={(e) => e.key === 'Enter' && triggerPick()}
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        className={cn(
+          'flex flex-col items-center justify-center gap-3 rounded-[var(--radius-xl)]',
+          'border-2 border-dashed border-border py-9 px-6 outline-none',
+          'transition-colors duration-150 select-none',
+          isDragging && 'border-primary bg-primary/5',
+          isUploading
+            ? 'cursor-not-allowed opacity-60'
+            : 'cursor-pointer hover:border-primary/50 hover:bg-muted/30 focus-visible:border-ring focus-visible:shadow-[var(--shadow-focus)]',
+        )}
+      >
+        <input
+          ref={inputRef}
           type="file"
-          accept=".pdf,.docx,.pptx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain,text/markdown"
+          accept={ACCEPTED}
           onChange={handleFileChange}
           disabled={isUploading}
-          className="mt-1"
+          className="sr-only"
+          tabIndex={-1}
         />
+
+        <div className="flex h-10 w-10 items-center justify-center rounded-[var(--radius-lg)] bg-primary/10">
+          <IconUpload className="h-5 w-5 text-primary-text" />
+        </div>
+
+        <div className="text-center">
+          <p className="text-sm font-medium text-foreground">
+            Drag & drop or{' '}
+            <span className="text-primary-text underline-offset-2 hover:underline">browse files</span>
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">PDF, DOCX, PPTX, TXT, MD</p>
+        </div>
       </div>
 
+      {/* Selected file pill (brief flash before upload state takes over) */}
+      {showFile && (
+        <div className="flex items-center gap-2 rounded-[var(--radius-md)] border border-border bg-muted/30 px-3 py-2">
+          <IconFile className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <span className="flex-1 truncate text-sm text-foreground">{selectedFile.name}</span>
+          <button
+            type="button"
+            aria-label="Clear selection"
+            onClick={clearFile}
+            className="text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <IconX className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Upload states */}
       {isUploading && (
         <Alert>
           <IconLoader className="h-4 w-4 animate-spin" />
-          <AlertDescription>Uploading and processing material…</AlertDescription>
+          <AlertDescription>
+            Uploading{selectedFile ? ` "${selectedFile.name}"` : ''}…
+          </AlertDescription>
         </Alert>
       )}
       {error && (
