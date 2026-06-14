@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  CanvasApiError,
   CanvasVerificationError,
+  listCanvasCourseStudents,
   parseAndValidateCanvasUrl,
   verifyCanvasCredentials,
 } from "~/lib/canvas/client.server";
@@ -82,5 +84,24 @@ describe("verifyCanvasCredentials", () => {
     const error = new CanvasVerificationError("Invalid Canvas API token", 400);
     expect(error).toBeInstanceOf(Error);
     expect(error.statusCode).toBe(400);
+  });
+});
+
+describe("listCanvasCourseStudents test mode", () => {
+  it("returns mock roster for course 1", async () => {
+    const students = await listCanvasCourseStudents(
+      { canvasUrl: "http://localhost:8080", apiKey: "test", isTestMode: true },
+      "1",
+    );
+
+    expect(students).toHaveLength(2);
+    expect(students[0]?.sis_user_id).toBe("student_1");
+  });
+});
+
+describe("CanvasApiError", () => {
+  it("carries statusCode", () => {
+    const error = new CanvasApiError("Canvas API error: 500", 500);
+    expect(error.statusCode).toBe(500);
   });
 });

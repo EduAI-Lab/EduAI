@@ -35,6 +35,8 @@ interface Props {
   access: CourseAccess
   topics: CourseTopic[]
   enrollments: CourseEnrollment[]
+  enrollmentsLoading?: boolean
+  enrollmentsError?: string | null
   materials: CourseMaterial[]
   tas: CourseTA[]
   instructors: StaffUser[]
@@ -48,6 +50,7 @@ interface Props {
   onAssignInstructor: (instructorId: string) => Promise<void>
   onAddTA: (userId: string) => Promise<void>
   onRemoveTA: (userId: string) => Promise<void>
+  courseId?: string
 }
 
 export function CourseDetailManagerView({
@@ -55,6 +58,8 @@ export function CourseDetailManagerView({
   access,
   topics,
   enrollments,
+  enrollmentsLoading = false,
+  enrollmentsError = null,
   materials,
   tas,
   instructors,
@@ -68,6 +73,7 @@ export function CourseDetailManagerView({
   onAssignInstructor,
   onAddTA,
   onRemoveTA,
+  courseId,
 }: Props) {
   const [newTopic, setNewTopic] = useState('')
   const [staffError, setStaffError] = useState<string | null>(null)
@@ -198,6 +204,7 @@ export function CourseDetailManagerView({
             error={materialsError}
             success={materialsSuccess}
             onFileSelect={onFileSelect}
+            courseId={courseId}
           />
         </TabsContent>
 
@@ -255,10 +262,21 @@ export function CourseDetailManagerView({
                 Enrolled Users
               </CardTitle>
             </CardHeader>
-            {enrollments.length === 0 ? (
+            {enrollmentsError && (
+              <p className="text-sm text-destructive" role="alert">
+                {enrollmentsError}
+              </p>
+            )}
+            {enrollmentsLoading ? (
               <Card>
                 <CardContent className="flex items-center justify-center py-8 text-muted-foreground">
-                  No enrollments yet. (Enrollment API pending #305)
+                  Loading enrollments…
+                </CardContent>
+              </Card>
+            ) : enrollments.length === 0 ? (
+              <Card>
+                <CardContent className="flex items-center justify-center py-8 text-muted-foreground">
+                  No enrollments yet.
                 </CardContent>
               </Card>
             ) : (
@@ -269,10 +287,20 @@ export function CourseDetailManagerView({
                       <div>
                         <span className="text-sm font-medium">{e.userName}</span>
                         <span className="text-xs text-muted-foreground ml-2">{e.userEmail}</span>
+                        {e.studentNumber && (
+                          <span className="block text-xs text-muted-foreground mt-1">
+                            Student number: {e.studentNumber}
+                          </span>
+                        )}
                       </div>
-                      <Badge variant={e.role === 'INSTRUCTOR' ? 'default' : 'secondary'}>
-                        {e.role}
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        {!e.isActive && (
+                          <Badge variant="outline">Inactive</Badge>
+                        )}
+                        <Badge variant={e.role === 'INSTRUCTOR' ? 'default' : 'secondary'}>
+                          {e.role}
+                        </Badge>
+                      </div>
                     </CardContent>
                   </Card>
                 ))}
