@@ -54,8 +54,9 @@
   --color-warning-700: oklch(0.640 0.150 60);
   --color-warning-500: oklch(0.769 0.165 70);
   --color-warning-100: oklch(0.962 0.055 89);
-  --color-error-700:   oklch(0.420 0.160 28);
-  --color-error-500:   oklch(0.552 0.193 33);
+  --color-error-700:   oklch(0.415 0.205 27);
+  --color-error-600:   oklch(0.480 0.225 27);
+  --color-error-500:   oklch(0.545 0.230 27);
   --color-error-100:   oklch(0.950 0.055 20);
 
   /* ── Semantic tokens — Light Mode ───────────────────────── */
@@ -89,6 +90,7 @@
   --ring:                   var(--color-blue-900);
 
   --destructive:            var(--color-error-500);
+  --destructive-hover:      var(--color-error-600);
   --destructive-foreground: var(--color-neutral-0);
 
   /* ── Sidebar — dark navy (UBC Blue) ─────────────────────── */
@@ -122,6 +124,12 @@
   --foreground:             oklch(0.929 0.013 256);
   --primary-text:           oklch(0.640 0.155 252);    /* lighter UBC blue for dark bg ~4.5:1 */
 
+  /* Error palette flips: surface darkens, interactive brightens for dark bg legibility */
+  --color-error-100:        oklch(0.230 0.060 27);     /* dark red-tinted surface */
+  --color-error-500:        oklch(0.625 0.240 25);     /* vivid bright red — pops on dark bg */
+  --color-error-600:        oklch(0.700 0.220 25);     /* hover state on dark bg */
+  --color-error-700:        oklch(0.875 0.065 25);     /* light pinkish for text on dark surface */
+
   --card:                   oklch(0.190 0.012 259);
   --card-foreground:        oklch(0.929 0.013 256);
 
@@ -134,8 +142,9 @@
   --border:                 oklch(0.265 0.020 259);
   --input:                  oklch(0.220 0.012 259);
 
-  --destructive:            oklch(0.380 0.115 28);
-  --destructive-foreground: oklch(0.930 0.005 34);
+  --destructive:            var(--color-error-500);    /* vivid bright red in dark mode */
+  --destructive-hover:      var(--color-error-600);
+  --destructive-foreground: oklch(1.000 0 0);
 
   --sidebar:                oklch(0.115 0.018 262);
   --sidebar-foreground:     oklch(0.780 0.015 256);

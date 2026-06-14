@@ -37,6 +37,7 @@ body {
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-destructive-hover: var(--destructive-hover);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
@@ -106,7 +107,8 @@ body {
   --muted-foreground: oklch(0.545 0 0);
   --accent: oklch(0.684 0.140 232);
   --accent-foreground: oklch(1.0000 0 0);
-  --destructive: oklch(0.552 0.193 33);
+  --destructive: oklch(0.545 0.230 27);
+  --destructive-hover: oklch(0.480 0.225 27);
   --destructive-foreground: oklch(1.0000 0 0);
   --border: oklch(0.904 0 0);
   --input: oklch(0.967 0 0);
@@ -138,8 +140,9 @@ body {
   --color-success-700: oklch(0.420 0.120 145);
   --color-success-500: oklch(0.554 0.155 145);
   --color-success-100: oklch(0.940 0.050 145);
-  --color-error-700: oklch(0.420 0.160 28);
-  --color-error-500: oklch(0.552 0.193 33);
+  --color-error-700: oklch(0.415 0.205 27);
+  --color-error-600: oklch(0.480 0.225 27);
+  --color-error-500: oklch(0.545 0.230 27);
   --color-error-100: oklch(0.950 0.055 20);
   --color-warning-700: oklch(0.640 0.150 60);
   --color-warning-500: oklch(0.769 0.165 70);
@@ -172,7 +175,7 @@ body {
   --shadow-2xl: 0px 1px 3px 0px hsl(0 0% 0% / 0.43);
   /* ── Focus rings (Button/Input focus-visible) ──────────── */
   --shadow-focus: 0 0 0 3px oklch(0.418 0.171 257 / 0.35);
-  --shadow-focus-error: 0 0 0 3px oklch(0.552 0.193 33 / 0.35);
+  --shadow-focus-error: 0 0 0 3px oklch(0.545 0.230 27 / 0.40);
   --tracking-normal: 0.025em;
   --spacing: 0.25rem;
   --shadow-color: #000000;
@@ -201,8 +204,15 @@ body {
   --muted-foreground: oklch(0.680 0 0);
   --accent: oklch(0.684 0.140 232);
   --accent-foreground: oklch(1.0000 0 0);
-  --destructive: oklch(0.380 0.115 28);
-  --destructive-foreground: oklch(0.930 0.005 34);
+  /* Error palette — flips for dark bg legibility */
+  --color-error-100: oklch(0.230 0.060 27);
+  --color-error-500: oklch(0.625 0.240 25);
+  --color-error-600: oklch(0.700 0.220 25);
+  --color-error-700: oklch(0.875 0.065 25);
+  --destructive: var(--color-error-500);
+  --destructive-hover: var(--color-error-600);
+  --destructive-foreground: oklch(1.000 0 0);
+  --shadow-focus-error: 0 0 0 3px oklch(0.625 0.240 25 / 0.45);
   --border: oklch(0.265 0.020 259);
   --input: oklch(0.220 0.012 259);
   --ring: oklch(0.418 0.171 257);
