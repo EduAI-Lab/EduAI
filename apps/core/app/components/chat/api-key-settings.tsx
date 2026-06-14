@@ -106,7 +106,7 @@ export function ApiKeySettings({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="rounded-[var(--radius-xl)] shadow-md">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-[var(--secondary)]">
+          <DialogTitle className="flex items-center gap-2 text-primary-text">
             <IconKey className="h-5 w-5 shrink-0" />
             API key settings
           </DialogTitle>
