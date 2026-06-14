@@ -50,7 +50,6 @@ export default [
   route("/api/preferences", "routes/api/preferences.ts"),
   route("/api/users/*", "routes/api/users.$.ts"),
   route("/api/invitations", "routes/api/invitations.ts"),
-  route("/api/invitations/accept", "routes/api/invitations.accept.ts"),
   route("/api/invitations/:id", "routes/api/invitations.$id.ts"),
   route("/api/ollama-models", "routes/api/ollama-models.ts"),
   route("/api/vllm-models", "routes/api/vllm-models.ts"),
