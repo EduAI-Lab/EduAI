@@ -31,8 +31,6 @@ export async function action({ request }: ActionFunctionArgs) {
     email: String(formData.email || ""),
     password: String(formData.password || ""),
   };
-  // Only the domain segment is logged — never the full address (PII).
-  const emailDomain = input.email.split("@")[1] ?? null;
 
   const result = signInSchema.safeParse(input);
   if (!result.success) {
@@ -72,7 +70,6 @@ export async function action({ request }: ActionFunctionArgs) {
           actionCode: "LOGIN_FAILED",
           outcome: "FAILURE",
           entityType: "Auth",
-          details: { emailDomain },
         }),
       );
       return {
@@ -86,14 +83,24 @@ export async function action({ request }: ActionFunctionArgs) {
     const headers = new Headers();
     appendAuthSetCookies(response, headers);
 
+    // Attribute the success to the just-authenticated user so the audit log names the actor
+    // instead of "Unknown". The user lives in the better-auth sign-in response body.
+    const signedIn = (await response
+      .clone()
+      .json()
+      .catch(() => null)) as { user?: { id?: string; role?: string | null } } | null;
+    const signedInUser = signedIn?.user?.id
+      ? { id: signedIn.user.id, role: signedIn.user.role ?? null }
+      : null;
+
     fireAndForget(
       logSecurityEvent({
-        ...getActorContext(null),
+        ...getActorContext(signedInUser),
         ...requestContext,
         actionCode: "LOGIN_SUCCESS",
         outcome: "SUCCESS",
         entityType: "Auth",
-        details: { emailDomain },
+        entityId: signedInUser?.id ?? null,
       }),
     );
 
@@ -110,7 +117,6 @@ export async function action({ request }: ActionFunctionArgs) {
         actionCode: "LOGIN_FAILED",
         outcome: "FAILURE",
         entityType: "Auth",
-        details: { emailDomain },
       }),
     );
     return { formError: message };

@@ -21,10 +21,12 @@ import { seedUser, cleanupRbac } from "../helpers/rbac";
 
 import { loader as listLoader, action as createAction } from "~/routes/api/invitations";
 import { action as invitationIdAction } from "~/routes/api/invitations.$id";
+// The accept flow has a single live path: the user-facing page route. There is no
+// API equivalent, so the page's loader/action are what we drive here.
 import {
   loader as acceptLoader,
   action as acceptAction,
-} from "~/routes/api/invitations.accept";
+} from "~/routes/auth/accept-invitation";
 
 const getSessionSpy = vi.spyOn(auth.api, "getSession");
 const sendEmailMock = vi.mocked(sendEmail);
@@ -62,12 +64,14 @@ function createReq(body: unknown) {
     ...ctx,
   };
 }
-function acceptReq(body: unknown) {
+// The page action consumes form-encoded data (it backs a <Form method="post">),
+// not JSON, so accept requests are built as url-encoded form bodies.
+function acceptReq(fields: Record<string, string>) {
   return {
-    request: new Request("http://localhost/api/invitations/accept", {
+    request: new Request("http://localhost/auth/accept-invitation", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(fields).toString(),
     }),
     params: {},
     ...ctx,
@@ -253,20 +257,18 @@ describe("POST /api/invitations/:id (resend)", () => {
 });
 
 describe("accept flow", () => {
-  it("GET validates a token and returns email + role", async () => {
+  it("loader validates a token and returns email + role", async () => {
     asAdmin();
     const email = uniqueEmail();
     const created = await (await createAction(createReq({ email, role: "INSTRUCTOR" }))).json();
     const token = tokenFromAcceptUrl(created.acceptUrl);
 
-    const res = await acceptLoader({
-      request: new Request(`http://localhost/api/invitations/accept?token=${token}`),
+    const res = (await acceptLoader({
+      request: new Request(`http://localhost/auth/accept-invitation?token=${token}`),
       params: {},
       ...ctx,
-    });
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body).toEqual({ email, role: "INSTRUCTOR", name: null });
+    })) as any;
+    expect(res).toMatchObject({ ok: true, email, role: "INSTRUCTOR", name: null });
   });
 
   it("creates a real, logged-in account with the invited role and marks the invite accepted", async () => {
@@ -275,10 +277,11 @@ describe("accept flow", () => {
     const created = await (await createAction(createReq({ email, role: "INSTRUCTOR" }))).json();
     const token = tokenFromAcceptUrl(created.acceptUrl);
 
-    const res = await acceptAction(
+    const res = (await acceptAction(
       acceptReq({ token, name: "Pat Prof", password: "supersecret1", confirmPassword: "supersecret1" }),
-    );
-    expect(res.status).toBe(201);
+    )) as Response;
+    expect(res.status).toBe(302); // redirected to /dashboard on success
+    expect(res.headers.get("Location")).toBe("/dashboard");
     expect(res.headers.get("Set-Cookie")).toBeTruthy(); // logged in
 
     const user = await prisma.user.findUnique({ where: { email } });
@@ -301,20 +304,22 @@ describe("accept flow", () => {
     ).json();
     const token = tokenFromAcceptUrl(created.acceptUrl);
 
-    const res = await acceptAction(
+    const res = (await acceptAction(
       acceptReq({ token, name: "Uma Unit", password: "supersecret1", confirmPassword: "supersecret1" }),
-    );
-    expect(res.status).toBe(201);
+    )) as Response;
+    expect(res.status).toBe(302);
     const user = await prisma.user.findUnique({ where: { email } });
     expect(user?.role).toBe("UNIT_ADMIN");
     expect(user?.authorizedUnits).toEqual(["COSC"]);
   });
 
-  it("rejects invalid, expired, revoked, and already-used tokens", async () => {
+  it("surfaces a friendly error for invalid, expired, and revoked tokens", async () => {
+    // The page action returns { formError } (a friendly message), not a status code.
     // Invalid token
-    expect(
-      (await acceptAction(acceptReq({ token: "nope", name: "X X", password: "supersecret1", confirmPassword: "supersecret1" }))).status,
-    ).toBe(404);
+    const invalid = (await acceptAction(
+      acceptReq({ token: "nope", name: "X X", password: "supersecret1", confirmPassword: "supersecret1" }),
+    )) as any;
+    expect(invalid.formError).toMatch(/invalid/i);
 
     // Expired
     const expiredEmail = uniqueEmail();
@@ -327,9 +332,10 @@ describe("accept flow", () => {
         expiresAt: new Date(Date.now() - 1000),
       },
     });
-    expect(
-      (await acceptAction(acceptReq({ token: "expired-token", name: "X X", password: "supersecret1", confirmPassword: "supersecret1" }))).status,
-    ).toBe(410);
+    const expired = (await acceptAction(
+      acceptReq({ token: "expired-token", name: "X X", password: "supersecret1", confirmPassword: "supersecret1" }),
+    )) as any;
+    expect(expired.formError).toMatch(/expired/i);
 
     // Revoked
     const revokedEmail = uniqueEmail();
@@ -343,11 +349,10 @@ describe("accept flow", () => {
         expiresAt: new Date(Date.now() + 100000),
       },
     });
-    const revokedRes = await acceptAction(
+    const revoked = (await acceptAction(
       acceptReq({ token: "revoked-token", name: "X X", password: "supersecret1", confirmPassword: "supersecret1" }),
-    );
-    expect(revokedRes.status).toBe(410);
-    expect((await revokedRes.json()).error).toBe("INVITATION_REVOKED");
+    )) as any;
+    expect(revoked.formError).toMatch(/cancelled/i);
   });
 
   it("rolls back the created account when the promote step fails, keeping the invite usable", async () => {
@@ -358,9 +363,9 @@ describe("accept flow", () => {
     const body = { token, name: "Pat Prof", password: "supersecret1", confirmPassword: "supersecret1" };
 
     const txSpy = vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("db hiccup"));
-    const failed = await acceptAction(acceptReq(body));
+    const failed = (await acceptAction(acceptReq(body))) as any;
     txSpy.mockRestore();
-    expect(failed.status).toBe(500);
+    expect(failed.formError).toBeTruthy(); // surfaced as a form error, not a redirect
 
     // The half-created account was rolled back, so the same invite still works.
     expect(await prisma.user.findUnique({ where: { email } })).toBeNull();
@@ -370,15 +375,15 @@ describe("accept flow", () => {
     const realNow = Date.now;
     const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => realNow() + 11_000);
     try {
-      const retry = await acceptAction(acceptReq(body));
-      expect(retry.status).toBe(201);
+      const retry = (await acceptAction(acceptReq(body))) as Response;
+      expect(retry.status).toBe(302);
     } finally {
       nowSpy.mockRestore();
     }
     expect((await prisma.user.findUnique({ where: { email } }))?.role).toBe("INSTRUCTOR");
   });
 
-  it("409s if the email was registered between invite and accept", async () => {
+  it("rejects accepting when the email was registered between invite and accept", async () => {
     asAdmin();
     const email = uniqueEmail();
     const created = await (await createAction(createReq({ email, role: "INSTRUCTOR" }))).json();
@@ -387,9 +392,9 @@ describe("accept flow", () => {
     // Simulate the email being claimed in the meantime.
     await prisma.user.create({ data: { email, name: "Squatter", role: "STUDENT" } });
 
-    const res = await acceptAction(
+    const res = (await acceptAction(
       acceptReq({ token, name: "Late Comer", password: "supersecret1", confirmPassword: "supersecret1" }),
-    );
-    expect(res.status).toBe(409);
+    )) as any;
+    expect(res.formError).toMatch(/already exists/i);
   });
 });
