@@ -9,7 +9,7 @@ export function AdminChatView(props: ChatViewSharedProps) {
       showCourseSelector
       WelcomeComponent={AdminChatWelcome}
       bannerTitle="Admin chatbot"
-      bannerDescription="Operational assistant for enrollments, users, bug reports, and course metadata. Only models with tool support are listed — register them in Admin → AI Models."
+      bannerDescription="Operational assistant for enrollments, users, bug reports, and course metadata. Supports read and write actions — writes require your explicit confirmation in chat."
     />
   );
 }

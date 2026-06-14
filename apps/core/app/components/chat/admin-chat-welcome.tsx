@@ -27,9 +27,10 @@ const suggestedPrompts = [
     prompt: "Show unhandled bug reports from all sources, newest first.",
   },
   {
-    title: "Course overview",
-    description: "Metadata for available courses",
-    prompt: "List all courses I can access with code, name, and department.",
+    title: "Enroll a student",
+    description: "Add a user to the selected course",
+    prompt:
+      "I want to enroll userId USER_ID as a STUDENT in the selected course. First look up the user to confirm, then ask me to confirm before creating the enrollment.",
   },
 ];
 
@@ -54,8 +55,8 @@ export function AdminChatWelcome({ selectedModelInfo, onSelectPrompt }: AdminCha
               </p>
             )}
             <p className="text-sm text-muted-foreground max-w-lg mx-auto">
-              Read-only assistant for enrollments, users, bug reports, and course metadata.
-              Select a course below for enrollment queries.
+              Operational assistant for enrollments, users, bug reports, and course metadata.
+              Write actions require your explicit confirmation in chat.
             </p>
           </div>
         </div>

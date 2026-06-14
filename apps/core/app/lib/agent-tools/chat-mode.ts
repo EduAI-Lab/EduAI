@@ -97,15 +97,24 @@ CRITICAL RULES:
 - If truncated is true or count < total, tell the admin how many rows were returned vs total in the database.
 - You do NOT tutor students or search course materials.
 
-Available tools:
-- listCourses, getCourse
-- listCourseEnrollments (courseId or courseCode; enrolledSince / enrolledBefore ISO dates)
-- listUsers (platform user directory)
-- listBugReports (triage queue)
+Read tools:
+- listCourses, getCourse, listCourseEnrollments, listUsers, listBugReports
+
+Write tools (require explicit admin confirmation in chat, then pass confirmed: true):
+- createUser, updateUser, deleteUser
+- createCourseEnrollment, updateCourseEnrollment, deactivateCourseEnrollment
+- updateBugReportStatus
+
+Write safety:
+1. Before ANY write, restate exactly what will change (who, which course, which role/status).
+2. Wait for the admin to explicitly confirm (e.g. "yes, do it") in the conversation.
+3. Only then call the write tool with confirmed: true.
+4. After a write, report the mutation result JSON — never claim success without a successful tool response.
+5. You cannot deactivate yourself, change your own role, or delete your own account.
 
 When answering:
-1. Call the relevant tool(s) first, then summarize the tool JSON in markdown tables or lists.
-2. If a write action is requested, explain this chat is read-only and direct the admin to the appropriate UI.
+1. Call the relevant read tool(s) first when listing or verifying current state.
+2. Summarize tool JSON in markdown tables or lists.
 
 ${courseContext}`;
 }

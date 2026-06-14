@@ -10,10 +10,43 @@ import {
   listAdminUsers,
   resolveAdminCourseId,
 } from "./admin-context.server";
+import {
+  createAdminEnrollment,
+  createAdminUser,
+  deactivateAdminEnrollment,
+  deleteAdminUser,
+  updateAdminBugReportStatus,
+  updateAdminEnrollmentRole,
+  updateAdminUser,
+} from "./admin-mutations.server";
 
-/** Admin assistant tools — platform ops, no RAG. ADMIN-only tools are gated in handlers. */
+const confirmedWrite = z
+  .literal(true)
+  .describe("Must be true — the admin explicitly confirmed this write in chat");
+
+const enrollmentRole = z.enum(["STUDENT", "TA", "INSTRUCTOR"]);
+
+const courseScope = {
+  courseId: z
+    .string()
+    .optional()
+    .describe("Course id (CUID); defaults to the course selected in admin chat"),
+  courseCode: z
+    .string()
+    .optional()
+    .describe("Course code when course id is unknown"),
+};
+
+/** Admin assistant tools — platform ops with read + write (ADMIN-only). */
 export function createAdminChatTools(ctx: ChatToolContext) {
   const { user, effectiveCourseId, effectiveCourseCode } = ctx;
+
+  const resolveCourse = (courseId?: string, courseCode?: string) =>
+    resolveAdminCourseId(user, {
+      courseId,
+      courseCode: courseCode ?? effectiveCourseCode ?? undefined,
+      fallbackCourseId: effectiveCourseId,
+    });
 
   return {
     listCourses: tool({
@@ -34,14 +67,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
       description:
         "List enrollments for a course from the database. Filter by enrolledAt window for time-range questions.",
       parameters: z.object({
-        courseId: z
-          .string()
-          .optional()
-          .describe("Course id (CUID); defaults to the course selected in admin chat"),
-        courseCode: z
-          .string()
-          .optional()
-          .describe("Course code (e.g. COSC 111); use when course id is unknown"),
+        ...courseScope,
         enrolledSince: z
           .string()
           .optional()
@@ -61,11 +87,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         isActive,
         limit,
       }) => {
-        const resolved = await resolveAdminCourseId(user, {
-          courseId,
-          courseCode: courseCode ?? effectiveCourseCode ?? undefined,
-          fallbackCourseId: effectiveCourseId,
-        });
+        const resolved = await resolveCourse(courseId, courseCode);
         if ("error" in resolved) {
           return resolved;
         }
@@ -96,6 +118,110 @@ export function createAdminChatTools(ctx: ChatToolContext) {
       }),
       execute: async ({ status, source, limit }) =>
         listAdminBugReportsForChat(user, { status, source, limit }),
+    }),
+
+    createUser: tool({
+      description:
+        "Create a new platform user. Requires confirmed=true after the admin approves in chat.",
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        name: z.string().min(2),
+        email: z.string().email(),
+        role: z.enum(["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "TA", "STUDENT"]),
+        isActive: z.boolean().optional(),
+      }),
+      execute: async ({ confirmed: _confirmed, ...input }) => createAdminUser(user, input),
+    }),
+
+    updateUser: tool({
+      description:
+        "Update a platform user by id. Requires confirmed=true. Cannot deactivate or change role of yourself.",
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        userId: z.string().describe("User id (CUID)"),
+        name: z.string().min(2).optional(),
+        email: z.string().email().optional(),
+        role: z.enum(["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "TA", "STUDENT"]).optional(),
+        isActive: z.boolean().optional(),
+      }),
+      execute: async ({ confirmed: _confirmed, userId, ...updates }) =>
+        updateAdminUser(user, userId, updates),
+    }),
+
+    deleteUser: tool({
+      description:
+        "Permanently delete a platform user by id. Requires confirmed=true. Cannot delete yourself.",
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        userId: z.string().describe("User id (CUID)"),
+      }),
+      execute: async ({ userId }) => deleteAdminUser(user, userId),
+    }),
+
+    createCourseEnrollment: tool({
+      description:
+        "Add a user to a course with a role. Requires confirmed=true. Idempotent if already enrolled.",
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        ...courseScope,
+        userId: z.string().describe("User id to enroll"),
+        role: enrollmentRole,
+      }),
+      execute: async ({ courseId, courseCode, userId, role }) =>
+        createAdminEnrollment(user, {
+          courseId,
+          courseCode,
+          fallbackCourseId: effectiveCourseId,
+          userId,
+          role,
+        }),
+    }),
+
+    updateCourseEnrollment: tool({
+      description:
+        "Change an enrollment role. Requires confirmed=true. Enforces instructor-floor rules.",
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        ...courseScope,
+        enrollmentId: z.string().describe("Enrollment id (CUID)"),
+        role: enrollmentRole,
+      }),
+      execute: async ({ courseId, courseCode, enrollmentId, role }) =>
+        updateAdminEnrollmentRole(user, {
+          courseId,
+          courseCode,
+          fallbackCourseId: effectiveCourseId,
+          enrollmentId,
+          role,
+        }),
+    }),
+
+    deactivateCourseEnrollment: tool({
+      description:
+        "Soft-remove an enrollment (sets isActive=false). Requires confirmed=true.",
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        ...courseScope,
+        enrollmentId: z.string().describe("Enrollment id (CUID)"),
+      }),
+      execute: async ({ courseId, courseCode, enrollmentId }) =>
+        deactivateAdminEnrollment(user, {
+          courseId,
+          courseCode,
+          fallbackCourseId: effectiveCourseId,
+          enrollmentId,
+        }),
+    }),
+
+    updateBugReportStatus: tool({
+      description: "Update triage status on a bug report. Requires confirmed=true.",
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        reportId: z.string().describe("Bug report id"),
+        status: z.enum(["UNHANDLED", "IN_PROGRESS", "RESOLVED"]),
+      }),
+      execute: async ({ reportId, status }) =>
+        updateAdminBugReportStatus(user, reportId, status),
     }),
   };
 }
