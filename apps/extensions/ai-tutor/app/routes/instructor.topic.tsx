@@ -43,7 +43,7 @@ import { requireClientUser } from '~/lib/client-auth';
  * needed for breadcrumbs and to compute the publish-cascade gate.
  */
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
-  await requireClientUser('INSTRUCTOR');
+  await requireClientUser(['INSTRUCTOR', 'UNIT_ADMIN', 'TA']);
   const moduleId = Number(params.moduleId);
   if (!Number.isFinite(moduleId)) {
     throw new Response('Invalid module id', { status: 400 });

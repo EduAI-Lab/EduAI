@@ -41,7 +41,7 @@ import { requireClientUser } from '~/lib/client-auth';
  * if the route param isn't numeric so the router renders the error boundary.
  */
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
-  await requireClientUser('INSTRUCTOR');
+  await requireClientUser(['INSTRUCTOR', 'UNIT_ADMIN', 'TA']);
   const courseId = Number(params.courseId);
   if (!Number.isFinite(courseId)) {
     throw new Response('Invalid course id', { status: 400 });
