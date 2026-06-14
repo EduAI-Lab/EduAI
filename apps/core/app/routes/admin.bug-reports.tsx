@@ -4,7 +4,7 @@ import type { LoaderFunctionArgs } from "react-router";
 import { BugReportsAdminView } from "~/components/admin/bug-reports-admin-view";
 import { AppSidebar } from "~/components/app-sidebar";
 import { SiteHeader } from "~/components/site-header";
-import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
+import { SidebarInset, SidebarProvider } from "@eduai/ui";
 import { useBugReports } from "~/hooks/api/use-bug-reports";
 import {
   Breadcrumb,
@@ -13,7 +13,7 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from "~/components/ui/breadcrumb";
+} from "@eduai/ui";
 import { auth } from "~/lib/auth/server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -45,7 +45,7 @@ export default function BugReportsPage() {
         } as React.CSSProperties
       }
     >
-      <AppSidebar variant="inset" user={user} />
+      <AppSidebar user={user} />
       <SidebarInset>
         <SiteHeader
           breadcrumbs={

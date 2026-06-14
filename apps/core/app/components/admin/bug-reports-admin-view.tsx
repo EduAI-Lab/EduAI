@@ -1,18 +1,19 @@
-import { Badge } from "~/components/ui/badge";
+import { Badge } from "@eduai/ui";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "~/components/ui/card";
+  PageHeading,
+} from "@eduai/ui";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "~/components/ui/select";
+} from "@eduai/ui";
 import {
   Table,
   TableBody,
@@ -20,7 +21,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "~/components/ui/table";
+} from "@eduai/ui";
 import type { BugReport, BugReportStatus } from "~/hooks/api/types";
 
 export type BugReportsAdminViewProps = {
@@ -46,7 +47,7 @@ export function BugReportsAdminView({
   if (isLoading) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900" />
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-foreground" />
         <p className="mt-4 text-sm text-muted-foreground">Loading...</p>
       </div>
     );
@@ -57,11 +58,15 @@ export function BugReportsAdminView({
       <div className="@container/main flex flex-1 flex-col gap-2">
         <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
           <div className="px-4 lg:px-6">
-            <h2 className="text-2xl font-bold">Bug Reports</h2>
-            <p className="text-muted-foreground">
-              Triage platform bug reports (ADMIN only, §11).
-              {isStubbed && " Stub data until Core API #304."}
-            </p>
+            <PageHeading
+              heading="Bug reports"
+              subheading={
+                <>
+                  Triage platform bug reports (ADMIN only, §11).
+                  {isStubbed && " Stub data until Core API #304."}
+                </>
+              }
+            />
           </div>
 
           <div className="px-4 lg:px-6">

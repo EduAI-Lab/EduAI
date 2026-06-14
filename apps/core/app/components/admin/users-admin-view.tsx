@@ -2,7 +2,7 @@ import { useState } from "react";
 
 import { UserFormDialog } from "~/components/admin/user-form-dialog";
 import { UsersTable } from "~/components/admin/users-table";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, PageHeading } from "@eduai/ui";
 import type {
   CreateUserInput,
   PlatformUser,
@@ -66,7 +66,10 @@ export function UsersAdminView({
   if (isLoading) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900" />
+        <div
+          className="animate-spin rounded-full h-8 w-8 border-b-2"
+          style={{ borderColor: "var(--primary)" }}
+        />
         <p className="mt-4 text-sm text-muted-foreground">Loading...</p>
       </div>
     );
@@ -77,14 +80,19 @@ export function UsersAdminView({
       <div className="@container/main flex flex-1 flex-col gap-2">
         <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
           <div className="px-4 lg:px-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-2xl font-bold">User Management</h2>
-                <p className="text-muted-foreground">
-                  Manage users and their access to the platform
-                </p>
-              </div>
-            </div>
+            <PageHeading
+              heading="User management"
+              subheading={
+                <>
+                  Manage users and their access to the platform &mdash;{" "}
+                  <span className="text-foreground font-medium">{users.length} total</span>
+                  {" · "}
+                  <span className="text-foreground font-medium">
+                    {users.filter((u) => u.isActive !== false).length} active
+                  </span>
+                </>
+              }
+            />
           </div>
 
           {error && (
@@ -99,7 +107,7 @@ export function UsersAdminView({
                 <div>
                   <CardTitle>Platform Users</CardTitle>
                   <CardDescription>
-                    View and manage all users in the system
+                    {users.length} total &middot; {users.filter((u) => u.isActive !== false).length} active
                   </CardDescription>
                 </div>
               </CardHeader>
