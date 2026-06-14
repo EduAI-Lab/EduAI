@@ -56,6 +56,33 @@ export async function enforceAdminIfApiKey(request: Request): Promise<GuardResul
   return { response: null, session };
 }
 
+type AdminGate =
+  | { response: Response; session: null }
+  | { response: null; session: Session };
+
+/**
+ * Resolve an ADMIN session for an admin-only endpoint. Honors the x-api-key
+ * rule (`enforceAdminIfApiKey`) and reuses that session to avoid a second
+ * lookup. Returns `{ response }` (403/forbidden) when the caller is not an
+ * active ADMIN, otherwise `{ session }`.
+ */
+export async function requireAdmin(request: Request): Promise<AdminGate> {
+  const { response, session } = await enforceAdminIfApiKey(request);
+  if (response) return { response, session: null };
+
+  const resolved = session ?? (await auth.api.getSession(request));
+  if (!resolved?.user || resolved.user.role !== "ADMIN") {
+    return {
+      response: new Response(
+        JSON.stringify({ error: "Forbidden: Admins only" }),
+        { status: 403, headers: { "Content-Type": "application/json" } },
+      ),
+      session: null,
+    };
+  }
+  return { response: null, session: resolved };
+}
+
 /**
  * Enforce: request must carry `Authorization: Bearer <EDUAI_API_KEY>` for
  * server-to-server calls from AI Tutor and Question Maker.
