@@ -224,6 +224,7 @@ Each section should use this format:
 | [`NavUser.test.tsx`](apps/core/app/tests/unit/NavUser.test.tsx) | Verifies the user's name and email render in the nav user component, the role badge displays the correct label for the admin role, and initials appear in the avatar fallback. |
 | [`ProjectGoals.test.tsx`](apps/core/app/tests/unit/ProjectGoals.test.tsx) | Verifies the "Project goals" section heading renders and the three goal cards (Cognitive AI Models, Personalized Learning, Global Access) are present. |
 | [`SiteFooter.test.tsx`](apps/core/app/tests/unit/SiteFooter.test.tsx) | Verifies the About and Quick Links section headings render, and the current year appears in the copyright line. |
+| [`SuggestedPrompts.test.tsx`](apps/core/app/tests/unit/SuggestedPrompts.test.tsx) | Verifies all six study-focused prompt card titles render (Build a study plan, Explain a concept, Generate practice problems, Review my essay, Debug my code, Summarize key points), and that clicking a card calls `onSelectPrompt` with the correct full prompt string. |
 
 ---
 
