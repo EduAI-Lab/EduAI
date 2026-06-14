@@ -1,4 +1,3 @@
-import { GalleryVerticalEnd } from "lucide-react";
 import { redirect, useActionData, useLoaderData, useNavigation } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
@@ -76,34 +75,31 @@ export default function StudentIdOnboardingPage() {
   const isLoading = navigation.state === "submitting";
 
   return (
-    <div className="grid min-h-svh lg:grid-cols-2">
-      <div className="flex flex-col gap-4 p-6 md:p-10">
-        <div className="flex justify-center gap-2 md:justify-start">
-          <a href="/dashboard" className="flex items-center gap-2 font-medium">
-            <div className="bg-primary text-primary-foreground flex size-6 items-center justify-center rounded-md">
-              <GalleryVerticalEnd className="size-4" />
-            </div>
-            EduAI
-          </a>
-        </div>
-        <div className="flex flex-1 items-center justify-center">
-          <div className="w-full max-w-sm">
-            <p className="mb-6 text-center text-sm text-muted-foreground">
-              Welcome{userName ? `, ${userName}` : ""}! One more step before you get started.
-            </p>
-            <StudentIdOnboardingForm
-              formError={actionData?.formError}
-              fieldError={actionData?.fieldError}
-              isLoading={isLoading}
-            />
-          </div>
-        </div>
+    <div
+      className="min-h-svh flex items-center justify-center relative font-sans"
+      style={{ background: "var(--background)" }}
+    >
+      {/* Gold top bar */}
+      <div className="fixed top-0 left-0 right-0 h-[3px] z-10" style={{ background: "var(--gold)" }} />
+
+      {/* Logo (fixed top-left) */}
+      <div className="fixed top-4 left-6 flex items-center gap-2">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{ stroke: "var(--primary)" }}>
+          <circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18"/><path d="M3 12h18"/><path d="M12 3c2 2 3.5 5.5 3.5 9s-1.5 7-3.5 9"/>
+        </svg>
+        <span className="text-[15px] font-bold" style={{ color: "var(--primary)" }}>EduAI</span>
       </div>
-      <div className="bg-muted relative hidden lg:block">
-        <img
-          src="/placeholder.svg"
-          alt=""
-          className="absolute inset-0 h-full w-full object-cover dark:brightness-[0.2] dark:grayscale"
+
+      <div className="w-full max-w-[460px] mx-4">
+        {userName && (
+          <p className="text-center text-sm text-muted-foreground mb-4">
+            Welcome, <span className="font-medium text-foreground">{userName}</span>! One more step.
+          </p>
+        )}
+        <StudentIdOnboardingForm
+          formError={actionData?.formError}
+          fieldError={actionData?.fieldError}
+          isLoading={isLoading}
         />
       </div>
     </div>
