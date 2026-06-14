@@ -16,6 +16,15 @@ export {
   resolveAdminCourseId,
 } from "./admin-context.server";
 export {
+  createAdminEnrollment,
+  createAdminUser,
+  deactivateAdminEnrollment,
+  deleteAdminUser,
+  updateAdminBugReportStatus,
+  updateAdminEnrollmentRole,
+  updateAdminUser,
+} from "./admin-mutations.server";
+export {
   buildAdminSystemPrompt,
   buildLearningAssistantSystemPrompt,
   buildLearningSystemPrompt,
