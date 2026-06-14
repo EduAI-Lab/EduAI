@@ -6,6 +6,7 @@ import {
   IconChevronDown,
   IconSend,
   IconPlayerStop,
+  IconWorld,
 } from "@tabler/icons-react";
 import { useState } from "react";
 import { ApiKeySettings } from "./api-key-settings";
@@ -13,6 +14,10 @@ import { useApiKeys } from "~/hooks/use-api-keys";
 import {
   PromptInput,
   PromptInputTextarea,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
 } from "@eduai/ui";
 import {
   DropdownMenu,
@@ -92,6 +97,23 @@ export function ChatInput({
 
           {/* Selector pills row */}
           <div className="flex items-center gap-2 mb-2.5">
+            {/* Global chat static indicator */}
+            {!showCourseSelector && (
+              <TooltipProvider delayDuration={300}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full border border-primary-text/40 bg-primary-text/10 text-primary-text min-h-[28px] select-none cursor-default">
+                      <IconWorld size={12} stroke={2} />
+                      Global
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-[220px] text-center">
+                    Platform-wide chat — not tied to any course. Your messages use general AI knowledge only.
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+
             {/* Course selector pill */}
             {showCourseSelector && (
               <DropdownMenu>
