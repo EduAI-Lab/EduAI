@@ -43,6 +43,7 @@ export function ApiKeySettings({
   onUpdateProvider,
   onRemoveProvider,
 }: ApiKeySettingsProps) {
+  const [activeProvider, setActiveProvider] = useState<Provider>("openai");
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
   const [tempKeys, setTempKeys] = useState<Record<string, string>>({});
 
@@ -110,7 +111,28 @@ export function ApiKeySettings({
         </DialogHeader>
 
         <div className="space-y-5 py-1">
+          {/* Tab navigation */}
+          <div className="flex gap-0 border-b border-border">
+            {providers.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => setActiveProvider(p.id)}
+                type="button"
+                aria-selected={activeProvider === p.id}
+                className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-[1px] ${
+                  activeProvider === p.id
+                    ? "border-b-[var(--primary)] text-foreground"
+                    : "border-b-transparent text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Tab content */}
           {providers.map((p) => {
+            if (activeProvider !== p.id) return null;
             const configured = isProviderConfigured(p.id);
             return (
               <section

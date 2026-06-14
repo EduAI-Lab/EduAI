@@ -26,11 +26,19 @@ const makeProps = (overrides: Record<string, any> = {}) => ({
 // ---------------------------------------------------------------------------
 
 describe("ApiKeySettings — rendering", () => {
-  it("renders OpenAI and Google provider cards when open", () => {
+  it("renders OpenAI and Google provider tabs when open, with OpenAI selected by default", () => {
     render(<ApiKeySettings {...makeProps()} />);
     expect(screen.getByText("OpenAI API key")).toBeInTheDocument();
-    expect(screen.getByText("Google AI API key")).toBeInTheDocument();
+    expect(screen.queryByText("Google AI API key")).not.toBeInTheDocument();
     expect(screen.queryByText("Ollama (Local)")).not.toBeInTheDocument();
+  });
+
+  it("switches to Google AI tab when clicked", () => {
+    render(<ApiKeySettings {...makeProps()} />);
+    const googleTab = screen.getByRole("button", { name: "Google AI" });
+    fireEvent.click(googleTab);
+    expect(screen.getByText("Google AI API key")).toBeInTheDocument();
+    expect(screen.queryByText("OpenAI API key")).not.toBeInTheDocument();
   });
 
   it("shows preconfigured Ollama and vLLM note", () => {
@@ -50,7 +58,7 @@ describe("ApiKeySettings — rendering", () => {
 // ---------------------------------------------------------------------------
 
 describe("ApiKeySettings — unconfigured providers", () => {
-  it("shows the Save OpenAI Key button for an unconfigured OpenAI provider", () => {
+  it("shows the Save OpenAI Key button for an unconfigured OpenAI provider on the OpenAI tab", () => {
     render(<ApiKeySettings {...makeProps()} />);
     expect(screen.getByRole("button", { name: /save openai key/i })).toBeInTheDocument();
   });
@@ -79,6 +87,13 @@ describe("ApiKeySettings — unconfigured providers", () => {
       apiKey: "sk-mykey",
       isEnabled: true,
     });
+  });
+
+  it("shows the Save Google AI Key button when on the Google AI tab", () => {
+    render(<ApiKeySettings {...makeProps()} />);
+    const googleTab = screen.getByRole("button", { name: "Google AI" });
+    fireEvent.click(googleTab);
+    expect(screen.getByRole("button", { name: /save google ai key/i })).toBeInTheDocument();
   });
 });
 
