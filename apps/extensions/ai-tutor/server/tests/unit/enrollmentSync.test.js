@@ -200,6 +200,23 @@ describe('syncCourseEnrollments', () => {
       });
       expect(result).toEqual({ synced: 1, created: 1, deleted: 0, errors: [] });
     });
+
+    it('syncs STUDENT enrollments only (#578)', async () => {
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([
+        ACTIVE_ENROLLMENT,
+        { ...ACTIVE_ENROLLMENT, studentId: 'ta-1', role: 'TA' },
+        { ...ACTIVE_ENROLLMENT, studentId: 'inst-1', role: 'INSTRUCTOR' },
+      ]);
+      prisma.courseEnrollment.findMany.mockResolvedValue([]);
+
+      const result = await syncCourseEnrollments(1);
+
+      expect(prisma.courseEnrollment.createMany).toHaveBeenCalledWith({
+        data: [{ courseOfferingId: 1, userId: 'user-cuid-1' }],
+        skipDuplicates: true,
+      });
+      expect(result.synced).toBe(1);
+    });
   });
 
   describe('error propagation', () => {

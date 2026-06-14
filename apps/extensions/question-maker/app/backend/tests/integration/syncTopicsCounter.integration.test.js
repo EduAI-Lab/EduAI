@@ -50,6 +50,9 @@ vi.mock('../../src/services/coreApiService.js', () => ({
   pushTopicToCore: vi.fn(),
   pushQuestionToCore: vi.fn(),
   patchQuestionTestableOnCore: vi.fn(),
+  findScopedCoreCourseByCode: vi.fn(),
+  isCoreCourseInScopedList: vi.fn(),
+  listCoursesFromCore: vi.fn(),
 }));
 
 const { default: app } = await import('../../src/app.js');
@@ -88,6 +91,7 @@ describe('POST /api/course/:id/sync-topics — synced counter', () => {
     const mockExistingTopic = {
       id: 'local-t-1',
       name: 'Old Name',
+      courseId: 'course-1',
       coreTopicId: 'core-t-1',
       update: vi.fn().mockResolvedValue(undefined),
     };
@@ -152,6 +156,7 @@ describe('POST /api/course/:id/sync-topics — synced counter', () => {
     const linkedTopic = {
       id: 'local-t-linked',
       name: 'Old Linked Name',
+      courseId: 'course-3',
       coreTopicId: 'core-t-linked',
       update: vi.fn().mockResolvedValue(undefined),
     };

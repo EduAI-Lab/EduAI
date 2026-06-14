@@ -61,7 +61,7 @@ type FormState = {
     variantReasoningLevel: ReasoningLevel;
     variantAnswer: string;
     variantChoices: MCQChoice[];
-    variantSecondaryTopics: number[];
+    variantSecondaryTopics: string[];
     variantAssessmentId: string;
     variantReferenceId: string;
     questionType: QuestionType;
@@ -237,7 +237,7 @@ export const AddQuestionDialog = ({
                 variantReasoningLevel: presetVariant.variant.reasoningLevel ?? 'factual',
                 variantAnswer: presetVariant.variant.answer ?? '',
                 variantChoices: copiedChoices,
-                variantSecondaryTopics: presetVariant.variant.secondaryTopicsId || [],
+                variantSecondaryTopics: (presetVariant.variant.secondaryTopicsId || []).map(String),
                 variantAssessmentId: presetVariant.variant.assessmentId ? presetVariant.variant.assessmentId.toString() : 'none',
                 generationPrompt: 'Create a variant of this question...'
             });
@@ -410,9 +410,9 @@ export const AddQuestionDialog = ({
         return Number.isFinite(parsed) ? parsed : undefined;
     };
 
-    const toggleSecondaryTopic = (topicId: number, checked: boolean) => {
+    const toggleSecondaryTopic = (topicId: string, checked: boolean) => {
         setForm((prev) => {
-            if (prev.primaryTopicId && Number(prev.primaryTopicId) === topicId && checked) {
+            if (prev.primaryTopicId && prev.primaryTopicId === topicId && checked) {
                 return prev;
             }
 
@@ -509,8 +509,7 @@ export const AddQuestionDialog = ({
         if (mode === 'variant') {
             if (!form.baseSelection) missing.push({ label: 'Base variant selection', fieldId: null });
         } else {
-            const primaryTopicNum = parseNumber(form.primaryTopicId);
-            if (!primaryTopicNum) missing.push({ label: 'Primary topic', fieldId: 'field-primary-topic' });
+            if (!form.primaryTopicId.trim()) missing.push({ label: 'Primary topic', fieldId: 'field-primary-topic' });
         }
         const isMcq = form.questionType === 'MCQ';
         if (isMcq) {
@@ -638,7 +637,7 @@ export const AddQuestionDialog = ({
                 if (topics.length > 0) {
                     const topicLines = topics.map((topic) => `- [${topic.id}] ${topic.name}`).join('\n');
                     sections.push(
-                        `Course topics:\n${topicLines}\n\nUse these numeric IDs for "primary_topic_id" and "secondary_topic_ids".`
+                        `Course topics:\n${topicLines}\n\nUse these topic IDs for "primary_topic_id" and "secondary_topic_ids".`
                     );
                 }
 
@@ -695,23 +694,22 @@ export const AddQuestionDialog = ({
             }
 
             setForm((prev) => {
-                const topicIdSet = new Set(topics.map((topic) => topic.id));
-                const primaryCandidate = Number(generated.primary_topic_id);
-                const primaryTopicNumeric =
-                    Number.isInteger(primaryCandidate) && topicIdSet.has(primaryCandidate)
-                        ? primaryCandidate
-                        : null;
+                const topicIdSet = new Set(topics.map((topic) => String(topic.id)));
+                const primaryCandidate =
+                    generated.primary_topic_id != null ? String(generated.primary_topic_id).trim() : '';
+                const primaryTopicId =
+                    primaryCandidate && topicIdSet.has(primaryCandidate) ? primaryCandidate : null;
 
                 const resolvedSecondaryTopics = Array.isArray(generated.secondary_topic_ids)
                     ? Array.from(
                         new Set(
                             generated.secondary_topic_ids
-                                .map((value: unknown) => Number(value))
+                                .map((value: unknown) => String(value).trim())
                                 .filter(
                                     (value) =>
-                                        Number.isInteger(value) &&
+                                        value !== '' &&
                                         topicIdSet.has(value) &&
-                                        value !== primaryTopicNumeric
+                                        value !== primaryTopicId
                                 )
                         )
                     )
@@ -753,7 +751,7 @@ export const AddQuestionDialog = ({
                 }
 
                 const resolvedPrimaryTopicId =
-                    primaryTopicNumeric !== null ? primaryTopicNumeric.toString() : prev.primaryTopicId;
+                    primaryTopicId !== null ? primaryTopicId : prev.primaryTopicId;
 
                 const resolvedDescription =
                     typeof generated.description === 'string' && generated.description.trim().length > 0
@@ -884,7 +882,7 @@ export const AddQuestionDialog = ({
                 || createDescriptionFromText(form.variantText)
                 || null;
 
-            const primaryTopicId = parseNumber(form.primaryTopicId);
+            const primaryTopicId = form.primaryTopicId.trim();
             if (!primaryTopicId) {
                 throw new Error('Valid primary topic is required.');
             }

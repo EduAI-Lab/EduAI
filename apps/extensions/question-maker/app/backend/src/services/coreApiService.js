@@ -5,11 +5,75 @@
  */
 import { config } from '../config/settings.js';
 
-function serviceHeaders() {
-  return {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${config.eduaiApiKey}`,
-  };
+function serviceHeaders({ cookie } = {}) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (config.eduaiApiKey) {
+    headers.Authorization = `Bearer ${config.eduaiApiKey}`;
+  } else if (cookie) {
+    headers.cookie = cookie;
+  }
+  return headers;
+}
+
+function authHeaderVariants({ cookie, preferCookie = false } = {}) {
+  const variants = [];
+  const service = config.eduaiApiKey ? { Authorization: `Bearer ${config.eduaiApiKey}` } : null;
+  const session = cookie ? { cookie } : null;
+
+  if (preferCookie) {
+    if (session) variants.push(session);
+    if (service) variants.push(service);
+  } else {
+    if (service) variants.push(service);
+    if (session) variants.push(session);
+  }
+
+  return variants;
+}
+
+function isRetryableAuthFailure(status, body) {
+  return (
+    (status === 401 || status === 403) &&
+    (body?.error === 'INVALID_SERVICE_KEY' ||
+      body?.error === 'Unauthorized' ||
+      body?.error === 'Forbidden')
+  );
+}
+
+/**
+ * Calls Core with service-key and/or session-cookie auth.
+ * When both are available, retries with the alternate auth mode on auth failures
+ * so a stale EDUAI_API_KEY does not block user-session reads.
+ */
+async function fetchFromCore(path, { method = 'GET', body, cookie, preferCookie = false } = {}) {
+  const url = `${config.coreUrl}${path}`;
+  const variants = authHeaderVariants({ cookie, preferCookie });
+
+  if (variants.length === 0) {
+    throw coreError('EDUAI_API_KEY not configured and no session cookie available', 503, {
+      error: 'CORE_SERVICE_UNAVAILABLE',
+    });
+  }
+
+  let lastError;
+  for (const authHeaders of variants) {
+    const res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json', ...authHeaders },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+    if (res.ok) return res.json();
+
+    const errBody = await res.json().catch(() => ({}));
+    const err = coreError(errBody.error || 'Core request failed', res.status, errBody);
+    if (variants.length > 1 && isRetryableAuthFailure(res.status, errBody)) {
+      lastError = err;
+      continue;
+    }
+    throw err;
+  }
+
+  throw lastError;
 }
 
 function coreError(message, status, body) {
@@ -17,15 +81,11 @@ function coreError(message, status, body) {
 }
 
 /** GET /api/courses/:courseId/topics — returns { topics: [{ id, name }] } (deleted topics excluded by Core) */
-export async function getCourseTopicsFromCore(coreCourseId) {
-  const res = await fetch(`${config.coreUrl}/api/courses/${coreCourseId}/topics`, {
-    headers: serviceHeaders(),
+export async function getCourseTopicsFromCore(coreCourseId, opts = {}) {
+  return fetchFromCore(`/api/courses/${coreCourseId}/topics`, {
+    cookie: opts.cookie,
+    preferCookie: Boolean(opts.cookie),
   });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw coreError(body.error || 'Core topics fetch failed', res.status, body);
-  }
-  return res.json();
 }
 
 /**
@@ -98,16 +158,14 @@ export async function patchQuestionTestableOnCore(coreQuestionId, testable) {
  * unscoped, so QM can apply its own access logic (mirroring Core's keystone).
  * Returns { enrollments: [] } when the course no longer exists in Core (404).
  */
-export async function getCourseEnrollmentsFromCore(coreCourseId) {
-  const res = await fetch(`${config.coreUrl}/api/courses/${coreCourseId}/enrollments`, {
-    headers: serviceHeaders(),
+export async function getCourseEnrollmentsFromCore(coreCourseId, opts = {}) {
+  return fetchFromCore(`/api/courses/${coreCourseId}/enrollments`, {
+    cookie: opts.cookie,
+    preferCookie: Boolean(opts.cookie),
+  }).catch((err) => {
+    if (err.status === 404) return { enrollments: [] };
+    throw err;
   });
-  if (res.status === 404) return { enrollments: [] };
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw coreError(body.error || 'Core enrollments fetch failed', res.status, body);
-  }
-  return res.json();
 }
 
 /**
@@ -115,16 +173,71 @@ export async function getCourseEnrollmentsFromCore(coreCourseId) {
  * (including `department`, needed for the UNIT_ADMIN unit lock).
  * Returns null when the course no longer exists in Core (404).
  */
-export async function getCourseFromCore(coreCourseId) {
-  const res = await fetch(`${config.coreUrl}/api/courses/${coreCourseId}`, {
-    headers: serviceHeaders(),
-  });
-  if (res.status === 404) return null;
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw coreError(body.error || 'Core course fetch failed', res.status, body);
+export async function getCourseFromCore(coreCourseId, opts = {}) {
+  try {
+    return await fetchFromCore(`/api/courses/${coreCourseId}`, {
+      cookie: opts.cookie,
+      preferCookie: Boolean(opts.cookie),
+    });
+  } catch (err) {
+    if (err.status === 404) return null;
+    throw err;
   }
-  return res.json();
+}
+
+/**
+ * GET /api/courses — session-scoped course list for instructor UI flows (#578).
+ * Forwards the caller's Core session cookie so Core applies `buildCourseListFilter`
+ * (INSTRUCTOR/TA enrollments, etc.). Do not use the service key for course pickers.
+ */
+export async function listCoursesFromCore(cookieHeader) {
+  return fetchFromCore('/api/courses', {
+    cookie: cookieHeader,
+    preferCookie: true,
+  });
+}
+
+/** Returns true when `coreCourseId` appears in the caller's scoped Core course list (#578). */
+export async function isCoreCourseInScopedList(coreCourseId, cookieHeader) {
+  const data = await listCoursesFromCore(cookieHeader);
+  const courses = Array.isArray(data?.courses) ? data.courses : [];
+  return courses.some((course) => course?.id === coreCourseId);
+}
+
+function normalizeCourseCode(value) {
+  if (!value || typeof value !== 'string') return '';
+  return value.replace(/\s+/g, '').toLowerCase();
+}
+
+/**
+ * Finds a Core course in the caller's scoped list by normalized course code (#578).
+ * Used when a local QM row matches Core by code but was never link-core'd.
+ */
+export async function findScopedCoreCourseByCode(courseCode, cookieHeader) {
+  const target = normalizeCourseCode(courseCode);
+  if (!target) return null;
+
+  const matchInList = (data) => {
+    const courses = Array.isArray(data?.courses) ? data.courses : [];
+    return courses.find((course) => normalizeCourseCode(course?.code) === target) ?? null;
+  };
+
+  try {
+    const scoped = await listCoursesFromCore(cookieHeader);
+    const match = matchInList(scoped);
+    if (match) return match;
+  } catch {
+    // fall through to service-key catalog search
+  }
+
+  if (!config.eduaiApiKey) return null;
+
+  try {
+    const catalog = await fetchFromCore('/api/courses', { preferCookie: false });
+    return matchInList(catalog);
+  } catch {
+    return null;
+  }
 }
 
 /**

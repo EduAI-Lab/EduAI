@@ -238,6 +238,10 @@ export const api = {
     http(`/api/courses/${courseId}/topics/sync`, {
       method: 'POST',
     }),
+  syncCourseEnrollments: (courseId: number) =>
+    http(`/api/courses/${courseId}/sync-enrollments`, {
+      method: 'POST',
+    }) as Promise<{ synced: number; created: number; deleted: number; errors: [] }>,
   remapCourseTopics: (courseId: number, mappings: { fromTopicId: number; toTopicId: number }[]) =>
     http(`/api/courses/${courseId}/topics/remap`, {
       method: 'POST',

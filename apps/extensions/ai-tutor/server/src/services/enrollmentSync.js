@@ -27,7 +27,10 @@ export async function syncCourseEnrollments(courseOfferingId, options = {}) {
   }
 
   const allEnrollments = await listEduAiCourseEnrollmentsServiceKey(course.externalId);
-  const activeEnrollments = allEnrollments.filter((e) => e.isActive);
+  // AI Tutor local enrollments represent student access only (#578).
+  const activeEnrollments = allEnrollments.filter(
+    (e) => e.isActive && e.role === 'STUDENT',
+  );
 
   // Guard: empty upstream means "no data yet" — don't wipe local rows
   if (activeEnrollments.length === 0) {
