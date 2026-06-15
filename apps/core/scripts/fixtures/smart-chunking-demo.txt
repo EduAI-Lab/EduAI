@@ -1,0 +1,32 @@
+Chapter 1: Course Policies
+
+Late submissions are penalized 10% per day unless an approved accommodation applies.
+Office hours are Tuesdays 2–4pm in ICCS 304.
+
+Section 1.1 Grading Breakdown
+
+Participation counts for 5% of the final grade. The midterm is worth 30%.
+The final exam is worth 40%. Assignments total 25%.
+
+2.1 Assignment 1 — Due Date
+
+Question: When is Assignment 1 due?
+Answer: Assignment 1 is due Friday March 14 at 11:59pm Pacific. Submit via Canvas.
+Late work loses 10% per day up to three days, then receives zero credit.
+
+2.2 Assignment 2 — Scope
+
+Question: What topics does Assignment 2 cover?
+Answer: Assignment 2 covers binary search trees, AVL rotations, and amortized analysis from Lectures 5–7.
+
+--- Slide 12 ---
+
+Exam Format
+
+The midterm is closed-book, 90 minutes, and covers Modules 1–4.
+Calculators are not permitted. One double-sided cheat sheet is allowed for the final only.
+
+GLOSSARY
+
+AVL tree — A self-balancing binary search tree where heights of subtrees differ by at most one.
+Amortized analysis — A method to average operation cost over a sequence rather than worst-case per operation.
