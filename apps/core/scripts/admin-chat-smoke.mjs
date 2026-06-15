@@ -146,8 +146,9 @@ async function runHttpSmoke() {
     ],
     streaming: false,
   });
-  if (probe.status === 200 && probe.json?.text) {
-    pass("admin chat LLM round-trip", `reply length=${probe.json.text.length}`);
+  const reply = probe.json?.text ?? probe.json?.content;
+  if (probe.status === 200 && typeof reply === "string" && reply.length > 0) {
+    pass("admin chat LLM round-trip", `reply length=${reply.length}`);
   } else if (probe.status === 502) {
     fail("admin chat LLM round-trip", probe.json?.error ?? probe.text);
   } else {
