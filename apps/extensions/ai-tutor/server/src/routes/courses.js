@@ -31,6 +31,7 @@ import { mapCourseOffering, mapProgressData } from '../utils/mappers.js';
 import { cloneCourseContent, cloneLessonsFromOffering } from '../services/courseCloning.js';
 import { calculateCourseProgress } from '../services/progressCalculation.js';
 import { findEduAiCourseById, listEduAiCourses } from '../services/eduaiClient.js';
+import { mapEduAiServiceKeyError } from '../services/eduaiServiceKeyErrors.js';
 import { syncExternalCourseTopics } from '../services/topicSync.js';
 import { syncCourseEnrollments } from '../services/enrollmentSync.js';
 
@@ -38,6 +39,15 @@ const router = express.Router();
 
 function isSupportedCourseRole(role) {
   return role === 'INSTRUCTOR' || role === 'STUDENT' || role === 'TA' || role === 'UNIT_ADMIN';
+}
+
+function respondEduAiUpstreamError(res, error, fallbackMessage) {
+  const mapped = mapEduAiServiceKeyError(error);
+  if (mapped) {
+    return res.status(mapped.status).json({ error: mapped.message, code: mapped.code });
+  }
+  const status = Number.isInteger(error?.status) ? error.status : 502;
+  return res.status(status).json({ error: error.message || fallbackMessage });
 }
 
 /**
@@ -75,8 +85,7 @@ router.get('/eduai/courses', requireRole('INSTRUCTOR'), async (req, res) => {
     res.json(filtered);
   } catch (error) {
     console.error('[eduai] Failed to list courses', error);
-    const status = Number.isInteger(error?.status) ? error.status : 502;
-    res.status(status).json({ error: error.message || 'Unable to fetch EduAI courses' });
+    return respondEduAiUpstreamError(res, error, 'Unable to fetch EduAI courses');
   }
 });
 
@@ -269,8 +278,7 @@ router.post('/courses/import-external', requireRole(['INSTRUCTOR', 'UNIT_ADMIN',
     res.status(201).json(mapCourseOffering(created));
   } catch (error) {
     console.error('[eduai] Failed to import course', error);
-    const status = Number.isInteger(error?.status) ? error.status : 500;
-    res.status(status).json({ error: error.message || 'Unable to import course' });
+    return respondEduAiUpstreamError(res, error, 'Unable to import course');
   }
 });
 
