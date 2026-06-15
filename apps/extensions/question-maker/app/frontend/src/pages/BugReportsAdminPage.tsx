@@ -98,7 +98,7 @@ export function BugReportsAdminPage() {
     void load();
   }, [isLoading, user, navigate, load]);
 
-  async function handleStatusChange(bugId: number, newStatus: string) {
+  async function handleStatusChange(bugId: string, newStatus: string) {
     try {
       await bugReportApi.updateStatus(bugId, newStatus);
       setRows((prev) => prev.map((b) => (b.id === bugId ? { ...b, status: newStatus } : b)));
@@ -133,6 +133,7 @@ export function BugReportsAdminPage() {
             <thead className="bg-muted/50 border-b">
               <tr>
                 <th className="text-left p-3 font-medium">Status</th>
+                <th className="text-left p-3 font-medium">Source</th>
                 <th className="text-left p-3 font-medium">Description</th>
                 <th className="text-left p-3 font-medium">User</th>
                 <th className="text-left p-3 font-medium">Date</th>
@@ -143,7 +144,7 @@ export function BugReportsAdminPage() {
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="p-8 text-center text-muted-foreground">
+                  <td colSpan={7} className="p-8 text-center text-muted-foreground">
                     No bug reports yet.
                   </td>
                 </tr>
@@ -163,10 +164,15 @@ export function BugReportsAdminPage() {
                         ))}
                       </select>
                     </td>
+                    <td className="p-3 align-top whitespace-nowrap">
+                      <span className="text-xs text-muted-foreground uppercase tracking-wide">
+                        {row.source ?? '—'}
+                      </span>
+                    </td>
                     <td className="p-3 align-top max-w-[280px]">
                       <button
                         type="button"
-                        className="truncate text-left w-full hover:text-primary"
+                        className="truncate text-left w-full hover:text-primary-text"
                         title={row.description}
                         onClick={() =>
                           setDetail({

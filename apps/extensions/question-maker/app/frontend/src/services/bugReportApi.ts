@@ -4,7 +4,7 @@
 import api from './api';
 
 export interface BugReportRow {
-  id: number;
+  id: string;
   description: string;
   status: string;
   consoleLogs: string | null;
@@ -13,9 +13,10 @@ export interface BugReportRow {
   pageUrl: string | null;
   userAgent: string | null;
   isAnonymous: boolean;
-  userId: number;
-  user: { email: string };
+  userId: string | null;
+  user: { email: string } | null;
   createdAt: string;
+  source?: string | null;
 }
 
 export interface SubmitBugReportPayload {
@@ -39,7 +40,7 @@ export const bugReportApi = {
     return res.data.data;
   },
 
-  async updateStatus(bugId: number, status: string): Promise<void> {
+  async updateStatus(bugId: string, status: string): Promise<void> {
     await api.patch(`/api/bug-reports/${bugId}`, { status });
   }
 };
