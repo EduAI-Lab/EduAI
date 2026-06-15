@@ -59,6 +59,19 @@ function mutationFailure(error: ToolError & Record<string, unknown>) {
   };
 }
 
+export function userRefValidationError(opts: {
+  userId?: string;
+  userEmail?: string;
+}): MutationResult | null {
+  if (opts.userId?.trim() || opts.userEmail?.trim()) {
+    return null;
+  }
+  return mutationFailure({
+    error: "VALIDATION_ERROR",
+    fields: { user: "userId or userEmail required — call listUsers first" },
+  });
+}
+
 /** When the model calls a write tool before the admin confirmed in chat. */
 export function requireWriteConfirmation(confirmed: boolean): MutationResult | null {
   if (confirmed === true) {
@@ -234,6 +247,13 @@ export async function updateAdminUser(
     };
   }
 
+  if (Object.keys(parsed.data).length === 0) {
+    return {
+      error: "VALIDATION_ERROR",
+      fields: { body: "at least one field to update is required" },
+    };
+  }
+
   if (parsed.data.authorizedUnits !== undefined) {
     const target = await prisma.user.findUnique({
       where: { id: userId },
@@ -321,70 +341,68 @@ export async function createAdminEnrollment(
     role: EnrollmentRole;
   },
 ): Promise<MutationResult> {
-  return runAdminWriteTool("createCourseEnrollment", actor, async () => {
-    const denied = requirePlatformAdmin(actor);
-    if (denied) return denied;
+  const denied = requirePlatformAdmin(actor);
+  if (denied) return denied;
 
-    const resolvedUser = await resolveAdminUserId(actor, {
-      userId: opts.userId,
-      userEmail: opts.userEmail,
-    });
-    if ("error" in resolvedUser) {
-      return resolvedUser;
-    }
-
-    const resolved = await resolveAdminCourseId(actor, {
-      courseId: opts.courseId,
-      courseCode: opts.courseCode,
-      fallbackCourseId: opts.fallbackCourseId,
-    });
-    if ("error" in resolved) {
-      return resolved;
-    }
-
-    const gate = await getAccessibleCourse(actor, resolved.courseId);
-    if ("error" in gate) {
-      return gate;
-    }
-
-    const mapped = mapEnrollmentResult(
-      await addEnrollment(resolved.courseId, {
-        userId: resolvedUser.userId,
-        role: opts.role,
-      }),
-    );
-    if ("writeSucceeded" in mapped && mapped.writeSucceeded === false) {
-      return mapped;
-    }
-
-    const verified = await prisma.enrollment.findFirst({
-      where: {
-        courseId: resolved.courseId,
-        userId: resolvedUser.userId,
-        isActive: true,
-      },
-      select: {
-        id: true,
-        role: true,
-        isActive: true,
-        enrolledAt: true,
-        user: { select: { email: true, name: true } },
-      },
-    });
-
-    if (!verified) {
-      return mutationFailure({
-        error: "VERIFY_FAILED",
-        message: "Enrollment not visible in database after write",
-      });
-    }
-
-    return {
-      ...mapped,
-      verifiedEnrollment: verified,
-      resolvedUser,
-    };
+  const resolvedUser = await resolveAdminUserId(actor, {
+    userId: opts.userId,
+    userEmail: opts.userEmail,
   });
+  if ("error" in resolvedUser) {
+    return resolvedUser;
+  }
+
+  const resolved = await resolveAdminCourseId(actor, {
+    courseId: opts.courseId,
+    courseCode: opts.courseCode,
+    fallbackCourseId: opts.fallbackCourseId,
+  });
+  if ("error" in resolved) {
+    return resolved;
+  }
+
+  const gate = await getAccessibleCourse(actor, resolved.courseId);
+  if ("error" in gate) {
+    return gate;
+  }
+
+  const mapped = mapEnrollmentResult(
+    await addEnrollment(resolved.courseId, {
+      userId: resolvedUser.userId,
+      role: opts.role,
+    }),
+  );
+  if ("writeSucceeded" in mapped && mapped.writeSucceeded === false) {
+    return mapped;
+  }
+
+  const verified = await prisma.enrollment.findFirst({
+    where: {
+      courseId: resolved.courseId,
+      userId: resolvedUser.userId,
+      isActive: true,
+    },
+    select: {
+      id: true,
+      role: true,
+      isActive: true,
+      enrolledAt: true,
+      user: { select: { email: true, name: true } },
+    },
+  });
+
+  if (!verified) {
+    return mutationFailure({
+      error: "VERIFY_FAILED",
+      message: "Enrollment not visible in database after write",
+    });
+  }
+
+  return {
+    ...mapped,
+    verifiedEnrollment: verified,
+    resolvedUser,
+  };
 }
 
 /** ADMIN — change enrollment role. */
