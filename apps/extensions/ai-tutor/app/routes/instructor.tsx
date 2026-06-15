@@ -168,7 +168,7 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
         <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 animate-fade-up">
           <div>
             <p className="text-sm font-medium text-muted-foreground mb-1">Dashboard</p>
-            <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-foreground">
+            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-foreground">
               Teaching
             </h1>
           </div>
@@ -218,7 +218,7 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
 
         {/* EduAI Import Panel */}
         {showEduAiImport && (
-          <div className="card-editorial p-6 space-y-5 animate-scale-in">
+          <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6 space-y-5 animate-scale-in">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <div className="flex items-center gap-2 mb-1">
@@ -237,7 +237,7 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
                       />
                     </svg>
                   </div>
-                  <h2 className="font-display text-xl font-bold text-foreground">
+                  <h2 className="text-xl font-bold text-foreground">
                     Import from EduAI
                   </h2>
                 </div>
@@ -347,7 +347,7 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
                       <div className="flex-1 space-y-2">
                         {course.code && <span className="tag tag-primary">{course.code}</span>}
                         {course.name && (
-                          <h3 className="font-display text-lg font-bold text-foreground">
+                          <h3 className="text-lg font-bold text-foreground">
                             {course.name}
                           </h3>
                         )}
@@ -438,7 +438,7 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
           </div>
         ) : oCourses.length === 0 ? (
           <div className="animate-fade-up delay-150">
-            <div className="card-editorial p-12 text-center max-w-lg mx-auto">
+            <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-12 text-center max-w-lg mx-auto">
               <div className="w-16 h-16 mx-auto mb-6 rounded-2xl bg-secondary flex items-center justify-center">
                 <svg
                   className="w-8 h-8 text-muted-foreground"
@@ -454,7 +454,7 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
                   />
                 </svg>
               </div>
-              <h2 className="font-display text-xl font-bold text-foreground mb-2">
+              <h2 className="text-xl font-bold text-foreground mb-2">
                 No courses yet
               </h2>
               <p className="text-muted-foreground text-sm">
@@ -476,7 +476,7 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
                     navigate(`/instructor/courses/${c.id}`);
                   }
                 }}
-                className="group card-editorial p-6 cursor-pointer transition-all duration-300 hover:shadow-xl hover:-translate-y-1 glow flex flex-col animate-fade-up focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                className="group rounded-lg border bg-card text-card-foreground shadow-sm p-6 cursor-pointer transition-all duration-300 hover:shadow-xl hover:-translate-y-1 glow flex flex-col animate-fade-up focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 style={{ animationDelay: `${150 + index * 50}ms` }}
               >
                 {/* Header */}
@@ -502,7 +502,7 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
 
                 {/* Course info */}
                 <div className="flex-1 mb-4">
-                  <h3 className="font-display text-lg font-bold text-foreground mb-1 group-hover:text-primary transition-colors line-clamp-2">
+                  <h3 className="text-lg font-bold text-foreground mb-1 group-hover:text-primary transition-colors line-clamp-2">
                     {c.title}
                   </h3>
                   {c.description && (

@@ -56,7 +56,7 @@ import type { Route } from './+types/instructor.list';
 import { requireClientUser } from '~/lib/client-auth';
 
 import type { ActivityUpdatePayload } from '../lib/activityForm';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@eduai/ui';
 import TopicSyncMappingDialog from '~/components/TopicSyncMappingDialog';
 import { useBugReport } from '~/components/bug-report/useBugReport';
 
@@ -555,13 +555,13 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
               </BreadcrumbItem>
             </BreadcrumbList>
           </Breadcrumb>
-          <h2 className="font-display text-2xl font-semibold text-foreground mb-6">
+          <h2 className="text-2xl font-semibold text-foreground mb-6">
             {lesson?.title || 'Lesson'}
           </h2>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
             <div className="lg:col-span-2 space-y-4">
-              <div className="card-editorial p-5">
+              <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-5">
                 <div className="font-semibold mb-3 text-foreground">Activities</div>
                 {oActivities.length === 0 ? (
                   <div className="text-muted-foreground">No activities yet.</div>
@@ -589,7 +589,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div className="flex items-start gap-3">
-                              <span className="flex-shrink-0 w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center font-display font-semibold text-xs">
+                              <span className="flex-shrink-0 w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center font-semibold text-xs">
                                 {i + 1}
                               </span>
                               <div>
@@ -896,7 +896,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
             </div>
 
             <aside className="space-y-4">
-              <div className="card-editorial p-5 space-y-3">
+              <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-5 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="font-semibold text-foreground">Course Topics</div>
                   {lesson?.courseOfferingId && (
