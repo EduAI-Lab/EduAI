@@ -100,6 +100,7 @@ async function runHttpSmoke() {
   const emptyAdmin = await postAdminChat(adminLogin.cookies, {
     chatMode: "admin",
     messages: [],
+    apiKeys: {},
     streaming: false,
   });
   if (emptyAdmin.status === 200) {
@@ -113,6 +114,7 @@ async function runHttpSmoke() {
     const forbidden = await postAdminChat(studentLogin.cookies, {
       chatMode: "admin",
       messages: [],
+      apiKeys: {},
       streaming: false,
     });
     if (forbidden.status === 403) {
@@ -134,6 +136,7 @@ async function runHttpSmoke() {
   const probe = await postAdminChat(adminLogin.cookies, {
     chatMode: "admin",
     model,
+    apiKeys: {},
     messages: [
       {
         id: randomUUID(),
