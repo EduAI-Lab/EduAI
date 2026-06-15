@@ -142,7 +142,7 @@ export function QuestionMetadataPanel({
                                 >
                                     <input
                                         type="checkbox"
-                                        className="h-4 w-4 rounded border-border bg-background ring-ring cursor-pointer accent-primary"
+                                        className="h-4 w-4 rounded border-border bg-background ring-ring cursor-pointer accent-accent"
                                         checked={checked}
                                         disabled={isPrimary}
                                         onChange={(event) => onToggleSecondaryTopic(topic.id, event.target.checked)}

@@ -346,16 +346,16 @@ export const QuestionDetailView = ({
                                     <Badge variant="outline">{entry.primaryTopicName ?? `Topic ${entry.primaryTopicId}`}</Badge>
                                     <Badge variant="secondary" className="uppercase">{entry.questionType}</Badge>
                                     {entry.isAiGenerated && (
-                                        <Badge variant="default" className="bg-purple-100 text-purple-800 hover:bg-purple-200 border-purple-300">
+                                        <Badge variant="default" className="bg-secondary/15 text-secondary border-secondary/30 hover:bg-secondary/25">
                                             AI Generated
                                         </Badge>
                                     )}
                                     {entry.isDraft ? (
-                                        <Badge variant="default" className="bg-amber-100 text-amber-800 hover:bg-amber-200 border-amber-300">
+                                        <Badge variant="default" className="bg-warning-100 text-warning-700 border-warning-500/30">
                                             Draft
                                         </Badge>
                                     ) : (
-                                        <Badge variant="default" className="bg-green-100 text-green-800 hover:bg-green-200 border-green-300">
+                                        <Badge variant="default" className="bg-success-100 text-success-700 border-success-500/30">
                                             Reviewed
                                         </Badge>
                                     )}
@@ -689,7 +689,7 @@ export const QuestionDetailView = ({
                                                 key={index}
                                                 className={`rounded-lg border p-4 shadow-sm ${
                                                     isCorrect
-                                                        ? 'border-emerald-300 bg-emerald-50'
+                                                        ? 'border-success-500/40 bg-success-100'
                                                         : 'border-border bg-muted'
                                                 }`}
                                             >
@@ -697,7 +697,7 @@ export const QuestionDetailView = ({
                                                     <span
                                                         className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
                                                             isCorrect
-                                                                ? 'bg-emerald-500 text-white'
+                                                                ? 'bg-success-500 text-white'
                                                                 : 'bg-muted text-foreground'
                                                         }`}
                                                     >
@@ -707,7 +707,7 @@ export const QuestionDetailView = ({
                                                         {choice.text}
                                                     </p>
                                                     {isCorrect && (
-                                                        <span className="text-xs font-semibold text-emerald-700">
+                                                        <span className="text-xs font-semibold text-success-700">
                                                             Correct
                                                         </span>
                                                     )}
@@ -748,7 +748,7 @@ export const QuestionDetailView = ({
                                 <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                                     {entry.questionType === 'MCQ' ? 'Correct Answer' : 'Answer'}
                                 </h3>
-                                <div className="mt-3 rounded-lg border border-border bg-emerald-50/60 p-5 shadow-sm">
+                                <div className="mt-3 rounded-lg border border-success-500/30 bg-success-100/60 p-5 shadow-sm">
                                     <p className="text-sm font-medium text-foreground leading-relaxed whitespace-pre-line">
                                         {entry.questionType === 'MCQ' && variant.choices && variant.choices.length > 0
                                             ? (() => {
@@ -774,7 +774,7 @@ export const QuestionDetailView = ({
                             size="sm"
                             onClick={handleToggleAiTag}
                             disabled={isToggling}
-                            className="flex items-center gap-2 text-xs border-purple-300 text-purple-700 hover:bg-purple-50"
+                            className="flex items-center gap-2 text-xs"
                             title="Toggle AI Generated status"
                         >
                             <Sparkles className="h-3 w-3" />
@@ -787,7 +787,7 @@ export const QuestionDetailView = ({
                             size="sm"
                             onClick={handleToggleDraft}
                             disabled={isTogglingDraft}
-                            className="flex items-center gap-2 text-xs border-amber-300 text-amber-700 hover:bg-amber-50"
+                            className="flex items-center gap-2 text-xs"
                             title="Toggle review status"
                         >
                             <FileEdit className="h-3 w-3" />
