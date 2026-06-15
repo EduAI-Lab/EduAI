@@ -4,7 +4,7 @@
 import { useState, useRef, useEffect } from 'react';
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@eduai/ui';
-import { Textarea, Button, Label } from '@eduai/ui';
+import { Textarea, Button, Label, Switch } from '@eduai/ui';
 import { useToast } from '@/components/ui/use-toast';
 import { bugReportApi } from '../../services/bugReportApi';
 
@@ -149,12 +149,10 @@ export function BugReportDialog({ open, setOpen, getCapturedData, userEmail }: B
                 )}
               </p>
             </div>
-            <input
+            <Switch
               id="anonymous-bug"
-              type="checkbox"
-              className="h-4 w-4 shrink-0 rounded border-border"
               checked={isAnonymous}
-              onChange={(e) => setIsAnonymous(e.target.checked)}
+              onCheckedChange={setIsAnonymous}
             />
           </div>
 

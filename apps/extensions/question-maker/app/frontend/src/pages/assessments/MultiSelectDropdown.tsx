@@ -2,7 +2,7 @@
  * Lightweight multi-select dropdown for topics with outside-click handling.
  * Allows toggling selections while honoring disabled IDs.
  */
-import { Button, Label } from '@eduai/ui';
+import { Button, Label, Checkbox } from '@eduai/ui';
 
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
@@ -87,12 +87,10 @@ export const MultiSelectDropdown = ({
                     : 'cursor-pointer hover:bg-secondary/50'
                 }`}
               >
-                <input
-                  type="checkbox"
+                <Checkbox
                   disabled={disabledIds.has(topic.id)}
                   checked={selectedIds.includes(topic.id)}
-                  onChange={() => toggleOption(topic.id)}
-                  className="rounded border-border"
+                  onCheckedChange={() => toggleOption(topic.id)}
                 />
                 <span>{topic.name}</span>
               </label>
