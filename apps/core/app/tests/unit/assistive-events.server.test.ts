@@ -49,6 +49,31 @@ describe("recordResponseComplianceEvent", () => {
     });
     expect(JSON.stringify(arg.data.metricsJson)).not.toContain("Top summary");
   });
+
+  it("persists oversight timing and token fields", async () => {
+    await recordResponseComplianceEvent({
+      userId: "u1",
+      chatId: "c1",
+      adhdAssist: true,
+      assistantText: "**Top summary**\n- A\n\n**Next?** More?",
+      extras: {
+        wordCap: 120,
+        oversightDurationMs: 842,
+        oversightPromptTokens: 90,
+        oversightCompletionTokens: 40,
+        oversightMethod: "deterministic",
+        preStructuralPass: false,
+      },
+    });
+
+    expect(db.assistiveEvent.create.mock.calls[0][0].data.metricsJson).toMatchObject({
+      oversightDurationMs: 842,
+      oversightPromptTokens: 90,
+      oversightCompletionTokens: 40,
+      oversightMethod: "deterministic",
+      preStructuralPass: false,
+    });
+  });
 });
 
 describe("sanitizeClientMetrics", () => {
