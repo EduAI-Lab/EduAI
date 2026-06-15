@@ -401,7 +401,7 @@ export default function Chat() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => setHistoryOpen(true)}
+                      onClick={() => setHistoryOpen((prev) => !prev)}
                       aria-label="Open chat history"
                       className="h-8 w-8"
                     >
