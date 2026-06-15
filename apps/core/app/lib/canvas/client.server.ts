@@ -1,6 +1,10 @@
+import { request as undiciRequest } from "undici";
+
 const CANVAS_VERIFY_TIMEOUT_MS = 10_000;
 const CANVAS_REQUEST_TIMEOUT_MS = 30_000;
+const CANVAS_FILE_DOWNLOAD_MAX_REDIRECTS = 10;
 const CANVAS_PAGE_SIZE = 100;
+const LOCAL_CANVAS_DOCKER_HOST = "canvas.docker";
 
 export const CANVAS_EXTERNAL_SOURCE = "canvas";
 
@@ -26,6 +30,29 @@ export type CanvasCourseUserApi = {
   sis_user_id?: string | null;
 };
 
+export type CanvasFileApi = {
+  id: number;
+  display_name: string;
+  filename: string;
+  "content-type": string;
+  size: number;
+  updated_at: string;
+  url: string;
+};
+
+export type CanvasModuleItemApi = {
+  id: number;
+  type: string;
+  content_id?: number | null;
+  title?: string | null;
+};
+
+export type CanvasModuleApi = {
+  id: number;
+  name: string;
+  items?: CanvasModuleItemApi[];
+};
+
 const MOCK_CANVAS_COURSES: CanvasCourseApi[] = [
   { id: 1, name: "Introduction to Computer Science", course_code: "COSC 101" },
   { id: 2, name: "Data Structures and Algorithms", course_code: "COSC 201" },
@@ -39,6 +66,41 @@ const MOCK_CANVAS_ROSTER: Record<number, CanvasCourseUserApi[]> = {
   ],
   2: [{ id: 103, name: "Student Three", email: "student3@example.com", sis_user_id: "student_3" }],
   3: [],
+};
+
+const MOCK_CANVAS_FILES: Record<number, CanvasFileApi[]> = {
+  1: [
+    {
+      id: 1001,
+      display_name: "Lecture 1 - Intro.txt",
+      filename: "lecture1.txt",
+      "content-type": "text/plain",
+      size: 2048,
+      updated_at: "2025-01-10T12:00:00.000Z",
+      url: "mock://canvas/files/1001",
+    },
+    {
+      id: 1002,
+      display_name: "Week 1 Notes.txt",
+      filename: "week1.txt",
+      "content-type": "text/plain",
+      size: 512,
+      updated_at: "2025-01-12T09:00:00.000Z",
+      url: "mock://canvas/files/1002",
+    },
+  ],
+  2: [
+    {
+      id: 2001,
+      display_name: "Algorithms Overview.pptx",
+      filename: "algorithms.pptx",
+      "content-type":
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      size: 4096,
+      updated_at: "2025-02-01T10:00:00.000Z",
+      url: "mock://canvas/files/2001",
+    },
+  ],
 };
 
 export class CanvasApiError extends Error {
@@ -209,6 +271,18 @@ export async function canvasGetPaginated<T>(
 }
 
 function getMockPaginatedResponse<T>(path: string): T[] {
+  if (path.includes("/courses") && path.includes("/files")) {
+    const courseMatch = path.match(/\/courses\/(\d+)\/files/);
+    if (courseMatch) {
+      const courseId = Number(courseMatch[1]);
+      return (MOCK_CANVAS_FILES[courseId] ?? []) as T[];
+    }
+  }
+
+  if (path.includes("/courses") && path.includes("/modules")) {
+    return [] as T[];
+  }
+
   if (path.includes("/courses") && !path.includes("/users")) {
     return MOCK_CANVAS_COURSES as T[];
   }
@@ -258,4 +332,163 @@ export async function listCanvasCourseTas(
     `/courses/${canvasCourseId}/users?enrollment_type[]=ta&include[]=email`,
     fetchImpl,
   );
+}
+
+/** Lists files uploaded to a Canvas course. */
+export async function listCanvasCourseFiles(
+  credentials: CanvasIntegrationCredentials,
+  canvasCourseId: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<CanvasFileApi[]> {
+  return canvasGetPaginated<CanvasFileApi>(
+    credentials,
+    `/courses/${canvasCourseId}/files`,
+    fetchImpl,
+  );
+}
+
+/** Lists modules (with items) for a Canvas course. */
+export async function listCanvasCourseModules(
+  credentials: CanvasIntegrationCredentials,
+  canvasCourseId: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<CanvasModuleApi[]> {
+  return canvasGetPaginated<CanvasModuleApi>(
+    credentials,
+    `/courses/${canvasCourseId}/modules?include[]=items`,
+    fetchImpl,
+  );
+}
+
+/** Rewrites Canvas file URLs to the configured canvasUrl origin (local Docker DOMAIN mismatch). */
+export function resolveCanvasFileDownloadUrl(fileUrl: string, canvasUrl: string): string {
+  const fileParsed = new URL(fileUrl);
+  const canvasParsed = parseAndValidateCanvasUrl(canvasUrl);
+  return `${canvasParsed.origin}${fileParsed.pathname}${fileParsed.search}`;
+}
+
+function isLocalCanvasDev(canvasUrl: string): boolean {
+  const parsed = parseAndValidateCanvasUrl(canvasUrl);
+  return parsed.protocol === "http:" && HTTP_ALLOWED_HOSTNAMES.has(parsed.hostname.toLowerCase());
+}
+
+function shouldUseLocalCanvasDockerTransport(canvasUrl: string, fileUrl: string): boolean {
+  if (!isLocalCanvasDev(canvasUrl)) {
+    return false;
+  }
+  const host = new URL(fileUrl).hostname.toLowerCase();
+  return host === LOCAL_CANVAS_DOCKER_HOST || HTTP_ALLOWED_HOSTNAMES.has(host);
+}
+
+type CanvasFileDownloadResponse = {
+  status: number;
+  getHeader(name: string): string | null;
+  arrayBuffer(): Promise<ArrayBuffer>;
+};
+
+async function performCanvasFileDownloadRequest(
+  url: string,
+  headers: Record<string, string>,
+  credentials: CanvasIntegrationCredentials,
+  fetchImpl: typeof fetch,
+): Promise<CanvasFileDownloadResponse> {
+  const useUndici =
+    fetchImpl === fetch &&
+    process.env.VITEST !== "true" &&
+    shouldUseLocalCanvasDockerTransport(credentials.canvasUrl, url);
+
+  if (useUndici) {
+    const requestUrl = resolveCanvasFileDownloadUrl(url, credentials.canvasUrl);
+    const { statusCode, headers: responseHeaders, body } = await undiciRequest(requestUrl, {
+      headers: {
+        ...headers,
+        host: LOCAL_CANVAS_DOCKER_HOST,
+      },
+      signal: AbortSignal.timeout(CANVAS_REQUEST_TIMEOUT_MS),
+    });
+    const normalizedHeaders = new Headers(responseHeaders as Record<string, string>);
+    return {
+      status: statusCode,
+      getHeader: (name) => normalizedHeaders.get(name),
+      arrayBuffer: () => body.arrayBuffer(),
+    };
+  }
+
+  const response = await fetchImpl(url, {
+    headers,
+    redirect: "manual",
+    signal: AbortSignal.timeout(CANVAS_REQUEST_TIMEOUT_MS),
+  });
+  return {
+    status: response.status,
+    getHeader: (name) => response.headers.get(name),
+    arrayBuffer: () => response.arrayBuffer(),
+  };
+}
+
+async function fetchCanvasFileBytes(
+  credentials: CanvasIntegrationCredentials,
+  initialUrl: string,
+  fetchImpl: typeof fetch,
+): Promise<Uint8Array> {
+  let url = resolveCanvasFileDownloadUrl(initialUrl, credentials.canvasUrl);
+
+  for (let redirectCount = 0; redirectCount <= CANVAS_FILE_DOWNLOAD_MAX_REDIRECTS; redirectCount++) {
+    const headers: Record<string, string> = {};
+    if (!url.includes("sf_verifier")) {
+      headers.Authorization = `Bearer ${credentials.apiKey}`;
+    }
+
+    const response = await performCanvasFileDownloadRequest(
+      url,
+      headers,
+      credentials,
+      fetchImpl,
+    );
+
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.getHeader("location");
+      if (!location) {
+        throw new CanvasApiError(
+          `Canvas file download redirect missing Location (${response.status})`,
+          502,
+        );
+      }
+      url = resolveCanvasFileDownloadUrl(new URL(location, url).href, credentials.canvasUrl);
+      continue;
+    }
+
+    if (response.status < 200 || response.status >= 300) {
+      throw new CanvasApiError(`Canvas file download failed: ${response.status}`, response.status);
+    }
+
+    return new Uint8Array(await response.arrayBuffer());
+  }
+
+  throw new CanvasApiError("Canvas file download exceeded redirect limit", 502);
+}
+
+/** Downloads a Canvas file by its authenticated URL. */
+export async function downloadCanvasFile(
+  credentials: CanvasIntegrationCredentials,
+  file: Pick<CanvasFileApi, "id" | "url" | "filename" | "content-type">,
+  fetchImpl: typeof fetch = fetch,
+): Promise<Uint8Array> {
+  if (credentials.isTestMode) {
+    const text = `Mock Canvas file content for ${file.filename}`;
+    return new Uint8Array(Buffer.from(text));
+  }
+
+  try {
+    return await fetchCanvasFileBytes(credentials, file.url, fetchImpl);
+  } catch (error) {
+    if (error instanceof CanvasApiError) {
+      throw error;
+    }
+    const detail = error instanceof Error ? error.message : "fetch failed";
+    throw new CanvasApiError(
+      `Canvas file download failed: ${detail}. Check that your Canvas URL in Settings matches a host reachable from EduAI (e.g. http://localhost:8080).`,
+      502,
+    );
+  }
 }

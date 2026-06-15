@@ -24,6 +24,7 @@ import {
   BreadcrumbSeparator,
 } from '~/components/ui/breadcrumb'
 import type { CourseMaterial as UploadMaterial } from '~/components/course-materials-upload'
+import type { CourseDetail } from '~/hooks/api/use-course-detail'
 import { resolveCourseAccess } from '~/lib/rbac/resolve-course-access.server'
 import type { RbacUser } from '~/lib/rbac'
 
@@ -92,10 +93,24 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   return {
     course: {
-      ...course,
+      id: course.id,
+      code: course.code,
+      name: course.name,
+      description: course.description,
+      term: course.term,
+      year: course.year,
+      isActive: course.isActive,
+      isPublished: course.isPublished,
+      aiInstructions: course.aiInstructions,
+      instructorId: course.instructorId,
+      department: course.department,
+      externalSource: course.externalSource,
+      externalId: course.externalId,
       createdAt: course.createdAt.toISOString(),
       updatedAt: course.updatedAt.toISOString(),
-    },
+      instructor: course.instructor ?? undefined,
+      tas: course.tas.map(({ id, userId, user }) => ({ id, userId, user })),
+    } satisfies CourseDetail,
     user,
     access,
     instructors,
@@ -108,7 +123,7 @@ export default function CourseDetailPage() {
   const revalidator = useRevalidator()
   const { topics, createTopic, deleteTopic } = useCourseTopics(course.id)
   const { enrollments, loading: enrollmentsLoading, error: enrollmentsError } = useCourseEnrollments(course.id)
-  const { materials, uploadMaterial } = useCourseMaterials(course.id)
+  const { materials, uploadMaterial, refetch: refetchMaterials } = useCourseMaterials(course.id)
   const { tas, addTA, removeTA } = useCourseTAs(course.id)
   const { getValidApiKeys } = useApiKeys()
   const [isUploading, setIsUploading] = useState(false)
@@ -204,6 +219,12 @@ export default function CourseDetailPage() {
                 onAddTA={addTA}
                 onRemoveTA={removeTA}
                 courseId={course.id}
+                showCanvasMaterialSync={
+                  access === 'instructor' &&
+                  course.externalSource === 'canvas' &&
+                  Boolean(course.externalId)
+                }
+                onMaterialsRefresh={() => void refetchMaterials()}
               />
             ) : access === 'ta' ? (
               <CourseDetailTaView
