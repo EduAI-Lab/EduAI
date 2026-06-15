@@ -15,15 +15,18 @@ import {
   createAdminUser,
   deactivateAdminEnrollment,
   deleteAdminUser,
-  runAdminWriteTool,
+  runConfirmedAdminWriteTool,
   updateAdminBugReportStatus,
   updateAdminEnrollmentRole,
   updateAdminUser,
 } from "./admin-mutations.server";
 
+/** Accept true/false at schema level; execute rejects false without breaking the stream. */
 const confirmedWrite = z
-  .literal(true)
-  .describe("Must be true — the admin explicitly confirmed this write in chat");
+  .boolean()
+  .describe(
+    "false until the admin explicitly confirms in chat (e.g. yes, do it); then true to apply the write",
+  );
 
 const enrollmentRole = z.enum(["STUDENT", "TA", "INSTRUCTOR"]);
 
@@ -136,7 +139,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
 
     createUser: tool({
       description:
-        "Create a new platform user. Requires confirmed=true after the admin approves in chat.",
+        "Create a new platform user. Call with confirmed=false first to preview; after admin confirms in chat, call again with confirmed=true.",
       parameters: z.object({
         confirmed: confirmedWrite,
         name: z.string().min(2),
@@ -144,13 +147,15 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         role: z.enum(["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "TA", "STUDENT"]),
         isActive: z.boolean().optional(),
       }),
-      execute: async ({ confirmed: _confirmed, ...input }) =>
-        runAdminWriteTool("createUser", user, () => createAdminUser(user, input)),
+      execute: async ({ confirmed, ...input }) =>
+        runConfirmedAdminWriteTool("createUser", user, confirmed, () =>
+          createAdminUser(user, input),
+        ),
     }),
 
     updateUser: tool({
       description:
-        "Update a platform user. Requires confirmed=true. Pass userId or userEmail to identify the user.",
+        "Update a platform user. Pass userId or userEmail. Use confirmed=false until admin approves, then confirmed=true.",
       parameters: z
         .object({
           confirmed: confirmedWrite,
@@ -161,8 +166,8 @@ export function createAdminChatTools(ctx: ChatToolContext) {
           isActive: z.boolean().optional(),
         })
         .refine(requireUserRef, { message: "userId or userEmail required" }),
-      execute: async ({ confirmed: _confirmed, userId, userEmail, ...updates }) =>
-        runAdminWriteTool("updateUser", user, async () => {
+      execute: async ({ confirmed, userId, userEmail, ...updates }) =>
+        runConfirmedAdminWriteTool("updateUser", user, confirmed, async () => {
           const { resolveAdminUserId } = await import("./admin-context.server");
           const target = await resolveAdminUserId(user, { userId, userEmail });
           if ("error" in target) {
@@ -174,15 +179,15 @@ export function createAdminChatTools(ctx: ChatToolContext) {
 
     deleteUser: tool({
       description:
-        "Permanently delete a platform user. Requires confirmed=true. Pass userId or userEmail.",
+        "Permanently delete a platform user. Pass userId or userEmail. Use confirmed=true only after admin confirms.",
       parameters: z
         .object({
           confirmed: confirmedWrite,
           ...userRef,
         })
         .refine(requireUserRef, { message: "userId or userEmail required" }),
-      execute: async ({ userId, userEmail }) =>
-        runAdminWriteTool("deleteUser", user, async () => {
+      execute: async ({ confirmed, userId, userEmail }) =>
+        runConfirmedAdminWriteTool("deleteUser", user, confirmed, async () => {
           const { resolveAdminUserId } = await import("./admin-context.server");
           const target = await resolveAdminUserId(user, { userId, userEmail });
           if ("error" in target) {
@@ -194,7 +199,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
 
     createCourseEnrollment: tool({
       description:
-        "Add a user to a course with a role. Requires confirmed=true. Pass userId or userEmail.",
+        "Add a user to a course with a role. Pass userId or userEmail. Use confirmed=true only after admin confirms.",
       parameters: z
         .object({
           confirmed: confirmedWrite,
@@ -203,28 +208,30 @@ export function createAdminChatTools(ctx: ChatToolContext) {
           role: enrollmentRole,
         })
         .refine(requireUserRef, { message: "userId or userEmail required" }),
-      execute: async ({ courseId, courseCode, userId, userEmail, role }) =>
-        createAdminEnrollment(user, {
-          courseId,
-          courseCode,
-          fallbackCourseId: effectiveCourseId,
-          userId,
-          userEmail,
-          role,
-        }),
+      execute: async ({ confirmed, courseId, courseCode, userId, userEmail, role }) =>
+        runConfirmedAdminWriteTool("createCourseEnrollment", user, confirmed, () =>
+          createAdminEnrollment(user, {
+            courseId,
+            courseCode,
+            fallbackCourseId: effectiveCourseId,
+            userId,
+            userEmail,
+            role,
+          }),
+        ),
     }),
 
     updateCourseEnrollment: tool({
       description:
-        "Change an enrollment role. Requires confirmed=true. Enforces instructor-floor rules.",
+        "Change an enrollment role. Enforces instructor-floor rules. Use confirmed=true only after admin confirms.",
       parameters: z.object({
         confirmed: confirmedWrite,
         ...courseScope,
         enrollmentId: z.string().describe("Enrollment id (CUID)"),
         role: enrollmentRole,
       }),
-      execute: async ({ courseId, courseCode, enrollmentId, role }) =>
-        runAdminWriteTool("updateCourseEnrollment", user, () =>
+      execute: async ({ confirmed, courseId, courseCode, enrollmentId, role }) =>
+        runConfirmedAdminWriteTool("updateCourseEnrollment", user, confirmed, () =>
           updateAdminEnrollmentRole(user, {
             courseId,
             courseCode,
@@ -237,14 +244,14 @@ export function createAdminChatTools(ctx: ChatToolContext) {
 
     deactivateCourseEnrollment: tool({
       description:
-        "Soft-remove an enrollment (sets isActive=false). Requires confirmed=true.",
+        "Soft-remove an enrollment (sets isActive=false). Use confirmed=true only after admin confirms.",
       parameters: z.object({
         confirmed: confirmedWrite,
         ...courseScope,
         enrollmentId: z.string().describe("Enrollment id (CUID)"),
       }),
-      execute: async ({ courseId, courseCode, enrollmentId }) =>
-        runAdminWriteTool("deactivateCourseEnrollment", user, () =>
+      execute: async ({ confirmed, courseId, courseCode, enrollmentId }) =>
+        runConfirmedAdminWriteTool("deactivateCourseEnrollment", user, confirmed, () =>
           deactivateAdminEnrollment(user, {
             courseId,
             courseCode,
@@ -255,14 +262,14 @@ export function createAdminChatTools(ctx: ChatToolContext) {
     }),
 
     updateBugReportStatus: tool({
-      description: "Update triage status on a bug report. Requires confirmed=true.",
+      description: "Update triage status on a bug report. Use confirmed=true only after admin confirms.",
       parameters: z.object({
         confirmed: confirmedWrite,
         reportId: z.string().describe("Bug report id"),
         status: z.enum(["UNHANDLED", "IN_PROGRESS", "RESOLVED"]),
       }),
-      execute: async ({ reportId, status }) =>
-        runAdminWriteTool("updateBugReportStatus", user, () =>
+      execute: async ({ confirmed, reportId, status }) =>
+        runConfirmedAdminWriteTool("updateBugReportStatus", user, confirmed, () =>
           updateAdminBugReportStatus(user, reportId, status),
         ),
     }),
