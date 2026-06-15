@@ -94,7 +94,7 @@ describe('PATCH /api/questions/variants/:variantId/testable', () => {
   it('returns 404 for a non-existent variant (access check precedes payload validation)', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(sessionOk()));
     const res = await request(app)
-      .patch('/api/questions/variants/999/testable')
+      .patch('/api/questions/variants/999999999/testable')
       .set('Cookie', 'session=valid')
       .send({ testable: 'yes' });
     expect(res.status).toBe(404);
