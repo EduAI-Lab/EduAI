@@ -2,15 +2,16 @@
  * Course selection page shown after login. User must select a course card to continue to Question Bank / Assessments.
  * Same header as homepage; content shows "Your Courses", "Add new course" card, and available course cards.
  */
-import { Card, CardContent } from '@eduai/ui';
-import { Tooltip } from '@/components/ui/tooltip';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
+import { useAuth } from '@/contexts/AuthContext';
 import { useQmLayout } from '../components/layout/QmLayoutContext';
+import { CoursesAdminView } from '@/components/courses/courses-admin-view';
+import { CoursesInstructorView } from '@/components/courses/courses-instructor-view';
+import { CoursesUnitAdminView } from '@/components/courses/courses-unit-admin-view';
 import { useCourses } from '../hooks/useCourses';
 import { Course } from '../types/question';
 import { courseService } from '../services/courseService';
-import { GraduationCap, Plus } from 'lucide-react';
 import { useGuidedTour } from '../contexts/GuidedTourContext';
 import { assessmentService } from '../services/assessmentService';
 
@@ -26,6 +27,7 @@ function isTestCourse(course: Course): boolean {
 export const CourseSelectionPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user } = useAuth();
   const { courses, isLoading: isCoursesLoading, fetchCourses } = useCourses();
   const [isStartingTour, setIsStartingTour] = useState(false);
   const { setGuidedTourHandler, openProfile } = useQmLayout();
@@ -153,55 +155,18 @@ export const CourseSelectionPage = () => {
     return () => setGuidedTourHandler(null);
   }, [handleGuidedTourClick, setGuidedTourHandler]);
 
-  return (
-    <div className="max-w-4xl mx-auto px-6 py-8">
-        <h1 className="text-2xl font-bold text-foreground mb-6">Your Courses</h1>
+  const gridProps = {
+    courses,
+    isLoading: isCoursesLoading,
+    onSelectCourse: handleSelectCourse,
+    onAddCourse: openProfile,
+  };
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 items-stretch">
-          {/* Add new course card - used as tour target when there are no courses yet */}
-          <Tooltip content="Add or link a course from the AI service to get started" side="top">
-            <Card
-              className="border-2 border-dashed border-muted-foreground/30 bg-muted/30 hover:border-primary hover:bg-muted/50 cursor-pointer transition-colors flex min-h-[140px]"
-              data-tour-id={courses.length === 0 ? 'course-select' : undefined}
-              onClick={openProfile}
-            >
-              <CardContent className="flex flex-col items-center justify-center flex-1 p-6">
-              <div className="rounded-full bg-muted p-3 mb-2">
-                <Plus className="h-6 w-6 text-muted-foreground" />
-              </div>
-              <p className="text-sm font-medium text-muted-foreground">Add new course</p>
-            </CardContent>
-            </Card>
-          </Tooltip>
-
-          {/* Available course cards */}
-          {courses.map((course, index) => (
-            <Tooltip key={course.id} content={`Open question bank and assessments for ${course.name}`} side="top">
-              <Card
-                className="cursor-pointer transition-shadow hover:shadow-md border bg-card text-card-foreground flex min-h-[140px]"
-                data-tour-id={index === 0 ? 'course-select' : undefined}
-                onClick={() => handleSelectCourse(course)}
-              >
-                <CardContent className="flex flex-col flex-1 p-6 justify-center">
-                <div className="flex items-center gap-2 min-w-0">
-                  <GraduationCap className="h-5 w-5 text-primary shrink-0" />
-                  <span className="font-semibold truncate">{course.name}</span>
-                </div>
-                {course.code && (
-                  <p className="text-sm text-muted-foreground mt-1">{course.code}</p>
-                )}
-                <p className="text-xs text-muted-foreground/80 mt-2">Click to open</p>
-              </CardContent>
-              </Card>
-            </Tooltip>
-          ))}
-        </div>
-
-        {!isCoursesLoading && courses.length === 0 && (
-          <p className="text-sm text-muted-foreground mt-4">
-            No courses yet. Add a course from your profile to get started.
-          </p>
-        )}
-    </div>
-  );
+  if (user?.role === 'ADMIN') {
+    return <CoursesAdminView {...gridProps} />;
+  }
+  if (user?.role === 'UNIT_ADMIN') {
+    return <CoursesUnitAdminView {...gridProps} />;
+  }
+  return <CoursesInstructorView {...gridProps} />;
 };

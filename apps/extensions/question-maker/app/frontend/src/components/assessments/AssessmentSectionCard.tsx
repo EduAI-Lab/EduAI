@@ -16,6 +16,7 @@ interface AssessmentSectionCardProps {
     onViewQuestion?: (entry: QuestionVariantEntry) => void;
     onToggleDraft?: (entry: QuestionVariantEntry, nextDraft: boolean) => void;
     onCreateVariant?: (entry: QuestionVariantEntry) => void;
+    readOnly?: boolean;
 }
 
 export function AssessmentSectionCard({
@@ -29,7 +30,8 @@ export function AssessmentSectionCard({
     onAddQuestions,
     onViewQuestion,
     onToggleDraft,
-    onCreateVariant
+    onCreateVariant,
+    readOnly = false,
 }: AssessmentSectionCardProps) {
     const [localName, setLocalName] = useState(section.name);
 
@@ -72,8 +74,10 @@ export function AssessmentSectionCard({
                     onChange={(event) => handleTitleChange(event.target.value)}
                     onBlur={handleTitleBlur}
                     placeholder={`Section ${sectionIndex + 1}`}
+                    readOnly={readOnly}
                     className="h-8 flex-1 min-w-0 border-0 bg-card text-foreground font-medium placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-primary-foreground"
                 />
+                {!readOnly && (
                 <Button
                     type="button"
                     variant="ghost"
@@ -84,12 +88,14 @@ export function AssessmentSectionCard({
                 >
                     <Trash2 className="h-4 w-4" />
                 </Button>
+                )}
             </div>
 
             <div className="space-y-2 border-t border-border bg-muted/50 p-3">
                 {questions.length === 0 ? (
                     <div className="flex flex-col items-center gap-3 rounded border border-dashed border-border bg-card p-6">
                         <p className="text-sm text-muted-foreground">No questions added yet</p>
+                        {!readOnly && (
                         <Button
                             type="button"
                             variant="outline"
@@ -99,6 +105,7 @@ export function AssessmentSectionCard({
                         >
                             Add questions
                         </Button>
+                        )}
                     </div>
                 ) : (
                     <>
@@ -180,7 +187,7 @@ export function AssessmentSectionCard({
                                                         View
                                                     </Button>
                                                 )}
-                                                {onToggleDraft && (
+                                                {onToggleDraft && !readOnly && (
                                                     <Button
                                                         type="button"
                                                         variant="outline"
@@ -191,7 +198,7 @@ export function AssessmentSectionCard({
                                                         {isDraft ? 'Mark reviewed' : 'Mark draft'}
                                                     </Button>
                                                 )}
-                                                {onCreateVariant && (
+                                                {onCreateVariant && !readOnly && (
                                                     <Button
                                                         type="button"
                                                         variant="outline"
@@ -204,6 +211,7 @@ export function AssessmentSectionCard({
                                                 )}
                                             </div>
                                         </div>
+                                        {!readOnly && (
                                         <Button
                                             type="button"
                                             variant="ghost"
@@ -214,10 +222,12 @@ export function AssessmentSectionCard({
                                         >
                                             <X className="h-3.5 w-3.5" />
                                         </Button>
+                                        )}
                                     </div>
                                 );
                             })}
                         </div>
+                        {!readOnly && (
                         <Button
                             type="button"
                             variant="ghost"
@@ -228,6 +238,7 @@ export function AssessmentSectionCard({
                             <Plus className="h-3.5 w-3.5" />
                             Add more questions
                         </Button>
+                        )}
                     </>
                 )}
             </div>

@@ -20,6 +20,9 @@ import { CanvasImportDialog } from '../components/canvas/CanvasImportDialog';
 import type { Assessment, Course, Question } from '../types/question';
 import type { Topic } from '../types/topic';
 import { buildAiReviewDocxBlob } from '../utils/aiReviewExportDocx';
+import { QmHomeShell } from '../components/home/QmHomeShell';
+import { PermissionGate } from '@/components/rbac/PermissionGate';
+import { useQmPermissions } from '@/hooks/useQmPermissions';
 
 /** Hover text for the Variants column — counts are reviewed-only (drafts excluded). */
 const REVIEWED_VARIANTS_TOOLTIP =
@@ -198,6 +201,7 @@ export function AssessmentVariantPage() {
   const courseIdParam = searchParams.get('courseId');
   const baselineAssessmentIdParam = searchParams.get('baselineAssessmentId');
   const { toast } = useToast();
+  const { canManageAssessment, canRunAiReview, canManageCanvas } = useQmPermissions();
   const { courses, isLoading: coursesLoading, fetchCourses } = useCourses();
 
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
@@ -683,8 +687,9 @@ export function AssessmentVariantPage() {
   };
 
   return (
-    <div className="min-h-full bg-background">
-      <div className="mx-auto max-w-5xl px-4 py-6">
+    <QmHomeShell>
+      <div className="min-h-full bg-background">
+      <div className="mx-auto max-w-5xl space-y-6">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="sm" asChild className="gap-1.5 text-muted-foreground">
@@ -742,13 +747,17 @@ export function AssessmentVariantPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-wrap gap-3">
+              <PermissionGate allow={canManageAssessment}>
               <Button type="button" variant="secondary" disabled={!selectedCourse?.id} onClick={() => setExamUploadOpen(true)}>
                 <Upload className="mr-2 h-4 w-4" />
                 OCR upload
               </Button>
+              </PermissionGate>
+              <PermissionGate allow={canManageCanvas}>
               <Button type="button" variant="outline" disabled={!selectedCourse?.id} onClick={() => setCanvasImportOpen(true)}>
                 Import from Canvas
               </Button>
+              </PermissionGate>
             </CardContent>
           </Card>
 
@@ -777,9 +786,11 @@ export function AssessmentVariantPage() {
                   </SelectContent>
                 </Select>
               </div>
+              <PermissionGate allow={canManageAssessment}>
               <Button type="button" variant="outline" onClick={markBaseline} disabled={!baselineAssessmentId}>
                 Mark as reference baseline
               </Button>
+              </PermissionGate>
               {baselineAssessment?.blueprintConfig?.studyRole === 'reference_baseline' && (
                 <Badge className="w-fit bg-indigo-700">Reference</Badge>
               )}
@@ -934,6 +945,7 @@ export function AssessmentVariantPage() {
                     </SelectContent>
                   </Select>
                 </div>
+                <PermissionGate allow={canManageAssessment}>
                 <div className="flex min-w-[min(100%,280px)] flex-col gap-2">
                   <Button
                     type="button"
@@ -974,6 +986,7 @@ export function AssessmentVariantPage() {
                     </Button>
                   )}
                 </div>
+                </PermissionGate>
               </div>
             </CardContent>
           </Card>
@@ -990,6 +1003,7 @@ export function AssessmentVariantPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <PermissionGate allow={canManageAssessment}>
               <Button
                 type="button"
                 onClick={assembleStructureMatchedExams}
@@ -1020,6 +1034,7 @@ export function AssessmentVariantPage() {
                   ))}
                 </ul>
               )}
+              </PermissionGate>
             </CardContent>
           </Card>
         </section>
@@ -1102,6 +1117,7 @@ export function AssessmentVariantPage() {
                   </div>
                 </div>
 
+                <PermissionGate allow={canRunAiReview}>
                 <div className="flex flex-wrap gap-2">
                   <Button type="button" variant="outline" onClick={() => setAiReviewRubricOpen(true)}>
                     Rubric
@@ -1117,6 +1133,7 @@ export function AssessmentVariantPage() {
                     )}
                   </Button>
                 </div>
+                </PermissionGate>
 
                 {aiReviewResult && (
                   <div className="space-y-4 rounded-lg border bg-card p-4 text-sm">
@@ -1390,5 +1407,6 @@ export function AssessmentVariantPage() {
       )}
       </div>
     </div>
+    </QmHomeShell>
   );
 }

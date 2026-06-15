@@ -48,6 +48,7 @@ export interface QuestionVariant {
     choices?: MCQChoice[] | null; // For MCQ questions only
     isAiGenerated?: boolean; // Indicates if this variant was generated using AI
     isDraft?: boolean; // Indicates if this variant is a draft and needs review
+    createdBy?: string | null;
     createdAt?: string;
     updatedAt?: string;
     // Relations

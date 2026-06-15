@@ -9,6 +9,8 @@ import { DeleteConfirmationModal } from '@/components/ui/DeleteConfirmationModal
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { QuestionBank } from '../components/question-bank/QuestionBank';
+import { QmHomeShell } from '../components/home/QmHomeShell';
+import { useQmPermissions } from '../hooks/useQmPermissions';
 import { AssessmentSection } from '../components/assessments/AssessmentSection';
 import { QuestionDetailView } from '../components/question-detail/QuestionDetailView';
 import { Course, Question, Assessment, QuestionVariantEntry, AssessmentGenerationParams, MCQChoice } from '../types/question';
@@ -68,6 +70,7 @@ export const Homepage = () => {
   const { toast } = useToast();
   const { startTour, registerOnTourEnd } = useGuidedTour();
   const { setGuidedTourHandler } = useQmLayout();
+  const { canCreateQuestion } = useQmPermissions();
 
   const loadTopicsForCourse = useCallback(async (courseId: number, options: { force?: boolean } = {}) => {
     if (!courseId) {
@@ -823,7 +826,7 @@ export const Homepage = () => {
   );
 
   return (
-    <div className="max-w-7xl mx-auto px-6 py-8 space-y-6">
+    <QmHomeShell>
       <div className="flex flex-wrap items-center gap-4">
         <Select
           value={selectedCourse?.id?.toString() || ''}
@@ -865,8 +868,8 @@ export const Homepage = () => {
             isLoading={isQuestionsLoading}
             courseName={selectedCourse?.name}
             emptyMessage={emptyStateMessage}
-            disableAdd={!selectedCourse}
-            disableUpload={!selectedCourse}
+            disableAdd={!selectedCourse || !canCreateQuestion}
+            disableUpload={!selectedCourse || !canCreateQuestion}
             onOpenProfile={() => startTour('main')}
           />
         ) : (
@@ -1014,6 +1017,6 @@ export const Homepage = () => {
         confirmLabel="Delete"
         isLoading={isDeletingAssessment}
       />
-    </div>
+    </QmHomeShell>
   );
 };

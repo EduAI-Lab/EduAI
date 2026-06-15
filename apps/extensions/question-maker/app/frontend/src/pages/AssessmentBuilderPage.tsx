@@ -12,6 +12,9 @@ import { Assessment, Question, QuestionVariantEntry } from '../types/question';
 import type { AssessmentGenerationParams } from '../types/question';
 import { Topic } from '../types/topic';
 import { AssessmentBuilder } from '../components/assessments/AssessmentBuilder';
+import { QmHomeShell } from '../components/home/QmHomeShell';
+import { PermissionGate } from '@/components/rbac/PermissionGate';
+import { useQmPermissions } from '@/hooks/useQmPermissions';
 import { AddQuestionDialog } from '../components/questions/AddQuestionDialog';
 import { CanvasExportDialog } from '../components/canvas/CanvasExportDialog';
 import GenerateAssessmentModal from '../components/assessments/GenerateAssessmentModal';
@@ -29,6 +32,8 @@ const AssessmentBuilderPage = () => {
     const navigate = useNavigate();
     const assessmentId = Number(id);
     const { toast } = useToast();
+    const { canManageAssessment, canExportAssessment } = useQmPermissions();
+    const readOnly = !canManageAssessment;
 
     const [assessment, setAssessment] = useState<Assessment | null>(null);
     const [topics, setTopics] = useState<Topic[]>([]);
@@ -466,7 +471,8 @@ const AssessmentBuilderPage = () => {
 
     return (
         <>
-            <div className="mx-auto max-w-6xl space-y-6 px-6 py-8">
+            <QmHomeShell>
+            <div className="space-y-6">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                         <Button
                             type="button"
@@ -520,6 +526,7 @@ const AssessmentBuilderPage = () => {
                                 )}
                             </div>
                             <div className="flex flex-wrap items-center gap-2">
+                                <PermissionGate allow={canManageAssessment}>
                                 <Button
                                     type="button"
                                     variant="outline"
@@ -529,6 +536,8 @@ const AssessmentBuilderPage = () => {
                                 >
                                     Edit Blueprint
                                 </Button>
+                                </PermissionGate>
+                                <PermissionGate allow={canExportAssessment}>
                                 {hasQuestions && !hasDraftQuestions ? (
                                     <>
                                         <Button
@@ -607,6 +616,8 @@ const AssessmentBuilderPage = () => {
                                         </span>
                                     </Tooltip>
                                 )}
+                                </PermissionGate>
+                                <PermissionGate allow={canManageAssessment}>
                                 <Button
                                     type="button"
                                     variant="destructive"
@@ -616,6 +627,7 @@ const AssessmentBuilderPage = () => {
                                 >
                                     {isDeletingAssessment ? 'Deleting…' : 'Delete Assessment'}
                                 </Button>
+                                </PermissionGate>
                             </div>
                         </CardHeader>
                         <CardContent className="pt-4">
@@ -719,10 +731,12 @@ const AssessmentBuilderPage = () => {
                                 onViewQuestion={handleViewQuestion}
                                 onToggleDraft={handleToggleDraft}
                                 onCreateVariant={handleCreateVariant}
+                                readOnly={readOnly}
                             />
                         </CardContent>
                     </Card>
             </div>
+            </QmHomeShell>
 
             {viewEntry && (
                 <QuestionDetailView

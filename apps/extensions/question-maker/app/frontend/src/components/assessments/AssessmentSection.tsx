@@ -8,6 +8,8 @@ import {
     Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@eduai/ui';
 import { Button, Card, CardContent, CardHeader, CardTitle, Badge, ScrollArea } from '@eduai/ui';
 import { Tooltip } from '@/components/ui/tooltip';
+import { PermissionGate } from '@/components/rbac/PermissionGate';
+import { useQmPermissions } from '@/hooks/useQmPermissions';
 import {
     Plus,
     ChevronUp,
@@ -160,6 +162,7 @@ export const AssessmentSection = ({
     onImportFromCanvas
 }: AssessmentSectionProps) => {
     const navigate = useNavigate();
+    const { canManageAssessment, canExportAssessment, canUseVariantWorkflow } = useQmPermissions();
     const [expandedAssessment, setExpandedAssessment] = useState<number | null>(null);
     const [isGenerateModalOpen, setIsGenerateModalOpen] = useState(false);
     const [pendingGenerateAction, setPendingGenerateAction] = useState<'create' | null>(null);
@@ -241,6 +244,7 @@ export const AssessmentSection = ({
                     <p className="text-sm text-muted-foreground">{headerDescription}</p>
                     {loadError && <p className="text-sm text-red-600 mt-1">{loadError}</p>}
                 </div>
+                <PermissionGate allow={canManageAssessment}>
                 <div className="flex gap-2">
                     {onImportFromCanvas && (
                         <Tooltip content="Import an assessment from your Canvas course" side="bottom">
@@ -279,6 +283,7 @@ export const AssessmentSection = ({
                         </Button>
                     </Tooltip>
                 </div>
+                </PermissionGate>
             </div>
 
             {isLoading ? (
@@ -336,6 +341,7 @@ export const AssessmentSection = ({
                                                 </Button>
                                             </Tooltip>
 
+                                            <PermissionGate allow={canUseVariantWorkflow}>
                                             <Tooltip
                                                 content="Open assessment variant workflow with this exam as the baseline"
                                                 side="bottom"
@@ -354,7 +360,9 @@ export const AssessmentSection = ({
                                                     <span>Create variant</span>
                                                 </Button>
                                             </Tooltip>
+                                            </PermissionGate>
 
+                                            <PermissionGate allow={canExportAssessment}>
                                             {hasAnyExportHandler && (
                                                 <Tooltip
                                                     content="Export to Canvas, Word, or plain text"
@@ -372,7 +380,9 @@ export const AssessmentSection = ({
                                                     </Button>
                                                 </Tooltip>
                                             )}
+                                            </PermissionGate>
 
+                                            <PermissionGate allow={canManageAssessment}>
                                             {onDeleteAssessment && (
                                                 <Button
                                                     variant="ghost"
@@ -383,6 +393,7 @@ export const AssessmentSection = ({
                                                     <Trash2 className="h-4 w-4" />
                                                 </Button>
                                             )}
+                                            </PermissionGate>
 
                                             <Button
                                                 variant="ghost"
@@ -470,14 +481,16 @@ export const AssessmentSection = ({
             {!isLoading && !hasAssessments && (
                 <div className="text-center py-8">
                     <p className="text-muted-foreground mb-4">No assessments created yet.</p>
+                    <PermissionGate allow={canManageAssessment}>
                     <Button
                         onClick={handleOpenCreateModal}
-                        className="flex items-center space-x-2"
+                        className="flex items-center space-x-2 mx-auto"
                         disabled={!selectedCourseId}
                     >
                         <Plus className="h-4 w-4" />
                         <span>Create Your First Assessment</span>
                     </Button>
+                    </PermissionGate>
                 </div>
             )}
 

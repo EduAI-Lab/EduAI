@@ -8,6 +8,8 @@ import {
     Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@eduai/ui';
 import { Button, Badge, Label, Textarea } from '@eduai/ui';
 import { useToast } from '@/components/ui/use-toast';
+import { PermissionGate } from '@/components/rbac/PermissionGate';
+import { useQmPermissions } from '@/hooks/useQmPermissions';
 import { X, Copy, Trash2, ArrowLeft, Sparkles, FileEdit, Pencil } from 'lucide-react';
 import { QuestionVariantEntry, MCQChoice, QuestionType, QuestionDifficulty } from '../../types/question';
 import { Topic } from '../../types/topic';
@@ -115,6 +117,16 @@ export const QuestionDetailView = ({
     const [topicsLoading, setTopicsLoading] = useState(false);
     const [savingMetadata, setSavingMetadata] = useState(false);
     const { toast } = useToast();
+    const {
+        canApproveVariant,
+        canCreateQuestion,
+        canEditResource,
+        canDeleteResource,
+    } = useQmPermissions();
+    const owner = { createdBy: entry.variant.createdBy ?? null };
+    const isApproved = entry.isDraft === false;
+    const canEditDraft = canEditResource(owner) && !isApproved;
+    const canEditMetadata = canEditResource(owner);
 
     useEffect(() => {
         if (!entry.courseId) return;
@@ -398,7 +410,7 @@ export const QuestionDetailView = ({
                                 <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                                     Synopsis
                                 </h3>
-                                {!editingMetadata && onUpdateQuestionMetadata && (
+                                {!editingMetadata && onUpdateQuestionMetadata && canEditMetadata && (
                                     <Button
                                         variant="ghost"
                                         size="sm"
@@ -756,6 +768,7 @@ export const QuestionDetailView = ({
 
                 <div className="flex items-center justify-between border-t bg-muted px-6 py-4">
                     <div className="flex items-center gap-2">
+                        <PermissionGate allow={canEditDraft}>
                         <Button
                             variant="outline"
                             size="sm"
@@ -767,6 +780,8 @@ export const QuestionDetailView = ({
                             <Sparkles className="h-3 w-3" />
                             <span>{entry.isAiGenerated ? 'Remove AI Tag' : 'Add AI Tag'}</span>
                         </Button>
+                        </PermissionGate>
+                        <PermissionGate allow={canApproveVariant}>
                         <Button
                             variant="outline"
                             size="sm"
@@ -778,12 +793,16 @@ export const QuestionDetailView = ({
                             <FileEdit className="h-3 w-3" />
                             <span>{entry.isDraft ? 'Mark as Reviewed' : 'Mark as Draft'}</span>
                         </Button>
+                        </PermissionGate>
                     </div>
                     <div className="flex items-center gap-2">
+                        <PermissionGate allow={canCreateQuestion}>
                         <Button variant="outline" onClick={() => onCreateVariant(entry)} className="flex items-center gap-2">
                             <Copy className="h-4 w-4" />
                             <span>Create variant</span>
                         </Button>
+                        </PermissionGate>
+                        <PermissionGate allow={canDeleteResource(owner)}>
                         <Button
                             variant="destructive"
                             onClick={() => onDeleteVariant(entry)}
@@ -792,6 +811,7 @@ export const QuestionDetailView = ({
                             <Trash2 className="h-4 w-4" />
                             <span>Delete variant</span>
                         </Button>
+                        </PermissionGate>
                     </div>
                 </div>
             </div>

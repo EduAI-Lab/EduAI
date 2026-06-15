@@ -5,6 +5,8 @@
 import { Button, Card, CardContent, Badge } from '@eduai/ui';
 
 import { Eye, Copy } from 'lucide-react';
+import { PermissionGate } from '@/components/rbac/PermissionGate';
+import { useQmPermissions } from '@/hooks/useQmPermissions';
 import { QuestionVariantEntry } from '../../types/question';
 
 interface QuestionCardProps {
@@ -15,6 +17,7 @@ interface QuestionCardProps {
 }
 
 export const QuestionCard = ({ entry, questionNumber, onView, onCreateVariant }: QuestionCardProps) => {
+    const { canCreateQuestion } = useQmPermissions();
     const primaryTopicLabel = entry.primaryTopicName ?? `Topic ${entry.primaryTopicId}`;
 
     return (
@@ -86,6 +89,7 @@ export const QuestionCard = ({ entry, questionNumber, onView, onCreateVariant }:
                             <Eye className="h-4 w-4" />
                             <span>View</span>
                         </Button>
+                        <PermissionGate allow={canCreateQuestion}>
                         <Button
                             variant="outline"
                             size="sm"
@@ -95,6 +99,7 @@ export const QuestionCard = ({ entry, questionNumber, onView, onCreateVariant }:
                             <Copy className="h-4 w-4" />
                             <span>Variant</span>
                         </Button>
+                        </PermissionGate>
                     </div>
                 </div>
             </CardContent>

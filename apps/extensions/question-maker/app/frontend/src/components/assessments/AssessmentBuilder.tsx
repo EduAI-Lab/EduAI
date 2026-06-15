@@ -18,6 +18,7 @@ interface AssessmentBuilderProps {
     onViewQuestion?: (entry: QuestionVariantEntry) => void;
     onToggleDraft?: (entry: QuestionVariantEntry, nextDraft: boolean) => void;
     onCreateVariant?: (entry: QuestionVariantEntry) => void;
+    readOnly?: boolean;
 }
 
 export function AssessmentBuilder({
@@ -31,7 +32,8 @@ export function AssessmentBuilder({
     onRemoveQuestionFromSection,
     onViewQuestion,
     onToggleDraft,
-    onCreateVariant
+    onCreateVariant,
+    readOnly = false,
 }: AssessmentBuilderProps) {
     const [pickerOpen, setPickerOpen] = useState(false);
     const [pickerSectionId, setPickerSectionId] = useState<number | null>(null);
@@ -84,10 +86,12 @@ export function AssessmentBuilder({
                                             setPickerSectionId(section.id);
                                             setPickerOpen(true);
                                         }}
+                                        readOnly={readOnly}
                                     />
                                 ))}
                             </div>
                         )}
+                        {!readOnly && (
                         <div className="pt-3">
                             <Button
                                 type="button"
@@ -99,6 +103,7 @@ export function AssessmentBuilder({
                                 Add section
                             </Button>
                         </div>
+                        )}
                     </div>
                 </ScrollArea>
             </div>

@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router';
 import {
   BookOpen,
+  BugOff,
   ClipboardList,
   ExternalLink,
   HelpCircle,
@@ -9,59 +10,21 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { getCoreDashboardUrl } from '@/lib/coreUrl';
+import { useAuth } from '@/contexts/AuthContext';
+import { getFooterNavForUser, getNavForUser, type QmNavItem, type QmNavItemKey } from '@/lib/rbac';
 
-type NavItem = {
-  title: string;
-  href: string;
-  icon: React.ComponentType<{ className?: string; size?: number; strokeWidth?: number }>;
-  external?: boolean;
-  match?: (pathname: string, search: string) => boolean;
+const NAV_ICONS: Record<
+  QmNavItemKey,
+  React.ComponentType<{ className?: string; size?: number; strokeWidth?: number }>
+> = {
+  courses: BookOpen,
+  questions: ListChecks,
+  assessments: ClipboardList,
+  variants: Sparkles,
+  help: HelpCircle,
+  'bug-reports': BugOff,
+  'back-to-eduai': ExternalLink,
 };
-
-const MAIN_NAV: NavItem[] = [
-  {
-    title: 'Courses',
-    href: '/courses',
-    icon: BookOpen,
-    match: (pathname) => pathname === '/courses',
-  },
-  {
-    title: 'Questions',
-    href: '/home?tab=questions',
-    icon: ListChecks,
-    match: (pathname, search) =>
-      pathname === '/home' && !search.includes('tab=assessments'),
-  },
-  {
-    title: 'Assessments',
-    href: '/home?tab=assessments',
-    icon: ClipboardList,
-    match: (pathname, search) =>
-      pathname === '/home' && search.includes('tab=assessments'),
-  },
-  {
-    title: 'Variants',
-    href: '/assessment-variant',
-    icon: Sparkles,
-    match: (pathname) => pathname.startsWith('/assessment-variant'),
-  },
-  {
-    title: 'Help',
-    href: '/help',
-    icon: HelpCircle,
-    match: (pathname) => pathname === '/help',
-  },
-];
-
-const FOOTER_NAV: NavItem[] = [
-  {
-    title: 'Back to EduAI',
-    href: getCoreDashboardUrl(),
-    icon: ExternalLink,
-    external: true,
-  },
-];
 
 type QmSidebarProps = {
   className?: string;
@@ -74,11 +37,12 @@ function NavButton({
   search,
   onNavigate,
 }: {
-  item: NavItem;
+  item: QmNavItem;
   pathname: string;
   search: string;
   onNavigate?: () => void;
 }) {
+  const Icon = NAV_ICONS[item.key];
   const isActive =
     !item.external && (item.match?.(pathname, search) ?? false);
   const linkClassName =
@@ -105,7 +69,7 @@ function NavButton({
           }}
         />
       )}
-      <item.icon size={16} strokeWidth={1.75} />
+      <Icon size={16} strokeWidth={1.75} />
       <span className="flex-1">{item.title}</span>
     </>
   );
@@ -150,6 +114,12 @@ function NavButton({
 
 export function QmSidebar({ className, onNavigate }: QmSidebarProps) {
   const { pathname, search } = useLocation();
+  const { user } = useAuth();
+  const qmUser = user
+    ? { id: user.id, role: user.role, authorizedUnits: user.authorizedUnits }
+    : null;
+  const mainNav = getNavForUser(qmUser);
+  const footerNav = getFooterNavForUser(qmUser);
 
   return (
     <aside
@@ -181,9 +151,9 @@ export function QmSidebar({ className, onNavigate }: QmSidebarProps) {
       </div>
 
       <nav className="flex flex-1 flex-col gap-0.5 px-3 py-4">
-        {MAIN_NAV.map((item) => (
+        {mainNav.map((item) => (
           <NavButton
-            key={item.title}
+            key={item.key}
             item={item}
             pathname={pathname}
             search={search}
@@ -193,9 +163,9 @@ export function QmSidebar({ className, onNavigate }: QmSidebarProps) {
       </nav>
 
       <div className="mt-auto border-t border-sidebar-border px-3 py-4">
-        {FOOTER_NAV.map((item) => (
+        {footerNav.map((item) => (
           <NavButton
-            key={item.title}
+            key={item.key}
             item={item}
             pathname={pathname}
             search={search}
