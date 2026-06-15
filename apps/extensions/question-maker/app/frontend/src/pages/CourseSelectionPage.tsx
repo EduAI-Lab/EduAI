@@ -2,16 +2,15 @@
  * Course selection page shown after login. User must select a course card to continue to Question Bank / Assessments.
  * Same header as homepage; content shows "Your Courses", "Add new course" card, and available course cards.
  */
+import { Card, CardContent } from '@eduai/ui';
+import { Tooltip } from '@/components/ui/tooltip';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { TopNavigation } from '../components/navigation/TopNavigation';
+import { useLocation, useNavigate } from 'react-router';
+import { useQmLayout } from '../components/layout/QmLayoutContext';
 import { useCourses } from '../hooks/useCourses';
 import { Course } from '../types/question';
-import { ProfileCoursesDialog } from '../components/profile/ProfileCoursesDialog';
 import { courseService } from '../services/courseService';
 import { GraduationCap, Plus } from 'lucide-react';
-import { Card, CardContent } from '../components/ui/card';
-import { Tooltip } from '../components/ui/tooltip';
 import { useGuidedTour } from '../contexts/GuidedTourContext';
 import { assessmentService } from '../services/assessmentService';
 
@@ -28,18 +27,14 @@ export const CourseSelectionPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { courses, isLoading: isCoursesLoading, fetchCourses } = useCourses();
-  const [profileOpen, setProfileOpen] = useState(false);
   const [isStartingTour, setIsStartingTour] = useState(false);
+  const { setGuidedTourHandler, openProfile } = useQmLayout();
   const { startTour, registerStepAction, isActive: isTourActive } = useGuidedTour();
   const coursesRef = useRef(courses);
   coursesRef.current = courses;
 
   const handleSelectCourse = (course: Course) => {
     navigate('/home', { state: { courseId: course.id }, replace: true });
-  };
-
-  const handleProfileClick = () => {
-    setProfileOpen(true);
   };
 
   const handleGuidedTourClick = useCallback(async () => {
@@ -153,17 +148,13 @@ export const CourseSelectionPage = () => {
     return unregister;
   }, [isTourActive, registerStepAction, navigate, location.state, fetchCourses]);
 
-  return (
-    <div className="min-h-screen bg-background">
-      <TopNavigation
-        variant="course-selection"
-        courses={courses}
-        isLoadingCourses={isCoursesLoading}
-        onProfileClick={handleProfileClick}
-        onGuidedTourClick={handleGuidedTourClick}
-      />
+  useEffect(() => {
+    setGuidedTourHandler(handleGuidedTourClick);
+    return () => setGuidedTourHandler(null);
+  }, [handleGuidedTourClick, setGuidedTourHandler]);
 
-      <div className="max-w-4xl mx-auto px-6 py-8">
+  return (
+    <div className="max-w-4xl mx-auto px-6 py-8">
         <h1 className="text-2xl font-bold text-foreground mb-6">Your Courses</h1>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 items-stretch">
@@ -172,7 +163,7 @@ export const CourseSelectionPage = () => {
             <Card
               className="border-2 border-dashed border-muted-foreground/30 bg-muted/30 hover:border-primary hover:bg-muted/50 cursor-pointer transition-colors flex min-h-[140px]"
               data-tour-id={courses.length === 0 ? 'course-select' : undefined}
-              onClick={() => setProfileOpen(true)}
+              onClick={openProfile}
             >
               <CardContent className="flex flex-col items-center justify-center flex-1 p-6">
               <div className="rounded-full bg-muted p-3 mb-2">
@@ -211,14 +202,6 @@ export const CourseSelectionPage = () => {
             No courses yet. Add a course from your profile to get started.
           </p>
         )}
-      </div>
-
-      <ProfileCoursesDialog
-        open={profileOpen}
-        onClose={() => setProfileOpen(false)}
-        existingCourses={courses}
-        onCoursesAdded={fetchCourses}
-      />
     </div>
   );
 };

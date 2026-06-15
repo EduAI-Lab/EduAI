@@ -3,6 +3,7 @@ import {
   IconBooks,
   IconBrain,
   IconDashboard,
+  IconListCheck,
   IconReport,
   IconRobot,
   IconSettings,
@@ -37,6 +38,7 @@ const NAV_ICONS: Record<NavItemKey, Icon> = {
   dashboard: IconDashboard,
   courses: IconBooks,
   chat: IconRobot,
+  "question-maker": IconListCheck,
   "admin-users": IconUsers,
   "admin-ai": IconBrain,
   "admin-bugs": IconReport,
@@ -48,6 +50,7 @@ function toNavMainItems(items: ReturnType<typeof getNavForUser>): NavMainItem[] 
     title: item.title,
     url: item.url,
     icon: NAV_ICONS[item.key],
+    external: item.external,
   }))
 }
 

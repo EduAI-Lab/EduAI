@@ -8,6 +8,7 @@
  */
 import express from 'express';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
+import { QM_AUTHORIZED } from '../middleware/roles.js';
 import { requireCourseAccess } from '../middleware/courseAccess.js';
 import { requireAssessmentAccess } from '../middleware/resourceAccess.js';
 import {
@@ -22,8 +23,7 @@ import {
 
 const router = express.Router();
 
-const AUTHORS = ['ADMIN', 'UNIT_ADMIN', 'INSTRUCTOR', 'TA'];
-const INSTRUCTORS = ['ADMIN', 'UNIT_ADMIN', 'INSTRUCTOR'];
+const QM_AUTHORIZED_ROLES = QM_AUTHORIZED;
 
 const writeByCourseBody = requireCourseAccess({ min: 'instructor', getCourseId: (req) => req.body.courseId });
 
@@ -31,7 +31,7 @@ const writeByCourseBody = requireCourseAccess({ min: 'instructor', getCourseId: 
 router.patch(
   '/assessments/:id/role',
   authenticateToken,
-  requireRole(INSTRUCTORS),
+  requireRole(QM_AUTHORIZED_ROLES),
   requireAssessmentAccess({ min: 'instructor' }),
   async (req, res, next) => {
     try {
@@ -54,7 +54,7 @@ router.patch(
 router.get(
   '/assessments/:id/blueprint-snapshot',
   authenticateToken,
-  requireRole(AUTHORS),
+  requireRole(QM_AUTHORIZED_ROLES),
   requireAssessmentAccess({ min: 'ta' }),
   async (req, res, next) => {
     try {
@@ -70,7 +70,7 @@ router.get(
 router.get(
   '/assessments/:id/variant-readiness',
   authenticateToken,
-  requireRole(AUTHORS),
+  requireRole(QM_AUTHORIZED_ROLES),
   requireAssessmentAccess({ min: 'ta' }),
   async (req, res, next) => {
     try {
@@ -88,7 +88,7 @@ router.get(
 );
 
 /** POST /api/assessment-variant/assemble-variants (instructor-only). */
-router.post('/assemble-variants', authenticateToken, requireRole(INSTRUCTORS), writeByCourseBody, async (req, res, next) => {
+router.post('/assemble-variants', authenticateToken, requireRole(QM_AUTHORIZED_ROLES), writeByCourseBody, async (req, res, next) => {
   try {
     const {
       referenceAssessmentId,
@@ -123,7 +123,7 @@ router.post('/assemble-variants', authenticateToken, requireRole(INSTRUCTORS), w
 });
 
 /** POST /api/assessment-variant/assemble-by-metadata (instructor-only). */
-router.post('/assemble-by-metadata', authenticateToken, requireRole(INSTRUCTORS), writeByCourseBody, async (req, res, next) => {
+router.post('/assemble-by-metadata', authenticateToken, requireRole(QM_AUTHORIZED_ROLES), writeByCourseBody, async (req, res, next) => {
   try {
     const {
       referenceAssessmentId,
@@ -158,7 +158,7 @@ router.post('/assemble-by-metadata', authenticateToken, requireRole(INSTRUCTORS)
 });
 
 /** POST /api/assessment-variant/generate-bank-variants (instructor-only). */
-router.post('/generate-bank-variants', authenticateToken, requireRole(INSTRUCTORS), writeByCourseBody, async (req, res, next) => {
+router.post('/generate-bank-variants', authenticateToken, requireRole(QM_AUTHORIZED_ROLES), writeByCourseBody, async (req, res, next) => {
   try {
     const { questionIds, model, apiKeys, variantsToAdd, variantPromptInstructions } = req.body;
 
@@ -185,7 +185,7 @@ router.post('/generate-bank-variants', authenticateToken, requireRole(INSTRUCTOR
 });
 
 /** POST /api/assessment-variant/review-variant-ai (instructor-only). */
-router.post('/review-variant-ai', authenticateToken, requireRole(INSTRUCTORS), writeByCourseBody, async (req, res, next) => {
+router.post('/review-variant-ai', authenticateToken, requireRole(QM_AUTHORIZED_ROLES), writeByCourseBody, async (req, res, next) => {
   try {
     const { baselineAssessmentId, variantAssessmentId, model, apiKeys, rubricText, applyUsabilityPenalty, includeOverallSummary } = req.body;
     if (!baselineAssessmentId || !variantAssessmentId) {

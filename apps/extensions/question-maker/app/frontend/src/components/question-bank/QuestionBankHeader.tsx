@@ -2,8 +2,8 @@
  * Header for the question bank list with add/upload actions and course context.
  * Shows counts and disables actions when appropriate.
  */
-import { Button } from '../ui/button';
-import { Tooltip } from '../ui/tooltip';
+import { Button } from '@eduai/ui';
+import { Tooltip } from '@/components/ui/tooltip';
 import { Plus, Upload } from 'lucide-react';
 
 interface QuestionBankHeaderProps {
@@ -28,10 +28,10 @@ export const QuestionBankHeader = ({
       {/* Main Header */}
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">
+          <h2 className="text-2xl font-bold text-foreground">
             {courseName ? `Active Course: ${courseName}` : 'Select a course to view questions'}
           </h2>
-          <p className="text-sm text-gray-600">Question Bank</p>
+          <p className="text-sm text-muted-foreground">Question Bank</p>
         </div>
         <div className="flex items-center gap-2">
           <Tooltip content="Upload a document of your questions to have it added to your question bank" side="bottom">

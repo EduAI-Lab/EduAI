@@ -21,13 +21,14 @@ import { Topics } from '../schema/index.js';
 import { patchQuestionTestableOnCore } from '../services/coreApiService.js';
 import { pushVariantToCore } from '../services/coreWiringService.js';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
+import { QM_AUTHORIZED } from '../middleware/roles.js';
 import { requireQuestionAccess, requireVariantAccess } from '../middleware/resourceAccess.js';
 import { LEVELS } from '../middleware/courseAccess.js';
 import { logger } from '../utils/logger.js';
 
 const router = express.Router();
 
-const AUTHORS = ['ADMIN', 'UNIT_ADMIN', 'INSTRUCTOR', 'TA'];
+const QM_AUTHORIZED_ROLES = QM_AUTHORIZED;
 
 /** Coerce a raw isDraft value to a strict boolean, or undefined when absent. */
 function parseIsDraft(raw) {
@@ -40,7 +41,7 @@ function parseIsDraft(raw) {
 router.post(
   '/:id/variants',
   authenticateToken,
-  requireRole(AUTHORS),
+  requireRole(QM_AUTHORIZED_ROLES),
   requireQuestionAccess({ min: 'ta' }),
   async (req, res, next) => {
     try {
@@ -86,7 +87,7 @@ router.post(
 router.get(
   '/:id/variants',
   authenticateToken,
-  requireRole(AUTHORS),
+  requireRole(QM_AUTHORIZED_ROLES),
   requireQuestionAccess({ min: 'ta' }),
   async (req, res, next) => {
     try {
@@ -106,7 +107,7 @@ router.get(
 router.put(
   '/variants/:variantId',
   authenticateToken,
-  requireRole(AUTHORS),
+  requireRole(QM_AUTHORIZED_ROLES),
   requireVariantAccess({ min: 'ta' }),
   async (req, res, next) => {
     try {
@@ -189,7 +190,7 @@ router.put(
 router.patch(
   '/variants/:variantId/testable',
   authenticateToken,
-  requireRole(AUTHORS),
+  requireRole(QM_AUTHORIZED_ROLES),
   requireVariantAccess({ min: 'instructor' }),
   async (req, res, next) => {
     try {
@@ -223,7 +224,7 @@ router.patch(
 router.delete(
   '/variants/:variantId',
   authenticateToken,
-  requireRole(AUTHORS),
+  requireRole(QM_AUTHORIZED_ROLES),
   requireVariantAccess({ min: 'ta' }),
   async (req, res, next) => {
     try {

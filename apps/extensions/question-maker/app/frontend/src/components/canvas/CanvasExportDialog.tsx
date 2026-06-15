@@ -4,24 +4,9 @@
  */
 import { useState, useEffect } from 'react';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '../ui/dialog';
-import { Button } from '../ui/button';
-import { Label } from '../ui/label';
-import { Input } from '../ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../ui/select';
-import { useToast } from '../ui/use-toast';
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@eduai/ui';
+import { Button, Label, Input } from '@eduai/ui';
+import { useToast } from '@/components/ui/use-toast';
 import canvasService, { CanvasCourse, CanvasIntegration } from '../../services/canvasService';
 
 interface CanvasExportDialogProps {

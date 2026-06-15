@@ -2,9 +2,12 @@
  * Main product homepage showing questions and assessments with creation/import/export flows.
  * Handles course/topic loading, tab state, and orchestrates dialogs for questions, variants, Canvas, and uploads.
  */
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@eduai/ui';
+import { ToastAction } from '@/components/ui/use-toast';
+import { useToast } from '@/components/ui/use-toast';
+import { DeleteConfirmationModal } from '@/components/ui/DeleteConfirmationModal';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { TopNavigation } from '../components/navigation/TopNavigation';
+import { useLocation, useNavigate } from 'react-router';
 import { QuestionBank } from '../components/question-bank/QuestionBank';
 import { AssessmentSection } from '../components/assessments/AssessmentSection';
 import { QuestionDetailView } from '../components/question-detail/QuestionDetailView';
@@ -16,12 +19,9 @@ import { courseService } from '../services/courseService';
 import assessmentService from '../services/assessmentService';
 import { AddQuestionDialog } from '../components/questions/AddQuestionDialog';
 import { QuestionUploadDialog, mapExtractedToDraftQuestions } from '../components/question-bank/QuestionUploadDialog';
-import { ToastAction } from '../components/ui/toast';
-import { ProfileCoursesDialog } from '../components/profile/ProfileCoursesDialog';
 import { CanvasExportDialog } from '../components/canvas/CanvasExportDialog';
 import { CanvasImportDialog } from '../components/canvas/CanvasImportDialog';
-import { useToast } from '../components/ui/use-toast';
-import { DeleteConfirmationModal } from '../components/ui/DeleteConfirmationModal';
+import { useQmLayout } from '../components/layout/QmLayoutContext';
 import { useGuidedTour } from '../contexts/GuidedTourContext';
 import {
     assessmentBlocksToDocxBlob,
@@ -56,7 +56,6 @@ export const Homepage = () => {
   const [pendingExtractionDrafts, setPendingExtractionDrafts] = useState<ReturnType<typeof mapExtractedToDraftQuestions> | null>(null);
   const [presetVariant, setPresetVariant] = useState<QuestionVariantEntry | null>(null);
   const [topicsByCourse, setTopicsByCourse] = useState<Record<number, Topic[]>>({});
-  const [isProfileDialogOpen, setIsProfileDialogOpen] = useState(false);
   const [isCanvasExportOpen, setIsCanvasExportOpen] = useState(false);
   const [selectedAssessmentForExport, setSelectedAssessmentForExport] = useState<{ id: number; name: string } | null>(null);
   const [isCanvasImportOpen, setIsCanvasImportOpen] = useState(false);
@@ -68,6 +67,7 @@ export const Homepage = () => {
   const [isDeletingVariant, setIsDeletingVariant] = useState(false);
   const { toast } = useToast();
   const { startTour, registerOnTourEnd } = useGuidedTour();
+  const { setGuidedTourHandler } = useQmLayout();
 
   const loadTopicsForCourse = useCallback(async (courseId: number, options: { force?: boolean } = {}) => {
     if (!courseId) {
@@ -226,6 +226,11 @@ export const Homepage = () => {
       replace: true
     });
   }, [navigate, selectedCourse?.id]);
+
+  useEffect(() => {
+    setGuidedTourHandler(handleGuidedTourClick);
+    return () => setGuidedTourHandler(null);
+  }, [handleGuidedTourClick, setGuidedTourHandler]);
 
   useEffect(() => {
     void fetchAssessments();
@@ -818,21 +823,38 @@ export const Homepage = () => {
   );
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <TopNavigation
-        selectedCourse={selectedCourse}
-        onCourseChange={setSelectedCourse}
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-        courses={courses}
-        isLoadingCourses={isCoursesLoading}
-        onProfileClick={() => setIsProfileDialogOpen(true)}
-        showBackButton
-        onBackClick={() => navigate('/courses')}
-        onGuidedTourClick={handleGuidedTourClick}
-      />
+    <div className="max-w-7xl mx-auto px-6 py-8 space-y-6">
+      <div className="flex flex-wrap items-center gap-4">
+        <Select
+          value={selectedCourse?.id?.toString() || ''}
+          onValueChange={(value) => {
+            const course = courses.find((c) => c.id.toString() === value);
+            if (course) setSelectedCourse(course);
+          }}
+          disabled={isCoursesLoading || courses.length === 0}
+        >
+          <SelectTrigger className="w-80 min-w-80" data-tour-id="course-select">
+            <SelectValue
+              placeholder={isCoursesLoading ? 'Loading courses...' : 'Select Course'}
+            />
+          </SelectTrigger>
+          <SelectContent>
+            {courses.length === 0 ? (
+              <SelectItem value="__no_courses" disabled>
+                {isCoursesLoading ? 'Loading...' : 'No courses available'}
+              </SelectItem>
+            ) : (
+              courses.map((course) => (
+                <SelectItem key={course.id} value={course.id.toString()}>
+                  {course.code || '—'} - {course.name}
+                </SelectItem>
+              ))
+            )}
+          </SelectContent>
+        </Select>
+      </div>
 
-      <div className="max-w-7xl mx-auto px-6 py-8">
+      <div>
         {activeTab === 'questions' ? (
           <QuestionBank
             variants={variantEntries}
@@ -922,13 +944,6 @@ export const Homepage = () => {
         onQuestionCreated={handleQuestionCreated}
         presetVariant={presetVariant}
         totalQuestionsInBank={variantEntries.length}
-      />
-
-      <ProfileCoursesDialog
-        open={isProfileDialogOpen}
-        onClose={() => setIsProfileDialogOpen(false)}
-        existingCourses={courses}
-        onCoursesAdded={fetchCourses}
       />
 
       {selectedAssessmentForExport && (

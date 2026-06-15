@@ -2,10 +2,9 @@
  * Displays question metadata with variant tabs, topic labels, and review toggles.
  * Lets users select a question, add variants, and change draft status inline.
  */
+import { Button, Badge, Tabs, TabsList, TabsTrigger, TabsContent } from '@eduai/ui';
+
 import { useState, useEffect } from 'react';
-import { Button } from '../ui/button';
-import { Badge } from '../ui/badge';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '../ui/tabs';
 import { Question, QuestionVariant } from '../../types/question';
 import { Topic } from '../../types/topic';
 
@@ -36,20 +35,20 @@ const getDifficultyColor = (difficulty: string) => {
     case 'hard':
       return 'bg-red-100 text-red-800 border-red-200';
     default:
-      return 'bg-gray-100 text-gray-800 border-gray-200';
+      return 'bg-muted text-foreground border-border';
   }
 };
 
 const getReasoningColor = (reasoning: string) => {
   switch (reasoning) {
     case 'factual':
-      return 'bg-blue-100 text-blue-800 border-blue-200';
+      return 'bg-primary/15 text-primary border-primary/30';
     case 'analytical':
       return 'bg-purple-100 text-purple-800 border-purple-200';
     case 'application':
       return 'bg-indigo-100 text-indigo-800 border-indigo-200';
     default:
-      return 'bg-gray-100 text-gray-800 border-gray-200';
+      return 'bg-muted text-foreground border-border';
   }
 };
 
@@ -100,20 +99,20 @@ export const QuestionMetadataCard = ({
   return (
     <div
       className={`rounded border ${
-        isSelected ? 'border-primary bg-primary/5' : 'border-gray-200'
+        isSelected ? 'border-primary bg-primary/5' : 'border-border'
       } overflow-hidden`}
     >
       {/* Header with metadata info and selection */}
       <div
         onClick={onToggleSelection}
-        className="flex items-start gap-3 px-3 py-3 cursor-pointer hover:bg-gray-50"
+        className="flex items-start gap-3 px-3 py-3 cursor-pointer hover:bg-muted"
       >
         <input
           type="checkbox"
           checked={isSelected}
           onChange={onToggleSelection}
           onClick={(e) => e.stopPropagation()}
-          className="mt-1 h-4 w-4 rounded border-gray-300 cursor-pointer"
+          className="mt-1 h-4 w-4 rounded border-border cursor-pointer"
         />
         <div className="flex-1 space-y-2">
           <div className="flex items-start justify-between gap-2">
@@ -146,7 +145,7 @@ export const QuestionMetadataCard = ({
                 )}
               </div>
               {question.description && (
-                <p className="text-sm font-medium text-gray-900 mb-1">
+                <p className="text-sm font-medium text-foreground mb-1">
                   {question.description}
                 </p>
               )}
@@ -196,7 +195,7 @@ export const QuestionMetadataCard = ({
                   e.stopPropagation();
                   onAddVariant();
                 }}
-                className="text-xs bg-black text-white hover:bg-gray-800"
+                className="text-xs bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 + Variant
               </Button>
@@ -212,8 +211,8 @@ export const QuestionMetadataCard = ({
           onValueChange={(value) => handleVariantChange(Number(value))}
           className="w-full"
         >
-          <div className="border-t border-gray-200 bg-gray-50 px-3 py-2">
-            <TabsList className="h-8 bg-white">
+          <div className="border-t border-border bg-muted px-3 py-2">
+            <TabsList className="h-8 bg-card">
               {variants.map((variant, index) => (
                 <TabsTrigger
                   key={variant.id}
@@ -229,14 +228,14 @@ export const QuestionMetadataCard = ({
             <TabsContent
               key={variant.id}
               value={variant.id.toString()}
-              className="mt-0 px-3 py-3 border-t border-gray-200 bg-white"
+              className="mt-0 px-3 py-3 border-t border-border bg-card"
             >
               <VariantContent variant={variant} />
             </TabsContent>
           ))}
         </Tabs>
       ) : (
-        <div className="px-3 py-3 border-t border-gray-200 bg-white">
+        <div className="px-3 py-3 border-t border-border bg-card">
           <VariantContent variant={activeVariant} />
         </div>
       )}
@@ -249,7 +248,7 @@ const VariantContent = ({ variant }: { variant: QuestionVariant }) => {
 
   return (
     <div className="space-y-2">
-      <p className="text-sm text-gray-900">{variant.questionText}</p>
+      <p className="text-sm text-foreground">{variant.questionText}</p>
       {hasChoices && variant.choices && (
         <div className="mt-2 space-y-1.5">
           {variant.choices.map((choice, index) => {
@@ -258,13 +257,13 @@ const VariantContent = ({ variant }: { variant: QuestionVariant }) => {
               <div
                 key={index}
                 className={`text-xs flex items-start gap-2 p-2 rounded ${
-                  isCorrect ? 'bg-emerald-50 border border-emerald-200' : 'bg-gray-50 border border-gray-200'
+                  isCorrect ? 'bg-emerald-50 border border-emerald-200' : 'bg-muted border border-border'
                 }`}
               >
-                <span className={`font-semibold shrink-0 ${isCorrect ? 'text-emerald-700' : 'text-gray-600'}`}>
+                <span className={`font-semibold shrink-0 ${isCorrect ? 'text-emerald-700' : 'text-muted-foreground'}`}>
                   {choice.letter})
                 </span>
-                <span className={isCorrect ? 'text-emerald-900 font-medium' : 'text-gray-700'}>
+                <span className={isCorrect ? 'text-emerald-900 font-medium' : 'text-foreground'}>
                   {choice.text}
                 </span>
                 {isCorrect && (
@@ -294,10 +293,10 @@ const VariantContent = ({ variant }: { variant: QuestionVariant }) => {
         )}
       </div>
       {variant.assessment && (
-        <div className="mt-2 pt-2 border-t border-gray-100">
+        <div className="mt-2 pt-2 border-t border-border">
           <p className="text-xs text-muted-foreground">
             Previously used in:{' '}
-            <span className="font-medium text-gray-900">
+            <span className="font-medium text-foreground">
               {variant.assessment.name} ({variant.assessment.semester})
             </span>
           </p>

@@ -2,11 +2,10 @@
  * Drag-free topic selector that manages primary, secondary, and excluded topic lists.
  * Filters available topics, supports search, and emits changes per category.
  */
+import { Input, Label } from '@eduai/ui';
+import { Tooltip } from '@/components/ui/tooltip';
 import * as React from 'react';
-import { Input } from '../ui/input';
-import { Label } from '../ui/label';
 import { X } from 'lucide-react';
-import { Tooltip } from '../ui/tooltip';
 
 type Topic = { id: number; name: string };
 type TopicCategory = 'general' | 'primary' | 'secondary' | 'excluded';
@@ -125,9 +124,9 @@ export const TopicSelect = ({
 
     const colorClasses = {
       general: isSelected 
-        ? 'bg-blue-50 text-blue-700 border-2 border-blue-500 shadow-md' 
-        : 'bg-white text-gray-800 border border-gray-300 hover:shadow-md',
-      primary: 'bg-blue-500 text-white border-blue-600',
+        ? 'bg-primary/10 text-primary border-2 border-primary shadow-md' 
+        : 'bg-card text-foreground border border-border hover:shadow-md',
+      primary: 'bg-primary text-primary-foreground border-primary',
       secondary: 'bg-orange-500 text-white border-orange-600',
       excluded: 'bg-red-500 text-white border-red-600',
     };
@@ -179,15 +178,15 @@ export const TopicSelect = ({
 
     const categoryStyles = {
       primary: {
-        border: isHovered || isFlashing ? 'border-blue-400 bg-blue-50/50' : 'border-gray-300 bg-gray-50/50',
+        border: isHovered || isFlashing ? 'border-primary bg-primary/10' : 'border-border bg-muted/50',
         glow: 'ring-2 ring-blue-300',
       },
       secondary: {
-        border: isHovered || isFlashing ? 'border-orange-400 bg-orange-50/50' : 'border-gray-300 bg-gray-50/50',
+        border: isHovered || isFlashing ? 'border-orange-400 bg-orange-50/50' : 'border-border bg-muted/50',
         glow: 'ring-2 ring-orange-300',
       },
       excluded: {
-        border: isHovered || isFlashing ? 'border-red-400 bg-red-50/50' : 'border-gray-300 bg-gray-50/50',
+        border: isHovered || isFlashing ? 'border-red-400 bg-red-50/50' : 'border-border bg-muted/50',
         glow: 'ring-2 ring-red-300',
       },
     };
@@ -221,7 +220,7 @@ export const TopicSelect = ({
           </Tooltip>
         </div>
         {topics.length === 0 ? (
-          <div className="text-sm text-gray-400 text-center py-4">
+          <div className="text-sm text-muted-foreground text-center py-4">
             {hasSelection ? 'Click to assign selected topics' : '+ Click to assign topics here'}
           </div>
         ) : (
@@ -251,14 +250,14 @@ export const TopicSelect = ({
           </div>
 
           {selectedTopicIds.size > 0 && (
-            <div className="text-sm text-blue-600 font-medium">
+            <div className="text-sm text-primary font-medium">
               {selectedTopicIds.size} topic{selectedTopicIds.size !== 1 ? 's' : ''} selected — Click a category zone to assign
             </div>
           )}
 
-          <div className="min-h-[200px] max-h-[300px] overflow-y-auto p-3 border rounded-lg bg-gray-50">
+          <div className="min-h-[200px] max-h-[300px] overflow-y-auto p-3 border rounded-lg bg-muted">
             {generalBankTopics.length === 0 ? (
-              <div className="text-sm text-gray-400 text-center py-8">
+              <div className="text-sm text-muted-foreground text-center py-8">
                 {searchQuery ? 'No topics found' : 'No topics available'}
               </div>
             ) : (

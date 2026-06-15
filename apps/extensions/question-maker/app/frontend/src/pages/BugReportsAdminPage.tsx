@@ -2,16 +2,10 @@
  * Admin-only list of bug reports with status updates and attachment viewers.
  */
 import { useEffect, useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { ArrowLeft } from 'lucide-react';
-import { Button } from '../components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle
-} from '../components/ui/dialog';
-import { useToast } from '../components/ui/use-toast';
+import { Button, Dialog, DialogContent, DialogHeader, DialogTitle } from '@eduai/ui';
+import { useToast } from '@/components/ui/use-toast';
 import { bugReportApi, BugReportRow } from '../services/bugReportApi';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -121,7 +115,7 @@ export function BugReportsAdminPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <div className="border-b bg-white px-6 py-4 flex items-center gap-4">
+      <div className="border-b bg-card px-6 py-4 flex items-center gap-4">
         <Button variant="ghost" size="sm" onClick={() => navigate('/home')} className="gap-2">
           <ArrowLeft className="h-4 w-4" />
           Back
@@ -170,7 +164,7 @@ export function BugReportsAdminPage() {
                     <td className="p-3 align-top max-w-[280px]">
                       <button
                         type="button"
-                        className="truncate text-left w-full hover:text-blue-700"
+                        className="truncate text-left w-full hover:text-primary"
                         title={row.description}
                         onClick={() =>
                           setDetail({

@@ -4,8 +4,7 @@ export const HelpPage = () => {
     const { startTour } = useGuidedTour();
 
     return (
-        <div className="min-h-screen bg-background text-foreground">
-            <div className="mx-auto max-w-4xl px-6 py-10 space-y-10 text-base">
+        <div className="mx-auto max-w-4xl px-6 py-10 space-y-10 text-base">
                 <header className="space-y-2">
                     <p className="text-xs uppercase tracking-wide text-muted-foreground">Help Center</p>
                     <h1 className="text-3xl font-bold">Question Maker User Guide</h1>
@@ -13,7 +12,7 @@ export const HelpPage = () => {
                         <button
                             type="button"
                             onClick={() => startTour('main')}
-                            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-800 hover:border-gray-400"
+                            className="rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:border-border"
                         >
                             Start Guided Tour
                         </button>
@@ -160,7 +159,7 @@ export const HelpPage = () => {
                             <img
                                 src="/help/variant.png"
                                 alt="Create Variant form"
-                                className="w-full md:w-5/6 rounded-md border bg-white"
+                                className="w-full md:w-5/6 rounded-md border bg-card"
                             />
                         </div>
                     </div>
@@ -209,7 +208,7 @@ export const HelpPage = () => {
                         <img
                             src="/help/upload-assessment.png"
                             alt="Upload questions dialog with assessment details and review list"
-                            className="w-full md:w-5/6 rounded-md border bg-white"
+                            className="w-full md:w-5/6 rounded-md border bg-card"
                         />
                     </div>
                 </section>
@@ -230,7 +229,7 @@ export const HelpPage = () => {
                             <img
                                 src="/help/add-assessment-blueprint.png"
                                 alt="Add Assessment blueprint modal"
-                                className="w-full md:w-5/6 rounded-md border bg-white"
+                                className="w-full md:w-5/6 rounded-md border bg-card"
                             />
                         </div>
                     </div>
@@ -246,7 +245,7 @@ export const HelpPage = () => {
                             <img
                                 src="/help/edit-assessment-blueprint.png"
                                 alt="Edit Assessment blueprint modal"
-                                className="w-full md:w-5/6 rounded-md border bg-white"
+                                className="w-full md:w-5/6 rounded-md border bg-card"
                             />
                         </div>
                     </div>
@@ -263,7 +262,7 @@ export const HelpPage = () => {
                             <img
                                 src="/help/create-section.png"
                                 alt="Create Section panel with filters and search results"
-                                className="w-full md:w-5/6 rounded-md border bg-white"
+                                className="w-full md:w-5/6 rounded-md border bg-card"
                             />
                         </div>
                     </div>
@@ -278,7 +277,7 @@ export const HelpPage = () => {
                             <img
                                 src="/help/create-section.png"
                                 alt="Inline create options while building a section"
-                                className="w-full md:w-5/6 rounded-md border bg-white"
+                                className="w-full md:w-5/6 rounded-md border bg-card"
                             />
                         </div>
                     </div>
@@ -305,7 +304,7 @@ export const HelpPage = () => {
                             <img
                                 src="/help/export-to-txt-canvas.png"
                                 alt="Canvas export dialog with connection and course selection"
-                                className="w-full md:w-5/6 rounded-md border bg-white"
+                                className="w-full md:w-5/6 rounded-md border bg-card"
                             />
                         </div>
                     </div>
@@ -316,7 +315,7 @@ export const HelpPage = () => {
                             <img
                                 src="/help/export-to-txt-canvas.png"
                                 alt="Export to TXT action"
-                                className="w-full md:w-5/6 rounded-md border bg-white"
+                                className="w-full md:w-5/6 rounded-md border bg-card"
                             />
                         </div>
                     </div>
@@ -371,7 +370,7 @@ export const HelpPage = () => {
                       <img
                         src="/help/ai-models.png"
                         alt="Model picker showing Internal and External groups"
-                        className="w-full md:w-1/2 rounded-md border bg-white"
+                        className="w-full md:w-1/2 rounded-md border bg-card"
                       />
                     </div>
                 </section>
@@ -396,7 +395,6 @@ export const HelpPage = () => {
                         <li>Upload save requires at least one included question and filled assessment fields (type/name/semester).</li>
                     </ul>
                 </section>
-            </div>
         </div>
     );
 };

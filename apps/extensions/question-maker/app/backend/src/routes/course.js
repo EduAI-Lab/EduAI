@@ -4,14 +4,17 @@
  */
 import express from 'express';
 import { Course, Question_Metadata, Topics } from '../schema/index.js';
-import { authenticateToken } from '../middleware/auth.js';
+import { authenticateToken, requireRole } from '../middleware/auth.js';
+import { QM_AUTHORIZED } from '../middleware/roles.js';
 import { getCourseTopicsFromCore, pushTopicToCore } from '../services/coreApiService.js';
 import { logger } from '../utils/logger.js';
 
 const router = express.Router();
 
+router.use(authenticateToken, requireRole(QM_AUTHORIZED));
+
 /** POST /api/course – creates a course tied to the authenticated user after basic validation. */
-router.post('/', authenticateToken, async (req, res, next) => {
+router.post('/', async (req, res, next) => {
   try {
     const { name, courseCode } = req.body;
 
@@ -39,7 +42,7 @@ router.post('/', authenticateToken, async (req, res, next) => {
 });
 
 /** GET /api/course – lists the user’s courses and optionally includes question/topic stats. */
-router.get('/', authenticateToken, async (req, res, next) => {
+router.get('/', async (req, res, next) => {
   try {
     const { includeStats = false } = req.query;
     
@@ -97,7 +100,7 @@ router.get('/', authenticateToken, async (req, res, next) => {
 });
 
 /** GET /api/course/:id – fetches a single course with optional details if the requester owns it. */
-router.get('/:id', authenticateToken, async (req, res, next) => {
+router.get('/:id', async (req, res, next) => {
   try {
     const { includeDetails = false } = req.query;
     
@@ -146,7 +149,7 @@ router.get('/:id', authenticateToken, async (req, res, next) => {
 });
 
 /** PUT /api/course/:id – updates course metadata after confirming ownership. */
-router.put('/:id', authenticateToken, async (req, res, next) => {
+router.put('/:id', async (req, res, next) => {
   try {
     const { name, courseCode } = req.body;
 
@@ -177,7 +180,7 @@ router.put('/:id', authenticateToken, async (req, res, next) => {
 });
 
 /** DELETE /api/course/:id – removes a course and its associations if it belongs to the user. */
-router.delete('/:id', authenticateToken, async (req, res, next) => {
+router.delete('/:id', async (req, res, next) => {
   try {
     const courseData = await Course.findOne({
       where: { id: req.params.id, userId: req.user.id }
@@ -202,7 +205,7 @@ router.delete('/:id', authenticateToken, async (req, res, next) => {
 });
 
 /** GET /api/course/:id/topics – returns the topic list for an owned course. */
-router.get('/:id/topics', authenticateToken, async (req, res, next) => {
+router.get('/:id/topics', async (req, res, next) => {
   try {
     // Verify user owns the course
     const course = await Course.findOne({
@@ -231,7 +234,7 @@ router.get('/:id/topics', authenticateToken, async (req, res, next) => {
 });
 
 /** POST /api/course/:id/topics – adds a topic to the course and pushes it to Core if the course is linked. */
-router.post('/:id/topics', authenticateToken, async (req, res, next) => {
+router.post('/:id/topics', async (req, res, next) => {
   try {
     const { name } = req.body;
 
@@ -281,7 +284,7 @@ router.post('/:id/topics', authenticateToken, async (req, res, next) => {
 });
 
 /** PATCH /api/course/:id/link-core – stores a Core course CUID on the local course row. */
-router.patch('/:id/link-core', authenticateToken, async (req, res, next) => {
+router.patch('/:id/link-core', async (req, res, next) => {
   try {
     const { coreCourseId } = req.body;
 
@@ -306,7 +309,7 @@ router.patch('/:id/link-core', authenticateToken, async (req, res, next) => {
 });
 
 /** POST /api/course/:id/sync-topics – pulls topics from Core and upserts them into the local topics table. */
-router.post('/:id/sync-topics', authenticateToken, async (req, res, next) => {
+router.post('/:id/sync-topics', async (req, res, next) => {
   try {
     const course = await Course.findOne({
       where: { id: req.params.id, userId: req.user.id }

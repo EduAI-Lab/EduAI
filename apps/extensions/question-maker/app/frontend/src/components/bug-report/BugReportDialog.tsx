@@ -3,16 +3,9 @@
  */
 import { useState, useRef, useEffect } from 'react';
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle
-} from '../ui/dialog';
-import { Textarea } from '../ui/textarea';
-import { Button } from '../ui/button';
-import { Label } from '../ui/label';
-import { useToast } from '../ui/use-toast';
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@eduai/ui';
+import { Textarea, Button, Label } from '@eduai/ui';
+import { useToast } from '@/components/ui/use-toast';
 import { bugReportApi } from '../../services/bugReportApi';
 
 const MAX_DESC = 2000;
@@ -108,7 +101,7 @@ export function BugReportDialog({ open, setOpen, getCapturedData, userEmail }: B
       }}
     >
       <DialogContent className="w-[90vw] max-w-[560px] p-0 overflow-hidden border-0 shadow-2xl sm:rounded-lg">
-        <div className="bg-blue-700 px-6 pt-6 pb-4">
+        <div className="bg-primary px-6 pt-6 pb-4">
           <DialogHeader>
             <DialogTitle className="text-white text-lg font-semibold tracking-tight">Report a Bug</DialogTitle>
           </DialogHeader>
@@ -159,7 +152,7 @@ export function BugReportDialog({ open, setOpen, getCapturedData, userEmail }: B
             <input
               id="anonymous-bug"
               type="checkbox"
-              className="h-4 w-4 shrink-0 rounded border-gray-300"
+              className="h-4 w-4 shrink-0 rounded border-border"
               checked={isAnonymous}
               onChange={(e) => setIsAnonymous(e.target.checked)}
             />
@@ -169,7 +162,7 @@ export function BugReportDialog({ open, setOpen, getCapturedData, userEmail }: B
             <Button type="button" variant="ghost" onClick={() => setOpen(false)} className="text-muted-foreground">
               Cancel
             </Button>
-            <Button type="submit" disabled={submitting} className="bg-blue-700 hover:bg-blue-800 text-white min-w-[100px]">
+            <Button type="submit" disabled={submitting} className="bg-primary hover:bg-primary/90 text-primary-foreground min-w-[100px]">
               {submitting ? (
                 <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
               ) : (

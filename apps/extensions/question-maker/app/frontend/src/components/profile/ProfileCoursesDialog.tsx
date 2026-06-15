@@ -3,23 +3,16 @@
  * Lets users select courses from the AI service, skip ones already added, and persist them via courseService.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle
-} from '../ui/dialog';
-import { Button } from '../ui/button';
-import { Badge } from '../ui/badge';
+    Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@eduai/ui';
+import { Button, Badge } from '@eduai/ui';
+import { useToast } from '@/components/ui/use-toast';
 import { Loader2, LogOut, Plus } from 'lucide-react';
 import { Class } from '../../types/class';
 import { eduaiService, EduAICourseOption, EduAITopicOption } from '../../services/eduaiService';
 import { courseService } from '../../services/courseService';
 import { assessmentService } from '../../services/assessmentService';
-import { useToast } from '../ui/use-toast';
 import { useAuth } from '../../contexts/AuthContext';
 import { useEduAIStatus } from '../../hooks/useEduAIStatus';
 import { EduAIStatusBadge } from '../eduai/EduAIStatusBadge';
@@ -309,7 +302,7 @@ export const ProfileCoursesDialog = ({
 
                 <div className="mt-4 space-y-4">
                     {/* Test Course Option - Always visible */}
-                    <div className="rounded-md border-2 border-dashed border-blue-300 bg-blue-50/50 p-4">
+                    <div className="rounded-md border-2 border-dashed border-primary/40 bg-primary/10 p-4">
                         <div className="flex items-center justify-between">
                             <div className="flex-1">
                                 <div className="flex items-center gap-2 mb-1">
@@ -370,8 +363,8 @@ export const ProfileCoursesDialog = ({
                                             isAdded
                                                 ? 'cursor-not-allowed border-muted bg-muted/40 opacity-80'
                                                 : isSelected
-                                                    ? 'border-blue-500 bg-blue-50'
-                                                    : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50/40'
+                                                    ? 'border-primary bg-primary/10'
+                                                    : 'border-border hover:border-primary/40 hover:bg-primary/10'
                                         }`}
                                     >
                                         <input

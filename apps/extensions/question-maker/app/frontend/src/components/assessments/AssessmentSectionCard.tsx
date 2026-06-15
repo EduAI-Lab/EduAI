@@ -1,7 +1,6 @@
+import { Input, Button } from '@eduai/ui';
+import { Tooltip } from '@/components/ui/tooltip';
 import React, { useState, useEffect } from 'react';
-import { Input } from '../ui/input';
-import { Button } from '../ui/button';
-import { Tooltip } from '../ui/tooltip';
 import { Trash2, X, Plus, AlertTriangle } from 'lucide-react';
 import type { AssessmentSection, SectionVariantLink, QuestionVariantEntry } from '../../types/question';
 
@@ -65,38 +64,38 @@ export function AssessmentSectionCard({
     );
 
     return (
-        <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+        <div className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
             {/* Section header: */}
-            <div className="flex items-center gap-2 rounded-t-lg bg-slate-800 px-3 py-2">
+            <div className="flex items-center gap-2 rounded-t-lg bg-primary px-3 py-2">
                 <Input
                     value={localName}
                     onChange={(event) => handleTitleChange(event.target.value)}
                     onBlur={handleTitleBlur}
                     placeholder={`Section ${sectionIndex + 1}`}
-                    className="h-8 flex-1 min-w-0 border-0 bg-white text-gray-900 font-medium placeholder:text-gray-500 focus-visible:ring-1 focus-visible:ring-white"
+                    className="h-8 flex-1 min-w-0 border-0 bg-card text-foreground font-medium placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-primary-foreground"
                 />
                 <Button
                     type="button"
                     variant="ghost"
                     size="sm"
                     onClick={onDeleteSection}
-                    className="h-8 w-8 shrink-0 p-0 text-gray-300 hover:bg-slate-700 hover:text-white"
+                    className="h-8 w-8 shrink-0 p-0 text-muted-foreground hover:bg-primary/90 hover:text-primary-foreground"
                     aria-label="Delete section"
                 >
                     <Trash2 className="h-4 w-4" />
                 </Button>
             </div>
 
-            <div className="space-y-2 border-t border-gray-200 bg-gray-50/50 p-3">
+            <div className="space-y-2 border-t border-border bg-muted/50 p-3">
                 {questions.length === 0 ? (
-                    <div className="flex flex-col items-center gap-3 rounded border border-dashed border-gray-200 bg-white p-6">
-                        <p className="text-sm text-gray-500">No questions added yet</p>
+                    <div className="flex flex-col items-center gap-3 rounded border border-dashed border-border bg-card p-6">
+                        <p className="text-sm text-muted-foreground">No questions added yet</p>
                         <Button
                             type="button"
                             variant="outline"
                             size="sm"
                             onClick={onAddQuestions}
-                            className="gap-1.5 border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                            className="gap-1.5 border-border bg-card text-foreground hover:bg-muted"
                         >
                             Add questions
                         </Button>
@@ -109,48 +108,48 @@ export function AssessmentSectionCard({
                                 return (
                                     <div
                                         key={link.id}
-                                        className="flex items-start gap-3 rounded border border-gray-200 bg-white p-3 shadow-sm group"
+                                        className="flex items-start gap-3 rounded border border-border bg-card p-3 shadow-sm group"
                                     >
-                                        <span className="mt-0.5 w-5 shrink-0 text-right text-xs font-mono text-gray-500">
+                                        <span className="mt-0.5 w-5 shrink-0 text-right text-xs font-mono text-muted-foreground">
                                             {idx + 1}.
                                         </span>
                                         <div className="min-w-0 flex-1 space-y-1.5">
-                                            <p className="text-sm leading-relaxed text-gray-800">
+                                            <p className="text-sm leading-relaxed text-foreground">
                                                 {entry.variant.questionText}
                                             </p>
                                             {(entry.variant.choices?.length ?? 0) > 0 && (
-                                                <ul className="list-none space-y-0.5 pl-0 text-xs text-gray-600">
+                                                <ul className="list-none space-y-0.5 pl-0 text-xs text-muted-foreground">
                                                     {entry.variant.choices?.map((c) => (
                                                         <li key={c.letter} className="flex gap-1.5">
-                                                            <span className="font-mono font-medium text-gray-500">{c.letter}.</span>
+                                                            <span className="font-mono font-medium text-muted-foreground">{c.letter}.</span>
                                                             <span>{c.text}</span>
                                                         </li>
                                                     ))}
                                                 </ul>
                                             )}
                                             {entry.variant.answer != null && String(entry.variant.answer).trim() !== '' && (
-                                                <p className="text-xs text-gray-600">
-                                                    <span className="font-medium text-gray-500">Answer: </span>
+                                                <p className="text-xs text-muted-foreground">
+                                                    <span className="font-medium text-muted-foreground">Answer: </span>
                                                     <span className="whitespace-pre-wrap">{entry.variant.answer}</span>
                                                 </p>
                                             )}
                                             <div className="flex flex-wrap items-center gap-1.5">
-                                                <span className="rounded border border-gray-200 bg-gray-100 px-1.5 py-0 text-[10px] font-medium capitalize text-gray-700">
+                                                <span className="rounded border border-border bg-muted px-1.5 py-0 text-[10px] font-medium capitalize text-foreground">
                                                     {entry.questionType}
                                                 </span>
-                                                <span className="rounded border border-gray-200 bg-gray-100 px-1.5 py-0 text-[10px] font-medium capitalize text-gray-700">
+                                                <span className="rounded border border-border bg-muted px-1.5 py-0 text-[10px] font-medium capitalize text-foreground">
                                                     {entry.variant.difficulty}
                                                 </span>
                                                 {entry.primaryTopicName && (
-                                                    <span className="truncate rounded border border-gray-200 bg-gray-100 px-1.5 py-0 text-[10px] font-medium text-gray-700">
+                                                    <span className="truncate rounded border border-border bg-muted px-1.5 py-0 text-[10px] font-medium text-foreground">
                                                         {entry.primaryTopicName}
                                                     </span>
                                                 )}
                                                 <span
                                                     className={`rounded border px-1.5 py-0 text-[10px] font-medium capitalize ${
                                                         isDraft
-                                                            ? 'border-gray-300 bg-gray-200 text-gray-700'
-                                                            : 'border-gray-200 bg-gray-100 text-gray-700'
+                                                            ? 'border-border bg-muted text-foreground'
+                                                            : 'border-border bg-muted text-foreground'
                                                     }`}
                                                 >
                                                     {isDraft ? 'Draft' : 'Reviewed'}
@@ -175,7 +174,7 @@ export function AssessmentSectionCard({
                                                         type="button"
                                                         variant="outline"
                                                         size="sm"
-                                                        className="h-7 border-gray-200 bg-white px-2 text-[11px] font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900"
+                                                        className="h-7 border-border bg-card px-2 text-[11px] font-medium text-foreground hover:bg-muted hover:text-foreground"
                                                         onClick={() => onViewQuestion(entry)}
                                                     >
                                                         View
@@ -186,7 +185,7 @@ export function AssessmentSectionCard({
                                                         type="button"
                                                         variant="outline"
                                                         size="sm"
-                                                        className="h-7 border-gray-200 bg-white px-2 text-[11px] font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900"
+                                                        className="h-7 border-border bg-card px-2 text-[11px] font-medium text-foreground hover:bg-muted hover:text-foreground"
                                                         onClick={() => onToggleDraft(entry, !isDraft)}
                                                     >
                                                         {isDraft ? 'Mark reviewed' : 'Mark draft'}
@@ -197,7 +196,7 @@ export function AssessmentSectionCard({
                                                         type="button"
                                                         variant="outline"
                                                         size="sm"
-                                                        className="h-7 border-gray-200 bg-white px-2 text-[11px] font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900"
+                                                        className="h-7 border-border bg-card px-2 text-[11px] font-medium text-foreground hover:bg-muted hover:text-foreground"
                                                         onClick={() => onCreateVariant(entry)}
                                                     >
                                                         New variant
@@ -210,7 +209,7 @@ export function AssessmentSectionCard({
                                             variant="ghost"
                                             size="sm"
                                             onClick={() => onRemoveQuestion(link.variantId)}
-                                            className="h-6 w-6 shrink-0 p-0 text-gray-400 opacity-0 transition-opacity hover:text-red-600 group-hover:opacity-100"
+                                            className="h-6 w-6 shrink-0 p-0 text-muted-foreground opacity-0 transition-opacity hover:text-red-600 group-hover:opacity-100"
                                             aria-label="Remove question"
                                         >
                                             <X className="h-3.5 w-3.5" />
@@ -224,7 +223,7 @@ export function AssessmentSectionCard({
                             variant="ghost"
                             size="sm"
                             onClick={onAddQuestions}
-                            className="mt-1 gap-1.5 self-start text-[11px] font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+                            className="mt-1 gap-1.5 self-start text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
                         >
                             <Plus className="h-3.5 w-3.5" />
                             Add more questions

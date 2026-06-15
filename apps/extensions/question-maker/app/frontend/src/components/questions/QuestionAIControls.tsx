@@ -2,17 +2,10 @@
  * AI configuration block: status badge, prompt, model, difficulty/reasoning, API key, Generate button.
  * For use in AddQuestionDialog right column (prototype-style layout).
  */
-import { Label } from '../ui/label';
-import { Button } from '../ui/button';
-import { Input } from '../ui/input';
-import { Textarea } from '../ui/textarea';
+import { Label, Button, Input, Textarea } from '@eduai/ui';
+
 import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue
-} from '../ui/select';
+    Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@eduai/ui';
 import { EduAIStatusBadge } from '../eduai/EduAIStatusBadge';
 import { apiKeyStorage } from '../../services/apiKeyStorage';
 import type { EduAIModelOption } from '../../services/eduaiService';
