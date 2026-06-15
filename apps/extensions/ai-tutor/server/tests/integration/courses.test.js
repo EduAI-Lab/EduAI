@@ -285,7 +285,7 @@ describe('Course publish state — Core write-through (#477)', () => {
   });
 
   afterEach(() => {
-    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     delete process.env.EDUAI_API_KEY;
   });
 
