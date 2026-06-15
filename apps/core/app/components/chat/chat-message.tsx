@@ -110,7 +110,12 @@ export function ChatMessage({ message, isStreaming = false }: ChatMessageProps) 
               <Tool
                 key={`tool-${toolPart.toolCallId || index}`}
                 toolPart={toolPart}
-                defaultOpen={toolPart.state === "input-streaming"}
+                defaultOpen={
+                  toolPart.state === "output-available" &&
+                  (toolPart.output?.mutation === true ||
+                    toolPart.output?.writeSucceeded === false ||
+                    Boolean(toolPart.output?.error))
+                }
               />
             );
           })}

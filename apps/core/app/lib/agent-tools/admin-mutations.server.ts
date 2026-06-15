@@ -9,10 +9,28 @@ import {
   updateEnrollmentRole,
 } from "~/lib/courses/enrollments.server";
 import { updateBugReportStatus } from "~/lib/bug-reports/server";
-import { getAccessibleCourse, resolveAdminCourseId } from "./admin-context.server";
+import {
+  getAccessibleCourse,
+  resolveAdminCourseId,
+  resolveAdminUserId,
+} from "./admin-context.server";
 
 type ToolError = { error: string; fields?: Record<string, string> };
 type MutationResult = Record<string, unknown> | ToolError;
+
+export const ADMIN_WRITE_TOOL_NAMES = new Set([
+  "createUser",
+  "updateUser",
+  "deleteUser",
+  "createCourseEnrollment",
+  "updateCourseEnrollment",
+  "deactivateCourseEnrollment",
+  "updateBugReportStatus",
+]);
+
+export function isAdminWriteToolName(name: string): boolean {
+  return ADMIN_WRITE_TOOL_NAMES.has(name);
+}
 
 function requirePlatformAdmin(user: RbacUser): ToolError | null {
   if (user.role !== "ADMIN") {
@@ -25,9 +43,46 @@ function mutationPayload(data: Record<string, unknown>) {
   return {
     dataSource: "database" as const,
     mutation: true as const,
+    writeSucceeded: true as const,
     appliedAt: new Date().toISOString(),
     ...data,
   };
+}
+
+function mutationFailure(error: ToolError & Record<string, unknown>) {
+  return {
+    dataSource: "database" as const,
+    mutation: true as const,
+    writeSucceeded: false as const,
+    appliedAt: new Date().toISOString(),
+    ...error,
+  };
+}
+
+/** Audit log + normalize write tool results for the model and UI. */
+export async function runAdminWriteTool(
+  toolName: string,
+  actor: RbacUser,
+  run: () => Promise<MutationResult>,
+): Promise<MutationResult> {
+  const result = await run();
+  const succeeded =
+    "writeSucceeded" in result && result.writeSucceeded === true && !("error" in result && result.error);
+
+  console.info("[admin-chat:write]", {
+    tool: toolName,
+    actorId: actor.id,
+    writeSucceeded: succeeded,
+    error: "error" in result ? result.error : undefined,
+  });
+
+  if ("error" in result && result.error) {
+    return mutationFailure(result as ToolError & Record<string, unknown>);
+  }
+  if (!succeeded) {
+    return mutationFailure({ error: "WRITE_FAILED", ...result });
+  }
+  return result;
 }
 
 function mapEnrollmentResult(
@@ -37,18 +92,21 @@ function mapEnrollmentResult(
 ) {
   if ("status" in result) {
     if (result.status === "422" && "error" in result) {
-      return { error: result.error, fields: "fields" in result ? result.fields : undefined };
+      return mutationFailure({
+        error: result.error,
+        fields: "fields" in result ? result.fields : undefined,
+      });
     }
     if (result.status === "409" && "error" in result) {
-      return {
+      return mutationFailure({
         error: result.error,
         ...("currentInstructorCount" in result
           ? { currentInstructorCount: result.currentInstructorCount }
           : {}),
-      };
+      });
     }
     if (result.status === "404") {
-      return { error: "NOT_FOUND" };
+      return mutationFailure({ error: "NOT_FOUND" });
     }
     if (result.status === "201" || result.status === "200") {
       return mutationPayload({
@@ -64,7 +122,7 @@ function mapEnrollmentResult(
       });
     }
   }
-  return { error: "UNKNOWN" };
+  return mutationFailure({ error: "UNKNOWN" });
 }
 
 /** ADMIN — create platform user (same validation as POST /api/users). */
@@ -227,33 +285,75 @@ export async function createAdminEnrollment(
     courseId?: string;
     courseCode?: string;
     fallbackCourseId?: string | null;
-    userId: string;
+    userId?: string;
+    userEmail?: string;
     role: EnrollmentRole;
   },
 ): Promise<MutationResult> {
-  const denied = requirePlatformAdmin(actor);
-  if (denied) return denied;
+  return runAdminWriteTool("createCourseEnrollment", actor, async () => {
+    const denied = requirePlatformAdmin(actor);
+    if (denied) return denied;
 
-  const resolved = await resolveAdminCourseId(actor, {
-    courseId: opts.courseId,
-    courseCode: opts.courseCode,
-    fallbackCourseId: opts.fallbackCourseId,
-  });
-  if ("error" in resolved) {
-    return resolved;
-  }
-
-  const gate = await getAccessibleCourse(actor, resolved.courseId);
-  if ("error" in gate) {
-    return gate;
-  }
-
-  return mapEnrollmentResult(
-    await addEnrollment(resolved.courseId, {
+    const resolvedUser = await resolveAdminUserId(actor, {
       userId: opts.userId,
-      role: opts.role,
-    }),
-  );
+      userEmail: opts.userEmail,
+    });
+    if ("error" in resolvedUser) {
+      return resolvedUser;
+    }
+
+    const resolved = await resolveAdminCourseId(actor, {
+      courseId: opts.courseId,
+      courseCode: opts.courseCode,
+      fallbackCourseId: opts.fallbackCourseId,
+    });
+    if ("error" in resolved) {
+      return resolved;
+    }
+
+    const gate = await getAccessibleCourse(actor, resolved.courseId);
+    if ("error" in gate) {
+      return gate;
+    }
+
+    const mapped = mapEnrollmentResult(
+      await addEnrollment(resolved.courseId, {
+        userId: resolvedUser.userId,
+        role: opts.role,
+      }),
+    );
+    if ("writeSucceeded" in mapped && mapped.writeSucceeded === false) {
+      return mapped;
+    }
+
+    const verified = await prisma.enrollment.findFirst({
+      where: {
+        courseId: resolved.courseId,
+        userId: resolvedUser.userId,
+        isActive: true,
+      },
+      select: {
+        id: true,
+        role: true,
+        isActive: true,
+        enrolledAt: true,
+        user: { select: { email: true, name: true } },
+      },
+    });
+
+    if (!verified) {
+      return mutationFailure({
+        error: "VERIFY_FAILED",
+        message: "Enrollment not visible in database after write",
+      });
+    }
+
+    return {
+      ...mapped,
+      verifiedEnrollment: verified,
+      resolvedUser,
+    };
+  });
 }
 
 /** ADMIN — change enrollment role. */

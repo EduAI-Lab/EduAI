@@ -8,7 +8,9 @@ const prismaMock = vi.hoisted(() => ({
     update: vi.fn(),
     delete: vi.fn(),
     findUnique: vi.fn(),
+    findFirst: vi.fn(),
   },
+  enrollment: { findFirst: vi.fn() },
 }));
 
 vi.mock("~/lib/prisma.server", () => ({ default: prismaMock }));
@@ -26,6 +28,7 @@ vi.mock("~/lib/bug-reports/server", () => ({
 vi.mock("~/lib/agent-tools/admin-context.server", () => ({
   resolveAdminCourseId: vi.fn(),
   getAccessibleCourse: vi.fn(),
+  resolveAdminUserId: vi.fn(),
 }));
 
 import {
@@ -34,7 +37,7 @@ import {
   updateEnrollmentRole,
 } from "~/lib/courses/enrollments.server";
 import { updateBugReportStatus } from "~/lib/bug-reports/server";
-import { resolveAdminCourseId, getAccessibleCourse } from "~/lib/agent-tools/admin-context.server";
+import { resolveAdminCourseId, resolveAdminUserId, getAccessibleCourse } from "~/lib/agent-tools/admin-context.server";
 import {
   createAdminUser,
   deleteAdminUser,
@@ -126,13 +129,27 @@ describe("createAdminEnrollment via addEnrollment", () => {
       courseId: "c1",
       courseCode: "COSC 111",
     });
+    vi.mocked(resolveAdminUserId).mockResolvedValue({
+      userId: "u1",
+      email: "s@test.com",
+      name: "Student",
+    });
     vi.mocked(getAccessibleCourse).mockResolvedValue({
       course: { id: "c1", code: "COSC 111" },
     } as never);
     vi.mocked(addEnrollment).mockResolvedValue({
       status: "201",
-      enrollment: { id: "e1", role: "STUDENT" },
+      enrollment: { id: "e1", role: "STUDENT", userId: "u1", courseId: "c1", isActive: true },
     } as never);
+
+    const prismaEnrollment = vi.fn().mockResolvedValue({
+      id: "e1",
+      role: "STUDENT",
+      isActive: true,
+      enrolledAt: new Date(),
+      user: { email: "s@test.com", name: "Student" },
+    });
+    prismaMock.enrollment.findFirst = prismaEnrollment;
 
     const result = await createAdminEnrollment(ADMIN, {
       courseCode: "COSC 111",
@@ -141,7 +158,7 @@ describe("createAdminEnrollment via addEnrollment", () => {
     });
 
     expect(addEnrollment).toHaveBeenCalledWith("c1", { userId: "u1", role: "STUDENT" });
-    expect(result).toMatchObject({ ok: true, enrollment: { id: "e1" } });
+    expect(result).toMatchObject({ ok: true, writeSucceeded: true, verifiedEnrollment: { id: "e1" } });
   });
 });
 
@@ -164,7 +181,8 @@ describe("updateAdminEnrollmentRole", () => {
       role: "STUDENT",
     });
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
+      writeSucceeded: false,
       error: "INSTRUCTOR_FLOOR_VIOLATION",
       currentInstructorCount: 1,
     });

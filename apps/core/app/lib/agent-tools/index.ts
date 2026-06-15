@@ -20,10 +20,14 @@ export {
   createAdminUser,
   deactivateAdminEnrollment,
   deleteAdminUser,
+  isAdminWriteToolName,
+  runAdminWriteTool,
   updateAdminBugReportStatus,
   updateAdminEnrollmentRole,
   updateAdminUser,
+  ADMIN_WRITE_TOOL_NAMES,
 } from "./admin-mutations.server";
+export { resolveAdminUserId } from "./admin-context.server";
 export {
   buildAdminSystemPrompt,
   buildLearningAssistantSystemPrompt,

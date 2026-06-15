@@ -780,11 +780,14 @@ export async function action({ request }: ActionFunctionArgs) {
     });
 
     if (chatMode === "admin" && !supportsTools) {
-      console.warn("[chat-api] admin chat using a model without tool support — DB queries disabled", {
-        model,
-        chatId: chat?.id ?? null,
-        code: "ADMIN_TOOLS_UNAVAILABLE",
-      });
+      return chatApiReject(
+        400,
+        {
+          error: "Admin chat requires a model with tool support. Select a tool-capable model in Admin → AI Models.",
+          code: "ADMIN_TOOLS_REQUIRED",
+        },
+        { model, chatId: chat?.id ?? null },
+      );
     }
 
     let streamConfig;
