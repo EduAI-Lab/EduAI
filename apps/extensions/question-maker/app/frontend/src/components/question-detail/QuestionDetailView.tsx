@@ -48,7 +48,7 @@ const DetailItem = ({
                 <div className="mt-2 text-sm font-medium text-foreground leading-relaxed whitespace-pre-line">
                     {value}
                 </div>
-                <p className="mt-3 text-xs font-medium text-primary">View all variants</p>
+                <p className="mt-3 text-xs font-medium text-primary-text">View all variants</p>
             </button>
         ) : (
             <div
@@ -607,7 +607,7 @@ export const QuestionDetailView = ({
                                     {variant.assessment ? (
                                         <button
                                             onClick={() => navigate(`/assessments/${variant.assessment!.id}`)}
-                                            className="mt-2 text-sm font-medium text-primary hover:text-primary hover:underline text-left"
+                                            className="mt-2 text-sm font-medium text-primary-text hover:text-primary-text hover:underline text-left"
                                         >
                                             {variant.assessment.name} ({variant.assessment.semester})
                                         </button>

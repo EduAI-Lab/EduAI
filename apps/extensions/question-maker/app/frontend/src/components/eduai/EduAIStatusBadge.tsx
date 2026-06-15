@@ -32,7 +32,7 @@ export const EduAIStatusBadge = ({ status, message, onRefresh, compact = false, 
     questionGenerationPhase === 'generating'
       ? 'text-amber-700'
       : questionGenerationPhase === 'review'
-        ? 'text-primary'
+        ? 'text-primary-text'
         : null;
 
   const content = (

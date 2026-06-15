@@ -54,7 +54,7 @@ export function QmRoleBanner({ variant }: QmRoleBannerProps) {
       data-testid={`qm-role-banner-${view}`}
     >
       <div className="flex gap-3">
-        <Icon className="mt-0.5 size-5 shrink-0 text-primary" aria-hidden />
+        <Icon className="mt-0.5 size-5 shrink-0 text-primary-text" aria-hidden />
         <div className="min-w-0 space-y-1">
           <p className="text-sm font-medium text-foreground">{copy.title}</p>
           <p className="text-sm text-muted-foreground">{copy.description}</p>

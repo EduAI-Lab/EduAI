@@ -22,27 +22,27 @@ export const HelpPage = () => {
                 <section className="space-y-2">
                     <h2 className="text-xl font-semibold" id="toc">Table of Contents</h2>
                     <ol className="list-decimal list-inside space-y-1">
-                        <li><a href="#before-you-start" className="text-primary hover:underline">Before You Start</a></li>
-                        <li><a href="#course-selection-tour" className="text-primary hover:underline">Course Selection and Guided Tour</a></li>
-                        <li><a href="#onboarding" className="text-primary hover:underline">Onboarding: Add Courses and Topics</a></li>
+                        <li><a href="#before-you-start" className="text-primary-text hover:underline">Before You Start</a></li>
+                        <li><a href="#course-selection-tour" className="text-primary-text hover:underline">Course Selection and Guided Tour</a></li>
+                        <li><a href="#onboarding" className="text-primary-text hover:underline">Onboarding: Add Courses and Topics</a></li>
                         <li>
-                            <a href="#create-questions" className="text-primary hover:underline">Create Questions</a>
+                            <a href="#create-questions" className="text-primary-text hover:underline">Create Questions</a>
                             <ul className="list-disc list-inside pl-4 text-xs space-y-1">
                                 <li>Manual</li>
                                 <li>AI service–assisted</li>
                             </ul>
                         </li>
                         <li>
-                            <a href="#variants" className="text-primary hover:underline">Create Variants</a>
+                            <a href="#variants" className="text-primary-text hover:underline">Create Variants</a>
                             <ul className="list-disc list-inside pl-4 text-xs space-y-1">
                                 <li>Manual</li>
                                 <li>Copy Fields</li>
                                 <li>AI service–assisted</li>
                             </ul>
                         </li>
-                        <li><a href="#upload" className="text-primary hover:underline">Upload PDF/Image → Extract Questions</a></li>
+                        <li><a href="#upload" className="text-primary-text hover:underline">Upload PDF/Image → Extract Questions</a></li>
                         <li>
-                            <a href="#assessments" className="text-primary hover:underline">Build Assessments</a>
+                            <a href="#assessments" className="text-primary-text hover:underline">Build Assessments</a>
                             <ul className="list-disc list-inside pl-4 text-xs space-y-1">
                                 <li>Create/Edit Blueprint</li>
                                 <li>Create Sections &amp; Select Questions</li>
@@ -53,10 +53,10 @@ export const HelpPage = () => {
                                 <li>Export to Word</li>
                             </ul>
                         </li>
-                        <li><a href="#assessment-variant-workflow" className="text-primary hover:underline">Assessment Variant Workflow</a></li>
-                        <li><a href="#ai-models" className="text-primary hover:underline">AI Models and API Keys</a></li>
-                        <li><a href="#bug-reporting" className="text-primary hover:underline">Report Bugs and Track Status</a></li>
-                        <li><a href="#tips" className="text-primary hover:underline">Tips &amp; Common Issues</a></li>
+                        <li><a href="#assessment-variant-workflow" className="text-primary-text hover:underline">Assessment Variant Workflow</a></li>
+                        <li><a href="#ai-models" className="text-primary-text hover:underline">AI Models and API Keys</a></li>
+                        <li><a href="#bug-reporting" className="text-primary-text hover:underline">Report Bugs and Track Status</a></li>
+                        <li><a href="#tips" className="text-primary-text hover:underline">Tips &amp; Common Issues</a></li>
                     </ol>
                 </section>
 

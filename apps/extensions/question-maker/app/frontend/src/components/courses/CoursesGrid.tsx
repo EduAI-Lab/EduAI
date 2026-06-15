@@ -53,7 +53,7 @@ export function CoursesGrid({
             >
               <CardContent className="flex flex-col flex-1 p-6 justify-center">
                 <div className="flex items-center gap-2 min-w-0">
-                  <GraduationCap className="h-5 w-5 text-primary shrink-0" />
+                  <GraduationCap className="h-5 w-5 text-primary-text shrink-0" />
                   <span className="font-semibold truncate">{course.name}</span>
                 </div>
                 {course.code && (

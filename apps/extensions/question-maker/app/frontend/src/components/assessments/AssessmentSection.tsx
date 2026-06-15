@@ -50,7 +50,7 @@ type QuestionEntry = {
 const getAssessmentTypeColor = (type: string) => {
     switch (type) {
         case 'Lab':
-            return 'bg-primary/15 text-primary';
+            return 'bg-secondary/15 text-secondary';
         case 'Midterm':
             return 'bg-orange-100 text-orange-800';
         case 'Quiz':

@@ -57,7 +57,7 @@ export function BugReportProvider({ children }: BugReportProviderProps) {
               onClick={() => setOpen(true)}
               aria-label="Report a bug"
             >
-              <BugOff className="h-4 w-4 text-primary" />
+              <BugOff className="h-4 w-4 text-foreground" />
               <span className="text-sm font-medium">Report bug</span>
             </Button>
           </Tooltip>

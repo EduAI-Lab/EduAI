@@ -85,7 +85,7 @@ export const TopNavigation = (props: TopNavigationProps) => {
             </Tooltip>
           )}
           <Tooltip content="Question Maker" side="bottom">
-            <div className="text-2xl font-bold text-primary cursor-default">QM</div>
+            <div className="text-2xl font-bold text-primary-text cursor-default">QM</div>
           </Tooltip>
           <EduAiBackLink />
         </div>

@@ -42,7 +42,7 @@ const getDifficultyColor = (difficulty: string) => {
 const getReasoningColor = (reasoning: string) => {
   switch (reasoning) {
     case 'factual':
-      return 'bg-primary/15 text-primary border-primary/30';
+      return 'bg-secondary/15 text-secondary border-secondary/30';
     case 'analytical':
       return 'bg-purple-100 text-purple-800 border-purple-200';
     case 'application':

@@ -50,7 +50,7 @@ const statusConfig: Record<
   processing: {
     label: 'Processing',
     icon: Loader2,
-    className: 'text-primary animate-spin',
+    className: 'text-secondary animate-spin',
     badgeVariant: 'secondary',
   },
   success: {

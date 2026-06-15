@@ -162,7 +162,7 @@ export const QuestionBank = ({
             <div className="text-center py-8">
               {!courseName && onOpenProfile ? (
                 <div className="flex flex-col items-center space-y-4 py-4">
-                  <div className="flex items-center gap-2 text-primary">
+                  <div className="flex items-center gap-2 text-muted-foreground">
                     <Info className="h-5 w-5" />
                     <p className="text-foreground font-medium">{emptyMessage || 'No courses available.'}</p>
                   </div>
