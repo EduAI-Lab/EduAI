@@ -33,9 +33,11 @@ describe("ApiKeySettings — rendering", () => {
     expect(screen.queryByText("Ollama (Local)")).not.toBeInTheDocument();
   });
 
-  it("switches to the Google AI panel when its tab is selected", async () => {
+  it("switches to the Google AI panel when Google AI provider is selected", async () => {
     render(<ApiKeySettings {...makeProps()} />);
-    fireEvent.focus(screen.getByRole("tab", { name: "Google AI" }));
+    fireEvent.click(screen.getByRole("combobox"));
+    const googleOption = await screen.findByRole("option", { name: "Google AI" });
+    fireEvent.click(googleOption);
     await waitFor(() =>
       expect(screen.getByText("Google AI API key")).toBeInTheDocument()
     );
@@ -90,9 +92,11 @@ describe("ApiKeySettings — unconfigured providers", () => {
     });
   });
 
-  it("shows the Save Google AI Key button after selecting the Google AI tab", async () => {
+  it("shows the Save Google AI Key button after selecting the Google AI provider", async () => {
     render(<ApiKeySettings {...makeProps()} />);
-    fireEvent.focus(screen.getByRole("tab", { name: "Google AI" }));
+    fireEvent.click(screen.getByRole("combobox"));
+    const googleOption = await screen.findByRole("option", { name: "Google AI" });
+    fireEvent.click(googleOption);
     await waitFor(() =>
       expect(
         screen.getByRole("button", { name: /save google ai key/i })
