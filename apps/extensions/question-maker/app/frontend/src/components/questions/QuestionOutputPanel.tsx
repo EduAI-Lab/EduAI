@@ -2,10 +2,9 @@
  * Output panel for question text, MCQ choices, and answer.
  * Matches prototype layout: clear labels, optional copy/clear, single card for content.
  */
+import { Label, Textarea, Button } from '@eduai/ui';
+
 import { useState } from 'react';
-import { Label } from '../ui/label';
-import { Textarea } from '../ui/textarea';
-import { Button } from '../ui/button';
 import { Copy, Check, RotateCcw } from 'lucide-react';
 import { MCQChoicesField } from './MCQChoicesField';
 import type { QuestionType, MCQChoice } from '../../types/question';

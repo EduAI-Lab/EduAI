@@ -34,7 +34,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 export default function BugReportsPage() {
   const { user } = useLoaderData<typeof loader>();
-  const { reports, isLoading, isStubbed, updateReportStatus } = useBugReports();
+  const { reports, isLoading, updateReportStatus } = useBugReports();
 
   return (
     <SidebarProvider
@@ -69,7 +69,6 @@ export default function BugReportsPage() {
         <BugReportsAdminView
           reports={reports}
           isLoading={isLoading}
-          isStubbed={isStubbed}
           onUpdateStatus={updateReportStatus}
         />
       </SidebarInset>

@@ -2,18 +2,13 @@
  * Developer-only API test page for exercising backend endpoints from the UI.
  * Includes forms to create/fetch courses, topics, questions, and assessments for debugging.
  */
+import { Card, CardContent, CardHeader, CardTitle, Button, Input, Textarea, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Label } from '@eduai/ui';
+import { useToast } from '@/components/ui/use-toast';
 import React, { useState } from 'react';
-import { Navigate } from 'react-router-dom';
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
-import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
-import { Textarea } from '../components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { Label } from '../components/ui/label';
+import { Navigate } from 'react-router';
 import api from '../services/api';
 import eduaiService from '../services/eduaiService';
 import { useAuth } from '../contexts/AuthContext';
-import { useToast } from '../components/ui/use-toast';
 import { EduAIStatusBadge } from '../components/eduai/EduAIStatusBadge';
 import { useEduAIStatus } from '../hooks/useEduAIStatus';
 
@@ -156,7 +151,7 @@ export const ApiTestPage = () => {
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
       </div>
     );
   }

@@ -17,7 +17,7 @@ interface Letter {
 interface FloatingLettersProps {
   /** Optional class for the container */
   className?: string;
-  /** Optional class for each letter (e.g. text-slate-400 for dark backgrounds) */
+  /** Optional class for each letter (e.g. text-muted-foreground for dark backgrounds) */
   letterClassName?: string;
 }
 

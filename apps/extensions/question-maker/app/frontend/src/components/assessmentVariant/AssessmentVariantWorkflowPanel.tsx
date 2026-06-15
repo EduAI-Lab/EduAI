@@ -1,13 +1,11 @@
 /**
  * Assessment variant workflow: mark reference exam, blueprint snapshot, assemble one variant exam.
  */
+import { Button, Card, CardContent, CardHeader, CardTitle, Badge } from '@eduai/ui';
+import { useToast } from '@/components/ui/use-toast';
 import * as React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { Loader2, Sparkles } from 'lucide-react';
-import { Button } from '../ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
-import { Badge } from '../ui/badge';
-import { useToast } from '../ui/use-toast';
 import assessmentVariantService, { type BlueprintSnapshot } from '../../services/assessmentVariantService';
 
 type BlueprintConfig = { studyRole?: string; referenceAssessmentId?: number } | null | undefined;
@@ -151,8 +149,8 @@ export const AssessmentVariantWorkflowPanel = ({
         </div>
 
         {snapshot && (
-          <div className="rounded-md border border-amber-200 bg-white p-3 text-sm">
-            <p className="font-medium text-gray-900">{snapshot.slotCount} slots</p>
+          <div className="rounded-md border border-amber-200 bg-card p-3 text-sm">
+            <p className="font-medium text-foreground">{snapshot.slotCount} slots</p>
             <p className="text-muted-foreground">
               Difficulty: {JSON.stringify(snapshot.aggregates.difficultyCounts)} · Types:{' '}
               {JSON.stringify(snapshot.aggregates.typeCounts)}

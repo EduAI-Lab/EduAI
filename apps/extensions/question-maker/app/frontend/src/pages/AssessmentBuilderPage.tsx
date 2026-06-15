@@ -1,5 +1,9 @@
+import { Button, Badge, Card, CardContent, CardHeader, CardTitle } from '@eduai/ui';
+import { DeleteConfirmationModal } from '@/components/ui/DeleteConfirmationModal';
+import { Tooltip } from '@/components/ui/tooltip';
+import { useToast } from '@/components/ui/use-toast';
 import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router';
 import { ArrowLeft, AlertTriangle, Upload, FileText, FileType2 } from 'lucide-react';
 import assessmentService from '../services/assessmentService';
 import { courseService } from '../services/courseService';
@@ -7,16 +11,13 @@ import { questionService } from '../services/questionService';
 import { Assessment, Question, QuestionVariantEntry } from '../types/question';
 import type { AssessmentGenerationParams } from '../types/question';
 import { Topic } from '../types/topic';
-import { Button } from '../components/ui/button';
-import { Badge } from '../components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { AssessmentBuilder } from '../components/assessments/AssessmentBuilder';
+import { QmHomeShell } from '../components/home/QmHomeShell';
+import { PermissionGate } from '@/components/rbac/PermissionGate';
+import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
 import { AddQuestionDialog } from '../components/questions/AddQuestionDialog';
 import { CanvasExportDialog } from '../components/canvas/CanvasExportDialog';
 import GenerateAssessmentModal from '../components/assessments/GenerateAssessmentModal';
-import { DeleteConfirmationModal } from '../components/ui/DeleteConfirmationModal';
-import { Tooltip } from '../components/ui/tooltip';
-import { useToast } from '../components/ui/use-toast';
 import { QuestionDetailView } from '../components/question-detail/QuestionDetailView';
 import { defaultReasoningData } from './assessments/assessmentViewTypes';
 import {
@@ -31,8 +32,11 @@ const AssessmentBuilderPage = () => {
     const navigate = useNavigate();
     const assessmentId = Number(id);
     const { toast } = useToast();
-
     const [assessment, setAssessment] = useState<Assessment | null>(null);
+    const { canManageAssessment, canExportAssessment } = useQmPermissionsForCourse(
+        assessment?.courseId ?? null,
+    );
+    const readOnly = !canManageAssessment;
     const [topics, setTopics] = useState<Topic[]>([]);
     const [questions, setQuestions] = useState<Question[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -429,7 +433,7 @@ const AssessmentBuilderPage = () => {
 
     if (isLoading) {
         return (
-            <div className="min-h-screen bg-gray-50">
+            <div className="min-h-screen bg-background">
                 <div className="mx-auto max-w-6xl px-6 py-8">
                     <p className="text-sm text-muted-foreground">Loading assessment builder…</p>
                 </div>
@@ -439,7 +443,7 @@ const AssessmentBuilderPage = () => {
 
     if (!assessment || error) {
         return (
-            <div className="min-h-screen bg-gray-50">
+            <div className="min-h-screen bg-background">
                 <div className="mx-auto max-w-6xl space-y-4 px-6 py-8">
                     <Button
                         type="button"
@@ -468,8 +472,8 @@ const AssessmentBuilderPage = () => {
 
     return (
         <>
-            <div className="min-h-screen bg-gray-50">
-                <div className="mx-auto max-w-6xl space-y-6 px-6 py-8">
+            <QmHomeShell>
+            <div className="space-y-6">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                         <Button
                             type="button"
@@ -484,11 +488,11 @@ const AssessmentBuilderPage = () => {
                         <div className="text-sm text-muted-foreground">Assessment Builder</div>
                     </div>
 
-                    <Card className="border border-gray-200">
+                    <Card className="border border-border">
                         <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                             <div className="space-y-2">
                                 <div className="flex flex-wrap items-center gap-2">
-                                    <CardTitle className="text-2xl font-semibold text-gray-900">
+                                    <CardTitle className="text-2xl font-semibold text-foreground">
                                         {assessment.name}
                                     </CardTitle>
                                     {hasDraftQuestions && (
@@ -503,35 +507,38 @@ const AssessmentBuilderPage = () => {
                                 </div>
                                 <div className="flex flex-wrap gap-2">
                                     {assessment.type && (
-                                        <Badge variant="outline" className="border-gray-200 bg-gray-50 text-gray-700">
+                                        <Badge variant="outline" className="border-border bg-muted text-foreground">
                                             {assessment.type}
                                         </Badge>
                                     )}
                                     {assessment.semester && (
-                                        <Badge variant="outline" className="border-gray-200 bg-gray-50 text-gray-700">
+                                        <Badge variant="outline" className="border-border bg-muted text-foreground">
                                             {assessment.semester}
                                         </Badge>
                                     )}
                                     {assessment.course?.name && (
-                                        <Badge variant="outline" className="border-gray-200 bg-gray-50 text-gray-700">
+                                        <Badge variant="outline" className="border-border bg-muted text-foreground">
                                             {assessment.course.name}
                                         </Badge>
                                     )}
                                 </div>
                                 {assessment.description && (
-                                    <p className="text-sm text-gray-500">{assessment.description}</p>
+                                    <p className="text-sm text-muted-foreground">{assessment.description}</p>
                                 )}
                             </div>
                             <div className="flex flex-wrap items-center gap-2">
+                                <PermissionGate allow={canManageAssessment}>
                                 <Button
                                     type="button"
                                     variant="outline"
                                     size="sm"
                                     onClick={() => setIsEditAssessmentOpen(true)}
-                                    className="border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                                    className="border-border bg-card text-foreground hover:bg-muted"
                                 >
                                     Edit Blueprint
                                 </Button>
+                                </PermissionGate>
+                                <PermissionGate allow={canExportAssessment}>
                                 {hasQuestions && !hasDraftQuestions ? (
                                     <>
                                         <Button
@@ -539,7 +546,7 @@ const AssessmentBuilderPage = () => {
                                             variant="outline"
                                             size="sm"
                                             onClick={() => setIsCanvasExportOpen(true)}
-                                            className="border-gray-800 bg-gray-900 text-white hover:bg-gray-800"
+                                            className="bg-primary text-primary-foreground hover:bg-primary/90 border-primary"
                                         >
                                             <Upload className="mr-2 h-4 w-4" />
                                             Export to Canvas
@@ -550,7 +557,7 @@ const AssessmentBuilderPage = () => {
                                             size="sm"
                                             onClick={handleExportTxt}
                                             disabled={isTxtExporting || isWordExporting}
-                                            className="border-gray-800 bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50"
+                                            className="bg-primary text-primary-foreground hover:bg-primary/90 border-primary disabled:opacity-50"
                                         >
                                             <FileText className="mr-2 h-4 w-4" />
                                             {isTxtExporting ? 'Exporting…' : 'Export TXT'}
@@ -561,7 +568,7 @@ const AssessmentBuilderPage = () => {
                                             size="sm"
                                             onClick={() => void handleExportWord()}
                                             disabled={isTxtExporting || isWordExporting}
-                                            className="border-gray-800 bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50"
+                                            className="bg-primary text-primary-foreground hover:bg-primary/90 border-primary disabled:opacity-50"
                                         >
                                             <FileType2 className="mr-2 h-4 w-4" />
                                             {isWordExporting ? 'Exporting…' : 'Export Word'}
@@ -582,7 +589,7 @@ const AssessmentBuilderPage = () => {
                                                 variant="outline"
                                                 size="sm"
                                                 disabled
-                                                className="border-gray-800 bg-gray-900 text-white opacity-50"
+                                                className="bg-primary text-primary-foreground opacity-50 border-primary"
                                             >
                                                 <Upload className="mr-2 h-4 w-4" />
                                                 Export to Canvas
@@ -592,7 +599,7 @@ const AssessmentBuilderPage = () => {
                                                 variant="outline"
                                                 size="sm"
                                                 disabled
-                                                className="border-gray-800 bg-gray-900 text-white opacity-50"
+                                                className="bg-primary text-primary-foreground opacity-50 border-primary"
                                             >
                                                 <FileText className="mr-2 h-4 w-4" />
                                                 Export TXT
@@ -602,7 +609,7 @@ const AssessmentBuilderPage = () => {
                                                 variant="outline"
                                                 size="sm"
                                                 disabled
-                                                className="border-gray-800 bg-gray-900 text-white opacity-50"
+                                                className="bg-primary text-primary-foreground opacity-50 border-primary"
                                             >
                                                 <FileType2 className="mr-2 h-4 w-4" />
                                                 Export Word
@@ -610,6 +617,8 @@ const AssessmentBuilderPage = () => {
                                         </span>
                                     </Tooltip>
                                 )}
+                                </PermissionGate>
+                                <PermissionGate allow={canManageAssessment}>
                                 <Button
                                     type="button"
                                     variant="destructive"
@@ -619,6 +628,7 @@ const AssessmentBuilderPage = () => {
                                 >
                                     {isDeletingAssessment ? 'Deleting…' : 'Delete Assessment'}
                                 </Button>
+                                </PermissionGate>
                             </div>
                         </CardHeader>
                         <CardContent className="pt-4">
@@ -722,11 +732,12 @@ const AssessmentBuilderPage = () => {
                                 onViewQuestion={handleViewQuestion}
                                 onToggleDraft={handleToggleDraft}
                                 onCreateVariant={handleCreateVariant}
+                                readOnly={readOnly}
                             />
                         </CardContent>
                     </Card>
-                </div>
             </div>
+            </QmHomeShell>
 
             {viewEntry && (
                 <QuestionDetailView
@@ -764,6 +775,7 @@ const AssessmentBuilderPage = () => {
                     onClose={() => setIsCanvasExportOpen(false)}
                     assessmentId={assessment.id}
                     assessmentName={assessment.name ?? 'Assessment'}
+                    courseId={assessment.courseId ?? null}
                     onExportSuccess={() => {
                         toast({
                             title: 'Export successful',

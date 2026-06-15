@@ -142,7 +142,7 @@ export const DualRangeSlider: React.FC<DualRangeSliderProps> = ({
     <div className={`relative ${className}`}>
       <div
         ref={sliderRef}
-        className="relative h-4 bg-gray-200 rounded cursor-pointer"
+        className="relative h-4 bg-muted rounded cursor-pointer"
         onMouseDown={(e) => {
           const rect = sliderRef.current?.getBoundingClientRect();
           if (!rect) return;
@@ -164,7 +164,7 @@ export const DualRangeSlider: React.FC<DualRangeSliderProps> = ({
         }}
       >
         {/* Track */}
-        <div className="absolute top-0 left-0 right-0 h-4 bg-gray-200 rounded"></div>
+        <div className="absolute top-0 left-0 right-0 h-4 bg-muted rounded"></div>
         
         {/* Easy segment (light green) */}
         <div
@@ -209,7 +209,7 @@ export const DualRangeSlider: React.FC<DualRangeSliderProps> = ({
       </div>
       
       {/* Labels */}
-      <div className="flex justify-between text-xs text-gray-500 mt-1">
+      <div className="flex justify-between text-xs text-muted-foreground mt-1">
         <span>Easy</span>
         <span>Medium</span>
         <span>Hard</span>

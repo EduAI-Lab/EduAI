@@ -142,3 +142,16 @@ export async function getMyProfileFromCore(cookieHeader) {
   }
   return res.json();
 }
+
+/** GET /api/courses via service key — all Core courses (for QM list enrichment/filtering). */
+export async function getAllCoursesFromCore() {
+  const res = await fetch(`${config.coreUrl}/api/courses`, {
+    headers: serviceHeaders(),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw coreError(body.error || 'Core courses fetch failed', res.status, body);
+  }
+  const data = await res.json();
+  return Array.isArray(data.courses) ? data.courses : [];
+}
