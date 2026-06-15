@@ -34,6 +34,7 @@ import { findEduAiCourseById, listEduAiCourses } from '../services/eduaiClient.j
 import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
 import { syncExternalCourseTopics } from '../services/topicSync.js';
 import { syncCourseEnrollments } from '../services/enrollmentSync.js';
+import { importExternalCourseForUser } from '../services/importTaughtCoursesService.js';
 
 const router = express.Router();
 
@@ -218,57 +219,12 @@ router.post('/courses/import-external', requireRole(['INSTRUCTOR', 'UNIT_ADMIN',
       return res.status(409).json({ error: 'Course already imported' });
     }
 
-    const titleParts = [
-      typeof externalCourse.code === 'string' ? externalCourse.code.trim() : null,
-      typeof externalCourse.name === 'string' ? externalCourse.name.trim() : null,
-    ].filter(Boolean);
-
-    const derivedTitle =
-      titleParts.join(' - ') ||
-      (typeof externalCourse.name === 'string' ? externalCourse.name : null) ||
-      (typeof externalCourse.code === 'string' ? externalCourse.code : null) ||
-      'Imported Course';
-
-    const derivedDescription =
-      typeof externalCourse.description === 'string' && externalCourse.description.trim()
-        ? externalCourse.description
-        : [externalCourse.term, externalCourse.year].filter(Boolean).join(' ') || null;
-
-    const created = await prisma.$transaction(async (tx) => {
-      const offering = await tx.courseOffering.create({
-        data: {
-          title: derivedTitle,
-          description: derivedDescription,
-          externalId: externalCourse.id,
-          externalSource: 'EDUAI',
-          externalMetadata: externalCourse,
-        },
-      });
-
-      await tx.courseInstructor.create({
-        data: {
-          courseOfferingId: offering.id,
-          userId: instructor.id,
-          role: 'LEAD',
-        },
-      });
-
-      return offering;
-    });
-
-    // Sync topics and enrollments from Core concurrently (independent operations)
-    const [topicResult, enrollmentResult] = await Promise.allSettled([
-      syncExternalCourseTopics(created.id),
-      syncCourseEnrollments(created.id),
-    ]);
-    if (topicResult.status === 'rejected') {
-      console.error('[eduai] Failed to sync topics for imported course', topicResult.reason);
-    }
-    if (enrollmentResult.status === 'rejected') {
-      console.error('[eduai] Failed to sync enrollments for imported course', enrollmentResult.reason);
+    const { offering, created } = await importExternalCourseForUser(instructor, externalCourse);
+    if (!created) {
+      return res.status(409).json({ error: 'Course already imported' });
     }
 
-    res.status(201).json(mapCourseOffering(created));
+    res.status(201).json(mapCourseOffering(offering));
   } catch (error) {
     console.error('[eduai] Failed to import course', error);
     const status = Number.isInteger(error?.status) ? error.status : 500;
