@@ -3,7 +3,7 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { useContext } from 'react';
 import { useLocation } from 'react-router';
 import { BugOff, HelpCircle, Menu, Moon, Sun, User, X } from 'lucide-react';
-import { useTheme } from '@/components/theme-provider';
+import { useTheme } from '@eduai/ui';
 import { EduAIStatusBadge } from '@/components/eduai/EduAIStatusBadge';
 import { useEduAIStatus } from '@/hooks/useEduAIStatus';
 import { useGuidedTour } from '@/contexts/GuidedTourContext';
@@ -62,7 +62,7 @@ export function QmSiteHeader({ onMenuClick, mobileNavOpen }: QmSiteHeaderProps) 
       >
         {mobileNavOpen ? <X className="size-5" /> : <Menu className="size-5" />}
       </Button>
-      <Separator orientation="vertical" className="mx-2 hidden h-4 md:block" />
+      <Separator orientation="vertical" className="mx-2 h-4 md:hidden" />
       <h1 className="text-sm font-medium text-foreground">{resolveTitle(pathname)}</h1>
 
       <div className="ml-auto flex items-center gap-1">
