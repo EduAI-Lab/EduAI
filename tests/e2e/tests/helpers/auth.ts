@@ -93,3 +93,61 @@ export async function registerUser(
 
   return { email, password, name };
 }
+
+/**
+ * Promote an existing user to a given role via the E2E seed endpoint
+ * (POST /api/e2e/promote). Requires E2E_SEED_SECRET to be configured on Core.
+ *
+ * Does NOT refresh the caller's session — sign out and sign back in after
+ * calling this if the current request context needs to carry the new role.
+ */
+export async function promoteUser(
+  request: APIRequestContext,
+  email: string,
+  role: string,
+): Promise<void> {
+  const secret = process.env.E2E_SEED_SECRET ?? 'e2e-seed-secret';
+  const res = await request.post(`${CORE_URL}/api/e2e/promote`, {
+    data: { secret, email, role },
+  });
+  if (!res.ok()) {
+    const body = await res.text();
+    throw new Error(`promoteUser(${email} → ${role}) failed ${res.status()}: ${body}`);
+  }
+}
+
+/**
+ * Register a new user, promote them to INSTRUCTOR, and re-authenticate so the
+ * request context's session reflects the new role.
+ */
+export async function createInstructor(
+  request: APIRequestContext,
+  opts: { name?: string; prefix?: string } = {},
+): Promise<{ email: string; password: string; name: string }> {
+  const user = await registerUser(request, {
+    name: opts.name ?? 'E2E Instructor',
+    prefix: opts.prefix ?? 'instructor',
+  });
+  await promoteUser(request, user.email, 'INSTRUCTOR');
+  await signOut(request);
+  await signIn(request, { email: user.email, password: user.password });
+  return user;
+}
+
+/**
+ * Register a new user, promote them to ADMIN, and re-authenticate so the
+ * request context's session reflects the new role.
+ */
+export async function createAdmin(
+  request: APIRequestContext,
+  opts: { name?: string; prefix?: string } = {},
+): Promise<{ email: string; password: string; name: string }> {
+  const user = await registerUser(request, {
+    name: opts.name ?? 'E2E Admin',
+    prefix: opts.prefix ?? 'admin',
+  });
+  await promoteUser(request, user.email, 'ADMIN');
+  await signOut(request);
+  await signIn(request, { email: user.email, password: user.password });
+  return user;
+}
