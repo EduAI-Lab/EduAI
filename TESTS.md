@@ -121,9 +121,17 @@ Each section should use this format:
 
 ## EduAI Full Platform End-to-End Tests
 
-**Path:** `tests/e2e/`
+**Path:** `tests/e2e/tests/`
 
-> _To be populated._
+> Frontend tests are deferred while the UI is in flux. The suite below covers backend API flows only.
+
+| Test file | What it tests |
+|-----------|---------------|
+| [`core/registration.spec.ts`](tests/e2e/tests/core/registration.spec.ts) | Core user registration (sign-up rejects duplicate email, short password, invalid email), sign-in success/failure, `GET /api/me` auth gate and profile shape, `PATCH /api/me` name update and role-change rejection, `POST /api/sessions/validate` 200/401/405, and sign-out session invalidation. |
+| [`core/access-control.spec.ts`](tests/e2e/tests/core/access-control.spec.ts) | Unauthenticated requests to all protected Core routes return 401; STUDENT role: can read own profile, gets empty course list (no enrollments), can read and PATCH assistive preferences; STUDENT is blocked (403) from admin-only AI-provider/model lists, course creation, and invitation management; sign-out then re-sign-in restores access; service key validate round-trip. |
+| [`ai-tutor/access.spec.ts`](tests/e2e/tests/ai-tutor/access.spec.ts) | AI Tutor server health (`GET /api/health`); unauthenticated calls to `/api/me` and `/api/courses` return 401; authenticated user (Core session cookie) can call `/api/me` and `/api/courses`; STUDENT blocked from admin routes; `POST /api/logout` proxies sign-out to Core and invalidates the session; idempotent logout with no session. |
+| [`question-maker/access.spec.ts`](tests/e2e/tests/question-maker/access.spec.ts) | QM health endpoints (`GET /healthz`, `GET /`, unknown route 404); unauthenticated calls to `/api/auth/me`, `/api/course`, `/api/questions` return 401; authenticated user: `/api/auth/me` returns user with `isBugReportAdmin=false`, `/api/course` and `/api/questions` return arrays, can create and retrieve a course; `POST /api/auth/logout` proxies to Core; STUDENT blocked from question create (403) and assessment create (403). |
+| [`cross-service/user-journey.spec.ts`](tests/e2e/tests/cross-service/user-journey.spec.ts) | One Core session cookie grants access to Core, AI Tutor, and QM simultaneously with matching email/role; all three reject with 401 when unauthenticated; Core sign-out cascades to all three; AI Tutor logout cascades to Core; QM logout cascades to Core; re-authentication restores access to all three; two-user data isolation on QM courses; two-user profile isolation on Core. |
 
 ---
 
