@@ -122,6 +122,22 @@ describe("updateAdminBugReportStatus", () => {
   });
 });
 
+describe("requireWriteConfirmation", () => {
+  it("returns null when confirmed is true", async () => {
+    const { requireWriteConfirmation } = await import("~/lib/agent-tools/admin-mutations.server");
+    expect(requireWriteConfirmation(true)).toBeNull();
+  });
+
+  it("returns CONFIRMATION_REQUIRED when confirmed is false", async () => {
+    const { requireWriteConfirmation } = await import("~/lib/agent-tools/admin-mutations.server");
+    const result = requireWriteConfirmation(false);
+    expect(result).toMatchObject({
+      writeSucceeded: false,
+      error: "CONFIRMATION_REQUIRED",
+    });
+  });
+});
+
 describe("createAdminEnrollment via addEnrollment", () => {
   it("delegates to addEnrollment after resolving course", async () => {
     const { createAdminEnrollment } = await import("~/lib/agent-tools/admin-mutations.server");

@@ -59,6 +59,18 @@ function mutationFailure(error: ToolError & Record<string, unknown>) {
   };
 }
 
+/** When the model calls a write tool before the admin confirmed in chat. */
+export function requireWriteConfirmation(confirmed: boolean): MutationResult | null {
+  if (confirmed === true) {
+    return null;
+  }
+  return mutationFailure({
+    error: "CONFIRMATION_REQUIRED",
+    message:
+      "Write not applied — wait for the admin to explicitly confirm in chat, then call this tool again with confirmed: true.",
+  });
+}
+
 /** Audit log + normalize write tool results for the model and UI. */
 export async function runAdminWriteTool(
   toolName: string,
@@ -83,6 +95,25 @@ export async function runAdminWriteTool(
     return mutationFailure({ error: "WRITE_FAILED", ...result });
   }
   return result;
+}
+
+export async function runConfirmedAdminWriteTool(
+  toolName: string,
+  actor: RbacUser,
+  confirmed: boolean,
+  run: () => Promise<MutationResult>,
+): Promise<MutationResult> {
+  const gate = requireWriteConfirmation(confirmed);
+  if (gate) {
+    console.info("[admin-chat:write]", {
+      tool: toolName,
+      actorId: actor.id,
+      writeSucceeded: false,
+      error: "CONFIRMATION_REQUIRED",
+    });
+    return gate;
+  }
+  return runAdminWriteTool(toolName, actor, run);
 }
 
 function mapEnrollmentResult(
