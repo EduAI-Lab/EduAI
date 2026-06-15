@@ -128,27 +128,27 @@ export const Homepage = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state, courses]);
 
-  // Update tab based on URL query (e.g., /home?tab=assessments)
+  // URL is authoritative for tab. When URL has a valid tab param, sync state to
+  // it. When URL lacks the param (e.g. bare /home), push the current state tab.
+  // Using a single effect avoids the stale-closure loop that two competing
+  // effects cause: effect A sets state, effect B reads the old state and
+  // navigates back before the state update flushes.
   useEffect(() => {
     const params = new URLSearchParams(location.search);
-    const tab = params.get('tab');
-    if (tab === 'assessments' || tab === 'questions') {
-      setActiveTab(tab);
+    const urlTab = params.get('tab');
+    if (urlTab === 'assessments' || urlTab === 'questions') {
+      setActiveTab(urlTab);
+    } else {
+      params.set('tab', activeTab);
+      navigate(
+        { pathname: location.pathname, search: params.toString() },
+        { replace: true, state: location.state }
+      );
     }
-  }, [location.search]);
-
-  // Keep URL query in sync with selected tab to make refreshes stable (preserve location.state e.g. startGuidedTour)
-  useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const currentTab = params.get('tab');
-    if (currentTab === activeTab) return;
-
-    params.set('tab', activeTab);
-    navigate(
-      { pathname: location.pathname, search: params.toString() },
-      { replace: true, state: location.state }
-    );
-  }, [activeTab, location.pathname, location.search, location.state, navigate]);
+  // activeTab excluded from deps intentionally — URL is always authoritative
+  // when it has a valid tab; we only write to the URL when it's missing the param.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search, location.pathname, location.state, navigate]);
 
   // Choose course based on preference when courses list updates
   useEffect(() => {
