@@ -1,6 +1,9 @@
 // ── Utilities ─────────────────────────────────────────────────────────────
 export { cn, getInitials } from "./utils"
 
+// ── Theme ──────────────────────────────────────────────────────────────────
+export { ThemeProvider, useTheme } from "./theme-provider"
+
 // ── Domain components ──────────────────────────────────────────────────────
 export { RoleBadge } from "./role-badge"
 export type { RoleBadgeProps } from "./role-badge"

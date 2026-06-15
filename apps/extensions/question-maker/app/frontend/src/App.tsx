@@ -3,9 +3,8 @@
  * Defines navigation for login, homepage, assessments, help, and an optional API test route.
  */
 import { BrowserRouter as Router, Routes, Route, Navigate, useParams, useSearchParams } from 'react-router';
-import { Toaster } from '@eduai/ui';
+import { Toaster, ThemeProvider } from '@eduai/ui';
 import { AuthProvider } from './contexts/AuthContext';
-import { ThemeProvider } from './components/theme-provider';
 import { QmAppGate } from './components/auth/QmAppGate';
 import { QmAppLayout } from './components/layout/QmAppLayout';
 import { CourseSelectionPage } from './pages/CourseSelectionPage';
