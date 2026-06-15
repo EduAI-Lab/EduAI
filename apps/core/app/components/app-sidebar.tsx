@@ -3,6 +3,7 @@ import {
   IconBooks,
   IconBrain,
   IconDashboard,
+  IconExternalLink,
   IconListCheck,
   IconReport,
   IconRobot,
@@ -22,12 +23,15 @@ import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@eduai/ui"
 import type { User } from "~/lib/auth/types"
+import { getAiTutorAppUrl } from "~/lib/extension-urls"
 import {
   getNavForUser,
   getNavSecondaryForUser,
@@ -122,6 +126,24 @@ export function AppSidebar({
         <NavMain items={navMain} />
         {showDocuments && <NavDocuments items={documents} />}
         <NavSecondary items={navSecondary} className="mt-auto" />
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild>
+                  <a
+                    href={getAiTutorAppUrl()}
+                    className="flex items-center gap-[10px] w-full px-[14px] py-[9px] rounded-[7px] text-[13.5px] outline-none select-none"
+                    style={{ color: "rgba(255,255,255,0.82)", paddingLeft: "16px" }}
+                  >
+                    <IconExternalLink size={16} strokeWidth={1.75} />
+                    <span className="flex-1">AI Tutor</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
         <NavUser user={user} />
