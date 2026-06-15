@@ -71,6 +71,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
+- [core] fix: Resolve `feat/eduai-redesign` ↔ `development` merge without losing features — restore the ADHD Assist oversight flow (`needsOversight` audit/rewrite branch, overseen-message persistence) in `POST /api/chat` that a prior merge had dropped, while keeping the redesigned chat-history header actions and in-input assistive/system-prompt controls; restore assistive prop destructuring in `chat-conversation-layout`; migrate `development`'s new `admin.invitations` screen off the deleted local UI kit onto `@eduai/ui`; drop the obsolete chat header-controls-placement unit test (assistive controls now render in the input footer by design). ([#583](https://github.com/EduAI-Lab/EduAI/pull/583), @yta3216, 2026-06-15)
 - [core] fix: `re-embed-course` script resolves courses by code with `findFirst` since `code` alone is not unique. (#561, @abdullahmoh21, 2026-06-11)
 
 ### Fixed
