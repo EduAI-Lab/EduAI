@@ -27,26 +27,29 @@ const getTopicName = (topicsById: Record<number, Topic>, topicId?: number | null
 };
 
 const getDifficultyColor = (difficulty: string) => {
+  // Design-system semantic scale tokens — render as self-contained chips that
+  // stay legible in both light and dark mode while keeping each level distinct.
   switch (difficulty) {
     case 'easy':
-      return 'bg-green-100 text-green-800 border-green-200';
+      return 'bg-success-100 text-success-700 border-success-500/30';
     case 'medium':
-      return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      return 'bg-warning-100 text-warning-700 border-warning-500/30';
     case 'hard':
-      return 'bg-red-100 text-red-800 border-red-200';
+      return 'bg-error-100 text-error-700 border-error-500/30';
     default:
       return 'bg-muted text-foreground border-border';
   }
 };
 
 const getReasoningColor = (reasoning: string) => {
+  // Distinct, theme-safe accents per reasoning type using design-system tokens.
   switch (reasoning) {
     case 'factual':
       return 'bg-secondary/15 text-secondary border-secondary/30';
     case 'analytical':
-      return 'bg-purple-100 text-purple-800 border-purple-200';
+      return 'bg-accent text-accent-foreground border-border';
     case 'application':
-      return 'bg-indigo-100 text-indigo-800 border-indigo-200';
+      return 'bg-gold/15 text-primary border-gold/40';
     default:
       return 'bg-muted text-foreground border-border';
   }
@@ -131,15 +134,15 @@ export const QuestionMetadataCard = ({
                     variant="default"
                     className={
                       activeVariant.isDraft
-                        ? 'bg-amber-100 text-amber-800 border-amber-200'
-                        : 'bg-green-100 text-green-800 border-green-200'
+                        ? 'bg-warning-100 text-warning-700 border-warning-500/30'
+                        : 'bg-success-100 text-success-700 border-success-500/30'
                     }
                   >
                     {activeVariant.isDraft ? 'Draft' : 'Reviewed'}
                   </Badge>
                 )}
                 {activeVariant && activeVariant.isAiGenerated && (
-                  <Badge variant="outline" className="text-xs border-purple-200 text-purple-800">
+                  <Badge variant="outline" className="text-xs">
                     AI
                   </Badge>
                 )}
