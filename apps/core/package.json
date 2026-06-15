@@ -37,6 +37,8 @@
     "research:summarize-classroom-replicates": "node ./scripts/research/summarize-classroom-replicates.mjs",
     "research:backfill-energy": "node ./scripts/research/backfill-interaction-energy.mjs",
     "research:export-human-check": "node ./scripts/research/export-human-spot-check.mjs",
+    "research:build-knn-exemplars": "node ./scripts/research/build-knn-exemplars-from-labels.mjs",
+    "research:eval-knn": "tsx ./scripts/research/evaluate-knn-router.ts",
     "test:embedding": "tsx scripts/test-embedding.ts"
   },
   "dependencies": {
