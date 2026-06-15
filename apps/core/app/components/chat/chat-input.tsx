@@ -190,35 +190,30 @@ export function ChatInput({
                 <TooltipProvider delayDuration={300}>
                   <Tooltip>
                     <TooltipTrigger asChild>
+                      {/* Fixed-width pill: same elements in both states so toggling
+                          never shifts the layout. Active uses the theme-safe accent
+                          (legible on both light and dark) for an unmistakable state. */}
                       <div
-                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border transition-all"
-                        style={{
-                          borderColor: adhdAssist ? "var(--primary)" : "var(--border)",
-                          backgroundColor: adhdAssist ? "var(--primary-foreground)" : "transparent",
-                        }}
+                        className={`flex items-center gap-2 rounded-full border px-3 py-1.5 transition-colors ${
+                          adhdAssist
+                            ? "border-accent bg-accent text-accent-foreground"
+                            : "border-border bg-transparent text-muted-foreground"
+                        }`}
                       >
+                        <IconBrain size={14} strokeWidth={2} className="shrink-0" />
+                        <Label
+                          htmlFor="adhd-assist-composer"
+                          className="cursor-pointer text-xs font-medium whitespace-nowrap text-current"
+                        >
+                          Assistive mode
+                        </Label>
                         <Switch
                           id="adhd-assist-composer"
                           checked={adhdAssist}
                           onCheckedChange={(checked) => onAdhdAssistChange(Boolean(checked))}
                           aria-label="Assistive mode"
-                          className="scale-75 origin-left"
+                          className="shrink-0"
                         />
-                        <Label
-                          htmlFor="adhd-assist-composer"
-                          className="cursor-pointer text-xs font-medium whitespace-nowrap"
-                          style={{
-                            color: adhdAssist ? "var(--primary)" : "var(--muted-foreground)",
-                          }}
-                        >
-                          Assistive mode
-                        </Label>
-                        {adhdAssist && (
-                          <span className="inline-flex items-center gap-0.5 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold leading-none text-primary-foreground select-none">
-                            <IconBrain size={10} strokeWidth={2} />
-                            On
-                          </span>
-                        )}
                       </div>
                     </TooltipTrigger>
                     <TooltipContent side="top" className="max-w-[220px]">
