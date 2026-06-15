@@ -294,7 +294,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
         </Breadcrumb>
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="font-display text-2xl font-semibold text-foreground">Lessons</h2>
+            <h2 className="text-2xl font-semibold text-foreground">Lessons</h2>
           </div>
           <button
             onClick={() => {
@@ -312,7 +312,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
         </div>
 
         {showImport && (
-          <div className="card-editorial p-5 space-y-4">
+          <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-5 space-y-4">
             <div>
               <label className="block text-sm font-semibold mb-1 text-foreground">
                 Choose course
@@ -452,7 +452,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
               return (
                 <div
                   key={lesson.id}
-                  className="card-editorial p-5 hover:shadow-lg transition group cursor-pointer flex flex-col h-full animate-fade-up"
+                  className="rounded-lg border bg-card text-card-foreground shadow-sm p-5 hover:shadow-lg transition group cursor-pointer flex flex-col h-full animate-fade-up"
                   style={{ animationDelay: `${idx * 50}ms` }}
                   onClick={() => navigate(`/instructor/lesson/${lesson.id}`)}
                   role="button"
@@ -465,7 +465,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
                   }}
                 >
                   <div className="flex items-start gap-3">
-                    <span className="flex-shrink-0 w-8 h-8 rounded-full bg-accent text-accent-foreground flex items-center justify-center font-display font-semibold text-sm">
+                    <span className="flex-shrink-0 w-8 h-8 rounded-full bg-accent text-accent-foreground flex items-center justify-center font-semibold text-sm">
                       {idx + 1}
                     </span>
                     <div className="flex-1 min-w-0">

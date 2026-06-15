@@ -282,7 +282,9 @@ Unit tests for the shared design-system component library (`@eduai/ui`). Run wit
 | `BugReportDialog.test.tsx` | The bug report form rejects descriptions that are too short, takes a screenshot on open, and submits diagnostic data including the reporter's anonymous preference |
 | `BugReportProvider.test.tsx` | Page location and diagnostic capture tools are available to any component that needs to file a bug report |
 | `BugReportsTab.test.tsx` | Admins can view, update status, and copy bug reports; anonymous submissions hide reporter identity in the copied output |
-| `Nav.test.tsx` | The Report Bug button is visible to students and professors but hidden from admins |
+| `Nav.test.tsx` | The Report Bug button is visible to students and professors but hidden from admins; EduAI Core cross-nav link and dark-mode toggle render for authenticated users |
+| `extension-urls.test.ts` | Cross-app URL helpers default to local dev hosts for EduAI Core and AiTutor |
+| `student-chat-history.test.ts` | Client-side chat history persistence — store/list/delete sessions per activity and build message previews |
 | `useLocalUser.test.tsx` | Users can log in, log out, and have their session available across the app; accessing the session outside its provider throws an error |
 
 > **Coverage gap:** `home.tsx` role-based routing (STUDENT→/student, INSTRUCTOR→/instructor, UNIT_ADMIN→/instructor, TA→/unsupported-role, ADMIN→/admin) and `unsupported-role.tsx` role guard (TA stays on page; other roles are redirected to their correct route) are not currently covered by unit tests.

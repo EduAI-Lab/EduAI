@@ -32,7 +32,7 @@ import type {
 } from '~/lib/types';
 import type { Route } from './+types/admin';
 import { requireClientUser } from '~/lib/client-auth';
-import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@eduai/ui';
 
 type CostTier = 'LOW' | 'MEDIUM' | 'HIGH';
 
@@ -358,7 +358,7 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
         <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 animate-fade-up">
           <div className="space-y-2">
             <p className="text-sm font-medium text-muted-foreground">Admin</p>
-            <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-foreground">
+            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-foreground">
               Settings
             </h1>
           </div>
@@ -409,9 +409,9 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
         )}
 
         {activeTab === 'users' ? (
-          <div className="card-editorial p-6 sm:p-8 space-y-6 animate-fade-up delay-150">
+          <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6 sm:p-8 space-y-6 animate-fade-up delay-150">
             <div className="space-y-2">
-              <h2 className="font-display text-xl font-bold text-foreground">User Management</h2>
+              <h2 className="text-xl font-bold text-foreground">User Management</h2>
               <p className="text-sm text-muted-foreground max-w-2xl">
                 User roles are now read-only in AI Tutor. Identity and role changes are managed in
                 EduAI and synced on sign-in.
@@ -444,9 +444,9 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
             </div>
           </div>
         ) : activeTab === 'enrollments' ? (
-          <div className="card-editorial p-6 sm:p-8 space-y-6 animate-fade-up delay-150">
+          <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6 sm:p-8 space-y-6 animate-fade-up delay-150">
             <div className="space-y-2">
-              <h2 className="font-display text-xl font-bold text-foreground">Course Enrollments</h2>
+              <h2 className="text-xl font-bold text-foreground">Course Enrollments</h2>
               <p className="text-sm text-muted-foreground max-w-2xl">
                 Students only see courses they are enrolled in. Use this tab to manage those
                 relationships directly.
@@ -568,10 +568,10 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
           </div>
         ) : activeTab === 'settings' ? (
           <div className="space-y-6 animate-fade-up delay-150">
-            <div className="card-editorial p-6 sm:p-8 space-y-6">
+            <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6 sm:p-8 space-y-6">
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="font-display text-xl font-bold text-foreground">AI loop policy</h2>
+                  <h2 className="text-xl font-bold text-foreground">AI loop policy</h2>
                   <InfoBadge copy="A loop is the handoff between the student-facing tutor and the internal supervisor that checks each draft before it is shown." />
                 </div>
                 <p className="text-sm text-muted-foreground max-w-3xl">
@@ -853,9 +853,9 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
               </div>
             </div>
 
-            <div className="card-editorial p-6 sm:p-8 space-y-6">
+            <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6 sm:p-8 space-y-6">
               <div className="space-y-2">
-                <h2 className="font-display text-xl font-bold text-foreground">EduAI API Key</h2>
+                <h2 className="text-xl font-bold text-foreground">EduAI API Key</h2>
                 <p className="text-sm text-muted-foreground max-w-2xl">
                   {status.envConfigured ? (
                     <>

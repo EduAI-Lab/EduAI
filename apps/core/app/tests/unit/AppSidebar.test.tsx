@@ -54,6 +54,13 @@ describe("AppSidebar — rendering", () => {
     expect(screen.getByRole("link", { name: "Dashboard" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Courses" })).toBeInTheDocument();
   });
+
+  it("renders AI Tutor extension link", () => {
+    renderSidebar("STUDENT");
+    const link = screen.getByRole("link", { name: "AI Tutor" });
+    expect(link).toBeInTheDocument();
+    expect(link).toHaveAttribute("href", "http://localhost:3001");
+  });
 });
 
 describe("AppSidebar — role-gated nav", () => {
