@@ -22,7 +22,7 @@ import type { Topic } from '../types/topic';
 import { buildAiReviewDocxBlob } from '../utils/aiReviewExportDocx';
 import { QmHomeShell } from '../components/home/QmHomeShell';
 import { PermissionGate } from '@/components/rbac/PermissionGate';
-import { useQmPermissions } from '@/hooks/useQmPermissions';
+import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
 
 /** Hover text for the Variants column — counts are reviewed-only (drafts excluded). */
 const REVIEWED_VARIANTS_TOOLTIP =
@@ -201,10 +201,12 @@ export function AssessmentVariantPage() {
   const courseIdParam = searchParams.get('courseId');
   const baselineAssessmentIdParam = searchParams.get('baselineAssessmentId');
   const { toast } = useToast();
-  const { canManageAssessment, canRunAiReview, canManageCanvas } = useQmPermissions();
   const { courses, isLoading: coursesLoading, fetchCourses } = useCourses();
 
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
+  const { canManageAssessment, canRunAiReview, canManageCanvas } = useQmPermissionsForCourse(
+    selectedCourse?.id ?? null,
+  );
   const [topics, setTopics] = useState<Topic[]>([]);
   const [assessments, setAssessments] = useState<Assessment[]>([]);
   const [baselineAssessmentId, setBaselineAssessmentId] = useState<string>('');
@@ -1379,7 +1381,12 @@ export function AssessmentVariantPage() {
             }}
             onQuestionsSaved={handleExamQuestionsSaved}
           />
-          <CanvasImportDialog open={canvasImportOpen} onClose={() => setCanvasImportOpen(false)} onImportSuccess={handleCanvasImport} />
+          <CanvasImportDialog
+            open={canvasImportOpen}
+            onClose={() => setCanvasImportOpen(false)}
+            courseId={selectedCourse?.id ?? null}
+            onImportSuccess={handleCanvasImport}
+          />
           <Dialog open={aiReviewRubricOpen} onOpenChange={setAiReviewRubricOpen}>
             <DialogContent className="max-w-3xl">
               <DialogHeader>

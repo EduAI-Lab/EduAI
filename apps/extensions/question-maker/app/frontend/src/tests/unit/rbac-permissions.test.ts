@@ -43,4 +43,9 @@ describe('QM RBAC permissions', () => {
     expect(canTriageBugReports(unitAdmin)).toBe(false);
     expect(canTriageBugReports(instructor)).toBe(false);
   });
+
+  it('denies authoring when course access is null', () => {
+    expect(canCreateQuestion(instructor, null)).toBe(false);
+    expect(canManageAssessment(instructor, null)).toBe(false);
+  });
 });

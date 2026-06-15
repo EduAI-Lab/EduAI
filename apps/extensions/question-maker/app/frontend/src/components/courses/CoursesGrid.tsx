@@ -10,6 +10,7 @@ export type CoursesGridProps = {
   onAddCourse: () => void;
   showAddCourse?: boolean;
   emptyHint?: string;
+  showDepartment?: boolean;
 };
 
 export function CoursesGrid({
@@ -19,6 +20,7 @@ export function CoursesGrid({
   onAddCourse,
   showAddCourse = true,
   emptyHint,
+  showDepartment = false,
 }: CoursesGridProps) {
   return (
     <>
@@ -58,6 +60,11 @@ export function CoursesGrid({
                 </div>
                 {course.code && (
                   <p className="text-sm text-muted-foreground mt-1">{course.code}</p>
+                )}
+                {showDepartment && course.department && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Unit: <span className="font-medium text-foreground">{course.department}</span>
+                  </p>
                 )}
                 <p className="text-xs text-muted-foreground/80 mt-2">Click to open</p>
               </CardContent>

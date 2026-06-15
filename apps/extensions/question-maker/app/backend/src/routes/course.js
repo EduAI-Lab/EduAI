@@ -6,12 +6,29 @@ import express from 'express';
 import { Course, Question_Metadata, Topics } from '../schema/index.js';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
 import { QM_AUTHORIZED } from '../middleware/roles.js';
+import { resolveCourseAccessWithCourse, LEVELS } from '../middleware/courseAccess.js';
+import { listCoursesForUser } from '../services/courseListService.js';
 import { getCourseTopicsFromCore, pushTopicToCore } from '../services/coreApiService.js';
 import { logger } from '../utils/logger.js';
 
 const router = express.Router();
 
 router.use(authenticateToken, requireRole(QM_AUTHORIZED));
+
+async function loadCourseWithAccess(req, res, minRank = LEVELS.instructor.rank) {
+  const { course, access } = await resolveCourseAccessWithCourse(req.user, req.params.id, {
+    cookie: req.headers.cookie,
+  });
+  if (!course) {
+    res.status(404).json({ success: false, error: 'Course not found' });
+    return null;
+  }
+  if (!access || access.rank < minRank) {
+    res.status(403).json({ success: false, error: 'Insufficient course access' });
+    return null;
+  }
+  return { course, access };
+}
 
 /** POST /api/course – creates a course tied to the authenticated user after basic validation. */
 router.post('/', async (req, res, next) => {
@@ -41,69 +58,85 @@ router.post('/', async (req, res, next) => {
   }
 });
 
-/** GET /api/course – lists the user’s courses and optionally includes question/topic stats. */
+/** GET /api/course – role-scoped list with optional stats. */
 router.get('/', async (req, res, next) => {
   try {
     const { includeStats = false } = req.query;
-    
-    let includeOptions = [];
-    if (includeStats === 'true') {
-      includeOptions = [
+
+    const courses = await listCoursesForUser(req.user, { cookie: req.headers.cookie });
+
+    if (includeStats !== 'true') {
+      return res.json({ success: true, data: courses });
+    }
+
+    const courseIds = courses.map((c) => c.id);
+    const withRelations = await Course.findAll({
+      where: { id: courseIds },
+      include: [
         {
           model: Question_Metadata,
           as: 'questionMetadata',
           attributes: ['id', 'type', 'description'],
-          required: false
+          required: false,
         },
         {
           model: Topics,
           as: 'topics',
           attributes: ['id', 'name'],
-          required: false
-        }
-      ];
-    }
-
-    const courses = await Course.findAll({
-      where: { userId: req.user.id },
-      include: includeOptions,
-      order: [['createdAt', 'DESC']]
+          required: false,
+        },
+      ],
+      order: [['createdAt', 'DESC']],
     });
 
-    // Add stats if requested
-    if (includeStats === 'true') {
-      const coursesWithStats = courses.map(course => ({
-        ...course.toJSON(),
+    const relationById = new Map(withRelations.map((c) => [c.id, c]));
+    const coursesWithStats = courses.map((course) => {
+      const rel = relationById.get(course.id);
+      const meta = rel?.questionMetadata ?? [];
+      const topics = rel?.topics ?? [];
+      return {
+        ...course,
         stats: {
-          totalQuestions: course.questionMetadata?.length || 0,
-          totalTopics: course.topics?.length || 0,
-          questionTypes: course.questionMetadata?.reduce((acc, q) => {
+          totalQuestions: meta.length,
+          totalTopics: topics.length,
+          questionTypes: meta.reduce((acc, q) => {
             acc[q.type] = (acc[q.type] || 0) + 1;
             return acc;
-          }, {}) || {}
-        }
-      }));
-      
-      return res.json({
-        success: true,
-        data: coursesWithStats
-      });
-    }
+          }, {}),
+        },
+      };
+    });
 
+    res.json({ success: true, data: coursesWithStats });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/** GET /api/course/:id/access – caller's resolved access for UI gating. */
+router.get('/:id/access', async (req, res, next) => {
+  try {
+    const loaded = await loadCourseWithAccess(req, res);
+    if (!loaded) return;
+    const { access } = loaded;
     res.json({
       success: true,
-      data: courses
+      data: { level: access.level, rank: access.rank },
     });
   } catch (error) {
     next(error);
   }
 });
 
-/** GET /api/course/:id – fetches a single course with optional details if the requester owns it. */
+/** GET /api/course/:id – single course when caller has instructor+ access. */
 router.get('/:id', async (req, res, next) => {
   try {
+    const loaded = await loadCourseWithAccess(req, res);
+    if (!loaded) return;
+
+    const { course, access } = loaded;
     const { includeDetails = false } = req.query;
-    
+
     let includeOptions = [];
     if (includeDetails === 'true') {
       includeOptions = [
@@ -115,33 +148,28 @@ router.get('/:id', async (req, res, next) => {
             {
               model: Topics,
               as: 'primaryTopic',
-              attributes: ['id', 'name']
-            }
-          ]
+              attributes: ['id', 'name'],
+            },
+          ],
         },
         {
           model: Topics,
           as: 'topics',
-          attributes: ['id', 'name']
-        }
+          attributes: ['id', 'name'],
+        },
       ];
     }
 
-    const courseData = await Course.findOne({
-      where: { id: req.params.id, userId: req.user.id },
-      include: includeOptions
-    });
-
-    if (!courseData) {
-      return res.status(404).json({
-        success: false,
-        error: 'Course not found'
-      });
-    }
+    const courseData = includeOptions.length
+      ? await Course.findByPk(course.id, { include: includeOptions })
+      : course;
 
     res.json({
       success: true,
-      data: courseData
+      data: {
+        ...(courseData.toJSON ? courseData.toJSON() : courseData),
+        accessLevel: access.level,
+      },
     });
   } catch (error) {
     next(error);
@@ -204,29 +232,20 @@ router.delete('/:id', async (req, res, next) => {
   }
 });
 
-/** GET /api/course/:id/topics – returns the topic list for an owned course. */
+/** GET /api/course/:id/topics – topics for a course the caller may access. */
 router.get('/:id/topics', async (req, res, next) => {
   try {
-    // Verify user owns the course
-    const course = await Course.findOne({
-      where: { id: req.params.id, userId: req.user.id }
-    });
-
-    if (!course) {
-      return res.status(404).json({
-        success: false,
-        error: 'Course not found'
-      });
-    }
+    const loaded = await loadCourseWithAccess(req, res);
+    if (!loaded) return;
 
     const topics = await Topics.findAll({
-      where: { courseId: req.params.id },
-      order: [['createdAt', 'ASC']]
+      where: { courseId: loaded.course.id },
+      order: [['createdAt', 'ASC']],
     });
 
     res.json({
       success: true,
-      data: topics
+      data: topics,
     });
   } catch (error) {
     next(error);

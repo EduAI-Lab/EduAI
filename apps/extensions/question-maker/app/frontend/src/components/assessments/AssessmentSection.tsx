@@ -9,7 +9,7 @@ import {
 import { Button, Card, CardContent, CardHeader, CardTitle, Badge, ScrollArea } from '@eduai/ui';
 import { Tooltip } from '@/components/ui/tooltip';
 import { PermissionGate } from '@/components/rbac/PermissionGate';
-import { useQmPermissions } from '@/hooks/useQmPermissions';
+import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
 import {
     Plus,
     ChevronUp,
@@ -162,7 +162,8 @@ export const AssessmentSection = ({
     onImportFromCanvas
 }: AssessmentSectionProps) => {
     const navigate = useNavigate();
-    const { canManageAssessment, canExportAssessment, canUseVariantWorkflow } = useQmPermissions();
+    const { canManageAssessment, canExportAssessment, canUseVariantWorkflow } =
+        useQmPermissionsForCourse(selectedCourseId ?? null);
     const [expandedAssessment, setExpandedAssessment] = useState<number | null>(null);
     const [isGenerateModalOpen, setIsGenerateModalOpen] = useState(false);
     const [pendingGenerateAction, setPendingGenerateAction] = useState<'create' | null>(null);

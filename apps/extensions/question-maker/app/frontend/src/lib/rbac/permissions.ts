@@ -2,7 +2,8 @@ import type { OwnableResource, QmCourseAccess, QmUser } from './types';
 import { isAuthoringAccess, resolvePlatformCourseAccess } from './resolve-course-access';
 
 function accessFor(user: QmUser | null | undefined, courseAccess?: QmCourseAccess): QmCourseAccess {
-  return courseAccess ?? resolvePlatformCourseAccess(user);
+  if (courseAccess !== undefined) return courseAccess;
+  return resolvePlatformCourseAccess(user);
 }
 
 function isOwner(user: QmUser, resource?: OwnableResource | null): boolean {
