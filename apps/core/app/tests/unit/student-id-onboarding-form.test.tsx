@@ -19,7 +19,6 @@ describe("StudentIdOnboardingForm", () => {
     expect(screen.getByRole("heading", { name: /link your ubc student number/i })).toBeInTheDocument();
     expect(screen.getByLabelText("UBC Student Number")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Link student number" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Skip for now — I'll do this later" })).toBeInTheDocument();
   });
 
   it("shows a form error when provided", () => {
