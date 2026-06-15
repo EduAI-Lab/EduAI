@@ -107,9 +107,11 @@ Each level supports publish/unpublish gating — unpublished parents hide their 
 | ---------------- | ------------------------------------------------------------------- |
 | **Student**      | Enrolled courses, activities, AI chat modes                         |
 | **Instructor**   | Full course management, content authoring, analytics                |
-| **TA**           | Assigned course assistance (read-only on content, submit bug reports) |
+| **TA**           | Read-only instructor shell, course submissions view (no content edits) |
 | **Unit Admin**   | Department-scoped course management and enrollment admin            |
-| **Admin**        | User management, system settings, AI model config                   |
+| **Admin**        | User management, system settings, AI model config, bug report triage |
+
+RBAC UI wiring follows `docs/rbac-endpoints-ai-tutor.md` and `docs/implementations/rbac-matrix.md` §14–15. Frontend gates use `app/lib/rbac/permissions.ts` and `PermissionGate` — TA users share the `/instructor` shell in read-only mode; unit admins see department-scoped course management.
 
 ### AI Tutoring — Two-Agent Supervisor System
 

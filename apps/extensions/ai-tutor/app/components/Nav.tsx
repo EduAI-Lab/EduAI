@@ -34,6 +34,7 @@ import {
 } from '@eduai/ui';
 
 import { useLocalUser } from '../hooks/useLocalUser';
+import { useAtPermissions } from '../hooks/useAtPermissions';
 import { api } from '../lib/api';
 import { getEduAiAppUrl } from '../lib/extension-urls';
 import TourButton from './TourButton';
@@ -84,10 +85,11 @@ export default function Nav() {
   const navigate = useNavigate();
   const loc = useLocation();
   const { user, logout } = useLocalUser();
+  const { canSubmitBugReport } = useAtPermissions();
   const { captureScreenshot } = useBugReport();
   const { resolvedTheme, setTheme } = useTheme();
   const isAdminUser = user?.role === 'ADMIN';
-  const canReportBug = user?.role === 'STUDENT' || user?.role === 'INSTRUCTOR';
+  const canReportBug = canSubmitBugReport;
   const eduAiUrl = getEduAiAppUrl();
 
   const handleLogout = async () => {
