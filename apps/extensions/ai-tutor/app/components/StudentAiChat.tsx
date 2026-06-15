@@ -847,7 +847,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setHistoryOpen(true)}
+                onClick={() => setHistoryOpen((prev) => !prev)}
                 aria-label="Open chat history"
                 className="min-w-[44px]"
               >

@@ -1,4 +1,4 @@
-import { Button } from "@eduai/ui";
+import { Button, Label, Switch, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@eduai/ui";
 import {
   IconSettings,
   IconBooks,
@@ -7,6 +7,7 @@ import {
   IconSend,
   IconPlayerStop,
   IconWorld,
+  IconBrain,
 } from "@tabler/icons-react";
 import { useState } from "react";
 import { ApiKeySettings } from "./api-key-settings";
@@ -14,10 +15,6 @@ import { useApiKeys } from "~/hooks/use-api-keys";
 import {
   PromptInput,
   PromptInputTextarea,
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
 } from "@eduai/ui";
 import {
   DropdownMenu,
@@ -40,6 +37,10 @@ interface ChatInputProps {
   chatModels: Array<{ id: string; name: string; description: string; provider: string; maxTokens?: number; supportsImages?: boolean; supportsTools?: boolean }>;
   selectedModelInfo?: { id: string; name: string; description: string; provider: string; maxTokens?: number; supportsImages?: boolean; supportsTools?: boolean };
   showCourseSelector?: boolean;
+  adhdAssist?: boolean;
+  onAdhdAssistChange?: (v: boolean) => void;
+  systemPrompt?: string | null;
+  onSystemPromptSave?: (p: string | null) => void;
 }
 
 export function ChatInput({
@@ -56,6 +57,10 @@ export function ChatInput({
   chatModels,
   selectedModelInfo,
   showCourseSelector = true,
+  adhdAssist = false,
+  onAdhdAssistChange,
+  systemPrompt,
+  onSystemPromptSave,
 }: ChatInputProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const {
@@ -178,17 +183,59 @@ export function ChatInput({
               </DropdownMenuContent>
             </DropdownMenu>
 
-            {/* API key settings — right side */}
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setSettingsOpen(true)}
-              className="ml-auto h-7 w-7 p-0 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-              aria-label="API key settings"
-            >
-              <IconSettings size={14} stroke={2} />
-            </Button>
+            {/* Right-side controls */}
+            <div className="ml-auto flex items-center gap-1">
+              {/* Assistive mode toggle — in right cluster, more prominent */}
+              {onAdhdAssistChange && (
+                <TooltipProvider delayDuration={300}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      {/* Fixed-width pill: same elements in both states so toggling
+                          never shifts the layout. Active uses the theme-safe accent
+                          (legible on both light and dark) for an unmistakable state. */}
+                      <div
+                        className={`flex items-center gap-2 rounded-full border px-3 py-1.5 transition-colors ${
+                          adhdAssist
+                            ? "border-accent bg-accent text-accent-foreground"
+                            : "border-border bg-transparent text-muted-foreground"
+                        }`}
+                      >
+                        <IconBrain size={14} strokeWidth={2} className="shrink-0" />
+                        <Label
+                          htmlFor="adhd-assist-composer"
+                          className="cursor-pointer text-xs font-medium whitespace-nowrap text-current"
+                        >
+                          Assistive mode
+                        </Label>
+                        <Switch
+                          id="adhd-assist-composer"
+                          checked={adhdAssist}
+                          onCheckedChange={(checked) => onAdhdAssistChange(Boolean(checked))}
+                          aria-label="Assistive mode"
+                          className="shrink-0"
+                        />
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-[220px]">
+                      <p>Formats AI responses for improved focus and readability.</p>
+                      <p className="mt-0.5 opacity-75">Useful for ADHD and assistive reading needs.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+
+              {/* Chat settings gear button */}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setSettingsOpen(true)}
+                className="h-7 w-7 p-0 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                aria-label="Chat settings"
+              >
+                <IconSettings size={14} stroke={2} />
+              </Button>
+            </div>
           </div>
 
           {/* Textarea + send row */}
@@ -203,7 +250,7 @@ export function ChatInput({
               <PromptInputTextarea
                 placeholder={selectedCourseLabel ? `Ask about ${selectedCourseLabel} materials…` : "Ask anything…"}
                 disabled={isLoading}
-                className="min-h-[44px] max-h-[120px] resize-none border-none bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 text-sm placeholder:text-muted-foreground/60 px-3.5 py-2.5"
+                className="min-h-[44px] max-h-[120px] resize-none border-none bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 text-sm text-foreground placeholder:text-muted-foreground/60 px-3.5 py-2.5"
               />
             </PromptInput>
 
@@ -244,6 +291,8 @@ export function ChatInput({
         isProviderConfigured={isProviderConfigured}
         onUpdateProvider={updateProviderSettings}
         onRemoveProvider={removeProviderSettings}
+        systemPrompt={systemPrompt}
+        onSystemPromptSave={onSystemPromptSave}
       />
     </>
   );

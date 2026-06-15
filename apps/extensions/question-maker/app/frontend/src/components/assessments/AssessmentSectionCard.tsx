@@ -155,8 +155,8 @@ export function AssessmentSectionCard({
                                                 <span
                                                     className={`rounded border px-1.5 py-0 text-[10px] font-medium capitalize ${
                                                         isDraft
-                                                            ? 'border-border bg-muted text-foreground'
-                                                            : 'border-border bg-muted text-foreground'
+                                                            ? 'border-warning-500/30 bg-warning-100 text-warning-700'
+                                                            : 'border-success-500/30 bg-success-100 text-success-700'
                                                     }`}
                                                 >
                                                     {isDraft ? 'Draft' : 'Reviewed'}

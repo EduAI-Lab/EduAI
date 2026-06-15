@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@eduai/ui";
 import { Input } from "@eduai/ui";
 import { Label } from "@eduai/ui";
@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from "@eduai/ui";
 import { Badge } from "@eduai/ui";
+import { Textarea } from "@eduai/ui";
 import {
   PageTabs,
   PageTabsList,
@@ -18,7 +19,14 @@ import {
   PageTabsContent,
 } from "@eduai/ui";
 import {
-  IconKey,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@eduai/ui";
+import {
+  IconSettings,
   IconEye,
   IconEyeOff,
   IconExternalLink,
@@ -39,6 +47,8 @@ export interface ApiKeySettingsProps {
     settings: { apiKey?: string; isEnabled: boolean }
   ) => void;
   onRemoveProvider: (provider: Provider) => void;
+  systemPrompt?: string | null;
+  onSystemPromptSave?: (p: string | null) => void;
 }
 
 export function ApiKeySettings({
@@ -48,9 +58,17 @@ export function ApiKeySettings({
   isProviderConfigured,
   onUpdateProvider,
   onRemoveProvider,
+  systemPrompt,
+  onSystemPromptSave,
 }: ApiKeySettingsProps) {
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
   const [tempKeys, setTempKeys] = useState<Record<string, string>>({});
+  const [prompt, setPrompt] = useState(systemPrompt || "");
+  const [activeProvider, setActiveProvider] = useState<Provider>("openai");
+
+  useEffect(() => {
+    setPrompt(systemPrompt || "");
+  }, [systemPrompt]);
 
   const handleSaveKey = (provider: Provider) => {
     const key = tempKeys[provider]?.trim();
@@ -74,6 +92,15 @@ export function ApiKeySettings({
     if (key.length <= 8)
       return key.substring(0, 2) + "•".repeat(Math.max(4, key.length - 2));
     return key.substring(0, 8) + "•".repeat(Math.max(0, key.length - 8));
+  };
+
+  const handleSystemPromptSave = () => {
+    onSystemPromptSave?.(prompt.trim() || null);
+  };
+
+  const handleSystemPromptClear = () => {
+    setPrompt("");
+    onSystemPromptSave?.(null);
   };
 
   const providers: Array<{
@@ -104,31 +131,101 @@ export function ApiKeySettings({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="rounded-[var(--radius-xl)] shadow-md">
+      <DialogContent className="max-h-[85vh] overflow-y-auto rounded-[var(--radius-xl)] shadow-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-primary-text">
-            <IconKey className="h-5 w-5 shrink-0" />
-            API key settings
+            <IconSettings className="h-5 w-5 shrink-0" />
+            Chat settings
           </DialogTitle>
           <DialogDescription>
-            Configure your own API keys to use your personal quotas and credits.
+            Customize your system prompt and configure API keys to use your personal quotas and credits.
           </DialogDescription>
         </DialogHeader>
 
-        <PageTabs defaultValue="openai" className="py-1">
+        <PageTabs defaultValue={onSystemPromptSave ? "prompt" : "keys"} className="py-1">
           <PageTabsList>
-            {providers.map((p) => (
-              <PageTabsTrigger key={p.id} value={p.id}>
-                {p.label}
-              </PageTabsTrigger>
-            ))}
+            {onSystemPromptSave && (
+              <PageTabsTrigger value="prompt">System prompt</PageTabsTrigger>
+            )}
+            <PageTabsTrigger value="keys">API keys</PageTabsTrigger>
           </PageTabsList>
 
-          {providers.map((p) => {
+          {onSystemPromptSave && (
+            <PageTabsContent value="prompt">
+              <div className="rounded-[var(--radius-md)] border border-border bg-card p-4 space-y-3">
+                <div>
+                  <Label
+                    htmlFor="system-prompt-edit"
+                    className="text-sm font-semibold text-foreground"
+                  >
+                    System prompt
+                  </Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Customize how the AI behaves in this chat.
+                  </p>
+                </div>
+                <Textarea
+                  id="system-prompt-edit"
+                  placeholder="Enter a custom system prompt (leave empty to use default)..."
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  className="min-h-[160px] font-mono text-sm rounded-[var(--radius-md)]"
+                />
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handleSystemPromptSave}
+                    className="flex-1 rounded-[var(--radius-base)]"
+                  >
+                    Save
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleSystemPromptClear}
+                    disabled={!prompt.trim()}
+                    className="flex-1 rounded-[var(--radius-base)]"
+                  >
+                    Clear
+                  </Button>
+                </div>
+              </div>
+            </PageTabsContent>
+          )}
+
+          <PageTabsContent value="keys" className="space-y-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-muted-foreground">
+                Provider
+              </Label>
+              <Select
+                value={activeProvider}
+                onValueChange={(value) => setActiveProvider(value as Provider)}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {providers.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+          {providers
+            .filter((p) => p.id === activeProvider)
+            .map((p) => {
             const configured = isProviderConfigured(p.id);
             return (
-              <PageTabsContent key={p.id} value={p.id}>
-                <section className="space-y-3 rounded-[var(--radius-md)] border border-border bg-card p-4">
+                <section
+                  key={p.id}
+                  className="space-y-3 rounded-[var(--radius-md)] border border-border bg-card p-4"
+                >
                   {/* Section header */}
                   <div className="flex items-center justify-between gap-2">
                     <div>
@@ -239,7 +336,6 @@ export function ApiKeySettings({
                     </a>
                   </p>
                 </section>
-              </PageTabsContent>
             );
           })}
 
@@ -273,6 +369,7 @@ export function ApiKeySettings({
               servers.
             </p>
           </div>
+          </PageTabsContent>
         </PageTabs>
 
         <DialogFooter>

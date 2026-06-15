@@ -80,7 +80,7 @@ export function StudentChatHistoryPanel({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="flex w-[340px] flex-col p-0 sm:w-[380px]">
+      <SheetContent side="right" className="flex w-[340px] flex-col gap-0 p-0 sm:w-[380px]" onCloseAutoFocus={(e) => e.preventDefault()}>
         <SheetHeader className="border-b border-border px-5 pb-3 pt-5">
           <SheetTitle className="text-[15px]">Chat history</SheetTitle>
           <SheetDescription className="text-[13px]">

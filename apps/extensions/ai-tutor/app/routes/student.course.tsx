@@ -9,7 +9,7 @@ import {
   BreadcrumbLink,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from '../components/ui/breadcrumb';
+} from '@eduai/ui';
 import type { Course, Module } from '../lib/types';
 import type { Route } from './+types/student.course';
 import api from '~/lib/api';

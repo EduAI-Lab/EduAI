@@ -115,7 +115,8 @@ router.get('/', authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, 
     const assessments = await getAssessmentsByUser(scopeUserId, {
       limit: parseInt(limit) || 50,
       offset: parseInt(offset) || 0,
-      courseId: scopeCourseId
+      courseId: scopeCourseId,
+      isAdmin: req.user.role === 'ADMIN'
     });
 
     res.json({

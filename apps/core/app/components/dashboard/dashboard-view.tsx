@@ -299,6 +299,7 @@ function RecentChatsPanel({
               messages={transcript?.messages ?? []}
               ownerName={selectedChat?.userName}
               courseCode={selectedChat?.courseCode}
+              continueChatId={transcript?.canEdit ? selectedChat?.id : undefined}
             />
           )}
         </DialogContent>

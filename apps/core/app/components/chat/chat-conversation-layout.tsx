@@ -26,10 +26,10 @@ export function ChatConversationLayout({
   messages,
   input,
   isLoading,
-  adhdAssist: _adhdAssist,
-  onAssistChange: _onAssistChange,
-  systemPrompt: _systemPrompt,
-  onSystemPromptSave: _onSystemPromptSave,
+  adhdAssist,
+  onAssistChange,
+  systemPrompt,
+  onSystemPromptSave,
   onInputChange,
   onSubmit,
   onStop,
@@ -85,6 +85,10 @@ export function ChatConversationLayout({
         chatModels={chatModels}
         selectedModelInfo={selectedModelInfo}
         showCourseSelector={showCourseSelector}
+        adhdAssist={adhdAssist}
+        onAdhdAssistChange={onAssistChange}
+        systemPrompt={systemPrompt}
+        onSystemPromptSave={onSystemPromptSave}
       />
     </div>
   );

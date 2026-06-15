@@ -1,5 +1,6 @@
 import type { NavItem, NavUser } from '~/lib/rbac/types'
 import { getQuestionMakerUrl } from '~/lib/extensions/question-maker'
+import { getAiTutorAppUrl } from '~/lib/extension-urls'
 
 const CORE_NAV: NavItem[] = [
   { key: 'dashboard', title: 'Dashboard', url: '/dashboard' },
@@ -14,26 +15,26 @@ const QM_NAV_ITEM: NavItem = {
   external: true,
 }
 
+const AI_TUTOR_NAV_ITEM: NavItem = {
+  key: 'ai-tutor',
+  title: 'AI Tutor',
+  url: getAiTutorAppUrl(),
+  external: true,
+}
+
 const QM_NAV_ROLES = new Set(['INSTRUCTOR', 'ADMIN', 'UNIT_ADMIN'])
 
 const ADMIN_NAV: NavItem[] = [
   { key: 'admin-users', title: 'User Management', url: '/admin/users' },
   { key: 'admin-ai', title: 'AI Management', url: '/admin/ai-models' },
   { key: 'admin-bugs', title: 'Bug Reports', url: '/admin/bug-reports' },
-]
-
-const SETTINGS_NAV: NavItem[] = [
-  { key: 'settings', title: 'Settings', url: '/settings' },
+  { key: 'admin-invites', title: 'Invitations', url: '/admin/invitations' },
 ]
 
 /** Main sidebar links per rbac-matrix §4, §10–13 shell rules. */
 export function getNavForUser(user: NavUser): NavItem[] {
   const role = user.role ?? 'STUDENT'
   const nav = [...CORE_NAV]
-
-  if (QM_NAV_ROLES.has(role)) {
-    nav.push(QM_NAV_ITEM)
-  }
 
   if (role === 'ADMIN') {
     return [...nav, ...ADMIN_NAV]
@@ -49,7 +50,16 @@ export function usesGlobalChat(user: NavUser): boolean {
   return role === 'ADMIN' || role === 'UNIT_ADMIN'
 }
 
-/** Secondary sidebar links (Settings — all roles §12). */
-export function getNavSecondaryForUser(_user: NavUser): NavItem[] {
-  return SETTINGS_NAV
+/** Secondary sidebar links (bottom of sidebar). */
+export function getNavSecondaryForUser(user: NavUser): NavItem[] {
+  const role = user.role ?? 'STUDENT'
+  const items: NavItem[] = []
+
+  if (QM_NAV_ROLES.has(role)) {
+    items.push(QM_NAV_ITEM)
+  }
+
+  items.push(AI_TUTOR_NAV_ITEM)
+
+  return items
 }

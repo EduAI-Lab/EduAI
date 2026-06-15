@@ -48,7 +48,7 @@ export type BugReport = {
 };
 
 export type SubmitBugReportInput = {
-  title: string;
+  /** Merged description to persist (title, if any, should be folded in by the caller). */
   description: string;
   isAnonymous?: boolean;
 };

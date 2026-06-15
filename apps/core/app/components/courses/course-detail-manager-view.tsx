@@ -262,8 +262,7 @@ export function CourseDetailManagerView({
 
   // B2: top-right hero badges
   const topRightBadges: string[] = [
-    ...(course.isActive ? ["Active"] : []),
-    "AI-enabled",
+    ...(course.isActive ? ["Active"] : [])
   ];
   const readyMaterials = materials.filter((m) => m.status === "READY").length;
   const studentCount = enrollments.filter((e) => e.role === "STUDENT").length;

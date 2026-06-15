@@ -1,7 +1,7 @@
 import type { Prisma, User } from "@prisma/client";
 import { UserRole } from "@prisma/client";
 import { randomUUID } from "crypto";
-import { streamText, tool } from "ai";
+import { createDataStreamResponse, formatDataStreamPart, streamText, tool } from "ai";
 import {
   createAIProviderRegistry,
   listEnabledRegistryProviders,
@@ -10,6 +10,13 @@ import {
 } from "~/lib/ai/providers";
 import { modelSupportsTools } from "~/lib/ai/providers.server";
 import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
+import {
+  auditAndMaybeRewrite,
+  buildOverseenAssistantMessagesToPersist,
+  emptyOversightAuditResult,
+  isAdhdOversightEnabled,
+} from "~/lib/ai/adhd-oversight";
+import { resolveAdhdResponseWordCap } from "~/lib/ai/adhd-metrics";
 import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
 import { findRelevantContent } from "~/lib/ai/embedding";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
@@ -160,6 +167,32 @@ function serializeMessage(message: GenericMessage): Prisma.JsonValue {
   } catch {
     return JSON.parse(JSON.stringify(message)) as Prisma.JsonValue;
   }
+}
+
+/**
+ * Pulls plain text out of AI-SDK `response.messages` (whose `content` is an
+ * array of typed parts) as a fallback for when the `onFinish`/awaited `text`
+ * field is empty. Keeps persisted assistant content as a string so chat history
+ * restore renders real markdown instead of a blank bubble or raw JSON.
+ */
+function extractAssistantText(messages: GenericMessage[] | undefined): string {
+  if (!messages?.length) return "";
+  const collectText = (content: unknown): string => {
+    if (typeof content === "string") return content;
+    if (Array.isArray(content)) {
+      return content
+        .filter((p): p is GenericMessage => !!p && typeof p === "object")
+        .filter((p) => p.type === "text" && typeof p.text === "string")
+        .map((p) => p.text as string)
+        .join("\n");
+    }
+    return "";
+  };
+  return messages
+    .filter((m) => m.role === "assistant")
+    .map((m) => collectText(m.content))
+    .filter((t) => t.length > 0)
+    .join("\n");
 }
 
 /**
@@ -650,7 +683,14 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    await appendMessages(normalizedIncomingMessages);
+    // Persist only client-authored turns (user messages). The assistant reply is
+    // owned by `onFinish`/the awaited path below, which stores it once under a
+    // server id. Clients resend their whole `useChat` transcript every turn, and
+    // their assistant copies carry client-generated ids that never match the
+    // server id — persisting those here is what duplicated history on restore.
+    await appendMessages(
+      normalizedIncomingMessages.filter((message) => message.role !== "assistant"),
+    );
 
     // Define tools for RAG functionality and external web search
     const tools = {
@@ -837,12 +877,24 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
     streamConfig.system = composeSystemPrompt(streamConfig.system ?? "", { adhdAssist: effectiveAdhdAssist });
 
     const streamStartedAt = Date.now();
+    const needsOversight = effectiveAdhdAssist && isAdhdOversightEnabled();
+    const lastUserText = extractMessageText(
+      [...trimmedMessages].reverse().find((message) => message.role === "user"),
+    );
+    const adhdWordCap = resolveAdhdResponseWordCap(lastUserText);
+
     const logResponseCompliance = (
       assistantText: string,
       extras?: {
         finishReason?: string | null;
         promptTokens?: number;
         completionTokens?: number;
+        oversightRewritten?: boolean;
+        oversightMethod?: "none" | "deterministic" | "llm" | "llm_failed";
+        preStructuralPass?: boolean;
+        oversightDurationMs?: number;
+        oversightPromptTokens?: number;
+        oversightCompletionTokens?: number;
       },
     ) => {
       const trimmed = assistantText?.trim();
@@ -854,10 +906,17 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
         assistantText: trimmed,
         extras: {
           model,
+          wordCap: adhdWordCap,
           durationMs: Date.now() - streamStartedAt,
           finishReason: extras?.finishReason ?? null,
           promptTokens: extras?.promptTokens,
           completionTokens: extras?.completionTokens,
+          oversightRewritten: extras?.oversightRewritten,
+          oversightMethod: extras?.oversightMethod,
+          preStructuralPass: extras?.preStructuralPass,
+          oversightDurationMs: extras?.oversightDurationMs,
+          oversightPromptTokens: extras?.oversightPromptTokens,
+          oversightCompletionTokens: extras?.oversightCompletionTokens,
         },
       }).catch((err) => {
         console.error("[assistive-events] response_compliance log failed", err);
@@ -868,33 +927,150 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
     chatApiDebug("Starting LLM stream", {
       model,
       approach: supportsTools ? "tool_calling" : "hybrid_rag",
+      adhdOversight: needsOversight,
       ...llmPromptSizeHints(streamConfig.system, modelMessages),
     });
     const result = await streamText({
       ...(streamConfig as Parameters<typeof streamText>[0]),
-      onFinish: async ({ text, usage, finishReason, response }) => {
-        logResponseCompliance(text, {
+      onFinish: needsOversight
+        ? undefined
+        : async ({ text, usage, finishReason, response }) => {
+            logResponseCompliance(text, {
+              finishReason,
+              promptTokens: usage?.promptTokens,
+              completionTokens: usage?.completionTokens,
+            });
+            // For streaming responses, persist here. Non-streaming path calls
+            // consumeStream() which also triggers onFinish, so we skip here to
+            // avoid saving the assistant message twice with different UUIDs.
+            if (!streaming) return;
+            const assistantText = text || extractAssistantText(response?.messages);
+            if (assistantText) {
+              await appendMessages([
+                { id: randomUUID(), role: "assistant", content: assistantText },
+              ]).catch((err) => {
+                console.error("[chat-api] failed to persist streaming assistant message", err);
+              });
+            }
+          },
+    });
+
+    if (needsOversight) {
+      let draft = "";
+      let finalText = "";
+      let usage: Awaited<typeof result.usage> | undefined;
+      let finishReason: Awaited<typeof result.finishReason> | undefined;
+      let sources: Awaited<typeof result.sources> | undefined;
+      let reasoning: Awaited<typeof result.reasoning> | undefined;
+      let response: Awaited<typeof result.response> | undefined;
+
+      try {
+        await result.consumeStream();
+
+        const consumed = await Promise.all([
+          result.text,
+          result.usage,
+          result.finishReason,
+          result.sources,
+          result.reasoning,
+          result.response,
+        ]);
+        const text = consumed[0];
+        usage = consumed[1];
+        finishReason = consumed[2];
+        sources = consumed[3];
+        reasoning = consumed[4];
+        response = consumed[5];
+
+        draft = (text ?? "").trim();
+        const audited = draft
+          ? await auditAndMaybeRewrite({
+              draft,
+              model: aiModel,
+              wordCap: adhdWordCap,
+            })
+          : emptyOversightAuditResult();
+
+        finalText = audited.text || draft;
+        logResponseCompliance(finalText, {
           finishReason,
           promptTokens: usage?.promptTokens,
           completionTokens: usage?.completionTokens,
+          oversightRewritten: audited.rewritten,
+          oversightMethod: audited.method,
+          preStructuralPass: audited.beforeMetrics.structuralPass,
+          oversightDurationMs: audited.oversightDurationMs,
+          oversightPromptTokens: audited.oversightUsage?.promptTokens,
+          oversightCompletionTokens: audited.oversightUsage?.completionTokens,
         });
-        // Persist the assistant response so chat history is complete.
-        if (response?.messages?.length) {
-          const assistantMessages = (response.messages as GenericMessage[]).filter(
-            (m) => m.role === "assistant",
-          );
-          await appendMessages(assistantMessages).catch((err) => {
-            console.error("[chat-api] failed to persist streaming assistant message", err);
-          });
-        } else if (text) {
-          await appendMessages([
-            { id: randomUUID(), role: "assistant", content: text },
-          ]).catch((err) => {
-            console.error("[chat-api] failed to persist streaming assistant message", err);
+
+        const persistOverseenAssistantMessages = async (text: string) => {
+          const toPersist = buildOverseenAssistantMessagesToPersist(response?.messages, text);
+          if (toPersist.length > 0) {
+            await appendMessages(toPersist);
+          }
+        };
+
+        if (streaming) {
+          const headers: Record<string, string> = {
+            "Content-Encoding": "none",
+            "Transfer-Encoding": "chunked",
+            Connection: "keep-alive",
+          };
+          if (chat?.id) {
+            headers["X-Chat-Id"] = chat.id;
+          }
+
+          await persistOverseenAssistantMessages(finalText);
+
+          return createDataStreamResponse({
+            headers,
+            execute: (dataStream) => {
+              if (finalText) {
+                dataStream.write(formatDataStreamPart("text", finalText));
+              }
+              dataStream.write(
+                formatDataStreamPart("finish_message", {
+                  finishReason: finishReason ?? "stop",
+                }),
+              );
+            },
           });
         }
-      },
-    });
+
+        await persistOverseenAssistantMessages(finalText);
+
+        return new Response(
+          JSON.stringify({
+            content: finalText,
+            model,
+            usage,
+            finishReason,
+            sources: sources || [],
+            reasoning,
+            responseId: response?.id,
+            courseCode,
+            chatId: chat?.id,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      } catch (error) {
+        console.error("Error in ADHD oversight response:", error);
+        return new Response(
+          JSON.stringify({
+            error: "Failed to generate overseen response",
+            details: error instanceof Error ? error.message : "Unknown error",
+          }),
+          {
+            status: 500,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+    }
 
     if (streaming) {
       const headers: Record<string, string> = {
@@ -919,15 +1095,13 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
           result.response,
         ]);
 
-        if (response?.messages?.length) {
-          const assistantMessages = response.messages.filter((message) => message.role === "assistant");
-          await appendMessages(assistantMessages);
-        } else if (text) {
+        const assistantText = text || extractAssistantText(response?.messages);
+        if (assistantText) {
           await appendMessages([
             {
               id: randomUUID(),
               role: "assistant",
-              content: text,
+              content: assistantText,
             },
           ]);
         }

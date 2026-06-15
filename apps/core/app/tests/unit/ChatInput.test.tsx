@@ -4,7 +4,7 @@ import { ChatInput } from "~/components/chat/chat-input";
 
 vi.mock("~/components/chat/api-key-settings", () => ({
   ApiKeySettings: ({ open }: { open: boolean }) =>
-    open ? <div data-testid="api-key-settings">API Key Settings</div> : null,
+    open ? <div data-testid="api-key-settings">Chat Settings</div> : null,
 }));
 
 vi.mock("~/hooks/use-api-keys", () => ({
@@ -51,7 +51,7 @@ describe("ChatInput — rendering", () => {
 
   it("renders the settings gear button", () => {
     render(<ChatInput {...makeProps()} />);
-    expect(screen.getByRole("button", { name: /api key settings/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /chat settings/i })).toBeInTheDocument();
   });
 });
 
@@ -60,9 +60,9 @@ describe("ChatInput — rendering", () => {
 // ---------------------------------------------------------------------------
 
 describe("ChatInput — settings button", () => {
-  it("opens API key settings when the settings gear button is clicked", () => {
+  it("opens chat settings when the settings gear button is clicked", () => {
     render(<ChatInput {...makeProps()} />);
-    fireEvent.click(screen.getByRole("button", { name: /api key settings/i }));
+    fireEvent.click(screen.getByRole("button", { name: /chat settings/i }));
     expect(screen.getByTestId("api-key-settings")).toBeInTheDocument();
   });
 });

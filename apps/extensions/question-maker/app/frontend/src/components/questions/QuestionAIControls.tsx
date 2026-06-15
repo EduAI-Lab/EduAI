@@ -93,7 +93,7 @@ export function QuestionAIControls({
                             : 'e.g., Time complexity of quicksort'
                     }
                     disabled={disabled}
-                    className="bg-secondary border-border resize-none text-sm min-h-16"
+                    className="resize-none text-sm min-h-16"
                     rows={3}
                 />
             </div>
@@ -117,7 +117,7 @@ export function QuestionAIControls({
                                 type="text"
                                 value={`${providerApiKey.substring(0, 8)}${'•'.repeat(Math.max(0, providerApiKey.length - 8))}`}
                                 disabled
-                                className="h-9 text-xs flex-1 bg-secondary border-border"
+                                className="h-9 text-xs flex-1"
                             />
                             <Button
                                 type="button"
@@ -137,7 +137,7 @@ export function QuestionAIControls({
                             type="password"
                             placeholder={`Enter your ${providerName.toUpperCase()} API key`}
                             value={providerApiKey}
-                            className="h-9 text-xs bg-secondary border-border"
+                            className="h-9 text-xs"
                             onChange={(e) => onProviderApiKeyChange(e.target.value)}
                         />
                     )}

@@ -1285,7 +1285,7 @@ export const AddQuestionDialog = ({
                             checked={markAsReviewed}
                             onChange={(e) => setMarkAsReviewed(e.target.checked)}
                             disabled={isSubmitting}
-                            className="h-4 w-4 rounded border-border"
+                            className="h-4 w-4 rounded border-border bg-background ring-ring cursor-pointer accent-accent"
                         />
                         <label
                             htmlFor="mark-as-reviewed"

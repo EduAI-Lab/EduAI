@@ -48,15 +48,16 @@ type QuestionEntry = {
 };
 
 const getAssessmentTypeColor = (type: string) => {
+    // Uses semantic color tokens via CSS variables for dark+light mode support
     switch (type) {
         case 'Lab':
             return 'bg-secondary/15 text-secondary';
         case 'Midterm':
-            return 'bg-orange-100 text-orange-800';
+            return 'bg-warning-100 text-warning-700';
         case 'Quiz':
-            return 'bg-green-100 text-green-800';
+            return 'bg-success-100 text-success-700';
         case 'Final':
-            return 'bg-red-100 text-red-800';
+            return 'bg-error-100 text-error-700';
         default:
             return 'bg-muted text-foreground';
     }
@@ -316,7 +317,7 @@ export const AssessmentSection = ({
                                             {hasDrafts && (
                                                 <Badge
                                                     variant="default"
-                                                    className="bg-amber-100 text-amber-800 hover:bg-amber-200 border-amber-300 flex items-center gap-1"
+                                                    className="flex items-center gap-1 border-warning-500/30 bg-warning-100 text-warning-700"
                                                 >
                                                     <AlertTriangle className="h-3 w-3" />
                                                     Contains Draft questions

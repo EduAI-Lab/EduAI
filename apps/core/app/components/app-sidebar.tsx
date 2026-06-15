@@ -3,11 +3,12 @@ import {
   IconBooks,
   IconBrain,
   IconDashboard,
-  IconExternalLink,
   IconListCheck,
+  IconMessageChatbot,
   IconReport,
   IconRobot,
   IconSettings,
+  IconMail,
   IconUsers,
   type Icon,
 } from "@tabler/icons-react"
@@ -23,15 +24,12 @@ import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@eduai/ui"
 import type { User } from "~/lib/auth/types"
-import { getAiTutorAppUrl } from "~/lib/extension-urls"
 import {
   getNavForUser,
   getNavSecondaryForUser,
@@ -46,7 +44,9 @@ const NAV_ICONS: Record<NavItemKey, Icon> = {
   "admin-users": IconUsers,
   "admin-ai": IconBrain,
   "admin-bugs": IconReport,
+  "admin-invites": IconMail,
   settings: IconSettings,
+  "ai-tutor": IconMessageChatbot,
 }
 
 function toNavMainItems(items: ReturnType<typeof getNavForUser>): NavMainItem[] {
@@ -65,6 +65,7 @@ function toNavSecondaryItems(
     title: item.title,
     url: item.url,
     icon: NAV_ICONS[item.key],
+    external: item.external,
   }))
 }
 
@@ -126,24 +127,6 @@ export function AppSidebar({
         <NavMain items={navMain} />
         {showDocuments && <NavDocuments items={documents} />}
         <NavSecondary items={navSecondary} className="mt-auto" />
-        <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild>
-                  <a
-                    href={getAiTutorAppUrl()}
-                    className="flex items-center gap-[10px] w-full px-[14px] py-[9px] rounded-[7px] text-[13.5px] outline-none select-none"
-                    style={{ color: "rgba(255,255,255,0.82)", paddingLeft: "16px" }}
-                  >
-                    <IconExternalLink size={16} strokeWidth={1.75} />
-                    <span className="flex-1">AI Tutor</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
         <NavUser user={user} />
