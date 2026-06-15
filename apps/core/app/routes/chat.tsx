@@ -198,6 +198,11 @@ export default function Chat() {
   const { messages, input, handleInputChange, handleSubmit, isLoading, stop, setMessages } =
     useChat({
       api: "/api/chat",
+      // Persist stable client message ids to the server. Without this, AI SDK v4
+      // strips `id` from the request body, so the server stamps a fresh UUID for
+      // every user message on every turn — defeating the (chatId, messageId)
+      // dedup and re-saving the entire user history each turn (chat-history dup bug).
+      sendExtraMessageFields: true,
       body: {
         model: selectedModel,
         apiKeys: getValidApiKeys(),
