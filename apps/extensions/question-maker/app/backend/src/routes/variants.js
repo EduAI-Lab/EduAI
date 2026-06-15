@@ -28,7 +28,6 @@ import { logger } from '../utils/logger.js';
 
 const router = express.Router();
 
-const QM_AUTHORIZED_ROLES = QM_AUTHORIZED;
 
 /** Coerce a raw isDraft value to a strict boolean, or undefined when absent. */
 function parseIsDraft(raw) {
@@ -41,7 +40,7 @@ function parseIsDraft(raw) {
 router.post(
   '/:id/variants',
   authenticateToken,
-  requireRole(QM_AUTHORIZED_ROLES),
+  requireRole(QM_AUTHORIZED),
   requireQuestionAccess({ min: 'ta' }),
   async (req, res, next) => {
     try {
@@ -87,7 +86,7 @@ router.post(
 router.get(
   '/:id/variants',
   authenticateToken,
-  requireRole(QM_AUTHORIZED_ROLES),
+  requireRole(QM_AUTHORIZED),
   requireQuestionAccess({ min: 'ta' }),
   async (req, res, next) => {
     try {
@@ -107,7 +106,7 @@ router.get(
 router.put(
   '/variants/:variantId',
   authenticateToken,
-  requireRole(QM_AUTHORIZED_ROLES),
+  requireRole(QM_AUTHORIZED),
   requireVariantAccess({ min: 'ta' }),
   async (req, res, next) => {
     try {
@@ -190,7 +189,7 @@ router.put(
 router.patch(
   '/variants/:variantId/testable',
   authenticateToken,
-  requireRole(QM_AUTHORIZED_ROLES),
+  requireRole(QM_AUTHORIZED),
   requireVariantAccess({ min: 'instructor' }),
   async (req, res, next) => {
     try {
@@ -224,7 +223,7 @@ router.patch(
 router.delete(
   '/variants/:variantId',
   authenticateToken,
-  requireRole(QM_AUTHORIZED_ROLES),
+  requireRole(QM_AUTHORIZED),
   requireVariantAccess({ min: 'ta' }),
   async (req, res, next) => {
     try {
