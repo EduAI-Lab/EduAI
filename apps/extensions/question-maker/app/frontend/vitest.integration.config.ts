@@ -18,6 +18,7 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         '@': path.resolve(frontendDir, './src'),
+        '@eduai/ui': path.resolve(frontendDir, '../../../../../packages/ui/src/index.ts'),
       },
       dedupe: ['react', 'react-dom'],
     },
