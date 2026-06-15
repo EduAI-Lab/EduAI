@@ -74,3 +74,28 @@ export type LinkRosterResponse = {
   studentId: string;
   enrollmentsLinked: number;
 };
+
+export const SyncCanvasMaterialsSchema = z.object({
+  canvasFileIds: z.array(z.coerce.string().min(1)).min(1, "Select at least one file"),
+});
+
+export type SyncCanvasMaterialsInput = z.infer<typeof SyncCanvasMaterialsSchema>;
+
+export type CanvasMaterialImportStatus = "not_imported" | "imported" | "updated_on_canvas";
+
+export type CanvasMaterialDiscoverItem = {
+  canvasFileId: string;
+  displayName: string;
+  mimeType: string;
+  sizeBytes: number;
+  canvasUpdatedAt: string;
+  importStatus: CanvasMaterialImportStatus;
+  coreMaterialId: string | null;
+};
+
+export type SyncCanvasMaterialsResult = {
+  imported: number;
+  updated: number;
+  skipped: number;
+  failed: Array<{ canvasFileId: string; message: string }>;
+};

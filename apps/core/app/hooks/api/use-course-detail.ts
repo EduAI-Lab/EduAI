@@ -4,6 +4,8 @@ import type { Course } from './use-courses'
 
 export interface CourseDetail extends Course {
   instructor?: { id: string; name: string; email: string }
+  externalSource?: string | null
+  externalId?: string | null
   tas?: Array<{ id: string; userId: string; user: { id: string; name: string; email: string } }>
 }
 

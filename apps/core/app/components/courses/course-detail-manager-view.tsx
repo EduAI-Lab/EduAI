@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { IconTrash, IconPlus, IconUsers, IconCalendar, IconUserCheck, IconArrowsExchange, IconUserPlus } from '@tabler/icons-react'
+import { Download } from 'lucide-react'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { Badge } from '~/components/ui/badge'
@@ -17,6 +18,7 @@ import {
   CourseMaterialsUpload,
   type CourseMaterial,
 } from '~/components/course-materials-upload'
+import { CanvasMaterialSyncDialog } from '~/components/canvas/CanvasMaterialSyncDialog'
 import type { CourseDetail } from '~/hooks/api/use-course-detail'
 import type { CourseTopic } from '~/hooks/api/use-course-topics'
 import type { CourseEnrollment } from '~/hooks/api/use-course-enrollments'
@@ -51,6 +53,8 @@ interface Props {
   onAddTA: (userId: string) => Promise<void>
   onRemoveTA: (userId: string) => Promise<void>
   courseId?: string
+  showCanvasMaterialSync?: boolean
+  onMaterialsRefresh?: () => void
 }
 
 export function CourseDetailManagerView({
@@ -74,8 +78,11 @@ export function CourseDetailManagerView({
   onAddTA,
   onRemoveTA,
   courseId,
+  showCanvasMaterialSync = false,
+  onMaterialsRefresh,
 }: Props) {
   const [newTopic, setNewTopic] = useState('')
+  const [canvasSyncOpen, setCanvasSyncOpen] = useState(false)
   const [staffError, setStaffError] = useState<string | null>(null)
   const [staffSuccess, setStaffSuccess] = useState<string | null>(null)
   const [selectedInstructorId, setSelectedInstructorId] = useState<string>('')
@@ -198,6 +205,20 @@ export function CourseDetailManagerView({
         </TabsContent>
 
         <TabsContent value="materials" forceMount className="data-[state=inactive]:hidden flex-1 outline-none">
+          {showCanvasMaterialSync && courseId && (
+            <div className="mb-4">
+              <Button variant="outline" onClick={() => setCanvasSyncOpen(true)}>
+                <Download className="h-4 w-4 mr-2" />
+                Sync from Canvas
+              </Button>
+              <CanvasMaterialSyncDialog
+                courseId={courseId}
+                open={canvasSyncOpen}
+                onOpenChange={setCanvasSyncOpen}
+                onSynced={onMaterialsRefresh}
+              />
+            </div>
+          )}
           <CourseMaterialsUpload
             materials={materials}
             isUploading={isUploading}
@@ -205,6 +226,7 @@ export function CourseDetailManagerView({
             success={materialsSuccess}
             onFileSelect={onFileSelect}
             courseId={courseId}
+            onMaterialsRefresh={onMaterialsRefresh}
           />
         </TabsContent>
 
