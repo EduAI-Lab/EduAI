@@ -63,4 +63,5 @@ export default [
     "routes/api/admin.bug-reports.ts",
     { id: "routes/api/admin.bug-reports:id" },
   ),
+  route("/api/e2e/promote", "routes/api/e2e.promote.ts"),
 ] satisfies RouteConfig;
