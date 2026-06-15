@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { DepartmentSchema } from "~/lib/departments";
+import { UnitSchema } from "~/lib/units";
 
 /**
  * Schema for creating a new course
@@ -15,7 +15,7 @@ export const CreateCourseSchema = z.object({
   startDate: z.coerce.date(),
   endDate: z.coerce.date().optional(),
   // §19: department is required and must be a canonical subject code
-  department: DepartmentSchema,
+  department: UnitSchema,
   description: z.string().optional(),
   isPublished: z.coerce.boolean().optional().default(false),
   aiInstructions: z.string().optional().default(""),
@@ -30,7 +30,7 @@ export const UpdateCourseSchema = z.object({
   year: z.number().int().optional(),
   startDate: z.coerce.date().optional(),
   endDate: z.coerce.date().optional().nullable(),
-  department: DepartmentSchema.optional().nullable(),
+  department: UnitSchema.optional().nullable(),
   description: z.string().optional().nullable(),
   isPublished: z.coerce.boolean().optional(),
   isActive: z.coerce.boolean().optional(),
