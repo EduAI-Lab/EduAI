@@ -10,13 +10,28 @@ import { useEffect, useState } from 'react';
 import { useTheme } from 'next-themes';
 import {
   IconBooks,
+  IconChevronDown,
   IconExternalLink,
   IconLogout,
   IconMoon,
   IconSettings,
   IconSun,
 } from '@tabler/icons-react';
-import { Avatar, Button, RoleBadge, Separator, Tooltip, TooltipContent, TooltipTrigger } from '@eduai/ui';
+import {
+  Avatar,
+  Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  RoleBadge,
+  Separator,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@eduai/ui';
 
 import { useLocalUser } from '../hooks/useLocalUser';
 import { api } from '../lib/api';
@@ -24,6 +39,41 @@ import { getEduAiAppUrl } from '../lib/extension-urls';
 import TourButton from './TourButton';
 import { BugReportDialog } from './bug-report/BugReportDialog';
 import { useBugReport } from './bug-report/useBugReport';
+
+function EduAiConnectionDot({
+  status,
+}: {
+  status: 'loading' | 'connected' | 'disconnected';
+}) {
+  const label =
+    status === 'loading'
+      ? 'Checking EduAI connection…'
+      : status === 'connected'
+        ? 'EduAI is connected'
+        : 'EduAI is not connected';
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md"
+          aria-label={label}
+        >
+          <span
+            className={`h-2 w-2 rounded-full ${
+              status === 'loading'
+                ? 'animate-pulse bg-muted-foreground'
+                : status === 'connected'
+                  ? 'bg-[var(--color-success-500)]'
+                  : 'bg-[var(--color-error-500)]'
+            }`}
+          />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  );
+}
 
 export default function Nav() {
   const [eduAiStatus, setEduAiStatus] = useState<'loading' | 'connected' | 'disconnected'>(
@@ -85,7 +135,7 @@ export default function Nav() {
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background">
-      <div className="container mx-auto flex h-[var(--header-height)] items-center justify-between gap-4 px-4 lg:px-6">
+      <div className="container mx-auto flex h-[var(--header-height)] items-center justify-between gap-6 px-4 lg:px-6">
         <div className="flex min-w-0 items-center gap-3">
           <Link to="/" className="flex shrink-0 items-center gap-2.5">
             <div
@@ -147,92 +197,98 @@ export default function Nav() {
         </div>
 
         {user && (
-          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-            <Button variant="outline" size="sm" asChild className="hidden md:inline-flex">
-              <a href={eduAiUrl} aria-label="Open EduAI Core">
-                <IconExternalLink className="h-4 w-4" />
-                <span className="hidden lg:inline">EduAI Core</span>
-              </a>
-            </Button>
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div
-                  className={`hidden items-center gap-1.5 rounded-full px-2 py-1 text-xs font-medium sm:flex ${
-                    eduAiStatus === 'loading'
-                      ? 'bg-muted text-muted-foreground'
-                      : eduAiStatus === 'connected'
-                        ? 'bg-[var(--color-success-100)] text-[var(--color-success-700)]'
-                        : 'bg-[var(--color-error-100)] text-[var(--color-error-700)]'
-                  }`}
-                >
-                  <span
-                    className={`h-1.5 w-1.5 rounded-full ${
-                      eduAiStatus === 'loading'
-                        ? 'animate-pulse bg-muted-foreground'
-                        : eduAiStatus === 'connected'
-                          ? 'bg-[var(--color-success-500)]'
-                          : 'bg-[var(--color-error-500)]'
-                    }`}
-                  />
-                  EduAI
-                </div>
-              </TooltipTrigger>
-              <TooltipContent>
-                {eduAiStatus === 'loading'
-                  ? 'Checking EduAI connection…'
-                  : eduAiStatus === 'connected'
-                    ? 'EduAI is connected'
-                    : 'EduAI is not connected'}
-              </TooltipContent>
-            </Tooltip>
-
-            <div className="hidden items-center gap-2 md:flex">
-              <Avatar name={user.name ?? 'User'} size={32} />
-              <div className="flex flex-col">
-                <span className="max-w-[120px] truncate text-sm font-medium leading-tight">
-                  {user.name}
-                </span>
-                <RoleBadge role={user.role} className="mt-0.5 w-fit" />
-              </div>
+          <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
+            {/* Cross-app link + connection status */}
+            <div className="flex items-center gap-1 rounded-lg border border-border/60 bg-muted/30 px-1 py-0.5">
+              <Button variant="ghost" size="sm" asChild className="h-8 shadow-none">
+                <a href={eduAiUrl} aria-label="Open EduAI Core">
+                  <IconExternalLink className="h-4 w-4" />
+                  <span className="hidden lg:inline">EduAI Core</span>
+                </a>
+              </Button>
+              <Separator orientation="vertical" className="h-4" />
+              <EduAiConnectionDot status={eduAiStatus} />
             </div>
 
             {canReportBug && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={handleOpenBugReport}
-                disabled={capturingScreenshot}
-              >
-                {capturingScreenshot ? 'Preparing…' : 'Report Bug'}
-              </Button>
+              <>
+                <Separator orientation="vertical" className="hidden h-5 sm:block" />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleOpenBugReport}
+                  disabled={capturingScreenshot}
+                  className="hidden sm:inline-flex"
+                >
+                  {capturingScreenshot ? 'Preparing…' : 'Report Bug'}
+                </Button>
+              </>
             )}
 
-            <button
-              type="button"
-              onClick={toggleTheme}
-              aria-label={resolvedTheme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-              className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {resolvedTheme === 'dark' ? (
-                <IconSun size={18} aria-hidden="true" />
-              ) : (
-                <IconMoon size={18} aria-hidden="true" />
-              )}
-            </button>
+            <Separator orientation="vertical" className="hidden h-5 sm:block" />
 
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={handleLogout}
-              aria-label="Sign out"
-              className="text-muted-foreground hover:text-destructive"
-            >
-              <IconLogout className="h-4 w-4" />
-              <span className="hidden sm:inline">Sign out</span>
-            </Button>
+            {/* Account menu — theme + sign out live here to reduce header clutter */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  aria-label="Account menu"
+                  className="flex min-h-[44px] items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <Avatar name={user.name ?? 'User'} size={32} />
+                  <span className="hidden max-w-[7rem] truncate text-sm font-medium text-foreground xl:inline">
+                    {user.name}
+                  </span>
+                  <IconChevronDown
+                    className="hidden h-3.5 w-3.5 text-muted-foreground xl:block"
+                    aria-hidden
+                  />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel className="p-0 font-normal">
+                  <div className="flex items-center gap-3 px-3 py-2.5">
+                    <Avatar name={user.name ?? 'User'} size={32} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{user.name}</p>
+                      <div className="mt-1">
+                        <RoleBadge role={user.role} />
+                      </div>
+                    </div>
+                  </div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {canReportBug && (
+                  <>
+                    <DropdownMenuItem
+                      className="sm:hidden"
+                      disabled={capturingScreenshot}
+                      onSelect={() => void handleOpenBugReport()}
+                    >
+                      {capturingScreenshot ? 'Preparing…' : 'Report Bug'}
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator className="sm:hidden" />
+                  </>
+                )}
+                <DropdownMenuItem onSelect={toggleTheme}>
+                  {resolvedTheme === 'dark' ? (
+                    <IconSun className="h-4 w-4" />
+                  ) : (
+                    <IconMoon className="h-4 w-4" />
+                  )}
+                  {resolvedTheme === 'dark' ? 'Light mode' : 'Dark mode'}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  variant="destructive"
+                  onSelect={() => void handleLogout()}
+                >
+                  <IconLogout className="h-4 w-4" />
+                  Sign out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         )}
       </div>

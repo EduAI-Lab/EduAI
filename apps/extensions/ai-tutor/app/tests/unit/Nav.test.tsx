@@ -91,8 +91,6 @@ describe('Nav', () => {
   it('shows theme toggle for authenticated users', async () => {
     await renderNav('/student', { id: 'u1', name: 'Student', role: 'STUDENT' });
 
-    expect(
-      screen.getByRole('button', { name: /Switch to (light|dark) mode/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Account menu' })).toBeInTheDocument();
   });
 });
