@@ -163,6 +163,32 @@ function serializeMessage(message: GenericMessage): Prisma.JsonValue {
 }
 
 /**
+ * Pulls plain text out of AI-SDK `response.messages` (whose `content` is an
+ * array of typed parts) as a fallback for when the `onFinish`/awaited `text`
+ * field is empty. Keeps persisted assistant content as a string so chat history
+ * restore renders real markdown instead of a blank bubble or raw JSON.
+ */
+function extractAssistantText(messages: GenericMessage[] | undefined): string {
+  if (!messages?.length) return "";
+  const collectText = (content: unknown): string => {
+    if (typeof content === "string") return content;
+    if (Array.isArray(content)) {
+      return content
+        .filter((p): p is GenericMessage => !!p && typeof p === "object")
+        .filter((p) => p.type === "text" && typeof p.text === "string")
+        .map((p) => p.text as string)
+        .join("\n");
+    }
+    return "";
+  };
+  return messages
+    .filter((m) => m.role === "assistant")
+    .map((m) => collectText(m.content))
+    .filter((t) => t.length > 0)
+    .join("\n");
+}
+
+/**
  * Maps an external `(provider, id)` pair to an EduAI user, creating the user +
  * `ExternalUser` record when needed. The canonical EduAI email stays unchanged;
  * we only update the mapping's email for reference.
@@ -650,7 +676,14 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    await appendMessages(normalizedIncomingMessages);
+    // Persist only client-authored turns (user messages). The assistant reply is
+    // owned by `onFinish`/the awaited path below, which stores it once under a
+    // server id. Clients resend their whole `useChat` transcript every turn, and
+    // their assistant copies carry client-generated ids that never match the
+    // server id — persisting those here is what duplicated history on restore.
+    await appendMessages(
+      normalizedIncomingMessages.filter((message) => message.role !== "assistant"),
+    );
 
     // Define tools for RAG functionality and external web search
     const tools = {
@@ -878,17 +911,14 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
           promptTokens: usage?.promptTokens,
           completionTokens: usage?.completionTokens,
         });
-        // Persist the assistant response so chat history is complete.
-        if (response?.messages?.length) {
-          const assistantMessages = (response.messages as GenericMessage[]).filter(
-            (m) => m.role === "assistant",
-          );
-          await appendMessages(assistantMessages).catch((err) => {
-            console.error("[chat-api] failed to persist streaming assistant message", err);
-          });
-        } else if (text) {
+        // For streaming responses, persist here. Non-streaming path calls
+        // consumeStream() which also triggers onFinish, so we skip here to
+        // avoid saving the assistant message twice with different UUIDs.
+        if (!streaming) return;
+        const assistantText = text || extractAssistantText(response?.messages);
+        if (assistantText) {
           await appendMessages([
-            { id: randomUUID(), role: "assistant", content: text },
+            { id: randomUUID(), role: "assistant", content: assistantText },
           ]).catch((err) => {
             console.error("[chat-api] failed to persist streaming assistant message", err);
           });
@@ -919,15 +949,13 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
           result.response,
         ]);
 
-        if (response?.messages?.length) {
-          const assistantMessages = response.messages.filter((message) => message.role === "assistant");
-          await appendMessages(assistantMessages);
-        } else if (text) {
+        const assistantText = text || extractAssistantText(response?.messages);
+        if (assistantText) {
           await appendMessages([
             {
               id: randomUUID(),
               role: "assistant",
-              content: text,
+              content: assistantText,
             },
           ]);
         }
