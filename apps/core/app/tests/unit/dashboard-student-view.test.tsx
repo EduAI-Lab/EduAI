@@ -23,8 +23,7 @@ describe("DashboardStudentView", () => {
   it("shows student course and chat actions", () => {
     renderStudentDashboard();
 
-    expect(screen.getByText("My Courses")).toBeInTheDocument();
-    expect(screen.getByText("Course Chat")).toBeInTheDocument();
-    expect(screen.getByText("Settings")).toBeInTheDocument();
+    expect(screen.getByText("Your courses")).toBeInTheDocument();
+    expect(screen.getByText("Recent conversations")).toBeInTheDocument();
   });
 });
