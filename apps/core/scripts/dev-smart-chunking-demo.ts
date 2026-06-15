@@ -106,7 +106,11 @@ async function seedMaterial(courseId: string) {
       where: { id: existing.id },
       data: { status: "READY", processedAt: new Date() },
     });
-    return { materialId: existing.id, chunkCount: overlapped.length };
+    const dbChunkCount = await prisma.materialChunk.count({ where: { materialId: existing.id } });
+    if (dbChunkCount === 0) {
+      throw new Error(`Embedding completed but material ${existing.id} has 0 chunks in the database`);
+    }
+    return { materialId: existing.id, chunkCount: dbChunkCount };
   }
 
   const material = await prisma.courseMaterial.create({
@@ -125,7 +129,13 @@ async function seedMaterial(courseId: string) {
     where: { id: material.id },
     data: { status: "READY", processedAt: new Date() },
   });
-  return { materialId: material.id, chunkCount: overlapped.length };
+
+  const dbChunkCount = await prisma.materialChunk.count({ where: { materialId: material.id } });
+  if (dbChunkCount === 0) {
+    throw new Error(`Embedding completed but material ${material.id} has 0 chunks in the database`);
+  }
+
+  return { materialId: material.id, chunkCount: dbChunkCount };
 }
 
 async function main() {

@@ -102,9 +102,11 @@ export default function Chat() {
   const { chatModels, user, assistDefault, lastCourseCode } = useLoaderData<typeof loader>();
   const isGlobalChat = usesGlobalChat(user);
   const { courses } = useCourses();
-  const availableCourses: ChatCourseOption[] = isGlobalChat
-    ? []
-    : courses.map((c) => ({ id: c.id, name: c.name, code: c.code }));
+  const availableCourses: ChatCourseOption[] = courses.map((c) => ({
+    id: c.id,
+    name: c.name,
+    code: c.code,
+  }));
   const [selectedModel, setSelectedModel] = useState(
     chatModels.length > 0 ? chatModels[0].id : "",
   );
@@ -136,10 +138,6 @@ export default function Chat() {
   }, [setSelectedCourseCode, persistPreference]);
 
   useEffect(() => {
-    if (isGlobalChat) setSelectedCourseCode(null);
-  }, [isGlobalChat]);
-
-  useEffect(() => {
     if (!chatId || systemPrompt) {
       return;
     }
@@ -163,7 +161,7 @@ export default function Chat() {
       body: {
         model: selectedModel,
         apiKeys: getValidApiKeys(),
-        courseCode: isGlobalChat ? undefined : selectedCourseCode || undefined,
+        courseCode: selectedCourseCode || undefined,
         chatId: chatId || undefined,
         systemPrompt: systemPrompt || undefined,
         adhdAssist,
@@ -193,7 +191,7 @@ export default function Chat() {
           messages: messages.length > 0 ? messages : [],
           model: selectedModel,
           apiKeys: getValidApiKeys(),
-          courseCode: isGlobalChat ? undefined : selectedCourseCode || undefined,
+          courseCode: selectedCourseCode || undefined,
           adhdAssist,
           streaming: false,
         }),

@@ -2,22 +2,31 @@ Chapter 1: Course Policies
 
 Late submissions are penalized 10% per day unless an approved accommodation applies.
 Office hours are Tuesdays 2–4pm in ICCS 304.
+Students must read the syllabus before the first lab. Academic misconduct includes plagiarism and unauthorized collaboration on individual assignments.
 
 Section 1.1 Grading Breakdown
 
 Participation counts for 5% of the final grade. The midterm is worth 30%.
 The final exam is worth 40%. Assignments total 25%.
+Lab attendance is mandatory; missing more than two labs without documentation reduces the participation mark by half.
+
+Section 1.2 Communication
+
+Questions about grading must be submitted within one week of grade release.
+Use the course Piazza board for conceptual questions; use office hours for personal accommodations.
 
 2.1 Assignment 1 — Due Date
 
 Question: When is Assignment 1 due?
 Answer: Assignment 1 is due Friday March 14 at 11:59pm Pacific. Submit via Canvas.
 Late work loses 10% per day up to three days, then receives zero credit.
+Assignment 1 covers asymptotic notation, loop invariants, and basic recurrence relations from Lectures 1–3.
 
 2.2 Assignment 2 — Scope
 
 Question: What topics does Assignment 2 cover?
 Answer: Assignment 2 covers binary search trees, AVL rotations, and amortized analysis from Lectures 5–7.
+You may consult the course textbook but must cite any external sources in your write-up.
 
 --- Slide 12 ---
 
@@ -25,8 +34,17 @@ Exam Format
 
 The midterm is closed-book, 90 minutes, and covers Modules 1–4.
 Calculators are not permitted. One double-sided cheat sheet is allowed for the final only.
+The midterm room assignment will be posted one week before the exam date.
+
+--- Slide 13 ---
+
+Final Exam Policies
+
+The final exam is cumulative and scheduled during the official exam period.
+Alternate seating is available through the Accessibility office with two weeks notice.
 
 GLOSSARY
 
-AVL tree — A self-balancing binary search tree where heights of subtrees differ by at most one.
+AVL tree — A self-balancing binary search tree where heights of left and right subtrees differ by at most one for every node.
 Amortized analysis — A method to average operation cost over a sequence rather than worst-case per operation.
+Binary search tree — A tree where each node has at most two children and left keys are smaller than the parent key.

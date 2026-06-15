@@ -14,6 +14,7 @@ export interface CourseMaterial {
   fileSize: number;
   status: 'PROCESSING' | 'READY' | 'FAILED';
   createdAt: string;
+  chunkCount?: number;
   chunks?: Array<{ id: string; content: string }>;
 }
 
@@ -192,7 +193,7 @@ export function CourseMaterialsUpload({
                     <div>
                       <h4 className="font-medium">{material.title}</h4>
                       <p className="text-sm text-muted-foreground">
-                        {formatFileSize(material.fileSize)} • {material.chunks?.length || 0} chunks
+                        {formatFileSize(material.fileSize)} • {material.chunkCount ?? material.chunks?.length ?? 0} chunks
                       </p>
                     </div>
                   </div>
