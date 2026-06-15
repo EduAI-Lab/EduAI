@@ -32,8 +32,13 @@ export function BugReportSubmitDialog({
   const { submitBugReport, isSubmitting, isStubbed } = useSubmitBugReport();
 
   const handleSubmit = async () => {
-    const result = await submitBugReport({ title, description, isAnonymous });
-    if (result) {
+    // Fold the optional title into the description before sending — the DB schema
+    // has no separate title column (removed in #304).
+    const mergedDescription = title.trim()
+      ? `${title.trim()}\n\n${description.trim()}`
+      : description.trim();
+    const ok = await submitBugReport({ description: mergedDescription, isAnonymous });
+    if (ok) {
       setSubmitted(true);
       setTitle("");
       setDescription("");

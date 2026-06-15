@@ -1,13 +1,13 @@
 import { useCallback, useState } from "react";
 
-import type { BugReport, SubmitBugReportInput } from "~/hooks/api/types";
+import type { SubmitBugReportInput } from "~/hooks/api/types";
 
 export function useSubmitBugReport() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const submitBugReport = useCallback(
-    async (input: SubmitBugReportInput): Promise<BugReport | null> => {
+    async (input: SubmitBugReportInput): Promise<boolean> => {
       setIsSubmitting(true);
       setError(null);
 
@@ -16,9 +16,7 @@ export function useSubmitBugReport() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            description: input.title?.trim()
-              ? `${input.title.trim()}\n\n${input.description.trim()}`
-              : input.description.trim(),
+            description: input.description.trim(),
             isAnonymous: input.isAnonymous ?? false,
           }),
         });
@@ -28,22 +26,12 @@ export function useSubmitBugReport() {
           throw new Error(data.error ?? "Failed to submit bug report");
         }
 
-        return {
-          id: `core-bug-${Date.now()}`,
-          title: input.title,
-          description: input.description,
-          status: "OPEN",
-          source: "CORE",
-          isAnonymous: input.isAnonymous ?? false,
-          reporterName: null,
-          reporterEmail: null,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
+        // Backend returns 201 with no body — success is indicated by status alone.
+        return true;
       } catch (err) {
         console.error("Failed to submit bug report:", err);
         setError(err instanceof Error ? err.message : "Failed to submit bug report");
-        return null;
+        return false;
       } finally {
         setIsSubmitting(false);
       }
