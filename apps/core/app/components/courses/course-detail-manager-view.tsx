@@ -1,60 +1,68 @@
-import { useState } from 'react'
-import { IconTrash, IconPlus, IconUsers, IconCalendar, IconUserCheck, IconArrowsExchange, IconUserPlus } from '@tabler/icons-react'
-import { Download } from 'lucide-react'
-import { Button } from '~/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
-import { Badge } from '~/components/ui/badge'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs'
-import { Input } from '~/components/ui/input'
+import { useState } from "react";
+import {
+  IconTrash,
+  IconPlus,
+  IconUsers,
+  IconCalendar,
+  IconUserCheck,
+  IconArrowsExchange,
+  IconUserPlus,
+} from "@tabler/icons-react";
+import { Download } from "lucide-react";
+import { Button } from "~/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
+import { Badge } from "~/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
+import { Input } from "~/components/ui/input";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '~/components/ui/select'
-import { Checkbox } from '~/components/ui/checkbox'
+} from "~/components/ui/select";
+import { Checkbox } from "~/components/ui/checkbox";
 import {
   CourseMaterialsUpload,
   type CourseMaterial,
-} from '~/components/course-materials-upload'
-import { CanvasMaterialSyncDialog } from '~/components/canvas/CanvasMaterialSyncDialog'
-import type { CourseDetail } from '~/hooks/api/use-course-detail'
-import type { CourseTopic } from '~/hooks/api/use-course-topics'
-import type { CourseEnrollment } from '~/hooks/api/use-course-enrollments'
-import type { CourseTA } from '~/hooks/api/use-course-tas'
-import { canManageTopics, canManageInstructors } from '~/lib/rbac'
-import type { CourseAccess } from '~/lib/rbac'
+} from "~/components/course-materials-upload";
+import { CanvasMaterialSyncDialog } from "~/components/canvas/CanvasMaterialSyncDialog";
+import type { CourseDetail } from "~/hooks/api/use-course-detail";
+import type { CourseTopic } from "~/hooks/api/use-course-topics";
+import type { CourseEnrollment } from "~/hooks/api/use-course-enrollments";
+import type { CourseTA } from "~/hooks/api/use-course-tas";
+import { canManageTopics, canManageInstructors } from "~/lib/rbac";
+import type { CourseAccess } from "~/lib/rbac";
 
 interface StaffUser {
-  id: string
-  name: string
-  email: string
+  id: string;
+  name: string;
+  email: string;
 }
 
 interface Props {
-  course: CourseDetail
-  access: CourseAccess
-  topics: CourseTopic[]
-  enrollments: CourseEnrollment[]
-  enrollmentsLoading?: boolean
-  enrollmentsError?: string | null
-  materials: CourseMaterial[]
-  tas: CourseTA[]
-  instructors: StaffUser[]
-  taUsers: StaffUser[]
-  isUploading?: boolean
-  materialsError?: string | null
-  materialsSuccess?: string | null
-  onFileSelect: (file: File) => void
-  onCreateTopic: (name: string) => Promise<void>
-  onDeleteTopic: (id: string) => Promise<void>
-  onAssignInstructor: (instructorId: string) => Promise<void>
-  onAddTA: (userId: string) => Promise<void>
-  onRemoveTA: (userId: string) => Promise<void>
-  courseId?: string
-  showCanvasMaterialSync?: boolean
-  onMaterialsRefresh?: () => void
+  course: CourseDetail;
+  access: CourseAccess;
+  topics: CourseTopic[];
+  enrollments: CourseEnrollment[];
+  enrollmentsLoading?: boolean;
+  enrollmentsError?: string | null;
+  materials: CourseMaterial[];
+  tas: CourseTA[];
+  instructors: StaffUser[];
+  taUsers: StaffUser[];
+  isUploading?: boolean;
+  materialsError?: string | null;
+  materialsSuccess?: string | null;
+  onFileSelect: (file: File) => void;
+  onCreateTopic: (name: string) => Promise<void>;
+  onDeleteTopic: (id: string) => Promise<void>;
+  onAssignInstructor: (instructorId: string) => Promise<void>;
+  onAddTA: (userId: string) => Promise<void>;
+  onRemoveTA: (userId: string) => Promise<void>;
+  courseId?: string;
+  showCanvasMaterialSync?: boolean;
+  onMaterialsRefresh?: () => void;
 }
 
 export function CourseDetailManagerView({
@@ -81,82 +89,92 @@ export function CourseDetailManagerView({
   showCanvasMaterialSync = false,
   onMaterialsRefresh,
 }: Props) {
-  const [newTopic, setNewTopic] = useState('')
-  const [canvasSyncOpen, setCanvasSyncOpen] = useState(false)
-  const [staffError, setStaffError] = useState<string | null>(null)
-  const [staffSuccess, setStaffSuccess] = useState<string | null>(null)
-  const [selectedInstructorId, setSelectedInstructorId] = useState<string>('')
-  const [selectedTAIds, setSelectedTAIds] = useState<Set<string>>(new Set())
-  const [addingTAs, setAddingTAs] = useState(false)
-  const canManage = canManageTopics(access)
-  const canManageStaff = canManageInstructors(access)
+  const [newTopic, setNewTopic] = useState("");
+  const [canvasSyncOpen, setCanvasSyncOpen] = useState(false);
+  const [staffError, setStaffError] = useState<string | null>(null);
+  const [staffSuccess, setStaffSuccess] = useState<string | null>(null);
+  const [selectedInstructorId, setSelectedInstructorId] = useState<string>("");
+  const [selectedTAIds, setSelectedTAIds] = useState<Set<string>>(new Set());
+  const [addingTAs, setAddingTAs] = useState(false);
+  const canManage = canManageTopics(access);
+  const canManageStaff = canManageInstructors(access);
 
-  const availableInstructors = instructors.filter((p) => p.id !== course.instructorId)
+  const availableInstructors = instructors.filter(
+    (p) => p.id !== course.instructorId,
+  );
   const availableTAs = taUsers.filter(
-    (u) => !tas.some((ta) => ta.userId === u.id)
-  )
+    (u) => !tas.some((ta) => ta.userId === u.id),
+  );
 
   const handleTopicCreate = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!newTopic.trim()) return
-    await onCreateTopic(newTopic.trim())
-    setNewTopic('')
-  }
+    e.preventDefault();
+    if (!newTopic.trim()) return;
+    await onCreateTopic(newTopic.trim());
+    setNewTopic("");
+  };
 
   const handleAssignInstructor = async () => {
-    if (!selectedInstructorId) return
-    setStaffError(null)
-    setStaffSuccess(null)
+    if (!selectedInstructorId) return;
+    setStaffError(null);
+    setStaffSuccess(null);
     try {
-      await onAssignInstructor(selectedInstructorId)
-      setStaffSuccess(course.instructor ? 'Instructor replaced successfully' : 'Instructor assigned successfully')
-      setSelectedInstructorId('')
+      await onAssignInstructor(selectedInstructorId);
+      setStaffSuccess(
+        course.instructor
+          ? "Instructor replaced successfully"
+          : "Instructor assigned successfully",
+      );
+      setSelectedInstructorId("");
     } catch (e) {
-      setStaffError(e instanceof Error ? e.message : 'Failed to assign instructor')
+      setStaffError(
+        e instanceof Error ? e.message : "Failed to assign instructor",
+      );
     }
-  }
+  };
 
   const handleAddTAs = async () => {
-    if (selectedTAIds.size === 0) return
-    setAddingTAs(true)
-    setStaffError(null)
-    setStaffSuccess(null)
-    const ids = Array.from(selectedTAIds)
-    const failed: string[] = []
+    if (selectedTAIds.size === 0) return;
+    setAddingTAs(true);
+    setStaffError(null);
+    setStaffSuccess(null);
+    const ids = Array.from(selectedTAIds);
+    const failed: string[] = [];
     for (const id of ids) {
       try {
-        await onAddTA(id)
+        await onAddTA(id);
       } catch {
-        failed.push(id)
+        failed.push(id);
       }
     }
-    setAddingTAs(false)
-    setSelectedTAIds(new Set())
+    setAddingTAs(false);
+    setSelectedTAIds(new Set());
     if (failed.length === 0) {
-      setStaffSuccess(`${ids.length} TA${ids.length > 1 ? 's' : ''} added successfully`)
+      setStaffSuccess(
+        `${ids.length} TA${ids.length > 1 ? "s" : ""} added successfully`,
+      );
     } else {
-      setStaffError(`${failed.length} of ${ids.length} TAs failed to add`)
+      setStaffError(`${failed.length} of ${ids.length} TAs failed to add`);
     }
-  }
+  };
 
   const toggleTA = (id: string) => {
     setSelectedTAIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const handleRemoveTA = async (userId: string) => {
-    setStaffError(null)
-    setStaffSuccess(null)
+    setStaffError(null);
+    setStaffSuccess(null);
     try {
-      await onRemoveTA(userId)
+      await onRemoveTA(userId);
     } catch (e) {
-      setStaffError(e instanceof Error ? e.message : 'Failed to remove TA')
+      setStaffError(e instanceof Error ? e.message : "Failed to remove TA");
     }
-  }
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -169,8 +187,8 @@ export function CourseDetailManagerView({
               <IconCalendar className="w-4 h-4" />
               {course.term} {course.year}
             </div>
-            <Badge variant={course.isActive ? 'default' : 'secondary'}>
-              {course.isActive ? 'Active' : 'Inactive'}
+            <Badge variant={course.isActive ? "default" : "secondary"}>
+              {course.isActive ? "Active" : "Inactive"}
             </Badge>
           </div>
         </div>
@@ -185,14 +203,20 @@ export function CourseDetailManagerView({
           {canManageStaff && <TabsTrigger value="staff">Staff</TabsTrigger>}
         </TabsList>
 
-        <TabsContent value="overview" forceMount className="data-[state=inactive]:hidden flex-1 outline-none">
+        <TabsContent
+          value="overview"
+          forceMount
+          className="data-[state=inactive]:hidden flex-1 outline-none"
+        >
           <Card>
             <CardContent className="pt-6 grid gap-4">
               {course.description && <p>{course.description}</p>}
               {course.aiInstructions && (
                 <div className="bg-muted/50 rounded p-3 text-sm">
                   <p className="font-medium mb-1">AI Instructions</p>
-                  <p className="text-muted-foreground">{course.aiInstructions}</p>
+                  <p className="text-muted-foreground">
+                    {course.aiInstructions}
+                  </p>
                 </div>
               )}
               {course.instructor && (
@@ -204,7 +228,11 @@ export function CourseDetailManagerView({
           </Card>
         </TabsContent>
 
-        <TabsContent value="materials" forceMount className="data-[state=inactive]:hidden flex-1 outline-none">
+        <TabsContent
+          value="materials"
+          forceMount
+          className="data-[state=inactive]:hidden flex-1 outline-none"
+        >
           {showCanvasMaterialSync && courseId && (
             <div className="mb-4">
               <Button variant="outline" onClick={() => setCanvasSyncOpen(true)}>
@@ -230,7 +258,11 @@ export function CourseDetailManagerView({
           />
         </TabsContent>
 
-        <TabsContent value="topics" forceMount className="data-[state=inactive]:hidden flex-1 outline-none">
+        <TabsContent
+          value="topics"
+          forceMount
+          className="data-[state=inactive]:hidden flex-1 outline-none"
+        >
           <div className="flex flex-col gap-4">
             {canManage && (
               <form onSubmit={handleTopicCreate} className="flex gap-2">
@@ -276,7 +308,11 @@ export function CourseDetailManagerView({
           </div>
         </TabsContent>
 
-        <TabsContent value="enrollments" forceMount className="data-[state=inactive]:hidden flex-1 outline-none">
+        <TabsContent
+          value="enrollments"
+          forceMount
+          className="data-[state=inactive]:hidden flex-1 outline-none"
+        >
           <div className="flex flex-col gap-4">
             <CardHeader className="px-0 pt-0">
               <CardTitle className="text-base flex items-center gap-2">
@@ -307,8 +343,12 @@ export function CourseDetailManagerView({
                   <Card key={e.id}>
                     <CardContent className="flex items-center justify-between py-3">
                       <div>
-                        <span className="text-sm font-medium">{e.userName}</span>
-                        <span className="text-xs text-muted-foreground ml-2">{e.userEmail}</span>
+                        <span className="text-sm font-medium">
+                          {e.userName}
+                        </span>
+                        <span className="text-xs text-muted-foreground ml-2">
+                          {e.userEmail}
+                        </span>
                         {e.studentNumber && (
                           <span className="block text-xs text-muted-foreground mt-1">
                             Student number: {e.studentNumber}
@@ -319,7 +359,11 @@ export function CourseDetailManagerView({
                         {!e.isActive && (
                           <Badge variant="outline">Inactive</Badge>
                         )}
-                        <Badge variant={e.role === 'INSTRUCTOR' ? 'default' : 'secondary'}>
+                        <Badge
+                          variant={
+                            e.role === "INSTRUCTOR" ? "default" : "secondary"
+                          }
+                        >
                           {e.role}
                         </Badge>
                       </div>
@@ -332,7 +376,11 @@ export function CourseDetailManagerView({
         </TabsContent>
 
         {canManageStaff && (
-          <TabsContent value="staff" forceMount className="data-[state=inactive]:hidden flex-1 outline-none">
+          <TabsContent
+            value="staff"
+            forceMount
+            className="data-[state=inactive]:hidden flex-1 outline-none"
+          >
             <div className="flex flex-col gap-6">
               <CardHeader className="px-0 pt-0">
                 <CardTitle className="text-base flex items-center gap-2">
@@ -356,8 +404,12 @@ export function CourseDetailManagerView({
                     <Card>
                       <CardContent className="flex items-center justify-between py-3">
                         <div>
-                          <span className="text-sm font-medium">{course.instructor.name}</span>
-                          <span className="text-xs text-muted-foreground ml-2">{course.instructor.email}</span>
+                          <span className="text-sm font-medium">
+                            {course.instructor.name}
+                          </span>
+                          <span className="text-xs text-muted-foreground ml-2">
+                            {course.instructor.email}
+                          </span>
                         </div>
                         <Badge>Current</Badge>
                       </CardContent>
@@ -365,10 +417,14 @@ export function CourseDetailManagerView({
                     {availableInstructors.length > 0 ? (
                       <div className="flex flex-col gap-2">
                         <p className="text-xs text-muted-foreground">
-                          Selecting a new instructor will replace the current one.
+                          Selecting a new instructor will replace the current
+                          one.
                         </p>
                         <div className="flex gap-2">
-                          <Select value={selectedInstructorId} onValueChange={setSelectedInstructorId}>
+                          <Select
+                            value={selectedInstructorId}
+                            onValueChange={setSelectedInstructorId}
+                          >
                             <SelectTrigger className="flex-1">
                               <SelectValue placeholder="Select replacement instructor" />
                             </SelectTrigger>
@@ -391,15 +447,22 @@ export function CourseDetailManagerView({
                         </div>
                       </div>
                     ) : (
-                      <p className="text-sm text-muted-foreground">No other instructors available.</p>
+                      <p className="text-sm text-muted-foreground">
+                        No other instructors available.
+                      </p>
                     )}
                   </>
                 ) : (
                   <>
-                    <p className="text-xs text-muted-foreground">No instructor assigned yet.</p>
+                    <p className="text-xs text-muted-foreground">
+                      No instructor assigned yet.
+                    </p>
                     {availableInstructors.length > 0 ? (
                       <div className="flex gap-2">
-                        <Select value={selectedInstructorId} onValueChange={setSelectedInstructorId}>
+                        <Select
+                          value={selectedInstructorId}
+                          onValueChange={setSelectedInstructorId}
+                        >
                           <SelectTrigger className="flex-1">
                             <SelectValue placeholder="Select an instructor to assign" />
                           </SelectTrigger>
@@ -411,12 +474,17 @@ export function CourseDetailManagerView({
                             ))}
                           </SelectContent>
                         </Select>
-                        <Button onClick={handleAssignInstructor} disabled={!selectedInstructorId}>
+                        <Button
+                          onClick={handleAssignInstructor}
+                          disabled={!selectedInstructorId}
+                        >
                           Assign
                         </Button>
                       </div>
                     ) : (
-                      <p className="text-sm text-muted-foreground">No instructors available to assign.</p>
+                      <p className="text-sm text-muted-foreground">
+                        No instructors available to assign.
+                      </p>
                     )}
                   </>
                 )}
@@ -437,8 +505,12 @@ export function CourseDetailManagerView({
                       <Card key={ta.id}>
                         <CardContent className="flex items-center justify-between py-3">
                           <div>
-                            <span className="text-sm font-medium">{ta.user.name}</span>
-                            <span className="text-xs text-muted-foreground ml-2">{ta.user.email}</span>
+                            <span className="text-sm font-medium">
+                              {ta.user.name}
+                            </span>
+                            <span className="text-xs text-muted-foreground ml-2">
+                              {ta.user.email}
+                            </span>
                           </div>
                           <Button
                             variant="ghost"
@@ -456,7 +528,9 @@ export function CourseDetailManagerView({
                 )}
                 {availableTAs.length > 0 ? (
                   <div className="flex flex-col gap-2">
-                    <p className="text-xs text-muted-foreground">Select one or more TAs to add:</p>
+                    <p className="text-xs text-muted-foreground">
+                      Select one or more TAs to add:
+                    </p>
                     <div className="rounded-md border divide-y max-h-48 overflow-y-auto">
                       {availableTAs.map((u) => (
                         <label
@@ -468,8 +542,12 @@ export function CourseDetailManagerView({
                             onCheckedChange={() => toggleTA(u.id)}
                           />
                           <div className="flex flex-col min-w-0">
-                            <span className="text-sm font-medium truncate">{u.name}</span>
-                            <span className="text-xs text-muted-foreground truncate">{u.email}</span>
+                            <span className="text-sm font-medium truncate">
+                              {u.name}
+                            </span>
+                            <span className="text-xs text-muted-foreground truncate">
+                              {u.email}
+                            </span>
                           </div>
                         </label>
                       ))}
@@ -481,12 +559,18 @@ export function CourseDetailManagerView({
                     >
                       <IconUserPlus className="w-4 h-4 mr-1" />
                       {addingTAs
-                        ? 'Adding…'
-                        : `Add ${selectedTAIds.size > 0 ? `${selectedTAIds.size} ` : ''}TA${selectedTAIds.size !== 1 ? 's' : ''}`}
+                        ? "Adding…"
+                        : `Add ${
+                            selectedTAIds.size > 0
+                              ? `${selectedTAIds.size} `
+                              : ""
+                          }TA${selectedTAIds.size !== 1 ? "s" : ""}`}
                     </Button>
                   </div>
                 ) : (
-                  <p className="text-sm text-muted-foreground">No other TAs available to assign.</p>
+                  <p className="text-sm text-muted-foreground">
+                    No other TAs available to assign.
+                  </p>
                 )}
               </div>
             </div>
@@ -494,5 +578,5 @@ export function CourseDetailManagerView({
         )}
       </Tabs>
     </div>
-  )
+  );
 }
