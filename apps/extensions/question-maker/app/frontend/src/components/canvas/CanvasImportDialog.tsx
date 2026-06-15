@@ -7,7 +7,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@eduai/ui';
 import { Button, Label, Input } from '@eduai/ui';
 import { useToast } from '@/components/ui/use-toast';
-import { useQmPermissions } from '@/hooks/useQmPermissions';
+import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
 import canvasService, { CanvasCourse, CanvasIntegration, CanvasQuiz, CanvasSkippedQuestion } from '../../services/canvasService';
 import { courseService } from '../../services/courseService';
 import { Course } from '../../types/question';
@@ -16,16 +16,18 @@ import { Topic } from '../../types/topic';
 interface CanvasImportDialogProps {
   open: boolean;
   onClose: () => void;
+  courseId?: number | null;
   onImportSuccess?: (result: { assessmentId: number; assessmentName: string }) => void;
 }
 
 export const CanvasImportDialog = ({
   open,
   onClose,
+  courseId = null,
   onImportSuccess
 }: CanvasImportDialogProps) => {
   const { toast } = useToast();
-  const { canManageCanvas } = useQmPermissions();
+  const { canManageCanvas } = useQmPermissionsForCourse(courseId);
   const [integration, setIntegration] = useState<CanvasIntegration | null>(null);
   const [canvasCourses, setCanvasCourses] = useState<CanvasCourse[]>([]);
   const [localCourses, setLocalCourses] = useState<Course[]>([]);

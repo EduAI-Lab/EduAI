@@ -9,7 +9,7 @@ import {
 import { Button, Badge, Label, Textarea } from '@eduai/ui';
 import { useToast } from '@/components/ui/use-toast';
 import { PermissionGate } from '@/components/rbac/PermissionGate';
-import { useQmPermissions } from '@/hooks/useQmPermissions';
+import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
 import { X, Copy, Trash2, ArrowLeft, Sparkles, FileEdit, Pencil } from 'lucide-react';
 import { QuestionVariantEntry, MCQChoice, QuestionType, QuestionDifficulty } from '../../types/question';
 import { Topic } from '../../types/topic';
@@ -122,7 +122,7 @@ export const QuestionDetailView = ({
         canCreateQuestion,
         canEditResource,
         canDeleteResource,
-    } = useQmPermissions();
+    } = useQmPermissionsForCourse(entry.courseId ?? null);
     const owner = { createdBy: entry.variant.createdBy ?? null };
     const isApproved = entry.isDraft === false;
     const canEditDraft = canEditResource(owner) && !isApproved;

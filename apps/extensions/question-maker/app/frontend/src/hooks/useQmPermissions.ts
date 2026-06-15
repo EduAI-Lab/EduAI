@@ -5,13 +5,23 @@ import {
   type QmUser,
 } from '@/lib/rbac';
 import * as permissions from '@/lib/rbac/permissions';
+import { useCourseAccess } from './useCourseAccess';
 
+/**
+ * Resolves permissions for a specific course when `courseAccess` is passed.
+ * Omit or pass `undefined` to use platform-role defaults (nav, course picker).
+ * Pass `null` when the caller lacks access to the selected course.
+ */
 export function useQmPermissions(courseAccess?: QmCourseAccess) {
   const { user } = useAuth();
   const qmUser: QmUser | null = user
     ? { id: user.id, role: user.role, authorizedUnits: user.authorizedUnits }
     : null;
-  const access = courseAccess ?? resolvePlatformCourseAccess(qmUser);
+
+  const access =
+    courseAccess !== undefined
+      ? courseAccess
+      : resolvePlatformCourseAccess(qmUser);
 
   return {
     user: qmUser,
@@ -34,5 +44,22 @@ export function useQmPermissions(courseAccess?: QmCourseAccess) {
       qmUser
         ? permissions.canDeleteVariant(qmUser, access, resource)
         : false,
+  };
+}
+
+/** Course-scoped permissions — hides write actions while loading or when access is denied. */
+export function useQmPermissionsForCourse(courseId: number | null | undefined) {
+  const { access, isLoading } = useCourseAccess(courseId);
+
+  const effectiveAccess: QmCourseAccess | undefined =
+    courseId == null ? undefined : isLoading ? null : access;
+
+  const perms = useQmPermissions(effectiveAccess);
+
+  return {
+    ...perms,
+    courseAccess: access,
+    accessLoading: isLoading,
+    hasCourseAccess: courseId != null && !isLoading && access != null,
   };
 }

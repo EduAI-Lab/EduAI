@@ -10,7 +10,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { QuestionBank } from '../components/question-bank/QuestionBank';
 import { QmHomeShell } from '../components/home/QmHomeShell';
-import { useQmPermissions } from '../hooks/useQmPermissions';
+import { useQmPermissionsForCourse } from '../hooks/useQmPermissions';
 import { AssessmentSection } from '../components/assessments/AssessmentSection';
 import { QuestionDetailView } from '../components/question-detail/QuestionDetailView';
 import { Course, Question, Assessment, QuestionVariantEntry, AssessmentGenerationParams, MCQChoice } from '../types/question';
@@ -70,7 +70,9 @@ export const Homepage = () => {
   const { toast } = useToast();
   const { startTour, registerOnTourEnd } = useGuidedTour();
   const { setGuidedTourHandler } = useQmLayout();
-  const { canCreateQuestion } = useQmPermissions();
+  const { canCreateQuestion, hasCourseAccess, accessLoading } = useQmPermissionsForCourse(
+    selectedCourse?.id ?? null,
+  );
 
   const loadTopicsForCourse = useCallback(async (courseId: number, options: { force?: boolean } = {}) => {
     if (!courseId) {
@@ -827,6 +829,18 @@ export const Homepage = () => {
 
   return (
     <QmHomeShell>
+      {selectedCourse && !accessLoading && !hasCourseAccess && (
+        <div
+          role="alert"
+          className="rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+        >
+          You do not have access to this course. Choose a course from the list or return to{' '}
+          <button type="button" className="underline" onClick={() => navigate('/courses')}>
+            course selection
+          </button>
+          .
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-4">
         <Select
           value={selectedCourse?.id?.toString() || ''}
@@ -958,6 +972,7 @@ export const Homepage = () => {
           }}
           assessmentId={selectedAssessmentForExport.id}
           assessmentName={selectedAssessmentForExport.name}
+          courseId={selectedCourse?.id ?? null}
           onExportSuccess={(result) => {
             toast({
               title: 'Export successful!',
@@ -970,6 +985,7 @@ export const Homepage = () => {
       <CanvasImportDialog
         open={isCanvasImportOpen}
         onClose={() => setIsCanvasImportOpen(false)}
+        courseId={selectedCourse?.id ?? null}
         onImportSuccess={async (result) => {
           // Refresh assessments list
           await fetchAssessments();

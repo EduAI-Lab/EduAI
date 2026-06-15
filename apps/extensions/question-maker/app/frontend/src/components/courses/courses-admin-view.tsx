@@ -10,12 +10,13 @@ export function CoursesAdminView(props: CoursesAdminViewProps) {
       <div>
         <h1 className="text-2xl font-bold text-foreground">All courses</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Platform-wide access — open any linked course or add a new one for testing.
+          Platform-wide access — every linked QM course appears here. Open any course or add a new one.
         </p>
       </div>
       <CoursesGrid
         {...props}
         showAddCourse
+        showDepartment
         emptyHint="No courses linked yet. Add a course to start authoring."
       />
     </div>

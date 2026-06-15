@@ -80,7 +80,10 @@ export interface Course {
     id: number;
     name: string;
     code: string | null;
-    userId?: number;
+    userId?: string;
+    coreCourseId?: string | null;
+    department?: string | null;
+    accessLevel?: 'admin' | 'unit' | 'instructor' | 'ta' | null;
     createdAt?: string;
     updatedAt?: string;
     // Relations

@@ -14,7 +14,7 @@ import { Topic } from '../types/topic';
 import { AssessmentBuilder } from '../components/assessments/AssessmentBuilder';
 import { QmHomeShell } from '../components/home/QmHomeShell';
 import { PermissionGate } from '@/components/rbac/PermissionGate';
-import { useQmPermissions } from '@/hooks/useQmPermissions';
+import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
 import { AddQuestionDialog } from '../components/questions/AddQuestionDialog';
 import { CanvasExportDialog } from '../components/canvas/CanvasExportDialog';
 import GenerateAssessmentModal from '../components/assessments/GenerateAssessmentModal';
@@ -32,10 +32,11 @@ const AssessmentBuilderPage = () => {
     const navigate = useNavigate();
     const assessmentId = Number(id);
     const { toast } = useToast();
-    const { canManageAssessment, canExportAssessment } = useQmPermissions();
-    const readOnly = !canManageAssessment;
-
     const [assessment, setAssessment] = useState<Assessment | null>(null);
+    const { canManageAssessment, canExportAssessment } = useQmPermissionsForCourse(
+        assessment?.courseId ?? null,
+    );
+    const readOnly = !canManageAssessment;
     const [topics, setTopics] = useState<Topic[]>([]);
     const [questions, setQuestions] = useState<Question[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -774,6 +775,7 @@ const AssessmentBuilderPage = () => {
                     onClose={() => setIsCanvasExportOpen(false)}
                     assessmentId={assessment.id}
                     assessmentName={assessment.name ?? 'Assessment'}
+                    courseId={assessment.courseId ?? null}
                     onExportSuccess={() => {
                         toast({
                             title: 'Export successful',

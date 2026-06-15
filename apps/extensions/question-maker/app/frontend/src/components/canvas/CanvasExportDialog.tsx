@@ -8,7 +8,7 @@ import {
 import { Button, Label, Input } from '@eduai/ui';
 import { useToast } from '@/components/ui/use-toast';
 import { PermissionGate } from '@/components/rbac/PermissionGate';
-import { useQmPermissions } from '@/hooks/useQmPermissions';
+import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
 import canvasService, { CanvasCourse, CanvasIntegration } from '../../services/canvasService';
 
 interface CanvasExportDialogProps {
@@ -16,6 +16,7 @@ interface CanvasExportDialogProps {
   onClose: () => void;
   assessmentId: number;
   assessmentName: string;
+  courseId?: number | null;
   onExportSuccess?: (result: { quizId: number; canvasUrl: string }) => void;
 }
 
@@ -24,10 +25,11 @@ export const CanvasExportDialog = ({
   onClose,
   assessmentId,
   assessmentName,
+  courseId = null,
   onExportSuccess
 }: CanvasExportDialogProps) => {
   const { toast } = useToast();
-  const { canManageCanvas } = useQmPermissions();
+  const { canManageCanvas } = useQmPermissionsForCourse(courseId);
   const [integration, setIntegration] = useState<CanvasIntegration | null>(null);
   const [courses, setCourses] = useState<CanvasCourse[]>([]);
   const [selectedCourseId, setSelectedCourseId] = useState<string>('');

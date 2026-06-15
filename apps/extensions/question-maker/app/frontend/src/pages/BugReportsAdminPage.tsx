@@ -96,7 +96,7 @@ export function BugReportsAdminPage() {
     void load();
   }, [isLoading, user, navigate, load]);
 
-  async function handleStatusChange(bugId: number, newStatus: string) {
+  async function handleStatusChange(bugId: string, newStatus: string) {
     try {
       await bugReportApi.updateStatus(bugId, newStatus);
       setRows((prev) => prev.map((b) => (b.id === bugId ? { ...b, status: newStatus } : b)));

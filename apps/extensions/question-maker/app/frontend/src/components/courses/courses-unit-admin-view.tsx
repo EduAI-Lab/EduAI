@@ -16,12 +16,13 @@ export function CoursesUnitAdminView(props: CoursesUnitAdminViewProps) {
       <div>
         <h1 className="text-2xl font-bold text-foreground">Unit courses</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Courses you own or can access within {units}. Cross-unit edits are blocked server-side.
+          Courses in {units} that you can author in Question Maker. Cross-unit edits are blocked server-side.
         </p>
       </div>
       <CoursesGrid
         {...props}
         showAddCourse
+        showDepartment
         emptyHint="No courses in your unit yet. Link a course from your profile to begin."
       />
     </div>
