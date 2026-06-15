@@ -12,9 +12,13 @@ export async function truncateTestDatabase() {
   if (dialect !== 'postgres') {
     throw new Error(`truncateTestDatabase only supports postgres, got: ${dialect}`);
   }
-  await sequelize.query(
-    'TRUNCATE users RESTART IDENTITY CASCADE;'
+  const [tables] = await sequelize.query(
+    `SELECT tablename FROM pg_tables
+     WHERE schemaname = 'public' AND tablename != 'SequelizeMeta'`
   );
+  if (tables.length === 0) return;
+  const list = tables.map(r => `"${r.tablename}"`).join(', ');
+  await sequelize.query(`TRUNCATE ${list} RESTART IDENTITY CASCADE`);
 }
 
 /**
