@@ -16,7 +16,7 @@ import type {
 } from "~/components/chat/chat-view-types";
 import { fetchChatTranscript, type ChatTranscript } from "~/hooks/api/use-chat-history";
 import { SiteHeader } from "~/components/site-header";
-import { Button, SidebarInset, SidebarProvider } from "@eduai/ui";
+import { Button, SidebarInset, SidebarProvider, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@eduai/ui";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -152,6 +152,7 @@ export default function Chat() {
 
   const handleAssistChange = useCallback((checked: boolean) => {
     setAdhdAssist(checked);
+    // setAssistive already persists via PATCH /api/preferences — no extra submit needed.
     setAssistive(checked);
   }, [setAdhdAssist, setAssistive]);
 
@@ -389,15 +390,22 @@ export default function Chat() {
                 <IconPencilPlus className="h-4 w-4 sm:mr-1.5" />
                 <span className="hidden sm:inline">New chat</span>
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setHistoryOpen(true)}
-                aria-label="Open chat history"
-              >
-                <IconHistory className="h-4 w-4 sm:mr-1.5" />
-                <span className="hidden sm:inline">History</span>
-              </Button>
+              <TooltipProvider delayDuration={300}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setHistoryOpen(true)}
+                      aria-label="Open chat history"
+                      className="h-8 w-8"
+                    >
+                      <IconHistory className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Chat history</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             </div>
           }
         />
