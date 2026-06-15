@@ -31,28 +31,15 @@ export function NavSecondary({
         <SidebarMenu>
           {items.map((item) => {
             const isActive = !item.external && (pathname === item.url || pathname.startsWith(item.url + "/"))
-            const linkProps = {
-              "aria-current": isActive ? ("page" as const) : undefined,
-              className: "relative flex items-center gap-[10px] w-full px-[14px] py-[9px] rounded-[7px] text-[13.5px] outline-none select-none",
-              style: {
-                background: isActive ? "oklch(0.248 0.055 259)" : "transparent",
-                color: isActive ? "#fff" : "rgba(255,255,255,0.82)",
-                fontWeight: isActive ? 500 : 400,
-                transition: "background 120ms",
-                paddingLeft: "16px",
-              } as React.CSSProperties,
-              onMouseEnter: (e: React.MouseEvent<HTMLAnchorElement>) => {
-                if (!isActive) {
-                  (e.currentTarget as HTMLAnchorElement).style.background = "oklch(0.218 0.050 259)"
-                }
-              },
-              onMouseLeave: (e: React.MouseEvent<HTMLAnchorElement>) => {
-                if (!isActive) {
-                  (e.currentTarget as HTMLAnchorElement).style.background = "transparent"
-                }
-              },
-            }
-            const inner = (
+            const linkClassName = "relative flex items-center gap-[10px] w-full px-[14px] py-[9px] rounded-[7px] text-[13.5px] outline-none select-none"
+            const linkStyle = {
+              background: isActive ? "oklch(0.248 0.055 259)" : "transparent",
+              color: isActive ? "#fff" : "rgba(255,255,255,0.82)",
+              fontWeight: isActive ? 500 : 400,
+              transition: "background 120ms",
+              paddingLeft: "16px",
+            } as const
+            const linkBody = (
               <>
                 {isActive && (
                   <span
@@ -68,12 +55,42 @@ export function NavSecondary({
             return (
               <SidebarMenuItem key={item.title}>
                 {item.external ? (
-                  <a href={item.url} target="_blank" rel="noopener noreferrer" {...linkProps}>
-                    {inner}
+                  <a
+                    href={item.url}
+                    className={linkClassName}
+                    style={linkStyle}
+                    rel="noopener noreferrer"
+                    onMouseEnter={(e) => {
+                      if (!isActive) {
+                        ;(e.currentTarget as HTMLAnchorElement).style.background = "oklch(0.218 0.050 259)"
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isActive) {
+                        ;(e.currentTarget as HTMLAnchorElement).style.background = "transparent"
+                      }
+                    }}
+                  >
+                    {linkBody}
                   </a>
                 ) : (
-                  <Link to={item.url} {...linkProps}>
-                    {inner}
+                  <Link
+                    to={item.url}
+                    aria-current={isActive ? "page" : undefined}
+                    className={linkClassName}
+                    style={linkStyle}
+                    onMouseEnter={(e) => {
+                      if (!isActive) {
+                        ;(e.currentTarget as HTMLAnchorElement).style.background = "oklch(0.218 0.050 259)"
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isActive) {
+                        ;(e.currentTarget as HTMLAnchorElement).style.background = "transparent"
+                      }
+                    }}
+                  >
+                    {linkBody}
                   </Link>
                 )}
               </SidebarMenuItem>
