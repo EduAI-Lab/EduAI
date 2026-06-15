@@ -93,6 +93,14 @@ describe("updateAdminUser", () => {
     const result = await updateAdminUser(ADMIN, ADMIN.id, { role: "STUDENT" });
     expect(result).toEqual({ error: "CANNOT_CHANGE_OWN_ROLE" });
   });
+
+  it("rejects empty update payload", async () => {
+    const result = await updateAdminUser(ADMIN, "u2", {});
+    expect(result).toMatchObject({
+      error: "VALIDATION_ERROR",
+      fields: { body: "at least one field to update is required" },
+    });
+  });
 });
 
 describe("deleteAdminUser", () => {

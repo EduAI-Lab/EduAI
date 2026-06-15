@@ -24,6 +24,7 @@ export {
   runConfirmedAdminWriteTool,
   runAdminWriteTool,
   requireWriteConfirmation,
+  userRefValidationError,
   updateAdminBugReportStatus,
   updateAdminEnrollmentRole,
   updateAdminUser,

@@ -19,11 +19,13 @@ import {
   updateAdminBugReportStatus,
   updateAdminEnrollmentRole,
   updateAdminUser,
+  userRefValidationError,
 } from "./admin-mutations.server";
 
-/** Accept true/false at schema level; execute rejects false without breaking the stream. */
+/** Defaults to false so omitted/invalid values do not crash the tool-call stream. */
 const confirmedWrite = z
   .boolean()
+  .default(false)
   .describe(
     "false until the admin explicitly confirms in chat (e.g. yes, do it); then true to apply the write",
   );
@@ -49,10 +51,6 @@ const userRef = {
     .optional()
     .describe("Platform user email — use when id is unknown"),
 };
-
-function requireUserRef(data: { userId?: string; userEmail?: string }) {
-  return Boolean(data.userId?.trim() || data.userEmail?.trim());
-}
 
 /** Admin assistant tools — platform ops with read + write (ADMIN-only). */
 export function createAdminChatTools(ctx: ChatToolContext) {
@@ -156,60 +154,68 @@ export function createAdminChatTools(ctx: ChatToolContext) {
     updateUser: tool({
       description:
         "Update a platform user. Pass userId or userEmail. Use confirmed=false until admin approves, then confirmed=true.",
-      parameters: z
-        .object({
-          confirmed: confirmedWrite,
-          ...userRef,
-          name: z.string().min(2).optional(),
-          email: z.string().email().optional(),
-          role: z.enum(["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "TA", "STUDENT"]).optional(),
-          isActive: z.boolean().optional(),
-        })
-        .refine(requireUserRef, { message: "userId or userEmail required" }),
-      execute: async ({ confirmed, userId, userEmail, ...updates }) =>
-        runConfirmedAdminWriteTool("updateUser", user, confirmed, async () => {
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        ...userRef,
+        name: z.string().min(2).optional(),
+        email: z.string().email().optional(),
+        role: z.enum(["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "TA", "STUDENT"]).optional(),
+        isActive: z.boolean().optional(),
+      }),
+      execute: async ({ confirmed, userId, userEmail, ...updates }) => {
+        const userRefError = userRefValidationError({ userId, userEmail });
+        if (userRefError) {
+          return userRefError;
+        }
+        return runConfirmedAdminWriteTool("updateUser", user, confirmed, async () => {
           const { resolveAdminUserId } = await import("./admin-context.server");
           const target = await resolveAdminUserId(user, { userId, userEmail });
           if ("error" in target) {
             return target;
           }
           return updateAdminUser(user, target.userId, updates);
-        }),
+        });
+      },
     }),
 
     deleteUser: tool({
       description:
         "Permanently delete a platform user. Pass userId or userEmail. Use confirmed=true only after admin confirms.",
-      parameters: z
-        .object({
-          confirmed: confirmedWrite,
-          ...userRef,
-        })
-        .refine(requireUserRef, { message: "userId or userEmail required" }),
-      execute: async ({ confirmed, userId, userEmail }) =>
-        runConfirmedAdminWriteTool("deleteUser", user, confirmed, async () => {
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        ...userRef,
+      }),
+      execute: async ({ confirmed, userId, userEmail }) => {
+        const userRefError = userRefValidationError({ userId, userEmail });
+        if (userRefError) {
+          return userRefError;
+        }
+        return runConfirmedAdminWriteTool("deleteUser", user, confirmed, async () => {
           const { resolveAdminUserId } = await import("./admin-context.server");
           const target = await resolveAdminUserId(user, { userId, userEmail });
           if ("error" in target) {
             return target;
           }
           return deleteAdminUser(user, target.userId);
-        }),
+        });
+      },
     }),
 
     createCourseEnrollment: tool({
       description:
         "Add a user to a course with a role. Pass userId or userEmail. Use confirmed=true only after admin confirms.",
-      parameters: z
-        .object({
-          confirmed: confirmedWrite,
-          ...courseScope,
-          ...userRef,
-          role: enrollmentRole,
-        })
-        .refine(requireUserRef, { message: "userId or userEmail required" }),
-      execute: async ({ confirmed, courseId, courseCode, userId, userEmail, role }) =>
-        runConfirmedAdminWriteTool("createCourseEnrollment", user, confirmed, () =>
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        ...courseScope,
+        ...userRef,
+        role: enrollmentRole,
+      }),
+      execute: async ({ confirmed, courseId, courseCode, userId, userEmail, role }) => {
+        const userRefError = userRefValidationError({ userId, userEmail });
+        if (userRefError) {
+          return userRefError;
+        }
+        return runConfirmedAdminWriteTool("createCourseEnrollment", user, confirmed, () =>
           createAdminEnrollment(user, {
             courseId,
             courseCode,
@@ -218,7 +224,8 @@ export function createAdminChatTools(ctx: ChatToolContext) {
             userEmail,
             role,
           }),
-        ),
+        );
+      },
     }),
 
     updateCourseEnrollment: tool({

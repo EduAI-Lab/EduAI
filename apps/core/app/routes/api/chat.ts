@@ -260,7 +260,11 @@ async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
 
 function formatStreamError(error: unknown): string {
   if (error instanceof Error) {
-    return error.message || error.name;
+    const message = error.message || error.name;
+    if (message.includes("Invalid arguments for tool")) {
+      return `${message} — The model passed invalid tool parameters. Retry or pick a tool-capable model (e.g. vllm:qwen2.5-32b-instruct).`;
+    }
+    return message;
   }
   if (typeof error === "string") {
     return error;

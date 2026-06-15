@@ -72,6 +72,7 @@ export default function AdminChatPage() {
   const [selectedCourseCode, setSelectedCourseCode] = useState<string | null>(
     availableCourses[0]?.code ?? null,
   );
+  const selectedCourse = availableCourses.find((c) => c.code === selectedCourseCode) ?? null;
   const [chatId, setChatId] = useState<string | null>(null);
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
   const [adhdAssist, setAdhdAssist] = useState(false);
@@ -117,6 +118,7 @@ export default function AdminChatPage() {
       model: selectedModel,
       apiKeys: getValidApiKeys(),
       courseCode: selectedCourseCode || undefined,
+      courseId: selectedCourse?.id || undefined,
       chatId: chatId || undefined,
       systemPrompt: systemPrompt || undefined,
       adhdAssist,
@@ -148,6 +150,7 @@ export default function AdminChatPage() {
           model: selectedModel,
           apiKeys: getValidApiKeys(),
           courseCode: selectedCourseCode || undefined,
+          courseId: selectedCourse?.id || undefined,
           adhdAssist,
           streaming: false,
         }),
