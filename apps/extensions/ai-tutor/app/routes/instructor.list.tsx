@@ -41,14 +41,6 @@ import ActivityDetailsCard from '../components/ActivityDetailsCard';
 import EditActivityPanel from '../components/EditActivityPanel';
 import AddCourseTopicsButton from '../components/AddCourseTopicsButton';
 import Nav from '../components/Nav';
-import {
-  Breadcrumb,
-  BreadcrumbList,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from '../components/ui/breadcrumb';
 import api from '../lib/api';
 import type { Activity, Course, Lesson, ModuleDetail, Topic } from '../lib/types';
 import { CourseTopicsProvider, useCourseTopics } from '../hooks/useCourseTopics';
@@ -56,7 +48,18 @@ import type { Route } from './+types/instructor.list';
 import { requireClientUser } from '~/lib/client-auth';
 
 import type { ActivityUpdatePayload } from '../lib/activityForm';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@eduai/ui';
+import {
+  Breadcrumb,
+  BreadcrumbList,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@eduai/ui';
 import TopicSyncMappingDialog from '~/components/TopicSyncMappingDialog';
 import { useBugReport } from '~/components/bug-report/useBugReport';
 

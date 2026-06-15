@@ -34,7 +34,7 @@ import {
   BreadcrumbLink,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from '../components/ui/breadcrumb';
+} from '@eduai/ui';
 import api from '../lib/api';
 import type { Activity, Course, Lesson, ModuleDetail } from '../lib/types';
 import type { Route } from './+types/student.list';
