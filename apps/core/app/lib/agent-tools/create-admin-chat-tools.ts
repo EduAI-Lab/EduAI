@@ -15,6 +15,7 @@ import {
   createAdminUser,
   deactivateAdminEnrollment,
   deleteAdminUser,
+  runAdminWriteTool,
   updateAdminBugReportStatus,
   updateAdminEnrollmentRole,
   updateAdminUser,
@@ -36,6 +37,19 @@ const courseScope = {
     .optional()
     .describe("Course code when course id is unknown"),
 };
+
+const userRef = {
+  userId: z.string().optional().describe("Platform user id (CUID)"),
+  userEmail: z
+    .string()
+    .email()
+    .optional()
+    .describe("Platform user email — use when id is unknown"),
+};
+
+function requireUserRef(data: { userId?: string; userEmail?: string }) {
+  return Boolean(data.userId?.trim() || data.userEmail?.trim());
+}
 
 /** Admin assistant tools — platform ops with read + write (ADMIN-only). */
 export function createAdminChatTools(ctx: ChatToolContext) {
@@ -130,49 +144,72 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         role: z.enum(["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "TA", "STUDENT"]),
         isActive: z.boolean().optional(),
       }),
-      execute: async ({ confirmed: _confirmed, ...input }) => createAdminUser(user, input),
+      execute: async ({ confirmed: _confirmed, ...input }) =>
+        runAdminWriteTool("createUser", user, () => createAdminUser(user, input)),
     }),
 
     updateUser: tool({
       description:
-        "Update a platform user by id. Requires confirmed=true. Cannot deactivate or change role of yourself.",
-      parameters: z.object({
-        confirmed: confirmedWrite,
-        userId: z.string().describe("User id (CUID)"),
-        name: z.string().min(2).optional(),
-        email: z.string().email().optional(),
-        role: z.enum(["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "TA", "STUDENT"]).optional(),
-        isActive: z.boolean().optional(),
-      }),
-      execute: async ({ confirmed: _confirmed, userId, ...updates }) =>
-        updateAdminUser(user, userId, updates),
+        "Update a platform user. Requires confirmed=true. Pass userId or userEmail to identify the user.",
+      parameters: z
+        .object({
+          confirmed: confirmedWrite,
+          ...userRef,
+          name: z.string().min(2).optional(),
+          email: z.string().email().optional(),
+          role: z.enum(["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "TA", "STUDENT"]).optional(),
+          isActive: z.boolean().optional(),
+        })
+        .refine(requireUserRef, { message: "userId or userEmail required" }),
+      execute: async ({ confirmed: _confirmed, userId, userEmail, ...updates }) =>
+        runAdminWriteTool("updateUser", user, async () => {
+          const { resolveAdminUserId } = await import("./admin-context.server");
+          const target = await resolveAdminUserId(user, { userId, userEmail });
+          if ("error" in target) {
+            return target;
+          }
+          return updateAdminUser(user, target.userId, updates);
+        }),
     }),
 
     deleteUser: tool({
       description:
-        "Permanently delete a platform user by id. Requires confirmed=true. Cannot delete yourself.",
-      parameters: z.object({
-        confirmed: confirmedWrite,
-        userId: z.string().describe("User id (CUID)"),
-      }),
-      execute: async ({ userId }) => deleteAdminUser(user, userId),
+        "Permanently delete a platform user. Requires confirmed=true. Pass userId or userEmail.",
+      parameters: z
+        .object({
+          confirmed: confirmedWrite,
+          ...userRef,
+        })
+        .refine(requireUserRef, { message: "userId or userEmail required" }),
+      execute: async ({ userId, userEmail }) =>
+        runAdminWriteTool("deleteUser", user, async () => {
+          const { resolveAdminUserId } = await import("./admin-context.server");
+          const target = await resolveAdminUserId(user, { userId, userEmail });
+          if ("error" in target) {
+            return target;
+          }
+          return deleteAdminUser(user, target.userId);
+        }),
     }),
 
     createCourseEnrollment: tool({
       description:
-        "Add a user to a course with a role. Requires confirmed=true. Idempotent if already enrolled.",
-      parameters: z.object({
-        confirmed: confirmedWrite,
-        ...courseScope,
-        userId: z.string().describe("User id to enroll"),
-        role: enrollmentRole,
-      }),
-      execute: async ({ courseId, courseCode, userId, role }) =>
+        "Add a user to a course with a role. Requires confirmed=true. Pass userId or userEmail.",
+      parameters: z
+        .object({
+          confirmed: confirmedWrite,
+          ...courseScope,
+          ...userRef,
+          role: enrollmentRole,
+        })
+        .refine(requireUserRef, { message: "userId or userEmail required" }),
+      execute: async ({ courseId, courseCode, userId, userEmail, role }) =>
         createAdminEnrollment(user, {
           courseId,
           courseCode,
           fallbackCourseId: effectiveCourseId,
           userId,
+          userEmail,
           role,
         }),
     }),
@@ -187,13 +224,15 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         role: enrollmentRole,
       }),
       execute: async ({ courseId, courseCode, enrollmentId, role }) =>
-        updateAdminEnrollmentRole(user, {
-          courseId,
-          courseCode,
-          fallbackCourseId: effectiveCourseId,
-          enrollmentId,
-          role,
-        }),
+        runAdminWriteTool("updateCourseEnrollment", user, () =>
+          updateAdminEnrollmentRole(user, {
+            courseId,
+            courseCode,
+            fallbackCourseId: effectiveCourseId,
+            enrollmentId,
+            role,
+          }),
+        ),
     }),
 
     deactivateCourseEnrollment: tool({
@@ -205,12 +244,14 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         enrollmentId: z.string().describe("Enrollment id (CUID)"),
       }),
       execute: async ({ courseId, courseCode, enrollmentId }) =>
-        deactivateAdminEnrollment(user, {
-          courseId,
-          courseCode,
-          fallbackCourseId: effectiveCourseId,
-          enrollmentId,
-        }),
+        runAdminWriteTool("deactivateCourseEnrollment", user, () =>
+          deactivateAdminEnrollment(user, {
+            courseId,
+            courseCode,
+            fallbackCourseId: effectiveCourseId,
+            enrollmentId,
+          }),
+        ),
     }),
 
     updateBugReportStatus: tool({
@@ -221,7 +262,9 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         status: z.enum(["UNHANDLED", "IN_PROGRESS", "RESOLVED"]),
       }),
       execute: async ({ reportId, status }) =>
-        updateAdminBugReportStatus(user, reportId, status),
+        runAdminWriteTool("updateBugReportStatus", user, () =>
+          updateAdminBugReportStatus(user, reportId, status),
+        ),
     }),
   };
 }

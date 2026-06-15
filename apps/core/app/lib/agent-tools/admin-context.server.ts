@@ -226,4 +226,39 @@ export async function listAdminBugReportsForChat(
   });
 }
 
+/** Resolve a platform user id from id or email (ADMIN write tools). */
+export async function resolveAdminUserId(
+  user: RbacUser,
+  opts: { userId?: string; userEmail?: string },
+): Promise<{ userId: string; email: string; name: string } | ToolError> {
+  const denied = requirePlatformAdmin(user);
+  if (denied) return denied;
+
+  const id = opts.userId?.trim();
+  if (id) {
+    const found = await prisma.user.findUnique({
+      where: { id },
+      select: { id: true, email: true, name: true },
+    });
+    if (!found) {
+      return { error: "USER_NOT_FOUND", fields: { userId: "no user with this id" } };
+    }
+    return { userId: found.id, email: found.email, name: found.name };
+  }
+
+  const email = opts.userEmail?.trim().toLowerCase();
+  if (email) {
+    const found = await prisma.user.findFirst({
+      where: { email: { equals: email, mode: "insensitive" } },
+      select: { id: true, email: true, name: true },
+    });
+    if (!found) {
+      return { error: "USER_NOT_FOUND", fields: { userEmail: "no user with this email" } };
+    }
+    return { userId: found.id, email: found.email, name: found.name };
+  }
+
+  return { error: "VALIDATION_ERROR", fields: { user: "userId or userEmail required" } };
+}
+
 export { listAccessibleCourses, getAccessibleCourse };
