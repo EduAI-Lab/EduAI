@@ -8,6 +8,7 @@ import { Button, Dialog, DialogContent, DialogHeader, DialogTitle } from '@eduai
 import { useToast } from '@/components/ui/use-toast';
 import { bugReportApi, BugReportRow } from '../services/bugReportApi';
 import { useAuth } from '../contexts/AuthContext';
+import { canTriageBugReports } from '@/lib/rbac';
 
 const STATUS_OPTIONS = ['unhandled', 'in progress', 'resolved'] as const;
 
@@ -89,7 +90,8 @@ export function BugReportsAdminPage() {
 
   useEffect(() => {
     if (isLoading) return;
-    if (!user?.isBugReportAdmin) {
+    const qmUser = user ? { id: user.id, role: user.role, authorizedUnits: user.authorizedUnits } : null;
+    if (!canTriageBugReports(qmUser)) {
       navigate('/home', { replace: true });
       return;
     }
@@ -109,9 +111,9 @@ export function BugReportsAdminPage() {
     }
   }
 
-  if (!user?.isBugReportAdmin) {
-    return null;
-  }
+  if (isLoading) return null;
+  const qmUser = user ? { id: user.id, role: user.role, authorizedUnits: user.authorizedUnits } : null;
+  if (!canTriageBugReports(qmUser)) return null;
 
   return (
     <div className="min-h-screen bg-background text-foreground">
