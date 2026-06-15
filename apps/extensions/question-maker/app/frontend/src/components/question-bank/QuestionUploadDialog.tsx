@@ -9,33 +9,10 @@ import pdfWorkerSrc from 'pdfjs-dist/build/pdf.worker?url';
 import { UploadCloud, FileText, Loader2, Trash2, Copy as CopyIcon, RefreshCcw, ChevronDown, ChevronUp, History } from 'lucide-react';
 
 import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle
-} from '../ui/dialog';
-import {
-    AlertDialog,
-    AlertDialogAction,
-    AlertDialogCancel,
-    AlertDialogContent,
-    AlertDialogDescription,
-    AlertDialogFooter,
-    AlertDialogHeader,
-    AlertDialogTitle,
-} from '../ui/alert-dialog';
-import { Button } from '../ui/button';
-import { Textarea } from '../ui/textarea';
-import { Input } from '../ui/input';
-import { Label } from '../ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { ScrollArea } from '../ui/scroll-area';
-import { Progress } from '../ui/progress';
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
-import { Tooltip } from '../ui/tooltip';
-import { useToast } from '../ui/use-toast';
+    Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@eduai/ui';
+import { Button, Textarea, Input, Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, ScrollArea, Progress, Card, CardContent, CardHeader, CardTitle } from '@eduai/ui';
+import { Tooltip } from '@/components/ui/tooltip';
+import { useToast } from '@/components/ui/use-toast';
 import { useEduAIStatus } from '../../hooks/useEduAIStatus';
 import { EduAIStatusBadge } from '../eduai/EduAIStatusBadge';
 
@@ -960,7 +937,7 @@ export const QuestionUploadDialog = ({
                                 <History className="h-4 w-4 mr-1.5" />
                                 History
                                 {ocrJobs.filter((j) => j.status === 'processing' || j.status === 'pending').length > 0 && (
-                                    <span className="ml-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 text-[10px] font-medium text-white">
+                                    <span className="ml-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-medium text-white">
                                         {ocrJobs.filter((j) => j.status === 'processing' || j.status === 'pending').length}
                                     </span>
                                 )}
@@ -972,7 +949,7 @@ export const QuestionUploadDialog = ({
                 <div className="flex gap-6 py-2 min-h-[70vh]">
                     {/* Left: Assessment details — narrow, vertical fields */}
                     {saveTarget === 'bank' ? (
-                        <Card className="flex-shrink-0 w-[280px] border-dashed border-blue-200 bg-blue-50/50">
+                        <Card className="flex-shrink-0 w-[280px] border-dashed border-primary/30 bg-primary/10">
                             <CardHeader className="space-y-1">
                                 <CardTitle className="text-base font-semibold">Question bank only</CardTitle>
                                 <p className="text-xs text-muted-foreground">

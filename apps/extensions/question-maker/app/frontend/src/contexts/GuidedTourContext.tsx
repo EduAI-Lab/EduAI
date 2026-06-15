@@ -117,29 +117,29 @@ const Tooltip = ({
       onClick={(event) => event.stopPropagation()}
       onMouseDown={(event) => event.stopPropagation()}
     >
-      <div className="rounded-lg bg-white shadow-xl border border-gray-200 p-4 space-y-2">
+      <div className="rounded-lg bg-card shadow-xl border border-border p-4 space-y-2">
         <div className="flex items-start justify-between gap-2">
           <div>
-            <p className="text-xs uppercase tracking-wide text-gray-500">Step</p>
-            <h4 className="font-semibold text-gray-900">{step.title}</h4>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Step</p>
+            <h4 className="font-semibold text-foreground">{step.title}</h4>
           </div>
           <button
             onClick={onClose}
-            className="text-gray-500 hover:text-gray-800 text-sm"
+            className="text-muted-foreground hover:text-foreground text-sm"
             aria-label="Close tour"
           >
             Skip
           </button>
         </div>
-        <p className="text-sm text-gray-700 leading-relaxed">{step.content}</p>
+        <p className="text-sm text-foreground leading-relaxed">{step.content}</p>
         <div className="flex justify-between items-center pt-2">
           <button
             onClick={onPrev}
             className={cn(
               'px-3 py-1 rounded border text-sm',
               isFirst
-                ? 'border-gray-200 text-gray-300 cursor-not-allowed'
-                : 'border-gray-300 text-gray-700 hover:border-gray-400'
+                ? 'border-border text-muted-foreground cursor-not-allowed'
+                : 'border-border text-foreground hover:border-border'
             )}
             disabled={isFirst}
           >
@@ -147,7 +147,7 @@ const Tooltip = ({
           </button>
           <button
             onClick={isLast ? onClose : onNext}
-            className="px-3 py-1 rounded bg-blue-600 text-white text-sm hover:bg-blue-700"
+            className="px-3 py-1 rounded bg-primary text-primary-foreground text-sm hover:bg-primary/90"
           >
             {isLast ? 'Done' : 'Next'}
           </button>

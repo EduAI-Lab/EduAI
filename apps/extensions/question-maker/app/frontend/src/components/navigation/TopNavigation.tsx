@@ -3,17 +3,16 @@
  * Accepts course data and callbacks to propagate tab/course changes to parent layouts.
  * Supports variant "course-selection" (no selector/tabs) and optional back button for homepage.
  */
-import { Button } from '../ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
+import { Button, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Tabs, TabsList, TabsTrigger } from '@eduai/ui';
+import { Tooltip } from '@/components/ui/tooltip';
 import { Course } from '../../types/question';
 import { useContext } from 'react';
 import { User, HelpCircle, ArrowLeft, BugOff } from 'lucide-react';
 import { EduAIStatusBadge } from '../eduai/EduAIStatusBadge';
 import { useEduAIStatus } from '../../hooks/useEduAIStatus';
 import { useGuidedTour } from '../../contexts/GuidedTourContext';
-import { Tooltip } from '../ui/tooltip';
 import { BugReportContext } from '../../contexts/BugReportContext';
+import { EduAiBackLink } from './EduAiBackLink';
 
 type TopNavigationProps = (
   | {
@@ -67,9 +66,9 @@ export const TopNavigation = (props: TopNavigationProps) => {
   };
 
   return (
-    <div className="bg-white border-b border-gray-200 px-6 py-4">
+    <div className="border-b border-border bg-background px-6 py-4">
       <div className="flex items-center justify-between">
-        {/* Left: Back button (when on homepage) + Logo */}
+        {/* Left: Back button (when on homepage) + Logo + EduAI link */}
         <div className="flex items-center space-x-4">
           {showBackButton && onBackClick && (
             <Tooltip content="Return to course selection" side="bottom">
@@ -77,7 +76,7 @@ export const TopNavigation = (props: TopNavigationProps) => {
                 variant="ghost"
                 size="sm"
                 onClick={onBackClick}
-                className="text-gray-600"
+                className="text-muted-foreground"
                 aria-label="Back to course selection"
               >
                 <ArrowLeft className="h-5 w-5 mr-1" />
@@ -86,8 +85,9 @@ export const TopNavigation = (props: TopNavigationProps) => {
             </Tooltip>
           )}
           <Tooltip content="Question Maker" side="bottom">
-            <div className="text-2xl font-bold text-blue-600 cursor-default">QM</div>
+            <div className="text-2xl font-bold text-primary-text cursor-default">QM</div>
           </Tooltip>
+          <EduAiBackLink />
         </div>
 
         {/* Center: Course Selector and Tabs (only when variant is full) */}
@@ -155,8 +155,8 @@ export const TopNavigation = (props: TopNavigationProps) => {
                       </Tooltip>
                       {courses.length === 0 && !isLoadingCourses && (
                         <span className="absolute -top-0.5 -right-0.5 flex h-3 w-3">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-3 w-3 bg-primary"></span>
                         </span>
                       )}
                     </div>

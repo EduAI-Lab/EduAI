@@ -1,20 +1,27 @@
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import tailwindcss from '@tailwindcss/vite'
+import react from '@vitejs/plugin-react'
 import { loadEnv } from 'vite'
 import { defineConfig } from 'vitest/config'
-import react from '@vitejs/plugin-react'
-import { resolve } from 'path'
+import tsconfigPaths from 'vite-tsconfig-paths'
+
+const frontendDir = path.dirname(fileURLToPath(import.meta.url))
+const extensionRoot = path.resolve(frontendDir, '../..')
 
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, resolve(__dirname, '../..'), '')
+  const env = loadEnv(mode, extensionRoot, '')
 
   return {
-    plugins: [react()],
+    plugins: [tailwindcss(), react(), tsconfigPaths()],
     resolve: {
       alias: {
-        '@': resolve(__dirname, './src'),
+        '@': path.resolve(frontendDir, './src'),
       },
       dedupe: ['react', 'react-dom'],
     },
-    envDir: resolve(__dirname, '../..'),
+    envDir: extensionRoot,
     define: {
       'process.env': env,
     },

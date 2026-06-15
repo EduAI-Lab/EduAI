@@ -2,16 +2,10 @@
  * Question parameters panel: type, primary topic, secondary topics, difficulty, reasoning, description.
  * Matches prototype layout (compact labels, card-style) for use in AddQuestionDialog left column.
  */
-import { Label } from '../ui/label';
-import { Input } from '../ui/input';
-import { Textarea } from '../ui/textarea';
+import { Label, Input, Textarea } from '@eduai/ui';
+
 import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue
-} from '../ui/select';
+    Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@eduai/ui';
 import {
     QuestionType,
     QuestionDifficulty,

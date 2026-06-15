@@ -1,6 +1,5 @@
 import { useCallback, useState } from "react";
 
-import { STUB_ONLY } from "~/hooks/api/config";
 import type { BugReport, SubmitBugReportInput } from "~/hooks/api/types";
 
 export function useSubmitBugReport() {
@@ -13,24 +12,34 @@ export function useSubmitBugReport() {
       setError(null);
 
       try {
-        if (STUB_ONLY.bugReports) {
-          const now = new Date().toISOString();
-          return {
-            id: `bug-stub-${Date.now()}`,
-            title: input.title,
-            description: input.description,
-            status: "OPEN",
-            source: "CORE",
+        const response = await fetch("/api/bug-reports", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            description: input.title?.trim()
+              ? `${input.title.trim()}\n\n${input.description.trim()}`
+              : input.description.trim(),
             isAnonymous: input.isAnonymous ?? false,
-            reporterName: input.isAnonymous ? null : "Current User",
-            reporterEmail: input.isAnonymous ? null : null,
-            createdAt: now,
-            updatedAt: now,
-          };
+          }),
+        });
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({})) as { error?: string };
+          throw new Error(data.error ?? "Failed to submit bug report");
         }
 
-        // Future: POST /api/bug-reports
-        return null;
+        return {
+          id: `core-bug-${Date.now()}`,
+          title: input.title,
+          description: input.description,
+          status: "OPEN",
+          source: "CORE",
+          isAnonymous: input.isAnonymous ?? false,
+          reporterName: null,
+          reporterEmail: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
       } catch (err) {
         console.error("Failed to submit bug report:", err);
         setError(err instanceof Error ? err.message : "Failed to submit bug report");
@@ -46,6 +55,6 @@ export function useSubmitBugReport() {
     submitBugReport,
     isSubmitting,
     error,
-    isStubbed: STUB_ONLY.bugReports,
+    isStubbed: false,
   };
 }

@@ -2,10 +2,8 @@
  * Reusable MCQ choices editor: list of lettered options and correct-answer select.
  * Used in AddQuestionDialog and QuestionDetailView so MCQ UI is consistent and safe (no undefined .map).
  */
-import { Button } from '../ui/button';
-import { Input } from '../ui/input';
-import { Label } from '../ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { Button, Input, Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@eduai/ui';
+
 import type { MCQChoice } from '../../types/question';
 
 const DEFAULT_CHOICES: MCQChoice[] = [

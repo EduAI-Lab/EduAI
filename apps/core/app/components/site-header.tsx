@@ -1,5 +1,5 @@
 import { useLocation } from "react-router"
-import { useTheme } from "next-themes"
+import { useTheme } from "@eduai/ui"
 import { BugReportSubmitDialog } from "~/components/shared/bug-report-submit-dialog";
 import { Separator } from "@eduai/ui"
 import { SidebarTrigger } from "@eduai/ui"
