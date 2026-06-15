@@ -27,21 +27,18 @@ import type { BugReport, BugReportStatus } from "~/hooks/api/types";
 export type BugReportsAdminViewProps = {
   reports: BugReport[];
   isLoading: boolean;
-  isStubbed: boolean;
   onUpdateStatus: (id: string, status: BugReportStatus) => Promise<void>;
 };
 
 const STATUS_LABELS: Record<BugReportStatus, string> = {
-  OPEN: "Open",
+  UNHANDLED: "Unhandled",
   IN_PROGRESS: "In progress",
   RESOLVED: "Resolved",
-  CLOSED: "Closed",
 };
 
 export function BugReportsAdminView({
   reports,
   isLoading,
-  isStubbed,
   onUpdateStatus,
 }: BugReportsAdminViewProps) {
   if (isLoading) {
@@ -63,7 +60,6 @@ export function BugReportsAdminView({
               subheading={
                 <>
                   Triage platform bug reports (ADMIN only, §11).
-                  {isStubbed && " Stub data until Core API #304."}
                 </>
               }
             />
@@ -81,7 +77,7 @@ export function BugReportsAdminView({
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Title</TableHead>
+                      <TableHead>Description</TableHead>
                       <TableHead>Source</TableHead>
                       <TableHead>Reporter</TableHead>
                       <TableHead>Status</TableHead>
@@ -92,8 +88,7 @@ export function BugReportsAdminView({
                     {reports.map((report) => (
                       <TableRow key={report.id}>
                         <TableCell>
-                          <div className="font-medium">{report.title}</div>
-                          <div className="text-xs text-muted-foreground line-clamp-2">
+                          <div className="text-sm line-clamp-3">
                             {report.description}
                           </div>
                         </TableCell>
