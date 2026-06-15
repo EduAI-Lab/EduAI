@@ -7,6 +7,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { AppSidebar } from "~/components/app-sidebar";
 import { ChatCourseScopedView } from "~/components/chat/chat-course-scoped-view";
 import { ChatGlobalView } from "~/components/chat/chat-global-view";
+import { ChatHeaderControls } from "~/components/chat/chat-header-controls";
 import type {
   ChatCourseOption,
   ChatModelOption,
@@ -276,6 +277,14 @@ export default function Chat() {
                 </BreadcrumbItem>
               </BreadcrumbList>
             </Breadcrumb>
+          }
+          actions={
+            <ChatHeaderControls
+              adhdAssist={adhdAssist}
+              onAdhdAssistChange={handleAssistChange}
+              systemPrompt={systemPrompt}
+              onSystemPromptSave={handleSystemPromptSave}
+            />
           }
         />
         {isGlobalChat ? (
