@@ -59,6 +59,8 @@ import type { ActivityUpdatePayload } from '../lib/activityForm';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@eduai/ui';
 import TopicSyncMappingDialog from '~/components/TopicSyncMappingDialog';
 import { useBugReport } from '~/components/bug-report/useBugReport';
+import { PermissionGate } from '~/components/rbac/PermissionGate';
+import { useAtPermissions } from '~/hooks/useAtPermissions';
 
 /**
  * Tooltip-wrapped sync trigger surfaced only for EduAI-sourced courses. The
@@ -130,6 +132,7 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
 export default function InstructorLessonBuilder({ loaderData }: Route.ComponentProps) {
   const { lessonId } = useParams();
   const numericLessonId = lessonId ? Number(lessonId) : null;
+  const perms = useAtPermissions();
   const { course, module, lesson, activities: initialActivities } = loaderData;
   const [activities, setActivities] = useState<Activity[]>(initialActivities);
   const [oActivities, addActivityOpt] = useOptimistic(
@@ -606,6 +609,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                                 )}
                               </div>
                             </div>
+                            <PermissionGate allow={perms.canManageContent}>
                             <div className="flex gap-2">
                               {isEditing ? (
                                 <span className="tag bg-accent text-accent-foreground">
@@ -632,9 +636,10 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                                 </>
                               )}
                             </div>
+                            </PermissionGate>
                           </div>
 
-                          {isEditing ? (
+                          {isEditing && perms.canManageContent ? (
                             <EditActivityPanel
                               key={activity.id}
                               activity={activity}
@@ -877,6 +882,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                 )}
               </div>
 
+              <PermissionGate allow={perms.canManageContent}>
               <div className="flex justify-center">
                 <button
                   type="button"
@@ -893,6 +899,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                   onActivityCreated={refreshActivities}
                 />
               )}
+              </PermissionGate>
             </div>
 
             <aside className="space-y-4">
@@ -906,6 +913,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                   )}
                 </div>
                 {topicsError && <p className="text-xs text-destructive">{topicsError}</p>}
+                <PermissionGate allow={perms.canManageTopics}>
                 <div className="flex items-center gap-2">
                   {!!course?.externalId || course?.externalSource === 'EDUAI' ? (
                     // EduAI course: Show only sync button
@@ -944,6 +952,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                     <AddCourseTopicsButton disabled={!lesson?.courseOfferingId} />
                   )}
                 </div>
+                </PermissionGate>
                 <div className="space-y-1.5 max-h-48 overflow-y-auto text-sm">
                   {topics.length === 0 ? (
                     <div className="text-muted-foreground text-xs">No topics yet.</div>

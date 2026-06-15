@@ -154,6 +154,7 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
   const [courseEnrollments, setCourseEnrollments] = useState<AdminEnrollmentData | null>(null);
   const [loadingEnrollments, setLoadingEnrollments] = useState(false);
   const [updatingEnrollmentUserId, setUpdatingEnrollmentUserId] = useState<string | null>(null);
+  const [syncingEnrollmentsCourseId, setSyncingEnrollmentsCourseId] = useState<number | null>(null);
   const [selectedStudentId, setSelectedStudentId] = useState<string | ''>('');
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
@@ -247,6 +248,22 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
       setError('Could not enroll student. Please try again.');
     } finally {
       setUpdatingEnrollmentUserId(null);
+    }
+  };
+
+  const syncEnrollmentsFromEduAi = async () => {
+    if (!selectedCourseId) return;
+    setSyncingEnrollmentsCourseId(selectedCourseId);
+    setError(null);
+    setMessage(null);
+    try {
+      await api.syncCourseEnrollments(selectedCourseId);
+      await refreshSelectedCourseEnrollments(selectedCourseId);
+      setMessage('Enrollments synced from EduAI.');
+    } catch {
+      setError('Could not sync enrollments. Only EduAI-imported courses support sync.');
+    } finally {
+      setSyncingEnrollmentsCourseId(null);
     }
   };
 
@@ -475,6 +492,19 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
                       </option>
                     ))}
                   </select>
+                </div>
+
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => void syncEnrollmentsFromEduAi()}
+                    disabled={!selectedCourseId || syncingEnrollmentsCourseId !== null}
+                    className="btn-secondary text-sm"
+                  >
+                    {syncingEnrollmentsCourseId === selectedCourseId
+                      ? 'Syncing…'
+                      : 'Sync enrollments from EduAI'}
+                  </button>
                 </div>
 
                 {loadingEnrollments ? (

@@ -4,6 +4,8 @@ import Nav from '../components/Nav';
 import { ProgressBarFromData } from '../components/ProgressBar';
 import type { Course } from '../lib/types';
 import type { Route } from './+types/student';
+import { AtRoleBanner } from '../components/rbac/AtRoleBanner';
+import { useLocalUser } from '../hooks/useLocalUser';
 import api from '~/lib/api';
 import { requireClientUser } from '~/lib/client-auth';
 
@@ -15,6 +17,7 @@ export async function clientLoader(_: Route.ClientLoaderArgs) {
 
 export default function StudentHome({ loaderData }: Route.ComponentProps) {
   const navigate = useNavigate();
+  const { user } = useLocalUser();
   const courseList = useMemo(() => loaderData.courses ?? [], [loaderData.courses]);
 
   return (
@@ -28,9 +31,10 @@ export default function StudentHome({ loaderData }: Route.ComponentProps) {
         <div className="absolute inset-0 dots-pattern opacity-50" />
       </div>
 
-      <div className="container mx-auto px-6 py-10">
+      <div className="container mx-auto px-6 py-10 space-y-6">
+        {user ? <AtRoleBanner role={user.role} variant="student" /> : null}
         {/* Page header */}
-        <header className="mb-10 animate-fade-up" data-tour="student-dashboard-header">
+        <header className="mb-4 animate-fade-up" data-tour="student-dashboard-header">
           <div className="flex items-end justify-between gap-4 mb-2">
             <div>
               <p className="text-sm font-medium text-muted-foreground mb-1">Dashboard</p>
