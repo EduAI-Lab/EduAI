@@ -106,7 +106,7 @@ export function QuestionOutputPanel({
                               : 'Enter the full question text'
                     }
                     disabled={disabled}
-                    className="bg-secondary border-border min-h-24 resize-none"
+                    className="min-h-24 resize-none"
                     rows={5}
                 />
             </div>
@@ -152,7 +152,7 @@ export function QuestionOutputPanel({
                         onChange={(e) => onVariantAnswerChange(e.target.value)}
                         placeholder={isStreaming ? 'Generating answer...' : 'Provide an answer or leave blank'}
                         disabled={disabled}
-                        className="bg-secondary border-border min-h-20 resize-none"
+                        className="min-h-20 resize-none"
                         rows={3}
                     />
                 </div>

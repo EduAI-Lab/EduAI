@@ -112,13 +112,13 @@ export const AssessmentVariantWorkflowPanel = ({
   };
 
   return (
-    <Card className="border-dashed border-amber-200/80 bg-amber-50/40">
+    <Card className="border-dashed border-orange-300 dark:border-orange-600/50 bg-orange-50/60 dark:bg-orange-950/20">
       <CardHeader className="pb-2">
         <div className="flex flex-wrap items-center gap-2">
-          <Sparkles className="h-5 w-5 text-amber-800" aria-hidden />
-          <CardTitle className="text-base text-amber-950">Assessment variant workflow</CardTitle>
+          <Sparkles className="h-5 w-5 text-orange-700 dark:text-orange-400" aria-hidden />
+          <CardTitle className="text-base text-orange-950 dark:text-orange-200">Assessment variant workflow</CardTitle>
           {studyRole === 'reference_baseline' && (
-            <Badge className="bg-amber-700 text-white hover:bg-amber-700">Reference baseline</Badge>
+            <Badge className="bg-orange-700 text-white dark:bg-orange-600 hover:bg-orange-800 dark:hover:bg-orange-700">Reference baseline</Badge>
           )}
           {studyRole === 'generated_variant' && (
             <Badge variant="secondary">Generated variant</Badge>
@@ -149,7 +149,7 @@ export const AssessmentVariantWorkflowPanel = ({
         </div>
 
         {snapshot && (
-          <div className="rounded-md border border-amber-200 bg-card p-3 text-sm">
+          <div className="rounded-md border border-orange-300/60 dark:border-orange-700/40 bg-card p-3 text-sm">
             <p className="font-medium text-foreground">{snapshot.slotCount} slots</p>
             <p className="text-muted-foreground">
               Difficulty: {JSON.stringify(snapshot.aggregates.difficultyCounts)} · Types:{' '}
@@ -158,7 +158,7 @@ export const AssessmentVariantWorkflowPanel = ({
           </div>
         )}
 
-        <div className="flex flex-wrap gap-2 border-t border-amber-200/60 pt-3">
+        <div className="flex flex-wrap gap-2 border-t border-orange-300/40 dark:border-orange-700/30 pt-3">
           <Button type="button" size="sm" onClick={handleAssemble} disabled={assembling}>
             {assembling ? (
               <>
