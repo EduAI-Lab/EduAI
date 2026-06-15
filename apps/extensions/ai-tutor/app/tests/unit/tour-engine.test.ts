@@ -7,8 +7,8 @@ import {
   moveSession,
   moveSessionAfterMissingTarget,
   storeStepSelection,
-} from './tour-engine';
-import { tourDefinitions } from './tour-definitions';
+} from '~/lib/tours/tour-engine';
+import { tourDefinitions } from '~/lib/tours/tour-definitions';
 
 describe('tour engine', () => {
   test('seeds lesson route when tour starts on a lesson page', () => {
