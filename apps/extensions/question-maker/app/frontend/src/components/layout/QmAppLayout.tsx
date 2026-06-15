@@ -15,8 +15,9 @@ function QmAppLayoutInner() {
   const closeMobileNav = () => setMobileNavOpen(false);
 
   return (
-    <div className="flex min-h-screen bg-background">
-      <QmSidebar className="hidden md:flex" />
+    <div className="flex min-h-svh bg-background">
+      <div className="hidden w-72 shrink-0 md:block" aria-hidden />
+      <QmSidebar className="fixed inset-y-0 left-0 z-10 hidden h-svh md:flex" />
 
       {mobileNavOpen && (
         <>
@@ -26,11 +27,11 @@ function QmAppLayoutInner() {
             aria-label="Close navigation"
             onClick={closeMobileNav}
           />
-          <QmSidebar className="fixed inset-y-0 left-0 z-50 md:hidden" onNavigate={closeMobileNav} />
+          <QmSidebar className="fixed inset-y-0 left-0 z-50 h-svh md:hidden" onNavigate={closeMobileNav} />
         </>
       )}
 
-      <div className="flex min-h-screen min-w-0 flex-1 flex-col">
+      <div className="flex min-h-svh min-w-0 flex-1 flex-col">
         <QmSiteHeader
           onMenuClick={() => setMobileNavOpen((open) => !open)}
           mobileNavOpen={mobileNavOpen}
@@ -65,8 +66,9 @@ export function QmAccessShell({ children }: { children: ReactNode }) {
 
   return (
     <QmLayoutProvider>
-      <div className={cn('flex min-h-screen bg-background')}>
-        <QmSidebar className="hidden md:flex" />
+      <div className={cn('flex min-h-svh bg-background')}>
+        <div className="hidden w-72 shrink-0 md:block" aria-hidden />
+        <QmSidebar className="fixed inset-y-0 left-0 z-10 hidden h-svh md:flex" />
         {mobileNavOpen && (
           <>
             <button
@@ -75,10 +77,10 @@ export function QmAccessShell({ children }: { children: ReactNode }) {
               aria-label="Close navigation"
               onClick={closeMobileNav}
             />
-            <QmSidebar className="fixed inset-y-0 left-0 z-50 md:hidden" onNavigate={closeMobileNav} />
+            <QmSidebar className="fixed inset-y-0 left-0 z-50 h-svh md:hidden" onNavigate={closeMobileNav} />
           </>
         )}
-        <div className="flex min-h-screen min-w-0 flex-1 flex-col">
+        <div className="flex min-h-svh min-w-0 flex-1 flex-col">
           <QmSiteHeader
             onMenuClick={() => setMobileNavOpen((open) => !open)}
             mobileNavOpen={mobileNavOpen}

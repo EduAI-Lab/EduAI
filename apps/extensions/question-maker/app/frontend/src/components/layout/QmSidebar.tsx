@@ -154,7 +154,7 @@ export function QmSidebar({ className, onNavigate }: QmSidebarProps) {
   return (
     <aside
       className={cn(
-        'flex h-full w-72 shrink-0 flex-col bg-sidebar text-sidebar-foreground',
+        'flex h-full min-h-0 w-72 shrink-0 flex-col bg-sidebar text-sidebar-foreground',
         className,
       )}
     >
