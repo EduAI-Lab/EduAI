@@ -24,6 +24,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useEduAIStatus } from '../../hooks/useEduAIStatus';
 import { EduAIStatusBadge } from '../eduai/EduAIStatusBadge';
 import { useGuidedTour } from '../../contexts/GuidedTourContext';
+import { normalizeCourseCode } from '../../utils/courseDisplay';
 
 interface ProfileCoursesDialogProps {
     open: boolean;
@@ -31,9 +32,6 @@ interface ProfileCoursesDialogProps {
     existingCourses: Class[];
     onCoursesAdded?: () => Promise<void> | void;
 }
-
-const normalizeCourseCode = (value: string | null | undefined) =>
-    value ? value.replace(/\s+/g, '').toLowerCase() : '';
 
 export const ProfileCoursesDialog = ({
     open,
@@ -46,6 +44,7 @@ export const ProfileCoursesDialog = ({
     const [selectedCourseIds, setSelectedCourseIds] = useState<string[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+    const [resyncingCoreId, setResyncingCoreId] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const { toast } = useToast();
     const { logout, user } = useAuth();
@@ -90,17 +89,6 @@ export const ProfileCoursesDialog = ({
                 const options = await eduaiService.listCourses();
                 if (!isMounted) return;
                 setCourseOptions(options);
-
-                const entries = await Promise.all(
-                    options.map(async (option) => {
-                        // Pass both the course ID and code to help with topic lookup
-                        const topics = await eduaiService.listCourseTopics(option.id, option.code);
-                        return [option.id, topics] as const;
-                    })
-                );
-
-                if (!isMounted) return;
-                setTopicsByCourse(Object.fromEntries(entries));
             } catch (err) {
                 console.error('Failed to load AI service courses', err);
                 if (isMounted) {
@@ -120,6 +108,13 @@ export const ProfileCoursesDialog = ({
         };
     }, [open]);
 
+    useEffect(() => {
+        if (!open || selectedCourseIds.length === 0) return;
+        for (const coreCourseId of selectedCourseIds) {
+            void loadTopicsForCourse(coreCourseId);
+        }
+    }, [open, selectedCourseIds]);
+
     const toggleCourse = (courseId: string) => {
         setSelectedCourseIds((prev) =>
             prev.includes(courseId) ? prev.filter((id) => id !== courseId) : [...prev, courseId]
@@ -127,8 +122,55 @@ export const ProfileCoursesDialog = ({
     };
 
     const handleDialogChange = (value: boolean) => {
-        if (!value && !isSaving) {
+        if (!value && !isSaving && !resyncingCoreId) {
             onClose();
+        }
+    };
+
+    const findLocalCourseByCode = (code: string | null | undefined) => {
+        const normalized = normalizeCourseCode(code);
+        if (!normalized) return undefined;
+        return existingCourses.find((course) => {
+            const candidates = [course.code, course.courseCode, course.subject, course.name];
+            return candidates.some(
+                (candidate) => normalizeCourseCode(candidate ?? '') === normalized
+            );
+        });
+    };
+
+    const loadTopicsForCourse = async (coreCourseId: string) => {
+        if (topicsByCourse[coreCourseId]) return;
+        const topics = await eduaiService.listCoreCourseTopics(coreCourseId);
+        setTopicsByCourse((prev) => ({ ...prev, [coreCourseId]: topics }));
+    };
+
+    const handleResyncCourse = async (option: EduAICourseOption) => {
+        const localCourse = findLocalCourseByCode(option.code);
+        if (!localCourse?.id) {
+            toast({
+                title: 'Local course not found',
+                description: 'Could not match this Core course to a Question Maker course by code.',
+                variant: 'destructive'
+            });
+            return;
+        }
+
+        setResyncingCoreId(option.id);
+        setError(null);
+        try {
+            await courseService.linkAndSyncFromCore(localCourse.id, option.id);
+            if (onCoursesAdded) {
+                await onCoursesAdded();
+            }
+            toast({
+                title: 'Course re-synced',
+                description: `${option.code} is linked to Core and topics are updated.`
+            });
+        } catch (err) {
+            console.error('Failed to re-sync course from Core', err);
+            setError('Unable to re-sync this course from Core. Check EDUAI_API_KEY and try again.');
+        } finally {
+            setResyncingCoreId(null);
         }
     };
 
@@ -242,13 +284,21 @@ export const ProfileCoursesDialog = ({
                     courseCode: option.code
                 });
 
+                try {
+                    await courseService.linkAndSyncFromCore(createdCourse.id, courseId);
+                } catch (linkError) {
+                    await courseService.deleteCourse(createdCourse.id).catch(() => undefined);
+                    throw linkError;
+                }
+
                 if (normalizedCode) {
                     updatedCodes.add(normalizedCode);
                 }
 
-                const topics = topicsByCourse[courseId] ?? [];
-                for (const topic of topics) {
-                    await courseService.createTopic(createdCourse.id, topic.name);
+                try {
+                    await assessmentService.createPracticeExamForCourse(createdCourse.id);
+                } catch (practiceExamError) {
+                    console.warn('Failed to create Practice Exam for linked course', practiceExamError);
                 }
 
                 createdCount += 1;
@@ -260,7 +310,7 @@ export const ProfileCoursesDialog = ({
                 }
                 toast({
                     title: `Added ${createdCount} course${createdCount > 1 ? 's' : ''}`,
-                    description: 'Courses and topics have been synced from the AI service.'
+                    description: 'Courses linked to Core and topics synced.'
                 });
             } else {
                 toast({
@@ -362,54 +412,90 @@ export const ProfileCoursesDialog = ({
                                 const isAdded = normalized ? existingCourseCodeSet.has(normalized) : false;
                                 const isSelected = selectedCourseIds.includes(option.id);
                                 const topics = topicsByCourse[option.id] ?? [];
+                                const isResyncing = resyncingCoreId === option.id;
 
                                 return (
-                                    <label
+                                    <div
                                         key={option.id}
-                                        className={`flex cursor-pointer items-start gap-3 rounded-md border p-4 shadow-sm transition ${
+                                        className={`flex items-start gap-3 rounded-md border p-4 shadow-sm transition ${
                                             isAdded
-                                                ? 'cursor-not-allowed border-muted bg-muted/40 opacity-80'
+                                                ? 'border-muted bg-muted/40'
                                                 : isSelected
                                                     ? 'border-blue-500 bg-blue-50'
                                                     : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50/40'
                                         }`}
                                     >
-                                        <input
-                                            type="checkbox"
-                                            className="mt-1 h-4 w-4"
-                                            checked={isSelected}
-                                            onChange={() => toggleCourse(option.id)}
-                                            disabled={isAdded || isSaving}
-                                        />
-                                        <div className="flex-1 space-y-2">
-                                            <div className="flex flex-wrap items-center gap-2">
-                                                <span className="text-sm font-semibold text-foreground">
-                                                    {option.code} · {option.name}
-                                                </span>
-                                                {option.term && option.year && (
-                                                    <Badge variant="outline" className="text-xs">
-                                                        {option.term} {option.year}
-                                                    </Badge>
-                                                )}
-                                                {isAdded && <Badge variant="outline" data-tour-id="profile-added-badge">Already added</Badge>}
-                                                {isSelected && !isAdded && !isSaving && (
-                                                    <Badge variant="secondary">Selected</Badge>
-                                                )}
-                                            </div>
-                                            {option.description && (
-                                                <p className="text-xs text-muted-foreground">{option.description}</p>
-                                            )}
-                                            {topics.length > 0 && (
-                                                <div className="flex flex-wrap gap-2">
-                                                    {topics.map((topic) => (
-                                                        <Badge key={topic.id} variant="outline" className="text-xs">
-                                                            {topic.name}
-                                                        </Badge>
-                                                    ))}
+                                        {!isAdded ? (
+                                            <label className="flex cursor-pointer items-start gap-3 flex-1">
+                                                <input
+                                                    type="checkbox"
+                                                    className="mt-1 h-4 w-4"
+                                                    checked={isSelected}
+                                                    onChange={() => toggleCourse(option.id)}
+                                                    disabled={isSaving || !!resyncingCoreId}
+                                                />
+                                                <div className="flex-1 space-y-2">
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        <span className="text-sm font-semibold text-foreground">
+                                                            {option.code} · {option.name}
+                                                        </span>
+                                                        {option.term && option.year && (
+                                                            <Badge variant="outline" className="text-xs">
+                                                                {option.term} {option.year}
+                                                            </Badge>
+                                                        )}
+                                                        {isSelected && !isSaving && (
+                                                            <Badge variant="secondary">Selected</Badge>
+                                                        )}
+                                                    </div>
+                                                    {option.description && (
+                                                        <p className="text-xs text-muted-foreground">{option.description}</p>
+                                                    )}
+                                                    {topics.length > 0 && (
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {topics.map((topic) => (
+                                                                <Badge key={topic.id} variant="outline" className="text-xs">
+                                                                    {topic.name}
+                                                                </Badge>
+                                                            ))}
+                                                        </div>
+                                                    )}
                                                 </div>
-                                            )}
-                                        </div>
-                                    </label>
+                                            </label>
+                                        ) : (
+                                            <div className="flex flex-1 items-start justify-between gap-3">
+                                                <div className="space-y-2">
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        <span className="text-sm font-semibold text-foreground">
+                                                            {option.code} · {option.name}
+                                                        </span>
+                                                        <Badge variant="outline" data-tour-id="profile-added-badge">
+                                                            Already added
+                                                        </Badge>
+                                                    </div>
+                                                    <p className="text-xs text-muted-foreground">
+                                                        Re-sync to link this QM course to Core and refresh topics.
+                                                    </p>
+                                                </div>
+                                                <Button
+                                                    type="button"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    disabled={isSaving || !!resyncingCoreId}
+                                                    onClick={() => void handleResyncCourse(option)}
+                                                >
+                                                    {isResyncing ? (
+                                                        <>
+                                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                                            Syncing…
+                                                        </>
+                                                    ) : (
+                                                        'Re-sync from Core'
+                                                    )}
+                                                </Button>
+                                            </div>
+                                        )}
+                                    </div>
                                 );
                             })}
 
@@ -434,10 +520,10 @@ export const ProfileCoursesDialog = ({
                         <span>Logout</span>
                     </Button>
                     <div className="flex gap-2">
-                        <Button variant="ghost" onClick={onClose} disabled={isSaving}>
+                        <Button variant="ghost" onClick={onClose} disabled={isSaving || !!resyncingCoreId}>
                             Cancel
                         </Button>
-                        <Button onClick={handleSave} disabled={isSaving || isLoading} data-tour-id="profile-add-button">
+                        <Button onClick={handleSave} disabled={isSaving || isLoading || !!resyncingCoreId} data-tour-id="profile-add-button">
                             {isSaving ? 'Linking…' : 'Add selected courses'}
                         </Button>
                     </div>

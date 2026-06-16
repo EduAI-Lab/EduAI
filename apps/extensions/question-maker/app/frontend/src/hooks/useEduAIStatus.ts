@@ -65,10 +65,16 @@ const fetchStatus = async () => {
         if (result?.success) {
             setState({ status: 'ok', message: 'AI service is online' });
             clearHeartbeat();
+        } else if (result?.configured === false) {
+            setState({
+                status: 'error',
+                message: 'AI service not configured on the server (EDUAI_API_KEY).'
+            });
+            clearHeartbeat();
         } else {
             setState({
                 status: 'error',
-                message: 'AI service not available. Connect to UBC wifi or VPN.'
+                message: result?.error || 'AI service not available. Connect to UBC wifi or VPN.'
             });
             scheduleHeartbeatIfNeeded();
         }
