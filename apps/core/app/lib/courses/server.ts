@@ -18,6 +18,38 @@ import {
   type DeleteCourseTopicInput,
 } from "./schemas";
 
+// ---------------------------------------------------------------------------
+// Per-course RAG settings cache
+//
+// Avoids a DB round-trip on every findRelevantContent call (one per RAG query).
+// TTL defaults to 60 min; tune with COURSE_RAG_SETTINGS_CACHE_TTL_MS.
+// Invalidated explicitly on PATCH /api/courses/:id/rag-settings.
+// ---------------------------------------------------------------------------
+
+type RagSettingsCacheEntry = {
+  value: { ragTopK: number | null; ragSimilarityThreshold: number | null } | null;
+  expiresAt: number;
+};
+
+const ragSettingsCache = new Map<string, RagSettingsCacheEntry>();
+
+const COURSE_RAG_SETTINGS_CACHE_TTL_MS = Math.min(
+  7_200_000, // 2 h ceiling
+  Math.max(5_000, Number(process.env.COURSE_RAG_SETTINGS_CACHE_TTL_MS) || 3_600_000),
+);
+
+/** Remove all entries whose TTL has elapsed. */
+function pruneRagSettingsCache(): void {
+  const now = Date.now();
+  for (const [key, entry] of ragSettingsCache) {
+    if (entry.expiresAt <= now) ragSettingsCache.delete(key);
+  }
+}
+
+/** Drop a single course's entry so the next read fetches fresh data from DB. */
+export function invalidateCourseRagSettingsCache(courseId: string): void {
+  ragSettingsCache.delete(courseId);
+}
 
 /**
  * GET /api/courses — list active courses.
@@ -432,6 +464,34 @@ export async function getAccessibleCourseCodes(user: {
     select: { code: true },
   });
   return courses.map((course) => course.code);
+}
+
+/**
+ * Returns only the RAG-tuning fields for a course.
+ * Both fields are nullable — callers should fall back to global defaults when null.
+ *
+ * Results are cached in-memory for COURSE_RAG_SETTINGS_CACHE_TTL_MS (default 60 min)
+ * to avoid a DB round-trip on every RAG query. Call invalidateCourseRagSettingsCache()
+ * after any write to keep the cache consistent.
+ */
+export async function getCourseRagSettings(
+  courseId: string,
+): Promise<{ ragTopK: number | null; ragSimilarityThreshold: number | null } | null> {
+  pruneRagSettingsCache();
+
+  const now = Date.now();
+  const cached = ragSettingsCache.get(courseId);
+  if (cached && cached.expiresAt > now) {
+    return cached.value;
+  }
+
+  const value = await prisma.course.findUnique({
+    where: { id: courseId },
+    select: { ragTopK: true, ragSimilarityThreshold: true },
+  });
+
+  ragSettingsCache.set(courseId, { value, expiresAt: now + COURSE_RAG_SETTINGS_CACHE_TTL_MS });
+  return value;
 }
 
 export async function getCourseTopics(courseId: string) {

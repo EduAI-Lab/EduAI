@@ -21,6 +21,7 @@ const baseProps = {
   onInputChange: () => {},
   onSubmit: () => {},
   onSelectPrompt: () => {},
+  webToolsEnabled: false,
 };
 
 describe("Chat views — role layouts", () => {

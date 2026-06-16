@@ -12,13 +12,15 @@ import {
 import { READING_SURFACE_CLASS } from "~/components/assistive/reading-surface";
 import { Tool } from "~/components/ui/tool";
 import { cn } from "~/lib/utils";
+import { getChatToolDisplayName, isWebChatToolName } from "~/lib/ai/web-tool-ui";
 
 export interface ChatMessageProps {
   message: Message;
   isStreaming?: boolean;
+  webToolsEnabled?: boolean;
 }
 
-export function ChatMessage({ message, isStreaming = false }: ChatMessageProps) {
+export function ChatMessage({ message, isStreaming = false, webToolsEnabled = false }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -35,17 +37,6 @@ export function ChatMessage({ message, isStreaming = false }: ChatMessageProps) 
 
   const isUser = message.role === "user";
 
-  // Extract different types of parts
-  const textParts = message.parts?.filter((part) => part.type === "text") || [];
-  const toolParts = message.parts?.filter((part) =>
-    part.type === "tool-invocation" || part.type.startsWith("tool-")
-  ) || [];
-
-  // If no parts, fallback to message content
-  const hasTextContent = textParts.length > 0 || message.content;
-  const textContent = textParts.map(part => part.text).join("\n") || message.content || "";
-
-  // Convert tool parts to the format expected by Tool component
   const convertToolPart = (part: any) => {
     if (part.type === "tool-invocation") {
       return {
@@ -60,7 +51,6 @@ export function ChatMessage({ message, isStreaming = false }: ChatMessageProps) 
       };
     }
 
-    // Handle dynamic tool parts from AI SDK v5+ format
     if (part.type.startsWith("tool-")) {
       return {
         type: part.toolName || part.type.replace("tool-", ""),
@@ -74,6 +64,25 @@ export function ChatMessage({ message, isStreaming = false }: ChatMessageProps) 
 
     return null;
   };
+
+  // Extract different types of parts
+  const textParts = message.parts?.filter((part) => part.type === "text") || [];
+  const toolParts = message.parts?.filter((part) => {
+    if (!(part.type === "tool-invocation" || part.type.startsWith("tool-"))) {
+      return false;
+    }
+
+    const toolPart = convertToolPart(part);
+    if (!toolPart) return false;
+    if (!webToolsEnabled && isWebChatToolName(toolPart.type)) {
+      return false;
+    }
+    return true;
+  }) || [];
+
+  // If no parts, fallback to message content
+  const hasTextContent = textParts.length > 0 || message.content;
+  const textContent = textParts.map(part => part.text).join("\n") || message.content || "";
 
   if (isUser) {
     // User message - right aligned, limited width
@@ -110,6 +119,7 @@ export function ChatMessage({ message, isStreaming = false }: ChatMessageProps) 
               <Tool
                 key={`tool-${toolPart.toolCallId || index}`}
                 toolPart={toolPart}
+                displayName={getChatToolDisplayName(toolPart.type, webToolsEnabled) ?? toolPart.type}
                 defaultOpen={toolPart.state === "input-streaming"}
               />
             );
