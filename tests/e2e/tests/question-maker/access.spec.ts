@@ -96,7 +96,7 @@ test.describe('Authenticated access to Question Maker via Core session', () => {
     const list = Array.isArray(body) ? body : body?.data;
     expect(Array.isArray(list)).toBe(true);
     // QM seeds default courses for every new user via findOrCreateUser
-    expect(list.length).toBeGreaterThanOrEqual(0);
+    expect(list.length).toBeGreaterThan(0);
   });
 
   test('GET /api/questions is blocked for STUDENT (403)', async ({ request }) => {

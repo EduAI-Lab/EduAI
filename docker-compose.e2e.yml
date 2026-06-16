@@ -62,7 +62,7 @@ services:
       BETTER_AUTH_SECRET: e2e-test-secret-change-for-production
       BETTER_AUTH_URL: http://localhost:3000
       GOOGLE_GENERATIVE_AI_API_KEY: test-key-not-real
-      NODE_ENV: production
+      NODE_ENV: test
       PORT: "3000"
       E2E_SEED_SECRET: e2e-seed-secret
     ports:
