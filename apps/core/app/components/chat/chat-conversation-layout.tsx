@@ -1,7 +1,6 @@
 import type { Message } from "@ai-sdk/react";
 
 import { ChatInput } from "~/components/chat/chat-input";
-import { ChatHeaderControls } from "~/components/chat/chat-header-controls";
 import { ChatMessage } from "~/components/chat/chat-message";
 import { ChatTypingIndicator } from "~/components/chat/chat-typing-indicator";
 import { ChatWelcome } from "~/components/chat/chat-welcome";
@@ -32,17 +31,12 @@ export function ChatConversationLayout({
   messages,
   input,
   isLoading,
-  adhdAssist,
   assistive,
-  onAssistiveChange,
-  focusMode,
-  onFocusModeChange,
-  systemPrompt,
-  onSystemPromptSave,
   onInputChange,
   onSubmit,
   onStop,
   onSelectPrompt,
+  webToolsEnabled,
 }: ChatConversationLayoutProps) {
   return (
     <div
@@ -58,17 +52,6 @@ export function ChatConversationLayout({
               <div className="rounded-lg border bg-muted/30 px-4 py-3">
                 <p className="font-medium">{bannerTitle}</p>
                 <p className="text-sm text-muted-foreground">{bannerDescription}</p>
-              </div>
-
-              <div className="flex items-center justify-end">
-                <ChatHeaderControls
-                  adhdAssist={adhdAssist}
-                  onAdhdAssistChange={onAssistiveChange}
-                  focusMode={focusMode}
-                  onFocusModeChange={onFocusModeChange}
-                  systemPrompt={systemPrompt}
-                  onSystemPromptSave={onSystemPromptSave}
-                />
               </div>
 
               {messages.length === 0 ? (
@@ -92,6 +75,7 @@ export function ChatConversationLayout({
                           messages,
                           assistive,
                         )}
+                        webToolsEnabled={webToolsEnabled}
                       />
                     );
                   })}

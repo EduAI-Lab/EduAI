@@ -9,9 +9,47 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
+  EduAiCourseSchema,
+  EduAiCourseListSchema,
   EduAiEnrollmentSchema,
   EduAiEnrollmentListSchema,
 } from '../../src/schemas/eduai.js';
+
+// ─── EduAiCourseSchema ────────────────────────────────────────────────────────
+
+const CORE_COURSE = {
+  id: 'course-cuid-1',
+  code: 'COSC 101',
+  name: 'Intro to CS',
+  isPublished: true,
+  isActive: true,
+};
+
+describe('EduAiCourseSchema — isPublished (#477)', () => {
+  it('parses isPublished: true from a Core course response', () => {
+    const result = EduAiCourseSchema.parse(CORE_COURSE);
+    expect(result.isPublished).toBe(true);
+  });
+
+  it('parses isPublished: false', () => {
+    const result = EduAiCourseSchema.parse({ ...CORE_COURSE, isPublished: false });
+    expect(result.isPublished).toBe(false);
+  });
+
+  it('accepts a course with no isPublished field (optional — pre-existing Core courses)', () => {
+    const { isPublished: _, ...withoutFlag } = CORE_COURSE;
+    expect(() => EduAiCourseSchema.parse(withoutFlag)).not.toThrow();
+    const result = EduAiCourseSchema.parse(withoutFlag);
+    expect(result.isPublished).toBeUndefined();
+  });
+
+  it('parses a course list envelope containing isPublished', () => {
+    const result = EduAiCourseListSchema.parse({ courses: [CORE_COURSE] });
+    expect(result.courses[0].isPublished).toBe(true);
+  });
+});
+
+// ─── EduAiEnrollmentSchema ────────────────────────────────────────────────────
 
 // Core's actual enrollment response shape (no id field)
 const CORE_ENROLLMENT = {

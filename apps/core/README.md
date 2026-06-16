@@ -106,6 +106,9 @@ SMTP_USER=""
 SMTP_PASS=""
 EMAIL_FROM="EduAI <no-reply@eduai.local>"
 INVITE_EXPIRY_HOURS="72" # invitation link lifetime in hours
+
+# ADHD Assist Phase 3 oversight — second-pass structural audit when Assistive Mode is ON (default: enabled)
+# ADHD_ASSIST_OVERSIGHT="false"              # Set to false/0/off to disable rewrite pass
 ```
 
 ## Usage
@@ -154,7 +157,7 @@ Send chat messages with course context for grounded responses.
 - `apiKeys` (object): Provider-specific API keys
 - `courseCode` (string): Target course identifier
 - `streaming` (boolean): Enable response streaming
-- `adhdAssist` (boolean, optional): Opt-in flag persisted on `Chat.adhdAssist` (default `false`). When `true`, the resolved system prompt is prepended with the verbatim ADHD Assist policy block from `docs/literature/adhd-assist-prompt-policy.md` §3 before being passed to `streamText`. Style is the only IV — model, retrieval, tools, temperature, and streaming behavior are unchanged. UI toggle lives at the top of the chat header on `/chat`. If the field is omitted from the request body, the request falls back to the persisted `Chat.adhdAssist` for the resolved chat — same precedence pattern as `systemPrompt`. If the field is present, it overrides the persisted value (and updates it).
+- `adhdAssist` (boolean, optional): Opt-in flag persisted on `Chat.adhdAssist` (default `false`). When `true`, the resolved system prompt is prepended with the verbatim ADHD Assist policy block from `docs/literature/adhd-assist-prompt-policy.md` §3 before being passed to `streamText`. Style is the only IV — model, retrieval, tools, temperature, and streaming behavior are unchanged. UI toggle lives at the top of the chat header on `/chat`. If the field is omitted from the request body, the request falls back to the persisted `Chat.adhdAssist` for the resolved chat — same precedence pattern as `systemPrompt`. If the field is present, it overrides the persisted value (and updates it). When Assist is ON, Phase 3 oversight (`ADHD_ASSIST_OVERSIGHT` env, default enabled) audits the full draft for structural compliance (`**Top summary**`, `**Next?**`, word cap) before emit; set `ADHD_ASSIST_OVERSIGHT=false` to disable the rewrite pass.
 - `proxyUser` (object, optional): Only for admin `x-api-key` calls. Allows services like Aitutor to act on behalf of a user; see [Proxy Delegation (`proxyUser`)](#proxy-delegation-proxyuser).
 
 #### Examples

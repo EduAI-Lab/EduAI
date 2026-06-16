@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { hashPassword } from 'better-auth/crypto';
+import { clearStudentIdStorage, prepareStudentIdStorage } from '../app/lib/canvas/student-id.server';
 import { UNITS } from '../app/lib/units';
 
 const prisma = new PrismaClient();
@@ -29,6 +30,14 @@ export const SEED_IDS = {
     student3: 'seed_user_student_03',
     student4: 'seed_user_student_04',
     student5: 'seed_user_student_05',
+  },
+  /** Canvas-compatible sis_user_id values for seeded students (matches mock roster + local Canvas seed). */
+  studentNumbers: {
+    student1: 'student_1',
+    student2: 'student_2',
+    student3: 'student_3',
+    student4: 'student_4',
+    student5: 'student_5',
   },
   courses: {
     cosc101: 'seed_course_cosc101',
@@ -929,7 +938,10 @@ async function seedUsers() {
     name: string;
     role: 'ADMIN' | 'INSTRUCTOR' | 'TA' | 'STUDENT' | 'UNIT_ADMIN';
     authorizedUnits?: string[];
+    studentNumber?: string;
   };
+
+  const sn = SEED_IDS.studentNumbers;
 
   const users: SeededUser[] = [
     { id: u.admin, email: 'admin@eduai.local', name: 'EduAI Admin', role: 'ADMIN' },
@@ -941,14 +953,18 @@ async function seedUsers() {
     { id: u.instructorHum, email: 'instructor.hum@eduai.local', name: 'Dr. Hannah Arendt', role: 'INSTRUCTOR' },
     { id: u.taCS, email: 'ta.cs@eduai.local', name: 'Sam Carter', role: 'TA' },
     { id: u.taMath, email: 'ta.math@eduai.local', name: 'Riley Chen', role: 'TA' },
-    { id: u.student1, email: 'student1@eduai.local', name: 'Alex Patel', role: 'STUDENT' },
-    { id: u.student2, email: 'student2@eduai.local', name: 'Brooke Kim', role: 'STUDENT' },
-    { id: u.student3, email: 'student3@eduai.local', name: 'Cameron Lee', role: 'STUDENT' },
-    { id: u.student4, email: 'student4@eduai.local', name: 'Devon Singh', role: 'STUDENT' },
-    { id: u.student5, email: 'student5@eduai.local', name: 'Erin Walsh', role: 'STUDENT' },
+    { id: u.student1, email: 'student1@eduai.local', name: 'Alex Patel', role: 'STUDENT', studentNumber: sn.student1 },
+    { id: u.student2, email: 'student2@eduai.local', name: 'Brooke Kim', role: 'STUDENT', studentNumber: sn.student2 },
+    { id: u.student3, email: 'student3@eduai.local', name: 'Cameron Lee', role: 'STUDENT', studentNumber: sn.student3 },
+    { id: u.student4, email: 'student4@eduai.local', name: 'Devon Singh', role: 'STUDENT', studentNumber: sn.student4 },
+    { id: u.student5, email: 'student5@eduai.local', name: 'Erin Walsh', role: 'STUDENT', studentNumber: sn.student5 },
   ];
 
   for (const user of users) {
+    const studentIdFields = user.studentNumber
+      ? prepareStudentIdStorage(user.studentNumber)
+      : clearStudentIdStorage();
+
     await prisma.user.upsert({
       where: { id: user.id },
       update: {
@@ -958,6 +974,7 @@ async function seedUsers() {
         authorizedUnits: user.authorizedUnits ?? [],
         isActive: true,
         emailVerified: true,
+        ...studentIdFields,
       },
       create: {
         id: user.id,
@@ -967,6 +984,7 @@ async function seedUsers() {
         authorizedUnits: user.authorizedUnits ?? [],
         isActive: true,
         emailVerified: true,
+        ...studentIdFields,
       },
     });
   }
@@ -1211,15 +1229,33 @@ async function seedBugReports() {
   }
 }
 
+async function seedSystemConfig() {
+  await prisma.systemConfig.upsert({
+    where: { key: "webToolsEnabled" },
+    create: {
+      key: "webToolsEnabled",
+      value: "false",
+      description: "When true, webSearch and fetchPage are registered in the chat tool path.",
+      updatedBy: SEED_IDS.users.admin,
+    },
+    update: {},
+  });
+}
+
 async function main() {
   console.log(`Seeding Core (units registry: ${UNITS.length} subjects)...`);
+
+  await seedSystemConfig();
+  console.log("  System config seeded (webToolsEnabled=false)");
 
   await seedAIProvidersAndModels();
   console.log('  AI providers and models seeded');
 
   await seedUsers();
   await seedPasswords();
-  console.log('  Users seeded (admin, 2 unit admins, 4 instructors, 2 TAs, 5 students) with default password');
+  console.log(
+    '  Users seeded (admin, 2 unit admins, 4 instructors, 2 TAs, 5 students with student_1–student_5 IDs) with default password',
+  );
 
   await seedCourses();
   console.log(`  ${COURSES.length} courses seeded with topics, enrollments, and questions`);
