@@ -5,7 +5,7 @@
  * RESEARCH_POLICY_OUT — policy JSONL (default policy-runs.v1.jsonl)
  * RESEARCH_LABEL_OUT  — labels JSONL (default labels.v1.jsonl)
  */
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { DEFAULT_LABELS_OUT, DEFAULT_POLICY_OUT } from "./paths.mjs";
 
 function readEnv(name) {
@@ -30,7 +30,7 @@ function main() {
   const labelsPath = readEnv("RESEARCH_LABEL_OUT") ?? DEFAULT_LABELS_OUT;
 
   const policies = loadJsonl(policyPath);
-  const labels = loadJsonl(labelsPath);
+  const labels = existsSync(labelsPath) ? loadJsonl(labelsPath) : [];
 
   console.log("=== policy run summary ===");
   console.log("policy file:", policyPath, "rows:", policies.length);

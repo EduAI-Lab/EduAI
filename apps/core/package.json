@@ -42,6 +42,7 @@
     "research:eval-llm": "tsx ./scripts/research/evaluate-llm-router.ts",
     "research:status-report": "node ./scripts/research/summarize-research-status.mjs",
     "research:tier-a": "bash ./scripts/research/run-s378-tier-a.sh",
+    "research:tier-continue": "bash ./scripts/research/run-s378-tier-continue.sh",
     "research:offline-analysis": "bash ./scripts/research/run-offline-analysis.sh",
     "test:embedding": "tsx scripts/test-embedding.ts",
     "re-embed:course": "tsx scripts/re-embed-course.ts"
