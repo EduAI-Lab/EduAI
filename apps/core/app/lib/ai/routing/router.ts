@@ -1,5 +1,5 @@
 /**
- * Routing layer entrypoint — Phase 1 rules, Phase 3 kNN / hybrid (see `ROUTER_MODE`).
+ * Routing layer entrypoint — Phase 1 rules, Phase 3 kNN / hybrid / LLM classifier.
  *
  * - **`rules.ts`** — interpretable rule stack
  * - **`knn.ts`** — embedding kNN tier vote from seed exemplars
@@ -17,6 +17,11 @@ import {
 } from "./carbon-policy";
 import { predictTierKnn, type KnnTierPrediction } from "./knn";
 import {
+  classifyPromptForTier,
+  tierFromLlmClassification,
+  type LlmRouteClassification,
+} from "./llm-classifier";
+import {
   isLocalVllmRouting,
   localVllmFallbackModelId,
   normalizePickForLocalVllm,
@@ -25,16 +30,23 @@ import {
 export const ROUTER_VERSION_RULES = "v1-rules";
 export const ROUTER_VERSION_KNN = "v2-knn";
 export const ROUTER_VERSION_HYBRID = "v2-hybrid";
+export const ROUTER_VERSION_LLM = "v2-llm";
 
 /** @deprecated Use `ROUTER_VERSION_RULES` — kept for chat telemetry compatibility */
 export const ROUTER_VERSION = ROUTER_VERSION_RULES;
 
-export type RouterMode = "rules" | "knn" | "hybrid";
+export type RouterMode = "rules" | "knn" | "hybrid" | "llm";
 
 export function parseRouterMode(raw: string | undefined): RouterMode {
   const v = raw?.trim().toLowerCase();
-  if (v === "knn" || v === "hybrid") {
-    return v;
+  if (v === "knn") {
+    return "knn";
+  }
+  if (v === "hybrid") {
+    return "hybrid";
+  }
+  if (v === "llm" || v === "classifier" || v === "auto-llm") {
+    return "llm";
   }
   return "rules";
 }
@@ -50,8 +62,16 @@ export function routerVersionForMode(mode: RouterMode): string {
   if (mode === "hybrid") {
     return ROUTER_VERSION_HYBRID;
   }
+  if (mode === "llm") {
+    return ROUTER_VERSION_LLM;
+  }
   return ROUTER_VERSION_RULES;
 }
+
+export type ResolveRouterOptions = {
+  /** Per-request override (e.g. `model=auto-llm`). Wins over `ROUTER_MODE`. */
+  modeOverride?: RouterMode;
+};
 
 /**
  * Extra signals for routing (chat passes these from RAG prefetch + message metadata).
@@ -139,9 +159,10 @@ async function finalizePick(
     rule: string;
     mode: RouterMode;
     knn?: KnnTierPrediction | null;
+    llm?: LlmRouteClassification | null;
     phaseCtx: Phase1RouterContext;
     context: RouterInputContext;
-    pickSource: "rules" | "knn" | "hybrid";
+    pickSource: "rules" | "knn" | "hybrid" | "llm";
   },
 ): Promise<RouterDecision> {
   const normalizedPick = normalizePickForLocalVllm(pick);
@@ -202,6 +223,13 @@ async function finalizePick(
           knnTopNeighbor: meta.knn.neighbors[0]?.prompt ?? null,
           knnTopSimilarity: meta.knn.neighbors[0]?.similarity ?? null,
           knnExemplarCount: meta.knn.exemplarCount,
+        }
+      : {}),
+    ...(meta.llm
+      ? {
+          llmTask: meta.llm.task,
+          llmComplexity: meta.llm.complexity,
+          llmConfidence: meta.llm.confidence,
         }
       : {}),
   };
@@ -313,13 +341,84 @@ export async function resolveRoutedModelHybrid(
 }
 
 /**
- * Choose `provider:modelId` for Auto mode (`ROUTER_MODE`: rules | knn | hybrid).
+ * P3b LLM classifier: dedicated tier-1 router call, then carbon-aware model pick.
+ * Hard rules still win for images (tier ≥ 2).
+ */
+export async function resolveRoutedModelLlm(
+  prompt: string,
+  context: RouterInputContext,
+): Promise<RouterDecision> {
+  const phaseCtx = buildPhase1Context(prompt, context);
+  const match = matchPhase1Rules(phaseCtx);
+
+  if (phaseCtx.imagesPresent) {
+    return finalizePick(match.pick, {
+      routerVersion: ROUTER_VERSION_LLM,
+      rule: match.rule,
+      mode: "llm",
+      knn: null,
+      llm: null,
+      phaseCtx,
+      context,
+      pickSource: "rules",
+    });
+  }
+
+  let classification: LlmRouteClassification;
+
+  try {
+    classification = await classifyPromptForTier(prompt, context);
+    const tier = tierFromLlmClassification(classification);
+    const pick = pickSpecFromTier(tier, context);
+
+    return finalizePick(pick, {
+      routerVersion: ROUTER_VERSION_LLM,
+      rule: "llm_classifier",
+      mode: "llm",
+      knn: null,
+      llm: classification,
+      phaseCtx,
+      context,
+      pickSource: "llm",
+    });
+  } catch (err) {
+    const decision = await finalizePick(match.pick, {
+      routerVersion: ROUTER_VERSION_LLM,
+      rule: "llm_classifier_fallback_rules",
+      mode: "llm",
+      knn: null,
+      llm: null,
+      phaseCtx,
+      context,
+      pickSource: "rules",
+    });
+    decision.features.classifierError =
+      err instanceof Error ? err.message : String(err);
+    return decision;
+  }
+}
+
+function resolveMode(options?: ResolveRouterOptions): RouterMode {
+  if (options?.modeOverride) {
+    return options.modeOverride;
+  }
+  return resolveRouterMode();
+}
+
+/**
+ * Choose `provider:modelId` for Auto mode.
+ * - `model=auto` → `ROUTER_MODE` env (default rules)
+ * - `model=auto-llm` → LLM classifier (P3b)
  */
 export async function resolveRoutedModel(
   prompt: string,
   context: RouterInputContext,
+  options?: ResolveRouterOptions,
 ): Promise<RouterDecision> {
-  const mode = resolveRouterMode();
+  const mode = resolveMode(options);
+  if (mode === "llm") {
+    return resolveRoutedModelLlm(prompt, context);
+  }
   if (mode === "knn") {
     return resolveRoutedModelKnn(prompt, context);
   }
@@ -330,6 +429,6 @@ export async function resolveRoutedModel(
 }
 
 /** Version string stored on telemetry for the active mode. */
-export function activeRouterVersion(): string {
-  return routerVersionForMode(resolveRouterMode());
+export function activeRouterVersion(mode?: RouterMode): string {
+  return routerVersionForMode(mode ?? resolveRouterMode());
 }

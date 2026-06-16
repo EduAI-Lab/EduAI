@@ -37,13 +37,13 @@ function main() {
   console.log("labels file:", labelsPath, "rows:", labels.length);
   console.log("");
 
-  for (const pol of ["P0", "P1"]) {
+  for (const pol of ["P0", "P1", "P3b"]) {
     const rows = policies.filter((r) => r.policy === pol && !r.error && r.response);
     if (!rows.length) continue;
     const durs = rows.map((r) => r.duration_ms);
     const mean = durs.reduce((a, b) => a + b, 0) / durs.length;
     console.log(`${pol}: n=${rows.length} mean_latency_ms=${Math.round(mean)}`);
-    if (pol === "P1") {
+    if (pol === "P1" || pol === "P3b") {
       const tiers = { 1: 0, 2: 0, 3: 0, null: 0 };
       for (const r of rows) {
         const t = r.routing_tier ?? null;
@@ -57,33 +57,43 @@ function main() {
 
   const labelById = new Map(labels.map((l) => [l.prompt_id, l]));
   const p1Dev = policies.filter((r) => r.policy === "P1" && r.split === "dev" && !r.error);
+  const p3bDev = policies.filter((r) => r.policy === "P3b" && r.split === "dev" && !r.error);
 
-  if (p1Dev.length === 0) {
-    console.log("\nNo P1 dev runs — skip oracle gap (run RESEARCH_POLICY=P1 RESEARCH_RUN_SPLIT=dev).");
+  function printOracleGap(label, rows) {
+    if (rows.length === 0) {
+      console.log(`\nNo ${label} dev runs — skip oracle gap.`);
+      return;
+    }
+    let matched = 0;
+    let underRoute = 0;
+    let overRoute = 0;
+    let correct = 0;
+
+    for (const row of rows) {
+      const labelRow = labelById.get(row.prompt_id);
+      if (!labelRow || labelRow.min_adequate_tier == null) continue;
+      matched++;
+      const chosen = row.routing_tier ?? 1;
+      const oracle = labelRow.min_adequate_tier;
+      if (chosen < oracle) underRoute++;
+      else if (chosen > oracle) overRoute++;
+      else correct++;
+    }
+
+    console.log(`\n=== ${label} vs oracle (dev labels) ===`);
+    console.log("matched prompts:", matched);
+    console.log("correct tier:", correct, `(${matched ? ((100 * correct) / matched).toFixed(1) : 0}%)`);
+    console.log("under-routed (quality risk):", underRoute);
+    console.log("over-routed (energy waste):", overRoute);
+  }
+
+  if (p1Dev.length === 0 && p3bDev.length === 0) {
+    console.log("\nNo P1/P3b dev runs — skip oracle gap (run RESEARCH_POLICY=P1 RESEARCH_RUN_SPLIT=dev).");
     return;
   }
 
-  let matched = 0;
-  let underRoute = 0;
-  let overRoute = 0;
-  let correct = 0;
-
-  for (const row of p1Dev) {
-    const label = labelById.get(row.prompt_id);
-    if (!label || label.min_adequate_tier == null) continue;
-    matched++;
-    const chosen = row.routing_tier ?? 1;
-    const oracle = label.min_adequate_tier;
-    if (chosen < oracle) underRoute++;
-    else if (chosen > oracle) overRoute++;
-    else correct++;
-  }
-
-  console.log("\n=== P1 vs oracle (dev labels) ===");
-  console.log("matched prompts:", matched);
-  console.log("correct tier:", correct, `(${matched ? ((100 * correct) / matched).toFixed(1) : 0}%)`);
-  console.log("under-routed (quality risk):", underRoute);
-  console.log("over-routed (energy waste):", overRoute);
+  printOracleGap("P1", p1Dev);
+  printOracleGap("P3b", p3bDev);
 
   const sensitive = labels.filter((l) => l.tier_sensitive).length;
   console.log("\n=== label stats ===");

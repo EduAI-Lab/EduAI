@@ -10,7 +10,9 @@ import {
 } from "~/lib/ai/providers";
 import {
   activeRouterVersion,
+  parseRouterMode,
   resolveRoutedModel,
+  type RouterMode,
 } from "~/lib/ai/routing/router";
 import {
   normalizeTokenUsage,
@@ -52,6 +54,7 @@ function autoRoutingHeaders(
   resolvedModelId: string,
   routingTier: 1 | 2 | 3 | null,
   wasAuto: boolean,
+  routerVersion?: string | null,
 ): Record<string, string> {
   const headers: Record<string, string> = {
     "X-Routed-Model": resolvedModelId,
@@ -60,9 +63,25 @@ function autoRoutingHeaders(
     if (routingTier != null) {
       headers["X-Routing-Tier"] = String(routingTier);
     }
-    headers["X-Router-Version"] = activeRouterVersion();
+    headers["X-Router-Version"] = routerVersion ?? activeRouterVersion();
   }
   return headers;
+}
+
+function resolveAutoRouting(
+  model: string | undefined,
+): { routeWithAuto: boolean; modeOverride?: RouterMode; requestedAuto: string | null } {
+  if (model === undefined || model === "auto") {
+    return { routeWithAuto: true, requestedAuto: model ?? "auto" };
+  }
+  if (model === "auto-llm") {
+    return {
+      routeWithAuto: true,
+      modeOverride: "llm",
+      requestedAuto: "auto-llm",
+    };
+  }
+  return { routeWithAuto: false, requestedAuto: null };
 }
 
 const TOOL_MAX_STEPS = Math.min(
@@ -388,7 +407,7 @@ export async function action({ request }: ActionFunctionArgs) {
         JSON.stringify({
           error: "Missing model",
           details:
-            'ROUTER_AUTO_DEFAULT disables implicit Auto; send model "auto" or a concrete registry id.',
+            'ROUTER_AUTO_DEFAULT disables implicit Auto; send model "auto", "auto-llm", or a concrete registry id.',
         }),
         {
           status: 400,
@@ -397,7 +416,8 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    const routeWithAuto = model === undefined || model === "auto";
+    const autoRouting = resolveAutoRouting(model);
+    const routeWithAuto = autoRouting.routeWithAuto;
     const apiKeys = body.apiKeys as unknown;
     const courseId = typeof body.courseId === "string" ? body.courseId : undefined;
     const courseCode = typeof body.courseCode === "string" ? body.courseCode : undefined;
@@ -687,25 +707,40 @@ export async function action({ request }: ActionFunctionArgs) {
     let wasAuto = false;
     let routingTier: 1 | 2 | 3 | null = null;
     let routerContext: Record<string, unknown> | null = null;
+    let resolvedRouterVersion: string | null = null;
 
     if (routeWithAuto) {
-      const decision = await resolveRoutedModel(lastUserMessageTextForTelemetry, {
-        courseId: effectiveCourseId,
-        courseCode: courseCode ?? null,
-        imagesPresent: hasAttachments,
-        ragTopSimilarity,
-        ragChunkCount,
-        ragContextTokenEstimate,
-        courseRagNeeded,
-      });
+      const decision = await resolveRoutedModel(
+        lastUserMessageTextForTelemetry,
+        {
+          courseId: effectiveCourseId,
+          courseCode: courseCode ?? null,
+          imagesPresent: hasAttachments,
+          ragTopSimilarity,
+          ragChunkCount,
+          ragContextTokenEstimate,
+          courseRagNeeded,
+        },
+        autoRouting.modeOverride
+          ? { modeOverride: autoRouting.modeOverride }
+          : undefined,
+      );
       model = decision.modelId;
       wasAuto = true;
       routingTier = decision.tier;
-      routerContext = decision.features;
+      routerContext = {
+        ...decision.features,
+        requestedAuto: autoRouting.requestedAuto,
+      };
+      resolvedRouterVersion =
+        typeof decision.features.routerVersion === "string"
+          ? decision.features.routerVersion
+          : activeRouterVersion(autoRouting.modeOverride ?? parseRouterMode(process.env.ROUTER_MODE));
       chatApiDebug("Auto routing resolved model", {
         resolvedModelId: decision.modelId,
         routingTier: decision.tier,
         rule: decision.features.rule,
+        requestedAuto: autoRouting.requestedAuto,
       });
     }
 
@@ -1079,7 +1114,7 @@ ${buildRagSystemBlock(preloadedRagContext, { toolPath: true })}`;
           durationMs: Date.now() - requestStartMs,
           wasAuto,
           routingTier,
-          routerVersion: wasAuto ? activeRouterVersion() : null,
+          routerVersion: wasAuto ? resolvedRouterVersion : null,
           routerFeatures: routerContext,
         });
       },
@@ -1090,7 +1125,12 @@ ${buildRagSystemBlock(preloadedRagContext, { toolPath: true })}`;
         "Content-Encoding": "none",
         "Transfer-Encoding": "chunked",
         Connection: "keep-alive",
-        ...autoRoutingHeaders(resolvedModelId, routingTier, wasAuto),
+        ...autoRoutingHeaders(
+          resolvedModelId,
+          routingTier,
+          wasAuto,
+          resolvedRouterVersion,
+        ),
       };
       if (chat?.id) {
         headers["X-Chat-Id"] = chat.id;
@@ -1146,7 +1186,12 @@ ${buildRagSystemBlock(preloadedRagContext, { toolPath: true })}`;
             status: 200,
             headers: {
               "Content-Type": "application/json",
-              ...autoRoutingHeaders(resolvedModelId, routingTier, wasAuto),
+              ...autoRoutingHeaders(
+                resolvedModelId,
+                routingTier,
+                wasAuto,
+                resolvedRouterVersion,
+              ),
             },
           },
         );

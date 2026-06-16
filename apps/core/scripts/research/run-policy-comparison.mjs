@@ -3,10 +3,11 @@
  * Step 5 — run task-suite prompts under routing policy P0 or P1.
  *
  * P0: always tier 3 (vllm:qwen2.5-32b-instruct)
- * P1: Auto routing (model=auto)
+ * P1: Auto routing (model=auto) — rule-based
+ * P3b: LLM classifier Auto (model=auto-llm)
  *
  * Env: same as run-both-tier-baseline.mjs plus:
- *   RESEARCH_POLICY          P0 | P1 | both (default both)
+ *   RESEARCH_POLICY          P0 | P1 | P3b | both (default both = P0+P1)
  *   RESEARCH_RUN_SPLIT       dev | test | all (default test for step 5)
  *   RESEARCH_POLICY_OUT      default docs/research/data/runs/policy-runs.v1.jsonl
  */
@@ -35,6 +36,11 @@ const POLICIES = {
     policy: "P1",
     requested_model: "auto",
     description: "rule-based-auto",
+  },
+  P3b: {
+    policy: "P3b",
+    requested_model: "auto-llm",
+    description: "llm-classifier-auto",
   },
 };
 
@@ -122,9 +128,10 @@ async function postChat({
       responseText: "",
       finishReason: null,
       error: message,
-      routedModel: null,
-      routingTier: null,
-    };
+    routedModel: null,
+    routingTier: null,
+    routerVersion: null,
+  };
   }
 
   const text = await res.text();
@@ -145,6 +152,10 @@ async function postChat({
   const routingTier = routingTierHeader
     ? Number(routingTierHeader)
     : inferTierFromModel(routedModel);
+  const routerVersion =
+    res.headers.get("x-router-version") ??
+    res.headers.get("X-Router-Version") ??
+    null;
 
   const usage = json?.usage ?? null;
   const promptTokens =
@@ -160,6 +171,7 @@ async function postChat({
     error: json?.error ?? (res.status >= 400 ? text.slice(0, 200) : null),
     routedModel,
     routingTier: Number.isFinite(routingTier) ? routingTier : null,
+    routerVersion,
     promptTokens,
     completionTokens,
   };
@@ -202,10 +214,12 @@ async function main() {
   let policies =
     policyFilter === "BOTH"
       ? [POLICIES.P0, POLICIES.P1]
-      : [POLICIES[policyFilter]].filter(Boolean);
+      : policyFilter === "ALL"
+        ? [POLICIES.P0, POLICIES.P1, POLICIES.P3b]
+        : [POLICIES[policyFilter]].filter(Boolean);
 
   if (policies.length === 0) {
-    console.error("RESEARCH_POLICY must be P0, P1, or both.");
+    console.error("RESEARCH_POLICY must be P0, P1, P3b, both, or all.");
     process.exit(1);
   }
 
@@ -328,6 +342,7 @@ async function main() {
             tool_execution_mode: hybridFlags.tool_execution_mode,
             routed_model: result.routedModel,
             routing_tier: result.routingTier,
+            router_version: result.routerVersion,
             duration_ms: result.durationMs,
             prompt_tokens: result.promptTokens,
             completion_tokens: result.completionTokens,
