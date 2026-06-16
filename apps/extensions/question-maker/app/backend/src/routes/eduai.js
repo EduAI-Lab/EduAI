@@ -5,7 +5,29 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import eduaiService from '../services/eduaiService.js';
+import { listCoursesFromCore, getCourseTopicsFromCore } from '../services/coreApiService.js';
+import { config } from '../config/settings.js';
 import { Course } from '../schema/Course.js';
+
+function filterIgnoredCourses(data) {
+  const ignored = (config.eduaiIgnoredCourseCodes || []).map((c) =>
+    String(c).replace(/\s+/g, '').toLowerCase(),
+  );
+  if (ignored.length === 0) return data;
+
+  const normalize = (v) => (v == null ? '' : String(v).replace(/\s+/g, '').toLowerCase());
+  const filterCourse = (course) => {
+    const code = normalize(course.code);
+    const id = normalize(course.id);
+    return !ignored.some((k) => code === k || id === k);
+  };
+
+  if (Array.isArray(data)) return data.filter(filterCourse);
+  if (data && Array.isArray(data.courses)) {
+    return { ...data, courses: data.courses.filter(filterCourse) };
+  }
+  return data;
+}
 
 const router = express.Router();
 
@@ -135,10 +157,12 @@ router.post('/generate-questions', authenticateToken, async (req, res) => {
   }
 });
 
-/** GET /api/eduai/courses – fetches the list of EduAI-managed courses for selection. */
+/** GET /api/eduai/courses – fetches Core courses scoped to the caller's enrollments (#578). */
 router.get('/courses', authenticateToken, async (req, res) => {
   try {
-    const coursesData = await eduaiService.listCourses();
+    const coursesData = filterIgnoredCourses(
+      await listCoursesFromCore(req.headers.cookie ?? ''),
+    );
 
     res.json({
       success: true,
@@ -153,7 +177,7 @@ router.get('/courses', authenticateToken, async (req, res) => {
   }
 });
 
-/** GET /api/eduai/courses/:courseId/topics – retrieves EduAI topics for the given course ID. */
+/** GET /api/eduai/courses/:courseId/topics – Core topics for course picker preview (#578). */
 router.get('/courses/:courseId/topics', authenticateToken, async (req, res) => {
   try {
     const { courseId } = req.params;
@@ -162,16 +186,19 @@ router.get('/courses/:courseId/topics', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Course ID is required' });
     }
 
-    const topics = await eduaiService.getCourseTopics(courseId);
+    const data = await getCourseTopicsFromCore(courseId, {
+      cookie: req.headers.cookie ?? '',
+    });
 
     res.json({
       success: true,
-      data: topics
+      data
     });
   } catch (error) {
-    console.error('EduAI course topics error:', error);
-    res.status(500).json({
-      error: 'Failed to retrieve topics from EduAI',
+    console.error('Core course topics error:', error);
+    const status = Number.isInteger(error?.status) ? error.status : 502;
+    res.status(status).json({
+      error: 'Failed to retrieve topics from Core',
       details: error.message
     });
   }
@@ -185,12 +212,15 @@ router.get('/test-api-key', authenticateToken, async (req, res) => {
     if (result.success) {
       res.json({
         success: true,
+        configured: true,
         message: result.message,
         data: result.response
       });
     } else {
-      res.status(400).json({
+      const configured = result.error !== 'EduAI API key not configured';
+      res.json({
         success: false,
+        configured,
         error: result.error,
         statusCode: result.statusCode
       });

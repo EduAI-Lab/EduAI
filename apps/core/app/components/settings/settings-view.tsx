@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 
 import { CanvasIntegrationSettings } from "~/components/canvas/CanvasIntegrationSettings";
 import { AccessibilitySettingsTab } from "~/components/settings/accessibility-settings-tab";
+import { StudentNumberSettings } from "~/components/settings/student-number-settings";
 import {
   Accessibility,
   CheckCircle2,
@@ -43,10 +44,12 @@ const CANVAS_SETTINGS_ROLES = new Set(["INSTRUCTOR", "ADMIN"]);
 
 interface SettingsViewProps {
   role?: string;
+  studentNumber?: string | null;
 }
 
-export function SettingsView({ role }: SettingsViewProps) {
+export function SettingsView({ role, studentNumber = null }: SettingsViewProps) {
   const showCanvasSettings = CANVAS_SETTINGS_ROLES.has(role ?? "");
+  const showStudentNumberSettings = role === "STUDENT";
   const {
     updateProviderSettings,
     removeProviderSettings,
@@ -139,6 +142,10 @@ export function SettingsView({ role }: SettingsViewProps) {
         </TabsContent>
 
         <TabsContent value="api-keys" className="mt-6 space-y-6">
+          {showStudentNumberSettings && (
+            <StudentNumberSettings initialStudentNumber={studentNumber} />
+          )}
+
           <Card>
             <CardHeader>
               <CardTitle>Server API Keys</CardTitle>
