@@ -1,7 +1,13 @@
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
+import { canAccessChat } from "~/lib/chat-history/server";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
+/**
+ * GET /api/chats/:chatId — chat metadata. Readable by the owner and by anyone
+ * with course-staff/admin visibility (see lib/chat-history). `canEdit` is true
+ * only for the owner; read-only viewers use it to suppress the composer.
+ */
 export async function loader({ request, params }: LoaderFunctionArgs) {
   try {
     const session = await auth.api.getSession(request);
@@ -20,17 +26,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       });
     }
 
-    const chat = await prisma.chat.findFirst({
-      where: { id: chatId, userId: session.user.id },
-      select: {
-        id: true,
-        systemPrompt: true,
-        title: true,
-        adhdAssist: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
+    const { chat, canEdit } = await canAccessChat(
+      { id: session.user.id, role: session.user.role },
+      chatId,
+    );
 
     if (!chat) {
       return new Response(JSON.stringify({ error: "Chat not found" }), {
@@ -39,10 +38,27 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       });
     }
 
-    return new Response(JSON.stringify(chat), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({
+        id: chat.id,
+        systemPrompt: chat.systemPrompt,
+        title: chat.title,
+        adhdAssist: chat.adhdAssist,
+        courseId: chat.courseId,
+        courseCode: chat.course?.code ?? null,
+        courseName: chat.course?.name ?? null,
+        ownerId: chat.userId,
+        ownerName: chat.user.name,
+        ownerEmail: chat.user.email,
+        canEdit,
+        createdAt: chat.createdAt,
+        updatedAt: chat.updatedAt,
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
   } catch (error) {
     console.error("Chat API error:", error);
     return new Response(JSON.stringify({ error: "Internal server error" }), {

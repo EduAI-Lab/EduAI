@@ -34,7 +34,7 @@ import {
   BreadcrumbLink,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from '../components/ui/breadcrumb';
+} from '@eduai/ui';
 import api from '../lib/api';
 import type { Activity, Course, Lesson, ModuleDetail } from '../lib/types';
 import type { Route } from './+types/student.list';
@@ -456,7 +456,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
         {/* Lesson Progress */}
         {orderedActivities.length > 0 && (
           <div className="mb-8 animate-fade-up">
-            <div className="card-editorial p-5" data-tour="student-lesson-progress">
+            <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-5" data-tour="student-lesson-progress">
               <div className="flex items-center gap-4 mb-3">
                 <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
                   <svg
@@ -474,7 +474,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
                   </svg>
                 </div>
                 <div className="flex-1">
-                  <h1 className="font-display text-xl font-bold text-foreground">
+                  <h1 className="text-xl font-bold text-foreground">
                     {lesson?.title || 'Lesson'}
                   </h1>
                   <p className="text-sm text-muted-foreground">
@@ -496,7 +496,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
           {/* Main content area */}
           <div className="space-y-6 animate-fade-up delay-150">
             {/* Question card */}
-            <div className="card-editorial p-6" data-tour="student-question-card">
+            <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6" data-tour="student-question-card">
               <div className="flex items-center gap-2 mb-4">
                 <span className="tag tag-primary">Question</span>
                 {activity?.mainTopic && (
@@ -523,8 +523,8 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
             </div>
 
             {/* Answer card */}
-            <div className="card-editorial p-6 space-y-5" data-tour="student-answer-card">
-              <h2 className="font-display text-lg font-bold text-foreground">Your Answer</h2>
+            <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6 space-y-5" data-tour="student-answer-card">
+              <h2 className="text-lg font-bold text-foreground">Your Answer</h2>
 
               {activity?.type === 'MCQ' ? (
                 Array.isArray(activity?.options?.choices) ? (
@@ -776,7 +776,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
         {/* Pre-Chat Modal */}
         {showKnowledgeModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/20 backdrop-blur-sm p-4 animate-fade-in">
-            <div className="max-w-lg w-full card-editorial p-8 space-y-6 animate-scale-in">
+            <div className="max-w-lg w-full rounded-lg border bg-card text-card-foreground shadow-sm p-8 space-y-6 animate-scale-in">
               <div>
                 <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary mb-4">
                   <svg
@@ -793,7 +793,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
                     />
                   </svg>
                 </div>
-                <h2 className="font-display text-2xl font-bold text-foreground">
+                <h2 className="text-2xl font-bold text-foreground">
                   Before we start...
                 </h2>
                 <p className="text-muted-foreground mt-1">

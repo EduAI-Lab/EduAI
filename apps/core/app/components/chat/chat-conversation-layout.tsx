@@ -7,14 +7,14 @@ import { ChatWelcome } from "~/components/chat/chat-welcome";
 import type { ChatViewSharedProps } from "~/components/chat/chat-view-types";
 
 type ChatConversationLayoutProps = ChatViewSharedProps & {
-  bannerTitle: string;
-  bannerDescription: string;
+  bannerTitle?: string;
+  bannerDescription?: string;
   showCourseSelector: boolean;
 };
 
 export function ChatConversationLayout({
-  bannerTitle,
-  bannerDescription,
+  bannerTitle: _bannerTitle,
+  bannerDescription: _bannerDescription,
   showCourseSelector,
   chatModels,
   selectedModel,
@@ -26,6 +26,10 @@ export function ChatConversationLayout({
   messages,
   input,
   isLoading,
+  adhdAssist,
+  onAssistChange,
+  systemPrompt,
+  onSystemPromptSave,
   onInputChange,
   onSubmit,
   onStop,
@@ -33,16 +37,13 @@ export function ChatConversationLayout({
   webToolsEnabled,
 }: ChatConversationLayoutProps) {
   return (
-    <div className="flex flex-col h-[calc(100vh-var(--header-height))] bg-gradient-to-br from-background via-background to-muted/20">
-      <div className="flex-1 flex flex-col min-h-0 relative">
+    <div
+      className="flex flex-col h-[calc(100vh-var(--header-height))] bg-background"
+    >
+      <div className="flex-1 flex flex-col min-h-0 relative overflow-hidden">
         <div className="h-full overflow-y-auto scrollbar-hover">
-          <div className="px-4 py-6">
-            <div className="max-w-4xl mx-auto space-y-6">
-              <div className="rounded-lg border bg-muted/30 px-4 py-3">
-                <p className="font-medium">{bannerTitle}</p>
-                <p className="text-sm text-muted-foreground">{bannerDescription}</p>
-              </div>
-
+          <div className="px-6 py-6">
+            <div className="max-w-[720px] mx-auto space-y-5">
               {messages.length === 0 ? (
                 <ChatWelcome
                   selectedModelInfo={selectedModelInfo}
@@ -86,6 +87,10 @@ export function ChatConversationLayout({
         chatModels={chatModels}
         selectedModelInfo={selectedModelInfo}
         showCourseSelector={showCourseSelector}
+        adhdAssist={adhdAssist}
+        onAdhdAssistChange={onAssistChange}
+        systemPrompt={systemPrompt}
+        onSystemPromptSave={onSystemPromptSave}
       />
     </div>
   );

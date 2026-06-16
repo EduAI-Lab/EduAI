@@ -1,0 +1,45 @@
+/*
+ * EduAI Design System — Shadow Tokens
+ *
+ * Philosophy: Subtle elevation hierarchy. Cards rely primarily on
+ * borders for definition; shadows add gentle lift only where needed.
+ * The system is intentionally soft — low opacity, short spread.
+ *
+ * Dark mode: shadows are nearly invisible (surfaces distinguish
+ * via background color rather than shadow).
+ */
+
+:root {
+  /* ── Shadow color ───────────────────────────────────────── */
+  --shadow-color:    0 0% 0%;       /* hsl black */
+  --shadow-opacity:  0.17;
+
+  /* ── Shadow scale ───────────────────────────────────────── */
+  --shadow-2xs: 0px 1px 2px 0px hsl(var(--shadow-color) / 0.06);
+
+  --shadow-xs:  0px 1px 3px 0px hsl(var(--shadow-color) / 0.09);
+
+  --shadow-sm:  0px 1px 3px 0px  hsl(var(--shadow-color) / 0.17),
+                0px 1px 2px -1px hsl(var(--shadow-color) / 0.17);
+
+  --shadow:     0px 1px 3px 0px  hsl(var(--shadow-color) / 0.17),
+                0px 2px 4px -1px hsl(var(--shadow-color) / 0.12);
+
+  --shadow-md:  0px 1px 3px 0px  hsl(var(--shadow-color) / 0.17),
+                0px 4px 6px -1px hsl(var(--shadow-color) / 0.14);
+
+  --shadow-lg:  0px 1px 3px 0px  hsl(var(--shadow-color) / 0.17),
+                0px 8px 16px -2px hsl(var(--shadow-color) / 0.14);
+
+  --shadow-xl:  0px 1px 3px 0px  hsl(var(--shadow-color) / 0.17),
+                0px 16px 24px -4px hsl(var(--shadow-color) / 0.14);
+
+  --shadow-2xl: 0px 1px 3px 0px  hsl(var(--shadow-color) / 0.43);
+
+  /* ── Focus ring ─────────────────────────────────────────── */
+  --shadow-focus:       0 0 0 3px oklch(0.418 0.171 257 / 0.35);
+  --shadow-focus-error: 0 0 0 3px oklch(0.552 0.193 33 / 0.35);
+
+  /* ── Sidebar overlay shadow (offcanvas mode) ────────────── */
+  --shadow-sidebar:     4px 0px 24px 0px hsl(var(--shadow-color) / 0.20);
+}

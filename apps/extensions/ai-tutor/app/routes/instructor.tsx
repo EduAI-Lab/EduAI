@@ -20,7 +20,12 @@
 import { useOptimistic, useState } from 'react';
 import { useNavigate } from 'react-router';
 import Nav from '../components/Nav';
+import { CreateCourseDialog } from '../components/courses/CreateCourseDialog';
+import { AtRoleBanner } from '../components/rbac/AtRoleBanner';
+import { PermissionGate } from '../components/rbac/PermissionGate';
 import { PublishStatusButton } from '../components/PublishStatusButton';
+import { useAtPermissions } from '../hooks/useAtPermissions';
+import { useLocalUser } from '../hooks/useLocalUser';
 import api from '../lib/api';
 import type { Course, EduAiCourse } from '../lib/types';
 import type { Route } from './+types/instructor';
@@ -43,7 +48,10 @@ export async function clientLoader(_: Route.ClientLoaderArgs) {
  */
 export default function InstructorHome({ loaderData }: Route.ComponentProps) {
   const navigate = useNavigate();
+  const { user } = useLocalUser();
+  const perms = useAtPermissions();
   const [courses, setCourses] = useState<Course[]>(loaderData.courses ?? []);
+  const [showCreateCourse, setShowCreateCourse] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showEduAiImport, setShowEduAiImport] = useState(false);
   const [publishingId, setPublishingId] = useState<number | null>(null);
@@ -164,15 +172,26 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
       </div>
 
       <div className="container mx-auto px-6 py-10 space-y-8">
+        {user ? (
+          <AtRoleBanner role={user.role} authorizedUnits={user.authorizedUnits} />
+        ) : null}
+
         {/* Page header */}
         <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 animate-fade-up">
           <div>
             <p className="text-sm font-medium text-muted-foreground mb-1">Dashboard</p>
-            <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-foreground">
+            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-foreground">
               Teaching
             </h1>
           </div>
-          <button
+          <div className="flex flex-wrap gap-2">
+            <PermissionGate allow={perms.canCreateCourse}>
+              <button type="button" onClick={() => setShowCreateCourse(true)} className="btn-secondary">
+                Create course
+              </button>
+            </PermissionGate>
+            <PermissionGate allow={perms.canBrowseEduAiCatalog}>
+              <button
             onClick={() => {
               setShowEduAiImport((prev) => {
                 const next = !prev;
@@ -214,11 +233,35 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
               </>
             )}
           </button>
+            </PermissionGate>
+            <PermissionGate allow={perms.canImportFromEduAi && !perms.canBrowseEduAiCatalog}>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowEduAiImport((prev) => {
+                    const next = !prev;
+                    if (next) ensureEduAiCourses();
+                    else setEduAiError(null);
+                    return next;
+                  });
+                }}
+                className="btn-primary"
+              >
+                Import from EduAI
+              </button>
+            </PermissionGate>
+          </div>
         </header>
 
+        <CreateCourseDialog
+          open={showCreateCourse}
+          onOpenChange={setShowCreateCourse}
+          onCreated={() => void loadCourses()}
+        />
+
         {/* EduAI Import Panel */}
-        {showEduAiImport && (
-          <div className="card-editorial p-6 space-y-5 animate-scale-in">
+        {showEduAiImport && (perms.canBrowseEduAiCatalog || perms.canImportFromEduAi) && (
+          <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6 space-y-5 animate-scale-in">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <div className="flex items-center gap-2 mb-1">
@@ -237,7 +280,7 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
                       />
                     </svg>
                   </div>
-                  <h2 className="font-display text-xl font-bold text-foreground">
+                  <h2 className="text-xl font-bold text-foreground">
                     Import from EduAI
                   </h2>
                 </div>
@@ -347,7 +390,7 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
                       <div className="flex-1 space-y-2">
                         {course.code && <span className="tag tag-primary">{course.code}</span>}
                         {course.name && (
-                          <h3 className="font-display text-lg font-bold text-foreground">
+                          <h3 className="text-lg font-bold text-foreground">
                             {course.name}
                           </h3>
                         )}
@@ -438,7 +481,7 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
           </div>
         ) : oCourses.length === 0 ? (
           <div className="animate-fade-up delay-150">
-            <div className="card-editorial p-12 text-center max-w-lg mx-auto">
+            <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-12 text-center max-w-lg mx-auto">
               <div className="w-16 h-16 mx-auto mb-6 rounded-2xl bg-secondary flex items-center justify-center">
                 <svg
                   className="w-8 h-8 text-muted-foreground"
@@ -454,7 +497,7 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
                   />
                 </svg>
               </div>
-              <h2 className="font-display text-xl font-bold text-foreground mb-2">
+              <h2 className="text-xl font-bold text-foreground mb-2">
                 No courses yet
               </h2>
               <p className="text-muted-foreground text-sm">
@@ -476,7 +519,7 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
                     navigate(`/instructor/courses/${c.id}`);
                   }
                 }}
-                className="group card-editorial p-6 cursor-pointer transition-all duration-300 hover:shadow-xl hover:-translate-y-1 glow flex flex-col animate-fade-up focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                className="group rounded-lg border bg-card text-card-foreground shadow-sm p-6 cursor-pointer transition-all duration-300 hover:shadow-xl hover:-translate-y-1 glow flex flex-col animate-fade-up focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 style={{ animationDelay: `${150 + index * 50}ms` }}
               >
                 {/* Header */}
@@ -502,7 +545,7 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
 
                 {/* Course info */}
                 <div className="flex-1 mb-4">
-                  <h3 className="font-display text-lg font-bold text-foreground mb-1 group-hover:text-primary transition-colors line-clamp-2">
+                  <h3 className="text-lg font-bold text-foreground mb-1 group-hover:text-primary transition-colors line-clamp-2">
                     {c.title}
                   </h3>
                   {c.description && (
@@ -531,19 +574,21 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
                     </span>
                   </div>
 
-                  <div
-                    onClick={(event) => event.stopPropagation()}
-                    onKeyDown={(event) => event.stopPropagation()}
-                  >
-                    <PublishStatusButton
-                      isPublished={c.isPublished}
-                      pending={publishingId === c.id}
-                      onClick={() => {
-                        if (publishingId === c.id) return;
-                        togglePublish(c.id, c.isPublished);
-                      }}
-                    />
-                  </div>
+                  <PermissionGate allow={perms.canPublishContent}>
+                    <div
+                      onClick={(event) => event.stopPropagation()}
+                      onKeyDown={(event) => event.stopPropagation()}
+                    >
+                      <PublishStatusButton
+                        isPublished={c.isPublished}
+                        pending={publishingId === c.id}
+                        onClick={() => {
+                          if (publishingId === c.id) return;
+                          togglePublish(c.id, c.isPublished);
+                        }}
+                      />
+                    </div>
+                  </PermissionGate>
                 </div>
               </div>
             ))}

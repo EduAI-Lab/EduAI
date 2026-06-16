@@ -1,6 +1,6 @@
 /**
- * Lightweight tooltip component for displaying content on hover/focus.
- * Positions with fixed coordinates and clamps to viewport so the tooltip never goes off-screen.
+ * QM tooltip wrapper — keeps the legacy `content` prop API used across pages.
+ * Styled with redesign tokens via semantic classes.
  */
 import * as React from 'react';
 import { createPortal } from 'react-dom';
@@ -16,7 +16,13 @@ interface TooltipProps {
   multiline?: boolean;
 }
 
-export const Tooltip = ({ children, content, side = 'top', className, multiline = false }: TooltipProps) => {
+export const Tooltip = ({
+  children,
+  content,
+  side = 'top',
+  className,
+  multiline = false,
+}: TooltipProps) => {
   const [isVisible, setIsVisible] = React.useState(false);
   const triggerRef = React.useRef<HTMLDivElement>(null);
   const tooltipRef = React.useRef<HTMLDivElement>(null);
@@ -79,9 +85,9 @@ export const Tooltip = ({ children, content, side = 'top', className, multiline 
     <div
       ref={tooltipRef}
       className={cn(
-        'fixed z-[100] px-3 py-1.5 text-sm text-white bg-gray-900 rounded-md shadow-lg pointer-events-none',
+        'pointer-events-none fixed z-[100] rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground shadow-lg',
         multiline ? 'max-w-xs break-words' : 'whitespace-nowrap',
-        className
+        className,
       )}
       style={
         position === null

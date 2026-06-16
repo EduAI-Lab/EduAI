@@ -14,6 +14,7 @@ FROM node:20-alpine AS deps
 WORKDIR /app
 
 COPY package.json package-lock.json .npmrc ./
+COPY packages/ui/package.json                                 ./packages/ui/
 COPY apps/core/package.json                                   ./apps/core/
 COPY apps/extensions/ai-tutor/package.json                    ./apps/extensions/ai-tutor/
 COPY apps/extensions/ai-tutor/server/package.json             ./apps/extensions/ai-tutor/server/
@@ -29,6 +30,7 @@ WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
 
+COPY packages/ui                     ./packages/ui/
 COPY apps/extensions/ai-tutor/app    ./apps/extensions/ai-tutor/app
 COPY apps/extensions/ai-tutor/shared ./apps/extensions/ai-tutor/shared
 COPY apps/extensions/ai-tutor/vitest.config.ts ./apps/extensions/ai-tutor/

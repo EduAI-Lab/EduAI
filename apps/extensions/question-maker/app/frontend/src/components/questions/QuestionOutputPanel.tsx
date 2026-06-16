@@ -2,10 +2,9 @@
  * Output panel for question text, MCQ choices, and answer.
  * Matches prototype layout: clear labels, optional copy/clear, single card for content.
  */
+import { Label, Textarea, Button } from '@eduai/ui';
+
 import { useState } from 'react';
-import { Label } from '../ui/label';
-import { Textarea } from '../ui/textarea';
-import { Button } from '../ui/button';
 import { Copy, Check, RotateCcw } from 'lucide-react';
 import { MCQChoicesField } from './MCQChoicesField';
 import type { QuestionType, MCQChoice } from '../../types/question';
@@ -107,7 +106,7 @@ export function QuestionOutputPanel({
                               : 'Enter the full question text'
                     }
                     disabled={disabled}
-                    className="bg-secondary border-border min-h-24 resize-none"
+                    className="min-h-24 resize-none"
                     rows={5}
                 />
             </div>
@@ -153,7 +152,7 @@ export function QuestionOutputPanel({
                         onChange={(e) => onVariantAnswerChange(e.target.value)}
                         placeholder={isStreaming ? 'Generating answer...' : 'Provide an answer or leave blank'}
                         disabled={disabled}
-                        className="bg-secondary border-border min-h-20 resize-none"
+                        className="min-h-20 resize-none"
                         rows={3}
                     />
                 </div>

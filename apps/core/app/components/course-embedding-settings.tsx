@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertCircle, CheckCircle, Loader2, RefreshCw } from "lucide-react";
-import { Alert, AlertDescription } from "~/components/ui/alert";
-import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
-import { Checkbox } from "~/components/ui/checkbox";
-import { Label } from "~/components/ui/label";
+import { IconAlertCircle, IconCircleCheck, IconLoader, IconRefresh } from "@tabler/icons-react";
+import { Alert, AlertDescription } from "@eduai/ui";
+import { Button } from "@eduai/ui";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@eduai/ui";
+import { Checkbox } from "@eduai/ui";
+import { Label } from "@eduai/ui";
 import { readJsonResponse } from "~/lib/api/client";
 import {
   formatReEmbedJobMessage,
@@ -16,7 +16,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "~/components/ui/select";
+} from "@eduai/ui";
 
 type ModelOption = { id: string; label: string };
 
@@ -188,7 +188,7 @@ export function CourseEmbeddingSettings({ courseId, onSettingsSaved }: CourseEmb
     return (
       <Card>
         <CardContent className="flex items-center gap-2 py-8 text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" />
+          <IconLoader className="h-4 w-4 animate-spin" />
           Loading embedding settings…
         </CardContent>
       </Card>
@@ -224,7 +224,7 @@ export function CourseEmbeddingSettings({ courseId, onSettingsSaved }: CourseEmb
 
         {data?.needsReEmbed && (
           <Alert>
-            <AlertCircle className="h-4 w-4" />
+            <IconAlertCircle className="h-4 w-4" />
             <AlertDescription>
               Materials were indexed with a different model. Re-index all materials before relying on
               course chat RAG.
@@ -282,14 +282,14 @@ export function CourseEmbeddingSettings({ courseId, onSettingsSaved }: CourseEmb
 
         {error && (
           <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
+            <IconAlertCircle className="h-4 w-4" />
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
 
         {success && (
           <Alert>
-            <CheckCircle className="h-4 w-4" />
+            <IconCircleCheck className="h-4 w-4" />
             <AlertDescription>{success}</AlertDescription>
           </Alert>
         )}
@@ -297,12 +297,12 @@ export function CourseEmbeddingSettings({ courseId, onSettingsSaved }: CourseEmb
         <Button onClick={handleSave} disabled={saving}>
           {saving ? (
             <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              <IconLoader className="mr-2 h-4 w-4 animate-spin" />
               {reEmbedProgress ?? "Saving…"}
             </>
           ) : (
             <>
-              <RefreshCw className="mr-2 h-4 w-4" />
+              <IconRefresh className="mr-2 h-4 w-4" />
               Save settings
             </>
           )}
