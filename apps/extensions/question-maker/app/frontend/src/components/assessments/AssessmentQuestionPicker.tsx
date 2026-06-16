@@ -27,7 +27,7 @@ type PickerFilter = {
     types: QuestionType[];
     difficulties: QuestionDifficulty[];
     primaryTopicId: string;
-    secondaryTopicIds: number[];
+    secondaryTopicIds: string[];
     search: string;
 };
 

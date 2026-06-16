@@ -5,10 +5,45 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
 
+## [Week 7 — June 15–21, 2026]
+
+### Added
+
+- [question-maker] api: Auto-import taught Core courses on instructor login — `importTaughtCoursesFromCore` links or creates local courses for scoped Core offerings where the caller's enrollment role is `INSTRUCTOR` or `TA`, syncs topics, and seeds a Practice Exam. (#578, @GlowyBlack, 2026-06-15)
+- [core] api: Expose `callerEnrollmentRole` on each course in `GET /api/courses` so extensions can distinguish teaching vs student enrollments when auto-importing. (#578, @GlowyBlack, 2026-06-15)
+- [question-maker] tests: Add `topicSyncService.test.js`, `courseCodeUtils.test.js`, and `importTaughtCoursesService.test.js`; extend `coreApiService.test.js` for cookie-only scoped reads (no service-key fallback on 403). (#578, @GlowyBlack, 2026-06-15)
+
+### Changed
+
+- [question-maker] refactor: Extract shared `courseCodeUtils.js`, `topicSyncService.js`, and `coreCourseLinkService.js` — dedupe `syncTopicsFromCoreForCourse` / `normalizeCourseCode` from routes and import service; batch topic upserts with two `findAll` queries on the hot `/topics` path. (#578, @GlowyBlack, 2026-06-15)
+- [question-maker] ui: Reuse `normalizeCourseCode` from `courseDisplay.ts` in `ProfileCoursesDialog` and `AddQuestionDialog`. (#578, @GlowyBlack, 2026-06-15)
+- [question-maker] api: Use `cookieOnly` on user-scoped Core reads (`listCoursesFromCore`, topics) so a stale session does not fall back to the unscoped service key; prefer service key for enrollment roster reads used by RBAC. (#578, @GlowyBlack, 2026-06-15)
+- [ai-tutor] api: Filter auto-import to Core courses where `callerEnrollmentRole` is `INSTRUCTOR` or `TA`. (#578, @GlowyBlack, 2026-06-15)
+
+### Fixed
+
+- [question-maker] security: Forward session cookie on `GET /api/eduai/courses/:courseId/topics` so Core applies enrollment scope. (#578, @GlowyBlack, 2026-06-15)
+- [question-maker] security: Remove full-catalog service-key fallback from `findScopedCoreCourseByCode` — scoped cookie list only. (#578, @GlowyBlack, 2026-06-15)
+- [question-maker] ui: Roll back locally created course when `link-core` fails after create (`ProfileCoursesDialog`). (#578, @GlowyBlack, 2026-06-15)
+- [ai-tutor] fix: Restrict enrollment sync deletes to `STUDENT` rows so TA access is not revoked when Core returns a STUDENT-only roster. (#578, @GlowyBlack, 2026-06-15)
+- [core] security: Block student-number reassignment via `POST /api/canvas/link-roster` after first link (409; contact admin to change). (#578, @GlowyBlack, 2026-06-15)
+- [ai-tutor] fix: Add `updated` to `syncCourseEnrollments` client return type in `api.ts`. (#578, @GlowyBlack, 2026-06-15)
+- [ai-tutor] tests: Extend `enrollmentSync.test.js` — TA rows survive STUDENT-only sync deletes. (#578, @GlowyBlack, 2026-06-15)
+- [core] tests: Update `canvas.integration.test.ts` reassignment case to use a unique student number (avoids `studentIdLookup` collision with seeded data). (#578, @GlowyBlack, 2026-06-15)
+
+---
+
 ## [Week 6 — June 8–14, 2026]
 
 ### Added
 
+- [question-maker] api: Scope `GET /api/eduai/courses` to the caller's Core enrollments via forwarded session cookie; guard `PATCH /api/course/:id/link-core` with `isCoreCourseInScopedList`; auto-link local courses by code and pull topics from Core. (#582, @GlowyBlack, 2026-06-13)
+- [question-maker] ui: Filter course nav to Core-linked and sandbox courses when the instructor has Core enrollments (`useDisplayCourses`, `courseDisplay.ts`). (#582, @GlowyBlack, 2026-06-13)
+- [ai-tutor] api: Scope `GET /api/eduai/courses` and `POST /api/courses/import-external` to instructor Core enrollments; add `POST /api/courses/:courseId/sync-enrollments` to pull active STUDENT rows from Core. (#582, @GlowyBlack, 2026-06-13)
+- [ai-tutor] ui: Add “Sync students from Core” on the instructor course page for EduAI-imported offerings. (#582, @GlowyBlack, 2026-06-13)
+- [core] db: Seed encrypted student numbers (`student_1`–`student_5`) on test student accounts so Canvas roster link works out of the box in dev. (#582, @GlowyBlack, 2026-06-13)
+- [question-maker] tests: Extend `coreApiService.test.js` and `coreWiringDb.integration.test.js` for scoped Core course listing, link-core authorization, and variant testable 404 guard (#578). (#582, @GlowyBlack, 2026-06-13)
+- [ai-tutor] tests: Add `#578` coverage in `courses.test.js` (scoped import, sync-enrollments) and `enrollmentSync.test.js` (STUDENT-only filter). (#582, @GlowyBlack, 2026-06-13)
 - [core] rag: Add per-course RAG tuning — `ragTopK Int?` and `ragSimilarityThreshold Float?` on the `Course` model (nullable, both default to global values when null); `findRelevantContent` now fetches course settings and applies them with the resolution order: course override → caller arg → global env default. Two courses can now have completely different retrieval behaviour without touching the global config. (#365, @ammaarm128, 2026-06-05)
 - [core] api: `GET /api/courses/:id/rag-settings` + `PATCH /api/courses/:id/rag-settings` — read and update per-course RAG overrides; PATCH is restricted to ADMIN/INSTRUCTOR; setting a field to `null` restores the global default. (#365, @ammaarm128, 2026-06-05)
 - [core] ui: RAG Settings tab on the course detail page (`/courses/:courseId`) — visible to admins and instructors; form fields for Top-K chunks (1–20) and similarity threshold (0–1); empty fields clear the override back to global default. (#365, @ammaarm128, 2026-06-05)
@@ -49,8 +84,13 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] ui: Add Staff tab to Course Detail with `useCourseTAs` hook — lists current instructor and TAs with reassignment controls for admin/unit admin. (#491, @yta3216, 2026-06-08)
 - [core] [ai-tutor] api: Move course publish state to Core as source of truth (#477) — new `PATCH /api/courses/:id/publish` and `/unpublish` endpoints on Core (service-key + session auth, rank ≥ 2); AI Tutor write-through calls Core before updating local DB; `coreOfferingId` set at import time and `isPublished` synced from Core; native courses skip the Core call; unpublish cascades to child modules and lessons. (#510, @evanbones, 2026-06-08)
 
+
 ### Changed
 
+- [monorepo] docs: Document scoped extension course listing and AI Tutor enrollment sync in `docs/implementations/api-wiring.md`. (#578, @GlowyBlack, 2026-06-11)
+- [question-maker] api: Prefer Core session cookie over service key in `coreApiService.fetchFromCore` for user-scoped Core calls; support string CUID topic ids in Add Question and topic sync. (#578, @GlowyBlack, 2026-06-11)
+- [ai-tutor] infra: Default AI Tutor server `.env.example` and test env to `127.0.0.1` for Postgres on Windows. (#578, @GlowyBlack, 2026-06-11)
+- [core] rag: Cap cloud `embedMany` batch size at the provider limit of 100 (was 128) so `EMBED_MANY_BATCH_SIZE` env overrides cannot exceed Gemini's "At most 100 requests per batch" ceiling; add unit tests verifying 250-chunk materials split correctly and preserve order. (#52, #504, @ebabar5, 2026-06-10)
 - [core] ui: Wire course detail Enrollments tab to `GET /api/courses/:id/enrollments` via `useCourseEnrollments`; show enrolled users with name, email, student number, role, and active state. (#577, @GlowyBlack, 2026-06-12)
 - [core] rag: Cap cloud `embedMany` batch size at the provider limit of 100 (was 128) so `EMBED_MANY_BATCH_SIZE` env overrides cannot exceed Gemini's "At most 100 requests per batch" ceiling; add unit tests verifying 250-chunk materials split correctly and preserve order. (#52, #504, @ebabar5, 2026-06-10)
 - [core] api: Auto-publish Canvas-synced courses (`isPublished: true`) so linked students can list them under the student publish gate. (#511, @GlowyBlack, 2026-06-10)

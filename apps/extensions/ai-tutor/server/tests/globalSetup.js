@@ -7,7 +7,6 @@ import { config } from 'dotenv';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const serverRoot = resolve(__dirname, '..');
 
-// Walk up from serverRoot until we find node_modules/.bin/<name>
 const isWindows = process.platform === 'win32';
 
 function findBin(name) {
@@ -29,32 +28,72 @@ function execBin(bin, args, opts) {
   return execFileSync(bin, args, opts);
 }
 
-export async function setup() {
-  config({ path: resolve(serverRoot, '.env.test') });
+function dbNameFromUrl(databaseUrl) {
+  const name = new URL(databaseUrl).pathname.replace(/^\//, '');
+  if (!name) throw new Error('DATABASE_URL must include a database name');
+  return name;
+}
 
-  // Create the test database if it doesn't exist
-  try {
-    execSync(
-      'psql -h localhost -p 54321 -U postgres -tc "SELECT 1 FROM pg_database WHERE datname = \'aitutor_test\'" | grep -q 1 || psql -h localhost -p 54321 -U postgres -c "CREATE DATABASE aitutor_test"',
-      { env: { ...process.env, PGPASSWORD: 'postgres' }, stdio: 'pipe' },
-    );
-  } catch {
-    // If psql is not available, try via createdb
+function ensureTestDatabase(dbName) {
+  const env = { ...process.env, PGPASSWORD: 'postgres' };
+  const quoted = `"${dbName.replace(/"/g, '""')}"`;
+  const existsSql = `SELECT 1 FROM pg_database WHERE datname = '${dbName.replace(/'/g, "''")}'`;
+
+  const tryShell = (cmd) => {
     try {
-      execSync('createdb -h localhost -p 54321 -U postgres aitutor_test', {
-        env: { ...process.env, PGPASSWORD: 'postgres' },
+      execSync(cmd, { env, stdio: 'pipe' });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  if (tryShell(
+    `psql -h 127.0.0.1 -p 54321 -U postgres -tc "${existsSql}" | grep -q 1 || psql -h 127.0.0.1 -p 54321 -U postgres -c "CREATE DATABASE ${quoted}"`,
+  )) {
+    return;
+  }
+
+  if (tryShell(`createdb -h 127.0.0.1 -p 54321 -U postgres ${quoted}`)) {
+    return;
+  }
+
+  // Windows often has no psql — use the dev Docker container when available.
+  try {
+    const out = execSync(
+      `docker exec eduai-ai-tutor-db psql -U postgres -tc "${existsSql}"`,
+      { encoding: 'utf8' },
+    );
+    if (!out.trim()) {
+      execSync(`docker exec eduai-ai-tutor-db psql -U postgres -c "CREATE DATABASE ${quoted}"`, {
         stdio: 'pipe',
       });
-    } catch {
-      // Database likely already exists — that's fine
     }
+  } catch {
+    // Database likely already exists — that's fine
   }
+}
+
+export async function setup() {
+  config({ path: resolve(serverRoot, '.env.test'), override: true });
+
+  let databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    throw new Error('DATABASE_URL is required in .env.test for integration tests');
+  }
+
+  // Windows Hyper-V can break `localhost` while 127.0.0.1 works (see docs/implementations/windows-dev-database.md).
+  if (isWindows) {
+    databaseUrl = databaseUrl.replace('@localhost:', '@127.0.0.1:');
+  }
+
+  ensureTestDatabase(dbNameFromUrl(databaseUrl));
 
   const prismaBin = findBin('prisma');
 
   execBin(prismaBin, ['migrate', 'deploy'], {
     cwd: serverRoot,
-    env: { ...process.env, DATABASE_URL: process.env.DATABASE_URL },
+    env: { ...process.env, DATABASE_URL: databaseUrl },
     stdio: 'pipe',
   });
 }

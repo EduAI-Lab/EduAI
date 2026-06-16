@@ -12,7 +12,7 @@ const prismaMock = vi.hoisted(() => ({
     updateMany: vi.fn(),
   },
   user: { findMany: vi.fn(), findUnique: vi.fn() },
-  enrollment: { findFirst: vi.fn(), findUnique: vi.fn(), createMany: vi.fn() },
+  enrollment: { findFirst: vi.fn(), findUnique: vi.fn(), findMany: vi.fn(), createMany: vi.fn() },
   $transaction: vi.fn(),
 }));
 
@@ -195,6 +195,7 @@ describe("getCourses", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(enforceAdminIfApiKey).mockResolvedValue({ response: null, session: null });
+    prismaMock.enrollment.findMany.mockResolvedValue([]);
   });
 
   it("returns 401 when no session", async () => {
@@ -206,10 +207,21 @@ describe("getCourses", () => {
   it("returns 200 with courses when ADMIN", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "ADMIN" } } as any);
     prismaMock.course.findMany.mockResolvedValue([{ id: "c1", name: "Algorithms" }]);
+    prismaMock.enrollment.findMany.mockResolvedValue([{ courseId: "c1", role: "INSTRUCTOR" }]);
     const res = await getCourses(makeGetRequest());
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toEqual({ courses: [{ id: "c1", name: "Algorithms" }] });
+    expect(body).toEqual({
+      courses: [{ id: "c1", name: "Algorithms", callerEnrollmentRole: "INSTRUCTOR" }],
+    });
+    expect(prismaMock.enrollment.findMany).toHaveBeenCalledWith({
+      where: {
+        userId: "u1",
+        isActive: true,
+        courseId: { in: ["c1"] },
+      },
+      select: { courseId: true, role: true },
+    });
   });
 
   it("queries only non-deleted courses for ADMIN (unscoped)", async () => {

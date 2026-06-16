@@ -99,6 +99,7 @@ export async function postCoreBugReport(userId, payload) {
   return null;
 }
 
+ 
 /**
  * Propagate a publish/unpublish action to Core for a linked course offering.
  * Called by the AI Tutor publish/unpublish routes when `coreOfferingId` is set.
@@ -116,15 +117,19 @@ export async function setCoreCoursePublishState(coreOfferingId, publish) {
     headers: { Authorization: `Bearer ${serviceKey}` },
   });
 }
-
-export async function listEduAiCourses() {
-  const serviceKey = process.env.EDUAI_API_KEY;
-  if (!serviceKey) {
-    throw new Error('EDUAI_API_KEY not configured');
+ 
+/**   
+ * Lists Core courses visible to the caller (#578). Requires the user's Core
+ * session cookie — do not use the service key (that returns the full catalog).
+ */
+export async function listEduAiCourses(options = {}) {
+  const cookie = typeof options.cookie === 'string' ? options.cookie : '';
+  if (!cookie) {
+    const error = new Error('Session cookie is required to list EduAI courses');
+    error.status = 401;
+    throw error;
   }
-  const data = await requestEduAi('/courses', {
-    headers: { Authorization: `Bearer ${serviceKey}` },
-  });
+  const data = await requestEduAi('/courses', { cookie });
   try {
     const parsed = EduAiCourseListSchema.parse(data);
     return parsed.courses;
@@ -136,9 +141,9 @@ export async function listEduAiCourses() {
   }
 }
 
-export async function findEduAiCourseById(courseId) {
+export async function findEduAiCourseById(courseId, options = {}) {
   if (!courseId) return null;
-  const courses = await listEduAiCourses();
+  const courses = await listEduAiCourses(options);
   return courses.find((course) => course.id === courseId) ?? null;
 }
 

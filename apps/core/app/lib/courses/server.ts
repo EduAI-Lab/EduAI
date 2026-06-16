@@ -87,7 +87,22 @@ export async function getCourses(request: Request) {
   const courses = await prisma.course.findMany({
     where: await buildCourseListFilter(session.user),
   });
-  return new Response(JSON.stringify({ courses }), {
+
+  const enrollmentRows = await prisma.enrollment.findMany({
+    where: {
+      userId: session.user.id,
+      isActive: true,
+      courseId: { in: courses.map((course) => course.id) },
+    },
+    select: { courseId: true, role: true },
+  });
+  const roleByCourseId = new Map(enrollmentRows.map((row) => [row.courseId, row.role]));
+  const coursesWithCallerRole = courses.map((course) => ({
+    ...course,
+    callerEnrollmentRole: roleByCourseId.get(course.id) ?? null,
+  }));
+
+  return new Response(JSON.stringify({ courses: coursesWithCallerRole }), {
     status: 200,
     headers: { "Content-Type": "application/json" } as const,
   });
