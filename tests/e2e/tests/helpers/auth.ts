@@ -1,12 +1,10 @@
 import type { APIRequestContext, APIResponse } from '@playwright/test';
 import { CORE_URL } from '../../playwright.config';
 
-let _counter = 0;
-
-/** Generate a unique email address for each test invocation. */
+/** Generate a collision-safe unique email address for each test invocation. */
 export function uniqueEmail(prefix = 'user'): string {
-  _counter += 1;
-  return `e2e-${prefix}-${_counter}-${Date.now()}@test.local`;
+  const rand = Math.floor(Math.random() * 1e9);
+  return `e2e-${prefix}-${rand}-${Date.now()}@test.local`;
 }
 
 export const DEFAULT_PASSWORD = 'E2eTestPass1!';

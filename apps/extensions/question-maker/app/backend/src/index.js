@@ -54,7 +54,7 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 /** Boots the Express app, wires server error handlers, and kicks off DB connection attempts. */
 const startServer = async () => {
   try {
-    server = app.listen(PORT, () => {
+    server = app.listen(PORT, '0.0.0.0', () => {
       logger.info({
         port: PORT,
         logLevel: config.logLevel,

@@ -5,7 +5,7 @@
  * pool after a fresh start.
  */
 import { request } from '@playwright/test';
-import { CORE_URL, AI_TUTOR_API_URL } from './playwright.config';
+import { CORE_URL, AI_TUTOR_API_URL, QM_BACKEND_URL } from './playwright.config';
 
 const POLL_INTERVAL_MS = 1000;
 const MAX_WAIT_MS = 60_000;
@@ -36,5 +36,6 @@ export default async function globalSetup() {
   await Promise.all([
     waitForUrl(`${CORE_URL}/api/me`),
     waitForUrl(`${AI_TUTOR_API_URL}/api/courses`),
+    waitForUrl(`${QM_BACKEND_URL}/api/course`),
   ]);
 }

@@ -8,7 +8,13 @@
 import type { ActionFunctionArgs } from "react-router";
 import prisma from "~/lib/prisma.server";
 
+const VALID_ROLES = new Set(['ADMIN', 'UNIT_ADMIN', 'INSTRUCTOR', 'TA', 'STUDENT']);
+
 export async function action({ request }: ActionFunctionArgs) {
+  if (process.env.NODE_ENV !== 'test') {
+    return new Response(null, { status: 404 });
+  }
+
   const secret = process.env.E2E_SEED_SECRET;
   if (!secret) {
     return new Response(null, { status: 404 });
@@ -29,6 +35,13 @@ export async function action({ request }: ActionFunctionArgs) {
   const { email, role } = body ?? {};
   if (typeof email !== "string" || typeof role !== "string") {
     return new Response(JSON.stringify({ error: "email and role required" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  if (!VALID_ROLES.has(role)) {
+    return new Response(JSON.stringify({ error: `Invalid role. Must be one of: ${[...VALID_ROLES].join(', ')}` }), {
       status: 400,
       headers: { "Content-Type": "application/json" },
     });
