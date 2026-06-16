@@ -1,8 +1,6 @@
 /**
  * Core domain types for questions, variants, courses, topics, and assessments.
  */
-export type { Topic } from './topic';
-
 export type QuestionDifficulty = 'easy' | 'medium' | 'hard';
 export type QuestionType = 'MCQ' | 'SA' | 'LA';
 export type ReasoningLevel = 'factual' | 'analytical' | 'application';
@@ -20,15 +18,13 @@ export interface MCQChoice {
     text: string;
 }
 
-import type { Topic } from './topic';
-
 // Question Metadata (matches backend Question_Metadata schema)
 export interface QuestionMetadata {
     id: number;
     description: string | null;
     type: QuestionType;
     courseId: number;
-    primaryTopicId: string;
+    primaryTopicId: number;
     questionOrder: Record<number, number> | null; // Maps assessment IDs to order numbers
     createdAt: string;
     updatedAt: string;
@@ -46,12 +42,13 @@ export interface QuestionVariant {
     reasoningLevel?: ReasoningLevel;
     questionMetadataId?: number;
     assessmentId: number | null;
-    secondaryTopicsId: string[] | null;
+    secondaryTopicsId: number[] | null;
     referenceId: number | null;
     answer: string | null;
     choices?: MCQChoice[] | null; // For MCQ questions only
     isAiGenerated?: boolean; // Indicates if this variant was generated using AI
     isDraft?: boolean; // Indicates if this variant is a draft and needs review
+    createdBy?: string | null;
     createdAt?: string;
     updatedAt?: string;
     // Relations
@@ -83,8 +80,10 @@ export interface Course {
     id: number;
     name: string;
     code: string | null;
+    userId?: string;
     coreCourseId?: string | null;
-    userId?: number;
+    department?: string | null;
+    accessLevel?: 'admin' | 'unit' | 'instructor' | 'ta' | null;
     createdAt?: string;
     updatedAt?: string;
     // Relations
@@ -98,7 +97,17 @@ export interface CourseCreate {
     courseCode?: string;
 }
 
-// Topic type exported from ./topic (CUID string ids)
+// Topic (matches backend Topics schema)
+export interface Topic {
+    id: number;
+    name: string;
+    courseId: number;
+    createdAt: string;
+    updatedAt: string;
+    // Relations
+    course?: Course;
+    primaryQuestions?: QuestionMetadata[];
+}
 
 // User (matches backend User schema)
 export interface User {
@@ -116,7 +125,7 @@ export interface Question extends QuestionMetadata {}
 export interface QuestionCreate {
     description?: string | null;
     courseId: number;
-    primaryTopicId: string;
+    primaryTopicId: number;
     type: QuestionType;
     questionOrder?: Record<number, number> | null;
 }
@@ -156,8 +165,8 @@ export interface ExtractedQuestion {
     difficulty: QuestionDifficulty;
     answer: string | null;
     type: QuestionType;
-    primaryTopicId: string | null;
-    secondaryTopicIds: string[];
+    primaryTopicId: number | null;
+    secondaryTopicIds: number[];
     /** MCQ options: only present for type === 'MCQ'. */
     choices?: MCQChoice[] | null;
 }
@@ -166,7 +175,7 @@ export interface QuestionVariantEntry {
     questionId: number;
     questionDescription: string | null;
     questionType: QuestionType;
-    primaryTopicId: string;
+    primaryTopicId: number;
     primaryTopicName?: string;
     courseId: number;
     courseName?: string;
@@ -190,9 +199,9 @@ export type ReasoningDataState = {
 };
 
 export interface AssessmentBlueprintConfig {
-    primaryTopicIds: string[];
-    secondaryTopicIds: string[];
-    excludedTopicIds: string[];
+    primaryTopicIds: number[];
+    secondaryTopicIds: number[];
+    excludedTopicIds: number[];
     difficultyDistribution: {
         easy: number;
         medium: number;

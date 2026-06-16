@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Button } from "~/components/ui/button";
+import { Button } from "@eduai/ui";
 import {
   Dialog,
   DialogContent,
@@ -8,10 +8,10 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "~/components/ui/dialog";
-import { Textarea } from "~/components/ui/textarea";
-import { Label } from "~/components/ui/label";
-import { MessageSquare } from "lucide-react";
+} from "@eduai/ui";
+import { Textarea } from "@eduai/ui";
+import { Label } from "@eduai/ui";
+import { IconMessage } from "@tabler/icons-react";
 
 export interface SystemPromptSettingsProps {
   systemPrompt?: string | null;
@@ -45,7 +45,7 @@ export function SystemPromptSettings({ systemPrompt, onSave }: SystemPromptSetti
           variant="outline"
           className="h-9 gap-2"
         >
-          <MessageSquare className="h-4 w-4" />
+          <IconMessage className="h-4 w-4" />
           <span>System Prompt</span>
         </Button>
       </DialogTrigger>

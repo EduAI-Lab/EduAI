@@ -1,0 +1,75 @@
+<!-- @dsCard group="Components" viewport="700x320" name="Card" subtitle="Default, hoverable, StatCard — the primary container pattern" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>
+  body { margin: 0; padding: 20px 24px; font-family: var(--font-sans); background: var(--color-neutral-50); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+  .stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter, StatCard, Button, Badge } = window.EduAIDesignSystem_4b4b4d;
+
+function App() {
+  return (
+    <div>
+      <div className="grid">
+        <Card>
+          <CardHeader>
+            <CardTitle>CPSC 110</CardTitle>
+            <CardDescription>Computation, Programs, and Programming</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Badge variant="success" dot>Published</Badge>
+          </CardContent>
+          <CardFooter>
+            <Button variant="outline" size="sm">View</Button>
+          </CardFooter>
+        </Card>
+        <Card hoverable>
+          <CardHeader>
+            <CardTitle>AI Chat</CardTitle>
+            <CardDescription>Course-scoped RAG assistant</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <span style={{fontSize:"12px",color:"var(--muted-foreground)"}}>Hover to see lift ↑</span>
+          </CardContent>
+          <CardFooter>
+            <Button variant="primary" size="sm">Open Chat</Button>
+          </CardFooter>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Canvas Sync</CardTitle>
+            <CardDescription>Last synced 3 min ago</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Badge variant="muted">Connected</Badge>
+          </CardContent>
+          <CardFooter>
+            <Button variant="ghost" size="sm">Sync now</Button>
+          </CardFooter>
+        </Card>
+      </div>
+      <div className="stat-row">
+        <StatCard label="Active Students" value="4,532" trend={12.5} trendLabel="vs last month" />
+        <StatCard label="Courses Published" value="67" trend={4.2} />
+        <StatCard label="Pending Submissions" value="152" trend={-3.1} />
+        <StatCard label="Avg Quiz Score" value="84%" trend={2.0} />
+      </div>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>

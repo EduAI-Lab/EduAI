@@ -9,7 +9,7 @@ import {
   BreadcrumbLink,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from '../components/ui/breadcrumb';
+} from '@eduai/ui';
 import type { Course, Module } from '../lib/types';
 import type { Route } from './+types/student.course';
 import api from '~/lib/api';
@@ -88,7 +88,7 @@ export default function StudentCourseModules({ loaderData }: Route.ComponentProp
               </svg>
             </div>
             <div>
-              <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-foreground">
+              <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-foreground">
                 {course?.title || 'Course'}
               </h1>
               {course?.description && (
@@ -106,7 +106,7 @@ export default function StudentCourseModules({ loaderData }: Route.ComponentProp
         {/* Module grid */}
         {moduleList.length === 0 ? (
           <div className="animate-fade-up delay-150">
-            <div className="card-editorial p-12 text-center max-w-lg mx-auto">
+            <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-12 text-center max-w-lg mx-auto">
               <div className="w-16 h-16 mx-auto mb-6 rounded-2xl bg-secondary flex items-center justify-center">
                 <svg
                   className="w-8 h-8 text-muted-foreground"
@@ -122,7 +122,7 @@ export default function StudentCourseModules({ loaderData }: Route.ComponentProp
                   />
                 </svg>
               </div>
-              <h2 className="font-display text-xl font-bold text-foreground mb-2">
+              <h2 className="text-xl font-bold text-foreground mb-2">
                 No modules available
               </h2>
               <p className="text-muted-foreground text-sm">
@@ -136,7 +136,7 @@ export default function StudentCourseModules({ loaderData }: Route.ComponentProp
               <button
                 key={module.id}
                 onClick={() => navigate(`/student/module/${module.id}`)}
-                className="group card-editorial p-6 text-left transition-all duration-300 hover:shadow-xl hover:-translate-y-1 glow animate-fade-up"
+                className="group rounded-lg border bg-card text-card-foreground shadow-sm p-6 text-left transition-all duration-300 hover:shadow-xl hover:-translate-y-1 glow animate-fade-up"
                 style={{ animationDelay: `${150 + index * 50}ms` }}
                 data-tour={index === 0 ? 'student-module-card-first' : undefined}
                 data-tour-route={index === 0 ? `/student/module/${module.id}` : undefined}
@@ -169,7 +169,7 @@ export default function StudentCourseModules({ loaderData }: Route.ComponentProp
 
                 {/* Module info */}
                 <div className="mb-4">
-                  <h3 className="font-display text-lg font-bold text-foreground mb-1 group-hover:text-primary transition-colors line-clamp-2">
+                  <h3 className="text-lg font-bold text-foreground mb-1 group-hover:text-primary transition-colors line-clamp-2">
                     {module.title}
                   </h3>
                   {module.description && (

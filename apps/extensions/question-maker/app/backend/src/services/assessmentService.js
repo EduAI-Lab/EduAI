@@ -45,7 +45,10 @@ export const createAssessment = async (userId, assessmentData) => {
 /** Lists assessments owned by a user with optional filters and eager-loaded relations. */
 export const getAssessmentsByUser = async (userId, options = {}) => {
   try {
-    const { limit = 50, offset = 0, courseId } = options;
+    const { limit = 50, offset = 0, courseId, isAdmin = false } = options;
+
+    // If user is admin without a courseId constraint, allow all assessments; otherwise scope to owner
+    const courseWhere = isAdmin ? {} : { userId };
 
     const assessments = await Assessments.findAll({
       where: {
@@ -56,7 +59,7 @@ export const getAssessmentsByUser = async (userId, options = {}) => {
           model: Course,
           as: 'course',
           attributes: ['id', 'name', 'code'],
-          where: { userId },
+          where: courseWhere,
           required: true
         },
         {

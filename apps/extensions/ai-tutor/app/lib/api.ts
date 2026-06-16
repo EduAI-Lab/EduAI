@@ -27,6 +27,8 @@ import type {
   AdminAiModelPolicy,
   AdminUser,
   ActivityAnswerResult,
+  ActivityAnalyticsRow,
+  ActivityFeedbackRow,
   ActivityFeedbackResult,
   AiModel,
   BugReportCreatePayload,
@@ -34,6 +36,9 @@ import type {
   Course,
   EduAiApiKeyStatus,
   EduAiCourse,
+  EnrollmentRole,
+  StudentMetricRow,
+  SubmissionRow,
   SuggestedPrompt,
   User,
 } from './types';
@@ -338,6 +343,39 @@ export const api = {
     http(`/api/admin/courses/${courseId}/enrollments/${userId}`, {
       method: 'DELETE',
     }) as Promise<{ ok: true }>,
+  updateEnrollmentRole: (courseId: number, userId: string, role: EnrollmentRole) =>
+    http(`/api/admin/courses/${courseId}/enrollments/${userId}/role`, {
+      method: 'PATCH',
+      body: JSON.stringify({ role }),
+    }) as Promise<{ ok: true; role: EnrollmentRole }>,
+  syncCourseEnrollments: (courseId: number) =>
+    http(`/api/admin/courses/${courseId}/sync-enrollments`, {
+      method: 'POST',
+    }) as Promise<{ ok: true }>,
+  courseSubmissions: (
+    courseId: number,
+    params?: { activityId?: number; studentId?: string; take?: number; skip?: number },
+  ) => {
+    const search = new URLSearchParams();
+    if (params?.activityId != null) search.set('activityId', String(params.activityId));
+    if (params?.studentId) search.set('studentId', params.studentId);
+    if (params?.take != null) search.set('take', String(params.take));
+    if (params?.skip != null) search.set('skip', String(params.skip));
+    const qs = search.toString();
+    return http(`/api/courses/${courseId}/submissions${qs ? `?${qs}` : ''}`) as Promise<
+      SubmissionRow[]
+    >;
+  },
+  courseStudentMetrics: (courseId: number) =>
+    http(`/api/courses/${courseId}/student-metrics`) as Promise<StudentMetricRow[]>,
+  courseAnalytics: (courseId: number) =>
+    http(`/api/courses/${courseId}/analytics`) as Promise<ActivityAnalyticsRow[]>,
+  activitySubmissions: (activityId: number) =>
+    http(`/api/activities/${activityId}/submissions`) as Promise<SubmissionRow[]>,
+  listActivityFeedback: (activityId: number) =>
+    http(`/api/activities/${activityId}/feedback`) as Promise<ActivityFeedbackRow[]>,
+  mySubmissions: () => http('/api/me/submissions') as Promise<SubmissionRow[]>,
+  myFeedback: () => http('/api/me/feedback') as Promise<ActivityFeedbackRow[]>,
   submitBugReport: (payload: BugReportCreatePayload) =>
     http('/api/bug-reports', {
       method: 'POST',

@@ -30,11 +30,13 @@ import {
   BreadcrumbLink,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from '../components/ui/breadcrumb';
+} from '@eduai/ui';
 import { PublishStatusButton } from '../components/PublishStatusButton';
 import api from '../lib/api';
 import type { Course, Lesson, Module, ModuleDetail } from '../lib/types';
 import type { Route } from './+types/instructor.topic';
+import { PermissionGate } from '../components/rbac/PermissionGate';
+import { useAtPermissions } from '../hooks/useAtPermissions';
 import { requireClientUser } from '~/lib/client-auth';
 
 /**
@@ -68,6 +70,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
   const navigate = useNavigate();
   const { moduleId } = useParams();
   const numericModuleId = moduleId ? Number(moduleId) : null;
+  const perms = useAtPermissions();
   const { course, module, lessons: initialLessons } = loaderData;
   const [lessons, setLessons] = useState<Lesson[]>(initialLessons);
   const [title, setTitle] = useState('');
@@ -294,8 +297,9 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
         </Breadcrumb>
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="font-display text-2xl font-semibold text-foreground">Lessons</h2>
+            <h2 className="text-2xl font-semibold text-foreground">Lessons</h2>
           </div>
+          <PermissionGate allow={perms.canManageContent}>
           <button
             onClick={() => {
               if (!showImport) {
@@ -309,10 +313,12 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
           >
             {showImport ? 'Close' : 'Import Lessons'}
           </button>
+          </PermissionGate>
         </div>
 
+        <PermissionGate allow={perms.canManageContent}>
         {showImport && (
-          <div className="card-editorial p-5 space-y-4">
+          <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-5 space-y-4">
             <div>
               <label className="block text-sm font-semibold mb-1 text-foreground">
                 Choose course
@@ -419,7 +425,9 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
             )}
           </div>
         )}
+        </PermissionGate>
 
+        <PermissionGate allow={perms.canManageContent}>
         <form onSubmit={onCreateLesson} className="flex gap-3">
           <input
             value={title}
@@ -431,6 +439,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
             {creating ? 'Adding…' : 'Add Lesson'}
           </button>
         </form>
+        </PermissionGate>
 
         {oLessons.length === 0 ? (
           <div className="text-muted-foreground">No lessons yet.</div>
@@ -452,7 +461,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
               return (
                 <div
                   key={lesson.id}
-                  className="card-editorial p-5 hover:shadow-lg transition group cursor-pointer flex flex-col h-full animate-fade-up"
+                  className="rounded-lg border bg-card text-card-foreground shadow-sm p-5 hover:shadow-lg transition group cursor-pointer flex flex-col h-full animate-fade-up"
                   style={{ animationDelay: `${idx * 50}ms` }}
                   onClick={() => navigate(`/instructor/lesson/${lesson.id}`)}
                   role="button"
@@ -465,7 +474,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
                   }}
                 >
                   <div className="flex items-start gap-3">
-                    <span className="flex-shrink-0 w-8 h-8 rounded-full bg-accent text-accent-foreground flex items-center justify-center font-display font-semibold text-sm">
+                    <span className="flex-shrink-0 w-8 h-8 rounded-full bg-accent text-accent-foreground flex items-center justify-center font-semibold text-sm">
                       {idx + 1}
                     </span>
                     <div className="flex-1 min-w-0">
@@ -476,6 +485,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
                   </div>
                   <div className="flex-grow"></div>
                   <div className="mt-4 flex justify-end">
+                    <PermissionGate allow={perms.canPublishContent}>
                     <div
                       onClick={(e) => e.stopPropagation()}
                       onKeyDown={(e) => e.stopPropagation()}
@@ -490,6 +500,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
                         }}
                       />
                     </div>
+                    </PermissionGate>
                   </div>
                 </div>
               );

@@ -7,25 +7,14 @@ import { SuggestedPrompts } from "~/components/chat/suggested-prompts";
 // ---------------------------------------------------------------------------
 
 describe("SuggestedPrompts — rendering", () => {
-  it("renders the Quick Start heading", () => {
+  it("renders all six prompt titles", () => {
     render(<SuggestedPrompts onSelectPrompt={vi.fn()} />);
-    expect(screen.getByText("Quick Start")).toBeInTheDocument();
-  });
-
-  it("renders all six suggestion titles", () => {
-    render(<SuggestedPrompts onSelectPrompt={vi.fn()} />);
-    expect(screen.getByText("Creative Ideas")).toBeInTheDocument();
-    expect(screen.getByText("Code Review")).toBeInTheDocument();
-    expect(screen.getByText("Learning Path")).toBeInTheDocument();
-    expect(screen.getByText("Problem Solving")).toBeInTheDocument();
-    expect(screen.getByText("Design Ideas")).toBeInTheDocument();
-    expect(screen.getByText("Research & Analysis")).toBeInTheDocument();
-  });
-
-  it("renders all six suggestion descriptions", () => {
-    render(<SuggestedPrompts onSelectPrompt={vi.fn()} />);
-    expect(screen.getByText("Brainstorm innovative solutions and concepts")).toBeInTheDocument();
-    expect(screen.getByText("Get help with programming and development")).toBeInTheDocument();
+    expect(screen.getByText("Build a study plan")).toBeInTheDocument();
+    expect(screen.getByText("Explain a concept")).toBeInTheDocument();
+    expect(screen.getByText("Generate practice problems")).toBeInTheDocument();
+    expect(screen.getByText("Review my essay")).toBeInTheDocument();
+    expect(screen.getByText("Debug my code")).toBeInTheDocument();
+    expect(screen.getByText("Summarize key points")).toBeInTheDocument();
   });
 });
 
@@ -34,21 +23,21 @@ describe("SuggestedPrompts — rendering", () => {
 // ---------------------------------------------------------------------------
 
 describe("SuggestedPrompts — callbacks", () => {
-  it("calls onSelectPrompt with the correct prompt when a card is clicked", () => {
+  it("calls onSelectPrompt with the correct study plan prompt when 'Build a study plan' is clicked", () => {
     const onSelectPrompt = vi.fn();
     render(<SuggestedPrompts onSelectPrompt={onSelectPrompt} />);
-    fireEvent.click(screen.getByText("Creative Ideas"));
+    fireEvent.click(screen.getByText("Build a study plan"));
     expect(onSelectPrompt).toHaveBeenCalledWith(
-      "Help me brainstorm creative solutions for organizing a virtual team building event"
+      "Help me create a personalized study plan for my upcoming exam, including key topics to review and a day-by-day schedule."
     );
   });
 
-  it("calls onSelectPrompt with a different prompt per card", () => {
+  it("calls onSelectPrompt with the correct debug prompt when 'Debug my code' is clicked", () => {
     const onSelectPrompt = vi.fn();
     render(<SuggestedPrompts onSelectPrompt={onSelectPrompt} />);
-    fireEvent.click(screen.getByText("Learning Path"));
+    fireEvent.click(screen.getByText("Debug my code"));
     expect(onSelectPrompt).toHaveBeenCalledWith(
-      "Create a 30-day learning plan for mastering TypeScript from beginner to intermediate level"
+      "Help me debug this code, explain what's going wrong, and suggest a clean fix with an explanation."
     );
   });
 });

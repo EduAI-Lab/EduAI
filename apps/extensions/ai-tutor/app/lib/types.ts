@@ -1,11 +1,54 @@
 // Must stay in sync with Core's UserRole enum: apps/core/app/lib/rbac/types.ts (TODO: #594)
 export type Role = 'STUDENT' | 'INSTRUCTOR' | 'TA' | 'ADMIN' | 'UNIT_ADMIN';
 
+export type EnrollmentRole = 'STUDENT' | 'TA' | 'INSTRUCTOR';
+
 export type User = {
   id: string;
   name: string;
   email: string;
   role: Role;
+  authorizedUnits?: string[];
+};
+
+export type SubmissionRow = {
+  id: number;
+  userId: string;
+  activityId: number;
+  attemptNumber: number;
+  answerText?: string | null;
+  answerOption?: number | null;
+  isCorrect?: boolean | null;
+  createdAt: string;
+};
+
+export type ActivityFeedbackRow = {
+  id: number;
+  userId: string;
+  activityId: number;
+  rating: number;
+  note?: string | null;
+  createdAt: string;
+};
+
+export type StudentMetricRow = {
+  userId: string;
+  submissionCount: number;
+  correctSubmissionCount: number;
+  incorrectSubmissionCount: number;
+  helpRequestCount: number;
+};
+
+export type ActivityAnalyticsRow = {
+  activityId: number;
+  averageRating?: number | null;
+  feedbackCount?: number;
+  difficultyScore?: string | null;
+  activity?: {
+    id: number;
+    title?: string | null;
+    lessonId?: number;
+  };
 };
 
 export type AdminUser = {
@@ -16,9 +59,13 @@ export type AdminUser = {
   createdAt: string;
 };
 
+export type EnrolledStudent = AdminUser & {
+  role?: EnrollmentRole;
+};
+
 export type AdminEnrollmentData = {
   courseId: number;
-  enrolledStudents: AdminUser[];
+  enrolledStudents: EnrolledStudent[];
   availableStudents: AdminUser[];
 };
 

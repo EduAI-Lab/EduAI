@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { IconDatabase, IconReport } from "@tabler/icons-react";
 import { NavDocuments } from "~/components/nav-documents";
 import type { NavDocumentItem } from "~/components/nav-documents";
-import { SidebarProvider } from "~/components/ui/sidebar";
+import { SidebarProvider } from "@eduai/ui";
 
 const items: NavDocumentItem[] = [
   { name: "Data Library", url: "#", icon: IconDatabase },

@@ -1,0 +1,38 @@
+<!-- @dsCard group="Colors" viewport="700x220" name="Blue Scale" subtitle="Full UBC Blue ramp from 50 to 950" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; padding: 20px; font-family: var(--font-sans); background: var(--background); }
+  .ramp { display: flex; gap: 4px; border-radius: var(--radius-base); overflow: hidden; margin-bottom: 12px; }
+  .step { flex: 1; height: 60px; display: flex; align-items: flex-end; padding: 6px; }
+  .step-label { font-size: 9px; font-weight: 600; writing-mode: horizontal-tb; }
+  .tokens { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+  .token { font-size: 10px; font-family: var(--font-mono); color: var(--muted-foreground); background: var(--muted); padding: 2px 6px; border-radius: 3px; }
+</style>
+</head>
+<body>
+  <div class="ramp">
+    <div class="step" style="background:var(--color-blue-50)"><span class="step-label" style="color:#555">50</span></div>
+    <div class="step" style="background:var(--color-blue-100)"><span class="step-label" style="color:#555">100</span></div>
+    <div class="step" style="background:var(--color-blue-200)"><span class="step-label" style="color:#555">200</span></div>
+    <div class="step" style="background:var(--color-blue-300)"><span class="step-label" style="color:#555">300</span></div>
+    <div class="step" style="background:var(--color-blue-400)"><span class="step-label" style="color:#fff">400</span></div>
+    <div class="step" style="background:var(--color-blue-500)"><span class="step-label" style="color:#fff">500</span></div>
+    <div class="step" style="background:var(--color-blue-600)"><span class="step-label" style="color:#fff">600</span></div>
+    <div class="step" style="background:var(--color-blue-700)"><span class="step-label" style="color:#fff">700</span></div>
+    <div class="step" style="background:var(--color-blue-800)"><span class="step-label" style="color:#fff">800</span></div>
+    <div class="step" style="background:var(--color-blue-900)"><span class="step-label" style="color:#fff">900</span></div>
+    <div class="step" style="background:var(--color-blue-950)"><span class="step-label" style="color:#fff">950</span></div>
+  </div>
+  <div class="tokens">
+    <span class="token">--color-blue-50…950</span>
+    <span class="token">--primary = blue-900</span>
+    <span class="token">--secondary = blue-600</span>
+    <span class="token">--accent = blue-300</span>
+    <span class="token">--sidebar = blue-900</span>
+  </div>
+</body>
+</html>

@@ -6,7 +6,7 @@ import { auth } from '~/lib/auth/server'
 import prisma from '~/lib/prisma.server'
 import { AppSidebar } from '~/components/app-sidebar'
 import { SiteHeader } from '~/components/site-header'
-import { SidebarInset, SidebarProvider } from '~/components/ui/sidebar'
+import { SidebarInset, SidebarProvider } from '@eduai/ui'
 import { CourseDetailManagerView } from '~/components/courses/course-detail-manager-view'
 import { CourseDetailTaView } from '~/components/courses/course-detail-ta-view'
 import { CourseDetailStudentView } from '~/components/courses/course-detail-student-view'
@@ -22,7 +22,7 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from '~/components/ui/breadcrumb'
+} from '@eduai/ui'
 import type { CourseMaterial as UploadMaterial } from '~/components/course-materials-upload'
 import { resolveCourseAccess } from '~/lib/rbac/resolve-course-access.server'
 import type { RbacUser } from '~/lib/rbac'
@@ -107,7 +107,7 @@ export default function CourseDetailPage() {
   const { course, user, access, instructors, taUsers } = useLoaderData<typeof loader>()
   const revalidator = useRevalidator()
   const { topics, createTopic, deleteTopic } = useCourseTopics(course.id)
-  const { enrollments, loading: enrollmentsLoading, error: enrollmentsError } = useCourseEnrollments(course.id)
+  const { enrollments } = useCourseEnrollments(course.id)
   const { materials, uploadMaterial } = useCourseMaterials(course.id)
   const { tas, addTA, removeTA } = useCourseTAs(course.id)
   const { getValidApiKeys } = useApiKeys()
@@ -158,7 +158,7 @@ export default function CourseDetailPage() {
         '--header-height': 'calc(var(--spacing) * 12)',
       } as React.CSSProperties}
     >
-      <AppSidebar variant="inset" user={user} />
+      <AppSidebar user={user} />
       <SidebarInset>
         <SiteHeader
           title={course.name}
@@ -188,8 +188,6 @@ export default function CourseDetailPage() {
                 access={access}
                 topics={topics}
                 enrollments={enrollments}
-                enrollmentsLoading={enrollmentsLoading}
-                enrollmentsError={enrollmentsError}
                 materials={uploadMaterials}
                 tas={tas}
                 instructors={instructors}
@@ -214,6 +212,7 @@ export default function CourseDetailPage() {
                 materialsError={materialsError}
                 materialsSuccess={materialsSuccess}
                 onFileSelect={handleFileSelect}
+                courseId={course.id}
               />
             ) : (
               <CourseDetailStudentView
