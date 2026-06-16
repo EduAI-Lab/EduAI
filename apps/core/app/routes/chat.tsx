@@ -7,6 +7,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { AppSidebar } from "~/components/app-sidebar";
 import { ChatCourseScopedView } from "~/components/chat/chat-course-scoped-view";
 import { ChatGlobalView } from "~/components/chat/chat-global-view";
+import { ChatHeaderControls } from "~/components/chat/chat-header-controls";
 import type {
   ChatCourseOption,
   ChatModelOption,
@@ -102,9 +103,11 @@ export default function Chat() {
   const { chatModels, user, assistDefault, lastCourseCode } = useLoaderData<typeof loader>();
   const isGlobalChat = usesGlobalChat(user);
   const { courses } = useCourses();
-  const availableCourses: ChatCourseOption[] = isGlobalChat
-    ? []
-    : courses.map((c) => ({ id: c.id, name: c.name, code: c.code }));
+  const availableCourses: ChatCourseOption[] = courses.map((c) => ({
+    id: c.id,
+    name: c.name,
+    code: c.code,
+  }));
   const [selectedModel, setSelectedModel] = useState(
     chatModels.length > 0 ? chatModels[0].id : "",
   );
@@ -114,6 +117,7 @@ export default function Chat() {
   const [chatId, setChatId] = useState<string | null>(null);
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
   const [adhdAssist, setAdhdAssist] = useState(assistDefault ?? false);
+  const [webToolsEnabled, setWebToolsEnabled] = useState(false);
   const { getValidApiKeys } = useApiKeys();
   const { setAssistive } = useAssistiveUi();
   const prefsFetcher = useFetcher();
@@ -134,10 +138,6 @@ export default function Chat() {
     setSelectedCourseCode(code);
     persistPreference({ lastCourseCode: code });
   }, [setSelectedCourseCode, persistPreference]);
-
-  useEffect(() => {
-    if (isGlobalChat) setSelectedCourseCode(null);
-  }, [isGlobalChat]);
 
   useEffect(() => {
     if (!chatId || systemPrompt) {
@@ -163,7 +163,7 @@ export default function Chat() {
       body: {
         model: selectedModel,
         apiKeys: getValidApiKeys(),
-        courseCode: isGlobalChat ? undefined : selectedCourseCode || undefined,
+        courseCode: selectedCourseCode || undefined,
         chatId: chatId || undefined,
         systemPrompt: systemPrompt || undefined,
         adhdAssist,
@@ -172,6 +172,11 @@ export default function Chat() {
         const chatIdHeader = response.headers.get("X-Chat-Id");
         if (chatIdHeader && !chatId) {
           setChatId(chatIdHeader);
+        }
+
+        const webToolsHeader = response.headers.get("X-Web-Tools-Enabled");
+        if (webToolsHeader !== null) {
+          setWebToolsEnabled(webToolsHeader === "1");
         }
       },
     });
@@ -193,7 +198,7 @@ export default function Chat() {
           messages: messages.length > 0 ? messages : [],
           model: selectedModel,
           apiKeys: getValidApiKeys(),
-          courseCode: isGlobalChat ? undefined : selectedCourseCode || undefined,
+          courseCode: selectedCourseCode || undefined,
           adhdAssist,
           streaming: false,
         }),
@@ -243,6 +248,7 @@ export default function Chat() {
     onSubmit: handleSubmit,
     onStop: stop,
     onSelectPrompt: handlePromptSelect,
+    webToolsEnabled,
   };
 
   return (
@@ -269,6 +275,14 @@ export default function Chat() {
                 </BreadcrumbItem>
               </BreadcrumbList>
             </Breadcrumb>
+          }
+          actions={
+            <ChatHeaderControls
+              adhdAssist={adhdAssist}
+              onAdhdAssistChange={handleAssistChange}
+              systemPrompt={systemPrompt}
+              onSystemPromptSave={handleSystemPromptSave}
+            />
           }
         />
         {isGlobalChat ? (
