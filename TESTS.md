@@ -289,8 +289,13 @@ Unit tests for the shared design-system component library (`@eduai/ui`). Run wit
 | `extension-urls.test.ts` | Cross-app URL helpers default to local dev hosts for EduAI Core and AiTutor |
 | `student-chat-history.test.ts` | Client-side chat history persistence — store/list/delete sessions per activity and build message previews |
 | `useLocalUser.test.tsx` | Users can log in, log out, and have their session available across the app; accessing the session outside its provider throws an error |
+| `rbac-permissions.test.ts` | RBAC permission helpers (`canManageContent`, enrollment/analytics gates) and role routing for all five platform roles |
+| `PermissionGate.test.tsx` | Declarative UI gate hides children when `allow` is false and renders optional fallback |
+| `AtRoleBanner.test.tsx` | Role banners show TA read-only copy and unit-admin authorized units |
 
-> **Coverage gap:** `home.tsx` role-based routing (STUDENT→/student, INSTRUCTOR→/instructor, UNIT_ADMIN→/instructor, TA→/unsupported-role, ADMIN→/admin) and `unsupported-role.tsx` role guard (TA stays on page; other roles are redirected to their correct route) are not currently covered by unit tests.
+**E2E (Playwright):** `tests/e2e/ai-tutor-rbac.spec.ts` — login smoke tests for student, instructor, and admin shells (requires Core + AiTutor dev servers).
+
+> **Coverage gap:** `home.tsx` role-based routing is partially covered via `rbac-permissions.test.ts`; full route-loader integration tests remain optional follow-up.
 
 ---
 

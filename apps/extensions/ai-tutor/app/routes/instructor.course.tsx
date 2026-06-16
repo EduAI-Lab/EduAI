@@ -35,6 +35,14 @@ import api from '../lib/api';
 import type { Course, Module } from '../lib/types';
 import type { Route } from './+types/instructor.course';
 import { requireClientUser } from '~/lib/client-auth';
+import { useLocalUser } from '../hooks/useLocalUser';
+import { useAtPermissions } from '../hooks/useAtPermissions';
+import { CourseAnalyticsPanel } from '../components/courses/CourseAnalyticsPanel';
+import { CourseEnrollmentsPanel } from '../components/courses/CourseEnrollmentsPanel';
+import { CourseStudentMetricsPanel } from '../components/courses/CourseStudentMetricsPanel';
+import { CourseSubmissionsPanel } from '../components/courses/CourseSubmissionsPanel';
+import { PermissionGate } from '../components/rbac/PermissionGate';
+import { getCourseDetailTabs } from '~/lib/rbac/nav';
 
 /**
  * Loads the course header and its modules in parallel. Throws a 400 Response
@@ -64,6 +72,10 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
   const navigate = useNavigate();
   const { courseId } = useParams();
   const numericCourseId = courseId ? Number(courseId) : null;
+  const { user } = useLocalUser();
+  const perms = useAtPermissions();
+  const tabs = getCourseDetailTabs(user ? { id: user.id, role: user.role, authorizedUnits: user.authorizedUnits } : null);
+  const [activeTab, setActiveTab] = useState<(typeof tabs)[number]['id']>('content');
   const { course, modules: initialModules } = loaderData;
   const [modules, setModules] = useState<Module[]>(initialModules);
   const [title, setTitle] = useState('');
@@ -234,10 +246,46 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
+
+        <div className="flex flex-wrap gap-2">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={activeTab === tab.id ? 'btn-primary' : 'btn-secondary'}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {activeTab === 'enrollments' && numericCourseId ? (
+          <CourseEnrollmentsPanel
+            courseId={numericCourseId}
+            canManage={perms.canManageEnrollments}
+            canAssignTa={perms.canAssignTaRole}
+          />
+        ) : null}
+
+        {activeTab === 'submissions' && numericCourseId ? (
+          <CourseSubmissionsPanel courseId={numericCourseId} />
+        ) : null}
+
+        {activeTab === 'analytics' && numericCourseId ? (
+          <div className="space-y-6">
+            <CourseStudentMetricsPanel courseId={numericCourseId} />
+            <CourseAnalyticsPanel courseId={numericCourseId} />
+          </div>
+        ) : null}
+
+        {activeTab === 'content' ? (
+          <>
         <div className="flex items-center justify-between">
           <h2 className="text-2xl font-semibold text-foreground">Modules</h2>
-          <div className="flex items-center gap-2">
-            <button
+          <PermissionGate allow={perms.canManageContent}>
+            <div className="flex items-center gap-2">
+              <button
               onClick={() => {
                 if (!showImport) {
                   ensureSourceCoursesLoaded();
@@ -250,9 +298,11 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
             >
               {showImport ? 'Close' : 'Import'}
             </button>
-          </div>
+            </div>
+          </PermissionGate>
         </div>
 
+        <PermissionGate allow={perms.canManageContent}>
         {showImport && (
           <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-5 space-y-4">
             <div>
@@ -335,7 +385,9 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
             )}
           </div>
         )}
+        </PermissionGate>
 
+        <PermissionGate allow={perms.canManageContent}>
         <form onSubmit={onCreateModule} className="flex gap-3">
           <input
             value={title}
@@ -347,6 +399,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
             {creating ? 'Adding…' : 'Add Module'}
           </button>
         </form>
+        </PermissionGate>
 
         {oModules.length === 0 ? (
           <div className="text-muted-foreground">No modules yet.</div>
@@ -389,26 +442,30 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                   </div>
                   <div className="flex-grow"></div>
                   <div className="mt-4 flex justify-end">
-                    <div
-                      onClick={(e) => e.stopPropagation()}
-                      onKeyDown={(e) => e.stopPropagation()}
-                    >
-                      <PublishStatusButton
-                        isPublished={m.isPublished}
-                        pending={busy}
-                        blockedReason={tooltipMessage}
-                        onClick={() => {
-                          if (busy || blocked) return;
-                          togglePublish(m.id, m.isPublished);
-                        }}
-                      />
-                    </div>
+                    <PermissionGate allow={perms.canPublishContent}>
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                      >
+                        <PublishStatusButton
+                          isPublished={m.isPublished}
+                          pending={busy}
+                          blockedReason={tooltipMessage}
+                          onClick={() => {
+                            if (busy || blocked) return;
+                            togglePublish(m.id, m.isPublished);
+                          }}
+                        />
+                      </div>
+                    </PermissionGate>
                   </div>
                 </div>
               );
             })}
           </div>
         )}
+          </>
+        ) : null}
       </div>
     </div>
   );
