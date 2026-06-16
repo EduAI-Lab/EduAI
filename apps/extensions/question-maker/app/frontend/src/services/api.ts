@@ -14,9 +14,18 @@ api.interceptors.response.use(
   (response: AxiosResponse) => response,
   (error: AxiosError) => {
     if (error.response?.status === 401) {
-      const coreUrl = (import.meta as any).env?.VITE_CORE_URL || 'http://localhost:3000';
-      const returnUrl = encodeURIComponent(window.location.href);
-      window.location.href = `${coreUrl}/login?redirect=${returnUrl}`;
+      const apiError = (error.response.data as { error?: string; success?: boolean })?.error;
+      const isSessionExpired =
+        apiError === 'Authentication required' ||
+        (apiError === 'Unauthorized' &&
+          typeof error.config?.url === 'string' &&
+          error.config.url.includes('/api/auth/me'));
+
+      if (isSessionExpired) {
+        const coreUrl = (import.meta as any).env?.VITE_CORE_URL || 'http://localhost:3000';
+        const returnUrl = encodeURIComponent(window.location.href);
+        window.location.href = `${coreUrl}/login?redirect=${returnUrl}`;
+      }
     }
     return Promise.reject(error);
   }

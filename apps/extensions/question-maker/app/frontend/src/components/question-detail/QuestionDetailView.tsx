@@ -90,7 +90,7 @@ interface QuestionDetailViewProps {
         questionId: number,
         updates: {
             description?: string | null;
-            primaryTopicId?: number;
+            primaryTopicId?: string;
             type?: QuestionType;
             primaryTopicName?: string;
         }
@@ -487,23 +487,22 @@ export const QuestionDetailView = ({
                                             size="sm"
                                             disabled={savingMetadata || !editPrimaryTopicId}
                                             onClick={async () => {
-                                                const primaryId = parseInt(editPrimaryTopicId, 10);
-                                                if (Number.isNaN(primaryId)) return;
+                                                if (!editPrimaryTopicId) return;
                                                 setSavingMetadata(true);
                                                 try {
                                                     await questionService.updateQuestion(entry.questionId, {
                                                         description: editDescription || undefined,
-                                                        primaryTopicId: primaryId,
+                                                        primaryTopicId: editPrimaryTopicId,
                                                         type: editType,
                                                         courseId: entry.courseId
                                                     });
                                                     await questionService.updateVariant(entry.variant.id, {
                                                         difficulty: editDifficulty
                                                     });
-                                                    const primaryTopicName = topics.find((t) => t.id === primaryId)?.name;
+                                                    const primaryTopicName = topics.find((t) => t.id === editPrimaryTopicId)?.name;
                                                     onUpdateQuestionMetadata?.(entry.questionId, {
                                                         description: editDescription || null,
-                                                        primaryTopicId: primaryId,
+                                                        primaryTopicId: editPrimaryTopicId,
                                                         type: editType,
                                                         primaryTopicName
                                                     });
