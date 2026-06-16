@@ -37,6 +37,11 @@
     "research:summarize-classroom-replicates": "node ./scripts/research/summarize-classroom-replicates.mjs",
     "research:backfill-energy": "node ./scripts/research/backfill-interaction-energy.mjs",
     "research:export-human-check": "node ./scripts/research/export-human-spot-check.mjs",
+    "research:build-knn-exemplars": "node ./scripts/research/build-knn-exemplars-from-labels.mjs",
+    "research:eval-knn": "tsx ./scripts/research/evaluate-knn-router.ts",
+    "research:status-report": "node ./scripts/research/summarize-research-status.mjs",
+    "research:tier-a": "bash ./scripts/research/run-s378-tier-a.sh",
+    "research:offline-analysis": "bash ./scripts/research/run-offline-analysis.sh",
     "test:embedding": "tsx scripts/test-embedding.ts"
   },
   "dependencies": {

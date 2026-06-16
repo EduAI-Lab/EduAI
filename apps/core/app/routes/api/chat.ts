@@ -8,7 +8,10 @@ import {
   mergeLocalInferenceFromEnv,
   parseModelIdentifier,
 } from "~/lib/ai/providers";
-import { activeRouterVersion, resolveRoutedModel } from "~/lib/ai/routing/router";
+import {
+  activeRouterVersion,
+  resolveRoutedModel,
+} from "~/lib/ai/routing/router";
 import {
   normalizeTokenUsage,
   persistAiInteractionTelemetry,
@@ -44,6 +47,23 @@ import {
   HYBRID_RAG_MAX_CONTEXT_CHARS,
 } from "~/lib/chat-rag";
 import { routerAutoDefaultEnabled } from "~/lib/router-env.server";
+
+function autoRoutingHeaders(
+  resolvedModelId: string,
+  routingTier: 1 | 2 | 3 | null,
+  wasAuto: boolean,
+): Record<string, string> {
+  const headers: Record<string, string> = {
+    "X-Routed-Model": resolvedModelId,
+  };
+  if (wasAuto) {
+    if (routingTier != null) {
+      headers["X-Routing-Tier"] = String(routingTier);
+    }
+    headers["X-Router-Version"] = activeRouterVersion();
+  }
+  return headers;
+}
 
 const TOOL_MAX_STEPS = Math.min(
   32,
@@ -1070,7 +1090,7 @@ ${buildRagSystemBlock(preloadedRagContext, { toolPath: true })}`;
         "Content-Encoding": "none",
         "Transfer-Encoding": "chunked",
         Connection: "keep-alive",
-        "X-Routed-Model": resolvedModelId,
+        ...autoRoutingHeaders(resolvedModelId, routingTier, wasAuto),
       };
       if (chat?.id) {
         headers["X-Chat-Id"] = chat.id;
@@ -1126,7 +1146,7 @@ ${buildRagSystemBlock(preloadedRagContext, { toolPath: true })}`;
             status: 200,
             headers: {
               "Content-Type": "application/json",
-              "X-Routed-Model": resolvedModelId,
+              ...autoRoutingHeaders(resolvedModelId, routingTier, wasAuto),
             },
           },
         );
