@@ -2,7 +2,7 @@
  * P3b — LLM tier classifier (dedicated router call on tier-1 vLLM).
  * Used when the client requests `model=auto-llm` or `ROUTER_MODE=llm`.
  */
-import { generateObject } from "ai";
+import { generateText } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { z } from "zod";
 import { isLocalVllmRouting } from "./local-vllm";
@@ -42,7 +42,24 @@ complexity:
 - medium: standard coursework, moderate reasoning, typical problem sets
 - high: multi-step proofs, difficult debugging, ambiguous or high-stakes work
 
-confidence: how sure you are about complexity (not answer quality).`;
+confidence: how sure you are about complexity (not answer quality).
+
+Respond with a single JSON object only (no markdown fences):
+{"task":"chat|coding|analysis|creative","complexity":"low|medium|high","confidence":0-100}`;
+
+/** Parse classifier JSON from model text (vLLM lacks tool-call-parser for generateObject). */
+export function parseClassifierJson(text: string): LlmRouteClassification {
+  const trimmed = text.trim();
+  const jsonMatch = trimmed.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    throw new Error("Classifier response contained no JSON object");
+  }
+  const parsed = llmRouteSchema.safeParse(JSON.parse(jsonMatch[0]));
+  if (!parsed.success) {
+    throw new Error(`Classifier JSON invalid: ${parsed.error.message}`);
+  }
+  return parsed.data;
+}
 
 function classifierModelId(): string {
   return (
@@ -116,9 +133,8 @@ export async function classifyPromptForTier(
   const openai = createClassifierClient();
   const model = openai(classifierModelId());
 
-  const { object } = await generateObject({
+  const { text } = await generateText({
     model,
-    schema: llmRouteSchema,
     system: CLASSIFIER_SYSTEM,
     prompt: buildClassifierUserPrompt(prompt, context),
     temperature: 0,
@@ -126,5 +142,5 @@ export async function classifyPromptForTier(
     abortSignal: AbortSignal.timeout(classifierTimeoutMs()),
   });
 
-  return object;
+  return parseClassifierJson(text);
 }

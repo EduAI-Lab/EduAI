@@ -25,7 +25,7 @@ set +a
 unset RESEARCH_RUN_LIMIT
 
 wait_for_p3b() {
-  while pgrep -f 'run-policy-comparison' >/dev/null 2>&1; do
+  while pgrep -f 'node scripts/research/run-policy-comparison' >/dev/null 2>&1; do
     local n
     n=$(wc -l <"$P3B_OUT" 2>/dev/null || echo 0)
     echo "P3b running… $n/$DEV_PROMPTS $(date -Iseconds)"

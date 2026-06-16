@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import {
   tierFromLlmClassification,
+  parseClassifierJson,
   type LlmRouteClassification,
 } from "~/lib/ai/routing/llm-classifier";
 
@@ -39,5 +40,23 @@ describe("tierFromLlmClassification", () => {
     expect(
       tierFromLlmClassification({ ...base, complexity: "high" }),
     ).toBe(3);
+  });
+});
+
+describe("parseClassifierJson", () => {
+  it("parses bare JSON object", () => {
+    const out = parseClassifierJson(
+      '{"task":"coding","complexity":"medium","confidence":85}',
+    );
+    expect(out.task).toBe("coding");
+    expect(out.complexity).toBe("medium");
+    expect(out.confidence).toBe(85);
+  });
+
+  it("extracts JSON from surrounding text", () => {
+    const out = parseClassifierJson(
+      'Here is the result:\n{"task":"chat","complexity":"low","confidence":92}\n',
+    );
+    expect(out.complexity).toBe("low");
   });
 });
