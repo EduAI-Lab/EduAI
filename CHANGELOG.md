@@ -37,6 +37,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
+- [core] feat: Add Settings Accessibility tab — Assistive Mode (`useAssistiveUi`), reduce motion, density (comfortable/compact), and theme (system/light/dark) with account persistence via `UiPreferencesProvider` and html hooks that stay absent at baseline. (#530, #560, @ebabar5, 2026-06-11)
+- [core] tests: Unit tests for Settings Accessibility tab, `UiPreferencesProvider`, and extended `/api/preferences` UI fields. (#530, #560, @ebabar5, 2026-06-11)
 - [question-maker] api: Scope `GET /api/eduai/courses` to the caller's Core enrollments via forwarded session cookie; guard `PATCH /api/course/:id/link-core` with `isCoreCourseInScopedList`; auto-link local courses by code and pull topics from Core. (#582, @GlowyBlack, 2026-06-13)
 - [question-maker] ui: Filter course nav to Core-linked and sandbox courses when the instructor has Core enrollments (`useDisplayCourses`, `courseDisplay.ts`). (#582, @GlowyBlack, 2026-06-13)
 - [ai-tutor] api: Scope `GET /api/eduai/courses` and `POST /api/courses/import-external` to instructor Core enrollments; add `POST /api/courses/:courseId/sync-enrollments` to pull active STUDENT rows from Core. (#582, @GlowyBlack, 2026-06-13)
