@@ -612,15 +612,20 @@ router.patch('/courses/:courseId/publish', requireRole(['INSTRUCTOR', 'UNIT_ADMI
       select: { coreOfferingId: true },
     });
 
-    // Write-through to Core when this course is linked — Core is source of truth.
-    if (offering?.coreOfferingId) {
-      await setCoreCoursePublishState(offering.coreOfferingId, true);
-    }
-
     const updated = await prisma.courseOffering.update({
       where: { id: courseId },
       data: { isPublished: true },
     });
+
+    // Write-through to Core after the local write succeeds — if Core rejects, roll back local.
+    if (offering?.coreOfferingId) {
+      try {
+        await setCoreCoursePublishState(offering.coreOfferingId, true);
+      } catch (coreErr) {
+        await prisma.courseOffering.update({ where: { id: courseId }, data: { isPublished: false } });
+        throw coreErr;
+      }
+    }
 
     res.json(mapCourseOffering(updated));
   } catch (e) {
@@ -661,11 +666,6 @@ router.patch('/courses/:courseId/unpublish', requireRole(['INSTRUCTOR', 'UNIT_AD
       select: { coreOfferingId: true },
     });
 
-    // Write-through to Core when this course is linked — Core is source of truth.
-    if (offering?.coreOfferingId) {
-      await setCoreCoursePublishState(offering.coreOfferingId, false);
-    }
-
     // Cascade unpublish to modules and lessons (AI Tutor content hierarchy).
     await prisma.$transaction(async (tx) => {
       await tx.courseOffering.update({
@@ -691,6 +691,11 @@ router.patch('/courses/:courseId/unpublish', requireRole(['INSTRUCTOR', 'UNIT_AD
         });
       }
     });
+
+    // Write-through to Core after the cascade transaction completes — if Core rejects, throw.
+    if (offering?.coreOfferingId) {
+      await setCoreCoursePublishState(offering.coreOfferingId, false);
+    }
 
     const updated = await prisma.courseOffering.findUnique({
       where: { id: courseId },
