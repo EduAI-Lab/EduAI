@@ -11,6 +11,9 @@ FROM node:20-alpine AS deps
 WORKDIR /app
 
 COPY package.json package-lock.json .npmrc ./
+COPY packages/types/package.json  ./packages/types/
+COPY packages/types/tsconfig.json ./packages/types/
+COPY packages/types/src           ./packages/types/src
 COPY apps/core/package.json                                   ./apps/core/
 COPY apps/extensions/ai-tutor/package.json                    ./apps/extensions/ai-tutor/
 COPY apps/extensions/ai-tutor/server/package.json             ./apps/extensions/ai-tutor/server/
@@ -19,8 +22,9 @@ COPY apps/extensions/question-maker/app/backend/package.json  ./apps/extensions/
 COPY apps/extensions/question-maker/app/frontend/package.json ./apps/extensions/question-maker/app/frontend/
 
 RUN npm ci --ignore-scripts \
+     && npm run build -w @eduai/types \
      && cd apps/extensions/question-maker/app/backend \
-     && npm install --ignore-scripts --no-package-lock --workspaces=false
+     && npm install --ignore-scripts --no-package-lock
 
 # ── Target: test ───────────────────────────────────────────────────────────
 FROM node:20-alpine AS test
