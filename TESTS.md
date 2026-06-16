@@ -166,7 +166,13 @@ Each section should use this format:
 | `auth-handler-request.test.ts` | Tests that internal Better Auth sub-requests omit session cookies on sign-in (clean re-login after logout) and forward cookies on sign-out. |
 | `bug-reports.test.ts` | `createBugReport` service: rejects null/missing payloads, invalid or CORE source values, empty userId, non-string/missing description, descriptions over 2000 chars; accepts exactly 2000 chars; returns USER_NOT_FOUND when the user doesn't exist; trims userId before DB lookup; passes AI_TUTOR and QUESTION_MAKER source through to the create call; persists userId even when isAnonymous is true; defaults isAnonymous to false; passes all optional fields through unchanged; stores null for absent optional fields. |
 | `chat-api-keys.schema.test.ts` | Validates `clientApiKeysBodySchema` and `toUserProviderSettings` coercion defaults for chat `apiKeys` body parsing. |
+| `chat-intent.test.ts` | Tests `needsCourseRag` intent routing — greetings, generic knowledge, course keywords, code requests, and borderline escalation when a course is selected. |
 | `chat-rag.test.ts` | Tests `buildCappedRagContextText` and `capRagHitsForTool` chunk/char caps for hybrid and tool RAG paths. |
+| `chat-tools.test.ts` | Tests `buildChatToolRegistry` — when web tools are OFF only `getInformation` is registered; when ON, `webSearch` and `fetchPage` are added. |
+| `model-tool-capability.test.ts` | Tests `isSmallModelSlug` heuristics (migration backfill) and `allowsSupportsToolsToggle` — toggle shown only for CHAT-type models (including small slugs). |
+| `ModelFormDialog.test.tsx` | Admin model form dialog — title, submit/cancel, Ollama/vLLM model pickers, Supports Tools toggle for CHAT models, and confirmation dialog before enabling tools. |
+| `web-tool-ui.test.ts` | Tests `isWebChatToolName` and `getChatToolDisplayName` — web-tool labels gated by `X-Web-Tools-Enabled`; course RAG labels always shown. |
+| `AIModelsTable.test.tsx` | Admin AI models table — empty state, column rendering, and edit/delete callbacks. |
 | `canvas-client.test.ts` | `parseAndValidateCanvasUrl` SSRF guard (HTTPS required except local dev hosts), `verifyCanvasCredentials` success/invalid token/Canvas errors/unreachable Canvas, test-mode roster mocks, and `CanvasApiError`. |
 | `canvas-encryption.test.ts` | AES-256-GCM encrypt/decrypt round-trip, empty input, legacy plaintext passthrough, strict encrypted-format detection, and missing `ENCRYPTION_KEY`. |
 | `canvas-student-id.test.ts` | `User.studentId` encrypt/decrypt round-trip, `prepareStudentIdStorage`, `prepareRosterSisUserIdStorage` (shared HMAC lookup with roster), `rosterSisUserIdMatchFilter`, and legacy plaintext passthrough. |

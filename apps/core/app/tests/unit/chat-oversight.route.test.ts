@@ -47,18 +47,20 @@ vi.mock("~/lib/assistive-events.server", () => ({
 
 vi.mock("~/lib/prisma.server", () => ({
   default: {
-    chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
-    chatMessage: { findMany: vi.fn(), createMany: vi.fn() },
-    course: { findFirst: vi.fn() },
-  },
-}));
+	    chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
+	    chatMessage: { findMany: vi.fn(), createMany: vi.fn() },
+	    course: { findFirst: vi.fn() },
+	    systemConfig: { findUnique: vi.fn() },
+	  },
+	}));
 
 import { streamText } from "ai";
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
-import { auditAndMaybeRewrite } from "~/lib/ai/adhd-oversight";
-import { withStructuralPass, computeAdhdResponseMetrics } from "~/lib/ai/adhd-metrics";
-import prisma from "~/lib/prisma.server";
+	import { auditAndMaybeRewrite } from "~/lib/ai/adhd-oversight";
+	import { withStructuralPass, computeAdhdResponseMetrics } from "~/lib/ai/adhd-metrics";
+	import { invalidateWebToolsCache } from "~/lib/system-config.server";
+	import prisma from "~/lib/prisma.server";
 
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const USER_ID = "user-1";
@@ -130,8 +132,9 @@ function baseBody(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  process.env.VLLM_BASE_URL = "http://localhost:8001";
-  process.env.ADHD_ASSIST_OVERSIGHT = "true";
+	  process.env.VLLM_BASE_URL = "http://localhost:8001";
+	  process.env.ADHD_ASSIST_OVERSIGHT = "true";
+	  invalidateWebToolsCache();
 
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: USER_ID, role: "STUDENT" },
@@ -144,9 +147,10 @@ beforeEach(() => {
     systemPrompt: null,
   } as never);
 
-  vi.mocked(prisma.chatMessage.findMany).mockResolvedValue([]);
-  vi.mocked(prisma.chatMessage.createMany).mockResolvedValue({ count: 1 });
-});
+	  vi.mocked(prisma.chatMessage.findMany).mockResolvedValue([]);
+	  vi.mocked(prisma.chatMessage.createMany).mockResolvedValue({ count: 1 });
+	  vi.mocked(prisma.systemConfig.findUnique).mockResolvedValue(null);
+	});
 
 afterEach(() => {
   if (originalVllm === undefined) delete process.env.VLLM_BASE_URL;
