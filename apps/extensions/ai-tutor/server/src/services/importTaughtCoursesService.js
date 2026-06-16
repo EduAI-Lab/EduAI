@@ -41,10 +41,7 @@ function deriveDescription(externalCourse) {
  */
 export async function importExternalCourseForUser(instructor, externalCourse) {
   const alreadyImported = await prisma.courseOffering.findFirst({
-    where: {
-      externalId: externalCourse.id,
-      instructors: { some: { userId: instructor.id } },
-    },
+    where: { coreOfferingId: externalCourse.id },
   });
 
   if (alreadyImported) {
@@ -57,6 +54,8 @@ export async function importExternalCourseForUser(instructor, externalCourse) {
         title: deriveTitle(externalCourse),
         description: deriveDescription(externalCourse),
         externalId: externalCourse.id,
+        coreOfferingId: externalCourse.id,
+        isPublished: externalCourse.isPublished ?? false,
         externalSource: 'EDUAI',
         externalMetadata: externalCourse,
       },
