@@ -26,6 +26,7 @@ A production-ready chat platform with Retrieval-Augmented Generation (RAG) capab
 - **Role-based Access**: Support for students, professors, and administrators
 - **Persisted Chat Preferences**: Assistive mode and the selected course are saved per user, restored on every page load and new chat, and cleared on logout
 - **Account-level Assistive Mode**: Shell-wide `AssistiveUiProvider` sets `data-assistive` on `<html>` when ON (absent when OFF so baseline CSS is unchanged); preference persists via `UserPreference.assistDefault` and syncs with the `/chat` header toggle
+- **Assistive active highlighting**: On `/chat`, emphasizes the latest assistant reply, de-emphasizes older messages, anchors the composer, auto-focuses input after responses, and offers optional focus mode to hide non-essential chrome
 
 ## Prerequisites
 
@@ -385,6 +386,8 @@ Read and update the authenticated user's UI preferences (`UserPreference` row). 
 When `assistDefault` is `true`, the root layout sets `data-assistive="true"` on `<html>` for CSS scoping; when `false`, the attribute is **absent** (not `"false"`) so baseline styles are unchanged.
 
 **Assistive reading typography:** Elements marked with the `reading-surface` class (chat messages, course overview text, etc.) pick up spacing-only typography under `[data-assistive]` — 16px base, ~1.625 line-height, 65ch max measure, increased paragraph/letter spacing. No font-family swap; OFF state is pixel-identical because the attribute is absent.
+
+**Active highlighting + focus mode (#525):** On `/chat` when `[data-assistive]` is set, the latest assistant message is emphasized (outline + background), older messages are de-emphasized (lower opacity, full opacity on hover/focus), the composer is subtly anchored, `:focus-visible` rings are strengthened, and the input auto-focuses after each assistant turn. **Focus mode** (header toggle, assistive ON only) sets `data-assistive-focus-mode` on `<html>` to hide the sidebar and course/model selectors. Client `re_orientation` events record re-orientation latency via `POST /api/assistive-events`.
 
 **Example** (browser session — toggle Assistive Mode on):
 

@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "./styles/assistive-reading.css";
+@import "./styles/assistive-active-highlight.css";
 @source "../node_modules/streamdown/dist/index.js";
 
 @custom-variant dark (&:is(.dark *));
