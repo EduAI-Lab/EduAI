@@ -2,8 +2,8 @@ import { prisma } from '../config/database.js';
 import { listEduAiCourseEnrollmentsServiceKey } from './eduaiClient.js';
 
 /**
- * Sync active enrollments from Core into the local CourseEnrollment table,
- * preserving each enrollee's EnrollmentRole (STUDENT, TA, or INSTRUCTOR).
+ * Sync active student enrollments from Core into the local CourseEnrollment table.
+ * Only STUDENT rows are imported (#578); TA and INSTRUCTOR access is not mirrored locally.
  *
  * - Creates rows for users active in Core but missing locally.
  * - Updates the `role` for rows whose Core role changed.
@@ -29,7 +29,10 @@ export async function syncCourseEnrollments(courseOfferingId, options = {}) {
   }
 
   const allEnrollments = await listEduAiCourseEnrollmentsServiceKey(course.externalId);
-  const activeEnrollments = allEnrollments.filter((e) => e.isActive);
+  // AI Tutor local enrollments represent student access only (#578).
+  const activeEnrollments = allEnrollments.filter(
+    (e) => e.isActive && (e.role ?? 'STUDENT') === 'STUDENT',
+  );
 
   // Guard: empty upstream means "no data yet" — don't wipe local rows
   if (activeEnrollments.length === 0) {
@@ -45,7 +48,9 @@ export async function syncCourseEnrollments(courseOfferingId, options = {}) {
   const existingByUserId = new Map(existing.map((e) => [e.userId, e]));
 
   const toCreate = activeEnrollments.filter((e) => !existingByUserId.has(e.studentId));
-  const toDelete = existing.filter((e) => !activeUserIds.has(e.userId));
+  const toDelete = existing.filter(
+    (e) => !activeUserIds.has(e.userId) && e.role === 'STUDENT',
+  );
   const toUpdate = activeEnrollments.filter((e) => {
     const local = existingByUserId.get(e.studentId);
     return local && local.role !== 'TA' && local.role !== (e.role ?? 'STUDENT');

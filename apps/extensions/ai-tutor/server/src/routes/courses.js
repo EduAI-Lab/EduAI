@@ -31,8 +31,10 @@ import { mapCourseOffering, mapProgressData } from '../utils/mappers.js';
 import { cloneCourseContent, cloneLessonsFromOffering } from '../services/courseCloning.js';
 import { calculateCourseProgress } from '../services/progressCalculation.js';
 import { findEduAiCourseById, listEduAiCourses, setCoreCoursePublishState } from '../services/eduaiClient.js';
+import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
 import { syncExternalCourseTopics } from '../services/topicSync.js';
 import { syncCourseEnrollments } from '../services/enrollmentSync.js';
+import { importExternalCourseForUser } from '../services/importTaughtCoursesService.js';
 
 const router = express.Router();
 
@@ -52,8 +54,8 @@ function isSupportedCourseRole(role) {
  */
 router.get('/eduai/courses', requireRole('INSTRUCTOR'), async (req, res) => {
   try {
-    // Fetch available courses from Core using the service key
-    const courses = await listEduAiCourses();
+    const cookie = getEduAiCookieForRequest(req);
+    const courses = await listEduAiCourses({ cookie });
 
     // Exclude courses already linked to a local offering (by coreOfferingId, which is @unique).
     // Using coreOfferingId (not externalId + instructor) means seeded or cross-instructor
@@ -196,9 +198,10 @@ router.post('/courses/import-external', requireRole(['INSTRUCTOR', 'UNIT_ADMIN',
   }
 
   try {
-    const externalCourse = await findEduAiCourseById(externalCourseId);
+    const cookie = getEduAiCookieForRequest(req);
+    const externalCourse = await findEduAiCourseById(externalCourseId, { cookie });
     if (!externalCourse) {
-      return res.status(404).json({ error: 'EduAI course not found' });
+      return res.status(403).json({ error: 'CORE_COURSE_NOT_AUTHORIZED' });
     }
 
     // coreOfferingId is @unique — one AI Tutor offering per Core course regardless of instructor.
@@ -210,59 +213,12 @@ router.post('/courses/import-external', requireRole(['INSTRUCTOR', 'UNIT_ADMIN',
       return res.status(409).json({ error: 'Course already imported' });
     }
 
-    const titleParts = [
-      typeof externalCourse.code === 'string' ? externalCourse.code.trim() : null,
-      typeof externalCourse.name === 'string' ? externalCourse.name.trim() : null,
-    ].filter(Boolean);
-
-    const derivedTitle =
-      titleParts.join(' - ') ||
-      (typeof externalCourse.name === 'string' ? externalCourse.name : null) ||
-      (typeof externalCourse.code === 'string' ? externalCourse.code : null) ||
-      'Imported Course';
-
-    const derivedDescription =
-      typeof externalCourse.description === 'string' && externalCourse.description.trim()
-        ? externalCourse.description
-        : [externalCourse.term, externalCourse.year].filter(Boolean).join(' ') || null;
-
-    const created = await prisma.$transaction(async (tx) => {
-      const offering = await tx.courseOffering.create({
-        data: {
-          title: derivedTitle,
-          description: derivedDescription,
-          externalId: externalCourse.id,
-          coreOfferingId: externalCourse.id,
-          externalSource: 'EDUAI',
-          externalMetadata: externalCourse,
-          isPublished: externalCourse.isPublished ?? false,
-        },
-      });
-
-      await tx.courseInstructor.create({
-        data: {
-          courseOfferingId: offering.id,
-          userId: instructor.id,
-          role: 'LEAD',
-        },
-      });
-
-      return offering;
-    });
-
-    // Sync topics and enrollments from Core concurrently (independent operations)
-    const [topicResult, enrollmentResult] = await Promise.allSettled([
-      syncExternalCourseTopics(created.id),
-      syncCourseEnrollments(created.id),
-    ]);
-    if (topicResult.status === 'rejected') {
-      console.error('[eduai] Failed to sync topics for imported course', topicResult.reason);
-    }
-    if (enrollmentResult.status === 'rejected') {
-      console.error('[eduai] Failed to sync enrollments for imported course', enrollmentResult.reason);
+    const { offering, created } = await importExternalCourseForUser(instructor, externalCourse);
+    if (!created) {
+      return res.status(409).json({ error: 'Course already imported' });
     }
 
-    res.status(201).json(mapCourseOffering(created));
+    res.status(201).json(mapCourseOffering(offering));
   } catch (error) {
     console.error('[eduai] Failed to import course', error);
     const status = Number.isInteger(error?.status) ? error.status : 500;
@@ -307,6 +263,47 @@ router.get('/courses/:courseId', async (req, res) => {
     res.json(mapCourseOffering(course));
   } catch (e) {
     res.status(500).json({ error: String(e) });
+  }
+});
+
+/**
+ * POST /courses/:courseId/sync-enrollments — refresh student enrollments from Core (#578).
+ *
+ * Auth: INSTRUCTOR assigned to the course.
+ * Side effects: upserts local CourseEnrollment rows from Core STUDENT enrollments.
+ */
+router.post('/courses/:courseId/sync-enrollments', requireRole('INSTRUCTOR'), async (req, res) => {
+  const instructor = req.user;
+  const courseId = Number(req.params.courseId);
+  if (!Number.isFinite(courseId)) {
+    return res.status(400).json({ error: 'Invalid course id' });
+  }
+
+  try {
+    const course = await prisma.courseOffering.findUnique({
+      where: { id: courseId },
+      include: { instructors: { select: { userId: true } } },
+    });
+
+    if (!course) {
+      return res.status(404).json({ error: 'Course not found' });
+    }
+
+    const isAssigned = course.instructors.some((i) => i.userId === instructor.id);
+    if (!isAssigned) {
+      return res.status(403).json({ error: 'Not authorized for this course' });
+    }
+
+    if (!course.externalId || course.externalSource !== 'EDUAI') {
+      return res.status(400).json({ error: 'Course is not imported from EduAI' });
+    }
+
+    const result = await syncCourseEnrollments(courseId, { course });
+    res.json(result);
+  } catch (error) {
+    console.error('[eduai] Instructor enrollment sync failed', error);
+    const status = Number.isInteger(error?.status) ? error.status : 500;
+    res.status(status).json({ error: error.message || 'Enrollment sync failed' });
   }
 });
 
