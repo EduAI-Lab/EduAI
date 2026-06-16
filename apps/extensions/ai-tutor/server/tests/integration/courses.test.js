@@ -498,19 +498,18 @@ describe('Course publish state — Core write-through (#477)', () => {
       isPublished: true,
     };
 
-    // Mock Core's listEduAiCourses response (used by import-external internally).
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      text: () => Promise.resolve(''),
-      json: () => Promise.resolve({ courses: [coreCourse] }),
-    }));
+    vi.mocked(findEduAiCourseById).mockResolvedValue(coreCourse);
 
     const res = await request(profApp)
       .post('/api/courses/import-external')
+      .set('Cookie', 'session=valid')
       .send({ externalCourseId: EXTERNAL_COURSE_ID });
 
     expect(res.status).toBe(201);
+    expect(findEduAiCourseById).toHaveBeenCalledWith(
+      EXTERNAL_COURSE_ID,
+      expect.objectContaining({ cookie: 'session=valid' }),
+    );
 
     const imported = await prisma.courseOffering.findFirst({
       where: { externalId: EXTERNAL_COURSE_ID },
