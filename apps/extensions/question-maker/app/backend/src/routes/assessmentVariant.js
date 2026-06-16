@@ -8,6 +8,7 @@
  */
 import express from 'express';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
+import { AUTHORS, INSTRUCTORS } from '../middleware/roles.js';
 import { requireCourseAccess } from '../middleware/courseAccess.js';
 import { requireAssessmentAccess } from '../middleware/resourceAccess.js';
 import {
@@ -21,9 +22,6 @@ import {
 } from '../services/assessmentVariantService.js';
 
 const router = express.Router();
-
-const AUTHORS = ['ADMIN', 'UNIT_ADMIN', 'INSTRUCTOR', 'TA'];
-const INSTRUCTORS = ['ADMIN', 'UNIT_ADMIN', 'INSTRUCTOR'];
 
 const writeByCourseBody = requireCourseAccess({ min: 'instructor', getCourseId: (req) => req.body.courseId });
 

@@ -30,7 +30,7 @@ import { requireRole, isUnitAdminForCourse, isCourseAdmin } from '../middleware/
 import { mapCourseOffering, mapProgressData } from '../utils/mappers.js';
 import { cloneCourseContent, cloneLessonsFromOffering } from '../services/courseCloning.js';
 import { calculateCourseProgress } from '../services/progressCalculation.js';
-import { findEduAiCourseById, listEduAiCourses } from '../services/eduaiClient.js';
+import { findEduAiCourseById, listEduAiCourses, setCoreCoursePublishState } from '../services/eduaiClient.js';
 import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
 import { syncExternalCourseTopics } from '../services/topicSync.js';
 import { syncCourseEnrollments } from '../services/enrollmentSync.js';
@@ -46,30 +46,26 @@ function isSupportedCourseRole(role) {
  * GET /eduai/courses — list importable EduAI courses for the instructor.
  *
  * Auth: INSTRUCTOR.
- * Returns: EduAI course descriptors minus any already imported by this
- *   instructor (de-duped via local `externalId`).
+ * Returns: EduAI course descriptors minus any already linked to a local
+ *   offering (de-duped via `coreOfferingId`, which is @unique).
  *
- * Why: filtering by THIS instructor (not globally) lets multiple instructors
- * import the same EduAI course independently into their own offerings.
+ * Why: `coreOfferingId` is a unique constraint — one AI Tutor offering per
+ * Core course — so filtering globally (not per-instructor) is correct.
  */
 router.get('/eduai/courses', requireRole('INSTRUCTOR'), async (req, res) => {
   try {
     const cookie = getEduAiCookieForRequest(req);
     const courses = await listEduAiCourses({ cookie });
 
-    // Exclude any EduAI course already imported by this instructor
-    // We identify imported ones via CourseOffering.externalId (source id) scoped to the instructor
-    const instructorId = req.user?.id;
+    // Exclude courses already linked to a local offering (by coreOfferingId, which is @unique).
+    // Using coreOfferingId (not externalId + instructor) means seeded or cross-instructor
+    // imports are also excluded — consistent with the one-Core-course-per-offering constraint.
     const imported = await prisma.courseOffering.findMany({
-      where: {
-        externalSource: 'EDUAI',
-        externalId: { not: null },
-        instructors: { some: { userId: instructorId } },
-      },
-      select: { externalId: true },
+      where: { coreOfferingId: { not: null } },
+      select: { coreOfferingId: true },
     });
 
-    const importedIds = new Set(imported.map((c) => c.externalId).filter(Boolean));
+    const importedIds = new Set(imported.map((c) => c.coreOfferingId).filter(Boolean));
     const filtered = Array.isArray(courses)
       ? courses.filter((c) => c && typeof c.id === 'string' && !importedIds.has(c.id))
       : [];
@@ -208,11 +204,9 @@ router.post('/courses/import-external', requireRole(['INSTRUCTOR', 'UNIT_ADMIN',
       return res.status(403).json({ error: 'CORE_COURSE_NOT_AUTHORIZED' });
     }
 
+    // coreOfferingId is @unique — one AI Tutor offering per Core course regardless of instructor.
     const alreadyImported = await prisma.courseOffering.findFirst({
-      where: {
-        externalId: externalCourseId,
-        instructors: { some: { userId: instructor.id } },
-      },
+      where: { coreOfferingId: externalCourseId },
     });
 
     if (alreadyImported) {
@@ -610,10 +604,25 @@ router.patch('/courses/:courseId/publish', requireRole(['INSTRUCTOR', 'UNIT_ADMI
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
 
+    const offering = await prisma.courseOffering.findUnique({
+      where: { id: courseId },
+      select: { coreOfferingId: true },
+    });
+
     const updated = await prisma.courseOffering.update({
       where: { id: courseId },
       data: { isPublished: true },
     });
+
+    // Write-through to Core after the local write succeeds — if Core rejects, roll back local.
+    if (offering?.coreOfferingId) {
+      try {
+        await setCoreCoursePublishState(offering.coreOfferingId, true);
+      } catch (coreErr) {
+        await prisma.courseOffering.update({ where: { id: courseId }, data: { isPublished: false } });
+        throw coreErr;
+      }
+    }
 
     res.json(mapCourseOffering(updated));
   } catch (e) {
@@ -649,21 +658,23 @@ router.patch('/courses/:courseId/unpublish', requireRole(['INSTRUCTOR', 'UNIT_AD
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
 
-    // Unpublish course and cascade to all modules and lessons
+    const offering = await prisma.courseOffering.findUnique({
+      where: { id: courseId },
+      select: { coreOfferingId: true },
+    });
+
+    // Cascade unpublish to modules and lessons (AI Tutor content hierarchy).
     await prisma.$transaction(async (tx) => {
-      // Update the course
       await tx.courseOffering.update({
         where: { id: courseId },
         data: { isPublished: false },
       });
 
-      // Update all modules in this course
       await tx.module.updateMany({
         where: { courseOfferingId: courseId },
         data: { isPublished: false },
       });
 
-      // Update all lessons in modules of this course
       const modules = await tx.module.findMany({
         where: { courseOfferingId: courseId },
         select: { id: true },
@@ -677,6 +688,11 @@ router.patch('/courses/:courseId/unpublish', requireRole(['INSTRUCTOR', 'UNIT_AD
         });
       }
     });
+
+    // Write-through to Core after the cascade transaction completes — if Core rejects, throw.
+    if (offering?.coreOfferingId) {
+      await setCoreCoursePublishState(offering.coreOfferingId, false);
+    }
 
     const updated = await prisma.courseOffering.findUnique({
       where: { id: courseId },
