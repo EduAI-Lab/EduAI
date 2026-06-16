@@ -106,6 +106,13 @@ model Course {
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
   aiInstructions String           @default("")
+  /// Per-course override: `local` | `ollama` | `cloud`; null uses server env.
+  embeddingProvider    String?
+  /// Per-course model id (Ollama or OpenRouter/OpenAI); null uses server default for provider.
+  embeddingModel       String?
+  lastEmbeddedAt       DateTime?
+  embeddedWithProvider String?
+  embeddedWithModel    String?
   aiInteractions AIInteraction[]
   enrollments    Enrollment[]
   materials      CourseMaterial[]
@@ -369,7 +376,7 @@ model MaterialChunk {
 model MaterialEmbedding {
   id        String                      @id @default(cuid())
   chunkId   String                      @unique
-  embedding Unsupported("vector(3072)")
+  embedding Unsupported("vector(1024)")
   createdAt DateTime                    @default(now())
   chunk     MaterialChunk               @relation(fields: [chunkId], references: [id], onDelete: Cascade)
 
