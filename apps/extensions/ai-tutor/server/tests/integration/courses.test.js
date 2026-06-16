@@ -11,6 +11,29 @@ import {
   prisma,
 } from '../helpers.js';
 
+vi.mock('../../src/services/eduaiClient.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    findEduAiCourseById: vi.fn(),
+    listEduAiCourses: vi.fn(),
+    syncExternalCourseTopics: vi.fn(),
+    syncCourseEnrollments: vi.fn(),
+  };
+});
+
+import { findEduAiCourseById } from '../../src/services/eduaiClient.js';
+import { syncExternalCourseTopics } from '../../src/services/topicSync.js';
+import { syncCourseEnrollments } from '../../src/services/enrollmentSync.js';
+
+vi.mock('../../src/services/topicSync.js', () => ({
+  syncExternalCourseTopics: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('../../src/services/enrollmentSync.js', () => ({
+  syncCourseEnrollments: vi.fn().mockResolvedValue({ synced: 2, created: 1, deleted: 0, errors: [] }),
+}));
+
 describe('Courses routes', () => {
   let prof;
   let seed; // { user, course, module, lesson, topic }
@@ -21,6 +44,9 @@ describe('Courses routes', () => {
     prof = makeProfessor();
     seed = await seedMinimalCourse(prof.id);
     profApp = await createApp({ mockUser: prof });
+    vi.mocked(findEduAiCourseById).mockReset();
+    vi.mocked(syncExternalCourseTopics).mockClear();
+    vi.mocked(syncCourseEnrollments).mockClear();
   });
 
   // ── Helper to create and enroll a student ─────────────────────────
@@ -258,6 +284,92 @@ describe('Courses routes', () => {
       expect(updatedLesson.isPublished).toBe(false);
     });
   });
+
+  // ── POST /api/courses/import-external (#578) ─────────────────────
+
+  describe('POST /api/courses/import-external', () => {
+    it('imports a Core course the instructor is enrolled in', async () => {
+      vi.mocked(findEduAiCourseById).mockResolvedValue({
+        id: 'core-course-1',
+        code: 'COSC 111',
+        name: 'Computing I',
+        term: 'Fall',
+        year: 2026,
+      });
+
+      const res = await request(profApp)
+        .post('/api/courses/import-external')
+        .set('Cookie', 'session=valid')
+        .send({ externalCourseId: 'core-course-1' });
+
+      expect(res.status).toBe(201);
+      expect(res.body.externalId).toBe('core-course-1');
+      expect(findEduAiCourseById).toHaveBeenCalledWith(
+        'core-course-1',
+        expect.objectContaining({ cookie: 'session=valid' }),
+      );
+    });
+
+    it('returns 403 when the Core course is not in the instructor scoped list (#578)', async () => {
+      vi.mocked(findEduAiCourseById).mockResolvedValue(null);
+
+      const res = await request(profApp)
+        .post('/api/courses/import-external')
+        .set('Cookie', 'session=valid')
+        .send({ externalCourseId: 'core-course-not-mine' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe('CORE_COURSE_NOT_AUTHORIZED');
+    });
+
+    it('returns 400 without externalCourseId', async () => {
+      const res = await request(profApp)
+        .post('/api/courses/import-external')
+        .send({});
+
+      expect(res.status).toBe(400);
+    });
+  });
+
+  describe('POST /api/courses/:courseId/sync-enrollments (#578)', () => {
+    it('syncs student enrollments for an EduAI-imported course the instructor owns', async () => {
+      await prisma.courseOffering.update({
+        where: { id: seed.course.id },
+        data: { externalId: 'core-1', externalSource: 'EDUAI' },
+      });
+
+      const res = await request(profApp)
+        .post(`/api/courses/${seed.course.id}/sync-enrollments`)
+        .set('Cookie', 'session=valid');
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ synced: 2, created: 1, deleted: 0, errors: [] });
+      expect(syncCourseEnrollments).toHaveBeenCalledWith(
+        seed.course.id,
+        expect.objectContaining({ course: expect.objectContaining({ id: seed.course.id }) }),
+      );
+    });
+
+    it('returns 403 when the instructor is not assigned to the course', async () => {
+      const otherProf = makeProfessor();
+      const otherApp = await createApp({ mockUser: otherProf });
+
+      const res = await request(otherApp)
+        .post(`/api/courses/${seed.course.id}/sync-enrollments`)
+        .set('Cookie', 'session=valid');
+
+      expect(res.status).toBe(403);
+    });
+
+    it('returns 400 for a native course without Core externalId', async () => {
+      const res = await request(profApp)
+        .post(`/api/courses/${seed.course.id}/sync-enrollments`)
+        .set('Cookie', 'session=valid');
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/not imported from EduAI/i);
+    });
+  });
 });
 
 // ── Core write-through: publish state propagation (#477) ──────────────────────
@@ -386,19 +498,18 @@ describe('Course publish state — Core write-through (#477)', () => {
       isPublished: true,
     };
 
-    // Mock Core's listEduAiCourses response (used by import-external internally).
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      text: () => Promise.resolve(''),
-      json: () => Promise.resolve({ courses: [coreCourse] }),
-    }));
+    vi.mocked(findEduAiCourseById).mockResolvedValue(coreCourse);
 
     const res = await request(profApp)
       .post('/api/courses/import-external')
+      .set('Cookie', 'session=valid')
       .send({ externalCourseId: EXTERNAL_COURSE_ID });
 
     expect(res.status).toBe(201);
+    expect(findEduAiCourseById).toHaveBeenCalledWith(
+      EXTERNAL_COURSE_ID,
+      expect.objectContaining({ cookie: 'session=valid' }),
+    );
 
     const imported = await prisma.courseOffering.findFirst({
       where: { externalId: EXTERNAL_COURSE_ID },
