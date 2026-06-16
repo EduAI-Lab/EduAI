@@ -1,33 +1,16 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { ChatHeaderControls } from "~/components/chat/chat-header-controls";
 
 describe("ChatHeaderControls", () => {
   const defaultProps = {
-    adhdAssist: false,
-    onAdhdAssistChange: vi.fn(),
     systemPrompt: null as string | null,
     onSystemPromptSave: vi.fn(),
   };
 
-  it("renders the assistive mode switch and label", () => {
+  it("does not render the assistive mode switch (moved to chat input)", () => {
     render(<ChatHeaderControls {...defaultProps} />);
-    expect(screen.getByRole("switch", { name: "Assistive mode" })).toBeInTheDocument();
-    expect(screen.getByText("Assistive mode Off")).toBeInTheDocument();
-  });
-
-  it("shows On in the label when assistive mode is enabled", () => {
-    render(<ChatHeaderControls {...defaultProps} adhdAssist={true} />);
-    expect(screen.getByText("Assistive mode On")).toBeInTheDocument();
-  });
-
-  it("calls onAdhdAssistChange when the switch is toggled", () => {
-    const onAdhdAssistChange = vi.fn();
-    render(
-      <ChatHeaderControls {...defaultProps} onAdhdAssistChange={onAdhdAssistChange} />,
-    );
-    fireEvent.click(screen.getByRole("switch", { name: "Assistive mode" }));
-    expect(onAdhdAssistChange).toHaveBeenCalledWith(true);
+    expect(screen.queryByRole("switch", { name: /assistive mode/i })).not.toBeInTheDocument();
   });
 
   it("renders the System Prompt trigger button", () => {

@@ -10,10 +10,16 @@
  * this provider owns the live client-side state and persistence.
  */
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { postAssistiveEvent } from "~/lib/assistive-events.client";
+
+type SetAssistiveOptions = {
+  /** Skip telemetry and preference persistence (e.g. when syncing from an existing chat). */
+  silent?: boolean;
+};
 
 type AssistiveUiContextValue = {
   assistive: boolean;
-  setAssistive: (value: boolean) => void;
+  setAssistive: (value: boolean, options?: SetAssistiveOptions) => void;
 };
 
 const AssistiveUiContext = createContext<AssistiveUiContextValue | null>(null);
@@ -39,8 +45,26 @@ export function AssistiveUiProvider({
     }
   }, [assistive]);
 
-  const setAssistive = useCallback((value: boolean) => {
-    setAssistiveState(value);
+  const setAssistive = useCallback((value: boolean, options?: SetAssistiveOptions) => {
+    setAssistiveState((prev) => {
+      if (!options?.silent && prev !== value) {
+        void postAssistiveEvent({
+          eventType: "mode_toggled",
+          adhdAssist: value,
+          metrics: {
+            fromMode: prev,
+            toMode: value,
+            clientTimestamp: new Date().toISOString(),
+          },
+        });
+      }
+      return value;
+    });
+
+    if (options?.silent) {
+      return;
+    }
+
     fetch("/api/preferences", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },

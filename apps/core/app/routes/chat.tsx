@@ -1,5 +1,5 @@
 import { useChat } from "@ai-sdk/react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, redirect, useLoaderData, useFetcher } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
@@ -32,6 +32,7 @@ import { getUserPreference, saveUserPreference } from "~/lib/user-preferences.se
 import { getAccessibleCourseCodes } from "~/lib/courses/server";
 import { parsePreferenceUpdates } from "~/lib/user-preferences";
 import { useAssistiveUi } from "~/components/assistive/assistive-ui-provider";
+import { postAssistiveEvent } from "~/lib/assistive-events.client";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request);
@@ -118,6 +119,7 @@ export default function Chat() {
   const { getValidApiKeys } = useApiKeys();
   const { setAssistive } = useAssistiveUi();
   const prefsFetcher = useFetcher();
+  const mountTimeRef = useRef(Date.now());
 
   const persistPreference = useCallback(
     (updates: { assistDefault?: boolean; lastCourseCode?: string | null }) => {
@@ -154,7 +156,7 @@ export default function Chat() {
         setSystemPrompt(session.systemPrompt);
       }
       setAdhdAssist(Boolean(session.adhdAssist));
-      setAssistive(Boolean(session.adhdAssist));
+      setAssistive(Boolean(session.adhdAssist), { silent: true });
     })();
   }, [chatId, systemPrompt, setAssistive]);
 
@@ -176,6 +178,34 @@ export default function Chat() {
         }
       },
     });
+
+  const onSubmit = useCallback(
+    (e: React.FormEvent<HTMLFormElement>) => {
+      if (!chatId) {
+        void postAssistiveEvent({
+          eventType: "task_initiation",
+          adhdAssist,
+          metrics: {
+            durationMs: Date.now() - mountTimeRef.current,
+            success: true,
+            clientTimestamp: new Date().toISOString(),
+          },
+        });
+      } else {
+        void postAssistiveEvent({
+          eventType: "re_orientation",
+          chatId,
+          adhdAssist,
+          metrics: {
+            success: true,
+            clientTimestamp: new Date().toISOString(),
+          },
+        });
+      }
+      handleSubmit(e);
+    },
+    [adhdAssist, chatId, handleSubmit],
+  );
 
   const selectedModelInfo = chatModels.find(
     (model) => model.id === selectedModel,
@@ -241,7 +271,7 @@ export default function Chat() {
     systemPrompt,
     onSystemPromptSave: handleSystemPromptSave,
     onInputChange: handleInputChange,
-    onSubmit: handleSubmit,
+    onSubmit,
     onStop: stop,
     onSelectPrompt: handlePromptSelect,
   };
@@ -273,8 +303,6 @@ export default function Chat() {
           }
           actions={
             <ChatHeaderControls
-              adhdAssist={adhdAssist}
-              onAdhdAssistChange={handleAssistChange}
               systemPrompt={systemPrompt}
               onSystemPromptSave={handleSystemPromptSave}
             />

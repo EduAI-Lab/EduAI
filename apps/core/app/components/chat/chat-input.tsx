@@ -1,4 +1,6 @@
 import { Button } from "~/components/ui/button";
+import { Label } from "~/components/ui/label";
+import { Switch } from "~/components/ui/switch";
 import { Settings } from "lucide-react";
 import { useState } from "react";
 import { ApiKeySettings } from "./api-key-settings";
@@ -14,6 +16,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger } from "~/components/u
 interface ChatInputProps {
   input: string;
   isLoading: boolean;
+  adhdAssist: boolean;
+  onAssistChange: (checked: boolean) => void;
   onInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
   onStop?: () => void;
@@ -30,6 +34,8 @@ interface ChatInputProps {
 export function ChatInput({
   input,
   isLoading,
+  adhdAssist,
+  onAssistChange,
   onInputChange,
   onSubmit,
   onStop,
@@ -129,6 +135,18 @@ export function ChatInput({
                   ))}
                 </SelectContent>
               </Select>
+              <div className="flex h-8 items-center gap-2">
+                <Switch
+                  id="adhd-assist"
+                  checked={adhdAssist}
+                  disabled={isLoading}
+                  onCheckedChange={(checked) => onAssistChange(Boolean(checked))}
+                  aria-label="Assistive mode"
+                />
+                <Label htmlFor="adhd-assist" className="text-xs whitespace-nowrap">
+                  Assistive mode {adhdAssist ? "On" : "Off"}
+                </Label>
+              </div>
               <PromptInputActions className="ml-auto">
                 {isLoading && onStop ? (
                   <PromptInputAction

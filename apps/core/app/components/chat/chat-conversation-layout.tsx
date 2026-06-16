@@ -26,6 +26,8 @@ export function ChatConversationLayout({
   messages,
   input,
   isLoading,
+  adhdAssist,
+  onAssistChange,
   onInputChange,
   onSubmit,
   onStop,
@@ -73,6 +75,8 @@ export function ChatConversationLayout({
       <ChatInput
         input={input}
         isLoading={isLoading}
+        adhdAssist={adhdAssist}
+        onAssistChange={onAssistChange}
         onInputChange={onInputChange}
         onSubmit={onSubmit}
         onStop={onStop}
