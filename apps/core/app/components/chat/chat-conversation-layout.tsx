@@ -5,6 +5,11 @@ import { ChatMessage } from "~/components/chat/chat-message";
 import { ChatTypingIndicator } from "~/components/chat/chat-typing-indicator";
 import { ChatWelcome } from "~/components/chat/chat-welcome";
 import type { ChatViewSharedProps } from "~/components/chat/chat-view-types";
+import {
+  ASSISTIVE_CHAT_SURFACE_CLASS,
+  resolveMessageHighlightRole,
+} from "~/components/assistive/active-highlight";
+import { cn } from "~/lib/utils";
 
 type ChatConversationLayoutProps = ChatViewSharedProps & {
   bannerTitle: string;
@@ -26,6 +31,7 @@ export function ChatConversationLayout({
   messages,
   input,
   isLoading,
+  assistive,
   onInputChange,
   onSubmit,
   onStop,
@@ -33,7 +39,12 @@ export function ChatConversationLayout({
   webToolsEnabled,
 }: ChatConversationLayoutProps) {
   return (
-    <div className="flex flex-col h-[calc(100vh-var(--header-height))] bg-gradient-to-br from-background via-background to-muted/20">
+    <div
+      className={cn(
+        "flex flex-col h-[calc(100vh-var(--header-height))] bg-gradient-to-br from-background via-background to-muted/20",
+        assistive && ASSISTIVE_CHAT_SURFACE_CLASS,
+      )}
+    >
       <div className="flex-1 flex flex-col min-h-0 relative">
         <div className="h-full overflow-y-auto scrollbar-hover">
           <div className="px-4 py-6">
@@ -59,6 +70,11 @@ export function ChatConversationLayout({
                         key={message.id}
                         message={message as Message}
                         isStreaming={isStreamingMessage}
+                        highlightRole={resolveMessageHighlightRole(
+                          index,
+                          messages,
+                          assistive,
+                        )}
                         webToolsEnabled={webToolsEnabled}
                       />
                     );
@@ -86,6 +102,7 @@ export function ChatConversationLayout({
         chatModels={chatModels}
         selectedModelInfo={selectedModelInfo}
         showCourseSelector={showCourseSelector}
+        assistiveHighlight={assistive}
       />
     </div>
   );

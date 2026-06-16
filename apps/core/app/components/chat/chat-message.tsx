@@ -10,6 +10,11 @@ import {
   MessageAction
 } from "~/components/ui/message";
 import { READING_SURFACE_CLASS } from "~/components/assistive/reading-surface";
+import {
+  CHAT_MESSAGE_ACTIVE_CLASS,
+  CHAT_MESSAGE_INACTIVE_CLASS,
+  type MessageHighlightRole,
+} from "~/components/assistive/active-highlight";
 import { Tool } from "~/components/ui/tool";
 import { cn } from "~/lib/utils";
 import { getChatToolDisplayName, isWebChatToolName } from "~/lib/ai/web-tool-ui";
@@ -17,10 +22,16 @@ import { getChatToolDisplayName, isWebChatToolName } from "~/lib/ai/web-tool-ui"
 export interface ChatMessageProps {
   message: Message;
   isStreaming?: boolean;
+  highlightRole?: MessageHighlightRole;
   webToolsEnabled?: boolean;
 }
 
-export function ChatMessage({ message, isStreaming = false, webToolsEnabled = false }: ChatMessageProps) {
+export function ChatMessage({
+  message,
+  isStreaming = false,
+  highlightRole = null,
+  webToolsEnabled = false,
+}: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -65,6 +76,13 @@ export function ChatMessage({ message, isStreaming = false, webToolsEnabled = fa
     return null;
   };
 
+  const highlightClass =
+    highlightRole === "active"
+      ? CHAT_MESSAGE_ACTIVE_CLASS
+      : highlightRole === "inactive"
+        ? CHAT_MESSAGE_INACTIVE_CLASS
+        : undefined;
+
   // Extract different types of parts
   const textParts = message.parts?.filter((part) => part.type === "text") || [];
   const toolParts = message.parts?.filter((part) => {
@@ -87,7 +105,7 @@ export function ChatMessage({ message, isStreaming = false, webToolsEnabled = fa
   if (isUser) {
     // User message - right aligned, limited width
     return (
-      <div className="flex justify-end mb-4">
+      <div className={cn("flex justify-end mb-4", highlightClass)}>
         <div className="flex items-end gap-3 max-w-[80%]">
           <div className="rounded-lg px-4 py-3 bg-primary text-primary-foreground">
             <div className={cn("whitespace-pre-wrap", READING_SURFACE_CLASS)}>
@@ -107,7 +125,7 @@ export function ChatMessage({ message, isStreaming = false, webToolsEnabled = fa
 
   // AI message with tool calls
   return (
-    <div className="space-y-4 mb-4">
+    <div className={cn("space-y-4 mb-4", highlightClass)}>
       {/* Tool calls rendered FIRST, before message content */}
       {toolParts.length > 0 && (
         <div className="space-y-3 ml-12">
