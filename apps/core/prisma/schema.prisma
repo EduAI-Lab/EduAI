@@ -298,6 +298,9 @@ model UserPreference {
   userId         String   @unique
   assistDefault  Boolean  @default(false)
   lastCourseCode String?
+  motionReduced  Boolean  @default(false)
+  density        String   @default("comfortable")
+  theme          String   @default("system")
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)

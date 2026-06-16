@@ -1,22 +1,38 @@
 /**
  * /api/preferences — read/write the authenticated user's UI preferences.
  *
- * Backs the shell-wide AssistiveUiProvider (and, later, the Settings
- * Accessibility tab). Reuses the same UserPreference storage the chat route
- * seeds per-chat assist from, so a toggle anywhere stays in sync everywhere.
+ * Backs AssistiveUiProvider, UiPreferencesProvider, and the Settings
+ * Accessibility tab. Reuses UserPreference storage so toggles stay in sync.
  */
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { saveUserPreference } from "~/lib/user-preferences.server";
-import { parsePreferenceUpdates } from "~/lib/user-preferences";
+import { DEFAULT_ACCOUNT_PREFERENCES, parsePreferenceUpdates } from "~/lib/user-preferences";
+import { isUiDensity, isUiTheme } from "~/lib/ui-preferences";
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+function rowToResponse(row: {
+  assistDefault: boolean;
+  lastCourseCode: string | null;
+  motionReduced: boolean;
+  density: string;
+  theme: string;
+}) {
+  return {
+    assistDefault: row.assistDefault,
+    lastCourseCode: row.lastCourseCode,
+    motionReduced: row.motionReduced,
+    density: isUiDensity(row.density) ? row.density : DEFAULT_ACCOUNT_PREFERENCES.density,
+    theme: isUiTheme(row.theme) ? row.theme : DEFAULT_ACCOUNT_PREFERENCES.theme,
+  };
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -27,13 +43,20 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const row = await prisma.userPreference.findUnique({
     where: { userId: session.user.id },
-    select: { assistDefault: true, lastCourseCode: true },
+    select: {
+      assistDefault: true,
+      lastCourseCode: true,
+      motionReduced: true,
+      density: true,
+      theme: true,
+    },
   });
 
-  return json(200, {
-    assistDefault: row?.assistDefault ?? false,
-    lastCourseCode: row?.lastCourseCode ?? null,
-  });
+  if (!row) {
+    return json(200, DEFAULT_ACCOUNT_PREFERENCES);
+  }
+
+  return json(200, rowToResponse(row));
 }
 
 export async function action({ request }: ActionFunctionArgs) {
