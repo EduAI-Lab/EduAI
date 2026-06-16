@@ -55,7 +55,7 @@ services:
   e2e-eduai-app:
     build:
       context: .
-      dockerfile: docker/Dockerfile.eduai
+      dockerfile: docker/tests/Dockerfile.eduai
       target: serve
     environment:
       DATABASE_URL: postgresql://postgres:postgres@e2e-eduai-db:5432/eduai_e2e
@@ -79,7 +79,7 @@ services:
   e2e-ai-tutor-server:
     build:
       context: .
-      dockerfile: docker/Dockerfile.ai-tutor-server
+      dockerfile: docker/tests/Dockerfile.ai-tutor-server
       target: serve
     environment:
       DATABASE_URL: postgresql://postgres:postgres@e2e-ai-tutor-db:5432/aitutor_e2e
@@ -109,7 +109,7 @@ services:
   e2e-ai-tutor-app:
     build:
       context: .
-      dockerfile: docker/Dockerfile.ai-tutor-app
+      dockerfile: docker/tests/Dockerfile.ai-tutor-app
       target: serve
     environment:
       PORT: "3001"
@@ -128,7 +128,7 @@ services:
   e2e-qm-server:
     build:
       context: .
-      dockerfile: docker/Dockerfile.qm-server
+      dockerfile: docker/tests/Dockerfile.qm-server
       target: serve
     environment:
       DATABASE_URL: postgresql://postgres:password@e2e-qm-db:5432/question_maker_e2e
@@ -152,7 +152,7 @@ services:
   e2e-qm-app:
     build:
       context: .
-      dockerfile: docker/Dockerfile.qm-app
+      dockerfile: docker/tests/Dockerfile.qm-app
       target: serve
     environment:
       PORT: "5173"
@@ -171,7 +171,7 @@ services:
   e2e-runner:
     build:
       context: .
-      dockerfile: docker/Dockerfile.playwright
+      dockerfile: docker/tests/Dockerfile.playwright
     environment:
       CORE_URL: http://e2e-eduai-app:3000
       AI_TUTOR_URL: http://e2e-ai-tutor-app:3001
