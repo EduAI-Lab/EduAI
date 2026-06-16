@@ -5,7 +5,6 @@ import {
   Outlet,
   Scripts,
   ScrollRestoration,
-  useRouteLoaderData,
 } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 
@@ -18,7 +17,7 @@ import { AssistiveUiProvider } from "~/components/assistive/assistive-ui-provide
 import { UiPreferencesProvider } from "~/components/assistive/ui-preferences-provider";
 import { Toaster } from "~/components/ui/sonner";
 import { DEFAULT_ACCOUNT_PREFERENCES } from "~/lib/user-preferences";
-import { isUiDensity, isUiTheme, resolveThemeHtmlClass } from "~/lib/ui-preferences";
+import { isUiDensity, isUiTheme } from "~/lib/ui-preferences";
 
 export const links: Route.LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -69,18 +68,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export function Layout({ children }: { children: React.ReactNode }) {
-  const data = useRouteLoaderData<typeof loader>("root");
-  const themeClass = data ? resolveThemeHtmlClass(data.theme) : undefined;
-
   return (
-    // Non-default hooks only — absent attributes/classes keep baseline pixel-identical.
-    <html
-      lang="en"
-      className={themeClass}
-      {...(data?.assistive ? { "data-assistive": "true" } : {})}
-      {...(data?.motionReduced ? { "data-reduce-motion": "true" } : {})}
-      {...(data?.density === "compact" ? { "data-density": "compact" } : {})}
-    >
+    <html lang="en">
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />

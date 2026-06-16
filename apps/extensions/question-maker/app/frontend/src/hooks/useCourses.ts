@@ -16,7 +16,7 @@ export const useCourses = () => {
       setIsLoading(true);
       setError(null);
       const data = await courseService.getCourses();
-      setCourses(data);
+      setCourses(Array.isArray(data) ? data : []);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to fetch courses');
     } finally {

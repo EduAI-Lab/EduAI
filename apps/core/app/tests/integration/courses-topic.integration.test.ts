@@ -433,6 +433,7 @@ describe("POST /api/courses/:courseId/topics", () => {
     }
   });
 
+
   it("returns 409 TOPIC_ALREADY_EXISTS with existingId on duplicate name", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(ADMIN_SESSION as never);
 
