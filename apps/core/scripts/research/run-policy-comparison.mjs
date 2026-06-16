@@ -44,6 +44,24 @@ const POLICIES = {
   },
 };
 
+function resolvePolicies(policyFilter) {
+  const key = policyFilter.trim();
+  if (key === "BOTH") {
+    return [POLICIES.P0, POLICIES.P1];
+  }
+  if (key === "ALL") {
+    return [POLICIES.P0, POLICIES.P1, POLICIES.P3b];
+  }
+  const direct = POLICIES[key];
+  if (direct) {
+    return [direct];
+  }
+  const alt = Object.values(POLICIES).find(
+    (p) => p.policy.toUpperCase() === key.toUpperCase(),
+  );
+  return alt ? [alt] : [];
+}
+
 function readEnv(primary, alias) {
   for (const name of [primary, alias]) {
     const v = process.env[name];
@@ -211,12 +229,7 @@ async function main() {
   if (xApiKey) headers["x-api-key"] = xApiKey;
   if (cookie) headers.Cookie = cookie;
 
-  let policies =
-    policyFilter === "BOTH"
-      ? [POLICIES.P0, POLICIES.P1]
-      : policyFilter === "ALL"
-        ? [POLICIES.P0, POLICIES.P1, POLICIES.P3b]
-        : [POLICIES[policyFilter]].filter(Boolean);
+  let policies = resolvePolicies(policyFilter);
 
   if (policies.length === 0) {
     console.error("RESEARCH_POLICY must be P0, P1, P3b, both, or all.");

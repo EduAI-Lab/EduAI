@@ -16,15 +16,7 @@ exec >>"$LOG" 2>&1
 echo "=== tier-a start $STAMP ==="
 
 cd "$CORE"
-set -a
-source .env
-set +a
-
-if [[ -f .env.research ]]; then
-  set -a
-  source .env.research
-  set +a
-fi
+source scripts/research/source-research-env.sh "$CORE"
 
 POLICY_OUT="${RESEARCH_POLICY_OUT:-/tmp/policy-runs-p1-dev.jsonl}"
 SUMMARY_OUT="${RESEARCH_TIER_A_SUMMARY:-/tmp/policy-runs-p1-dev-summary.txt}"
