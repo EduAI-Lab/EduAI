@@ -26,6 +26,7 @@ vi.mock("~/lib/auth/server", () => ({
 
 vi.mock("~/lib/auth/guards.server", () => ({
   enforceAdminIfApiKey: vi.fn(),
+  requireServiceKey: vi.fn(),
 }));
 
 import {
@@ -36,12 +37,13 @@ import {
   createCourse,
   updateCourse,
   deleteCourse,
+  setPublishState,
   createCourseTopic,
   updateCourseTopic,
   deleteCourseTopic,
 } from "~/lib/courses/server";
 import { auth } from "~/lib/auth/server";
-import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
+import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 
 describe("getCourse", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -527,6 +529,130 @@ describe("deleteCourse", () => {
     expect(prismaMock.course.update).toHaveBeenCalledWith({
       where: { id: "c1" },
       data: { deletedAt: expect.any(Date) },
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// setPublishState (§5 — publish / unpublish)
+// ---------------------------------------------------------------------------
+
+const VALID_KEY = "test-service-key";
+
+function makePublishRequest(bearer?: string) {
+  const headers: Record<string, string> = {};
+  if (bearer) headers["Authorization"] = `Bearer ${bearer}`;
+  return new Request("http://localhost/api/courses/c1/publish", { method: "PATCH", headers });
+}
+
+describe("setPublishState", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv("EDUAI_API_KEY", VALID_KEY);
+    vi.mocked(enforceAdminIfApiKey).mockResolvedValue({ response: null, session: null });
+    vi.mocked(requireServiceKey).mockResolvedValue(null);
+  });
+
+  afterEach(() => vi.unstubAllEnvs());
+
+  // Service key path -----------------------------------------------------------
+
+  it("service key — returns 404 when course does not exist", async () => {
+    prismaMock.course.findFirst.mockResolvedValue(null);
+    const res = await setPublishState(makePublishRequest(VALID_KEY), "c1", true);
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "COURSE_NOT_FOUND" });
+    expect(prismaMock.course.update).not.toHaveBeenCalled();
+  });
+
+  it("service key — publishes course and returns 200", async () => {
+    prismaMock.course.findFirst.mockResolvedValue({ id: "c1" });
+    prismaMock.course.update.mockResolvedValue({ id: "c1", isPublished: true });
+    const res = await setPublishState(makePublishRequest(VALID_KEY), "c1", true);
+    expect(res.status).toBe(200);
+    expect(prismaMock.course.update).toHaveBeenCalledWith({
+      where: { id: "c1" },
+      data: { isPublished: true },
+    });
+  });
+
+  it("service key — unpublishes course and returns 200", async () => {
+    prismaMock.course.findFirst.mockResolvedValue({ id: "c1" });
+    prismaMock.course.update.mockResolvedValue({ id: "c1", isPublished: false });
+    const res = await setPublishState(makePublishRequest(VALID_KEY), "c1", false);
+    expect(res.status).toBe(200);
+    expect(prismaMock.course.update).toHaveBeenCalledWith({
+      where: { id: "c1" },
+      data: { isPublished: false },
+    });
+  });
+
+  it("service key — returns 403 when requireServiceKey rejects the key", async () => {
+    vi.mocked(requireServiceKey).mockResolvedValue(
+      new Response(JSON.stringify({ error: "INVALID_SERVICE_KEY" }), { status: 403 }),
+    );
+    const res = await setPublishState(makePublishRequest("wrong-key"), "c1", true);
+    expect(res.status).toBe(403);
+    expect(prismaMock.course.update).not.toHaveBeenCalled();
+  });
+
+  // User session path ----------------------------------------------------------
+
+  it("session — returns 401 when no session", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null);
+    const res = await setPublishState(makePublishRequest(), "c1", true);
+    expect(res.status).toBe(401);
+    expect(prismaMock.course.update).not.toHaveBeenCalled();
+  });
+
+  it("session — returns 404 when course does not exist or is soft-deleted", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "ADMIN" } } as any);
+    prismaMock.course.findFirst.mockResolvedValue(null);
+    const res = await setPublishState(makePublishRequest(), "c1", true);
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "COURSE_NOT_FOUND" });
+  });
+
+  it("session — returns 403 for a TA (rank < 2)", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "STUDENT" } } as any);
+    prismaMock.course.findFirst.mockResolvedValue({ id: "c1", department: null });
+    prismaMock.enrollment.findUnique.mockResolvedValue({ role: "TA", isActive: true });
+    const res = await setPublishState(makePublishRequest(), "c1", true);
+    expect(res.status).toBe(403);
+    expect(prismaMock.course.update).not.toHaveBeenCalled();
+  });
+
+  it("session — returns 403 for a user with no course relationship", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "STUDENT" } } as any);
+    prismaMock.course.findFirst.mockResolvedValue({ id: "c1", department: null });
+    prismaMock.enrollment.findUnique.mockResolvedValue(null);
+    const res = await setPublishState(makePublishRequest(), "c1", true);
+    expect(res.status).toBe(403);
+    expect(prismaMock.course.update).not.toHaveBeenCalled();
+  });
+
+  it("session — INSTRUCTOR publishes their course (returns 200)", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u2", role: "INSTRUCTOR" } } as any);
+    prismaMock.course.findFirst.mockResolvedValue({ id: "c1", department: null });
+    prismaMock.enrollment.findUnique.mockResolvedValue({ role: "INSTRUCTOR", isActive: true });
+    prismaMock.course.update.mockResolvedValue({ id: "c1", isPublished: true });
+    const res = await setPublishState(makePublishRequest(), "c1", true);
+    expect(res.status).toBe(200);
+    expect(prismaMock.course.update).toHaveBeenCalledWith({
+      where: { id: "c1" },
+      data: { isPublished: true },
+    });
+  });
+
+  it("session — ADMIN unpublishes any course (returns 200)", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "ADMIN" } } as any);
+    prismaMock.course.findFirst.mockResolvedValue({ id: "c1", department: null });
+    prismaMock.course.update.mockResolvedValue({ id: "c1", isPublished: false });
+    const res = await setPublishState(makePublishRequest(), "c1", false);
+    expect(res.status).toBe(200);
+    expect(prismaMock.course.update).toHaveBeenCalledWith({
+      where: { id: "c1" },
+      data: { isPublished: false },
     });
   });
 });
