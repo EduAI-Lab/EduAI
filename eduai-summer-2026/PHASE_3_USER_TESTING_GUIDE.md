@@ -1,8 +1,11 @@
 # ADHD Assist Phase 3 — User Testing Guide
 
-**Audience:** Researchers and developers running Form A evals or a real-user pilot  
-**Parent issues:** [#493 Phase 3 oversight](https://github.com/EduAI-Lab/EduAICore/issues/493) · [#521 Telemetry](https://github.com/EduAI-Lab/EduAICore/issues/521) · [#534 Form A record](https://github.com/EduAI-Lab/EduAICore/issues/534)  
-**Epic:** [#384 Accessibility & UX](https://github.com/EduAI-Lab/EduAICore/issues/384) (Weeks 5–8)  
+**Audience:** Researchers and developers running Form A evals or a real-user pilot
+
+**Parent issues:** [#493 Phase 3 oversight](https://github.com/EduAI-Lab/EduAICore/issues/493) · [#521 Telemetry](https://github.com/EduAI-Lab/EduAICore/issues/521) · [#534 Form A record](https://github.com/EduAI-Lab/EduAICore/issues/534)
+
+**Epic:** [#384 Accessibility & UX](https://github.com/EduAI-Lab/EduAICore/issues/384) (Weeks 5–8)
+
 **Last updated:** 2026-06-12
 
 ---
