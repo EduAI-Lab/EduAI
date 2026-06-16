@@ -78,6 +78,18 @@ export async function linkCanvasRoster(
   }
 
   if (
+    currentStudentId &&
+    currentStudentId !== normalized &&
+    !isLegacyPlaintextStudentId(user.studentId)
+  ) {
+    auditLinkAttempt(userId, "failure", "student_id_reassign_blocked");
+    throw new LinkRosterError(
+      "Student number cannot be changed after linking. Contact an administrator.",
+      409,
+    );
+  }
+
+  if (
     currentStudentId !== normalized ||
     isLegacyPlaintextStudentId(user.studentId)
   ) {

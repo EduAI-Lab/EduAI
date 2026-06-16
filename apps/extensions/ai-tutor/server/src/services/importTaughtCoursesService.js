@@ -8,6 +8,11 @@ import { syncExternalCourseTopics } from './topicSync.js';
 import { syncCourseEnrollments } from './enrollmentSync.js';
 
 const AUTO_IMPORT_ROLES = new Set(['INSTRUCTOR']);
+const TEACHING_ENROLLMENT_ROLES = new Set(['INSTRUCTOR', 'TA']);
+
+function isTeachingCoreCourse(coreCourse) {
+  return TEACHING_ENROLLMENT_ROLES.has(coreCourse?.callerEnrollmentRole);
+}
 
 function deriveTitle(externalCourse) {
   const titleParts = [
@@ -120,6 +125,11 @@ export async function importTaughtCoursesFromCore(instructor, cookie) {
 
   for (const coreCourse of coreCourses) {
     if (!coreCourse?.id || typeof coreCourse.id !== 'string') {
+      skipped++;
+      continue;
+    }
+
+    if (!isTeachingCoreCourse(coreCourse)) {
       skipped++;
       continue;
     }

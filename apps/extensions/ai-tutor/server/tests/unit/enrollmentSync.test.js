@@ -182,7 +182,7 @@ describe('syncCourseEnrollments', () => {
   });
 
   describe('delete path', () => {
-    it('deletes local enrollment rows absent from Core active list', async () => {
+    it('deletes local STUDENT enrollment rows absent from Core active list', async () => {
       listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([ACTIVE_ENROLLMENT]);
       prisma.courseEnrollment.findMany.mockResolvedValue([
         { userId: 'user-cuid-1', role: 'STUDENT' },
@@ -197,7 +197,20 @@ describe('syncCourseEnrollments', () => {
       expect(result).toEqual({ synced: 1, created: 0, updated: 0, deleted: 1, errors: [] });
     });
 
-    it('skips deleteMany when no stale rows exist', async () => {
+    it('does not delete local TA rows when syncing STUDENT enrollments only (#578)', async () => {
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([ACTIVE_ENROLLMENT]);
+      prisma.courseEnrollment.findMany.mockResolvedValue([
+        { userId: 'user-cuid-1', role: 'STUDENT' },
+        { userId: 'user-cuid-ta', role: 'TA' },
+      ]);
+
+      const result = await syncCourseEnrollments(1);
+
+      expect(prisma.courseEnrollment.deleteMany).not.toHaveBeenCalled();
+      expect(result).toEqual({ synced: 1, created: 0, updated: 0, deleted: 0, errors: [] });
+    });
+
+    it('skips deleteMany when no stale STUDENT rows exist', async () => {
       listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([ACTIVE_ENROLLMENT]);
       prisma.courseEnrollment.findMany.mockResolvedValue([{ userId: 'user-cuid-1', role: 'STUDENT' }]);
 

@@ -6,73 +6,14 @@ import express from 'express';
 import { Course, Question_Metadata, Topics } from '../schema/index.js';
 import { authenticateToken } from '../middleware/auth.js';
 import {
-  getCourseTopicsFromCore,
   pushTopicToCore,
   isCoreCourseInScopedList,
-  findScopedCoreCourseByCode,
 } from '../services/coreApiService.js';
+import { ensureCoreCourseLink } from '../services/coreCourseLinkService.js';
+import { syncTopicsFromCoreForCourse } from '../services/topicSyncService.js';
 import { logger } from '../utils/logger.js';
 
 const router = express.Router();
-
-/** Links a local course to Core when code matches an enrolled Core course (#578). */
-async function ensureCoreCourseLink(course, cookie) {
-  if (course.coreCourseId) return false;
-
-  try {
-    const match = await findScopedCoreCourseByCode(course.code, cookie);
-    if (match?.id) {
-      await course.update({ coreCourseId: match.id });
-      logger.info(
-        { courseId: course.id, coreCourseId: match.id, code: course.code },
-        'Auto-linked local course to Core by code'
-      );
-      return true;
-    }
-  } catch (err) {
-    logger.warn({ err, courseId: course.id }, 'Core course auto-link skipped');
-  }
-
-  return false;
-}
-
-/** Upserts Core course topics into the local QM topics table. */
-async function syncTopicsFromCoreForCourse(course, cookie, { failOnCoreError = false } = {}) {
-  if (!course?.coreCourseId) return 0;
-
-  let coreTopics;
-  try {
-    const data = await getCourseTopicsFromCore(course.coreCourseId, { cookie });
-    coreTopics = Array.isArray(data?.topics) ? data.topics : Array.isArray(data) ? data : [];
-  } catch (err) {
-    logger.warn({ err, coreCourseId: course.coreCourseId }, 'Core topic sync skipped');
-    if (failOnCoreError) throw err;
-    return 0;
-  }
-
-  let synced = 0;
-  for (const ct of coreTopics) {
-    if (!ct?.id || !ct?.name) continue;
-
-    let existing = await Topics.findOne({ where: { coreTopicId: ct.id } });
-    if (existing) {
-      if (existing.courseId !== course.id) continue;
-      await existing.update({ name: ct.name });
-      synced++;
-      continue;
-    }
-
-    existing = await Topics.findOne({ where: { courseId: course.id, name: ct.name } });
-    if (existing) {
-      await existing.update({ coreTopicId: ct.id });
-    } else {
-      await Topics.create({ name: ct.name, courseId: course.id, coreTopicId: ct.id });
-    }
-    synced++;
-  }
-
-  return synced;
-}
 
 /** POST /api/course – creates a course tied to the authenticated user after basic validation. */
 router.post('/', authenticateToken, async (req, res, next) => {

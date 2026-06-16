@@ -42,6 +42,7 @@ import { apiKeyStorage } from '../../services/apiKeyStorage';
 import { useEduAIStatus } from '../../hooks/useEduAIStatus';
 import { Tooltip } from '../ui/tooltip';
 import { ChevronDown, ChevronUp, HelpCircle } from 'lucide-react';
+import { normalizeCourseCode } from '../../utils/courseDisplay';
 
 interface AddQuestionDialogProps {
     open: boolean;
@@ -439,8 +440,6 @@ export const AddQuestionDialog = ({
         }
         return `${words.slice(0, 12).join(' ')}…`;
     };
-
-    const normalizeCourseCode = (value: string) => value.toLowerCase().replace(/\s+/g, '');
 
     const isCourseRecognizedByEduAI = (code: string | null | undefined) => {
         if (!code || availableEduCourses.length === 0) {

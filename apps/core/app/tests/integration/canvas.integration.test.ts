@@ -522,10 +522,11 @@ describe("Canvas API — link-roster", { timeout: 15_000 }, () => {
     await prisma.user.delete({ where: { id: otherStudent.id } });
   });
 
-  it("allows a student to change their linked student number", async () => {
+  it("returns 409 when a student attempts to change their linked student number", async () => {
     await seedSyncedCourseForLinking();
 
-    const prepared = prepareStudentIdStorage("student_1");
+    const initialNumber = `change_src_${Date.now()}`;
+    const prepared = prepareStudentIdStorage(initialNumber);
     const student = await prisma.user.create({
       data: {
         email: `canvas-change-${Date.now()}@test.com`,
@@ -539,17 +540,13 @@ describe("Canvas API — link-roster", { timeout: 15_000 }, () => {
 
     sessionFor(student.id, "STUDENT");
     const res = await call("POST", "link-roster", { studentNumber: "student_2" });
-    expect(res.status).toBe(200);
-
-    const body = await res.json();
-    expect(body.data.studentId).toBe("student_2");
-    expect(body.data.enrollmentsLinked).toBeGreaterThanOrEqual(1);
+    expect(res.status).toBe(409);
 
     const updatedUser = await prisma.user.findUnique({
       where: { id: student.id },
       select: { studentId: true },
     });
-    expect(readStoredStudentId(updatedUser?.studentId)).toBe("student_2");
+    expect(readStoredStudentId(updatedUser?.studentId)).toBe(initialNumber);
 
     await prisma.enrollment.deleteMany({ where: { userId: student.id } });
     await prisma.user.delete({ where: { id: student.id } });

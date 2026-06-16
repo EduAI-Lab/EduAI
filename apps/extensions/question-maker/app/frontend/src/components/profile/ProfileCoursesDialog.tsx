@@ -24,6 +24,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useEduAIStatus } from '../../hooks/useEduAIStatus';
 import { EduAIStatusBadge } from '../eduai/EduAIStatusBadge';
 import { useGuidedTour } from '../../contexts/GuidedTourContext';
+import { normalizeCourseCode } from '../../utils/courseDisplay';
 
 interface ProfileCoursesDialogProps {
     open: boolean;
@@ -31,9 +32,6 @@ interface ProfileCoursesDialogProps {
     existingCourses: Class[];
     onCoursesAdded?: () => Promise<void> | void;
 }
-
-const normalizeCourseCode = (value: string | null | undefined) =>
-    value ? value.replace(/\s+/g, '').toLowerCase() : '';
 
 export const ProfileCoursesDialog = ({
     open,
@@ -286,11 +284,16 @@ export const ProfileCoursesDialog = ({
                     courseCode: option.code
                 });
 
+                try {
+                    await courseService.linkAndSyncFromCore(createdCourse.id, courseId);
+                } catch (linkError) {
+                    await courseService.deleteCourse(createdCourse.id).catch(() => undefined);
+                    throw linkError;
+                }
+
                 if (normalizedCode) {
                     updatedCodes.add(normalizedCode);
                 }
-
-                await courseService.linkAndSyncFromCore(createdCourse.id, courseId);
 
                 try {
                     await assessmentService.createPracticeExamForCourse(createdCourse.id);
