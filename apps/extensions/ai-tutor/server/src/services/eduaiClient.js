@@ -99,6 +99,24 @@ export async function postCoreBugReport(userId, payload) {
   return null;
 }
 
+/**
+ * Propagate a publish/unpublish action to Core for a linked course offering.
+ * Called by the AI Tutor publish/unpublish routes when `coreOfferingId` is set.
+ * Uses the service key — Core verifies the key and applies the change.
+ * Throws an Error with `status` set on HTTP failure.
+ */
+export async function setCoreCoursePublishState(coreOfferingId, publish) {
+  const serviceKey = process.env.EDUAI_API_KEY;
+  if (!serviceKey) {
+    throw new Error('EDUAI_API_KEY not configured');
+  }
+  const action = publish ? 'publish' : 'unpublish';
+  return requestEduAi(`/courses/${coreOfferingId}/${action}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${serviceKey}` },
+  });
+}
+
 export async function listEduAiCourses() {
   const serviceKey = process.env.EDUAI_API_KEY;
   if (!serviceKey) {
