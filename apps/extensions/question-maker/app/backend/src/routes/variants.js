@@ -21,13 +21,12 @@ import { Topics } from '../schema/index.js';
 import { patchQuestionTestableOnCore } from '../services/coreApiService.js';
 import { pushVariantToCore } from '../services/coreWiringService.js';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
+import { AUTHORS } from '../middleware/roles.js';
 import { requireQuestionAccess, requireVariantAccess } from '../middleware/resourceAccess.js';
 import { LEVELS } from '../middleware/courseAccess.js';
 import { logger } from '../utils/logger.js';
 
 const router = express.Router();
-
-const AUTHORS = ['ADMIN', 'UNIT_ADMIN', 'INSTRUCTOR', 'TA'];
 
 /** Coerce a raw isDraft value to a strict boolean, or undefined when absent. */
 function parseIsDraft(raw) {

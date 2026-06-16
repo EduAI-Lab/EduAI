@@ -6,8 +6,7 @@
  * and populates `req.user` with the Core user shape.
  */
 import { findOrCreateUser } from '../services/authService.js';
-
-const VALID_ROLES = new Set(['STUDENT', 'INSTRUCTOR', 'TA', 'ADMIN', 'UNIT_ADMIN']);
+import { VALID_ROLES } from './roles.js';
 
 function normalizeRole(role) {
   return VALID_ROLES.has(role) ? role : 'STUDENT';

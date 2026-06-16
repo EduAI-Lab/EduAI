@@ -15,6 +15,7 @@ export type AccessLevel = {
 export type RbacUser = {
   id: string;
   role?: string | null;
+  /** Optional — fetched from the DB when absent and the user is a UNIT_ADMIN. */
   authorizedUnits?: string[];
 };
 

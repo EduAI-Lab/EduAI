@@ -32,13 +32,11 @@ import {
   checkQuestionInAssessments
 } from '../services/assessmentSectionService.js';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
+import { AUTHORS, INSTRUCTORS } from '../middleware/roles.js';
 import { requireCourseAccess, resolveCourseAccessWithCourse, LEVELS } from '../middleware/courseAccess.js';
 import { requireAssessmentAccess, requireQuestionAccess } from '../middleware/resourceAccess.js';
 
 const router = express.Router();
-
-const AUTHORS = ['ADMIN', 'UNIT_ADMIN', 'INSTRUCTOR', 'TA'];
-const INSTRUCTORS = ['ADMIN', 'UNIT_ADMIN', 'INSTRUCTOR'];
 
 // Convenience guards for the two access tiers used throughout this router.
 const viewAssessment = requireAssessmentAccess({ min: 'ta' });

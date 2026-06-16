@@ -155,8 +155,18 @@ class EduAIService {
 
     /** Tests configured AI service credentials by calling the backend validation endpoint. */
     async testApiKey(): Promise<EduAITestResponse> {
-        const response = await api.get('/api/eduai/test-api-key');
-        return response.data;
+        try {
+            const response = await api.get('/api/eduai/test-api-key');
+            return response.data;
+        } catch (err: any) {
+            if (err.response?.status === 400 && err.response?.data) {
+                return {
+                    ...err.response.data,
+                    configured: err.response.data.configured ?? true
+                };
+            }
+            throw err;
+        }
     }
 
     /**
@@ -237,6 +247,26 @@ class EduAIService {
         }
 
         return [];
+    }
+
+    /**
+     * Fetch course topics from Core via backend proxy (courseId is a Core CUID).
+     */
+    async listCoreCourseTopics(coreCourseId: string): Promise<EduAITopicOption[]> {
+        try {
+            const response = await api.get(`/api/eduai/courses/${coreCourseId}/topics`);
+            const topics = response.data?.data?.topics ?? [];
+            if (!Array.isArray(topics)) {
+                return [];
+            }
+            return topics.map((topic: { id: string; name: string }) => ({
+                id: topic.id,
+                name: topic.name
+            }));
+        } catch (error) {
+            console.error('Failed to fetch Core course topics:', error);
+            return [];
+        }
     }
 
     /**

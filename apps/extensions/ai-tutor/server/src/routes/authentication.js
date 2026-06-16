@@ -1,11 +1,19 @@
 import express from 'express';
 import { toPublicUser } from '../utils/mappers.js';
+import { importTaughtCoursesFromCore } from '../services/importTaughtCoursesService.js';
 
 const router = express.Router();
 
 router.get('/me', async (req, res) => {
   const authUser = req.user;
   if (!authUser) return res.status(401).json({ error: 'Authentication required' });
+
+  try {
+    await importTaughtCoursesFromCore(authUser, req.headers.cookie ?? '');
+  } catch (err) {
+    console.error('[eduai] Auto-import taught courses failed on login', err);
+  }
+
   res.json({ user: toPublicUser(authUser) });
 });
 

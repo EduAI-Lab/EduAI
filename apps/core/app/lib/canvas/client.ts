@@ -1,10 +1,16 @@
 import type {
   CanvasCoursePickerItem,
   CanvasIntegrationPublic,
+  LinkRosterResponse,
   SyncCanvasCoursesResult,
 } from "~/lib/canvas/schemas";
 
-export type { CanvasCoursePickerItem, CanvasIntegrationPublic, SyncCanvasCoursesResult };
+export type {
+  CanvasCoursePickerItem,
+  CanvasIntegrationPublic,
+  LinkRosterResponse,
+  SyncCanvasCoursesResult,
+};
 
 type CanvasApiBody<T = unknown> = {
   success: boolean;
@@ -76,6 +82,17 @@ export async function syncCanvasCourses(input: {
   });
   if (!body.data) {
     throw new Error("Canvas sync did not return result data");
+  }
+  return body.data;
+}
+
+export async function linkCanvasRoster(studentNumber: string): Promise<LinkRosterResponse> {
+  const body = await canvasRequest<LinkRosterResponse>("link-roster", {
+    method: "POST",
+    body: JSON.stringify({ studentNumber }),
+  });
+  if (!body.data) {
+    throw new Error("Link roster did not return result data");
   }
   return body.data;
 }

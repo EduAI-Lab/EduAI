@@ -7,7 +7,7 @@ export function ChatGlobalView(props: ChatViewSharedProps) {
       {...props}
       showCourseSelector
       bannerTitle="Global chat"
-      bannerDescription="Platform-wide conversation for admins and unit admins. Select a course below to include its materials in RAG context."
+      bannerDescription="Platform-wide conversation for admins and unit admins. Select a course below to enable RAG over that course's materials."
     />
   );
 }
