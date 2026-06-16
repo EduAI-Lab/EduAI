@@ -64,7 +64,7 @@ describe('importTaughtCoursesFromCore (AI Tutor)', () => {
 
   it('imports Core courses not yet present locally', async () => {
     listEduAiCourses.mockResolvedValue([
-      { id: 'core-1', code: 'COSC 111', name: 'Computing Science' },
+      { id: 'core-1', code: 'COSC 111', name: 'Computing Science', callerEnrollmentRole: 'INSTRUCTOR' },
     ]);
 
     const result = await importTaughtCoursesFromCore(instructor, 'session=abc');
@@ -82,7 +82,7 @@ describe('importTaughtCoursesFromCore (AI Tutor)', () => {
 
   it('skips courses already imported by the instructor', async () => {
     listEduAiCourses.mockResolvedValue([
-      { id: 'core-1', code: 'COSC 111', name: 'Computing Science' },
+      { id: 'core-1', code: 'COSC 111', name: 'Computing Science', callerEnrollmentRole: 'INSTRUCTOR' },
     ]);
     courseOfferingFindMany.mockResolvedValue([{ externalId: 'core-1' }]);
 
