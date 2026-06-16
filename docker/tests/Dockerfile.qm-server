@@ -24,13 +24,14 @@ COPY apps/extensions/question-maker/app/frontend/package.json ./apps/extensions/
 RUN npm ci --ignore-scripts \
      && npm run build -w @eduai/types \
      && cd apps/extensions/question-maker/app/backend \
-     && npm install --ignore-scripts --no-package-lock
+     && npm install --ignore-scripts --no-package-lock --workspaces=false
 
 # ── Target: test ───────────────────────────────────────────────────────────
 FROM node:20-alpine AS test
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/packages/types ./packages/types
 COPY --from=deps /app/apps/extensions/question-maker/app/backend/node_modules \
      ./apps/extensions/question-maker/app/backend/node_modules
 
@@ -51,6 +52,7 @@ FROM node:20-alpine AS serve
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/packages/types ./packages/types
 
 COPY apps/extensions/question-maker/app/backend/src     ./apps/extensions/question-maker/app/backend/src
 COPY apps/extensions/question-maker/app/backend/scripts ./apps/extensions/question-maker/app/backend/scripts
