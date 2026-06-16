@@ -74,8 +74,8 @@ type DraftQuestion = Required<Pick<ExtractedQuestion, 'question'>> &
         answer?: string | null;
         type: QuestionType;
         summary: string;
-        primaryTopicId: number | null;
-        secondaryTopicIds: number[];
+        primaryTopicId: string | null;
+        secondaryTopicIds: string[];
         include: boolean;
     };
 
@@ -139,16 +139,16 @@ export function mapExtractedToDraftQuestions(items: ExtractedQuestion[]): DraftQ
             )
         )
         .map((item) => {
-            const primaryCandidate = item.primaryTopicId !== undefined && item.primaryTopicId !== null
-                ? Number(item.primaryTopicId)
-                : null;
-            const primaryTopicId = Number.isInteger(primaryCandidate) ? primaryCandidate : null;
+            const primaryTopicId =
+                item.primaryTopicId !== undefined && item.primaryTopicId !== null && String(item.primaryTopicId).trim()
+                    ? String(item.primaryTopicId).trim()
+                    : null;
             const secondaryTopicIds = Array.isArray(item.secondaryTopicIds)
                 ? Array.from(
                     new Set(
                         item.secondaryTopicIds
-                            .map((v) => Number(v))
-                            .filter((v) => Number.isInteger(v) && v !== primaryTopicId)
+                            .map((v) => String(v).trim())
+                            .filter((v) => v.length > 0 && v !== primaryTopicId)
                     )
                 )
                 : [];
@@ -568,8 +568,8 @@ export const QuestionUploadDialog = ({
         setDraftQuestions((prev) => prev.filter((draft) => draft.id !== id));
     }, []);
 
-    const setPrimaryTopicForDraft = useCallback((id: string, topicId: number | null) => {
-        const normalizedTopicId = typeof topicId === 'number' && Number.isInteger(topicId) ? topicId : null;
+    const setPrimaryTopicForDraft = useCallback((id: string, topicId: string | null) => {
+        const normalizedTopicId = topicId && topicId.trim() ? topicId.trim() : null;
         setDraftQuestions((prev) =>
             prev.map((draft) => {
                 if (draft.id !== id) {
@@ -587,7 +587,7 @@ export const QuestionUploadDialog = ({
         );
     }, []);
 
-    const toggleSecondaryTopicForDraft = useCallback((id: string, topicId: number) => {
+    const toggleSecondaryTopicForDraft = useCallback((id: string, topicId: string) => {
         setDraftQuestions((prev) =>
             prev.map((draft) => {
                 if (draft.id !== id) {
@@ -844,7 +844,7 @@ export const QuestionUploadDialog = ({
 
         try {
             const fallbackPrimaryTopicId =
-                topics.length > 0 && primaryTopicId ? Number(primaryTopicId) : undefined;
+                topics.length > 0 && primaryTopicId ? primaryTopicId : undefined;
             const fallbackTopicName =
                 topics.length === 0 ? (newTopicName.trim() || 'Uploaded Questions') : undefined;
 
@@ -1227,11 +1227,7 @@ export const QuestionUploadDialog = ({
                                                                         setPrimaryTopicForDraft(draft.id, null);
                                                                         return;
                                                                     }
-                                                                    const parsed = Number.parseInt(value, 10);
-                                                                    setPrimaryTopicForDraft(
-                                                                        draft.id,
-                                                                        Number.isNaN(parsed) ? null : parsed
-                                                                    );
+                                                                    setPrimaryTopicForDraft(draft.id, value);
                                                                 }}
                                                                 disabled={topics.length === 0}
                                                             >

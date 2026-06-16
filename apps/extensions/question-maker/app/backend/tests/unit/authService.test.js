@@ -69,9 +69,20 @@ describe('findOrCreateUser', () => {
     findOrCreate.mockResolvedValue([newUser, true]);
     courseCount.mockResolvedValue(0);
 
-    await findOrCreateUser({ id: 'u3', email: 'c@d.com', name: 'Carol' });
+    await findOrCreateUser({ id: 'u3', email: 'c@d.com', name: 'Carol', role: 'STUDENT' });
 
     expect(seedCoursesForNewUser).toHaveBeenCalledWith('u3');
+    expect(newUser.update).toHaveBeenCalledWith(expect.objectContaining({ coursesSeededAt: expect.any(Date) }));
+  });
+
+  it('does not seed demo courses for newly created instructors', async () => {
+    const newUser = makeUser({ id: 'u8', email: 'h@i.com', name: 'Instructor', coursesSeededAt: null });
+    findOrCreate.mockResolvedValue([newUser, true]);
+    courseCount.mockResolvedValue(0);
+
+    await findOrCreateUser({ id: 'u8', email: 'h@i.com', name: 'Instructor', role: 'INSTRUCTOR' });
+
+    expect(seedCoursesForNewUser).not.toHaveBeenCalled();
     expect(newUser.update).toHaveBeenCalledWith(expect.objectContaining({ coursesSeededAt: expect.any(Date) }));
   });
 

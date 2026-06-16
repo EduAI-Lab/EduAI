@@ -36,4 +36,5 @@ export type ChatViewSharedProps = {
   onSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
   onStop?: () => void;
   onSelectPrompt: (prompt: string) => void;
+  webToolsEnabled: boolean;
 };

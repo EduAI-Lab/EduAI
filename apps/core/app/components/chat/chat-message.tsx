@@ -17,17 +17,20 @@ import {
 } from "~/components/assistive/active-highlight";
 import { Tool } from "~/components/ui/tool";
 import { cn } from "~/lib/utils";
+import { getChatToolDisplayName, isWebChatToolName } from "~/lib/ai/web-tool-ui";
 
 export interface ChatMessageProps {
   message: Message;
   isStreaming?: boolean;
   highlightRole?: MessageHighlightRole;
+  webToolsEnabled?: boolean;
 }
 
 export function ChatMessage({
   message,
   isStreaming = false,
   highlightRole = null,
+  webToolsEnabled = false,
 }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
 
@@ -45,17 +48,6 @@ export function ChatMessage({
 
   const isUser = message.role === "user";
 
-  // Extract different types of parts
-  const textParts = message.parts?.filter((part) => part.type === "text") || [];
-  const toolParts = message.parts?.filter((part) =>
-    part.type === "tool-invocation" || part.type.startsWith("tool-")
-  ) || [];
-
-  // If no parts, fallback to message content
-  const hasTextContent = textParts.length > 0 || message.content;
-  const textContent = textParts.map(part => part.text).join("\n") || message.content || "";
-
-  // Convert tool parts to the format expected by Tool component
   const convertToolPart = (part: any) => {
     if (part.type === "tool-invocation") {
       return {
@@ -70,7 +62,6 @@ export function ChatMessage({
       };
     }
 
-    // Handle dynamic tool parts from AI SDK v5+ format
     if (part.type.startsWith("tool-")) {
       return {
         type: part.toolName || part.type.replace("tool-", ""),
@@ -91,6 +82,25 @@ export function ChatMessage({
       : highlightRole === "inactive"
         ? CHAT_MESSAGE_INACTIVE_CLASS
         : undefined;
+
+  // Extract different types of parts
+  const textParts = message.parts?.filter((part) => part.type === "text") || [];
+  const toolParts = message.parts?.filter((part) => {
+    if (!(part.type === "tool-invocation" || part.type.startsWith("tool-"))) {
+      return false;
+    }
+
+    const toolPart = convertToolPart(part);
+    if (!toolPart) return false;
+    if (!webToolsEnabled && isWebChatToolName(toolPart.type)) {
+      return false;
+    }
+    return true;
+  }) || [];
+
+  // If no parts, fallback to message content
+  const hasTextContent = textParts.length > 0 || message.content;
+  const textContent = textParts.map(part => part.text).join("\n") || message.content || "";
 
   if (isUser) {
     // User message - right aligned, limited width
@@ -127,6 +137,7 @@ export function ChatMessage({
               <Tool
                 key={`tool-${toolPart.toolCallId || index}`}
                 toolPart={toolPart}
+                displayName={getChatToolDisplayName(toolPart.type, webToolsEnabled) ?? toolPart.type}
                 defaultOpen={toolPart.state === "input-streaming"}
               />
             );

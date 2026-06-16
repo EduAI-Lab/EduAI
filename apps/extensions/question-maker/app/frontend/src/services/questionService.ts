@@ -114,7 +114,7 @@ export const questionService = {
     difficulty?: QuestionDifficulty;
     reasoningLevel?: 'factual' | 'analytical' | 'application';
     assessmentId?: number;
-    secondaryTopicsId?: number[];
+    secondaryTopicsId?: string[];
     answer?: string | null;
     choices?: MCQChoice[] | null;
     referenceId?: number;
@@ -130,7 +130,7 @@ export const questionService = {
     questionText?: string;
     difficulty?: QuestionDifficulty;
     assessmentId?: number;
-    secondaryTopicsId?: number[];
+    secondaryTopicsId?: string[];
     answer?: string | null;
     choices?: MCQChoice[] | null;
     referenceId?: number;
@@ -173,7 +173,7 @@ export const questionService = {
   /** Saves extracted questions (and optional assessment) and returns normalized questions. */
   async saveExtractedQuestions(payload: {
     courseId: number;
-    primaryTopicId?: number;
+    primaryTopicId?: string;
     topicName?: string;
     questions: ExtractedQuestion[];
     assessment?: {
