@@ -117,6 +117,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ## [Week 6 — June 8–12, 2026]
 
 ### Added
+- [core] rag: Extend semantic chunking with document-aware PDF/DOCX/PPTX section splits (Chapter/Section/Part, numbered headings, slide markers, all-caps titles) and ~80-char overlap on the upload path; `resolveMaterialChunks` separator round-trip preserved. Re-upload or re-embed existing materials to benefit. (#433, #563, @superbolt08, 2026-06-11)
 - [core] ui/css: ADHD UI platform hygiene pass — mount `Toaster`, add global `prefers-reduced-motion` support. (#543, @yta3216, 2026-06-09)
 - [core] api: Add TA management (`GET`/`POST`/`DELETE /api/courses/:courseId/tas`) and instructor reassignment (`PATCH /api/courses/:id`) for `ADMIN`/`UNIT_ADMIN`. (#491, @yta3216, 2026-06-08)
 - [core] ui: Add Staff tab to Course Detail with `useCourseTAs` hook — lists current instructor and TAs with reassignment controls for admin/unit admin. (#491, @yta3216, 2026-06-08)
