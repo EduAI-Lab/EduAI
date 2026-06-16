@@ -23,10 +23,12 @@ export async function modelSupportsTools(modelIdentifier: string): Promise<boole
       select: {
         supportsTools: true,
         name: true,
+        modelId: true,
+        type: true,
       },
     });
 
-    const supportsTools = model?.supportsTools ?? false;
+    const supportsTools = Boolean(model?.supportsTools);
     console.log(
       `Model ${modelIdentifier} (${model?.name || 'unknown'}) supports tools: ${supportsTools}`,
     );
