@@ -3,51 +3,17 @@
  * Uses Core GET /api/courses (session-scoped via buildCourseListFilter).
  */
 import { Course, Topics } from '../schema/index.js';
-import { listCoursesFromCore, getCourseTopicsFromCore } from './coreApiService.js';
+import { listCoursesFromCore } from './coreApiService.js';
+import { normalizeCourseCode } from './courseCodeUtils.js';
+import { syncTopicsFromCoreForCourse } from './topicSyncService.js';
 import { createAssessment } from './assessmentService.js';
 import { logger } from '../utils/logger.js';
 
 const AUTO_IMPORT_ROLES = new Set(['INSTRUCTOR']);
+const TEACHING_ENROLLMENT_ROLES = new Set(['INSTRUCTOR', 'TA']);
 
-function normalizeCourseCode(value) {
-  if (!value || typeof value !== 'string') return '';
-  return value.replace(/\s+/g, '').toLowerCase();
-}
-
-async function syncTopicsFromCoreForCourse(course, cookie) {
-  if (!course?.coreCourseId) return 0;
-
-  let coreTopics;
-  try {
-    const data = await getCourseTopicsFromCore(course.coreCourseId, { cookie });
-    coreTopics = Array.isArray(data?.topics) ? data.topics : Array.isArray(data) ? data : [];
-  } catch (err) {
-    logger.warn({ err, coreCourseId: course.coreCourseId }, 'Core topic sync skipped during auto-import');
-    return 0;
-  }
-
-  let synced = 0;
-  for (const ct of coreTopics) {
-    if (!ct?.id || !ct?.name) continue;
-
-    let existing = await Topics.findOne({ where: { coreTopicId: ct.id } });
-    if (existing) {
-      if (existing.courseId !== course.id) continue;
-      await existing.update({ name: ct.name });
-      synced++;
-      continue;
-    }
-
-    existing = await Topics.findOne({ where: { courseId: course.id, name: ct.name } });
-    if (existing) {
-      await existing.update({ coreTopicId: ct.id });
-    } else {
-      await Topics.create({ name: ct.name, courseId: course.id, coreTopicId: ct.id });
-    }
-    synced++;
-  }
-
-  return synced;
+function isTeachingCoreCourse(coreCourse) {
+  return TEACHING_ENROLLMENT_ROLES.has(coreCourse?.callerEnrollmentRole);
 }
 
 async function ensurePracticeExam(userId, courseId) {
@@ -130,6 +96,11 @@ export async function importTaughtCoursesFromCore(userId, role, cookie) {
 
   for (const coreCourse of coreCourses) {
     if (!coreCourse?.id) {
+      skipped++;
+      continue;
+    }
+
+    if (!isTeachingCoreCourse(coreCourse)) {
       skipped++;
       continue;
     }

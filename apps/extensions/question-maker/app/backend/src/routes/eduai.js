@@ -186,7 +186,9 @@ router.get('/courses/:courseId/topics', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Course ID is required' });
     }
 
-    const data = await getCourseTopicsFromCore(courseId);
+    const data = await getCourseTopicsFromCore(courseId, {
+      cookie: req.headers.cookie ?? '',
+    });
 
     res.json({
       success: true,

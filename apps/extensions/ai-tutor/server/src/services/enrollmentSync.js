@@ -48,7 +48,9 @@ export async function syncCourseEnrollments(courseOfferingId, options = {}) {
   const existingByUserId = new Map(existing.map((e) => [e.userId, e]));
 
   const toCreate = activeEnrollments.filter((e) => !existingByUserId.has(e.studentId));
-  const toDelete = existing.filter((e) => !activeUserIds.has(e.userId));
+  const toDelete = existing.filter(
+    (e) => !activeUserIds.has(e.userId) && e.role === 'STUDENT',
+  );
   const toUpdate = activeEnrollments.filter((e) => {
     const local = existingByUserId.get(e.studentId);
     return local && local.role !== 'TA' && local.role !== (e.role ?? 'STUDENT');

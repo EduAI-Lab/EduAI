@@ -4,6 +4,7 @@
  * (status stored on the error as .status, parsed body as .body).
  */
 import { config } from '../config/settings.js';
+import { normalizeCourseCode } from './courseCodeUtils.js';
 
 function serviceHeaders({ cookie } = {}) {
   const headers = { 'Content-Type': 'application/json' };
@@ -43,11 +44,18 @@ function isRetryableAuthFailure(status, body) {
 /**
  * Calls Core with service-key and/or session-cookie auth.
  * When both are available, retries with the alternate auth mode on auth failures
- * so a stale EDUAI_API_KEY does not block user-session reads.
+ * so a stale EDUAI_API_KEY does not block user-session reads — unless `cookieOnly`
+ * is set (user-scoped reads must not fall back to the unscoped service key).
  */
-async function fetchFromCore(path, { method = 'GET', body, cookie, preferCookie = false } = {}) {
+async function fetchFromCore(
+  path,
+  { method = 'GET', body, cookie, preferCookie = false, cookieOnly = false } = {},
+) {
   const url = `${config.coreUrl}${path}`;
-  const variants = authHeaderVariants({ cookie, preferCookie });
+  let variants = authHeaderVariants({ cookie, preferCookie });
+  if (cookieOnly) {
+    variants = cookie ? [{ cookie }] : [];
+  }
 
   if (variants.length === 0) {
     throw coreError('EDUAI_API_KEY not configured and no session cookie available', 503, {
@@ -82,9 +90,11 @@ function coreError(message, status, body) {
 
 /** GET /api/courses/:courseId/topics — returns { topics: [{ id, name }] } (deleted topics excluded by Core) */
 export async function getCourseTopicsFromCore(coreCourseId, opts = {}) {
+  const cookie = opts.cookie ?? '';
   return fetchFromCore(`/api/courses/${coreCourseId}/topics`, {
-    cookie: opts.cookie,
-    preferCookie: Boolean(opts.cookie),
+    cookie,
+    preferCookie: Boolean(cookie),
+    cookieOnly: Boolean(cookie),
   });
 }
 
@@ -159,9 +169,11 @@ export async function patchQuestionTestableOnCore(coreQuestionId, testable) {
  * Returns { enrollments: [] } when the course no longer exists in Core (404).
  */
 export async function getCourseEnrollmentsFromCore(coreCourseId, opts = {}) {
+  // Unscoped roster read for QM RBAC — service key when configured; never prefer cookie
+  // (students receive 403 on the session path).
   return fetchFromCore(`/api/courses/${coreCourseId}/enrollments`, {
     cookie: opts.cookie,
-    preferCookie: Boolean(opts.cookie),
+    preferCookie: false,
   }).catch((err) => {
     if (err.status === 404) return { enrollments: [] };
     throw err;
@@ -194,6 +206,7 @@ export async function listCoursesFromCore(cookieHeader) {
   return fetchFromCore('/api/courses', {
     cookie: cookieHeader,
     preferCookie: true,
+    cookieOnly: true,
   });
 }
 
@@ -202,11 +215,6 @@ export async function isCoreCourseInScopedList(coreCourseId, cookieHeader) {
   const data = await listCoursesFromCore(cookieHeader);
   const courses = Array.isArray(data?.courses) ? data.courses : [];
   return courses.some((course) => course?.id === coreCourseId);
-}
-
-function normalizeCourseCode(value) {
-  if (!value || typeof value !== 'string') return '';
-  return value.replace(/\s+/g, '').toLowerCase();
 }
 
 /**
@@ -224,17 +232,7 @@ export async function findScopedCoreCourseByCode(courseCode, cookieHeader) {
 
   try {
     const scoped = await listCoursesFromCore(cookieHeader);
-    const match = matchInList(scoped);
-    if (match) return match;
-  } catch {
-    // fall through to service-key catalog search
-  }
-
-  if (!config.eduaiApiKey) return null;
-
-  try {
-    const catalog = await fetchFromCore('/api/courses', { preferCookie: false });
-    return matchInList(catalog);
+    return matchInList(scoped);
   } catch {
     return null;
   }

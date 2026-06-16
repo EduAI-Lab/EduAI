@@ -6,9 +6,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const courseFindAll = vi.fn();
 const courseCreate = vi.fn();
 const courseUpdate = vi.fn();
-const topicsFindOne = vi.fn();
-const topicsCreate = vi.fn();
 const topicsFindAll = vi.fn();
+const topicsCreate = vi.fn();
 const createAssessment = vi.fn();
 
 vi.mock('../../src/schema/index.js', () => ({
@@ -17,15 +16,17 @@ vi.mock('../../src/schema/index.js', () => ({
     create: courseCreate,
   },
   Topics: {
-    findOne: topicsFindOne,
-    create: topicsCreate,
     findAll: topicsFindAll,
+    create: topicsCreate,
   },
 }));
 
 vi.mock('../../src/services/coreApiService.js', () => ({
   listCoursesFromCore: vi.fn(),
-  getCourseTopicsFromCore: vi.fn(),
+}));
+
+vi.mock('../../src/services/topicSyncService.js', () => ({
+  syncTopicsFromCoreForCourse: vi.fn().mockResolvedValue(1),
 }));
 
 vi.mock('../../src/services/assessmentService.js', () => ({
@@ -39,7 +40,8 @@ vi.mock('../../src/utils/logger.js', () => ({
   },
 }));
 
-const { listCoursesFromCore, getCourseTopicsFromCore } = await import('../../src/services/coreApiService.js');
+const { listCoursesFromCore } = await import('../../src/services/coreApiService.js');
+const { syncTopicsFromCoreForCourse } = await import('../../src/services/topicSyncService.js');
 const { importTaughtCoursesFromCore } = await import('../../src/services/importTaughtCoursesService.js');
 
 describe('importTaughtCoursesFromCore (QM)', () => {
@@ -48,10 +50,9 @@ describe('importTaughtCoursesFromCore (QM)', () => {
     courseFindAll.mockResolvedValue([]);
     courseCreate.mockImplementation(async (data) => ({ id: 99, ...data, update: courseUpdate }));
     topicsFindAll.mockResolvedValue([{ id: 1, name: 'Topic A' }]);
-    topicsFindOne.mockResolvedValue(null);
     topicsCreate.mockResolvedValue({});
     createAssessment.mockResolvedValue({});
-    getCourseTopicsFromCore.mockResolvedValue({ topics: [{ id: 't1', name: 'Topic A' }] });
+    syncTopicsFromCoreForCourse.mockResolvedValue(1);
   });
 
   it('skips auto-import for non-instructor roles', async () => {
@@ -63,7 +64,14 @@ describe('importTaughtCoursesFromCore (QM)', () => {
 
   it('creates local courses for unlinked Core courses', async () => {
     listCoursesFromCore.mockResolvedValue({
-      courses: [{ id: 'core-1', code: 'COSC 111', name: 'Computing Science' }],
+      courses: [
+        {
+          id: 'core-1',
+          code: 'COSC 111',
+          name: 'Computing Science',
+          callerEnrollmentRole: 'INSTRUCTOR',
+        },
+      ],
     });
 
     const result = await importTaughtCoursesFromCore('u1', 'INSTRUCTOR', 'session=abc');
@@ -77,11 +85,19 @@ describe('importTaughtCoursesFromCore (QM)', () => {
       }),
     );
     expect(createAssessment).toHaveBeenCalled();
+    expect(syncTopicsFromCoreForCourse).toHaveBeenCalled();
   });
 
   it('links an existing local course by code instead of creating a duplicate', async () => {
     listCoursesFromCore.mockResolvedValue({
-      courses: [{ id: 'core-2', code: 'COSC 121', name: 'Programming II' }],
+      courses: [
+        {
+          id: 'core-2',
+          code: 'COSC 121',
+          name: 'Programming II',
+          callerEnrollmentRole: 'INSTRUCTOR',
+        },
+      ],
     });
     const localCourse = {
       id: 5,

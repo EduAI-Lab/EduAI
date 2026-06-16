@@ -288,7 +288,18 @@ describe('listCoursesFromCore', () => {
 
   it('throws on a 401 (no/invalid session)', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(ok({ error: 'Unauthorized' }, 401)));
-    await expect(listCoursesFromCore('')).rejects.toMatchObject({ status: 401 });
+    await expect(listCoursesFromCore('session=invalid')).rejects.toMatchObject({ status: 401 });
+  });
+
+  it('does not fall back to the service key when the session cookie is rejected', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(ok({ error: 'Forbidden' }, 403));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(listCoursesFromCore('session=stale')).rejects.toMatchObject({ status: 403 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][1].headers.Authorization).toBeUndefined();
   });
 });
 
