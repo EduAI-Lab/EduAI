@@ -30,6 +30,7 @@ export function ChatConversationLayout({
   onSubmit,
   onStop,
   onSelectPrompt,
+  webToolsEnabled,
 }: ChatConversationLayoutProps) {
   return (
     <div className="flex flex-col h-[calc(100vh-var(--header-height))] bg-gradient-to-br from-background via-background to-muted/20">
@@ -58,6 +59,7 @@ export function ChatConversationLayout({
                         key={message.id}
                         message={message as Message}
                         isStreaming={isStreamingMessage}
+                        webToolsEnabled={webToolsEnabled}
                       />
                     );
                   })}

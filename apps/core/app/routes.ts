@@ -53,6 +53,7 @@ export default [
   route("/api/invitations/accept", "routes/api/invitations.accept.ts"),
   route("/api/invitations/:id", "routes/api/invitations.$id.ts"),
   route("/api/ollama-models", "routes/api/ollama-models.ts"),
+  route("/api/system-config/*", "routes/api/system-config.$.ts"),
   route("/api/vllm-models", "routes/api/vllm-models.ts"),
   route("/api/sessions/validate", "routes/api/sessions.validate.ts"),
   route("/api/bug-reports", "routes/api/bug-reports.ts"),

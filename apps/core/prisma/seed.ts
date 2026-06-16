@@ -1211,8 +1211,24 @@ async function seedBugReports() {
   }
 }
 
+async function seedSystemConfig() {
+  await prisma.systemConfig.upsert({
+    where: { key: "webToolsEnabled" },
+    create: {
+      key: "webToolsEnabled",
+      value: "false",
+      description: "When true, webSearch and fetchPage are registered in the chat tool path.",
+      updatedBy: SEED_IDS.users.admin,
+    },
+    update: {},
+  });
+}
+
 async function main() {
   console.log(`Seeding Core (units registry: ${UNITS.length} subjects)...`);
+
+  await seedSystemConfig();
+  console.log("  System config seeded (webToolsEnabled=false)");
 
   await seedAIProvidersAndModels();
   console.log('  AI providers and models seeded');
