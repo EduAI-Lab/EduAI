@@ -508,7 +508,10 @@ export function LogsAdminView({
             <TableBody>
               {rows.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-muted-foreground py-8 text-center">
+                  <TableCell
+                    colSpan={tab === "audit" ? 8 : tab === "security" ? 7 : 6}
+                    className="text-muted-foreground py-8 text-center"
+                  >
                     No logs found for the selected filters.
                   </TableCell>
                 </TableRow>

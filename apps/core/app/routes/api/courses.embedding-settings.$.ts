@@ -147,6 +147,20 @@ export async function action({ request, params }: ActionFunctionArgs) {
     );
     const job = await startReEmbedJob(courseId);
     reEmbedJob = serializeReEmbedJob(job);
+
+    // A re-embed started through the settings PATCH must be audited the same way
+    // the dedicated /re-embed route audits it, so this path is not a coverage gap.
+    fireAndForget(
+      logAuditAction({
+        ...getActorContext(authResult.session?.user ?? null),
+        ...requestContext,
+        actionCode: "RE_EMBED_JOB_CREATED",
+        category: "AI_CONFIG",
+        entityType: "ReEmbedJob",
+        entityId: job.id,
+        details: { courseId },
+      }),
+    );
   }
 
   const refreshed = fields;

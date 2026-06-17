@@ -116,11 +116,26 @@ function parseDateFilter(value: string | undefined, mode: "start" | "end") {
   if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
     return undefined;
   }
-  // Using UTC avoids timezone drift when users filter on day boundaries.
-  if (mode === "start") {
-    return new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+  // Reject out-of-range components (e.g. 2026-13-45). Date.UTC silently rolls these
+  // over to a different valid date, which would query a window the admin never asked
+  // for — drop the filter instead of returning a wrong one.
+  if (month < 1 || month > 12 || day < 1 || day > 31) {
+    return undefined;
   }
-  return new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
+  // Using UTC avoids timezone drift when users filter on day boundaries.
+  const boundary =
+    mode === "start"
+      ? new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0))
+      : new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
+  // Guard against rollover (e.g. Feb 30 → Mar 2): the round-tripped components must match.
+  if (
+    boundary.getUTCFullYear() !== year ||
+    boundary.getUTCMonth() !== month - 1 ||
+    boundary.getUTCDate() !== day
+  ) {
+    return undefined;
+  }
+  return boundary;
 }
 
 /** Normalizes unknown row payloads into serializable plain objects for the client. */
