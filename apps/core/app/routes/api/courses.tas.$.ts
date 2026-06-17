@@ -147,6 +147,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
           category: "ENROLLMENT",
           entityType: "CourseTA",
           entityId: result.ta.id,
+          entityLabel: result.ta.user?.name ?? null,
           details: { courseId, targetUserId: result.ta.userId },
         }),
       );
@@ -172,7 +173,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
           actionCode: "COURSE_TA_REMOVED",
           category: "ENROLLMENT",
           entityType: "CourseTA",
-          entityId: courseId,
+          entityId: result.taId,
+          entityLabel: result.taName,
           details: { courseId, targetUserId: body?.userId },
         }),
       );

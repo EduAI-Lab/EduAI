@@ -323,9 +323,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
           actionCode: "TOPIC_DELETED",
           category: "TOPIC",
           entityType: "CourseTopic",
-          entityId:
-            (typeof body?.topicId === "string" ? body.topicId : params.topicId) ?? null,
-          entityLabel: typeof body?.name === "string" ? body.name : null,
+          entityId: result.topic.id,
+          entityLabel: result.topic.name,
           details: { courseId },
         }),
       );
