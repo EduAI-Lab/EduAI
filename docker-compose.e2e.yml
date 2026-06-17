@@ -61,6 +61,7 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@e2e-eduai-db:5432/eduai_e2e
       BETTER_AUTH_SECRET: e2e-test-secret-change-for-production
       BETTER_AUTH_URL: http://localhost:3000
+      BETTER_AUTH_DISABLE_RATE_LIMIT: "1"
       GOOGLE_GENERATIVE_AI_API_KEY: test-key-not-real
       NODE_ENV: production
       PORT: "3000"
