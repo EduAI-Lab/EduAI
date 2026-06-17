@@ -150,7 +150,9 @@ export default function Chat() {
   const handleAssistiveChange = useCallback(
     (checked: boolean) => {
       setAdhdAssist(checked);
-      if (!checked) setFocusMode(false);
+      if (!checked) {
+        setFocusMode(false);
+      }
       // setAssistive already persists via PATCH /api/preferences — no extra submit needed.
       setAssistive(checked);
     },

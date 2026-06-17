@@ -1,4 +1,4 @@
-import { IconBrain } from "@tabler/icons-react";
+import { IconBan, IconBrain } from "@tabler/icons-react";
 import { Label, Switch, Tooltip, TooltipContent, TooltipTrigger } from "@eduai/ui";
 import { SystemPromptSettings } from "~/components/chat/system-prompt-settings";
 
@@ -55,22 +55,29 @@ export function ChatHeaderControls({
           <p className="mt-0.5 opacity-75">Useful for ADHD and assistive reading needs.</p>
         </TooltipContent>
       </Tooltip>
-      {adhdAssist ? (
-        <div className="flex items-center gap-2">
-          <Switch
-            id="assistive-focus-mode"
-            checked={focusMode}
-            onCheckedChange={(checked) => onFocusModeChange(Boolean(checked))}
-            aria-label="Focus mode"
-          />
-          <Label
-            htmlFor="assistive-focus-mode"
-            className="cursor-pointer text-sm text-muted-foreground whitespace-nowrap"
-          >
-            Focus mode {focusMode ? "On" : "Off"}
-          </Label>
-        </div>
-      ) : null}
+      <div
+        className={
+          adhdAssist
+            ? "flex items-center gap-2"
+            : "flex items-center gap-2 opacity-40 grayscale pointer-events-none"
+        }
+      >
+        <Switch
+          id="assistive-focus-mode"
+          checked={focusMode}
+          disabled={!adhdAssist}
+          onCheckedChange={(checked) => onFocusModeChange(Boolean(checked))}
+          aria-label="Focus mode"
+          className={adhdAssist ? "cursor-pointer" : "cursor-pointer disabled:opacity-60"}
+        />
+        {!adhdAssist && <IconBan data-testid="focus-mode-disabled-icon" className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+        <Label
+          htmlFor="assistive-focus-mode"
+          className="cursor-pointer text-sm text-muted-foreground whitespace-nowrap"
+        >
+          Focus mode {focusMode ? "On" : "Off"}
+        </Label>
+      </div>
       <SystemPromptSettings
         systemPrompt={systemPrompt}
         onSave={onSystemPromptSave}
