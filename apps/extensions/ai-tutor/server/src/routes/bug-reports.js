@@ -1,5 +1,5 @@
 import express from 'express';
-import { requireRole, requireRoles } from '../middleware/auth.js';
+import { requireRole } from '../middleware/auth.js';
 import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
 import {
   BugReportError,
@@ -11,9 +11,11 @@ import { mapCoreAdminBugReportRow } from '../utils/bugReportMappers.js';
 
 const router = express.Router();
 
-router.post('/bug-reports', requireRoles(['STUDENT', 'INSTRUCTOR']), async (req, res) => {
+router.post('/bug-reports', async (req, res) => {
+  const authUser = req.user;
+  if (!authUser) return res.status(401).json({ error: 'Authentication required' });
   try {
-    await createBugReport(req.user, req.body || {});
+    await createBugReport(authUser, req.body || {});
     res.status(201).json({ ok: true });
   } catch (error) {
     if (error instanceof BugReportError) {

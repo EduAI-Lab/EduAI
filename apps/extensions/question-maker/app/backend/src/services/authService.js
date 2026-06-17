@@ -27,8 +27,10 @@ export async function findOrCreateUser(coreUser) {
     // coursesSeededAt is NULL for: (a) brand-new users, (b) users created before this
     // column existed. Only seed if they still have 0 courses — existing users with
     // courses just need the flag backfilled.
+    // Instructors receive courses via Core auto-import on /auth/me — skip demo seeds.
     const courseCount = await Course.count({ where: { userId: user.id } });
-    if (courseCount === 0) {
+    const role = coreUser.role ?? 'STUDENT';
+    if (courseCount === 0 && !['INSTRUCTOR', 'UNIT_ADMIN'].includes(role)) {
       await seedCoursesForNewUser(user.id);
     }
     await user.update({ coursesSeededAt: new Date() });

@@ -31,11 +31,12 @@ export type ToolPart = {
 
 export type ToolProps = {
   toolPart: ToolPart
+  displayName?: string
   defaultOpen?: boolean
   className?: string
 }
 
-const Tool = ({ toolPart, defaultOpen = false, className }: ToolProps) => {
+const Tool = ({ toolPart, displayName, defaultOpen = false, className }: ToolProps) => {
   const [isOpen, setIsOpen] = useState(defaultOpen)
 
   const { state, input, output, toolCallId } = toolPart
@@ -151,7 +152,7 @@ const Tool = ({ toolPart, defaultOpen = false, className }: ToolProps) => {
             <div className="flex items-center gap-2">
               {getStateIcon()}
               <span className="font-mono text-sm font-medium">
-                {toolPart.type}
+                {displayName ?? toolPart.type}
               </span>
               {getStateBadge()}
             </div>

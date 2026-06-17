@@ -2,18 +2,17 @@
  * Vitest globalSetup — runs ONCE in the main process before any test file.
  *
  * When TEST_DATABASE_URL is set (integration / coverage runs), it synchronizes the
- * schema a single time up front. Individual integration files only truncate + seed in
- * their beforeEach hooks; without this, the first file to run would truncate a table that
- * no file had created yet (the `sync({ alter: true })` inside connectDatabase swallows its
- * own errors), producing an order-dependent "relation does not exist" flake when the unit
- * and integration suites share one worker (coverage run).
+ * schema a single time up front. Individual integration test files truncate + seed in
+ * their beforeEach hooks; without this up-front sync, the first file to run would
+ * attempt to truncate a table that does not exist yet (the `sync({ alter: true })` inside
+ * connectDatabase swallows its own errors), producing an order-dependent flake.
  *
  * Without TEST_DATABASE_URL this is a no-op: integration suites self-skip (see `describeDb`),
  * so a plain unit run never touches a database.
  */
 import dotenv from 'dotenv';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 export async function setup() {
   // globalSetup runs in the main process before setupFiles (tests/setup.js) load the root .env,
@@ -36,5 +35,6 @@ export async function setup() {
   // background reconnection interval, which would keep this main process alive after teardown.
   await sequelize.authenticate();
   await sequelize.sync({ alter: true });
+
   await sequelize.close();
 }

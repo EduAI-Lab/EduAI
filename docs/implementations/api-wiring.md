@@ -340,7 +340,13 @@ Per #275, new endpoints ship with **minimum-viable auth**, not the full role mat
 
 ### GET /api/courses
 
-**Local wiring:** When an instructor selects a Core course in QM, call `GET /api/courses` and store the returned CUID in `courses.core_course_id`. No new Core endpoint needed.
+**Local wiring:** When an instructor selects a Core course in QM or imports one in AI Tutor, call `GET /api/courses` with the **caller's Core session cookie forwarded** (not the service key). Core applies `buildCourseListFilter` so the list matches Canvas-synced instructor enrollments (#578). Store the returned CUID in `courses.core_course_id` (QM) or import into a local offering (AI Tutor).
+
+**Service key:** Reserve `Authorization: Bearer EDUAI_API_KEY` for server-to-server reads by course id (enrollments, topics, reconciliation) — not for instructor course pickers.
+
+**AI Tutor enrollment sync (#578):** After importing a Core course, instructors call `POST /api/courses/:courseId/sync-enrollments` (or use the course UI) to pull active **STUDENT** enrollments from Core into local `CourseEnrollment` rows. QM RBAC for linked courses reads enrollments from Core on each request — Canvas roster updates are visible once Core sync completes, with no QM-side sync step.
+
+**Manual E2E:** See [canvas-extension-course-alignment-e2e.md](./canvas-extension-course-alignment-e2e.md) for the full verification checklist and automated regression commands.
 
 ---
 

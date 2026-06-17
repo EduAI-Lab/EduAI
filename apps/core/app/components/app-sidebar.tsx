@@ -7,6 +7,7 @@ import {
   IconReport,
   IconRobot,
   IconSettings,
+  IconMail,
   IconUsers,
   type Icon,
 } from "@tabler/icons-react"
@@ -42,6 +43,7 @@ const NAV_ICONS: Record<NavItemKey, Icon> = {
   "admin-ai": IconBrain,
   "admin-bugs": IconReport,
   "admin-chat": IconRobot,
+  "admin-invites": IconMail,
   settings: IconSettings,
 }
 

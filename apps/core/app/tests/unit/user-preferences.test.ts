@@ -41,6 +41,20 @@ describe("parsePreferenceUpdates", () => {
     ).toEqual({ assistDefault: true, lastCourseCode: "MATH 100" });
   });
 
+  it("keeps boolean motionReduced", () => {
+    expect(parsePreferenceUpdates({ motionReduced: true })).toEqual({ motionReduced: true });
+    expect(parsePreferenceUpdates({ motionReduced: false })).toEqual({ motionReduced: false });
+    expect(parsePreferenceUpdates({ motionReduced: "true" })).toEqual({});
+  });
+
+  it("keeps valid density and theme values", () => {
+    expect(parsePreferenceUpdates({ density: "compact", theme: "dark" })).toEqual({
+      density: "compact",
+      theme: "dark",
+    });
+    expect(parsePreferenceUpdates({ density: "wide", theme: "neon" })).toEqual({});
+  });
+
   it("returns an empty object for non-object payloads", () => {
     expect(parsePreferenceUpdates(null)).toEqual({});
     expect(parsePreferenceUpdates(undefined)).toEqual({});

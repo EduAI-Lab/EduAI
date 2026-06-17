@@ -107,7 +107,7 @@ export default function CourseDetailPage() {
   const { course, user, access, instructors, taUsers } = useLoaderData<typeof loader>()
   const revalidator = useRevalidator()
   const { topics, createTopic, deleteTopic } = useCourseTopics(course.id)
-  const { enrollments } = useCourseEnrollments(course.id)
+  const { enrollments, loading: enrollmentsLoading, error: enrollmentsError } = useCourseEnrollments(course.id)
   const { materials, uploadMaterial } = useCourseMaterials(course.id)
   const { tas, addTA, removeTA } = useCourseTAs(course.id)
   const { getValidApiKeys } = useApiKeys()
@@ -135,6 +135,7 @@ export default function CourseDetailPage() {
     fileSize: m.fileSize,
     status: m.status,
     createdAt: m.createdAt,
+    chunkCount: m.chunkCount,
   }))
 
   const handleFileSelect = async (file: File) => {
@@ -188,6 +189,8 @@ export default function CourseDetailPage() {
                 access={access}
                 topics={topics}
                 enrollments={enrollments}
+                enrollmentsLoading={enrollmentsLoading}
+                enrollmentsError={enrollmentsError}
                 materials={uploadMaterials}
                 tas={tas}
                 instructors={instructors}

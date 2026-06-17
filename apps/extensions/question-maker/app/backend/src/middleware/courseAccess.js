@@ -69,7 +69,13 @@ export async function resolveAccessForCourse(reqUser, course, { cookie } = {}) {
 
   // UNIT_ADMIN unit lock (§19): a null department is never a match.
   if (reqUser.role === 'UNIT_ADMIN') {
-    const coreCourse = await getCourseFromCore(course.coreCourseId);
+    let coreCourse = null;
+    try {
+      coreCourse = await getCourseFromCore(course.coreCourseId, { cookie });
+    } catch {
+      if (reqUser.id === course.userId) return LEVELS.instructor;
+      // fall through to enrollment check
+    }
     const department = coreCourse?.department ?? null;
     if (department !== null) {
       const units = await getAuthorizedUnits(reqUser, cookie);
@@ -79,9 +85,22 @@ export async function resolveAccessForCourse(reqUser, course, { cookie } = {}) {
   }
 
   // Enrollment-based access (C column): only an active enrollment counts.
-  const { enrollments } = await getCourseEnrollmentsFromCore(course.coreCourseId);
-  const mine = (enrollments ?? []).find((e) => e.studentId === reqUser.id && e.isActive);
-  if (!mine) return null;
+  let enrollments = [];
+  try {
+    const data = await getCourseEnrollmentsFromCore(course.coreCourseId, { cookie });
+    enrollments = data?.enrollments ?? [];
+  } catch (err) {
+    // Service key missing or Core unreachable — allow the QM course owner to proceed locally.
+    if (reqUser.id === course.userId) return LEVELS.instructor;
+    return null;
+  }
+
+  const mine = enrollments.find((e) => e.studentId === reqUser.id && e.isActive);
+  if (!mine) {
+    // Linker may not appear in Core roster yet after a fresh link/sync.
+    if (reqUser.id === course.userId) return LEVELS.instructor;
+    return null;
+  }
 
   switch (mine.role) {
     case 'INSTRUCTOR':

@@ -62,6 +62,13 @@ async function handleRequest(request: Request) {
         return validationErrorFromZod(result.error);
       }
 
+      if (result.data.supportsTools && result.data.type !== "CHAT") {
+        return new Response(
+          JSON.stringify({ error: "Only CHAT models can have supportsTools enabled" }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
+
       try {
         const model = await prisma.aIModel.create({
           data: result.data,
@@ -103,6 +110,21 @@ async function handleRequest(request: Request) {
 
       if (!result.success) {
         return validationErrorFromZod(result.error);
+      }
+
+      const existingModel = await prisma.aIModel.findUnique({ where: { id: modelId } });
+      if (!existingModel) {
+        return new Response("Model not found", { status: 404 });
+      }
+
+      const nextType = result.data.type ?? existingModel.type;
+      const nextSupportsTools = result.data.supportsTools ?? existingModel.supportsTools;
+
+      if (nextSupportsTools && nextType !== "CHAT") {
+        return new Response(
+          JSON.stringify({ error: "Only CHAT models can have supportsTools enabled" }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
       }
 
       try {
