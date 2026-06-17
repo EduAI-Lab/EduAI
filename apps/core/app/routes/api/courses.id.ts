@@ -97,7 +97,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
         .json()
         .then((body) => UpdateCourseSchema.safeParse(body))
         .catch(() => null);
-      const changedFields =
+      const requestedFields =
         validated && validated.success ? Object.keys(validated.data) : [];
 
       const response = await updateCourse(request, courseId);
@@ -107,6 +107,19 @@ export async function action({ request, params }: ActionFunctionArgs) {
           .clone()
           .json()
           .catch(() => null);
+        // updateCourse strips instructorId/department for callers below rank 3, so
+        // only report them as changed when the persisted course actually reflects
+        // the requested value — otherwise the audit trail overstates the change.
+        const changedFields =
+          updated && validated && validated.success
+            ? requestedFields.filter((field) => {
+                if (field === "instructorId")
+                  return updated.instructorId === validated.data.instructorId;
+                if (field === "department")
+                  return updated.department === validated.data.department;
+                return true;
+              })
+            : requestedFields;
         fireAndForget(
           logAuditAction({
             ...getActorContext(session?.user ?? null),
