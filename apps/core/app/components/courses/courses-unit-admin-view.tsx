@@ -12,7 +12,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
   Textarea,
 } from '@eduai/ui'
-import { DEPARTMENTS, getDepartmentLabel } from '~/lib/departments'
+import { UNIT_OPTIONS, getDepartmentLabel } from '~/lib/units'
 import { DepartmentCombobox } from '~/components/courses/department-combobox'
 import type { Course, CreateCourseInput, UpdateCourseInput } from '~/hooks/api/use-courses'
 
@@ -34,7 +34,7 @@ interface Props {
 
 // Only show department options that are both canonical and in the user's authorized units
 function useAuthorizedDepts(authorizedUnits: string[]) {
-  return DEPARTMENTS.filter((d) => authorizedUnits.includes(d.code))
+  return UNIT_OPTIONS.filter((d) => authorizedUnits.includes(d.code))
 }
 
 export function CoursesUnitAdminView({ courses, authorizedUnits, instructors = [], onCreateCourse, onEditCourse, onDeleteCourse, onPublishToggle }: Props) {
