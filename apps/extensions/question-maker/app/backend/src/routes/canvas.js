@@ -22,13 +22,11 @@ import {
   importQuizFromCanvas
 } from '../services/canvasService.js';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
+import { CANVAS_ROLES } from '../middleware/roles.js';
 import { requireCourseAccess } from '../middleware/courseAccess.js';
 import { requireAssessmentAccess } from '../middleware/resourceAccess.js';
 
 const router = express.Router();
-
-// Canvas integrations are personal to instructors-and-up; TA/STUDENT have none.
-const CANVAS_ROLES = ['ADMIN', 'UNIT_ADMIN', 'INSTRUCTOR'];
 
 /** GET /api/canvas/integration – returns whether the caller has Canvas configured (own, no key exposed). */
 router.get('/integration', authenticateToken, requireRole(CANVAS_ROLES), async (req, res, next) => {

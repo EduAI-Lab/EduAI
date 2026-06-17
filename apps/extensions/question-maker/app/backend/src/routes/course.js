@@ -5,7 +5,12 @@
 import express from 'express';
 import { Course, Question_Metadata, Topics } from '../schema/index.js';
 import { authenticateToken } from '../middleware/auth.js';
-import { getCourseTopicsFromCore, pushTopicToCore } from '../services/coreApiService.js';
+import {
+  pushTopicToCore,
+  isCoreCourseInScopedList,
+} from '../services/coreApiService.js';
+import { ensureCoreCourseLink } from '../services/coreCourseLinkService.js';
+import { syncTopicsFromCoreForCourse } from '../services/topicSyncService.js';
 import { logger } from '../utils/logger.js';
 
 const router = express.Router();
@@ -216,6 +221,15 @@ router.get('/:id/topics', authenticateToken, async (req, res, next) => {
       });
     }
 
+    const cookie = req.headers.cookie ?? '';
+    if (await ensureCoreCourseLink(course, cookie)) {
+      await course.reload();
+    }
+
+    if (course.coreCourseId) {
+      await syncTopicsFromCoreForCourse(course, cookie);
+    }
+
     const topics = await Topics.findAll({
       where: { courseId: req.params.id },
       order: [['createdAt', 'ASC']]
@@ -297,6 +311,22 @@ router.patch('/:id/link-core', authenticateToken, async (req, res, next) => {
       return res.status(404).json({ success: false, error: 'Course not found' });
     }
 
+    const cookie = req.headers.cookie ?? '';
+    let linkable = false;
+    try {
+      linkable = await isCoreCourseInScopedList(coreCourseId, cookie);
+    } catch (err) {
+      const status = Number.isInteger(err?.status) ? err.status : 502;
+      return res.status(status).json({
+        success: false,
+        error: err.message || 'Failed to verify Core course access',
+      });
+    }
+
+    if (!linkable) {
+      return res.status(403).json({ success: false, error: 'CORE_COURSE_NOT_AUTHORIZED' });
+    }
+
     await course.update({ coreCourseId });
 
     res.json({ success: true, data: course });
@@ -316,35 +346,23 @@ router.post('/:id/sync-topics', authenticateToken, async (req, res, next) => {
       return res.status(404).json({ success: false, error: 'Course not found' });
     }
 
+    const cookie = req.headers.cookie ?? '';
+    if (await ensureCoreCourseLink(course, cookie)) {
+      await course.reload();
+    }
+
     if (!course.coreCourseId) {
       return res.status(400).json({ success: false, error: 'Course is not linked to Core' });
     }
 
-    let coreTopics;
+    let synced;
     try {
-      const data = await getCourseTopicsFromCore(course.coreCourseId);
-      coreTopics = data.topics ?? data;
-    } catch (coreErr) {
-      return res.status(502).json({ success: false, error: coreErr.body?.error || 'Failed to fetch topics from Core' });
-    }
-
-    let synced = 0;
-    for (const ct of coreTopics) {
-      // Try to find existing local topic by Core ID
-      let existing = await Topics.findOne({ where: { coreTopicId: ct.id } });
-      if (existing) {
-        await existing.update({ name: ct.name });
-        synced++;
-      } else {
-        // Try by name+course to avoid duplicate names
-        existing = await Topics.findOne({ where: { courseId: course.id, name: ct.name } });
-        if (existing) {
-          await existing.update({ coreTopicId: ct.id });
-        } else {
-          await Topics.create({ name: ct.name, courseId: course.id, coreTopicId: ct.id });
-        }
-        synced++;
-      }
+      synced = await syncTopicsFromCoreForCourse(course, cookie, { failOnCoreError: true });
+    } catch (err) {
+      return res.status(502).json({
+        success: false,
+        error: err.message || 'Core request failed',
+      });
     }
 
     res.json({ success: true, data: { synced } });

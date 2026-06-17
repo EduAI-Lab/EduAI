@@ -7,7 +7,6 @@ import {
   isLegacyPlaintextStudentId,
   prepareStudentIdStorage,
   readStoredStudentId,
-  rosterSisUserIdMatchFilter,
   studentIdMatchFilter,
 } from "~/lib/canvas/student-id.server";
 
@@ -61,13 +60,6 @@ export async function linkCanvasRoster(
   }
 
   const currentStudentId = readStoredStudentId(user.studentId);
-  if (currentStudentId && currentStudentId !== normalized) {
-    auditLinkAttempt(userId, "failure", "student_id_already_set");
-    throw new LinkRosterError(
-      "Your account already has a student number linked. Contact support to change it.",
-      409,
-    );
-  }
 
   const takenByOther = await prisma.user.findFirst({
     where: {
@@ -85,18 +77,15 @@ export async function linkCanvasRoster(
     );
   }
 
-  const stagingCount = await prisma.canvasRosterMember.count({
-    where: {
-      isActive: true,
-      ...rosterSisUserIdMatchFilter(normalized),
-    },
-  });
-
-  if (stagingCount === 0) {
-    auditLinkAttempt(userId, "failure", "no_staging_match");
+  if (
+    currentStudentId &&
+    currentStudentId !== normalized &&
+    !isLegacyPlaintextStudentId(user.studentId)
+  ) {
+    auditLinkAttempt(userId, "failure", "student_id_reassign_blocked");
     throw new LinkRosterError(
-      "No Canvas enrollments found for this student number. Ask your instructor to sync the course first.",
-      404,
+      "Student number cannot be changed after linking. Contact an administrator.",
+      409,
     );
   }
 

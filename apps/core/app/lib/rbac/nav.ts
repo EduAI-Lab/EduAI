@@ -11,6 +11,7 @@ const ADMIN_NAV: NavItem[] = [
   { key: 'admin-ai', title: 'AI Management', url: '/admin/ai-models' },
   { key: 'admin-bugs', title: 'Bug Reports', url: '/admin/bug-reports' },
   { key: 'admin-chat', title: 'Admin Chatbot', url: '/admin/chat' },
+  { key: 'admin-invites', title: 'Invitations', url: '/admin/invitations' },
 ]
 
 const SETTINGS_NAV: NavItem[] = [

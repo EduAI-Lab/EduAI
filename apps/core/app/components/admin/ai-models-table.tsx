@@ -5,6 +5,8 @@ import { Badge } from "~/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "~/components/ui/table";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "~/components/ui/alert-dialog";
 import { Switch } from "~/components/ui/switch";
+import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
+import { CHAT_TOOLS_TOOLTIP } from "~/lib/ai/tools-help";
 
 type AIProvider = {
   id: string;
@@ -133,9 +135,16 @@ export function AIModelsTable({ models, onEdit, onDelete, onToggleActive }: AIMo
                     </Badge>
                   )}
                   {model.supportsTools && (
-                    <Badge variant="secondary" className="text-xs">
-                      Tools
-                    </Badge>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Badge variant="secondary" className="text-xs cursor-help">
+                          Tools
+                        </Badge>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-xs">
+                        {CHAT_TOOLS_TOOLTIP}
+                      </TooltipContent>
+                    </Tooltip>
                   )}
                   {model.supportsStreaming && (
                     <Badge variant="secondary" className="text-xs">

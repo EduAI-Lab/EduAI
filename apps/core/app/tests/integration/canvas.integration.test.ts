@@ -476,7 +476,7 @@ describe("Canvas API — link-roster", { timeout: 15_000 }, () => {
     await prisma.user.delete({ where: { id: unlinkedStudent.id } });
   });
 
-  it("returns 404 when no staged roster matches the student number", async () => {
+  it("links student number even when no staged roster matches yet", async () => {
     const student = await prisma.user.create({
       data: {
         email: `canvas-no-match-${Date.now()}@test.com`,
@@ -488,7 +488,17 @@ describe("Canvas API — link-roster", { timeout: 15_000 }, () => {
 
     sessionFor(student.id, "STUDENT");
     const res = await call("POST", "link-roster", { studentNumber: "unknown_999" });
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.data.studentId).toBe("unknown_999");
+    expect(body.data.enrollmentsLinked).toBe(0);
+
+    const updatedUser = await prisma.user.findUnique({
+      where: { id: student.id },
+      select: { studentId: true },
+    });
+    expect(readStoredStudentId(updatedUser?.studentId)).toBe("unknown_999");
 
     await prisma.user.delete({ where: { id: student.id } });
   });
@@ -510,6 +520,36 @@ describe("Canvas API — link-roster", { timeout: 15_000 }, () => {
     expect(res.status).toBe(409);
 
     await prisma.user.delete({ where: { id: otherStudent.id } });
+  });
+
+  it("returns 409 when a student attempts to change their linked student number", async () => {
+    await seedSyncedCourseForLinking();
+
+    const initialNumber = `change_src_${Date.now()}`;
+    const prepared = prepareStudentIdStorage(initialNumber);
+    const student = await prisma.user.create({
+      data: {
+        email: `canvas-change-${Date.now()}@test.com`,
+        name: "Change Student",
+        role: "STUDENT",
+        emailVerified: true,
+        studentId: prepared.studentId,
+        studentIdLookup: prepared.studentIdLookup,
+      },
+    });
+
+    sessionFor(student.id, "STUDENT");
+    const res = await call("POST", "link-roster", { studentNumber: "student_2" });
+    expect(res.status).toBe(409);
+
+    const updatedUser = await prisma.user.findUnique({
+      where: { id: student.id },
+      select: { studentId: true },
+    });
+    expect(readStoredStudentId(updatedUser?.studentId)).toBe(initialNumber);
+
+    await prisma.enrollment.deleteMany({ where: { userId: student.id } });
+    await prisma.user.delete({ where: { id: student.id } });
   });
 
   it("returns 401 for unauthenticated link-roster requests", async () => {

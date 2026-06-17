@@ -26,6 +26,14 @@ const db = prisma as unknown as {
   };
 };
 
+const fullRow = {
+  assistDefault: true,
+  lastCourseCode: "COSC 121",
+  motionReduced: true,
+  density: "compact",
+  theme: "dark",
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -36,33 +44,30 @@ describe("getUserPreference (restore on load)", () => {
     await expect(getUserPreference("u1", [])).resolves.toEqual({
       assistDefault: false,
       lastCourseCode: null,
+      motionReduced: false,
+      density: "comfortable",
+      theme: "system",
     });
     expect(db.userPreference.findUnique).toHaveBeenCalledWith({ where: { userId: "u1" } });
   });
 
   it("restores the stored toggle + course from a previous session", async () => {
-    db.userPreference.findUnique.mockResolvedValue({
-      assistDefault: true,
-      lastCourseCode: "COSC 121",
-    });
-    await expect(getUserPreference("u1", ["COSC 121"])).resolves.toEqual({
-      assistDefault: true,
-      lastCourseCode: "COSC 121",
-    });
+    db.userPreference.findUnique.mockResolvedValue(fullRow);
+    await expect(getUserPreference("u1", ["COSC 121"])).resolves.toEqual(fullRow);
   });
 
   it("clears a stale stored course and returns null when it is no longer available", async () => {
     db.userPreference.findUnique.mockResolvedValue({
-      assistDefault: true,
+      ...fullRow,
       lastCourseCode: "BIOL 200",
     });
     db.userPreference.upsert.mockResolvedValue({
-      assistDefault: true,
+      ...fullRow,
       lastCourseCode: null,
     });
 
     await expect(getUserPreference("u1", ["COSC 121", "MATH 100"])).resolves.toEqual({
-      assistDefault: true,
+      ...fullRow,
       lastCourseCode: null,
     });
     expect(db.userPreference.upsert).toHaveBeenCalledWith({
@@ -76,11 +81,17 @@ describe("getUserPreference (restore on load)", () => {
     db.userPreference.findUnique.mockResolvedValue({
       assistDefault: false,
       lastCourseCode: "MATH 100",
+      motionReduced: false,
+      density: "comfortable",
+      theme: "system",
     });
 
     await expect(getUserPreference("u1", ["COSC 121", "MATH 100"])).resolves.toEqual({
       assistDefault: false,
       lastCourseCode: "MATH 100",
+      motionReduced: false,
+      density: "comfortable",
+      theme: "system",
     });
     expect(db.userPreference.upsert).not.toHaveBeenCalled();
   });
@@ -88,22 +99,35 @@ describe("getUserPreference (restore on load)", () => {
 
 describe("saveUserPreference (persist on change)", () => {
   it("upserts scoped to the user's id and returns the stored values", async () => {
-    db.userPreference.upsert.mockResolvedValue({
-      assistDefault: true,
-      lastCourseCode: "MATH 100",
-    });
+    db.userPreference.upsert.mockResolvedValue(fullRow);
 
     const result = await saveUserPreference("u1", {
       assistDefault: true,
       lastCourseCode: "MATH 100",
+      motionReduced: true,
+      density: "compact",
+      theme: "dark",
     });
 
     expect(db.userPreference.upsert).toHaveBeenCalledWith({
       where: { userId: "u1" },
-      create: { userId: "u1", assistDefault: true, lastCourseCode: "MATH 100" },
-      update: { assistDefault: true, lastCourseCode: "MATH 100" },
+      create: {
+        userId: "u1",
+        assistDefault: true,
+        lastCourseCode: "MATH 100",
+        motionReduced: true,
+        density: "compact",
+        theme: "dark",
+      },
+      update: {
+        assistDefault: true,
+        lastCourseCode: "MATH 100",
+        motionReduced: true,
+        density: "compact",
+        theme: "dark",
+      },
     });
-    expect(result).toEqual({ assistDefault: true, lastCourseCode: "MATH 100" });
+    expect(result).toEqual(fullRow);
   });
 });
 

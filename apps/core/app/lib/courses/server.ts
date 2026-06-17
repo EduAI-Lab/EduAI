@@ -19,6 +19,7 @@ import {
   type DeleteCourseTopicInput,
 } from "./schemas";
 
+
 async function parseCreateCourseBody(request: Request) {
   const contentType = request.headers.get("content-type") ?? "";
 
@@ -80,6 +81,39 @@ async function parseCreateCourseBody(request: Request) {
   return { ok: true as const, data: parsed.data };
 }
 
+// ---------------------------------------------------------------------------
+// Per-course RAG settings cache
+//
+// Avoids a DB round-trip on every findRelevantContent call (one per RAG query).
+// TTL defaults to 60 min; tune with COURSE_RAG_SETTINGS_CACHE_TTL_MS.
+// Invalidated explicitly on PATCH /api/courses/:id/rag-settings.
+// ---------------------------------------------------------------------------
+
+type RagSettingsCacheEntry = {
+  value: { ragTopK: number | null; ragSimilarityThreshold: number | null } | null;
+  expiresAt: number;
+};
+
+const ragSettingsCache = new Map<string, RagSettingsCacheEntry>();
+
+const COURSE_RAG_SETTINGS_CACHE_TTL_MS = Math.min(
+  7_200_000, // 2 h ceiling
+  Math.max(5_000, Number(process.env.COURSE_RAG_SETTINGS_CACHE_TTL_MS) || 3_600_000),
+);
+
+/** Remove all entries whose TTL has elapsed. */
+function pruneRagSettingsCache(): void {
+  const now = Date.now();
+  for (const [key, entry] of ragSettingsCache) {
+    if (entry.expiresAt <= now) ragSettingsCache.delete(key);
+  }
+}
+
+/** Drop a single course's entry so the next read fetches fresh data from DB. */
+export function invalidateCourseRagSettingsCache(courseId: string): void {
+  ragSettingsCache.delete(courseId);
+}
+
 /**
  * GET /api/courses — list active courses.
  *
@@ -116,7 +150,22 @@ export async function getCourses(request: Request) {
   const courses = await prisma.course.findMany({
     where: await buildCourseListFilter(session.user),
   });
-  return new Response(JSON.stringify({ courses }), {
+
+  const enrollmentRows = await prisma.enrollment.findMany({
+    where: {
+      userId: session.user.id,
+      isActive: true,
+      courseId: { in: courses.map((course) => course.id) },
+    },
+    select: { courseId: true, role: true },
+  });
+  const roleByCourseId = new Map(enrollmentRows.map((row) => [row.courseId, row.role]));
+  const coursesWithCallerRole = courses.map((course) => ({
+    ...course,
+    callerEnrollmentRole: roleByCourseId.get(course.id) ?? null,
+  }));
+
+  return new Response(JSON.stringify({ courses: coursesWithCallerRole }), {
     status: 200,
     headers: { "Content-Type": "application/json" } as const,
   });
@@ -329,6 +378,76 @@ export async function deleteCourse(request: Request, courseId: string) {
   return new Response(null, { status: 204 });
 }
 
+/**
+ * PATCH /api/courses/:id/publish|unpublish — set published state (§5).
+ * Accepts service key (extensions) or user session (ADMIN / UNIT_ADMIN(D) /
+ * INSTRUCTOR(C) — rank >= 2, same gate as updateCourse).
+ */
+export async function setPublishState(request: Request, courseId: string, publish: boolean) {
+  // Service key path: trusted extensions (AI Tutor) call this with Bearer EDUAI_API_KEY.
+  if (request.headers.get("Authorization")?.startsWith("Bearer ")) {
+    const serviceKeyGuard = await requireServiceKey(request);
+    if (serviceKeyGuard) return serviceKeyGuard;
+
+    const course = await prisma.course.findFirst({
+      where: { id: courseId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!course) {
+      return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" } as const,
+      });
+    }
+
+    const updated = await prisma.course.update({
+      where: { id: courseId },
+      data: { isPublished: publish },
+    });
+    return new Response(JSON.stringify(updated), {
+      status: 200,
+      headers: { "Content-Type": "application/json" } as const,
+    });
+  }
+
+  // User session path (admin UI / direct API access)
+  const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
+  if (apiKeyGuard) return apiKeyGuard;
+
+  const session = apiKeySession ?? (await auth.api.getSession(request));
+  if (!session?.user) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" } as const,
+    });
+  }
+
+  const { course, access } = await resolveCourseAccessWithCourse(session.user, courseId);
+
+  if (!course) {
+    return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
+      status: 404,
+      headers: { "Content-Type": "application/json" } as const,
+    });
+  }
+
+  if (!access || access.rank < 2) {
+    return new Response(JSON.stringify({ error: "Forbidden" }), {
+      status: 403,
+      headers: { "Content-Type": "application/json" } as const,
+    });
+  }
+
+  const updated = await prisma.course.update({
+    where: { id: courseId },
+    data: { isPublished: publish },
+  });
+  return new Response(JSON.stringify(updated), {
+    status: 200,
+    headers: { "Content-Type": "application/json" } as const,
+  });
+}
+
 export async function getCourse(courseId: string) {
   return prisma.course.findFirst({
     where: { id: courseId, deletedAt: null },
@@ -362,6 +481,34 @@ export async function getAccessibleCourseCodes(user: {
     select: { code: true },
   });
   return courses.map((course) => course.code);
+}
+
+/**
+ * Returns only the RAG-tuning fields for a course.
+ * Both fields are nullable — callers should fall back to global defaults when null.
+ *
+ * Results are cached in-memory for COURSE_RAG_SETTINGS_CACHE_TTL_MS (default 60 min)
+ * to avoid a DB round-trip on every RAG query. Call invalidateCourseRagSettingsCache()
+ * after any write to keep the cache consistent.
+ */
+export async function getCourseRagSettings(
+  courseId: string,
+): Promise<{ ragTopK: number | null; ragSimilarityThreshold: number | null } | null> {
+  pruneRagSettingsCache();
+
+  const now = Date.now();
+  const cached = ragSettingsCache.get(courseId);
+  if (cached && cached.expiresAt > now) {
+    return cached.value;
+  }
+
+  const value = await prisma.course.findUnique({
+    where: { id: courseId },
+    select: { ragTopK: true, ragSimilarityThreshold: true },
+  });
+
+  ragSettingsCache.set(courseId, { value, expiresAt: now + COURSE_RAG_SETTINGS_CACHE_TTL_MS });
+  return value;
 }
 
 export async function getCourseTopics(courseId: string) {

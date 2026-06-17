@@ -1,7 +1,7 @@
 import type { Prisma, User } from "@prisma/client";
 import { UserRole } from "@prisma/client";
 import { randomUUID } from "crypto";
-import { streamText } from "ai";
+import { createDataStreamResponse, formatDataStreamPart, streamText } from "ai";
 import {
   createAIProviderRegistry,
   listEnabledRegistryProviders,
@@ -11,12 +11,25 @@ import {
 import {
   capMaxOutputTokensForPrompt,
   estimateTokensFromChars,
+  modelSupportsTools,
   resolveActiveChatModel,
   resolveMaxOutputTokens,
   resolveModelContextWindow,
   ESTIMATED_CHARS_PER_TOKEN,
 } from "~/lib/ai/providers.server";
 import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
+import { needsCourseRag } from "~/lib/ai/chat-intent";
+import {
+  buildChatToolRegistry,
+  buildToolCallingSystemPrompt,
+} from "~/lib/ai/chat-tools";
+import {
+  auditAndMaybeRewrite,
+  buildOverseenAssistantMessagesToPersist,
+  emptyOversightAuditResult,
+  isAdhdOversightEnabled,
+} from "~/lib/ai/adhd-oversight";
+import { resolveAdhdResponseWordCap } from "~/lib/ai/adhd-metrics";
 import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
 import { findRelevantContent } from "~/lib/ai/embedding";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
@@ -25,8 +38,6 @@ import { auth } from "~/lib/auth/server";
 import type { ActionFunctionArgs } from "react-router";
 import {
   buildAdminSystemPrompt,
-  buildLearningAssistantSystemPrompt,
-  buildLearningSystemPrompt,
   chatbotTypeFromMode,
   createChatTools,
   parseChatMode,
@@ -34,6 +45,7 @@ import {
 import prisma from "~/lib/prisma.server";
 import { chatApiDebug, chatApiReject, chatApiTrace } from "~/lib/chat-api-log";
 import { clientApiKeysBodySchema, toUserProviderSettings } from "~/lib/chat-api-keys.schema";
+import { getWebToolsEnabled } from "~/lib/system-config.server";
 import {
   buildCappedRagContextText,
   capToolResultsInMessages,
@@ -48,6 +60,10 @@ import {
 const TOOL_MAX_STEPS = Math.min(
   32,
   Math.max(1, Number(process.env.CHAT_TOOL_MAX_STEPS) || 12),
+);
+const TOOL_MAX_TOKENS = Math.min(
+  128_000,
+  Math.max(1024, Number(process.env.CHAT_TOOL_MAX_OUTPUT_TOKENS) || 32_000),
 );
 
 type GenericMessage = Record<string, any>;
@@ -317,6 +333,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const courseId = typeof body.courseId === "string" ? body.courseId : undefined;
     const courseCode = typeof body.courseCode === "string" ? body.courseCode : undefined;
     const streaming = body.streaming === undefined ? true : Boolean(body.streaming);
+    const forceHybridRag = body.forceHybridRag === true;
     const chatId = typeof body.chatId === "string" ? body.chatId : undefined;
     const chatMode = parseChatMode(body.chatMode);
     const expectedChatbotType = chatbotTypeFromMode(chatMode);
@@ -444,7 +461,7 @@ export async function action({ request }: ActionFunctionArgs) {
           },
         );
       }
-      if (chat.chatbotType !== expectedChatbotType) {
+      if (chat.chatbotType && chat.chatbotType !== expectedChatbotType) {
         return new Response(
           JSON.stringify({
             error: "Chatbot type mismatch",
@@ -558,8 +575,10 @@ export async function action({ request }: ActionFunctionArgs) {
     });
 
     // Cap oversized tool results (#260), then digest older turns when the thread
-    // exceeds the char budget (#259). Final bounds are applied after model lookup.
-    const historyForModel = capToolResultsInMessages(trimmedMessages);
+    // exceeds the char budget (#259). Budget accounting counts tool payloads.
+    let modelMessages = prepareBoundedSessionContext(
+      capToolResultsInMessages(trimmedMessages),
+    );
 
     if (mergedMessages.length === 0) {
       return new Response(
@@ -576,14 +595,11 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     if (!model || typeof apiKeys !== "object" || apiKeys === null) {
-      return chatApiReject(
-        400,
-        { error: "Missing required fields", code: "MISSING_MODEL_OR_API_KEYS" },
+      return new Response(
+        JSON.stringify({ error: "Missing required fields" }),
         {
-          chatMode,
-          chatId: chat?.id ?? null,
-          hasModel: Boolean(model),
-          hasApiKeys: typeof apiKeys === "object" && apiKeys !== null,
+          status: 400,
+          headers: { "Content-Type": "application/json" },
         },
       );
     }
@@ -591,26 +607,28 @@ export async function action({ request }: ActionFunctionArgs) {
     // Validate API keys
     const apiKeysParsed = clientApiKeysBodySchema.safeParse(apiKeys);
     if (!apiKeysParsed.success) {
-      return chatApiReject(
-        400,
-        {
+      return new Response(
+        JSON.stringify({
           error: "Invalid apiKeys",
-          code: "INVALID_API_KEYS",
           details: apiKeysParsed.error.flatten(),
+        }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
         },
-        { chatMode, model, chatId: chat?.id ?? null },
       );
     }
     const parsedModel = parseModelIdentifier(model);
     if (!parsedModel) {
-      return chatApiReject(
-        400,
-        {
+      return new Response(
+        JSON.stringify({
           error:
             'Invalid model id. Use provider:modelId (e.g. vllm:qwen2.5-7b-instruct). Check Admin → AI Models.',
-          code: "INVALID_MODEL_ID",
+        }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
         },
-        { chatMode, model, chatId: chat?.id ?? null },
       );
     }
 
@@ -626,13 +644,14 @@ export async function action({ request }: ActionFunctionArgs) {
           : parsedModel.providerId === "ollama"
             ? "OLLAMA_BASE_URL"
             : "provider API key";
-      return chatApiReject(
-        400,
-        {
+      return new Response(
+        JSON.stringify({
           error: `Provider "${parsedModel.providerId}" is not available on this server. Set ${envHint} in apps/core/.env and restart the dev process.`,
-          code: "PROVIDER_NOT_ENABLED",
+        }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
         },
-        { chatMode, model, providerId: parsedModel.providerId, chatId: chat?.id ?? null },
       );
     }
 
@@ -686,6 +705,13 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
+    await appendMessages(normalizedIncomingMessages);
+
+    const lastUserMessage = [...trimmedMessages].reverse().find((message) => message.role === "user");
+    const userQuestion = extractMessageText(lastUserMessage);
+    const hasCourse = Boolean(effectiveCourseId);
+    const courseRagNeeded = needsCourseRag(userQuestion, hasCourse);
+
     let aiModel;
     try {
       aiModel = registry.languageModel(model);
@@ -708,193 +734,258 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    await appendMessages(normalizedIncomingMessages);
-
-    const rbacUser = {
-      id: actingUser.id,
-      role: actingUser.role,
-    };
-
-    const tools = createChatTools(
-      {
-        user: rbacUser,
-        effectiveCourseId,
-        effectiveCourseCode: courseCode ?? null,
-      },
-      chatMode,
-    );
-
+    const webToolsEnabled = await getWebToolsEnabled();
     const resolvedSystemPrompt = trimmedSystemPrompt ?? chat.systemPrompt ?? null;
 
-    const buildDefaultSystemPrompt = () =>
-      chatMode === "admin"
-        ? buildAdminSystemPrompt({
-            courseCode,
-            effectiveCourseId,
-            customPrompt: resolvedSystemPrompt,
-          })
-        : buildLearningSystemPrompt({ courseCode, customPrompt: resolvedSystemPrompt });
+    let streamConfig;
+    let supportsTools: boolean;
+    let useToolCalling: boolean;
 
-    const buildLearningNonToolSystemPrompt = (citeMaterials: boolean) =>
-      buildLearningAssistantSystemPrompt({
-        courseCode,
-        customPrompt: resolvedSystemPrompt,
-        citeMaterials,
+    if (chatMode === "admin") {
+      const rbacUser = {
+        id: actingUser.id,
+        role: actingUser.role,
+      };
+
+      const tools = createChatTools(
+        {
+          user: rbacUser,
+          effectiveCourseId,
+          effectiveCourseCode: courseCode ?? null,
+        },
+        chatMode,
+      );
+
+      const buildDefaultSystemPrompt = () =>
+        buildAdminSystemPrompt({
+          courseCode,
+          effectiveCourseId,
+          customPrompt: resolvedSystemPrompt,
+        });
+
+      const activeChatModel = await resolveActiveChatModel(model);
+      supportsTools = activeChatModel?.supportsTools ?? false;
+      const contextWindow = resolveModelContextWindow(
+        activeChatModel?.maxTokens,
+        parsedModel.providerId,
+      );
+      const desiredMaxOutput = resolveMaxOutputTokens(
+        activeChatModel?.maxTokens,
+        parsedModel.providerId,
+      );
+
+      const adminSessionBudget =
+        contextWindow <= 32_768
+          ? Math.floor(contextWindow * ESTIMATED_CHARS_PER_TOKEN * 0.42)
+          : undefined;
+
+      modelMessages = prepareBoundedSessionContext(
+        capToolResultsInMessages(trimmedMessages, 3000),
+        adminSessionBudget
+          ? {
+              charBudget: adminSessionBudget,
+              recentCount: 4,
+              digestMaxChars: 3000,
+            }
+          : undefined,
+      );
+
+      chatApiTrace("model capability check", {
+        chatMode,
+        model,
+        supportsTools,
+        contextWindow,
+        desiredMaxOutput,
+        adminSessionBudget: adminSessionBudget ?? null,
+        dbMaxTokens: activeChatModel?.maxTokens ?? null,
+        chatId: chat?.id ?? null,
       });
 
-    // Check if the model supports tool calling
-    const activeChatModel = await resolveActiveChatModel(model);
-    const supportsTools = activeChatModel?.supportsTools ?? false;
-    const contextWindow = resolveModelContextWindow(
-      activeChatModel?.maxTokens,
-      parsedModel.providerId,
-    );
-    const desiredMaxOutput = resolveMaxOutputTokens(
-      activeChatModel?.maxTokens,
-      parsedModel.providerId,
-    );
+      if (!supportsTools) {
+        return chatApiReject(
+          400,
+          {
+            error:
+              "Admin chat requires a model with tool support. Select a tool-capable model in Admin → AI Models.",
+            code: "ADMIN_TOOLS_REQUIRED",
+          },
+          { model, chatId: chat?.id ?? null },
+        );
+      }
 
-    const adminSessionBudget =
-      chatMode === "admin" && contextWindow <= 32_768
-        ? Math.floor(contextWindow * ESTIMATED_CHARS_PER_TOKEN * 0.42)
-        : undefined;
+      useToolCalling = true;
 
-    const modelMessages = prepareBoundedSessionContext(
-      chatMode === "admin"
-        ? capToolResultsInMessages(trimmedMessages, 3000)
-        : historyForModel,
-      adminSessionBudget
-        ? {
-            charBudget: adminSessionBudget,
-            recentCount: 4,
-            digestMaxChars: 3000,
-          }
-        : undefined,
-    );
+      streamConfig = {
+        model: aiModel,
+        messages: modelMessages,
+        temperature: 0.2,
+        maxTokens: desiredMaxOutput,
+        maxSteps: TOOL_MAX_STEPS,
+        tools,
+        toolCallStreaming: streaming && parsedModel.providerId !== "vllm",
+        system: buildDefaultSystemPrompt(),
+      };
 
-    chatApiTrace("model capability check", {
-      chatMode,
-      model,
-      supportsTools,
-      contextWindow,
-      desiredMaxOutput,
-      adminSessionBudget: adminSessionBudget ?? null,
-      dbMaxTokens: activeChatModel?.maxTokens ?? null,
-      chatId: chat?.id ?? null,
-    });
+      const systemChars = typeof streamConfig.system === "string" ? streamConfig.system.length : 0;
+      let messageChars = 0;
+      for (const message of modelMessages) {
+        messageChars += estimateMessageCharsForModel(message);
+      }
+      const estimatedInputTokens = estimateTokensFromChars(systemChars + messageChars);
+      streamConfig.maxTokens = capMaxOutputTokensForPrompt({
+        contextWindow,
+        estimatedInputTokens,
+        desiredMaxOutput,
+      });
 
-    if (chatMode === "admin" && !supportsTools) {
-      return chatApiReject(
-        400,
-        {
-          error: "Admin chat requires a model with tool support. Select a tool-capable model in Admin → AI Models.",
-          code: "ADMIN_TOOLS_REQUIRED",
-        },
-        { model, chatId: chat?.id ?? null },
-      );
-    }
+      chatApiTrace("max output tokens capped", {
+        contextWindow,
+        estimatedInputTokens,
+        desiredMaxOutput,
+        effectiveMaxTokens: streamConfig.maxTokens,
+        systemChars,
+        messageChars,
+      });
+    } else {
+      const tools = buildChatToolRegistry({ effectiveCourseId, webToolsEnabled });
 
-    let streamConfig;
+      supportsTools = await modelSupportsTools(model);
+      useToolCalling = supportsTools && !forceHybridRag;
 
-    if (!supportsTools) {
-      // MODELS WITHOUT TOOL SUPPORT: learning chats may use hybrid RAG; admin never does.
-      if (chatMode === "admin") {
-        streamConfig = {
-          model: aiModel,
-          messages: modelMessages,
-          temperature: 0.6,
-          maxTokens: 8192,
-          system: buildDefaultSystemPrompt(),
-        };
-      } else {
-        const lastUserMessage = [...trimmedMessages].reverse().find((message) => message.role === "user");
-        const userQuestion = extractMessageText(lastUserMessage);
-        const messageContentLower = userQuestion.toLowerCase();
+    if (!useToolCalling) {
+      const hybridRagAlwaysWithCourse = process.env.CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE === "1";
+      const isRAGQuery = hybridRagAlwaysWithCourse ? hasCourse : courseRagNeeded;
 
-        const hybridRagAlwaysWithCourse = process.env.CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE === "1";
-        const isRAGQuery =
-          Boolean(effectiveCourseId) &&
-          (hybridRagAlwaysWithCourse ||
-            messageContentLower.includes("course") ||
-            messageContentLower.includes("material") ||
-            messageContentLower.includes("document") ||
-            messageContentLower.includes("chapter") ||
-            messageContentLower.includes("lecture") ||
-            messageContentLower.includes("assignment") ||
-            messageContentLower.includes("explain") ||
-            messageContentLower.includes("what is") ||
-            messageContentLower.includes("summarize") ||
-            messageContentLower.includes("summary") ||
-            messageContentLower.includes("content") ||
-            messageContentLower.includes("about"));
+      if (isRAGQuery) {
+        try {
+          const relevantContent = await findRelevantContent(
+            userQuestion,
+            effectiveCourseId!,
+            HYBRID_RAG_MAX_CHUNKS,
+          );
+          const contextText =
+            relevantContent.length > 0
+              ? buildCappedRagContextText(
+                  relevantContent,
+                  HYBRID_RAG_MAX_CHUNKS,
+                  HYBRID_RAG_MAX_CONTEXT_CHARS,
+                )
+              : "";
 
-        if (isRAGQuery) {
-          try {
-            const relevantContent = await findRelevantContent(
-              userQuestion || messageContentLower,
-              effectiveCourseId!,
-              HYBRID_RAG_MAX_CHUNKS,
-            );
-            const contextText =
-              relevantContent.length > 0
-                ? buildCappedRagContextText(
-                    relevantContent,
-                    HYBRID_RAG_MAX_CHUNKS,
-                    HYBRID_RAG_MAX_CONTEXT_CHARS,
-                  )
-                : "";
+          const baseSystemPrompt = resolvedSystemPrompt || `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
 
-            const baseSystemPrompt = buildLearningNonToolSystemPrompt(true);
+IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.
 
-            const systemWithRAG = contextText
-              ? `${baseSystemPrompt}
+${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ``}
+
+Always be helpful, accurate, and cite the course materials when using them in your response. Use markdown for formatting.`;
+
+          const systemWithRAG = contextText
+            ? `${baseSystemPrompt}
 
 ${contextText ? `Here are relevant excerpts from the course materials to help answer the user's question:
 
 ${contextText}
 
 Based on this information, provide a comprehensive answer to the user's question. If the provided content doesn't fully answer their question, mention what you can answer based on the available materials and suggest what additional information might be helpful.` : "I don't have access to specific course materials for this question, but I can provide general educational assistance."}`
-              : baseSystemPrompt;
+            : baseSystemPrompt;
 
-            streamConfig = {
-              model: aiModel,
-              messages: modelMessages,
-              temperature: 0.6,
-              maxTokens: 8192,
-              system: systemWithRAG,
-            };
-          } catch (error) {
-            console.error("Error finding relevant content for model without tool support:", error);
-            streamConfig = {
-              model: aiModel,
-              messages: modelMessages,
-              temperature: 0.6,
-              maxTokens: 8192,
-              system: buildLearningNonToolSystemPrompt(false),
-            };
-          }
-        } else {
           streamConfig = {
             model: aiModel,
             messages: modelMessages,
             temperature: 0.6,
             maxTokens: 8192,
-            system: buildLearningNonToolSystemPrompt(false),
+            system: systemWithRAG,
+          };
+        } catch (error) {
+          console.error("Error finding relevant content for model without tool support:", error);
+          const defaultSystemPrompt = resolvedSystemPrompt || `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
+
+IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.
+
+${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ""}
+
+Be helpful, conversational, and accurate. Use markdown for formatting.`;
+
+          streamConfig = {
+            model: aiModel,
+            messages: modelMessages,
+            temperature: 0.6,
+            maxTokens: 8192,
+            system: defaultSystemPrompt,
           };
         }
+      } else {
+        const defaultSystemPrompt = resolvedSystemPrompt || `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
+
+IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.
+
+${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ""}
+
+Be helpful, conversational, and accurate. Use markdown for formatting.`;
+
+        streamConfig = {
+          model: aiModel,
+          messages: modelMessages,
+          temperature: 0.6,
+          maxTokens: 8192,
+          system: defaultSystemPrompt,
+        };
       }
     } else {
+      const baseSystemPrompt = resolvedSystemPrompt || `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
+
+IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.`;
+
+      let preloadedRagContext = "";
+      if (courseRagNeeded && effectiveCourseId) {
+        try {
+          const relevantContent = await findRelevantContent(
+            userQuestion,
+            effectiveCourseId,
+            HYBRID_RAG_MAX_CHUNKS,
+          );
+          preloadedRagContext =
+            relevantContent.length > 0
+              ? buildCappedRagContextText(
+                  relevantContent,
+                  HYBRID_RAG_MAX_CHUNKS,
+                  HYBRID_RAG_MAX_CONTEXT_CHARS,
+                )
+              : "";
+        } catch (error) {
+          console.error("Error pre-loading course context for tool path:", error);
+        }
+      }
+
+      let toolSystemPrompt = buildToolCallingSystemPrompt({
+        basePrompt: baseSystemPrompt,
+        courseCode: courseCode ?? undefined,
+        webToolsEnabled,
+        hasPreloadedRag: Boolean(preloadedRagContext),
+      });
+
+      if (preloadedRagContext) {
+        toolSystemPrompt = `${toolSystemPrompt}
+
+Here are relevant excerpts from the course materials to help answer the user's question:
+
+${preloadedRagContext}
+
+Based on this information, provide a comprehensive answer. Use getInformation only if these excerpts are insufficient.`;
+      }
+
       streamConfig = {
         model: aiModel,
         messages: modelMessages,
-        temperature: chatMode === "admin" ? 0.2 : 0.6,
-        maxTokens: desiredMaxOutput,
+        temperature: 0.6,
+        maxTokens: TOOL_MAX_TOKENS,
         maxSteps: TOOL_MAX_STEPS,
         tools,
-        // vLLM tool-call streaming is unreliable on some served models.
-        toolCallStreaming: streaming && parsedModel.providerId !== "vllm",
-        system: buildDefaultSystemPrompt(),
+        toolCallStreaming: streaming,
+        system: toolSystemPrompt,
       };
+    }
     }
 
     const effectiveAdhdAssist = resolveEffectiveAdhdAssist({
@@ -904,35 +995,26 @@ Based on this information, provide a comprehensive answer to the user's question
     });
     streamConfig.system = composeSystemPrompt(streamConfig.system ?? "", { adhdAssist: effectiveAdhdAssist });
 
-    const systemChars = typeof streamConfig.system === "string" ? streamConfig.system.length : 0;
-    let messageChars = 0;
-    for (const message of modelMessages) {
-      messageChars += estimateMessageCharsForModel(message);
-    }
-    const estimatedInputTokens = estimateTokensFromChars(systemChars + messageChars);
-    const effectiveMaxTokens = capMaxOutputTokensForPrompt({
-      contextWindow,
-      estimatedInputTokens,
-      desiredMaxOutput: supportsTools ? desiredMaxOutput : Math.min(desiredMaxOutput, 8192),
-    });
-    streamConfig.maxTokens = effectiveMaxTokens;
-
-    chatApiTrace("max output tokens capped", {
-      contextWindow,
-      estimatedInputTokens,
-      desiredMaxOutput,
-      effectiveMaxTokens,
-      systemChars,
-      messageChars,
-    });
-
     const streamStartedAt = Date.now();
+    const needsOversight =
+      chatMode !== "admin" && effectiveAdhdAssist && isAdhdOversightEnabled();
+    const lastUserText = extractMessageText(
+      [...trimmedMessages].reverse().find((message) => message.role === "user"),
+    );
+    const adhdWordCap = resolveAdhdResponseWordCap(lastUserText);
+
     const logResponseCompliance = (
       assistantText: string,
       extras?: {
         finishReason?: string | null;
         promptTokens?: number;
         completionTokens?: number;
+        oversightRewritten?: boolean;
+        oversightMethod?: "none" | "deterministic" | "llm" | "llm_failed";
+        preStructuralPass?: boolean;
+        oversightDurationMs?: number;
+        oversightPromptTokens?: number;
+        oversightCompletionTokens?: number;
       },
     ) => {
       const trimmed = assistantText?.trim();
@@ -944,10 +1026,17 @@ Based on this information, provide a comprehensive answer to the user's question
         assistantText: trimmed,
         extras: {
           model,
+          wordCap: adhdWordCap,
           durationMs: Date.now() - streamStartedAt,
           finishReason: extras?.finishReason ?? null,
           promptTokens: extras?.promptTokens,
           completionTokens: extras?.completionTokens,
+          oversightRewritten: extras?.oversightRewritten,
+          oversightMethod: extras?.oversightMethod,
+          preStructuralPass: extras?.preStructuralPass,
+          oversightDurationMs: extras?.oversightDurationMs,
+          oversightPromptTokens: extras?.oversightPromptTokens,
+          oversightCompletionTokens: extras?.oversightCompletionTokens,
         },
       }).catch((err) => {
         console.error("[assistive-events] response_compliance log failed", err);
@@ -957,10 +1046,13 @@ Based on this information, provide a comprehensive answer to the user's question
     // Log the LLM stream configuration
     chatApiDebug("Starting LLM stream", {
       chatMode,
-      supportsTools,
-      providerId: parsedModel.providerId,
       model,
-      approach: supportsTools ? "tool_calling" : "hybrid_rag",
+      supportsTools,
+      courseRagNeeded,
+      webToolsEnabled,
+      forceHybridRag,
+      approach: useToolCalling ? "tool_calling" : "hybrid_rag",
+      adhdOversight: needsOversight,
       ...llmPromptSizeHints(streamConfig.system, modelMessages),
     });
 
@@ -976,31 +1068,157 @@ Based on this information, provide a comprehensive answer to the user's question
     try {
       result = await streamText({
         ...(streamConfig as Parameters<typeof streamText>[0]),
-        onFinish: async ({ text, usage, finishReason }) => {
-          logResponseCompliance(text, {
-            finishReason,
-            promptTokens: usage?.promptTokens,
-            completionTokens: usage?.completionTokens,
-          });
-        },
-        onError: ({ error }) => {
-          logStreamError(error, streamTrace);
-        },
+        onFinish: needsOversight
+          ? undefined
+          : async ({ text, usage, finishReason }) => {
+              logResponseCompliance(text, {
+                finishReason,
+                promptTokens: usage?.promptTokens,
+                completionTokens: usage?.completionTokens,
+              });
+            },
+        onError:
+          chatMode === "admin"
+            ? ({ error }) => {
+                logStreamError(error, streamTrace);
+              }
+            : undefined,
       });
     } catch (error) {
-      logStreamError(error, streamTrace);
-      const hint =
-        chatMode === "admin" && parsedModel.providerId === "vllm"
-          ? " Pick a tool-capable vLLM model registered in Admin → AI Models."
-          : "";
-      return chatApiReject(
-        502,
-        {
-          error: `LLM stream failed: ${formatStreamError(error)}.${hint}`,
-          code: "LLM_STREAM_FAILED",
-        },
-        streamTrace,
-      );
+      if (chatMode === "admin") {
+        logStreamError(error, streamTrace);
+        const hint =
+          parsedModel.providerId === "vllm"
+            ? " Pick a tool-capable vLLM model registered in Admin → AI Models."
+            : "";
+        return chatApiReject(
+          502,
+          {
+            error: `LLM stream failed: ${formatStreamError(error)}.${hint}`,
+            code: "LLM_STREAM_FAILED",
+          },
+          streamTrace,
+        );
+      }
+      throw error;
+    }
+
+    if (needsOversight) {
+      let draft = "";
+      let finalText = "";
+      let usage: Awaited<typeof result.usage> | undefined;
+      let finishReason: Awaited<typeof result.finishReason> | undefined;
+      let sources: Awaited<typeof result.sources> | undefined;
+      let reasoning: Awaited<typeof result.reasoning> | undefined;
+      let response: Awaited<typeof result.response> | undefined;
+
+      try {
+        await result.consumeStream();
+
+        const consumed = await Promise.all([
+          result.text,
+          result.usage,
+          result.finishReason,
+          result.sources,
+          result.reasoning,
+          result.response,
+        ]);
+        const text = consumed[0];
+        usage = consumed[1];
+        finishReason = consumed[2];
+        sources = consumed[3];
+        reasoning = consumed[4];
+        response = consumed[5];
+
+        draft = (text ?? "").trim();
+        const audited = draft
+          ? await auditAndMaybeRewrite({
+              draft,
+              model: aiModel,
+              wordCap: adhdWordCap,
+            })
+          : emptyOversightAuditResult();
+
+        finalText = audited.text || draft;
+        logResponseCompliance(finalText, {
+          finishReason,
+          promptTokens: usage?.promptTokens,
+          completionTokens: usage?.completionTokens,
+          oversightRewritten: audited.rewritten,
+          oversightMethod: audited.method,
+          preStructuralPass: audited.beforeMetrics.structuralPass,
+          oversightDurationMs: audited.oversightDurationMs,
+          oversightPromptTokens: audited.oversightUsage?.promptTokens,
+          oversightCompletionTokens: audited.oversightUsage?.completionTokens,
+        });
+
+        const persistOverseenAssistantMessages = async (text: string) => {
+          const toPersist = buildOverseenAssistantMessagesToPersist(response?.messages, text);
+          if (toPersist.length > 0) {
+            await appendMessages(toPersist);
+          }
+        };
+
+        if (streaming) {
+          const headers: Record<string, string> = {
+            "Content-Encoding": "none",
+            "Transfer-Encoding": "chunked",
+            Connection: "keep-alive",
+          };
+          if (chat?.id) {
+            headers["X-Chat-Id"] = chat.id;
+          }
+          headers["X-Web-Tools-Enabled"] = webToolsEnabled ? "1" : "0";
+
+          await persistOverseenAssistantMessages(finalText);
+
+          return createDataStreamResponse({
+            headers,
+            execute: (dataStream) => {
+              if (finalText) {
+                dataStream.write(formatDataStreamPart("text", finalText));
+              }
+              dataStream.write(
+                formatDataStreamPart("finish_message", {
+                  finishReason: finishReason ?? "stop",
+                }),
+              );
+            },
+          });
+        }
+
+        await persistOverseenAssistantMessages(finalText);
+
+        return new Response(
+          JSON.stringify({
+            content: finalText,
+            model,
+            usage,
+            finishReason,
+            sources: sources || [],
+            reasoning,
+            responseId: response?.id,
+            courseCode,
+            chatId: chat?.id,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      } catch (error) {
+        console.error("Error in ADHD oversight response:", error);
+        return new Response(
+          JSON.stringify({
+            error: "Failed to generate overseen response",
+            details: error instanceof Error ? error.message : "Unknown error",
+          }),
+          {
+            status: 500,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
     }
 
     if (streaming) {
@@ -1012,16 +1230,21 @@ Based on this information, provide a comprehensive answer to the user's question
       if (chat?.id) {
         headers["X-Chat-Id"] = chat.id;
       }
+      headers["X-Web-Tools-Enabled"] = webToolsEnabled ? "1" : "0";
       return result.toDataStreamResponse({
         headers,
-        getErrorMessage: (error) => {
-          logStreamError(error, streamTrace);
-          const base = formatStreamError(error);
-          if (chatMode === "admin" && parsedModel.providerId === "vllm") {
-            return `${base} — Check that the selected model supports tools and that max output tokens fit the vLLM context window.`;
-          }
-          return base;
-        },
+        ...(chatMode === "admin"
+          ? {
+              getErrorMessage: (error) => {
+                logStreamError(error, streamTrace);
+                const base = formatStreamError(error);
+                if (parsedModel.providerId === "vllm") {
+                  return `${base} — Check that the selected model supports tools and that max output tokens fit the vLLM context window.`;
+                }
+                return base;
+              },
+            }
+          : {}),
       });
     } else {
       try {
@@ -1081,7 +1304,10 @@ Based on this information, provide a comprehensive answer to the user's question
       }
     }
   } catch (error) {
-    console.error("[chat-api] unhandled error", error);
-    return chatApiReject(500, { error: "Internal server error", code: "INTERNAL_ERROR" });
+    console.error("Chat API error:", error);
+    return new Response(JSON.stringify({ error: "Internal server error" }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 }

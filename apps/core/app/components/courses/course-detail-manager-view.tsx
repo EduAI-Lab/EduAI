@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { IconTrash, IconPlus, IconUsers, IconCalendar, IconUserCheck, IconArrowsExchange, IconUserPlus } from '@tabler/icons-react'
+import { IconTrash, IconPlus, IconUsers, IconCalendar, IconUserCheck, IconArrowsExchange, IconUserPlus, IconSettings } from '@tabler/icons-react'
 import { Button } from '~/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
 import { Badge } from '~/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs'
 import { Input } from '~/components/ui/input'
+import { Label } from '~/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -35,6 +36,8 @@ interface Props {
   access: CourseAccess
   topics: CourseTopic[]
   enrollments: CourseEnrollment[]
+  enrollmentsLoading?: boolean
+  enrollmentsError?: string | null
   materials: CourseMaterial[]
   tas: CourseTA[]
   instructors: StaffUser[]
@@ -56,6 +59,8 @@ export function CourseDetailManagerView({
   access,
   topics,
   enrollments,
+  enrollmentsLoading = false,
+  enrollmentsError = null,
   materials,
   tas,
   instructors,
@@ -77,8 +82,15 @@ export function CourseDetailManagerView({
   const [selectedInstructorId, setSelectedInstructorId] = useState<string>('')
   const [selectedTAIds, setSelectedTAIds] = useState<Set<string>>(new Set())
   const [addingTAs, setAddingTAs] = useState(false)
+  const [ragTopK, setRagTopK] = useState<string>(course.ragTopK?.toString() ?? '')
+  const [ragThreshold, setRagThreshold] = useState<string>(
+    course.ragSimilarityThreshold?.toString() ?? '',
+  )
+  const [ragSaving, setRagSaving] = useState(false)
+  const [ragSaveMsg, setRagSaveMsg] = useState<string | null>(null)
   const canManage = canManageTopics(access)
   const canManageStaff = canManageInstructors(access)
+  const canManageRagSettings = access === 'admin' || access === 'instructor'
 
   const availableInstructors = instructors.filter((p) => p.id !== course.instructorId)
   const availableTAs = taUsers.filter(
@@ -147,6 +159,33 @@ export function CourseDetailManagerView({
     }
   }
 
+  const saveRagSettings = async () => {
+    if (!courseId) return
+    setRagSaving(true)
+    setRagSaveMsg(null)
+    try {
+      const payload: Record<string, number | null> = {
+        ragTopK: ragTopK === '' ? null : parseInt(ragTopK, 10),
+        ragSimilarityThreshold: ragThreshold === '' ? null : parseFloat(ragThreshold),
+      }
+      const res = await fetch(`/api/courses/${courseId}/rag-settings`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      if (res.ok) {
+        setRagSaveMsg('Saved.')
+      } else {
+        const err = await res.json().catch(() => ({}))
+        setRagSaveMsg(err?.error ?? 'Save failed.')
+      }
+    } catch {
+      setRagSaveMsg('Network error.')
+    } finally {
+      setRagSaving(false)
+    }
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-start justify-between">
@@ -172,6 +211,7 @@ export function CourseDetailManagerView({
           <TabsTrigger value="topics">Topics</TabsTrigger>
           <TabsTrigger value="enrollments">Enrollments</TabsTrigger>
           {canManageStaff && <TabsTrigger value="staff">Staff</TabsTrigger>}
+          {canManageRagSettings && <TabsTrigger value="settings">Settings</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="overview" forceMount className="data-[state=inactive]:hidden flex-1 outline-none">
@@ -258,10 +298,21 @@ export function CourseDetailManagerView({
                 Enrolled Users
               </CardTitle>
             </CardHeader>
-            {enrollments.length === 0 ? (
+            {enrollmentsError && (
+              <p className="text-sm text-destructive" role="alert">
+                {enrollmentsError}
+              </p>
+            )}
+            {enrollmentsLoading ? (
               <Card>
                 <CardContent className="flex items-center justify-center py-8 text-muted-foreground">
-                  No enrollments yet. (Enrollment API pending #305)
+                  Loading enrollments…
+                </CardContent>
+              </Card>
+            ) : enrollments.length === 0 ? (
+              <Card>
+                <CardContent className="flex items-center justify-center py-8 text-muted-foreground">
+                  No enrollments yet.
                 </CardContent>
               </Card>
             ) : (
@@ -272,10 +323,20 @@ export function CourseDetailManagerView({
                       <div>
                         <span className="text-sm font-medium">{e.userName}</span>
                         <span className="text-xs text-muted-foreground ml-2">{e.userEmail}</span>
+                        {e.studentNumber && (
+                          <span className="block text-xs text-muted-foreground mt-1">
+                            Student number: {e.studentNumber}
+                          </span>
+                        )}
                       </div>
-                      <Badge variant={e.role === 'INSTRUCTOR' ? 'default' : 'secondary'}>
-                        {e.role}
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        {!e.isActive && (
+                          <Badge variant="outline">Inactive</Badge>
+                        )}
+                        <Badge variant={e.role === 'INSTRUCTOR' ? 'default' : 'secondary'}>
+                          {e.role}
+                        </Badge>
+                      </div>
                     </CardContent>
                   </Card>
                 ))}
@@ -443,6 +504,75 @@ export function CourseDetailManagerView({
                 )}
               </div>
             </div>
+          </TabsContent>
+        )}
+
+        {canManageRagSettings && (
+          <TabsContent value="settings" forceMount className="data-[state=inactive]:hidden flex-1 outline-none">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <IconSettings className="h-5 w-5" />
+                  RAG Settings
+                </CardTitle>
+                <CardDescription>
+                  Override the global retrieval defaults for this course. Leave a field
+                  blank to use the platform default.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-6 max-w-sm">
+                  <div className="grid gap-2">
+                    <Label htmlFor="ragTopK">
+                      Top-K chunks{' '}
+                      <span className="text-muted-foreground text-xs">(default: 4)</span>
+                    </Label>
+                    <Input
+                      id="ragTopK"
+                      type="number"
+                      min={1}
+                      max={20}
+                      placeholder="e.g. 6"
+                      value={ragTopK}
+                      onChange={(e) => setRagTopK(e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Maximum number of material chunks returned per RAG query (1–20).
+                    </p>
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="ragThreshold">
+                      Similarity threshold{' '}
+                      <span className="text-muted-foreground text-xs">(default: 0.5)</span>
+                    </Label>
+                    <Input
+                      id="ragThreshold"
+                      type="number"
+                      min={0.01}
+                      max={0.99}
+                      step={0.05}
+                      placeholder="e.g. 0.6"
+                      value={ragThreshold}
+                      onChange={(e) => setRagThreshold(e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Minimum cosine similarity score (0–1). Higher values return fewer
+                      but more relevant chunks.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <Button onClick={saveRagSettings} disabled={ragSaving}>
+                      {ragSaving ? 'Saving…' : 'Save settings'}
+                    </Button>
+                    {ragSaveMsg && (
+                      <span className="text-sm text-muted-foreground">{ragSaveMsg}</span>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
         )}
       </Tabs>
