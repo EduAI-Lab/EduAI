@@ -106,7 +106,7 @@ model Course {
   isPublished    Boolean          @default(false)
   startDate      DateTime
   endDate        DateTime?
-  instructorId   String?
+  instructorId   String
   externalId     String?
   externalSource String?
   lastSyncedAt   DateTime?
