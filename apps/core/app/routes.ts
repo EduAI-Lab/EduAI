@@ -46,6 +46,7 @@ export default [
   route("/admin/users", "routes/admin.users.tsx"),
   route("/admin/invitations", "routes/admin.invitations.tsx"),
   route("/admin/bug-reports", "routes/admin.bug-reports.tsx"),
+  route("/admin/settings", "routes/admin.settings.tsx"),
   route("/api/ai-providers/*", "routes/api/ai-providers.$.ts"),
   route("/api/ai-models/*", "routes/api/ai-models.$.ts"),
   route("/api/me", "routes/api/me.ts"),
@@ -58,6 +59,7 @@ export default [
   route("/api/system-config/*", "routes/api/system-config.$.ts"),
   route("/api/vllm-models", "routes/api/vllm-models.ts"),
   route("/api/sessions/validate", "routes/api/sessions.validate.ts"),
+  route("/api/policies", "routes/api/policies.ts"),
   route("/api/bug-reports", "routes/api/bug-reports.ts"),
   route("/api/admin/bug-reports", "routes/api/admin.bug-reports.ts"),
   route(

@@ -7,6 +7,7 @@ import {
   IconReport,
   IconRobot,
   IconSettings,
+  IconShieldLock,
   IconMail,
   IconUsers,
   type Icon,
@@ -43,6 +44,7 @@ const NAV_ICONS: Record<NavItemKey, Icon> = {
   "admin-ai": IconBrain,
   "admin-bugs": IconReport,
   "admin-invites": IconMail,
+  "admin-settings": IconShieldLock,
   settings: IconSettings,
 }
 

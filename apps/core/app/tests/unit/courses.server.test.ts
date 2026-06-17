@@ -29,6 +29,10 @@ vi.mock("~/lib/auth/guards.server", () => ({
   requireServiceKey: vi.fn(),
 }));
 
+vi.mock("~/lib/policy.server", () => ({
+  getPolicy: vi.fn(),
+}));
+
 import {
   getCourse,
   getCourses,
@@ -44,6 +48,7 @@ import {
 } from "~/lib/courses/server";
 import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
+import { getPolicy } from "~/lib/policy.server";
 
 describe("getCourse", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -301,6 +306,8 @@ describe("createCourse", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(enforceAdminIfApiKey).mockResolvedValue({ response: null, session: null });
+    // Default the instructor-create policy OFF; tests that exercise it opt in.
+    vi.mocked(getPolicy).mockResolvedValue(false);
     prismaMock.$transaction.mockImplementation(async (fn: (tx: typeof prismaMock) => Promise<unknown>) => fn(prismaMock));
   });
 
@@ -310,10 +317,35 @@ describe("createCourse", () => {
     expect(res.status).toBe(403);
   });
 
-  it("returns 403 when caller is not ADMIN or UNIT_ADMIN", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } } as any);
+  it("returns 403 when caller is STUDENT/TA", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "STUDENT" } } as any);
     const res = await createCourse(makePostRequest(VALID_COURSE_FIELDS));
     expect(res.status).toBe(403);
+  });
+
+  it("returns 403 when caller is INSTRUCTOR and the create-course policy is disabled", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } } as any);
+    vi.mocked(getPolicy).mockResolvedValue(false);
+    const res = await createCourse(makePostRequest(VALID_COURSE_FIELDS));
+    expect(res.status).toBe(403);
+    expect(getPolicy).toHaveBeenCalledWith("instructors.canCreateCourses");
+  });
+
+  it("returns 201 and auto-enrolls a self-creating INSTRUCTOR when the policy is enabled", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "instr-1", role: "INSTRUCTOR" } } as any);
+    vi.mocked(getPolicy).mockResolvedValue(true);
+    prismaMock.user.findMany.mockResolvedValue([{ id: "instr-1" }]);
+    prismaMock.course.create.mockResolvedValue({ id: "course-1" });
+    prismaMock.enrollment.createMany.mockResolvedValue({ count: 1 });
+
+    // No instructorUserIds supplied — the creator is added automatically.
+    const { instructorUserIds: _omit, ...fieldsWithoutInstructors } = VALID_COURSE_FIELDS;
+    const res = await createCourse(makePostRequest(fieldsWithoutInstructors));
+
+    expect(res.status).toBe(201);
+    expect(prismaMock.enrollment.createMany).toHaveBeenCalledWith({
+      data: [{ courseId: "course-1", userId: "instr-1", role: "INSTRUCTOR", isActive: true }],
+    });
   });
 
   it("returns 403 when UNIT_ADMIN creates outside their authorized units (#298)", async () => {
