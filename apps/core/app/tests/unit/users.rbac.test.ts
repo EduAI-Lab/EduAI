@@ -62,7 +62,7 @@ describe("PATCH /api/users/:id — self guards (#297)", () => {
   it("rejects self-role-change with 403", async () => {
     const res = await action(makePatch("admin-1", { role: "STUDENT" }));
     expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ error: "Cannot change your own role" });
+    expect(await res.json()).toEqual({ error: "CANNOT_CHANGE_OWN_ROLE" });
     expect(prisma.user.update).not.toHaveBeenCalled();
   });
 
@@ -100,9 +100,9 @@ describe("PATCH /api/users/:id — authorizedUnits assignment (#297)", () => {
     );
   });
 
-  it("rejects an invalid subject code with 400 (§19 UnitSchema)", async () => {
+  it("rejects an invalid subject code with 422 (§19 UnitSchema)", async () => {
     const res = await action(makePatch("ua-1", { authorizedUnits: ["cosc"] }));
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
     expect(prisma.user.update).not.toHaveBeenCalled();
   });
 
