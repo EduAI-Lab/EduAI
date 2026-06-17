@@ -4,6 +4,7 @@
   "private": true,
   "packageManager": "npm@11.12.1",
   "workspaces": [
+    "packages/*",
     "apps/*",
     "apps/extensions/*",
     "apps/extensions/ai-tutor/*",
