@@ -257,7 +257,7 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
     setError(null);
     setMessage(null);
     try {
-      await api.syncCourseEnrollments(selectedCourseId);
+      await api.adminSyncCourseEnrollments(selectedCourseId);
       await refreshSelectedCourseEnrollments(selectedCourseId);
       setMessage('Enrollments synced from EduAI.');
     } catch {

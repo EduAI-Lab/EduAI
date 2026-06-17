@@ -348,7 +348,7 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ role }),
     }) as Promise<{ ok: true; role: EnrollmentRole }>,
-  syncCourseEnrollments: (courseId: number) =>
+  adminSyncCourseEnrollments: (courseId: number) =>
     http(`/api/admin/courses/${courseId}/sync-enrollments`, {
       method: 'POST',
     }) as Promise<{ ok: true }>,
