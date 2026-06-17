@@ -325,7 +325,11 @@ async function handleRequest(request: Request) {
             entityId: updated.id,
             entityLabel: updated.name,
             // Field names only — never the changed values (avoids logging PII like email/studentId).
-            details: { changedFields, newRole: result.data.role },
+            // newRole is only meaningful on a role change, so omit it otherwise.
+            details: {
+              changedFields,
+              ...(result.data.role !== undefined ? { newRole: result.data.role } : {}),
+            },
           }),
         );
 
