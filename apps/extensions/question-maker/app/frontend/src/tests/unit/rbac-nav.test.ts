@@ -19,7 +19,8 @@ describe('QM nav RBAC', () => {
     expect(getNavForUser(instructor).some((item) => item.key === 'variants')).toBe(true);
   });
 
-  it('does not include a QM bug reports nav item (triage is in Core)', () => {
-    expect(getNavForUser(admin).some((item) => item.key === 'bug-reports')).toBe(false);
+  it('includes bug reports nav for admin only', () => {
+    expect(getNavForUser(admin).some((item) => item.key === 'bug-reports')).toBe(true);
+    expect(getNavForUser(instructor).some((item) => item.key === 'bug-reports')).toBe(false);
   });
 });

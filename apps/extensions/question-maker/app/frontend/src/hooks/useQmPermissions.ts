@@ -35,6 +35,7 @@ export function useQmPermissions(courseAccess?: QmCourseAccess) {
     canUseVariantWorkflow: permissions.canUseVariantWorkflow(qmUser, access),
     canManageCanvas: permissions.canManageCanvasIntegration(qmUser, access),
     canLinkCourse: permissions.canLinkCourse(qmUser),
+    canTriageBugReports: permissions.canTriageBugReports(qmUser),
     canEditResource: (resource?: { createdBy?: string | null } | null) =>
       qmUser
         ? permissions.canEditDraftVariant(qmUser, access, resource)

@@ -1,11 +1,7 @@
-import { useState } from "react";
 import { Link, redirect, useLoaderData } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 
-import {
-  BugReportsAdminView,
-  type BugReportSourceFilter,
-} from "~/components/admin/bug-reports-admin-view";
+import { BugReportsAdminView } from "~/components/admin/bug-reports-admin-view";
 import { AppSidebar } from "~/components/app-sidebar";
 import { SiteHeader } from "~/components/site-header";
 import { SidebarInset, SidebarProvider } from "@eduai/ui";
@@ -38,10 +34,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 export default function BugReportsPage() {
   const { user } = useLoaderData<typeof loader>();
-  const [sourceFilter, setSourceFilter] = useState<BugReportSourceFilter>("ALL");
-  const { reports, isLoading, updateReportStatus } = useBugReports(
-    sourceFilter === "ALL" ? undefined : sourceFilter,
-  );
+  const { reports, isLoading, updateReportStatus } = useBugReports();
 
   return (
     <SidebarProvider
@@ -76,8 +69,6 @@ export default function BugReportsPage() {
         <BugReportsAdminView
           reports={reports}
           isLoading={isLoading}
-          sourceFilter={sourceFilter}
-          onSourceFilterChange={setSourceFilter}
           onUpdateStatus={updateReportStatus}
         />
       </SidebarInset>

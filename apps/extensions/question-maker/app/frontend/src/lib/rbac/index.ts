@@ -12,6 +12,7 @@ export {
   canManageAssessment,
   canManageCanvasIntegration,
   canRunAiReview,
+  canTriageBugReports,
   canUseVariantWorkflow,
   canViewAssessment,
 } from './permissions';

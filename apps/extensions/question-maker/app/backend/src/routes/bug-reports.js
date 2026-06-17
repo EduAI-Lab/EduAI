@@ -1,10 +1,10 @@
 import express from 'express';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireRole } from '../middleware/auth.js';
 import { config } from '../config/settings.js';
 
 const router = express.Router();
 
-/** POST /api/bug-reports — submit a bug report (any authenticated user). Triage: Core /admin/bug-reports. */
+/** POST /api/bug-reports — submit a bug report (any authenticated user). */
 router.post('/bug-reports', requireAuth, async (req, res) => {
   const serviceKey = config.eduaiApiKey;
   if (!serviceKey) {
@@ -45,6 +45,48 @@ router.post('/bug-reports', requireAuth, async (req, res) => {
     }
 
     return res.status(201).json({ success: true });
+  } catch {
+    return res.status(502).json({ success: false, error: 'Could not reach Core' });
+  }
+});
+
+/** GET /api/admin/bug-reports — ADMIN-only proxy to Core triage API. */
+router.get('/admin/bug-reports', requireAuth, requireRole('ADMIN'), async (req, res) => {
+  try {
+    const url = new URL(`${config.coreUrl}/api/admin/bug-reports`);
+    for (const [key, value] of Object.entries(req.query)) {
+      if (value != null && value !== '') url.searchParams.set(key, String(value));
+    }
+
+    const response = await fetch(url.toString(), {
+      headers: { cookie: req.headers.cookie ?? '' },
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return res.status(response.status).json({ success: false, ...body });
+    }
+    return res.json({ success: true, data: body });
+  } catch {
+    return res.status(502).json({ success: false, error: 'Could not reach Core' });
+  }
+});
+
+/** PATCH /api/admin/bug-reports/:id — ADMIN-only status update via Core. */
+router.patch('/admin/bug-reports/:id', requireAuth, requireRole('ADMIN'), async (req, res) => {
+  try {
+    const response = await fetch(`${config.coreUrl}/api/admin/bug-reports/${req.params.id}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        cookie: req.headers.cookie ?? '',
+      },
+      body: JSON.stringify(req.body ?? {}),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return res.status(response.status).json({ success: false, ...body });
+    }
+    return res.json({ success: true, data: body });
   } catch {
     return res.status(502).json({ success: false, error: 'Could not reach Core' });
   }

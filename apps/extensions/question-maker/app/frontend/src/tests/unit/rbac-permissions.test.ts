@@ -4,6 +4,7 @@ import {
   canCreateQuestion,
   canLinkCourse,
   canManageAssessment,
+  canTriageBugReports,
   canViewAssessment,
   resolvePlatformCourseAccess,
 } from '@/lib/rbac';
@@ -37,6 +38,12 @@ describe('QM RBAC permissions', () => {
     expect(canManageAssessment(unitAdmin)).toBe(true);
     expect(canManageAssessment(instructor)).toBe(true);
     expect(canManageAssessment(instructor, 'ta')).toBe(false);
+  });
+
+  it('allows only ADMIN to triage bug reports', () => {
+    expect(canTriageBugReports(admin)).toBe(true);
+    expect(canTriageBugReports(unitAdmin)).toBe(false);
+    expect(canTriageBugReports(instructor)).toBe(false);
   });
 
   it('denies authoring when course access is null', () => {

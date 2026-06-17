@@ -107,3 +107,7 @@ export function canLinkCourse(user: QmUser | null | undefined): boolean {
   if (!user?.role) return false;
   return user.role === 'ADMIN' || user.role === 'UNIT_ADMIN' || user.role === 'INSTRUCTOR';
 }
+
+export function canTriageBugReports(user: QmUser | null | undefined): boolean {
+  return user?.role === 'ADMIN';
+}

@@ -381,7 +381,7 @@ export const HelpPage = () => {
                         <li>Use “Report bug” (floating button) or the bug icon in top navigation.</li>
                         <li>Describe the issue and optionally submit anonymously.</li>
                         <li>The app automatically captures recent console/network diagnostics and a screenshot to help triage.</li>
-                        <li>Admins triage all platform reports in EduAI Core → Admin → Bug reports (filter by source: Core, Question Maker, AI Tutor).</li>
+                        <li>Admin users can open “Bug reports” in the top navigation to review reports and update status (unhandled, in progress, resolved).</li>
                     </ul>
                 </section>
 
