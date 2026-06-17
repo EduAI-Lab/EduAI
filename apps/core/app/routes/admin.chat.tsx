@@ -69,21 +69,13 @@ export default function AdminChatPage() {
   const [selectedModel, setSelectedModel] = useState(
     chatModels.length > 0 ? chatModels[0].id : "",
   );
-  const [selectedCourseCode, setSelectedCourseCode] = useState<string | null>(
-    availableCourses[0]?.code ?? null,
-  );
+  const [selectedCourseCode, setSelectedCourseCode] = useState<string | null>(null);
   const selectedCourse = availableCourses.find((c) => c.code === selectedCourseCode) ?? null;
   const [chatId, setChatId] = useState<string | null>(null);
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
   const [adhdAssist, setAdhdAssist] = useState(false);
   const { getValidApiKeys } = useApiKeys();
   const { setAssistive } = useAssistiveUi();
-
-  useEffect(() => {
-    if (!selectedCourseCode && availableCourses.length > 0) {
-      setSelectedCourseCode(availableCourses[0].code);
-    }
-  }, [availableCourses, selectedCourseCode]);
 
   useEffect(() => {
     if (!chatId || systemPrompt) {

@@ -10,8 +10,11 @@ const ADMIN_NAV: NavItem[] = [
   { key: 'admin-users', title: 'User Management', url: '/admin/users' },
   { key: 'admin-ai', title: 'AI Management', url: '/admin/ai-models' },
   { key: 'admin-bugs', title: 'Bug Reports', url: '/admin/bug-reports' },
-  { key: 'admin-chat', title: 'Admin Chatbot', url: '/admin/chat' },
   { key: 'admin-invites', title: 'Invitations', url: '/admin/invitations' },
+]
+
+const ADMIN_SECONDARY_NAV: NavItem[] = [
+  { key: 'admin-chat', title: 'Admin Chatbot', url: '/admin/chat' },
 ]
 
 const SETTINGS_NAV: NavItem[] = [
@@ -36,7 +39,11 @@ export function usesGlobalChat(user: NavUser): boolean {
   return role === 'ADMIN' || role === 'UNIT_ADMIN'
 }
 
-/** Secondary sidebar links (Settings — all roles §12). */
-export function getNavSecondaryForUser(_user: NavUser): NavItem[] {
+/** Secondary sidebar links — Admin Chatbot (ADMIN only) above Settings (§12). */
+export function getNavSecondaryForUser(user: NavUser): NavItem[] {
+  const role = user.role ?? 'STUDENT'
+  if (role === 'ADMIN') {
+    return [...ADMIN_SECONDARY_NAV, ...SETTINGS_NAV]
+  }
   return SETTINGS_NAV
 }

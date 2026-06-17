@@ -83,10 +83,10 @@ export function buildAdminSystemPrompt({
   }
 
   const courseContext = effectiveCourseId && courseCode
-    ? `Selected course for enrollment tools: ${courseCode} (courseId: ${effectiveCourseId}). listCourseEnrollments will default to this course.`
+    ? `Optional UI course hint: ${courseCode} (courseId: ${effectiveCourseId}). Course-scoped tools still require courseId or courseCode in the tool call unless this hint applies.`
     : courseCode
-      ? `Selected course code: ${courseCode}. Call listCourseEnrollments with courseCode if needed.`
-      : "No course selected — pass courseId or courseCode to listCourseEnrollments.";
+      ? `Optional UI course hint: ${courseCode}. Pass courseId or courseCode to course-scoped tools.`
+      : "No course selected — admin chat is platform-wide. Pass courseId or courseCode to course-scoped tools (listCourseEnrollments, enrollment writes).";
 
   return `You are EduAI Admin Assistant for platform administrators at UBC Okanagan (UBCO).
 
