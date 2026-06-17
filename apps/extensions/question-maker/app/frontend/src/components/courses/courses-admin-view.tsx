@@ -1,9 +1,12 @@
 import { QmRoleBanner } from '@/components/rbac/QmRoleBanner';
+import { useAuth } from '@/contexts/AuthContext';
 import { CoursesGrid, type CoursesGridProps } from './CoursesGrid';
 
-type CoursesAdminViewProps = Omit<CoursesGridProps, 'emptyHint' | 'showAddCourse'>;
+type CoursesAdminViewProps = Omit<CoursesGridProps, 'emptyHint' | 'showAddCourse' | 'roleView' | 'currentUserId'>;
 
 export function CoursesAdminView(props: CoursesAdminViewProps) {
+  const { user } = useAuth();
+
   return (
     <div className="max-w-4xl mx-auto px-6 py-8 space-y-6">
       <QmRoleBanner variant="admin" />
@@ -16,6 +19,8 @@ export function CoursesAdminView(props: CoursesAdminViewProps) {
       <CoursesGrid
         {...props}
         showDepartment
+        roleView="admin"
+        currentUserId={user?.id}
         emptyHint="No courses linked yet. Add a course to start authoring."
       />
     </div>

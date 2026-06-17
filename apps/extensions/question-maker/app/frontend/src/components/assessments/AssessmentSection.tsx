@@ -9,6 +9,7 @@ import {
 import { Button, Card, CardContent, CardHeader, CardTitle, Badge, ScrollArea } from '@eduai/ui';
 import { Tooltip } from '@/components/ui/tooltip';
 import { PermissionGate } from '@/components/rbac/PermissionGate';
+import { CourseNoAccessAlert } from '@/components/rbac/CourseNoAccessAlert';
 import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
 import {
     Plus,
@@ -241,6 +242,9 @@ export const AssessmentSection = ({
 
     return (
         <div className="space-y-6">
+            {selectedCourseId && !accessLoading && !hasCourseAccess && (
+                <CourseNoAccessAlert onGoToCourses={() => navigate('/courses')} />
+            )}
             <div className="flex justify-between items-center">
                 <div>
                     <h2 className="text-2xl font-bold text-foreground">Assessments</h2>

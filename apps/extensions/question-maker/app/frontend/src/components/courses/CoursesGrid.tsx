@@ -1,5 +1,7 @@
 import { Card, CardContent } from '@eduai/ui';
 import { Tooltip } from '@/components/ui/tooltip';
+import { CourseAccessBadge } from '@/components/courses/CourseAccessBadge';
+import type { QmRoleView } from '@/lib/rbac';
 import { GraduationCap, Plus } from 'lucide-react';
 import { Course } from '@/types/question';
 
@@ -11,6 +13,8 @@ export type CoursesGridProps = {
   showAddCourse?: boolean;
   emptyHint?: string;
   showDepartment?: boolean;
+  roleView?: QmRoleView;
+  currentUserId?: string;
 };
 
 export function CoursesGrid({
@@ -21,6 +25,8 @@ export function CoursesGrid({
   showAddCourse = true,
   emptyHint,
   showDepartment = false,
+  roleView,
+  currentUserId,
 }: CoursesGridProps) {
   return (
     <>
@@ -66,6 +72,11 @@ export function CoursesGrid({
                     Unit: <span className="font-medium text-foreground">{course.department}</span>
                   </p>
                 )}
+                <CourseAccessBadge
+                  course={course}
+                  roleView={roleView}
+                  currentUserId={currentUserId}
+                />
                 <p className="text-xs text-muted-foreground/80 mt-2">Click to open</p>
               </CardContent>
             </Card>

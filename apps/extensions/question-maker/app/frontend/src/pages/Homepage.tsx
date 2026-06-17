@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { QuestionBank } from '../components/question-bank/QuestionBank';
 import { QmHomeShell } from '../components/home/QmHomeShell';
+import { CourseNoAccessAlert } from '@/components/rbac/CourseNoAccessAlert';
 import { useQmPermissionsForCourse } from '../hooks/useQmPermissions';
 import { AssessmentSection } from '../components/assessments/AssessmentSection';
 import { QuestionDetailView } from '../components/question-detail/QuestionDetailView';
@@ -832,16 +833,7 @@ export const Homepage = () => {
   return (
     <QmHomeShell>
       {selectedCourse && !accessLoading && !hasCourseAccess && (
-        <div
-          role="alert"
-          className="rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-        >
-          You do not have access to this course. Choose a course from the list or return to{' '}
-          <button type="button" className="underline" onClick={() => navigate('/courses')}>
-            course selection
-          </button>
-          .
-        </div>
+        <CourseNoAccessAlert onGoToCourses={() => navigate('/courses')} />
       )}
       <div className="flex flex-wrap items-center gap-4">
         <Select

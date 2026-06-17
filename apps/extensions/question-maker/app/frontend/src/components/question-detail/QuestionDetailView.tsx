@@ -10,7 +10,7 @@ import { Button, Badge, Label, Textarea, Switch } from '@eduai/ui';
 import { useToast } from '@/components/ui/use-toast';
 import { PermissionGate } from '@/components/rbac/PermissionGate';
 import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
-import { getAiTutorUrl } from '@/lib/coreUrl';
+import { getAiTutorInstructorUrl } from '@/lib/coreUrl';
 import { X, Copy, Trash2, ArrowLeft, Sparkles, FileEdit, Pencil, ExternalLink } from 'lucide-react';
 import { QuestionVariantEntry, MCQChoice, QuestionType, QuestionDifficulty } from '../../types/question';
 import { Topic } from '../../types/topic';
@@ -119,6 +119,7 @@ export const QuestionDetailView = ({
     const [editDifficulty, setEditDifficulty] = useState<QuestionDifficulty>('medium');
     const [topics, setTopics] = useState<Topic[]>([]);
     const [topicsLoading, setTopicsLoading] = useState(false);
+    const [coreCourseId, setCoreCourseId] = useState<string | null>(null);
     const [savingMetadata, setSavingMetadata] = useState(false);
     const { toast } = useToast();
     const {
@@ -136,6 +137,25 @@ export const QuestionDetailView = ({
     useEffect(() => {
         setIsTestable(entry.variant.testable ?? false);
     }, [entry.variant.id, entry.variant.testable]);
+
+    useEffect(() => {
+        if (!entry.courseId) {
+            setCoreCourseId(null);
+            return;
+        }
+        let cancelled = false;
+        courseService
+            .getCourse(entry.courseId)
+            .then((course) => {
+                if (!cancelled) setCoreCourseId(course.coreCourseId ?? null);
+            })
+            .catch(() => {
+                if (!cancelled) setCoreCourseId(null);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [entry.courseId]);
 
     useEffect(() => {
         if (!entry.courseId) return;
@@ -340,7 +360,11 @@ export const QuestionDetailView = ({
     };
 
     const handleOpenAiTutor = () => {
-        window.open(getAiTutorUrl(), '_blank', 'noopener,noreferrer');
+        window.open(
+            getAiTutorInstructorUrl({ coreCourseId }),
+            '_blank',
+            'noopener,noreferrer',
+        );
     };
 
     useEffect(() => {
