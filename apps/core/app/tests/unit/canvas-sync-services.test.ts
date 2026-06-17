@@ -6,6 +6,7 @@ import {
   normalizeStudentId,
 } from "~/lib/canvas/enrollment-link.server";
 import { SyncCanvasCoursesSchema } from "~/lib/canvas/schemas";
+import { ubcTermFromDate } from "~/lib/canvas/term.server";
 
 describe("normalizeStudentId", () => {
   it("trims whitespace", () => {
@@ -25,6 +26,21 @@ describe("normalizeRosterEmail", () => {
   });
 });
 
+describe("ubcTermFromDate", () => {
+  it.each([
+    ["2026-09-15T12:00:00Z", "W1"],
+    ["2026-12-15T12:00:00Z", "W1"],
+    ["2026-01-15T12:00:00Z", "W2"],
+    ["2026-04-15T12:00:00Z", "W2"],
+    ["2026-05-15T12:00:00Z", "S1"],
+    ["2026-06-15T12:00:00Z", "S1"],
+    ["2026-07-15T12:00:00Z", "S2"],
+    ["2026-08-15T12:00:00Z", "S2"],
+  ] as const)("maps %s to %s", (isoDate, term) => {
+    expect(ubcTermFromDate(new Date(isoDate))).toBe(term);
+  });
+});
+
 describe("mapCanvasCourseToCoreFields", () => {
   it("maps Canvas course fields with defaults", () => {
     const mapped = mapCanvasCourseToCoreFields({
@@ -39,6 +55,7 @@ describe("mapCanvasCourseToCoreFields", () => {
     expect(mapped.externalSource).toBe("canvas");
     expect(mapped.code).toBe("COSC 101");
     expect(mapped.section).toBe("001");
+    expect(mapped.term).toBe("W2");
     expect(mapped.year).toBe(2026);
     expect(mapped.endDate).toEqual(new Date("2026-04-30T23:59:59Z"));
   });

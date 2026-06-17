@@ -195,8 +195,10 @@ Each section should use this format:
 | `courses.server.test.ts` | `getCourses` (role-scoped via `buildCourseListFilter`), `createCourse` (incl. UNIT_ADMIN department lock), `updateCourse` (rank gating, UNIT_ADMIN can't move a course outside their units), `deleteCourse` soft-delete, `getCourse`, `getCourseTopics`, `getCourseTopic`, `deleteCourseTopic`, and `setPublishState` (service-key path with `requireServiceKey` guard, session path with rank-gating, 404 for missing course, 400 for missing id, and correct `isPublished` toggling for both publish and unpublish). |
 | `canvas-student-id.test.ts` | `User.studentId` encrypt/decrypt round-trip, `prepareStudentIdStorage`, `prepareRosterSisUserIdStorage` (shared HMAC lookup with roster), `rosterSisUserIdMatchFilter`, and legacy plaintext passthrough. |
 | `canvas-schemas.test.ts` | `ConnectCanvasSchema`, `SyncCanvasCoursesSchema`, and `LinkRosterSchema` validation (canvasUrl normalization, apiKey/test mode rules, empty sync selection, student number trim). |
-| `canvas-sync-services.test.ts` | `normalizeStudentId`, `normalizeRosterEmail`, `mapCanvasCourseToCoreFields`, `SyncCanvasCoursesSchema` coercion, and test-mode `listTeacherCanvasCourses`. |
+| `canvas-sync-services.test.ts` | `normalizeStudentId`, `normalizeRosterEmail`, `ubcTermFromDate` (UBC W1/W2/S1/S2 month boundaries), `mapCanvasCourseToCoreFields`, `SyncCanvasCoursesSchema` coercion, and test-mode `listTeacherCanvasCourses`. |
 | `canvas-sync-delta.test.ts` | `computeCanvasSyncDelta` check/uncheck logic: newly checked courses, omitted courses unsynced, empty selection unsyncs all. |
+| `canvas-materials.server.test.ts` | Canvas material discover/import service — file listing, import status mapping, create/update `CourseMaterial`, and embedding handoff with mocked Canvas + Prisma. |
+| `CanvasMaterialSyncDialog.test.tsx` | Canvas material sync dialog — loads discover results, file selection, sync API call, and success/error toasts. |
 | `canvas-enrollment-link.test.ts` | `linkEnrollmentsFromStagingForCourse` and `resolveCanvasEnrollmentsForUser` with mocked Prisma: matching `studentId` upserts enrollments (including encrypted roster `sisUserId` at rest with `isActive: true` on re-sync), no staging rows returns zero, missing `studentId` skips linking. |
 | `canvas-onboarding.test.ts` | `userNeedsStudentIdOnboarding` returns true for STUDENT/TA without a linked student number and false once linked or for other roles. |
 | `CanvasCourseSyncDialog.test.tsx` | Canvas sync dialog: loads course picker, toggles checkboxes, calls sync API, and shows sync result summary including roster counts and errors. |
@@ -317,6 +319,7 @@ Each section should use this format:
 | `eduaiClient.publishState.test.js` | `setCoreCoursePublishState`: throws when `EDUAI_API_KEY` is not set, calls `PATCH /courses/:id/publish` with Bearer service-key auth, calls `PATCH /courses/:id/unpublish` when `publish` is false, throws with the Core HTTP status on non-2xx responses (403, 404). |
 | `eduaiClient.testableQuestions.test.js` | `listCourseTestableQuestions` fetches a course's testable questions from Core with the service key and maps/handles the response and error cases |
 | `enrollmentSync.test.js` | `syncCourseEnrollments` — early-return guards, STUDENT-only active filter (#578), create/update sync from Core, TA rows preserved on delete when absent from Core STUDENT list, and error propagation |
+| `importTaughtCoursesService.test.js` | `importTaughtCoursesFromCore` and `importEnrolledCoursesFromCore` — instructor mirror skips non-teaching roles, imports unlinked offerings, syncs `isPublished` on linked courses; student mirror upserts enrollments and prunes stale EDUAI links |
 
 ---
 
@@ -362,7 +365,7 @@ Each section should use this format:
 | `coreApiService.test.js` | Core HTTP client — topics, questions, enrollments, profile, and scoped `listCoursesFromCore` / `isCoreCourseInScopedList` / `findScopedCoreCourseByCode` (#578) with cookie-only auth (no service-key fallback on stale session), enrollment reads preferring service key, and cookie forwarding on topics |
 | `coreWiringService.test.js` | `pushVariantToCore` maps variant payloads to Core, lowercases enum values, handles CUID topic ids, and surfaces `INVALID_TOPIC_IDS` |
 | `courseCodeUtils.test.js` | `normalizeCourseCode` lowercases and strips whitespace; returns empty string for null/blank input |
-| `importTaughtCoursesService.test.js` | `importTaughtCoursesFromCore` — skips non-instructor roles, imports unlinked Core courses with Practice Exam + topic sync, links existing local rows by code instead of duplicating, and filters to teaching enrollment roles (`INSTRUCTOR`/`TA`) |
+| `importTaughtCoursesService.test.js` | `importTaughtCoursesFromCore` — skips non-instructor roles, imports unlinked Core courses with Practice Exam + topic sync, links existing local rows by code instead of duplicating, filters to teaching enrollment roles (`INSTRUCTOR`/`TA`), and resyncs topics on mirror |
 | `topicSyncService.test.js` | `syncTopicsFromCoreForCourse` — no-op when unlinked, batched `findAll` upsert (create, link-by-name, rename-by-core-id), skip when `coreTopicId` belongs to another course, and `failOnCoreError` rethrow |
 | `eduaiService.test.js` | `EduAIService` (axios mocked): `chat` success/timeout/unreachable/reset/HTTP-error paths, `generateQuestions` parsing/normalization (MCQ choices, answer-letter, topic dedupe, error envelopes, retries), `listCourses`/`getCourseTopics`/`listAIModels` success and error handling, `testApiKey` outcomes |
 | `encryption.test.js` | Encrypted values round-trip back to the original string, and edge cases like empty input are handled without errors |
