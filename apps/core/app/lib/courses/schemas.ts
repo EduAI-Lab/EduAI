@@ -14,7 +14,7 @@ export const CreateCourseSchema = z.object({
   year: z.number().int(),
   startDate: z.coerce.date(),
   endDate: z.coerce.date().optional(),
-  // §19: department writes are validated against the canonical subject codes
+  // §19: department is required and must be a canonical subject code
   department: UnitSchema,
   description: z.string().optional(),
   isPublished: z.coerce.boolean().optional().default(false),
@@ -37,6 +37,24 @@ export const UpdateCourseSchema = z.object({
   aiInstructions: z.string().optional(),
   instructorId: z.string().min(1).optional(),
 });
+
+export const UpdateCourseRagSettingsSchema = z.object({
+  ragTopK: z
+    .number()
+    .int()
+    .min(1, "ragTopK must be at least 1")
+    .max(20, "ragTopK must be at most 20")
+    .nullable()
+    .optional(),
+  ragSimilarityThreshold: z
+    .number()
+    .gt(0, "ragSimilarityThreshold must be > 0")
+    .lt(1, "ragSimilarityThreshold must be < 1")
+    .nullable()
+    .optional(),
+});
+
+export type UpdateCourseRagSettingsInput = z.infer<typeof UpdateCourseRagSettingsSchema>;
 
 export const AddTASchema = z.object({
   userId: z.string().min(1, "User ID is required"),

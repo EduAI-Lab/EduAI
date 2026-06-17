@@ -3,7 +3,11 @@ import { describe, it, expect } from "vitest";
 import {
   computeAdhdResponseMetrics,
   isStructuralCompliancePass,
+  resolveAdhdResponseWordCap,
   withStructuralPass,
+  ADHD_CLARIFICATION_WORD_CAP,
+  ADHD_CLARIFICATION_USER_WORD_THRESHOLD,
+  ADHD_TUTORING_WORD_CAP,
 } from "~/lib/ai/adhd-metrics";
 
 describe("computeAdhdResponseMetrics", () => {
@@ -20,7 +24,7 @@ describe("computeAdhdResponseMetrics", () => {
     expect(isStructuralCompliancePass(metrics)).toBe(true);
   });
 
-  it("fails when Next? is inline but not in the last three lines as a marked block", () => {
+  it("fails when Next? anchor lacks bold markers", () => {
     const text = `Gradient descent is like walking down a hill.
 
 Next? Want to know more?`;
@@ -46,5 +50,21 @@ Next? Want to know more?`;
       oneTopic: null,
     });
     expect(metrics.structuralPass).toBe(true);
+  });
+});
+
+describe("resolveAdhdResponseWordCap", () => {
+  it("uses clarification cap for short follow-up turns", () => {
+    const short = Array(ADHD_CLARIFICATION_USER_WORD_THRESHOLD).fill("word").join(" ");
+    expect(resolveAdhdResponseWordCap(short)).toBe(ADHD_CLARIFICATION_WORD_CAP);
+  });
+
+  it("uses tutoring cap for longer user turns", () => {
+    const long = Array(ADHD_CLARIFICATION_USER_WORD_THRESHOLD + 1).fill("word").join(" ");
+    expect(resolveAdhdResponseWordCap(long)).toBe(ADHD_TUTORING_WORD_CAP);
+  });
+
+  it("treats ≤20-word user turns as clarification context per policy §3 heuristic", () => {
+    expect(ADHD_CLARIFICATION_USER_WORD_THRESHOLD).toBe(20);
   });
 });

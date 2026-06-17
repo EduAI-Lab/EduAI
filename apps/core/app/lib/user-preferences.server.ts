@@ -1,15 +1,31 @@
 import prisma from "~/lib/prisma.server";
-import { resolveSelectedCourse, type PreferenceUpdates } from "~/lib/user-preferences";
+import {
+  DEFAULT_ACCOUNT_PREFERENCES,
+  resolveSelectedCourse,
+  type AccountPreferences,
+  type PreferenceUpdates,
+} from "~/lib/user-preferences";
+import { isUiDensity, isUiTheme } from "~/lib/ui-preferences";
 
-export type ChatPreferences = {
+export type ChatPreferences = AccountPreferences;
+
+const DEFAULT_PREFERENCES: ChatPreferences = DEFAULT_ACCOUNT_PREFERENCES;
+
+function rowToPreferences(row: {
   assistDefault: boolean;
   lastCourseCode: string | null;
-};
-
-const DEFAULT_PREFERENCES: ChatPreferences = {
-  assistDefault: false,
-  lastCourseCode: null,
-};
+  motionReduced: boolean;
+  density: string;
+  theme: string;
+}): ChatPreferences {
+  return {
+    assistDefault: row.assistDefault,
+    lastCourseCode: row.lastCourseCode,
+    motionReduced: row.motionReduced,
+    density: isUiDensity(row.density) ? row.density : DEFAULT_PREFERENCES.density,
+    theme: isUiTheme(row.theme) ? row.theme : DEFAULT_PREFERENCES.theme,
+  };
+}
 
 /**
  * Reads a user's chat preferences, falling back to defaults when unset.
@@ -25,10 +41,7 @@ export async function getUserPreference(
     return DEFAULT_PREFERENCES;
   }
 
-  const prefs: ChatPreferences = {
-    assistDefault: row.assistDefault,
-    lastCourseCode: row.lastCourseCode,
-  };
+  const prefs = rowToPreferences(row);
 
   if (
     prefs.lastCourseCode &&
@@ -50,10 +63,7 @@ export async function saveUserPreference(
     create: { userId, ...updates },
     update: updates,
   });
-  return {
-    assistDefault: row.assistDefault,
-    lastCourseCode: row.lastCourseCode,
-  };
+  return rowToPreferences(row);
 }
 
 /** Removes a user's stored chat preferences (used on logout). */

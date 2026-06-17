@@ -40,7 +40,9 @@ model User {
   createdTopics     CourseTopic[]          @relation("TopicCreator")
   canvasIntegration         CanvasIntegration?
   syncedCanvasRosterMembers CanvasRosterMember[]
-  taughtCourses             Course[]           @relation("CourseInstructor")
+  invitationsSent           Invitation[]         @relation("InvitationsSent")
+  invitationAccepted        Invitation[]         @relation("InvitationAccepted")
+  taughtCourses             Course[]             @relation("CourseInstructor")
   courseTAs                 CourseTA[]
 
   @@map("user")
@@ -112,15 +114,19 @@ model Course {
   deletedAt      DateTime?
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
-  aiInstructions String           @default("")
-  instructor     User?            @relation("CourseInstructor", fields: [instructorId], references: [id])
+  aiInstructions         String           @default("")
+  /// Per-course RAG chunk limit. Overrides the global HYBRID_RAG_MAX_CHUNKS when set.
+  ragTopK                Int?
+  /// Per-course cosine-similarity threshold (0–1). Overrides RAG_SIMILARITY_THRESHOLD env when set.
+  ragSimilarityThreshold Float?
+  instructor             User?            @relation("CourseInstructor", fields: [instructorId], references: [id])
   /// Per-course override: `local` | `ollama` | `cloud`; null uses server env.
-  embeddingProvider    String?
+  embeddingProvider      String?
   /// Per-course model id (Ollama or OpenRouter/OpenAI); null uses server default for provider.
-  embeddingModel       String?
-  lastEmbeddedAt       DateTime?
-  embeddedWithProvider String?
-  embeddedWithModel    String?
+  embeddingModel         String?
+  lastEmbeddedAt         DateTime?
+  embeddedWithProvider   String?
+  embeddedWithModel      String?
   aiInteractions AIInteraction[]
   enrollments    Enrollment[]
   tas                 CourseTA[]
@@ -292,6 +298,9 @@ model UserPreference {
   userId         String   @unique
   assistDefault  Boolean  @default(false)
   lastCourseCode String?
+  motionReduced  Boolean  @default(false)
+  density        String   @default("comfortable")
+  theme          String   @default("system")
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -570,6 +579,40 @@ enum EnrollmentRole {
   STUDENT
   TA
   INSTRUCTOR
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+}
+
+/// Admin-issued invitation to onboard a privileged, non-self-serve platform
+/// user (ADMIN / UNIT_ADMIN / INSTRUCTOR). The invitee follows a tokenized
+/// link, sets a password, and gets a real account with the invited role.
+model Invitation {
+  id              String           @id @default(cuid())
+  email           String
+  name            String?
+  role            UserRole
+  authorizedUnits String[]         @default([])
+  /// sha256 of the raw token; the raw token only ever lives in the email link.
+  tokenHash       String           @unique
+  status          InvitationStatus @default(PENDING)
+  /// Null when the inviting admin's account has since been deleted.
+  invitedById     String?
+  invitedBy       User?            @relation("InvitationsSent", fields: [invitedById], references: [id], onDelete: SetNull)
+  /// Null until accepted; cleared if the accepted account is later deleted.
+  acceptedUserId  String?
+  acceptedUser    User?            @relation("InvitationAccepted", fields: [acceptedUserId], references: [id], onDelete: SetNull)
+  expiresAt       DateTime
+  acceptedAt      DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([email])
+  @@index([status])
+  @@map("invitations")
 }
 
 enum QuestionType {

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { IconFilter, IconPlus, IconSearch } from "@tabler/icons-react";
 
 import { AIModelsTable } from "~/components/admin/ai-models-table";
@@ -8,6 +8,7 @@ import { ProvidersTable } from "~/components/admin/providers-table";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
+import { Label } from "~/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -15,6 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "~/components/ui/select";
+import { Switch } from "~/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import type { AIModel, AIProvider } from "~/hooks/api/types";
 import type { OllamaModel, VllmModel } from "~/components/admin/model-form-dialog";
@@ -70,6 +72,40 @@ export function AiModelsAdminView({
   const [fetchingVllmModels, setFetchingVllmModels] = useState(false);
   const [vllmError, setVllmError] = useState<string | null>(null);
   const [vllmFetched, setVllmFetched] = useState(false);
+  const [webToolsEnabled, setWebToolsEnabled] = useState(false);
+  const [savingWebTools, setSavingWebTools] = useState(false);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await fetch("/api/system-config/webToolsEnabled");
+        if (response.ok) {
+          const data = await response.json();
+          setWebToolsEnabled(Boolean(data.webToolsEnabled));
+        }
+      } catch (err) {
+        console.error("Failed to fetch webToolsEnabled:", err);
+      }
+    })();
+  }, []);
+
+  const handleWebToolsToggle = useCallback(async (enabled: boolean) => {
+    setSavingWebTools(true);
+    try {
+      const response = await fetch("/api/system-config/webToolsEnabled", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ webToolsEnabled: enabled }),
+      });
+      if (response.ok) {
+        setWebToolsEnabled(enabled);
+      }
+    } catch (err) {
+      console.error("Failed to update webToolsEnabled:", err);
+    } finally {
+      setSavingWebTools(false);
+    }
+  }, []);
 
   const handleFetchOllamaModels = useCallback(async () => {
     setFetchingOllamaModels(true);
@@ -244,6 +280,7 @@ export function AiModelsAdminView({
               <TabsList>
                 <TabsTrigger value="models">Models</TabsTrigger>
                 <TabsTrigger value="providers">Providers</TabsTrigger>
+                <TabsTrigger value="settings">Settings</TabsTrigger>
               </TabsList>
 
               <TabsContent value="models" className="space-y-4">
@@ -342,6 +379,36 @@ export function AiModelsAdminView({
                       onDelete={handleDeleteProvider}
                       onToggleActive={handleToggleProvider}
                     />
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="settings" className="space-y-4">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Chat tool settings</CardTitle>
+                    <CardDescription>
+                      Control which tools are registered on the chat API tool path. Course RAG via
+                      getInformation is always available for tool-capable models.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
+                      <div className="space-y-1">
+                        <Label htmlFor="webToolsEnabled">Web search tools</Label>
+                        <p className="text-sm text-muted-foreground">
+                          When enabled, webSearch and fetchPage are registered alongside
+                          getInformation. Default is off for lower latency during ADHD and
+                          course-RAG research.
+                        </p>
+                      </div>
+                      <Switch
+                        id="webToolsEnabled"
+                        checked={webToolsEnabled}
+                        disabled={savingWebTools}
+                        onCheckedChange={handleWebToolsToggle}
+                      />
+                    </div>
                   </CardContent>
                 </Card>
               </TabsContent>
