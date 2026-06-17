@@ -45,6 +45,31 @@ export async function importExternalCourseForUser(instructor, externalCourse) {
   });
 
   if (alreadyImported) {
+    // Ensure the instructor is linked to the existing course (handles seeded courses
+    // and courses already imported by another user).
+    await prisma.courseInstructor.upsert({
+      where: {
+        userId_courseOfferingId: {
+          userId: instructor.id,
+          courseOfferingId: alreadyImported.id,
+        },
+      },
+      create: { courseOfferingId: alreadyImported.id, userId: instructor.id, role: 'LEAD' },
+      update: {},
+    });
+
+    // Backfill department so UNIT_ADMIN scoping works when course was seeded without it.
+    if (
+      !alreadyImported.department &&
+      typeof externalCourse.department === 'string' &&
+      externalCourse.department.trim()
+    ) {
+      await prisma.courseOffering.update({
+        where: { id: alreadyImported.id },
+        data: { department: externalCourse.department.trim() },
+      });
+    }
+
     return { offering: alreadyImported, created: false };
   }
 

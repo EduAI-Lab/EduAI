@@ -10,7 +10,7 @@ import api from '~/lib/api';
 import { requireClientUser } from '~/lib/client-auth';
 
 export async function clientLoader(_: Route.ClientLoaderArgs) {
-  await requireClientUser('STUDENT');
+  await requireClientUser(['STUDENT', 'TA']);
   const courses = (await api.listCourses()) as Course[];
   return { courses };
 }

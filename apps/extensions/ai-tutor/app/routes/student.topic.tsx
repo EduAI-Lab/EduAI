@@ -16,7 +16,7 @@ import api from '~/lib/api';
 import { requireClientUser } from '~/lib/client-auth';
 
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
-  await requireClientUser('STUDENT');
+  await requireClientUser(['STUDENT', 'TA']);
   const moduleId = Number(params.moduleId);
   if (!Number.isFinite(moduleId)) {
     throw new Response('Invalid module id', { status: 400 });
