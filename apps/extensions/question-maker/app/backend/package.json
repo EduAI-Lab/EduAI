@@ -19,6 +19,7 @@
     "test:ocr": "node scripts/testOcrExtraction.js"
   },
   "dependencies": {
+    "@eduai/types": "*",
     "@paralleldrive/cuid2": "^2.2.2",
     "axios": "^1.13.1",
     "bcryptjs": "^2.4.3",
