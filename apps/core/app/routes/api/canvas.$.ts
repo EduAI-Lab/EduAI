@@ -65,6 +65,9 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
         actionCode: "CANVAS_ACCESS_DENIED",
         outcome: "DENIED",
         entityType: "Canvas",
+        entityId: userId,
+        entityLabel: session.user.email ?? null,
+        ...(session.user.email ? { details: { email: session.user.email } } : {}),
       }),
     );
     return json({ success: false, error: "Forbidden: instructors only" }, 403);
@@ -151,6 +154,9 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
                 actionCode: "RATE_LIMIT_EXCEEDED",
                 outcome: "DENIED",
                 entityType: "Canvas",
+                entityId: userId,
+                entityLabel: session.user.email ?? null,
+                ...(session.user.email ? { details: { email: session.user.email } } : {}),
               }),
             );
             return json(

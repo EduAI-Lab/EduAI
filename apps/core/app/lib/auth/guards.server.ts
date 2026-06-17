@@ -50,6 +50,9 @@ export async function enforceAdminIfApiKey(request: Request): Promise<GuardResul
         actionCode: "API_KEY_DENIED",
         outcome: "DENIED",
         entityType: "Auth",
+        entityId: session?.user?.id ?? null,
+        entityLabel: session?.user?.email ?? null,
+        ...(session?.user?.email ? { details: { email: session.user.email } } : {}),
       }),
     );
     return {
@@ -94,6 +97,9 @@ export async function requireAdmin(request: Request): Promise<AdminGate> {
           actionCode: "ADMIN_ACCESS_DENIED",
           outcome: "DENIED",
           entityType: "Auth",
+          entityId: resolved?.user?.id ?? null,
+          entityLabel: resolved?.user?.email ?? null,
+          ...(resolved?.user?.email ? { details: { email: resolved.user.email } } : {}),
         }),
       );
     }

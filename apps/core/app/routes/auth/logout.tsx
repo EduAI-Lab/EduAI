@@ -37,6 +37,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const headers = new Headers();
   appendAuthSetCookies(response, headers);
 
+  const actorEmail = session?.user?.email ?? null;
   fireAndForget(
     logSecurityEvent({
       ...getActorContext(session?.user ?? null),
@@ -44,6 +45,9 @@ export async function action({ request }: ActionFunctionArgs) {
       actionCode: "LOGOUT",
       outcome: "SUCCESS",
       entityType: "Auth",
+      entityId: session?.user?.id ?? null,
+      entityLabel: actorEmail,
+      details: actorEmail ? { email: actorEmail } : undefined,
     }),
   );
 

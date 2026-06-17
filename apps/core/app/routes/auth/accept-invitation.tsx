@@ -80,8 +80,12 @@ export async function action({ request }: ActionFunctionArgs) {
       category: "INVITATION",
       entityType: "Invitation",
       entityId: result.invitationId,
-      entityLabel: result.user.role,
-      details: { role: result.user.role, acceptedUserId: result.user.id },
+      entityLabel: result.user.email,
+      details: {
+        role: result.user.role,
+        email: result.user.email,
+        acceptedUserId: result.user.id,
+      },
     }),
   );
 

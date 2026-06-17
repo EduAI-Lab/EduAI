@@ -27,7 +27,7 @@ async function handleRequest(request: Request) {
   const requestContext = getRequestContext(request);
 
   // Records an admin-only access rejection so security triage can spot probing of the user API.
-  const logAdminDenied = (actor: { id: string; role?: string | null } | null) =>
+  const logAdminDenied = (actor: { id: string; role?: string | null; email?: string | null } | null) =>
     fireAndForget(
       logSecurityEvent({
         ...getActorContext(actor),
@@ -35,6 +35,9 @@ async function handleRequest(request: Request) {
         actionCode: "ADMIN_ACCESS_DENIED",
         outcome: "DENIED",
         entityType: "User",
+        entityId: actor?.id ?? null,
+        entityLabel: actor?.email ?? null,
+        ...(actor?.email ? { details: { email: actor.email } } : {}),
       }),
     );
 
@@ -156,7 +159,7 @@ async function handleRequest(request: Request) {
             entityType: "User",
             entityId: created.id,
             entityLabel: created.name,
-            details: { role: created.role },
+            details: { role: created.role, email: created.email },
           }),
         );
 
@@ -324,9 +327,11 @@ async function handleRequest(request: Request) {
             entityType: "User",
             entityId: updated.id,
             entityLabel: updated.name,
-            // Field names only — never the changed values (avoids logging PII like email/studentId).
-            // newRole is only meaningful on a role change, so omit it otherwise.
+            // Identify the affected account by email; log changed field *names* (not
+            // their values, which may carry other PII like studentId). newRole is only
+            // meaningful on a role change, so omit it otherwise.
             details: {
+              email: updated.email,
               changedFields,
               ...(result.data.role !== undefined ? { newRole: result.data.role } : {}),
             },
@@ -380,8 +385,11 @@ async function handleRequest(request: Request) {
       }
 
       try {
-        await prisma.user.delete({
+        // Capture identifying fields before the row is gone so the audit entry
+        // names the deleted account rather than only its id.
+        const deleted = await prisma.user.delete({
           where: { id: userId },
+          select: { id: true, name: true, email: true },
         });
 
         fireAndForget(
@@ -391,7 +399,9 @@ async function handleRequest(request: Request) {
             actionCode: "USER_DELETED",
             category: "USER",
             entityType: "User",
-            entityId: userId,
+            entityId: deleted.id,
+            entityLabel: deleted.name,
+            details: { email: deleted.email },
           }),
         );
 
