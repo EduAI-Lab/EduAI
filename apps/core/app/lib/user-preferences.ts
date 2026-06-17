@@ -1,6 +1,31 @@
+import {
+  DEFAULT_UI_PREFERENCES,
+  isUiDensity,
+  isUiTheme,
+  type UiDensity,
+  type UiTheme,
+} from "~/lib/ui-preferences";
+
 export type PreferenceUpdates = {
   assistDefault?: boolean;
   lastCourseCode?: string | null;
+  motionReduced?: boolean;
+  density?: UiDensity;
+  theme?: UiTheme;
+};
+
+export type AccountPreferences = {
+  assistDefault: boolean;
+  lastCourseCode: string | null;
+  motionReduced: boolean;
+  density: UiDensity;
+  theme: UiTheme;
+};
+
+export const DEFAULT_ACCOUNT_PREFERENCES: AccountPreferences = {
+  assistDefault: false,
+  lastCourseCode: null,
+  ...DEFAULT_UI_PREFERENCES,
 };
 
 /**
@@ -22,6 +47,18 @@ export function parsePreferenceUpdates(payload: unknown): PreferenceUpdates {
     updates.lastCourseCode = trimmed.length > 0 ? trimmed : null;
   } else if (obj.lastCourseCode === null) {
     updates.lastCourseCode = null;
+  }
+
+  if (typeof obj.motionReduced === "boolean") {
+    updates.motionReduced = obj.motionReduced;
+  }
+
+  if (isUiDensity(obj.density)) {
+    updates.density = obj.density;
+  }
+
+  if (isUiTheme(obj.theme)) {
+    updates.theme = obj.theme;
   }
 
   return updates;

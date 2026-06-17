@@ -9,6 +9,7 @@ export const EduAiCourseSchema = z
     term: z.string().nullable().optional(),
     year: z.number().nullable().optional(),
     isActive: z.boolean().nullable().optional(),
+    isPublished: z.boolean().nullable().optional(),
     aiInstructions: z.string().nullable().optional(),
   })
   .passthrough();

@@ -51,11 +51,21 @@ describe("Assistive preference round-trip", () => {
 
     const res = await loader(getArgs());
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ assistDefault: false, lastCourseCode: null });
+    expect(await res.json()).toEqual({
+      assistDefault: false,
+      lastCourseCode: null,
+      motionReduced: false,
+      density: "comfortable",
+      theme: "system",
+    });
 
-    // Root loader (drives data-assistive) also reports OFF
     const root = await rootLoader(getArgs("/"));
-    expect(root).toEqual({ assistive: false });
+    expect(root).toEqual({
+      assistive: false,
+      motionReduced: false,
+      density: "comfortable",
+      theme: "system",
+    });
   });
 
   it("PATCH ON persists, survives re-read, and flips the root loader", async () => {
@@ -74,7 +84,12 @@ describe("Assistive preference round-trip", () => {
     // GET reads it back; root loader now reports ON
     const res = await loader(getArgs());
     expect((await res.json()).assistDefault).toBe(true);
-    expect(await rootLoader(getArgs("/"))).toEqual({ assistive: true });
+    expect(await rootLoader(getArgs("/"))).toEqual({
+      assistive: true,
+      motionReduced: false,
+      density: "comfortable",
+      theme: "system",
+    });
   });
 
   it("PATCH OFF returns the account to baseline", async () => {
@@ -87,7 +102,12 @@ describe("Assistive preference round-trip", () => {
 
     const row = await prisma.userPreference.findUnique({ where: { userId: user.id } });
     expect(row?.assistDefault).toBe(false);
-    expect(await rootLoader(getArgs("/"))).toEqual({ assistive: false });
+    expect(await rootLoader(getArgs("/"))).toEqual({
+      assistive: false,
+      motionReduced: false,
+      density: "comfortable",
+      theme: "system",
+    });
   });
 
   it("preference is per-account: one user's toggle does not leak to another", async () => {
@@ -101,12 +121,22 @@ describe("Assistive preference round-trip", () => {
     mockSession(userOff);
     const res = await loader(getArgs());
     expect((await res.json()).assistDefault).toBe(false);
-    expect(await rootLoader(getArgs("/"))).toEqual({ assistive: false });
+    expect(await rootLoader(getArgs("/"))).toEqual({
+      assistive: false,
+      motionReduced: false,
+      density: "comfortable",
+      theme: "system",
+    });
   });
 
   it("guests always get baseline from the root loader", async () => {
     mockSession(null);
-    expect(await rootLoader(getArgs("/"))).toEqual({ assistive: false });
+    expect(await rootLoader(getArgs("/"))).toEqual({
+      assistive: false,
+      motionReduced: false,
+      density: "comfortable",
+      theme: "system",
+    });
 
     const res = await loader(getArgs());
     expect(res.status).toBe(401);
@@ -121,6 +151,35 @@ describe("Assistive preference round-trip", () => {
     await action(patchArgs({ assistDefault: true }));
 
     const res = await loader(getArgs());
-    expect(await res.json()).toEqual({ assistDefault: true, lastCourseCode: "COSC 111" });
+    expect(await res.json()).toEqual({
+      assistDefault: true,
+      lastCourseCode: "COSC 111",
+      motionReduced: false,
+      density: "comfortable",
+      theme: "system",
+    });
+  });
+
+  it("persists motion, density, and theme through GET and the root loader", async () => {
+    const user = await seedUser();
+    createdUserIds.push(user.id);
+    mockSession(user);
+
+    const patched = await action(
+      patchArgs({ motionReduced: true, density: "compact", theme: "dark" }),
+    );
+    expect(patched.status).toBe(200);
+
+    const row = await prisma.userPreference.findUnique({ where: { userId: user.id } });
+    expect(row?.motionReduced).toBe(true);
+    expect(row?.density).toBe("compact");
+    expect(row?.theme).toBe("dark");
+
+    expect(await rootLoader(getArgs("/"))).toEqual({
+      assistive: false,
+      motionReduced: true,
+      density: "compact",
+      theme: "dark",
+    });
   });
 });
