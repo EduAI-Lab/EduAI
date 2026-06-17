@@ -222,15 +222,34 @@ router.post('/courses/import-external', requireRole(['INSTRUCTOR', 'UNIT_ADMIN',
       return res.status(403).json({ error: 'CORE_COURSE_NOT_AUTHORIZED' });
     }
 
-    const alreadyImported = await prisma.courseOffering.findFirst({
-      where: {
-        externalId: externalCourseId,
-        instructors: { some: { userId: instructor.id } },
-      },
+    // Check by coreOfferingId (unique) first — catches seeded courses and courses
+    // already imported by another instructor before trying to create a new row.
+    const existingByCoreId = await prisma.courseOffering.findUnique({
+      where: { coreOfferingId: externalCourseId },
+      include: { instructors: { select: { userId: true } } },
     });
 
-    if (alreadyImported) {
-      return res.status(409).json({ error: 'Course already imported' });
+    if (existingByCoreId) {
+      const alreadyInstructor = existingByCoreId.instructors.some((i) => i.userId === instructor.id);
+      if (alreadyInstructor) {
+        return res.status(409).json({ error: 'Course already imported' });
+      }
+      // Link this instructor to the existing course so they can manage it.
+      await prisma.courseInstructor.create({
+        data: { courseOfferingId: existingByCoreId.id, userId: instructor.id, role: 'LEAD' },
+      });
+      // Backfill department if missing (needed for UNIT_ADMIN scoping).
+      if (
+        !existingByCoreId.department &&
+        typeof externalCourse.department === 'string' &&
+        externalCourse.department.trim()
+      ) {
+        await prisma.courseOffering.update({
+          where: { id: existingByCoreId.id },
+          data: { department: externalCourse.department.trim() },
+        });
+      }
+      return res.status(200).json(mapCourseOffering(existingByCoreId));
     }
 
     const titleParts = [

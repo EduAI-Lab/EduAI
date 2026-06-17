@@ -186,6 +186,12 @@ type CourseFixture = {
   isPublished: boolean;
   /** Core CUID — this offering imports from this Core course. */
   coreCourseId: string;
+  /** Department code matching Core (used for UNIT_ADMIN scoping). */
+  department: string;
+  /** Core CUID of the primary instructor (mirrors Core seed). */
+  instructorId: string;
+  /** Core CUIDs of students to enroll (subset of seed students). */
+  studentIds: string[];
   /** Maps topic slug → Core topic CUID (same slugs Core seeds). */
   topics: { slug: string; name: string; coreTopicSlug: string }[];
   modules: ModuleFixture[];
@@ -200,6 +206,9 @@ const COURSE_FIXTURES: CourseFixture[] = [
     endDate: new Date('2026-12-12'),
     isPublished: true,
     coreCourseId: CORE.courses.cosc101,
+    department: 'COSC',
+    instructorId: CORE.users.instructorCS,
+    studentIds: [CORE.users.student1, CORE.users.student2, CORE.users.student3],
     topics: [
       { slug: 'computational_thinking', name: 'Computational Thinking', coreTopicSlug: 'computational_thinking' },
       { slug: 'digital_literacy', name: 'Digital Literacy', coreTopicSlug: 'digital_literacy' },
@@ -276,6 +285,9 @@ const COURSE_FIXTURES: CourseFixture[] = [
     endDate: new Date('2026-04-24'),
     isPublished: true,
     coreCourseId: CORE.courses.cosc121,
+    department: 'COSC',
+    instructorId: CORE.users.instructorCS,
+    studentIds: [CORE.users.student1, CORE.users.student2, CORE.users.student4, CORE.users.student5],
     topics: [
       { slug: 'oop', name: 'Object-Oriented Design', coreTopicSlug: 'oop' },
       { slug: 'ds_fundamentals', name: 'Data Structures Fundamentals', coreTopicSlug: 'ds_fundamentals' },
@@ -364,6 +376,9 @@ const COURSE_FIXTURES: CourseFixture[] = [
     endDate: new Date('2026-12-12'),
     isPublished: true,
     coreCourseId: CORE.courses.math200,
+    department: 'MATH',
+    instructorId: CORE.users.instructorMath,
+    studentIds: [CORE.users.student3, CORE.users.student4, CORE.users.student5],
     topics: [
       { slug: 'partials', name: 'Partial Derivatives', coreTopicSlug: 'partials' },
       { slug: 'multiple_integrals', name: 'Multiple Integrals', coreTopicSlug: 'multiple_integrals' },
@@ -487,8 +502,9 @@ async function seedCourses(promptTemplateIds: Record<string, number>) {
           endDate: course.endDate,
           isPublished: course.isPublished,
           externalId: course.coreCourseId,
-          externalSource: 'core',
+          externalSource: 'EDUAI',
           coreOfferingId: course.coreCourseId,
+          department: course.department,
         },
       });
     } else {
@@ -500,9 +516,36 @@ async function seedCourses(promptTemplateIds: Record<string, number>) {
           endDate: course.endDate,
           isPublished: course.isPublished,
           externalId: course.coreCourseId,
-          externalSource: 'core',
+          externalSource: 'EDUAI',
           coreOfferingId: course.coreCourseId,
+          department: course.department,
         },
+      });
+    }
+
+    // Upsert the primary instructor link so they can manage the course.
+    await prisma.courseInstructor.upsert({
+      where: {
+        userId_courseOfferingId: {
+          userId: course.instructorId,
+          courseOfferingId: offering.id,
+        },
+      },
+      create: { courseOfferingId: offering.id, userId: course.instructorId, role: 'LEAD' },
+      update: {},
+    });
+
+    // Upsert student enrollments so the student shell shows these courses.
+    for (const studentId of course.studentIds) {
+      await prisma.courseEnrollment.upsert({
+        where: {
+          courseOfferingId_userId: {
+            courseOfferingId: offering.id,
+            userId: studentId,
+          },
+        },
+        create: { courseOfferingId: offering.id, userId: studentId, role: 'STUDENT' },
+        update: {},
       });
     }
 
