@@ -23,8 +23,10 @@ COPY apps/extensions/question-maker/app/frontend/package.json ./apps/extensions/
 
 RUN npm ci --ignore-scripts \
      && npm run build -w @eduai/types \
+     && mkdir -p apps/extensions/question-maker/app/backend/node_modules/@eduai \
+     && ln -s /app/packages/types apps/extensions/question-maker/app/backend/node_modules/@eduai/types \
      && cd apps/extensions/question-maker/app/backend \
-     && npm install --ignore-scripts --no-package-lock
+     && npm install --ignore-scripts --no-package-lock --workspaces=false
 
 # ── Target: test ───────────────────────────────────────────────────────────
 FROM node:20-alpine AS test
