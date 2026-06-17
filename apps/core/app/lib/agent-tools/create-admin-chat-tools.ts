@@ -36,11 +36,15 @@ const courseScope = {
   courseId: z
     .string()
     .optional()
-    .describe("Course id (CUID); required for enrollment tools when no courseCode is given"),
+    .describe(
+      "Course id (CUID); omit when admin UI has a course selected or courseCode is known",
+    ),
   courseCode: z
     .string()
     .optional()
-    .describe("Course code; required for enrollment tools when no courseId is given"),
+    .describe(
+      "Course code; omit when admin UI has a course selected — tool defaults to UI selection",
+    ),
 };
 
 const userRef = {
@@ -80,7 +84,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
 
     listCourseEnrollments: tool({
       description:
-        "List enrollments for a course from the database. Filter by enrolledAt window for time-range questions.",
+        "List users enrolled in a course (roster). Defaults to the course selected in the admin UI when courseId/courseCode are omitted. Filter by enrolledAt window for time-range questions.",
       parameters: z.object({
         ...courseScope,
         enrolledSince: z
@@ -117,7 +121,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
 
     listUsers: tool({
       description:
-        "List platform users from the database (ADMIN only). Returns id, email, name, role, active status.",
+        "List all platform users (ADMIN only) — not filtered by course. For users in a specific course, use listCourseEnrollments instead.",
       parameters: z.object({
         limit: z.number().int().min(1).max(200).optional(),
       }),

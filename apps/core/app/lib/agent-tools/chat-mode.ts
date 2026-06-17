@@ -73,20 +73,39 @@ type AdminPromptOptions = PromptOptions & {
   effectiveCourseId?: string | null;
 };
 
+/** Course selection block appended to every admin system prompt (including custom overrides). */
+export function formatAdminCourseContext(
+  courseCode?: string | null,
+  effectiveCourseId?: string | null,
+): string {
+  if (effectiveCourseId && courseCode) {
+    return `SELECTED COURSE (admin UI dropdown): ${courseCode} (courseId: ${effectiveCourseId}).
+When the admin refers to "this course", "the selected course", or asks for users/enrollments in the course, call listCourseEnrollments immediately — omit courseId/courseCode and the tool uses this selection.
+listUsers lists all platform accounts, not course rosters. For members of this course, use listCourseEnrollments.
+Do NOT ask the admin for course id or code while a course is selected in the UI.`;
+  }
+
+  if (courseCode) {
+    return `SELECTED COURSE (admin UI dropdown): ${courseCode}.
+When the admin refers to "this course" or "the selected course", call listCourseEnrollments with courseCode "${courseCode}" (or omit courseId/courseCode if the tool accepts the UI default).
+listUsers is platform-wide; for course members use listCourseEnrollments.
+Do NOT ask the admin for course id or code while a course is selected in the UI.`;
+  }
+
+  return `No course selected in the admin UI dropdown — chat is platform-wide.
+Pass courseId or courseCode to listCourseEnrollments and enrollment write tools when the admin names a specific course.`;
+}
+
 export function buildAdminSystemPrompt({
   courseCode,
   effectiveCourseId,
   customPrompt,
 }: AdminPromptOptions): string {
-  if (customPrompt) {
-    return customPrompt;
-  }
+  const courseContext = formatAdminCourseContext(courseCode, effectiveCourseId);
 
-  const courseContext = effectiveCourseId && courseCode
-    ? `Optional UI course hint: ${courseCode} (courseId: ${effectiveCourseId}). Course-scoped tools still require courseId or courseCode in the tool call unless this hint applies.`
-    : courseCode
-      ? `Optional UI course hint: ${courseCode}. Pass courseId or courseCode to course-scoped tools.`
-      : "No course selected — admin chat is platform-wide. Pass courseId or courseCode to course-scoped tools (listCourseEnrollments, enrollment writes).";
+  if (customPrompt) {
+    return `${customPrompt.trim()}\n\n${courseContext}`;
+  }
 
   return `You are EduAI Admin Assistant for platform administrators at UBC Okanagan (UBCO).
 

@@ -418,6 +418,18 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     }
     const effectiveCourseId = resolvedCourseId || courseId || null;
+    let effectiveCourseCode = courseCode ?? null;
+    if (!effectiveCourseCode && effectiveCourseId) {
+      try {
+        const course = await prisma.course.findUnique({
+          where: { id: effectiveCourseId },
+          select: { code: true },
+        });
+        effectiveCourseCode = course?.code ?? null;
+      } catch (e) {
+        console.error("Failed to resolve course code by id", e);
+      }
+    }
 
     // §10 (#302): course-scoped chats require course access for the acting
     // user. Students need an active enrollment AND a published course; an
@@ -751,14 +763,14 @@ export async function action({ request }: ActionFunctionArgs) {
         {
           user: rbacUser,
           effectiveCourseId,
-          effectiveCourseCode: courseCode ?? null,
+          effectiveCourseCode,
         },
         chatMode,
       );
 
       const buildDefaultSystemPrompt = () =>
         buildAdminSystemPrompt({
-          courseCode,
+          courseCode: effectiveCourseCode,
           effectiveCourseId,
           customPrompt: resolvedSystemPrompt,
         });
