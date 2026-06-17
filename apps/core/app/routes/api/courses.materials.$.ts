@@ -79,7 +79,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
       const material = await prisma.courseMaterial.findFirst({
         where: { id: materialId, courseId },
-        select: { id: true, uploadedBy: true },
+        select: { id: true, uploadedBy: true, title: true },
       });
       if (!material) {
         return json(404, { error: 'MATERIAL_NOT_FOUND' });
@@ -104,6 +104,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
           category: 'MATERIAL',
           entityType: 'CourseMaterial',
           entityId: materialId,
+          entityLabel: material.title,
           details: { courseId },
         }),
       );

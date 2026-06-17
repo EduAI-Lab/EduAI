@@ -125,7 +125,11 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
               category: "CANVAS",
               entityType: "CanvasIntegration",
               entityId: userId,
-              details: { isTestMode: result.data.isTestMode },
+              entityLabel: integration.canvasUrl,
+              details: {
+                isTestMode: result.data.isTestMode,
+                canvasUrl: integration.canvasUrl,
+              },
             }),
           );
 
