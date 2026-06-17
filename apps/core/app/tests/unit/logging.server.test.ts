@@ -22,7 +22,7 @@ describe("logging.server", () => {
     vi.mocked(systemDb.createSystemError).mockResolvedValue(undefined as any);
   });
 
-  it("redacts restricted audit fields while keeping accountability IDs", async () => {
+  it("redacts restricted audit fields while keeping accountability IDs and full emails", async () => {
     await logAuditAction({
       actionCode: "STUDENT_PROFILE_UPDATED",
       category: "USER",
@@ -41,7 +41,8 @@ describe("logging.server", () => {
         details: {
           studentId: "10001",
           ubcEmployeeId: "1234567",
-          email: "[REDACTED]",
+          // Emails are intentionally logged in full (temporary product decision).
+          email: "student@example.com",
           phone: "[REDACTED]",
           password: "[REDACTED]",
         },
@@ -49,7 +50,7 @@ describe("logging.server", () => {
     );
   });
 
-  it("forces security category and redacts security details", async () => {
+  it("forces security category and logs full emails while redacting other restricted fields", async () => {
     await logSecurityEvent({
       actionCode: "LOGIN_FAILED",
       entityType: "Auth",
@@ -58,7 +59,7 @@ describe("logging.server", () => {
 
     expect(auditDb.createSecurityLog).toHaveBeenCalledWith(
       expect.objectContaining({
-        details: { email: "[REDACTED]", reason: "invalid" },
+        details: { email: "user@example.com", reason: "invalid" },
       }),
     );
   });
