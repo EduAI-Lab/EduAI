@@ -9,9 +9,9 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
-- [core] api: Canvas material sync — discover and import Canvas course files into Core `CourseMaterial` with embedding pipeline; instructor UI on course detail (`CanvasMaterialSyncDialog`). (#620, @GlowyBlack, 2026-06-16)
-- [ai-tutor] api: `importEnrolledCoursesFromCore` — mirrors published student enrollments from Core into local offerings on `/api/me` and `GET /courses`. (#578, @GlowyBlack, 2026-06-16)
-- [core] api: `ubcTermFromDate` — UBC academic term codes (W1/W2/S1/S2) from course start dates in `America/Vancouver`. (#620, @GlowyBlack, 2026-06-16)
+- [core] api: Canvas material sync — discover and import Canvas course files into Core `CourseMaterial` with embedding pipeline; instructor UI on course detail (`CanvasMaterialSyncDialog`). (#658, @GlowyBlack, 2026-06-17)
+- [ai-tutor] api: `importEnrolledCoursesFromCore` — mirrors published student enrollments from Core into local offerings on `/api/me` and `GET /courses`. (#658, @GlowyBlack, 2026-06-17)
+- [core] api: `ubcTermFromDate` — UBC academic term codes (W1/W2/S1/S2) from course start dates in `America/Vancouver`. (#658, @GlowyBlack, 2026-06-17)
 - [question-maker] api: Auto-import taught Core courses on instructor login — `importTaughtCoursesFromCore` links or creates local courses for scoped Core offerings where the caller's enrollment role is `INSTRUCTOR` or `TA`, syncs topics, and seeds a Practice Exam. (#578, @GlowyBlack, 2026-06-15)
 - [core] api: Expose `callerEnrollmentRole` on each course in `GET /api/courses` so extensions can distinguish teaching vs student enrollments when auto-importing. (#578, @GlowyBlack, 2026-06-15)
 - [question-maker] tests: Add `topicSyncService.test.js`, `courseCodeUtils.test.js`, and `importTaughtCoursesService.test.js`; extend `coreApiService.test.js` for cookie-only scoped reads (no service-key fallback on 403). (#578, @GlowyBlack, 2026-06-15)
@@ -22,11 +22,13 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [question-maker] ui: Reuse `normalizeCourseCode` from `courseDisplay.ts` in `ProfileCoursesDialog` and `AddQuestionDialog`. (#578, @GlowyBlack, 2026-06-15)
 - [question-maker] api: Use `cookieOnly` on user-scoped Core reads (`listCoursesFromCore`, topics) so a stale session does not fall back to the unscoped service key; prefer service key for enrollment roster reads used by RBAC. (#578, @GlowyBlack, 2026-06-15)
 - [ai-tutor] api: Filter auto-import to Core courses where `callerEnrollmentRole` is `INSTRUCTOR` or `TA`. (#578, @GlowyBlack, 2026-06-15)
+- [question-maker] ui: Show Core `term` and `year` on course selection cards and the nav course dropdown (enriched from Core metadata). (#658, @GlowyBlack, 2026-06-17)
+- [core] api: Fall back to Canvas enrollment term `start_at` / `end_at` when course dates are missing; request `include[]=term` on teacher course list. (#658, @GlowyBlack, 2026-06-17)
 - [ai-tutor] api: Treat Core as source of truth — `importTaughtCoursesFromCore` mirrors taught courses on `/api/me` and `GET /courses` (import, topic/enrollment resync, `isPublished` sync) without manual sync endpoints. (#578, #620, @GlowyBlack, 2026-06-16)
 - [ai-tutor] ui: Remove manual Core import panel from instructor dashboard and “Sync students from Core” from the course page — mirroring is automatic. (#578, #620, @GlowyBlack, 2026-06-16)
 - [question-maker] api: Merge full Core mirror into `importTaughtCoursesFromCore` — topic resync on every `/auth/me` and `GET /api/course`; remove manual sync-from-core route. (#578, #620, @GlowyBlack, 2026-06-16)
 - [question-maker] ui: Remove manual “Sync with Core” from profile courses and course selection; update help copy for automatic mirroring. (#578, #620, @GlowyBlack, 2026-06-16)
-- [core] api: Use `ubcTermFromDate` when mapping Canvas courses to Core term/year fields. (#620, @GlowyBlack, 2026-06-16)
+- [core] api: Use `ubcTermFromDate` when mapping Canvas courses to Core term/year fields. (#658, @GlowyBlack, 2026-06-17)
 
 ### Fixed
 
@@ -40,8 +42,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [ai-tutor] fix: Sync `isPublished` from Core when instructor mirror runs on already-linked offerings. (#578, @GlowyBlack, 2026-06-16)
 - [ai-tutor] ui: Student dashboard empty state notes enrollments sync from Core on sign-in. (#578, @GlowyBlack, 2026-06-16)
 - [ai-tutor] tests: Extend `importTaughtCoursesService.test.js` — `importEnrolledCoursesFromCore` and `isPublished` sync on linked offerings. (#578, @GlowyBlack, 2026-06-16)
-- [core] tests: `ubcTermFromDate` month boundaries in `canvas-sync-services.test.ts`. (#620, @GlowyBlack, 2026-06-16)
-- [core] tests: Add `canvas-materials.server.test.ts` and `CanvasMaterialSyncDialog.test.tsx` for Canvas file discover/import and sync dialog UX. (#620, @GlowyBlack, 2026-06-16)
+- [core] tests: `resolveCanvasCourseDates` term fallback and `ubcTermFromDate` month boundaries in `canvas-sync-services.test.ts`. (#658, @GlowyBlack, 2026-06-17)
+- [core] tests: Add `canvas-materials.server.test.ts` and `CanvasMaterialSyncDialog.test.tsx` for Canvas file discover/import and sync dialog UX. (#658, @GlowyBlack, 2026-06-17)
 - [core] tests: Update `canvas.integration.test.ts` reassignment case to use a unique student number (avoids `studentIdLookup` collision with seeded data). (#578, @GlowyBlack, 2026-06-15)
 
 ---

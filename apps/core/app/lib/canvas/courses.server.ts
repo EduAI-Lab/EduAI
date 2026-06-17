@@ -26,9 +26,33 @@ export class InvalidCanvasCourseAccessError extends Error {
   }
 }
 
+function parseCanvasIsoDate(value: string | null | undefined): Date | null {
+  if (!value) {
+    return null;
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+/** Course dates first, then enrollment term dates, then sync-time for start only. */
+export function resolveCanvasCourseDates(canvasCourse: CanvasCourseApi): {
+  startDate: Date;
+  endDate: Date | null;
+} {
+  const term = canvasCourse.term;
+  const startDate =
+    parseCanvasIsoDate(canvasCourse.start_at) ??
+    parseCanvasIsoDate(term?.start_at) ??
+    parseCanvasIsoDate(term?.end_at) ??
+    new Date();
+  const endDate =
+    parseCanvasIsoDate(canvasCourse.end_at) ?? parseCanvasIsoDate(term?.end_at) ?? null;
+
+  return { startDate, endDate };
+}
+
 export function mapCanvasCourseToCoreFields(canvasCourse: CanvasCourseApi) {
-  const startDate = canvasCourse.start_at ? new Date(canvasCourse.start_at) : new Date();
-  const endDate = canvasCourse.end_at ? new Date(canvasCourse.end_at) : null;
+  const { startDate, endDate } = resolveCanvasCourseDates(canvasCourse);
 
   return {
     externalId: String(canvasCourse.id),

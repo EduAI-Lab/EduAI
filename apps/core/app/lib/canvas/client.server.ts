@@ -14,6 +14,14 @@ export type CanvasIntegrationCredentials = {
   isTestMode: boolean;
 };
 
+export type CanvasTermApi = {
+  id: number;
+  name?: string | null;
+  start_at?: string | null;
+  end_at?: string | null;
+  workflow_state?: string;
+};
+
 export type CanvasCourseApi = {
   id: number;
   name: string;
@@ -21,6 +29,7 @@ export type CanvasCourseApi = {
   start_at?: string | null;
   end_at?: string | null;
   workflow_state?: string;
+  term?: CanvasTermApi | null;
 };
 
 export type CanvasCourseUserApi = {
@@ -303,7 +312,7 @@ export async function listTeacherCanvasCourses(
 ): Promise<CanvasCourseApi[]> {
   return canvasGetPaginated<CanvasCourseApi>(
     credentials,
-    "/courses?enrollment_type=teacher&enrollment_role=TeacherEnrollment",
+    "/courses?enrollment_type=teacher&enrollment_role=TeacherEnrollment&include[]=term",
     fetchImpl,
   );
 }
