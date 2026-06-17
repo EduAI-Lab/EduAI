@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const prismaMock = vi.hoisted(() => ({
   course: { findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
