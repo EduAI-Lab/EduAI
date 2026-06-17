@@ -34,7 +34,6 @@ export function ChatConversationLayout({
   onSubmit,
   onStop,
   onSelectPrompt,
-  webToolsEnabled,
 }: ChatConversationLayoutProps) {
   return (
     <div
@@ -60,7 +59,6 @@ export function ChatConversationLayout({
                         key={message.id}
                         message={message as Message}
                         isStreaming={isStreamingMessage}
-                        webToolsEnabled={webToolsEnabled}
                       />
                     );
                   })}
