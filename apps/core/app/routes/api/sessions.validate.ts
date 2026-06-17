@@ -13,14 +13,17 @@ export async function action({ request }: ActionFunctionArgs) {
     });
   }
 
-  const ip =
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  // Derive the IP once from the shared request-context helper so the rate-limit
+  // key, the logged `ipAddress`, and `details.ip` all agree (the helper also
+  // honors x-real-ip / cf-connecting-ip, not just x-forwarded-for).
+  const requestContext = getRequestContext(request);
+  const ip = requestContext.ipAddress ?? "unknown";
 
   if (isRateLimited(ip)) {
     fireAndForget(
       logSecurityEvent({
         ...getActorContext(null),
-        ...getRequestContext(request),
+        ...requestContext,
         actionCode: "RATE_LIMIT_EXCEEDED",
         outcome: "DENIED",
         entityType: "Session",
