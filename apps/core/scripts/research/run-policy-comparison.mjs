@@ -17,6 +17,7 @@ import { dirname } from "node:path";
 import { performance } from "node:perf_hooks";
 import { DEFAULT_POLICY_OUT, PROMPTS_PATH } from "./paths.mjs";
 import {
+  ensureResearchEnergyReady,
   flattenEnergyFields,
   isEnergyMeasurementEnabled,
   withEnergyMeasurement,
@@ -196,6 +197,8 @@ async function postChat({
 }
 
 async function main() {
+  await ensureResearchEnergyReady();
+
   const url = readEnv("RESEARCH_RUN_URL", "CHAT_BENCH_URL");
   const apiKeysJson = loadApiKeysJson();
   const xApiKey = readEnv("RESEARCH_RUN_X_API_KEY", "CHAT_BENCH_X_API_KEY");

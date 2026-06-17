@@ -21,6 +21,7 @@ Artifacts live in `URA/docs/research/data/runs/` (see `paths.mjs`).
 | `npm run research:status-report` | Advisor status memo (auto-detects v2 files) |
 | `npm run research:offline-analysis` | Labels, kNN, spot-check, status |
 | `npm run research:eval-llm` | Offline LLM classifier vs labels (needs vLLM) |
+| `npm run research:p3b-dev-v3` | s378: P3b dev re-run (mapping v3 + energy sidecar) |
 | `npm run research:remaining` | s378 batch: P0/P1/P3b v2 dev + test |
 
 Full methodology: `URA/docs/research/data/README.md`

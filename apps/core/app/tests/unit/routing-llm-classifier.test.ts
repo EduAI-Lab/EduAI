@@ -21,19 +21,19 @@ describe("tierFromLlmClassification", () => {
     expect(tierFromLlmClassification(base)).toBe(1);
   });
 
-  it("maps medium complexity to tier 3 on local vLLM", () => {
+  it("maps medium complexity to tier 1 on local vLLM", () => {
     process.env.VLLM_BASE_URL = "http://localhost:8001";
     expect(
       tierFromLlmClassification({ ...base, complexity: "medium" }),
-    ).toBe(3);
+    ).toBe(1);
   });
 
-  it("bumps to tier 3 when confidence is below threshold", () => {
+  it("keeps tier 1 when confidence is below threshold on local vLLM", () => {
     process.env.VLLM_BASE_URL = "http://localhost:8001";
     process.env.ROUTING_LLM_MIN_CONFIDENCE = "80";
     expect(
       tierFromLlmClassification({ ...base, complexity: "low", confidence: 50 }),
-    ).toBe(3);
+    ).toBe(1);
   });
 
   it("maps high complexity to tier 3", () => {

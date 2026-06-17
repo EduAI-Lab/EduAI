@@ -22,6 +22,7 @@ import {
   DEFAULT_CLASSROOM_SUMMARY,
   PROMPTS_PATH,
 } from "./paths.mjs";
+import { ensureResearchEnergyReady } from "./energy-sidecar.mjs";
 import {
   resolveResearchChatFlags,
   resolveResearchTimeoutMs,
@@ -196,6 +197,8 @@ function buildSummary({ rows, wallMs, policy, students, concurrency, split }) {
 }
 
 async function main() {
+  await ensureResearchEnergyReady();
+
   const url = readEnv("RESEARCH_RUN_URL", "CHAT_BENCH_URL");
   const apiKeysJson = loadApiKeysJson();
   const xApiKey = readEnv("RESEARCH_RUN_X_API_KEY", "CHAT_BENCH_X_API_KEY");

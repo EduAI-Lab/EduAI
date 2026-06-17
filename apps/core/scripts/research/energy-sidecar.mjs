@@ -1,16 +1,45 @@
 /**
  * Client helpers for tools/energy-meter sidecar (RAPL + NVML).
  *
- * Set ENERGY_SIDECAR_URL=http://127.0.0.1:9100 and RESEARCH_MEASURE_ENERGY=1.
+ * Energy measurement is on by default for research scripts. Set
+ * RESEARCH_MEASURE_ENERGY=0 to skip. Sidecar URL defaults to
+ * http://127.0.0.1:9100 (override with ENERGY_SIDECAR_URL).
  */
 
-function readSidecarUrl() {
+export const DEFAULT_ENERGY_SIDECAR_URL = "http://127.0.0.1:9100";
+
+function resolveSidecarUrl() {
   const url = process.env.ENERGY_SIDECAR_URL?.trim();
-  return url ? url.replace(/\/$/, "") : null;
+  return (url || DEFAULT_ENERGY_SIDECAR_URL).replace(/\/$/, "");
 }
 
 export function isEnergyMeasurementEnabled() {
-  return process.env.RESEARCH_MEASURE_ENERGY === "1" && Boolean(readSidecarUrl());
+  if (process.env.RESEARCH_MEASURE_ENERGY === "0") {
+    return false;
+  }
+  return Boolean(resolveSidecarUrl());
+}
+
+export async function ensureResearchEnergyReady() {
+  if (!isEnergyMeasurementEnabled()) {
+    return;
+  }
+  const base = resolveSidecarUrl();
+  try {
+    const res = await fetch(`${base}/health`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(
+      `Energy sidecar not reachable at ${base} (${msg}). ` +
+        "Start tools/energy-meter/server.mjs on the inference host, or set RESEARCH_MEASURE_ENERGY=0.",
+    );
+  }
 }
 
 export function resolveEnergySettleMs() {
@@ -18,8 +47,7 @@ export function resolveEnergySettleMs() {
 }
 
 export async function energyMeasureStart(tag) {
-  const base = readSidecarUrl();
-  if (!base) return null;
+  const base = resolveSidecarUrl();
   const res = await fetch(`${base}/measure-start`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -35,8 +63,7 @@ export async function energyMeasureStart(tag) {
 }
 
 export async function energyMeasureStop(tag) {
-  const base = readSidecarUrl();
-  if (!base) return null;
+  const base = resolveSidecarUrl();
   const res = await fetch(`${base}/measure-stop`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

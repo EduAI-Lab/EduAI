@@ -68,8 +68,8 @@ function classifierModelId(): string {
 }
 
 function classifierMinConfidence(): number {
-  const n = Number(process.env.ROUTING_LLM_MIN_CONFIDENCE ?? "70");
-  return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 70;
+  const n = Number(process.env.ROUTING_LLM_MIN_CONFIDENCE ?? "60");
+  return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 60;
 }
 
 function classifierTimeoutMs(): number {
@@ -86,7 +86,7 @@ function createClassifierClient() {
     baseURL = `${baseURL}/v1`;
   }
   const apiKey = process.env.VLLM_API_KEY?.trim() || "vllm-local";
-  return createOpenAI({ baseURL, apiKey });
+  return createOpenAI({ baseURL, apiKey, compatibility: "strict" });
 }
 
 function buildClassifierUserPrompt(
@@ -114,14 +114,15 @@ export function tierFromLlmClassification(
 ): 1 | 2 | 3 {
   const minConf = classifierMinConfidence();
   if (classification.confidence < minConf) {
-    return isLocalVllmRouting() ? 3 : 2;
+    // Two-tier vLLM stack: prefer 7B when classifier is uncertain.
+    return isLocalVllmRouting() ? 1 : 2;
   }
 
   if (classification.complexity === "low") {
     return 1;
   }
   if (classification.complexity === "medium") {
-    return isLocalVllmRouting() ? 3 : 2;
+    return 1;
   }
   return 3;
 }

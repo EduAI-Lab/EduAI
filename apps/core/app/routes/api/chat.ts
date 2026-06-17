@@ -15,7 +15,7 @@ import {
   type RouterMode,
 } from "~/lib/ai/routing/router";
 import {
-  normalizeTokenUsage,
+  coalesceTokenUsage,
   persistAiInteractionTelemetry,
 } from "~/lib/ai/routing/telemetry";
 import { modelSupportsTools } from "~/lib/ai/providers.server";
@@ -1103,13 +1103,21 @@ ${buildRagSystemBlock(preloadedRagContext, { toolPath: true })}`;
         finishMeta.finishReason = String(finishReason ?? "");
         finishMeta.ready = true;
         resolveFinishSnapshot?.();
+        const normalizedFinishUsage = coalesceTokenUsage(
+          finishMeta.usage,
+          usage as Record<string, unknown> | undefined,
+        );
         await persistAiInteractionTelemetry({
           userId: actingUser.id,
           courseId: effectiveCourseId,
           resolvedModelId,
           query: lastUserMessageTextForTelemetry,
           responseText: text ?? "",
-          usage,
+          usage: {
+            promptTokens: normalizedFinishUsage.promptTokens ?? undefined,
+            completionTokens: normalizedFinishUsage.completionTokens ?? undefined,
+            totalTokens: normalizedFinishUsage.totalTokens ?? undefined,
+          },
           finishReason: finishMeta.finishReason,
           durationMs: Date.now() - requestStartMs,
           wasAuto,
@@ -1163,8 +1171,14 @@ ${buildRagSystemBlock(preloadedRagContext, { toolPath: true })}`;
           ]);
         }
 
-        const normalizedUsage = normalizeTokenUsage(
-          finishMeta.usage ?? (usage as Record<string, unknown> | undefined),
+        const rawResponse = response as
+          | { usage?: Record<string, unknown>; body?: { usage?: Record<string, unknown> } }
+          | undefined;
+        const normalizedUsage = coalesceTokenUsage(
+          finishMeta.usage,
+          usage as Record<string, unknown> | undefined,
+          rawResponse?.usage,
+          rawResponse?.body?.usage,
         );
         const resolvedFinishReason =
           finishMeta.finishReason || String(finishReason ?? "");

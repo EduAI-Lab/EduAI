@@ -34,10 +34,24 @@ export function normalizeTokenUsage(
     asTokenCount(usage.completion_tokens);
   const totalTokens =
     asTokenCount(usage.totalTokens) ??
+    asTokenCount(usage.total_tokens) ??
     (promptTokens != null && completionTokens != null
       ? promptTokens + completionTokens
       : null);
   return { promptTokens, completionTokens, totalTokens };
+}
+
+/** Pick the first source that yields token counts (finish hook, AI SDK usage, raw body). */
+export function coalesceTokenUsage(
+  ...sources: (Record<string, unknown> | undefined | null)[]
+): NormalizedTokenUsage {
+  for (const source of sources) {
+    const normalized = normalizeTokenUsage(source);
+    if (normalized.promptTokens != null || normalized.completionTokens != null) {
+      return normalized;
+    }
+  }
+  return { promptTokens: null, completionTokens: null, totalTokens: null };
 }
 
 export function splitRegistryModelId(
