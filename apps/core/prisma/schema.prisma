@@ -114,15 +114,19 @@ model Course {
   deletedAt      DateTime?
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
-  aiInstructions String           @default("")
-  instructor     User?            @relation("CourseInstructor", fields: [instructorId], references: [id])
+  aiInstructions         String           @default("")
+  /// Per-course RAG chunk limit. Overrides the global HYBRID_RAG_MAX_CHUNKS when set.
+  ragTopK                Int?
+  /// Per-course cosine-similarity threshold (0–1). Overrides RAG_SIMILARITY_THRESHOLD env when set.
+  ragSimilarityThreshold Float?
+  instructor             User?            @relation("CourseInstructor", fields: [instructorId], references: [id])
   /// Per-course override: `local` | `ollama` | `cloud`; null uses server env.
-  embeddingProvider    String?
+  embeddingProvider      String?
   /// Per-course model id (Ollama or OpenRouter/OpenAI); null uses server default for provider.
-  embeddingModel       String?
-  lastEmbeddedAt       DateTime?
-  embeddedWithProvider String?
-  embeddedWithModel    String?
+  embeddingModel         String?
+  lastEmbeddedAt         DateTime?
+  embeddedWithProvider   String?
+  embeddedWithModel      String?
   aiInteractions AIInteraction[]
   enrollments    Enrollment[]
   tas                 CourseTA[]
@@ -294,6 +298,9 @@ model UserPreference {
   userId         String   @unique
   assistDefault  Boolean  @default(false)
   lastCourseCode String?
+  motionReduced  Boolean  @default(false)
+  density        String   @default("comfortable")
+  theme          String   @default("system")
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)

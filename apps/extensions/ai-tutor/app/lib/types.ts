@@ -1,3 +1,4 @@
+// Must stay in sync with Core's UserRole enum: apps/core/app/lib/rbac/types.ts (TODO: #594)
 export type Role = 'STUDENT' | 'INSTRUCTOR' | 'TA' | 'ADMIN' | 'UNIT_ADMIN';
 
 export type User = {

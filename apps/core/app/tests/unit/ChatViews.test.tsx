@@ -15,18 +15,23 @@ const baseProps = {
   input: "",
   isLoading: false,
   adhdAssist: false,
-  onAssistChange: () => {},
+  assistive: false,
+  onAssistiveChange: () => {},
+  focusMode: false,
+  onFocusModeChange: () => {},
   systemPrompt: null,
   onSystemPromptSave: async () => {},
   onInputChange: () => {},
   onSubmit: () => {},
   onSelectPrompt: () => {},
+  webToolsEnabled: false,
 };
 
 describe("Chat views — role layouts", () => {
-  it("global view hides course selector banner text", () => {
+  it("global view shows optional course context banner", () => {
     render(<ChatGlobalView {...baseProps} />);
     expect(screen.getByText("Global chat")).toBeInTheDocument();
+    expect(screen.getByText(/Select a course below/i)).toBeInTheDocument();
   });
 
   it("course-scoped view shows course banner", () => {

@@ -2,6 +2,7 @@ import type {
   CanvasCoursePickerItem,
   CanvasIntegrationPublic,
   CanvasMaterialDiscoverItem,
+  LinkRosterResponse,
   SyncCanvasCoursesResult,
   SyncCanvasMaterialsResult,
 } from "~/lib/canvas/schemas";
@@ -10,6 +11,7 @@ export type {
   CanvasCoursePickerItem,
   CanvasIntegrationPublic,
   CanvasMaterialDiscoverItem,
+  LinkRosterResponse,
   SyncCanvasCoursesResult,
   SyncCanvasMaterialsResult,
 };
@@ -128,6 +130,17 @@ export async function syncCanvasMaterials(
   });
   if (!body.data) {
     throw new Error("Canvas material sync did not return result data");
+  }
+  return body.data;
+}
+
+export async function linkCanvasRoster(studentNumber: string): Promise<LinkRosterResponse> {
+  const body = await canvasRequest<LinkRosterResponse>("link-roster", {
+    method: "POST",
+    body: JSON.stringify({ studentNumber }),
+  });
+  if (!body.data) {
+    throw new Error("Link roster did not return result data");
   }
   return body.data;
 }

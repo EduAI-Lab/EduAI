@@ -183,12 +183,15 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const materials = await prisma.courseMaterial.findMany({
     where: { courseId },
     include: {
-      chunks: {
-        include: { embedding: true },
-      },
+      _count: { select: { chunks: true } },
     },
     orderBy: { createdAt: 'desc' },
   });
 
-  return json(200, { materials });
+  return json(200, {
+    materials: materials.map(({ _count, ...material }) => ({
+      ...material,
+      chunkCount: _count?.chunks ?? 0,
+    })),
+  });
 }
