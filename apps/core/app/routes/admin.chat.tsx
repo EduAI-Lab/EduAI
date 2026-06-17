@@ -5,7 +5,7 @@ import type { LoaderFunctionArgs } from "react-router";
 
 import { AdminChatView } from "~/components/chat/admin-chat-view";
 import { AppSidebar } from "~/components/app-sidebar";
-import type { ChatCourseOption, ChatModelOption } from "~/components/chat/chat-view-types";
+import type { ChatModelOption } from "~/components/chat/chat-view-types";
 import { SiteHeader } from "~/components/site-header";
 import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
 import {
@@ -17,7 +17,6 @@ import {
   BreadcrumbSeparator,
 } from "~/components/ui/breadcrumb";
 import { fetchChatSession } from "~/hooks/api/use-chat-sessions";
-import { useCourses } from "~/hooks/api/use-courses";
 import { useApiKeys } from "~/hooks/use-api-keys";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
@@ -59,18 +58,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 export default function AdminChatPage() {
   const { chatModels, user } = useLoaderData<typeof loader>();
-  const { courses } = useCourses();
-  const availableCourses: ChatCourseOption[] = courses.map((c) => ({
-    id: c.id,
-    name: c.name,
-    code: c.code,
-  }));
 
   const [selectedModel, setSelectedModel] = useState(
     chatModels.length > 0 ? chatModels[0].id : "",
   );
-  const [selectedCourseCode, setSelectedCourseCode] = useState<string | null>(null);
-  const selectedCourse = availableCourses.find((c) => c.code === selectedCourseCode) ?? null;
   const [chatId, setChatId] = useState<string | null>(null);
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
   const [adhdAssist, setAdhdAssist] = useState(false);
@@ -105,8 +96,6 @@ export default function AdminChatPage() {
 
   const requestContextRef = useRef({
     selectedModel,
-    selectedCourseCode,
-    selectedCourseId: selectedCourse?.id as string | undefined,
     chatId,
     systemPrompt,
     adhdAssist,
@@ -114,8 +103,6 @@ export default function AdminChatPage() {
   });
   requestContextRef.current = {
     selectedModel,
-    selectedCourseCode,
-    selectedCourseId: selectedCourse?.id,
     chatId,
     systemPrompt,
     adhdAssist,
@@ -132,8 +119,6 @@ export default function AdminChatPage() {
         chatMode: "admin",
         model: ctx.selectedModel,
         apiKeys: ctx.getValidApiKeys(),
-        courseCode: ctx.selectedCourseCode || undefined,
-        courseId: ctx.selectedCourseId || undefined,
         chatId: ctx.chatId || undefined,
         systemPrompt: ctx.systemPrompt || undefined,
         adhdAssist: ctx.adhdAssist,
@@ -165,8 +150,6 @@ export default function AdminChatPage() {
           messages: messages.length > 0 ? messages : [],
           model: selectedModel,
           apiKeys: getValidApiKeys(),
-          courseCode: selectedCourseCode || undefined,
-          courseId: selectedCourse?.id || undefined,
           adhdAssist,
           streaming: false,
         }),
@@ -228,9 +211,9 @@ export default function AdminChatPage() {
           selectedModel={selectedModel}
           setSelectedModel={setSelectedModel}
           selectedModelInfo={selectedModelInfo}
-          selectedCourseCode={selectedCourseCode}
-          setSelectedCourseCode={setSelectedCourseCode}
-          availableCourses={availableCourses}
+          selectedCourseCode={null}
+          setSelectedCourseCode={() => {}}
+          availableCourses={[]}
           messages={messages}
           input={input}
           isLoading={isLoading}

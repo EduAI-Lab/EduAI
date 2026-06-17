@@ -6,30 +6,21 @@ import {
 } from "~/lib/agent-tools/chat-mode";
 
 describe("formatAdminCourseContext", () => {
-  it("instructs the model to use listCourseEnrollments when UI course is selected", () => {
-    const text = formatAdminCourseContext("COSC 111", "course-abc");
-    expect(text).toContain("COSC 111");
-    expect(text).toContain("course-abc");
-    expect(text).toContain("listCourseEnrollments");
-    expect(text).toContain("Do NOT ask the admin for course id or code");
-  });
-
-  it("describes platform-wide mode when no course is selected", () => {
-    const text = formatAdminCourseContext(null, null);
-    expect(text).toContain("No course selected");
+  it("describes platform-wide admin chat with explicit course in tools", () => {
+    const text = formatAdminCourseContext();
     expect(text).toContain("platform-wide");
+    expect(text).toContain("listCourseEnrollments");
+    expect(text).toContain("courseId or courseCode");
   });
 });
 
 describe("buildAdminSystemPrompt", () => {
-  it("appends course context even when a custom prompt override is set", () => {
+  it("appends scope note even when a custom prompt override is set", () => {
     const prompt = buildAdminSystemPrompt({
-      courseCode: "COSC 111",
-      effectiveCourseId: "course-abc",
       customPrompt: "Custom admin instructions.",
     });
     expect(prompt).toContain("Custom admin instructions.");
-    expect(prompt).toContain("SELECTED COURSE (admin UI dropdown): COSC 111");
+    expect(prompt).toContain("platform-wide");
     expect(prompt).toContain("listCourseEnrollments");
   });
 });

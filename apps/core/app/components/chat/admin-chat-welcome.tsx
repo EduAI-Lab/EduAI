@@ -12,9 +12,9 @@ export interface AdminChatWelcomeProps {
 const suggestedPrompts = [
   {
     title: "Recent enrollments",
-    description: "Who joined the selected course in the last 7 days",
+    description: "Who joined a course in the last 7 days",
     prompt:
-      "List enrollments for the selected course where students joined in the last 7 days. Show email, name, and enrolled date.",
+      "List enrollments for course code COSC 111 where students joined in the last 7 days. Show email, name, and enrolled date.",
   },
   {
     title: "Platform users",
@@ -28,9 +28,9 @@ const suggestedPrompts = [
   },
   {
     title: "Enroll a student",
-    description: "Add a user to the selected course",
+    description: "Add a user to a course",
     prompt:
-      "I want to enroll userId USER_ID as a STUDENT in the selected course. First look up the user to confirm, then ask me to confirm before creating the enrollment.",
+      "I want to enroll userId USER_ID as a STUDENT in course COSC 111. First look up the user to confirm, then ask me to confirm before creating the enrollment.",
   },
 ];
 
