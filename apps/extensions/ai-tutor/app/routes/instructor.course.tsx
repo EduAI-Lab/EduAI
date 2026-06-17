@@ -41,7 +41,7 @@ import { requireClientUser } from '~/lib/client-auth';
  * if the route param isn't numeric so the router renders the error boundary.
  */
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
-  await requireClientUser('INSTRUCTOR');
+  await requireClientUser(['INSTRUCTOR', 'UNIT_ADMIN', 'TA']);
   const courseId = Number(params.courseId);
   if (!Number.isFinite(courseId)) {
     throw new Response('Invalid course id', { status: 400 });
@@ -76,6 +76,8 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
   const [loadingSourceModules, setLoadingSourceModules] = useState(false);
   const [selectedModuleIds, setSelectedModuleIds] = useState<Set<number>>(new Set());
   const [importing, setImporting] = useState(false);
+  const [syncingEnrollments, setSyncingEnrollments] = useState(false);
+  const [enrollmentSyncMessage, setEnrollmentSyncMessage] = useState<string | null>(null);
   const [publishingId, setPublishingId] = useState<number | null>(null);
   const modulesRequestIdRef = useRef(0);
 
@@ -237,6 +239,31 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
         <div className="flex items-center justify-between">
           <h2 className="font-display text-2xl font-semibold text-foreground">Modules</h2>
           <div className="flex items-center gap-2">
+            {(course?.externalSource === 'EDUAI' || course?.externalId) && (
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={syncingEnrollments}
+                onClick={async () => {
+                  if (!numericCourseId || syncingEnrollments) return;
+                  setSyncingEnrollments(true);
+                  setEnrollmentSyncMessage(null);
+                  try {
+                    const result = await api.syncCourseEnrollments(numericCourseId);
+                    setEnrollmentSyncMessage(
+                      `Synced ${result.synced} student(s) from Core (${result.created} added, ${result.deleted} removed).`,
+                    );
+                  } catch (error) {
+                    console.error('Failed to sync enrollments from Core', error);
+                    setEnrollmentSyncMessage('Failed to sync student enrollments from Core.');
+                  } finally {
+                    setSyncingEnrollments(false);
+                  }
+                }}
+              >
+                {syncingEnrollments ? 'Syncing students…' : 'Sync students from Core'}
+              </button>
+            )}
             <button
               onClick={() => {
                 if (!showImport) {
@@ -252,6 +279,10 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
             </button>
           </div>
         </div>
+
+        {enrollmentSyncMessage && (
+          <p className="text-sm text-muted-foreground">{enrollmentSyncMessage}</p>
+        )}
 
         {showImport && (
           <div className="card-editorial p-5 space-y-4">

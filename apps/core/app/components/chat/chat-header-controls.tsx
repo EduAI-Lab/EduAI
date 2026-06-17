@@ -5,6 +5,8 @@ import { Label } from "~/components/ui/label";
 export interface ChatHeaderControlsProps {
   adhdAssist: boolean;
   onAdhdAssistChange: (checked: boolean) => void;
+  focusMode: boolean;
+  onFocusModeChange: (checked: boolean) => void;
   systemPrompt: string | null;
   onSystemPromptSave: (prompt: string | null) => void;
 }
@@ -12,6 +14,8 @@ export interface ChatHeaderControlsProps {
 export function ChatHeaderControls({
   adhdAssist,
   onAdhdAssistChange,
+  focusMode,
+  onFocusModeChange,
   systemPrompt,
   onSystemPromptSave,
 }: ChatHeaderControlsProps) {
@@ -28,6 +32,19 @@ export function ChatHeaderControls({
           Assistive mode {adhdAssist ? "On" : "Off"}
         </Label>
       </div>
+      {adhdAssist ? (
+        <div className="flex h-9 items-center gap-2">
+          <Switch
+            id="assistive-focus-mode"
+            checked={focusMode}
+            onCheckedChange={(checked) => onFocusModeChange(Boolean(checked))}
+            aria-label="Focus mode"
+          />
+          <Label htmlFor="assistive-focus-mode" className="text-sm whitespace-nowrap">
+            Focus mode {focusMode ? "On" : "Off"}
+          </Label>
+        </div>
+      ) : null}
       <SystemPromptSettings
         systemPrompt={systemPrompt}
         onSave={onSystemPromptSave}

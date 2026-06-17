@@ -26,6 +26,7 @@ A production-ready chat platform with Retrieval-Augmented Generation (RAG) capab
 - **Role-based Access**: Support for students, professors, and administrators
 - **Persisted Chat Preferences**: Assistive mode and the selected course are saved per user, restored on every page load and new chat, and cleared on logout
 - **Account-level Assistive Mode**: Shell-wide `AssistiveUiProvider` sets `data-assistive` on `<html>` when ON (absent when OFF so baseline CSS is unchanged); preference persists via `UserPreference.assistDefault` and syncs with the `/chat` header toggle
+- **Assistive active highlighting**: On `/chat`, emphasizes the latest assistant reply, de-emphasizes older messages, anchors the composer, auto-focuses input after responses, and offers optional focus mode to hide non-essential chrome
 
 ## Prerequisites
 
@@ -105,6 +106,9 @@ SMTP_USER=""
 SMTP_PASS=""
 EMAIL_FROM="EduAI <no-reply@eduai.local>"
 INVITE_EXPIRY_HOURS="72" # invitation link lifetime in hours
+
+# ADHD Assist Phase 3 oversight — second-pass structural audit when Assistive Mode is ON (default: enabled)
+# ADHD_ASSIST_OVERSIGHT="false"              # Set to false/0/off to disable rewrite pass
 ```
 
 ## Usage
@@ -153,7 +157,7 @@ Send chat messages with course context for grounded responses.
 - `apiKeys` (object): Provider-specific API keys
 - `courseCode` (string): Target course identifier
 - `streaming` (boolean): Enable response streaming
-- `adhdAssist` (boolean, optional): Opt-in flag persisted on `Chat.adhdAssist` (default `false`). When `true`, the resolved system prompt is prepended with the verbatim ADHD Assist policy block from `docs/literature/adhd-assist-prompt-policy.md` §3 before being passed to `streamText`. Style is the only IV — model, retrieval, tools, temperature, and streaming behavior are unchanged. UI toggle lives at the top of the chat header on `/chat`. If the field is omitted from the request body, the request falls back to the persisted `Chat.adhdAssist` for the resolved chat — same precedence pattern as `systemPrompt`. If the field is present, it overrides the persisted value (and updates it).
+- `adhdAssist` (boolean, optional): Opt-in flag persisted on `Chat.adhdAssist` (default `false`). When `true`, the resolved system prompt is prepended with the verbatim ADHD Assist policy block from `docs/literature/adhd-assist-prompt-policy.md` §3 before being passed to `streamText`. Style is the only IV — model, retrieval, tools, temperature, and streaming behavior are unchanged. UI toggle lives at the top of the chat header on `/chat`. If the field is omitted from the request body, the request falls back to the persisted `Chat.adhdAssist` for the resolved chat — same precedence pattern as `systemPrompt`. If the field is present, it overrides the persisted value (and updates it). When Assist is ON, Phase 3 oversight (`ADHD_ASSIST_OVERSIGHT` env, default enabled) audits the full draft for structural compliance (`**Top summary**`, `**Next?**`, word cap) before emit; set `ADHD_ASSIST_OVERSIGHT=false` to disable the rewrite pass.
 - `proxyUser` (object, optional): Only for admin `x-api-key` calls. Allows services like Aitutor to act on behalf of a user; see [Proxy Delegation (`proxyUser`)](#proxy-delegation-proxyuser).
 
 #### Examples
@@ -376,12 +380,16 @@ Read and update the authenticated user's UI preferences (`UserPreference` row). 
 
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
-| `GET` | `/api/preferences` | Returns `{ assistDefault, lastCourseCode }` — defaults to `{ assistDefault: false, lastCourseCode: null }` when no row exists |
-| `PATCH` | `/api/preferences` | Partial update; accepts `assistDefault` (boolean) and/or `lastCourseCode` (string or `null` to clear) |
+| `GET` | `/api/preferences` | Returns `{ assistDefault, lastCourseCode, motionReduced, density, theme }` — defaults to `{ assistDefault: false, lastCourseCode: null, motionReduced: false, density: "comfortable", theme: "system" }` when no row exists |
+| `PATCH` | `/api/preferences` | Partial update; accepts `assistDefault` (boolean), `lastCourseCode` (string or `null`), `motionReduced` (boolean), `density` (`comfortable` \| `compact`), and/or `theme` (`system` \| `light` \| `dark`) |
 
-When `assistDefault` is `true`, the root layout sets `data-assistive="true"` on `<html>` for CSS scoping; when `false`, the attribute is **absent** (not `"false"`) so baseline styles are unchanged.
+When `assistDefault` is `true`, the root layout sets `data-assistive="true"` on `<html>` for CSS scoping; when `false`, the attribute is **absent** (not `"false"`) so baseline styles are unchanged. Non-default `motionReduced`, `density`, and `theme` values set `data-reduce-motion`, `data-density="compact"`, or `light`/`dark` classes on `<html>`; defaults remove those hooks so OFF states stay pixel-identical.
+
+**Settings → Accessibility tab:** `/settings` exposes Assistive Mode, reduce motion, density, and theme controls. Assistive Mode uses `AssistiveUiProvider`; motion/density/theme use `UiPreferencesProvider`. Both persist through `/api/preferences`.
 
 **Assistive reading typography:** Elements marked with the `reading-surface` class (chat messages, course overview text, etc.) pick up spacing-only typography under `[data-assistive]` — 16px base, ~1.625 line-height, 65ch max measure, increased paragraph/letter spacing. No font-family swap; OFF state is pixel-identical because the attribute is absent.
+
+**Active highlighting + focus mode (#525):** On `/chat` when `[data-assistive]` is set, the latest assistant message is emphasized (outline + background), older messages are de-emphasized (lower opacity, full opacity on hover/focus), the composer is subtly anchored, `:focus-visible` rings are strengthened, and the input auto-focuses after each assistant turn. **Focus mode** (header toggle, assistive ON only) sets `data-assistive-focus-mode` on `<html>` to hide the sidebar and course/model selectors. Client `re_orientation` events record re-orientation latency via `POST /api/assistive-events`.
 
 **Example** (browser session — toggle Assistive Mode on):
 
@@ -394,7 +402,7 @@ fetch("/api/preferences", {
 });
 ```
 
-The Settings Accessibility tab (motion, density, theme) is tracked separately in GitHub issue #530 and is blocked on the Settings shell rewrite (PR #491).
+The Settings Accessibility tab ships in #530 (`/settings` → Accessibility).
 
 ### Canvas Integration Endpoints
 
