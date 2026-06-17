@@ -47,7 +47,6 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ error: created.error }, created.status);
   }
 
-  const emailDomain = created.invitation.email.split("@")[1] ?? null;
   fireAndForget(
     logAuditAction({
       ...getActorContext(gate.session?.user ?? null),
@@ -56,8 +55,10 @@ export async function action({ request }: ActionFunctionArgs) {
       category: "INVITATION",
       entityType: "Invitation",
       entityId: created.invitation.id,
-      entityLabel: emailDomain ?? created.invitation.role,
-      details: { role: created.invitation.role, emailDomain },
+      // Email (and email-derived values like the domain) are never stored — see
+      // docs/LOGGING.md §3. The invitation id links back to the email if needed.
+      entityLabel: created.invitation.role,
+      details: { role: created.invitation.role },
     }),
   );
 
