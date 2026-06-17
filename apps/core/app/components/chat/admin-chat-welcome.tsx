@@ -17,6 +17,11 @@ const suggestedPrompts = [
       "List enrollments for course code COSC 111 where students joined in the last 7 days. Show email, name, and enrolled date.",
   },
   {
+    title: "Course topics",
+    description: "Topics linked to a course",
+    prompt: "List all topics for course COSC 111.",
+  },
+  {
     title: "Platform users",
     description: "Overview of registered users",
     prompt: "List all platform users with their role and active status.",

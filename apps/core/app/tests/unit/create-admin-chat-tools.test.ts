@@ -7,6 +7,8 @@ vi.mock("~/lib/agent-tools/admin-context.server", () => ({
   listAccessibleCourses: vi.fn(),
   listAdminBugReportsForChat: vi.fn(),
   listAdminCourseEnrollments: vi.fn(),
+  listAdminCourseTopics: vi.fn(),
+  getAdminCourseTopic: vi.fn(),
   listAdminUsers: vi.fn(),
   resolveAdminCourseId: vi.fn(),
 }));
@@ -27,6 +29,10 @@ vi.mock("~/lib/agent-tools/admin-mutations.server", async (importOriginal) => {
 
 import { createAdminChatTools } from "~/lib/agent-tools/create-admin-chat-tools";
 import {
+  listAdminCourseTopics,
+  resolveAdminCourseId,
+} from "~/lib/agent-tools/admin-context.server";
+import {
   createAdminUser,
   runConfirmedAdminWriteTool,
   userRefValidationError,
@@ -41,6 +47,29 @@ const ctx = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+describe("createAdminChatTools read execute", () => {
+  it("listCourseTopics resolves course then lists topics", async () => {
+    vi.mocked(resolveAdminCourseId).mockResolvedValue({
+      courseId: "course-1",
+      courseCode: "COSC 111",
+    });
+    vi.mocked(listAdminCourseTopics).mockResolvedValue({
+      dataSource: "database",
+      courseId: "course-1",
+      courseCode: "COSC 111",
+      topics: [],
+      count: 0,
+      queriedAt: new Date().toISOString(),
+    });
+
+    const tools = createAdminChatTools(ctx);
+    const result = await tools.listCourseTopics.execute({ courseCode: "COSC 111" });
+    expect(resolveAdminCourseId).toHaveBeenCalled();
+    expect(listAdminCourseTopics).toHaveBeenCalledWith(ADMIN, "course-1");
+    expect(result).toMatchObject({ count: 0, dataSource: "database" });
+  });
 });
 
 describe("createAdminChatTools write execute", () => {

@@ -21,13 +21,16 @@ vi.mock("~/lib/auth/course-access.server", () => ({
 vi.mock("~/lib/agent-tools/course-context.server", () => ({
   getAccessibleCourse: vi.fn(),
   listAccessibleCourses: vi.fn(),
+  listAccessibleCourseTopics: vi.fn(),
+  getAccessibleCourseTopic: vi.fn(),
 }));
 
 import { listBugReports } from "~/lib/bug-reports/server";
-import { getAccessibleCourse } from "~/lib/agent-tools/course-context.server";
+import { getAccessibleCourse, listAccessibleCourseTopics } from "~/lib/agent-tools/course-context.server";
 import {
   listAdminBugReportsForChat,
   listAdminCourseEnrollments,
+  listAdminCourseTopics,
   listAdminUsers,
   resolveAdminCourseId,
 } from "~/lib/agent-tools/admin-context.server";
@@ -89,6 +92,26 @@ describe("listAdminCourseEnrollments", () => {
     });
     expect(result.count).toBe(1);
     expect(prismaMock.enrollment.findMany).toHaveBeenCalled();
+  });
+});
+
+describe("listAdminCourseTopics", () => {
+  it("returns topics with dataSource envelope for admin", async () => {
+    vi.mocked(getAccessibleCourse).mockResolvedValue({
+      course: { id: "c1", code: "COSC 111" },
+    } as never);
+    vi.mocked(listAccessibleCourseTopics).mockResolvedValue({
+      topics: [{ id: "t1", courseId: "c1", name: "Loops", createdAt: new Date(), updatedAt: new Date() }],
+    });
+
+    const result = await listAdminCourseTopics(ADMIN, "c1");
+    expect(result).toMatchObject({
+      dataSource: "database",
+      courseId: "c1",
+      courseCode: "COSC 111",
+      count: 1,
+      topics: [expect.objectContaining({ id: "t1", name: "Loops" })],
+    });
   });
 });
 
