@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useAuth } from '@/contexts/AuthContext';
+import { useQmPermissions } from '@/hooks/useQmPermissions';
 import { useQmLayout } from '../components/layout/QmLayoutContext';
 import { CoursesAdminView } from '@/components/courses/courses-admin-view';
 import { CoursesInstructorView } from '@/components/courses/courses-instructor-view';
@@ -28,6 +29,7 @@ export const CourseSelectionPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
+  const { canLinkCourse } = useQmPermissions();
   const { courses, isLoading: isCoursesLoading, fetchCourses } = useCourses();
   const [isStartingTour, setIsStartingTour] = useState(false);
   const { setGuidedTourHandler, openProfile } = useQmLayout();
@@ -160,6 +162,7 @@ export const CourseSelectionPage = () => {
     isLoading: isCoursesLoading,
     onSelectCourse: handleSelectCourse,
     onAddCourse: openProfile,
+    showAddCourse: canLinkCourse,
   };
 
   if (user?.role === 'ADMIN') {

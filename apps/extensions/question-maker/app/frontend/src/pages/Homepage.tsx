@@ -295,6 +295,7 @@ export const Homepage = () => {
     updates: {
       isAiGenerated?: boolean;
       isDraft?: boolean;
+      testable?: boolean;
       difficulty?: import('../types/question').QuestionDifficulty;
       choices?: MCQChoice[] | null;
       answer?: string | null;
@@ -309,6 +310,7 @@ export const Homepage = () => {
             ...updatedVariants[variantIndex],
             ...(updates.isAiGenerated !== undefined && { isAiGenerated: updates.isAiGenerated }),
             ...(updates.isDraft !== undefined && { isDraft: updates.isDraft }),
+            ...(updates.testable !== undefined && { testable: updates.testable }),
             ...(updates.difficulty !== undefined && { difficulty: updates.difficulty }),
             ...(updates.choices !== undefined && { choices: updates.choices }),
             ...(updates.answer !== undefined && { answer: updates.answer })
@@ -882,8 +884,8 @@ export const Homepage = () => {
             isLoading={isQuestionsLoading}
             courseName={selectedCourse?.name}
             emptyMessage={emptyStateMessage}
-            disableAdd={!selectedCourse || !canCreateQuestion}
-            disableUpload={!selectedCourse || !canCreateQuestion}
+            disableAdd={!selectedCourse || !canCreateQuestion || accessLoading || !hasCourseAccess}
+            disableUpload={!selectedCourse || !canCreateQuestion || accessLoading || !hasCourseAccess}
             onOpenProfile={() => startTour('main')}
           />
         ) : (

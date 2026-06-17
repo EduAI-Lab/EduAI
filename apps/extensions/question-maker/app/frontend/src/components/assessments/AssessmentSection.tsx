@@ -163,8 +163,9 @@ export const AssessmentSection = ({
     onImportFromCanvas
 }: AssessmentSectionProps) => {
     const navigate = useNavigate();
-    const { canManageAssessment, canExportAssessment, canUseVariantWorkflow } =
+    const { canManageAssessment, canExportAssessment, canUseVariantWorkflow, accessLoading, hasCourseAccess } =
         useQmPermissionsForCourse(selectedCourseId ?? null);
+    const canWriteInCourse = hasCourseAccess && !accessLoading;
     const [expandedAssessment, setExpandedAssessment] = useState<number | null>(null);
     const [isGenerateModalOpen, setIsGenerateModalOpen] = useState(false);
     const [pendingGenerateAction, setPendingGenerateAction] = useState<'create' | null>(null);
@@ -246,7 +247,7 @@ export const AssessmentSection = ({
                     <p className="text-sm text-muted-foreground">{headerDescription}</p>
                     {loadError && <p className="text-sm text-red-600 mt-1">{loadError}</p>}
                 </div>
-                <PermissionGate allow={canManageAssessment}>
+                <PermissionGate allow={canManageAssessment && canWriteInCourse}>
                 <div className="flex gap-2">
                     {onImportFromCanvas && (
                         <Tooltip content="Import an assessment from your Canvas course" side="bottom">
@@ -343,7 +344,7 @@ export const AssessmentSection = ({
                                                 </Button>
                                             </Tooltip>
 
-                                            <PermissionGate allow={canUseVariantWorkflow}>
+                                            <PermissionGate allow={canUseVariantWorkflow && canWriteInCourse}>
                                             <Tooltip
                                                 content="Open assessment variant workflow with this exam as the baseline"
                                                 side="bottom"
@@ -364,7 +365,7 @@ export const AssessmentSection = ({
                                             </Tooltip>
                                             </PermissionGate>
 
-                                            <PermissionGate allow={canExportAssessment}>
+                                            <PermissionGate allow={canExportAssessment && canWriteInCourse}>
                                             {hasAnyExportHandler && (
                                                 <Tooltip
                                                     content="Export to Canvas, Word, or plain text"
@@ -384,7 +385,7 @@ export const AssessmentSection = ({
                                             )}
                                             </PermissionGate>
 
-                                            <PermissionGate allow={canManageAssessment}>
+                                            <PermissionGate allow={canManageAssessment && canWriteInCourse}>
                                             {onDeleteAssessment && (
                                                 <Button
                                                     variant="ghost"
@@ -483,7 +484,7 @@ export const AssessmentSection = ({
             {!isLoading && !hasAssessments && (
                 <div className="text-center py-8">
                     <p className="text-muted-foreground mb-4">No assessments created yet.</p>
-                    <PermissionGate allow={canManageAssessment}>
+                    <PermissionGate allow={canManageAssessment && canWriteInCourse}>
                     <Button
                         onClick={handleOpenCreateModal}
                         className="flex items-center space-x-2 mx-auto"

@@ -1,7 +1,6 @@
 import { Link, useLocation } from 'react-router';
 import {
   BookOpen,
-  BugOff,
   ClipboardList,
   ExternalLink,
   HelpCircle,
@@ -22,7 +21,6 @@ const NAV_ICONS: Record<
   assessments: ClipboardList,
   variants: Sparkles,
   help: HelpCircle,
-  'bug-reports': BugOff,
   'back-to-eduai': ExternalLink,
 };
 

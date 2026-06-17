@@ -12,7 +12,6 @@ import { Homepage } from './pages/Homepage';
 import { ApiTestPage } from './pages/ApiTestPage';
 import AssessmentBuilderPage from './pages/AssessmentBuilderPage';
 import { HelpPage } from './pages/HelpPage';
-import { BugReportsAdminPage } from './pages/BugReportsAdminPage';
 import { AssessmentVariantPage } from './pages/AssessmentVariantPage';
 import { GuidedTourProvider } from './contexts/GuidedTourContext';
 import { BugReportProvider } from './contexts/BugReportContext';
@@ -44,7 +43,6 @@ function App() {
                     <Route path="/home" element={<Homepage />} />
                     <Route path="/assessments/:id/builder" element={<AssessmentBuilderPage />} />
                     <Route path="/help" element={<HelpPage />} />
-                    <Route path="/admin/bug-reports" element={<BugReportsAdminPage />} />
                     <Route path="/assessment-variant" element={<AssessmentVariantPage />} />
                   </Route>
                   <Route path="/landing" element={<Navigate to="/home" replace />} />

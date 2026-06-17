@@ -48,6 +48,10 @@ export interface QuestionVariant {
     choices?: MCQChoice[] | null; // For MCQ questions only
     isAiGenerated?: boolean; // Indicates if this variant was generated using AI
     isDraft?: boolean; // Indicates if this variant is a draft and needs review
+    /** Core Question CUID after approval push — required for AI Tutor testable toggle. */
+    coreQuestionId?: string | null;
+    /** When true on Core, question is injected into AI Tutor tutoring context. */
+    testable?: boolean;
     createdBy?: string | null;
     createdAt?: string;
     updatedAt?: string;

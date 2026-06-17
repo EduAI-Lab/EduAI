@@ -15,7 +15,6 @@ export function CoursesInstructorView(props: CoursesInstructorViewProps) {
       </div>
       <CoursesGrid
         {...props}
-        showAddCourse
         emptyHint="No courses yet. Add a course from your profile to get started."
       />
     </div>

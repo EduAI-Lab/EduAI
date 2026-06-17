@@ -2,7 +2,6 @@ import type { QmNavItem, QmNavItemKey, QmUser } from './types';
 import { getCoreDashboardUrl } from '@/lib/coreUrl';
 import {
   canManageAssessment,
-  canTriageBugReports,
   canUseVariantWorkflow,
 } from './permissions';
 import { resolvePlatformCourseAccess } from './resolve-course-access';
@@ -58,15 +57,6 @@ export function getNavForUser(user: QmUser | null | undefined): QmNavItem[] {
     }
     return true;
   });
-
-  if (canTriageBugReports(user)) {
-    nav.push({
-      key: 'bug-reports',
-      title: 'Bug reports',
-      href: '/admin/bug-reports',
-      match: (pathname) => pathname === '/admin/bug-reports',
-    });
-  }
 
   return nav;
 }

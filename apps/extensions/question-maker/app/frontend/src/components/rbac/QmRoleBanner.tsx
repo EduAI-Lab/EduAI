@@ -13,7 +13,7 @@ const COPY: Record<
   admin: {
     title: 'Administrator view',
     description:
-      'Full platform access across all courses. You can manage questions, assessments, Canvas exports, and triage bug reports.',
+      'Full platform access across all courses. You can manage questions, assessments, and Canvas exports. Triage bug reports in EduAI Core.',
     icon: Shield,
   },
   'unit-admin': {

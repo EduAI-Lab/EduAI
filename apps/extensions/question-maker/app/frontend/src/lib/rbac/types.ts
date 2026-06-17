@@ -18,7 +18,6 @@ export type QmNavItemKey =
   | 'assessments'
   | 'variants'
   | 'help'
-  | 'bug-reports'
   | 'back-to-eduai';
 
 export type QmNavItem = {

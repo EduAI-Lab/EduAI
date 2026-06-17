@@ -10,6 +10,8 @@ describe("BugReportsAdminView", () => {
       <BugReportsAdminView
         reports={stubBugReports}
         isLoading={false}
+        sourceFilter="ALL"
+        onSourceFilterChange={vi.fn()}
         onUpdateStatus={vi.fn()}
       />,
     );
@@ -17,6 +19,7 @@ describe("BugReportsAdminView", () => {
     expect(screen.getByText("Bug reports")).toBeInTheDocument();
     expect(screen.getByText("User reported chatId not persisting in local state.")).toBeInTheDocument();
     expect(screen.getByText("CORE")).toBeInTheDocument();
+    expect(screen.getByText("All sources")).toBeInTheDocument();
   });
 
   it("shows loading state", () => {
@@ -24,6 +27,8 @@ describe("BugReportsAdminView", () => {
       <BugReportsAdminView
         reports={[]}
         isLoading
+        sourceFilter="ALL"
+        onSourceFilterChange={vi.fn()}
         onUpdateStatus={vi.fn()}
       />,
     );

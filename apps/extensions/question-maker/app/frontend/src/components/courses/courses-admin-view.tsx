@@ -15,7 +15,6 @@ export function CoursesAdminView(props: CoursesAdminViewProps) {
       </div>
       <CoursesGrid
         {...props}
-        showAddCourse
         showDepartment
         emptyHint="No courses linked yet. Add a course to start authoring."
       />

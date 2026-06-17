@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { apiFetch } from "~/hooks/api/config";
-import type { BugReport, BugReportStatus } from "~/hooks/api/types";
+import type { BugReport, BugReportSource, BugReportStatus } from "~/hooks/api/types";
 
 type AdminBugReportsResponse = {
   reports: Array<{
@@ -17,7 +17,8 @@ type AdminBugReportsResponse = {
   }>;
 };
 
-export function useBugReports() {
+/** Optional source filter — triage is centralized here for Core + all extensions. */
+export function useBugReports(source?: BugReportSource) {
   const [reports, setReports] = useState<BugReport[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +28,12 @@ export function useBugReports() {
     setError(null);
 
     try {
-      const data = await apiFetch<AdminBugReportsResponse>("/api/admin/bug-reports");
+      const params = new URLSearchParams();
+      if (source) params.set("source", source);
+      const qs = params.toString();
+      const data = await apiFetch<AdminBugReportsResponse>(
+        `/api/admin/bug-reports${qs ? `?${qs}` : ""}`,
+      );
       setReports(
         data.reports.map((r) => ({
           id: r.id,
@@ -47,7 +53,7 @@ export function useBugReports() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [source]);
 
   useEffect(() => {
     void refresh();
