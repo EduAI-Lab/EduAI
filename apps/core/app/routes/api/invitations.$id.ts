@@ -31,7 +31,6 @@ export async function action({ request, params }: ActionFunctionArgs) {
     const result = await revokeInvitation(id);
     if (!result.ok) return json({ error: result.error }, result.status);
 
-    const emailDomain = result.invitation.email.split("@")[1] ?? null;
     fireAndForget(
       logAuditAction({
         ...getActorContext(gate.session?.user ?? null),
@@ -40,8 +39,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
         category: "INVITATION",
         entityType: "Invitation",
         entityId: result.invitation.id,
-        entityLabel: emailDomain ?? result.invitation.role,
-        details: { role: result.invitation.role, emailDomain },
+        // Email-derived values are never stored — see docs/LOGGING.md §3.
+        entityLabel: result.invitation.role,
+        details: { role: result.invitation.role },
       }),
     );
 
@@ -55,7 +55,6 @@ export async function action({ request, params }: ActionFunctionArgs) {
     });
     if (!result.ok) return json({ error: result.error }, result.status);
 
-    const emailDomain = result.invitation.email.split("@")[1] ?? null;
     fireAndForget(
       logAuditAction({
         ...getActorContext(gate.session?.user ?? null),
@@ -64,8 +63,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
         category: "INVITATION",
         entityType: "Invitation",
         entityId: result.invitation.id,
-        entityLabel: emailDomain ?? result.invitation.role,
-        details: { role: result.invitation.role, emailDomain },
+        // Email-derived values are never stored — see docs/LOGGING.md §3.
+        entityLabel: result.invitation.role,
+        details: { role: result.invitation.role },
       }),
     );
 
