@@ -1,5 +1,5 @@
 import { useChat } from "@ai-sdk/react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, redirect, useLoaderData } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 
@@ -103,17 +103,41 @@ export default function AdminChatPage() {
     [setAssistive],
   );
 
+  const requestContextRef = useRef({
+    selectedModel,
+    selectedCourseCode,
+    selectedCourseId: selectedCourse?.id as string | undefined,
+    chatId,
+    systemPrompt,
+    adhdAssist,
+    getValidApiKeys,
+  });
+  requestContextRef.current = {
+    selectedModel,
+    selectedCourseCode,
+    selectedCourseId: selectedCourse?.id,
+    chatId,
+    systemPrompt,
+    adhdAssist,
+    getValidApiKeys,
+  };
+
   const { messages, input, handleInputChange, handleSubmit, isLoading, stop } = useChat({
     api: "/api/chat",
-    body: {
-      chatMode: "admin",
-      model: selectedModel,
-      apiKeys: getValidApiKeys(),
-      courseCode: selectedCourseCode || undefined,
-      courseId: selectedCourse?.id || undefined,
-      chatId: chatId || undefined,
-      systemPrompt: systemPrompt || undefined,
-      adhdAssist,
+    experimental_prepareRequestBody: ({ messages: chatMessages, requestBody }) => {
+      const ctx = requestContextRef.current;
+      return {
+        ...requestBody,
+        messages: chatMessages,
+        chatMode: "admin",
+        model: ctx.selectedModel,
+        apiKeys: ctx.getValidApiKeys(),
+        courseCode: ctx.selectedCourseCode || undefined,
+        courseId: ctx.selectedCourseId || undefined,
+        chatId: ctx.chatId || undefined,
+        systemPrompt: ctx.systemPrompt || undefined,
+        adhdAssist: ctx.adhdAssist,
+      };
     },
     onResponse: async (response) => {
       await logChatApiResponse(response, "admin-chat");
