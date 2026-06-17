@@ -11,9 +11,9 @@ import { Topic } from '../../types/topic';
 interface MultiSelectDropdownProps {
   label: string;
   options: Topic[];
-  selectedIds: number[];
-  onChange: (ids: number[]) => void;
-  disabledIds?: Set<number>;
+  selectedIds: string[];
+  onChange: (ids: string[]) => void;
+  disabledIds?: Set<string>;
   /** Optional: match filter panel style (e.g. primary topic dropdown) */
   labelClassName?: string;
   triggerClassName?: string;
@@ -25,7 +25,7 @@ export const MultiSelectDropdown = ({
   options,
   selectedIds,
   onChange,
-  disabledIds = new Set<number>(),
+  disabledIds = new Set<string>(),
   labelClassName,
   triggerClassName,
   listClassName
@@ -44,7 +44,7 @@ export const MultiSelectDropdown = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const toggleOption = (id: number) => {
+  const toggleOption = (id: string) => {
     onChange(
       selectedIds.includes(id)
         ? selectedIds.filter((value) => value !== id)

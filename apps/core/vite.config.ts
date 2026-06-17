@@ -28,7 +28,8 @@ export default defineConfig(({ mode }) => {
       alias: {
         "@tabler/icons-react": "@tabler/icons-react/dist/esm/icons/index.mjs",
       },
-      dedupe: ["better-auth"],
+      // Monorepo hoisting can give Radix/shadcn a second React copy → "useState of null" after HMR.
+      dedupe: ["react", "react-dom", "better-auth"],
     },
     server: {
       port: 3000,

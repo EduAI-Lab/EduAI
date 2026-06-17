@@ -2,27 +2,31 @@ import { Form } from "react-router";
 import { useEffect, useState } from "react";
 
 import { CanvasIntegrationSettings } from "~/components/canvas/CanvasIntegrationSettings";
+import { AccessibilitySettingsTab } from "~/components/settings/accessibility-settings-tab";
+import { StudentNumberSettings } from "~/components/settings/student-number-settings";
 import {
-  IconCircleCheck,
-  IconCopy,
-  IconKey,
-  IconPlus,
-  IconWorld,
-} from "@tabler/icons-react";
+  Accessibility,
+  CheckCircle2,
+  Copy,
+  Globe,
+  Key,
+  Plus,
+  Shield,
+  Trash2,
+} from "lucide-react";
 
-import { Badge } from "@eduai/ui";
-import { Button } from "@eduai/ui";
+import { Badge } from "~/components/ui/badge";
+import { Button } from "~/components/ui/button";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@eduai/ui";
-import { Input } from "@eduai/ui";
-import { Label } from "@eduai/ui";
-import { PageTabs, PageTabsList, PageTabsTrigger, PageTabsContent } from "@eduai/ui";
-import { PageHeading } from "@eduai/ui";
+} from "~/components/ui/card";
+import { Input } from "~/components/ui/input";
+import { Label } from "~/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { useApiKeys } from "~/hooks/use-api-keys";
 import { authClient } from "~/lib/auth/client";
 
@@ -40,16 +44,18 @@ const CANVAS_SETTINGS_ROLES = new Set(["INSTRUCTOR", "ADMIN"]);
 
 interface SettingsViewProps {
   role?: string;
+  studentNumber?: string | null;
 }
 
-export function SettingsView({ role }: SettingsViewProps) {
+export function SettingsView({ role, studentNumber = null }: SettingsViewProps) {
   const showCanvasSettings = CANVAS_SETTINGS_ROLES.has(role ?? "");
+  const showStudentNumberSettings = role === "STUDENT";
   const {
     updateProviderSettings,
     removeProviderSettings,
     isProviderConfigured,
   } = useApiKeys();
-  const [activeTab, setActiveTab] = useState("api-keys");
+  const [activeTab, setActiveTab] = useState("accessibility");
   const [serverKeys, setServerKeys] = useState<ServerApiKey[]>([]);
   const [creating, setCreating] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
@@ -113,27 +119,33 @@ export function SettingsView({ role }: SettingsViewProps) {
   };
 
   return (
-    <div className="flex flex-1 flex-col">
-      <div className="@container/main flex flex-1 flex-col gap-2">
-        <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-          <div className="px-4 lg:px-6">
-            <PageHeading
-              heading="Settings"
-              subheading="Manage server API keys and local model provider configuration."
-            />
-          </div>
-          <div className="px-4 lg:px-6">
-            <PageTabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <PageTabsList>
-          <PageTabsTrigger value="api-keys">
-            <IconKey className="h-4 w-4" /> API Keys
-          </PageTabsTrigger>
-          <PageTabsTrigger value="providers">
-            <IconWorld className="h-4 w-4" /> Providers
-          </PageTabsTrigger>
-        </PageTabsList>
+    <div className="px-4 py-6 max-w-4xl mx-auto w-full">
+      <h1 className="text-2xl font-bold mb-2">Settings</h1>
+      <p className="text-sm text-muted-foreground mb-4">
+        Manage account preferences, API keys, and local model provider configuration.
+      </p>
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="settings-tabs">
+          <TabsTrigger value="accessibility">
+            <Accessibility className="h-4 w-4" /> Accessibility
+          </TabsTrigger>
+          <TabsTrigger value="api-keys">
+            <Key className="h-4 w-4" /> API Keys
+          </TabsTrigger>
+          <TabsTrigger value="providers">
+            <Globe className="h-4 w-4" /> Providers
+          </TabsTrigger>
+        </TabsList>
 
-        <PageTabsContent value="api-keys" className="space-y-6">
+        <TabsContent value="accessibility">
+          <AccessibilitySettingsTab />
+        </TabsContent>
+
+        <TabsContent value="api-keys" className="mt-6 space-y-6">
+          {showStudentNumberSettings && (
+            <StudentNumberSettings initialStudentNumber={studentNumber} />
+          )}
+
           <Card>
             <CardHeader>
               <CardTitle>Server API Keys</CardTitle>
@@ -156,7 +168,7 @@ export function SettingsView({ role }: SettingsViewProps) {
                     className="flex-1"
                   />
                   <Button onClick={createServerKey} disabled={creating}>
-                    <IconPlus className="h-4 w-4 mr-1" /> Create
+                    <Plus className="h-4 w-4 mr-1" /> Create
                   </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
@@ -178,54 +190,56 @@ export function SettingsView({ role }: SettingsViewProps) {
                   </div>
                   <Button size="sm" variant="outline" onClick={copyCreatedKey}>
                     {copyOk ? (
-                      <IconCircleCheck className="h-4 w-4" />
+                      <CheckCircle2 className="h-4 w-4" />
                     ) : (
-                      <IconCopy className="h-4 w-4" />
+                      <Copy className="h-4 w-4" />
                     )}
                   </Button>
                 </div>
               )}
 
-              <div className="flex flex-col rounded-lg border border-border overflow-hidden">
+              <div className="space-y-2">
                 {serverKeys.length === 0 ? (
-                  <p className="text-sm text-muted-foreground px-5 py-4">
+                  <p className="text-sm text-muted-foreground">
                     No API keys yet.
                   </p>
                 ) : (
-                  serverKeys.map((k, i) => (
+                  serverKeys.map((k) => (
                     <div
                       key={k.id}
-                      className="flex items-center gap-3.5 px-5 py-3.5 bg-card border-b border-border last:border-b-0"
+                      className="p-3 border rounded-md flex items-center justify-between"
                     >
-                      <div
-                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
-                        style={{ background: "color-mix(in oklch, var(--primary) 8%, var(--background))" }}
-                      >
-                        <IconKey className="h-4 w-4" style={{ color: "var(--primary)" }} />
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">
+                            {k.name || "Unnamed Key"}
+                          </span>
+                          {k.enabled ? (
+                            <Badge variant="secondary">
+                              <Shield className="h-3 w-3 mr-1" /> Active
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline">Disabled</Badge>
+                          )}
+                        </div>
+                        <div className="text-xs text-muted-foreground font-mono break-all">
+                          {k.prefix}-
+                          {k.start ? `${k.start.substring(0, 8)}...` : "******"}
+                        </div>
+                        {k.expiresAt && (
+                          <div className="text-xs text-muted-foreground">
+                            Expires:{" "}
+                            {new Date(k.expiresAt).toLocaleDateString()}
+                          </div>
+                        )}
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium text-foreground">
-                          {k.name || "Unnamed Key"}
-                        </div>
-                        <div className="text-xs text-muted-foreground font-mono mt-0.5">
-                          {k.prefix}-{k.start ? `${k.start.substring(0, 8)}…` : "••••••••"}
-                        </div>
-                      </div>
-                      {k.expiresAt && (
-                        <div className="text-xs text-muted-foreground text-right shrink-0">
-                          Expires {new Date(k.expiresAt).toLocaleDateString()}
-                        </div>
-                      )}
-                      {!k.enabled && (
-                        <Badge variant="outline" className="shrink-0">Disabled</Badge>
-                      )}
                       <Button
                         size="sm"
                         variant="outline"
                         onClick={() => deleteServerKey(k.id)}
-                        className="shrink-0 text-destructive hover:text-destructive border-border"
+                        className="text-red-600 hover:text-red-700"
                       >
-                        Revoke
+                        <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
                   ))
@@ -252,9 +266,9 @@ export function SettingsView({ role }: SettingsViewProps) {
   -d '{"messages":[{"role":"user","content":"hello"}],"model":"google:gemini-2.0-flash","apiKeys":{"google":{"apiKey":"AIza-***","isEnabled":true}}}'`}</pre>
             </CardContent>
           </Card>
-        </PageTabsContent>
+        </TabsContent>
 
-        <PageTabsContent value="providers">
+        <TabsContent value="providers" className="mt-6">
           <Card>
             <CardHeader>
               <CardTitle>Model Providers</CardTitle>
@@ -363,27 +377,22 @@ export function SettingsView({ role }: SettingsViewProps) {
               </div>
             </CardContent>
           </Card>
-        </PageTabsContent>
-            </PageTabs>
-          </div>
+        </TabsContent>
+      </Tabs>
 
-          <div className="px-4 lg:px-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Account</CardTitle>
-                <CardDescription>Sign out of EduAI on this browser.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Form method="post" action="/auth/logout" replace>
-                  <Button type="submit" variant="outline">
-                    Log out
-                  </Button>
-                </Form>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Account</CardTitle>
+          <CardDescription>Sign out of EduAI on this browser.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Form method="post" action="/auth/logout" replace>
+            <Button type="submit" variant="outline">
+              Log out
+            </Button>
+          </Form>
+        </CardContent>
+      </Card>
     </div>
   );
 }

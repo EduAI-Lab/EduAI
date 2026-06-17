@@ -53,7 +53,13 @@ describe("GET /api/preferences", () => {
     vi.mocked(prisma.userPreference.findUnique).mockResolvedValue(null);
     const res = await loader(makeArgs());
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ assistDefault: false, lastCourseCode: null });
+    expect(await res.json()).toEqual({
+      assistDefault: false,
+      lastCourseCode: null,
+      motionReduced: false,
+      density: "comfortable",
+      theme: "system",
+    });
   });
 
   it("returns the stored preferences", async () => {
@@ -61,9 +67,18 @@ describe("GET /api/preferences", () => {
     vi.mocked(prisma.userPreference.findUnique).mockResolvedValue({
       assistDefault: true,
       lastCourseCode: "COSC 111",
+      motionReduced: true,
+      density: "compact",
+      theme: "dark",
     } as never);
     const res = await loader(makeArgs());
-    expect(await res.json()).toEqual({ assistDefault: true, lastCourseCode: "COSC 111" });
+    expect(await res.json()).toEqual({
+      assistDefault: true,
+      lastCourseCode: "COSC 111",
+      motionReduced: true,
+      density: "compact",
+      theme: "dark",
+    });
     expect(prisma.userPreference.findUnique).toHaveBeenCalledWith(
       expect.objectContaining({ where: { userId: "u1" } }),
     );
@@ -87,11 +102,40 @@ describe("PATCH /api/preferences", () => {
     vi.mocked(saveUserPreference).mockResolvedValue({
       assistDefault: true,
       lastCourseCode: null,
+      motionReduced: false,
+      density: "comfortable",
+      theme: "system",
     });
     const res = await action(makeArgs("PATCH", { assistDefault: true }));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ assistDefault: true, lastCourseCode: null });
+    expect(await res.json()).toEqual({
+      assistDefault: true,
+      lastCourseCode: null,
+      motionReduced: false,
+      density: "comfortable",
+      theme: "system",
+    });
     expect(saveUserPreference).toHaveBeenCalledWith("u1", { assistDefault: true });
+  });
+
+  it("persists motion, density, and theme fields", async () => {
+    mockUser();
+    vi.mocked(saveUserPreference).mockResolvedValue({
+      assistDefault: false,
+      lastCourseCode: null,
+      motionReduced: true,
+      density: "compact",
+      theme: "dark",
+    });
+    const res = await action(
+      makeArgs("PATCH", { motionReduced: true, density: "compact", theme: "dark" }),
+    );
+    expect(res.status).toBe(200);
+    expect(saveUserPreference).toHaveBeenCalledWith("u1", {
+      motionReduced: true,
+      density: "compact",
+      theme: "dark",
+    });
   });
 
   it("returns 400 when no valid fields are provided", async () => {

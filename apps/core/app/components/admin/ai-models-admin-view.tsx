@@ -1,22 +1,23 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { IconFilter, IconPlus, IconSearch } from "@tabler/icons-react";
 
 import { AIModelsTable } from "~/components/admin/ai-models-table";
 import { ModelFormDialog } from "~/components/admin/model-form-dialog";
 import { ProviderFormDialog } from "~/components/admin/provider-form-dialog";
 import { ProvidersTable } from "~/components/admin/providers-table";
-import { Button } from "@eduai/ui";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@eduai/ui";
-import { Input } from "@eduai/ui";
-import { PageHeading } from "@eduai/ui";
+import { Button } from "~/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
+import { Input } from "~/components/ui/input";
+import { Label } from "~/components/ui/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@eduai/ui";
-import { PageTabs, PageTabsList, PageTabsTrigger, PageTabsContent } from "@eduai/ui";
+} from "~/components/ui/select";
+import { Switch } from "~/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import type { AIModel, AIProvider } from "~/hooks/api/types";
 import type { OllamaModel, VllmModel } from "~/components/admin/model-form-dialog";
 
@@ -71,6 +72,40 @@ export function AiModelsAdminView({
   const [fetchingVllmModels, setFetchingVllmModels] = useState(false);
   const [vllmError, setVllmError] = useState<string | null>(null);
   const [vllmFetched, setVllmFetched] = useState(false);
+  const [webToolsEnabled, setWebToolsEnabled] = useState(false);
+  const [savingWebTools, setSavingWebTools] = useState(false);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await fetch("/api/system-config/webToolsEnabled");
+        if (response.ok) {
+          const data = await response.json();
+          setWebToolsEnabled(Boolean(data.webToolsEnabled));
+        }
+      } catch (err) {
+        console.error("Failed to fetch webToolsEnabled:", err);
+      }
+    })();
+  }, []);
+
+  const handleWebToolsToggle = useCallback(async (enabled: boolean) => {
+    setSavingWebTools(true);
+    try {
+      const response = await fetch("/api/system-config/webToolsEnabled", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ webToolsEnabled: enabled }),
+      });
+      if (response.ok) {
+        setWebToolsEnabled(enabled);
+      }
+    } catch (err) {
+      console.error("Failed to update webToolsEnabled:", err);
+    } finally {
+      setSavingWebTools(false);
+    }
+  }, []);
 
   const handleFetchOllamaModels = useCallback(async () => {
     setFetchingOllamaModels(true);
@@ -213,7 +248,7 @@ export function AiModelsAdminView({
   if (isLoading) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-foreground" />
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900" />
         <p className="mt-4 text-sm text-muted-foreground">Loading...</p>
       </div>
     );
@@ -224,10 +259,14 @@ export function AiModelsAdminView({
       <div className="@container/main flex flex-1 flex-col gap-2">
         <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
           <div className="px-4 lg:px-6">
-            <PageHeading
-              heading="AI management"
-              subheading="Manage AI providers and models for your platform"
-            />
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-bold">AI Management</h2>
+                <p className="text-muted-foreground">
+                  Manage AI providers and models for your platform
+                </p>
+              </div>
+            </div>
           </div>
 
           {error && (
@@ -237,13 +276,14 @@ export function AiModelsAdminView({
           )}
 
           <div className="px-4 lg:px-6">
-            <PageTabs defaultValue="models" className="w-full">
-              <PageTabsList>
-                <PageTabsTrigger value="models">Models</PageTabsTrigger>
-                <PageTabsTrigger value="providers">Providers</PageTabsTrigger>
-              </PageTabsList>
+            <Tabs defaultValue="models" className="w-full">
+              <TabsList>
+                <TabsTrigger value="models">Models</TabsTrigger>
+                <TabsTrigger value="providers">Providers</TabsTrigger>
+                <TabsTrigger value="settings">Settings</TabsTrigger>
+              </TabsList>
 
-              <PageTabsContent value="models" className="space-y-4">
+              <TabsContent value="models" className="space-y-4">
                 <Card>
                   <CardHeader>
                     <div className="flex items-center justify-between">
@@ -306,9 +346,9 @@ export function AiModelsAdminView({
                     />
                   </CardContent>
                 </Card>
-              </PageTabsContent>
+              </TabsContent>
 
-              <PageTabsContent value="providers" className="space-y-4">
+              <TabsContent value="providers" className="space-y-4">
                 <Card>
                   <CardHeader>
                     <div className="flex items-center justify-between">
@@ -341,8 +381,38 @@ export function AiModelsAdminView({
                     />
                   </CardContent>
                 </Card>
-              </PageTabsContent>
-            </PageTabs>
+              </TabsContent>
+
+              <TabsContent value="settings" className="space-y-4">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Chat tool settings</CardTitle>
+                    <CardDescription>
+                      Control which tools are registered on the chat API tool path. Course RAG via
+                      getInformation is always available for tool-capable models.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
+                      <div className="space-y-1">
+                        <Label htmlFor="webToolsEnabled">Web search tools</Label>
+                        <p className="text-sm text-muted-foreground">
+                          When enabled, webSearch and fetchPage are registered alongside
+                          getInformation. Default is off for lower latency during ADHD and
+                          course-RAG research.
+                        </p>
+                      </div>
+                      <Switch
+                        id="webToolsEnabled"
+                        checked={webToolsEnabled}
+                        disabled={savingWebTools}
+                        onCheckedChange={handleWebToolsToggle}
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            </Tabs>
           </div>
         </div>
       </div>

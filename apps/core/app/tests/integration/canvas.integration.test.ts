@@ -512,6 +512,36 @@ describe("Canvas API — link-roster", { timeout: 15_000 }, () => {
     await prisma.user.delete({ where: { id: otherStudent.id } });
   });
 
+  it("returns 409 when a student attempts to change their linked student number", async () => {
+    await seedSyncedCourseForLinking();
+
+    const initialNumber = `change_src_${Date.now()}`;
+    const prepared = prepareStudentIdStorage(initialNumber);
+    const student = await prisma.user.create({
+      data: {
+        email: `canvas-change-${Date.now()}@test.com`,
+        name: "Change Student",
+        role: "STUDENT",
+        emailVerified: true,
+        studentId: prepared.studentId,
+        studentIdLookup: prepared.studentIdLookup,
+      },
+    });
+
+    sessionFor(student.id, "STUDENT");
+    const res = await call("POST", "link-roster", { studentNumber: "student_2" });
+    expect(res.status).toBe(409);
+
+    const updatedUser = await prisma.user.findUnique({
+      where: { id: student.id },
+      select: { studentId: true },
+    });
+    expect(readStoredStudentId(updatedUser?.studentId)).toBe(initialNumber);
+
+    await prisma.enrollment.deleteMany({ where: { userId: student.id } });
+    await prisma.user.delete({ where: { id: student.id } });
+  });
+
   it("returns 401 for unauthenticated link-roster requests", async () => {
     noSession();
     const res = await call("POST", "link-roster", { studentNumber: "student_1" });

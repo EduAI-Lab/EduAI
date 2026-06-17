@@ -82,7 +82,7 @@ const AssessmentBuilderPage = () => {
     }, [assessmentId]);
 
     const topicById = useMemo(() => {
-        const map: Record<number, Topic> = {};
+        const map: Record<string, Topic> = {};
         topics.forEach((topic) => {
             map[topic.id] = topic;
         });
@@ -90,7 +90,7 @@ const AssessmentBuilderPage = () => {
     }, [topics]);
 
     const questionVariantEntries = useMemo<QuestionVariantEntry[]>(() => {
-        const resolveTopicName = (topicId: number) => topicById[topicId]?.name ?? `Topic ${topicId}`;
+        const resolveTopicName = (topicId: string) => topicById[topicId]?.name ?? `Topic ${topicId}`;
         return questions.flatMap((question) =>
             (question.variants ?? []).map((variant) => {
                 const secondaryTopicNames = Array.isArray(variant.secondaryTopicsId)
@@ -357,13 +357,13 @@ const AssessmentBuilderPage = () => {
 
     const handleUpdateQuestionMetadata = async (
         questionId: number,
-        _updates: { description?: string | null; primaryTopicId?: number; type?: string; primaryTopicName?: string }
+        _updates: { description?: string | null; primaryTopicId?: string; type?: string; primaryTopicName?: string }
     ) => {
         try {
             const fetched = await questionService.getQuestion(questionId);
             await refreshQuestionsAndAssessment();
             if (viewEntry?.questionId === questionId) {
-                const resolveTopicName = (topicId: number) => topicById[topicId]?.name ?? `Topic ${topicId}`;
+                const resolveTopicName = (topicId: string) => topicById[topicId]?.name ?? `Topic ${topicId}`;
                 const variant = fetched.variants?.find((v) => v.id === viewEntry.variant.id) ?? viewEntry.variant;
                 const secondaryTopicNames = Array.isArray(variant.secondaryTopicsId)
                     ? (variant.secondaryTopicsId

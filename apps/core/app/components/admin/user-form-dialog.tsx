@@ -9,7 +9,7 @@ import { Checkbox } from "@eduai/ui";
 import { Badge } from "@eduai/ui";
 import { useForm, useWatch } from "react-hook-form";
 import { createUserSchema, updateUserSchema } from "~/lib/auth/schemas";
-import { DEPARTMENTS } from "~/lib/departments";
+import { UNIT_OPTIONS } from "~/lib/units";
 import type { z } from "zod";
 
 import type { User } from "~/components/admin/users-table";
@@ -173,7 +173,7 @@ export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormD
                   Select the departments this administrator can manage.
                 </FormDescription>
                 <div className="grid grid-cols-2 gap-2 rounded-md border p-3">
-                  {DEPARTMENTS.map((dept) => (
+                  {UNIT_OPTIONS.map((dept) => (
                     <label
                       key={dept.code}
                       className="flex items-center gap-2 cursor-pointer select-none"

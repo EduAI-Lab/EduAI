@@ -1,31 +1,26 @@
 import express from 'express';
 import { requireAuth } from '../middleware/auth.js';
 import { config } from '../config/settings.js';
-import { getMyProfileFromCore } from '../services/coreApiService.js';
+import { importTaughtCoursesFromCore } from '../services/importTaughtCoursesService.js';
+import { logger } from '../utils/logger.js';
 
 const router = express.Router();
 
 // §11: bug-report triage is ADMIN-only (role-based, replacing the prior email allowlist).
-router.get('/auth/me', requireAuth, async (req, res, next) => {
+router.get('/auth/me', requireAuth, async (req, res) => {
   try {
-    const isBugReportAdmin = req.user.role === 'ADMIN';
-    let authorizedUnits;
-
-    if (req.user.role === 'UNIT_ADMIN') {
-      const profile = await getMyProfileFromCore(req.headers.cookie).catch(() => null);
-      authorizedUnits = Array.isArray(profile?.authorizedUnits) ? profile.authorizedUnits : [];
-    }
-
-    res.json({
-      user: {
-        ...req.user,
-        isBugReportAdmin,
-        ...(authorizedUnits !== undefined ? { authorizedUnits } : {}),
-      },
-    });
-  } catch (error) {
-    next(error);
+    await importTaughtCoursesFromCore(
+      req.user.id,
+      req.user.role,
+      req.headers.cookie ?? '',
+    );
+  } catch (err) {
+    logger.warn({ err, userId: req.user.id }, 'Auto-import taught courses failed on login');
   }
+
+  const isBugReportAdmin = req.user.role === 'ADMIN';
+
+  res.json({ user: { ...req.user, isBugReportAdmin } });
 });
 
 // Proxy sign-out to Core server-to-server, avoiding browser CORS restrictions.

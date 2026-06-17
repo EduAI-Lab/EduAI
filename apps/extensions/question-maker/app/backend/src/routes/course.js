@@ -4,34 +4,19 @@
  */
 import express from 'express';
 import { Course, Question_Metadata, Topics } from '../schema/index.js';
-import { authenticateToken, requireRole } from '../middleware/auth.js';
-import { QM_AUTHORIZED } from '../middleware/roles.js';
-import { resolveCourseAccessWithCourse, LEVELS } from '../middleware/courseAccess.js';
-import { listCoursesForUser } from '../services/courseListService.js';
-import { getCourseTopicsFromCore, pushTopicToCore } from '../services/coreApiService.js';
+import { authenticateToken } from '../middleware/auth.js';
+import {
+  pushTopicToCore,
+  isCoreCourseInScopedList,
+} from '../services/coreApiService.js';
+import { ensureCoreCourseLink } from '../services/coreCourseLinkService.js';
+import { syncTopicsFromCoreForCourse } from '../services/topicSyncService.js';
 import { logger } from '../utils/logger.js';
 
 const router = express.Router();
 
-router.use(authenticateToken, requireRole(QM_AUTHORIZED));
-
-async function loadCourseWithAccess(req, res, minRank = LEVELS.instructor.rank) {
-  const { course, access } = await resolveCourseAccessWithCourse(req.user, req.params.id, {
-    cookie: req.headers.cookie,
-  });
-  if (!course) {
-    res.status(404).json({ success: false, error: 'Course not found' });
-    return null;
-  }
-  if (!access || access.rank < minRank) {
-    res.status(403).json({ success: false, error: 'Insufficient course access' });
-    return null;
-  }
-  return { course, access };
-}
-
 /** POST /api/course – creates a course tied to the authenticated user after basic validation. */
-router.post('/', async (req, res, next) => {
+router.post('/', authenticateToken, async (req, res, next) => {
   try {
     const { name, courseCode } = req.body;
 
@@ -58,85 +43,69 @@ router.post('/', async (req, res, next) => {
   }
 });
 
-/** GET /api/course – role-scoped list with optional stats. */
-router.get('/', async (req, res, next) => {
+/** GET /api/course – lists the user’s courses and optionally includes question/topic stats. */
+router.get('/', authenticateToken, async (req, res, next) => {
   try {
     const { includeStats = false } = req.query;
-
-    const courses = await listCoursesForUser(req.user, { cookie: req.headers.cookie });
-
-    if (includeStats !== 'true') {
-      return res.json({ success: true, data: courses });
-    }
-
-    const courseIds = courses.map((c) => c.id);
-    const withRelations = await Course.findAll({
-      where: { id: courseIds },
-      include: [
+    
+    let includeOptions = [];
+    if (includeStats === 'true') {
+      includeOptions = [
         {
           model: Question_Metadata,
           as: 'questionMetadata',
           attributes: ['id', 'type', 'description'],
-          required: false,
+          required: false
         },
         {
           model: Topics,
           as: 'topics',
           attributes: ['id', 'name'],
-          required: false,
-        },
-      ],
-      order: [['createdAt', 'DESC']],
+          required: false
+        }
+      ];
+    }
+
+    const courses = await Course.findAll({
+      where: { userId: req.user.id },
+      include: includeOptions,
+      order: [['createdAt', 'DESC']]
     });
 
-    const relationById = new Map(withRelations.map((c) => [c.id, c]));
-    const coursesWithStats = courses.map((course) => {
-      const rel = relationById.get(course.id);
-      const meta = rel?.questionMetadata ?? [];
-      const topics = rel?.topics ?? [];
-      return {
-        ...course,
+    // Add stats if requested
+    if (includeStats === 'true') {
+      const coursesWithStats = courses.map(course => ({
+        ...course.toJSON(),
         stats: {
-          totalQuestions: meta.length,
-          totalTopics: topics.length,
-          questionTypes: meta.reduce((acc, q) => {
+          totalQuestions: course.questionMetadata?.length || 0,
+          totalTopics: course.topics?.length || 0,
+          questionTypes: course.questionMetadata?.reduce((acc, q) => {
             acc[q.type] = (acc[q.type] || 0) + 1;
             return acc;
-          }, {}),
-        },
-      };
-    });
+          }, {}) || {}
+        }
+      }));
+      
+      return res.json({
+        success: true,
+        data: coursesWithStats
+      });
+    }
 
-    res.json({ success: true, data: coursesWithStats });
-  } catch (error) {
-    next(error);
-  }
-});
-
-/** GET /api/course/:id/access – caller's resolved access for UI gating. */
-router.get('/:id/access', async (req, res, next) => {
-  try {
-    const loaded = await loadCourseWithAccess(req, res);
-    if (!loaded) return;
-    const { access } = loaded;
     res.json({
       success: true,
-      data: { level: access.level, rank: access.rank },
+      data: courses
     });
   } catch (error) {
     next(error);
   }
 });
 
-/** GET /api/course/:id – single course when caller has instructor+ access. */
-router.get('/:id', async (req, res, next) => {
+/** GET /api/course/:id – fetches a single course with optional details if the requester owns it. */
+router.get('/:id', authenticateToken, async (req, res, next) => {
   try {
-    const loaded = await loadCourseWithAccess(req, res);
-    if (!loaded) return;
-
-    const { course, access } = loaded;
     const { includeDetails = false } = req.query;
-
+    
     let includeOptions = [];
     if (includeDetails === 'true') {
       includeOptions = [
@@ -148,28 +117,33 @@ router.get('/:id', async (req, res, next) => {
             {
               model: Topics,
               as: 'primaryTopic',
-              attributes: ['id', 'name'],
-            },
-          ],
+              attributes: ['id', 'name']
+            }
+          ]
         },
         {
           model: Topics,
           as: 'topics',
-          attributes: ['id', 'name'],
-        },
+          attributes: ['id', 'name']
+        }
       ];
     }
 
-    const courseData = includeOptions.length
-      ? await Course.findByPk(course.id, { include: includeOptions })
-      : course;
+    const courseData = await Course.findOne({
+      where: { id: req.params.id, userId: req.user.id },
+      include: includeOptions
+    });
+
+    if (!courseData) {
+      return res.status(404).json({
+        success: false,
+        error: 'Course not found'
+      });
+    }
 
     res.json({
       success: true,
-      data: {
-        ...(courseData.toJSON ? courseData.toJSON() : courseData),
-        accessLevel: access.level,
-      },
+      data: courseData
     });
   } catch (error) {
     next(error);
@@ -177,7 +151,7 @@ router.get('/:id', async (req, res, next) => {
 });
 
 /** PUT /api/course/:id – updates course metadata after confirming ownership. */
-router.put('/:id', async (req, res, next) => {
+router.put('/:id', authenticateToken, async (req, res, next) => {
   try {
     const { name, courseCode } = req.body;
 
@@ -208,7 +182,7 @@ router.put('/:id', async (req, res, next) => {
 });
 
 /** DELETE /api/course/:id – removes a course and its associations if it belongs to the user. */
-router.delete('/:id', async (req, res, next) => {
+router.delete('/:id', authenticateToken, async (req, res, next) => {
   try {
     const courseData = await Course.findOne({
       where: { id: req.params.id, userId: req.user.id }
@@ -232,20 +206,38 @@ router.delete('/:id', async (req, res, next) => {
   }
 });
 
-/** GET /api/course/:id/topics – topics for a course the caller may access. */
-router.get('/:id/topics', async (req, res, next) => {
+/** GET /api/course/:id/topics – returns the topic list for an owned course. */
+router.get('/:id/topics', authenticateToken, async (req, res, next) => {
   try {
-    const loaded = await loadCourseWithAccess(req, res);
-    if (!loaded) return;
+    // Verify user owns the course
+    const course = await Course.findOne({
+      where: { id: req.params.id, userId: req.user.id }
+    });
+
+    if (!course) {
+      return res.status(404).json({
+        success: false,
+        error: 'Course not found'
+      });
+    }
+
+    const cookie = req.headers.cookie ?? '';
+    if (await ensureCoreCourseLink(course, cookie)) {
+      await course.reload();
+    }
+
+    if (course.coreCourseId) {
+      await syncTopicsFromCoreForCourse(course, cookie);
+    }
 
     const topics = await Topics.findAll({
-      where: { courseId: loaded.course.id },
-      order: [['createdAt', 'ASC']],
+      where: { courseId: req.params.id },
+      order: [['createdAt', 'ASC']]
     });
 
     res.json({
       success: true,
-      data: topics,
+      data: topics
     });
   } catch (error) {
     next(error);
@@ -253,7 +245,7 @@ router.get('/:id/topics', async (req, res, next) => {
 });
 
 /** POST /api/course/:id/topics – adds a topic to the course and pushes it to Core if the course is linked. */
-router.post('/:id/topics', async (req, res, next) => {
+router.post('/:id/topics', authenticateToken, async (req, res, next) => {
   try {
     const { name } = req.body;
 
@@ -303,7 +295,7 @@ router.post('/:id/topics', async (req, res, next) => {
 });
 
 /** PATCH /api/course/:id/link-core – stores a Core course CUID on the local course row. */
-router.patch('/:id/link-core', async (req, res, next) => {
+router.patch('/:id/link-core', authenticateToken, async (req, res, next) => {
   try {
     const { coreCourseId } = req.body;
 
@@ -319,6 +311,22 @@ router.patch('/:id/link-core', async (req, res, next) => {
       return res.status(404).json({ success: false, error: 'Course not found' });
     }
 
+    const cookie = req.headers.cookie ?? '';
+    let linkable = false;
+    try {
+      linkable = await isCoreCourseInScopedList(coreCourseId, cookie);
+    } catch (err) {
+      const status = Number.isInteger(err?.status) ? err.status : 502;
+      return res.status(status).json({
+        success: false,
+        error: err.message || 'Failed to verify Core course access',
+      });
+    }
+
+    if (!linkable) {
+      return res.status(403).json({ success: false, error: 'CORE_COURSE_NOT_AUTHORIZED' });
+    }
+
     await course.update({ coreCourseId });
 
     res.json({ success: true, data: course });
@@ -328,7 +336,7 @@ router.patch('/:id/link-core', async (req, res, next) => {
 });
 
 /** POST /api/course/:id/sync-topics – pulls topics from Core and upserts them into the local topics table. */
-router.post('/:id/sync-topics', async (req, res, next) => {
+router.post('/:id/sync-topics', authenticateToken, async (req, res, next) => {
   try {
     const course = await Course.findOne({
       where: { id: req.params.id, userId: req.user.id }
@@ -338,35 +346,23 @@ router.post('/:id/sync-topics', async (req, res, next) => {
       return res.status(404).json({ success: false, error: 'Course not found' });
     }
 
+    const cookie = req.headers.cookie ?? '';
+    if (await ensureCoreCourseLink(course, cookie)) {
+      await course.reload();
+    }
+
     if (!course.coreCourseId) {
       return res.status(400).json({ success: false, error: 'Course is not linked to Core' });
     }
 
-    let coreTopics;
+    let synced;
     try {
-      const data = await getCourseTopicsFromCore(course.coreCourseId);
-      coreTopics = data.topics ?? data;
-    } catch (coreErr) {
-      return res.status(502).json({ success: false, error: coreErr.body?.error || 'Failed to fetch topics from Core' });
-    }
-
-    let synced = 0;
-    for (const ct of coreTopics) {
-      // Try to find existing local topic by Core ID
-      let existing = await Topics.findOne({ where: { coreTopicId: ct.id } });
-      if (existing) {
-        await existing.update({ name: ct.name });
-        synced++;
-      } else {
-        // Try by name+course to avoid duplicate names
-        existing = await Topics.findOne({ where: { courseId: course.id, name: ct.name } });
-        if (existing) {
-          await existing.update({ coreTopicId: ct.id });
-        } else {
-          await Topics.create({ name: ct.name, courseId: course.id, coreTopicId: ct.id });
-        }
-        synced++;
-      }
+      synced = await syncTopicsFromCoreForCourse(course, cookie, { failOnCoreError: true });
+    } catch (err) {
+      return res.status(502).json({
+        success: false,
+        error: err.message || 'Core request failed',
+      });
     }
 
     res.json({ success: true, data: { synced } });

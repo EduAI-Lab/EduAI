@@ -15,24 +15,35 @@ const baseProps = {
   input: "",
   isLoading: false,
   adhdAssist: false,
-  onAssistChange: () => {},
+  assistive: false,
+  onAssistiveChange: () => {},
+  focusMode: false,
+  onFocusModeChange: () => {},
   systemPrompt: null,
   onSystemPromptSave: async () => {},
   onInputChange: () => {},
   onSubmit: () => {},
   onSelectPrompt: () => {},
+  webToolsEnabled: false,
 };
 
 describe("Chat views — role layouts", () => {
-  it("global view shows Global indicator pill", () => {
+  it("global view shows optional course context banner", () => {
     render(<ChatGlobalView {...baseProps} />);
-    // Global view shows a "Global" indicator pill in the input area
-    expect(screen.getByText("Global")).toBeInTheDocument();
+    expect(screen.getByText("Global chat")).toBeInTheDocument();
+    expect(screen.getByText(/Select a course below/i)).toBeInTheDocument();
   });
 
-  it("course-scoped view shows course selector pill", () => {
+  it("course-scoped view shows course banner", () => {
     render(<ChatCourseScopedView {...baseProps} />);
-    // Course-scoped view shows a course selector pill that says "Select course"
-    expect(screen.getByText("Select course")).toBeInTheDocument();
+    expect(screen.getByText("Course-scoped chat")).toBeInTheDocument();
+  });
+});
+
+describe("Chat views — header controls placement", () => {
+  it("does not render assistive mode or system prompt controls in the scrollable chat body", () => {
+    render(<ChatGlobalView {...baseProps} />);
+    expect(screen.queryByRole("switch", { name: /assistive mode/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /system prompt/i })).not.toBeInTheDocument();
   });
 });

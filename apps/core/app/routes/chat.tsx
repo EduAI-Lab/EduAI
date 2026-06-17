@@ -1,22 +1,20 @@
 import { useChat } from "@ai-sdk/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, redirect, useLoaderData, useFetcher, useSearchParams } from "react-router";
+import { Link, redirect, useLoaderData, useFetcher } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import { IconHistory, IconPencilPlus } from "@tabler/icons-react";
-
 
 import { AppSidebar } from "~/components/app-sidebar";
 import { ChatCourseScopedView } from "~/components/chat/chat-course-scoped-view";
 import { ChatGlobalView } from "~/components/chat/chat-global-view";
-import { ChatHistoryPanel } from "~/components/chat/chat-history-panel";
-import { ChatTranscriptViewer } from "~/components/chat/chat-transcript-viewer";
+import { ChatHeaderControls } from "~/components/chat/chat-header-controls";
 import type {
   ChatCourseOption,
   ChatModelOption,
 } from "~/components/chat/chat-view-types";
-import { fetchChatTranscript, type ChatTranscript } from "~/hooks/api/use-chat-history";
+import { useAssistiveUi } from "~/components/assistive/assistive-ui-provider";
+import { CHAT_MESSAGE_INPUT_ID } from "~/components/assistive/active-highlight";
 import { SiteHeader } from "~/components/site-header";
-import { Button, SidebarInset, SidebarProvider, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@eduai/ui";
+import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -24,16 +22,10 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from "@eduai/ui"
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from "@eduai/ui"
+} from "~/components/ui/breadcrumb"
 import { fetchChatSession } from "~/hooks/api/use-chat-sessions";
 import { useCourses } from "~/hooks/api/use-courses";
+import { useAssistiveReorientation } from "~/hooks/use-assistive-reorientation";
 import { useApiKeys } from "~/hooks/use-api-keys";
 import { auth } from "~/lib/auth/server";
 import { usesGlobalChat } from "~/lib/rbac";
@@ -41,14 +33,6 @@ import prisma from "~/lib/prisma.server";
 import { getUserPreference, saveUserPreference } from "~/lib/user-preferences.server";
 import { getAccessibleCourseCodes } from "~/lib/courses/server";
 import { parsePreferenceUpdates } from "~/lib/user-preferences";
-import { useAssistiveUi } from "~/components/assistive/assistive-ui-provider";
-
-/**
- * Per-tab marker for the chat the user is actively in. Lives in sessionStorage
- * so it survives navigating away and back within the same tab (temporary leave)
- * but clears when the tab closes (fresh start) — the "smart restore" heuristic.
- */
-const ACTIVE_CHAT_KEY = "eduai:activeChatId";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request);
@@ -78,9 +62,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
     supportsTools: model.supportsTools,
   }));
 
-  // Validate the persisted course against the courses THIS user can actually
-  // access, so a stale / now-inaccessible `lastCourseCode` is dropped on restore
-  // rather than treated as valid just because the course still exists (#420 review).
   const availableCourseCodes = await getAccessibleCourseCodes(session.user);
   const preferences = await getUserPreference(session.user.id, availableCourseCodes);
 
@@ -91,11 +72,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
   };
 }
 
-/**
- * Persists the per-user chat preferences written from this route (Assistive-mode
- * default + last selected course). Accepts any subset of
- * { assistDefault?: boolean, lastCourseCode?: string | null }.
- */
 export async function action({ request }: ActionFunctionArgs) {
   const session = await auth.api.getSession(request);
   if (!session?.user) {
@@ -118,11 +94,14 @@ export async function action({ request }: ActionFunctionArgs) {
 
 export default function Chat() {
   const { chatModels, user, assistDefault, lastCourseCode } = useLoaderData<typeof loader>();
+  const { assistive, setAssistive } = useAssistiveUi();
   const isGlobalChat = usesGlobalChat(user);
   const { courses } = useCourses();
-  const availableCourses: ChatCourseOption[] = isGlobalChat
-    ? []
-    : courses.map((c) => ({ id: c.id, name: c.name, code: c.code }));
+  const availableCourses: ChatCourseOption[] = courses.map((c) => ({
+    id: c.id,
+    name: c.name,
+    code: c.code,
+  }));
   const [selectedModel, setSelectedModel] = useState(
     chatModels.length > 0 ? chatModels[0].id : "",
   );
@@ -131,17 +110,13 @@ export default function Chat() {
   );
   const [chatId, setChatId] = useState<string | null>(null);
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
-  const [adhdAssist, setAdhdAssist] = useState(assistDefault ?? false);
-  const [readOnlyTranscript, setReadOnlyTranscript] = useState<ChatTranscript | null>(null);
+  const [adhdAssist, setAdhdAssist] = useState(assistDefault ?? assistive);
+  const [focusMode, setFocusMode] = useState(false);
+  const [reorientationEpoch, setReorientationEpoch] = useState(0);
+  const [webToolsEnabled, setWebToolsEnabled] = useState(false);
+  const wasLoadingRef = useRef(false);
   const { getValidApiKeys } = useApiKeys();
-  const { setAssistive } = useAssistiveUi();
   const prefsFetcher = useFetcher();
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [searchParams, setSearchParams] = useSearchParams();
-  // Guards the one-shot auto-restore so it never re-fires on later renders.
-  const restoreAttempted = useRef(false);
-  // One-shot flag so ?courseCode= param is only applied on mount.
-  const courseParamApplied = useRef(false);
 
   const persistPreference = useCallback(
     (updates: { assistDefault?: boolean; lastCourseCode?: string | null }) => {
@@ -150,32 +125,39 @@ export default function Chat() {
     [prefsFetcher],
   );
 
-  const handleAssistChange = useCallback((checked: boolean) => {
-    setAdhdAssist(checked);
-    // setAssistive already persists via PATCH /api/preferences — no extra submit needed.
-    setAssistive(checked);
-  }, [setAdhdAssist, setAssistive]);
+  const handleAssistiveChange = useCallback(
+    (checked: boolean) => {
+      setAdhdAssist(checked);
+      if (!checked) setFocusMode(false);
+      setAssistive(checked);
+    },
+    [setAssistive],
+  );
 
-  const handleCourseChange = useCallback((code: string | null) => {
-    setSelectedCourseCode(code);
-    persistPreference({ lastCourseCode: code });
-  }, [setSelectedCourseCode, persistPreference]);
+  const handleCourseChange = useCallback(
+    (code: string | null) => {
+      setSelectedCourseCode(code);
+      persistPreference({ lastCourseCode: code });
+    },
+    [persistPreference],
+  );
 
   useEffect(() => {
-    if (isGlobalChat) setSelectedCourseCode(null);
-  }, [isGlobalChat]);
+    const el = document.documentElement;
+    if (assistive && focusMode) {
+      el.setAttribute("data-assistive-focus-mode", "true");
+    } else {
+      el.removeAttribute("data-assistive-focus-mode");
+    }
+    return () => el.removeAttribute("data-assistive-focus-mode");
+  }, [assistive, focusMode]);
 
-  // Apply ?courseCode= deep-link param once on mount, then strip it from URL.
-  useEffect(() => {
-    if (courseParamApplied.current || isGlobalChat) return;
-    const code = searchParams.get("courseCode");
-    if (!code) return;
-    courseParamApplied.current = true;
-    setSelectedCourseCode(code);
-    const next = new URLSearchParams(searchParams);
-    next.delete("courseCode");
-    setSearchParams(next, { replace: true });
-  }, [isGlobalChat, searchParams, setSearchParams]);
+  useAssistiveReorientation({
+    enabled: assistive && reorientationEpoch > 0,
+    adhdAssist,
+    chatId,
+    epoch: reorientationEpoch,
+  });
 
   useEffect(() => {
     if (!chatId || systemPrompt) {
@@ -195,18 +177,13 @@ export default function Chat() {
     })();
   }, [chatId, systemPrompt, setAssistive]);
 
-  const { messages, input, handleInputChange, handleSubmit, isLoading, stop, setMessages } =
+  const { messages, input, handleInputChange, handleSubmit, isLoading, stop } =
     useChat({
       api: "/api/chat",
-      // Persist stable client message ids to the server. Without this, AI SDK v4
-      // strips `id` from the request body, so the server stamps a fresh UUID for
-      // every user message on every turn — defeating the (chatId, messageId)
-      // dedup and re-saving the entire user history each turn (chat-history dup bug).
-      sendExtraMessageFields: true,
       body: {
         model: selectedModel,
         apiKeys: getValidApiKeys(),
-        courseCode: isGlobalChat ? undefined : selectedCourseCode || undefined,
+        courseCode: selectedCourseCode || undefined,
         chatId: chatId || undefined,
         systemPrompt: systemPrompt || undefined,
         adhdAssist,
@@ -216,83 +193,32 @@ export default function Chat() {
         if (chatIdHeader && !chatId) {
           setChatId(chatIdHeader);
         }
+
+        const webToolsHeader = response.headers.get("X-Web-Tools-Enabled");
+        if (webToolsHeader !== null) {
+          setWebToolsEnabled(webToolsHeader === "1");
+        }
       },
     });
+
+  useEffect(() => {
+    const finishedLoading = wasLoadingRef.current && !isLoading;
+    wasLoadingRef.current = isLoading;
+
+    if (!assistive || !finishedLoading) return;
+
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage?.role !== "assistant") return;
+
+    setReorientationEpoch((n) => n + 1);
+    requestAnimationFrame(() => {
+      document.getElementById(CHAT_MESSAGE_INPUT_ID)?.focus();
+    });
+  }, [assistive, isLoading, messages]);
 
   const selectedModelInfo = chatModels.find(
     (model) => model.id === selectedModel,
   );
-
-  // Persist the active chat per-tab so it can be restored on a temporary leave.
-  useEffect(() => {
-    if (typeof window === "undefined" || !chatId) return;
-    window.sessionStorage.setItem(ACTIVE_CHAT_KEY, chatId);
-  }, [chatId]);
-
-  const restoreChat = useCallback(
-    async (id: string): Promise<boolean> => {
-      const transcript = await fetchChatTranscript(id);
-      // Non-owner chats open read-only; never hydrate them into the live composer.
-      if (!transcript) {
-        window.sessionStorage.removeItem(ACTIVE_CHAT_KEY);
-        return false;
-      }
-      if (!transcript.canEdit) {
-        window.sessionStorage.removeItem(ACTIVE_CHAT_KEY);
-        setReadOnlyTranscript(transcript);
-        return false;
-      }
-      setChatId(id);
-      setMessages(transcript.messages as never);
-      setSystemPrompt(transcript.chat.systemPrompt ?? null);
-      setAdhdAssist(Boolean(transcript.chat.adhdAssist));
-      setAssistive(Boolean(transcript.chat.adhdAssist));
-      if (!isGlobalChat && transcript.chat.courseCode) {
-        setSelectedCourseCode(transcript.chat.courseCode);
-      }
-      window.sessionStorage.setItem(ACTIVE_CHAT_KEY, id);
-      return true;
-    },
-    [setMessages, setAssistive, isGlobalChat],
-  );
-
-  // Smart auto-restore on mount: an explicit ?chatId deep link wins; otherwise
-  // the per-tab marker means the user only briefly left — resume that chat. A
-  // fresh tab has no marker, so it starts clean.
-  useEffect(() => {
-    if (restoreAttempted.current || typeof window === "undefined") return;
-    restoreAttempted.current = true;
-
-    const deepLinkId = searchParams.get("chatId");
-    const sessionId = window.sessionStorage.getItem(ACTIVE_CHAT_KEY);
-    const target = deepLinkId || sessionId;
-    if (!target) return;
-
-    void (async () => {
-      const ok = await restoreChat(target);
-      if (ok && deepLinkId) {
-        searchParams.delete("chatId");
-        setSearchParams(searchParams, { replace: true });
-      }
-    })();
-  }, [restoreChat, searchParams, setSearchParams]);
-
-  const handleSelectChat = useCallback(
-    async (id: string) => {
-      await restoreChat(id);
-      setHistoryOpen(false);
-    },
-    [restoreChat],
-  );
-
-  const handleNewChat = useCallback(() => {
-    setChatId(null);
-    setMessages([]);
-    setSystemPrompt(null);
-    if (typeof window !== "undefined") {
-      window.sessionStorage.removeItem(ACTIVE_CHAT_KEY);
-    }
-  }, [setMessages]);
 
   const handleSystemPromptSave = async (prompt: string | null) => {
     setSystemPrompt(prompt);
@@ -307,7 +233,7 @@ export default function Chat() {
           messages: messages.length > 0 ? messages : [],
           model: selectedModel,
           apiKeys: getValidApiKeys(),
-          courseCode: isGlobalChat ? undefined : selectedCourseCode || undefined,
+          courseCode: selectedCourseCode || undefined,
           adhdAssist,
           streaming: false,
         }),
@@ -350,13 +276,17 @@ export default function Chat() {
     input,
     isLoading,
     adhdAssist,
-    onAssistChange: handleAssistChange,
+    assistive,
+    onAssistiveChange: handleAssistiveChange,
+    focusMode,
+    onFocusModeChange: setFocusMode,
     systemPrompt,
     onSystemPromptSave: handleSystemPromptSave,
     onInputChange: handleInputChange,
     onSubmit: handleSubmit,
     onStop: stop,
     onSelectPrompt: handlePromptSelect,
+    webToolsEnabled,
   };
 
   return (
@@ -368,7 +298,7 @@ export default function Chat() {
         } as React.CSSProperties
       }
     >
-      <AppSidebar user={user} />
+      <AppSidebar variant="inset" user={user} />
       <SidebarInset>
         <SiteHeader
           breadcrumbs={
@@ -385,67 +315,16 @@ export default function Chat() {
             </Breadcrumb>
           }
           actions={
-            <div className="flex items-center gap-1.5">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleNewChat}
-                aria-label="Start a new chat"
-              >
-                <IconPencilPlus className="h-4 w-4 sm:mr-1.5" />
-                <span className="hidden sm:inline">New chat</span>
-              </Button>
-              <TooltipProvider delayDuration={300}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setHistoryOpen((prev) => !prev)}
-                      aria-label="Open chat history"
-                      className="h-8 w-8"
-                    >
-                      <IconHistory className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">Chat history</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </div>
+            <ChatHeaderControls
+              adhdAssist={adhdAssist}
+              onAdhdAssistChange={handleAssistiveChange}
+              focusMode={focusMode}
+              onFocusModeChange={setFocusMode}
+              systemPrompt={systemPrompt}
+              onSystemPromptSave={handleSystemPromptSave}
+            />
           }
         />
-        <ChatHistoryPanel
-          open={historyOpen}
-          onOpenChange={setHistoryOpen}
-          activeChatId={chatId}
-          onSelect={handleSelectChat}
-          onNewChat={handleNewChat}
-        />
-        {/* Read-only view for non-owned chats (deep links, dashboard recent chats) */}
-        <Sheet open={readOnlyTranscript !== null} onOpenChange={(open) => { if (!open) setReadOnlyTranscript(null); }}>
-          <SheetContent side="right" className="w-full sm:max-w-xl flex flex-col p-0">
-            <SheetHeader className="px-5 pt-5 pb-3 border-b border-border flex-shrink-0">
-              <SheetTitle className="text-[15px]">
-                {readOnlyTranscript?.chat.title ?? "Conversation"}
-              </SheetTitle>
-              <SheetDescription className="text-[13px]">
-                {readOnlyTranscript?.chat.ownerName
-                  ? `${readOnlyTranscript.chat.ownerName}'s conversation`
-                  : "Read-only conversation"}
-                {readOnlyTranscript?.chat.courseCode
-                  ? ` · ${readOnlyTranscript.chat.courseCode}`
-                  : null}
-              </SheetDescription>
-            </SheetHeader>
-            <div className="flex-1 overflow-y-auto px-5 py-4">
-              <ChatTranscriptViewer
-                messages={readOnlyTranscript?.messages ?? []}
-                ownerName={readOnlyTranscript?.chat.ownerName}
-                courseCode={readOnlyTranscript?.chat.courseCode}
-              />
-            </div>
-          </SheetContent>
-        </Sheet>
         {isGlobalChat ? (
           <ChatGlobalView {...sharedViewProps} />
         ) : (

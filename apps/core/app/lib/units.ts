@@ -168,3 +168,12 @@ export const UNIT_LABELS: Record<Unit, string> = {
   VISA: 'Visual Arts',
   WRLD: 'World Literature',
 };
+
+export function getDepartmentLabel(code: string): string {
+  return UNIT_LABELS[code as Unit] ?? code;
+}
+
+export const UNIT_OPTIONS = UNITS.map((code) => ({
+  code,
+  label: UNIT_LABELS[code],
+}));

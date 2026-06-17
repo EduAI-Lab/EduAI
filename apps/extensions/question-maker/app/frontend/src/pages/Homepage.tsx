@@ -16,7 +16,7 @@ import { AssessmentSection } from '../components/assessments/AssessmentSection';
 import { QuestionDetailView } from '../components/question-detail/QuestionDetailView';
 import { Course, Question, Assessment, QuestionVariantEntry, AssessmentGenerationParams, MCQChoice } from '../types/question';
 import { Topic } from '../types/topic';
-import { useCourses } from '../hooks/useCourses';
+import { useDisplayCourses } from '../hooks/useDisplayCourses';
 import { questionService } from '../services/questionService';
 import { courseService } from '../services/courseService';
 import assessmentService from '../services/assessmentService';
@@ -38,7 +38,7 @@ export const Homepage = () => {
 
   const location = useLocation();
   const navigate = useNavigate();
-  const { courses, isLoading: isCoursesLoading, fetchCourses } = useCourses();
+  const { courses, displayCourses, isLoading: isCoursesLoading, fetchCourses } = useDisplayCourses();
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
   const [preferredCourseId, setPreferredCourseId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<'questions' | 'assessments'>(() => {
@@ -119,8 +119,8 @@ export const Homepage = () => {
   useEffect(() => {
     const state = location.state as { courseId?: number; startGuidedTour?: boolean } | null;
     const courseId = state?.courseId;
-    if (courseId == null || courses.length === 0) return;
-    const match = courses.find((c) => c.id === courseId);
+    if (courseId == null || displayCourses.length === 0) return;
+    const match = displayCourses.find((c) => c.id === courseId);
     if (match) {
       setSelectedCourse(match);
       setPreferredCourseId(courseId);
@@ -129,7 +129,7 @@ export const Homepage = () => {
     }
     // Intentionally not including navigate/location in deps to run only when state.courseId or courses change
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.state, courses]);
+  }, [location.state, displayCourses]);
 
   // URL is authoritative for tab. When URL has a valid tab param, sync state to
   // it. When URL lacks the param (e.g. bare /home), push the current state tab.
@@ -155,7 +155,7 @@ export const Homepage = () => {
 
   // Choose course based on preference when courses list updates
   useEffect(() => {
-    if (courses.length === 0) {
+    if (displayCourses.length === 0) {
       setSelectedCourse(null);
       setQuestions([]);
       return;
@@ -164,7 +164,7 @@ export const Homepage = () => {
     // Highest priority: course we clicked into from course selection page
     const stateCourseId = (location.state as { courseId?: number } | null)?.courseId;
     if (stateCourseId != null) {
-      const match = courses.find((c) => c.id === stateCourseId);
+      const match = displayCourses.find((c) => c.id === stateCourseId);
       if (match) {
         setSelectedCourse(match);
         setPreferredCourseId(stateCourseId);
@@ -173,13 +173,13 @@ export const Homepage = () => {
     }
 
     // If current selection is valid, keep it
-    if (selectedCourse && courses.some((course) => course.id === selectedCourse.id)) {
+    if (selectedCourse && displayCourses.some((course) => course.id === selectedCourse.id)) {
       return;
     }
 
     // Try preferred id from storage
     if (preferredCourseId) {
-      const match = courses.find((course) => course.id === preferredCourseId);
+      const match = displayCourses.find((course) => course.id === preferredCourseId);
       if (match) {
         setSelectedCourse(match);
         return;
@@ -187,8 +187,8 @@ export const Homepage = () => {
     }
 
     // Fallback to first course
-    setSelectedCourse(courses[0]);
-  }, [courses, preferredCourseId, selectedCourse, location.state]);
+    setSelectedCourse(displayCourses[0]);
+  }, [displayCourses, preferredCourseId, selectedCourse, location.state]);
 
   useEffect(() => {
     if (selectedCourse) {
@@ -251,7 +251,7 @@ export const Homepage = () => {
     return filteredQuestions.flatMap((question) => {
       const topics = topicsByCourse[question.courseId] ?? [];
       const topicNameMap = new Map(topics.map((topic) => [topic.id, topic.name]));
-      const resolveTopicName = (topicId: number) => topicNameMap.get(topicId) ?? `Topic ${topicId}`;
+      const resolveTopicName = (topicId: string) => topicNameMap.get(topicId) ?? `Topic ${topicId}`;
 
       return (question.variants || []).map((variant) => {
         const secondaryTopicNames = Array.isArray(variant.secondaryTopicsId)
@@ -278,7 +278,7 @@ export const Homepage = () => {
 
   const emptyStateMessage = selectedCourse
     ? questionsError || 'No questions found for this course yet. Try adding or uploading questions.'
-    : courses.length === 0
+    : displayCourses.length === 0
       ? 'No courses available. Start the guided tour to add courses from the AI service.'
       : 'Select a course to view its questions.';
 
@@ -328,7 +328,7 @@ export const Homepage = () => {
       questionId: number,
       updates: {
         description?: string | null;
-        primaryTopicId?: number;
+        primaryTopicId?: string;
         type?: import('../types/question').QuestionType;
         primaryTopicName?: string;
       }
