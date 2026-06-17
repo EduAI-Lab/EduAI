@@ -3,12 +3,15 @@ import { useEffect, useState } from "react";
 
 import { CanvasIntegrationSettings } from "~/components/canvas/CanvasIntegrationSettings";
 import {
+  IconAccessible,
   IconCircleCheck,
   IconCopy,
   IconKey,
   IconPlus,
   IconWorld,
 } from "@tabler/icons-react";
+import { AccessibilitySettingsTab } from "~/components/settings/accessibility-settings-tab";
+import { StudentNumberSettings } from "~/components/settings/student-number-settings";
 
 import { Badge } from "@eduai/ui";
 import { Button } from "@eduai/ui";
@@ -40,16 +43,18 @@ const CANVAS_SETTINGS_ROLES = new Set(["INSTRUCTOR", "ADMIN"]);
 
 interface SettingsViewProps {
   role?: string;
+  studentNumber?: string | null;
 }
 
-export function SettingsView({ role }: SettingsViewProps) {
+export function SettingsView({ role, studentNumber = null }: SettingsViewProps) {
   const showCanvasSettings = CANVAS_SETTINGS_ROLES.has(role ?? "");
+  const showStudentNumberSettings = role === "STUDENT";
   const {
     updateProviderSettings,
     removeProviderSettings,
     isProviderConfigured,
   } = useApiKeys();
-  const [activeTab, setActiveTab] = useState("api-keys");
+  const [activeTab, setActiveTab] = useState("accessibility");
   const [serverKeys, setServerKeys] = useState<ServerApiKey[]>([]);
   const [creating, setCreating] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
@@ -119,12 +124,15 @@ export function SettingsView({ role }: SettingsViewProps) {
           <div className="px-4 lg:px-6">
             <PageHeading
               heading="Settings"
-              subheading="Manage server API keys and local model provider configuration."
+              subheading="Manage account preferences, API keys, and local model provider configuration."
             />
           </div>
           <div className="px-4 lg:px-6">
             <PageTabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <PageTabsList>
+          <PageTabsTrigger value="accessibility">
+            <IconAccessible className="h-4 w-4" /> Accessibility
+          </PageTabsTrigger>
           <PageTabsTrigger value="api-keys">
             <IconKey className="h-4 w-4" /> API Keys
           </PageTabsTrigger>
@@ -133,7 +141,14 @@ export function SettingsView({ role }: SettingsViewProps) {
           </PageTabsTrigger>
         </PageTabsList>
 
+        <PageTabsContent value="accessibility">
+          <AccessibilitySettingsTab />
+        </PageTabsContent>
+
         <PageTabsContent value="api-keys" className="space-y-6">
+          {showStudentNumberSettings && (
+            <StudentNumberSettings initialStudentNumber={studentNumber} />
+          )}
           <Card>
             <CardHeader>
               <CardTitle>Server API Keys</CardTitle>

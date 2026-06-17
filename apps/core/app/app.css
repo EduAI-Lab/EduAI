@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "./styles/assistive-reading.css";
+@import "./styles/assistive-active-highlight.css";
 @source "../node_modules/streamdown/dist/index.js";
 @source "../../../packages/ui/src";
 
@@ -302,4 +303,35 @@ body {
 
 *::-webkit-scrollbar-corner {
   background: transparent;
+}
+
+/* For better UX, show scrollbar on hover for interactive elements */
+.scrollbar-hover:hover::-webkit-scrollbar-thumb {
+  background: oklch(0.5 0 0 / 0.2);
+}
+
+.scrollbar-hover:hover::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.5 0 0 / 0.3);
+}
+
+/* Accessibility tab hooks — attributes/classes only when non-default (see root Layout). */
+[data-reduce-motion="true"] *,
+[data-reduce-motion="true"] *::before,
+[data-reduce-motion="true"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+[data-density="compact"] {
+  --spacing: 0.1875rem;
+}
+
+/* Settings — stronger active/selected contrast in dark mode (#560 review). */
+.dark .settings-tabs [data-slot="tabs-trigger"][data-state="active"] {
+  background-color: color-mix(in oklch, var(--primary) 22%, var(--background));
+  border-color: var(--primary);
+  color: var(--foreground);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--primary) 35%, transparent);
 }

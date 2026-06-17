@@ -135,6 +135,7 @@ export default function CourseDetailPage() {
     fileSize: m.fileSize,
     status: m.status,
     createdAt: m.createdAt,
+    chunkCount: m.chunkCount,
   }))
 
   const handleFileSelect = async (file: File) => {

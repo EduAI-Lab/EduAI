@@ -11,11 +11,19 @@ import {
 } from "@eduai/ui";
 import { READING_SURFACE_CLASS } from "~/components/assistive/reading-surface";
 import { Tool } from "@eduai/ui";
+import {
+  CHAT_MESSAGE_ACTIVE_CLASS,
+  CHAT_MESSAGE_INACTIVE_CLASS,
+  type MessageHighlightRole,
+} from "~/components/assistive/active-highlight";
+import { isWebChatToolName } from "~/lib/ai/web-tool-ui";
 import { cn } from "~/lib/utils";
 
 export interface ChatMessageProps {
   message: Message;
   isStreaming?: boolean;
+  highlightRole?: MessageHighlightRole;
+  webToolsEnabled?: boolean;
 }
 
 /**
@@ -50,7 +58,12 @@ export function coerceMessageContent(content: unknown): string {
   return JSON.stringify(content);
 }
 
-export function ChatMessage({ message, isStreaming = false }: ChatMessageProps) {
+export function ChatMessage({
+  message,
+  isStreaming = false,
+  highlightRole = null,
+  webToolsEnabled = false,
+}: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -66,19 +79,6 @@ export function ChatMessage({ message, isStreaming = false }: ChatMessageProps) 
   };
 
   const isUser = message.role === "user";
-
-  // Filter out null/undefined parts before splitting by type
-  const safeParts = message.parts?.filter((part) => part != null) ?? [];
-  const textParts = safeParts.filter((part) => part.type === "text");
-  const toolParts = safeParts.filter((part) => {
-    const t = (part as any).type as string | undefined;
-    return typeof t === "string" && (t === "tool-invocation" || t.startsWith("tool-"));
-  });
-
-  // If no parts, fallback to message content — coerce to string regardless of DB shape
-  const rawTextFromParts = textParts.map((part) => (part as any).text as string).join("\n");
-  const textContent = rawTextFromParts || coerceMessageContent(message.content);
-  const hasTextContent = textContent.length > 0;
 
   // Convert tool parts to the format expected by Tool component
   const convertToolPart = (part: any) => {
@@ -114,10 +114,40 @@ export function ChatMessage({ message, isStreaming = false }: ChatMessageProps) 
     return null;
   };
 
+  // Filter out null/undefined parts before splitting by type
+  const safeParts = message.parts?.filter((part) => part != null) ?? [];
+  const textParts = safeParts.filter((part) => part.type === "text");
+  const toolParts = safeParts.filter((part) => {
+    const t = (part as any).type as string | undefined;
+    if (!(typeof t === "string" && (t === "tool-invocation" || t.startsWith("tool-")))) {
+      return false;
+    }
+
+    // Hide web tools (webSearch/fetchPage) when the deployment disables them
+    const toolPart = convertToolPart(part);
+    if (!toolPart) return false;
+    if (!webToolsEnabled && isWebChatToolName(toolPart.type)) {
+      return false;
+    }
+    return true;
+  });
+
+  // If no parts, fallback to message content — coerce to string regardless of DB shape
+  const rawTextFromParts = textParts.map((part) => (part as any).text as string).join("\n");
+  const textContent = rawTextFromParts || coerceMessageContent(message.content);
+  const hasTextContent = textContent.length > 0;
+
+  const highlightClass =
+    highlightRole === "active"
+      ? CHAT_MESSAGE_ACTIVE_CLASS
+      : highlightRole === "inactive"
+        ? CHAT_MESSAGE_INACTIVE_CLASS
+        : undefined;
+
   if (isUser) {
     // User message - right aligned, limited width
     return (
-      <div className="flex justify-end mb-4">
+      <div className={cn("flex justify-end mb-4", highlightClass)}>
         <div className="flex items-end gap-3 max-w-[80%] min-w-0">
           <div
             className="px-4 py-3 bg-primary text-primary-foreground min-w-0"
@@ -140,7 +170,7 @@ export function ChatMessage({ message, isStreaming = false }: ChatMessageProps) 
 
   // AI message with tool calls
   return (
-    <div className="space-y-4 mb-4">
+    <div className={cn("space-y-4 mb-4", highlightClass)}>
       {/* Tool calls rendered FIRST, before message content */}
       {toolParts.length > 0 && (
         <div className="space-y-3 ml-12">

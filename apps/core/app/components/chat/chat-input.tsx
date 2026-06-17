@@ -1,4 +1,4 @@
-import { Button, Label, Switch, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@eduai/ui";
+import { Button, Label, Switch, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, cn } from "@eduai/ui";
 import {
   IconSettings,
   IconBooks,
@@ -8,6 +8,7 @@ import {
   IconPlayerStop,
   IconWorld,
   IconBrain,
+  IconFocusCentered,
 } from "@tabler/icons-react";
 import { useState } from "react";
 import { ApiKeySettings } from "./api-key-settings";
@@ -22,6 +23,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@eduai/ui";
+import {
+  ASSISTIVE_FOCUS_CHROME_CLASS,
+  ASSISTIVE_INPUT_ANCHOR_CLASS,
+  CHAT_MESSAGE_INPUT_ID,
+} from "~/components/assistive/active-highlight";
 
 interface ChatInputProps {
   input: string;
@@ -39,6 +45,9 @@ interface ChatInputProps {
   showCourseSelector?: boolean;
   adhdAssist?: boolean;
   onAdhdAssistChange?: (v: boolean) => void;
+  focusMode?: boolean;
+  onFocusModeChange?: (v: boolean) => void;
+  assistiveHighlight?: boolean;
   systemPrompt?: string | null;
   onSystemPromptSave?: (p: string | null) => void;
 }
@@ -59,6 +68,9 @@ export function ChatInput({
   showCourseSelector = true,
   adhdAssist = false,
   onAdhdAssistChange,
+  focusMode = false,
+  onFocusModeChange,
+  assistiveHighlight = false,
   systemPrompt,
   onSystemPromptSave,
 }: ChatInputProps) {
@@ -107,7 +119,7 @@ export function ChatInput({
               <TooltipProvider delayDuration={300}>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full border border-primary-text/40 bg-primary-text/10 text-primary-text min-h-[28px] select-none cursor-default">
+                    <span className={cn("inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full border border-primary-text/40 bg-primary-text/10 text-primary-text min-h-[28px] select-none cursor-default", ASSISTIVE_FOCUS_CHROME_CLASS)}>
                       <IconWorld size={12} stroke={2} />
                       Global
                     </span>
@@ -125,7 +137,7 @@ export function ChatInput({
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full border border-border transition-all duration-150 cursor-pointer min-h-[28px]"
+                    className={cn("inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full border border-border transition-all duration-150 cursor-pointer min-h-[28px]", ASSISTIVE_FOCUS_CHROME_CLASS)}
                     style={{
                       background: selectedCourseId ? "var(--primary)" : "var(--muted)",
                       color: selectedCourseId ? "var(--primary-foreground)" : "var(--muted-foreground)",
@@ -162,7 +174,7 @@ export function ChatInput({
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full border border-border bg-muted text-muted-foreground transition-all duration-150 cursor-pointer min-h-[28px] hover:text-foreground"
+                  className={cn("inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full border border-border bg-muted text-muted-foreground transition-all duration-150 cursor-pointer min-h-[28px] hover:text-foreground", ASSISTIVE_FOCUS_CHROME_CLASS)}
                 >
                   <IconRobot size={12} stroke={2} />
                   {selectedModelInfo?.name ?? "Select model"}
@@ -224,6 +236,43 @@ export function ChatInput({
                 </TooltipProvider>
               )}
 
+              {/* Focus mode toggle — only available while Assistive mode is on. Dims
+                  surrounding chrome and anchors attention on the active exchange. */}
+              {adhdAssist && onFocusModeChange && (
+                <TooltipProvider delayDuration={300}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div
+                        className={`flex items-center gap-2 rounded-full border px-3 py-1.5 transition-colors ${
+                          focusMode
+                            ? "border-accent bg-accent text-accent-foreground"
+                            : "border-border bg-transparent text-muted-foreground"
+                        }`}
+                      >
+                        <IconFocusCentered size={14} strokeWidth={2} className="shrink-0" />
+                        <Label
+                          htmlFor="assistive-focus-composer"
+                          className="cursor-pointer text-xs font-medium whitespace-nowrap text-current"
+                        >
+                          Focus mode
+                        </Label>
+                        <Switch
+                          id="assistive-focus-composer"
+                          checked={focusMode}
+                          onCheckedChange={(checked) => onFocusModeChange(Boolean(checked))}
+                          aria-label="Focus mode"
+                          className="shrink-0"
+                        />
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-[220px]">
+                      <p>Dims everything except the current exchange.</p>
+                      <p className="mt-0.5 opacity-75">Reduces on-screen distractions while you read and reply.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+
               {/* Chat settings gear button */}
               <Button
                 type="button"
@@ -245,9 +294,13 @@ export function ChatInput({
               onValueChange={handleValueChange}
               onSubmit={handleSubmit}
               isLoading={isLoading}
-              className="flex-1 border border-border rounded-[var(--radius-xl)] bg-background shadow-none p-0 cursor-text"
+              className={cn(
+                "flex-1 border border-border rounded-[var(--radius-xl)] bg-background shadow-none p-0 cursor-text",
+                assistiveHighlight && ASSISTIVE_INPUT_ANCHOR_CLASS,
+              )}
             >
               <PromptInputTextarea
+                id={CHAT_MESSAGE_INPUT_ID}
                 placeholder={selectedCourseLabel ? `Ask about ${selectedCourseLabel} materials…` : "Ask anything…"}
                 disabled={isLoading}
                 className="min-h-[44px] max-h-[120px] resize-none border-none bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 text-sm text-foreground placeholder:text-muted-foreground/60 px-3.5 py-2.5"

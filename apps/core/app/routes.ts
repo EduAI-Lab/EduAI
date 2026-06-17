@@ -68,4 +68,5 @@ export default [
     { id: "routes/api/admin.bug-reports:id" },
   ),
   route("/api/dashboard/stats", "routes/api/dashboard.stats.ts"),
+  route("/api/e2e/promote", "routes/api/e2e.promote.ts"),
 ] satisfies RouteConfig;
