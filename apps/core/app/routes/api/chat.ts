@@ -770,8 +770,6 @@ export async function action({ request }: ActionFunctionArgs) {
 
       const buildDefaultSystemPrompt = () =>
         buildAdminSystemPrompt({
-          courseCode: effectiveCourseCode,
-          effectiveCourseId,
           customPrompt: resolvedSystemPrompt,
         });
 

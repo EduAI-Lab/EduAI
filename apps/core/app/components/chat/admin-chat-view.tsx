@@ -6,7 +6,7 @@ export function AdminChatView(props: ChatViewSharedProps) {
   return (
     <ChatConversationLayout
       {...props}
-      showCourseSelector
+      showCourseSelector={false}
       WelcomeComponent={AdminChatWelcome}
       bannerTitle="Admin chatbot"
       bannerDescription="Operational assistant for enrollments, users, bug reports, and course metadata. Supports read and write actions — writes require your explicit confirmation in chat."
