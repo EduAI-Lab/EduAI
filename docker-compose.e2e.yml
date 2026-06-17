@@ -62,8 +62,9 @@ services:
       BETTER_AUTH_SECRET: e2e-test-secret-change-for-production
       BETTER_AUTH_URL: http://localhost:3000
       GOOGLE_GENERATIVE_AI_API_KEY: test-key-not-real
-      NODE_ENV: production
+      NODE_ENV: test
       PORT: "3000"
+      E2E_SEED_SECRET: e2e-seed-secret
     ports:
       - "3000:3000"
     depends_on:
@@ -87,6 +88,7 @@ services:
       BETTER_AUTH_URL: http://e2e-ai-tutor-server:4000/api/auth
       COOKIE_DOMAIN: localhost
       PORT: "4000"
+      CORE_URL: http://e2e-eduai-app:3000
       EDUAI_DISCOVERY_URL: http://e2e-eduai-app:3000/api/auth/.well-known/openid-configuration
       EDUAI_CLIENT_ID: e2e-client-id
       EDUAI_CLIENT_SECRET: e2e-client-secret
@@ -136,6 +138,7 @@ services:
       ENCRYPTION_KEY: e2e-test-encryption-key-32bytes!
       NODE_ENV: production
       PORT: "8000"
+      CORE_URL: http://e2e-eduai-app:3000
       CORS_ORIGINS: http://localhost:5173
     ports:
       - "8000:8000"

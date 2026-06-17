@@ -102,7 +102,10 @@ describeDb('Core wiring DB integration', () => {
   // ---------------------------------------------------------------------------
   describe('PATCH /api/course/:id/link-core', () => {
     it('stores coreCourseId on the course', async () => {
-      vi.stubGlobal('fetch', makeFetch());
+      vi.stubGlobal(
+        'fetch',
+        makeFetch(coreOk({ courses: [{ id: 'cuid-core-course', code: 'COSC 111' }] })),
+      );
 
       const res = await request(app)
         .patch(`/api/course/${courseId}/link-core`)
@@ -116,8 +119,29 @@ describeDb('Core wiring DB integration', () => {
       expect(updated.coreCourseId).toBe('cuid-core-course');
     });
 
+    it('returns 403 when coreCourseId is outside the instructor scoped Core list (#578)', async () => {
+      vi.stubGlobal(
+        'fetch',
+        makeFetch(coreOk({ courses: [{ id: 'cuid-other', code: 'MATH 101' }] })),
+      );
+
+      const res = await request(app)
+        .patch(`/api/course/${courseId}/link-core`)
+        .set(cookie())
+        .send({ coreCourseId: 'cuid-core-course' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe('CORE_COURSE_NOT_AUTHORIZED');
+
+      const unchanged = await Course.findByPk(courseId);
+      expect(unchanged.coreCourseId).toBeNull();
+    });
+
     it('returns 404 for a course the user does not own', async () => {
-      vi.stubGlobal('fetch', makeFetch());
+      vi.stubGlobal(
+        'fetch',
+        makeFetch(coreOk({ courses: [{ id: 'cuid-core-course', code: 'COSC 111' }] })),
+      );
 
       const res = await request(app)
         .patch('/api/course/99999/link-core')
@@ -246,6 +270,17 @@ describeDb('Core wiring DB integration', () => {
   // PATCH /api/questions/variants/:variantId/testable
   // ---------------------------------------------------------------------------
   describe('PATCH /api/questions/variants/:variantId/testable', () => {
+    it('returns 404 for a non-existent variant (access check precedes payload validation)', async () => {
+      vi.stubGlobal('fetch', makeFetch());
+
+      const res = await request(app)
+        .patch('/api/questions/variants/999999/testable')
+        .set(cookie())
+        .send({ testable: 'yes' });
+
+      expect(res.status).toBe(404);
+    });
+
     it('returns 400 when variant has no coreQuestionId', async () => {
       vi.stubGlobal('fetch', makeFetch());
 

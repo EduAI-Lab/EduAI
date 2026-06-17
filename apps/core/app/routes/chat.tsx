@@ -1,8 +1,7 @@
 import { useChat } from "@ai-sdk/react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, redirect, useLoaderData, useFetcher } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-
 
 import { AppSidebar } from "~/components/app-sidebar";
 import { ChatCourseScopedView } from "~/components/chat/chat-course-scoped-view";
@@ -12,6 +11,8 @@ import type {
   ChatCourseOption,
   ChatModelOption,
 } from "~/components/chat/chat-view-types";
+import { useAssistiveUi } from "~/components/assistive/assistive-ui-provider";
+import { CHAT_MESSAGE_INPUT_ID } from "~/components/assistive/active-highlight";
 import { SiteHeader } from "~/components/site-header";
 import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
 import {
@@ -24,6 +25,7 @@ import {
 } from "~/components/ui/breadcrumb"
 import { fetchChatSession } from "~/hooks/api/use-chat-sessions";
 import { useCourses } from "~/hooks/api/use-courses";
+import { useAssistiveReorientation } from "~/hooks/use-assistive-reorientation";
 import { useApiKeys } from "~/hooks/use-api-keys";
 import { auth } from "~/lib/auth/server";
 import { usesGlobalChat } from "~/lib/rbac";
@@ -31,7 +33,6 @@ import prisma from "~/lib/prisma.server";
 import { getUserPreference, saveUserPreference } from "~/lib/user-preferences.server";
 import { getAccessibleCourseCodes } from "~/lib/courses/server";
 import { parsePreferenceUpdates } from "~/lib/user-preferences";
-import { useAssistiveUi } from "~/components/assistive/assistive-ui-provider";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request);
@@ -61,9 +62,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
     supportsTools: model.supportsTools,
   }));
 
-  // Validate the persisted course against the courses THIS user can actually
-  // access, so a stale / now-inaccessible `lastCourseCode` is dropped on restore
-  // rather than treated as valid just because the course still exists (#420 review).
   const availableCourseCodes = await getAccessibleCourseCodes(session.user);
   const preferences = await getUserPreference(session.user.id, availableCourseCodes);
 
@@ -74,11 +72,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
   };
 }
 
-/**
- * Persists the per-user chat preferences written from this route (Assistive-mode
- * default + last selected course). Accepts any subset of
- * { assistDefault?: boolean, lastCourseCode?: string | null }.
- */
 export async function action({ request }: ActionFunctionArgs) {
   const session = await auth.api.getSession(request);
   if (!session?.user) {
@@ -101,11 +94,14 @@ export async function action({ request }: ActionFunctionArgs) {
 
 export default function Chat() {
   const { chatModels, user, assistDefault, lastCourseCode } = useLoaderData<typeof loader>();
+  const { assistive, setAssistive } = useAssistiveUi();
   const isGlobalChat = usesGlobalChat(user);
   const { courses } = useCourses();
-  const availableCourses: ChatCourseOption[] = isGlobalChat
-    ? []
-    : courses.map((c) => ({ id: c.id, name: c.name, code: c.code }));
+  const availableCourses: ChatCourseOption[] = courses.map((c) => ({
+    id: c.id,
+    name: c.name,
+    code: c.code,
+  }));
   const [selectedModel, setSelectedModel] = useState(
     chatModels.length > 0 ? chatModels[0].id : "",
   );
@@ -114,9 +110,12 @@ export default function Chat() {
   );
   const [chatId, setChatId] = useState<string | null>(null);
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
-  const [adhdAssist, setAdhdAssist] = useState(assistDefault ?? false);
+  const [adhdAssist, setAdhdAssist] = useState(assistDefault ?? assistive);
+  const [focusMode, setFocusMode] = useState(false);
+  const [reorientationEpoch, setReorientationEpoch] = useState(0);
+  const [webToolsEnabled, setWebToolsEnabled] = useState(false);
+  const wasLoadingRef = useRef(false);
   const { getValidApiKeys } = useApiKeys();
-  const { setAssistive } = useAssistiveUi();
   const prefsFetcher = useFetcher();
 
   const persistPreference = useCallback(
@@ -126,19 +125,39 @@ export default function Chat() {
     [prefsFetcher],
   );
 
-  const handleAssistChange = useCallback((checked: boolean) => {
-    setAdhdAssist(checked);
-    setAssistive(checked);
-  }, [setAdhdAssist, setAssistive]);
+  const handleAssistiveChange = useCallback(
+    (checked: boolean) => {
+      setAdhdAssist(checked);
+      if (!checked) setFocusMode(false);
+      setAssistive(checked);
+    },
+    [setAssistive],
+  );
 
-  const handleCourseChange = useCallback((code: string | null) => {
-    setSelectedCourseCode(code);
-    persistPreference({ lastCourseCode: code });
-  }, [setSelectedCourseCode, persistPreference]);
+  const handleCourseChange = useCallback(
+    (code: string | null) => {
+      setSelectedCourseCode(code);
+      persistPreference({ lastCourseCode: code });
+    },
+    [persistPreference],
+  );
 
   useEffect(() => {
-    if (isGlobalChat) setSelectedCourseCode(null);
-  }, [isGlobalChat]);
+    const el = document.documentElement;
+    if (assistive && focusMode) {
+      el.setAttribute("data-assistive-focus-mode", "true");
+    } else {
+      el.removeAttribute("data-assistive-focus-mode");
+    }
+    return () => el.removeAttribute("data-assistive-focus-mode");
+  }, [assistive, focusMode]);
+
+  useAssistiveReorientation({
+    enabled: assistive && reorientationEpoch > 0,
+    adhdAssist,
+    chatId,
+    epoch: reorientationEpoch,
+  });
 
   useEffect(() => {
     if (!chatId || systemPrompt) {
@@ -164,7 +183,7 @@ export default function Chat() {
       body: {
         model: selectedModel,
         apiKeys: getValidApiKeys(),
-        courseCode: isGlobalChat ? undefined : selectedCourseCode || undefined,
+        courseCode: selectedCourseCode || undefined,
         chatId: chatId || undefined,
         systemPrompt: systemPrompt || undefined,
         adhdAssist,
@@ -174,8 +193,28 @@ export default function Chat() {
         if (chatIdHeader && !chatId) {
           setChatId(chatIdHeader);
         }
+
+        const webToolsHeader = response.headers.get("X-Web-Tools-Enabled");
+        if (webToolsHeader !== null) {
+          setWebToolsEnabled(webToolsHeader === "1");
+        }
       },
     });
+
+  useEffect(() => {
+    const finishedLoading = wasLoadingRef.current && !isLoading;
+    wasLoadingRef.current = isLoading;
+
+    if (!assistive || !finishedLoading) return;
+
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage?.role !== "assistant") return;
+
+    setReorientationEpoch((n) => n + 1);
+    requestAnimationFrame(() => {
+      document.getElementById(CHAT_MESSAGE_INPUT_ID)?.focus();
+    });
+  }, [assistive, isLoading, messages]);
 
   const selectedModelInfo = chatModels.find(
     (model) => model.id === selectedModel,
@@ -194,7 +233,7 @@ export default function Chat() {
           messages: messages.length > 0 ? messages : [],
           model: selectedModel,
           apiKeys: getValidApiKeys(),
-          courseCode: isGlobalChat ? undefined : selectedCourseCode || undefined,
+          courseCode: selectedCourseCode || undefined,
           adhdAssist,
           streaming: false,
         }),
@@ -237,13 +276,17 @@ export default function Chat() {
     input,
     isLoading,
     adhdAssist,
-    onAssistChange: handleAssistChange,
+    assistive,
+    onAssistiveChange: handleAssistiveChange,
+    focusMode,
+    onFocusModeChange: setFocusMode,
     systemPrompt,
     onSystemPromptSave: handleSystemPromptSave,
     onInputChange: handleInputChange,
     onSubmit: handleSubmit,
     onStop: stop,
     onSelectPrompt: handlePromptSelect,
+    webToolsEnabled,
   };
 
   return (
@@ -274,7 +317,9 @@ export default function Chat() {
           actions={
             <ChatHeaderControls
               adhdAssist={adhdAssist}
-              onAdhdAssistChange={handleAssistChange}
+              onAdhdAssistChange={handleAssistiveChange}
+              focusMode={focusMode}
+              onFocusModeChange={setFocusMode}
               systemPrompt={systemPrompt}
               onSystemPromptSave={handleSystemPromptSave}
             />

@@ -3,8 +3,146 @@ import { createHash } from 'crypto';
 /** Delimiter written by `processUploadedFile` between semantic chunks for the embed path. */
 export const SEMANTIC_CHUNK_SEPARATOR = '--- CHUNK SEPARATOR ---';
 
+/** Default character overlap between consecutive semantic upload chunks (matches generateChunks fallback). */
+export const DEFAULT_SEMANTIC_CHUNK_OVERLAP = 80;
+
 export function joinSemanticChunks(chunks: string[]): string {
   return chunks.join(`\n\n${SEMANTIC_CHUNK_SEPARATOR}\n\n`);
+}
+
+/**
+ * Detect PDF/DOCX/PPTX section boundary lines for document-aware chunking.
+ */
+export function isDocumentSectionBoundary(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed) return false;
+
+  if (/^---\s*Slide\s+\d+\s*---$/i.test(trimmed)) return true;
+  if (/^(?:Chapter|Section|Part)\s+\d+/i.test(trimmed)) return true;
+  if (/^\d+\)\s+\S/.test(trimmed)) return true;
+  if (/^\d+(?:\.\d+)+\s+\S/.test(trimmed)) return true;
+  if (/^\d+\.\s+\S/.test(trimmed)) return true;
+
+  if (trimmed.length >= 3 && trimmed.length <= 60 && !/[.!?]/.test(trimmed)) {
+    const letters = trimmed.replace(/[^a-zA-Z]/g, '');
+    if (letters.length >= 3) {
+      const upperCount = (letters.match(/[A-Z]/g) ?? []).length;
+      if (upperCount / letters.length >= 0.85) return true;
+    }
+  }
+
+  return false;
+}
+
+function isHeadingOnlySection(lines: string[]): boolean {
+  return lines.every((line) => {
+    const trimmed = line.trim();
+    return trimmed.length === 0 || isDocumentSectionBoundary(line);
+  });
+}
+
+function splitIntoDocumentSections(content: string): string[] {
+  const lines = content.split('\n');
+  const sections: string[] = [];
+  let currentLines: string[] = [];
+
+  for (const line of lines) {
+    if (isDocumentSectionBoundary(line) && currentLines.length > 0) {
+      if (isHeadingOnlySection(currentLines)) {
+        currentLines.push(line);
+      } else {
+        const section = currentLines.join('\n').trim();
+        if (section.length > 0) sections.push(section);
+        currentLines = [line];
+      }
+    } else {
+      currentLines.push(line);
+    }
+  }
+
+  const last = currentLines.join('\n').trim();
+  if (last.length > 0) {
+    if (isHeadingOnlySection(currentLines) && sections.length > 0) {
+      sections[sections.length - 1] += `\n\n${last}`;
+    } else {
+      sections.push(last);
+    }
+  }
+
+  return sections;
+}
+
+/**
+ * Prefix each chunk (after the first) with trailing text from the previous chunk.
+ * Overlap is baked into chunk content so SEMANTIC_CHUNK_SEPARATOR parsing stays valid.
+ */
+export function applyChunkOverlap(
+  chunks: string[],
+  overlap: number = DEFAULT_SEMANTIC_CHUNK_OVERLAP,
+): string[] {
+  if (chunks.length <= 1 || overlap <= 0) {
+    return chunks.map((chunk) => chunk.trim()).filter((chunk) => chunk.length > 0);
+  }
+
+  const result: string[] = [];
+  for (let i = 0; i < chunks.length; i++) {
+    let chunk = chunks[i].trim();
+    if (i > 0) {
+      const suffix = takeOverlapSuffix(chunks[i - 1].trim(), overlap);
+      if (suffix && !chunk.startsWith(suffix)) {
+        chunk = `${suffix} ${chunk}`;
+      }
+    }
+    if (chunk.length > 0) result.push(chunk);
+  }
+  return result;
+}
+
+function takeOverlapSuffix(text: string, targetChars: number): string {
+  const trimmed = text.trim();
+  if (!trimmed) return '';
+
+  if (trimmed.length <= targetChars && isDocumentSectionBoundary(trimmed)) {
+    return '';
+  }
+
+  const words = trimmed.split(/\s+/);
+  const overlapWordCount = Math.max(1, Math.floor(targetChars / 5));
+  let suffix = words.slice(-overlapWordCount).join(' ');
+
+  if (trimmed.length <= targetChars) {
+    const cap = Math.floor(trimmed.length * 0.5);
+    if (cap === 0) return '';
+    if (suffix.length > cap) suffix = suffix.slice(-cap);
+    return suffix.trim();
+  }
+
+  if (suffix.length > targetChars * 1.5) {
+    suffix = suffix.slice(-targetChars);
+  }
+
+  return suffix.trim();
+}
+
+export function enforceMaxChunkLength(chunks: string[], maxChunkSize: number): string[] {
+  const limit = Math.floor(maxChunkSize * 1.2);
+  const result: string[] = [];
+
+  for (const chunk of chunks) {
+    if (chunk.length <= limit) {
+      result.push(chunk);
+      continue;
+    }
+
+    let start = 0;
+    while (start < chunk.length) {
+      const piece = chunk.slice(start, start + maxChunkSize).trim();
+      if (piece.length > 0) result.push(piece);
+      start += maxChunkSize;
+    }
+  }
+
+  return result;
 }
 
 export interface FileInfo {
@@ -388,23 +526,32 @@ function applyMarkdownSemanticChunking(content: string, maxChunkSize: number): s
 }
 
 /**
- * Standard paragraph-based chunking for non-markdown content
+ * Standard document-aware chunking for non-markdown content (PDF/DOCX/PPTX text).
  */
 function applyStandardChunking(content: string, maxChunkSize: number): string[] {
-  const paragraphs = content.split(/\n\s*\n/).filter(p => p.trim().length > 0);
+  const sections = splitIntoDocumentSections(content);
+  const chunks: string[] = [];
+
+  for (const section of sections) {
+    chunks.push(...chunkSectionByParagraphs(section, maxChunkSize));
+  }
+
+  return enforceMaxChunkLength(chunks, maxChunkSize);
+}
+
+function chunkSectionByParagraphs(section: string, maxChunkSize: number): string[] {
+  const paragraphs = section.split(/\n\s*\n/).filter((p) => p.trim().length > 0);
   const chunks: string[] = [];
   let currentChunk = '';
 
   for (const paragraph of paragraphs) {
     const trimmedParagraph = paragraph.trim();
 
-    // If adding this paragraph would exceed the limit, save current chunk
     if (currentChunk.length + trimmedParagraph.length > maxChunkSize && currentChunk.length > 0) {
       chunks.push(currentChunk.trim());
       currentChunk = '';
     }
 
-    // If a single paragraph is too long, split it by sentences
     if (trimmedParagraph.length > maxChunkSize) {
       const sentences = trimmedParagraph.split(/(?<=[.!?])\s+/);
 
@@ -420,7 +567,6 @@ function applyStandardChunking(content: string, maxChunkSize: number): string[] 
     }
   }
 
-  // Add remaining content
   if (currentChunk.trim().length > 0) {
     chunks.push(currentChunk.trim());
   }
@@ -502,9 +648,13 @@ export async function processUploadedFile(file: File): Promise<FileInfo> {
         throw new Error(`Unsupported file type: ${file.type}`);
     }
 
-    // Enhanced semantic chunking for markdown content
-    const chunks = applySemanticChunking(content, 1500); // Larger chunks for markdown
-    const finalContent = joinSemanticChunks(chunks);
+    const maxChunkSize = 1500;
+    const chunks = applySemanticChunking(content, maxChunkSize);
+    const overlappedChunks = enforceMaxChunkLength(
+      applyChunkOverlap(chunks, DEFAULT_SEMANTIC_CHUNK_OVERLAP),
+      maxChunkSize,
+    );
+    const finalContent = joinSemanticChunks(overlappedChunks);
 
     // Extract file info with enhanced metadata
     const fileInfo = await extractTextFromFile(file, finalContent);
@@ -514,7 +664,7 @@ export async function processUploadedFile(file: File): Promise<FileInfo> {
       pageCount,
       metadata: {
         ...metadata,
-        chunkCount: chunks.length,
+        chunkCount: overlappedChunks.length,
         extractedAt: new Date(),
         processingLibrary: metadata.processingMethod || 'Unknown',
         isEnhanced: true, // Indicates this uses the new enhanced processing

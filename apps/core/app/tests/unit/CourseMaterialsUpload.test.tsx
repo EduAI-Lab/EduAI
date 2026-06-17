@@ -73,6 +73,26 @@ describe("CourseMaterialsUpload — missing data", () => {
     expect(screen.getByText(/No materials uploaded yet/)).toBeInTheDocument();
   });
 
+  it("shows chunk count from chunkCount when chunks array is omitted", () => {
+    render(
+      <CourseMaterialsUpload
+        materials={[
+          {
+            id: "2",
+            title: "Smart Chunking Demo",
+            mimeType: "text/plain",
+            fileSize: 2048,
+            status: "READY",
+            createdAt: "2026-01-01T00:00:00.000Z",
+            chunkCount: 6,
+          },
+        ]}
+        onFileSelect={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/6 chunks/)).toBeInTheDocument();
+  });
+
   it("shows a total count of 0 with no materials", () => {
     render(<CourseMaterialsUpload materials={[]} onFileSelect={vi.fn()} />);
     expect(screen.getByText(/0 total/)).toBeInTheDocument();
