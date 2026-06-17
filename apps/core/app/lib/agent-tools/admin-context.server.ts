@@ -1,6 +1,6 @@
 import prisma from "~/lib/prisma.server";
 import type { RbacUser } from "~/lib/auth/course-access.server";
-import { listAccessibleCourses, getAccessibleCourse } from "./course-context.server";
+import { listAccessibleCourses, getAccessibleCourse, listAccessibleCourseTopics, getAccessibleCourseTopic } from "./course-context.server";
 import { listBugReports } from "~/lib/bug-reports/server";
 
 type ToolError = { error: string; fields?: Record<string, string> };
@@ -187,6 +187,49 @@ export async function listAdminCourseEnrollments(
     count: enrollments.length,
     total,
     truncated: enrollments.length < total,
+  });
+}
+
+/** ADMIN course topic list — same RBAC as GET /api/courses/:id/topics. */
+export async function listAdminCourseTopics(user: RbacUser, courseId: string) {
+  const gate = await getAccessibleCourse(user, courseId);
+  if ("error" in gate) {
+    return gate;
+  }
+
+  const result = await listAccessibleCourseTopics(user, courseId);
+  if ("error" in result) {
+    return result;
+  }
+
+  return adminToolPayload({
+    courseId,
+    courseCode: gate.course.code,
+    topics: result.topics,
+    count: result.topics.length,
+  });
+}
+
+/** ADMIN single course topic — same RBAC as GET /api/courses/:id/topics/:topicId. */
+export async function getAdminCourseTopic(
+  user: RbacUser,
+  courseId: string,
+  topicId: string,
+) {
+  const gate = await getAccessibleCourse(user, courseId);
+  if ("error" in gate) {
+    return gate;
+  }
+
+  const result = await getAccessibleCourseTopic(user, courseId, topicId);
+  if ("error" in result) {
+    return result;
+  }
+
+  return adminToolPayload({
+    courseId,
+    courseCode: gate.course.code,
+    topic: result.topic,
   });
 }
 

@@ -12,6 +12,8 @@ export {
 export {
   listAdminBugReportsForChat,
   listAdminCourseEnrollments,
+  listAdminCourseTopics,
+  getAdminCourseTopic,
   listAdminUsers,
   resolveAdminCourseId,
 } from "./admin-context.server";

@@ -7,6 +7,8 @@ import {
   listAccessibleCourses,
   listAdminBugReportsForChat,
   listAdminCourseEnrollments,
+  listAdminCourseTopics,
+  getAdminCourseTopic,
   listAdminUsers,
   resolveAdminCourseId,
 } from "./admin-context.server";
@@ -112,6 +114,37 @@ export function createAdminChatTools(ctx: ChatToolContext) {
           isActive,
           limit,
         });
+      },
+    }),
+
+    listCourseTopics: tool({
+      description:
+        "List question/RAG topics for a course. Requires courseId or courseCode. Maps to GET /api/courses/:id/topics.",
+      parameters: z.object({
+        ...courseScope,
+      }),
+      execute: async ({ courseId, courseCode }) => {
+        const resolved = await resolveCourse(courseId, courseCode);
+        if ("error" in resolved) {
+          return resolved;
+        }
+        return listAdminCourseTopics(user, resolved.courseId);
+      },
+    }),
+
+    getCourseTopic: tool({
+      description:
+        "Get one course topic by id. Requires courseId or courseCode plus topicId.",
+      parameters: z.object({
+        ...courseScope,
+        topicId: z.string().describe("Topic id (CUID)"),
+      }),
+      execute: async ({ courseId, courseCode, topicId }) => {
+        const resolved = await resolveCourse(courseId, courseCode);
+        if ("error" in resolved) {
+          return resolved;
+        }
+        return getAdminCourseTopic(user, resolved.courseId, topicId);
       },
     }),
 

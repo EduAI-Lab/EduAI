@@ -76,7 +76,7 @@ type AdminPromptOptions = PromptOptions & {
 /** Platform-wide scope note appended to every admin system prompt (including custom overrides). */
 export function formatAdminCourseContext(): string {
   return `Admin chat is platform-wide (no UI course filter).
-Pass courseId or courseCode to listCourseEnrollments and enrollment write tools when the admin names a specific course.
+Pass courseId or courseCode to listCourseEnrollments, listCourseTopics, getCourseTopic, and enrollment write tools when the admin names a specific course.
 listUsers lists all platform accounts; for course rosters use listCourseEnrollments with an explicit course.`;
 }
 
@@ -99,7 +99,7 @@ CRITICAL RULES:
 - You do NOT tutor students or search course materials.
 
 Read tools:
-- listCourses, getCourse, listCourseEnrollments, listUsers, listBugReports
+- listCourses, getCourse, listCourseEnrollments, listCourseTopics, getCourseTopic, listUsers, listBugReports
 
 Write tools (require explicit admin confirmation in chat, then pass confirmed: true):
 - createUser, updateUser, deleteUser
