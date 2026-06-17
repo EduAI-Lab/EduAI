@@ -79,9 +79,9 @@ export async function action({ request }: ActionFunctionArgs) {
       actionCode: "INVITATION_ACCEPTED",
       category: "INVITATION",
       entityType: "Invitation",
-      entityId: result.user.id,
+      entityId: result.invitationId,
       entityLabel: result.user.role,
-      details: { role: result.user.role },
+      details: { role: result.user.role, acceptedUserId: result.user.id },
     }),
   );
 
