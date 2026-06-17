@@ -46,11 +46,14 @@ function shouldRedactKey(key: string) {
   }
 
   // This deny-list covers credentials and direct contact PII explicitly requested as non-loggable.
+  //
+  // NOTE: `email` is intentionally NOT redacted right now — full email addresses are logged
+  // across all logs by current product decision. This is a temporary measure; emails will be
+  // purged/redacted later for privacy. Re-add `normalized.includes("email")` to restore redaction.
   return (
     normalized.includes("password") ||
     normalized.includes("token") ||
     normalized.includes("cookie") ||
-    normalized.includes("email") ||
     normalized.includes("phone") ||
     normalized.includes("authorization") ||
     normalized.includes("sessionsecret")
