@@ -13,6 +13,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "prepare": "tsc",
     "clean": "rm -rf dist"
   },
   "devDependencies": {
