@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vitest";
 
 // Mock all server-side and external dependencies so only chunk helpers are exercised.
 vi.mock("~/lib/prisma.server", () => ({ default: {} }));
@@ -94,15 +94,15 @@ describe("generateEmbeddings", () => {
   const originalBatchSize = process.env.EMBED_MANY_BATCH_SIZE;
 
   let generateEmbeddings: typeof import("~/lib/ai/embedding").generateEmbeddings;
-  let embedManyMock: Awaited<typeof import("ai")>["embedMany"];
+  let embedManyMock: Mock;
 
   async function reloadEmbeddingModule() {
     vi.resetModules();
     const aiMod = await import("ai");
     const embeddingMod = await import("~/lib/ai/embedding");
-    embedManyMock = aiMod.embedMany;
+    embedManyMock = vi.mocked(aiMod.embedMany);
     generateEmbeddings = embeddingMod.generateEmbeddings;
-    vi.mocked(embedManyMock).mockImplementation(async ({ values }) => ({
+    embedManyMock.mockImplementation(async ({ values }) => ({
       embeddings: mockIndexedEmbeddings(values as string[]),
     }));
   }
