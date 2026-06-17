@@ -60,10 +60,11 @@ function respondEduAiUpstreamError(res, error, fallbackMessage) {
  * Why: filtering by THIS instructor (not globally) lets multiple instructors
  * import the same EduAI course independently into their own offerings.
  */
-router.get('/eduai/courses', requireRole('INSTRUCTOR'), async (req, res) => {
+router.get('/eduai/courses', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
   try {
-    // Fetch available courses from Core using the service key
-    const courses = await listEduAiCourses();
+    // #578: list the caller's Core-scoped courses using their session cookie
+    // (the service key would return the full catalog). Mirrors the import path.
+    const courses = await listEduAiCourses({ cookie: req.headers.cookie });
 
     // Exclude any EduAI course already imported by this instructor
     // We identify imported ones via CourseOffering.externalId (source id) scoped to the instructor
@@ -115,14 +116,19 @@ router.get('/courses', async (req, res) => {
       });
       res.json(courses.map(mapCourseOffering));
     } else if (authUser.role === 'UNIT_ADMIN') {
-      // UNIT_ADMINs see all courses in their authorized units regardless of publish state (no progress).
+      // UNIT_ADMINs see every course in their authorized units (regardless of
+      // publish state), plus any course they personally lead — so the courses
+      // they create or import are always visible even before a department is set.
       const units = Array.isArray(authUser.authorizedUnits) ? authUser.authorizedUnits : [];
-      const courses = units.length > 0
-        ? await prisma.courseOffering.findMany({
-            where: { department: { in: units } },
-            orderBy: { createdAt: 'desc' },
-          })
-        : [];
+      const courses = await prisma.courseOffering.findMany({
+        where: {
+          OR: [
+            ...(units.length > 0 ? [{ department: { in: units } }] : []),
+            { instructors: { some: { userId: authUser.id } } },
+          ],
+        },
+        orderBy: { createdAt: 'desc' },
+      });
       res.json(courses.map(mapCourseOffering));
     } else if (authUser.role === 'TA') {
       // TAs see all TA-enrolled courses regardless of publish state (no progress),
@@ -251,6 +257,9 @@ router.post('/courses/import-external', requireRole(['INSTRUCTOR', 'UNIT_ADMIN',
           externalId: externalCourse.id,
           externalSource: 'EDUAI',
           externalMetadata: externalCourse,
+          // Carry the Core department so UNIT_ADMINs (scoped by authorizedUnits)
+          // can see imported offerings in their units.
+          department: typeof externalCourse.department === 'string' ? externalCourse.department : null,
           // #477: link to the Core offering and mirror its publish state on import.
           coreOfferingId: externalCourse.id,
           isPublished: externalCourse.isPublished === true,
@@ -374,7 +383,7 @@ router.get('/courses/:courseId', async (req, res) => {
  */
 router.post('/courses', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
   const authUser = req.user;
-  const { title, description, sourceCourseId, startDate, endDate } = req.body || {};
+  const { title, description, sourceCourseId, startDate, endDate, department } = req.body || {};
 
   if (!title) {
     return res.status(400).json({ error: 'title is required' });
@@ -404,6 +413,7 @@ router.post('/courses', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), asyn
       data: {
         title,
         description,
+        department: typeof department === 'string' && department.trim() ? department.trim() : null,
         startDate: startDate ? new Date(startDate) : null,
         endDate: endDate ? new Date(endDate) : null,
       },

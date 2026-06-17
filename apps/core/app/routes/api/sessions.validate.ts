@@ -2,6 +2,7 @@ import type { ActionFunctionArgs } from "react-router";
 
 import { auth } from "~/lib/auth/server";
 import { isRateLimited } from "~/lib/auth/rate-limit.server";
+import prisma from "~/lib/prisma.server";
 
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== "POST") {
@@ -32,9 +33,21 @@ export async function action({ request }: ActionFunctionArgs) {
 
   const { id, email, name, image, role } = session.user;
 
+  // Better Auth sessions don't reliably hydrate custom array fields, so read
+  // authorizedUnits from the DB for UNIT_ADMINs. Extensions (AI Tutor) depend on
+  // this to scope a unit admin's courses to their authorized departments.
+  let authorizedUnits: string[] = [];
+  if (role === "UNIT_ADMIN") {
+    const dbUser = await prisma.user.findUnique({
+      where: { id },
+      select: { authorizedUnits: true },
+    });
+    authorizedUnits = dbUser?.authorizedUnits ?? [];
+  }
+
   return new Response(
     JSON.stringify({
-      user: { id, email, name, image, role: role ?? "STUDENT" },
+      user: { id, email, name, image, role: role ?? "STUDENT", authorizedUnits },
     }),
     {
       status: 200,
