@@ -7,6 +7,7 @@ vi.mock('../../src/config/database.js', () => ({
       findMany: vi.fn(),
       createMany: vi.fn(),
       deleteMany: vi.fn(),
+      update: vi.fn(),
     },
   },
 }));
@@ -34,12 +35,22 @@ const ACTIVE_ENROLLMENT = {
   role: 'STUDENT',
 };
 
+const TA_ENROLLMENT = {
+  studentId: 'user-cuid-ta',
+  studentEmail: 'ta@example.com',
+  studentName: 'Test TA',
+  enrolledAt: '2025-01-15T10:00:00.000Z',
+  isActive: true,
+  role: 'TA',
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   prisma.courseOffering.findUnique.mockResolvedValue(COURSE);
   prisma.courseEnrollment.findMany.mockResolvedValue([]);
   prisma.courseEnrollment.createMany.mockResolvedValue({ count: 0 });
   prisma.courseEnrollment.deleteMany.mockResolvedValue({ count: 0 });
+  prisma.courseEnrollment.update.mockResolvedValue({});
 });
 
 afterEach(() => {
@@ -50,34 +61,34 @@ describe('syncCourseEnrollments', () => {
   describe('early return guards', () => {
     it('returns zeros when courseOfferingId is not a finite number', async () => {
       const result = await syncCourseEnrollments(NaN);
-      expect(result).toEqual({ synced: 0, created: 0, deleted: 0, errors: [] });
+      expect(result).toEqual({ synced: 0, created: 0, updated: 0, deleted: 0, errors: [] });
       expect(prisma.courseOffering.findUnique).not.toHaveBeenCalled();
     });
 
     it('returns zeros when course is not found', async () => {
       prisma.courseOffering.findUnique.mockResolvedValue(null);
       const result = await syncCourseEnrollments(1);
-      expect(result).toEqual({ synced: 0, created: 0, deleted: 0, errors: [] });
+      expect(result).toEqual({ synced: 0, created: 0, updated: 0, deleted: 0, errors: [] });
     });
 
     it('returns zeros when course has no externalId', async () => {
       prisma.courseOffering.findUnique.mockResolvedValue({ ...COURSE, externalId: null });
       const result = await syncCourseEnrollments(1);
-      expect(result).toEqual({ synced: 0, created: 0, deleted: 0, errors: [] });
+      expect(result).toEqual({ synced: 0, created: 0, updated: 0, deleted: 0, errors: [] });
       expect(listEduAiCourseEnrollmentsServiceKey).not.toHaveBeenCalled();
     });
 
     it('returns zeros when externalSource is not EDUAI', async () => {
       prisma.courseOffering.findUnique.mockResolvedValue({ ...COURSE, externalSource: 'CANVAS' });
       const result = await syncCourseEnrollments(1);
-      expect(result).toEqual({ synced: 0, created: 0, deleted: 0, errors: [] });
+      expect(result).toEqual({ synced: 0, created: 0, updated: 0, deleted: 0, errors: [] });
       expect(listEduAiCourseEnrollmentsServiceKey).not.toHaveBeenCalled();
     });
 
     it('returns zeros when Core returns no active enrollments (guards against data wipe)', async () => {
       listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([]);
       const result = await syncCourseEnrollments(1);
-      expect(result).toEqual({ synced: 0, created: 0, deleted: 0, errors: [] });
+      expect(result).toEqual({ synced: 0, created: 0, updated: 0, deleted: 0, errors: [] });
       expect(prisma.courseEnrollment.createMany).not.toHaveBeenCalled();
       expect(prisma.courseEnrollment.deleteMany).not.toHaveBeenCalled();
     });
@@ -87,7 +98,7 @@ describe('syncCourseEnrollments', () => {
         { ...ACTIVE_ENROLLMENT, isActive: false },
       ]);
       const result = await syncCourseEnrollments(1);
-      expect(result).toEqual({ synced: 0, created: 0, deleted: 0, errors: [] });
+      expect(result).toEqual({ synced: 0, created: 0, updated: 0, deleted: 0, errors: [] });
     });
   });
 
@@ -100,36 +111,82 @@ describe('syncCourseEnrollments', () => {
   });
 
   describe('create path', () => {
-    it('creates enrollment rows that exist in Core but not locally', async () => {
+    it('creates enrollment rows with role from Core', async () => {
       listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([ACTIVE_ENROLLMENT]);
       prisma.courseEnrollment.findMany.mockResolvedValue([]);
 
       const result = await syncCourseEnrollments(1);
 
       expect(prisma.courseEnrollment.createMany).toHaveBeenCalledWith({
-        data: [{ courseOfferingId: 1, userId: 'user-cuid-1' }],
+        data: [{ courseOfferingId: 1, userId: 'user-cuid-1', role: 'STUDENT' }],
         skipDuplicates: true,
       });
-      expect(result).toEqual({ synced: 1, created: 1, deleted: 0, errors: [] });
+      expect(result).toEqual({ synced: 1, created: 1, updated: 0, deleted: 0, errors: [] });
     });
 
-    it('skips createMany when all active users already exist locally', async () => {
-      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([ACTIVE_ENROLLMENT]);
-      prisma.courseEnrollment.findMany.mockResolvedValue([{ userId: 'user-cuid-1' }]);
+    it('does not create TA enrollment rows (#578)', async () => {
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([TA_ENROLLMENT]);
+      prisma.courseEnrollment.findMany.mockResolvedValue([]);
 
       const result = await syncCourseEnrollments(1);
 
       expect(prisma.courseEnrollment.createMany).not.toHaveBeenCalled();
-      expect(result).toEqual({ synced: 1, created: 0, deleted: 0, errors: [] });
+      expect(result).toEqual({ synced: 0, created: 0, updated: 0, deleted: 0, errors: [] });
+    });
+
+    it('defaults role to STUDENT when Core omits it', async () => {
+      const enrollmentNoRole = { ...ACTIVE_ENROLLMENT, role: undefined };
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([enrollmentNoRole]);
+      prisma.courseEnrollment.findMany.mockResolvedValue([]);
+
+      await syncCourseEnrollments(1);
+
+      expect(prisma.courseEnrollment.createMany).toHaveBeenCalledWith({
+        data: [{ courseOfferingId: 1, userId: 'user-cuid-1', role: 'STUDENT' }],
+        skipDuplicates: true,
+      });
+    });
+
+    it('skips createMany when all active users already exist locally', async () => {
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([ACTIVE_ENROLLMENT]);
+      prisma.courseEnrollment.findMany.mockResolvedValue([{ userId: 'user-cuid-1', role: 'STUDENT' }]);
+
+      const result = await syncCourseEnrollments(1);
+
+      expect(prisma.courseEnrollment.createMany).not.toHaveBeenCalled();
+      expect(result).toEqual({ synced: 1, created: 0, updated: 0, deleted: 0, errors: [] });
+    });
+  });
+
+  describe('update path (role changed)', () => {
+    it('does not promote students to TA when Core reports TA (#578)', async () => {
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([
+        { ...ACTIVE_ENROLLMENT, studentId: 'user-cuid-1', role: 'TA' },
+      ]);
+      prisma.courseEnrollment.findMany.mockResolvedValue([{ userId: 'user-cuid-1', role: 'STUDENT' }]);
+
+      const result = await syncCourseEnrollments(1);
+
+      expect(prisma.courseEnrollment.update).not.toHaveBeenCalled();
+      expect(result).toEqual({ synced: 0, created: 0, updated: 0, deleted: 0, errors: [] });
+    });
+
+    it('does not update when role is unchanged', async () => {
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([ACTIVE_ENROLLMENT]);
+      prisma.courseEnrollment.findMany.mockResolvedValue([{ userId: 'user-cuid-1', role: 'STUDENT' }]);
+
+      await syncCourseEnrollments(1);
+
+      expect(prisma.courseEnrollment.update).not.toHaveBeenCalled();
     });
   });
 
   describe('delete path', () => {
-    it('deletes local enrollment rows absent from Core active list', async () => {
+    it('deletes local STUDENT enrollment rows absent from Core active list', async () => {
       listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([ACTIVE_ENROLLMENT]);
       prisma.courseEnrollment.findMany.mockResolvedValue([
-        { userId: 'user-cuid-1' },
-        { userId: 'user-cuid-stale' },
+        { userId: 'user-cuid-1', role: 'STUDENT' },
+        { userId: 'user-cuid-stale', role: 'STUDENT' },
       ]);
 
       const result = await syncCourseEnrollments(1);
@@ -137,12 +194,25 @@ describe('syncCourseEnrollments', () => {
       expect(prisma.courseEnrollment.deleteMany).toHaveBeenCalledWith({
         where: { courseOfferingId: 1, userId: { in: ['user-cuid-stale'] } },
       });
-      expect(result).toEqual({ synced: 1, created: 0, deleted: 1, errors: [] });
+      expect(result).toEqual({ synced: 1, created: 0, updated: 0, deleted: 1, errors: [] });
     });
 
-    it('skips deleteMany when no stale rows exist', async () => {
+    it('does not delete local TA rows when syncing STUDENT enrollments only (#578)', async () => {
       listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([ACTIVE_ENROLLMENT]);
-      prisma.courseEnrollment.findMany.mockResolvedValue([{ userId: 'user-cuid-1' }]);
+      prisma.courseEnrollment.findMany.mockResolvedValue([
+        { userId: 'user-cuid-1', role: 'STUDENT' },
+        { userId: 'user-cuid-ta', role: 'TA' },
+      ]);
+
+      const result = await syncCourseEnrollments(1);
+
+      expect(prisma.courseEnrollment.deleteMany).not.toHaveBeenCalled();
+      expect(result).toEqual({ synced: 1, created: 0, updated: 0, deleted: 0, errors: [] });
+    });
+
+    it('skips deleteMany when no stale STUDENT rows exist', async () => {
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([ACTIVE_ENROLLMENT]);
+      prisma.courseEnrollment.findMany.mockResolvedValue([{ userId: 'user-cuid-1', role: 'STUDENT' }]);
 
       await syncCourseEnrollments(1);
 
@@ -157,20 +227,20 @@ describe('syncCourseEnrollments', () => {
         { ...ACTIVE_ENROLLMENT, studentId: 'user-cuid-2', studentEmail: 'student2@example.com' },
       ]);
       prisma.courseEnrollment.findMany.mockResolvedValue([
-        { userId: 'user-cuid-1' },
-        { userId: 'user-cuid-stale' },
+        { userId: 'user-cuid-1', role: 'STUDENT' },
+        { userId: 'user-cuid-stale', role: 'STUDENT' },
       ]);
 
       const result = await syncCourseEnrollments(1);
 
       expect(prisma.courseEnrollment.createMany).toHaveBeenCalledWith({
-        data: [{ courseOfferingId: 1, userId: 'user-cuid-2' }],
+        data: [{ courseOfferingId: 1, userId: 'user-cuid-2', role: 'STUDENT' }],
         skipDuplicates: true,
       });
       expect(prisma.courseEnrollment.deleteMany).toHaveBeenCalledWith({
         where: { courseOfferingId: 1, userId: { in: ['user-cuid-stale'] } },
       });
-      expect(result).toEqual({ synced: 2, created: 1, deleted: 1, errors: [] });
+      expect(result).toEqual({ synced: 2, created: 1, updated: 0, deleted: 1, errors: [] });
     });
   });
 
@@ -195,10 +265,27 @@ describe('syncCourseEnrollments', () => {
       const result = await syncCourseEnrollments(1);
 
       expect(prisma.courseEnrollment.createMany).toHaveBeenCalledWith({
-        data: [{ courseOfferingId: 1, userId: 'user-cuid-1' }],
+        data: [{ courseOfferingId: 1, userId: 'user-cuid-1', role: 'STUDENT' }],
         skipDuplicates: true,
       });
-      expect(result).toEqual({ synced: 1, created: 1, deleted: 0, errors: [] });
+      expect(result).toEqual({ synced: 1, created: 1, updated: 0, deleted: 0, errors: [] });
+    });
+
+    it('syncs STUDENT enrollments only (#578)', async () => {
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([
+        ACTIVE_ENROLLMENT,
+        { ...ACTIVE_ENROLLMENT, studentId: 'ta-1', role: 'TA' },
+        { ...ACTIVE_ENROLLMENT, studentId: 'inst-1', role: 'INSTRUCTOR' },
+      ]);
+      prisma.courseEnrollment.findMany.mockResolvedValue([]);
+
+      const result = await syncCourseEnrollments(1);
+
+      expect(prisma.courseEnrollment.createMany).toHaveBeenCalledWith({
+        data: [{ courseOfferingId: 1, userId: 'user-cuid-1', role: 'STUDENT' }],
+        skipDuplicates: true,
+      });
+      expect(result.synced).toBe(1);
     });
   });
 

@@ -26,7 +26,7 @@ export interface QuestionMetadataPanelValue {
     questionDescription: string;
     variantDifficulty: QuestionDifficulty;
     variantReasoningLevel: ReasoningLevel;
-    variantSecondaryTopics: number[];
+    variantSecondaryTopics: string[];
 }
 
 interface QuestionMetadataPanelProps {
@@ -38,7 +38,7 @@ interface QuestionMetadataPanelProps {
     /** In variant mode, primary topic is read-only from preset; still need to show it */
     mode: 'new' | 'variant';
     primaryTopicName?: string;
-    onToggleSecondaryTopic: (topicId: number, checked: boolean) => void;
+    onToggleSecondaryTopic: (topicId: string, checked: boolean) => void;
 }
 
 const difficultyOptions: QuestionDifficulty[] = ['easy', 'medium', 'hard'];
@@ -95,36 +95,43 @@ export function QuestionMetadataPanel({
                 {mode === 'variant' && primaryTopicName ? (
                     <p className="text-sm text-muted-foreground py-2">{primaryTopicName}</p>
                 ) : (
-                    <Select
-                        value={value.primaryTopicId}
-                        onValueChange={(v) => onChange('primaryTopicId', v)}
-                        disabled={disabled || topics.length === 0}
-                    >
-                        <SelectTrigger className="bg-secondary border-border h-9">
-                            <SelectValue
-                                placeholder={
-                                    topics.length === 0
-                                        ? isAuxLoading
-                                            ? 'Loading topics...'
-                                            : 'No topics available'
-                                        : 'Select a topic'
-                                }
-                            />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {topics.length === 0 ? (
-                                <SelectItem value="__no_topics" disabled>
-                                    {isAuxLoading ? 'Loading topics...' : 'No topics available'}
-                                </SelectItem>
-                            ) : (
-                                topics.map((topic) => (
-                                    <SelectItem key={topic.id} value={topic.id.toString()}>
-                                        {topic.name}
+                    <>
+                        {topics.length === 0 && !isAuxLoading && (
+                            <p className="text-xs text-muted-foreground">
+                                No topics in this course yet. Add topics in Core, then use Profile → Re-sync from Core, or refresh this dialog.
+                            </p>
+                        )}
+                        <Select
+                            value={value.primaryTopicId}
+                            onValueChange={(v) => onChange('primaryTopicId', v)}
+                            disabled={disabled || topics.length === 0}
+                        >
+                            <SelectTrigger className="bg-secondary border-border h-9">
+                                <SelectValue
+                                    placeholder={
+                                        topics.length === 0
+                                            ? isAuxLoading
+                                                ? 'Loading topics...'
+                                                : 'No topics available'
+                                            : 'Select a topic'
+                                    }
+                                />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {topics.length === 0 ? (
+                                    <SelectItem value="__no_topics" disabled>
+                                        {isAuxLoading ? 'Loading topics...' : 'No topics available'}
                                     </SelectItem>
-                                ))
-                            )}
-                        </SelectContent>
-                    </Select>
+                                ) : (
+                                    topics.map((topic) => (
+                                        <SelectItem key={topic.id} value={topic.id.toString()}>
+                                            {topic.name}
+                                        </SelectItem>
+                                    ))
+                                )}
+                            </SelectContent>
+                        </Select>
+                    </>
                 )}
             </div>
 
@@ -139,7 +146,7 @@ export function QuestionMetadataPanel({
                         </p>
                     ) : (
                         topics.map((topic) => {
-                            const checked = value.variantSecondaryTopics.includes(topic.id);
+                            const checked = value.variantSecondaryTopics.includes(topic.id.toString());
                             const isPrimary = value.primaryTopicId === topic.id.toString();
                             return (
                                 <label
@@ -151,7 +158,7 @@ export function QuestionMetadataPanel({
                                         className="h-4 w-4"
                                         checked={checked}
                                         disabled={isPrimary}
-                                        onChange={(event) => onToggleSecondaryTopic(topic.id, event.target.checked)}
+                                        onChange={(event) => onToggleSecondaryTopic(topic.id.toString(), event.target.checked)}
                                     />
                                     <span>{topic.name}</span>
                                 </label>

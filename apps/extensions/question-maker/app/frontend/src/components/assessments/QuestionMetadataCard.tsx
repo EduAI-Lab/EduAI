@@ -14,14 +14,14 @@ interface QuestionMetadataCardProps {
   isSelected: boolean;
   onToggleSelection: () => void;
   onAddVariant: () => void;
-  topicsById: Record<number, Topic>;
+  topicsById: Record<string, Topic>;
   onToggleReview?: (variantId: number, nextDraft: boolean) => void;
   onViewQuestion?: (question: Question, variantId?: number) => void;
   selectedVariantId?: number;
   onVariantChange?: (questionId: number, variantId: number) => void;
 }
 
-const getTopicName = (topicsById: Record<number, Topic>, topicId?: number | null) => {
+const getTopicName = (topicsById: Record<string, Topic>, topicId?: string | null) => {
   if (!topicId) return 'Unassigned topic';
   const topic = topicsById[topicId];
   return topic ? topic.name : `Topic #${topicId}`;
