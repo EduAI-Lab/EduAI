@@ -84,14 +84,34 @@ export async function action({ request }: ActionFunctionArgs) {
     appendAuthSetCookies(response, headers);
 
     // Attribute the success to the just-authenticated user so the audit log names the actor
-    // instead of "Unknown". The user lives in the better-auth sign-in response body.
+    // instead of "Unknown". The user normally lives in the better-auth sign-in response body.
     const signedIn = (await response
       .clone()
       .json()
       .catch(() => null)) as { user?: { id?: string; role?: string | null } } | null;
-    const signedInUser = signedIn?.user?.id
+    let signedInUser = signedIn?.user?.id
       ? { id: signedIn.user.id, role: signedIn.user.role ?? null }
       : null;
+
+    // Fallback: if the response body didn't carry the user, resolve the session
+    // from the freshly-issued cookies so a successful login is never logged as
+    // anonymous if better-auth's response shape changes.
+    if (!signedInUser) {
+      const setCookies =
+        typeof headers.getSetCookie === "function" ? headers.getSetCookie() : [];
+      const cookieHeader = setCookies
+        .map((cookie) => cookie.split(";")[0])
+        .filter(Boolean)
+        .join("; ");
+      if (cookieHeader) {
+        const session = await auth.api
+          .getSession(new Request(request.url, { headers: { cookie: cookieHeader } }))
+          .catch(() => null);
+        if (session?.user) {
+          signedInUser = { id: session.user.id, role: session.user.role ?? null };
+        }
+      }
+    }
 
     fireAndForget(
       logSecurityEvent({

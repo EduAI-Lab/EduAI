@@ -83,6 +83,20 @@ export async function requireAdmin(request: Request): Promise<AdminGate> {
 
   const resolved = session ?? (await auth.api.getSession(request));
   if (!resolved?.user || resolved.user.role !== "ADMIN") {
+    // Record the rejection so admin-only routes gated solely by this helper
+    // still emit the documented "Admin access denied" security event.
+    // (The x-api-key non-admin case is already logged as API_KEY_DENIED above.)
+    if (!session) {
+      fireAndForget(
+        logSecurityEvent({
+          ...getActorContext(resolved?.user ?? null),
+          ...getRequestContext(request),
+          actionCode: "ADMIN_ACCESS_DENIED",
+          outcome: "DENIED",
+          entityType: "Auth",
+        }),
+      );
+    }
     return {
       response: new Response(
         JSON.stringify({ error: "Forbidden: Admins only" }),
