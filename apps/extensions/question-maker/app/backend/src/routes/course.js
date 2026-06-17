@@ -8,7 +8,7 @@ import { authenticateToken, requireRole } from '../middleware/auth.js';
 import { QM_AUTHORIZED } from '../middleware/roles.js';
 import { resolveCourseAccessWithCourse, LEVELS } from '../middleware/courseAccess.js';
 import { listCoursesForUser } from '../services/courseListService.js';
-import { getCourseTopicsFromCore, pushTopicToCore } from '../services/coreApiService.js';
+import { getCourseTopicsFromCore, pushTopicToCore, isCoreCourseInScopedList } from '../services/coreApiService.js';
 import { logger } from '../utils/logger.js';
 
 const router = express.Router();
@@ -319,6 +319,11 @@ router.patch('/:id/link-core', async (req, res, next) => {
       return res.status(404).json({ success: false, error: 'Course not found' });
     }
 
+    const authorized = await isCoreCourseInScopedList(coreCourseId, req.headers.cookie);
+    if (!authorized) {
+      return res.status(403).json({ success: false, error: 'CORE_COURSE_NOT_AUTHORIZED' });
+    }
+
     await course.update({ coreCourseId });
 
     res.json({ success: true, data: course });
@@ -344,7 +349,7 @@ router.post('/:id/sync-topics', async (req, res, next) => {
 
     let coreTopics;
     try {
-      const data = await getCourseTopicsFromCore(course.coreCourseId);
+      const data = await getCourseTopicsFromCore(course.coreCourseId, { cookie: req.headers.cookie });
       coreTopics = data.topics ?? data;
     } catch (coreErr) {
       return res.status(502).json({ success: false, error: coreErr.body?.error || 'Failed to fetch topics from Core' });
