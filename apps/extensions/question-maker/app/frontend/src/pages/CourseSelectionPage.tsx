@@ -15,7 +15,7 @@ import { Badge } from '../components/ui/badge';
 import { Tooltip } from '../components/ui/tooltip';
 import { useGuidedTour } from '../contexts/GuidedTourContext';
 import { assessmentService } from '../services/assessmentService';
-import { isSandboxCourse, SANDBOX_COURSE_CODE } from '../utils/courseDisplay';
+import { isSandboxCourse, SANDBOX_COURSE_CODE, formatCourseTermYear } from '../utils/courseDisplay';
 
 const SANDBOX_COURSE_NAME = 'Sandbox Course';
 
@@ -190,7 +190,9 @@ export const CourseSelectionPage = () => {
           </Tooltip>
 
           {/* Available course cards */}
-          {displayCourses.map((course, index) => (
+          {displayCourses.map((course, index) => {
+            const termYear = formatCourseTermYear(course);
+            return (
             <Tooltip key={course.id} content={`Open question bank and assessments for ${course.name}`} side="top">
               <Card
                 className="cursor-pointer transition-shadow hover:shadow-md border bg-card text-card-foreground flex min-h-[140px]"
@@ -208,11 +210,15 @@ export const CourseSelectionPage = () => {
                 {course.code && (
                   <p className="text-sm text-muted-foreground mt-1">{course.code}</p>
                 )}
+                {termYear && (
+                  <p className="text-sm text-muted-foreground mt-1">{termYear}</p>
+                )}
                 <p className="text-xs text-muted-foreground/80 mt-2">Click to open</p>
               </CardContent>
               </Card>
             </Tooltip>
-          ))}
+            );
+          })}
         </div>
         )}
 

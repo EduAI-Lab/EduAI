@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { listTeacherCanvasCourses } from "~/lib/canvas/client.server";
-import { mapCanvasCourseToCoreFields } from "~/lib/canvas/courses.server";
+import {
+  mapCanvasCourseToCoreFields,
+  resolveCanvasCourseDates,
+} from "~/lib/canvas/courses.server";
 import {
   normalizeRosterEmail,
   normalizeStudentId,
@@ -67,6 +70,46 @@ describe("mapCanvasCourseToCoreFields", () => {
     });
 
     expect(mapped.code).toBe("Untitled Course");
+  });
+
+  it("uses enrollment term dates when course start_at and end_at are missing", () => {
+    const mapped = mapCanvasCourseToCoreFields({
+      id: 6,
+      name: "Computer Creativity",
+      course_code: "COSC 123",
+      start_at: null,
+      end_at: null,
+      term: {
+        id: 3,
+        name: "2026 W1",
+        start_at: null,
+        end_at: "2026-12-31T07:00:00Z",
+      },
+    });
+
+    expect(mapped.term).toBe("W1");
+    expect(mapped.year).toBe(2026);
+    expect(mapped.startDate).toEqual(new Date("2026-12-31T07:00:00Z"));
+    expect(mapped.endDate).toEqual(new Date("2026-12-31T07:00:00Z"));
+  });
+
+  it("prefers course dates over term dates when both are present", () => {
+    const { startDate, endDate } = resolveCanvasCourseDates({
+      id: 7,
+      name: "Machine Architecture",
+      course_code: "COSC 211",
+      start_at: "2026-09-01T06:00:00Z",
+      end_at: "2026-12-31T07:00:00Z",
+      term: {
+        id: 1,
+        name: "Default Term",
+        start_at: null,
+        end_at: null,
+      },
+    });
+
+    expect(startDate).toEqual(new Date("2026-09-01T06:00:00Z"));
+    expect(endDate).toEqual(new Date("2026-12-31T07:00:00Z"));
   });
 });
 

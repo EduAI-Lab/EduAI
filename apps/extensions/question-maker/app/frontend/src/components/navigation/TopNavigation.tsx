@@ -7,6 +7,7 @@ import { Button } from '../ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { Course } from '../../types/question';
+import { formatCourseNavLabel } from '../../utils/courseDisplay';
 import { useContext } from 'react';
 import { User, HelpCircle, ArrowLeft, BugOff } from 'lucide-react';
 import { EduAIStatusBadge } from '../eduai/EduAIStatusBadge';
@@ -116,7 +117,7 @@ export const TopNavigation = (props: TopNavigationProps) => {
                   ) : (
                     courses.map((course) => (
                       <SelectItem key={course.id} value={course.id.toString()} className="text-base font-semibold">
-                        {course.code || '—'} - {course.name}
+                        {formatCourseNavLabel(course)}
                       </SelectItem>
                     ))
                   )}

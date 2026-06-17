@@ -79,7 +79,7 @@ export function CoursesInstructorView({ courses, onEditCourse, onPublishToggle }
                 <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                   <div className="flex items-center gap-1">
                     <IconCalendar className="w-4 h-4" />
-                    {course.term} {course.year}
+                    {course.year} {course.term} 
                   </div>
                   <Badge variant={course.isPublished ? 'default' : 'secondary'}>
                     {course.isPublished ? 'Published' : 'Draft'}
