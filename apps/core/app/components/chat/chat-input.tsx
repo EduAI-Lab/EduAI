@@ -111,11 +111,13 @@ export function ChatInput({
               {showCourseSelector && (
                 <div className={ASSISTIVE_FOCUS_CHROME_CLASS}>
                   <Select value={selectedCourseId || "none"} onValueChange={(value) => setSelectedCourseId(value === "none" ? null : value)}>
-                    <SelectTrigger className="w-[120px] h-8 text-xs">
-                      {selectedCourseId ? (availableCourses.find(c => c.code === selectedCourseId)?.code || "No Course") : "No Course"}
+                    <SelectTrigger className="w-[140px] h-8 text-xs">
+                      {selectedCourseId
+                        ? (availableCourses.find(c => c.code === selectedCourseId)?.code ?? "No course selected")
+                        : "No course selected"}
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">No Course Selected</SelectItem>
+                      <SelectItem value="none">No course selected</SelectItem>
                       {availableCourses.map((course) => (
                         <SelectItem key={course.code} value={course.code}>
                           {course.code}

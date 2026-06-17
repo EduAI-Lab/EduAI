@@ -84,7 +84,7 @@ export async function resolveAdminCourseId(
     return { courseId: course.id, courseCode: course.code };
   }
 
-  return { error: "courseId or courseCode required — select a course in the admin chat UI" };
+  return { error: "courseId or courseCode required" };
 }
 
 /** ADMIN-only user directory (read-only). */

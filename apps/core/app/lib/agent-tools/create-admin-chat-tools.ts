@@ -36,11 +36,11 @@ const courseScope = {
   courseId: z
     .string()
     .optional()
-    .describe("Course id (CUID); defaults to the course selected in admin chat"),
+    .describe("Course id (CUID); required for enrollment tools when no courseCode is given"),
   courseCode: z
     .string()
     .optional()
-    .describe("Course code when course id is unknown"),
+    .describe("Course code; required for enrollment tools when no courseId is given"),
 };
 
 const userRef = {
