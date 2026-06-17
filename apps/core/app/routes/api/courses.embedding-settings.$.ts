@@ -165,20 +165,30 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   const refreshed = fields;
 
-  fireAndForget(
-    logAuditAction({
-      ...getActorContext(authResult.session?.user ?? null),
-      ...requestContext,
-      actionCode: "EMBEDDING_SETTINGS_CHANGED",
-      category: "AI_CONFIG",
-      entityType: "Course",
-      entityId: courseId,
-      details: {
-        embeddingProvider: validated.value.embeddingProvider,
-        embeddingModel: validated.value.embeddingModel,
-      },
-    }),
-  );
+  // Only audit a real change: a PATCH that resubmits the existing provider/model is a no-op
+  // and must not produce an EMBEDDING_SETTINGS_CHANGED event that didn't actually change anything.
+  const settingsChanged =
+    current.embeddingProvider !== updated.embeddingProvider ||
+    current.embeddingModel !== updated.embeddingModel;
+
+  if (settingsChanged) {
+    fireAndForget(
+      logAuditAction({
+        ...getActorContext(authResult.session?.user ?? null),
+        ...requestContext,
+        actionCode: "EMBEDDING_SETTINGS_CHANGED",
+        category: "AI_CONFIG",
+        entityType: "Course",
+        entityId: courseId,
+        details: {
+          previousProvider: current.embeddingProvider,
+          previousModel: current.embeddingModel,
+          embeddingProvider: updated.embeddingProvider,
+          embeddingModel: updated.embeddingModel,
+        },
+      }),
+    );
+  }
 
   return jsonResponse({
     success: true,

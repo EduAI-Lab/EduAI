@@ -87,7 +87,11 @@ export async function action({ request, params }: ActionFunctionArgs) {
             category: "ENROLLMENT",
             entityType: "Enrollment",
             entityId: enrollmentId,
-            details: { courseId, newRole: result.enrollment.role },
+            details: {
+              courseId,
+              previousRole: result.previousRole,
+              newRole: result.enrollment.role,
+            },
           }),
         );
         return json(200, result.enrollment);

@@ -64,6 +64,79 @@ describe("logging.server", () => {
     );
   });
 
+  it("redacts credential-shaped keys missed by the original deny-list", async () => {
+    await logAuditAction({
+      actionCode: "CANVAS_INTEGRATION_SAVED",
+      category: "AI_CONFIG",
+      entityType: "Course",
+      details: {
+        apiKey: "ak-123",
+        secret: "shh",
+        clientSecret: "cs-456",
+        privateKey: "pk-789",
+        accessKey: "AKIA",
+        credential: "cred",
+        canvasUrl: "https://canvas.example.com",
+      },
+    });
+
+    expect(auditDb.createAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        details: {
+          apiKey: "[REDACTED]",
+          secret: "[REDACTED]",
+          clientSecret: "[REDACTED]",
+          privateKey: "[REDACTED]",
+          accessKey: "[REDACTED]",
+          credential: "[REDACTED]",
+          canvasUrl: "https://canvas.example.com",
+        },
+      }),
+    );
+  });
+
+  it("does not overflow on circular details and still redacts the rest", async () => {
+    const details: Record<string, unknown> = { password: "nope", note: "ok" };
+    details.self = details;
+
+    await logAuditAction({
+      actionCode: "USER_UPDATED",
+      category: "USER",
+      entityType: "User",
+      details,
+    });
+
+    expect(auditDb.createAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        details: { password: "[REDACTED]", note: "ok", self: "[CIRCULAR]" },
+      }),
+    );
+  });
+
+  it("sanitizes Map and Set values instead of dropping them to empty objects", async () => {
+    await logAuditAction({
+      actionCode: "USER_UPDATED",
+      category: "USER",
+      entityType: "User",
+      details: {
+        asMap: new Map<string, unknown>([
+          ["token", "secret-token"],
+          ["role", "ADMIN"],
+        ]),
+        asSet: new Set(["a", "b"]),
+      },
+    });
+
+    expect(auditDb.createAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        details: {
+          asMap: { token: "[REDACTED]", role: "ADMIN" },
+          asSet: ["a", "b"],
+        },
+      }),
+    );
+  });
+
   it("routes system error writes through centralized helper", async () => {
     await logSystemError({
       source: "AI",
