@@ -40,17 +40,21 @@ export async function action({ request, params }: ActionFunctionArgs) {
     const existing = await findActiveReEmbedJob(courseId);
     const job = existing ?? (await startReEmbedJob(courseId));
 
-    fireAndForget(
-      logAuditAction({
-        ...getActorContext(session?.user ?? null),
-        ...requestContext,
-        actionCode: "RE_EMBED_JOB_CREATED",
-        category: "AI_CONFIG",
-        entityType: "ReEmbedJob",
-        entityId: job.id,
-        details: { courseId },
-      }),
-    );
+    // Only a freshly-started job is a "created" event; reusing an active job is
+    // a no-op and must not be logged as a creation.
+    if (!existing) {
+      fireAndForget(
+        logAuditAction({
+          ...getActorContext(session?.user ?? null),
+          ...requestContext,
+          actionCode: "RE_EMBED_JOB_CREATED",
+          category: "AI_CONFIG",
+          entityType: "ReEmbedJob",
+          entityId: job.id,
+          details: { courseId },
+        }),
+      );
+    }
 
     return jsonResponse(
       {
