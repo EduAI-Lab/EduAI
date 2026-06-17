@@ -163,6 +163,10 @@ export async function runConfiguredLogRetentionIfDue(
     return;
   }
 
+  // Reserve the slot before awaiting so concurrent requests don't double-run,
+  // but remember the previous timestamp so a failed sweep can be retried on the
+  // next request instead of being suppressed for a full interval.
+  const previousSweepStartedAt = lastAutoSweepStartedAt;
   isAutoSweepRunning = true;
   lastAutoSweepStartedAt = now;
 
@@ -170,6 +174,8 @@ export async function runConfiguredLogRetentionIfDue(
     await runConfiguredLogRetention();
   } catch (error) {
     // Cleanup failures should be observable but must never block auth or domain mutations.
+    // Roll back the throttle timestamp so the next request can retry the sweep.
+    lastAutoSweepStartedAt = previousSweepStartedAt;
     console.error("[LOG_RETENTION_SWEEP_FAILED]", error);
   } finally {
     isAutoSweepRunning = false;
