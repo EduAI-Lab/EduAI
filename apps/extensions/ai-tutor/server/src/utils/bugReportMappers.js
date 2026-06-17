@@ -22,7 +22,7 @@ function resolveActivityTitle(activity) {
   return parseActivityFallbackTitle(activity.config);
 }
 
-function mapCoreStatusToAt(status) {
+export function mapCoreStatusToAt(status) {
   switch (status) {
     case 'UNHANDLED':
       return 'unhandled';
