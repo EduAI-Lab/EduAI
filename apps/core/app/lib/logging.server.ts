@@ -36,6 +36,24 @@ export type LogSystemErrorInput = CreateSystemErrorInput;
 
 const AUDIT_SAFE_ID_KEYS = new Set(["studentid", "ubcemployeeid"]);
 const REDACTED_VALUE = "[REDACTED]";
+const CIRCULAR_VALUE = "[CIRCULAR]";
+
+// Substrings that — after stripping non-alphanumerics and lowercasing the key — mark a value
+// as a credential or direct-contact PII that must never be persisted in log details. Matched as
+// substrings so compound keys are covered too: `secret` catches sessionSecret/clientSecret,
+// `apikey` catches x-api-key, `accesskey`/`privatekey` catch provider key fields.
+const REDACT_KEY_SUBSTRINGS = [
+  "password",
+  "token",
+  "cookie",
+  "phone",
+  "authorization",
+  "secret",
+  "apikey",
+  "accesskey",
+  "privatekey",
+  "credential",
+];
 
 function shouldRedactKey(key: string) {
   const normalized = key.replace(/[^a-z0-9]/gi, "").toLowerCase();
@@ -49,37 +67,53 @@ function shouldRedactKey(key: string) {
   //
   // NOTE: `email` is intentionally NOT redacted right now — full email addresses are logged
   // across all logs by current product decision. This is a temporary measure; emails will be
-  // purged/redacted later for privacy. Re-add `normalized.includes("email")` to restore redaction.
-  return (
-    normalized.includes("password") ||
-    normalized.includes("token") ||
-    normalized.includes("cookie") ||
-    normalized.includes("phone") ||
-    normalized.includes("authorization") ||
-    normalized.includes("sessionsecret")
-  );
+  // purged/redacted later for privacy. Add `"email"` to REDACT_KEY_SUBSTRINGS to restore redaction.
+  return REDACT_KEY_SUBSTRINGS.some((needle) => normalized.includes(needle));
 }
 
-function sanitizeDetails(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    // Arrays are recursively sanitized so nested objects cannot bypass redaction.
-    return value.map((entry) => sanitizeDetails(entry));
-  }
-
+function sanitizeDetails(value: unknown, seen: WeakSet<object> = new WeakSet()): unknown {
+  // Primitives, null, and Dates pass through untouched.
   if (!value || typeof value !== "object" || value instanceof Date) {
     return value;
   }
 
-  const sanitized: Record<string, unknown> = {};
-  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
-    if (shouldRedactKey(key)) {
-      sanitized[key] = REDACTED_VALUE;
-      continue;
+  const obj = value as object;
+
+  // Cycle guard: a self-referential details object would otherwise overflow the stack and,
+  // because callers swallow the throw, drop the entire payload. Only ancestors on the current
+  // branch live in `seen` (removed on unwind), so shared-but-acyclic references (DAGs) are
+  // still fully sanitized rather than mislabelled as circular.
+  if (seen.has(obj)) {
+    return CIRCULAR_VALUE;
+  }
+  seen.add(obj);
+
+  let result: unknown;
+  if (Array.isArray(value)) {
+    // Arrays are recursively sanitized so nested objects cannot bypass redaction.
+    result = value.map((entry) => sanitizeDetails(entry, seen));
+  } else if (value instanceof Map) {
+    // Maps are not enumerable via Object.entries (they'd serialize to {} and silently drop
+    // their contents, bypassing redaction), so normalize to a plain object first.
+    const sanitized: Record<string, unknown> = {};
+    for (const [key, entry] of value.entries()) {
+      const keyStr = typeof key === "string" ? key : String(key);
+      sanitized[keyStr] = shouldRedactKey(keyStr) ? REDACTED_VALUE : sanitizeDetails(entry, seen);
     }
-    sanitized[key] = sanitizeDetails(entry);
+    result = sanitized;
+  } else if (value instanceof Set) {
+    // Sets likewise serialize to {}; treat their members like an array.
+    result = Array.from(value, (entry) => sanitizeDetails(entry, seen));
+  } else {
+    const sanitized: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+      sanitized[key] = shouldRedactKey(key) ? REDACTED_VALUE : sanitizeDetails(entry, seen);
+    }
+    result = sanitized;
   }
 
-  return sanitized;
+  seen.delete(obj);
+  return result;
 }
 
 /**

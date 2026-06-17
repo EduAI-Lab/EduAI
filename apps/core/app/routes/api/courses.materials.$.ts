@@ -158,6 +158,22 @@ async function uploadMaterial(
       },
     });
 
+    // Audit the upload as soon as the material row is persisted, independent of embedding.
+    // A material that uploads successfully but later fails to embed is still a real upload
+    // and must leave an audit trail (the embedding failure is recorded separately below).
+    fireAndForget(
+      logAuditAction({
+        ...getActorContext(user ?? null),
+        ...requestContext,
+        actionCode: 'MATERIAL_UPLOADED',
+        category: 'MATERIAL',
+        entityType: 'CourseMaterial',
+        entityId: material.id,
+        entityLabel: material.title,
+        details: { courseId },
+      }),
+    );
+
     try {
       await processMaterialEmbeddings(material.id, fileInfo.content);
 
@@ -165,19 +181,6 @@ async function uploadMaterial(
         where: { id: material.id },
         data: { status: 'READY', processedAt: new Date() },
       });
-
-      fireAndForget(
-        logAuditAction({
-          ...getActorContext(user ?? null),
-          ...requestContext,
-          actionCode: 'MATERIAL_UPLOADED',
-          category: 'MATERIAL',
-          entityType: 'CourseMaterial',
-          entityId: material.id,
-          entityLabel: fileInfo.title,
-          details: { courseId },
-        }),
-      );
 
       return json(200, {
         success: true,

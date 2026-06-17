@@ -14,6 +14,17 @@ import { fireAndForget, logAuditAction, logSecurityEvent } from "~/lib/logging.s
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 
+// Identity events label the subject by email (unique) plus name for readability, so two
+// users who share a display name stay distinguishable in the log viewer. Email is the
+// stable identifier even after the user row is gone; name is included only when present.
+function userEntityLabel(
+  name: string | null | undefined,
+  email: string | null | undefined,
+): string | null {
+  if (email && name) return `${name} <${email}>`;
+  return email ?? name ?? null;
+}
+
 export async function loader({ request }: LoaderFunctionArgs) {
   return handleRequest(request);
 }
@@ -158,7 +169,7 @@ async function handleRequest(request: Request) {
             category: "USER",
             entityType: "User",
             entityId: created.id,
-            entityLabel: created.name,
+            entityLabel: userEntityLabel(created.name, created.email),
             details: { role: created.role, email: created.email },
           }),
         );
@@ -326,7 +337,7 @@ async function handleRequest(request: Request) {
             category: "USER",
             entityType: "User",
             entityId: updated.id,
-            entityLabel: updated.name,
+            entityLabel: userEntityLabel(updated.name, updated.email),
             // Identify the affected account by email; log changed field *names* (not
             // their values, which may carry other PII like studentId). newRole is only
             // meaningful on a role change, so omit it otherwise.
@@ -400,7 +411,7 @@ async function handleRequest(request: Request) {
             category: "USER",
             entityType: "User",
             entityId: deleted.id,
-            entityLabel: deleted.name,
+            entityLabel: userEntityLabel(deleted.name, deleted.email),
             details: { email: deleted.email },
           }),
         );
