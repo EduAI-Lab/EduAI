@@ -69,12 +69,13 @@ describe("ChatHeaderControls", () => {
     expect(screen.getByRole("button", { name: /system prompt/i })).toBeInTheDocument();
   });
 
-  it("shows focus mode toggle only when assistive mode is on", () => {
+  it("greys out and disables focus mode until assistive mode is on", () => {
     const { rerender } = render(<ChatHeaderControls {...defaultProps} />);
-    expect(screen.queryByRole("switch", { name: "Focus mode" })).not.toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Focus mode" })).toBeDisabled();
+    expect(screen.getByTestId("focus-mode-disabled-icon")).toBeInTheDocument();
 
     rerender(<ChatHeaderControls {...defaultProps} adhdAssist={true} />);
-    expect(screen.getByRole("switch", { name: "Focus mode" })).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Focus mode" })).toBeEnabled();
   });
 
   it("calls onFocusModeChange when focus mode is toggled", () => {

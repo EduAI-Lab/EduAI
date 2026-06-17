@@ -8,6 +8,7 @@ import {
   IconPlayerStop,
   IconWorld,
   IconBrain,
+  IconBan,
   IconFocusCentered,
 } from "@tabler/icons-react";
 import { useState } from "react";
@@ -236,9 +237,7 @@ export function ChatInput({
                 </TooltipProvider>
               )}
 
-              {/* Focus mode toggle — only available while Assistive mode is on. Dims
-                  surrounding chrome and anchors attention on the active exchange. */}
-              {adhdAssist && onFocusModeChange && (
+              {onFocusModeChange && (
                 <TooltipProvider delayDuration={300}>
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -246,10 +245,16 @@ export function ChatInput({
                         className={`flex items-center gap-2 rounded-full border px-3 py-1.5 transition-colors ${
                           focusMode
                             ? "border-accent bg-accent text-accent-foreground"
-                            : "border-border bg-transparent text-muted-foreground"
+                            : adhdAssist
+                              ? "border-border bg-transparent text-muted-foreground"
+                              : "border-border bg-transparent text-muted-foreground opacity-40 grayscale pointer-events-none"
                         }`}
                       >
-                        <IconFocusCentered size={14} strokeWidth={2} className="shrink-0" />
+                        {adhdAssist ? (
+                          <IconFocusCentered size={14} strokeWidth={2} className="shrink-0" />
+                        ) : (
+                          <IconBan size={14} strokeWidth={2} className="shrink-0" />
+                        )}
                         <Label
                           htmlFor="assistive-focus-composer"
                           className="cursor-pointer text-xs font-medium whitespace-nowrap text-current"
@@ -259,9 +264,10 @@ export function ChatInput({
                         <Switch
                           id="assistive-focus-composer"
                           checked={focusMode}
+                          disabled={!adhdAssist}
                           onCheckedChange={(checked) => onFocusModeChange(Boolean(checked))}
                           aria-label="Focus mode"
-                          className="shrink-0"
+                          className={adhdAssist ? "shrink-0 cursor-pointer" : "shrink-0 cursor-pointer disabled:opacity-70"}
                         />
                       </div>
                     </TooltipTrigger>
