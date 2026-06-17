@@ -1,6 +1,9 @@
 import express from 'express';
 import { toPublicUser } from '../utils/mappers.js';
-import { importTaughtCoursesFromCore } from '../services/importTaughtCoursesService.js';
+import {
+  importEnrolledCoursesFromCore,
+  importTaughtCoursesFromCore,
+} from '../services/importTaughtCoursesService.js';
 
 const router = express.Router();
 
@@ -12,6 +15,12 @@ router.get('/me', async (req, res) => {
     await importTaughtCoursesFromCore(authUser, req.headers.cookie ?? '');
   } catch (err) {
     console.error('[eduai] Auto-import taught courses failed on login', err);
+  }
+
+  try {
+    await importEnrolledCoursesFromCore(authUser, req.headers.cookie ?? '');
+  } catch (err) {
+    console.error('[eduai] Student enrollment mirror failed on login', err);
   }
 
   res.json({ user: toPublicUser(authUser) });

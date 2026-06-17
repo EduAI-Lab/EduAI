@@ -1,6 +1,6 @@
 /**
  * Course selection page shown after login. User must select a course card to continue to Question Bank / Assessments.
- * Same header as homepage; content shows "Your Courses", "Add new course" card, and available course cards.
+ * Same header as homepage; content shows course cards and sandbox course option.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -173,8 +173,8 @@ export const CourseSelectionPage = () => {
           <p className="text-sm text-muted-foreground">Loading courses…</p>
         ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 items-stretch">
-          {/* Add new course card - used as tour target when there are no courses yet */}
-          <Tooltip content="Add or link a course from Core to get started" side="top">
+          {/* Sandbox course */}
+          <Tooltip content="Create a local sandbox course for practice" side="top">
             <Card
               className="border-2 border-dashed border-muted-foreground/30 bg-muted/30 hover:border-primary hover:bg-muted/50 cursor-pointer transition-colors flex min-h-[140px]"
               data-tour-id={displayCourses.length === 0 ? 'course-select' : undefined}
@@ -184,7 +184,7 @@ export const CourseSelectionPage = () => {
               <div className="rounded-full bg-muted p-3 mb-2">
                 <Plus className="h-6 w-6 text-muted-foreground" />
               </div>
-              <p className="text-sm font-medium text-muted-foreground">Add new course</p>
+              <p className="text-sm font-medium text-muted-foreground">Sandbox course</p>
             </CardContent>
             </Card>
           </Tooltip>
@@ -219,8 +219,8 @@ export const CourseSelectionPage = () => {
         {!isPageLoading && displayCourses.length === 0 && (
           <p className="text-sm text-muted-foreground mt-4">
             {hasCoreCourses
-              ? 'No linked courses yet. Add a course from Core to get started.'
-              : 'No courses yet. Add a course from your profile to get started.'}
+              ? 'Your Core courses should appear here after sign-in. Refresh the page if something is missing.'
+              : 'No courses yet. Core courses appear automatically, or create a sandbox course to get started.'}
           </p>
         )}
       </div>
