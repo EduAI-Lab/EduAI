@@ -1,6 +1,6 @@
 # EduAI Core — Activity Logging
 
-**Last updated:** 2026-06-13
+**Last updated:** 2026-06-17
 
 This document describes the in-product logging subsystem in **apps/core**: what is recorded, what personal data it touches, who can see it, and how long it is kept. It is written to support a **Privacy Impact Assessment (PIA)**.
 
@@ -94,10 +94,12 @@ Each row may contain:
 | `actorUserId`, `actorRole` | Yes (pseudonymous) | The acting user's ID and role. The **name** is shown in the UI via a live join to the user table, not stored on the log row. |
 | `ipAddress` | Yes | Origin IP, when provided by an upstream proxy header. Often null in local/dev. |
 | `userAgent` | Yes | Browser/client string. |
-| `entityId` / `entityLabel` | Sometimes | The affected record (e.g. a user or course ID). |
+| `entityId` / `entityLabel` | Sometimes | The affected record (e.g. a user or course ID). For identity-related events `entityLabel` holds the subject's **email**. |
 | `details` (JSON) | Minimized | Free-form context, **sanitized before write** (see below). |
 
-**Redaction.** Before any `details` object is written, keys whose name contains `password`, `token`, `cookie`, `email`, `phone`, `authorization`, or `sessionsecret` are replaced with `[REDACTED]`. **Email addresses (and any email-derived value) and passwords are never stored** — login events record no email data at all; the actor is identified by `actorUserId`/`actorRole`. Identifier keys explicitly allowed for accountability: `studentId`, `ubcEmployeeId`.
+**Redaction.** Before any `details` object is written, keys whose name contains `password`, `token`, `cookie`, `phone`, `authorization`, or `sessionsecret` are replaced with `[REDACTED]`. **Passwords, tokens, and session secrets are never stored.** Identifier keys explicitly allowed for accountability: `studentId`, `ubcEmployeeId`.
+
+**Email addresses are stored** for identity-relevant events — login success/failure, logout, user created/updated/deleted, and invitation created/resent/revoked/accepted — so an admin can answer *who* without a fragile join (and, on a failed login, the attempted email is the only available subject identifier). This is a deliberate product decision recorded in `logging.server.ts`; `email` is intentionally **not** in the redaction deny-list. Re-adding `email` to that list restores full email redaction if a future privacy decision requires it.
 
 **Actor attribution.** If an actor's user record is later deleted, the log's `actorUserId` is nulled (`ON DELETE SET NULL`) but the `actorRole` captured at write time is retained, so the event remains attributable by role without retaining a foreign key to a deleted person.
 
