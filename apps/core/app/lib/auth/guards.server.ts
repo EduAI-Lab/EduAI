@@ -15,7 +15,11 @@ const ALLOWED_PROD_APEX = "eduai.ok.ubc.ca";
  */
 export function validateRedirectUrl(url: string | null): string {
   if (!url) return "/dashboard";
-  if (url.startsWith("/") && !url.startsWith("//")) return url;
+  // Browsers normalize backslashes to forward slashes, so `/\evil.com` becomes the
+  // protocol-relative `//evil.com`. Normalize before the same-origin check so the
+  // backslash variant cannot bypass the `//` open-redirect guard.
+  const normalized = url.replace(/\\/g, "/");
+  if (normalized.startsWith("/") && !normalized.startsWith("//")) return url;
   try {
     const { hostname } = new URL(url);
     if (hostname === "localhost" || hostname === "127.0.0.1") return url;
