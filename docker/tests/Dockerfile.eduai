@@ -49,9 +49,11 @@ CMD ["npx", "vitest", "run"]
 FROM node:20-alpine AS build
 WORKDIR /app
 
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/packages/types ./packages/types
-COPY apps/core ./apps/core
+COPY --from=deps /app/package.json      ./
+COPY --from=deps /app/package-lock.json ./
+COPY --from=deps /app/node_modules      ./node_modules
+COPY --from=deps /app/packages/types    ./packages/types
+COPY apps/core                          ./apps/core
 
 ENV PATH="/app/node_modules/.bin:${PATH}"
 # prisma generate does not connect to the DB; placeholder prevents any env check
@@ -68,9 +70,11 @@ COPY --from=deps /app/node_modules            ./node_modules
 COPY --from=build /app/apps/core/build        ./apps/core/build
 COPY --from=build /app/apps/core/node_modules ./apps/core/node_modules
 COPY --from=build /app/apps/core/prisma       ./apps/core/prisma
-COPY apps/core/package.json                   ./apps/core/
 
 ENV PATH="/app/node_modules/.bin:${PATH}"
 
+# Note: package.json is intentionally omitted. apps/core has "type":"module",
+# which makes Node treat the React Router server bundle (CommonJS) as ESM,
+# causing __dirname to be undefined. Without package.json Node defaults to CJS.
 WORKDIR /app/apps/core
-CMD ["sh", "-c", "npx prisma migrate deploy && npm run start"]
+CMD ["sh", "-c", "npx prisma migrate deploy && react-router-serve ./build/server/index.js"]
