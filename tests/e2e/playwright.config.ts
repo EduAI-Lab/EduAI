@@ -15,6 +15,9 @@ export { CORE_URL, AI_TUTOR_URL, AI_TUTOR_API_URL, QM_BACKEND_URL, QM_FRONTEND_U
 
 export default defineConfig({
   testDir: './tests',
+  globalSetup: './global-setup.ts',
+  /* Per-test timeout — generous enough to survive a cold server start */
+  timeout: 60_000,
   /* Run all tests in parallel */
   fullyParallel: false,
   /* Fail the build on CI if you accidentally left test.only in the source code */

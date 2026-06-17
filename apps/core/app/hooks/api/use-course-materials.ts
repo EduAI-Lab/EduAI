@@ -15,6 +15,7 @@ export interface CourseMaterial {
   createdAt: string
   updatedAt: string
   processedAt: string | null
+  chunkCount?: number
   // uploadedBy will be available after #300 schema update
   uploadedBy?: string
 }

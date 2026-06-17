@@ -5,6 +5,8 @@ import { SystemPromptSettings } from "~/components/chat/system-prompt-settings";
 export interface ChatHeaderControlsProps {
   adhdAssist: boolean;
   onAdhdAssistChange: (checked: boolean) => void;
+  focusMode: boolean;
+  onFocusModeChange: (checked: boolean) => void;
   systemPrompt: string | null;
   onSystemPromptSave: (prompt: string | null) => void;
 }
@@ -18,6 +20,8 @@ export interface ChatHeaderControlsProps {
 export function ChatHeaderControls({
   adhdAssist,
   onAdhdAssistChange,
+  focusMode,
+  onFocusModeChange,
   systemPrompt,
   onSystemPromptSave,
 }: ChatHeaderControlsProps) {
@@ -51,6 +55,22 @@ export function ChatHeaderControls({
           <p className="mt-0.5 opacity-75">Useful for ADHD and assistive reading needs.</p>
         </TooltipContent>
       </Tooltip>
+      {adhdAssist ? (
+        <div className="flex items-center gap-2">
+          <Switch
+            id="assistive-focus-mode"
+            checked={focusMode}
+            onCheckedChange={(checked) => onFocusModeChange(Boolean(checked))}
+            aria-label="Focus mode"
+          />
+          <Label
+            htmlFor="assistive-focus-mode"
+            className="cursor-pointer text-sm text-muted-foreground whitespace-nowrap"
+          >
+            Focus mode {focusMode ? "On" : "Off"}
+          </Label>
+        </div>
+      ) : null}
       <SystemPromptSettings
         systemPrompt={systemPrompt}
         onSave={onSystemPromptSave}

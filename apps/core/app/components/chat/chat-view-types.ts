@@ -26,9 +26,13 @@ export type ChatViewSharedProps = {
   input: string;
   isLoading: boolean;
   adhdAssist: boolean;
-  onAssistChange: (value: boolean) => void;
+  assistive: boolean;
+  onAssistiveChange: (value: boolean) => void;
+  focusMode: boolean;
+  onFocusModeChange: (value: boolean) => void;
   systemPrompt: string | null;
   onSystemPromptSave: (prompt: string | null) => Promise<void>;
+  webToolsEnabled: boolean;
   onInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
   onStop?: () => void;

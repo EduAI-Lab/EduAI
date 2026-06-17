@@ -16,6 +16,9 @@ import prisma from "~/lib/prisma.server";
 import { AssistiveUiProvider } from "~/components/assistive/assistive-ui-provider";
 import { ThemeProvider } from "~/components/theme-provider";
 import { Toaster } from "@eduai/ui";
+import { UiPreferencesProvider } from "~/components/assistive/ui-preferences-provider";
+import { DEFAULT_ACCOUNT_PREFERENCES } from "~/lib/user-preferences";
+import { isUiDensity, isUiTheme } from "~/lib/ui-preferences";
 
 export const links: Route.LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -30,24 +33,39 @@ export const links: Route.LinksFunction = () => [
   },
 ];
 
+const GUEST_ROOT_PREFERENCES = {
+  assistive: false,
+  motionReduced: false,
+  density: DEFAULT_ACCOUNT_PREFERENCES.density,
+  theme: DEFAULT_ACCOUNT_PREFERENCES.theme,
+} as const;
+
 /**
- * Resolves the account-level Assistive Mode flag for every page render.
- * Guests always get `false`, guaranteeing baseline UI on public pages.
- * Deliberately a single cheap select — not getUserPreference, whose course
- * validation is too heavy to run on every navigation.
+ * Resolves account-level UI preferences for every page render.
+ * Guests always get defaults, guaranteeing baseline UI on public pages.
  */
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request);
   if (!session?.user) {
-    return { assistive: false };
+    return GUEST_ROOT_PREFERENCES;
   }
 
   const row = await prisma.userPreference.findUnique({
     where: { userId: session.user.id },
-    select: { assistDefault: true },
+    select: {
+      assistDefault: true,
+      motionReduced: true,
+      density: true,
+      theme: true,
+    },
   });
 
-  return { assistive: row?.assistDefault ?? false };
+  return {
+    assistive: row?.assistDefault ?? false,
+    motionReduced: row?.motionReduced ?? false,
+    density: isUiDensity(row?.density) ? row.density : DEFAULT_ACCOUNT_PREFERENCES.density,
+    theme: isUiTheme(row?.theme) ? row.theme : DEFAULT_ACCOUNT_PREFERENCES.theme,
+  };
 }
 
 export function Layout({ children }: { children: React.ReactNode }) {
@@ -79,9 +97,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
 export default function App({ loaderData }: Route.ComponentProps) {
   return (
-    <AssistiveUiProvider initialAssistive={loaderData?.assistive ?? false}>
-      <Outlet />
-    </AssistiveUiProvider>
+    <UiPreferencesProvider
+      initialMotionReduced={loaderData?.motionReduced ?? false}
+      initialDensity={loaderData?.density ?? DEFAULT_ACCOUNT_PREFERENCES.density}
+    >
+      <AssistiveUiProvider initialAssistive={loaderData?.assistive ?? false}>
+        <Outlet />
+      </AssistiveUiProvider>
+    </UiPreferencesProvider>
   );
 }
 

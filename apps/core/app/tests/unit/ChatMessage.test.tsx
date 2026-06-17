@@ -74,6 +74,20 @@ describe("ChatMessage — AI message", () => {
     const { container } = render(<ChatMessage message={aiMessage} />);
     expect(container.querySelector(".reading-surface")).toBeInTheDocument();
   });
+
+  it("applies active highlight class when highlightRole is active", () => {
+    const { container } = render(
+      <ChatMessage message={aiMessage} highlightRole="active" />,
+    );
+    expect(container.querySelector(".chat-message--active")).toBeInTheDocument();
+  });
+
+  it("applies inactive highlight class when highlightRole is inactive", () => {
+    const { container } = render(
+      <ChatMessage message={aiMessage} highlightRole="inactive" />,
+    );
+    expect(container.querySelector(".chat-message--inactive")).toBeInTheDocument();
+  });
 });
 
 // ---------------------------------------------------------------------------
