@@ -55,10 +55,9 @@ export async function action({ request }: ActionFunctionArgs) {
       category: "INVITATION",
       entityType: "Invitation",
       entityId: created.invitation.id,
-      // Email (and email-derived values like the domain) are never stored — see
-      // docs/LOGGING.md §3. The invitation id links back to the email if needed.
-      entityLabel: created.invitation.role,
-      details: { role: created.invitation.role },
+      // The invited email is the subject of the event and is stored for accountability.
+      entityLabel: created.invitation.email,
+      details: { role: created.invitation.role, email: created.invitation.email },
     }),
   );
 

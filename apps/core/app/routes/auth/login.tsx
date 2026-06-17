@@ -70,6 +70,10 @@ export async function action({ request }: ActionFunctionArgs) {
           actionCode: "LOGIN_FAILED",
           outcome: "FAILURE",
           entityType: "Auth",
+          // The attempted email is the only identifier on a failed login (no actor
+          // exists yet), so it must be stored for security triage.
+          entityLabel: input.email,
+          details: { email: input.email },
         }),
       );
       return {
@@ -121,6 +125,8 @@ export async function action({ request }: ActionFunctionArgs) {
         outcome: "SUCCESS",
         entityType: "Auth",
         entityId: signedInUser?.id ?? null,
+        entityLabel: input.email,
+        details: { email: input.email },
       }),
     );
 
@@ -137,6 +143,8 @@ export async function action({ request }: ActionFunctionArgs) {
         actionCode: "LOGIN_FAILED",
         outcome: "FAILURE",
         entityType: "Auth",
+        entityLabel: input.email,
+        details: { email: input.email },
       }),
     );
     return { formError: message };

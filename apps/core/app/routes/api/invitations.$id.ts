@@ -39,9 +39,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
         category: "INVITATION",
         entityType: "Invitation",
         entityId: result.invitation.id,
-        // Email-derived values are never stored — see docs/LOGGING.md §3.
-        entityLabel: result.invitation.role,
-        details: { role: result.invitation.role },
+        // The invited email is the subject of the event and is stored for accountability.
+        entityLabel: result.invitation.email,
+        details: { role: result.invitation.role, email: result.invitation.email },
       }),
     );
 
@@ -63,9 +63,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
         category: "INVITATION",
         entityType: "Invitation",
         entityId: result.invitation.id,
-        // Email-derived values are never stored — see docs/LOGGING.md §3.
-        entityLabel: result.invitation.role,
-        details: { role: result.invitation.role },
+        // The invited email is the subject of the event and is stored for accountability.
+        entityLabel: result.invitation.email,
+        details: { role: result.invitation.role, email: result.invitation.email },
       }),
     );
 
