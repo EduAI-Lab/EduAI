@@ -87,6 +87,7 @@ services:
       BETTER_AUTH_URL: http://e2e-ai-tutor-server:4000/api/auth
       COOKIE_DOMAIN: localhost
       PORT: "4000"
+      CORE_URL: http://e2e-eduai-app:3000
       EDUAI_DISCOVERY_URL: http://e2e-eduai-app:3000/api/auth/.well-known/openid-configuration
       EDUAI_CLIENT_ID: e2e-client-id
       EDUAI_CLIENT_SECRET: e2e-client-secret
@@ -172,13 +173,18 @@ services:
     build:
       context: .
       dockerfile: docker/tests/Dockerfile.playwright
+    # Host networking lets Playwright reach services via localhost:PORT, which
+    # matches BETTER_AUTH_URL=http://localhost:3000 so session cookies are set
+    # for domain "localhost" and automatically propagated between Core (3000)
+    # and AI Tutor (4000) within the same Playwright request context.
+    network_mode: host
     environment:
-      CORE_URL: http://e2e-eduai-app:3000
-      AI_TUTOR_URL: http://e2e-ai-tutor-app:3001
-      AI_TUTOR_SERVER_URL: http://e2e-ai-tutor-server:4000
-      QM_BACKEND_URL: http://e2e-qm-server:8000
-      QM_FRONTEND_URL: http://e2e-qm-app:5173
-      BASE_URL: http://e2e-eduai-app:3000
+      CORE_URL: http://localhost:3000
+      AI_TUTOR_URL: http://localhost:3001
+      AI_TUTOR_SERVER_URL: http://localhost:4000
+      QM_BACKEND_URL: http://localhost:8000
+      QM_FRONTEND_URL: http://localhost:5173
+      BASE_URL: http://localhost:3000
       CI: "true"
     volumes:
       - ./playwright-report:/e2e/playwright-report
