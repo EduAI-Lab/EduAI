@@ -7,6 +7,7 @@ import {
   getAuthorizedUnits,
   resolveCourseAccessWithCourse,
 } from "~/lib/auth/course-access.server";
+import { getPolicy } from "~/lib/policy.server";
 import {
   CreateCourseSchema,
   UpdateCourseSchema,
@@ -109,15 +110,22 @@ export async function getCourses(request: Request) {
 }
 
 /**
- * POST /api/courses — create a course (ADMIN, or UNIT_ADMIN within their
- * authorized units).
+ * POST /api/courses — create a course.
+ *
+ * Authorized for ADMIN and UNIT_ADMIN (within their authorized units). An
+ * INSTRUCTOR may also self-create when the `instructors.canCreateCourses` policy
+ * flag is enabled; they are auto-enrolled as the course instructor.
  */
 export async function createCourse(request: Request) {
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
   if (apiKeyGuard) return apiKeyGuard;
 
   const session = apiKeySession ?? (await auth.api.getSession(request));
-  if (!session?.user || !["ADMIN", "UNIT_ADMIN"].includes(session.user.role ?? "")) {
+  const role = session?.user?.role ?? "";
+  const canCreate =
+    ["ADMIN", "UNIT_ADMIN"].includes(role) ||
+    (role === "INSTRUCTOR" && (await getPolicy("instructors.canCreateCourses")));
+  if (!session?.user || !canCreate) {
     return new Response(JSON.stringify({ error: "Forbidden" }), {
       status: 403,
       headers: { "Content-Type": "application/json" } as const,
@@ -144,6 +152,12 @@ export async function createCourse(request: Request) {
         instructorUserIds.push(rawInstructorUserIds);
       }
     }
+  }
+
+  // A self-creating instructor is enrolled as the course's instructor so the
+  // course is never orphaned. (ADMIN/UNIT_ADMIN assign instructors explicitly.)
+  if (session.user.role === "INSTRUCTOR" && !instructorUserIds.includes(session.user.id)) {
+    instructorUserIds.push(session.user.id);
   }
 
   const data = {
