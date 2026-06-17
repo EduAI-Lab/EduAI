@@ -9,3 +9,9 @@ export function routerAutoDefaultEnabled(): boolean {
   const lower = v.toLowerCase();
   return lower !== "false" && lower !== "0" && lower !== "no" && lower !== "off";
 }
+
+/** Show Auto (rules) and Auto (LLM) in the chat model picker when routing is configured. */
+export function routingPickerEnabled(): boolean {
+  if (routerAutoDefaultEnabled()) return true;
+  return Boolean(process.env.VLLM_BASE_URL?.trim());
+}

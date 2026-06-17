@@ -16,13 +16,16 @@ import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import {
-  AUTO_MODEL_ID,
   type ChatModelOption,
   defaultChatModelId,
   displayNameForRegistryId,
+  isAutoRoutingModelId,
   withAutoChatModel,
 } from "~/lib/chat-auto-model";
-import { routerAutoDefaultEnabled } from "~/lib/router-env.server";
+import {
+  routerAutoDefaultEnabled,
+  routingPickerEnabled,
+} from "~/lib/router-env.server";
 import { getUserPreference, saveUserPreference } from "~/lib/user-preferences.server";
 import { getAccessibleCourseCodes } from "~/lib/courses/server";
 import { parsePreferenceUpdates, resolveSelectedCourse } from "~/lib/user-preferences";
@@ -35,6 +38,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 
   const routerAutoEnabled = routerAutoDefaultEnabled();
+  const showRoutingModels = routingPickerEnabled();
 
   // Fetch AI models from database
   const dbModels = await prisma.aIModel.findMany({
@@ -59,7 +63,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     supportsTools: model.supportsTools,
   }));
 
-  const chatModels = withAutoChatModel(registryModels, routerAutoEnabled);
+  const chatModels = withAutoChatModel(registryModels, showRoutingModels);
 
   // Validate the persisted course against the courses THIS user can actually
   // access, so a stale / now-inaccessible `lastCourseCode` is dropped on restore
@@ -70,6 +74,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   return {
     chatModels,
     routerAutoEnabled,
+    showRoutingModels,
     user: session.user,
     ...preferences,
   };
@@ -367,7 +372,7 @@ export default function Chat() {
                               (isStreamingMessage ? streamingRoutedRegistryId : null))
                             : null;
                         const answeredByLabel =
-                          selectedModel === AUTO_MODEL_ID && routedRegistryId
+                          isAutoRoutingModelId(selectedModel) && routedRegistryId
                             ? displayNameForRegistryId(routedRegistryId, chatModels)
                             : undefined;
 

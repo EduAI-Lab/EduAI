@@ -1,4 +1,5 @@
 export const AUTO_MODEL_ID = "auto";
+export const AUTO_LLM_MODEL_ID = "auto-llm";
 
 export type ChatModelOption = {
   id: string;
@@ -12,19 +13,37 @@ export type ChatModelOption = {
 
 export const AUTO_CHAT_MODEL: ChatModelOption = {
   id: AUTO_MODEL_ID,
-  name: "Auto",
-  description: "Pick the best tier for this prompt (routing rules)",
+  name: "Auto (rules)",
+  description: "Rule-based routing (P1) — picks 7B or 32B from heuristics",
   provider: "routing",
   supportsTools: true,
   supportsImages: true,
 };
 
+export const AUTO_LLM_CHAT_MODEL: ChatModelOption = {
+  id: AUTO_LLM_MODEL_ID,
+  name: "Auto (LLM)",
+  description: "LLM classifier routing (P3b) — 7B classifies, then tier pick",
+  provider: "routing",
+  supportsTools: true,
+  supportsImages: true,
+};
+
+export const ROUTING_CHAT_MODELS: ChatModelOption[] = [
+  AUTO_CHAT_MODEL,
+  AUTO_LLM_CHAT_MODEL,
+];
+
+export function isAutoRoutingModelId(modelId: string): boolean {
+  return modelId === AUTO_MODEL_ID || modelId === AUTO_LLM_MODEL_ID;
+}
+
 export function withAutoChatModel(
   models: ChatModelOption[],
-  routerAutoEnabled: boolean,
+  showRoutingModels: boolean,
 ): ChatModelOption[] {
-  if (!routerAutoEnabled) return models;
-  return [AUTO_CHAT_MODEL, ...models];
+  if (!showRoutingModels) return models;
+  return [...ROUTING_CHAT_MODELS, ...models];
 }
 
 export function defaultChatModelId(

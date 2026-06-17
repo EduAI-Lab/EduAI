@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Button } from "~/components/ui/button";
 import { Settings } from "lucide-react";
 import {
@@ -6,7 +7,14 @@ import {
   PromptInputActions,
   PromptInputAction,
 } from "~/components/ui/prompt-input";
-import { Select, SelectContent, SelectItem, SelectTrigger } from "~/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+} from "~/components/ui/select";
 
 export interface ChatInputProps {
   input: string;
@@ -55,6 +63,16 @@ export function ChatInput({
   chatModels,
   selectedModelInfo,
 }: ChatInputProps) {
+  const { routingModels, registryModels } = useMemo(() => {
+    const routing: ChatInputProps["chatModels"] = [];
+    const registry: ChatInputProps["chatModels"] = [];
+    for (const model of chatModels) {
+      if (model.provider === "routing") routing.push(model);
+      else registry.push(model);
+    }
+    return { routingModels: routing, registryModels: registry };
+  }, [chatModels]);
+
   const handleValueChange = (value: string) => {
     const event = {
       target: { value },
@@ -121,11 +139,21 @@ export function ChatInput({
             </Select>
 
             <Select value={selectedModel} onValueChange={setSelectedModel}>
-              <SelectTrigger className="w-[140px] h-8 text-xs">
+              <SelectTrigger className="w-[160px] h-8 text-xs">
                 {selectedModelInfo?.name || "Select model"}
               </SelectTrigger>
               <SelectContent>
-                {chatModels.map((model) => (
+                {routingModels.length > 0 ? (
+                  <SelectGroup>
+                    <SelectLabel>Routing</SelectLabel>
+                    {routingModels.map((model) => (
+                      <SelectItem key={model.id} value={model.id}>
+                        {model.name}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                ) : null}
+                {registryModels.map((model) => (
                   <SelectItem key={model.id} value={model.id}>
                     {model.name}
                   </SelectItem>
