@@ -81,21 +81,8 @@ export const SyncCanvasMaterialsSchema = z.object({
 
 export type SyncCanvasMaterialsInput = z.infer<typeof SyncCanvasMaterialsSchema>;
 
-export type CanvasMaterialImportStatus = "not_imported" | "imported" | "updated_on_canvas";
-
-export type CanvasMaterialDiscoverItem = {
-  canvasFileId: string;
-  displayName: string;
-  mimeType: string;
-  sizeBytes: number;
-  canvasUpdatedAt: string;
-  importStatus: CanvasMaterialImportStatus;
-  coreMaterialId: string | null;
-};
-
-export type SyncCanvasMaterialsResult = {
-  imported: number;
-  updated: number;
-  skipped: number;
-  failed: Array<{ canvasFileId: string; message: string }>;
-};
+export type {
+  CanvasMaterialImportStatus,
+  CanvasMaterialDiscoverItem,
+  SyncCanvasMaterialsResult,
+} from "@eduai/types";

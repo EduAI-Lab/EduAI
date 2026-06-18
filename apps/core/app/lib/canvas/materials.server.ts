@@ -15,7 +15,7 @@ import type {
   CanvasMaterialDiscoverItem,
   CanvasMaterialImportStatus,
   SyncCanvasMaterialsResult,
-} from "~/lib/canvas/schemas";
+} from "@eduai/types";
 import prisma from "~/lib/prisma.server";
 
 const ALLOWED_MIME_TYPES = new Set([
