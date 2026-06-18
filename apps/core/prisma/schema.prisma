@@ -44,6 +44,8 @@ model User {
   invitationAccepted        Invitation[]         @relation("InvitationAccepted")
   taughtCourses             Course[]             @relation("CourseInstructor")
   courseTAs                 CourseTA[]
+  auditLogs                 AuditLog[]
+  systemLogs                SystemLog[]
 
   @@map("user")
 }
@@ -680,4 +682,116 @@ enum ReEmbedJobStatus {
   COMPLETED
   PARTIAL
   FAILED
+}
+
+// ─── Logging / Observability ──────────────────────────────────────────────
+// Three append-only streams surfaced in the admin /admin/logs viewer:
+//   AuditLog   — who changed what (domain mutations + accepted invitations)
+//   SystemLog  — server errors / diagnostics (route, AI, mail, db failures)
+//   plus a singleton LogRetentionPolicy that drives periodic cleanup.
+
+enum AuditLogCategory {
+  USER
+  INVITATION
+  COURSE
+  ENROLLMENT
+  MATERIAL
+  TOPIC
+  AI_CONFIG
+  CANVAS
+  BUG_REPORT
+  SECURITY
+}
+
+enum AuditLogOutcome {
+  SUCCESS
+  FAILURE
+  DENIED
+}
+
+enum SystemLogLevel {
+  ERROR
+  WARN
+  INFO
+}
+
+enum SystemLogSource {
+  ROUTE
+  AUTH
+  AI
+  CANVAS
+  MAIL
+  DB
+  SSR
+  API
+}
+
+model AuditLog {
+  id          String           @id @default(cuid())
+  createdAt   DateTime         @default(now())
+  category    AuditLogCategory
+  outcome     AuditLogOutcome  @default(SUCCESS)
+  actionCode  String
+  actorUserId String?
+  actorRole   String?
+  actorType   String           @default("USER")
+  entityType  String
+  entityId    String?
+  entityLabel String?
+  details     Json?
+  requestId   String?
+  routePath   String?
+  httpMethod  String?
+  ipAddress   String?
+  userAgent   String?
+
+  user User? @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([category, createdAt])
+  @@index([actionCode, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([entityType, entityId, createdAt])
+  @@index([routePath, createdAt])
+  @@index([outcome, createdAt])
+  @@map("audit_logs")
+}
+
+model SystemLog {
+  id          String          @id @default(cuid())
+  createdAt   DateTime        @default(now())
+  level       SystemLogLevel
+  source      SystemLogSource
+  code        String
+  message     String
+  errorName   String?
+  stack       String?
+  details     Json?
+  actorUserId String?
+  actorRole   String?
+  requestId   String?
+  routePath   String?
+  httpMethod  String?
+  ipAddress   String?
+  userAgent   String?
+  statusCode  Int?
+
+  user User? @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([level, createdAt])
+  @@index([source, createdAt])
+  @@index([code, createdAt])
+  @@index([actorUserId, createdAt])
+  @@map("system_logs")
+}
+
+model LogRetentionPolicy {
+  id                  String   @id @default("default")
+  auditRetentionDays  Int      @default(365)
+  systemRetentionDays Int      @default(90)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@map("log_retention_policy")
 }
