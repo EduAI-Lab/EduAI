@@ -24,7 +24,6 @@ import { requireServiceKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { getCourse } from "~/lib/courses/server";
 import { addEnrollment, getCourseEnrollments } from "~/lib/courses/enrollments.server";
-import { readStoredStudentId } from "~/lib/canvas/student-id.server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 
