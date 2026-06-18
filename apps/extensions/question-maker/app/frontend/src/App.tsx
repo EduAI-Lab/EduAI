@@ -16,6 +16,7 @@ import { BugReportsAdminPage } from './pages/BugReportsAdminPage';
 import { AssessmentVariantPage } from './pages/AssessmentVariantPage';
 import { GuidedTourProvider } from './contexts/GuidedTourContext';
 import { BugReportProvider } from './contexts/BugReportContext';
+import { ThemeSyncInitializer } from './components/ThemeSyncInitializer';
 
 function RedirectAssessmentToBuilder() {
   const { id } = useParams<{ id: string }>();
@@ -32,6 +33,7 @@ function RedirectLegacyStudyRoute() {
 function App() {
   return (
     <ThemeProvider defaultTheme="system" storageKey="theme">
+      <ThemeSyncInitializer />
       <AuthProvider>
       <QmAppGate>
         <GuidedTourProvider>

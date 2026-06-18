@@ -19,6 +19,7 @@ import { Toaster } from "@eduai/ui";
 import { UiPreferencesProvider } from "~/components/assistive/ui-preferences-provider";
 import { DEFAULT_ACCOUNT_PREFERENCES } from "~/lib/user-preferences";
 import { isUiDensity, isUiTheme } from "~/lib/ui-preferences";
+import { ThemeSyncInitializer } from "~/components/theme-sync-initializer";
 
 export const links: Route.LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -102,6 +103,7 @@ export default function App({ loaderData }: Route.ComponentProps) {
       initialDensity={loaderData?.density ?? DEFAULT_ACCOUNT_PREFERENCES.density}
     >
       <AssistiveUiProvider initialAssistive={loaderData?.assistive ?? false}>
+        <ThemeSyncInitializer />
         <Outlet />
       </AssistiveUiProvider>
     </UiPreferencesProvider>

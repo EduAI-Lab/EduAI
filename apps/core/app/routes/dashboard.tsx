@@ -20,6 +20,7 @@ import { SiteHeader } from "~/components/site-header";
 import { SidebarInset, SidebarProvider } from "@eduai/ui";
 import { redirectToStudentIdOnboardingIfNeeded } from "~/lib/canvas/onboarding.server";
 import { auth } from "~/lib/auth/server";
+import prisma from "~/lib/prisma.server";
 import type { User } from "~/lib/auth/types";
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -38,14 +39,23 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return onboardingRedirect;
   }
 
+  // A TA is a STUDENT-platform user holding an Enrollment(role=TA). Surface that
+  // so the dashboard can show the TA experience instead of the student one.
+  const isTA =
+    session.user.role === "STUDENT" &&
+    (await prisma.enrollment.count({
+      where: { userId: session.user.id, role: "TA", isActive: true },
+    })) > 0;
+
   return {
     user: session.user,
+    isTA,
   };
 }
 
 const CANVAS_SYNC_ROLES = new Set(["INSTRUCTOR", "ADMIN"]);
 
-function DashboardHero({ user }: { user: User }) {
+function DashboardHero({ user, isTA }: { user: User; isTA: boolean }) {
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
   const name = (user.name ?? "").split(" ");
@@ -59,7 +69,7 @@ function DashboardHero({ user }: { user: User }) {
     user.role === "ADMIN" ? "EduAI platform health and usage at a glance." :
     user.role === "UNIT_ADMIN" ? "Your unit courses and administration." :
     user.role === "INSTRUCTOR" ? "Your courses and teaching activity." :
-    user.role === "TA" ? "Your assigned courses and student activity." :
+    isTA ? "Your assigned courses and student activity." :
     "Your AI-powered learning companion.";
   const dateStr = new Date().toLocaleDateString("en-US", {
     weekday: "long", month: "long", day: "numeric", year: "numeric",
@@ -75,7 +85,7 @@ function DashboardHero({ user }: { user: User }) {
   );
 }
 
-function DashboardContent({ user }: { user: User }) {
+function DashboardContent({ user, isTA }: { user: User; isTA: boolean }) {
   const showCanvasSync = CANVAS_SYNC_ROLES.has(user.role ?? "");
 
   let view;
@@ -89,18 +99,16 @@ function DashboardContent({ user }: { user: User }) {
     case "INSTRUCTOR":
       view = <DashboardInstructorView />;
       break;
-    case "TA":
-      view = <DashboardTaView />;
-      break;
     case "STUDENT":
     default:
-      view = <DashboardStudentView />;
+      // STUDENT-platform users who hold a TA enrollment get the TA dashboard.
+      view = isTA ? <DashboardTaView /> : <DashboardStudentView />;
       break;
   }
 
   return (
     <>
-      <DashboardHero user={user} />
+      <DashboardHero user={user} isTA={isTA} />
       {view}
       {showCanvasSync && (
         <div className="px-4 lg:px-6 pb-6 w-auto">
@@ -112,7 +120,7 @@ function DashboardContent({ user }: { user: User }) {
 }
 
 export default function Page() {
-  const { user } = useLoaderData<typeof loader>();
+  const { user, isTA } = useLoaderData<typeof loader>();
 
   return (
     <SidebarProvider
@@ -136,7 +144,7 @@ export default function Page() {
             </Breadcrumb>
           }
         />
-        <DashboardContent user={user} />
+        <DashboardContent user={user} isTA={isTA} />
       </SidebarInset>
     </SidebarProvider>
   );
