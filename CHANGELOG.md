@@ -15,6 +15,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Changed
 
+- [core] refactor: Create `@eduai/types` shared workspace package — move `UserRole` and `EnrollmentRole` to `packages/types`; Core, AI Tutor, and QM now import from `@eduai/types` instead of maintaining independent copies, eliminating the need for manual sync across apps. (#594, #649, @evanbones, 2026-06-16)
 - [question-maker] refactor: Extract shared `courseCodeUtils.js`, `topicSyncService.js`, and `coreCourseLinkService.js` — dedupe `syncTopicsFromCoreForCourse` / `normalizeCourseCode` from routes and import service; batch topic upserts with two `findAll` queries on the hot `/topics` path. (#578, @GlowyBlack, 2026-06-15)
 - [question-maker] ui: Reuse `normalizeCourseCode` from `courseDisplay.ts` in `ProfileCoursesDialog` and `AddQuestionDialog`. (#578, @GlowyBlack, 2026-06-15)
 - [question-maker] api: Use `cookieOnly` on user-scoped Core reads (`listCoursesFromCore`, topics) so a stale session does not fall back to the unscoped service key; prefer service key for enrollment roster reads used by RBAC. (#578, @GlowyBlack, 2026-06-15)
@@ -30,6 +31,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [ai-tutor] fix: Add `updated` to `syncCourseEnrollments` client return type in `api.ts`. (#578, @GlowyBlack, 2026-06-15)
 - [ai-tutor] tests: Extend `enrollmentSync.test.js` — TA rows survive STUDENT-only sync deletes. (#578, @GlowyBlack, 2026-06-15)
 - [core] tests: Update `canvas.integration.test.ts` reassignment case to use a unique student number (avoids `studentIdLookup` collision with seeded data). (#578, @GlowyBlack, 2026-06-15)
+- [core] fix: Stop frontend from retransmitting the full conversation history on every chat request by sending only the newest user message and associated metadata. (#487, @YibingW, 2026-06-15)
 
 ---
 
