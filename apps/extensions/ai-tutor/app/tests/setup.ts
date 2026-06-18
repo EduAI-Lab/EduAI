@@ -22,3 +22,7 @@ if (typeof window.matchMedia === 'undefined') {
     dispatchEvent: () => false,
   });
 }
+
+if (typeof Element.prototype.scrollIntoView !== 'function') {
+  Element.prototype.scrollIntoView = () => {};
+}
