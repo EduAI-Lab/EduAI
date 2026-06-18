@@ -48,7 +48,7 @@ function App() {
                     <Route path="/assessment-variant" element={<AssessmentVariantPage />} />
                   </Route>
                   <Route path="/landing" element={<Navigate to="/home" replace />} />
-                  {process.env.NODE_ENV === 'development' && (
+                  {import.meta.env.DEV && (
                     <Route path="/api-test" element={<ApiTestPage />} />
                   )}
                   <Route path="/assessments/:id" element={<RedirectAssessmentToBuilder />} />
