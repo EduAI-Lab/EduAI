@@ -96,6 +96,18 @@ COURSES = [
             ("Midterm Exam", 40),
             ("Final Exam", 100),
         ],
+        "materials": [
+            (
+                "course-syllabus.md",
+                b"""# COSC 499 Capstone Software Engineering\n\n## Course Overview\nThis capstone course integrates software engineering concepts through a team project.\n\n## Learning Objectives\n- Apply software development lifecycle in a real project\n- Practice agile methodologies and sprint planning\n- Deliver a working software product to an industry partner\n\n## Schedule\n- **Week 1-2**: Project kickoff and requirements gathering\n- **Week 3-8**: Sprint development cycles\n- **Week 9-12**: Testing, refinement, and deployment\n- **Week 13**: Final presentations\n\n## Grading\n| Component | Weight |\n|---|---|\n| Midterm Exam | 20% |\n| Final Exam | 30% |\n| Project deliverables | 50% |\n""",
+                "text/markdown",
+            ),
+            (
+                "agile-reference.txt",
+                b"""AGILE DEVELOPMENT REFERENCE GUIDE\n\nSCRUM ROLES\n-----------\nProduct Owner: defines requirements and prioritizes backlog\nScrum Master: facilitates process, removes blockers\nDevelopment Team: self-organizing, cross-functional builders\n\nSPRINT CEREMONIES\n-----------------\nSprint Planning: define sprint goal and select backlog items\nDaily Standup: 15-min sync on progress, plan, blockers\nSprint Review: demo completed work to stakeholders\nSprint Retrospective: inspect and adapt the process\n\nKEY METRICS\n-----------\nVelocity: story points completed per sprint\nBurndown Chart: remaining work vs. time\nDefect Density: bugs per unit of code\n\nDEFINITION OF DONE\n------------------\n- Code reviewed and approved\n- Unit tests written and passing\n- Integration tests passing\n- Documentation updated\n- Deployed to staging environment\n""",
+                "text/plain",
+            ),
+        ],
     },
     {
         "sis_course_id": "2026S-COSC-310-001",
@@ -107,6 +119,18 @@ COURSES = [
             ("Midterm 2", 30),
             ("Final Exam", 80),
         ],
+        "materials": [
+            (
+                "course-outline.md",
+                b"""# COSC 310 Software Engineering\n\n## Topics Covered\n1. Software Development Lifecycle\n2. Requirements Engineering\n3. Software Design Patterns\n4. Testing and Quality Assurance\n5. Project Management\n6. Maintenance and Evolution\n\n## Textbook\n*Software Engineering* by Ian Sommerville, 10th Edition\n\n## Assessment\n- Midterm 1: 25%\n- Midterm 2: 25%\n- Final Exam: 40%\n- Assignments: 10%\n""",
+                "text/markdown",
+            ),
+            (
+                "design-patterns-notes.txt",
+                b"""DESIGN PATTERNS LECTURE NOTES\n\nCREATIONAL PATTERNS\n-------------------\nSingleton: ensures a class has only one instance\nFactory Method: defines interface for creating objects\nAbstract Factory: creates families of related objects\nBuilder: constructs complex objects step by step\n\nSTRUCTURAL PATTERNS\n-------------------\nAdapter: converts interface of a class into another interface\nBridge: separates abstraction from implementation\nComposite: treats individual objects and groups uniformly\nDecorator: adds responsibilities to objects dynamically\nFacade: provides simplified interface to complex subsystem\n\nBEHAVIOURAL PATTERNS\n--------------------\nObserver: defines one-to-many dependency between objects\nStrategy: defines family of algorithms, encapsulates each one\nCommand: encapsulates request as an object\nIterator: provides way to access elements sequentially\nTemplate Method: defines skeleton of algorithm in base class\n""",
+                "text/plain",
+            ),
+        ],
     },
     {
         "sis_course_id": "2026S-MATH-200-002",
@@ -116,6 +140,18 @@ COURSES = [
         "assignments": [
             ("Quiz 1", 20),
             ("Final Exam", 60),
+        ],
+        "materials": [
+            (
+                "course-outline.md",
+                b"""# MATH 200 Calculus III\n\n## Topics\n1. Vectors and the geometry of space\n2. Vector functions and space curves\n3. Partial derivatives\n4. Multiple integrals\n5. Vector calculus\n6. Green's, Stokes', and the Divergence Theorem\n\n## Grading\n- Quiz 1: 25%\n- Final Exam: 75%\n""",
+                "text/markdown",
+            ),
+            (
+                "partial-derivatives-notes.txt",
+                b"""PARTIAL DERIVATIVES - LECTURE NOTES\n\nDEFINITION\n----------\nFor f(x,y), the partial derivative with respect to x:\n  df/dx = lim[h->0] (f(x+h,y) - f(x,y)) / h\n\nTreated as: differentiate with respect to x, hold y constant.\n\nNOTATION\n--------\n- df/dx or f_x or D_x f (partial with respect to x)\n- df/dy or f_y or D_y f (partial with respect to y)\n\nCHAIN RULE (multivariable)\n---------------------------\nIf z = f(x,y), x = g(t), y = h(t), then:\n  dz/dt = (dz/dx)(dx/dt) + (dz/dy)(dy/dt)\n\nGRADIENT\n--------\nnabla f = (df/dx)i + (df/dy)j + (df/dz)k\n\nPoints in the direction of greatest increase of f.\nMagnitude = rate of greatest increase.\n\nCRITICAL POINTS\n---------------\nSet df/dx = 0 and df/dy = 0, solve simultaneously.\nUse second derivative test (discriminant D = f_xx*f_yy - (f_xy)^2):\n  D > 0, f_xx > 0: local minimum\n  D > 0, f_xx < 0: local maximum\n  D < 0: saddle point\n  D = 0: test inconclusive\n""",
+                "text/plain",
+            ),
         ],
     },
 ]
@@ -214,6 +250,44 @@ class Canvas:
         resp.raise_for_status()
         return resp.json()
 
+    # ---- files ----------------------------------------------------------- #
+    def list_files(self, course_id: int) -> list[dict]:
+        return self.get_paginated(f"/courses/{course_id}/files")
+
+    def upload_file(self, course_id: int, name: str, content: bytes, content_type: str) -> dict:
+        """Two-step Canvas file upload (pre-flight + POST to upload_url)."""
+        preflight = self.http.post(
+            f"/courses/{course_id}/files",
+            data={
+                "name": name,
+                "size": len(content),
+                "content_type": content_type,
+                "on_duplicate": "overwrite",
+            },
+        )
+        preflight.raise_for_status()
+        info = preflight.json()
+
+        upload_params = info.get("upload_params", {})
+        files = {"file": (name, content, content_type)}
+        upload_resp = httpx.post(
+            info["upload_url"],
+            data=upload_params,
+            files=files,
+            follow_redirects=True,
+            timeout=60,
+        )
+        upload_resp.raise_for_status()
+        file_obj = upload_resp.json()
+        print(f"  + file {name} ({len(content)} bytes)")
+        return file_obj
+
+    def ensure_file(self, course_id: int, name: str, content: bytes, content_type: str) -> dict:
+        existing = self.list_files(course_id)
+        if any(f["display_name"] == name for f in existing):
+            return next(f for f in existing if f["display_name"] == name)
+        return self.upload_file(course_id, name, content, content_type)
+
     # ---- assignments ----------------------------------------------------- #
     def ensure_assignment(self, course_id: int, name: str, points: float) -> None:
         existing = self.get_paginated(f"/courses/{course_id}/assignments")
@@ -242,6 +316,8 @@ def seed(canvas: Canvas) -> None:
             canvas.enroll(course["id"], student["id"], "StudentEnrollment")
         for name, points in spec["assignments"]:
             canvas.ensure_assignment(course["id"], name, points)
+        for filename, content, content_type in spec.get("materials", []):
+            canvas.ensure_file(course["id"], filename, content, content_type)
         n = len(spec["students"])
         print(f"  = {spec['course_code']}: {n} active students, course id {course['id']}")
 

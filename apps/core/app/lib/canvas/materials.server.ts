@@ -79,12 +79,12 @@ async function listImportableCanvasFiles(
 
 function resolveImportStatus(
   canvasUpdatedAt: Date,
-  material: { id: string; updatedAt: Date } | undefined,
+  material: { id: string; canvasUpdatedAt: Date | null } | undefined,
 ): CanvasMaterialImportStatus {
   if (!material) {
     return "not_imported";
   }
-  if (canvasUpdatedAt > material.updatedAt) {
+  if (material.canvasUpdatedAt !== null && canvasUpdatedAt > material.canvasUpdatedAt) {
     return "updated_on_canvas";
   }
   return "imported";
@@ -130,13 +130,13 @@ export async function discoverCanvasMaterialsForCourse(
       externalSource: CANVAS_EXTERNAL_SOURCE,
       externalId: { not: null },
     },
-    select: { id: true, externalId: true, updatedAt: true },
+    select: { id: true, externalId: true, canvasUpdatedAt: true },
   });
 
   const importedByExternalId = new Map(
     imported
       .filter((row) => row.externalId != null)
-      .map((row) => [row.externalId as string, row]),
+      .map((row) => [row.externalId as string, row as { id: string; canvasUpdatedAt: Date | null }]),
   );
 
   return canvasFiles.map((file) => {
@@ -157,6 +157,8 @@ export async function discoverCanvasMaterialsForCourse(
   });
 }
 
+const MAX_CANVAS_FILE_SIZE = 50 * 1024 * 1024; // 50 MB — matches file-processing.ts cap
+
 async function importSingleCanvasFile(
   courseId: string,
   userId: string,
@@ -169,6 +171,12 @@ async function importSingleCanvasFile(
     throw new Error("Unsupported file type");
   }
 
+  if (file.size > MAX_CANVAS_FILE_SIZE) {
+    throw new Error(
+      `File too large (${(file.size / 1024 / 1024).toFixed(1)} MB; max ${MAX_CANVAS_FILE_SIZE / 1024 / 1024} MB)`,
+    );
+  }
+
   const canvasFileId = String(file.id);
   const existing = await prisma.courseMaterial.findFirst({
     where: {
@@ -176,16 +184,22 @@ async function importSingleCanvasFile(
       externalSource: CANVAS_EXTERNAL_SOURCE,
       externalId: canvasFileId,
     },
+    select: { id: true, status: true, canvasUpdatedAt: true },
   });
 
   const canvasUpdatedAt = new Date(file.updated_at);
-  if (existing && canvasUpdatedAt <= existing.updatedAt && existing.status === "READY") {
+  if (
+    existing &&
+    existing.canvasUpdatedAt !== null &&
+    canvasUpdatedAt <= existing.canvasUpdatedAt &&
+    existing.status === "READY"
+  ) {
     return "skipped";
   }
 
   const bytes = await downloadCanvasFile(credentials, file, fetchImpl);
   const uploadFile = new File(
-    [bytes.slice()],
+    [bytes],
     file.filename || file.display_name,
     { type: mimeType },
   );
@@ -212,6 +226,7 @@ async function importSingleCanvasFile(
         rawText: fileInfo.content,
         status: "PROCESSING",
         uploadedBy: userId,
+        canvasUpdatedAt,
       },
     });
     materialId = existing.id;
@@ -228,6 +243,7 @@ async function importSingleCanvasFile(
         uploadedBy: userId,
         externalSource: CANVAS_EXTERNAL_SOURCE,
         externalId: canvasFileId,
+        canvasUpdatedAt,
       },
     });
     materialId = created.id;
