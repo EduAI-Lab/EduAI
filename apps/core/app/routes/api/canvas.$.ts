@@ -198,7 +198,24 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
           return json({ success: false, error: "Not found" }, 404);
         }
 
+        const existingIntegration = await getCanvasIntegrationPublic(userId);
         await deleteCanvasIntegration(userId);
+
+        fireAndForget(
+          logAuditAction({
+            ...getActorContext(session?.user ?? null),
+            ...requestContext,
+            actionCode: "CANVAS_INTEGRATION_DELETED",
+            category: "CANVAS",
+            entityType: "CanvasIntegration",
+            entityId: userId,
+            entityLabel: existingIntegration?.canvasUrl ?? null,
+            ...(existingIntegration?.canvasUrl
+              ? { details: { canvasUrl: existingIntegration.canvasUrl } }
+              : {}),
+          }),
+        );
+
         return json({
           success: true,
           message: "Canvas integration disconnected",

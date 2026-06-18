@@ -328,7 +328,9 @@ async function handleRequest(request: Request) {
             ? "USER_ROLE_CHANGED"
             : result.data.isActive === false
               ? "USER_DEACTIVATED"
-              : "USER_UPDATED";
+              : result.data.isActive === true
+                ? "USER_REACTIVATED"
+                : "USER_UPDATED";
         fireAndForget(
           logAuditAction({
             ...getActorContext(session.user),

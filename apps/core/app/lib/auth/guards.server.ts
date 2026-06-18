@@ -19,7 +19,7 @@ export function validateRedirectUrl(url: string | null): string {
   // protocol-relative `//evil.com`. Normalize before the same-origin check so the
   // backslash variant cannot bypass the `//` open-redirect guard.
   const normalized = url.replace(/\\/g, "/");
-  if (normalized.startsWith("/") && !normalized.startsWith("//")) return url;
+  if (normalized.startsWith("/") && !normalized.startsWith("//")) return normalized;
   try {
     const { hostname } = new URL(url);
     if (hostname === "localhost" || hostname === "127.0.0.1") return url;
