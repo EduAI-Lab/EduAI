@@ -1,56 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useTheme } from '@eduai/ui';
-import { IconExternalLink, IconMoon, IconSun } from '@tabler/icons-react';
-import {
-  Button,
-  Separator,
-  SidebarTrigger,
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@eduai/ui';
+import { IconMoon, IconSun } from '@tabler/icons-react';
+import { Button, Separator, SidebarTrigger } from '@eduai/ui';
 
-import { useLocalUser } from '~/hooks/useLocalUser';
 import { useAtPermissions } from '~/hooks/useAtPermissions';
-import { api } from '~/lib/api';
-import { getEduAiAppUrl } from '~/lib/extension-urls';
 import { BugReportDialog } from '../bug-report/BugReportDialog';
 import { useBugReport } from '../bug-report/useBugReport';
-
-function EduAiConnectionDot({
-  status,
-}: {
-  status: 'loading' | 'connected' | 'disconnected';
-}) {
-  const label =
-    status === 'loading'
-      ? 'Checking EduAI connection…'
-      : status === 'connected'
-        ? 'EduAI is connected'
-        : 'EduAI is not connected';
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span
-          className="inline-flex h-8 w-8 items-center justify-center rounded-md"
-          aria-label={label}
-        >
-          <span
-            className={`h-2 w-2 rounded-full ${
-              status === 'loading'
-                ? 'animate-pulse bg-muted-foreground'
-                : status === 'connected'
-                  ? 'bg-[var(--color-success-500)]'
-                  : 'bg-[var(--color-error-500)]'
-            }`}
-          />
-        </span>
-      </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
-  );
-}
 
 export type AppSiteHeaderProps = {
   breadcrumbs?: React.ReactNode;
@@ -59,41 +14,15 @@ export type AppSiteHeaderProps = {
 
 /**
  * Top header aligned with EduAI Core `site-header.tsx`:
- * theme toggle and bug report live in the header; account/sign-out live in the sidebar footer.
+ * theme toggle and bug report live in the header; EduAI Core link and account live in the sidebar.
  */
 export function AppSiteHeader({ breadcrumbs, actions }: AppSiteHeaderProps) {
-  const [eduAiStatus, setEduAiStatus] = useState<'loading' | 'connected' | 'disconnected'>(
-    'loading',
-  );
   const [bugReportOpen, setBugReportOpen] = useState(false);
   const [capturingScreenshot, setCapturingScreenshot] = useState(false);
-  const { user } = useLocalUser();
   const { canSubmitBugReport } = useAtPermissions();
   const { captureScreenshot } = useBugReport();
   const { resolvedTheme, setTheme } = useTheme();
-  const eduAiUrl = getEduAiAppUrl();
-  const isAdminUser = user?.role === 'ADMIN';
   const canReportBug = canSubmitBugReport;
-
-  useEffect(() => {
-    if (isAdminUser) {
-      setEduAiStatus('connected');
-      return;
-    }
-
-    let mounted = true;
-    api
-      .listAiModels()
-      .then(() => {
-        if (mounted) setEduAiStatus('connected');
-      })
-      .catch(() => {
-        if (mounted) setEduAiStatus('disconnected');
-      });
-    return () => {
-      mounted = false;
-    };
-  }, [isAdminUser]);
 
   const handleOpenBugReport = async () => {
     setCapturingScreenshot(true);
@@ -129,16 +58,6 @@ export function AppSiteHeader({ breadcrumbs, actions }: AppSiteHeaderProps) {
           )}
           <div className="ml-auto flex h-full items-center gap-3 sm:gap-4">
             {actions}
-            <div className="hidden items-center gap-1 rounded-lg border border-border/60 bg-muted/30 px-1 py-0.5 sm:flex">
-              <Button variant="ghost" size="sm" asChild className="h-8 shadow-none">
-                <a href={eduAiUrl} aria-label="Open EduAI Core">
-                  <IconExternalLink className="h-4 w-4" />
-                  <span className="hidden lg:inline">EduAI Core</span>
-                </a>
-              </Button>
-              <Separator orientation="vertical" className="h-4" />
-              <EduAiConnectionDot status={eduAiStatus} />
-            </div>
             <button
               type="button"
               onClick={toggleTheme}
