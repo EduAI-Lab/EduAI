@@ -12,11 +12,16 @@ vi.mock('../../src/services/eduaiClient.js', () => ({
   getEduAiBaseUrl: vi.fn(() => 'http://localhost:5174/api'),
   getEduAiChatUrl: vi.fn(() => 'http://localhost:5174/api/chat'),
   postCoreBugReport: vi.fn(),
+  listCoreAdminUsers: vi.fn().mockResolvedValue([]),
   listCourseTestableQuestions: vi.fn(),
   patchCoreEnrollmentRole: vi.fn(),
 }));
 
-import { listEduAiCourseEnrollmentsServiceKey, patchCoreEnrollmentRole } from '../../src/services/eduaiClient.js';
+import {
+  listCoreAdminUsers,
+  listEduAiCourseEnrollmentsServiceKey,
+  patchCoreEnrollmentRole,
+} from '../../src/services/eduaiClient.js';
 
 describe('Admin routes', () => {
   let admin;
@@ -29,9 +34,7 @@ describe('Admin routes', () => {
   });
 
   // ── GET /api/admin/users ──────────────────────────────────────────
-  // The list endpoint (GET /api/admin/users) calls prisma.user.findMany() which
-  // was removed from the AT schema in schema_unification; that route is broken
-  // and owned by the routes team. The RBAC guard (403) still works.
+  // User identity lives in Core; AI Tutor proxies GET /api/users with the admin cookie.
 
   describe('GET /api/admin/users', () => {
     it('returns 403 for non-admin (professor)', async () => {
@@ -39,6 +42,36 @@ describe('Admin routes', () => {
       const profApp = await createApp({ mockUser: prof });
       const res = await request(profApp).get('/api/admin/users');
       expect(res.status).toBe(403);
+    });
+
+    it('returns users proxied from Core', async () => {
+      listCoreAdminUsers.mockResolvedValueOnce([
+        {
+          id: 'user-1',
+          name: 'EduAI Admin',
+          email: 'admin@eduai.local',
+          role: 'ADMIN',
+          createdAt: '2026-06-01T12:00:00.000Z',
+        },
+        {
+          id: 'user-2',
+          name: 'Student One',
+          email: 'student1@eduai.local',
+          role: 'STUDENT',
+          createdAt: '2026-06-02T12:00:00.000Z',
+        },
+      ]);
+
+      const res = await request(adminApp).get('/api/admin/users');
+
+      expect(res.status).toBe(200);
+      expect(listCoreAdminUsers).toHaveBeenCalledWith(expect.any(String));
+      expect(res.body).toHaveLength(2);
+      expect(res.body[0]).toMatchObject({
+        name: 'EduAI Admin',
+        email: 'admin@eduai.local',
+        role: 'ADMIN',
+      });
     });
   });
 

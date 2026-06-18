@@ -135,6 +135,31 @@ export async function listCoreAdminBugReports(cookie, { source = 'AI_TUTOR', lim
 }
 
 /**
+ * GET Core platform users (ADMIN session cookie). Identity is owned by Core.
+ */
+export async function listCoreAdminUsers(cookie) {
+  if (!cookie) {
+    const error = new Error('Session cookie is required to list Core users');
+    error.status = 401;
+    throw error;
+  }
+
+  const url = `${getCoreBaseUrl()}/api/users`;
+  const response = await fetch(url, {
+    headers: { cookie },
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    const error = new Error(errorText || `Core user list failed with status ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+
+  return response.json();
+}
+
+/**
  * PATCH Core admin bug report status (ADMIN session cookie).
  */
 export async function patchCoreAdminBugReportStatus(cookie, bugReportId, coreStatus) {

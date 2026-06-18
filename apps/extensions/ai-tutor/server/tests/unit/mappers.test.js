@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   toPublicUser,
   mapAdminUser,
+  mapCoreAdminUser,
   mapCourseOffering,
   mapModule,
   mapLesson,
@@ -74,6 +75,31 @@ describe('mapAdminUser', () => {
       password: 'pw',
     });
     expect(result).not.toHaveProperty('password');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// mapCoreAdminUser
+// ---------------------------------------------------------------------------
+describe('mapCoreAdminUser', () => {
+  it('maps Core user rows to the admin list DTO', () => {
+    expect(
+      mapCoreAdminUser({
+        id: 'cuid-1',
+        name: 'Ada Lovelace',
+        email: 'ada@eduai.local',
+        role: 'STUDENT',
+        createdAt: '2026-03-10T08:00:00.000Z',
+        isActive: true,
+        _count: { enrolledCourses: 2 },
+      }),
+    ).toEqual({
+      id: 'cuid-1',
+      name: 'Ada Lovelace',
+      email: 'ada@eduai.local',
+      role: 'STUDENT',
+      createdAt: '2026-03-10T08:00:00.000Z',
+    });
   });
 });
 
