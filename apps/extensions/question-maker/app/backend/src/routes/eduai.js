@@ -207,7 +207,7 @@ router.get('/courses/:courseId/topics', authenticateToken, async (req, res) => {
 /** GET /api/eduai/test-api-key – validates that the configured EduAI credentials work. */
 router.get('/test-api-key', authenticateToken, async (req, res) => {
   try {
-    const result = await eduaiService.testApiKey();
+    const result = await eduaiService.testApiKey({ cookie: req.headers.cookie ?? '' });
 
     if (result.success) {
       res.json({

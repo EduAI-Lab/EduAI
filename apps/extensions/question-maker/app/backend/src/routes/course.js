@@ -9,6 +9,7 @@ import {
   pushTopicToCore,
   isCoreCourseInScopedList,
 } from '../services/coreApiService.js';
+import { resolveCourseAccessWithCourse } from '../middleware/courseAccess.js';
 import { ensureCoreCourseLink } from '../services/coreCourseLinkService.js';
 import { syncTopicsFromCoreForCourse } from '../services/topicSyncService.js';
 import { logger } from '../utils/logger.js';
@@ -95,6 +96,29 @@ router.get('/', authenticateToken, async (req, res, next) => {
     res.json({
       success: true,
       data: courses
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/** GET /api/course/:id/access – resolved per-course access for UI gating (§3). */
+router.get('/:id/access', authenticateToken, async (req, res, next) => {
+  try {
+    const { course, access } = await resolveCourseAccessWithCourse(req.user, req.params.id, {
+      cookie: req.headers.cookie ?? '',
+    });
+
+    if (!course) {
+      return res.status(404).json({ success: false, error: 'Course not found' });
+    }
+    if (!access) {
+      return res.status(403).json({ success: false, error: 'Insufficient course access' });
+    }
+
+    res.json({
+      success: true,
+      data: { level: access.level, rank: access.rank },
     });
   } catch (error) {
     next(error);

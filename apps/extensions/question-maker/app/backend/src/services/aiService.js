@@ -288,7 +288,7 @@ const sanitizeEduAIQuestion = (question) => {
 };
 
 /** Uses EduAI to extract questions from OCR’d text, chunking input and deduplicating outputs. */
-const extractQuestionsWithEduAI = async (text, course, model = "ollama:gpt-oss:120b", apiKeys = {}) => {
+const extractQuestionsWithEduAI = async (text, course, model = "google:gemini-2.5-flash", apiKeys = {}, { cookie } = {}) => {
   if (!eduaiService.isConfigured()) {
     throw new Error(
       "EduAI service is not configured. Please set EDUAI_API_KEY."
@@ -391,6 +391,7 @@ ${chunk}
         reasoningDistribution,
         systemPromptOverride: systemPrompt,
         userPromptOverride: userPrompt,
+        cookie,
       });
       return questions
         .map((question) => sanitizeEduAIQuestion(question))
@@ -703,7 +704,7 @@ const enrichQuestionsWithTopics = async (questions, courseId) => {
 };
 
 /** Public API to normalize raw upload text and run EduAI extraction for a course. */
-export const extractQuestionsFromText = async (rawText, courseId, model, apiKeys) => {
+export const extractQuestionsFromText = async (rawText, courseId, model, apiKeys, { cookie } = {}) => {
   const normalized = normalizeExtractText(rawText);
   if (!normalized) {
     return [];
@@ -713,7 +714,7 @@ export const extractQuestionsFromText = async (rawText, courseId, model, apiKeys
     attributes: ["id", "code", "name"],
   });
 
-  const extracted = await extractQuestionsWithEduAI(normalized, course, model, apiKeys);
+  const extracted = await extractQuestionsWithEduAI(normalized, course, model, apiKeys, { cookie });
   return extracted;
 };
 

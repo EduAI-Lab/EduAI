@@ -352,7 +352,13 @@ router.post(
         });
       }
 
-      const questions = await extractQuestionsFromText(text, req.qmCourse.id, model, apiKeys);
+      const questions = await extractQuestionsFromText(
+        text,
+        req.qmCourse.id,
+        model,
+        apiKeys,
+        { cookie: req.headers.cookie ?? '' },
+      );
 
       res.json({
         success: true,
