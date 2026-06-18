@@ -143,7 +143,10 @@ export function ChatMessage({
               </p>
             ) : null}
 
-            <MessageActions className="opacity-0 group-hover:opacity-100 transition-opacity">
+            <MessageActions
+              className="opacity-0 group-hover:opacity-100 transition-opacity"
+              data-chat-export-exclude
+            >
               <MessageAction tooltip="Copy message">
                 <Button
                   variant="ghost"
