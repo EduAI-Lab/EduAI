@@ -5,6 +5,9 @@ import { resolve } from 'path'
 
 export default defineConfig({
   plugins: [tailwindcss(), react()],
+  css: {
+    devSourcemap: false,
+  },
   resolve: {
     alias: {
       '@': resolve(__dirname, './src'),

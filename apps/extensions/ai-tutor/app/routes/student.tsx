@@ -72,7 +72,8 @@ export default function StudentHome({ loaderData }: Route.ComponentProps) {
                 No courses yet
               </h2>
               <p className="text-muted-foreground text-sm">
-                You haven't been enrolled in any courses. Contact your instructor to get started.
+                You are not enrolled in any published courses yet. Enrollments sync automatically
+                from Core when you sign in.
               </p>
             </div>
           </div>
