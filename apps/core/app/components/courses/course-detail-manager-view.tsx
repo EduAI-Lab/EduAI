@@ -29,7 +29,7 @@ import {
   CourseMaterialsUpload,
   type CourseMaterial,
 } from "~/components/course-materials-upload";
-import { CanvasMaterialSyncDialog } from "~/components/canvas/CanvasMaterialSyncDialog";
+import { CanvasMaterialSyncDialog } from "~/components/canvas/canvas-material-sync-dialog";
 import type { CourseDetail } from "~/hooks/api/use-course-detail";
 import type { CourseTopic } from "~/hooks/api/use-course-topics";
 import type { CourseEnrollment } from "~/hooks/api/use-course-enrollments";
