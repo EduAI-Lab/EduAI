@@ -635,8 +635,8 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
       <div className="space-y-2">
         <h2 className="text-xl font-bold text-foreground">Bug Reports</h2>
         <p className="text-sm text-muted-foreground max-w-3xl">
-          Review incoming reports from students and professors, inspect captured diagnostics, and
-          move each report through triage status.
+          Review AI Tutor bug reports only (submitted from this platform). QM and Core reports
+          are triaged in their respective admin surfaces.
         </p>
       </div>
 

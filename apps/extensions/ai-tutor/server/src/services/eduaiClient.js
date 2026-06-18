@@ -99,6 +99,71 @@ export async function postCoreBugReport(userId, payload) {
   return null;
 }
 
+function getCoreBaseUrl() {
+  const raw = process.env.CORE_URL || 'http://localhost:3000';
+  return raw.endsWith('/') ? raw.slice(0, -1) : raw;
+}
+
+/**
+ * GET Core admin bug reports (ADMIN session cookie). Used for AI Tutor-scoped triage (#648).
+ */
+export async function listCoreAdminBugReports(cookie, { source = 'AI_TUTOR', limit = 100, offset = 0 } = {}) {
+  if (!cookie) {
+    const error = new Error('Session cookie is required to list Core bug reports');
+    error.status = 401;
+    throw error;
+  }
+
+  const params = new URLSearchParams({
+    source,
+    limit: String(limit),
+    offset: String(offset),
+  });
+  const url = `${getCoreBaseUrl()}/api/admin/bug-reports?${params}`;
+  const response = await fetch(url, {
+    headers: { cookie },
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    const error = new Error(errorText || `Core bug report list failed with status ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+
+  return response.json();
+}
+
+/**
+ * PATCH Core admin bug report status (ADMIN session cookie).
+ */
+export async function patchCoreAdminBugReportStatus(cookie, bugReportId, coreStatus) {
+  if (!cookie) {
+    const error = new Error('Session cookie is required to update Core bug reports');
+    error.status = 401;
+    throw error;
+  }
+
+  const url = `${getCoreBaseUrl()}/api/admin/bug-reports/${bugReportId}`;
+  const response = await fetch(url, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie,
+    },
+    body: JSON.stringify({ status: coreStatus }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    const error = new Error(errorText || `Core bug report PATCH failed with status ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+
+  return response.json();
+}
+
  
 /**
  * Propagate a publish/unpublish action to Core for a linked course offering.
