@@ -8,6 +8,11 @@ import {
   deactivateEnrollment,
   updateEnrollmentRole,
 } from "~/lib/courses/enrollments.server";
+import {
+  createCourseTopic,
+  deleteCourseTopic,
+  updateCourseTopic,
+} from "~/lib/courses/server";
 import { updateBugReportStatus } from "~/lib/bug-reports/server";
 import {
   getAccessibleCourse,
@@ -26,6 +31,9 @@ export const ADMIN_WRITE_TOOL_NAMES = new Set([
   "updateCourseEnrollment",
   "deactivateCourseEnrollment",
   "updateBugReportStatus",
+  "createCourseTopic",
+  "updateCourseTopic",
+  "deleteCourseTopic",
 ]);
 
 export function isAdminWriteToolName(name: string): boolean {
@@ -476,4 +484,148 @@ export async function updateAdminBugReportStatus(
     return { error: "NOT_FOUND" };
   }
   return mutationPayload({ ok: true, report: updated });
+}
+
+function mapTopicCreateResult(
+  result: Awaited<ReturnType<typeof createCourseTopic>>,
+): MutationResult {
+  if (result.status === "201") {
+    return mutationPayload({ ok: true, topic: result.topic });
+  }
+  if (result.status === "404") {
+    return { error: "COURSE_NOT_FOUND" };
+  }
+  if (result.status === "409") {
+    return { error: "TOPIC_ALREADY_EXISTS", existingId: result.existingId };
+  }
+  return mutationFailure({
+    error: "VALIDATION_ERROR",
+    fields: { name: "invalid topic name" },
+  });
+}
+
+function mapTopicUpdateResult(
+  result: Awaited<ReturnType<typeof updateCourseTopic>>,
+): MutationResult {
+  if (result.status === "200") {
+    return mutationPayload({ ok: true, topic: result.topic });
+  }
+  if (result.status === "404") {
+    return { error: "TOPIC_NOT_FOUND" };
+  }
+  if (result.status === "409") {
+    return { error: "TOPIC_ALREADY_EXISTS", existingId: result.existingId };
+  }
+  return mutationFailure({
+    error: "VALIDATION_ERROR",
+    fields: { name: "invalid topic name" },
+  });
+}
+
+function mapTopicDeleteResult(
+  result: Awaited<ReturnType<typeof deleteCourseTopic>>,
+): MutationResult {
+  if (result.status === "204") {
+    return mutationPayload({ ok: true, deleted: true });
+  }
+  if (result.status === "404") {
+    return { error: "TOPIC_NOT_FOUND" };
+  }
+  return mutationFailure({
+    error: "VALIDATION_ERROR",
+    fields: { topic: "topicId or name required" },
+  });
+}
+
+/** ADMIN — create a course topic (same as POST /api/courses/:id/topics). */
+export async function createAdminCourseTopic(
+  actor: RbacUser,
+  opts: {
+    courseId?: string;
+    courseCode?: string;
+    fallbackCourseId?: string | null;
+    name: string;
+  },
+): Promise<MutationResult> {
+  const denied = requirePlatformAdmin(actor);
+  if (denied) return denied;
+
+  const resolved = await resolveAdminCourseId(actor, {
+    courseId: opts.courseId,
+    courseCode: opts.courseCode,
+    fallbackCourseId: opts.fallbackCourseId,
+  });
+  if ("error" in resolved) {
+    return resolved;
+  }
+
+  return mapTopicCreateResult(
+    await createCourseTopic(resolved.courseId, { name: opts.name }, actor.id),
+  );
+}
+
+/** ADMIN — rename a course topic (same as PATCH /api/courses/:id/topics/:topicId). */
+export async function updateAdminCourseTopic(
+  actor: RbacUser,
+  opts: {
+    courseId?: string;
+    courseCode?: string;
+    fallbackCourseId?: string | null;
+    topicId: string;
+    name: string;
+  },
+): Promise<MutationResult> {
+  const denied = requirePlatformAdmin(actor);
+  if (denied) return denied;
+
+  const resolved = await resolveAdminCourseId(actor, {
+    courseId: opts.courseId,
+    courseCode: opts.courseCode,
+    fallbackCourseId: opts.fallbackCourseId,
+  });
+  if ("error" in resolved) {
+    return resolved;
+  }
+
+  return mapTopicUpdateResult(
+    await updateCourseTopic(resolved.courseId, opts.topicId, { name: opts.name }),
+  );
+}
+
+/** ADMIN — soft-delete a course topic (same as DELETE /api/courses/:id/topics). */
+export async function deleteAdminCourseTopic(
+  actor: RbacUser,
+  opts: {
+    courseId?: string;
+    courseCode?: string;
+    fallbackCourseId?: string | null;
+    topicId?: string;
+    name?: string;
+  },
+): Promise<MutationResult> {
+  const denied = requirePlatformAdmin(actor);
+  if (denied) return denied;
+
+  const resolved = await resolveAdminCourseId(actor, {
+    courseId: opts.courseId,
+    courseCode: opts.courseCode,
+    fallbackCourseId: opts.fallbackCourseId,
+  });
+  if ("error" in resolved) {
+    return resolved;
+  }
+
+  if (!opts.topicId?.trim() && !opts.name?.trim()) {
+    return mutationFailure({
+      error: "VALIDATION_ERROR",
+      fields: { topic: "topicId or name required" },
+    });
+  }
+
+  return mapTopicDeleteResult(
+    await deleteCourseTopic(resolved.courseId, {
+      topicId: opts.topicId,
+      name: opts.name,
+    }),
+  );
 }

@@ -24,6 +24,9 @@ vi.mock("~/lib/agent-tools/admin-mutations.server", async (importOriginal) => {
     updateAdminEnrollmentRole: vi.fn(),
     deactivateAdminEnrollment: vi.fn(),
     updateAdminBugReportStatus: vi.fn(),
+    createAdminCourseTopic: vi.fn(),
+    updateAdminCourseTopic: vi.fn(),
+    deleteAdminCourseTopic: vi.fn(),
   };
 });
 
@@ -69,6 +72,18 @@ describe("createAdminChatTools read execute", () => {
     expect(resolveAdminCourseId).toHaveBeenCalled();
     expect(listAdminCourseTopics).toHaveBeenCalledWith(ADMIN, "course-1");
     expect(result).toMatchObject({ count: 0, dataSource: "database" });
+  });
+  it("returns CONFIRMATION_REQUIRED for createCourseTopic when confirmed is false", async () => {
+    const tools = createAdminChatTools(ctx);
+    const result = await tools.createCourseTopic.execute({
+      confirmed: false,
+      courseCode: "COSC 111",
+      name: "New Topic",
+    });
+    expect(result).toMatchObject({
+      writeSucceeded: false,
+      error: "CONFIRMATION_REQUIRED",
+    });
   });
 });
 
