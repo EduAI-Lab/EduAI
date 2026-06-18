@@ -58,6 +58,7 @@ export function resolveRunsFile(...relativePaths) {
 function inferRunsSubdir(filename) {
   if (
     filename === "labels.v1.jsonl" ||
+    filename === "labels-strict.v1.jsonl" ||
     filename === "both-tier.v1.jsonl" ||
     filename.startsWith("hard-spot-check")
   ) {

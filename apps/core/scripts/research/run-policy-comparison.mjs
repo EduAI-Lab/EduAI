@@ -4,6 +4,7 @@
  *
  * P0: always tier 3 (vllm:qwen2.5-32b-instruct)
  * P1: Auto routing (model=auto) — rule-based
+ * P3a: Hybrid rules+kNN (model=auto-hybrid)
  * P3b: LLM classifier Auto (model=auto-llm)
  *
  * Env: same as run-both-tier-baseline.mjs plus:
@@ -38,6 +39,11 @@ const POLICIES = {
     requested_model: "auto",
     description: "rule-based-auto",
   },
+  P3a: {
+    policy: "P3a",
+    requested_model: "auto-hybrid",
+    description: "rules+knn-hybrid",
+  },
   P3b: {
     policy: "P3b",
     requested_model: "auto-llm",
@@ -51,7 +57,10 @@ function resolvePolicies(policyFilter) {
     return [POLICIES.P0, POLICIES.P1];
   }
   if (key === "ALL") {
-    return [POLICIES.P0, POLICIES.P1, POLICIES.P3b];
+    return [POLICIES.P0, POLICIES.P1, POLICIES.P3a, POLICIES.P3b];
+  }
+  if (key === "ROUTING" || key === "COMPARE") {
+    return [POLICIES.P1, POLICIES.P3a, POLICIES.P3b];
   }
   const direct = POLICIES[key];
   if (direct) {

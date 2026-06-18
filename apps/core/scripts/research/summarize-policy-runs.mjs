@@ -37,13 +37,13 @@ function main() {
   console.log("labels file:", labelsPath, "rows:", labels.length);
   console.log("");
 
-  for (const pol of ["P0", "P1", "P3b"]) {
+  for (const pol of ["P0", "P1", "P3a", "P3b"]) {
     const rows = policies.filter((r) => r.policy === pol && !r.error && r.response);
     if (!rows.length) continue;
     const durs = rows.map((r) => r.duration_ms);
     const mean = durs.reduce((a, b) => a + b, 0) / durs.length;
     console.log(`${pol}: n=${rows.length} mean_latency_ms=${Math.round(mean)}`);
-    if (pol === "P1" || pol === "P3b") {
+    if (pol === "P1" || pol === "P3a" || pol === "P3b") {
       const tiers = { 1: 0, 2: 0, 3: 0, null: 0 };
       for (const r of rows) {
         const t = r.routing_tier ?? null;
@@ -57,6 +57,7 @@ function main() {
 
   const labelById = new Map(labels.map((l) => [l.prompt_id, l]));
   const p1Dev = policies.filter((r) => r.policy === "P1" && r.split === "dev" && !r.error);
+  const p3aDev = policies.filter((r) => r.policy === "P3a" && r.split === "dev" && !r.error);
   const p3bDev = policies.filter((r) => r.policy === "P3b" && r.split === "dev" && !r.error);
 
   function printOracleGap(label, rows) {
@@ -87,12 +88,13 @@ function main() {
     console.log("over-routed (energy waste):", overRoute);
   }
 
-  if (p1Dev.length === 0 && p3bDev.length === 0) {
-    console.log("\nNo P1/P3b dev runs — skip oracle gap (run RESEARCH_POLICY=P1 RESEARCH_RUN_SPLIT=dev).");
+  if (p1Dev.length === 0 && p3aDev.length === 0 && p3bDev.length === 0) {
+    console.log("\nNo P1/P3a/P3b dev runs — skip oracle gap.");
     return;
   }
 
   printOracleGap("P1", p1Dev);
+  printOracleGap("P3a", p3aDev);
   printOracleGap("P3b", p3bDev);
 
   const sensitive = labels.filter((l) => l.tier_sensitive).length;

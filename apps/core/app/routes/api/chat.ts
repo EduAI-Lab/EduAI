@@ -81,6 +81,13 @@ function resolveAutoRouting(
       requestedAuto: "auto-llm",
     };
   }
+  if (model === "auto-hybrid") {
+    return {
+      routeWithAuto: true,
+      modeOverride: "hybrid",
+      requestedAuto: "auto-hybrid",
+    };
+  }
   return { routeWithAuto: false, requestedAuto: null };
 }
 
@@ -407,7 +414,7 @@ export async function action({ request }: ActionFunctionArgs) {
         JSON.stringify({
           error: "Missing model",
           details:
-            'ROUTER_AUTO_DEFAULT disables implicit Auto; send model "auto", "auto-llm", or a concrete registry id.',
+            'ROUTER_AUTO_DEFAULT disables implicit Auto; send model "auto", "auto-llm", "auto-hybrid", or a concrete registry id.',
         }),
         {
           status: 400,

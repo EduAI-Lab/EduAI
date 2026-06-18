@@ -45,6 +45,7 @@
     "research:tier-continue": "bash ./scripts/research/run-s378-tier-continue.sh",
     "research:remaining": "bash ./scripts/research/run-s378-remaining-batches.sh",
     "research:p3b-dev-v3": "bash ./scripts/research/run-s378-p3b-dev-v3.sh",
+    "research:phase-456": "bash ./scripts/research/run-s378-phase-456.sh",
     "research:offline-analysis": "bash ./scripts/research/run-offline-analysis.sh",
     "test:embedding": "tsx scripts/test-embedding.ts",
     "re-embed:course": "tsx scripts/re-embed-course.ts"

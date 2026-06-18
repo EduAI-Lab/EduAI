@@ -8,7 +8,7 @@
  * Env (inherits RESEARCH_RUN_* from policy scripts):
  *   RESEARCH_CLASSROOM_STUDENTS     default 30
  *   RESEARCH_CLASSROOM_CONCURRENCY  default 5
- *   RESEARCH_CLASSROOM_POLICY       P0 | P1 (default P1)
+ *   RESEARCH_CLASSROOM_POLICY       P0 | P1 | P3b (default P1)
  *   RESEARCH_CLASSROOM_SPLIT        dev | test (default test)
  *   RESEARCH_CLASSROOM_OUT          JSONL output
  *   RESEARCH_CLASSROOM_SUMMARY      text summary
@@ -31,6 +31,7 @@ import {
 const POLICIES = {
   P0: { policy: "P0", requested_model: "vllm:qwen2.5-32b-instruct" },
   P1: { policy: "P1", requested_model: "auto" },
+  P3b: { policy: "P3b", requested_model: "auto-llm" },
 };
 
 function readEnv(primary, alias) {
@@ -223,9 +224,11 @@ async function main() {
     process.exit(1);
   }
 
-  const policy = POLICIES[policyKey];
+  const policy =
+    POLICIES[policyKey] ??
+    Object.values(POLICIES).find((p) => p.policy.toUpperCase() === policyKey);
   if (!policy) {
-    console.error("RESEARCH_CLASSROOM_POLICY must be P0 or P1.");
+    console.error("RESEARCH_CLASSROOM_POLICY must be P0, P1, or P3b.");
     process.exit(1);
   }
 
