@@ -11,6 +11,7 @@ import {
 } from '../services/coreApiService.js';
 import { ensureCoreCourseLink } from '../services/coreCourseLinkService.js';
 import { syncTopicsFromCoreForCourse } from '../services/topicSyncService.js';
+import { importTaughtCoursesFromCore } from '../services/importTaughtCoursesService.js';
 import { logger } from '../utils/logger.js';
 
 const router = express.Router();
@@ -46,6 +47,16 @@ router.post('/', authenticateToken, async (req, res, next) => {
 /** GET /api/course – lists the user’s courses and optionally includes question/topic stats. */
 router.get('/', authenticateToken, async (req, res, next) => {
   try {
+    try {
+      await importTaughtCoursesFromCore(
+        req.user.id,
+        req.user.role ?? 'STUDENT',
+        req.headers.cookie ?? '',
+      );
+    } catch (err) {
+      logger.warn({ err, userId: req.user.id }, 'Core course mirror failed on list');
+    }
+
     const { includeStats = false } = req.query;
     
     let includeOptions = [];

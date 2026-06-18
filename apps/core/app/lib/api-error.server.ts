@@ -12,7 +12,6 @@ export function jsonResponse(status: number, body: unknown): Response {
 
 /**
  * MCP-ready error envelope: `{ error: "CODE", fields?: { field: "message" } }`.
- * See docs/rag-ai/MCP_INTEGRATION_PLAN.md.
  */
 export function apiError(
   status: number,

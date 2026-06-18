@@ -2,6 +2,7 @@
  * Auto-imports Core courses the instructor teaches into the local QM library on login.
  * Uses Core GET /api/courses (session-scoped via buildCourseListFilter).
  */
+import { Op } from 'sequelize';
 import { Course, Topics } from '../schema/index.js';
 import { listCoursesFromCore } from './coreApiService.js';
 import { normalizeCourseCode } from './courseCodeUtils.js';
@@ -61,8 +62,9 @@ async function createLinkedCourse(userId, coreCourse, cookie) {
 }
 
 /**
- * Imports any Core courses the instructor teaches that are not yet linked locally.
- * Idempotent — safe to call on every /auth/me request.
+ * Mirrors Core course catalog into the local QM library. Core is the source of truth —
+ * imports new taught courses and refreshes topics for existing links.
+ * Idempotent — safe to call on every /auth/me and GET /api/course request.
  */
 export async function importTaughtCoursesFromCore(userId, role, cookie) {
   if (!AUTO_IMPORT_ROLES.has(role)) {
@@ -142,5 +144,19 @@ export async function importTaughtCoursesFromCore(userId, role, cookie) {
     logger.info({ userId, imported, linked, skipped }, 'Auto-imported taught courses from Core');
   }
 
-  return { imported, linked, skipped };
+  let synced = 0;
+  const linkedCourses = await Course.findAll({
+    where: { userId, coreCourseId: { [Op.ne]: null } },
+  });
+
+  for (const localCourse of linkedCourses) {
+    try {
+      await syncTopicsFromCoreForCourse(localCourse, cookie);
+      synced++;
+    } catch (err) {
+      logger.warn({ err, userId, courseId: localCourse.id }, 'Topic sync failed during Core import');
+    }
+  }
+
+  return { imported, linked, skipped, synced };
 }

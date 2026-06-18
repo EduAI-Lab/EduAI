@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 
-import { CanvasDashboardCard } from "~/components/canvas/CanvasDashboardCard";
+import { CanvasDashboardCard } from "~/components/canvas/canvas-dashboard-card";
 import { getCanvasIntegration } from "~/lib/canvas/client";
 
 vi.mock("~/lib/canvas/client", () => ({

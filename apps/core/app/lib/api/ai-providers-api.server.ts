@@ -3,9 +3,23 @@ import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { CreateAIProviderSchema, UpdateAIProviderSchema } from "~/lib/ai/schemas";
 import { apiError, validationErrorFromZod } from "~/lib/api-error.server";
+import { fireAndForget, logAuditAction, logSecurityEvent } from "~/lib/logging.server";
+import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 
 export async function handleAiProvidersApiRequest(request: Request) {
   const url = new URL(request.url);
+  const requestContext = getRequestContext(request);
+
+  const logAdminDenied = (actor: { id: string; role?: string | null } | null) =>
+    fireAndForget(
+      logSecurityEvent({
+        ...getActorContext(actor),
+        ...requestContext,
+        actionCode: "ADMIN_ACCESS_DENIED",
+        outcome: "DENIED",
+        entityType: "AIProvider",
+      }),
+    );
 
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
   if (apiKeyGuard) return apiKeyGuard;
@@ -20,6 +34,7 @@ export async function handleAiProvidersApiRequest(request: Request) {
         });
       }
       if (session.user.role !== "ADMIN") {
+        logAdminDenied(session.user ?? null);
         return new Response(JSON.stringify({ error: "Forbidden" }), {
           status: 403,
           headers: { "Content-Type": "application/json" },
@@ -46,6 +61,7 @@ export async function handleAiProvidersApiRequest(request: Request) {
     case "POST": {
       const session = apiKeySession ?? (await auth.api.getSession(request));
       if (!session?.user || session.user.role !== "ADMIN") {
+        logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");
       }
 
@@ -60,6 +76,18 @@ export async function handleAiProvidersApiRequest(request: Request) {
         const provider = await prisma.aIProvider.create({
           data: result.data,
         });
+
+        fireAndForget(
+          logAuditAction({
+            ...getActorContext(session.user),
+            ...requestContext,
+            actionCode: "AI_PROVIDER_CREATED",
+            category: "AI_CONFIG",
+            entityType: "AIProvider",
+            entityId: provider.id,
+            entityLabel: provider.name,
+          }),
+        );
 
         return new Response(JSON.stringify(provider), {
           status: 201,
@@ -83,6 +111,7 @@ export async function handleAiProvidersApiRequest(request: Request) {
 
       const session = apiKeySession ?? (await auth.api.getSession(request));
       if (!session?.user || session.user.role !== "ADMIN") {
+        logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");
       }
 
@@ -98,6 +127,18 @@ export async function handleAiProvidersApiRequest(request: Request) {
           where: { id: providerId },
           data: result.data,
         });
+
+        fireAndForget(
+          logAuditAction({
+            ...getActorContext(session.user),
+            ...requestContext,
+            actionCode: "AI_PROVIDER_UPDATED",
+            category: "AI_CONFIG",
+            entityType: "AIProvider",
+            entityId: provider.id,
+            entityLabel: provider.name,
+          }),
+        );
 
         return new Response(JSON.stringify(provider), {
           status: 200,
@@ -124,13 +165,26 @@ export async function handleAiProvidersApiRequest(request: Request) {
 
       const session = apiKeySession ?? (await auth.api.getSession(request));
       if (!session?.user || session.user.role !== "ADMIN") {
+        logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");
       }
 
       try {
-        await prisma.aIProvider.delete({
+        const provider = await prisma.aIProvider.delete({
           where: { id: providerId },
         });
+
+        fireAndForget(
+          logAuditAction({
+            ...getActorContext(session.user),
+            ...requestContext,
+            actionCode: "AI_PROVIDER_DELETED",
+            category: "AI_CONFIG",
+            entityType: "AIProvider",
+            entityId: provider.id,
+            entityLabel: provider.name,
+          }),
+        );
 
         return new Response(null, { status: 204 });
       } catch (error: any) {

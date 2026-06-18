@@ -59,7 +59,9 @@ export const auth = betterAuth({
       : { enabled: false },
   },
   rateLimit: {
-    enabled: true,
+    // Disable in E2E/test environments where many sign-ups happen in quick
+    // succession. Set BETTER_AUTH_DISABLE_RATE_LIMIT=1 to turn this off.
+    enabled: process.env.BETTER_AUTH_DISABLE_RATE_LIMIT !== '1',
     window: 60,
     max: 100,
   },

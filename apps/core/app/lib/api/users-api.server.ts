@@ -11,17 +11,43 @@ import {
   readStoredStudentId,
   studentIdMatchFilter,
 } from "~/lib/canvas/student-id.server";
+import { fireAndForget, logAuditAction, logSecurityEvent } from "~/lib/logging.server";
+import { getActorContext, getRequestContext } from "~/lib/request-context.server";
+
+function userEntityLabel(
+  name: string | null | undefined,
+  email: string | null | undefined,
+): string | null {
+  if (email && name) return `${name} <${email}>`;
+  return email ?? name ?? null;
+}
+
 export async function handleUsersApiRequest(request: Request) {
   const url = new URL(request.url);
+  const requestContext = getRequestContext(request);
 
-  // If an API key is provided, only ADMIN users may proceed
+  const logAdminDenied = (actor: { id: string; role?: string | null; email?: string | null } | null) =>
+    fireAndForget(
+      logSecurityEvent({
+        ...getActorContext(actor),
+        ...requestContext,
+        actionCode: "ADMIN_ACCESS_DENIED",
+        outcome: "DENIED",
+        entityType: "User",
+        entityId: actor?.id ?? null,
+        entityLabel: actor?.email ?? null,
+        ...(actor?.email ? { details: { email: actor.email } } : {}),
+      }),
+    );
+
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
   if (apiKeyGuard) return apiKeyGuard;
 
   switch (request.method) {
     case "GET": {
-      const session = apiKeySession ?? await auth.api.getSession(request);
+      const session = apiKeySession ?? (await auth.api.getSession(request));
       if (!session?.user || session.user.role !== "ADMIN") {
+        logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");
       }
 
@@ -46,7 +72,7 @@ export async function handleUsersApiRequest(request: Request) {
             },
           },
         },
-        orderBy: { createdAt: 'desc' }
+        orderBy: { createdAt: "desc" },
       });
 
       const mapped = users.map(({ _count, ...u }) => ({
@@ -66,8 +92,9 @@ export async function handleUsersApiRequest(request: Request) {
     }
 
     case "POST": {
-      const session = apiKeySession ?? await auth.api.getSession(request);
+      const session = apiKeySession ?? (await auth.api.getSession(request));
       if (!session?.user || session.user.role !== "ADMIN") {
+        logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");
       }
 
@@ -82,7 +109,7 @@ export async function handleUsersApiRequest(request: Request) {
         const { _count, ...created } = await prisma.user.create({
           data: {
             ...result.data,
-            emailVerified: false, // New users need to verify their email
+            emailVerified: false,
           },
           select: {
             id: true,
@@ -115,12 +142,25 @@ export async function handleUsersApiRequest(request: Request) {
           },
         };
 
+        fireAndForget(
+          logAuditAction({
+            ...getActorContext(session.user),
+            ...requestContext,
+            actionCode: "USER_CREATED",
+            category: "USER",
+            entityType: "User",
+            entityId: created.id,
+            entityLabel: userEntityLabel(created.name, created.email),
+            details: { role: created.role, email: created.email },
+          }),
+        );
+
         return new Response(JSON.stringify(user), {
           status: 201,
           headers: { "Content-Type": "application/json" },
         });
       } catch (error: any) {
-        if (error.code === 'P2002') {
+        if (error.code === "P2002") {
           return apiError(409, "EMAIL_ALREADY_EXISTS");
         }
         throw error;
@@ -135,15 +175,14 @@ export async function handleUsersApiRequest(request: Request) {
         return apiError(400, "USER_ID_REQUIRED");
       }
 
-      const session = apiKeySession ?? await auth.api.getSession(request);
+      const session = apiKeySession ?? (await auth.api.getSession(request));
       if (!session?.user || session.user.role !== "ADMIN") {
+        logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");
       }
 
       const body = await request.json();
 
-      // Self-lockout guards (§4): an admin cannot deactivate themselves or
-      // change their own role (#297).
       if (userId === session.user.id) {
         if (body.isActive === false) {
           return apiError(400, "CANNOT_DEACTIVATE_SELF");
@@ -159,9 +198,6 @@ export async function handleUsersApiRequest(request: Request) {
         return validationErrorFromZod(result.error);
       }
 
-      // #297: authorizedUnits only makes sense on a UNIT_ADMIN — reject
-      // writes against any other target role (considering a role change in
-      // the same request).
       if (result.data.authorizedUnits !== undefined) {
         const target = await prisma.user.findUnique({
           where: { id: userId },
@@ -240,22 +276,48 @@ export async function handleUsersApiRequest(request: Request) {
           },
         };
 
+        const changedFields = Object.keys(result.data);
+        const actionCode =
+          result.data.role !== undefined
+            ? "USER_ROLE_CHANGED"
+            : result.data.isActive === false
+              ? "USER_DEACTIVATED"
+              : result.data.isActive === true
+                ? "USER_REACTIVATED"
+                : "USER_UPDATED";
+        fireAndForget(
+          logAuditAction({
+            ...getActorContext(session.user),
+            ...requestContext,
+            actionCode,
+            category: "USER",
+            entityType: "User",
+            entityId: updated.id,
+            entityLabel: userEntityLabel(updated.name, updated.email),
+            details: {
+              email: updated.email,
+              changedFields,
+              ...(result.data.role !== undefined ? { newRole: result.data.role } : {}),
+            },
+          }),
+        );
+
         return new Response(JSON.stringify(user), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
       } catch (error: any) {
-        if (error.code === 'P2025') {
+        if (error.code === "P2025") {
           return apiError(404, "USER_NOT_FOUND");
         }
-        if (error.code === 'P2002') {
+        if (error.code === "P2002") {
           const field = error.meta?.target;
           const message =
             Array.isArray(field) &&
             (field.includes("studentId") || field.includes("studentIdLookup"))
-              ? "Student number is already linked to another account"
-              : "Email already exists";
-          return apiError(409, message === "Email already exists" ? "EMAIL_ALREADY_EXISTS" : "STUDENT_ID_ALREADY_LINKED");
+              ? "STUDENT_ID_ALREADY_LINKED"
+              : "EMAIL_ALREADY_EXISTS";
+          return apiError(409, message);
         }
         throw error;
       }
@@ -269,27 +331,41 @@ export async function handleUsersApiRequest(request: Request) {
         return apiError(400, "USER_ID_REQUIRED");
       }
 
-      const session = apiKeySession ?? await auth.api.getSession(request);
+      const session = apiKeySession ?? (await auth.api.getSession(request));
       if (!session?.user || session.user.role !== "ADMIN") {
+        logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");
       }
 
-      // Prevent admin from deleting themselves
       if (userId === session.user.id) {
         return apiError(400, "CANNOT_DELETE_SELF");
       }
 
       try {
-        await prisma.user.delete({
+        const deleted = await prisma.user.delete({
           where: { id: userId },
+          select: { id: true, name: true, email: true },
         });
+
+        fireAndForget(
+          logAuditAction({
+            ...getActorContext(session.user),
+            ...requestContext,
+            actionCode: "USER_DELETED",
+            category: "USER",
+            entityType: "User",
+            entityId: deleted.id,
+            entityLabel: userEntityLabel(deleted.name, deleted.email),
+            details: { email: deleted.email },
+          }),
+        );
 
         return new Response(null, { status: 204 });
       } catch (error: any) {
-        if (error.code === 'P2025') {
+        if (error.code === "P2025") {
           return apiError(404, "USER_NOT_FOUND");
         }
-        if (error.code === 'P2003') {
+        if (error.code === "P2003") {
           return apiError(400, "CANNOT_DELETE_USER_WITH_DATA");
         }
         throw error;

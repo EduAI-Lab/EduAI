@@ -3,9 +3,23 @@ import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { CreateAIModelSchema, UpdateAIModelSchema } from "~/lib/ai/schemas";
 import { apiError, validationErrorFromZod } from "~/lib/api-error.server";
+import { fireAndForget, logAuditAction, logSecurityEvent } from "~/lib/logging.server";
+import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 
 export async function handleAiModelsApiRequest(request: Request) {
   const url = new URL(request.url);
+  const requestContext = getRequestContext(request);
+
+  const logAdminDenied = (actor: { id: string; role?: string | null } | null) =>
+    fireAndForget(
+      logSecurityEvent({
+        ...getActorContext(actor),
+        ...requestContext,
+        actionCode: "ADMIN_ACCESS_DENIED",
+        outcome: "DENIED",
+        entityType: "AIModel",
+      }),
+    );
 
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
   if (apiKeyGuard) return apiKeyGuard;
@@ -20,6 +34,7 @@ export async function handleAiModelsApiRequest(request: Request) {
         });
       }
       if (session.user.role !== "ADMIN") {
+        logAdminDenied(session.user ?? null);
         return new Response(JSON.stringify({ error: "Forbidden" }), {
           status: 403,
           headers: { "Content-Type": "application/json" },
@@ -41,6 +56,7 @@ export async function handleAiModelsApiRequest(request: Request) {
     case "POST": {
       const session = apiKeySession ?? (await auth.api.getSession(request));
       if (!session?.user || session.user.role !== "ADMIN") {
+        logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");
       }
 
@@ -65,6 +81,18 @@ export async function handleAiModelsApiRequest(request: Request) {
             provider: true,
           },
         });
+
+        fireAndForget(
+          logAuditAction({
+            ...getActorContext(session.user),
+            ...requestContext,
+            actionCode: "AI_MODEL_CREATED",
+            category: "AI_CONFIG",
+            entityType: "AIModel",
+            entityId: model.id,
+            entityLabel: model.name,
+          }),
+        );
 
         return new Response(JSON.stringify(model), {
           status: 201,
@@ -91,6 +119,7 @@ export async function handleAiModelsApiRequest(request: Request) {
 
       const session = apiKeySession ?? (await auth.api.getSession(request));
       if (!session?.user || session.user.role !== "ADMIN") {
+        logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");
       }
 
@@ -125,6 +154,18 @@ export async function handleAiModelsApiRequest(request: Request) {
           },
         });
 
+        fireAndForget(
+          logAuditAction({
+            ...getActorContext(session.user),
+            ...requestContext,
+            actionCode: "AI_MODEL_UPDATED",
+            category: "AI_CONFIG",
+            entityType: "AIModel",
+            entityId: model.id,
+            entityLabel: model.name,
+          }),
+        );
+
         return new Response(JSON.stringify(model), {
           status: 200,
           headers: { "Content-Type": "application/json" },
@@ -153,13 +194,26 @@ export async function handleAiModelsApiRequest(request: Request) {
 
       const session = apiKeySession ?? (await auth.api.getSession(request));
       if (!session?.user || session.user.role !== "ADMIN") {
+        logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");
       }
 
       try {
-        await prisma.aIModel.delete({
+        const model = await prisma.aIModel.delete({
           where: { id: modelId },
         });
+
+        fireAndForget(
+          logAuditAction({
+            ...getActorContext(session.user),
+            ...requestContext,
+            actionCode: "AI_MODEL_DELETED",
+            category: "AI_CONFIG",
+            entityType: "AIModel",
+            entityId: model.id,
+            entityLabel: model.name,
+          }),
+        );
 
         return new Response(null, { status: 204 });
       } catch (error: any) {
