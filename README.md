@@ -16,7 +16,8 @@ EduAI/
 │               ├── backend/         # Question Maker Express/Sequelize API
 │               └── frontend/        # Question Maker Vite/React frontend
 ├── packages/
-│   └── ui/                          # @eduai/ui — shared shadcn component library + design system components
+│   ├── ui/                          # @eduai/ui — shared shadcn component library + design system components
+│   └── types/                       # @eduai/types — shared UserRole and EnrollmentRole types
 ├── eduai-design-system/             # EduAI design system bundle (tokens, guidelines, Figma UI kit exports)
 ├── scripts/                         # Repo-level setup and dev utilities
 ├── docs/                            # System-wide architecture and planning docs

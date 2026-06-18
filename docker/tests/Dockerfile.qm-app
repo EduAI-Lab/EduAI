@@ -40,7 +40,7 @@ COPY apps/extensions/question-maker/app/backend/package.json \
 
 COPY apps/extensions/question-maker/app/frontend/src \
      ./apps/extensions/question-maker/app/frontend/src
-COPY apps/extensions/question-maker/app/frontend/vite.config.ts \
+COPY apps/extensions/question-maker/app/frontend/vite.config.mts \
      ./apps/extensions/question-maker/app/frontend/
 COPY apps/extensions/question-maker/app/frontend/vitest.unit.config.ts \
      ./apps/extensions/question-maker/app/frontend/
@@ -102,7 +102,7 @@ COPY --from=build /app/apps/extensions/question-maker/app/frontend/dist \
      ./apps/extensions/question-maker/app/frontend/dist
 COPY apps/extensions/question-maker/app/frontend/package.json \
      ./apps/extensions/question-maker/app/frontend/
-COPY apps/extensions/question-maker/app/frontend/vite.config.ts \
+COPY apps/extensions/question-maker/app/frontend/vite.config.mts \
      ./apps/extensions/question-maker/app/frontend/
 
 ENV PATH="/app/node_modules/.bin:${PATH}"
