@@ -7,6 +7,7 @@ import {
   IconUpload,
   IconSettings,
   IconBook,
+  IconTrash,
 } from '@tabler/icons-react'
 import { Card, CardContent } from '@eduai/ui'
 import { Button } from '@eduai/ui'
@@ -16,6 +17,16 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
+} from '@eduai/ui'
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction,
 } from '@eduai/ui'
 import { PageTabs, PageTabsList, PageTabsTrigger, PageTabsContent } from '@eduai/ui'
 import { CourseHeroCard } from '@eduai/ui'
@@ -36,6 +47,9 @@ interface Props {
   materialsSuccess?: string | null
   onFileSelect: (file: File) => void
   courseId?: string
+  /** Current viewer's user id — TAs may delete only their OWN uploads (§7). */
+  currentUserId?: string
+  onRefreshMaterials?: () => Promise<void>
 }
 
 function fileTypeColor(mime: string): string {
@@ -83,9 +97,31 @@ export function CourseDetailTaView({
   materialsSuccess = null,
   onFileSelect,
   courseId,
+  currentUserId,
+  onRefreshMaterials,
 }: Props) {
   const [uploadOpen, setUploadOpen] = useState(false)
   const [embeddingOpen, setEmbeddingOpen] = useState(false)
+  const [deleteMaterialId, setDeleteMaterialId] = useState<string | null>(null)
+  const [deletingMaterial, setDeletingMaterial] = useState(false)
+
+  const handleDeleteMaterial = async () => {
+    if (!deleteMaterialId || !courseId) return
+    setDeletingMaterial(true)
+    try {
+      const res = await fetch(
+        `/api/courses/${courseId}/materials/${deleteMaterialId}`,
+        { method: 'DELETE' },
+      )
+      if (!res.ok) throw new Error(await res.text().catch(() => 'Failed to delete material'))
+      setDeleteMaterialId(null)
+      if (onRefreshMaterials) await onRefreshMaterials()
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setDeletingMaterial(false)
+    }
+  }
 
   // Close upload modal when success arrives (not on file select — upload may fail)
   const prevSuccessRef = useRef(materialsSuccess)
@@ -101,6 +137,37 @@ export function CourseDetailTaView({
 
   return (
     <div className="flex flex-col gap-6">
+      {/* Delete material confirmation (TA own uploads only) */}
+      <AlertDialog
+        open={!!deleteMaterialId}
+        onOpenChange={(open) => {
+          if (!open) setDeleteMaterialId(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete material?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently removes the file and its embeddings. This action
+              cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingMaterial}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault()
+                handleDeleteMaterial()
+              }}
+              disabled={deletingMaterial}
+              className="bg-destructive text-white hover:bg-destructive/90"
+            >
+              {deletingMaterial ? 'Deleting…' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* A2: Upload modal */}
       <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
         <DialogContent className="sm:max-w-md rounded-[var(--radius-xl)]">
@@ -290,6 +357,18 @@ export function CourseDetailTaView({
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <MaterialStatusChip status={m.status} />
                     <MaterialStatusIcon status={m.status} />
+                    {/* §7: TA may delete only their own uploads. */}
+                    {!!currentUserId && m.uploadedBy === currentUserId && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label="Delete material"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => setDeleteMaterialId(m.id)}
+                      >
+                        <IconTrash className="w-4 h-4" />
+                      </Button>
+                    )}
                   </div>
                 </div>
               ))}

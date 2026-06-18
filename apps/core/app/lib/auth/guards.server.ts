@@ -83,6 +83,33 @@ export async function requireAdmin(request: Request): Promise<AdminGate> {
   return { response: null, session: resolved };
 }
 
+type InviterGate =
+  | { response: Response; session: null }
+  | { response: null; session: Session };
+
+/**
+ * Resolve a session for an inviter-only endpoint (ADMIN or UNIT_ADMIN).
+ * Honors the x-api-key rule (`enforceAdminIfApiKey`) and reuses that session
+ * to avoid a second lookup. Returns `{ response }` (403/forbidden) when the
+ * caller is not an active ADMIN or UNIT_ADMIN, otherwise `{ session }`.
+ */
+export async function requireInviter(request: Request): Promise<InviterGate> {
+  const { response, session } = await enforceAdminIfApiKey(request);
+  if (response) return { response, session: null };
+
+  const resolved = session ?? (await auth.api.getSession(request));
+  if (!resolved?.user || !["ADMIN", "UNIT_ADMIN"].includes(resolved.user.role ?? "")) {
+    return {
+      response: new Response(
+        JSON.stringify({ error: "Forbidden: Admins or unit admins only" }),
+        { status: 403, headers: { "Content-Type": "application/json" } },
+      ),
+      session: null,
+    };
+  }
+  return { response: null, session: resolved };
+}
+
 /**
  * Enforce: request must carry `Authorization: Bearer <EDUAI_API_KEY>` for
  * server-to-server calls from AI Tutor and Question Maker.
