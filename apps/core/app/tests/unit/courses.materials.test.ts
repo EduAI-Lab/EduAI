@@ -239,6 +239,36 @@ describe("POST /api/courses/:courseId/materials action", () => {
     const res = await action(stubUploadArgs());
     expect(res.status).toBe(409);
   });
+
+  it("restores a soft-deleted material on re-upload instead of 409", async () => {
+    mockSession("ADMIN");
+    mockAccess({ level: "admin", rank: 4 });
+    vi.mocked(processUploadedFile).mockResolvedValue({
+      checksum: "abc123", title: "file.pdf", mimeType: "application/pdf",
+      fileSize: 100, content: "text",
+    } as never);
+    // Same-checksum row exists but is soft-deleted → should restore, not 409.
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "existing-mat",
+      deletedAt: new Date(),
+    } as never);
+    vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "existing-mat" } as never);
+
+    const res = await action(stubUploadArgs());
+    expect(res.status).toBe(200);
+    // First update call clears the soft-delete markers and re-queues processing.
+    expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "existing-mat" },
+        data: expect.objectContaining({
+          deletedAt: null,
+          deletedBy: null,
+          status: "PROCESSING",
+        }),
+      }),
+    );
+    expect(prisma.courseMaterial.create).not.toHaveBeenCalled();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -258,14 +288,23 @@ describe("DELETE /api/courses/:courseId/materials/:materialId action", () => {
     vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
     const res = await action(makeDeleteArgs("missing"));
     expect(res.status).toBe(404);
-    expect(prisma.courseMaterial.delete).not.toHaveBeenCalled();
+    expect(prisma.courseMaterial.update).not.toHaveBeenCalled();
   });
 
-  it("returns 204 for an enrolled INSTRUCTOR (deletes any material)", async () => {
+  it("returns 204 for an enrolled INSTRUCTOR (soft-deletes any material)", async () => {
     mockAccess({ level: "instructor", rank: 2 });
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "mat-1",
+      uploadedBy: "other-user",
+    } as never);
     const res = await action(makeDeleteArgs("mat-1"));
     expect(res.status).toBe(204);
-    expect(prisma.courseMaterial.delete).toHaveBeenCalledWith({ where: { id: "mat-1" } });
+    expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "mat-1" },
+        data: { deletedAt: expect.any(Date), deletedBy: expect.any(String) },
+      }),
+    );
   });
 
   it("returns 403 for an enrolled STUDENT", async () => {
@@ -273,7 +312,7 @@ describe("DELETE /api/courses/:courseId/materials/:materialId action", () => {
     mockAccess({ level: "student", rank: 0 });
     const res = await action(makeDeleteArgs("mat-1"));
     expect(res.status).toBe(403);
-    expect(prisma.courseMaterial.delete).not.toHaveBeenCalled();
+    expect(prisma.courseMaterial.update).not.toHaveBeenCalled();
   });
 
   it("returns 403 for a TA deleting another user's material (§7 own-only)", async () => {

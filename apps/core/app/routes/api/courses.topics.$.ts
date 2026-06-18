@@ -270,7 +270,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
         }
       }
 
-      const result = await deleteCourseTopic(courseId, body);
+      const result = await deleteCourseTopic(courseId, body, session?.user.id ?? null);
 
       if (result.status !== "204") {
         const responseBody =

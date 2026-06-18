@@ -50,6 +50,7 @@ const TOPIC = {
   name: "Graphs",
   createdBy: null,
   deletedAt: null,
+  deletedBy: null,
   createdAt: TOPIC_AT,
   updatedAt: TOPIC_AT,
 };
