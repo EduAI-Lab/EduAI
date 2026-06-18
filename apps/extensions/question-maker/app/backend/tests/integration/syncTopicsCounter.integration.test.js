@@ -41,7 +41,7 @@ vi.mock('../../src/config/settings.js', () => {
 
 vi.mock('../../src/schema/index.js', () => ({
   Course: { findOne: vi.fn() },
-  Topics: { findOne: vi.fn(), create: vi.fn() },
+  Topics: { findAll: vi.fn(), create: vi.fn() },
   Question_Metadata: {},
 }));
 
@@ -75,7 +75,7 @@ describe('POST /api/course/:id/sync-topics — synced counter', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sessionOk()));
 
     Course.findOne.mockResolvedValue({
-      id: 'course-1',
+      id: 1,
       userId: INSTRUCTOR.id,
       coreCourseId: 'core-c-1',
     });
@@ -88,13 +88,17 @@ describe('POST /api/course/:id/sync-topics — synced counter', () => {
     const mockExistingTopic = {
       id: 'local-t-1',
       name: 'Old Name',
+      courseId: 1,
       coreTopicId: 'core-t-1',
       update: vi.fn().mockResolvedValue(undefined),
     };
-    Topics.findOne.mockResolvedValueOnce(mockExistingTopic);
+    // findAll #1: topics for this course; findAll #2: topics linked by coreTopicId
+    Topics.findAll
+      .mockResolvedValueOnce([mockExistingTopic])
+      .mockResolvedValueOnce([mockExistingTopic]);
 
     const res = await request(app)
-      .post('/api/course/course-1/sync-topics')
+      .post('/api/course/1/sync-topics')
       .set('Cookie', 'session=valid')
       .send();
 
@@ -108,7 +112,7 @@ describe('POST /api/course/:id/sync-topics — synced counter', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sessionOk()));
 
     Course.findOne.mockResolvedValue({
-      id: 'course-2',
+      id: 2,
       userId: INSTRUCTOR.id,
       coreCourseId: 'core-c-2',
     });
@@ -117,14 +121,14 @@ describe('POST /api/course/:id/sync-topics — synced counter', () => {
       topics: [{ id: 'core-t-new', name: 'Brand New Topic' }],
     });
 
-    // No existing topic found by coreTopicId or by name
-    Topics.findOne
-      .mockResolvedValueOnce(null) // not found by coreTopicId
-      .mockResolvedValueOnce(null); // not found by name
+    // No existing topics locally → create path
+    Topics.findAll
+      .mockResolvedValueOnce([]) // topics for this course
+      .mockResolvedValueOnce([]); // topics linked by coreTopicId
     Topics.create.mockResolvedValue({ id: 'local-t-new', name: 'Brand New Topic', coreTopicId: 'core-t-new' });
 
     const res = await request(app)
-      .post('/api/course/course-2/sync-topics')
+      .post('/api/course/2/sync-topics')
       .set('Cookie', 'session=valid')
       .send();
 
@@ -136,7 +140,7 @@ describe('POST /api/course/:id/sync-topics — synced counter', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sessionOk()));
 
     Course.findOne.mockResolvedValue({
-      id: 'course-3',
+      id: 3,
       userId: INSTRUCTOR.id,
       coreCourseId: 'core-c-3',
     });
@@ -152,18 +156,19 @@ describe('POST /api/course/:id/sync-topics — synced counter', () => {
     const linkedTopic = {
       id: 'local-t-linked',
       name: 'Old Linked Name',
+      courseId: 3,
       coreTopicId: 'core-t-linked',
       update: vi.fn().mockResolvedValue(undefined),
     };
-    // Second topic: not found by coreTopicId, not found by name → create
-    Topics.findOne
-      .mockResolvedValueOnce(linkedTopic) // first topic found by coreTopicId
-      .mockResolvedValueOnce(null)        // second topic not found by coreTopicId
-      .mockResolvedValueOnce(null);       // second topic not found by name
+    // Second topic has no local match → create path.
+    // findAll #1: topics for this course; findAll #2: topics linked by coreTopicId
+    Topics.findAll
+      .mockResolvedValueOnce([linkedTopic])
+      .mockResolvedValueOnce([linkedTopic]);
     Topics.create.mockResolvedValue({ id: 'local-t-new2', name: 'New Topic', coreTopicId: 'core-t-brand-new' });
 
     const res = await request(app)
-      .post('/api/course/course-3/sync-topics')
+      .post('/api/course/3/sync-topics')
       .set('Cookie', 'session=valid')
       .send();
 
