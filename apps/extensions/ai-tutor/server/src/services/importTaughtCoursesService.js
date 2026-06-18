@@ -351,6 +351,13 @@ export async function importEnrolledCoursesFromCore(student, cookie) {
   }
 
   const activeCoreIds = new Set(studentCourses.map((course) => course.id));
+
+  // Guard: if Core returned no courses (deploy blip, permission hiccup, empty filter),
+  // skip pruning to avoid deleting every mirrored student enrollment.
+  if (activeCoreIds.size === 0) {
+    return { enrolled, skipped, removed: 0 };
+  }
+
   const localEnrollments = await prisma.courseEnrollment.findMany({
     where: { userId: student.id, role: STUDENT_ENROLLMENT_ROLE },
     include: {

@@ -6,7 +6,7 @@
  * - May–Jun: Summer Term 1 (S1)
  * - Jul–Aug: Summer Term 2 (S2)
  */
-const UBC_TIME_ZONE = "America/Vancouver";
+const UBC_TIME_ZONE = process.env.UBC_TIMEZONE ?? "America/Vancouver";
 
 function monthInUbcTimeZone(date: Date): number {
   return Number(
