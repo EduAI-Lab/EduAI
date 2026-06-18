@@ -181,16 +181,20 @@ test.describe('Core invitation flow', () => {
       expect(validatePage).toContain('Instructor');
 
       // Accept the invitation — the page action creates the account, signs the
-      // user in, and redirects to the dashboard.
-      const acceptRes = await inviteeCtx.post(`${CORE_URL}/auth/accept-invitation`, {
-        form: {
-          token: token!,
-          name: 'Invited Instructor',
-          password: DEFAULT_PASSWORD,
-          confirmPassword: DEFAULT_PASSWORD,
+      // user in, and redirects to the dashboard. The form posts to the page URL
+      // including its ?token query (the loader reads the token from there).
+      const acceptRes = await inviteeCtx.post(
+        `${CORE_URL}/auth/accept-invitation?token=${encodeURIComponent(token!)}`,
+        {
+          form: {
+            token: token!,
+            name: 'Invited Instructor',
+            password: DEFAULT_PASSWORD,
+            confirmPassword: DEFAULT_PASSWORD,
+          },
+          maxRedirects: 0,
         },
-        maxRedirects: 0,
-      });
+      );
       expect(acceptRes.status()).toBe(302);
       expect(acceptRes.headers()['location']).toBe('/dashboard');
 
@@ -238,22 +242,25 @@ test.describe('Core invitation flow', () => {
       const { acceptUrl } = await createRes.json();
       const token = new URL(acceptUrl).searchParams.get('token')!;
 
+      const acceptPath = `${CORE_URL}/auth/accept-invitation?token=${encodeURIComponent(token)}`;
+
       // First accept succeeds and redirects to the dashboard.
-      const firstAccept = await inviteeCtx.post(`${CORE_URL}/auth/accept-invitation`, {
+      const firstAccept = await inviteeCtx.post(acceptPath, {
         form: { token, name: 'First Accept', password: DEFAULT_PASSWORD, confirmPassword: DEFAULT_PASSWORD },
         maxRedirects: 0,
       });
       expect(firstAccept.status()).toBe(302);
       expect(firstAccept.headers()['location']).toBe('/dashboard');
 
-      // Second accept with the same token must fail — the account now exists, so
-      // the page re-renders with a friendly error instead of redirecting.
-      const secondAccept = await secondCtx.post(`${CORE_URL}/auth/accept-invitation`, {
+      // Second accept with the same token must fail — the invitation is now
+      // consumed, so the page re-renders the "already used" error rather than
+      // redirecting.
+      const secondAccept = await secondCtx.post(acceptPath, {
         form: { token, name: 'Second Accept', password: DEFAULT_PASSWORD, confirmPassword: DEFAULT_PASSWORD },
         maxRedirects: 0,
       });
       expect(secondAccept.status()).toBe(200);
-      expect(await secondAccept.text()).toMatch(/already exists/i);
+      expect(await secondAccept.text()).toMatch(/already been used/i);
     } finally {
       await adminCtx.dispose();
       await inviteeCtx.dispose();
