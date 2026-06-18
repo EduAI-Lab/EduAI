@@ -6,10 +6,17 @@
  *   node summarize-classroom-replicates.mjs /path/to/classroom-p1-r*.txt
  * Or RESEARCH_CLASSROOM_REPLICATE_GLOB via env + paths in RUNS_DIR
  */
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { globSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { DEFAULT_CLASSROOM_SUMMARY, RUNS_DIR } from "./paths.mjs";
+
+function classroomGlob(runsDir, pattern) {
+  const nested = join(runsDir, "classroom", pattern);
+  const flat = join(runsDir, pattern);
+  const hits = globSync(nested);
+  return hits.length ? hits : globSync(flat);
+}
 
 function parseSummary(text) {
   const get = (re) => {
@@ -81,10 +88,10 @@ function main() {
   let p0Files = args.filter((f) => f.includes("p0") || f.includes("P0"));
 
   if (p1Files.length === 0) {
-    p1Files = globSync(join(runsDir, "classroom-sim-p1-r*.txt"));
+    p1Files = classroomGlob(runsDir, "classroom-sim-p1-r*.txt");
   }
   if (p0Files.length === 0) {
-    p0Files = globSync(join(runsDir, "classroom-sim-p0-r*.txt"));
+    p0Files = classroomGlob(runsDir, "classroom-sim-p0-r*.txt");
   }
 
   const load = (files) =>
@@ -97,7 +104,7 @@ function main() {
 
   const outPath =
     process.env.RESEARCH_CLASSROOM_REPLICATE_SUMMARY ||
-    join(runsDir, "classroom-sim-replicates-summary.txt");
+    join(runsDir, "classroom", "classroom-sim-replicates-summary.txt");
 
   const lines = [
     "=== Classroom simulation replicates ===",

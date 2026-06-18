@@ -15,11 +15,12 @@
  *   RESEARCH_POLICY_P3B_TEST  P3b test run (default policy-runs-p3b-test-v2.jsonl if exists)
  *   RESEARCH_LABEL_OUT      labels (default labels.v1.jsonl)
  */
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { dirname, join } from "node:path";
 import {
   DEFAULT_LABELS_OUT,
   RUNS_DIR,
+  resolveRunsFile,
 } from "./paths.mjs";
 
 function readEnv(name) {
@@ -158,33 +159,34 @@ function main() {
   const runsDir = readEnv("RESEARCH_RUNS_DIR") ?? RUNS_DIR;
   const date = new Date().toISOString().slice(0, 10);
   const outPath =
-    readEnv("RESEARCH_STATUS_OUT") ?? join(runsDir, `research-status-${date}.md`);
+    readEnv("RESEARCH_STATUS_OUT") ??
+    join(runsDir, "status", `research-status-${date}.md`);
 
   const labelsPath = readEnv("RESEARCH_LABEL_OUT") ?? DEFAULT_LABELS_OUT;
   const p0DevPath = pickPath(
     readEnv("RESEARCH_POLICY_P0_DEV"),
-    join(runsDir, "policy-runs-p0-dev.jsonl"),
+    resolveRunsFile("policy-runs-p0-dev.jsonl"),
     "/tmp/policy-runs-p0-dev.jsonl",
   );
   const p1DevPath = pickPath(
     readEnv("RESEARCH_POLICY_P1_DEV"),
-    join(runsDir, "policy-runs-p1-dev-v2.jsonl"),
-    join(runsDir, "policy-runs-p1-dev.jsonl"),
+    resolveRunsFile("policy-runs-p1-dev-v2.jsonl"),
+    resolveRunsFile("policy-runs-p1-dev.jsonl"),
     "/tmp/policy-runs-p1-dev-v2.jsonl",
   );
   const p3bDevPath = pickPath(
     readEnv("RESEARCH_POLICY_P3B_DEV"),
-    join(runsDir, "policy-runs-p3b-dev-v2.jsonl"),
+    resolveRunsFile("policy-runs-p3b-dev-v2.jsonl"),
     "/tmp/policy-runs-p3b-dev-v2.jsonl",
   );
   const p1TestPath = pickPath(
     readEnv("RESEARCH_POLICY_P1_TEST"),
-    join(runsDir, "policy-runs-p1-test-v2.jsonl"),
+    resolveRunsFile("policy-runs-p1-test-v2.jsonl"),
     "/tmp/policy-runs-p1-test-v2.jsonl",
   );
   const p3bTestPath = pickPath(
     readEnv("RESEARCH_POLICY_P3B_TEST"),
-    join(runsDir, "policy-runs-p3b-test-v2.jsonl"),
+    resolveRunsFile("policy-runs-p3b-test-v2.jsonl"),
     "/tmp/policy-runs-p3b-test-v2.jsonl",
   );
 
@@ -200,7 +202,7 @@ function main() {
     "",
     `Generated: ${new Date().toISOString()}`,
     "",
-    "See also: `apps/core/scripts/research/RESULTS.md` for interpretation.",
+    "See also: `URA/docs/research/findings/RESULTS.md` for interpretation.",
     "",
     "## Artifacts",
     "",
@@ -303,12 +305,13 @@ function main() {
   }
 
   lines.push("## Next steps", "");
-  lines.push("1. Human spot-check (`npm run research:export-human-check`)");
-  lines.push("2. Relabel or strict-judge dev set if tier-3 oracle rows needed");
-  lines.push("3. P0 test v2 + energy sidecar batch on cmps01");
-  lines.push("4. Advisor review — full analysis in `scripts/research/RESULTS.md`");
+  lines.push("1. Strict automated re-label if tier-3 oracle rows needed");
+  lines.push("2. P0 test v2 + energy sidecar batch on cmps01");
+  lines.push("3. P3b dev v3 after mapping tune");
+  lines.push("4. Advisor review — `URA/docs/research/findings/RESULTS.md`");
   lines.push("");
 
+  mkdirSync(dirname(outPath), { recursive: true });
   writeFileSync(outPath, `${lines.join("\n")}\n`, "utf8");
   console.log("=== research status report ===");
   console.log("output:", outPath);

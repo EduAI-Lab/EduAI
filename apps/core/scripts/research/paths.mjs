@@ -36,13 +36,54 @@ function resolveRunsDir() {
   return join(URA_RESEARCH, "data/runs");
 }
 
+/**
+ * Resolve a run artifact path. Checks organized subfolders first, then flat
+ * `runs/` root for backward compatibility.
+ */
+export function resolveRunsFile(...relativePaths) {
+  const runsDir = resolveRunsDir();
+  for (const rel of relativePaths) {
+    const direct = join(runsDir, rel);
+    if (existsSync(direct)) return direct;
+    const parts = rel.replace(/\\/g, "/").split("/");
+    if (parts.length === 1) {
+      const [subdir, name] = inferRunsSubdir(parts[0]);
+      const nested = join(runsDir, subdir, name);
+      if (existsSync(nested)) return nested;
+    }
+  }
+  return join(runsDir, relativePaths[0]);
+}
+
+function inferRunsSubdir(filename) {
+  if (
+    filename === "labels.v1.jsonl" ||
+    filename === "both-tier.v1.jsonl" ||
+    filename.startsWith("hard-spot-check")
+  ) {
+    return ["labels", filename];
+  }
+  if (filename.startsWith("classroom-")) {
+    return ["classroom", filename];
+  }
+  if (filename.startsWith("research-status")) {
+    return ["status", filename];
+  }
+  if (filename.startsWith("policy-")) {
+    return ["policy", filename];
+  }
+  return ["", filename];
+}
+
 export const SUITE_DIR = resolveSuiteDir();
 export const RUNS_DIR = resolveRunsDir();
 export const PROMPTS_PATH = join(SUITE_DIR, "prompts.v1.jsonl");
 export const SPLITS_PATH = join(SUITE_DIR, "splits.json");
-export const DEFAULT_BOTH_TIER_OUT = join(RUNS_DIR, "both-tier.v1.jsonl");
+export const DEFAULT_BOTH_TIER_OUT = resolveRunsFile("both-tier.v1.jsonl");
 export const DEFAULT_BOTH_TIER_IN = DEFAULT_BOTH_TIER_OUT;
-export const DEFAULT_LABELS_OUT = join(RUNS_DIR, "labels.v1.jsonl");
-export const DEFAULT_POLICY_OUT = join(RUNS_DIR, "policy-runs.v1.jsonl");
-export const DEFAULT_CLASSROOM_OUT = join(RUNS_DIR, "classroom-sim.v1.jsonl");
-export const DEFAULT_CLASSROOM_SUMMARY = join(RUNS_DIR, "classroom-sim-summary.v1.txt");
+export const DEFAULT_LABELS_OUT = resolveRunsFile("labels.v1.jsonl");
+export const DEFAULT_POLICY_OUT = resolveRunsFile("policy-runs.v1.jsonl");
+export const DEFAULT_CLASSROOM_OUT = resolveRunsFile("classroom-sim.v1.jsonl");
+export const DEFAULT_CLASSROOM_SUMMARY = resolveRunsFile(
+  "classroom-sim-summary.v1.txt",
+);

@@ -1,27 +1,40 @@
-# Research scripts — two-tier routing evaluation
+# Research scripts
 
-Scripts for the URA routing study (P0 / P1 / P3b policies, oracle labels, classroom sim).
+Runnable pipeline for the URA two-tier routing study. **Docs and data live in URA**, not here.
 
-## Results & analysis
+| | Path |
+|---|------|
+| **Research hub** | [`URA/docs/research/README.md`](../../../../../docs/research/README.md) |
+| **Main narrative** | [`URA/docs/research/RESEARCH_CONTEXT.md`](../../../../../docs/research/RESEARCH_CONTEXT.md) |
+| **Results & analysis** | [`URA/docs/research/findings/`](../../../../../docs/research/findings/) |
+| **Run artifacts** | [`URA/docs/research/data/runs/`](../../../../../docs/research/data/runs/) |
+| **Agent playbooks** | [`URA/docs/agents/memory.md`](../../../../../docs/agents/memory.md) |
 
-**[`RESULTS.md`](./RESULTS.md)** — consolidated analysis of v2 policy runs (latency, oracle gap, label limitations, write-up guidance). Regenerate the dated memo with:
-
-```bash
-npm run research:status-report
-```
-
-Artifacts live in `URA/docs/research/data/runs/` (see `paths.mjs`).
+---
 
 ## Quick commands
 
 | Command | Purpose |
 |---------|---------|
-| `npm run research:run-policy` | Run P0/P1/P3b on dev or test split |
+| `npm run research:run-policy` | P0 / P1 / P3b on dev or test |
 | `npm run research:summarize-policy` | Latency + oracle gap for one JSONL |
-| `npm run research:status-report` | Advisor status memo (auto-detects v2 files) |
-| `npm run research:offline-analysis` | Labels, kNN, spot-check, status |
-| `npm run research:eval-llm` | Offline LLM classifier vs labels (needs vLLM) |
-| `npm run research:p3b-dev-v3` | s378: P3b dev re-run (mapping v3 + energy sidecar) |
-| `npm run research:remaining` | s378 batch: P0/P1/P3b v2 dev + test |
+| `npm run research:status-report` | Advisor memo → `runs/status/` |
+| `npm run research:p3b-dev-v3` | s378: P3b dev re-run (mapping v3 + energy) |
+| `npm run research:remaining` | s378 batch scripts |
 
-Full methodology: `URA/docs/research/data/README.md`
+Set `RESEARCH_RUNS_DIR` to `URA/docs/research/data/runs` (see `paths.mjs`).
+
+---
+
+## Bundled task suite
+
+`data/task-suite/prompts.v1.jsonl` — copy for s378 after `git pull`.  
+**Canonical:** `URA/docs/research/data/task-suite/prompts.v1.jsonl`
+
+---
+
+## This folder contains
+
+- `*.mjs` / `*.sh` / `*.ts` — runners and summarizers
+- `env.research*.example` — s378 / laptop env templates
+- **Not** canonical results memos (see `URA/docs/research/findings/`)

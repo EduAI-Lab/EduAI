@@ -9,7 +9,7 @@
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { DEFAULT_LABELS_OUT, RUNS_DIR } from "./paths.mjs";
+import { DEFAULT_LABELS_OUT, RUNS_DIR, resolveRunsFile } from "./paths.mjs";
 
 function readEnv(name, fallback) {
   const v = process.env[name];
@@ -98,19 +98,19 @@ function summarizePolicyFile(rows, labels) {
 }
 
 function main() {
-  const testV2 = readEnv("RESEARCH_POLICY_TEST_V2", join(RUNS_DIR, "policy-runs-test.v2.jsonl"));
-  const p1DevV2 = readEnv("RESEARCH_POLICY_P1DEV_V2", join(RUNS_DIR, "policy-runs-p1-dev.v2.jsonl"));
-  const toolsTest = readEnv("RESEARCH_POLICY_TOOLS_TEST", join(RUNS_DIR, "policy-tools-test.v3.jsonl"));
-  const toolsP1Dev = readEnv("RESEARCH_POLICY_TOOLS_P1DEV", join(RUNS_DIR, "policy-tools-p1dev.v3.jsonl"));
-  const testOut = readEnv("RESEARCH_POLICY_TEST_OUT", join(RUNS_DIR, "policy-runs-test.v3.jsonl"));
-  const p1DevOut = readEnv("RESEARCH_POLICY_P1DEV_OUT", join(RUNS_DIR, "policy-runs-p1-dev.v3.jsonl"));
+  const testV2 = readEnv("RESEARCH_POLICY_TEST_V2", resolveRunsFile("policy-runs-test.v2.jsonl"));
+  const p1DevV2 = readEnv("RESEARCH_POLICY_P1DEV_V2", resolveRunsFile("policy-runs-p1-dev.v2.jsonl"));
+  const toolsTest = readEnv("RESEARCH_POLICY_TOOLS_TEST", resolveRunsFile("policy-tools-test.v3.jsonl"));
+  const toolsP1Dev = readEnv("RESEARCH_POLICY_TOOLS_P1DEV", resolveRunsFile("policy-tools-p1dev.v3.jsonl"));
+  const testOut = readEnv("RESEARCH_POLICY_TEST_OUT", resolveRunsFile("policy-runs-test.v3.jsonl"));
+  const p1DevOut = readEnv("RESEARCH_POLICY_P1DEV_OUT", resolveRunsFile("policy-runs-p1-dev.v3.jsonl"));
   const summaryOut = readEnv(
     "RESEARCH_POLICY_SUMMARY_OUT",
-    join(RUNS_DIR, "policy-summary-v3.txt"),
+    resolveRunsFile("policy-summary-v3.txt"),
   );
   const spotSummary = readEnv(
     "RESEARCH_SPOT_CHECK_SUMMARY",
-    join(RUNS_DIR, "hard-spot-check-summary.v1.txt"),
+    resolveRunsFile("hard-spot-check-summary.v1.txt"),
   );
   const labelsPath = readEnv("RESEARCH_LABEL_OUT", DEFAULT_LABELS_OUT);
 

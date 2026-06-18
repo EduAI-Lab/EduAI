@@ -10,7 +10,7 @@ import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { isOkRow, loadRunRows, pairByPrompt } from "./both-tier-io.mjs";
-import { DEFAULT_BOTH_TIER_IN, DEFAULT_LABELS_OUT, RUNS_DIR } from "./paths.mjs";
+import { DEFAULT_BOTH_TIER_IN, DEFAULT_LABELS_OUT, resolveRunsFile } from "./paths.mjs";
 
 const DEFAULT_SPOT_IDS = [
   "ts-037",
@@ -179,9 +179,9 @@ ${tier3?.response ?? "[missing]"}`;
 async function main() {
   const runsPath = readEnv("RESEARCH_SPOT_CHECK_IN") ?? DEFAULT_BOTH_TIER_IN;
   const labelsPath = readEnv("RESEARCH_LABEL_REF") ?? DEFAULT_LABELS_OUT;
-  const outPath = readEnv("RESEARCH_SPOT_CHECK_OUT") ?? join(RUNS_DIR, "hard-spot-check.v1.jsonl");
+  const outPath = readEnv("RESEARCH_SPOT_CHECK_OUT") ?? resolveRunsFile("hard-spot-check.v1.jsonl");
   const summaryPath =
-    readEnv("RESEARCH_SPOT_CHECK_SUMMARY") ?? join(RUNS_DIR, "hard-spot-check-summary.v1.txt");
+    readEnv("RESEARCH_SPOT_CHECK_SUMMARY") ?? resolveRunsFile("hard-spot-check-summary.v1.txt");
 
   const ids = (readEnv("RESEARCH_SPOT_CHECK_IDS") ?? DEFAULT_SPOT_IDS.join(","))
     .split(",")
