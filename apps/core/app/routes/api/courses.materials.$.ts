@@ -1,3 +1,9 @@
+/**
+ * Course materials API. DELETE uses soft-delete (sets deletedAt/deletedBy).
+ * One-way contract: material deletes are NEVER propagated to Canvas — Core owns the deletion.
+ * Extensions may rely on deletedAt being set to detect EduAI-side removals.
+ */
+
 import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router';
 import { processMaterialEmbeddings } from '~/lib/ai/embedding';
 import { processUploadedFile } from '~/lib/ai/file-processing';
@@ -74,7 +80,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       }
 
       const material = await prisma.courseMaterial.findFirst({
-        where: { id: materialId, courseId },
+        where: { id: materialId, courseId, deletedAt: null },
         select: { id: true, uploadedBy: true },
       });
       if (!material) {
@@ -89,8 +95,11 @@ export async function action({ request, params }: ActionFunctionArgs) {
         return json(403, { error: 'Forbidden' });
       }
 
-      // Hard delete — CourseMaterial has no deletedAt; chunks cascade.
-      await prisma.courseMaterial.delete({ where: { id: materialId } });
+      // Soft delete: set deletedAt and deletedBy. One-way: never propagated to Canvas.
+      await prisma.courseMaterial.update({
+        where: { id: materialId },
+        data: { deletedAt: new Date(), deletedBy: user.id },
+      });
       return new Response(null, { status: 204 });
     }
 
@@ -116,6 +125,39 @@ async function uploadMaterial(request: Request, courseId: string, userId: string
     });
 
     if (existingMaterial) {
+      // If the existing material is soft-deleted, restore it instead of 409.
+      if (existingMaterial.deletedAt) {
+        // Restore: clear deletedAt/deletedBy, reset status to PROCESSING, re-run embeddings.
+        await prisma.courseMaterial.update({
+          where: { id: existingMaterial.id },
+          data: {
+            deletedAt: null,
+            deletedBy: null,
+            status: 'PROCESSING',
+            uploadedBy: userId,
+            processedAt: null,
+          },
+        });
+        try {
+          await processMaterialEmbeddings(existingMaterial.id, fileInfo.content);
+          await prisma.courseMaterial.update({
+            where: { id: existingMaterial.id },
+            data: { status: 'READY', processedAt: new Date() },
+          });
+          return json(200, {
+            success: true,
+            materialId: existingMaterial.id,
+            message: 'Material restored and processed successfully',
+          });
+        } catch (embeddingError) {
+          await prisma.courseMaterial.update({
+            where: { id: existingMaterial.id },
+            data: { status: 'FAILED' },
+          });
+          throw embeddingError;
+        }
+      }
+      // Not soft-deleted: it's a real duplicate.
       return json(409, {
         error: 'A file with identical content already exists in this course',
         materialId: existingMaterial.id,
@@ -181,7 +223,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }
 
   const materials = await prisma.courseMaterial.findMany({
-    where: { courseId },
+    where: { courseId, deletedAt: null },
     include: {
       _count: { select: { chunks: true } },
     },

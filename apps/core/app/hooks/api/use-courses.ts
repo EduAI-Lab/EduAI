@@ -10,7 +10,7 @@ export interface Course {
   isActive: boolean
   isPublished: boolean
   aiInstructions: string
-  instructorId: string
+  instructorId: string | null
   department: string | null
   createdAt: string
   updatedAt: string

@@ -617,6 +617,7 @@ export async function updateCourseTopic(
 export async function deleteCourseTopic(
   courseId: string,
   payload: DeleteCourseTopicInput,
+  deletedBy?: string | null,
 ) {
   const parsed = DeleteCourseTopicSchema.safeParse(payload);
 
@@ -636,7 +637,7 @@ export async function deleteCourseTopic(
       ...(topicId ? { id: topicId } : {}),
       ...(name ? { name } : {}),
     },
-    data: { deletedAt: new Date() },
+    data: { deletedAt: new Date(), deletedBy: deletedBy || null },
   });
 
   if (deleteResult.count === 0) {

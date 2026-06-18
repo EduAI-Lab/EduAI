@@ -108,7 +108,9 @@ describe("materials upload → list → delete cycle (#300)", () => {
       context: {} as never,
     });
     expect(deleted.status).toBe(204);
-    expect(await prisma.courseMaterial.findUnique({ where: { id: materialId } })).toBeNull();
+    const deletedMaterial = await prisma.courseMaterial.findUnique({ where: { id: materialId } });
+    expect(deletedMaterial).not.toBeNull();
+    expect(deletedMaterial?.deletedAt).not.toBeNull();
   });
 
   it("STUDENT upload is rejected with 403 (#300)", async () => {

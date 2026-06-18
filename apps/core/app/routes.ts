@@ -23,6 +23,11 @@ export default [
   route("/courses", "routes/courses.tsx"),
   route("/courses/:courseId", "routes/courses.$courseId.tsx"),
   route("/api/courses/:courseId/materials", "routes/api/courses.materials.$.ts"),
+  route(
+    "/api/courses/:courseId/materials/:materialId",
+    "routes/api/courses.materials.$.ts",
+    { id: "routes/api/courses.materials.$:materialId" },
+  ),
   route("/api/courses/:courseId/re-embed", "routes/api/courses.re-embed.$.ts"),
   route("/api/courses/:courseId/re-embed/:jobId", "routes/api/courses.re-embed.$jobId.ts"),
   route("/api/courses/:courseId/embedding-settings", "routes/api/courses.embedding-settings.$.ts"),

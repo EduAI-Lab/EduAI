@@ -18,6 +18,8 @@ export interface CourseMaterial {
   status: 'PROCESSING' | 'READY' | 'FAILED'
   createdAt: string
   chunkCount?: number
+  /** Owner FK — used to gate TA own-only delete (§7). */
+  uploadedBy?: string | null
   chunks?: Array<{ id: string; content: string }>
 }
 
