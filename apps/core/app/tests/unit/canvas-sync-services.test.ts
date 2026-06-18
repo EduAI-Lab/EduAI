@@ -67,6 +67,7 @@ describe("mapCanvasCourseToCoreFields", () => {
     const mapped = mapCanvasCourseToCoreFields({
       id: 7,
       name: "Untitled Course",
+      start_at: "2026-01-06T08:00:00Z",
     });
 
     expect(mapped.code).toBe("Untitled Course");
@@ -82,14 +83,14 @@ describe("mapCanvasCourseToCoreFields", () => {
       term: {
         id: 3,
         name: "2026 W1",
-        start_at: null,
+        start_at: "2026-09-02T07:00:00Z",
         end_at: "2026-12-31T07:00:00Z",
       },
     });
 
     expect(mapped.term).toBe("W1");
     expect(mapped.year).toBe(2026);
-    expect(mapped.startDate).toEqual(new Date("2026-12-31T07:00:00Z"));
+    expect(mapped.startDate).toEqual(new Date("2026-09-02T07:00:00Z"));
     expect(mapped.endDate).toEqual(new Date("2026-12-31T07:00:00Z"));
   });
 
