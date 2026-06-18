@@ -65,8 +65,9 @@ export default function AdminChatPage() {
   const [chatId, setChatId] = useState<string | null>(null);
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
   const [adhdAssist, setAdhdAssist] = useState(false);
-  const { getValidApiKeys } = useApiKeys();
-  const { setAssistive } = useAssistiveUi();
+  const [focusMode, setFocusMode] = useState(false);
+  const [webToolsEnabled] = useState(false);
+  const { assistive, setAssistive } = useAssistiveUi();
 
   useEffect(() => {
     if (!chatId || systemPrompt) {
@@ -86,13 +87,16 @@ export default function AdminChatPage() {
     })();
   }, [chatId, systemPrompt, setAssistive]);
 
-  const handleAssistChange = useCallback(
+  const handleAssistiveChange = useCallback(
     (checked: boolean) => {
       setAdhdAssist(checked);
+      if (!checked) setFocusMode(false);
       setAssistive(checked);
     },
     [setAssistive],
   );
+
+  const { getValidApiKeys } = useApiKeys();
 
   const requestContextRef = useRef({
     selectedModel,
@@ -218,7 +222,11 @@ export default function AdminChatPage() {
           input={input}
           isLoading={isLoading}
           adhdAssist={adhdAssist}
-          onAssistChange={handleAssistChange}
+          assistive={assistive}
+          onAssistiveChange={handleAssistiveChange}
+          focusMode={focusMode}
+          onFocusModeChange={setFocusMode}
+          webToolsEnabled={webToolsEnabled}
           systemPrompt={systemPrompt}
           onSystemPromptSave={handleSystemPromptSave}
           onInputChange={handleInputChange}
