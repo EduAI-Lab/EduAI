@@ -15,6 +15,7 @@ A production-ready chat platform with Retrieval-Augmented Generation (RAG) capab
 
 ## Features
 
+- **Configurable Permissions**: Admins toggle role-based capabilities at runtime from an ADMIN-only page at `/admin/settings` — backed by a `SystemConfig` policy registry and exposed over `GET /api/policies` (service key for the extension apps, ADMIN session for the dashboard). The first flag, `instructors.canCreateCourses`, live-gates instructor course creation in Core and AI Tutor with no redeploy
 - **Admin Invitations**: Admins onboard ADMIN / UNIT_ADMIN / INSTRUCTOR users via emailed one-time accept links (`/admin/invitations`) — the invitee sets a password and lands signed in with the invited role; links can be revoked or re-sent (token rotation)
 - **Multi-Provider AI Support**: Switch between Ollama (local), Google Gemini, and OpenAI with a single configuration change
 - **Retrieval-Augmented Generation**: Ground responses in course materials with source citations to minimize hallucinations
