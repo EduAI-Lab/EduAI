@@ -2,12 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
-import {
-  discoverCanvasMaterials,
-  syncCanvasMaterials,
-  type CanvasMaterialDiscoverItem,
-  type SyncCanvasMaterialsResult,
-} from "~/lib/canvas/client";
+import { discoverCanvasMaterials, syncCanvasMaterials } from "~/lib/canvas/client";
+import type { CanvasMaterialDiscoverItem, SyncCanvasMaterialsResult } from "@eduai/types";
 import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
 import {

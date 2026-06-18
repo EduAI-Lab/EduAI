@@ -1,17 +1,21 @@
 import type {
   CanvasCoursePickerItem,
   CanvasIntegrationPublic,
-  CanvasMaterialDiscoverItem,
   LinkRosterResponse,
+  SyncCanvasCoursesInput,
   SyncCanvasCoursesResult,
-  SyncCanvasMaterialsResult,
 } from "~/lib/canvas/schemas";
+import type {
+  CanvasMaterialDiscoverItem,
+  SyncCanvasMaterialsResult,
+} from "@eduai/types";
 
 export type {
   CanvasCoursePickerItem,
   CanvasIntegrationPublic,
   CanvasMaterialDiscoverItem,
   LinkRosterResponse,
+  SyncCanvasCoursesInput,
   SyncCanvasCoursesResult,
   SyncCanvasMaterialsResult,
 };
@@ -77,9 +81,7 @@ export async function listCanvasCourses(): Promise<CanvasCoursePickerItem[]> {
   return body.data?.courses ?? [];
 }
 
-export async function syncCanvasCourses(input: {
-  canvasCourseIds: string[];
-}): Promise<SyncCanvasCoursesResult> {
+export async function syncCanvasCourses(input: SyncCanvasCoursesInput): Promise<SyncCanvasCoursesResult> {
   const body = await canvasRequest<SyncCanvasCoursesResult>("sync", {
     method: "POST",
     body: JSON.stringify(input),
