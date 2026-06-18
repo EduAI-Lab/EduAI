@@ -3,11 +3,26 @@ import { UnitSchema } from "~/lib/units";
 
 /**
  * Platform roles an admin may issue an invitation for. Deliberately excludes
- * STUDENT (self-registers) and TA (a course-enrollment role, not a platform
- * role — a course TA is a STUDENT user with an EnrollmentRole.TA enrollment).
+ * TA (a course-enrollment role, not a platform role — a course TA is a
+ * STUDENT user with an EnrollmentRole.TA enrollment). STUDENT is included so
+ * admins/unit admins can pre-invite students who'd otherwise self-register.
  */
-export const INVITABLE_ROLES = ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR"] as const;
+export const INVITABLE_ROLES = ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "STUDENT"] as const;
 export type InvitableRole = (typeof INVITABLE_ROLES)[number];
+
+/** Which platform roles each inviter role may issue. */
+export const ROLE_INVITE_MATRIX: Record<string, InvitableRole[]> = {
+  ADMIN: ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "STUDENT"],
+  UNIT_ADMIN: ["INSTRUCTOR", "STUDENT"],
+};
+
+export function getInvitableRoles(role: string | null | undefined): InvitableRole[] {
+  return ROLE_INVITE_MATRIX[role ?? ""] ?? [];
+}
+
+export function canInvite(inviterRole: string | null | undefined, targetRole: InvitableRole): boolean {
+  return getInvitableRoles(inviterRole).includes(targetRole);
+}
 
 export const createInvitationSchema = z
   .object({

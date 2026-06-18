@@ -31,13 +31,13 @@ describe("createInvitationSchema", () => {
     expect(r.success).toBe(true);
   });
 
-  it("rejects TA and STUDENT (not platform-invitable)", () => {
+  it("rejects TA (not platform-invitable; created via enrollment) but accepts STUDENT", () => {
     expect(
       createInvitationSchema.safeParse({ email: "ta@test.local", role: "TA" }).success,
     ).toBe(false);
     expect(
       createInvitationSchema.safeParse({ email: "s@test.local", role: "STUDENT" }).success,
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("requires units for UNIT_ADMIN", () => {
