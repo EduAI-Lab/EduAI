@@ -32,8 +32,12 @@ import { cloneCourseContent, cloneLessonsFromOffering } from '../services/course
 import { calculateCourseProgress } from '../services/progressCalculation.js';
 import { findEduAiCourseById, listEduAiCourses, setCoreCoursePublishState } from '../services/eduaiClient.js';
 import { mapEduAiServiceKeyError } from '../services/eduaiServiceKeyErrors.js';
-import { syncExternalCourseTopics } from '../services/topicSync.js';
 import { syncCourseEnrollments } from '../services/enrollmentSync.js';
+import {
+  importEnrolledCoursesFromCore,
+  importExternalCourseForUser,
+  importTaughtCoursesFromCore,
+} from '../services/importTaughtCoursesService.js';
 
 const router = express.Router();
 
@@ -66,19 +70,22 @@ router.get('/eduai/courses', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
     // (the service key would return the full catalog). Mirrors the import path.
     const courses = await listEduAiCourses({ cookie: req.headers.cookie });
 
-    // Exclude any EduAI course already imported by this instructor
-    // We identify imported ones via CourseOffering.externalId (source id) scoped to the instructor
-    const instructorId = req.user?.id;
+    // Exclude any EduAI course already mirrored into AI Tutor. coreOfferingId is
+    // @unique (one offering per Core course globally), so a hit on either the Core
+    // link or the legacy externalId means the course is already in the system.
     const imported = await prisma.courseOffering.findMany({
       where: {
         externalSource: 'EDUAI',
-        externalId: { not: null },
-        instructors: { some: { userId: instructorId } },
+        OR: [{ coreOfferingId: { not: null } }, { externalId: { not: null } }],
       },
-      select: { externalId: true },
+      select: { coreOfferingId: true, externalId: true },
     });
 
-    const importedIds = new Set(imported.map((c) => c.externalId).filter(Boolean));
+    const importedIds = new Set();
+    for (const row of imported) {
+      if (row.coreOfferingId) importedIds.add(row.coreOfferingId);
+      if (row.externalId) importedIds.add(row.externalId);
+    }
     const filtered = Array.isArray(courses)
       ? courses.filter((c) => c && typeof c.id === 'string' && !importedIds.has(c.id))
       : [];
@@ -108,8 +115,21 @@ router.get('/courses', async (req, res) => {
   }
 
   try {
+    if (authUser.role === 'STUDENT' || authUser.role === 'TA') {
+      try {
+        await importEnrolledCoursesFromCore(authUser, getEduAiCookieForRequest(req));
+      } catch (err) {
+        console.error('[eduai] Core enrollment mirror failed on list', err);
+      }
+    }
+
     if (authUser.role === 'INSTRUCTOR') {
-      // Instructors see all their courses regardless of publish status (no progress)
+      try {
+        await importTaughtCoursesFromCore(authUser, getEduAiCookieForRequest(req));
+      } catch (err) {
+        console.error('[eduai] Core course mirror failed on list', err);
+      }
+
       const courses = await prisma.courseOffering.findMany({
         where: { instructors: { some: { userId: authUser.id } } },
         orderBy: { createdAt: 'desc' },
@@ -222,93 +242,13 @@ router.post('/courses/import-external', requireRole(['INSTRUCTOR', 'UNIT_ADMIN',
       return res.status(403).json({ error: 'CORE_COURSE_NOT_AUTHORIZED' });
     }
 
-    // Check by coreOfferingId (unique) first — catches seeded courses and courses
-    // already imported by another instructor before trying to create a new row.
-    const existingByCoreId = await prisma.courseOffering.findUnique({
-      where: { coreOfferingId: externalCourseId },
-      include: { instructors: { select: { userId: true } } },
-    });
-
-    if (existingByCoreId) {
-      const alreadyInstructor = existingByCoreId.instructors.some((i) => i.userId === instructor.id);
-      if (alreadyInstructor) {
-        return res.status(409).json({ error: 'Course already imported' });
-      }
-      // Link this instructor to the existing course so they can manage it.
-      await prisma.courseInstructor.create({
-        data: { courseOfferingId: existingByCoreId.id, userId: instructor.id, role: 'LEAD' },
-      });
-      // Backfill department if missing (needed for UNIT_ADMIN scoping).
-      if (
-        !existingByCoreId.department &&
-        typeof externalCourse.department === 'string' &&
-        externalCourse.department.trim()
-      ) {
-        await prisma.courseOffering.update({
-          where: { id: existingByCoreId.id },
-          data: { department: externalCourse.department.trim() },
-        });
-      }
-      return res.status(200).json(mapCourseOffering(existingByCoreId));
+    // coreOfferingId is @unique — one AI Tutor offering per Core course regardless of instructor.
+    const { offering, created } = await importExternalCourseForUser(instructor, externalCourse);
+    if (!created) {
+      return res.status(409).json({ error: 'Course already imported' });
     }
 
-    const titleParts = [
-      typeof externalCourse.code === 'string' ? externalCourse.code.trim() : null,
-      typeof externalCourse.name === 'string' ? externalCourse.name.trim() : null,
-    ].filter(Boolean);
-
-    const derivedTitle =
-      titleParts.join(' - ') ||
-      (typeof externalCourse.name === 'string' ? externalCourse.name : null) ||
-      (typeof externalCourse.code === 'string' ? externalCourse.code : null) ||
-      'Imported Course';
-
-    const derivedDescription =
-      typeof externalCourse.description === 'string' && externalCourse.description.trim()
-        ? externalCourse.description
-        : [externalCourse.term, externalCourse.year].filter(Boolean).join(' ') || null;
-
-    const created = await prisma.$transaction(async (tx) => {
-      const offering = await tx.courseOffering.create({
-        data: {
-          title: derivedTitle,
-          description: derivedDescription,
-          externalId: externalCourse.id,
-          externalSource: 'EDUAI',
-          externalMetadata: externalCourse,
-          // Carry the Core department so UNIT_ADMINs (scoped by authorizedUnits)
-          // can see imported offerings in their units.
-          department: typeof externalCourse.department === 'string' ? externalCourse.department : null,
-          // #477: link to the Core offering and mirror its publish state on import.
-          coreOfferingId: externalCourse.id,
-          isPublished: externalCourse.isPublished === true,
-        },
-      });
-
-      await tx.courseInstructor.create({
-        data: {
-          courseOfferingId: offering.id,
-          userId: instructor.id,
-          role: 'LEAD',
-        },
-      });
-
-      return offering;
-    });
-
-    // Sync topics and enrollments from Core concurrently (independent operations)
-    const [topicResult, enrollmentResult] = await Promise.allSettled([
-      syncExternalCourseTopics(created.id),
-      syncCourseEnrollments(created.id),
-    ]);
-    if (topicResult.status === 'rejected') {
-      console.error('[eduai] Failed to sync topics for imported course', topicResult.reason);
-    }
-    if (enrollmentResult.status === 'rejected') {
-      console.error('[eduai] Failed to sync enrollments for imported course', enrollmentResult.reason);
-    }
-
-    res.status(201).json(mapCourseOffering(created));
+    res.status(201).json(mapCourseOffering(offering));
   } catch (error) {
     console.error('[eduai] Failed to import course', error);
     return respondEduAiUpstreamError(res, error, 'Unable to import course');

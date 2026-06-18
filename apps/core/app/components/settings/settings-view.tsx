@@ -1,7 +1,7 @@
 import { Form } from "react-router";
 import { useEffect, useState } from "react";
 
-import { CanvasIntegrationSettings } from "~/components/canvas/CanvasIntegrationSettings";
+import { CanvasIntegrationSettings } from "~/components/canvas/canvas-integration-settings";
 import {
   IconAccessible,
   IconCircleCheck,

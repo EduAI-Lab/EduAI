@@ -13,6 +13,8 @@ import {
   resolveEffectiveEmbeddingSettings,
   validateEmbeddingSettingsUpdate,
 } from "~/lib/ai/embedding";
+import { fireAndForget, logAuditAction } from "~/lib/logging.server";
+import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 
 async function requireManageSession(request: Request) {
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
@@ -76,6 +78,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 
   try {
+  const requestContext = getRequestContext(request);
   const authResult = await requireManageSession(request);
   if ("error" in authResult && authResult.error) return authResult.error;
 
@@ -144,9 +147,48 @@ export async function action({ request, params }: ActionFunctionArgs) {
     );
     const job = await startReEmbedJob(courseId);
     reEmbedJob = serializeReEmbedJob(job);
+
+    // A re-embed started through the settings PATCH must be audited the same way
+    // the dedicated /re-embed route audits it, so this path is not a coverage gap.
+    fireAndForget(
+      logAuditAction({
+        ...getActorContext(authResult.session?.user ?? null),
+        ...requestContext,
+        actionCode: "RE_EMBED_JOB_CREATED",
+        category: "AI_CONFIG",
+        entityType: "ReEmbedJob",
+        entityId: job.id,
+        details: { courseId },
+      }),
+    );
   }
 
   const refreshed = fields;
+
+  // Only audit a real change: a PATCH that resubmits the existing provider/model is a no-op
+  // and must not produce an EMBEDDING_SETTINGS_CHANGED event that didn't actually change anything.
+  const settingsChanged =
+    current.embeddingProvider !== updated.embeddingProvider ||
+    current.embeddingModel !== updated.embeddingModel;
+
+  if (settingsChanged) {
+    fireAndForget(
+      logAuditAction({
+        ...getActorContext(authResult.session?.user ?? null),
+        ...requestContext,
+        actionCode: "EMBEDDING_SETTINGS_CHANGED",
+        category: "AI_CONFIG",
+        entityType: "Course",
+        entityId: courseId,
+        details: {
+          previousProvider: current.embeddingProvider,
+          previousModel: current.embeddingModel,
+          embeddingProvider: updated.embeddingProvider,
+          embeddingModel: updated.embeddingModel,
+        },
+      }),
+    );
+  }
 
   return jsonResponse({
     success: true,

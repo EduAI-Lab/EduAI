@@ -6,6 +6,7 @@ import {
 } from "~/lib/canvas/client.server";
 import { getCanvasIntegrationWithDecryptedKey } from "~/lib/canvas/integration.server";
 import type { CanvasCoursePickerItem } from "~/lib/canvas/schemas";
+import { ubcTermFromDate } from "~/lib/canvas/term.server";
 import prisma from "~/lib/prisma.server";
 
 export class CanvasNotConnectedError extends Error {
@@ -25,17 +26,37 @@ export class InvalidCanvasCourseAccessError extends Error {
   }
 }
 
-/* TODO: Edit this once we know the proper term mapping */
-function termFromDate(date: Date): string {
-  const month = date.getMonth() + 1;
-  if (month >= 1 && month <= 4) return "W1";
-  if (month >= 5 && month <= 8) return "S1";
-  return "W2";
+function parseCanvasIsoDate(value: string | null | undefined): Date | null {
+  if (!value) {
+    return null;
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+/** Course dates from course fields first, then enrollment term start date. */
+export function resolveCanvasCourseDates(canvasCourse: CanvasCourseApi): {
+  startDate: Date;
+  endDate: Date | null;
+} {
+  const term = canvasCourse.term;
+  const startDate =
+    parseCanvasIsoDate(canvasCourse.start_at) ?? parseCanvasIsoDate(term?.start_at);
+
+  if (!startDate) {
+    throw new Error(
+      `Canvas course ${canvasCourse.id} has no start date. Set course dates in Canvas or ensure the course has an enrollment term with a start date.`,
+    );
+  }
+
+  const endDate =
+    parseCanvasIsoDate(canvasCourse.end_at) ?? parseCanvasIsoDate(term?.end_at) ?? null;
+
+  return { startDate, endDate };
 }
 
 export function mapCanvasCourseToCoreFields(canvasCourse: CanvasCourseApi) {
-  const startDate = canvasCourse.start_at ? new Date(canvasCourse.start_at) : new Date();
-  const endDate = canvasCourse.end_at ? new Date(canvasCourse.end_at) : null;
+  const { startDate, endDate } = resolveCanvasCourseDates(canvasCourse);
 
   return {
     externalId: String(canvasCourse.id),
@@ -43,7 +64,7 @@ export function mapCanvasCourseToCoreFields(canvasCourse: CanvasCourseApi) {
     name: canvasCourse.name,
     code: canvasCourse.course_code?.trim() || canvasCourse.name,
     section: "001",
-    term: termFromDate(startDate),
+    term: ubcTermFromDate(startDate),
     year: startDate.getFullYear(),
     startDate,
     endDate,

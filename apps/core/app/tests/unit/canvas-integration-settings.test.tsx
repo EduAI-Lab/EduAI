@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
-import { CanvasIntegrationSettings } from "~/components/canvas/CanvasIntegrationSettings";
+import { CanvasIntegrationSettings } from "~/components/canvas/canvas-integration-settings";
 import {
   connectCanvas,
   disconnectCanvas,

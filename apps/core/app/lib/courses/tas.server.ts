@@ -52,6 +52,12 @@ export async function removeCourseTA(courseId: string, payload: RemoveTAInput) {
   }
 
   const result = await prisma.$transaction(async (tx) => {
+    // Capture the TA record before deletion so the audit log can record the
+    // actual CourseTA id and the TA's name (both gone once the row is removed).
+    const existing = await tx.courseTA.findFirst({
+      where: { courseId, userId: parsed.data.userId },
+      select: { id: true, user: { select: { name: true } } },
+    });
     const deleted = await tx.courseTA.deleteMany({
       where: { courseId, userId: parsed.data.userId },
     });
@@ -61,9 +67,13 @@ export async function removeCourseTA(courseId: string, payload: RemoveTAInput) {
         data: { isActive: false },
       });
     }
-    return deleted;
+    return { count: deleted.count, ta: existing };
   });
 
   if (result.count === 0) return { error: "TA not found for this course" } as const;
-  return { success: true } as const;
+  return {
+    success: true,
+    taId: result.ta?.id ?? null,
+    taName: result.ta?.user?.name ?? null,
+  } as const;
 }
