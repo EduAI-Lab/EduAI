@@ -4,6 +4,8 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router"
 
 import { acceptInvitationSchema, type AcceptInvitationInput } from "~/lib/invitations/schemas"
 import { acceptInvitation, getInvitationByToken } from "~/lib/invitations/service.server"
+import { fireAndForget, logAuditAction } from "~/lib/logging.server"
+import { getActorContext, getRequestContext } from "~/lib/request-context.server"
 
 const ROLE_LABELS: Record<string, string> = {
   ADMIN: "Administrator",
@@ -41,6 +43,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
+  const requestContext = getRequestContext(request);
   const formData = Object.fromEntries(await request.formData());
   const input = {
     token: String(formData.token || ""),
@@ -65,6 +68,26 @@ export async function action({ request }: ActionFunctionArgs) {
   if (!result.ok) {
     return { formError: friendlyError(result.error) };
   }
+
+  // This is the real accept path the invitation page submits to (the /api route is a
+  // headless equivalent). Attribute the event to the newly-created user so the actor
+  // column names them rather than showing "Unknown".
+  fireAndForget(
+    logAuditAction({
+      ...getActorContext({ id: result.user.id, role: result.user.role }),
+      ...requestContext,
+      actionCode: "INVITATION_ACCEPTED",
+      category: "INVITATION",
+      entityType: "Invitation",
+      entityId: result.invitationId,
+      entityLabel: result.user.email,
+      details: {
+        role: result.user.role,
+        email: result.user.email,
+        acceptedUserId: result.user.id,
+      },
+    }),
+  );
 
   return redirect("/dashboard", { headers: result.headers });
 }
