@@ -319,12 +319,13 @@ model CourseMaterial {
   checksum       String
   rawText        String?
   status         MaterialStatus  @default(PROCESSING)
-  externalId     String?
-  externalSource String?
-  uploadedBy     String?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  processedAt    DateTime?
+  externalId        String?
+  externalSource    String?
+  canvasUpdatedAt   DateTime?
+  uploadedBy        String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  processedAt       DateTime?
   course         Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
   uploader       User?           @relation("MaterialUploader", fields: [uploadedBy], references: [id], onDelete: SetNull)
   chunks         MaterialChunk[]

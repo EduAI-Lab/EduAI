@@ -16,3 +16,23 @@ export const ENROLLMENT_ROLE_VALUES = [
   'TA',
   'STUDENT',
 ] as const satisfies readonly EnrollmentRole[]
+
+// Canvas material sync
+export type CanvasMaterialImportStatus = 'not_imported' | 'imported' | 'updated_on_canvas'
+
+export type CanvasMaterialDiscoverItem = {
+  canvasFileId: string
+  displayName: string
+  mimeType: string
+  sizeBytes: number
+  canvasUpdatedAt: string
+  importStatus: CanvasMaterialImportStatus
+  coreMaterialId: string | null
+}
+
+export type SyncCanvasMaterialsResult = {
+  imported: number
+  updated: number
+  skipped: number
+  failed: Array<{ canvasFileId: string; message: string }>
+}
