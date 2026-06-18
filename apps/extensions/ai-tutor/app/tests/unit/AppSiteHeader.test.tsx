@@ -44,9 +44,13 @@ vi.mock('~/lib/api', () => ({
   },
 }));
 
-vi.mock('next-themes', () => ({
-  useTheme: () => ({ resolvedTheme: 'light', setTheme: vi.fn() }),
-}));
+vi.mock('@eduai/ui', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@eduai/ui')>();
+  return {
+    ...actual,
+    useTheme: () => ({ resolvedTheme: 'light', setTheme: vi.fn() }),
+  };
+});
 
 vi.mock('~/components/bug-report/BugReportDialog', () => ({
   BugReportDialog: () => null,
@@ -94,9 +98,9 @@ describe('AppSiteHeader', () => {
     expect(screen.getByRole('link', { name: 'Open EduAI Core' })).toBeInTheDocument();
   });
 
-  it('shows account menu for authenticated users', async () => {
+  it('shows theme toggle in the header', async () => {
     await renderHeader('/student', { id: 'u1', name: 'Student', role: 'STUDENT' });
 
-    expect(screen.getByRole('button', { name: 'Account menu' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Switch to dark mode' })).toBeInTheDocument();
   });
 });

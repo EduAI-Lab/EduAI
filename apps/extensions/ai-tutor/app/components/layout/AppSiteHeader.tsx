@@ -1,22 +1,8 @@
 import { useEffect, useState } from 'react';
-import { useTheme } from 'next-themes';
+import { useTheme } from '@eduai/ui';
+import { IconExternalLink, IconMoon, IconSun } from '@tabler/icons-react';
 import {
-  IconChevronDown,
-  IconExternalLink,
-  IconLogout,
-  IconMoon,
-  IconSun,
-} from '@tabler/icons-react';
-import {
-  Avatar,
   Button,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-  RoleBadge,
   Separator,
   SidebarTrigger,
   Tooltip,
@@ -71,13 +57,17 @@ export type AppSiteHeaderProps = {
   actions?: React.ReactNode;
 };
 
+/**
+ * Top header aligned with EduAI Core `site-header.tsx`:
+ * theme toggle and bug report live in the header; account/sign-out live in the sidebar footer.
+ */
 export function AppSiteHeader({ breadcrumbs, actions }: AppSiteHeaderProps) {
   const [eduAiStatus, setEduAiStatus] = useState<'loading' | 'connected' | 'disconnected'>(
     'loading',
   );
   const [bugReportOpen, setBugReportOpen] = useState(false);
   const [capturingScreenshot, setCapturingScreenshot] = useState(false);
-  const { user, logout } = useLocalUser();
+  const { user } = useLocalUser();
   const { canSubmitBugReport } = useAtPermissions();
   const { captureScreenshot } = useBugReport();
   const { resolvedTheme, setTheme } = useTheme();
@@ -115,6 +105,10 @@ export function AppSiteHeader({ breadcrumbs, actions }: AppSiteHeaderProps) {
     }
   };
 
+  const toggleTheme = () => {
+    setTheme(resolvedTheme === 'dark' ? 'light' : 'dark');
+  };
+
   return (
     <>
       <header className="sticky top-0 z-20 flex h-[var(--header-height)] shrink-0 items-center border-b bg-background">
@@ -133,7 +127,7 @@ export function AppSiteHeader({ breadcrumbs, actions }: AppSiteHeaderProps) {
           ) : (
             <div className="flex-1" />
           )}
-          <div className="ml-auto flex h-full items-center gap-2 sm:gap-3">
+          <div className="ml-auto flex h-full items-center gap-3 sm:gap-4">
             {actions}
             <div className="hidden items-center gap-1 rounded-lg border border-border/60 bg-muted/30 px-1 py-0.5 sm:flex">
               <Button variant="ghost" size="sm" asChild className="h-8 shadow-none">
@@ -145,6 +139,18 @@ export function AppSiteHeader({ breadcrumbs, actions }: AppSiteHeaderProps) {
               <Separator orientation="vertical" className="h-4" />
               <EduAiConnectionDot status={eduAiStatus} />
             </div>
+            <button
+              type="button"
+              onClick={toggleTheme}
+              aria-label={resolvedTheme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {resolvedTheme === 'dark' ? (
+                <IconSun size={18} aria-hidden="true" />
+              ) : (
+                <IconMoon size={18} aria-hidden="true" />
+              )}
+            </button>
             {canReportBug ? (
               <Button
                 type="button"
@@ -152,66 +158,9 @@ export function AppSiteHeader({ breadcrumbs, actions }: AppSiteHeaderProps) {
                 size="sm"
                 onClick={() => void handleOpenBugReport()}
                 disabled={capturingScreenshot}
-                className="hidden sm:inline-flex"
               >
                 {capturingScreenshot ? 'Preparing…' : 'Report Bug'}
               </Button>
-            ) : null}
-            {user ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    type="button"
-                    aria-label="Account menu"
-                    className="flex min-h-[44px] items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <Avatar name={user.name ?? 'User'} size={32} />
-                    <span className="hidden max-w-[7rem] truncate text-sm font-medium xl:inline">
-                      {user.name}
-                    </span>
-                    <IconChevronDown className="hidden h-3.5 w-3.5 text-muted-foreground xl:block" />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuLabel className="p-0 font-normal">
-                    <div className="flex items-center gap-3 px-3 py-2.5">
-                      <Avatar name={user.name ?? 'User'} size={32} />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium">{user.name}</p>
-                        <RoleBadge role={user.role} />
-                      </div>
-                    </div>
-                  </DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  {canReportBug ? (
-                    <>
-                      <DropdownMenuItem
-                        className="sm:hidden"
-                        disabled={capturingScreenshot}
-                        onSelect={() => void handleOpenBugReport()}
-                      >
-                        {capturingScreenshot ? 'Preparing…' : 'Report Bug'}
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator className="sm:hidden" />
-                    </>
-                  ) : null}
-                  <DropdownMenuItem
-                    onSelect={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
-                  >
-                    {resolvedTheme === 'dark' ? (
-                      <IconSun className="h-4 w-4" />
-                    ) : (
-                      <IconMoon className="h-4 w-4" />
-                    )}
-                    {resolvedTheme === 'dark' ? 'Light mode' : 'Dark mode'}
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem variant="destructive" onSelect={() => void logout()}>
-                    <IconLogout className="h-4 w-4" />
-                    Sign out
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
             ) : null}
           </div>
         </div>
