@@ -34,7 +34,7 @@ function parseCanvasIsoDate(value: string | null | undefined): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-/** Course dates from course fields first, then enrollment term dates. Throws if start date cannot be determined. */
+/** Course dates from course fields first, then enrollment term dates, then sync time for start. */
 export function resolveCanvasCourseDates(canvasCourse: CanvasCourseApi): {
   startDate: Date;
   endDate: Date | null;
@@ -42,14 +42,9 @@ export function resolveCanvasCourseDates(canvasCourse: CanvasCourseApi): {
   const term = canvasCourse.term;
   const startDate =
     parseCanvasIsoDate(canvasCourse.start_at) ??
-    parseCanvasIsoDate(term?.start_at);
-
-  if (!startDate) {
-    throw new Error(
-      `Canvas course ${canvasCourse.id} has no start date. Set course dates in Canvas or ensure the course has an enrollment term with a start date.`,
-    );
-  }
-
+    parseCanvasIsoDate(term?.start_at) ??
+    parseCanvasIsoDate(term?.end_at) ??
+    new Date();
   const endDate =
     parseCanvasIsoDate(canvasCourse.end_at) ?? parseCanvasIsoDate(term?.end_at) ?? null;
 
