@@ -3,6 +3,8 @@ export { cn, getInitials } from "./utils"
 
 // ── Theme ──────────────────────────────────────────────────────────────────
 export { ThemeProvider, useTheme } from "./theme-provider"
+export { initThemeSync, broadcastThemeChange, closeThemeSync } from "./lib/theme-sync"
+export type { Theme as ThemeType } from "./lib/theme-sync"
 
 // ── Domain components ──────────────────────────────────────────────────────
 export { RoleBadge } from "./role-badge"
@@ -29,6 +31,8 @@ export { Button, buttonVariants } from "./ui/button"
 export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter, CardAction } from "./ui/card"
 export { Badge, badgeVariants } from "./ui/badge"
 export { Input } from "./ui/input"
+export { Combobox, MultiSelect } from "./ui/combobox"
+export type { ComboboxOption, ComboboxProps, MultiSelectProps } from "./ui/combobox"
 
 // ── shadcn primitives ──────────────────────────────────────────────────────
 export * from "./ui/accordion"

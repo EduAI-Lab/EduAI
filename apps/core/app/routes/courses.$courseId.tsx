@@ -38,10 +38,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     where: { id: courseId },
     include: {
       instructor: { select: { id: true, name: true, email: true } },
-      tas: {
-        include: { user: { select: { id: true, name: true, email: true } } },
-        orderBy: { createdAt: 'asc' },
-      },
     },
   })
 
@@ -82,8 +78,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
           select: { id: true, name: true, email: true },
           orderBy: { name: 'asc' },
         }),
+        // TA candidates are STUDENT-platform users; assigning one creates an
+        // Enrollment(role=TA). There is no platform-level TA role anymore.
         prisma.user.findMany({
-          where: { role: 'TA', isActive: true },
+          where: { role: 'STUDENT', isActive: true },
           select: { id: true, name: true, email: true },
           orderBy: { name: 'asc' },
         }),
@@ -108,7 +106,7 @@ export default function CourseDetailPage() {
   const revalidator = useRevalidator()
   const { topics, createTopic, deleteTopic } = useCourseTopics(course.id)
   const { enrollments } = useCourseEnrollments(course.id)
-  const { materials, uploadMaterial } = useCourseMaterials(course.id)
+  const { materials, uploadMaterial, refetch: refetchMaterials } = useCourseMaterials(course.id)
   const { tas, addTA, removeTA } = useCourseTAs(course.id)
   const { getValidApiKeys } = useApiKeys()
   const [isUploading, setIsUploading] = useState(false)
@@ -136,6 +134,7 @@ export default function CourseDetailPage() {
     status: m.status,
     createdAt: m.createdAt,
     chunkCount: m.chunkCount,
+    uploadedBy: m.uploadedBy ?? null,
   }))
 
   const handleFileSelect = async (file: File) => {
@@ -202,7 +201,9 @@ export default function CourseDetailPage() {
                 onAssignInstructor={handleAssignInstructor}
                 onAddTA={addTA}
                 onRemoveTA={removeTA}
+                onRefreshMaterials={refetchMaterials}
                 courseId={course.id}
+                currentUserId={user.id}
               />
             ) : access === 'ta' ? (
               <CourseDetailTaView
@@ -214,6 +215,8 @@ export default function CourseDetailPage() {
                 materialsSuccess={materialsSuccess}
                 onFileSelect={handleFileSelect}
                 courseId={course.id}
+                currentUserId={user.id}
+                onRefreshMaterials={refetchMaterials}
               />
             ) : (
               <CourseDetailStudentView
