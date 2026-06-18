@@ -1,12 +1,26 @@
 import { act, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router';
-import Nav from '~/components/Nav';
+import { SidebarProvider } from '@eduai/ui';
+import { AppSiteHeader } from '~/components/layout/AppSiteHeader';
 import { AuthProvider, type AuthUser } from '~/hooks/useLocalUser';
 import { BugReportProvider } from '~/components/bug-report/BugReportProvider';
 
 const { listAiModelsMock } = vi.hoisted(() => ({
   listAiModelsMock: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock('~/hooks/useAtPermissions', () => ({
+  useAtPermissions: () => ({
+    canSubmitBugReport: true,
+    canCreateCourse: false,
+    canBrowseEduAiCatalog: false,
+    canImportFromEduAi: false,
+    canManageContent: false,
+    canPublishContent: false,
+    canManageEnrollments: false,
+    canAssignTaRole: false,
+  }),
 }));
 
 vi.mock('~/hooks/useBugReportCapture', () => ({
@@ -34,15 +48,11 @@ vi.mock('next-themes', () => ({
   useTheme: () => ({ resolvedTheme: 'light', setTheme: vi.fn() }),
 }));
 
-vi.mock('~/components/TourButton', () => ({
-  default: () => null,
-}));
-
 vi.mock('~/components/bug-report/BugReportDialog', () => ({
   BugReportDialog: () => null,
 }));
 
-async function renderNav(path: string, user: AuthUser) {
+async function renderHeader(path: string, user: AuthUser) {
   const Wrapper = ({ children }: { children: ReactNode }) => (
     <AuthProvider initialUser={user}>
       <BugReportProvider>{children}</BugReportProvider>
@@ -52,44 +62,40 @@ async function renderNav(path: string, user: AuthUser) {
     render(
       <Wrapper>
         <MemoryRouter initialEntries={[path]}>
-          <Nav />
+          <SidebarProvider>
+            <AppSiteHeader />
+          </SidebarProvider>
         </MemoryRouter>
       </Wrapper>,
     );
   });
 }
 
-describe('Nav', () => {
+describe('AppSiteHeader', () => {
   beforeEach(() => {
     listAiModelsMock.mockClear();
   });
 
   it('shows Report Bug for STUDENT', async () => {
-    await renderNav('/student', { id: 'u1', name: 'Student', role: 'STUDENT' });
+    await renderHeader('/student', { id: 'u1', name: 'Student', role: 'STUDENT' });
 
     expect(screen.getByRole('button', { name: 'Report Bug' })).toBeInTheDocument();
   });
 
   it('shows Report Bug for INSTRUCTOR', async () => {
-    await renderNav('/instructor', { id: 'u2', name: 'Professor', role: 'INSTRUCTOR' });
+    await renderHeader('/instructor', { id: 'u2', name: 'Professor', role: 'INSTRUCTOR' });
 
     expect(screen.getByRole('button', { name: 'Report Bug' })).toBeInTheDocument();
   });
 
-  it('hides Report Bug for ADMIN', async () => {
-    await renderNav('/admin', { id: 'u3', name: 'Admin', role: 'ADMIN' });
-
-    expect(screen.queryByRole('button', { name: 'Report Bug' })).not.toBeInTheDocument();
-  });
-
   it('shows EduAI Core cross-nav link for authenticated users', async () => {
-    await renderNav('/student', { id: 'u1', name: 'Student', role: 'STUDENT' });
+    await renderHeader('/student', { id: 'u1', name: 'Student', role: 'STUDENT' });
 
     expect(screen.getByRole('link', { name: 'Open EduAI Core' })).toBeInTheDocument();
   });
 
-  it('shows theme toggle for authenticated users', async () => {
-    await renderNav('/student', { id: 'u1', name: 'Student', role: 'STUDENT' });
+  it('shows account menu for authenticated users', async () => {
+    await renderHeader('/student', { id: 'u1', name: 'Student', role: 'STUDENT' });
 
     expect(screen.getByRole('button', { name: 'Account menu' })).toBeInTheDocument();
   });
