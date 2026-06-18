@@ -1,6 +1,5 @@
 import { useNavigate } from 'react-router';
-import { IconDotsVertical, IconLogout, IconMoon, IconSun } from '@tabler/icons-react';
-import { useTheme } from 'next-themes';
+import { IconDotsVertical, IconLogout } from '@tabler/icons-react';
 import {
   Avatar,
   DropdownMenu,
@@ -23,11 +22,14 @@ type AiTutorSidebarUserProps = {
   user: User;
 };
 
+/**
+ * Sidebar footer user menu — matches EduAI Core `nav-user.tsx`:
+ * profile in the sidebar; sign out in the kebab dropdown (not in the header).
+ */
 export function AiTutorSidebarUser({ user }: AiTutorSidebarUserProps) {
   const { isMobile } = useSidebar();
   const { logout } = useLocalUser();
   const navigate = useNavigate();
-  const { resolvedTheme, setTheme } = useTheme();
 
   const handleLogout = async () => {
     await logout();
@@ -45,13 +47,17 @@ export function AiTutorSidebarUser({ user }: AiTutorSidebarUserProps) {
             >
               <Avatar name={user.name ?? 'User'} size={32} />
               <div className="min-w-0 flex-1 text-left leading-tight">
-                <div className="flex min-w-0 items-center gap-1">
+                <div className="flex min-w-0 items-center gap-[5px]">
                   <span className="truncate text-sm font-medium">{user.name}</span>
                   <RoleBadge role={user.role} />
                 </div>
                 <span className="block truncate text-xs text-sidebar-foreground/50">{user.email}</span>
               </div>
-              <IconDotsVertical className="ml-auto size-3.5 shrink-0 opacity-50" />
+              <IconDotsVertical
+                size={14}
+                strokeWidth={1.75}
+                className="ml-auto shrink-0 text-sidebar-foreground/50"
+              />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent
@@ -61,24 +67,17 @@ export function AiTutorSidebarUser({ user }: AiTutorSidebarUserProps) {
             sideOffset={4}
           >
             <DropdownMenuLabel className="p-0 font-normal">
-              <div className="flex items-center gap-2 px-3 py-2.5">
+              <div className="flex items-center gap-2 px-3 py-2.5 text-left">
                 <Avatar name={user.name ?? 'User'} size={32} />
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{user.name}</p>
-                  <RoleBadge role={user.role} />
+                <div className="min-w-0 flex-1 leading-tight">
+                  <span className="block truncate text-sm font-medium">{user.name}</span>
+                  <span className="block truncate text-xs text-muted-foreground">{user.email}</span>
                 </div>
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onSelect={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
-            >
-              {resolvedTheme === 'dark' ? <IconSun className="size-4" /> : <IconMoon className="size-4" />}
-              {resolvedTheme === 'dark' ? 'Light mode' : 'Dark mode'}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" onSelect={() => void handleLogout()}>
-              <IconLogout className="size-4" />
+              <IconLogout size={15} strokeWidth={1.75} />
               Sign out
             </DropdownMenuItem>
           </DropdownMenuContent>
