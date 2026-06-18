@@ -63,9 +63,9 @@ export type CanvasModuleApi = {
 };
 
 const MOCK_CANVAS_COURSES: CanvasCourseApi[] = [
-  { id: 1, name: "Introduction to Computer Science", course_code: "COSC 101" },
-  { id: 2, name: "Data Structures and Algorithms", course_code: "COSC 201" },
-  { id: 3, name: "Machine Architecture", course_code: "COSC 211" },
+  { id: 1, name: "Introduction to Computer Science", course_code: "COSC 101", start_at: "2026-01-06T08:00:00Z", end_at: "2026-04-30T23:59:59Z" },
+  { id: 2, name: "Data Structures and Algorithms", course_code: "COSC 201", start_at: "2026-01-06T08:00:00Z", end_at: "2026-04-30T23:59:59Z" },
+  { id: 3, name: "Machine Architecture", course_code: "COSC 211", start_at: "2026-01-06T08:00:00Z", end_at: "2026-04-30T23:59:59Z" },
 ];
 
 const MOCK_CANVAS_ROSTER: Record<number, CanvasCourseUserApi[]> = {
