@@ -3,6 +3,7 @@ import {
   IconBooks,
   IconBrain,
   IconDashboard,
+  IconFileText,
   IconListCheck,
   IconMessageChatbot,
   IconReport,
@@ -45,6 +46,7 @@ const NAV_ICONS: Record<NavItemKey, Icon> = {
   "admin-ai": IconBrain,
   "admin-bugs": IconReport,
   "admin-invites": IconMail,
+  "admin-logs": IconFileText,
   settings: IconSettings,
   "ai-tutor": IconMessageChatbot,
 }

@@ -2,6 +2,7 @@ import { Card, CardContent } from '@eduai/ui';
 import { Tooltip } from '@/components/ui/tooltip';
 import { GraduationCap, Plus } from 'lucide-react';
 import { Course } from '@/types/question';
+import { formatCourseTermYear } from '@/utils/courseDisplay';
 
 export type CoursesGridProps = {
   courses: Course[];
@@ -60,6 +61,11 @@ export function CoursesGrid({
                 </div>
                 {course.code && (
                   <p className="text-sm text-muted-foreground mt-1">{course.code}</p>
+                )}
+                {formatCourseTermYear(course) && (
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {formatCourseTermYear(course)}
+                  </p>
                 )}
                 {showDepartment && course.department && (
                   <p className="text-xs text-muted-foreground mt-1">

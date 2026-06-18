@@ -18,6 +18,8 @@ import {
   listBugReports,
   updateBugReportStatus,
 } from "~/lib/bug-reports/server";
+import { fireAndForget, logAuditAction, logSecurityEvent } from "~/lib/logging.server";
+import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -27,17 +29,33 @@ function json(status: number, body: unknown) {
 }
 
 async function requireAdmin(request: Request) {
+  const requestContext = getRequestContext(request);
+
+  // Records an admin-only access rejection so security triage can spot probing of the bug-report API.
+  const logAdminDenied = (actor: { id: string; role?: string | null } | null) =>
+    fireAndForget(
+      logSecurityEvent({
+        ...getActorContext(actor),
+        ...requestContext,
+        actionCode: "ADMIN_ACCESS_DENIED",
+        outcome: "DENIED",
+        entityType: "BugReport",
+      }),
+    );
+
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
-  if (apiKeyGuard) return { response: apiKeyGuard };
+  if (apiKeyGuard) return { response: apiKeyGuard, session: null };
 
   const session = apiKeySession ?? (await auth.api.getSession(request));
   if (!session?.user) {
-    return { response: json(401, { error: "Unauthorized" }) };
+    logAdminDenied(null);
+    return { response: json(401, { error: "Unauthorized" }), session: null };
   }
   if (session.user.role !== "ADMIN") {
-    return { response: json(403, { error: "Forbidden" }) };
+    logAdminDenied(session.user);
+    return { response: json(403, { error: "Forbidden" }), session: null };
   }
-  return { response: null };
+  return { response: null, session };
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -77,8 +95,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
     return json(405, { error: "Method not allowed" });
   }
 
-  const { response } = await requireAdmin(request);
+  const { response, session } = await requireAdmin(request);
   if (response) return response;
+
+  const requestContext = getRequestContext(request);
 
   const reportId = params.id;
   if (!reportId) {
@@ -97,6 +117,18 @@ export async function action({ request, params }: ActionFunctionArgs) {
   if (!result) {
     return json(404, { error: "REPORT_NOT_FOUND" });
   }
+
+  fireAndForget(
+    logAuditAction({
+      ...getActorContext(session?.user ?? null),
+      ...requestContext,
+      actionCode: "BUG_REPORT_STATUS_CHANGED",
+      category: "BUG_REPORT",
+      entityType: "BugReport",
+      entityId: reportId,
+      details: { status: body.status },
+    }),
+  );
 
   return json(200, result);
 }

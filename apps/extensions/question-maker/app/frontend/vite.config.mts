@@ -16,6 +16,9 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [tailwindcss(), react(), tsconfigPaths()],
+    css: {
+      devSourcemap: false,
+    },
     resolve: {
       alias: {
         '@': path.resolve(frontendDir, './src'),

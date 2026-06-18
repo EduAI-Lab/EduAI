@@ -10,7 +10,7 @@ import {
 } from "@eduai/ui"
 
 import { AppSidebar } from "~/components/app-sidebar";
-import { CanvasDashboardCard } from "~/components/canvas/CanvasDashboardCard";
+import { CanvasDashboardCard } from "~/components/canvas/canvas-dashboard-card";
 import { DashboardAdminView } from "~/components/dashboard/dashboard-admin-view";
 import { DashboardInstructorView } from "~/components/dashboard/dashboard-instructor-view";
 import { DashboardStudentView } from "~/components/dashboard/dashboard-student-view";
