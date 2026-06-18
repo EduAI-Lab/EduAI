@@ -113,7 +113,7 @@ export async function runAdminWriteTool(
     return mutationFailure(result as ToolError & Record<string, unknown>);
   }
   if (!succeeded) {
-    return mutationFailure({ error: "WRITE_FAILED", ...result });
+    return mutationFailure({ ...result, error: "WRITE_FAILED" });
   }
   return result;
 }
