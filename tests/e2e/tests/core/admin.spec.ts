@@ -170,28 +170,29 @@ test.describe('Core invitation flow', () => {
       const token = new URL(acceptUrl).searchParams.get('token');
       expect(token).toBeTruthy();
 
-      // Validate the token via GET (the accept page fetches this)
+      // Validate the token by loading the accept page (GET renders it with the
+      // invitee's email pre-filled and their invited role shown).
       const validateRes = await inviteeCtx.get(
-        `${CORE_URL}/api/invitations/accept?token=${encodeURIComponent(token!)}`,
+        `${CORE_URL}/auth/accept-invitation?token=${encodeURIComponent(token!)}`,
       );
       expect(validateRes.status()).toBe(200);
-      const { email: validatedEmail, role: validatedRole } = await validateRes.json();
-      expect(validatedEmail).toBe(inviteeEmail);
-      expect(validatedRole).toBe('INSTRUCTOR');
+      const validatePage = await validateRes.text();
+      expect(validatePage).toContain(inviteeEmail);
+      expect(validatePage).toContain('Instructor');
 
-      // Accept the invitation — creates the account and signs in
-      const acceptRes = await inviteeCtx.post(`${CORE_URL}/api/invitations/accept`, {
-        data: {
-          token,
+      // Accept the invitation — the page action creates the account, signs the
+      // user in, and redirects to the dashboard.
+      const acceptRes = await inviteeCtx.post(`${CORE_URL}/auth/accept-invitation`, {
+        form: {
+          token: token!,
           name: 'Invited Instructor',
           password: DEFAULT_PASSWORD,
           confirmPassword: DEFAULT_PASSWORD,
         },
+        maxRedirects: 0,
       });
-      expect(acceptRes.status()).toBe(201);
-      const { user: acceptedUser } = await acceptRes.json();
-      expect(acceptedUser.role).toBe('INSTRUCTOR');
-      expect(acceptedUser.email).toBe(inviteeEmail);
+      expect(acceptRes.status()).toBe(302);
+      expect(acceptRes.headers()['location']).toBe('/dashboard');
 
       // Invitee signs in and their session reflects INSTRUCTOR
       await signOut(inviteeCtx);
@@ -237,17 +238,22 @@ test.describe('Core invitation flow', () => {
       const { acceptUrl } = await createRes.json();
       const token = new URL(acceptUrl).searchParams.get('token')!;
 
-      // First accept succeeds
-      const firstAccept = await inviteeCtx.post(`${CORE_URL}/api/invitations/accept`, {
-        data: { token, name: 'First Accept', password: DEFAULT_PASSWORD, confirmPassword: DEFAULT_PASSWORD },
+      // First accept succeeds and redirects to the dashboard.
+      const firstAccept = await inviteeCtx.post(`${CORE_URL}/auth/accept-invitation`, {
+        form: { token, name: 'First Accept', password: DEFAULT_PASSWORD, confirmPassword: DEFAULT_PASSWORD },
+        maxRedirects: 0,
       });
-      expect(firstAccept.status()).toBe(201);
+      expect(firstAccept.status()).toBe(302);
+      expect(firstAccept.headers()['location']).toBe('/dashboard');
 
-      // Second accept with the same token must fail (user already exists)
-      const secondAccept = await secondCtx.post(`${CORE_URL}/api/invitations/accept`, {
-        data: { token, name: 'Second Accept', password: DEFAULT_PASSWORD, confirmPassword: DEFAULT_PASSWORD },
+      // Second accept with the same token must fail — the account now exists, so
+      // the page re-renders with a friendly error instead of redirecting.
+      const secondAccept = await secondCtx.post(`${CORE_URL}/auth/accept-invitation`, {
+        form: { token, name: 'Second Accept', password: DEFAULT_PASSWORD, confirmPassword: DEFAULT_PASSWORD },
+        maxRedirects: 0,
       });
-      expect([400, 409, 410]).toContain(secondAccept.status());
+      expect(secondAccept.status()).toBe(200);
+      expect(await secondAccept.text()).toMatch(/already exists/i);
     } finally {
       await adminCtx.dispose();
       await inviteeCtx.dispose();
