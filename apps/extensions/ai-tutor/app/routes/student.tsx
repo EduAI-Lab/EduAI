@@ -30,10 +30,12 @@ export default function StudentHome({ loaderData }: Route.ComponentProps) {
       <div className="space-y-6">
         {user ? <AtRoleBanner role={user.role} variant="student" /> : null}
 
-        <PageHeading
-          heading="My courses"
-          subheading="Continue where you left off or explore new learning materials."
-        />
+        <div data-tour="student-dashboard-header">
+          <PageHeading
+            heading="My courses"
+            subheading="Continue where you left off or explore new learning materials."
+          />
+        </div>
 
         <DashboardStatGrid stats={stats} />
 
