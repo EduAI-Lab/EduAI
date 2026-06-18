@@ -936,7 +936,7 @@ async function seedUsers() {
     id: string;
     email: string;
     name: string;
-    role: 'ADMIN' | 'INSTRUCTOR' | 'TA' | 'STUDENT' | 'UNIT_ADMIN';
+    role: 'ADMIN' | 'INSTRUCTOR' | 'STUDENT' | 'UNIT_ADMIN';
     authorizedUnits?: string[];
     studentNumber?: string;
   };
@@ -951,8 +951,10 @@ async function seedUsers() {
     { id: u.instructorMath, email: 'instructor.math@eduai.local', name: 'Dr. Emmy Noether', role: 'INSTRUCTOR' },
     { id: u.instructorSci, email: 'instructor.sci@eduai.local', name: 'Dr. Marie Curie', role: 'INSTRUCTOR' },
     { id: u.instructorHum, email: 'instructor.hum@eduai.local', name: 'Dr. Hannah Arendt', role: 'INSTRUCTOR' },
-    { id: u.taCS, email: 'ta.cs@eduai.local', name: 'Sam Carter', role: 'TA' },
-    { id: u.taMath, email: 'ta.math@eduai.local', name: 'Riley Chen', role: 'TA' },
+    // TAs are STUDENT-platform users; their TA status is the Enrollment(role=TA)
+    // created from course.taIds below.
+    { id: u.taCS, email: 'ta.cs@eduai.local', name: 'Sam Carter', role: 'STUDENT' },
+    { id: u.taMath, email: 'ta.math@eduai.local', name: 'Riley Chen', role: 'STUDENT' },
     { id: u.student1, email: 'student1@eduai.local', name: 'Alex Patel', role: 'STUDENT', studentNumber: sn.student1 },
     { id: u.student2, email: 'student2@eduai.local', name: 'Brooke Kim', role: 'STUDENT', studentNumber: sn.student2 },
     { id: u.student3, email: 'student3@eduai.local', name: 'Cameron Lee', role: 'STUDENT', studentNumber: sn.student3 },

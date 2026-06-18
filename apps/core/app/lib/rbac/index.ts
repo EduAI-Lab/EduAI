@@ -23,4 +23,4 @@ export {
   canManageTopics,
   isStudentAccess,
 } from './permissions'
-export { getNavForUser, getNavSecondaryForUser, usesGlobalChat } from './nav'
+export { getNavForUser, getNavSecondaryForUser } from './nav'

@@ -43,7 +43,6 @@ model User {
   invitationsSent           Invitation[]         @relation("InvitationsSent")
   invitationAccepted        Invitation[]         @relation("InvitationAccepted")
   taughtCourses             Course[]             @relation("CourseInstructor")
-  courseTAs                 CourseTA[]
 
   @@map("user")
 }
@@ -130,7 +129,6 @@ model Course {
   aiInteractions AIInteraction[]
   chats          Chat[]           @relation("CourseChats")
   enrollments    Enrollment[]
-  tas                 CourseTA[]
   canvasRosterMembers CanvasRosterMember[]
   materials           CourseMaterial[]
   reEmbedJobs    CourseReEmbedJob[]
@@ -178,18 +176,6 @@ model Enrollment {
   @@index([userId])
   @@index([externalSource, externalId])
   @@map("enrollments")
-}
-
-model CourseTA {
-  id        String   @id @default(cuid())
-  courseId  String
-  userId    String
-  createdAt DateTime @default(now())
-  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([courseId, userId])
-  @@map("course_tas")
 }
 
 model AIInteraction {
@@ -321,6 +307,11 @@ model CourseMaterial {
   externalId     String?
   externalSource String?
   uploadedBy     String?
+  /// Soft-delete marker. Non-null = removed in EduAI; deletes are ONE-WAY (never
+  /// propagated upstream to Canvas). Reads must filter `deletedAt: null`; Canvas
+  /// re-sync skips rows with deletedAt set. Lets extensions detect removals.
+  deletedAt      DateTime?
+  deletedBy      String?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
   processedAt    DateTime?
@@ -331,6 +322,7 @@ model CourseMaterial {
   @@unique([courseId, checksum])
   @@index([externalSource, externalId])
   @@index([uploadedBy])
+  @@index([courseId, deletedAt])
   @@map("course_materials")
 }
 
@@ -339,7 +331,10 @@ model CourseTopic {
   courseId        String
   name            String
   createdBy       String?
+  /// Soft-delete marker — see CourseMaterial.deletedAt. One-way (EduAI only),
+  /// never propagated to Canvas. Reads filter `deletedAt: null`.
   deletedAt       DateTime?
+  deletedBy       String?
   createdAt       DateTime                 @default(now())
   updatedAt       DateTime                 @updatedAt
   course          Course                   @relation(fields: [courseId], references: [id], onDelete: Cascade)
@@ -349,6 +344,7 @@ model CourseTopic {
 
   @@unique([courseId, name])
   @@index([createdBy])
+  @@index([courseId, deletedAt])
   @@map("course_topics")
 }
 
@@ -577,7 +573,6 @@ enum UserRole {
   ADMIN
   UNIT_ADMIN
   INSTRUCTOR
-  TA
   STUDENT
 }
 

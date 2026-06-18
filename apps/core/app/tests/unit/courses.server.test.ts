@@ -171,7 +171,7 @@ describe("deleteCourseTopic", () => {
     expect(prismaMock.courseTopic.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { courseId: "c1", deletedAt: null, id: "t1" },
-        data: { deletedAt: expect.any(Date) },
+        data: { deletedAt: expect.any(Date), deletedBy: null },
       }),
     );
   });
