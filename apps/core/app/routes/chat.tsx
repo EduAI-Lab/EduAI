@@ -29,6 +29,11 @@ import {
 import { getUserPreference, saveUserPreference } from "~/lib/user-preferences.server";
 import { getAccessibleCourseCodes } from "~/lib/courses/server";
 import { parsePreferenceUpdates, resolveSelectedCourse } from "~/lib/user-preferences";
+import {
+  buildChatExportFilename,
+  buildChatExportHtml,
+  downloadChatExportHtml,
+} from "~/lib/chat-export";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request);
@@ -308,6 +313,44 @@ export default function Chat() {
     }
   };
 
+  const handleExportChat = useCallback(() => {
+    if (messages.length === 0) {
+      return;
+    }
+
+    const exportedAt = new Date();
+    const answeredByLabels = Object.fromEntries(
+      messages
+        .filter((message) => message.role === "assistant")
+        .map((message) => {
+          const routedRegistryId =
+            routedModelByMessageId[message.id] ?? null;
+          const answeredByLabel =
+            isAutoRoutingModelId(selectedModel) && routedRegistryId
+              ? displayNameForRegistryId(routedRegistryId, chatModels)
+              : undefined;
+          return [message.id, answeredByLabel];
+        }),
+    );
+
+    const html = buildChatExportHtml({
+      messages,
+      exportedAt,
+      modelName: selectedModelInfo?.name,
+      answeredByLabels,
+    });
+    downloadChatExportHtml(
+      html,
+      buildChatExportFilename({ exportedAt }),
+    );
+  }, [
+    messages,
+    routedModelByMessageId,
+    selectedModel,
+    chatModels,
+    selectedModelInfo,
+  ]);
+
   const handlePromptSelect = (prompt: string) => {
     // Create proper synthetic events
     const inputEvent = {
@@ -346,6 +389,8 @@ export default function Chat() {
               onAdhdAssistChange={handleAssistChange}
               systemPrompt={systemPrompt}
               onSystemPromptSave={handleSystemPromptSave}
+              canExportChat={messages.length > 0}
+              onExportChat={handleExportChat}
             />
           }
         />

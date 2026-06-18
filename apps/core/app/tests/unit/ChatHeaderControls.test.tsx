@@ -34,4 +34,22 @@ describe("ChatHeaderControls", () => {
     render(<ChatHeaderControls {...defaultProps} />);
     expect(screen.getByRole("button", { name: /system prompt/i })).toBeInTheDocument();
   });
+
+  it("renders a disabled export button when there is nothing to export", () => {
+    render(<ChatHeaderControls {...defaultProps} />);
+    expect(screen.getByRole("button", { name: /export chat as html/i })).toBeDisabled();
+  });
+
+  it("calls onExportChat when export is enabled", () => {
+    const onExportChat = vi.fn();
+    render(
+      <ChatHeaderControls
+        {...defaultProps}
+        canExportChat={true}
+        onExportChat={onExportChat}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /export chat as html/i }));
+    expect(onExportChat).toHaveBeenCalledTimes(1);
+  });
 });

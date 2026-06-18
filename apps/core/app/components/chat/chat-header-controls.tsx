@@ -1,4 +1,6 @@
+import { Download } from "lucide-react";
 import { SystemPromptSettings } from "~/components/chat/system-prompt-settings";
+import { Button } from "~/components/ui/button";
 import { Switch } from "~/components/ui/switch";
 import { Label } from "~/components/ui/label";
 
@@ -7,6 +9,8 @@ export interface ChatHeaderControlsProps {
   onAdhdAssistChange: (checked: boolean) => void;
   systemPrompt: string | null;
   onSystemPromptSave: (prompt: string | null) => void;
+  canExportChat?: boolean;
+  onExportChat?: () => void;
 }
 
 export function ChatHeaderControls({
@@ -14,6 +18,8 @@ export function ChatHeaderControls({
   onAdhdAssistChange,
   systemPrompt,
   onSystemPromptSave,
+  canExportChat = false,
+  onExportChat,
 }: ChatHeaderControlsProps) {
   return (
     <div className="flex h-full items-center gap-3 sm:gap-4">
@@ -32,6 +38,17 @@ export function ChatHeaderControls({
         systemPrompt={systemPrompt}
         onSave={onSystemPromptSave}
       />
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={!canExportChat}
+        onClick={onExportChat}
+        aria-label="Export chat as HTML"
+      >
+        <Download className="h-4 w-4" />
+        Export
+      </Button>
     </div>
   );
 }
