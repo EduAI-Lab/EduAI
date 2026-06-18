@@ -30,17 +30,24 @@ import {
   setSystemSetting,
 } from '../services/systemSettings.js';
 import { getAiModelPolicyState, setAiModelPolicy } from '../services/aiModelPolicy.js';
-import { mapAdminUser, mapCourseOffering } from '../utils/mappers.js';
+import { mapCoreAdminUser, mapCourseOffering } from '../utils/mappers.js';
 import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
 import { syncCourseEnrollments } from '../services/enrollmentSync.js';
-import { listEduAiCourseEnrollmentsServiceKey } from '../services/eduaiClient.js';
+import { listCoreAdminUsers, listEduAiCourseEnrollmentsServiceKey } from '../services/eduaiClient.js';
 
 const router = express.Router();
 
 
-router.get('/admin/users', requireRole('ADMIN'), async (_req, res) => {
-  // User records live in Core; the AT schema has no local User table post-auth-migration.
-  res.json([]);
+router.get('/admin/users', requireRole('ADMIN'), async (req, res) => {
+  try {
+    const cookie = req.headers.cookie ?? '';
+    const users = await listCoreAdminUsers(cookie);
+    const rows = Array.isArray(users) ? users : [];
+    res.json(rows.map(mapCoreAdminUser));
+  } catch (e) {
+    const status = typeof e?.status === 'number' ? e.status : 500;
+    res.status(status).json({ error: String(e.message ?? e) });
+  }
 });
 
 /**
