@@ -198,29 +198,13 @@ describe('Courses routes', () => {
   // ── POST /api/courses ─────────────────────────────────────────────
 
   describe('POST /api/courses', () => {
-    it('creates a new course with instructor assignment', async () => {
+    it('returns 403 — course creation is managed in EduAI Core (#632)', async () => {
       const res = await request(profApp)
         .post('/api/courses')
         .send({ title: 'New Course', description: 'A brand new course' });
 
-      expect(res.status).toBe(201);
-      expect(res.body.title).toBe('New Course');
-
-      // Verify the instructor assignment was created
-      const assignment = await prisma.courseInstructor.findFirst({
-        where: { courseOfferingId: res.body.id, userId: prof.id },
-      });
-      expect(assignment).not.toBeNull();
-      expect(assignment.role).toBe('LEAD');
-    });
-
-    it('returns 400 without title', async () => {
-      const res = await request(profApp)
-        .post('/api/courses')
-        .send({ description: 'No title provided' });
-
-      expect(res.status).toBe(400);
-      expect(res.body.error).toMatch(/title/i);
+      expect(res.status).toBe(403);
+      expect(res.body.error).toMatch(/EduAI Core/i);
     });
   });
 

@@ -331,81 +331,14 @@ router.get('/courses/:courseId', async (req, res) => {
 });
 
 /**
- * POST /courses — create a native course, optionally cloning content from another.
- *
- * Auth: INSTRUCTOR; if `sourceCourseId` is given the caller must instruct it.
- * Side effects: creates CourseOffering + CourseInstructor; if cloning, deep-
- *   copies modules/lessons/activities via `cloneCourseContent`.
- *
- * Why: clone path lets instructors duplicate a previous term's course without
- * re-importing from EduAI or rebuilding lessons by hand.
+ * POST /courses — deprecated (#632). Course creation is owned by EduAI Core.
+ * Always returns 403 so legacy clients cannot create offerings locally.
  */
-router.post('/courses', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
-  const authUser = req.user;
-  const { title, description, sourceCourseId, startDate, endDate, department } = req.body || {};
-
-  if (!title) {
-    return res.status(400).json({ error: 'title is required' });
-  }
-
-  const numericSourceCourseId =
-    typeof sourceCourseId === 'number' || typeof sourceCourseId === 'string'
-      ? Number(sourceCourseId)
-      : null;
-
-  if (numericSourceCourseId !== null && !Number.isFinite(numericSourceCourseId)) {
-    return res.status(400).json({ error: 'Invalid sourceCourseId' });
-  }
-
-  try {
-    if (numericSourceCourseId !== null) {
-      const sourceCourse = await prisma.courseOffering.findUnique({
-        where: { id: numericSourceCourseId },
-        include: { instructors: { select: { userId: true } } },
-      });
-      if (!sourceCourse || !isCourseAdmin(authUser, sourceCourse)) {
-        return res.status(403).json({ error: 'Not authorized for source course' });
-      }
-    }
-
-    const offering = await prisma.courseOffering.create({
-      data: {
-        title,
-        description,
-        department: typeof department === 'string' && department.trim() ? department.trim() : null,
-        startDate: startDate ? new Date(startDate) : null,
-        endDate: endDate ? new Date(endDate) : null,
-      },
-    });
-
-    await prisma.courseInstructor.create({
-      data: {
-        courseOfferingId: offering.id,
-        userId: authUser.id,
-        role: 'LEAD',
-      },
-    });
-
-    if (numericSourceCourseId !== null) {
-      await cloneCourseContent(numericSourceCourseId, offering.id);
-    }
-
-    const created = await prisma.courseOffering.findUnique({
-      where: { id: offering.id },
-      include: {
-        modules: {
-          orderBy: { position: 'asc' },
-          include: {
-            lessons: { orderBy: { position: 'asc' } },
-          },
-        },
-      },
-    });
-
-    res.status(201).json(created);
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
+router.post('/courses', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (_req, res) => {
+  return res.status(403).json({
+    error:
+      'Course creation is managed in EduAI Core. Import or enable courses from Core instead.',
+  });
 });
 
 router.patch('/courses/:courseId', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
