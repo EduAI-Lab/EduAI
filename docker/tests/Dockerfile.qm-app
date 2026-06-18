@@ -80,6 +80,9 @@ WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
 
+# @eduai/ui is source-only; the node_modules/@eduai/ui symlink points here
+COPY packages/ui ./packages/ui/
+
 COPY apps/extensions/question-maker/app/backend/src \
      ./apps/extensions/question-maker/app/backend/src
 COPY apps/extensions/question-maker/app/backend/package.json \

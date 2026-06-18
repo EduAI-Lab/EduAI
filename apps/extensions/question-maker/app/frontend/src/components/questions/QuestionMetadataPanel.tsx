@@ -20,7 +20,7 @@ export interface QuestionMetadataPanelValue {
     questionDescription: string;
     variantDifficulty: QuestionDifficulty;
     variantReasoningLevel: ReasoningLevel;
-    variantSecondaryTopics: number[];
+    variantSecondaryTopics: string[];
 }
 
 interface QuestionMetadataPanelProps {
@@ -32,7 +32,7 @@ interface QuestionMetadataPanelProps {
     /** In variant mode, primary topic is read-only from preset; still need to show it */
     mode: 'new' | 'variant';
     primaryTopicName?: string;
-    onToggleSecondaryTopic: (topicId: number, checked: boolean) => void;
+    onToggleSecondaryTopic: (topicId: string, checked: boolean) => void;
 }
 
 const difficultyOptions: QuestionDifficulty[] = ['easy', 'medium', 'hard'];

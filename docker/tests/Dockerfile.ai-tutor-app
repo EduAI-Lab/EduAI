@@ -53,6 +53,7 @@ WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/packages/types ./packages/types
+COPY packages/ui ./packages/ui/
 COPY apps/extensions/ai-tutor ./apps/extensions/ai-tutor
 
 ENV PATH="/app/node_modules/.bin:${PATH}"

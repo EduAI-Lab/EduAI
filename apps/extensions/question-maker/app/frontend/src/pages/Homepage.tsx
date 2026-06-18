@@ -250,7 +250,7 @@ export const Homepage = () => {
     return filteredQuestions.flatMap((question) => {
       const topics = topicsByCourse[question.courseId] ?? [];
       const topicNameMap = new Map(topics.map((topic) => [topic.id, topic.name]));
-      const resolveTopicName = (topicId: number) => topicNameMap.get(topicId) ?? `Topic ${topicId}`;
+      const resolveTopicName = (topicId: string) => topicNameMap.get(topicId) ?? `Topic ${topicId}`;
 
       return (question.variants || []).map((variant) => {
         const secondaryTopicNames = Array.isArray(variant.secondaryTopicsId)
@@ -325,7 +325,7 @@ export const Homepage = () => {
       questionId: number,
       updates: {
         description?: string | null;
-        primaryTopicId?: number;
+        primaryTopicId?: string;
         type?: import('../types/question').QuestionType;
         primaryTopicName?: string;
       }
