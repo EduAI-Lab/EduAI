@@ -29,12 +29,6 @@ import {
 import { getUserPreference, saveUserPreference } from "~/lib/user-preferences.server";
 import { getAccessibleCourseCodes } from "~/lib/courses/server";
 import { parsePreferenceUpdates, resolveSelectedCourse } from "~/lib/user-preferences";
-import {
-  buildChatExportFilename,
-  buildChatExportHtmlFromDom,
-  defaultExportTitle,
-  downloadChatExportHtml,
-} from "~/lib/chat-export";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request);
@@ -132,8 +126,6 @@ export default function Chat() {
     string | null
   >(null);
   const pendingRoutedRegistryIdRef = useRef<string | null>(null);
-  const chatExportRef = useRef<HTMLDivElement | null>(null);
-  const chatPageRef = useRef<HTMLDivElement | null>(null);
   const { apiKeys, getValidApiKeys, updateProviderSettings, removeProviderSettings, isProviderConfigured } = useApiKeys();
   const prefsFetcher = useFetcher();
 
@@ -316,31 +308,6 @@ export default function Chat() {
     }
   };
 
-  const handleExportChat = useCallback(() => {
-    if (!chatExportRef.current || messages.length === 0) {
-      return;
-    }
-
-    const exportedAt = new Date();
-    const pageStyles = chatPageRef.current
-      ? window.getComputedStyle(chatPageRef.current)
-      : null;
-    const title = defaultExportTitle(messages);
-
-    const html = buildChatExportHtmlFromDom(chatExportRef.current, {
-      title,
-      exportedAt,
-      modelName: selectedModelInfo?.name,
-      pageBackground: pageStyles?.background ?? pageStyles?.backgroundColor,
-      pageColor: pageStyles?.color,
-      pageFontFamily: pageStyles?.fontFamily,
-    });
-    downloadChatExportHtml(
-      html,
-      buildChatExportFilename({ title, exportedAt }),
-    );
-  }, [messages, selectedModelInfo]);
-
   const handlePromptSelect = (prompt: string) => {
     // Create proper synthetic events
     const inputEvent = {
@@ -379,59 +346,50 @@ export default function Chat() {
               onAdhdAssistChange={handleAssistChange}
               systemPrompt={systemPrompt}
               onSystemPromptSave={handleSystemPromptSave}
-              canExportChat={messages.length > 0}
-              onExportChat={handleExportChat}
             />
           }
         />
-        <div
-          ref={chatPageRef}
-          className="flex flex-col h-[calc(100vh-var(--header-height))] bg-gradient-to-br from-background via-background to-muted/20"
-        >
+        <div className="flex flex-col h-[calc(100vh-var(--header-height))] bg-gradient-to-br from-background via-background to-muted/20">
           {/* Main content area */}
           <div className="flex-1 flex flex-col min-h-0 relative">
             <div className="h-full overflow-y-auto scrollbar-hover">
               <div className="px-4 py-6">
-                {messages.length === 0 ? (
-                  <div className="max-w-4xl mx-auto space-y-6">
+                <div className="max-w-4xl mx-auto space-y-6">
+                  {messages.length === 0 ? (
                     <ChatWelcome
                       selectedModelInfo={selectedModelInfo}
                       onSelectPrompt={handlePromptSelect}
                     />
-                  </div>
-                ) : (
-                  <div
-                    ref={chatExportRef}
-                    data-chat-export-root
-                    className="max-w-4xl mx-auto space-y-6"
-                  >
-                    {messages.map((message, index) => {
-                      const isLastMessage = index === messages.length - 1;
-                      const isStreamingMessage = isLastMessage && isLoading;
+                  ) : (
+                    <>
+                      {messages.map((message, index) => {
+                        const isLastMessage = index === messages.length - 1;
+                        const isStreamingMessage = isLastMessage && isLoading;
 
-                      const routedRegistryId =
-                        message.role === "assistant"
-                          ? (routedModelByMessageId[message.id] ??
-                            (isStreamingMessage ? streamingRoutedRegistryId : null))
-                          : null;
-                      const answeredByLabel =
-                        isAutoRoutingModelId(selectedModel) && routedRegistryId
-                          ? displayNameForRegistryId(routedRegistryId, chatModels)
-                          : undefined;
+                        const routedRegistryId =
+                          message.role === "assistant"
+                            ? (routedModelByMessageId[message.id] ??
+                              (isStreamingMessage ? streamingRoutedRegistryId : null))
+                            : null;
+                        const answeredByLabel =
+                          isAutoRoutingModelId(selectedModel) && routedRegistryId
+                            ? displayNameForRegistryId(routedRegistryId, chatModels)
+                            : undefined;
 
-                      return (
-                        <ChatMessage
-                          key={message.id}
-                          message={message}
-                          isStreaming={isStreamingMessage}
-                          answeredByLabel={answeredByLabel}
-                        />
-                      );
-                    })}
+                        return (
+                          <ChatMessage
+                            key={message.id}
+                            message={message}
+                            isStreaming={isStreamingMessage}
+                            answeredByLabel={answeredByLabel}
+                          />
+                        );
+                      })}
 
-                    {isLoading && <ChatTypingIndicator />}
-                  </div>
-                )}
+                      {isLoading && <ChatTypingIndicator />}
+                    </>
+                  )}
+                </div>
               </div>
             </div>
           </div>

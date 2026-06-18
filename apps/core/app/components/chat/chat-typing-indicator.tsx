@@ -8,7 +8,7 @@ export type ChatTypingIndicatorProps = Record<string, never>;
 
 export function ChatTypingIndicator() {
   return (
-    <BasicMessage data-chat-export-exclude>
+    <BasicMessage>
       <MessageAvatar
         src=""
         alt="EduAI"
