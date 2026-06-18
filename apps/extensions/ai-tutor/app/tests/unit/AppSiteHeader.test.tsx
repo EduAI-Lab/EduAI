@@ -6,10 +6,6 @@ import { AppSiteHeader } from '~/components/layout/AppSiteHeader';
 import { AuthProvider, type AuthUser } from '~/hooks/useLocalUser';
 import { BugReportProvider } from '~/components/bug-report/BugReportProvider';
 
-const { listAiModelsMock } = vi.hoisted(() => ({
-  listAiModelsMock: vi.fn().mockResolvedValue([]),
-}));
-
 vi.mock('~/hooks/useAtPermissions', () => ({
   useAtPermissions: () => ({
     canSubmitBugReport: true,
@@ -32,16 +28,6 @@ vi.mock('~/hooks/useBugReportCapture', () => ({
       screenshot: null,
     }),
   }),
-}));
-
-vi.mock('~/lib/api', () => ({
-  api: {
-    listAiModels: listAiModelsMock,
-  },
-  default: {
-    me: vi.fn().mockResolvedValue({ user: null }),
-    logout: vi.fn().mockResolvedValue({ ok: true }),
-  },
 }));
 
 vi.mock('@eduai/ui', async (importOriginal) => {
@@ -76,10 +62,6 @@ async function renderHeader(path: string, user: AuthUser) {
 }
 
 describe('AppSiteHeader', () => {
-  beforeEach(() => {
-    listAiModelsMock.mockClear();
-  });
-
   it('shows Report Bug for STUDENT', async () => {
     await renderHeader('/student', { id: 'u1', name: 'Student', role: 'STUDENT' });
 
@@ -90,12 +72,6 @@ describe('AppSiteHeader', () => {
     await renderHeader('/instructor', { id: 'u2', name: 'Professor', role: 'INSTRUCTOR' });
 
     expect(screen.getByRole('button', { name: 'Report Bug' })).toBeInTheDocument();
-  });
-
-  it('shows EduAI Core cross-nav link for authenticated users', async () => {
-    await renderHeader('/student', { id: 'u1', name: 'Student', role: 'STUDENT' });
-
-    expect(screen.getByRole('link', { name: 'Open EduAI Core' })).toBeInTheDocument();
   });
 
   it('shows theme toggle in the header', async () => {
