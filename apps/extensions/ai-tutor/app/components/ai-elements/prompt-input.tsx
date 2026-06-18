@@ -9,7 +9,7 @@ import {
   CommandItem,
   CommandList,
   CommandSeparator,
-} from '~/components/ui/command';
+} from '@eduai/ui';
 import {
   DropdownMenu,
   DropdownMenuContent,

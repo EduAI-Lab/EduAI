@@ -17,9 +17,9 @@
  *     opened (ensureEduAiCourses) to keep the initial route snappy.
  * Related: routes/instructor.course.tsx (drilldown), components/PublishStatusButton
  */
-import { useOptimistic, useState } from 'react';
+import { useMemo, useOptimistic, useState } from 'react';
 import { useNavigate } from 'react-router';
-import Nav from '../components/Nav';
+import { PageHeading } from '@eduai/ui';
 import { CreateCourseDialog } from '../components/courses/CreateCourseDialog';
 import { AtRoleBanner } from '../components/rbac/AtRoleBanner';
 import { PermissionGate } from '../components/rbac/PermissionGate';
@@ -30,6 +30,10 @@ import api from '../lib/api';
 import type { Course, EduAiCourse } from '../lib/types';
 import type { Route } from './+types/instructor';
 import { requireClientUser } from '~/lib/client-auth';
+import { AppShell } from '~/components/layout/AppShell';
+import { ShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbs';
+import { DashboardStatGrid } from '~/components/dashboard/DashboardStatGrid';
+import { buildInstructorDashboardStats } from '~/lib/dashboard-stats';
 
 /**
  * Loads the instructor's course list. The backend scopes /courses to the
@@ -64,11 +68,10 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
     courses,
     (state, patch: (items: Course[]) => Course[]) => patch(state),
   );
+  const stats = useMemo(() => buildInstructorDashboardStats(oCourses), [oCourses]);
 
   // The API client throws Errors whose .message is sometimes a raw JSON
-  // payload (`{"error":"..."}`) and sometimes a plain string. Try to surface
-  // the structured `error` field when present; otherwise fall back to the
-  // raw message. Returns a generic line for non-Error values.
+  // string; parse it to extract the structured `error` field when present.
   const parseErrorMessage = (error: unknown) => {
     if (error instanceof Error) {
       try {
@@ -160,98 +163,48 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
     }
   };
 
+  const headerActions = (
+    <div className="flex flex-wrap gap-2">
+      <PermissionGate allow={perms.canCreateCourse}>
+        <button type="button" onClick={() => setShowCreateCourse(true)} className="btn-secondary">
+          Create course
+        </button>
+      </PermissionGate>
+      <PermissionGate allow={perms.canBrowseEduAiCatalog || perms.canImportFromEduAi}>
+        <button
+          type="button"
+          onClick={() => {
+            setShowEduAiImport((prev) => {
+              const next = !prev;
+              if (next) ensureEduAiCourses();
+              else setEduAiError(null);
+              return next;
+            });
+          }}
+          className="btn-primary"
+        >
+          {showEduAiImport ? 'Close import' : 'Import from EduAI'}
+        </button>
+      </PermissionGate>
+    </div>
+  );
+
   return (
-    <div className="min-h-dvh bg-background">
-      <Nav />
-
-      {/* Background decoration */}
-      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-        <div className="absolute top-0 left-1/2 w-[1000px] h-[600px] bg-primary/3 rounded-full blur-3xl -translate-y-1/2 -translate-x-1/2" />
-        <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-accent/5 rounded-full blur-3xl translate-y-1/3 translate-x-1/4" />
-        <div className="absolute inset-0 grid-lines opacity-30" />
-      </div>
-
-      <div className="container mx-auto px-6 py-10 space-y-8">
+    <AppShell
+      breadcrumbs={<ShellBreadcrumbs items={[{ label: 'Teaching' }]} />}
+      actions={headerActions}
+    >
+      <div className="space-y-8">
         {user ? (
           <AtRoleBanner role={user.role} authorizedUnits={user.authorizedUnits} />
         ) : null}
 
-        {/* Page header */}
-        <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 animate-fade-up">
-          <div>
-            <p className="text-sm font-medium text-muted-foreground mb-1">Dashboard</p>
-            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-foreground">
-              Teaching
-            </h1>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <PermissionGate allow={perms.canCreateCourse}>
-              <button type="button" onClick={() => setShowCreateCourse(true)} className="btn-secondary">
-                Create course
-              </button>
-            </PermissionGate>
-            <PermissionGate allow={perms.canBrowseEduAiCatalog}>
-              <button
-            onClick={() => {
-              setShowEduAiImport((prev) => {
-                const next = !prev;
-                if (next) {
-                  ensureEduAiCourses();
-                } else {
-                  setEduAiError(null);
-                }
-                return next;
-              });
-            }}
-            className="btn-primary"
-          >
-            {showEduAiImport ? (
-              <>
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-                Close Import
-              </>
-            ) : (
-              <>
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                </svg>
-                Import from EduAI
-              </>
-            )}
-          </button>
-            </PermissionGate>
-            <PermissionGate allow={perms.canImportFromEduAi && !perms.canBrowseEduAiCatalog}>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowEduAiImport((prev) => {
-                    const next = !prev;
-                    if (next) ensureEduAiCourses();
-                    else setEduAiError(null);
-                    return next;
-                  });
-                }}
-                className="btn-primary"
-              >
-                Import from EduAI
-              </button>
-            </PermissionGate>
-          </div>
-        </header>
+        <PageHeading
+          heading="Teaching"
+          subheading="Manage courses, publish content, and import offerings from EduAI Core."
+        />
+
+        <DashboardStatGrid stats={stats} />
 
         <CreateCourseDialog
           open={showCreateCourse}
@@ -595,6 +548,6 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
           </div>
         )}
       </div>
-    </div>
+    </AppShell>
   );
 }

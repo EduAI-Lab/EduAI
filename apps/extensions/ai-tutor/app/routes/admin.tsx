@@ -21,7 +21,6 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import BugReportsTab from '~/components/admin/BugReportsTab';
-import Nav from '~/components/Nav';
 import api from '~/lib/api';
 import type {
   AdminBugReportRow,
@@ -32,7 +31,11 @@ import type {
 } from '~/lib/types';
 import type { Route } from './+types/admin';
 import { requireClientUser } from '~/lib/client-auth';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@eduai/ui';
+import { Tooltip, TooltipContent, TooltipTrigger, PageHeading } from '@eduai/ui';
+import { AppShell } from '~/components/layout/AppShell';
+import { ShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbs';
+import { DashboardStatGrid } from '~/components/dashboard/DashboardStatGrid';
+import { buildAdminDashboardStats } from '~/lib/dashboard-stats';
 
 type CostTier = 'LOW' | 'MEDIUM' | 'HIGH';
 
@@ -170,6 +173,10 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
   const aiPolicyDirty = useMemo(() => {
     return JSON.stringify(initialAiPolicy) !== JSON.stringify(aiPolicy);
   }, [aiPolicy, initialAiPolicy]);
+  const adminStats = useMemo(
+    () => buildAdminDashboardStats(users, courses, loaderData.bugReports),
+    [users, courses, loaderData.bugReports],
+  );
 
   const sourceTag = (() => {
     if (!status.configured) return { label: 'Not configured', className: 'tag' };
@@ -361,28 +368,19 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
   };
 
   return (
-    <div className="min-h-dvh bg-background">
-      <Nav />
-
-      {/* Background decoration */}
-      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-        <div className="absolute top-0 left-1/2 w-[1000px] h-[600px] bg-primary/3 rounded-full blur-3xl -translate-y-1/2 -translate-x-1/2" />
-        <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-accent/5 rounded-full blur-3xl translate-y-1/3 translate-x-1/4" />
-        <div className="absolute inset-0 grid-lines opacity-30" />
-      </div>
-
-      <div className="container mx-auto px-6 py-10 space-y-8">
-        <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 animate-fade-up">
-          <div className="space-y-2">
-            <p className="text-sm font-medium text-muted-foreground">Admin</p>
-            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-foreground">
-              Settings
-            </h1>
-          </div>
+    <AppShell breadcrumbs={<ShellBreadcrumbs items={[{ label: 'Admin' }]} />}>
+      <div className="space-y-8">
+        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+          <PageHeading
+            heading="Admin console"
+            subheading="Manage users, enrollments, AI loop policy, and bug report triage."
+          />
           <div className={sourceTag.className}>{sourceTag.label}</div>
-        </header>
+        </div>
 
-        <div className="flex flex-wrap gap-3 animate-fade-up delay-150">
+        <DashboardStatGrid stats={adminStats} />
+
+        <div className="flex flex-wrap gap-3">
           <button
             type="button"
             onClick={() => setActiveTab('users')}
@@ -955,7 +953,7 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
           <BugReportsTab initialReports={loaderData.bugReports} />
         )}
       </div>
-    </div>
+    </AppShell>
   );
 }
 
