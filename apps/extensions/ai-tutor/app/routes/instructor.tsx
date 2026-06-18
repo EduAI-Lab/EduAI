@@ -20,13 +20,13 @@
 import { useMemo, useOptimistic, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { PageHeading } from '@eduai/ui';
-import { CreateCourseDialog } from '../components/courses/CreateCourseDialog';
 import { AtRoleBanner } from '../components/rbac/AtRoleBanner';
 import { PermissionGate } from '../components/rbac/PermissionGate';
 import { PublishStatusButton } from '../components/PublishStatusButton';
 import { useAtPermissions } from '../hooks/useAtPermissions';
 import { useLocalUser } from '../hooks/useLocalUser';
 import api from '../lib/api';
+import { getEduAiAppUrl } from '../lib/extension-urls';
 import type { Course, EduAiCourse } from '../lib/types';
 import type { Route } from './+types/instructor';
 import { requireClientUser } from '~/lib/client-auth';
@@ -55,7 +55,6 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
   const { user } = useLocalUser();
   const perms = useAtPermissions();
   const [courses, setCourses] = useState<Course[]>(loaderData.courses ?? []);
-  const [showCreateCourse, setShowCreateCourse] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showEduAiImport, setShowEduAiImport] = useState(false);
   const [publishingId, setPublishingId] = useState<number | null>(null);
@@ -165,11 +164,6 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
 
   const headerActions = (
     <div className="flex flex-wrap gap-2">
-      <PermissionGate allow={perms.canCreateCourse}>
-        <button type="button" onClick={() => setShowCreateCourse(true)} className="btn-secondary">
-          Create course
-        </button>
-      </PermissionGate>
       <PermissionGate allow={perms.canBrowseEduAiCatalog || perms.canImportFromEduAi}>
         <button
           type="button"
@@ -205,12 +199,6 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
         />
 
         <DashboardStatGrid stats={stats} />
-
-        <CreateCourseDialog
-          open={showCreateCourse}
-          onOpenChange={setShowCreateCourse}
-          onCreated={() => void loadCourses()}
-        />
 
         {/* EduAI Import Panel */}
         {showEduAiImport && (perms.canBrowseEduAiCatalog || perms.canImportFromEduAi) && (
@@ -454,7 +442,14 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
                 No courses yet
               </h2>
               <p className="text-muted-foreground text-sm">
-                Import one from EduAI to get started with your teaching materials.
+                Courses are created in{' '}
+                <a
+                  href={`${getEduAiAppUrl()}/courses`}
+                  className="font-medium text-primary underline underline-offset-2"
+                >
+                  EduAI Core
+                </a>
+                . Import an enabled course from EduAI to get started here.
               </p>
             </div>
           </div>
