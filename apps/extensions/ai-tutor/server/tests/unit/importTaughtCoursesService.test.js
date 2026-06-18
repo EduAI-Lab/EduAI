@@ -191,7 +191,7 @@ describe('importEnrolledCoursesFromCore (AI Tutor)', () => {
     );
   });
 
-  it('removes stale EDUAI student enrollments no longer in Core', async () => {
+  it('does not prune enrollments when Core returns an empty course list', async () => {
     listEduAiCourses.mockResolvedValue([]);
     courseEnrollmentFindMany.mockResolvedValue([
       {
@@ -200,6 +200,40 @@ describe('importEnrolledCoursesFromCore (AI Tutor)', () => {
           externalSource: 'EDUAI',
           externalId: 'core-old',
           coreOfferingId: 'core-old',
+        },
+      },
+    ]);
+
+    const result = await importEnrolledCoursesFromCore(student, 'session=abc');
+
+    expect(result.removed).toBe(0);
+    expect(courseEnrollmentDeleteMany).not.toHaveBeenCalled();
+  });
+
+  it('removes stale EDUAI student enrollments no longer in Core', async () => {
+    listEduAiCourses.mockResolvedValue([
+      {
+        id: 'core-current',
+        code: 'COSC 111',
+        name: 'Computing',
+        callerEnrollmentRole: 'STUDENT',
+      },
+    ]);
+    courseEnrollmentFindMany.mockResolvedValue([
+      {
+        courseOfferingId: 30,
+        courseOffering: {
+          externalSource: 'EDUAI',
+          externalId: 'core-old',
+          coreOfferingId: 'core-old',
+        },
+      },
+      {
+        courseOfferingId: 31,
+        courseOffering: {
+          externalSource: 'EDUAI',
+          externalId: 'core-current',
+          coreOfferingId: 'core-current',
         },
       },
     ]);
