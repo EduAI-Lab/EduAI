@@ -1,17 +1,8 @@
 import type { LoaderFunctionArgs } from "react-router";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
-import { buildCourseListFilter, getAuthorizedUnits } from "~/lib/auth/course-access.server";
-
-export interface DashboardStats {
-  chatCount: number;
-  chatCountWeek: number;
-  materialCount: number;
-  studentCount: number;
-  instructorCount: number;
-  totalUsers: number;
-  activeCourseCount: number;
-}
+import { buildCourseListFilter } from "~/lib/auth/course-access.server";
+import type { DashboardStats } from "~/types/dashboard";
 
 function weekAgo(): Date {
   const d = new Date();
