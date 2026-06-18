@@ -9,6 +9,9 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
+- [core] feat: Add an activity logging subsystem — `audit_logs` (administrative mutations + `SECURITY` auth/access events) and `system_logs` (server errors) in Postgres, a redacting logging facade (`logging.server.ts`) that strips credential- and PII-shaped keys before write, request-context capture (actor/IP/user-agent), instrumented backend endpoints and security events, an ADMIN-only viewer at `/admin/logs`, and a configurable retention policy (defaults 365d audit/security, 90d system; viewer-triggered sweep throttled to 24h). (#581, @abdullahmoh21, 2026-06-17)
+- [core] docs: Add `docs/LOGGING.md` — PIA-oriented documentation of the activity logging subsystem (what is recorded, redaction, retention, and access). (#581, @abdullahmoh21, 2026-06-17)
+- [core] tests: Unit tests for the logging subsystem — `db.auditlog.server`, `db.systemlog.server`, `db.log-retention-policy.server`, and `logging.server` (credential/PII redaction, retention cutoffs, singleton-policy create/race). (#581, @abdullahmoh21, 2026-06-17)
 - [question-maker] api: Auto-import taught Core courses on instructor login — `importTaughtCoursesFromCore` links or creates local courses for scoped Core offerings where the caller's enrollment role is `INSTRUCTOR` or `TA`, syncs topics, and seeds a Practice Exam. (#578, @GlowyBlack, 2026-06-15)
 - [core] api: Expose `callerEnrollmentRole` on each course in `GET /api/courses` so extensions can distinguish teaching vs student enrollments when auto-importing. (#578, @GlowyBlack, 2026-06-15)
 - [question-maker] tests: Add `topicSyncService.test.js`, `courseCodeUtils.test.js`, and `importTaughtCoursesService.test.js`; extend `coreApiService.test.js` for cookie-only scoped reads (no service-key fallback on 403). (#578, @GlowyBlack, 2026-06-15)
@@ -20,6 +23,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [question-maker] ui: Reuse `normalizeCourseCode` from `courseDisplay.ts` in `ProfileCoursesDialog` and `AddQuestionDialog`. (#578, @GlowyBlack, 2026-06-15)
 - [question-maker] api: Use `cookieOnly` on user-scoped Core reads (`listCoursesFromCore`, topics) so a stale session does not fall back to the unscoped service key; prefer service key for enrollment roster reads used by RBAC. (#578, @GlowyBlack, 2026-06-15)
 - [ai-tutor] api: Filter auto-import to Core courses where `callerEnrollmentRole` is `INSTRUCTOR` or `TA`. (#578, @GlowyBlack, 2026-06-15)
+
+### Removed
+
+- [core] api: Remove the headless `POST /api/invitations/accept` endpoint — the invitation-accept flow is consolidated onto the `/accept-invitation` page route. (#581, @abdullahmoh21, 2026-06-17)
 
 ### Fixed
 
