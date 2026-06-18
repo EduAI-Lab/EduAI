@@ -20,7 +20,7 @@ type UpdateUserFormData = z.infer<typeof updateUserSchema>;
 type FormData = {
   name: string;
   email: string;
-  role: "ADMIN" | "UNIT_ADMIN" | "INSTRUCTOR" | "TA" | "STUDENT";
+  role: "ADMIN" | "UNIT_ADMIN" | "INSTRUCTOR" | "STUDENT";
   isActive: boolean;
   emailVerified?: boolean;
 };
@@ -32,9 +32,10 @@ export interface UserFormDialogProps {
   onSubmit: (data: CreateUserFormData | UpdateUserFormData) => void;
 }
 
+// TA is a course-level Enrollment role assigned from a course's staff tab, not a
+// platform role — so it is not an option here.
 const roleOptions = [
   { value: "STUDENT", label: "Student" },
-  { value: "TA", label: "Teaching Assistant" },
   { value: "INSTRUCTOR", label: "Instructor" },
   { value: "UNIT_ADMIN", label: "Unit Administrator" },
   { value: "ADMIN", label: "Administrator" },

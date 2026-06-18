@@ -99,7 +99,7 @@ export type User = {
   email: string;
   name: string;
   image?: string;
-  role: "ADMIN" | "UNIT_ADMIN" | "INSTRUCTOR" | "TA" | "STUDENT";
+  role: "ADMIN" | "UNIT_ADMIN" | "INSTRUCTOR" | "STUDENT";
   isActive: boolean;
   emailVerified: boolean;
   authorizedUnits: string[];
@@ -177,52 +177,77 @@ function RowActions({
 }) {
   const user = row.original;
   const isCurrentUser = user.id === currentUserId;
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+
+  const handleConfirmDelete = () => {
+    onDelete(user.id);
+    setIsDeleteDialogOpen(false);
+  };
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-8 w-8 p-0"
-          aria-label="Open menu"
-        >
-          <IconDots className="h-4 w-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={() => onEdit(user)}>
-          <IconEdit className="mr-2 h-4 w-4" />
-          Edit
-        </DropdownMenuItem>
-        {onViewChatHistory && (
-          <DropdownMenuItem onClick={() => onViewChatHistory(user)}>
-            <IconMessageCircle className="mr-2 h-4 w-4" />
-            View chat history
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 w-8 p-0"
+            aria-label="Open menu"
+          >
+            <IconDots className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={() => onEdit(user)}>
+            <IconEdit className="mr-2 h-4 w-4" />
+            Edit
           </DropdownMenuItem>
-        )}
-        <DropdownMenuItem
-          onClick={() => onToggleActive(user)}
-          disabled={isCurrentUser}
-        >
-          {user.isActive ? (
-            <IconUserOff className="mr-2 h-4 w-4" />
-          ) : (
-            <IconUserCheck className="mr-2 h-4 w-4" />
+          {onViewChatHistory && (
+            <DropdownMenuItem onClick={() => onViewChatHistory(user)}>
+              <IconMessageCircle className="mr-2 h-4 w-4" />
+              View chat history
+            </DropdownMenuItem>
           )}
-          {user.isActive ? "Deactivate" : "Activate"}
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          onClick={() => onDelete(user.id)}
-          disabled={isCurrentUser}
-          className="text-destructive focus:text-destructive"
-        >
-          <IconTrash className="mr-2 h-4 w-4" />
-          Delete
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+          <DropdownMenuItem
+            onClick={() => onToggleActive(user)}
+            disabled={isCurrentUser}
+          >
+            {user.isActive ? (
+              <IconUserOff className="mr-2 h-4 w-4" />
+            ) : (
+              <IconUserCheck className="mr-2 h-4 w-4" />
+            )}
+            {user.isActive ? "Deactivate" : "Activate"}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onClick={() => setIsDeleteDialogOpen(true)}
+            disabled={isCurrentUser}
+            className="text-destructive focus:text-destructive"
+          >
+            <IconTrash className="mr-2 h-4 w-4" />
+            Delete
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete user?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently deletes {user.name || user.email} and all their data. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmDelete}>
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 
