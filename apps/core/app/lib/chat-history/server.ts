@@ -91,8 +91,8 @@ export async function buildChatVisibilityFilter(
     { userId: viewer.id },
     // Course-scoped chats where the viewer is staff of the course. Mirror every
     // path resolveCourseAccess honours so a TA/instructor sees course history
-    // regardless of HOW they were attached: enrollment role, CourseTA junction,
-    // or direct course.instructorId.
+    // regardless of HOW they were attached: enrollment role (TA/INSTRUCTOR) or
+    // direct course.instructorId.
     {
       course: {
         enrollments: {
@@ -104,7 +104,6 @@ export async function buildChatVisibilityFilter(
         },
       },
     },
-    { course: { tas: { some: { userId: viewer.id } } } },
     { course: { instructorId: viewer.id } },
   ];
 

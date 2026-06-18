@@ -5,8 +5,13 @@ import { getAiTutorAppUrl } from '~/lib/extension-urls'
 const CORE_NAV: NavItem[] = [
   { key: 'dashboard', title: 'Dashboard', url: '/dashboard' },
   { key: 'courses', title: 'Courses', url: '/courses' },
-  { key: 'chat', title: 'Chatbot', url: '/chat' },
 ]
+
+const CHAT_NAV_ITEM: NavItem = {
+  key: 'chat',
+  title: 'Chatbot',
+  url: '/chat',
+}
 
 const QM_NAV_ITEM: NavItem = {
   key: 'question-maker',
@@ -40,20 +45,21 @@ export function getNavForUser(user: NavUser): NavItem[] {
     return [...nav, ...ADMIN_NAV]
   }
 
-  // UNIT_ADMIN, INSTRUCTOR, TA, STUDENT — no platform admin section
-  return nav
-}
+  if (role === 'UNIT_ADMIN') {
+    return [...nav, { key: 'admin-invites', title: 'Invitations', url: '/admin/invitations' }]
+  }
 
-/** ADMIN / UNIT_ADMIN use global chat; others use course-scoped chat (§10). */
-export function usesGlobalChat(user: NavUser): boolean {
-  const role = user.role ?? 'STUDENT'
-  return role === 'ADMIN' || role === 'UNIT_ADMIN'
+  // INSTRUCTOR, TA, STUDENT — no platform admin section
+  return nav
 }
 
 /** Secondary sidebar links (bottom of sidebar). */
 export function getNavSecondaryForUser(user: NavUser): NavItem[] {
   const role = user.role ?? 'STUDENT'
   const items: NavItem[] = []
+
+  // Chatbot link is available for all roles
+  items.push(CHAT_NAV_ITEM)
 
   if (QM_NAV_ROLES.has(role)) {
     items.push(QM_NAV_ITEM)
