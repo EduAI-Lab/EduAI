@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
-import { CanvasMaterialSyncDialog } from "~/components/canvas/CanvasMaterialSyncDialog";
+import { CanvasMaterialSyncDialog } from "~/components/canvas/canvas-material-sync-dialog";
 import { discoverCanvasMaterials, syncCanvasMaterials } from "~/lib/canvas/client";
 
 vi.mock("~/lib/canvas/client", () => ({

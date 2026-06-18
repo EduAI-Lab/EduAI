@@ -1,7 +1,7 @@
 import { Form } from "react-router";
 import { useEffect, useState } from "react";
 
-import { CanvasIntegrationSettings } from "~/components/canvas/CanvasIntegrationSettings";
+import { CanvasIntegrationSettings } from "~/components/canvas/canvas-integration-settings";
 import { AccessibilitySettingsTab } from "~/components/settings/accessibility-settings-tab";
 import { StudentNumberSettings } from "~/components/settings/student-number-settings";
 import {
