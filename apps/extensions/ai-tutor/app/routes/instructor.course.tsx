@@ -20,16 +20,8 @@
  */
 import type { FormEvent } from 'react';
 import { useOptimistic, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router';
-import Nav from '../components/Nav';
-import {
-  Breadcrumb,
-  BreadcrumbList,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from '@eduai/ui';
+import { useNavigate, useParams } from 'react-router';
+import { PageHeading } from '@eduai/ui';
 import { PublishStatusButton } from '../components/PublishStatusButton';
 import api from '../lib/api';
 import type { Course, Module } from '../lib/types';
@@ -43,6 +35,8 @@ import { CourseStudentMetricsPanel } from '../components/courses/CourseStudentMe
 import { CourseSubmissionsPanel } from '../components/courses/CourseSubmissionsPanel';
 import { PermissionGate } from '../components/rbac/PermissionGate';
 import { getCourseDetailTabs } from '~/lib/rbac/nav';
+import { AppShell } from '~/components/layout/AppShell';
+import { ShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbs';
 
 /**
  * Loads the course header and its modules in parallel. Throws a 400 Response
@@ -230,22 +224,18 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
   };
 
   return (
-    <div className="min-h-dvh bg-background">
-      <Nav />
-      <div className="container mx-auto px-4 py-8 space-y-6">
-        <Breadcrumb className="mb-6">
-          <BreadcrumbList>
-            <BreadcrumbItem>
-              <BreadcrumbLink asChild>
-                <Link to="/instructor">Teaching</Link>
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator>/</BreadcrumbSeparator>
-            <BreadcrumbItem>
-              <BreadcrumbPage>{course?.title || 'Course'}</BreadcrumbPage>
-            </BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
+    <AppShell
+      breadcrumbs={
+        <ShellBreadcrumbs
+          items={[
+            { label: 'Teaching', href: '/instructor' },
+            { label: course?.title || 'Course' },
+          ]}
+        />
+      }
+    >
+      <div className="space-y-6">
+        <PageHeading heading={course?.title || 'Course'} subheading="Course content and analytics" />
 
         <div className="flex flex-wrap gap-2">
           {tabs.map((tab) => (
@@ -467,6 +457,6 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
           </>
         ) : null}
       </div>
-    </div>
+    </AppShell>
   );
 }
