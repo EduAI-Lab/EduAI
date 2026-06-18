@@ -11,6 +11,7 @@ import type {
   AcceptInvitationInput,
   CreateInvitationInput,
 } from "~/lib/invitations/schemas";
+import { canInvite } from "~/lib/invitations/schemas";
 
 const DEFAULT_EXPIRY_HOURS = 72;
 
@@ -19,7 +20,7 @@ export type PublicInvitation = Omit<Invitation, "tokenHash"> & {
   isExpired: boolean;
 };
 
-type Inviter = { id: string; name?: string | null };
+type Inviter = { id: string; name?: string | null; role: string };
 
 export type CreateInvitationResult =
   | {
@@ -90,6 +91,11 @@ export async function createInvitation(
   invitedBy: Inviter,
 ): Promise<CreateInvitationResult> {
   const email = input.email.toLowerCase().trim();
+
+  // Enforce role-gated invitations: check if inviter can invite this role
+  if (!canInvite(invitedBy.role, input.role)) {
+    return { ok: false, status: 403, error: "FORBIDDEN_ROLE" };
+  }
 
   const existingUser = await prisma.user.findUnique({ where: { email } });
   if (existingUser) {

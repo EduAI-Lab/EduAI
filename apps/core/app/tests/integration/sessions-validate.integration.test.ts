@@ -57,6 +57,7 @@ describe("POST /api/sessions/validate — contract tests", () => {
         name: MOCK_USER.name,
         image: MOCK_USER.image,
         role: MOCK_USER.role,
+        authorizedUnits: [],
       },
     });
   });

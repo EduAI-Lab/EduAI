@@ -1,6 +1,6 @@
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 
-import { requireAdmin } from "~/lib/auth/guards.server";
+import { requireInviter } from "~/lib/auth/guards.server";
 import { createInvitationSchema } from "~/lib/invitations/schemas";
 import { createInvitation, listInvitations } from "~/lib/invitations/service.server";
 
@@ -11,22 +11,22 @@ function json(data: unknown, status = 200): Response {
   });
 }
 
-/** GET /api/invitations — list all invitations (ADMIN). */
+/** GET /api/invitations — list all invitations (ADMIN or UNIT_ADMIN). */
 export async function loader({ request }: LoaderFunctionArgs) {
-  const gate = await requireAdmin(request);
+  const gate = await requireInviter(request);
   if (gate.response) return gate.response;
 
   const invitations = await listInvitations();
   return json(invitations);
 }
 
-/** POST /api/invitations — create + email an invitation (ADMIN). */
+/** POST /api/invitations — create + email an invitation (ADMIN or UNIT_ADMIN). */
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
   }
 
-  const gate = await requireAdmin(request);
+  const gate = await requireInviter(request);
   if (gate.response) return gate.response;
 
   const body = await request.json().catch(() => null);
@@ -38,6 +38,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const created = await createInvitation(result.data, {
     id: gate.session.user.id,
     name: gate.session.user.name,
+    role: gate.session.user.role ?? "",
   });
   if (!created.ok) {
     return json({ error: created.error }, created.status);

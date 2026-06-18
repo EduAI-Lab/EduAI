@@ -4,6 +4,7 @@ import type { LoaderFunctionArgs } from "react-router";
 import { IconPlus, IconDots, IconCopy, IconMailForward, IconBan } from "@tabler/icons-react";
 
 import { auth } from "~/lib/auth/server";
+import { getInvitableRoles } from "~/lib/invitations/schemas";
 import {
   Button,
   Badge,
@@ -56,7 +57,7 @@ import {
 import { AppSidebar } from "~/components/app-sidebar";
 import { SiteHeader } from "~/components/site-header";
 
-type InviteRole = "ADMIN" | "UNIT_ADMIN" | "INSTRUCTOR";
+type InviteRole = "ADMIN" | "UNIT_ADMIN" | "INSTRUCTOR" | "STUDENT";
 
 type Invitation = {
   id: string;
@@ -72,6 +73,7 @@ type Invitation = {
 };
 
 const ROLE_OPTIONS: { value: InviteRole; label: string }[] = [
+  { value: "STUDENT", label: "Student" },
   { value: "INSTRUCTOR", label: "Professor (Instructor)" },
   { value: "UNIT_ADMIN", label: "Unit Administrator" },
   { value: "ADMIN", label: "Administrator" },
@@ -81,13 +83,17 @@ const ROLE_LABEL: Record<InviteRole, string> = {
   ADMIN: "Administrator",
   UNIT_ADMIN: "Unit Admin",
   INSTRUCTOR: "Instructor",
+  STUDENT: "Student",
 };
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request);
   if (!session?.user) return redirect("/auth/login");
-  if (session.user.role !== "ADMIN") return redirect("/dashboard");
-  return { user: session.user };
+  if (!["ADMIN", "UNIT_ADMIN"].includes(session.user.role ?? "")) return redirect("/dashboard");
+  return {
+    user: session.user,
+    invitableRoles: getInvitableRoles(session.user.role),
+  };
 }
 
 const formatDate = (s: string) =>
@@ -106,7 +112,7 @@ function StatusBadge({ invite }: { invite: Invitation }) {
 }
 
 export default function InvitationsPage() {
-  const { user } = useLoaderData<typeof loader>();
+  const { user, invitableRoles } = useLoaderData<typeof loader>();
   const [invites, setInvites] = useState<Invitation[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -114,7 +120,7 @@ export default function InvitationsPage() {
   // Invite form
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
-  const [role, setRole] = useState<InviteRole>("INSTRUCTOR");
+  const [role, setRole] = useState<InviteRole>((invitableRoles[0] as InviteRole) ?? "INSTRUCTOR");
   const [unitsText, setUnitsText] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -138,7 +144,7 @@ export default function InvitationsPage() {
   const resetForm = () => {
     setEmail("");
     setName("");
-    setRole("INSTRUCTOR");
+    setRole((invitableRoles[0] as InviteRole) ?? "INSTRUCTOR");
     setUnitsText("");
     setFormError(null);
   };
@@ -413,7 +419,7 @@ export default function InvitationsPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {ROLE_OPTIONS.map((o) => (
+                    {ROLE_OPTIONS.filter((o) => invitableRoles.includes(o.value)).map((o) => (
                       <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
                     ))}
                   </SelectContent>
