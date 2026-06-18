@@ -14,11 +14,14 @@ import {
 } from "./admin-context.server";
 import {
   createAdminEnrollment,
+  createAdminCourseTopic,
   createAdminUser,
   deactivateAdminEnrollment,
+  deleteAdminCourseTopic,
   deleteAdminUser,
   runConfirmedAdminWriteTool,
   updateAdminBugReportStatus,
+  updateAdminCourseTopic,
   updateAdminEnrollmentRole,
   updateAdminUser,
   userRefValidationError,
@@ -311,6 +314,67 @@ export function createAdminChatTools(ctx: ChatToolContext) {
       execute: async ({ confirmed, reportId, status }) =>
         runConfirmedAdminWriteTool("updateBugReportStatus", user, confirmed, () =>
           updateAdminBugReportStatus(user, reportId, status),
+        ),
+    }),
+
+    createCourseTopic: tool({
+      description:
+        "Create a topic under a course. Requires courseId or courseCode and topic name. Use confirmed=true only after admin confirms.",
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        ...courseScope,
+        name: z.string().min(1).describe("Topic display name"),
+      }),
+      execute: async ({ confirmed, courseId, courseCode, name }) =>
+        runConfirmedAdminWriteTool("createCourseTopic", user, confirmed, () =>
+          createAdminCourseTopic(user, {
+            courseId,
+            courseCode,
+            fallbackCourseId: effectiveCourseId,
+            name,
+          }),
+        ),
+    }),
+
+    updateCourseTopic: tool({
+      description:
+        "Rename a course topic. Requires courseId or courseCode, topicId, and new name. Use confirmed=true only after admin confirms.",
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        ...courseScope,
+        topicId: z.string().describe("Topic id (CUID)"),
+        name: z.string().min(1).describe("New topic name"),
+      }),
+      execute: async ({ confirmed, courseId, courseCode, topicId, name }) =>
+        runConfirmedAdminWriteTool("updateCourseTopic", user, confirmed, () =>
+          updateAdminCourseTopic(user, {
+            courseId,
+            courseCode,
+            fallbackCourseId: effectiveCourseId,
+            topicId,
+            name,
+          }),
+        ),
+    }),
+
+    deleteCourseTopic: tool({
+      description:
+        "Soft-delete a course topic by topicId or name. Use confirmed=true only after admin confirms.",
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        ...courseScope,
+        topicId: z.string().optional().describe("Topic id (CUID)"),
+        name: z.string().optional().describe("Topic name when id is unknown"),
+      }),
+      execute: async ({ confirmed, courseId, courseCode, topicId, name }) =>
+        runConfirmedAdminWriteTool("deleteCourseTopic", user, confirmed, () =>
+          deleteAdminCourseTopic(user, {
+            courseId,
+            courseCode,
+            fallbackCourseId: effectiveCourseId,
+            topicId,
+            name,
+          }),
         ),
     }),
   };

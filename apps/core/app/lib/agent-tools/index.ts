@@ -19,8 +19,10 @@ export {
 } from "./admin-context.server";
 export {
   createAdminEnrollment,
+  createAdminCourseTopic,
   createAdminUser,
   deactivateAdminEnrollment,
+  deleteAdminCourseTopic,
   deleteAdminUser,
   isAdminWriteToolName,
   runConfirmedAdminWriteTool,
@@ -28,6 +30,7 @@ export {
   requireWriteConfirmation,
   userRefValidationError,
   updateAdminBugReportStatus,
+  updateAdminCourseTopic,
   updateAdminEnrollmentRole,
   updateAdminUser,
   ADMIN_WRITE_TOOL_NAMES,
