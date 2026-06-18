@@ -79,7 +79,8 @@ test.describe('QM assessment route gates (STUDENT → 403)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Course routes — open to all authenticated users
+// Course routes — list/create open to any authenticated user; per-course
+// read/edit is gated by access (the owner resolves to instructor-level).
 // ---------------------------------------------------------------------------
 
 test.describe('QM course routes accessible to all authenticated users', () => {
@@ -113,6 +114,67 @@ test.describe('QM course routes accessible to all authenticated users', () => {
     expect(res.status()).toBe(200);
     const body = await res.json();
     expect(body.data?.name ?? body.name).toBe('Own Course');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Per-course access resolution — GET /api/course/:id/access
+//
+// This endpoint backs the client course-access gate. Its absence previously made
+// the UI fall back to "no access" and wrongly show the "You do not have access to
+// this course" banner (notably to ADMINs, who should reach every course).
+// ---------------------------------------------------------------------------
+
+test.describe('QM per-course access endpoint', () => {
+  test('returns an access level for the caller\'s own course', async ({ request }) => {
+    await signUp(request, { email: uniqueEmail('qm-access-own') });
+
+    const createRes = await request.post(`${QM_BACKEND_URL}/api/course`, {
+      data: { name: 'Access Course', courseCode: 'ACC 101' },
+    });
+    const { data: course } = await createRes.json();
+
+    const res = await request.get(`${QM_BACKEND_URL}/api/course/${course.id}/access`);
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    // Owner of an unlinked QM course resolves to instructor-level access.
+    expect(body.data).toMatchObject({ level: 'instructor', rank: 2 });
+  });
+
+  test('returns null access (200, not 403) for a course the caller cannot access', async ({
+    playwright,
+  }) => {
+    const owner = await playwright.request.newContext();
+    const other = await playwright.request.newContext();
+    try {
+      await signUp(owner, { email: uniqueEmail('qm-access-owner') });
+      await signUp(other, { email: uniqueEmail('qm-access-other') });
+
+      const createRes = await owner.post(`${QM_BACKEND_URL}/api/course`, {
+        data: { name: 'Private Course', courseCode: 'ACC 102' },
+      });
+      const { data: course } = await createRes.json();
+
+      const res = await other.get(`${QM_BACKEND_URL}/api/course/${course.id}/access`);
+      expect(res.status()).toBe(200);
+      const body = await res.json();
+      expect(body.data).toBeNull();
+    } finally {
+      await owner.dispose();
+      await other.dispose();
+    }
+  });
+
+  test('returns 404 for a non-existent course', async ({ request }) => {
+    await signUp(request, { email: uniqueEmail('qm-access-missing') });
+    const res = await request.get(`${QM_BACKEND_URL}/api/course/99999/access`);
+    expect(res.status()).toBe(404);
+  });
+
+  test('returns 401 without a session', async ({ request }) => {
+    const res = await request.fetch(`${QM_BACKEND_URL}/api/course/1/access`, { method: 'GET' });
+    expect(res.status()).toBe(401);
   });
 });
 
