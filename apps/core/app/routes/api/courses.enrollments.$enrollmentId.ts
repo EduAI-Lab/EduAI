@@ -21,6 +21,8 @@ import {
   getEnrollment,
   updateEnrollmentRole,
 } from "~/lib/courses/enrollments.server";
+import { fireAndForget, logAuditAction } from "~/lib/logging.server";
+import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -61,6 +63,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
     return json(404, { error: "ENROLLMENT_NOT_FOUND" });
   }
 
+  const requestContext = getRequestContext(request);
+
   if (request.method === "PATCH") {
     const body = await request.json().catch(() => ({}));
 
@@ -75,6 +79,21 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
     switch (result.status) {
       case "200":
+        fireAndForget(
+          logAuditAction({
+            ...getActorContext(session?.user ?? null),
+            ...requestContext,
+            actionCode: "ENROLLMENT_ROLE_CHANGED",
+            category: "ENROLLMENT",
+            entityType: "Enrollment",
+            entityId: enrollmentId,
+            details: {
+              courseId,
+              previousRole: result.previousRole,
+              newRole: result.enrollment.role,
+            },
+          }),
+        );
         return json(200, result.enrollment);
       case "409":
         return json(409, {
@@ -97,6 +116,17 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   switch (result.status) {
     case "204":
+      fireAndForget(
+        logAuditAction({
+          ...getActorContext(session?.user ?? null),
+          ...requestContext,
+          actionCode: "ENROLLMENT_DEACTIVATED",
+          category: "ENROLLMENT",
+          entityType: "Enrollment",
+          entityId: enrollmentId,
+          details: { courseId },
+        }),
+      );
       return new Response(null, { status: 204 });
     case "409":
       return json(409, {

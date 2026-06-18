@@ -178,18 +178,25 @@ export default function Chat() {
     })();
   }, [chatId, systemPrompt, setAssistive]);
 
+  const requestMetadata = {
+    chatMode: "learning" as const,
+    model: selectedModel,
+    apiKeys: getValidApiKeys(),
+    courseCode: isGlobalChat ? undefined : selectedCourseCode || undefined,
+    chatId: chatId || undefined,
+    systemPrompt: systemPrompt || undefined,
+    adhdAssist,
+  };
+
   const { messages, input, handleInputChange, handleSubmit, isLoading, stop } =
     useChat({
       api: "/api/chat",
-      body: {
+      body: requestMetadata,
+      experimental_prepareRequestBody: ({ messages, requestBody }) => ({
+        ...(requestBody ?? requestMetadata),
         chatMode: "learning",
-        model: selectedModel,
-        apiKeys: getValidApiKeys(),
-        courseCode: selectedCourseCode || undefined,
-        chatId: chatId || undefined,
-        systemPrompt: systemPrompt || undefined,
-        adhdAssist,
-      },
+        messages: messages.slice(-1),
+      }),
       onResponse: async (response) => {
         await logChatApiResponse(response, "learning-chat");
         const chatIdHeader = response.headers.get("X-Chat-Id");

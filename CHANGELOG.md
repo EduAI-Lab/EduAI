@@ -11,19 +11,37 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 - [core] feat: Admin Chatbot at `/admin/chat` — ADMIN-only assistant with AI SDK tools for platform ops (list/get courses, enrollments, users, bug reports; confirmed writes for user CRUD, enrollment changes, and bug triage). Separate `ChatbotType` sessions (`LEARNING` | `ADMIN`), tool-capable model requirement, and token budgeting for vLLM context windows. ([#651](https://github.com/EduAI-Lab/EduAI/pull/651), @superbolt08, 2026-06-16)
 - [core] api: API agent readiness ([#572](https://github.com/EduAI-Lab/EduAI/issues/572)) — shared JSON error envelope (`api-error.server.ts`), JSON body support on course create, enrollment POST idempotency keys, and consistent validation responses. ([#651](https://github.com/EduAI-Lab/EduAI/pull/651), @superbolt08, 2026-06-16)
-- [core] docs: MCP integration ADR ([#570](https://github.com/EduAI-Lab/EduAI/issues/570)), Phase 1 OpenAPI spec ([#571](https://github.com/EduAI-Lab/EduAI/issues/571)), and optional stdio MCP spike ([#573](https://github.com/EduAI-Lab/EduAI/issues/573)) under `docs/rag-ai/` and `tools/mcp-spike/`; production MCP Host Server ([#574](https://github.com/EduAI-Lab/EduAI/issues/574)) remains September. ([#651](https://github.com/EduAI-Lab/EduAI/pull/651), @superbolt08, 2026-06-16)
+- [core] docs: Agent readiness coverage snapshot in `docs/rag-ai/AGENT_READINESS.md` — maps admin/learning chat tools to REST endpoints ([#167](https://github.com/EduAI-Lab/EduAI/issues/167)). ([#651](https://github.com/EduAI-Lab/EduAI/pull/651), @superbolt08, 2026-06-18)
 - [ai-tutor] api: Wire admin bug-report triage to Core — `GET/PATCH /admin/bug-reports` forwards the EduAI session cookie to Core instead of a local table. ([#651](https://github.com/EduAI-Lab/EduAI/pull/651), @superbolt08, 2026-06-16)
 - [core] tests: Unit tests for admin chat tools (`create-admin-chat-tools.test.ts`, `agent-tools.admin-context.test.ts`, `agent-tools.admin-mutations.test.ts`, `agent-tools.course-context.test.ts`); HTTP smoke scripts `admin-chat-smoke.mjs` and `admin-chat-tools-smoke.ts`. ([#651](https://github.com/EduAI-Lab/EduAI/pull/651), @superbolt08, 2026-06-16)
+- [core] api: Canvas material sync — discover and import Canvas course files into Core `CourseMaterial` with embedding pipeline; instructor UI on course detail (`CanvasMaterialSyncDialog`). (#658, @GlowyBlack, 2026-06-17)
+- [ai-tutor] api: `importEnrolledCoursesFromCore` — mirrors published student enrollments from Core into local offerings on `/api/me` and `GET /courses`. (#658, @GlowyBlack, 2026-06-17)
+- [core] api: `ubcTermFromDate` — UBC academic term codes (W1/W2/S1/S2) from course start dates in `America/Vancouver`. (#658, @GlowyBlack, 2026-06-17)
+- [core] feat: Add an activity logging subsystem — `audit_logs` (administrative mutations + `SECURITY` auth/access events) and `system_logs` (server errors) in Postgres, a redacting logging facade (`logging.server.ts`) that strips credential- and PII-shaped keys before write, request-context capture (actor/IP/user-agent), instrumented backend endpoints and security events, an ADMIN-only viewer at `/admin/logs`, and a configurable retention policy (defaults 365d audit/security, 90d system; viewer-triggered sweep throttled to 24h). (#581, @abdullahmoh21, 2026-06-17)
+- [core] docs: Add `docs/LOGGING.md` — PIA-oriented documentation of the activity logging subsystem (what is recorded, redaction, retention, and access). (#581, @abdullahmoh21, 2026-06-17)
+- [core] tests: Unit tests for the logging subsystem — `db.auditlog.server`, `db.systemlog.server`, `db.log-retention-policy.server`, and `logging.server` (credential/PII redaction, retention cutoffs, singleton-policy create/race). (#581, @abdullahmoh21, 2026-06-17)
 - [question-maker] api: Auto-import taught Core courses on instructor login — `importTaughtCoursesFromCore` links or creates local courses for scoped Core offerings where the caller's enrollment role is `INSTRUCTOR` or `TA`, syncs topics, and seeds a Practice Exam. (#578, @GlowyBlack, 2026-06-15)
 - [core] api: Expose `callerEnrollmentRole` on each course in `GET /api/courses` so extensions can distinguish teaching vs student enrollments when auto-importing. (#578, @GlowyBlack, 2026-06-15)
 - [question-maker] tests: Add `topicSyncService.test.js`, `courseCodeUtils.test.js`, and `importTaughtCoursesService.test.js`; extend `coreApiService.test.js` for cookie-only scoped reads (no service-key fallback on 403). (#578, @GlowyBlack, 2026-06-15)
 
 ### Changed
 
+- [core] refactor: Create `@eduai/types` shared workspace package — move `UserRole` and `EnrollmentRole` to `packages/types`; Core, AI Tutor, and QM now import from `@eduai/types` instead of maintaining independent copies, eliminating the need for manual sync across apps. (#594, #649, @evanbones, 2026-06-16)
 - [question-maker] refactor: Extract shared `courseCodeUtils.js`, `topicSyncService.js`, and `coreCourseLinkService.js` — dedupe `syncTopicsFromCoreForCourse` / `normalizeCourseCode` from routes and import service; batch topic upserts with two `findAll` queries on the hot `/topics` path. (#578, @GlowyBlack, 2026-06-15)
 - [question-maker] ui: Reuse `normalizeCourseCode` from `courseDisplay.ts` in `ProfileCoursesDialog` and `AddQuestionDialog`. (#578, @GlowyBlack, 2026-06-15)
 - [question-maker] api: Use `cookieOnly` on user-scoped Core reads (`listCoursesFromCore`, topics) so a stale session does not fall back to the unscoped service key; prefer service key for enrollment roster reads used by RBAC. (#578, @GlowyBlack, 2026-06-15)
 - [ai-tutor] api: Filter auto-import to Core courses where `callerEnrollmentRole` is `INSTRUCTOR` or `TA`. (#578, @GlowyBlack, 2026-06-15)
+- [question-maker] ui: Show Core `term` and `year` on course selection cards and the nav course dropdown (enriched from Core metadata). (#658, @GlowyBlack, 2026-06-17)
+- [core] api: Fall back to Canvas enrollment term `start_at` / `end_at` when course dates are missing; request `include[]=term` on teacher course list. (#658, @GlowyBlack, 2026-06-17)
+- [ai-tutor] api: Treat Core as source of truth — `importTaughtCoursesFromCore` mirrors taught courses on `/api/me` and `GET /courses` (import, topic/enrollment resync, `isPublished` sync) without manual sync endpoints. (#578, #620, @GlowyBlack, 2026-06-16)
+- [ai-tutor] ui: Remove manual Core import panel from instructor dashboard and “Sync students from Core” from the course page — mirroring is automatic. (#578, #620, @GlowyBlack, 2026-06-16)
+- [question-maker] api: Merge full Core mirror into `importTaughtCoursesFromCore` — topic resync on every `/auth/me` and `GET /api/course`; remove manual sync-from-core route. (#578, #620, @GlowyBlack, 2026-06-16)
+- [question-maker] ui: Remove manual “Sync with Core” from profile courses and course selection; update help copy for automatic mirroring. (#578, #620, @GlowyBlack, 2026-06-16)
+- [core] api: Use `ubcTermFromDate` when mapping Canvas courses to Core term/year fields. (#658, @GlowyBlack, 2026-06-17)
+
+### Removed
+
+- [core] api: Remove the headless `POST /api/invitations/accept` endpoint — the invitation-accept flow is consolidated onto the `/accept-invitation` page route. (#581, @abdullahmoh21, 2026-06-17)
 
 ### Fixed
 
@@ -34,7 +52,13 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] security: Block student-number reassignment via `POST /api/canvas/link-roster` after first link (409; contact admin to change). (#578, @GlowyBlack, 2026-06-15)
 - [ai-tutor] fix: Add `updated` to `syncCourseEnrollments` client return type in `api.ts`. (#578, @GlowyBlack, 2026-06-15)
 - [ai-tutor] tests: Extend `enrollmentSync.test.js` — TA rows survive STUDENT-only sync deletes. (#578, @GlowyBlack, 2026-06-15)
+- [ai-tutor] fix: Sync `isPublished` from Core when instructor mirror runs on already-linked offerings. (#578, @GlowyBlack, 2026-06-16)
+- [ai-tutor] ui: Student dashboard empty state notes enrollments sync from Core on sign-in. (#578, @GlowyBlack, 2026-06-16)
+- [ai-tutor] tests: Extend `importTaughtCoursesService.test.js` — `importEnrolledCoursesFromCore` and `isPublished` sync on linked offerings. (#578, @GlowyBlack, 2026-06-16)
+- [core] tests: `resolveCanvasCourseDates` term fallback and `ubcTermFromDate` month boundaries in `canvas-sync-services.test.ts`. (#658, @GlowyBlack, 2026-06-17)
+- [core] tests: Add `canvas-materials.server.test.ts` and `CanvasMaterialSyncDialog.test.tsx` for Canvas file discover/import and sync dialog UX. (#658, @GlowyBlack, 2026-06-17)
 - [core] tests: Update `canvas.integration.test.ts` reassignment case to use a unique student number (avoids `studentIdLookup` collision with seeded data). (#578, @GlowyBlack, 2026-06-15)
+- [core] fix: Stop frontend from retransmitting the full conversation history on every chat request by sending only the newest user message and associated metadata. (#487, @YibingW, 2026-06-15)
 
 ---
 

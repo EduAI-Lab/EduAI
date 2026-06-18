@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
 import { Loader2, RefreshCw } from "lucide-react";
 
-import { CanvasCourseSyncDialog } from "~/components/canvas/CanvasCourseSyncDialog";
+import { CanvasCourseSyncDialog } from "~/components/canvas/canvas-course-sync-dialog";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { getCanvasIntegration, type CanvasIntegrationPublic } from "~/lib/canvas/client";

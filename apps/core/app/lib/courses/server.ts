@@ -631,19 +631,27 @@ export async function deleteCourseTopic(
 
   const { topicId, name } = parsed.data;
 
-  const deleteResult = await prisma.courseTopic.updateMany({
+  // Resolve the concrete row first so the deleted topic's id and name are
+  // available for the audit log regardless of whether the caller passed an id
+  // or a name (a soft delete leaves nothing to read back afterwards).
+  const target = await prisma.courseTopic.findFirst({
     where: {
       courseId,
       deletedAt: null,
       ...(topicId ? { id: topicId } : {}),
       ...(name ? { name } : {}),
     },
-    data: { deletedAt: new Date() },
+    select: { id: true, name: true },
   });
 
-  if (deleteResult.count === 0) {
+  if (!target) {
     return { status: "404" } as const;
   }
 
-  return { status: "204" } as const;
+  await prisma.courseTopic.update({
+    where: { id: target.id },
+    data: { deletedAt: new Date() },
+  });
+
+  return { status: "204", topic: target } as const;
 }

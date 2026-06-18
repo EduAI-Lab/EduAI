@@ -1,10 +1,10 @@
 # Agent readiness — endpoint & tool coverage
 
 **Date:** 2026-06-18  
-**Issues:** [#167](https://github.com/EduAI-Lab/EduAI/issues/167) (MCP-readiness), [#570](https://github.com/EduAI-Lab/EduAI/issues/570) (ADR), [#651](https://github.com/EduAI-Lab/EduAI/pull/651) (admin chatbot)  
-**Related:** [`MCP_INTEGRATION_PLAN.md`](./MCP_INTEGRATION_PLAN.md) · [`openapi/mcp-v1.openapi.yaml`](./openapi/mcp-v1.openapi.yaml)
+**Issues:** [#167](https://github.com/EduAI-Lab/EduAI/issues/167) (agent readiness), [#651](https://github.com/EduAI-Lab/EduAI/pull/651) (admin chatbot)  
+**Related:** [`docs/implementations/api-wiring.md`](../implementations/api-wiring.md) · [`CHAT_RAG_PIPELINE.md`](./CHAT_RAG_PIPELINE.md)
 
-This document summarizes which Core REST endpoints and in-process chat tools are **ready for agents** today — either exposed in the **Admin Chatbot** (`chatMode: admin`), the **Learning Chat** (`chatMode: learning`), or planned as **MCP Phase 1 / Phase 2** tools.
+This document summarizes which Core REST endpoints and in-process chat tools are **ready for agents** today — exposed in the **Admin Chatbot** (`chatMode: admin`) or **Learning Chat** (`chatMode: learning`).
 
 ---
 
@@ -14,17 +14,16 @@ This document summarizes which Core REST endpoints and in-process chat tools are
 | ------- | ----------- | ----- |
 | **Learning chat tools** | 3 tools | RAG + web (course-scoped RAG requires a selected course) |
 | **Admin chat tools** | 17 tools (7 read, 10 write) | Platform-wide; writes require `confirmed: true` after admin approval in chat |
-| **REST — agent-ready (MCP P1)** | 6 route families | Course context + RAG search + model catalog |
-| **REST — agent-ready (MCP P2)** | 6 route families | Enrollments, users, topics, bug triage |
+| **REST — agent-ready (read / ops)** | 12 route families | Courses, enrollments, users, topics, bug triage, model catalog |
 | **REST — not agent-ready** | ~10 route families | Chat passthrough, uploads, Canvas, auth, prefs, infra |
 
-**Coverage (route families with ≥1 agent-ready operation):** ~12 / 22 ≈ **55%** of the Core API inventory in [`MCP_INTEGRATION_PLAN.md`](./MCP_INTEGRATION_PLAN.md).
+**Coverage (route families with ≥1 agent-ready operation):** ~12 / 22 ≈ **55%** of Core REST surface (see [`api-wiring.md`](../implementations/api-wiring.md)).
 
 ---
 
 ## In-process chat tools (shipped)
 
-Agents inside EduAI use Vercel AI SDK `tool()` handlers — same business logic MCP will call from `lib/*/server.ts` in September ([#574](https://github.com/EduAI-Lab/EduAI/issues/574)).
+Agents inside EduAI use Vercel AI SDK `tool()` handlers backed by shared `lib/*/server.ts` modules (same path a future MCP host would call).
 
 ### Learning chat (`create-learning-chat-tools.ts`)
 
@@ -73,24 +72,20 @@ Implementation: `apps/core/app/lib/agent-tools/`.
 
 ---
 
-## REST endpoints — MCP tier matrix
+## REST endpoints — coverage matrix
 
-Legend (from MCP ADR): **P1** = external-agent MVP; **P2** = admin agent; **—** = not exposed via MCP v1/v2; **Chat** = available only via in-process tools today.
+### Ready for agents (course + RAG)
 
-### Ready for agents (P1 — course + RAG)
+| Method | Path | Chat tool | Status |
+| ------ | ---- | --------- | ------ |
+| GET | `/api/courses` | `listCourses` (admin) | Ready — JSON + RBAC |
+| GET | `/api/courses/:id` | `getCourse` (admin) | Ready |
+| GET | `/api/courses/:id/topics` | `listCourseTopics` | Ready |
+| GET | `/api/courses/:id/topics/:topicId` | `getCourseTopic` | Ready |
+| — | `findRelevantContent()` | `getInformation` (learning) | Ready — in-process only |
+| GET | `/api/ai-models` | — | Ready — ADMIN read |
 
-| Method | Path | Chat tool | MCP tool (planned) | Status |
-| ------ | ---- | --------- | ------------------ | ------ |
-| GET | `/api/courses` | `listCourses` (admin) | `list_courses` | Ready — JSON + RBAC |
-| GET | `/api/courses/:id` | `getCourse` (admin) | `get_course` | Ready |
-| GET | `/api/courses/:id/topics` | `listCourseTopics` | `list_course_topics` | Ready |
-| GET | `/api/courses/:id/topics/:topicId` | `getCourseTopic` | `get_course_topic` | Ready |
-| — | `findRelevantContent()` | `getInformation` (learning) | `search_course_materials` | Ready — in-process only |
-| GET | `/api/ai-models` | — | `list_ai_models` | Ready — ADMIN read |
-
-OpenAPI subset: [`openapi/mcp-v1.openapi.yaml`](./openapi/mcp-v1.openapi.yaml).
-
-### Ready for agents (P2 — admin operations)
+### Ready for agents (admin operations)
 
 | Method | Path | Admin chat tool | Status |
 | ------ | ---- | --------------- | ------ |
@@ -106,10 +101,9 @@ OpenAPI subset: [`openapi/mcp-v1.openapi.yaml`](./openapi/mcp-v1.openapi.yaml).
 
 | Area | Gap | Severity |
 | ---- | --- | -------- |
-| `POST/PATCH /api/courses` | PATCH still formData-only | Medium — P2 course admin |
-| Cookie-path RBAC (#292) | Some routes incomplete for non-ADMIN roles | Medium — user-scoped MCP tools |
-| RAG search | No standalone HTTP route (by design) | Low — MCP calls `findRelevantContent` directly |
-| Admin writes via MCP | Needs `EDUAI_API_KEY` + `actingUserId` | Planned September |
+| `POST/PATCH /api/courses` | PATCH still formData-only | Medium |
+| Cookie-path RBAC (#292) | Some routes incomplete for non-ADMIN roles | Medium |
+| RAG search | No standalone HTTP route (by design) | Low — use `findRelevantContent` in-process |
 
 ### Not agent-ready (explicitly out of scope)
 
@@ -119,7 +113,7 @@ OpenAPI subset: [`openapi/mcp-v1.openapi.yaml`](./openapi/mcp-v1.openapi.yaml).
 | GET/DELETE | `/api/chats/:chatId` | Chat UI persistence, not ops |
 | POST | `/api/courses/:courseId/materials` | File upload — search via RAG instead |
 | GET/PATCH | `/api/courses/:id/embedding-settings`, re-embed | Admin infra |
-| GET/POST/PATCH/DELETE | `/api/ai-providers` | Admin infra (models catalog is P1) |
+| GET/POST/PATCH/DELETE | `/api/ai-providers` | Admin infra (models catalog is ready) |
 | * | `/api/canvas/*` | Canvas integration |
 | * | `/api/auth/*` | Better Auth handler |
 | POST | `/api/questions` | Question Maker surface — separate epic |
@@ -135,44 +129,25 @@ OpenAPI subset: [`openapi/mcp-v1.openapi.yaml`](./openapi/mcp-v1.openapi.yaml).
 │ Admin chat UI   │────►│ POST /api/chat         │────►│ lib/agent-tools/*.ts    │
 │ Learning chat   │     │ chatMode admin|learning│     │ lib/*/server.ts         │
 └─────────────────┘     └──────────────────────┘     └─────────────────────────┘
-                                    ▲
-┌─────────────────┐                 │
-│ MCP Host (#574) │─────────────────┘  (September — same handlers, no HTTP loopback)
-└─────────────────┘
 ```
 
 **Rule:** New agent capabilities should add handlers under `lib/` and register tools in `create-admin-chat-tools.ts` or `create-learning-chat-tools.ts`. REST routes remain for browsers and extensions.
 
 ---
 
-## Auth expectations for external agents
+## Auth expectations
 
-| Caller | Phase | Auth |
-| ------ | ----- | ---- |
-| Learning / course tools | P1 | Better Auth session or future scoped user API key |
-| Admin read tools | P2 | ADMIN session (admin chat today) |
-| Admin write tools | P2 | ADMIN session + in-chat confirmation; MCP: service key + `actingUserId` |
-| Extension integrators | P1 | `Authorization: Bearer EDUAI_API_KEY` |
-
-Details: [`MCP_INTEGRATION_PLAN.md` § Auth design](./MCP_INTEGRATION_PLAN.md#auth-design).
-
----
-
-## What's next
-
-| Milestone | Work |
-| --------- | ---- |
-| **Now (PR #651)** | Admin chatbot with 17 tools; platform-wide ops |
-| **Summer** | API hygiene complete ([#572](https://github.com/EduAI-Lab/EduAI/issues/572)); OpenAPI P1 ([#571](https://github.com/EduAI-Lab/EduAI/issues/571)) |
-| **September** | MCP Host Server ([#574](https://github.com/EduAI-Lab/EduAI/issues/574)) — thin adapter on existing handlers |
-| **Post-MVP** | Course create/update MCP tools; scoped user API keys; remaining P2 routes (TAs, course PATCH JSON) |
+| Caller | Auth |
+| ------ | ---- |
+| Learning / course tools | Better Auth session |
+| Admin chat tools | ADMIN session only |
+| Admin write tools | ADMIN session + in-chat `confirmed: true` |
+| Extension integrators | `Authorization: Bearer EDUAI_API_KEY` |
 
 ---
 
 ## References
 
-- [`MCP_INTEGRATION_PLAN.md`](./MCP_INTEGRATION_PLAN.md) — full API inventory and ADR
-- [`openapi/mcp-v1.openapi.yaml`](./openapi/mcp-v1.openapi.yaml) — Phase 1 REST contract
 - [`docs/implementations/api-wiring.md`](../implementations/api-wiring.md) — REST contracts
 - `apps/core/app/lib/agent-tools/create-admin-chat-tools.ts`
 - `apps/core/app/lib/agent-tools/create-learning-chat-tools.ts`
