@@ -101,44 +101,20 @@ describe('STUDENT is flat-gated off variant authoring (§16)', () => {
   });
 });
 
-describe('TA own-only edit (§19)', () => {
-  it('edits own draft → 200', async () => {
+describe('TA blocked at platform role gate', () => {
+  it.each([
+    ['put', '/api/questions/variants/42', { questionText: 'edited' }],
+    ['put', '/api/questions/variants/42', { isDraft: false }],
+    ['put', '/api/questions/variants/42', { isDraft: true }],
+    ['patch', '/api/questions/variants/42/testable', { testable: true }],
+    ['delete', '/api/questions/variants/42', {}],
+  ])('%s %s → 403', async (method, path, body) => {
     authAs(TA, 'TA');
     loadVariant({ isDraft: true, createdBy: TA.id });
-    mockUpdateVariant.mockResolvedValue({ id: 42, isDraft: true, questionMetadata: { course: COURSE } });
-
-    const res = await request(app)
-      .put('/api/questions/variants/42')
-      .set('Cookie', 'session=v')
-      .send({ questionText: 'edited' });
-
-    expect(res.status).toBe(200);
-    expect(mockUpdateVariant).toHaveBeenCalled();
-  });
-
-  it("edits another user's draft → 403", async () => {
-    authAs(TA, 'TA');
-    loadVariant({ isDraft: true, createdBy: 'someone-else' });
-
-    const res = await request(app)
-      .put('/api/questions/variants/42')
-      .set('Cookie', 'session=v')
-      .send({ questionText: 'edited' });
-
+    const res = await request(app)[method](path).set('Cookie', 'session=v').send(body);
     expect(res.status).toBe(403);
     expect(mockUpdateVariant).not.toHaveBeenCalled();
-  });
-
-  it('is denied on a draft with no owner (null createdBy) → 403', async () => {
-    authAs(TA, 'TA');
-    loadVariant({ isDraft: true, createdBy: null });
-
-    const res = await request(app)
-      .put('/api/questions/variants/42')
-      .set('Cookie', 'session=v')
-      .send({ questionText: 'edited' });
-
-    expect(res.status).toBe(403);
+    expect(mockDeleteVariant).not.toHaveBeenCalled();
   });
 });
 
@@ -199,7 +175,7 @@ describe('approved-variant lock (§19)', () => {
     expect(mockUpdateVariant).toHaveBeenCalled();
   });
 
-  it('TA cannot revert an approved variant → 409', async () => {
+  it('TA cannot revert an approved variant → 403', async () => {
     authAs(TA, 'TA');
     loadVariant({ isDraft: false, createdBy: TA.id });
 
@@ -208,7 +184,7 @@ describe('approved-variant lock (§19)', () => {
       .set('Cookie', 'session=v')
       .send({ isDraft: true });
 
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(403);
     expect(mockUpdateVariant).not.toHaveBeenCalled();
   });
 });
@@ -241,14 +217,14 @@ describe('PATCH testable is instructor-gated (§16 push domain)', () => {
 });
 
 describe('TA own-only delete (§19)', () => {
-  it('deletes own variant → 200', async () => {
+  it('deletes own variant → 403 at platform role gate', async () => {
     authAs(TA, 'TA');
     loadVariant({ isDraft: true, createdBy: TA.id });
 
     const res = await request(app).delete('/api/questions/variants/42').set('Cookie', 'session=v');
 
-    expect(res.status).toBe(200);
-    expect(mockDeleteVariant).toHaveBeenCalled();
+    expect(res.status).toBe(403);
+    expect(mockDeleteVariant).not.toHaveBeenCalled();
   });
 
   it("deletes another user's variant → 403", async () => {

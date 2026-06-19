@@ -1,0 +1,61 @@
+<!-- @dsCard group="Components" viewport="700x260" name="Badge" subtitle="Role badges, status variants, dot indicator, outline" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>
+  body { margin: 0; padding: 20px 24px; font-family: var(--font-sans); background: var(--background); }
+  .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .label { font-size: 11px; color: var(--muted-foreground); font-family: var(--font-mono); width: 80px; flex-shrink: 0; }
+  hr { border: none; border-top: 1px solid var(--border); margin: 4px 0 12px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { Badge } = window.EduAIDesignSystem_4b4b4d;
+
+function App() {
+  return (
+    <div>
+      <div className="row">
+        <span className="label">Roles</span>
+        <Badge role="ADMIN">Admin</Badge>
+        <Badge role="UNIT_ADMIN">Unit Admin</Badge>
+        <Badge role="INSTRUCTOR">Instructor</Badge>
+        <Badge role="TA">TA</Badge>
+        <Badge role="STUDENT">Student</Badge>
+      </div>
+      <hr/>
+      <div className="row">
+        <span className="label">Status</span>
+        <Badge variant="success" dot>Published</Badge>
+        <Badge variant="warning" dot>Pending</Badge>
+        <Badge variant="destructive" dot>Inactive</Badge>
+        <Badge variant="muted" dot>Draft</Badge>
+      </div>
+      <div className="row">
+        <span className="label">Style</span>
+        <Badge variant="default">Default</Badge>
+        <Badge variant="secondary">Secondary</Badge>
+        <Badge variant="outline">Canvas synced</Badge>
+        <Badge variant="gold">Featured</Badge>
+      </div>
+      <div className="row">
+        <span className="label">Sizes</span>
+        <Badge variant="muted" size="sm">sm · 12</Badge>
+        <Badge variant="muted" size="default">default · 24</Badge>
+        <Badge variant="muted" size="lg">lg · 100</Badge>
+      </div>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>

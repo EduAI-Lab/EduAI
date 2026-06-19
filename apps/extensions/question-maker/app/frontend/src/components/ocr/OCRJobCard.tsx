@@ -1,3 +1,5 @@
+import { Badge, Button } from '@eduai/ui';
+import { Tooltip } from '@/components/ui/tooltip';
 import {
   FileText,
   CheckCircle2,
@@ -8,9 +10,6 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Badge } from '../ui/badge';
-import { Button } from '../ui/button';
-import { Tooltip } from '../ui/tooltip';
 import type { OCRJob, OCRJobStatus } from '../../types/ocr';
 
 function formatTimeAgo(iso: string): string {
@@ -51,7 +50,7 @@ const statusConfig: Record<
   processing: {
     label: 'Processing',
     icon: Loader2,
-    className: 'text-blue-500 animate-spin',
+    className: 'text-secondary animate-spin',
     badgeVariant: 'secondary',
   },
   success: {

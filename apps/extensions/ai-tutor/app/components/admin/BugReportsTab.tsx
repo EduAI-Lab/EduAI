@@ -31,14 +31,14 @@
  */
 
 import { useMemo, useState } from 'react';
-import { Button } from '~/components/ui/button';
+import { Button } from '@eduai/ui';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '~/components/ui/dialog';
+} from '@eduai/ui';
 import api from '~/lib/api';
 import type { AdminBugReportRow, BugReportStatus } from '~/lib/types';
 
@@ -631,9 +631,9 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
   };
 
   return (
-    <div className="card-editorial p-6 sm:p-8 space-y-6 animate-fade-up delay-150">
+    <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6 sm:p-8 space-y-6 animate-fade-up delay-150">
       <div className="space-y-2">
-        <h2 className="font-display text-xl font-bold text-foreground">Bug Reports</h2>
+        <h2 className="text-xl font-bold text-foreground">Bug Reports</h2>
         <p className="text-sm text-muted-foreground max-w-3xl">
           Review incoming reports from students and professors, inspect captured diagnostics, and
           move each report through triage status.

@@ -2,10 +2,8 @@
  * Reusable MCQ choices editor: list of lettered options and correct-answer select.
  * Used in AddQuestionDialog and QuestionDetailView so MCQ UI is consistent and safe (no undefined .map).
  */
-import { Button } from '../ui/button';
-import { Input } from '../ui/input';
-import { Label } from '../ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { Button, Input, Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@eduai/ui';
+
 import type { MCQChoice } from '../../types/question';
 
 const DEFAULT_CHOICES: MCQChoice[] = [
@@ -67,7 +65,7 @@ export function MCQChoicesField({
         {choicesLabel} <span className="text-destructive">*</span>{' '}
         <span className="text-xs text-muted-foreground">(required for MCQ)</span>
       </Label>
-      <div className="space-y-3 border rounded-md p-4 bg-muted/30">
+      <div className="space-y-3 border rounded-md p-4 bg-muted/50">
         {safeChoices.map((choice, index) => (
           <div key={`${idPrefix}-choice-${index}`} className="flex items-center gap-3">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-semibold">

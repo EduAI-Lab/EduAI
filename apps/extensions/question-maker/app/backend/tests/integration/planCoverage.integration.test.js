@@ -88,7 +88,7 @@ describeDb('Plan coverage (integration)', () => {
     const res = await request(app)
       .get(`/api/course/${courseIdA}`)
       .set(cookieB());
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(403);
     expect(res.body.success).toBe(false);
   });
 

@@ -6,3 +6,6 @@ export const VALID_ROLES = new Set(USER_ROLE_VALUES);
 export const AUTHORS    = ['ADMIN', 'UNIT_ADMIN', 'INSTRUCTOR', 'TA'];
 export const INSTRUCTORS = ['ADMIN', 'UNIT_ADMIN', 'INSTRUCTOR'];
 export const CANVAS_ROLES = ['ADMIN', 'UNIT_ADMIN', 'INSTRUCTOR'];
+
+/** Platform roles allowed to use Question Maker authoring (excludes STUDENT and TA). */
+export const QM_AUTHORIZED = ['ADMIN', 'UNIT_ADMIN', 'INSTRUCTOR'];
