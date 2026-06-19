@@ -378,7 +378,7 @@ export const HelpPage = () => {
                 <section id="bug-reporting" className="space-y-2">
                     <h2 className="text-xl font-semibold">10. Report Bugs and Track Status</h2>
                     <ul className="list-disc list-inside space-y-1">
-                        <li>Use “Report bug” (floating button) or the bug icon in top navigation.</li>
+                        <li>Use the bug icon in the top navigation to report an issue.</li>
                         <li>Describe the issue and optionally submit anonymously.</li>
                         <li>The app automatically captures recent console/network diagnostics and a screenshot to help triage.</li>
                         <li>Admin users can open “Bug reports” in the top navigation to review reports and update status (unhandled, in progress, resolved).</li>

@@ -2,16 +2,16 @@ import { useState } from "react";
 import { GraduationCap, Loader2 } from "lucide-react";
 
 import { linkCanvasRoster } from "~/lib/canvas/client";
-import { Button } from "~/components/ui/button";
+import { Button } from "@eduai/ui";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "~/components/ui/card";
-import { Input } from "~/components/ui/input";
-import { Label } from "~/components/ui/label";
+} from "@eduai/ui";
+import { Input } from "@eduai/ui";
+import { Label } from "@eduai/ui";
 
 type StudentNumberSettingsProps = {
   initialStudentNumber: string | null;

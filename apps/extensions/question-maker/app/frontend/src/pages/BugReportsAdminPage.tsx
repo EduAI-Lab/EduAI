@@ -12,14 +12,7 @@ import { canTriageBugReports } from '@/lib/rbac';
 
 const STATUS_OPTIONS = ['unhandled', 'in progress', 'resolved'] as const;
 
-type BugReportSourceFilter = 'ALL' | 'CORE' | 'QUESTION_MAKER' | 'AI_TUTOR';
-
-const SOURCE_FILTER_LABELS: Record<BugReportSourceFilter, string> = {
-  ALL: 'All sources',
-  CORE: 'Core',
-  QUESTION_MAKER: 'Question Maker',
-  AI_TUTOR: 'AI Tutor',
-};
+const QM_SOURCE = 'QUESTION_MAKER' as const;
 
 function DetailDialog({
   open,
@@ -74,7 +67,6 @@ export function BugReportsAdminPage() {
   const { toast } = useToast();
   const [rows, setRows] = useState<BugReportRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [sourceFilter, setSourceFilter] = useState<BugReportSourceFilter>('QUESTION_MAKER');
   const [detail, setDetail] = useState<{
     open: boolean;
     title: string;
@@ -85,9 +77,7 @@ export function BugReportsAdminPage() {
   const load = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await bugReportApi.list(
-        sourceFilter === 'ALL' ? undefined : { source: sourceFilter },
-      );
+      const data = await bugReportApi.list({ source: QM_SOURCE });
       setRows(data);
     } catch {
       toast({
@@ -99,7 +89,7 @@ export function BugReportsAdminPage() {
     } finally {
       setLoading(false);
     }
-  }, [navigate, toast, sourceFilter]);
+  }, [navigate, toast]);
 
   useEffect(() => {
     if (isLoading) return;
@@ -109,7 +99,7 @@ export function BugReportsAdminPage() {
       return;
     }
     void load();
-  }, [isLoading, user, navigate, load, sourceFilter]);
+  }, [isLoading, user, navigate, load]);
 
   async function handleStatusChange(bugId: string, newStatus: string) {
     try {
@@ -136,20 +126,6 @@ export function BugReportsAdminPage() {
           Back
         </Button>
         <h1 className="text-lg font-semibold">Bug reports</h1>
-        <div className="ml-auto flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">Source</span>
-          <select
-            value={sourceFilter}
-            onChange={(e) => setSourceFilter(e.target.value as BugReportSourceFilter)}
-            className="text-sm border rounded-md px-2 py-1.5 bg-background"
-          >
-            {(Object.keys(SOURCE_FILTER_LABELS) as BugReportSourceFilter[]).map((key) => (
-              <option key={key} value={key}>
-                {SOURCE_FILTER_LABELS[key]}
-              </option>
-            ))}
-          </select>
-        </div>
       </div>
 
       <div className="p-6 overflow-x-auto">
@@ -160,7 +136,6 @@ export function BugReportsAdminPage() {
             <thead className="bg-muted/50 border-b">
               <tr>
                 <th className="text-left p-3 font-medium">Status</th>
-                <th className="text-left p-3 font-medium">Source</th>
                 <th className="text-left p-3 font-medium">Description</th>
                 <th className="text-left p-3 font-medium">User</th>
                 <th className="text-left p-3 font-medium">Date</th>
@@ -171,9 +146,8 @@ export function BugReportsAdminPage() {
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="p-8 text-center text-muted-foreground">
-                    No bug reports
-                    {sourceFilter === 'ALL' ? '' : ` for ${SOURCE_FILTER_LABELS[sourceFilter]}`}.
+                  <td colSpan={6} className="p-8 text-center text-muted-foreground">
+                    No bug reports.
                   </td>
                 </tr>
               ) : (
@@ -191,11 +165,6 @@ export function BugReportsAdminPage() {
                           </option>
                         ))}
                       </select>
-                    </td>
-                    <td className="p-3 align-top whitespace-nowrap">
-                      <span className="text-xs text-muted-foreground uppercase tracking-wide">
-                        {row.source ?? '—'}
-                      </span>
                     </td>
                     <td className="p-3 align-top max-w-[280px]">
                       <button

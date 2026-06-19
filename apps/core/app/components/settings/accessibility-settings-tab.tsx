@@ -6,10 +6,10 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-} from "~/components/ui/card";
-import { Label } from "~/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "~/components/ui/radio-group";
-import { Switch } from "~/components/ui/switch";
+} from "@eduai/ui";
+import { Label } from "@eduai/ui";
+import { RadioGroup, RadioGroupItem } from "@eduai/ui";
+import { Switch } from "@eduai/ui";
 
 const settingsChoiceClass =
   "settings-choice flex items-center gap-2 rounded-md border border-border p-3 transition-colors has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/10 has-[[data-state=checked]]:ring-1 has-[[data-state=checked]]:ring-primary/30 dark:has-[[data-state=checked]]:bg-primary/25 dark:has-[[data-state=checked]]:ring-primary/50";

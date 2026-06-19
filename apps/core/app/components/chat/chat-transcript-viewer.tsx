@@ -5,15 +5,9 @@
  * staff view, admin per-user history). There is deliberately NO composer: a
  * reader can never append to or edit another user's chat. The owner restores
  * and continues their own chats through the live chat screen instead.
- *
- * When `continueChatId` is provided the viewer renders a "Continue in chat"
- * button that deep-links to /chat?chatId=<id> — only pass this when the
- * current user is the owner of the chat (canEdit === true).
  */
 import { type Message } from "ai";
-import { IconEye, IconMessageCircle, IconLoader2, IconArrowRight } from "@tabler/icons-react";
-import { Link } from "react-router";
-import { Button } from "@eduai/ui";
+import { IconEye, IconMessageCircle, IconLoader2 } from "@tabler/icons-react";
 import { ChatMessage } from "~/components/chat/chat-message";
 
 interface ChatTranscriptViewerProps {
@@ -23,12 +17,6 @@ interface ChatTranscriptViewerProps {
   courseCode?: string | null;
   isLoading?: boolean;
   className?: string;
-  /**
-   * When provided, renders a "Continue in chat" action that opens this chat
-   * in the live chat screen. Only pass this when the current user owns the
-   * chat (i.e. canEdit === true from ChatTranscript).
-   */
-  continueChatId?: string;
 }
 
 export function ChatTranscriptViewer({
@@ -37,7 +25,6 @@ export function ChatTranscriptViewer({
   courseCode,
   isLoading = false,
   className,
-  continueChatId,
 }: ChatTranscriptViewerProps) {
   return (
     <div className={className}>
@@ -47,19 +34,9 @@ export function ChatTranscriptViewer({
         <p className="text-[13px] text-muted-foreground">
           Read-only transcript
         </p>
-        <div className="ml-auto flex items-center gap-2">
-          {continueChatId && (
-            <Button asChild size="sm" variant="default" className="h-7 px-3 text-[12px] gap-1.5">
-              <Link to={`/chat?chatId=${continueChatId}`}>
-                Continue in chat
-                <IconArrowRight size={13} stroke={2} />
-              </Link>
-            </Button>
-          )}
-          <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-background text-muted-foreground border border-border">
-            View only
-          </span>
-        </div>
+        <span className="ml-auto text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-background text-muted-foreground border border-border">
+          View only
+        </span>
       </div>
 
       {isLoading ? (
@@ -83,7 +60,7 @@ export function ChatTranscriptViewer({
         <div className="space-y-5">
           {messages.map((message, index) => (
             <ChatMessage
-              key={typeof message.id === "string" && message.id ? message.id : `msg-${index}`}
+              key={(message.id as string) ?? `msg-${index}`}
               message={message as unknown as Message}
             />
           ))}

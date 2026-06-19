@@ -5,6 +5,7 @@ import {
   Outlet,
   Scripts,
   ScrollRestoration,
+  useRouteLoaderData,
 } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 
@@ -14,10 +15,8 @@ import "./app.css";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { AssistiveUiProvider } from "~/components/assistive/assistive-ui-provider";
-import { UiPreferencesProvider } from "~/components/assistive/ui-preferences-provider";
-import { Toaster } from "~/components/ui/sonner";
-import { DEFAULT_ACCOUNT_PREFERENCES } from "~/lib/user-preferences";
-import { isUiDensity, isUiTheme } from "~/lib/ui-preferences";
+import { ThemeProvider } from "~/components/theme-provider";
+import { Toaster } from "@eduai/ui";
 
 export const links: Route.LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -32,53 +31,50 @@ export const links: Route.LinksFunction = () => [
   },
 ];
 
-const GUEST_ROOT_PREFERENCES = {
-  assistive: false,
-  motionReduced: false,
-  density: DEFAULT_ACCOUNT_PREFERENCES.density,
-  theme: DEFAULT_ACCOUNT_PREFERENCES.theme,
-} as const;
-
 /**
- * Resolves account-level UI preferences for every page render.
- * Guests always get defaults, guaranteeing baseline UI on public pages.
+ * Resolves the account-level Assistive Mode flag for every page render.
+ * Guests always get `false`, guaranteeing baseline UI on public pages.
+ * Deliberately a single cheap select — not getUserPreference, whose course
+ * validation is too heavy to run on every navigation.
  */
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request);
   if (!session?.user) {
-    return GUEST_ROOT_PREFERENCES;
+    return { assistive: false };
   }
 
   const row = await prisma.userPreference.findUnique({
     where: { userId: session.user.id },
-    select: {
-      assistDefault: true,
-      motionReduced: true,
-      density: true,
-      theme: true,
-    },
+    select: { assistDefault: true },
   });
 
-  return {
-    assistive: row?.assistDefault ?? false,
-    motionReduced: row?.motionReduced ?? false,
-    density: isUiDensity(row?.density) ? row.density : DEFAULT_ACCOUNT_PREFERENCES.density,
-    theme: isUiTheme(row?.theme) ? row.theme : DEFAULT_ACCOUNT_PREFERENCES.theme,
-  };
+  return { assistive: row?.assistDefault ?? false };
 }
 
 export function Layout({ children }: { children: React.ReactNode }) {
+  const data = useRouteLoaderData<typeof loader>("root");
+
   return (
-    <html lang="en">
+    // data-assistive is only ever present when ON — absent (not "false") when
+    // OFF so the baseline state cannot match [data-assistive] CSS selectors.
+    <html lang="en" {...(data?.assistive ? { "data-assistive": "true" } : {})}>
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <Meta />
         <Links />
+        {/* Inline script: set .dark on <html> before first paint to prevent flash */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('theme');if(t==='dark'||(t==='system'||!t)&&window.matchMedia('(prefers-color-scheme: dark)').matches){document.documentElement.classList.add('dark')}}catch(e){}})()`,
+          }}
+        />
       </head>
       <body>
-        {children}
-        <Toaster />
+        <ThemeProvider>
+          {children}
+          <Toaster />
+        </ThemeProvider>
         <ScrollRestoration />
         <Scripts />
       </body>
@@ -88,15 +84,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
 export default function App({ loaderData }: Route.ComponentProps) {
   return (
-    <UiPreferencesProvider
-      initialMotionReduced={loaderData?.motionReduced ?? false}
-      initialDensity={loaderData?.density ?? DEFAULT_ACCOUNT_PREFERENCES.density}
-      initialTheme={loaderData?.theme ?? DEFAULT_ACCOUNT_PREFERENCES.theme}
-    >
-      <AssistiveUiProvider initialAssistive={loaderData?.assistive ?? false}>
-        <Outlet />
-      </AssistiveUiProvider>
-    </UiPreferencesProvider>
+    <AssistiveUiProvider initialAssistive={loaderData?.assistive ?? false}>
+      <Outlet />
+    </AssistiveUiProvider>
   );
 }
 
