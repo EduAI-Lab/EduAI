@@ -456,7 +456,7 @@ describe("courses.topics action — DELETE", () => {
     mockAccess({ level: "ta", rank: 1 });
     prismaMock.courseTopic.findFirst.mockResolvedValue({ createdBy: "someone-else" });
     vi.mocked(getPolicy).mockResolvedValue(true);
-    vi.mocked(deleteCourseTopic).mockResolvedValue({ status: "204" });
+    vi.mocked(deleteCourseTopic).mockResolvedValue({ status: "204", topic: { id: TOPIC.id, name: TOPIC.name } });
     const res = await action(makeDelete({ topicId: "topic-1" }));
     expect(res.status).toBe(204);
   });
