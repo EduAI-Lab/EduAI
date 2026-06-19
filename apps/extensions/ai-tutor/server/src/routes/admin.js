@@ -33,6 +33,7 @@ import { getAiModelPolicyState, setAiModelPolicy } from '../services/aiModelPoli
 import { mapAdminUser, mapCourseOffering } from '../utils/mappers.js';
 import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
 import { syncCourseEnrollments } from '../services/enrollmentSync.js';
+import { listEduAiCourseEnrollmentsServiceKey, patchCoreEnrollmentRole } from '../services/eduaiClient.js';
 
 const router = express.Router();
 
@@ -280,6 +281,16 @@ router.patch(
         return res.status(404).json({ error: 'Enrollment not found' });
       }
 
+      if (course.externalId && course.externalSource === 'EDUAI') {
+        const coreEnrollments = await listEduAiCourseEnrollmentsServiceKey(course.externalId);
+        const coreEnrollment = coreEnrollments.find((e) => e.studentId === userId);
+        if (!coreEnrollment) {
+          return res.status(404).json({ error: 'Enrollment not found in Core' });
+        }
+        const cookie = getEduAiCookieForRequest(req);
+        await patchCoreEnrollmentRole(course.externalId, coreEnrollment.id, rawRole, cookie);
+      }
+
       const updated = await prisma.courseEnrollment.update({
         where: { courseOfferingId_userId: { courseOfferingId: courseId, userId } },
         data: { role: rawRole },
@@ -287,7 +298,8 @@ router.patch(
 
       res.json({ ok: true, role: updated.role });
     } catch (e) {
-      res.status(500).json({ error: String(e) });
+      const status = Number.isInteger(e?.status) ? e.status : 500;
+      res.status(status).json({ error: String(e) });
     }
   },
 );
