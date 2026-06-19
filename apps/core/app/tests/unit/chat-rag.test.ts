@@ -1,6 +1,8 @@
 import { describe, it, expect, afterEach } from "vitest";
 import {
   buildCappedRagContextText,
+  buildRagAnswerInstructions,
+  buildRagSystemBlock,
   capRagHitsForTool,
   capToolResultsInMessages,
   estimateMessageCharsForModel,
@@ -9,6 +11,7 @@ import {
   resolveSessionCharBudget,
   resolveToolResultMaxChars,
   truncateToMaxChars,
+  RAG_COURSE_GROUNDING_INSTRUCTION,
   HYBRID_RAG_MAX_CHUNKS,
   HYBRID_RAG_MAX_CONTEXT_CHARS,
   TOOL_RAG_MAX_CHARS_PER_CHUNK,
@@ -19,6 +22,30 @@ import {
 function hit(content: string, title = "Lecture 1"): HybridRagHit {
   return { content, similarity: 0.9, materialTitle: title };
 }
+
+describe("buildRagAnswerInstructions", () => {
+  it("includes general grounding rules without course-specific examples", () => {
+    const text = buildRagAnswerInstructions();
+    expect(text).toContain(RAG_COURSE_GROUNDING_INSTRUCTION);
+    expect(text).toContain("do not support that premise");
+    expect(text).toContain("Cite the **Source** header");
+    expect(text).not.toMatch(/Morocco|FIFA/i);
+  });
+
+  it("adds getInformation hint on tool path", () => {
+    expect(buildRagAnswerInstructions({ toolPath: true })).toContain("getInformation");
+    expect(buildRagAnswerInstructions()).not.toContain("getInformation");
+  });
+});
+
+describe("buildRagSystemBlock", () => {
+  it("wraps context with excerpt header and grounding suffix", () => {
+    const block = buildRagSystemBlock("**Source**: Doc\nFact one.");
+    expect(block).toContain("Here are relevant excerpts");
+    expect(block).toContain("Fact one.");
+    expect(block).toContain("Course grounding rules");
+  });
+});
 
 describe("buildCappedRagContextText", () => {
   it("returns empty string for no hits", () => {

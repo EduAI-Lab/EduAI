@@ -1,5 +1,5 @@
 // @vitest-environment node
-// Tests for #484: course selected → RAG always runs on both hybrid and tool paths.
+// Route tests for smart course RAG gate (#484 + research grounding).
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("ai", async (importOriginal) => {
@@ -115,8 +115,14 @@ function baseBody(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function lastStreamSystem(): string {
+  const call = vi.mocked(streamText).mock.calls.at(-1)?.[0] as { system?: string } | undefined;
+  return call?.system ?? "";
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  delete process.env.CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE;
   process.env.VLLM_BASE_URL = "http://localhost:8001";
 
   vi.mocked(auth.api.getSession).mockResolvedValue({
@@ -135,31 +141,40 @@ beforeEach(() => {
   vi.mocked(prisma.systemConfig.findUnique).mockResolvedValue(null);
 });
 
-describe("Always-on course RAG (#484)", () => {
+describe("Smart course RAG gate (#484)", () => {
   describe("hybrid path (supportsTools = false)", () => {
     beforeEach(() => {
       vi.mocked(modelSupportsTools).mockResolvedValue(false);
     });
 
-    it("calls findRelevantContent for a generic query when course is selected", async () => {
+    it("prefetches but does not inject for generic queries with weak hits", async () => {
+      vi.mocked(findRelevantContent).mockResolvedValue([
+        { content: "noise", similarity: 0.2, materialTitle: "Doc" },
+      ]);
       mockStream();
       const res = await action(makeRequest(baseBody()));
       expect(res.status).toBe(200);
-      expect(findRelevantContent).toHaveBeenCalledWith(
-        expect.any(String),
-        COURSE_ID,
-        expect.any(Number),
-      );
+      expect(findRelevantContent).toHaveBeenCalled();
+      expect(lastStreamSystem()).not.toContain("Course grounding rules");
     });
 
-    it("does not call findRelevantContent when no course is selected", async () => {
+    it("injects grounding block for course-intent queries", async () => {
+      vi.mocked(findRelevantContent).mockResolvedValue([
+        { content: "Trees are hierarchical.", similarity: 0.7, materialTitle: "Ch 3" },
+      ]);
       mockStream();
-      const res = await action(makeRequest(baseBody({ courseId: undefined })));
+      const res = await action(
+        makeRequest(baseBody({
+          messages: [{ id: "msg-1", role: "user", content: "What did chapter 3 say about trees?" }],
+        })),
+      );
       expect(res.status).toBe(200);
-      expect(findRelevantContent).not.toHaveBeenCalled();
+      expect(lastStreamSystem()).toContain("Course grounding rules");
+      expect(lastStreamSystem()).toContain("Trees are hierarchical.");
     });
 
-    it("calls findRelevantContent for a greeting-style query when course is selected", async () => {
+    it("prefetches but skips inject for greetings with weak hits", async () => {
+      vi.mocked(findRelevantContent).mockResolvedValue([]);
       mockStream();
       const res = await action(
         makeRequest(baseBody({
@@ -167,11 +182,25 @@ describe("Always-on course RAG (#484)", () => {
         })),
       );
       expect(res.status).toBe(200);
-      expect(findRelevantContent).toHaveBeenCalledWith(
-        expect.any(String),
-        COURSE_ID,
-        expect.any(Number),
-      );
+      expect(findRelevantContent).toHaveBeenCalled();
+      expect(lastStreamSystem()).not.toContain("Course grounding rules");
+    });
+
+    it("injects on strong similarity even for generic phrasing", async () => {
+      vi.mocked(findRelevantContent).mockResolvedValue([
+        { content: "Gradient descent minimizes loss.", similarity: 0.85, materialTitle: "Notes" },
+      ]);
+      mockStream();
+      const res = await action(makeRequest(baseBody()));
+      expect(res.status).toBe(200);
+      expect(lastStreamSystem()).toContain("Gradient descent minimizes loss.");
+    });
+
+    it("does not prefetch when no course is selected", async () => {
+      mockStream();
+      const res = await action(makeRequest(baseBody({ courseId: undefined })));
+      expect(res.status).toBe(200);
+      expect(findRelevantContent).not.toHaveBeenCalled();
     });
   });
 
@@ -180,22 +209,28 @@ describe("Always-on course RAG (#484)", () => {
       vi.mocked(modelSupportsTools).mockResolvedValue(true);
     });
 
-    it("preloads findRelevantContent for a generic query when course is selected", async () => {
+    it("preloads only when inject gate passes", async () => {
+      vi.mocked(findRelevantContent).mockResolvedValue([]);
       mockStream();
       const res = await action(makeRequest(baseBody()));
       expect(res.status).toBe(200);
-      expect(findRelevantContent).toHaveBeenCalledWith(
-        expect.any(String),
-        COURSE_ID,
-        expect.any(Number),
-      );
+      expect(findRelevantContent).toHaveBeenCalled();
+      expect(lastStreamSystem()).not.toContain("Course grounding rules");
     });
 
-    it("does not preload findRelevantContent when no course is selected", async () => {
+    it("preloads grounding for course-intent queries", async () => {
+      vi.mocked(findRelevantContent).mockResolvedValue([
+        { content: "Late work loses 10%.", similarity: 0.72, materialTitle: "Syllabus" },
+      ]);
       mockStream();
-      const res = await action(makeRequest(baseBody({ courseId: undefined })));
+      const res = await action(
+        makeRequest(baseBody({
+          messages: [{ id: "msg-1", role: "user", content: "What does the syllabus say about late work?" }],
+        })),
+      );
       expect(res.status).toBe(200);
-      expect(findRelevantContent).not.toHaveBeenCalled();
+      expect(lastStreamSystem()).toContain("Late work loses 10%");
+      expect(lastStreamSystem()).toContain("getInformation");
     });
   });
 });
