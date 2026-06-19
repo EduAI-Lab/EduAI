@@ -82,20 +82,15 @@ export const HelpPage = () => {
                 </section>
 
                 <section id="onboarding" className="space-y-2">
-                    <h2 className="text-xl font-semibold">3. Onboarding: Add Courses and Topics</h2>
-                    <p className="text-sm text-muted-foreground">Flow: top nav profile icon (👤) on `/courses` or `/home` → “Link courses from AI service”.</p>
+                    <h2 className="text-xl font-semibold">3. Onboarding: Courses and Topics</h2>
+                    <p className="text-sm text-muted-foreground">Courses you teach in Core are added automatically when you sign in.</p>
                     <ol className="list-decimal list-inside space-y-1">
-                        <li>Open the profile button in the top-right of the Home page.</li>
-                        <li>In “Link courses from AI service”, pick the courses you teach.
-                            <ul className="list-disc list-inside pl-4 space-y-1">
-                                <li>“Already added” badge means it’s already in your library.</li>
-                                <li>Each course imports its topics automatically from the AI service.</li>
-                            </ul>
-                        </li>
-                        <li>Click “Add selected courses”. Courses + topics are created locally.</li>
-                        <li>(Optional) Use the “Logout” button in this dialog to end the session.</li>
+                        <li>After login, your taught courses from Core appear on the course selection page.</li>
+                        <li>Topics are kept in sync with Core automatically.</li>
+                        <li>For practice without Core, create a <strong>Sandbox course</strong> from your profile menu.</li>
+                        <li>(Optional) Use <strong>Logout</strong> in the courses dialog to end the session.</li>
                     </ol>
-                    <p className="text-sm">Tip: Add courses before creating questions or assessments.</p>
+                    <p className="text-sm">Tip: Wait for courses to load before creating questions or assessments.</p>
                 </section>
 
                 <section id="create-questions" className="space-y-4">

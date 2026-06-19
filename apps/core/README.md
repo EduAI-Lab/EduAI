@@ -16,6 +16,7 @@ A production-ready chat platform with Retrieval-Augmented Generation (RAG) capab
 ## Features
 
 - **Admin Invitations**: Admins onboard ADMIN / UNIT_ADMIN / INSTRUCTOR users via emailed one-time accept links (`/admin/invitations`) — the invitee sets a password and lands signed in with the invited role; links can be revoked or re-sent (token rotation)
+- **Activity Logging**: Administrative mutations and security events (logins, access denials, rate-limit trips) are recorded to `audit_logs` and server errors to `system_logs`, with credential- and PII-shaped fields redacted before write; admins review them in an ADMIN-only viewer at `/admin/logs` with a configurable retention policy (see [docs/LOGGING.md](../../docs/LOGGING.md))
 - **Multi-Provider AI Support**: Switch between Ollama (local), Google Gemini, and OpenAI with a single configuration change
 - **Retrieval-Augmented Generation**: Ground responses in course materials with source citations to minimize hallucinations
 - **Tool Calling**: Enhanced information retrieval through integrated RAG tools
@@ -26,6 +27,7 @@ A production-ready chat platform with Retrieval-Augmented Generation (RAG) capab
 - **Role-based Access**: Support for students, professors, and administrators
 - **Persisted Chat Preferences**: Assistive mode and the selected course are saved per user, restored on every page load and new chat, and cleared on logout
 - **Account-level Assistive Mode**: Shell-wide `AssistiveUiProvider` sets `data-assistive` on `<html>` when ON (absent when OFF so baseline CSS is unchanged); preference persists via `UserPreference.assistDefault` and syncs with the `/chat` header toggle
+- **Assistive active highlighting**: On `/chat`, emphasizes the latest assistant reply, de-emphasizes older messages, anchors the composer, auto-focuses input after responses, and offers optional focus mode to hide non-essential chrome
 
 ## Prerequisites
 
@@ -379,12 +381,16 @@ Read and update the authenticated user's UI preferences (`UserPreference` row). 
 
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
-| `GET` | `/api/preferences` | Returns `{ assistDefault, lastCourseCode }` — defaults to `{ assistDefault: false, lastCourseCode: null }` when no row exists |
-| `PATCH` | `/api/preferences` | Partial update; accepts `assistDefault` (boolean) and/or `lastCourseCode` (string or `null` to clear) |
+| `GET` | `/api/preferences` | Returns `{ assistDefault, lastCourseCode, motionReduced, density, theme }` — defaults to `{ assistDefault: false, lastCourseCode: null, motionReduced: false, density: "comfortable", theme: "system" }` when no row exists |
+| `PATCH` | `/api/preferences` | Partial update; accepts `assistDefault` (boolean), `lastCourseCode` (string or `null`), `motionReduced` (boolean), `density` (`comfortable` \| `compact`), and/or `theme` (`system` \| `light` \| `dark`) |
 
-When `assistDefault` is `true`, the root layout sets `data-assistive="true"` on `<html>` for CSS scoping; when `false`, the attribute is **absent** (not `"false"`) so baseline styles are unchanged.
+When `assistDefault` is `true`, the root layout sets `data-assistive="true"` on `<html>` for CSS scoping; when `false`, the attribute is **absent** (not `"false"`) so baseline styles are unchanged. Non-default `motionReduced`, `density`, and `theme` values set `data-reduce-motion`, `data-density="compact"`, or `light`/`dark` classes on `<html>`; defaults remove those hooks so OFF states stay pixel-identical.
+
+**Settings → Accessibility tab:** `/settings` exposes Assistive Mode, reduce motion, density, and theme controls. Assistive Mode uses `AssistiveUiProvider`; motion/density/theme use `UiPreferencesProvider`. Both persist through `/api/preferences`.
 
 **Assistive reading typography:** Elements marked with the `reading-surface` class (chat messages, course overview text, etc.) pick up spacing-only typography under `[data-assistive]` — 16px base, ~1.625 line-height, 65ch max measure, increased paragraph/letter spacing. No font-family swap; OFF state is pixel-identical because the attribute is absent.
+
+**Active highlighting + focus mode (#525):** On `/chat` when `[data-assistive]` is set, the latest assistant message is emphasized (outline + background), older messages are de-emphasized (lower opacity, full opacity on hover/focus), the composer is subtly anchored, `:focus-visible` rings are strengthened, and the input auto-focuses after each assistant turn. **Focus mode** (header toggle, assistive ON only) sets `data-assistive-focus-mode` on `<html>` to hide the sidebar and course/model selectors. Client `re_orientation` events record re-orientation latency via `POST /api/assistive-events`.
 
 **Example** (browser session — toggle Assistive Mode on):
 
@@ -397,7 +403,7 @@ fetch("/api/preferences", {
 });
 ```
 
-The Settings Accessibility tab (motion, density, theme) is tracked separately in GitHub issue #530 and is blocked on the Settings shell rewrite (PR #491).
+The Settings Accessibility tab ships in #530 (`/settings` → Accessibility).
 
 ### Canvas Integration Endpoints
 

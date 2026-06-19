@@ -8,17 +8,17 @@ import { Label } from '../ui/label';
 import { X } from 'lucide-react';
 import { Tooltip } from '../ui/tooltip';
 
-type Topic = { id: number; name: string };
+type Topic = { id: string; name: string };
 type TopicCategory = 'general' | 'primary' | 'secondary' | 'excluded';
 
 interface TopicSelectProps {
   availableTopics: Topic[];
-  primaryTopicIds: number[];
-  secondaryTopicIds: number[];
-  excludedTopicIds: number[];
-  onPrimaryChange: (ids: number[]) => void;
-  onSecondaryChange: (ids: number[]) => void;
-  onExcludedChange: (ids: number[]) => void;
+  primaryTopicIds: string[];
+  secondaryTopicIds: string[];
+  excludedTopicIds: string[];
+  onPrimaryChange: (ids: string[]) => void;
+  onSecondaryChange: (ids: string[]) => void;
+  onExcludedChange: (ids: string[]) => void;
 }
 
 export const TopicSelect = ({
@@ -31,7 +31,7 @@ export const TopicSelect = ({
   onExcludedChange,
 }: TopicSelectProps) => {
   const [searchQuery, setSearchQuery] = React.useState('');
-  const [selectedTopicIds, setSelectedTopicIds] = React.useState<Set<number>>(new Set());
+  const [selectedTopicIds, setSelectedTopicIds] = React.useState<Set<string>>(new Set());
   const [flashCategory, setFlashCategory] = React.useState<TopicCategory | null>(null);
   const [hoverCategory, setHoverCategory] = React.useState<TopicCategory | null>(null);
 
@@ -57,7 +57,7 @@ export const TopicSelect = ({
   }, [availableTopics, primaryTopicIds, secondaryTopicIds, excludedTopicIds, searchQuery]);
 
   // Handle topic selection toggle
-  const toggleTopicSelection = (topicId: number) => {
+  const toggleTopicSelection = (topicId: string) => {
     setSelectedTopicIds(prev => {
       const next = new Set(prev);
       if (next.has(topicId)) {
@@ -109,7 +109,7 @@ export const TopicSelect = ({
   };
 
   // Handle remove from category (return to general bank)
-  const handleRemove = (topicId: number, category: TopicCategory) => {
+  const handleRemove = (topicId: string, category: TopicCategory) => {
     if (category === 'primary') {
       onPrimaryChange(primaryTopicIds.filter(i => i !== topicId));
     } else if (category === 'secondary') {

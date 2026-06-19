@@ -9,7 +9,7 @@ import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select'
 import { Textarea } from '~/components/ui/textarea'
-import { DEPARTMENTS, getDepartmentLabel } from '~/lib/departments'
+import { UNIT_OPTIONS, getDepartmentLabel } from '~/lib/units'
 import { DepartmentCombobox } from '~/components/courses/department-combobox'
 import type { Course, CreateCourseInput, UpdateCourseInput } from '~/hooks/api/use-courses'
 
@@ -104,7 +104,7 @@ export function CoursesAdminView({ courses, instructors = [], onCreateCourse, on
               <div className="grid gap-2">
                 <Label htmlFor="create-dept">Department</Label>
                 <DepartmentCombobox
-                  departments={[...DEPARTMENTS]}
+                  departments={[...UNIT_OPTIONS]}
                   value={createDept}
                   onValueChange={setCreateDept}
                 />
@@ -281,7 +281,7 @@ export function CoursesAdminView({ courses, instructors = [], onCreateCourse, on
               <div className="grid gap-2">
                 <Label>Department</Label>
                 <DepartmentCombobox
-                  departments={[...DEPARTMENTS]}
+                  departments={[...UNIT_OPTIONS]}
                   value={editDept}
                   onValueChange={setEditDept}
                   placeholder="No department"

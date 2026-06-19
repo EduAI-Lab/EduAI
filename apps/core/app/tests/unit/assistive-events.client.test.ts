@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { postAssistiveEvent } from "~/lib/assistive-events.client";
+import { postAssistiveClientEvent } from "~/lib/assistive-events.client";
 
-describe("postAssistiveEvent", () => {
+describe("postAssistiveClientEvent", () => {
   beforeEach(() => {
     vi.stubGlobal(
       "fetch",
@@ -13,54 +13,59 @@ describe("postAssistiveEvent", () => {
     vi.unstubAllGlobals();
   });
 
-  it("POSTs to /api/assistive-events with the payload", async () => {
-    await postAssistiveEvent({
-      eventType: "task_initiation",
+  it("POSTs sanitized client events to /api/assistive-events", async () => {
+    postAssistiveClientEvent({
+      eventType: "re_orientation",
       adhdAssist: true,
-      metrics: { durationMs: 1200, success: true },
+      chatId: "cjld2cjxh0000qzrmn831i7rn",
+      metrics: { durationMs: 420, path: "/chat" },
     });
+
+    await Promise.resolve();
 
     expect(fetch).toHaveBeenCalledWith(
       "/api/assistive-events",
       expect.objectContaining({
         method: "POST",
         credentials: "include",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          eventType: "task_initiation",
+          eventType: "re_orientation",
           adhdAssist: true,
-          metrics: { durationMs: 1200, success: true },
+          chatId: "cjld2cjxh0000qzrmn831i7rn",
+          metrics: { durationMs: 420, path: "/chat" },
         }),
       }),
     );
   });
 
-  it("includes chatId when provided", async () => {
-    await postAssistiveEvent({
-      eventType: "re_orientation",
-      chatId: "cjld2cjxh0000qzrmn831i7rn",
+  it("omits chatId when not provided", async () => {
+    postAssistiveClientEvent({
+      eventType: "task_initiation",
       adhdAssist: false,
     });
 
-    expect(fetch).toHaveBeenCalledWith(
-      "/api/assistive-events",
-      expect.objectContaining({
-        body: JSON.stringify({
-          eventType: "re_orientation",
-          chatId: "cjld2cjxh0000qzrmn831i7rn",
-          adhdAssist: false,
-        }),
-      }),
-    );
+    await Promise.resolve();
+
+    const init = vi.mocked(fetch).mock.calls[0]?.[1];
+    expect(JSON.parse(String(init?.body))).toEqual({
+      eventType: "task_initiation",
+      adhdAssist: false,
+    });
   });
 
   it("swallows network errors without throwing", async () => {
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     vi.mocked(fetch).mockRejectedValueOnce(new Error("offline"));
 
-    await expect(
-      postAssistiveEvent({ eventType: "mode_toggled", metrics: { fromMode: false, toMode: true } }),
-    ).resolves.toBeUndefined();
+    expect(() =>
+      postAssistiveClientEvent({
+        eventType: "mode_toggled",
+        adhdAssist: true,
+        metrics: { fromMode: false, toMode: true },
+      }),
+    ).not.toThrow();
+
+    await Promise.resolve();
 
     expect(consoleSpy).toHaveBeenCalled();
     consoleSpy.mockRestore();
