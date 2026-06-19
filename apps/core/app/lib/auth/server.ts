@@ -1,7 +1,9 @@
 import { betterAuth } from "better-auth";
 import { apiKey } from "better-auth/plugins";
+import { createAuthMiddleware, APIError } from "better-auth/api";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import prisma from "../prisma.server";
+import { getPolicy, logPolicyDenial } from "../policy.server";
 
 export const authBaseURL =
   process.env.BETTER_AUTH_URL?.trim() ||
@@ -27,6 +29,29 @@ export const auth = betterAuth({
       apiKeyHeaders: ["x-api-key"],
     }),
   ],
+  hooks: {
+    // §6a: single chokepoint for the public-registration toggle. Both sign-up
+    // entry points (the register.tsx action sub-request and a direct POST to
+    // the catch-all /api/auth/*) flow through auth.handler(), so enforcing here
+    // covers both. Invitation acceptance and OAuth/SSO are different paths and
+    // stay open. `policy.server` imports only prisma — no cycle with this file.
+    before: createAuthMiddleware(async (ctx) => {
+      if (
+        ctx.path === "/sign-up/email" &&
+        !(await getPolicy("auth.allowPublicRegistration"))
+      ) {
+        logPolicyDenial({
+          policyKey: "auth.allowPublicRegistration",
+          userId: null,
+          role: null,
+          action: "auth.signup",
+        });
+        throw new APIError("FORBIDDEN", {
+          message: "Public registration is disabled",
+        });
+      }
+    }),
+  },
   user: {
     additionalFields: {
       role: {
