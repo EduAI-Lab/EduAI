@@ -196,6 +196,24 @@ export async function listEduAiModels() {
 }
 
 /**
+ * Update an enrollment's role in Core, forwarding the acting user's session cookie.
+ * Core's enrollment-role endpoint requires user session auth (not service key).
+ * Throws an Error with `status` set on HTTP failure.
+ */
+export async function patchCoreEnrollmentRole(externalCourseId, enrollmentId, role, cookie) {
+  if (!cookie) {
+    const error = new Error('Session cookie required to update enrollment role in Core');
+    error.status = 401;
+    throw error;
+  }
+  return requestEduAi(`/courses/${externalCourseId}/enrollments/${enrollmentId}`, {
+    method: 'PATCH',
+    cookie,
+    body: { role },
+  });
+}
+
+/**
  * Fetch testable questions for a Core course offering using the service key.
  * Returns the `questions` array from Core's paginated response.
  * Throws an Error with `status` set on HTTP failure.
