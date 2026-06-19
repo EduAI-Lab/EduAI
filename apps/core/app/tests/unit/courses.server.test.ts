@@ -25,7 +25,6 @@ vi.mock("~/lib/auth/server", () => ({
 }));
 
 vi.mock("~/lib/auth/guards.server", () => ({
-  enforceAdminIfApiKey: vi.fn(),
   requireServiceKey: vi.fn(),
 }));
 
@@ -43,7 +42,7 @@ import {
   deleteCourseTopic,
 } from "~/lib/courses/server";
 import { auth } from "~/lib/auth/server";
-import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
+import { requireServiceKey } from "~/lib/auth/guards.server";
 
 describe("getCourse", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -199,7 +198,6 @@ function makeGetRequest(headers?: Record<string, string>) {
 describe("getCourses", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(enforceAdminIfApiKey).mockResolvedValue({ response: null, session: null });
     prismaMock.enrollment.findMany.mockResolvedValue([]);
   });
 
@@ -269,14 +267,6 @@ describe("getCourses", () => {
     expect(where.OR[0]).toEqual({ department: { in: ["COSC"] } });
   });
 
-  it("uses apiKeySession when enforceAdminIfApiKey resolves one", async () => {
-    const apiKeySession = { user: { id: "u2", role: "ADMIN" } };
-    vi.mocked(enforceAdminIfApiKey).mockResolvedValue({ response: null, session: apiKeySession as any });
-    prismaMock.course.findMany.mockResolvedValue([]);
-    const res = await getCourses(makeGetRequest());
-    expect(res.status).toBe(200);
-    expect(auth.api.getSession).not.toHaveBeenCalled();
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -305,7 +295,6 @@ const VALID_COURSE_FIELDS = {
 describe("createCourse", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(enforceAdminIfApiKey).mockResolvedValue({ response: null, session: null });
     prismaMock.$transaction.mockImplementation(async (fn: (tx: typeof prismaMock) => Promise<unknown>) => fn(prismaMock));
   });
 
@@ -409,7 +398,6 @@ function makePatchRequest(body: Record<string, unknown>) {
 describe("updateCourse", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(enforceAdminIfApiKey).mockResolvedValue({ response: null, session: null });
   });
 
   it("returns 401 when no session", async () => {
@@ -499,7 +487,6 @@ function makeDeleteRequest() {
 describe("deleteCourse", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(enforceAdminIfApiKey).mockResolvedValue({ response: null, session: null });
   });
 
   it("returns 401 when no session", async () => {
@@ -554,7 +541,6 @@ describe("setPublishState", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv("EDUAI_API_KEY", VALID_KEY);
-    vi.mocked(enforceAdminIfApiKey).mockResolvedValue({ response: null, session: null });
     vi.mocked(requireServiceKey).mockResolvedValue(null);
   });
 

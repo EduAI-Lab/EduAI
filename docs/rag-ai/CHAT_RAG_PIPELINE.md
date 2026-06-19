@@ -121,7 +121,7 @@ The handler is the `action` in [`chat.ts`](../../apps/core/app/routes/api/chat.t
 
 ## 2. Before any LLM call
 
-1. **Session** — `auth.api.getSession`, or admin `x-api-key` path with optional `proxyUser` remapping.
+1. **Session** — `auth.api.getSession` (session cookie; no legacy `x-api-key` path).
 2. **Parse body** — `normalizeMessage` ensures `id` and `role`; stamps UUID if missing.
 3. **Course** — `courseCode` → `Course` row by code; `effectiveCourseId = resolved id || courseId`.
 4. **Chat** — load by `chatId` + user (410 if deleted); create/update for `systemPrompt`.

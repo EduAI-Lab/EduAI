@@ -13,7 +13,6 @@ vi.mock("~/lib/auth/server", () => ({
 }));
 
 vi.mock("~/lib/auth/guards.server", () => ({
-  enforceAdminIfApiKey: vi.fn().mockResolvedValue({ response: null, session: null }),
   requireServiceKey: vi.fn(),
 }));
 
