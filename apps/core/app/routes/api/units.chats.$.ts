@@ -13,14 +13,9 @@ import type { LoaderFunctionArgs } from "react-router";
 
 import { auth } from "~/lib/auth/server";
 import { getAuthorizedUnits } from "~/lib/auth/course-access.server";
+import { jsonResponse as json } from "~/lib/api/json-response.server";
 import { getPolicy, denyByPolicy } from "~/lib/policy.server";
 import prisma from "~/lib/prisma.server";
-
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const department = params.department;
@@ -68,8 +63,25 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     orderBy: { updatedAt: "desc" },
   });
 
+  // Limit to chats owned by an active STUDENT of the chat's OWN course — the same
+  // owner-role filter the per-course endpoint applies. Without this, staff
+  // (instructor/TA/unit-admin) chats tagged to a department course would leak
+  // into the unit aggregate, contradicting the "student chats" contract above.
+  // Sibling relations (chat.user vs chat.course) can't be correlated in a single
+  // Prisma `where`, so we resolve the active-student set and filter in memory.
+  const studentEnrollments = await prisma.enrollment.findMany({
+    where: { role: "STUDENT", isActive: true, course: { department, deletedAt: null } },
+    select: { courseId: true, userId: true },
+  });
+  const activeStudent = new Set(
+    studentEnrollments.map((e) => `${e.courseId}:${e.userId}`),
+  );
+  const studentChats = chats.filter(
+    (chat) => chat.course && activeStudent.has(`${chat.course.id}:${chat.user.id}`),
+  );
+
   return json({
-    chats: chats.map((chat) => ({
+    chats: studentChats.map((chat) => ({
       id: chat.id,
       title: chat.title,
       ownerId: chat.user.id,

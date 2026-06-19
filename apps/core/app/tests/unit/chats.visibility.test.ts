@@ -4,6 +4,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const prismaMock = vi.hoisted(() => ({
   chat: { findMany: vi.fn(), findFirst: vi.fn() },
+  chatMessage: { findMany: vi.fn() },
+  enrollment: { findFirst: vi.fn(), findMany: vi.fn() },
 }));
 
 vi.mock("~/lib/prisma.server", () => ({ default: prismaMock }));
@@ -55,6 +57,11 @@ function access(level: string | null, rank = 0) {
 beforeEach(() => {
   vi.clearAllMocks();
   prismaMock.chat.findMany.mockResolvedValue([]);
+  prismaMock.chatMessage.findMany.mockResolvedValue([
+    { messageId: "m1", role: "user", content: "hi", position: 1 },
+  ]);
+  prismaMock.enrollment.findFirst.mockResolvedValue(null);
+  prismaMock.enrollment.findMany.mockResolvedValue([]);
 });
 
 // ---------------------------------------------------------------------------
@@ -183,6 +190,8 @@ describe("GET /api/units/:department/chats", () => {
         course: { id: "c1", code: "COSC 101", name: "Intro" },
       },
     ]);
+    // s1 is an active STUDENT of c1, so their chat survives the owner-role filter.
+    prismaMock.enrollment.findMany.mockResolvedValue([{ courseId: "c1", userId: "s1" }]);
     const res = await unitChatsLoader(unitArgs("COSC"));
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -193,12 +202,41 @@ describe("GET /api/units/:department/chats", () => {
     );
   });
 
+  it("excludes chats NOT owned by an active student of the chat's own course", async () => {
+    session("UNIT_ADMIN");
+    vi.mocked(getAuthorizedUnits).mockResolvedValue(["COSC"]);
+    vi.mocked(getPolicy).mockResolvedValue(true);
+    prismaMock.chat.findMany.mockResolvedValue([
+      {
+        id: "chat-staff", title: "TA notes", createdAt: AT, updatedAt: AT,
+        user: { id: "ta1", name: "TA" },
+        course: { id: "c1", code: "COSC 101", name: "Intro" },
+      },
+    ]);
+    // ta1 holds no STUDENT enrollment in c1 — their course chat must not appear.
+    prismaMock.enrollment.findMany.mockResolvedValue([]);
+    const res = await unitChatsLoader(unitArgs("COSC"));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.chats).toHaveLength(0);
+  });
+
   it("ADMIN reads any unit aggregate without a flag (200)", async () => {
     session("ADMIN");
     vi.mocked(getPolicy).mockResolvedValue(false);
+    prismaMock.chat.findMany.mockResolvedValue([
+      {
+        id: "chat-1", title: "Q", createdAt: AT, updatedAt: AT,
+        user: { id: "s1", name: "Stu" },
+        course: { id: "c1", code: "COSC 101", name: "Intro" },
+      },
+    ]);
+    prismaMock.enrollment.findMany.mockResolvedValue([{ courseId: "c1", userId: "s1" }]);
     const res = await unitChatsLoader(unitArgs("COSC"));
     expect(res.status).toBe(200);
     expect(getPolicy).not.toHaveBeenCalled();
+    const body = await res.json();
+    expect(body.chats).toHaveLength(1);
   });
 });
 
@@ -214,6 +252,8 @@ function detailArgs(chatId = "chat-1") {
   };
 }
 
+// Metadata-only row — the loader fetches message bodies separately (and only
+// for non-owner oversight reads), so chat.findFirst no longer selects messages.
 const CHAT_ROW = {
   id: "chat-1",
   userId: "owner-1",
@@ -223,27 +263,49 @@ const CHAT_ROW = {
   adhdAssist: false,
   createdAt: AT,
   updatedAt: AT,
-  messages: [{ messageId: "m1", role: "user", content: "hi", position: 1 }],
 };
 
 describe("GET /api/chats/:chatId (course-authorized viewer)", () => {
-  it("lets the owner read their chat", async () => {
+  it("lets the owner read their chat metadata WITHOUT pulling the transcript", async () => {
     session("STUDENT", "owner-1");
     prismaMock.chat.findFirst.mockResolvedValue(CHAT_ROW);
     const res = await chatDetailLoader(detailArgs());
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).not.toHaveProperty("userId"); // owner/course ids stripped
-    expect(body.messages).toHaveLength(1);
+    // Owner session-resume reads metadata only — no over-fetch of messages.
+    expect(body.messages).toBeUndefined();
+    expect(prismaMock.chatMessage.findMany).not.toHaveBeenCalled();
   });
 
-  it("lets a course INSTRUCTOR read it when instructors.canViewCourseChats is on", async () => {
+  it("lets a course INSTRUCTOR read a STUDENT chat (with transcript) when the flag is on", async () => {
     session("INSTRUCTOR", "instr-1");
     prismaMock.chat.findFirst.mockResolvedValue(CHAT_ROW);
     access("instructor", 2);
     vi.mocked(getPolicy).mockResolvedValue(true);
+    // The chat's owner is an active STUDENT of the course.
+    prismaMock.enrollment.findFirst.mockResolvedValue({ id: "e1" });
     const res = await chatDetailLoader(detailArgs());
     expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.messages).toHaveLength(1); // oversight read includes the transcript
+    expect(prismaMock.enrollment.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ userId: "owner-1", role: "STUDENT", isActive: true }),
+      }),
+    );
+  });
+
+  it("404s an INSTRUCTOR reading a NON-student (e.g. staff) chat even with the flag on", async () => {
+    session("INSTRUCTOR", "instr-1");
+    prismaMock.chat.findFirst.mockResolvedValue(CHAT_ROW);
+    access("instructor", 2);
+    vi.mocked(getPolicy).mockResolvedValue(true);
+    // Owner is not an active STUDENT of the course (e.g. a co-instructor/TA).
+    prismaMock.enrollment.findFirst.mockResolvedValue(null);
+    const res = await chatDetailLoader(detailArgs());
+    expect(res.status).toBe(404);
+    expect(prismaMock.chatMessage.findMany).not.toHaveBeenCalled();
   });
 
   it("404s a non-owner INSTRUCTOR when the flag is off (no existence leak)", async () => {

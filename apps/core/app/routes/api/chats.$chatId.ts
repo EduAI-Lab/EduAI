@@ -34,10 +34,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         adhdAssist: true,
         createdAt: true,
         updatedAt: true,
-        messages: {
-          select: { messageId: true, role: true, content: true, position: true },
-          orderBy: { position: "asc" },
-        },
       },
     });
 
@@ -48,18 +44,33 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       });
     }
 
+    const isOwner = chat.userId === session.user.id;
+
     // Owner and ADMIN may always read. §5c: a course-authorized viewer
     // (instructor/unit-admin) may read a course chat when their grant flag is on
     // — resolved through the shared chat-visibility gate so this route can't
     // drift from the course/unit chat list endpoints.
-    let authorized = chat.userId === session.user.id || session.user.role === "ADMIN";
+    let authorized = isOwner || session.user.role === "ADMIN";
     if (!authorized && chat.courseId) {
       const { access } = await resolveCourseAccessWithCourse(session.user, chat.courseId);
       const gate = courseChatViewPolicyKey(access?.level ?? null);
-      if (gate === "always") {
-        authorized = true;
-      } else if (gate !== "never" && (await getPolicy(gate))) {
-        authorized = true;
+      const gateOpen =
+        gate === "always" || (gate !== "never" && (await getPolicy(gate)));
+      if (gateOpen) {
+        // Oversight is limited to STUDENT-owned chats — the same owner-role
+        // filter the course/unit list endpoints apply. Without this, a
+        // co-instructor/TA/unit-admin with the grant on could read another
+        // staff member's private course chat.
+        const ownerIsStudent = await prisma.enrollment.findFirst({
+          where: {
+            courseId: chat.courseId,
+            userId: chat.userId,
+            role: "STUDENT",
+            isActive: true,
+          },
+          select: { id: true },
+        });
+        authorized = ownerIsStudent !== null;
       }
     }
 
@@ -71,7 +82,19 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       });
     }
 
-    const { userId: _userId, courseId: _courseId, ...chatView } = chat;
+    // Message bodies are only needed by the oversight viewer (a non-owner staff
+    // read). The owner's session-resume path (useChatSession) reads metadata
+    // only, so don't pull the full transcript on that hot path.
+    const messages = isOwner
+      ? undefined
+      : await prisma.chatMessage.findMany({
+          where: { chatId: chat.id },
+          select: { messageId: true, role: true, content: true, position: true },
+          orderBy: { position: "asc" },
+        });
+
+    const { userId: _userId, courseId: _courseId, ...meta } = chat;
+    const chatView = messages ? { ...meta, messages } : meta;
     return new Response(JSON.stringify(chatView), {
       status: 200,
       headers: { "Content-Type": "application/json" },

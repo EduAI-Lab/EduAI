@@ -3,18 +3,13 @@ import { z } from "zod";
 
 import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
+import { jsonResponse as json } from "~/lib/api/json-response.server";
 import {
   getPolicies,
   getPolicyDefinitions,
   isPolicyKey,
   setPolicy,
 } from "~/lib/policy.server";
-
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
 
 /**
  * GET /api/policies — read all configurable RBAC policy flags.
