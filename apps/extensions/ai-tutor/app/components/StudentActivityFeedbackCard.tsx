@@ -34,7 +34,7 @@ export default function StudentActivityFeedbackCard({
       <div className="space-y-1">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h3 className="font-display text-lg font-bold text-foreground">Quick feedback</h3>
+            <h3 className="text-lg font-bold text-foreground">Quick feedback</h3>
             <p className="text-sm text-muted-foreground">
               How did this activity feel after your first attempt?
             </p>

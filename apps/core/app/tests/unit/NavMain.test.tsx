@@ -4,7 +4,7 @@ import { MemoryRouter } from "react-router";
 import { IconDashboard, IconBooks } from "@tabler/icons-react";
 import { NavMain } from "~/components/nav-main";
 import type { NavMainItem } from "~/components/nav-main";
-import { SidebarProvider } from "~/components/ui/sidebar";
+import { SidebarProvider } from "@eduai/ui";
 
 const items: NavMainItem[] = [
   { title: "Dashboard", url: "/dashboard", icon: IconDashboard },

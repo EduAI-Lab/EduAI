@@ -6,21 +6,40 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-} from "~/components/ui/card";
-import { Label } from "~/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "~/components/ui/radio-group";
-import { Switch } from "~/components/ui/switch";
+  Label,
+  RadioGroup,
+  RadioGroupItem,
+  Switch,
+  useTheme,
+} from "@eduai/ui";
+import { DEFAULT_UI_PREFERENCES, type UiTheme } from "~/lib/ui-preferences";
 
 const settingsChoiceClass =
-  "settings-choice flex items-center gap-2 rounded-md border border-border p-3 transition-colors has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/10 has-[[data-state=checked]]:ring-1 has-[[data-state=checked]]:ring-primary/30 dark:has-[[data-state=checked]]:bg-primary/25 dark:has-[[data-state=checked]]:ring-primary/50";
+  "settings-choice cursor-pointer flex items-center gap-2 rounded-md border border-border p-3 transition-colors has-[[data-state=checked]]:bg-accent has-[[data-state=checked]]:ring-1 has-[[data-state=checked]]:ring-accent dark:has-[[data-state=checked]]:bg-accent dark:has-[[data-state=checked]]:ring-accent";
 
 const settingsSwitchClass =
-  "data-[state=checked]:bg-primary dark:data-[state=unchecked]:border-border dark:data-[state=unchecked]:bg-muted";
+  "data-[state=checked]:bg-accent dark:data-[state=unchecked]:border-border dark:data-[state=unchecked]:bg-muted cursor-pointer";
 
 export function AccessibilitySettingsTab() {
   const { assistive, setAssistive } = useAssistiveUi();
-  const { motionReduced, density, theme, setMotionReduced, setDensity, setTheme } =
-    useUiPreferences();
+  const { motionReduced, density, setMotionReduced, setDensity } = useUiPreferences();
+  const { theme: nextTheme, setTheme: setNextTheme } = useTheme();
+
+  // Theme is owned by next-themes (shared `theme` localStorage key carries the
+  // choice across Core/AI Tutor/Question Maker). We also mirror it to the
+  // account so the preference survives across devices.
+  const theme = (nextTheme as UiTheme | undefined) ?? DEFAULT_UI_PREFERENCES.theme;
+  const setTheme = (value: UiTheme) => {
+    setNextTheme(value);
+    fetch("/api/preferences", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ theme: value }),
+    }).catch((error) => {
+      console.error("Failed to persist theme preference:", error);
+    });
+  };
 
   return (
     <div className="mt-6 space-y-6">
@@ -50,7 +69,7 @@ export function AccessibilitySettingsTab() {
                 aria-label="Assistive Mode"
                 className={settingsSwitchClass}
               />
-              <span className="text-sm text-muted-foreground whitespace-nowrap">
+              <span className="text-sm text-muted-foreground whitespace-nowrap cursor-pointer">
                 {assistive ? "On" : "Off"}
               </span>
             </div>
@@ -73,7 +92,7 @@ export function AccessibilitySettingsTab() {
                 aria-label="Reduce motion"
                 className={settingsSwitchClass}
               />
-              <span className="text-sm text-muted-foreground whitespace-nowrap">
+              <span className="text-sm text-muted-foreground whitespace-nowrap cursor-pointer">
                 {motionReduced ? "On" : "Off"}
               </span>
             </div>
@@ -93,13 +112,13 @@ export function AccessibilitySettingsTab() {
             >
               <div className={settingsChoiceClass}>
                 <RadioGroupItem value="comfortable" id="density-comfortable" />
-                <Label htmlFor="density-comfortable" className="font-normal">
+                <Label htmlFor="density-comfortable" className="font-normal cursor-pointer">
                   Comfortable
                 </Label>
               </div>
               <div className={settingsChoiceClass}>
                 <RadioGroupItem value="compact" id="density-compact" />
-                <Label htmlFor="density-compact" className="font-normal">
+                <Label htmlFor="density-compact" className="font-normal cursor-pointer">
                   Compact
                 </Label>
               </div>
@@ -120,19 +139,19 @@ export function AccessibilitySettingsTab() {
             >
               <div className={settingsChoiceClass}>
                 <RadioGroupItem value="system" id="theme-system" />
-                <Label htmlFor="theme-system" className="font-normal">
+                <Label htmlFor="theme-system" className="font-normal cursor-pointer">
                   System
                 </Label>
               </div>
               <div className={settingsChoiceClass}>
                 <RadioGroupItem value="light" id="theme-light" />
-                <Label htmlFor="theme-light" className="font-normal">
+                <Label htmlFor="theme-light" className="font-normal cursor-pointer">
                   Light
                 </Label>
               </div>
               <div className={settingsChoiceClass}>
                 <RadioGroupItem value="dark" id="theme-dark" />
-                <Label htmlFor="theme-dark" className="font-normal">
+                <Label htmlFor="theme-dark" className="font-normal cursor-pointer">
                   Dark
                 </Label>
               </div>

@@ -299,12 +299,10 @@ model SuggestedPrompt {
   updatedAt DateTime @updatedAt
 }
 
-/// One AI chat session per (user, activity, mode) tuple.
-///
-/// The unique constraint `[userId, activityId, mode]` is intentional:
-/// switching modes (teach/guide/custom) for the same activity yields a
-/// distinct session so chat history doesn't bleed across pedagogies, but
-/// re-entering the same mode resumes the existing conversation.
+/// One row per AI chat session a student starts for a given (activity, mode).
+/// Multiple rows per (userId, activityId, mode) are allowed so the history
+/// panel can list past conversations. Each row's chatId is the Core Chat id
+/// where the full message transcript lives.
 ///
 /// `userId` stores the Core CUID; no local FK — User table is owned by Core.
 model AiChatSession {
@@ -313,13 +311,14 @@ model AiChatSession {
   activity            Activity             @relation(fields: [activityId], references: [id], onDelete: Cascade)
   activityId          Int
   mode                String
-  chatId              String
+  chatId              String               @unique
   modelId             String?
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
   aiInteractionTraces AiInteractionTrace[]
 
-  @@unique([userId, activityId, mode])
+  @@index([userId, activityId])
+  @@index([userId, activityId, mode])
 }
 
 /// `userId` stores the Core CUID; no local FK — User table is owned by Core.

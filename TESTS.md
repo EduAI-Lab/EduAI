@@ -10,13 +10,14 @@
 6. [EduAI Full Platform End-to-End Tests](#eduai-full-platform-end-to-end-tests)
 7. [EduAI Unit Tests](#eduai-unit-tests)
 8. [EduAI Integration Tests](#eduai-integration-tests)
-9. [AI Tutor Unit Tests](#ai-tutor-unit-tests)
-10. [AI Tutor Integration Tests](#ai-tutor-integration-tests)
-11. [AI Tutor Server Unit Tests](#ai-tutor-server-unit-tests)
-12. [AI Tutor Server Integration Tests](#ai-tutor-server-integration-tests)
-13. [Question Maker Unit Tests](#question-maker-unit-tests)
-14. [Question Maker Integration Tests](#question-maker-integration-tests)
-15. [Extending This Document](#extending-this-document)
+9. [@eduai/ui Component Tests](#eduaiui-component-tests)
+10. [AI Tutor Unit Tests](#ai-tutor-unit-tests)
+11. [AI Tutor Integration Tests](#ai-tutor-integration-tests)
+12. [AI Tutor Server Unit Tests](#ai-tutor-server-unit-tests)
+13. [AI Tutor Server Integration Tests](#ai-tutor-server-integration-tests)
+14. [Question Maker Unit Tests](#question-maker-unit-tests)
+15. [Question Maker Integration Tests](#question-maker-integration-tests)
+16. [Extending This Document](#extending-this-document)
 
 ---
 
@@ -245,12 +246,27 @@ Each section should use this format:
 | [`AccessibilitySettingsTab.test.tsx`](apps/core/app/tests/unit/AccessibilitySettingsTab.test.tsx) | Tests Settings Accessibility tab renders de-stigmatized copy/controls and wires Assistive Mode + reduce motion to shared providers. |
 | [`root-layout.test.tsx`](apps/core/app/tests/unit/root-layout.test.tsx) | Verifies the root document layout renders without route loader context, preventing invalid hook crashes before the app router is available. |
 | [`assistive-reading.test.ts`](apps/core/app/tests/unit/assistive-reading.test.ts) | Verifies `READING_SURFACE_CLASS` matches assistive-reading.css hooks and that typography rules are scoped under `[data-assistive]` with spacing-based defaults (16px base, 1.625 line-height, 65ch measure, no font-family swap). |
+| [`ChatViews.test.tsx`](apps/core/app/tests/unit/ChatViews.test.tsx) | Verifies `ChatGlobalView` renders the "Global" indicator pill and `ChatCourseScopedView` renders the "Select course" selector pill in their input areas (redesigned chat layout — no in-body context banner; assistive/system-prompt controls live in the input footer). |
 | [`active-highlight.test.ts`](apps/core/app/tests/unit/active-highlight.test.ts) | Tests `resolveMessageHighlightRole` / `findLastAssistantIndex` and the `assistive-active-highlight.css` contract — active/inactive message hooks, hover/focus restore, outline+background emphasis, and focus-mode sidebar/chrome hiding under `[data-assistive]`. |
 | [`assistive-events.client.test.ts`](apps/core/app/tests/unit/assistive-events.client.test.ts) | Tests `postAssistiveClientEvent` fire-and-forget POST shape to `/api/assistive-events` (credentials, optional `chatId`, sanitized metrics payload). |
 | [`use-assistive-reorientation.test.tsx`](apps/core/app/tests/unit/use-assistive-reorientation.test.tsx) | Tests `useAssistiveReorientation` records `re_orientation` on pointerdown and non-composer focusin, ignores programmatic `focusin` on the chat composer (post-assistant auto-focus), and stays idle until `epoch > 0`. |
 | [`ChatViews.test.tsx`](apps/core/app/tests/unit/ChatViews.test.tsx) | Verifies `ChatGlobalView` and `ChatCourseScopedView` render their role-specific banner text, and that clicking the Assistive Mode switch calls `onAssistiveChange` with the toggled boolean. |
 | [`NavMain.test.tsx`](apps/core/app/tests/unit/NavMain.test.tsx) | Verifies nav items render as SPA `<Link>` elements, the active item receives `aria-current="page"` based on the current pathname, child routes (e.g. `/courses/abc`) also activate the parent nav item, and an empty items list renders without throwing. |
 | [`SiteHeader.test.tsx`](apps/core/app/tests/unit/SiteHeader.test.tsx) | Verifies the header renders an explicit `title` prop, derives the page title from the current route when no prop is passed, renders optional action slots, and replaces the `<h1>` with the `breadcrumbs` node when that prop is provided. |
+| [`ApiKeySettings.test.tsx`](apps/core/app/tests/unit/ApiKeySettings.test.tsx) | Verifies the API key settings dialog renders OpenAI and Google provider tabs, switches tabs on click, masks existing keys, enables/disables the save button based on input state, calls `onUpdateProvider`/`onRemoveProvider` callbacks, shows a saving state while submitting, and renders nothing when `open` is false. |
+| [`AppSidebar.test.tsx`](apps/core/app/tests/unit/AppSidebar.test.tsx) | Verifies the app sidebar renders role-appropriate nav items for each role (Admin sees admin section, Instructor/TA/Student do not), and renders the signed-in user's name. |
+| [`BugReportsAdminView.test.tsx`](apps/core/app/tests/unit/BugReportsAdminView.test.tsx) | Verifies the bug reports admin view renders stub reports with their title and source tag, and shows a loading state when `isLoading` is true. |
+| [`ChatInput.test.tsx`](apps/core/app/tests/unit/ChatInput.test.tsx) | Verifies the chat input renders the textarea, model selector, course selector, and submit button; submit is disabled when input is empty or loading; the API key settings panel toggles on button click. |
+| [`ChatWelcome.test.tsx`](apps/core/app/tests/unit/ChatWelcome.test.tsx) | Verifies the welcome heading renders, the model name appears when `selectedModelInfo` is provided, "Powered by" is hidden when omitted, all four suggestion cards render, and clicking a card calls `onSelectPrompt` with the prompt text. |
+| [`CourseDetail.test.tsx`](apps/core/app/tests/unit/CourseDetail.test.tsx) | Verifies `CourseDetailManagerView`, `CourseDetailTaView`, and `CourseDetailStudentView` each render the course code and name; manager view shows the Materials tab and upload widget; TA and student views render the overview tab content. |
+| [`CourseMaterialsUpload.test.tsx`](apps/core/app/tests/unit/CourseMaterialsUpload.test.tsx) | Verifies the upload widget renders a file input and supported-formats text; disables the input and shows an uploading message while `isUploading` is true; and displays error or success messages from props. |
+| [`CoursesList.test.tsx`](apps/core/app/tests/unit/CoursesList.test.tsx) | Verifies that all five role-specific course list views (Admin, UnitAdmin, Instructor, TA, Student) render course cards with correct course code and name, and handle empty and mixed published/draft states appropriately. |
+| [`NavDocuments.test.tsx`](apps/core/app/tests/unit/NavDocuments.test.tsx) | Verifies the Documents group label renders, each document item name appears, and the group renders without error when the items list is empty. |
+| [`NavSecondary.test.tsx`](apps/core/app/tests/unit/NavSecondary.test.tsx) | Verifies secondary nav items render as links with correct `href` attributes, and the component renders without throwing when the items list is empty. |
+| [`NavUser.test.tsx`](apps/core/app/tests/unit/NavUser.test.tsx) | Verifies the user's name and email render in the nav user component, the role badge displays the correct label for the admin role, and initials appear in the avatar fallback. |
+| [`ProjectGoals.test.tsx`](apps/core/app/tests/unit/ProjectGoals.test.tsx) | Verifies the "Project goals" section heading renders and the three goal cards (Cognitive AI Models, Personalized Learning, Global Access) are present. |
+| [`SiteFooter.test.tsx`](apps/core/app/tests/unit/SiteFooter.test.tsx) | Verifies the About and Quick Links section headings render, and the current year appears in the copyright line. |
+| [`SuggestedPrompts.test.tsx`](apps/core/app/tests/unit/SuggestedPrompts.test.tsx) | Verifies all six study-focused prompt card titles render (Build a study plan, Explain a concept, Generate practice problems, Review my essay, Debug my code, Summarize key points), and that clicking a card calls `onSelectPrompt` with the correct full prompt string. |
 
 ---
 
@@ -278,6 +294,26 @@ Each section should use this format:
 
 ---
 
+## @eduai/ui Component Tests
+
+**Path:** `packages/ui/src/tests/`
+
+Unit tests for the shared design-system component library (`@eduai/ui`). Run with `npm test` from `packages/ui`, or via `turbo run test` from the repo root.
+
+| Test file | What it tests |
+|-----------|---------------|
+| [`role-badge.test.tsx`](packages/ui/src/tests/role-badge.test.tsx) | `RoleBadge` renders the human-readable label for each known role (Admin, Unit Admin, Instructor, TA, Student), falls back to the Student config for an unknown role, and applies a passed `className`. |
+| [`status-badge.test.tsx`](packages/ui/src/tests/status-badge.test.tsx) | `StatusBadge` renders active/inactive labels, applies defaults, shows the indicator dot, and applies custom classes/styling. |
+| [`avatar.test.tsx`](packages/ui/src/tests/avatar.test.tsx) | `Avatar` renders an image when given a src, falls back to initials, handles image load errors, and forwards custom props. |
+| [`stat-card.test.tsx`](packages/ui/src/tests/stat-card.test.tsx) | `StatCard` renders label and value (including numeric values) and renders positive / negative / zero trend states with their trend labels. |
+| [`course-card.test.tsx`](packages/ui/src/tests/course-card.test.tsx) | `CourseCard` renders course code/name/description, status and badges, the actions menu, and course links. |
+| [`course-hero-card.test.tsx`](packages/ui/src/tests/course-hero-card.test.tsx) | `CourseHeroCard` renders course code/term/year/name, descriptions, topics, badges, and handles year-type variations. |
+| [`course-color-bar.test.tsx`](packages/ui/src/tests/course-color-bar.test.tsx) | `CourseColorBar` applies the expected height, maps color indices, and cycles through `COURSE_COLORS`. |
+| [`page-heading.test.tsx`](packages/ui/src/tests/page-heading.test.tsx) | `PageHeading` renders the heading text and accent bar, and renders an optional subheading including React-node children. |
+| [`page-tabs.test.tsx`](packages/ui/src/tests/page-tabs.test.tsx) | `PageTabs` (List/Trigger/Content) renders the tab structure and default content, reflects active states, and applies custom classes. |
+
+---
+
 ## AI Tutor Unit Tests
 
 **Path:** `apps/extensions/ai-tutor/app/tests/unit/`
@@ -288,10 +324,17 @@ Each section should use this format:
 | `BugReportDialog.test.tsx` | The bug report form rejects descriptions that are too short, takes a screenshot on open, and submits diagnostic data including the reporter's anonymous preference |
 | `BugReportProvider.test.tsx` | Page location and diagnostic capture tools are available to any component that needs to file a bug report |
 | `BugReportsTab.test.tsx` | Admins can view, update status, and copy bug reports; anonymous submissions hide reporter identity in the copied output |
-| `Nav.test.tsx` | The Report Bug button is visible to students and professors but hidden from admins |
+| `Nav.test.tsx` | The Report Bug button is visible to students and professors but hidden from admins; EduAI Core cross-nav link and dark-mode toggle render for authenticated users |
+| `extension-urls.test.ts` | Cross-app URL helpers default to local dev hosts for EduAI Core and AiTutor |
+| `student-chat-history.test.ts` | Client-side chat history persistence — store/list/delete sessions per activity and build message previews |
 | `useLocalUser.test.tsx` | Users can log in, log out, and have their session available across the app; accessing the session outside its provider throws an error |
+| `rbac-permissions.test.ts` | RBAC permission helpers (`canManageContent`, enrollment/analytics gates) and role routing for all five platform roles |
+| `PermissionGate.test.tsx` | Declarative UI gate hides children when `allow` is false and renders optional fallback |
+| `AtRoleBanner.test.tsx` | Role banners show TA read-only copy and unit-admin authorized units |
 
-> **Coverage gap:** `home.tsx` role-based routing (STUDENT→/student, INSTRUCTOR→/instructor, UNIT_ADMIN→/instructor, TA→/unsupported-role, ADMIN→/admin) and `unsupported-role.tsx` role guard (TA stays on page; other roles are redirected to their correct route) are not currently covered by unit tests.
+**E2E (Playwright):** `tests/e2e/ai-tutor-rbac.spec.ts` — login smoke tests for student, instructor, and admin shells (requires Core + AiTutor dev servers).
+
+> **Coverage gap:** `home.tsx` role-based routing is partially covered via `rbac-permissions.test.ts`; full route-loader integration tests remain optional follow-up.
 
 ---
 
@@ -332,6 +375,7 @@ Each section should use this format:
 | `activities.test.js` | Students see completion status on activities while professors do not; TA sees activities even when unpublished; answer submission (§308) enforces STUDENT-only + active enrollment + full ancestor publish chain (403 for INSTRUCTOR/TA, unenrolled student, and unpublished lesson/module/course); `GET /activities/:id/submissions` and `GET /activities/:id/feedback` admit INSTRUCTOR and course-enrolled TA but 403 students and TAs in a different course; cross-course TA isolation confirmed (TA in course A cannot access course B); teach/guide/custom endpoints enforce the same STUDENT + enrollment + publish gate |
 | `admin.test.js` | Admin route RBAC (GET users 403 for non-admin, GET courses 200/403, PATCH user role 410 managed by EduAI, GET API key status); `POST /admin/courses/:id/sync-enrollments` — RBAC (403 non-admin), invalid courseId, 404, native/non-EDUAI course rejection, create/delete/update counts, empty-active-list guard (no data wipe), idempotency, and Core client error propagation (502/500); UNIT_ADMIN enrollment management — list (department-scoped 200/403), POST enroll (STUDENT and TA roles, 403 outside department), DELETE (200/403), PATCH role (TA assign, TA remove, 400 invalid role, 404 missing enrollment, 403 outside department); PATCH role on EduAI-linked courses (#569) — calls Core PATCH with correct args and updates local role, leaves local DB unchanged when Core fails, 404 when user has no Core enrollment. |
 | `analytics.test.js` | `GET /courses/:id/submissions` (INSTRUCTOR/UNIT_ADMIN/TA/ADMIN get 200; student gets 403), filterable by activityId and studentId; `GET /courses/:id/student-metrics` and `GET /courses/:id/analytics` (INSTRUCTOR/UNIT_ADMIN/ADMIN get 200; TA and student get 403); `GET /me/submissions` and `GET /me/feedback` own-resource endpoints return the user's own data with no enrollment check (inactive students retain access) |
+| `admin.test.js` | Admins can list courses and view API key status; role-update returns 410 (managed by EduAI); all admin endpoints reject non-admin users with 403 |
 | `auth.test.js` | The current user is returned without their password field; admins are blocked from non-admin endpoints while retaining access to `/api/me` |
 | `bugReports.test.js` | Any authenticated user (student, professor, admin, TA) can submit bug reports (201, `postCoreBugReport` called with correct userId per #309); unauthenticated requests return 401; descriptions that are too short or too long return 400; anonymous reports still pass the real userId to Core; Core errors surface as 500 |
 | `courseCloning.test.js` | Cloning a course copies all modules, lessons, and activities in order, maps topics by name to the target course creating them when missing, and reuses existing topics on name collision |

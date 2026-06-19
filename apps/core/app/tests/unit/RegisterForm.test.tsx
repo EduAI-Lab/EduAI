@@ -27,14 +27,9 @@ describe("RegisterForm — rendering", () => {
     expect(screen.getByLabelText("Confirm Password")).toHaveAttribute("type", "password");
   });
 
-  it("renders the submit button with the text \"Register\"", () => {
+  it("renders the submit button with the text \"Create account\"", () => {
     render(<RegisterForm />);
-    expect(screen.getByRole("button", { name: "Register" })).toBeInTheDocument();
-  });
-
-  it("renders a \"Register with GitHub\" button", () => {
-    render(<RegisterForm />);
-    expect(screen.getByRole("button", { name: /register with github/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create account" })).toBeInTheDocument();
   });
 
   it("renders a link to /auth/login", () => {
@@ -52,25 +47,25 @@ describe("RegisterForm — field errors", () => {
   it("displays and applies error styling for fieldErrors.name", () => {
     render(<RegisterForm fieldErrors={{ name: "Name is required" }} />);
     expect(screen.getByText("Name is required")).toBeInTheDocument();
-    expect(screen.getByLabelText("Name")).toHaveClass("border-red-300");
+    expect(screen.getByLabelText("Name")).toHaveClass("border-destructive");
   });
 
   it("displays and applies error styling for fieldErrors.email", () => {
     render(<RegisterForm fieldErrors={{ email: "Invalid email" }} />);
     expect(screen.getByText("Invalid email")).toBeInTheDocument();
-    expect(screen.getByLabelText("Email")).toHaveClass("border-red-300");
+    expect(screen.getByLabelText("Email")).toHaveClass("border-destructive");
   });
 
   it("displays and applies error styling for fieldErrors.password", () => {
     render(<RegisterForm fieldErrors={{ password: "Password too short" }} />);
     expect(screen.getByText("Password too short")).toBeInTheDocument();
-    expect(screen.getByLabelText("Password")).toHaveClass("border-red-300");
+    expect(screen.getByLabelText("Password")).toHaveClass("border-destructive");
   });
 
   it("displays and applies error styling for fieldErrors.confirmPassword", () => {
     render(<RegisterForm fieldErrors={{ confirmPassword: "Passwords do not match" }} />);
     expect(screen.getByText("Passwords do not match")).toBeInTheDocument();
-    expect(screen.getByLabelText("Confirm Password")).toHaveClass("border-red-300");
+    expect(screen.getByLabelText("Confirm Password")).toHaveClass("border-destructive");
   });
 });
 
