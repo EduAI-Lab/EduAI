@@ -6,6 +6,7 @@ import { acceptInvitationSchema, type AcceptInvitationInput } from "~/lib/invita
 import { acceptInvitation, getInvitationByToken } from "~/lib/invitations/service.server"
 import { fireAndForget, logAuditAction } from "~/lib/logging.server"
 import { getActorContext, getRequestContext } from "~/lib/request-context.server"
+import { userNeedsStudentIdOnboarding } from "~/lib/canvas/onboarding.server"
 
 const ROLE_LABELS: Record<string, string> = {
   ADMIN: "Administrator",
@@ -89,7 +90,9 @@ export async function action({ request }: ActionFunctionArgs) {
     }),
   );
 
-  return redirect("/dashboard", { headers: result.headers });
+  const needsOnboarding = await userNeedsStudentIdOnboarding(result.user.id, result.user.role);
+  const destination = needsOnboarding ? "/onboarding/student-id" : "/dashboard";
+  return redirect(destination, { headers: result.headers });
 }
 
 export default function AcceptInvitationPage() {
