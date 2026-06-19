@@ -41,13 +41,9 @@ describe("Chat views — role layouts", () => {
 });
 
 describe("Chat views — header controls placement", () => {
-  it("does not render system prompt controls in the scrollable chat body", () => {
+  it("does not render assistive mode or system prompt controls in the scrollable chat body", () => {
     render(<ChatGlobalView {...baseProps} />);
+    expect(screen.queryByRole("switch", { name: /assistive mode/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /system prompt/i })).not.toBeInTheDocument();
-  });
-
-  it("renders the assistive mode switch near the chat input", () => {
-    render(<ChatGlobalView {...baseProps} />);
-    expect(screen.getByRole("switch", { name: /assistive mode/i })).toBeInTheDocument();
   });
 });
