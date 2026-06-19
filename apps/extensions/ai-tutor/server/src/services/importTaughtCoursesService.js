@@ -126,18 +126,32 @@ export async function importExternalCourseForUser(instructor, externalCourse) {
   });
 
   if (alreadyImported) {
-    const isAssigned = await prisma.courseInstructor.findFirst({
-      where: { courseOfferingId: alreadyImported.id, userId: instructor.id },
-    });
-    if (!isAssigned) {
-      await prisma.courseInstructor.create({
-        data: {
-          courseOfferingId: alreadyImported.id,
+    // Ensure the instructor is linked to the existing course (handles seeded courses
+    // and courses already imported by another user).
+    await prisma.courseInstructor.upsert({
+      where: {
+        userId_courseOfferingId: {
           userId: instructor.id,
-          role: 'LEAD',
+          courseOfferingId: alreadyImported.id,
         },
+      },
+      create: { courseOfferingId: alreadyImported.id, userId: instructor.id, role: 'LEAD' },
+      update: {},
+    });
+
+    // Backfill department so UNIT_ADMIN scoping works when course was seeded without it.
+    if (
+      !alreadyImported.department &&
+      typeof externalCourse.department === 'string' &&
+      externalCourse.department.trim()
+    ) {
+      await prisma.courseOffering.update({
+        where: { id: alreadyImported.id },
+        data: { department: externalCourse.department.trim() },
       });
     }
+
+    // #477: backfill the Core offering link and mirror its publish state.
     if (!alreadyImported.coreOfferingId) {
       await prisma.courseOffering.update({
         where: { id: alreadyImported.id },
@@ -145,6 +159,7 @@ export async function importExternalCourseForUser(instructor, externalCourse) {
       });
     }
     await syncOfferingPublishFromCore(externalCourse);
+
     return { offering: alreadyImported, created: false };
   }
 

@@ -7,7 +7,7 @@ import prisma from "~/lib/prisma.server";
 import { AppSidebar } from "~/components/app-sidebar";
 import { SettingsView } from "~/components/settings/settings-view";
 import { SiteHeader } from "~/components/site-header";
-import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
+import { SidebarInset, SidebarProvider } from "@eduai/ui";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request);
@@ -39,10 +39,10 @@ export default function SettingsPage() {
         } as React.CSSProperties
       }
     >
-      <AppSidebar variant="inset" user={user} />
+      <AppSidebar user={user} />
       <SidebarInset>
         <SiteHeader />
-        <SettingsView role={user.role} studentNumber={studentNumber} />
+        <SettingsView role={user.role ?? undefined} studentNumber={studentNumber} />
       </SidebarInset>
     </SidebarProvider>
   );

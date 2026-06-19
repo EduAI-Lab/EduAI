@@ -17,7 +17,9 @@ export default [
   route("/api/canvas/*", "routes/api/canvas.$.ts"),
   route("/api/chat", "routes/api/chat.ts"),
   route("/api/assistive-events", "routes/api/assistive-events.ts"),
+  route("/api/chats", "routes/api/chats.ts"),
   route("/api/chats/:chatId", "routes/api/chats.$chatId.ts"),
+  route("/api/chats/:chatId/messages", "routes/api/chats.$chatId.messages.ts"),
   route("/courses", "routes/courses.tsx"),
   route("/courses/:courseId", "routes/courses.$courseId.tsx"),
   route("/api/courses/:courseId/materials", "routes/api/courses.materials.$.ts"),
@@ -66,5 +68,6 @@ export default [
     "routes/api/admin.bug-reports.ts",
     { id: "routes/api/admin.bug-reports:id" },
   ),
+  route("/api/dashboard/stats", "routes/api/dashboard.stats.ts"),
   route("/api/e2e/promote", "routes/api/e2e.promote.ts"),
 ] satisfies RouteConfig;

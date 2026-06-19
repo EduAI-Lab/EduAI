@@ -32,11 +32,12 @@ import {
   checkQuestionInAssessments
 } from '../services/assessmentSectionService.js';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
-import { AUTHORS, INSTRUCTORS } from '../middleware/roles.js';
+import { QM_AUTHORIZED } from '../middleware/roles.js';
 import { requireCourseAccess, resolveCourseAccessWithCourse, LEVELS } from '../middleware/courseAccess.js';
 import { requireAssessmentAccess, requireQuestionAccess } from '../middleware/resourceAccess.js';
 
 const router = express.Router();
+
 
 // Convenience guards for the two access tiers used throughout this router.
 const viewAssessment = requireAssessmentAccess({ min: 'ta' });
@@ -47,7 +48,7 @@ const writeAssessmentByAssessmentId = requireAssessmentAccess({ min: 'instructor
 router.post(
   '/',
   authenticateToken,
-  requireRole(INSTRUCTORS),
+  requireRole(QM_AUTHORIZED),
   requireCourseAccess({ min: 'instructor', getCourseId: (req) => req.body.courseId }),
   async (req, res, next) => {
     try {
@@ -89,7 +90,7 @@ router.post(
  * course owner. Without a courseId the list stays caller-scoped to the user's
  * own courses.
  */
-router.get('/', authenticateToken, requireRole(AUTHORS), async (req, res, next) => {
+router.get('/', authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, next) => {
   try {
     const { limit, offset, courseId } = req.query;
 
@@ -114,7 +115,8 @@ router.get('/', authenticateToken, requireRole(AUTHORS), async (req, res, next) 
     const assessments = await getAssessmentsByUser(scopeUserId, {
       limit: parseInt(limit) || 50,
       offset: parseInt(offset) || 0,
-      courseId: scopeCourseId
+      courseId: scopeCourseId,
+      isAdmin: req.user.role === 'ADMIN'
     });
 
     res.json({
@@ -126,8 +128,8 @@ router.get('/', authenticateToken, requireRole(AUTHORS), async (req, res, next) 
   }
 });
 
-/** GET /api/assessments/:id – fetches a single assessment; TA view-only allowed. */
-router.get('/:id', authenticateToken, requireRole(AUTHORS), viewAssessment, async (req, res, next) => {
+/** GET /api/assessments/:id – fetches a single assessment. */
+router.get('/:id', authenticateToken, requireRole(QM_AUTHORIZED), viewAssessment, async (req, res, next) => {
   try {
     const assessment = await getAssessmentById(req.params.id, req.qmCourse.userId);
 
@@ -141,7 +143,7 @@ router.get('/:id', authenticateToken, requireRole(AUTHORS), viewAssessment, asyn
 });
 
 /** PUT /api/assessments/:id – updates assessment metadata/blueprint (instructor-only). */
-router.put('/:id', authenticateToken, requireRole(INSTRUCTORS), writeAssessment, async (req, res, next) => {
+router.put('/:id', authenticateToken, requireRole(QM_AUTHORIZED), writeAssessment, async (req, res, next) => {
   try {
     const { type, name, semester, description, courseId, blueprintConfig } = req.body;
 
@@ -165,7 +167,7 @@ router.put('/:id', authenticateToken, requireRole(INSTRUCTORS), writeAssessment,
 });
 
 /** DELETE /api/assessments/:id – deletes the specified assessment (instructor-only). */
-router.delete('/:id', authenticateToken, requireRole(INSTRUCTORS), writeAssessment, async (req, res, next) => {
+router.delete('/:id', authenticateToken, requireRole(QM_AUTHORIZED), writeAssessment, async (req, res, next) => {
   try {
     await deleteAssessment(req.params.id, req.qmCourse.userId);
 
@@ -179,7 +181,7 @@ router.delete('/:id', authenticateToken, requireRole(INSTRUCTORS), writeAssessme
 });
 
 /** POST /api/assessments/:id/questions – links a question to an assessment (instructor-only). */
-router.post('/:id/questions', authenticateToken, requireRole(INSTRUCTORS), writeAssessment, async (req, res, next) => {
+router.post('/:id/questions', authenticateToken, requireRole(QM_AUTHORIZED), writeAssessment, async (req, res, next) => {
   try {
     const { questionId, orderNumber } = req.body;
 
@@ -208,7 +210,7 @@ router.post('/:id/questions', authenticateToken, requireRole(INSTRUCTORS), write
 });
 
 /** DELETE /api/assessments/:id/questions/:questionId – unlinks a question (instructor-only). */
-router.delete('/:id/questions/:questionId', authenticateToken, requireRole(INSTRUCTORS), writeAssessment, async (req, res, next) => {
+router.delete('/:id/questions/:questionId', authenticateToken, requireRole(QM_AUTHORIZED), writeAssessment, async (req, res, next) => {
   try {
     const question = await removeQuestionFromAssessment(
       req.params.id,
@@ -227,7 +229,7 @@ router.delete('/:id/questions/:questionId', authenticateToken, requireRole(INSTR
 });
 
 /** GET /api/assessments/:id/questions – returns all questions associated with the assessment (TA view). */
-router.get('/:id/questions', authenticateToken, requireRole(AUTHORS), viewAssessment, async (req, res, next) => {
+router.get('/:id/questions', authenticateToken, requireRole(QM_AUTHORIZED), viewAssessment, async (req, res, next) => {
   try {
     const questions = await getQuestionsInAssessment(req.params.id, req.qmCourse.userId);
 
@@ -242,7 +244,7 @@ router.get('/:id/questions', authenticateToken, requireRole(AUTHORS), viewAssess
 
 // Section routes
 /** GET /api/assessments/:id/sections – lists all sections tied to the assessment (TA view). */
-router.get('/:id/sections', authenticateToken, requireRole(AUTHORS), viewAssessment, async (req, res, next) => {
+router.get('/:id/sections', authenticateToken, requireRole(QM_AUTHORIZED), viewAssessment, async (req, res, next) => {
   try {
     const sections = await getSectionsForAssessment(req.params.id, req.qmCourse.userId);
     res.json({ success: true, data: sections });
@@ -252,7 +254,7 @@ router.get('/:id/sections', authenticateToken, requireRole(AUTHORS), viewAssessm
 });
 
 /** POST /api/assessments/:id/sections – creates a new section (instructor-only). */
-router.post('/:id/sections', authenticateToken, requireRole(INSTRUCTORS), writeAssessment, async (req, res, next) => {
+router.post('/:id/sections', authenticateToken, requireRole(QM_AUTHORIZED), writeAssessment, async (req, res, next) => {
   try {
     const section = await createAssessmentSection(req.params.id, req.qmCourse.userId, req.body);
     res.status(201).json({
@@ -266,7 +268,7 @@ router.post('/:id/sections', authenticateToken, requireRole(INSTRUCTORS), writeA
 });
 
 /** PUT /api/assessments/:assessmentId/sections/:sectionId – updates section metadata (instructor-only). */
-router.put('/:assessmentId/sections/:sectionId', authenticateToken, requireRole(INSTRUCTORS), writeAssessmentByAssessmentId, async (req, res, next) => {
+router.put('/:assessmentId/sections/:sectionId', authenticateToken, requireRole(QM_AUTHORIZED), writeAssessmentByAssessmentId, async (req, res, next) => {
   try {
     const section = await updateAssessmentSection(req.params.sectionId, req.qmCourse.userId, req.body, req.qmCourse.id);
     res.json({
@@ -280,7 +282,7 @@ router.put('/:assessmentId/sections/:sectionId', authenticateToken, requireRole(
 });
 
 /** DELETE /api/assessments/:assessmentId/sections/:sectionId – removes the section (instructor-only). */
-router.delete('/:assessmentId/sections/:sectionId', authenticateToken, requireRole(INSTRUCTORS), writeAssessmentByAssessmentId, async (req, res, next) => {
+router.delete('/:assessmentId/sections/:sectionId', authenticateToken, requireRole(QM_AUTHORIZED), writeAssessmentByAssessmentId, async (req, res, next) => {
   try {
     await deleteAssessmentSection(req.params.sectionId, req.qmCourse.userId, req.qmCourse.id);
     res.json({
@@ -293,7 +295,7 @@ router.delete('/:assessmentId/sections/:sectionId', authenticateToken, requireRo
 });
 
 /** POST /api/assessments/:assessmentId/sections/:sectionId/variants – attaches a variant (instructor-only). */
-router.post('/:assessmentId/sections/:sectionId/variants', authenticateToken, requireRole(INSTRUCTORS), writeAssessmentByAssessmentId, async (req, res, next) => {
+router.post('/:assessmentId/sections/:sectionId/variants', authenticateToken, requireRole(QM_AUTHORIZED), writeAssessmentByAssessmentId, async (req, res, next) => {
   try {
     const { variantId, displayOrder, metadata } = req.body;
 
@@ -323,7 +325,7 @@ router.post('/:assessmentId/sections/:sectionId/variants', authenticateToken, re
 });
 
 /** PUT /api/assessments/:assessmentId/sections/:sectionId/variants/:variantId/order – updates display order (instructor-only). */
-router.put('/:assessmentId/sections/:sectionId/variants/:variantId/order', authenticateToken, requireRole(INSTRUCTORS), writeAssessmentByAssessmentId, async (req, res, next) => {
+router.put('/:assessmentId/sections/:sectionId/variants/:variantId/order', authenticateToken, requireRole(QM_AUTHORIZED), writeAssessmentByAssessmentId, async (req, res, next) => {
   try {
     const { displayOrder } = req.body;
 
@@ -353,7 +355,7 @@ router.put('/:assessmentId/sections/:sectionId/variants/:variantId/order', authe
 });
 
 /** DELETE /api/assessments/:assessmentId/sections/:sectionId/variants/:variantId – removes a variant from the section (instructor-only). */
-router.delete('/:assessmentId/sections/:sectionId/variants/:variantId', authenticateToken, requireRole(INSTRUCTORS), writeAssessmentByAssessmentId, async (req, res, next) => {
+router.delete('/:assessmentId/sections/:sectionId/variants/:variantId', authenticateToken, requireRole(QM_AUTHORIZED), writeAssessmentByAssessmentId, async (req, res, next) => {
   try {
     await removeVariantFromSection(
       req.params.sectionId,
@@ -372,7 +374,7 @@ router.delete('/:assessmentId/sections/:sectionId/variants/:variantId', authenti
 });
 
 /** GET /api/assessments/questions/:questionId/check-in-assessments – whether a question appears in any sections (TA view). */
-router.get('/questions/:questionId/check-in-assessments', authenticateToken, requireRole(AUTHORS), requireQuestionAccess({ min: 'ta', param: 'questionId' }), async (req, res, next) => {
+router.get('/questions/:questionId/check-in-assessments', authenticateToken, requireRole(QM_AUTHORIZED), requireQuestionAccess({ min: 'ta', param: 'questionId' }), async (req, res, next) => {
   try {
     const result = await checkQuestionInAssessments(
       Number(req.params.questionId),
@@ -389,7 +391,7 @@ router.get('/questions/:questionId/check-in-assessments', authenticateToken, req
 });
 
 /** DELETE /api/assessments/questions/:questionId/remove-from-all-sections – bulk removes a question (instructor-only). */
-router.delete('/questions/:questionId/remove-from-all-sections', authenticateToken, requireRole(INSTRUCTORS), requireQuestionAccess({ min: 'instructor', param: 'questionId' }), async (req, res, next) => {
+router.delete('/questions/:questionId/remove-from-all-sections', authenticateToken, requireRole(QM_AUTHORIZED), requireQuestionAccess({ min: 'instructor', param: 'questionId' }), async (req, res, next) => {
   try {
     const result = await removeQuestionFromAllSections(
       Number(req.params.questionId),

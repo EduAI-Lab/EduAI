@@ -5,4 +5,5 @@ export interface User {
   image?: string;
   role: string;
   isBugReportAdmin?: boolean;
+  authorizedUnits?: string[];
 }

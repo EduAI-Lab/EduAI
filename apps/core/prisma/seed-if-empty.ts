@@ -2,12 +2,18 @@ import { PrismaClient } from '@prisma/client';
 import { execSync } from 'child_process';
 
 const prisma = new PrismaClient();
-const count = await prisma.user.count();
+const [userCount, studentsWithoutId] = await Promise.all([
+  prisma.user.count(),
+  prisma.user.count({ where: { role: 'STUDENT', studentId: null } }),
+]);
 await prisma.$disconnect();
 
-if (count === 0) {
+if (userCount === 0) {
   console.log('[auto-seed] No data found, seeding core database...');
   execSync('npm run db:seed', { stdio: 'inherit' });
+} else if (studentsWithoutId > 0) {
+  console.log(`[auto-seed] ${studentsWithoutId} student(s) missing student ID — re-seeding to backfill...`);
+  execSync('npm run db:seed', { stdio: 'inherit' });
 } else {
-  console.log(`[auto-seed] Core database already has ${count} users, skipping seed.`);
+  console.log(`[auto-seed] Core database already has ${userCount} users, skipping seed.`);
 }

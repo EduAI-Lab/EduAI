@@ -1,34 +1,54 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   IconTrash,
   IconPlus,
   IconUsers,
-  IconCalendar,
   IconUserCheck,
   IconArrowsExchange,
   IconUserPlus,
+  IconFileText,
+  IconUpload,
   IconSettings,
+  IconBook,
+  IconLoader,
+  IconCircleCheck,
+  IconCircleX,
 } from "@tabler/icons-react";
 import { Download } from "lucide-react";
-import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
-import { Badge } from "~/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
-import { Input } from "~/components/ui/input";
-import { Label } from '~/components/ui/label'
-
+import { Button } from "@eduai/ui";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@eduai/ui";
+import { Badge } from "@eduai/ui";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@eduai/ui";
+import {
+  PageTabs,
+  PageTabsList,
+  PageTabsTrigger,
+  PageTabsContent,
+} from "@eduai/ui";
+import { CourseHeroCard } from "@eduai/ui";
+import { StatusBadge } from "@eduai/ui";
+import { Avatar } from "@eduai/ui";
+import { StatCard } from "@eduai/ui";
+import { Input } from "@eduai/ui";
+import { Label } from "@eduai/ui";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "~/components/ui/select";
-import { Checkbox } from "~/components/ui/checkbox";
-import {
-  CourseMaterialsUpload,
-  type CourseMaterial,
-} from "~/components/course-materials-upload";
+} from "@eduai/ui";
+import { Checkbox } from "@eduai/ui";
+import { CourseMaterialsUpload } from "~/components/course-materials-upload";
+import { CourseEmbeddingSettings } from "~/components/course-embedding-settings";
+import { CourseChatHistory } from "~/components/courses/course-chat-history";
+import type { CourseMaterial } from "~/components/course-materials-upload";
 import { CanvasMaterialSyncDialog } from "~/components/canvas/canvas-material-sync-dialog";
 import type { CourseDetail } from "~/hooks/api/use-course-detail";
 import type { CourseTopic } from "~/hooks/api/use-course-topics";
@@ -68,6 +88,67 @@ interface Props {
   onMaterialsRefresh?: () => void;
 }
 
+// ── helpers ──────────────────────────────────────────────────────────────────
+
+function fileTypeColor(mime: string): string {
+  if (mime.includes("pdf")) return "oklch(0.63 0.22 25)";
+  if (mime.includes("pptx") || mime.includes("presentation"))
+    return "oklch(0.55 0.18 48)";
+  if (mime.includes("docx") || mime.includes("word"))
+    return "oklch(0.52 0.18 230)";
+  return "oklch(0.55 0.12 260)";
+}
+
+function formatSize(bytes: number): string {
+  if (!bytes) return "–";
+  const mb = bytes / 1_048_576;
+  return mb >= 1 ? `${mb.toFixed(1)} MB` : `${(bytes / 1024).toFixed(0)} KB`;
+}
+
+function MaterialStatusIcon({ status }: { status: CourseMaterial["status"] }) {
+  if (status === "PROCESSING")
+    return <IconLoader className="h-4 w-4 text-yellow-500 animate-spin" />;
+  if (status === "READY")
+    return <IconCircleCheck className="h-4 w-4 text-green-500" />;
+  if (status === "FAILED")
+    return <IconCircleX className="h-4 w-4 text-red-500" />;
+  return <IconFileText className="h-4 w-4 text-muted-foreground" />;
+}
+
+function MaterialStatusChip({ status }: { status: CourseMaterial["status"] }) {
+  const cfg = {
+    READY: {
+      label: "Embedded",
+      bg: "var(--color-success-100)",
+      color: "var(--color-success-700)",
+    },
+    PROCESSING: {
+      label: "Processing",
+      bg: "oklch(0.97 0.03 90)",
+      color: "oklch(0.55 0.18 90)",
+    },
+    FAILED: {
+      label: "Failed",
+      bg: "var(--color-error-100)",
+      color: "var(--destructive)",
+    },
+  }[status] ?? {
+    label: "Unknown",
+    bg: "var(--muted)",
+    color: "var(--muted-foreground)",
+  };
+  return (
+    <span
+      className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+      style={{ background: cfg.bg, color: cfg.color }}
+    >
+      {cfg.label}
+    </span>
+  );
+}
+
+// ── component ─────────────────────────────────────────────────────────────────
+
 export function CourseDetailManagerView({
   course,
   access,
@@ -92,22 +173,35 @@ export function CourseDetailManagerView({
   showCanvasMaterialSync = false,
   onMaterialsRefresh,
 }: Props) {
-  const [newTopic, setNewTopic] = useState('')
-  const [canvasSyncOpen, setCanvasSyncOpen] = useState(false)
-  const [staffError, setStaffError] = useState<string | null>(null)
-  const [staffSuccess, setStaffSuccess] = useState<string | null>(null)
-  const [selectedInstructorId, setSelectedInstructorId] = useState<string>('')
-  const [selectedTAIds, setSelectedTAIds] = useState<Set<string>>(new Set())
-  const [addingTAs, setAddingTAs] = useState(false)
-  const [ragTopK, setRagTopK] = useState<string>(course.ragTopK?.toString() ?? '')
+  const [newTopic, setNewTopic] = useState("");
+  const [canvasSyncOpen, setCanvasSyncOpen] = useState(false);
+  const [staffError, setStaffError] = useState<string | null>(null);
+  const [staffSuccess, setStaffSuccess] = useState<string | null>(null);
+  const [selectedInstructorId, setSelectedInstructorId] = useState<string>("");
+  const [selectedTAIds, setSelectedTAIds] = useState<Set<string>>(new Set());
+  const [addingTAs, setAddingTAs] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [embeddingOpen, setEmbeddingOpen] = useState(false);
+  const [ragTopK, setRagTopK] = useState<string>(course.ragTopK?.toString() ?? "");
   const [ragThreshold, setRagThreshold] = useState<string>(
-    course.ragSimilarityThreshold?.toString() ?? '',
-  )
-  const [ragSaving, setRagSaving] = useState(false)
-  const [ragSaveMsg, setRagSaveMsg] = useState<string | null>(null)
-  const canManage = canManageTopics(access)
-  const canManageStaff = canManageInstructors(access)
-  const canManageRagSettings = access === 'admin' || access === 'instructor'
+    course.ragSimilarityThreshold?.toString() ?? "",
+  );
+  const [ragSaving, setRagSaving] = useState(false);
+  const [ragSaveMsg, setRagSaveMsg] = useState<string | null>(null);
+
+  // Close upload modal when success arrives (not on file select — upload may fail)
+  const prevSuccessRef = useRef(materialsSuccess);
+  useEffect(() => {
+    if (materialsSuccess && materialsSuccess !== prevSuccessRef.current) {
+      setUploadOpen(false);
+    }
+    prevSuccessRef.current = materialsSuccess;
+  }, [materialsSuccess]);
+
+  const canManage = canManageTopics(access);
+  const canManageStaff = canManageInstructors(access);
+  const canManageRagSettings = access === "admin" || access === "instructor";
+
 
   const availableInstructors = instructors.filter(
     (p) => p.id !== course.instructorId,
@@ -187,116 +281,403 @@ export function CourseDetailManagerView({
   };
 
   const saveRagSettings = async () => {
-    if (!courseId) return
-    setRagSaving(true)
-    setRagSaveMsg(null)
+    if (!courseId) return;
+    setRagSaving(true);
+    setRagSaveMsg(null);
     try {
       const payload: Record<string, number | null> = {
-        ragTopK: ragTopK === '' ? null : parseInt(ragTopK, 10),
-        ragSimilarityThreshold: ragThreshold === '' ? null : parseFloat(ragThreshold),
-      }
+        ragTopK: ragTopK === "" ? null : parseInt(ragTopK, 10),
+        ragSimilarityThreshold:
+          ragThreshold === "" ? null : parseFloat(ragThreshold),
+      };
       const res = await fetch(`/api/courses/${courseId}/rag-settings`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
-      })
+      });
       if (res.ok) {
-        setRagSaveMsg('Saved.')
+        setRagSaveMsg("Saved.");
       } else {
-        const err = await res.json().catch(() => ({}))
-        setRagSaveMsg(err?.error ?? 'Save failed.')
+        const err = await res.json().catch(() => ({}));
+        setRagSaveMsg(err?.error ?? "Save failed.");
       }
     } catch {
-      setRagSaveMsg('Network error.')
+      setRagSaveMsg("Network error.");
     } finally {
-      setRagSaving(false)
+      setRagSaving(false);
     }
-  }
+  };
+
+  // B2: top-right hero badges
+  const topRightBadges: string[] = [
+    ...(course.isActive ? ["Active"] : [])
+  ];
+  const readyMaterials = materials.filter((m) => m.status === "READY").length;
+  const studentCount = enrollments.filter((e) => e.role === "STUDENT").length;
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">{course.code}</h1>
-          <p className="text-xl text-muted-foreground mt-1">{course.name}</p>
-          <div className="flex items-center gap-3 mt-2 text-sm text-muted-foreground">
-            <div className="flex items-center gap-1">
-              <IconCalendar className="w-4 h-4" />
-              {course.term} {course.year}
-            </div>
-            <Badge variant={course.isActive ? "default" : "secondary"}>
-              {course.isActive ? "Active" : "Inactive"}
-            </Badge>
-          </div>
-        </div>
-      </div>
-
-      <Tabs defaultValue="overview">
-        <TabsList>
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="materials">Materials</TabsTrigger>
-          <TabsTrigger value="topics">Topics</TabsTrigger>
-          <TabsTrigger value="enrollments">Enrollments</TabsTrigger>
-          {canManageStaff && <TabsTrigger value="staff">Staff</TabsTrigger>}
-          {canManageRagSettings && <TabsTrigger value="settings">Settings</TabsTrigger>}
-        </TabsList>
-
-        <TabsContent
-          value="overview"
-          forceMount
-          className="data-[state=inactive]:hidden flex-1 outline-none"
-        >
-          <Card>
-            <CardContent className="pt-6 grid gap-4">
-              {course.description && <p>{course.description}</p>}
-              {course.aiInstructions && (
-                <div className="bg-muted/50 rounded p-3 text-sm">
-                  <p className="font-medium mb-1">AI Instructions</p>
-                  <p className="text-muted-foreground">
-                    {course.aiInstructions}
-                  </p>
-                </div>
-              )}
-              {course.instructor && (
-                <p className="text-sm text-muted-foreground">
-                  Instructor: {course.instructor.name}
-                </p>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent
-          value="materials"
-          forceMount
-          className="data-[state=inactive]:hidden flex-1 outline-none"
-        >
-          {showCanvasMaterialSync && courseId && (
-            <div className="mb-4">
-              <Button variant="outline" onClick={() => setCanvasSyncOpen(true)}>
-                <Download className="h-4 w-4 mr-2" />
-                Sync from Canvas
-              </Button>
-              <CanvasMaterialSyncDialog
-                courseId={courseId}
-                open={canvasSyncOpen}
-                onOpenChange={setCanvasSyncOpen}
-                onSynced={onMaterialsRefresh}
-              />
-            </div>
-          )}
+      {/* A2: Upload modal */}
+      <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
+        <DialogContent className="sm:max-w-md rounded-[var(--radius-xl)]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <IconUpload className="h-4 w-4" />
+              Upload course material
+            </DialogTitle>
+            <DialogDescription>
+              Upload documents to make them available for AI chat.
+            </DialogDescription>
+          </DialogHeader>
           <CourseMaterialsUpload
-            materials={materials}
             isUploading={isUploading}
             error={materialsError}
             success={materialsSuccess}
             onFileSelect={onFileSelect}
-            courseId={courseId}
-            onMaterialsRefresh={onMaterialsRefresh}
           />
-        </TabsContent>
+        </DialogContent>
+      </Dialog>
 
-        <TabsContent
+      {/* A2: Embedding settings modal */}
+      {courseId && (
+        <Dialog open={embeddingOpen} onOpenChange={setEmbeddingOpen}>
+          <DialogContent className="sm:max-w-lg rounded-[var(--radius-xl)]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <IconSettings className="h-4 w-4" />
+                Embedding settings
+              </DialogTitle>
+              <DialogDescription>
+                Configure the embedding model used to index this course's
+                materials.
+              </DialogDescription>
+            </DialogHeader>
+            <CourseEmbeddingSettings
+              courseId={courseId}
+              onSettingsSaved={onMaterialsRefresh}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Canvas material sync */}
+      {showCanvasMaterialSync && courseId && (
+        <CanvasMaterialSyncDialog
+          courseId={courseId}
+          open={canvasSyncOpen}
+          onOpenChange={setCanvasSyncOpen}
+          onSynced={onMaterialsRefresh}
+        />
+      )}
+
+      <PageTabs defaultValue="overview">
+        <PageTabsList>
+          <PageTabsTrigger value="overview">Overview</PageTabsTrigger>
+          <PageTabsTrigger value="materials">Materials</PageTabsTrigger>
+          <PageTabsTrigger value="topics">Topics</PageTabsTrigger>
+          <PageTabsTrigger value="enrollments">Enrollments</PageTabsTrigger>
+          {canManageStaff && (
+            <PageTabsTrigger value="staff">Staff</PageTabsTrigger>
+          )}
+          {canManageRagSettings && (
+            <PageTabsTrigger value="settings">Settings</PageTabsTrigger>
+          )}
+          <PageTabsTrigger value="chat-history">Chat history</PageTabsTrigger>
+        </PageTabsList>
+
+        {/* ── Overview ── */}
+        <PageTabsContent
+          value="overview"
+          forceMount
+          className="data-[state=inactive]:hidden flex-1 outline-none"
+        >
+          {/* B2: Topics folded into hero, badges top-right */}
+          <CourseHeroCard
+            code={course.code}
+            term={course.term}
+            year={course.year}
+            name={course.name}
+            description={course.description}
+            topRightBadges={topRightBadges}
+            topics={topics.map((t) => t.name)}
+          />
+
+          {/* Stat row */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-4">
+            <StatCard label="Students" value={studentCount} />
+            <StatCard label="Materials" value={materials.length} />
+            <StatCard label="Embedded" value={readyMaterials} />
+          </div>
+
+          {/* B1+B3: Info grid — collapses when instructor missing */}
+          <div className="grid gap-4 mb-4 grid-cols-1 sm:grid-cols-2">
+            {/* B3: Enriched info card */}
+            <Card>
+              <CardContent className="pt-5 pb-5 flex flex-col gap-4">
+                <p className="text-[13px] font-semibold text-foreground">
+                  Course information
+                </p>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
+                      Code
+                    </p>
+                    <p className="text-sm text-foreground">{course.code}</p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
+                      Term
+                    </p>
+                    <p className="text-sm text-foreground">
+                      {course.term} {course.year}
+                    </p>
+                  </div>
+                  {course.department && (
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
+                        Department
+                      </p>
+                      <p className="text-sm text-foreground">
+                        {course.department}
+                      </p>
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
+                      Status
+                    </p>
+                    <StatusBadge active={course.isActive} />
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
+                      Published
+                    </p>
+                    <StatusBadge
+                      active={course.isPublished}
+                      activeLabel="Published"
+                      inactiveLabel="Draft"
+                    />
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
+                      Materials
+                    </p>
+                    <p className="text-sm text-foreground">
+                      {materials.length} file{materials.length !== 1 ? "s" : ""}{" "}
+                      · {readyMaterials} embedded
+                    </p>
+                  </div>
+                </div>
+                {course.aiInstructions && (
+                  <div className="pt-3 border-t border-border">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">
+                      AI instructions
+                    </p>
+                    <p className="text-[13px] text-muted-foreground leading-relaxed">
+                      {course.aiInstructions}
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Instructor + TAs */}
+            {course.instructor ? (
+              <Card>
+                <CardContent className="pt-5 pb-5 flex flex-col gap-4">
+                  <p className="text-sm font-semibold text-foreground">
+                    Instructor
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <Avatar
+                      name={course.instructor.name}
+                      size={40}
+                      radius={9}
+                    />
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">
+                        {course.instructor.name}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {course.instructor.email}
+                      </p>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold tracking-wide text-foreground mb-2">
+                      Teaching assistants
+                    </p>
+                    {tas.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {tas.map((ta) => (
+                          <div
+                            key={ta.id}
+                            className="flex items-center gap-1.5"
+                          >
+                            <Avatar name={ta.user.name} size={22} radius={5} />
+                            <span className="text-xs text-foreground">
+                              {ta.user.name}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs text-muted-foreground">
+                            {"No TAs assigned"}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card>
+                <CardContent className="pt-5 pb-5 flex flex-0 flex-col gap-2">
+                  <p className="text-sm font-semibold text-foreground">
+                    Instructor
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    No professor assigned
+                  </p>
+                  <p className="text-xs font-semibold tracking-wide text-foreground mt-2 mb-1">
+                      Teaching assistants
+                    </p>
+                    {tas.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {tas.map((ta) => (
+                          <div
+                            key={ta.id}
+                            className="flex items-center gap-1.5"
+                          >
+                            <Avatar name={ta.user.name} size={22} radius={5} />
+                            <span className="text-xs text-foreground">
+                              {ta.user.name}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs text-muted-foreground">
+                            {"No TAs assigned"}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+              </Card>
+            )}
+          </div>
+        </PageTabsContent>
+
+        {/* ── Materials — A1+A2 rework ── */}
+        <PageTabsContent
+          value="materials"
+          forceMount
+          className="data-[state=inactive]:hidden flex-1 outline-none"
+        >
+          {/* A2: Header row: title left, action buttons right */}
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <p className="text-[16px] font-semibold text-foreground">
+                Course materials
+              </p>
+              <p className="text-[13px] text-muted-foreground">
+                {materials.length} file{materials.length !== 1 ? "s" : ""}
+                {" · "}
+                {readyMaterials} embedded in AI
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {showCanvasMaterialSync && courseId && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCanvasSyncOpen(true)}
+                >
+                  <Download className="h-4 w-4 mr-1.5" />
+                  Sync from Canvas
+                </Button>
+              )}
+              {courseId && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setEmbeddingOpen(true)}
+                >
+                  <IconSettings className="h-4 w-4 mr-1.5" />
+                  Embedding settings
+                </Button>
+              )}
+              <Button size="sm" onClick={() => setUploadOpen(true)}>
+                <IconUpload className="h-4 w-4 mr-1.5" />
+                Upload material
+              </Button>
+            </div>
+          </div>
+
+          {/* A1: Single materials list — no duplicate */}
+          {materials.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <div
+                className="w-14 h-14 rounded-[14px] flex items-center justify-center mb-4"
+                style={{ background: "var(--muted)" }}
+              >
+                <IconBook
+                  size={26}
+                  className="text-muted-foreground"
+                  stroke={1.5}
+                />
+              </div>
+              <p className="text-[15px] font-semibold text-foreground mb-1">
+                No materials yet
+              </p>
+              <p className="text-[13px] text-muted-foreground mb-4">
+                Upload documents to make them available for AI chat.
+              </p>
+              <Button size="sm" onClick={() => setUploadOpen(true)}>
+                <IconUpload className="h-4 w-4 mr-1.5" />
+                Upload material
+              </Button>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {materials.map((m) => (
+                <div
+                  key={m.id}
+                  className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius-lg)] border border-border bg-card"
+                >
+                  <div
+                    className="w-8 h-8 rounded-[7px] flex items-center justify-center flex-shrink-0"
+                    style={{ background: fileTypeColor(m.mimeType) }}
+                  >
+                    <IconFileText size={14} color="white" stroke={2} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] font-medium text-foreground truncate">
+                      {m.title}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      {formatSize(m.fileSize)} ·{" "}
+                      {new Date(m.createdAt).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <MaterialStatusChip status={m.status} />
+                    <MaterialStatusIcon status={m.status} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </PageTabsContent>
+
+        {/* ── Topics ── */}
+        <PageTabsContent
           value="topics"
           forceMount
           className="data-[state=inactive]:hidden flex-1 outline-none"
@@ -344,9 +725,10 @@ export function CourseDetailManagerView({
               </div>
             )}
           </div>
-        </TabsContent>
+        </PageTabsContent>
 
-        <TabsContent
+        {/* ── Enrollments ── */}
+        <PageTabsContent
           value="enrollments"
           forceMount
           className="data-[state=inactive]:hidden flex-1 outline-none"
@@ -355,18 +737,19 @@ export function CourseDetailManagerView({
             <CardHeader className="px-0 pt-0">
               <CardTitle className="text-base flex items-center gap-2">
                 <IconUsers className="w-4 h-4" />
-                Enrolled Users
+                Enrolled users
               </CardTitle>
             </CardHeader>
-            {enrollmentsError && (
-              <p className="text-sm text-destructive" role="alert">
-                {enrollmentsError}
-              </p>
-            )}
             {enrollmentsLoading ? (
               <Card>
                 <CardContent className="flex items-center justify-center py-8 text-muted-foreground">
                   Loading enrollments…
+                </CardContent>
+              </Card>
+            ) : enrollmentsError ? (
+              <Card>
+                <CardContent className="flex items-center justify-center py-8 text-destructive">
+                  {enrollmentsError}
                 </CardContent>
               </Card>
             ) : enrollments.length === 0 ? (
@@ -411,10 +794,11 @@ export function CourseDetailManagerView({
               </div>
             )}
           </div>
-        </TabsContent>
+        </PageTabsContent>
 
+        {/* ── Staff (admin / unit_admin only) ── */}
         {canManageStaff && (
-          <TabsContent
+          <PageTabsContent
             value="staff"
             forceMount
             className="data-[state=inactive]:hidden flex-1 outline-none"
@@ -423,7 +807,7 @@ export function CourseDetailManagerView({
               <CardHeader className="px-0 pt-0">
                 <CardTitle className="text-base flex items-center gap-2">
                   <IconUserCheck className="w-4 h-4" />
-                  Course Staff
+                  Course staff
                 </CardTitle>
               </CardHeader>
 
@@ -434,7 +818,7 @@ export function CourseDetailManagerView({
                 <p className="text-sm text-green-600">{staffSuccess}</p>
               )}
 
-              {/* Instructor assignment */}
+              {/* Instructor */}
               <div className="flex flex-col gap-3">
                 <p className="text-sm font-medium">Instructor</p>
                 {course.instructor ? (
@@ -528,9 +912,9 @@ export function CourseDetailManagerView({
                 )}
               </div>
 
-              {/* TA management */}
+              {/* TAs */}
               <div className="flex flex-col gap-3">
-                <p className="text-sm font-medium">Teaching Assistants</p>
+                <p className="text-sm font-medium">Teaching assistants</p>
                 {tas.length === 0 ? (
                   <Card>
                     <CardContent className="flex items-center justify-center py-6 text-muted-foreground text-sm">
@@ -612,11 +996,16 @@ export function CourseDetailManagerView({
                 )}
               </div>
             </div>
-          </TabsContent>
+          </PageTabsContent>
         )}
 
+        {/* ── Settings (RAG retrieval tuning) ── */}
         {canManageRagSettings && (
-          <TabsContent value="settings" forceMount className="data-[state=inactive]:hidden flex-1 outline-none">
+          <PageTabsContent
+            value="settings"
+            forceMount
+            className="data-[state=inactive]:hidden flex-1 outline-none"
+          >
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -624,16 +1013,18 @@ export function CourseDetailManagerView({
                   RAG Settings
                 </CardTitle>
                 <CardDescription>
-                  Override the global retrieval defaults for this course. Leave a field
-                  blank to use the platform default.
+                  Override the global retrieval defaults for this course. Leave a
+                  field blank to use the platform default.
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid gap-6 max-w-sm">
                   <div className="grid gap-2">
                     <Label htmlFor="ragTopK">
-                      Top-K chunks{' '}
-                      <span className="text-muted-foreground text-xs">(default: 4)</span>
+                      Top-K chunks{" "}
+                      <span className="text-muted-foreground text-xs">
+                        (default: 4)
+                      </span>
                     </Label>
                     <Input
                       id="ragTopK"
@@ -645,14 +1036,17 @@ export function CourseDetailManagerView({
                       onChange={(e) => setRagTopK(e.target.value)}
                     />
                     <p className="text-xs text-muted-foreground">
-                      Maximum number of material chunks returned per RAG query (1–20).
+                      Maximum number of material chunks returned per RAG query
+                      (1–20).
                     </p>
                   </div>
 
                   <div className="grid gap-2">
                     <Label htmlFor="ragThreshold">
-                      Similarity threshold{' '}
-                      <span className="text-muted-foreground text-xs">(default: 0.5)</span>
+                      Similarity threshold{" "}
+                      <span className="text-muted-foreground text-xs">
+                        (default: 0.5)
+                      </span>
                     </Label>
                     <Input
                       id="ragThreshold"
@@ -665,25 +1059,36 @@ export function CourseDetailManagerView({
                       onChange={(e) => setRagThreshold(e.target.value)}
                     />
                     <p className="text-xs text-muted-foreground">
-                      Minimum cosine similarity score (0–1). Higher values return fewer
-                      but more relevant chunks.
+                      Minimum cosine similarity score (0–1). Higher values return
+                      fewer but more relevant chunks.
                     </p>
                   </div>
 
                   <div className="flex items-center gap-3">
                     <Button onClick={saveRagSettings} disabled={ragSaving}>
-                      {ragSaving ? 'Saving…' : 'Save settings'}
+                      {ragSaving ? "Saving…" : "Save settings"}
                     </Button>
                     {ragSaveMsg && (
-                      <span className="text-sm text-muted-foreground">{ragSaveMsg}</span>
+                      <span className="text-sm text-muted-foreground">
+                        {ragSaveMsg}
+                      </span>
                     )}
                   </div>
                 </div>
               </CardContent>
             </Card>
-          </TabsContent>
+          </PageTabsContent>
         )}
-      </Tabs>
+
+        {/* ── Chat history ── */}
+        <PageTabsContent
+          value="chat-history"
+          forceMount
+          className="data-[state=inactive]:hidden flex-1 outline-none"
+        >
+          <CourseChatHistory courseId={course.id} courseCode={course.code} />
+        </PageTabsContent>
+      </PageTabs>
     </div>
   );
 }

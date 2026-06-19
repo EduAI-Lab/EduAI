@@ -2,21 +2,11 @@
  * Dialog for creating questions (manual or AI-assisted) and managing initial variants.
  * Handles course/topic selection, validation, assessment linkage, and optional AI generation hooks.
  */
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@eduai/ui';
+import { Button, Input, Textarea, Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, ScrollArea } from '@eduai/ui';
+import { useToast, ToastAction } from '@/components/ui/use-toast';
+import { Tooltip } from '@/components/ui/tooltip';
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle
-} from '../ui/dialog';
-import { Button } from '../ui/button';
-import { Input } from '../ui/input';
-import { Textarea } from '../ui/textarea';
-import { Label } from '../ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { ScrollArea } from '../ui/scroll-area';
 import {
     Question,
     QuestionDifficulty,
@@ -34,13 +24,10 @@ import { courseService } from '../../services/courseService';
 import assessmentService from '../../services/assessmentService';
 import { Assessment } from '../../types/question';
 import { Topic } from '../../types/topic';
-import { useToast } from '../ui/use-toast';
-import { ToastAction } from '../ui/toast';
 import eduaiService, { EduAIModelOption, EduAICourseOption } from '../../services/eduaiService';
 import { Course } from '../../types/question';
 import { apiKeyStorage } from '../../services/apiKeyStorage';
 import { useEduAIStatus } from '../../hooks/useEduAIStatus';
-import { Tooltip } from '../ui/tooltip';
 import { ChevronDown, ChevronUp, HelpCircle } from 'lucide-react';
 import { normalizeCourseCode } from '../../utils/courseDisplay';
 
@@ -957,8 +944,8 @@ export const AddQuestionDialog = ({
                             <div className="relative flex-shrink-0">
                                 {showNewUserHint && (
                                     <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
-                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
-                                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-500" />
+                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
+                                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary" />
                                     </span>
                                 )}
                                 <Button
@@ -1295,7 +1282,7 @@ export const AddQuestionDialog = ({
                             checked={markAsReviewed}
                             onChange={(e) => setMarkAsReviewed(e.target.checked)}
                             disabled={isSubmitting}
-                            className="h-4 w-4 rounded border-gray-300"
+                            className="h-4 w-4 rounded border-border bg-background ring-ring cursor-pointer accent-accent"
                         />
                         <label
                             htmlFor="mark-as-reviewed"

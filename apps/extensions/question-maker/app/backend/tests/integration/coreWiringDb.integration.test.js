@@ -45,6 +45,14 @@ function coreErr(data, status) {
   return { ok: false, status, json: () => Promise.resolve(data) };
 }
 
+// Per-course access gate (requireCourseAccess) resolves a LINKED course's access
+// from Core enrollment, so any route on a linked course makes one enrollment
+// fetch before the handler runs. This reply lists TEST_USER as an active
+// instructor so the gate grants access.
+function enrollmentOk() {
+  return coreOk({ enrollments: [{ studentId: TEST_USER.id, role: 'INSTRUCTOR', isActive: true }] });
+}
+
 describeDb('Core wiring DB integration', () => {
   let connectTestDatabase, truncateTestDatabase, sequelize;
   let User, Course, Topics, Question_Metadata, Variants;
@@ -174,7 +182,7 @@ describeDb('Core wiring DB integration', () => {
         { id: 'cuid-t1', name: 'Chapter 1' }, // matches existing local topic by name
         { id: 'cuid-t2', name: 'Chapter 2' }, // new
       ];
-      vi.stubGlobal('fetch', makeFetch(coreOk({ topics: coreTopics })));
+      vi.stubGlobal('fetch', makeFetch(enrollmentOk(), coreOk({ topics: coreTopics })));
 
       const res = await request(app)
         .post(`/api/course/${courseId}/sync-topics`)
@@ -193,7 +201,7 @@ describeDb('Core wiring DB integration', () => {
     it('returns 502 when Core fetch fails', async () => {
       await Course.update({ coreCourseId: 'cuid-core-course' }, { where: { id: courseId } });
 
-      vi.stubGlobal('fetch', makeFetch(coreErr({ error: 'Service Unavailable' }, 503)));
+      vi.stubGlobal('fetch', makeFetch(enrollmentOk(), coreErr({ error: 'Service Unavailable' }, 503)));
 
       const res = await request(app)
         .post(`/api/course/${courseId}/sync-topics`)
@@ -210,8 +218,8 @@ describeDb('Core wiring DB integration', () => {
     it('pushes to Core and stores coreTopicId when course is linked', async () => {
       await Course.update({ coreCourseId: 'cuid-core-course' }, { where: { id: courseId } });
 
-      // fetch: session validate, then Core POST /topics
-      vi.stubGlobal('fetch', makeFetch(coreOk({ id: 'cuid-new-topic', name: 'Sorting' }, 201)));
+      // fetch: session validate, enrollment access check, then Core POST /topics
+      vi.stubGlobal('fetch', makeFetch(enrollmentOk(), coreOk({ id: 'cuid-new-topic', name: 'Sorting' }, 201)));
 
       const res = await request(app)
         .post(`/api/course/${courseId}/topics`)
@@ -228,7 +236,7 @@ describeDb('Core wiring DB integration', () => {
     it('creates topic locally even when Core push fails', async () => {
       await Course.update({ coreCourseId: 'cuid-core-course' }, { where: { id: courseId } });
 
-      vi.stubGlobal('fetch', makeFetch({ ok: false, status: 503, json: () => Promise.resolve({}) }));
+      vi.stubGlobal('fetch', makeFetch(enrollmentOk(), { ok: false, status: 503, json: () => Promise.resolve({}) }));
 
       const res = await request(app)
         .post(`/api/course/${courseId}/topics`)
@@ -248,7 +256,7 @@ describeDb('Core wiring DB integration', () => {
 
       vi.stubGlobal(
         'fetch',
-        makeFetch({
+        makeFetch(enrollmentOk(), {
           ok: false,
           status: 409,
           json: () => Promise.resolve({ error: 'TOPIC_ALREADY_EXISTS', existingId: 'cuid-existing-topic' }),

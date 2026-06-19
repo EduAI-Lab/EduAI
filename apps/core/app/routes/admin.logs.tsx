@@ -18,8 +18,8 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from "~/components/ui/breadcrumb";
-import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
+} from "@eduai/ui";
+import { SidebarInset, SidebarProvider } from "@eduai/ui";
 import { auth } from "~/lib/auth/server";
 import {
   listAuditLogs,
