@@ -169,34 +169,42 @@ describe('CoursesUnitAdminView', () => {
 
 // CoursesInstructorView
 describe('CoursesInstructorView', () => {
-  it('does NOT show "Create Course" button', () => {
+  it('shows "Create Course" button when the policy default is on', () => {
+    // usePolicies fails in jsdom (no /api/policies), so the `?? true` policy
+    // defaults apply — create is on by default.
     wrap(
       <CoursesInstructorView
         courses={[PUBLISHED_COURSE]}
+        onCreateCourse={NOOP}
         onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
         onPublishToggle={NOOP}
       />
     )
-    expect(screen.queryByRole('button', { name: /create course/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /create course/i })).toBeInTheDocument()
   })
 
-  it('shows publish and edit buttons per course', () => {
+  it('shows publish, edit, and delete buttons per course', () => {
     wrap(
       <CoursesInstructorView
         courses={[PUBLISHED_COURSE]}
+        onCreateCourse={NOOP}
         onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
         onPublishToggle={NOOP}
       />
     )
     const btns = screen.getAllByRole('button')
-    expect(btns.length).toBeGreaterThanOrEqual(2) // publish + edit
+    expect(btns.length).toBeGreaterThanOrEqual(3) // publish + edit + delete
   })
 
   it('renders both published and draft courses', () => {
     wrap(
       <CoursesInstructorView
         courses={[PUBLISHED_COURSE, DRAFT_COURSE]}
+        onCreateCourse={NOOP}
         onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
         onPublishToggle={NOOP}
       />
     )

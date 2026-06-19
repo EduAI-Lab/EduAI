@@ -2,8 +2,11 @@ import { IconBook, IconCalendar } from '@tabler/icons-react'
 import { Card, CardContent } from '~/components/ui/card'
 import { Badge } from '~/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs'
+import {
+  CourseMaterialsUpload,
+  type CourseMaterial,
+} from '~/components/course-materials-upload'
 import type { CourseDetail } from '~/hooks/api/use-course-detail'
-import type { CourseMaterial } from '~/hooks/api/use-course-materials'
 import type { CourseTopic } from '~/hooks/api/use-course-topics'
 import { usePolicies } from '~/hooks/api/use-policies'
 
@@ -11,13 +14,32 @@ interface Props {
   course: CourseDetail
   materials: CourseMaterial[]
   topics: CourseTopic[]
+  isUploading?: boolean
+  materialsError?: string | null
+  materialsSuccess?: string | null
+  onFileSelect?: (file: File) => void
 }
 
-export function CourseDetailStudentView({ course, materials, topics }: Props) {
+export function CourseDetailStudentView({
+  course,
+  materials,
+  topics,
+  isUploading = false,
+  materialsError = null,
+  materialsSuccess = null,
+  onFileSelect,
+}: Props) {
   const { policies } = usePolicies()
   // §2 gate: hide the materials section when students.canViewMaterials is off
   // (mirrors the loader 403). Default true preserves today's behavior.
   const canViewMaterials = policies['students.canViewMaterials'] ?? true
+  // §2 grant: a student sees the upload control only when students.canUploadMaterials
+  // is on (default false — mirrors the POST 403). Uploads land on the whole-course
+  // RAG corpus, same as instructor/TA uploads.
+  const canUploadMaterials =
+    (policies['students.canUploadMaterials'] ?? false) && Boolean(onFileSelect)
+  // The Materials tab shows when the student may either read or upload.
+  const showMaterialsTab = canViewMaterials || canUploadMaterials
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -35,7 +57,7 @@ export function CourseDetailStudentView({ course, materials, topics }: Props) {
       <Tabs defaultValue="overview">
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
-          {canViewMaterials && <TabsTrigger value="materials">Materials</TabsTrigger>}
+          {showMaterialsTab && <TabsTrigger value="materials">Materials</TabsTrigger>}
           {/* No Topics management tab, no Enrollments tab for students — §8, §6 */}
         </TabsList>
 
@@ -61,10 +83,20 @@ export function CourseDetailStudentView({ course, materials, topics }: Props) {
           </Card>
         </TabsContent>
 
-        {canViewMaterials && (
+        {showMaterialsTab && (
         <TabsContent value="materials" forceMount className="data-[state=inactive]:hidden flex-1 outline-none">
-          {/* Read-only — no upload (§7) */}
-          {materials.length === 0 ? (
+          {/* §2 grant: students.canUploadMaterials surfaces the upload control
+              (and material list) for an enrolled student; the POST endpoint
+              applies the matching gate. Off by default → read-only list. */}
+          {canUploadMaterials ? (
+            <CourseMaterialsUpload
+              materials={materials}
+              isUploading={isUploading}
+              error={materialsError}
+              success={materialsSuccess}
+              onFileSelect={onFileSelect!}
+            />
+          ) : materials.length === 0 ? (
             <Card>
               <CardContent className="flex items-center justify-center py-8 text-muted-foreground">
                 No materials available yet.

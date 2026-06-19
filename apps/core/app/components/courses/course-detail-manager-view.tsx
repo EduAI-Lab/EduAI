@@ -93,7 +93,13 @@ export function CourseDetailManagerView({
   const [ragSaveMsg, setRagSaveMsg] = useState<string | null>(null)
   const { policies } = usePolicies()
   const canManage = canManageTopics(access, policies['tas.canManageTopics'] ?? false)
-  const canManageStaff = canManageInstructors(access)
+  // Reassigning the instructor stays ADMIN/UNIT_ADMIN only; the Staff tab (TA
+  // management) also opens to an owning instructor when the enrollment policy is
+  // on. Mirrors the TA endpoint and loader gates.
+  const canAssignInstructor = canManageInstructors(access)
+  const canManageStaff =
+    canAssignInstructor ||
+    (access === 'instructor' && (policies['instructors.canManageEnrollments'] ?? true))
   const canManageRagSettings = access === 'admin' || access === 'instructor'
 
   // §5d: a Chats tab visible only to roles whose course-chat-visibility flag is on.
@@ -378,7 +384,8 @@ export function CourseDetailManagerView({
                 <p className="text-sm text-green-600">{staffSuccess}</p>
               )}
 
-              {/* Instructor assignment */}
+              {/* Instructor assignment — ADMIN/UNIT_ADMIN only */}
+              {canAssignInstructor && (
               <div className="flex flex-col gap-3">
                 <p className="text-sm font-medium">Instructor</p>
                 {course.instructor ? (
@@ -451,6 +458,7 @@ export function CourseDetailManagerView({
                   </>
                 )}
               </div>
+              )}
 
               {/* TA management */}
               <div className="flex flex-col gap-3">

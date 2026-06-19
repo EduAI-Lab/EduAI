@@ -18,6 +18,7 @@ import { SiteHeader } from "~/components/site-header";
 import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
 import { redirectToStudentIdOnboardingIfNeeded } from "~/lib/canvas/onboarding.server";
 import { auth } from "~/lib/auth/server";
+import { usePolicies } from "~/hooks/api/use-policies";
 import type { User } from "~/lib/auth/types";
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -44,7 +45,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
 const CANVAS_SYNC_ROLES = new Set(["INSTRUCTOR", "ADMIN"]);
 
 function DashboardContent({ user }: { user: User }) {
-  const showCanvasSync = CANVAS_SYNC_ROLES.has(user.role ?? "");
+  const { policies } = usePolicies();
+  // Instructors only see the Canvas sync card when the policy is on; ADMIN is
+  // unaffected. Mirrors the `instructors.canManageCanvasIntegration` gate on
+  // the Canvas API (canvas.$.ts).
+  const canvasPolicyOk =
+    user.role === "ADMIN" ||
+    (policies["instructors.canManageCanvasIntegration"] ?? true);
+  const showCanvasSync = CANVAS_SYNC_ROLES.has(user.role ?? "") && canvasPolicyOk;
 
   let view;
   switch (user.role) {
