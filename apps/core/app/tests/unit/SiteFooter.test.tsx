@@ -19,7 +19,7 @@ describe("SiteFooter — rendering", () => {
         <SiteFooter />
       </MemoryRouter>
     );
-    expect(screen.getByRole("heading", { name: "Quick Links" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Quick links" })).toBeInTheDocument();
   });
 
   it("renders the current year in the copyright line", () => {

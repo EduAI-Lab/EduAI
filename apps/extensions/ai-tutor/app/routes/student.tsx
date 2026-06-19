@@ -4,17 +4,20 @@ import Nav from '../components/Nav';
 import { ProgressBarFromData } from '../components/ProgressBar';
 import type { Course } from '../lib/types';
 import type { Route } from './+types/student';
+import { AtRoleBanner } from '../components/rbac/AtRoleBanner';
+import { useLocalUser } from '../hooks/useLocalUser';
 import api from '~/lib/api';
 import { requireClientUser } from '~/lib/client-auth';
 
 export async function clientLoader(_: Route.ClientLoaderArgs) {
-  await requireClientUser('STUDENT');
+  await requireClientUser(['STUDENT', 'TA']);
   const courses = (await api.listCourses()) as Course[];
   return { courses };
 }
 
 export default function StudentHome({ loaderData }: Route.ComponentProps) {
   const navigate = useNavigate();
+  const { user } = useLocalUser();
   const courseList = useMemo(() => loaderData.courses ?? [], [loaderData.courses]);
 
   return (
@@ -28,13 +31,14 @@ export default function StudentHome({ loaderData }: Route.ComponentProps) {
         <div className="absolute inset-0 dots-pattern opacity-50" />
       </div>
 
-      <div className="container mx-auto px-6 py-10">
+      <div className="container mx-auto px-6 py-10 space-y-6">
+        {user ? <AtRoleBanner role={user.role} variant="student" /> : null}
         {/* Page header */}
-        <header className="mb-10 animate-fade-up" data-tour="student-dashboard-header">
+        <header className="mb-4 animate-fade-up" data-tour="student-dashboard-header">
           <div className="flex items-end justify-between gap-4 mb-2">
             <div>
               <p className="text-sm font-medium text-muted-foreground mb-1">Dashboard</p>
-              <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-foreground">
+              <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-foreground">
                 My Courses
               </h1>
             </div>
@@ -52,7 +56,7 @@ export default function StudentHome({ loaderData }: Route.ComponentProps) {
         {/* Course grid */}
         {courseList.length === 0 ? (
           <div className="animate-fade-up delay-150">
-            <div className="card-editorial p-12 text-center max-w-lg mx-auto">
+            <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-12 text-center max-w-lg mx-auto">
               <div className="w-16 h-16 mx-auto mb-6 rounded-2xl bg-secondary flex items-center justify-center">
                 <svg
                   className="w-8 h-8 text-muted-foreground"
@@ -68,7 +72,7 @@ export default function StudentHome({ loaderData }: Route.ComponentProps) {
                   />
                 </svg>
               </div>
-              <h2 className="font-display text-xl font-bold text-foreground mb-2">
+              <h2 className="text-xl font-bold text-foreground mb-2">
                 No courses yet
               </h2>
               <p className="text-muted-foreground text-sm">
@@ -83,7 +87,7 @@ export default function StudentHome({ loaderData }: Route.ComponentProps) {
               <button
                 key={course.id}
                 onClick={() => navigate(`/student/courses/${course.id}`)}
-                className="group card-editorial p-6 text-left transition-all duration-300 hover:shadow-xl hover:-translate-y-1 glow animate-fade-up"
+                className="group rounded-lg border bg-card text-card-foreground shadow-sm p-6 text-left transition-all duration-300 hover:shadow-xl hover:-translate-y-1 glow animate-fade-up"
                 style={{ animationDelay: `${150 + index * 50}ms` }}
                 data-tour={index === 0 ? 'student-course-card-first' : undefined}
                 data-tour-route={index === 0 ? `/student/courses/${course.id}` : undefined}
@@ -126,7 +130,7 @@ export default function StudentHome({ loaderData }: Route.ComponentProps) {
 
                 {/* Course info */}
                 <div className="mb-4">
-                  <h3 className="font-display text-lg font-bold text-foreground mb-1 group-hover:text-primary transition-colors line-clamp-2">
+                  <h3 className="text-lg font-bold text-foreground mb-1 group-hover:text-primary transition-colors line-clamp-2">
                     {course.title}
                   </h3>
                   {course.description && (

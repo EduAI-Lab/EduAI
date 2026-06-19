@@ -1,16 +1,8 @@
+import { Button, Input, Label, ScrollArea, Separator } from '@eduai/ui';
+
 import React, { useMemo, useState } from 'react';
 import {
-    Dialog,
-    DialogContent,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle
-} from '../ui/dialog';
-import { Button } from '../ui/button';
-import { Input } from '../ui/input';
-import { Label } from '../ui/label';
-import { ScrollArea } from '../ui/scroll-area';
-import { Separator } from '../ui/separator';
+    Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@eduai/ui';
 import { MultiSelectDropdown } from '../../pages/assessments/MultiSelectDropdown';
 import { QuestionDifficulty, QuestionType, QuestionVariantEntry, Topic } from '../../types/question';
 

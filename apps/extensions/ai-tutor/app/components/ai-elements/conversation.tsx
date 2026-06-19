@@ -1,6 +1,6 @@
 'use client';
 
-import { Button } from '~/components/ui/button';
+import { Button } from '@eduai/ui';
 import { cn } from '~/lib/utils';
 import { ArrowDownIcon } from 'lucide-react';
 import type { ComponentProps } from 'react';

@@ -33,6 +33,7 @@ import { getAiModelPolicyState, setAiModelPolicy } from '../services/aiModelPoli
 import { mapAdminUser, mapCourseOffering } from '../utils/mappers.js';
 import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
 import { syncCourseEnrollments } from '../services/enrollmentSync.js';
+import { listEduAiCourseEnrollmentsServiceKey } from '../services/eduaiClient.js';
 
 const router = express.Router();
 
@@ -102,13 +103,34 @@ router.get(
         return res.status(403).json({ error: 'Not authorized for this course' });
       }
 
-      // User records live in Core; return enrolled userIds with a stub shape.
-      // availableStudents cannot be populated without a Core user-list API.
+      // Fetch real names/emails from Core when the course has an externalId.
+      // Fall back to userId if Core is unavailable (fail-soft).
+      let coreNameMap = new Map();
+      if (course.externalId) {
+        try {
+          const coreEnrollments = await listEduAiCourseEnrollmentsServiceKey(course.externalId);
+          for (const e of coreEnrollments) {
+            coreNameMap.set(e.studentId, { name: e.studentName, email: e.studentEmail });
+          }
+        } catch (err) {
+          console.warn('[admin] Could not fetch Core enrollment names for course', courseId, err.message);
+        }
+      }
+
       res.json({
         courseId,
         enrolledStudents: course.enrollments
           .toSorted((a, b) => a.userId.localeCompare(b.userId))
-          .map((e) => ({ id: e.userId, name: e.userId, email: '', role: e.role, createdAt: e.createdAt })),
+          .map((e) => {
+            const coreInfo = coreNameMap.get(e.userId);
+            return {
+              id: e.userId,
+              name: coreInfo?.name ?? e.userId,
+              email: coreInfo?.email ?? '',
+              role: e.role,
+              createdAt: e.createdAt,
+            };
+          }),
         availableStudents: [],
       });
     } catch (e) {

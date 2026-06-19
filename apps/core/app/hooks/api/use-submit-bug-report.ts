@@ -1,40 +1,37 @@
 import { useCallback, useState } from "react";
 
-import { STUB_ONLY } from "~/hooks/api/config";
-import type { BugReport, SubmitBugReportInput } from "~/hooks/api/types";
+import type { SubmitBugReportInput } from "~/hooks/api/types";
 
 export function useSubmitBugReport() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const submitBugReport = useCallback(
-    async (input: SubmitBugReportInput): Promise<BugReport | null> => {
+    async (input: SubmitBugReportInput): Promise<boolean> => {
       setIsSubmitting(true);
       setError(null);
 
       try {
-        if (STUB_ONLY.bugReports) {
-          const now = new Date().toISOString();
-          return {
-            id: `bug-stub-${Date.now()}`,
-            title: input.title,
-            description: input.description,
-            status: "OPEN",
-            source: "CORE",
+        const response = await fetch("/api/bug-reports", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            description: input.description.trim(),
             isAnonymous: input.isAnonymous ?? false,
-            reporterName: input.isAnonymous ? null : "Current User",
-            reporterEmail: input.isAnonymous ? null : null,
-            createdAt: now,
-            updatedAt: now,
-          };
+          }),
+        });
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({})) as { error?: string };
+          throw new Error(data.error ?? "Failed to submit bug report");
         }
 
-        // Future: POST /api/bug-reports
-        return null;
+        // Backend returns 201 with no body — success is indicated by status alone.
+        return true;
       } catch (err) {
         console.error("Failed to submit bug report:", err);
         setError(err instanceof Error ? err.message : "Failed to submit bug report");
-        return null;
+        return false;
       } finally {
         setIsSubmitting(false);
       }
@@ -46,6 +43,6 @@ export function useSubmitBugReport() {
     submitBugReport,
     isSubmitting,
     error,
-    isStubbed: STUB_ONLY.bugReports,
+    isStubbed: false,
   };
 }

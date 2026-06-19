@@ -2,13 +2,9 @@
  * Modal for creating or editing an assessment blueprint (name, type, semester).
  * Returns collected params to parent callbacks.
  */
+import { Button, Card, CardContent, CardFooter, CardHeader, CardTitle, Input, Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@eduai/ui';
+import { Tooltip } from '@/components/ui/tooltip';
 import * as React from 'react';
-import { Button } from '../ui/button';
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '../ui/card';
-import { Input } from '../ui/input';
-import { Label } from '../ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { Tooltip } from '../ui/tooltip';
 import { AssessmentGenerationParams, AssessmentType } from '../../types/question';
 
 interface GenerateAssessmentModalProps {

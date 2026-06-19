@@ -1,6 +1,6 @@
 'use client';
 
-import { Button } from '~/components/ui/button';
+import { Button } from '@eduai/ui';
 import {
   Command,
   CommandEmpty,
@@ -15,8 +15,8 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '~/components/ui/dropdown-menu';
-import { HoverCard, HoverCardContent, HoverCardTrigger } from '~/components/ui/hover-card';
+} from '@eduai/ui';
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@eduai/ui';
 import {
   InputGroup,
   InputGroupAddon,
@@ -29,8 +29,8 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '~/components/ui/select';
-import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui/tooltip';
+} from '@eduai/ui';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@eduai/ui';
 import { cn } from '~/lib/utils';
 import type { ChatStatus, FileUIPart } from 'ai';
 import {

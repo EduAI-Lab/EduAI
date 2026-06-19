@@ -7,6 +7,7 @@ import {
   isLegacyPlaintextStudentId,
   prepareStudentIdStorage,
   readStoredStudentId,
+  rosterSisUserIdMatchFilter,
   studentIdMatchFilter,
 } from "~/lib/canvas/student-id.server";
 
@@ -74,6 +75,21 @@ export async function linkCanvasRoster(
     throw new LinkRosterError(
       "This student number is already linked to another account.",
       409,
+    );
+  }
+
+  const stagingCount = await prisma.canvasRosterMember.count({
+    where: {
+      isActive: true,
+      ...rosterSisUserIdMatchFilter(normalized),
+    },
+  });
+
+  if (stagingCount === 0) {
+    auditLinkAttempt(userId, "failure", "no_staging_match");
+    throw new LinkRosterError(
+      "No Canvas enrollments found for this student number. Ask your instructor to sync the course first.",
+      404,
     );
   }
 

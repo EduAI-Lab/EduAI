@@ -1,0 +1,223 @@
+<!-- @dsCard group="EduAI Core" viewport="1280x800" name="Core Portal" subtitle="Student portal — sidebar, dashboard, chat, courses. Open index.html for the interactive prototype." -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../../styles.css">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--font-sans); background: var(--background); display: flex; height: 800px; overflow: hidden; font-size: 13px; }
+
+  /* ── Sidebar ─────────────────────────── */
+  .sidebar {
+    width: 220px; min-width: 220px; background: oklch(0.198 0.060 259);
+    display: flex; flex-direction: column; border-right: 1px solid oklch(0.270 0.045 259);
+  }
+  .sb-logo {
+    padding: 14px 16px; border-bottom: 1px solid oklch(0.270 0.045 259);
+    display: flex; align-items: center; gap: 8px; color: #fff;
+    font-size: 15px; font-weight: 700;
+  }
+  .sb-logo svg { flex-shrink: 0; }
+  .sb-content { flex: 1; padding: 10px 8px; display: flex; flex-direction: column; gap: 2px; overflow: hidden; }
+  .sb-qc {
+    display: flex; align-items: center; gap: 8px; padding: 7px 10px;
+    border-radius: 6px; margin-bottom: 8px;
+    background: rgba(255,255,255,0.10); color: #fff;
+    border: 1px solid rgba(255,255,255,0.15); font-size: 13px; font-weight: 500;
+  }
+  .sb-item {
+    display: flex; align-items: center; gap: 9px; padding: 7px 10px;
+    border-radius: 6px; color: oklch(0.870 0.012 256); font-size: 13px;
+  }
+  .sb-item.active { background: oklch(0.265 0.055 259); color: #fff; font-weight: 500; }
+  .sb-divider { height: 1px; background: oklch(0.270 0.045 259); margin: 8px 0; }
+  .sb-footer {
+    padding: 10px 12px; border-top: 1px solid oklch(0.270 0.045 259);
+    display: flex; align-items: center; gap: 9px;
+  }
+  .sb-avatar {
+    width: 30px; height: 30px; border-radius: 6px; flex-shrink: 0;
+    background: oklch(0.42 0.14 230); display: flex; align-items: center;
+    justify-content: center; color: #fff; font-size: 11px; font-weight: 700;
+  }
+  .sb-user-name { font-size: 12px; font-weight: 500; color: #fff; }
+  .sb-user-email { font-size: 10px; color: oklch(0.620 0.025 256); }
+  .role-badge {
+    font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 999px;
+    background: var(--color-role-student); color: #fff;
+  }
+
+  /* ── Main content ────────────────────── */
+  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .site-header {
+    height: 52px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; padding: 0 22px;
+    justify-content: space-between; flex-shrink: 0;
+  }
+  .breadcrumb { display: flex; align-items: center; gap: 6px; color: var(--muted-foreground); font-size: 12px; }
+  .breadcrumb .current { color: var(--foreground); font-weight: 500; }
+  .header-actions { display: flex; align-items: center; gap: 8px; }
+  .pill { font-size: 11px; padding: 3px 10px; border-radius: 999px; background: var(--muted); color: var(--muted-foreground); border: 1px solid var(--border); }
+
+  /* ── Dashboard content ───────────────── */
+  .page { flex: 1; overflow: hidden; padding: 24px 22px; display: flex; flex-direction: column; gap: 20px; }
+  .page-title { font-size: 22px; font-weight: 700; color: var(--foreground); }
+  .page-sub { font-size: 13px; color: var(--muted-foreground); margin-top: 4px; }
+  .gold-bar { width: 40px; height: 3px; background: var(--gold); border-radius: 2px; margin-top: 12px; }
+
+  /* Stat cards */
+  .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .stat-card {
+    background: linear-gradient(to bottom, oklch(from var(--primary) l c h / 0.05), white);
+    border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px;
+  }
+  .stat-label { font-size: 11px; color: var(--muted-foreground); margin-bottom: 6px; }
+  .stat-value { font-size: 24px; font-weight: 600; color: var(--foreground); line-height: 1; }
+  .stat-trend {
+    display: inline-flex; align-items: center; gap: 2px;
+    font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 999px; margin-top: 6px;
+  }
+  .trend-up { background: var(--color-success-100); color: var(--color-success-700); }
+  .trend-dn { background: var(--color-error-100);   color: var(--color-error-700); }
+
+  /* Action cards */
+  .action-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .action-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 16px; cursor: pointer;
+  }
+  .action-icon { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; margin-bottom: 10px; }
+  .action-title { font-size: 13px; font-weight: 600; color: var(--foreground); margin-bottom: 3px; }
+  .action-desc { font-size: 11px; color: var(--muted-foreground); line-height: 1.4; }
+</style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<aside class="sidebar">
+  <div class="sb-logo">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="9"/>
+      <path d="M12 3a9 9 0 0 1 0 18"/><path d="M3 12h18"/>
+      <path d="M12 3c2 2 3.5 5.5 3.5 9s-1.5 7-3.5 9"/>
+    </svg>
+    EduAI
+  </div>
+  <div class="sb-content">
+    <div class="sb-qc">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      Quick Create
+    </div>
+    <div class="sb-item active">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/></svg>
+      Dashboard
+    </div>
+    <div class="sb-item">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M4 19V7.5a3.5 3.5 0 0 1 7 0V19M11 7.5a3.5 3.5 0 0 1 7 0V19M4 19h16"/></svg>
+      Courses
+    </div>
+    <div class="sb-item">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 8V4M8 4h8M7 8h10a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2zM9 13h.01M15 13h.01"/></svg>
+      Chat
+    </div>
+    <div class="sb-divider"></div>
+    <div class="sb-item">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-2.82 1.17V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 3 15a2 2 0 0 1-4 0"/></svg>
+      Settings
+    </div>
+  </div>
+  <div class="sb-footer">
+    <div class="sb-avatar">AC</div>
+    <div style="flex:1; min-width:0">
+      <div style="display:flex;align-items:center;gap:5px">
+        <div class="sb-user-name">Alex Chen</div>
+        <div class="role-badge">Student</div>
+      </div>
+      <div class="sb-user-email">alex@student.ubc.ca</div>
+    </div>
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="oklch(0.620 0.025 256)" stroke-width="2" stroke-linecap="round"><path d="M12 5h.01M12 12h.01M12 19h.01"/></svg>
+  </div>
+</aside>
+
+<!-- Main content -->
+<div class="main">
+  <div class="site-header">
+    <div class="breadcrumb">
+      <span>Home</span>
+      <span style="color:var(--border)">/</span>
+      <span class="current">Dashboard</span>
+    </div>
+    <div class="header-actions">
+      <div class="pill">UBC · Student Portal</div>
+    </div>
+  </div>
+
+  <div class="page">
+    <div>
+      <div class="page-title">Good afternoon, Alex.</div>
+      <div class="page-sub">Here's what's happening in your courses today.</div>
+      <div class="gold-bar"></div>
+    </div>
+
+    <div class="stat-grid">
+      <div class="stat-card">
+        <div class="stat-label">Courses Enrolled</div>
+        <div class="stat-value">3</div>
+        <div class="stat-trend trend-up">↑ 0%</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">AI Sessions This Week</div>
+        <div class="stat-value">12</div>
+        <div class="stat-trend trend-up">↑ 33%</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Materials Accessed</div>
+        <div class="stat-value">47</div>
+        <div class="stat-trend trend-up">↑ 8%</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Avg. Quiz Score</div>
+        <div class="stat-value">84%</div>
+        <div class="stat-trend trend-dn">↓ 2%</div>
+      </div>
+    </div>
+
+    <div>
+      <div style="font-size:14px;font-weight:600;color:var(--foreground);margin-bottom:12px">Quick actions</div>
+      <div class="action-grid">
+        <div class="action-card">
+          <div class="action-icon" style="background:var(--color-blue-50)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="1.75" stroke-linecap="round"><path d="M12 8V4M8 4h8M7 8h10a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2zM9 13h.01M15 13h.01"/></svg>
+          </div>
+          <div class="action-title">Chat with AI</div>
+          <div class="action-desc">Ask questions about your course materials</div>
+        </div>
+        <div class="action-card">
+          <div class="action-icon" style="background:oklch(0.418 0.171 257 / 0.10)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--secondary)" stroke-width="1.75" stroke-linecap="round"><path d="M4 19V7.5a3.5 3.5 0 0 1 7 0V19M11 7.5a3.5 3.5 0 0 1 7 0V19M4 19h16"/></svg>
+          </div>
+          <div class="action-title">Browse Courses</div>
+          <div class="action-desc">View enrolled courses and materials</div>
+        </div>
+        <div class="action-card">
+          <div class="action-icon" style="background:var(--color-success-100)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-success-700)" stroke-width="1.75" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>
+          </div>
+          <div class="action-title">View Materials</div>
+          <div class="action-desc">PDFs, slides, and course documents</div>
+        </div>
+        <div class="action-card">
+          <div class="action-icon" style="background:var(--color-warning-100)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-warning-700)" stroke-width="1.75" stroke-linecap="round"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></svg>
+          </div>
+          <div class="action-title">Settings</div>
+          <div class="action-desc">Manage your account and preferences</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

@@ -11,10 +11,10 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '~/components/ui/dialog';
-import { Textarea } from '~/components/ui/textarea';
-import { Switch } from '~/components/ui/switch';
-import { Button } from '~/components/ui/button';
+} from '@eduai/ui';
+import { Textarea } from '@eduai/ui';
+import { Switch } from '@eduai/ui';
+import { Button } from '@eduai/ui';
 
 const bugReportSchema = z.object({
   description: z
