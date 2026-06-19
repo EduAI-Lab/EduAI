@@ -12,6 +12,7 @@ const ADMIN_NAV: NavItem[] = [
   { key: 'admin-bugs', title: 'Bug Reports', url: '/admin/bug-reports' },
   { key: 'admin-invites', title: 'Invitations', url: '/admin/invitations' },
   { key: 'admin-settings', title: 'Permissions', url: '/admin/settings' },
+  { key: 'admin-logs', title: 'Logs', url: '/admin/logs' },
 ]
 
 const SETTINGS_NAV: NavItem[] = [

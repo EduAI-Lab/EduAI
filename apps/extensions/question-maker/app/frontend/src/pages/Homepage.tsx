@@ -268,7 +268,7 @@ export const Homepage = () => {
   const emptyStateMessage = selectedCourse
     ? questionsError || 'No questions found for this course yet. Try adding or uploading questions.'
     : displayCourses.length === 0
-      ? 'No courses available. Start the guided tour to add courses from the AI service.'
+      ? 'No courses available. Core courses appear after sign-in, or start the guided tour for a sandbox course.'
       : 'Select a course to view its questions.';
 
   const filteredAssessments = useMemo(() => {

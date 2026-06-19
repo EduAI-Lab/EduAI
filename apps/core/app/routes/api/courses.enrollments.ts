@@ -26,6 +26,8 @@ import { getPolicy, logPolicyDenial } from "~/lib/policy.server";
 import { getCourse } from "~/lib/courses/server";
 import { addEnrollment, getCourseEnrollments } from "~/lib/courses/enrollments.server";
 import { readStoredStudentId } from "~/lib/canvas/student-id.server";
+import { fireAndForget, logAuditAction } from "~/lib/logging.server";
+import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const courseId = params.id;
@@ -168,10 +170,22 @@ export async function action({ request, params }: ActionFunctionArgs) {
     });
   }
 
+  const requestContext = getRequestContext(request);
   const result = await addEnrollment(courseId, body ?? {});
 
   switch (result.status) {
     case "201":
+      fireAndForget(
+        logAuditAction({
+          ...getActorContext(session?.user ?? null),
+          ...requestContext,
+          actionCode: "ENROLLMENT_ADDED",
+          category: "ENROLLMENT",
+          entityType: "Enrollment",
+          entityId: result.enrollment.id,
+          details: { courseId, role: result.enrollment.role, targetUserId: result.enrollment.userId },
+        }),
+      );
       return new Response(JSON.stringify(result.enrollment), {
         status: 201,
         headers: { "Content-Type": "application/json" },
