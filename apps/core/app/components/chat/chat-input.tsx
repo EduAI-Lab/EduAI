@@ -116,13 +116,14 @@ export function ChatInput({
         <div className="max-w-[720px] mx-auto px-6 pt-3 pb-4">
 
           {/* Selector pills row */}
-          <div className="flex items-center gap-2 mb-2.5">
+          <div className={cn("flex items-center gap-2 mb-2.5", disabledReason && "pointer-events-none opacity-40")}>
             {/* Course selector pill */}
             {showCourseSelector && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
+                    disabled={!!disabledReason}
                     className={cn("inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full border border-border transition-all duration-150 cursor-pointer min-h-[28px]", ASSISTIVE_FOCUS_CHROME_CLASS)}
                     style={{
                       background: selectedCourseId ? "var(--primary)" : "var(--muted)",
@@ -154,6 +155,7 @@ export function ChatInput({
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
+                  disabled={!!disabledReason}
                   className={cn("inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full border border-border bg-muted text-muted-foreground transition-all duration-150 cursor-pointer min-h-[28px] hover:text-foreground", ASSISTIVE_FOCUS_CHROME_CLASS)}
                 >
                   <IconRobot size={12} stroke={2} />
@@ -202,6 +204,7 @@ export function ChatInput({
                         <Switch
                           id="adhd-assist-composer"
                           checked={adhdAssist}
+                          disabled={!!disabledReason}
                           onCheckedChange={(checked) => onAdhdAssistChange(Boolean(checked))}
                           aria-label="Assistive mode"
                           className="shrink-0"
@@ -243,7 +246,7 @@ export function ChatInput({
                         <Switch
                           id="assistive-focus-composer"
                           checked={focusMode}
-                          disabled={!adhdAssist}
+                          disabled={!adhdAssist || !!disabledReason}
                           onCheckedChange={(checked) => onFocusModeChange(Boolean(checked))}
                           aria-label="Focus mode"
                           className={adhdAssist ? "shrink-0 cursor-pointer" : "shrink-0 cursor-pointer disabled:opacity-70"}
@@ -263,8 +266,9 @@ export function ChatInput({
                 type="button"
                 variant="ghost"
                 size="sm"
+                disabled={!!disabledReason}
                 onClick={() => setSettingsOpen(true)}
-                className="h-7 w-7 p-0 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                className="h-7 w-7 p-0 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:pointer-events-none"
                 aria-label="Chat settings"
               >
                 <IconSettings size={14} stroke={2} />
