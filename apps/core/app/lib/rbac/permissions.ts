@@ -1,4 +1,7 @@
 import type { CourseAccess, RbacUser } from './types'
+// Type-only import (erased at runtime) — keeps this module free of the
+// prisma-importing policy.server while sharing the PolicyKey union.
+import type { PolicyKey } from '~/lib/policy.server'
 
 // §5 Course Management
 // ADMIN can create any course; UNIT_ADMIN can create courses in their authorized units
@@ -70,6 +73,39 @@ export function canManageTopics(
   if (access === 'admin' || access === 'unit' || access === 'instructor') return true
   if (access === 'ta') return taCanManageTopics
   return false
+}
+
+// §5c Course chat visibility
+// Single source of truth for "who may read a course's chats", consumed by all
+// three chat routes (course / unit / single-chat) and the course UI so they
+// cannot drift. Returns the policy flag that gates the level, or the sentinels
+// 'always' (ADMIN — no flag needed) / 'never' (TA/STUDENT/none — no flag can
+// grant it).
+export type ChatViewGate = PolicyKey | 'always' | 'never'
+
+export function courseChatViewPolicyKey(access: CourseAccess): ChatViewGate {
+  switch (access) {
+    case 'admin':
+      return 'always'
+    case 'instructor':
+      return 'instructors.canViewCourseChats'
+    case 'unit':
+      return 'unitAdmins.canViewUnitChats'
+    default:
+      return 'never'
+  }
+}
+
+// UI mirror of the backend gate: resolve chat-view permission from a policy map
+// (as returned by usePolicies()), so the client hides controls the server 403s.
+export function canViewCourseChats(
+  access: CourseAccess,
+  policies: Partial<Record<PolicyKey, boolean>>,
+): boolean {
+  const gate = courseChatViewPolicyKey(access)
+  if (gate === 'always') return true
+  if (gate === 'never') return false
+  return policies[gate] ?? false
 }
 
 // §19 Cross-cutting

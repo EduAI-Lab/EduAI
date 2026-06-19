@@ -82,9 +82,9 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
     !(await getPolicy("instructors.canManageCanvasIntegration"))
   ) {
     logPolicyDenial({
+      request,
       policyKey: "instructors.canManageCanvasIntegration",
-      userId,
-      role: session.user.role,
+      user: session.user,
       action: "canvas.manage",
     });
     return json({ success: false, error: "Forbidden: instructors only" }, 403);

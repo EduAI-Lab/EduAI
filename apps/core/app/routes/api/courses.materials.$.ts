@@ -8,7 +8,7 @@ import {
   resolveCourseAccessWithCourse,
   type AccessLevel,
 } from '~/lib/auth/course-access.server';
-import { getPolicy, logPolicyDenial } from '~/lib/policy.server';
+import { getPolicy, denyByPolicy } from '~/lib/policy.server';
 import type { Session } from '~/lib/auth/server';
 import { fireAndForget, logAuditAction, logSystemError } from '~/lib/logging.server';
 import { getActorContext, getRequestContext } from '~/lib/request-context.server';
@@ -58,7 +58,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   const resolved = await resolveMaterialsAccess(request, courseId);
   if (resolved.response) return resolved.response;
-  const { user, access } = resolved;
+  const { user, access, isPublished } = resolved;
 
   const requestContext = getRequestContext(request);
 
@@ -70,25 +70,36 @@ export async function action({ request, params }: ActionFunctionArgs) {
       const studentUploadAllowed =
         access.level === 'student' && (await getPolicy('students.canUploadMaterials'));
       if (access.rank < 1 && !studentUploadAllowed) {
-        logPolicyDenial({
+        return denyByPolicy({
+          request,
           policyKey: 'students.canUploadMaterials',
-          userId: user.id,
-          role: access.level,
+          user,
           action: 'material.upload',
           courseId,
         });
-        return json(403, { error: 'Forbidden' });
+      }
+      // §7/§19: a student may upload only in a PUBLISHED course — mirror the
+      // list gate (loader 403s students in unpublished courses) so student
+      // content can't be seeded into a draft course's RAG corpus. Higher ranks
+      // legitimately work in unpublished courses.
+      if (access.level === 'student' && !isPublished) {
+        return denyByPolicy({
+          request,
+          policyKey: 'students.canUploadMaterials',
+          user,
+          action: 'material.upload',
+          courseId,
+        });
       }
       // Gate: a TA is allowed by default; deny only when the gate is off.
       if (access.level === 'ta' && !(await getPolicy('tas.canManageMaterials'))) {
-        logPolicyDenial({
+        return denyByPolicy({
+          request,
           policyKey: 'tas.canManageMaterials',
-          userId: user.id,
-          role: access.level,
+          user,
           action: 'material.upload',
           courseId,
         });
-        return json(403, { error: 'Forbidden' });
       }
       return uploadMaterial(request, courseId, user, requestContext);
     }
@@ -110,14 +121,13 @@ export async function action({ request, params }: ActionFunctionArgs) {
       // tas.canManageMaterials is a single gate covering upload AND delete, so
       // an off flag must also block TA deletes (including own uploads).
       if (access.level === 'ta' && !(await getPolicy('tas.canManageMaterials'))) {
-        logPolicyDenial({
+        return denyByPolicy({
+          request,
           policyKey: 'tas.canManageMaterials',
-          userId: user.id,
-          role: access.level,
+          user,
           action: 'material.delete',
           courseId,
         });
-        return json(403, { error: 'Forbidden' });
       }
 
       // §7: delete is ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C), plus the TA
@@ -274,14 +284,13 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   // Policy gate (students.canViewMaterials, default true): layers on top of the
   // publish gate — off means students cannot list materials at all.
   if (access.level === 'student' && !(await getPolicy('students.canViewMaterials'))) {
-    logPolicyDenial({
+    return denyByPolicy({
+      request,
       policyKey: 'students.canViewMaterials',
-      userId: user.id,
-      role: access.level,
+      user,
       action: 'material.list',
       courseId,
     });
-    return json(403, { error: 'Forbidden' });
   }
 
   const materials = await prisma.courseMaterial.findMany({

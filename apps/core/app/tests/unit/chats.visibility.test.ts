@@ -20,6 +20,13 @@ vi.mock("~/lib/auth/course-access.server", () => ({
 vi.mock("~/lib/policy.server", () => ({
   getPolicy: vi.fn(),
   logPolicyDenial: vi.fn(),
+  denyByPolicy: vi.fn(
+    () =>
+      new Response(JSON.stringify({ error: "Forbidden" }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      }),
+  ),
 }));
 
 import { loader as courseChatsLoader } from "~/routes/api/courses.chats.$";
@@ -90,9 +97,17 @@ describe("GET /api/courses/:courseId/chats", () => {
     const body = await res.json();
     expect(body.chats).toHaveLength(1);
     expect(body.chats[0]).toMatchObject({ id: "chat-1", ownerId: "s1", ownerName: "Stu" });
-    // Only chats tagged with this course are returned.
+    // Only chats tagged with this course AND owned by an active STUDENT of the
+    // course are returned — staff (instructor/TA/unit-admin) chats are excluded.
     expect(prismaMock.chat.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { courseId: "c1" } }),
+      expect.objectContaining({
+        where: {
+          courseId: "c1",
+          user: {
+            enrollments: { some: { courseId: "c1", role: "STUDENT", isActive: true } },
+          },
+        },
+      }),
     );
   });
 

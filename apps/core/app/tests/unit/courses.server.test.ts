@@ -32,6 +32,13 @@ vi.mock("~/lib/auth/guards.server", () => ({
 vi.mock("~/lib/policy.server", () => ({
   getPolicy: vi.fn(),
   logPolicyDenial: vi.fn(),
+  denyByPolicy: vi.fn(
+    () =>
+      new Response(JSON.stringify({ error: "Forbidden" }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      }),
+  ),
 }));
 
 import {
@@ -349,6 +356,36 @@ describe("createCourse", () => {
     const res = await createCourse(makePostRequest(fieldsWithoutInstructors));
 
     expect(res.status).toBe(201);
+    expect(prismaMock.enrollment.createMany).toHaveBeenCalledWith({
+      data: [{ courseId: "course-1", userId: "instr-1", role: "INSTRUCTOR", isActive: true }],
+    });
+  });
+
+  it("discards client-supplied instructorUserIds for a self-creating INSTRUCTOR (cannot assign another instructor)", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "instr-1", role: "INSTRUCTOR" } } as any);
+    vi.mocked(getPolicy).mockResolvedValue(true);
+    prismaMock.user.findMany.mockResolvedValue([{ id: "instr-1" }]);
+    prismaMock.course.create.mockResolvedValue({ id: "course-1" });
+    prismaMock.enrollment.createMany.mockResolvedValue({ count: 1 });
+
+    // Attacker supplies a different instructor's id as the primary instructor.
+    const res = await createCourse(
+      makePostRequest({ ...VALID_COURSE_FIELDS, instructorUserIds: "victim-instr" }),
+    );
+
+    expect(res.status).toBe(201);
+    // Validation only ever queried the creator — the supplied victim id was dropped.
+    expect(prismaMock.user.findMany).toHaveBeenCalledWith({
+      where: { id: { in: ["instr-1"] }, role: "INSTRUCTOR" },
+      select: { id: true },
+    });
+    // The course's primary instructor (instructorUserIds[0]) is the creator.
+    expect(prismaMock.course.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ instructorId: "instr-1" }),
+      }),
+    );
+    // The sole instructor enrollment is the creator — the victim is never enrolled.
     expect(prismaMock.enrollment.createMany).toHaveBeenCalledWith({
       data: [{ courseId: "course-1", userId: "instr-1", role: "INSTRUCTOR", isActive: true }],
     });

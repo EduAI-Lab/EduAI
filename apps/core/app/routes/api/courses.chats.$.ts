@@ -7,14 +7,17 @@
  *   - UNIT_ADMIN with `unitAdmins.canViewUnitChats`.
  *
  * Returns chat metadata only (id, owner id + name, title, timestamps) — never
- * message bodies. General (non-course) chats are excluded by the `courseId`
- * filter.
+ * message bodies. Only chats owned by an active STUDENT of this course are
+ * listed: general (non-course) chats are excluded by the `courseId` filter, and
+ * staff (instructor/TA/unit-admin) chats tagged to the course are excluded by
+ * the owner-role filter.
  */
 import type { LoaderFunctionArgs } from "react-router";
 
 import { auth } from "~/lib/auth/server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
-import { getPolicy, logPolicyDenial } from "~/lib/policy.server";
+import { courseChatViewPolicyKey } from "~/lib/rbac/permissions";
+import { getPolicy, denyByPolicy } from "~/lib/policy.server";
 import prisma from "~/lib/prisma.server";
 
 const json = (body: unknown, status = 200) =>
@@ -42,38 +45,31 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     return json({ error: "Forbidden" }, 403);
   }
 
-  // ADMIN always; instructor/unit require the relevant grant flag.
-  if (access.level !== "admin") {
-    if (access.level === "instructor") {
-      if (!(await getPolicy("instructors.canViewCourseChats"))) {
-        logPolicyDenial({
-          policyKey: "instructors.canViewCourseChats",
-          userId: session.user.id,
-          role: session.user.role,
-          action: "course.chats.view",
-          courseId,
-        });
-        return json({ error: "Forbidden" }, 403);
-      }
-    } else if (access.level === "unit") {
-      if (!(await getPolicy("unitAdmins.canViewUnitChats"))) {
-        logPolicyDenial({
-          policyKey: "unitAdmins.canViewUnitChats",
-          userId: session.user.id,
-          role: session.user.role,
-          action: "course.chats.view",
-          courseId,
-        });
-        return json({ error: "Forbidden" }, 403);
-      }
-    } else {
-      // TA / STUDENT cannot read others' course chats.
-      return json({ error: "Forbidden" }, 403);
-    }
+  // §5c chat visibility via the shared gate: ADMIN always; instructor/unit
+  // require their grant flag; TA/STUDENT never read others' course chats.
+  const gate = courseChatViewPolicyKey(access.level);
+  if (gate === "never") {
+    return json({ error: "Forbidden" }, 403);
+  }
+  if (gate !== "always" && !(await getPolicy(gate))) {
+    return denyByPolicy({
+      request,
+      policyKey: gate,
+      user: session.user,
+      action: "course.chats.view",
+      courseId,
+    });
   }
 
   const chats = await prisma.chat.findMany({
-    where: { courseId },
+    // Owner must be an active STUDENT of this course — excludes staff chats
+    // (instructor/TA/unit-admin) that are also tagged to the course.
+    where: {
+      courseId,
+      user: {
+        enrollments: { some: { courseId, role: "STUDENT", isActive: true } },
+      },
+    },
     select: {
       id: true,
       title: true,

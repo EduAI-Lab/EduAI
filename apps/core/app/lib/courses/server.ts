@@ -7,7 +7,7 @@ import {
   getAuthorizedUnits,
   resolveCourseAccessWithCourse,
 } from "~/lib/auth/course-access.server";
-import { getPolicy, logPolicyDenial } from "~/lib/policy.server";
+import { getPolicy, denyByPolicy } from "~/lib/policy.server";
 import {
   CreateCourseSchema,
   UpdateCourseSchema,
@@ -129,10 +129,10 @@ export async function createCourse(request: Request) {
     // §4: log uniformly when an INSTRUCTOR is denied by the policy flag. The
     // pure-401 (no session) case stays unlogged.
     if (session?.user && role === "INSTRUCTOR") {
-      logPolicyDenial({
+      return denyByPolicy({
+        request,
         policyKey: "instructors.canCreateCourses",
-        userId: session.user.id,
-        role,
+        user: session.user,
         action: "course.create",
       });
     }
@@ -164,9 +164,14 @@ export async function createCourse(request: Request) {
     }
   }
 
-  // A self-creating instructor is enrolled as the course's instructor so the
-  // course is never orphaned. (ADMIN/UNIT_ADMIN assign instructors explicitly.)
-  if (session.user.role === "INSTRUCTOR" && !instructorUserIds.includes(session.user.id)) {
+  // A self-creating instructor is always enrolled as the course's SOLE
+  // instructor. We deliberately discard any client-supplied `instructorUserIds`
+  // for this path: an instructor must not be able to assign the course (or its
+  // primary `instructorId`, which is `instructorUserIds[0]`) to other
+  // instructors. ADMIN / UNIT_ADMIN assign instructors explicitly and keep the
+  // supplied list.
+  if (session.user.role === "INSTRUCTOR") {
+    instructorUserIds.length = 0;
     instructorUserIds.push(session.user.id);
   }
 
@@ -309,16 +314,12 @@ export async function updateCourse(request: Request, courseId: string) {
     const keys = Object.keys(result.data);
     const aiInstructionsOnly = keys.length > 0 && keys.every((key) => key === "aiInstructions");
     if (!taCanSetAi || !aiInstructionsOnly) {
-      logPolicyDenial({
+      return denyByPolicy({
+        request,
         policyKey: "tas.canSetAiInstructions",
-        userId: user.id,
-        role: user.role,
+        user,
         action: "course.update",
         courseId,
-      });
-      return new Response(JSON.stringify({ error: "Forbidden" }), {
-        status: 403,
-        headers: { "Content-Type": "application/json" } as const,
       });
     }
     const updated = await prisma.course.update({
@@ -427,31 +428,23 @@ export async function deleteCourse(request: Request, courseId: string) {
   // by this flag (the service-key/enforceAdminIfApiKey path never reaches here
   // as an instructor).
   if (access.level === "instructor" && !(await getPolicy("instructors.canDeleteCourses"))) {
-    logPolicyDenial({
+    return denyByPolicy({
+      request,
       policyKey: "instructors.canDeleteCourses",
-      userId: session.user.id,
-      role: session.user.role,
+      user: session.user,
       action: "course.delete",
       courseId,
-    });
-    return new Response(JSON.stringify({ error: "Forbidden" }), {
-      status: 403,
-      headers: { "Content-Type": "application/json" } as const,
     });
   }
 
   // Policy gate: UNIT_ADMIN delete is conditional; ADMIN is always allowed.
   if (access.level === "unit" && !(await getPolicy("unitAdmins.canDeleteCourses"))) {
-    logPolicyDenial({
+    return denyByPolicy({
+      request,
       policyKey: "unitAdmins.canDeleteCourses",
-      userId: session.user.id,
-      role: session.user.role,
+      user: session.user,
       action: "course.delete",
       courseId,
-    });
-    return new Response(JSON.stringify({ error: "Forbidden" }), {
-      status: 403,
-      headers: { "Content-Type": "application/json" } as const,
     });
   }
 
@@ -526,16 +519,12 @@ export async function setPublishState(request: Request, courseId: string, publis
   // Policy gate: an INSTRUCTOR may publish only when the flag is on; higher
   // ranks (ADMIN / UNIT_ADMIN) are always allowed.
   if (access.level === "instructor" && !(await getPolicy("instructors.canPublishCourses"))) {
-    logPolicyDenial({
+    return denyByPolicy({
+      request,
       policyKey: "instructors.canPublishCourses",
-      userId: session.user.id,
-      role: session.user.role,
+      user: session.user,
       action: "course.publish",
       courseId,
-    });
-    return new Response(JSON.stringify({ error: "Forbidden" }), {
-      status: 403,
-      headers: { "Content-Type": "application/json" } as const,
     });
   }
 

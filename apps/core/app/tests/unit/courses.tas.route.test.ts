@@ -13,6 +13,13 @@ vi.mock("~/lib/auth/guards.server", () => ({
 vi.mock("~/lib/policy.server", () => ({
   getPolicy: vi.fn(),
   logPolicyDenial: vi.fn(),
+  denyByPolicy: vi.fn(
+    () =>
+      new Response(JSON.stringify({ error: "Forbidden" }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      }),
+  ),
 }));
 
 vi.mock("~/lib/courses/tas.server", () => ({

@@ -63,14 +63,23 @@ describe('policyService', () => {
     expect(await getPolicy(FLAG)).toBe(false); // last good, not a hard fail
   });
 
-  it('falls back to built-in defaults when the first fetch fails', async () => {
+  it('fails CLOSED when the first fetch fails (no last-good): a disabled flag is never silently re-enabled', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Core down')));
-    expect(await getPolicy(FLAG)).toBe(true); // default for this flag
+    // Cold start during a Core outage: policy state is unknown, so even a
+    // default-true flag resolves to false rather than fail-open.
+    expect(await getPolicy(FLAG)).toBe(false);
+    expect(await getPolicies()).toBe(null);
   });
 
-  it('falls back to defaults when no service key is configured', async () => {
+  it('fails CLOSED when no service key is configured', async () => {
     getEffectiveEduAiApiKey.mockResolvedValue(null);
     vi.stubGlobal('fetch', vi.fn());
-    expect(await getPolicy(FLAG)).toBe(true);
+    expect(await getPolicy(FLAG)).toBe(false);
+  });
+
+  it('applies the per-key built-in default when Core is reachable but omits the key', async () => {
+    // Core responds successfully but without this flag (e.g. an older Core).
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse({})));
+    expect(await getPolicy(FLAG)).toBe(true); // POLICY_DEFAULTS fills the gap
   });
 });

@@ -1,5 +1,6 @@
 import { auth } from "~/lib/auth/server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { courseChatViewPolicyKey } from "~/lib/rbac/permissions";
 import { getPolicy } from "~/lib/policy.server";
 import prisma from "~/lib/prisma.server";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
@@ -48,19 +49,16 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     }
 
     // Owner and ADMIN may always read. §5c: a course-authorized viewer
-    // (instructor/unit-admin) may read a course chat when their flag is on.
+    // (instructor/unit-admin) may read a course chat when their grant flag is on
+    // — resolved through the shared chat-visibility gate so this route can't
+    // drift from the course/unit chat list endpoints.
     let authorized = chat.userId === session.user.id || session.user.role === "ADMIN";
     if (!authorized && chat.courseId) {
       const { access } = await resolveCourseAccessWithCourse(session.user, chat.courseId);
-      if (
-        access?.level === "instructor" &&
-        (await getPolicy("instructors.canViewCourseChats"))
-      ) {
+      const gate = courseChatViewPolicyKey(access?.level ?? null);
+      if (gate === "always") {
         authorized = true;
-      } else if (
-        access?.level === "unit" &&
-        (await getPolicy("unitAdmins.canViewUnitChats"))
-      ) {
+      } else if (gate !== "never" && (await getPolicy(gate))) {
         authorized = true;
       }
     }

@@ -247,6 +247,15 @@ describe("POST /api/courses/:courseId/materials action", () => {
     expect(res.status).toBe(200);
   });
 
+  it("returns 403 for a STUDENT uploading to an UNPUBLISHED course even when students.canUploadMaterials is on (§7/§19 publish gate)", async () => {
+    mockSession("STUDENT");
+    mockAccess({ level: "student", rank: 0 }, { ...COURSE, isPublished: false });
+    vi.mocked(getPolicy).mockResolvedValue(true);
+    const res = await action(stubUploadArgs());
+    expect(res.status).toBe(403);
+    expect(prisma.courseMaterial.create).not.toHaveBeenCalled();
+  });
+
   it("returns 400 when no file provided", async () => {
     mockSession("INSTRUCTOR");
     const form = new FormData();

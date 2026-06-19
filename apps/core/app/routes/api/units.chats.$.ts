@@ -13,7 +13,7 @@ import type { LoaderFunctionArgs } from "react-router";
 
 import { auth } from "~/lib/auth/server";
 import { getAuthorizedUnits } from "~/lib/auth/course-access.server";
-import { getPolicy, logPolicyDenial } from "~/lib/policy.server";
+import { getPolicy, denyByPolicy } from "~/lib/policy.server";
 import prisma from "~/lib/prisma.server";
 
 const json = (body: unknown, status = 200) =>
@@ -46,13 +46,12 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       return json({ error: "Forbidden" }, 403);
     }
     if (!(await getPolicy("unitAdmins.canViewUnitChats"))) {
-      logPolicyDenial({
+      return denyByPolicy({
+        request,
         policyKey: "unitAdmins.canViewUnitChats",
-        userId: session.user.id,
-        role,
+        user: session.user,
         action: "unit.chats.view",
       });
-      return json({ error: "Forbidden" }, 403);
     }
   }
 

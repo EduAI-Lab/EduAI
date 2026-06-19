@@ -34,7 +34,8 @@ export const auth = betterAuth({
     // entry points (the register.tsx action sub-request and a direct POST to
     // the catch-all /api/auth/*) flow through auth.handler(), so enforcing here
     // covers both. Invitation acceptance and OAuth/SSO are different paths and
-    // stay open. `policy.server` imports only prisma — no cycle with this file.
+    // stay open. `policy.server` imports prisma + the logging facade, neither of
+    // which imports this file — no cycle.
     before: createAuthMiddleware(async (ctx) => {
       if (
         ctx.path === "/sign-up/email" &&
@@ -42,8 +43,7 @@ export const auth = betterAuth({
       ) {
         logPolicyDenial({
           policyKey: "auth.allowPublicRegistration",
-          userId: null,
-          role: null,
+          user: null,
           action: "auth.signup",
         });
         throw new APIError("FORBIDDEN", {
