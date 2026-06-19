@@ -10,7 +10,20 @@ import {
   readStoredStudentId,
   studentIdMatchFilter,
 } from "~/lib/canvas/student-id.server";
+import { fireAndForget, logAuditAction, logSecurityEvent } from "~/lib/logging.server";
+import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
+
+// Identity events label the subject by email (unique) plus name for readability, so two
+// users who share a display name stay distinguishable in the log viewer. Email is the
+// stable identifier even after the user row is gone; name is included only when present.
+function userEntityLabel(
+  name: string | null | undefined,
+  email: string | null | undefined,
+): string | null {
+  if (email && name) return `${name} <${email}>`;
+  return email ?? name ?? null;
+}
 
 export async function loader({ request }: LoaderFunctionArgs) {
   return handleRequest(request);
@@ -22,6 +35,22 @@ export async function action({ request }: ActionFunctionArgs) {
 
 async function handleRequest(request: Request) {
   const url = new URL(request.url);
+  const requestContext = getRequestContext(request);
+
+  // Records an admin-only access rejection so security triage can spot probing of the user API.
+  const logAdminDenied = (actor: { id: string; role?: string | null; email?: string | null } | null) =>
+    fireAndForget(
+      logSecurityEvent({
+        ...getActorContext(actor),
+        ...requestContext,
+        actionCode: "ADMIN_ACCESS_DENIED",
+        outcome: "DENIED",
+        entityType: "User",
+        entityId: actor?.id ?? null,
+        entityLabel: actor?.email ?? null,
+        ...(actor?.email ? { details: { email: actor.email } } : {}),
+      }),
+    );
 
   // If an API key is provided, only ADMIN users may proceed
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
@@ -31,6 +60,7 @@ async function handleRequest(request: Request) {
     case "GET": {
       const session = apiKeySession ?? await auth.api.getSession(request);
       if (!session?.user || session.user.role !== "ADMIN") {
+        logAdminDenied(session?.user ?? null);
         return new Response("Forbidden: Admins only", { status: 403 });
       }
 
@@ -85,6 +115,7 @@ async function handleRequest(request: Request) {
     case "POST": {
       const session = apiKeySession ?? await auth.api.getSession(request);
       if (!session?.user || session.user.role !== "ADMIN") {
+        logAdminDenied(session?.user ?? null);
         return new Response("Forbidden: Admins only", { status: 403 });
       }
 
@@ -138,6 +169,19 @@ async function handleRequest(request: Request) {
           },
         };
 
+        fireAndForget(
+          logAuditAction({
+            ...getActorContext(session.user),
+            ...requestContext,
+            actionCode: "USER_CREATED",
+            category: "USER",
+            entityType: "User",
+            entityId: created.id,
+            entityLabel: userEntityLabel(created.name, created.email),
+            details: { role: created.role, email: created.email },
+          }),
+        );
+
         return new Response(JSON.stringify(user), {
           status: 201,
           headers: { "Content-Type": "application/json" },
@@ -163,6 +207,7 @@ async function handleRequest(request: Request) {
 
       const session = apiKeySession ?? await auth.api.getSession(request);
       if (!session?.user || session.user.role !== "ADMIN") {
+        logAdminDenied(session?.user ?? null);
         return new Response("Forbidden: Admins only", { status: 403 });
       }
 
@@ -288,6 +333,36 @@ async function handleRequest(request: Request) {
           },
         };
 
+        // Pick the most specific action code so admins can filter role/deactivation changes directly.
+        const changedFields = Object.keys(result.data);
+        const actionCode =
+          result.data.role !== undefined
+            ? "USER_ROLE_CHANGED"
+            : result.data.isActive === false
+              ? "USER_DEACTIVATED"
+              : result.data.isActive === true
+                ? "USER_REACTIVATED"
+                : "USER_UPDATED";
+        fireAndForget(
+          logAuditAction({
+            ...getActorContext(session.user),
+            ...requestContext,
+            actionCode,
+            category: "USER",
+            entityType: "User",
+            entityId: updated.id,
+            entityLabel: userEntityLabel(updated.name, updated.email),
+            // Identify the affected account by email; log changed field *names* (not
+            // their values, which may carry other PII like studentId). newRole is only
+            // meaningful on a role change, so omit it otherwise.
+            details: {
+              email: updated.email,
+              changedFields,
+              ...(result.data.role !== undefined ? { newRole: result.data.role } : {}),
+            },
+          }),
+        );
+
         return new Response(JSON.stringify(user), {
           status: 200,
           headers: { "Content-Type": "application/json" },
@@ -322,6 +397,7 @@ async function handleRequest(request: Request) {
 
       const session = apiKeySession ?? await auth.api.getSession(request);
       if (!session?.user || session.user.role !== "ADMIN") {
+        logAdminDenied(session?.user ?? null);
         return new Response("Forbidden: Admins only", { status: 403 });
       }
 
@@ -334,9 +410,25 @@ async function handleRequest(request: Request) {
       }
 
       try {
-        await prisma.user.delete({
+        // Capture identifying fields before the row is gone so the audit entry
+        // names the deleted account rather than only its id.
+        const deleted = await prisma.user.delete({
           where: { id: userId },
+          select: { id: true, name: true, email: true },
         });
+
+        fireAndForget(
+          logAuditAction({
+            ...getActorContext(session.user),
+            ...requestContext,
+            actionCode: "USER_DELETED",
+            category: "USER",
+            entityType: "User",
+            entityId: deleted.id,
+            entityLabel: userEntityLabel(deleted.name, deleted.email),
+            details: { email: deleted.email },
+          }),
+        );
 
         return new Response(null, { status: 204 });
       } catch (error: any) {

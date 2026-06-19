@@ -2,8 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CanvasApiError,
   CanvasVerificationError,
+  downloadCanvasFile,
   listCanvasCourseStudents,
   parseAndValidateCanvasUrl,
+  resolveCanvasFileDownloadUrl,
   verifyCanvasCredentials,
 } from "~/lib/canvas/client.server";
 
@@ -84,6 +86,89 @@ describe("verifyCanvasCredentials", () => {
     const error = new CanvasVerificationError("Invalid Canvas API token", 400);
     expect(error).toBeInstanceOf(Error);
     expect(error.statusCode).toBe(400);
+  });
+});
+
+describe("resolveCanvasFileDownloadUrl", () => {
+  it("rewrites file host to the configured Canvas URL origin", () => {
+    expect(
+      resolveCanvasFileDownloadUrl(
+        "http://canvas.docker/files/99/download?verify=abc",
+        "http://localhost:8080",
+      ),
+    ).toBe("http://localhost:8080/files/99/download?verify=abc");
+  });
+});
+
+describe("downloadCanvasFile", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("downloads via rewritten URL using the Canvas API token", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("file bytes", { status: 200 })),
+    );
+
+    const bytes = await downloadCanvasFile(
+      { canvasUrl: "http://localhost:8080", apiKey: "1234~token", isTestMode: false },
+      {
+        id: 99,
+        url: "http://canvas.docker/files/99/download?verify=abc",
+        filename: "assignment2.md",
+        "content-type": "text/markdown",
+      },
+    );
+
+    expect(Buffer.from(bytes).toString()).toBe("file bytes");
+    expect(fetch).toHaveBeenCalledWith(
+      "http://localhost:8080/files/99/download?verify=abc",
+      expect.objectContaining({
+        headers: { Authorization: "Bearer 1234~token" },
+        redirect: "manual",
+      }),
+    );
+  });
+
+  it("rewrites canvas.docker redirects to the configured Canvas origin", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          new Response(null, {
+            status: 302,
+            headers: {
+              Location:
+                "http://canvas.docker/files/1/download?download_frd=1&sf_verifier=abc",
+            },
+          }),
+        )
+        .mockResolvedValueOnce(new Response("redirected bytes", { status: 200 })),
+    );
+
+    const bytes = await downloadCanvasFile(
+      { canvasUrl: "http://localhost:8080", apiKey: "1234~token", isTestMode: false },
+      {
+        id: 1,
+        url: "http://localhost:8080/files/1/download?download_frd=1",
+        filename: "assignment2.md",
+        "content-type": "text/markdown",
+      },
+    );
+
+    expect(Buffer.from(bytes).toString()).toBe("redirected bytes");
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      "http://localhost:8080/files/1/download?download_frd=1",
+      expect.any(Object),
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      "http://localhost:8080/files/1/download?download_frd=1&sf_verifier=abc",
+      expect.any(Object),
+    );
   });
 });
 

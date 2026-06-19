@@ -57,11 +57,23 @@ export async function removeCourseTA(courseId: string, payload: RemoveTAInput) {
     return { error: "Invalid input", details: parsed.error.flatten() } as const;
   }
 
-  const result = await prisma.enrollment.updateMany({
+  // A TA is an Enrollment with role = "TA"; there is no CourseTA table.
+  // Capture the enrollment before deactivation so the audit log can record the
+  // enrollment id and the TA's name (both unavailable once the row is inactive).
+  const existing = await prisma.enrollment.findFirst({
+    where: { courseId, userId: parsed.data.userId, role: "TA", isActive: true },
+    select: { id: true, user: { select: { name: true } } },
+  });
+  if (!existing) return { error: "TA not found for this course" } as const;
+
+  await prisma.enrollment.updateMany({
     where: { courseId, userId: parsed.data.userId, role: "TA", isActive: true },
     data: { isActive: false },
   });
 
-  if (result.count === 0) return { error: "TA not found for this course" } as const;
-  return { success: true } as const;
+  return {
+    success: true,
+    taId: existing.id,
+    taName: existing.user?.name ?? null,
+  } as const;
 }

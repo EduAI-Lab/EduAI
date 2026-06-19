@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
 import { IconLoader, IconRefresh } from "@tabler/icons-react";
 
-import { CanvasCourseSyncDialog } from "~/components/canvas/CanvasCourseSyncDialog";
+import { CanvasCourseSyncDialog } from "~/components/canvas/canvas-course-sync-dialog";
 import { Button } from "@eduai/ui";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@eduai/ui";
 import { getCanvasIntegration, type CanvasIntegrationPublic } from "~/lib/canvas/client";

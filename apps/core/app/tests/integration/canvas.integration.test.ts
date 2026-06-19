@@ -141,6 +141,14 @@ beforeEach(async () => {
   await prisma.canvasIntegration.deleteMany({
     where: { userId: { in: [instructorId, studentId, linkedStudentId] } },
   });
+  // Delete any transient users left behind by a previously-failed test whose
+  // inline cleanup never ran (e.g. assertion failed before the delete calls).
+  await prisma.user.deleteMany({
+    where: {
+      email: { startsWith: "canvas-", endsWith: "@test.com" },
+      id: { notIn: [instructorId, studentId, linkedStudentId, taId] },
+    },
+  });
 });
 
 async function connectTestMode() {
@@ -458,22 +466,24 @@ describe("Canvas API — link-roster", { timeout: 15_000 }, () => {
       },
     });
 
-    sessionFor(unlinkedStudent.id, "STUDENT");
-    const res = await call("POST", "link-roster", { studentNumber: "student_2" });
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.success).toBe(true);
-    expect(body.data.studentId).toBe("student_2");
-    expect(body.data.enrollmentsLinked).toBeGreaterThanOrEqual(1);
+    try {
+      sessionFor(unlinkedStudent.id, "STUDENT");
+      const res = await call("POST", "link-roster", { studentNumber: "student_2" });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.success).toBe(true);
+      expect(body.data.studentId).toBe("student_2");
+      expect(body.data.enrollmentsLinked).toBeGreaterThanOrEqual(1);
 
-    const updatedUser = await prisma.user.findUnique({
-      where: { id: unlinkedStudent.id },
-      select: { studentId: true },
-    });
-    expect(readStoredStudentId(updatedUser?.studentId)).toBe("student_2");
-
-    await prisma.enrollment.deleteMany({ where: { userId: unlinkedStudent.id } });
-    await prisma.user.delete({ where: { id: unlinkedStudent.id } });
+      const updatedUser = await prisma.user.findUnique({
+        where: { id: unlinkedStudent.id },
+        select: { studentId: true },
+      });
+      expect(readStoredStudentId(updatedUser?.studentId)).toBe("student_2");
+    } finally {
+      await prisma.enrollment.deleteMany({ where: { userId: unlinkedStudent.id } });
+      await prisma.user.delete({ where: { id: unlinkedStudent.id } });
+    }
   });
 
   it("returns 404 when no staged roster matches the student number", async () => {
@@ -560,12 +570,15 @@ describe("Canvas API — link-roster", { timeout: 15_000 }, () => {
       },
     });
 
-    sessionFor(unlinkedTa.id, "STUDENT");
-    const res = await call("POST", "link-roster", { studentNumber: "student_2" });
-    expect(res.status).toBe(200);
-
-    await prisma.enrollment.deleteMany({ where: { userId: unlinkedTa.id } });
-    await prisma.user.delete({ where: { id: unlinkedTa.id } });
+    try {
+      // A TA is a STUDENT at the platform level; TA-ness is the Enrollment role.
+      sessionFor(unlinkedTa.id, "STUDENT");
+      const res = await call("POST", "link-roster", { studentNumber: "student_2" });
+      expect(res.status).toBe(200);
+    } finally {
+      await prisma.enrollment.deleteMany({ where: { userId: unlinkedTa.id } });
+      await prisma.user.delete({ where: { id: unlinkedTa.id } });
+    }
   });
 
   it("returns 403 when an instructor attempts link-roster", async () => {

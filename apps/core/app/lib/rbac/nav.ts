@@ -34,6 +34,7 @@ const ADMIN_NAV: NavItem[] = [
   { key: 'admin-ai', title: 'AI Management', url: '/admin/ai-models' },
   { key: 'admin-bugs', title: 'Bug Reports', url: '/admin/bug-reports' },
   { key: 'admin-invites', title: 'Invitations', url: '/admin/invitations' },
+  { key: 'admin-logs', title: 'Logs', url: '/admin/logs' },
 ]
 
 /** Main sidebar links per rbac-matrix §4, §10–13 shell rules. */

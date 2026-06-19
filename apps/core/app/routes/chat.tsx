@@ -230,6 +230,15 @@ export default function Chat() {
     })();
   }, [chatId, systemPrompt, setAssistive]);
 
+  const requestMetadata = {
+    model: selectedModel,
+    apiKeys: getValidApiKeys(),
+    courseCode: selectedCourseCode || undefined,
+    chatId: chatId || undefined,
+    systemPrompt: systemPrompt || undefined,
+    adhdAssist,
+  };
+
   const { messages, input, handleInputChange, handleSubmit, isLoading, stop, setMessages } =
     useChat({
       api: "/api/chat",
@@ -238,14 +247,14 @@ export default function Chat() {
       // every user message on every turn — defeating the (chatId, messageId)
       // dedup and re-saving the entire user history each turn (chat-history dup bug).
       sendExtraMessageFields: true,
-      body: {
-        model: selectedModel,
-        apiKeys: getValidApiKeys(),
-        courseCode: selectedCourseCode || undefined,
-        chatId: chatId || undefined,
-        systemPrompt: systemPrompt || undefined,
-        adhdAssist,
-      },
+      body: requestMetadata,
+      // #487: send only the latest turn to the server, not the full history.
+      // Spreads requestBody (carrying the stable message id from
+      // sendExtraMessageFields) so dedup + latest-turn-only both hold.
+      experimental_prepareRequestBody: ({ messages, requestBody }) => ({
+        ...(requestBody ?? requestMetadata),
+        messages: messages.slice(-1),
+      }),
       onResponse: async (response) => {
         const chatIdHeader = response.headers.get("X-Chat-Id");
         if (chatIdHeader && !chatId) {

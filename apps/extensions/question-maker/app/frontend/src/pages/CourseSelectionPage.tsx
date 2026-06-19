@@ -1,6 +1,6 @@
 /**
  * Course selection page shown after login. User must select a course card to continue to Question Bank / Assessments.
- * Same header as homepage; content shows "Your Courses", "Add new course" card, and available course cards.
+ * Same header as homepage; content shows course cards and sandbox course option.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';

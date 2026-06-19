@@ -40,6 +40,8 @@ export type AcceptInvitationResult =
   | {
       ok: true;
       headers: Headers;
+      /** The accepted invitation's id, for accountability logging. */
+      invitationId: string;
       user: { id: string; email: string; role: string };
     }
   | { ok: false; status: number; error: string };
@@ -297,5 +299,5 @@ export async function acceptInvitation(
   const headers = new Headers();
   appendAuthSetCookies(response, headers);
 
-  return { ok: true, headers, user: updatedUser };
+  return { ok: true, headers, invitationId: invite.id, user: updatedUser };
 }
