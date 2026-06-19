@@ -21,6 +21,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Changed
 
+- [core] perf: Improve RAG retrieval quality for vague and label-based queries — add hybrid BM25+vector search path to `findRelevantContent` behind `RAG_HYBRID_BM25=1`; combines pgvector cosine similarity (70%) with PostgreSQL `ts_rank` full-text BM25 (30%) in a single SQL query; no schema migration required; alpha weight configurable via `RAG_HYBRID_BM25_ALPHA`; pure-vector path unchanged when flag is off. (#432, @frostbitcactus, 2026-06-19)
 - [core] refactor: Create `@eduai/types` shared workspace package — move `UserRole` and `EnrollmentRole` to `packages/types`; Core, AI Tutor, and QM now import from `@eduai/types` instead of maintaining independent copies, eliminating the need for manual sync across apps. (#594, #649, @evanbones, 2026-06-16)
 - [question-maker] refactor: Extract shared `courseCodeUtils.js`, `topicSyncService.js`, and `coreCourseLinkService.js` — dedupe `syncTopicsFromCoreForCourse` / `normalizeCourseCode` from routes and import service; batch topic upserts with two `findAll` queries on the hot `/topics` path. (#578, @GlowyBlack, 2026-06-15)
 - [question-maker] ui: Reuse `normalizeCourseCode` from `courseDisplay.ts` in `ProfileCoursesDialog` and `AddQuestionDialog`. (#578, @GlowyBlack, 2026-06-15)
