@@ -1,4 +1,6 @@
 import { auth } from "~/lib/auth/server";
+import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { getPolicy } from "~/lib/policy.server";
 import prisma from "~/lib/prisma.server";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
@@ -21,14 +23,20 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     }
 
     const chat = await prisma.chat.findFirst({
-      where: { id: chatId, userId: session.user.id },
+      where: { id: chatId },
       select: {
         id: true,
+        userId: true,
+        courseId: true,
         systemPrompt: true,
         title: true,
         adhdAssist: true,
         createdAt: true,
         updatedAt: true,
+        messages: {
+          select: { messageId: true, role: true, content: true, position: true },
+          orderBy: { position: "asc" },
+        },
       },
     });
 
@@ -39,7 +47,34 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       });
     }
 
-    return new Response(JSON.stringify(chat), {
+    // Owner and ADMIN may always read. §5c: a course-authorized viewer
+    // (instructor/unit-admin) may read a course chat when their flag is on.
+    let authorized = chat.userId === session.user.id || session.user.role === "ADMIN";
+    if (!authorized && chat.courseId) {
+      const { access } = await resolveCourseAccessWithCourse(session.user, chat.courseId);
+      if (
+        access?.level === "instructor" &&
+        (await getPolicy("instructors.canViewCourseChats"))
+      ) {
+        authorized = true;
+      } else if (
+        access?.level === "unit" &&
+        (await getPolicy("unitAdmins.canViewUnitChats"))
+      ) {
+        authorized = true;
+      }
+    }
+
+    if (!authorized) {
+      // No existence leak — same 404 a non-owner gets for a missing chat.
+      return new Response(JSON.stringify({ error: "Chat not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const { userId: _userId, courseId: _courseId, ...chatView } = chat;
+    return new Response(JSON.stringify(chatView), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
