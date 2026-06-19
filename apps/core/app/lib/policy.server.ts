@@ -5,8 +5,9 @@ import prisma from "~/lib/prisma.server";
  *
  * A small, central registry of runtime-toggleable permission flags. Each flag
  * has a code default; an admin can override it, and the override is persisted in
- * the `SystemConfig` key/value table under the `policy.` key prefix (mirroring
- * the single-flag pattern in `system-config.server.ts`).
+ * the `SystemConfig` key/value table under the `policy.` key prefix. The former
+ * standalone `webToolsEnabled` `SystemConfig` row was folded into this registry
+ * as `chat.webToolsEnabled` (see the key carry-over migration).
  *
  * Reads are served through a short-TTL in-memory cache so the hot enforcement
  * paths (e.g. course creation) don't hit the DB on every request; `setPolicy`
@@ -31,6 +32,96 @@ export const POLICY_FLAGS = {
     label: "Instructors can create courses",
     description:
       "Allow users with the INSTRUCTOR role to create courses. Applies to Core and AI Tutor.",
+    default: true,
+  },
+  "instructors.canPublishCourses": {
+    label: "Instructors can publish courses",
+    description:
+      "Allow users with the INSTRUCTOR role to publish/unpublish their courses. ADMIN and UNIT_ADMIN are unaffected.",
+    default: true,
+  },
+  "instructors.canManageEnrollments": {
+    label: "Instructors can manage enrollments",
+    description:
+      "Allow users with the INSTRUCTOR role to add/remove students and TAs in their courses. ADMIN and UNIT_ADMIN are unaffected.",
+    default: true,
+  },
+  "instructors.canManageCanvasIntegration": {
+    label: "Instructors can manage Canvas integration",
+    description:
+      "Allow users with the INSTRUCTOR role to connect and sync Canvas. ADMIN is unaffected.",
+    default: true,
+  },
+  "instructors.canDeleteCourses": {
+    label: "Instructors can delete courses",
+    description:
+      "Allow users with the INSTRUCTOR role to soft-delete their courses. ADMIN and UNIT_ADMIN are unaffected.",
+    default: true,
+  },
+  "tas.canManageMaterials": {
+    label: "TAs can manage course materials",
+    description:
+      "Allow users with the TA role to upload and delete course materials. Instructors, unit admins, and admins are unaffected.",
+    default: true,
+  },
+  "students.canUploadMaterials": {
+    label: "Students can upload course materials",
+    description:
+      "Allow users with the STUDENT role to upload course materials in courses they are enrolled in.",
+    default: false,
+  },
+  "students.canUseWebTool": {
+    label: "Students can use web tools in chat",
+    description:
+      "Allow students to use web search/fetch in chat. Requires the global web tools master switch to also be on.",
+    default: false,
+  },
+  "chat.webToolsEnabled": {
+    label: "Web search tools enabled",
+    description:
+      "Global on/off for web search and fetch tools in chat. When off, web tools are never registered for anyone.",
+    default: false,
+  },
+  "unitAdmins.canDeleteCourses": {
+    label: "Unit admins can delete courses",
+    description:
+      "Allow users with the UNIT_ADMIN role to soft-delete courses in their units. ADMIN is always allowed.",
+    default: true,
+  },
+  "students.canViewMaterials": {
+    label: "Students can view course materials",
+    description:
+      "Allow students to view/list course materials. Layers on top of the publish gate; off means students cannot list materials at all.",
+    default: true,
+  },
+  "tas.canSetAiInstructions": {
+    label: "TAs can edit AI instructions",
+    description:
+      "Allow users with the TA role to edit a course's AI instructions field only (no other course fields).",
+    default: false,
+  },
+  "tas.canManageTopics": {
+    label: "TAs can manage course topics",
+    description:
+      "Allow users with the TA role to create, edit, and delete any topic in their courses (supersedes the own-only carve-out).",
+    default: false,
+  },
+  "instructors.canViewCourseChats": {
+    label: "Instructors can view course chats",
+    description:
+      "Allow users with the INSTRUCTOR role to read student chats in their courses.",
+    default: false,
+  },
+  "unitAdmins.canViewUnitChats": {
+    label: "Unit admins can view unit chats",
+    description:
+      "Allow users with the UNIT_ADMIN role to read student chats across courses in their units.",
+    default: false,
+  },
+  "auth.allowPublicRegistration": {
+    label: "Allow public registration",
+    description:
+      "Allow public email/password self-signup (new users default to STUDENT). Off blocks the signup endpoint and hides the signup UI; invitation-based account creation is unaffected.",
     default: true,
   },
 } as const;
@@ -116,4 +207,29 @@ export async function setPolicy(
     },
   });
   invalidatePolicyCache();
+}
+
+/**
+ * Structured audit line for a policy-flag-caused 403.
+ *
+ * Single source of truth for denial logging, co-located with the policy
+ * registry. If/when the `feature/logging` `AuditLog` work lands, this helper is
+ * the single place to re-point at the structured logger.
+ */
+export function logPolicyDenial(input: {
+  policyKey: PolicyKey;
+  userId: string | null;
+  // `undefined` accepted so a better-auth session `user.role` (typed
+  // `string | null | undefined`) can be passed without a `?? null` at every site.
+  role: string | null | undefined;
+  action: string; // e.g. "course.publish"
+  courseId?: string;
+}): void {
+  console.info(
+    JSON.stringify({
+      event: "policy_denied",
+      ...input,
+      at: new Date().toISOString(),
+    }),
+  );
 }
