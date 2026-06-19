@@ -668,8 +668,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const resolvedSystemPrompt = trimmedSystemPrompt ?? chat.systemPrompt ?? null;
 
     if (!useToolCalling) {
-      const hybridRagAlwaysWithCourse = process.env.CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE === "1";
-      const isRAGQuery = hybridRagAlwaysWithCourse ? hasCourse : courseRagNeeded;
+      const isRAGQuery = hasCourse;
 
       if (isRAGQuery) {
         try {
@@ -753,7 +752,7 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
 IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.`;
 
       let preloadedRagContext = "";
-      if (courseRagNeeded && effectiveCourseId) {
+      if (effectiveCourseId) {
         try {
           const relevantContent = await findRelevantContent(
             userQuestion,
