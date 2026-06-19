@@ -1,5 +1,4 @@
-import type { Prisma, User } from "@prisma/client";
-import { UserRole } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import { randomUUID } from "crypto";
 import { createDataStreamResponse, formatDataStreamPart, streamText } from "ai";
 import {
@@ -24,7 +23,6 @@ import {
 import { resolveAdhdResponseWordCap } from "~/lib/ai/adhd-metrics";
 import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
 import { findRelevantContent } from "~/lib/ai/embedding";
-import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { auth } from "~/lib/auth/server";
 import type { ActionFunctionArgs } from "react-router";
@@ -60,11 +58,6 @@ type StoredMessageRecord = {
   content: Prisma.JsonValue;
 };
 
-type ProxyUserPayload = {
-  provider?: string;
-  id?: string;
-  email?: string;
-};
 
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0;
@@ -172,93 +165,6 @@ function serializeMessage(message: GenericMessage): Prisma.JsonValue {
   }
 }
 
-/**
- * Maps an external `(provider, id)` pair to an EduAI user, creating the user +
- * `ExternalUser` record when needed. The canonical EduAI email stays unchanged;
- * we only update the mapping's email for reference.
- */
-async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
-  const provider = proxyUser.provider?.trim().toLowerCase() || "aitutor";
-  const externalUserId = proxyUser.id?.trim();
-
-  if (!externalUserId) {
-    throw new Error("proxyUser.id is required");
-  }
-
-  let email = proxyUser.email?.trim().toLowerCase();
-  if (!email || !email.includes("@")) {
-    email = `${externalUserId}@${provider}.local`;
-  }
-
-  const existingMapping = await prisma.externalUser.findUnique({
-    where: {
-      provider_externalUserId: {
-        provider,
-        externalUserId,
-      },
-    },
-    include: {
-      user: true,
-    },
-  });
-
-  if (existingMapping?.user) {
-    if (!existingMapping.email && email) {
-      await prisma.externalUser.update({
-        where: { id: existingMapping.id },
-        data: { email },
-      });
-    }
-    return existingMapping.user;
-  }
-
-  let user = await prisma.user.findUnique({ where: { email } });
-
-  if (!user) {
-    user = await prisma.user.create({
-      data: {
-        email,
-        name: email,
-        role: UserRole.STUDENT,
-        isActive: true,
-      },
-    });
-  }
-
-  try {
-    await prisma.externalUser.create({
-      data: {
-        provider,
-        externalUserId,
-        email,
-        userId: user.id,
-      },
-    });
-  } catch (error: unknown) {
-    if (
-      typeof error === "object" &&
-      error !== null &&
-      "code" in error &&
-      (error as { code?: string }).code === "P2002"
-    ) {
-      const mapping = await prisma.externalUser.findUnique({
-        where: {
-          provider_externalUserId: {
-            provider,
-            externalUserId,
-          },
-        },
-        include: { user: true },
-      });
-      if (mapping?.user) {
-        return mapping.user;
-      }
-    }
-    throw error;
-  }
-
-  return user;
-}
 
 /**
  * POST /api/chat
@@ -274,11 +180,7 @@ async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
  */
 export async function action({ request }: ActionFunctionArgs) {
   try {
-    const apiKeyHeader = request.headers.get("x-api-key");
-    const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
-    if (apiKeyGuard) return apiKeyGuard;
-
-    const session = apiKeySession ?? (await auth.api.getSession(request));
+    const session = await auth.api.getSession(request);
     if (!session?.user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
@@ -295,8 +197,6 @@ export async function action({ request }: ActionFunctionArgs) {
     const streaming = body.streaming === undefined ? true : Boolean(body.streaming);
     const forceHybridRag = body.forceHybridRag === true;
     const chatId = typeof body.chatId === "string" ? body.chatId : undefined;
-    const proxyUserPayload =
-      body.proxyUser && typeof body.proxyUser === "object" ? (body.proxyUser as ProxyUserPayload) : null;
 
     const hasAdhdAssistField = Object.prototype.hasOwnProperty.call(body, "adhdAssist");
     const adhdAssist = body.adhdAssist === true;
@@ -310,35 +210,7 @@ export async function action({ request }: ActionFunctionArgs) {
       trimmedSystemPrompt = null;
     }
 
-    let actingUser = session.user;
-    if (proxyUserPayload) {
-      if (!apiKeyHeader) {
-        return new Response(JSON.stringify({ error: "proxyUser requires admin API key access" }), {
-          status: 403,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-
-      try {
-        const proxyUser = await resolveProxyUser(proxyUserPayload);
-        actingUser = {
-          ...actingUser,
-          id: proxyUser.id,
-          email: proxyUser.email,
-          name: proxyUser.name,
-          role: proxyUser.role,
-        };
-      } catch (error) {
-        console.error("Failed to resolve proxy user:", error);
-        return new Response(
-          JSON.stringify({
-            error: "Failed to resolve proxy user",
-            details: error instanceof Error ? error.message : "Unknown error",
-          }),
-          { status: 400, headers: { "Content-Type": "application/json" } },
-        );
-      }
-    }
+    const actingUser = session.user;
 
     const normalizedIncomingMessages = rawMessages
       .map((m) => normalizeMessage(m))

@@ -1,6 +1,5 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { auth } from "~/lib/auth/server";
-import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import {
   getWebToolsEnabled,
   setWebToolsEnabled,
@@ -49,10 +48,7 @@ export async function action({ request }: ActionFunctionArgs) {
     });
   }
 
-  const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
-  if (apiKeyGuard) return apiKeyGuard;
-
-  const session = apiKeySession ?? (await auth.api.getSession(request));
+  const session = await auth.api.getSession(request);
   if (!session?.user || session.user.role !== "ADMIN") {
     return new Response(JSON.stringify({ error: "Forbidden" }), {
       status: 403,

@@ -3,7 +3,6 @@ import { processMaterialEmbeddings } from '~/lib/ai/embedding';
 import { processUploadedFile } from '~/lib/ai/file-processing';
 import prisma from '~/lib/prisma.server';
 import { auth } from '~/lib/auth/server';
-import { enforceAdminIfApiKey } from '~/lib/auth/guards.server';
 import {
   resolveCourseAccessWithCourse,
   type AccessLevel,
@@ -30,10 +29,7 @@ async function resolveMaterialsAccess(
   | { response: Response; user?: never; access?: never; isPublished?: never }
   | { response?: never; user: Session['user']; access: AccessLevel; isPublished: boolean }
 > {
-  const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
-  if (apiKeyGuard) return { response: apiKeyGuard };
-
-  const session = apiKeySession ?? (await auth.api.getSession(request));
+  const session = await auth.api.getSession(request);
   if (!session?.user) {
     return { response: json(401, { error: 'Unauthorized' }) };
   }

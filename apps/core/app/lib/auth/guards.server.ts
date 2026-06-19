@@ -1,8 +1,8 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import type { Session } from "./server";
 import { auth } from "./server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
+import type { Session } from "./server";
 
 const ALLOWED_PROD_SUFFIX = ".eduai.ok.ubc.ca";
 const ALLOWED_PROD_APEX = "eduai.ok.ubc.ca";
@@ -30,83 +30,30 @@ export function validateRedirectUrl(url: string | null): string {
   return "/dashboard";
 }
 
-type GuardResult = {
-  response: Response | null;
-  session: Session | null;
-};
-
-/**
- * Enforce: if request includes `x-api-key`, only ADMIN users may proceed.
- * Returns `{ response, session }` so callers can reuse the fetched session.
- */
-export async function enforceAdminIfApiKey(request: Request): Promise<GuardResult> {
-  const apiKeyHeader = request.headers.get("x-api-key");
-  if (!apiKeyHeader) {
-    return { response: null, session: null };
-  }
-
-  const session = await auth.api.getSession(request);
-  if (!session?.user || session.user.role !== "ADMIN") {
-    fireAndForget(
-      logSecurityEvent({
-        ...getActorContext(session?.user ?? null),
-        ...getRequestContext(request),
-        actionCode: "API_KEY_DENIED",
-        outcome: "DENIED",
-        entityType: "Auth",
-        entityId: session?.user?.id ?? null,
-        entityLabel: session?.user?.email ?? null,
-        ...(session?.user?.email ? { details: { email: session.user.email } } : {}),
-      }),
-    );
-    return {
-      response: new Response(
-        JSON.stringify({ error: "Forbidden: x-api-key access restricted to admin users" }),
-        {
-          status: 403,
-          headers: { "Content-Type": "application/json" },
-        }
-      ),
-      session,
-    };
-  }
-
-  return { response: null, session };
-}
-
 type AdminGate =
   | { response: Response; session: null }
   | { response: null; session: Session };
 
 /**
- * Resolve an ADMIN session for an admin-only endpoint. Honors the x-api-key
- * rule (`enforceAdminIfApiKey`) and reuses that session to avoid a second
- * lookup. Returns `{ response }` (403/forbidden) when the caller is not an
- * active ADMIN, otherwise `{ session }`.
+ * Resolve an ADMIN session for an admin-only endpoint.
+ * Returns `{ response }` (403/forbidden) when the caller is not an active ADMIN,
+ * otherwise `{ session }`.
  */
 export async function requireAdmin(request: Request): Promise<AdminGate> {
-  const { response, session } = await enforceAdminIfApiKey(request);
-  if (response) return { response, session: null };
-
-  const resolved = session ?? (await auth.api.getSession(request));
+  const resolved = await auth.api.getSession(request);
   if (!resolved?.user || resolved.user.role !== "ADMIN") {
-    // Record the rejection so admin-only routes gated solely by this helper
-    // still emit the documented "Admin access denied" security event.
-    // (The x-api-key non-admin case is already logged as API_KEY_DENIED above.)
-    if (!session) {
-      fireAndForget(
-        logSecurityEvent({
-          ...getActorContext(resolved?.user ?? null),
-          ...getRequestContext(request),
-          actionCode: "ADMIN_ACCESS_DENIED",
-          outcome: "DENIED",
-          entityType: "Auth",
-          entityId: resolved?.user?.id ?? null,
-          entityLabel: resolved?.user?.email ?? null,
-          ...(resolved?.user?.email ? { details: { email: resolved.user.email } } : {}),
-        }),
-      );
-    }
+    fireAndForget(
+      logSecurityEvent({
+        ...getActorContext(resolved?.user ?? null),
+        ...getRequestContext(request),
+        actionCode: "ADMIN_ACCESS_DENIED",
+        outcome: "DENIED",
+        entityType: "Auth",
+        entityId: resolved?.user?.id ?? null,
+        entityLabel: resolved?.user?.email ?? null,
+        ...(resolved?.user?.email ? { details: { email: resolved.user.email } } : {}),
+      }),
+    );
     return {
       response: new Response(
         JSON.stringify({ error: "Forbidden: Admins only" }),

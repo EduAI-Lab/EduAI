@@ -33,9 +33,7 @@ vi.mock("~/lib/auth/server", () => ({
   auth: { api: { getSession: vi.fn() } },
 }));
 
-vi.mock("~/lib/auth/guards.server", () => ({
-  enforceAdminIfApiKey: vi.fn().mockResolvedValue({ response: null, session: null }),
-}));
+vi.mock("~/lib/auth/guards.server", () => ({}));
 
 vi.mock("~/lib/ai/providers.server", () => ({
   modelSupportsTools: vi.fn().mockResolvedValue(false),

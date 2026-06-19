@@ -1,7 +1,6 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
 import { auth } from "~/lib/auth/server";
-import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { getCourseTA, addCourseTA, removeCourseTA } from "~/lib/courses/tas.server";
 import prisma from "~/lib/prisma.server";
 import { resolveCourseAccess } from "~/lib/rbac/resolve-course-access.server";
@@ -10,10 +9,7 @@ import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
-  if (apiKeyGuard) return apiKeyGuard;
-
-  const session = apiKeySession ?? await auth.api.getSession(request);
+  const session = await auth.api.getSession(request);
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -80,10 +76,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     });
   }
 
-  const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
-  if (apiKeyGuard) return apiKeyGuard;
-
-  const session = apiKeySession ?? await auth.api.getSession(request);
+  const session = await auth.api.getSession(request);
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,

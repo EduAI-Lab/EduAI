@@ -9,9 +9,7 @@ vi.mock("~/lib/auth/server", () => ({
   auth: { api: { getSession: vi.fn() } },
 }));
 
-vi.mock("~/lib/auth/guards.server", () => ({
-  enforceAdminIfApiKey: vi.fn().mockResolvedValue({ response: null, session: null }),
-}));
+vi.mock("~/lib/auth/guards.server", () => ({}));
 
 vi.mock("~/lib/prisma.server", () => ({
   default: {
@@ -21,7 +19,6 @@ vi.mock("~/lib/prisma.server", () => ({
 
 import { action } from "~/routes/api/users.$";
 import { auth } from "~/lib/auth/server";
-import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import prisma from "~/lib/prisma.server";
 
 const ADMIN = { id: "admin-1", role: "ADMIN" };
@@ -44,7 +41,6 @@ function mockUser(user: { id: string; role: string } | null) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(enforceAdminIfApiKey).mockResolvedValue({ response: null, session: null });
   mockUser(ADMIN);
   vi.mocked(prisma.user.update).mockResolvedValue({
     id: "target",
