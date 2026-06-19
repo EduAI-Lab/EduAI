@@ -1,4 +1,6 @@
 import prisma from "~/lib/prisma.server";
+import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
+import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 
 /**
  * @file Configurable RBAC policy flags.
@@ -203,27 +205,54 @@ export async function setPolicy(
   invalidatePolicyCache();
 }
 
-/**
- * Structured audit line for a policy-flag-caused 403.
- *
- * Single source of truth for denial logging, co-located with the policy
- * registry. If/when the `feature/logging` `AuditLog` work lands, this helper is
- * the single place to re-point at the structured logger.
- */
-export function logPolicyDenial(input: {
+const FORBIDDEN_BODY = JSON.stringify({ error: "Forbidden" });
+
+/** The canonical 403 body returned for every policy-gated denial. */
+export function policyForbidden(): Response {
+  return new Response(FORBIDDEN_BODY, {
+    status: 403,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+export type PolicyDenialInput = {
   policyKey: PolicyKey;
-  userId: string | null;
-  // `undefined` accepted so a better-auth session `user.role` (typed
-  // `string | null | undefined`) can be passed without a `?? null` at every site.
-  role: string | null | undefined;
+  // The denied actor (a better-auth session `user` satisfies this), or null for
+  // anonymous denials (e.g. the public-registration chokepoint).
+  user: { id: string; role?: string | null } | null;
   action: string; // e.g. "course.publish"
   courseId?: string;
-}): void {
-  console.info(
-    JSON.stringify({
-      event: "policy_denied",
-      ...input,
-      at: new Date().toISOString(),
+  // Optional: when provided, the audit line carries full request metadata
+  // (request id, route, method, ip, user-agent).
+  request?: Request;
+};
+
+/**
+ * Record a policy-flag-caused 403 as a SECURITY audit event through the shared
+ * logging facade (`logging.server.ts` → Postgres `audit_logs`, auto-redacted,
+ * surfaced at `/admin/logs`). Fire-and-forget so enforcement paths never pay
+ * log-write latency. This is the single source of truth for denial logging.
+ */
+export function logPolicyDenial(input: PolicyDenialInput): void {
+  fireAndForget(
+    logSecurityEvent({
+      ...getActorContext(input.user),
+      ...(input.request ? getRequestContext(input.request) : {}),
+      actionCode: "POLICY_DENIED",
+      outcome: "DENIED",
+      entityType: input.courseId ? "Course" : "Policy",
+      entityId: input.courseId ?? null,
+      details: { policyKey: input.policyKey, action: input.action },
     }),
   );
+}
+
+/**
+ * Unified policy gate: log the denial AND return the standard 403 in one call.
+ * Every policy-flag enforcement site funnels through this so the audit trail and
+ * the response body stay consistent.
+ */
+export function denyByPolicy(input: PolicyDenialInput): Response {
+  logPolicyDenial(input);
+  return policyForbidden();
 }

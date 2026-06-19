@@ -44,20 +44,33 @@ beforeEach(() => {
 });
 
 describe("GET /api/policies", () => {
-  it("returns policies for a valid service key (Bearer)", async () => {
+  it("returns policies for a valid service key (Bearer, no user session)", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null); // server-to-server, no session
     vi.mocked(requireServiceKey).mockResolvedValue(null); // valid
     const res = await loader({ request: get({ Authorization: "Bearer key" }) } as any);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ policies: POLICIES });
-    expect(auth.api.getSession).not.toHaveBeenCalled();
   });
 
-  it("rejects an invalid service key with the guard's response", async () => {
+  it("rejects an invalid service key with the guard's response (no user session)", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null);
     vi.mocked(requireServiceKey).mockResolvedValue(
       new Response(JSON.stringify({ error: "INVALID_SERVICE_KEY" }), { status: 403 }),
     );
     const res = await loader({ request: get({ Authorization: "Bearer bad" }) } as any);
     expect(res.status).toBe(403);
+  });
+
+  it("serves a logged-in user their policy values even when a stray Bearer header is present (not diverted to the service-key path)", async () => {
+    // A proxy/SDK may attach an Authorization: Bearer header to a real user
+    // request; it must NOT route them through requireServiceKey and 403 them.
+    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } } as any);
+    const res = await loader({ request: get({ Authorization: "Bearer not-the-service-key" }) } as any);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toHaveProperty("policies");
+    expect(body).not.toHaveProperty("definitions");
+    expect(requireServiceKey).not.toHaveBeenCalled();
   });
 
   it("returns policies + definitions for an ADMIN session", async () => {
@@ -80,8 +93,12 @@ describe("GET /api/policies", () => {
     expect(body).not.toHaveProperty("definitions");
   });
 
-  it("401s an anonymous request", async () => {
+  it("401s an anonymous request (no session, no service key)", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(null);
+    // With no user session and no Bearer key, the service-key guard returns 401.
+    vi.mocked(requireServiceKey).mockResolvedValue(
+      new Response(JSON.stringify({ error: "MISSING_SERVICE_KEY" }), { status: 401 }),
+    );
     const res = await loader({ request: get() } as any);
     expect(res.status).toBe(401);
   });

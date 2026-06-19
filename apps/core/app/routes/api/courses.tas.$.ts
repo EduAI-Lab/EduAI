@@ -6,7 +6,7 @@ import { getCourseTA, addCourseTA, removeCourseTA } from "~/lib/courses/tas.serv
 import prisma from "~/lib/prisma.server";
 import { resolveCourseAccess } from "~/lib/rbac/resolve-course-access.server";
 import { canManageInstructors } from "~/lib/rbac/permissions";
-import { getPolicy, logPolicyDenial } from "~/lib/policy.server";
+import { getPolicy, denyByPolicy } from "~/lib/policy.server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 
@@ -67,10 +67,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       (await getPolicy("instructors.canManageEnrollments")));
   if (!canManageTAs) {
     if (access === "instructor") {
-      logPolicyDenial({
+      return denyByPolicy({
+        request,
         policyKey: "instructors.canManageEnrollments",
-        userId: session.user.id,
-        role: session.user.role,
+        user: session.user,
         action: "courseTA.manage",
         courseId,
       });
@@ -145,10 +145,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
       (await getPolicy("instructors.canManageEnrollments")));
   if (!canManageTAs) {
     if (access === "instructor") {
-      logPolicyDenial({
+      return denyByPolicy({
+        request,
         policyKey: "instructors.canManageEnrollments",
-        userId: session.user.id,
-        role: session.user.role,
+        user: session.user,
         action: "courseTA.manage",
         courseId,
       });

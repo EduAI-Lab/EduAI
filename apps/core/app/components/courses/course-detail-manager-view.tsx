@@ -34,7 +34,7 @@ import type { CourseDetail } from "~/hooks/api/use-course-detail";
 import type { CourseTopic } from "~/hooks/api/use-course-topics";
 import type { CourseEnrollment } from "~/hooks/api/use-course-enrollments";
 import type { CourseTA } from "~/hooks/api/use-course-tas";
-import { canManageTopics, canManageInstructors } from "~/lib/rbac";
+import { canManageTopics, canManageInstructors, canViewCourseChats } from "~/lib/rbac";
 import type { CourseAccess } from "~/lib/rbac";
 import { usePolicies } from "~/hooks/api/use-policies";
 import { useCourseChats } from "~/hooks/api/use-course-chats";
@@ -119,11 +119,9 @@ export function CourseDetailManagerView({
     (access === 'instructor' && (policies['instructors.canManageEnrollments'] ?? true))
   const canManageRagSettings = access === 'admin' || access === 'instructor'
 
-  // §5d: a Chats tab visible only to roles whose course-chat-visibility flag is on.
-  const canViewChats =
-    access === 'admin' ||
-    (access === 'instructor' && (policies['instructors.canViewCourseChats'] ?? false)) ||
-    (access === 'unit' && (policies['unitAdmins.canViewUnitChats'] ?? false))
+  // §5d: a Chats tab visible only to roles whose course-chat-visibility flag is
+  // on. Uses the shared gate so the UI mirrors the backend chat routes exactly.
+  const canViewChats = canViewCourseChats(access, policies)
   const {
     chats: courseChats,
     loading: chatsLoading,

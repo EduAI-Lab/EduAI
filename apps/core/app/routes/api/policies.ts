@@ -26,28 +26,29 @@ const json = (body: unknown, status = 200) =>
  * so the admin UI can render the toggles from the same response.
  */
 export async function loader({ request }: LoaderFunctionArgs) {
-  // Extensions call server-to-server with the service key.
-  if (request.headers.get("Authorization")?.startsWith("Bearer ")) {
-    const guard = await requireServiceKey(request);
-    if (guard) return guard;
-    return json({ policies: await getPolicies() });
-  }
-
-  // Any authenticated user may read policy VALUES so the client can mirror
-  // backend enforcement (hide controls that would otherwise 403). Only ADMIN
-  // additionally receives the toggle DEFINITIONS used to render the admin
-  // settings UI; PATCH stays ADMIN-only.
+  // Resolve a user session first. Any authenticated user may read policy VALUES
+  // so the client can mirror backend enforcement (hide controls that would
+  // otherwise 403). A real user request must NOT be diverted to the service-key
+  // path just because a proxy/SDK attached a stray `Authorization: Bearer`
+  // header — that header is only authoritative when there is no user session.
   const session = await auth.api.getSession(request);
-  if (!session?.user) return json({ error: "Unauthorized" }, 401);
-
-  if (session.user.role !== "ADMIN") {
-    return json({ policies: await getPolicies() });
+  if (session?.user) {
+    if (session.user.role !== "ADMIN") {
+      return json({ policies: await getPolicies() });
+    }
+    // Only ADMIN additionally receives the toggle DEFINITIONS used to render the
+    // admin settings UI; PATCH stays ADMIN-only.
+    return json({
+      policies: await getPolicies(),
+      definitions: getPolicyDefinitions(),
+    });
   }
 
-  return json({
-    policies: await getPolicies(),
-    definitions: getPolicyDefinitions(),
-  });
+  // No user session — this is a server-to-server extension call authenticated
+  // with the shared service key.
+  const guard = await requireServiceKey(request);
+  if (guard) return guard;
+  return json({ policies: await getPolicies() });
 }
 
 const UpdatePolicySchema = z.object({
