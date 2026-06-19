@@ -33,7 +33,12 @@ import { chatApiDebug } from "~/lib/chat-api-log";
 import { clientApiKeysBodySchema, toUserProviderSettings } from "~/lib/chat-api-keys.schema";
 import { getWebToolsEnabled } from "~/lib/system-config.server";
 import {
+  shouldInjectCourseRag,
+  shouldPrefetchCourseRag,
+} from "~/lib/ai/course-rag-policy";
+import {
   buildCappedRagContextText,
+  buildRagSystemBlock,
   capToolResultsInMessages,
   estimateMessageCharsForModel,
   extractMessageText,
@@ -41,6 +46,7 @@ import {
   resolveMaxContextMessages,
   HYBRID_RAG_MAX_CHUNKS,
   HYBRID_RAG_MAX_CONTEXT_CHARS,
+  type HybridRagHit,
 } from "~/lib/chat-rag";
 
 const TOOL_MAX_STEPS = Math.min(
@@ -667,83 +673,73 @@ export async function action({ request }: ActionFunctionArgs) {
 
     const resolvedSystemPrompt = trimmedSystemPrompt ?? chat.systemPrompt ?? null;
 
-    if (!useToolCalling) {
-      const isRAGQuery = hasCourse;
+    const defaultCourseSystemPrompt =
+      resolvedSystemPrompt ||
+      `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
 
-      if (isRAGQuery) {
-        try {
-          const relevantContent = await findRelevantContent(
-            userQuestion,
-            effectiveCourseId!,
+IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.
+
+${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ""}
+
+Be helpful, conversational, and accurate. Use markdown for formatting.`;
+
+    let courseRagHits: HybridRagHit[] = [];
+    let courseRagContextText = "";
+    let courseRagInject = false;
+
+    if (shouldPrefetchCourseRag(hasCourse) && effectiveCourseId) {
+      try {
+        courseRagHits = await findRelevantContent(
+          userQuestion,
+          effectiveCourseId,
+          HYBRID_RAG_MAX_CHUNKS,
+        );
+        courseRagInject = shouldInjectCourseRag({
+          hasCourse,
+          courseRagNeeded,
+          hits: courseRagHits,
+        });
+        if (courseRagInject && courseRagHits.length > 0) {
+          courseRagContextText = buildCappedRagContextText(
+            courseRagHits,
             HYBRID_RAG_MAX_CHUNKS,
+            HYBRID_RAG_MAX_CONTEXT_CHARS,
           );
-          const contextText =
-            relevantContent.length > 0
-              ? buildCappedRagContextText(
-                  relevantContent,
-                  HYBRID_RAG_MAX_CHUNKS,
-                  HYBRID_RAG_MAX_CONTEXT_CHARS,
-                )
-              : "";
-
-          const baseSystemPrompt = resolvedSystemPrompt || `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
-
-IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.
-
-${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ``}
-
-Always be helpful, accurate, and cite the course materials when using them in your response. Use markdown for formatting.`;
-
-          const systemWithRAG = contextText
-            ? `${baseSystemPrompt}
-
-${contextText ? `Here are relevant excerpts from the course materials to help answer the user's question:
-
-${contextText}
-
-Based on this information, provide a comprehensive answer to the user's question. If the provided content doesn't fully answer their question, mention what you can answer based on the available materials and suggest what additional information might be helpful.` : "I don't have access to specific course materials for this question, but I can provide general educational assistance."}`
-            : baseSystemPrompt;
-
-          streamConfig = {
-            model: aiModel,
-            messages: modelMessages,
-            temperature: 0.6,
-            maxTokens: 8192,
-            system: systemWithRAG,
-          };
-        } catch (error) {
-          console.error("Error finding relevant content for model without tool support:", error);
-          const defaultSystemPrompt = resolvedSystemPrompt || `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
-
-IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.
-
-${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ""}
-
-Be helpful, conversational, and accurate. Use markdown for formatting.`;
-
-          streamConfig = {
-            model: aiModel,
-            messages: modelMessages,
-            temperature: 0.6,
-            maxTokens: 8192,
-            system: defaultSystemPrompt,
-          };
         }
-      } else {
-        const defaultSystemPrompt = resolvedSystemPrompt || `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
+      } catch (error) {
+        console.error("Error prefetching course RAG context:", error);
+        courseRagInject = shouldInjectCourseRag({
+          hasCourse,
+          courseRagNeeded,
+          hits: [],
+        });
+      }
+    }
 
-IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.
+    if (!useToolCalling) {
+      if (courseRagInject) {
+        const systemWithRAG = courseRagContextText
+          ? `${defaultCourseSystemPrompt}
 
-${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ""}
+${buildRagSystemBlock(courseRagContextText)}`
+          : `${defaultCourseSystemPrompt}
 
-Be helpful, conversational, and accurate. Use markdown for formatting.`;
+I don't have access to specific course materials for this question, but I can provide general educational assistance.`;
 
         streamConfig = {
           model: aiModel,
           messages: modelMessages,
           temperature: 0.6,
           maxTokens: 8192,
-          system: defaultSystemPrompt,
+          system: systemWithRAG,
+        };
+      } else {
+        streamConfig = {
+          model: aiModel,
+          messages: modelMessages,
+          temperature: 0.6,
+          maxTokens: 8192,
+          system: defaultCourseSystemPrompt,
         };
       }
     } else {
@@ -751,42 +747,17 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
 
 IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.`;
 
-      let preloadedRagContext = "";
-      if (effectiveCourseId) {
-        try {
-          const relevantContent = await findRelevantContent(
-            userQuestion,
-            effectiveCourseId,
-            HYBRID_RAG_MAX_CHUNKS,
-          );
-          preloadedRagContext =
-            relevantContent.length > 0
-              ? buildCappedRagContextText(
-                  relevantContent,
-                  HYBRID_RAG_MAX_CHUNKS,
-                  HYBRID_RAG_MAX_CONTEXT_CHARS,
-                )
-              : "";
-        } catch (error) {
-          console.error("Error pre-loading course context for tool path:", error);
-        }
-      }
-
       let toolSystemPrompt = buildToolCallingSystemPrompt({
         basePrompt: baseSystemPrompt,
         courseCode: courseCode ?? undefined,
         webToolsEnabled,
-        hasPreloadedRag: Boolean(preloadedRagContext),
+        hasPreloadedRag: Boolean(courseRagContextText),
       });
 
-      if (preloadedRagContext) {
+      if (courseRagContextText) {
         toolSystemPrompt = `${toolSystemPrompt}
 
-Here are relevant excerpts from the course materials to help answer the user's question:
-
-${preloadedRagContext}
-
-Based on this information, provide a comprehensive answer. Use getInformation only if these excerpts are insufficient.`;
+${buildRagSystemBlock(courseRagContextText, { toolPath: true })}`;
       }
 
       streamConfig = {
@@ -859,6 +830,9 @@ Based on this information, provide a comprehensive answer. Use getInformation on
     chatApiDebug("Starting LLM stream", {
       model,
       courseRagNeeded,
+      courseRagInject,
+      ragTopSimilarity: courseRagHits[0]?.similarity ?? null,
+      ragChunkCount: courseRagHits.length,
       webToolsEnabled,
       forceHybridRag,
       approach: useToolCalling ? "tool_calling" : "hybrid_rag",
