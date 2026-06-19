@@ -83,8 +83,8 @@ flowchart TB
 
 ## Notes
 
-- **Hybrid RAG** runs **`findRelevantContent` once** before `streamText` whenever a **course is selected** (`effectiveCourseId` set). Hits are formatted with **`buildCappedRagContextText`** (chunk cap **4**, total char cap **14_000**) and injected into **`system`**. No keyword gate — always retrieves on course-scoped chat (team policy 2026-06, #484).
-- **Tool RAG (preload)** runs **`findRelevantContent` once** before `streamText` whenever a **course is selected** (`effectiveCourseId` set), injecting excerpts into the system prompt. **`getInformation`** remains registered as a supplemental fallback if the preloaded excerpts are insufficient — it is no longer the sole retrieval path. Results pass through **`capRagHitsForTool`** (chunk cap **4**, **6000** chars per chunk).
+- **Hybrid RAG** prefetches **`findRelevantContent`** on every course-scoped turn. Excerpts inject when **`shouldInjectCourseRag`** passes (`needsCourseRag`, similarity thresholds, or `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE=1`), formatted with **`buildCappedRagContextText`** and **`buildRagSystemBlock`** (chunk cap **4**, char cap **14_000**).
+- **Tool RAG (preload)** shares the same prefetch + inject gate. When injection passes, excerpts use **`buildRagSystemBlock({ toolPath: true })`**. **`getInformation`** remains a supplemental fallback (`capRagHitsForTool`, **6000** chars per chunk).
 - **Query embeddings** use an in-memory cache (`QUERY_EMBED_CACHE_TTL_MS`, `QUERY_EMBED_CACHE_MAX`). **Server** `OPENROUTER_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, or `OPENAI_API_KEY` (first match wins) — independent of the user's chat provider (e.g. Ollama).
 - **Similarity threshold** defaults from **`RAG_SIMILARITY_THRESHOLD`** (default **0.5**) when the caller omits `similarityThreshold`.
 - **Ingestion** (`processMaterialEmbeddings`) fills the vector tables; it does not run on each chat request.
@@ -95,6 +95,8 @@ flowchart TB
 | ---- | ---- |
 | Route handler | [`apps/core/app/routes/api/chat.ts`](../../apps/core/app/routes/api/chat.ts) |
 | RAG caps + formatters | [`apps/core/app/lib/chat-rag.ts`](../../apps/core/app/lib/chat-rag.ts) |
+| RAG inject gate | [`apps/core/app/lib/ai/course-rag-policy.ts`](../../apps/core/app/lib/ai/course-rag-policy.ts) |
+| Chat intent | [`apps/core/app/lib/ai/chat-intent.ts`](../../apps/core/app/lib/ai/chat-intent.ts) |
 | Vector search + embed API | [`apps/core/app/lib/ai/embedding.ts`](../../apps/core/app/lib/ai/embedding.ts) |
 | API key body schema | [`apps/core/app/lib/chat-api-keys.schema.ts`](../../apps/core/app/lib/chat-api-keys.schema.ts) |
 | Chat debug logging | [`apps/core/app/lib/chat-api-log.ts`](../../apps/core/app/lib/chat-api-log.ts) |
@@ -143,7 +145,7 @@ RAG is **not** one pipeline. It branches on `modelSupportsTools(model)` (from th
 - **`maxSteps`**: `CHAT_TOOL_MAX_STEPS` (default **12**, capped at 32)
 - **`maxTokens`**: `CHAT_TOOL_MAX_OUTPUT_TOKENS` (default **32000**, capped at 128_000)
 - `toolCallStreaming` mirrors client `streaming`
-- When `effectiveCourseId` is set, **`findRelevantContent`** runs **before** `streamText` and excerpts are injected into the system prompt (same caps as hybrid path). This ensures course context is always present regardless of whether the model calls `getInformation`.
+- When `effectiveCourseId` is set, **`findRelevantContent`** runs **before** `streamText` (prefetch). Excerpts are injected only when **`shouldInjectCourseRag`** is true: `needsCourseRag(message)`, strong/moderate similarity, or `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE=1`.
 - **`getInformation`** remains registered as a supplemental tool — the model may call it if preloaded excerpts are insufficient. Its results pass through **`capRagHitsForTool`** (chunk cap **4**, **6000** chars per chunk).
 - System prompt instructs: use preloaded excerpts first; call `getInformation` only if they are insufficient; external/recent info → `webSearch` then `fetchPage`.
 
@@ -151,12 +153,12 @@ RAG is **not** one pipeline. It branches on `modelSupportsTools(model)` (from th
 
 - No tool loop
 - **`extractTextFromMessage`** on the last user turn (string, parts array, or `{ text }` object)
-- **`isRAGQuery`** = `effectiveCourseId` set (always-on when course is selected — no keyword gate; #484 team policy 2026-06)
-- If true → **`findRelevantContent`** once → **`buildCappedRagContextText`** → appended to **`system`**
+- **`isRAGQuery`** / inject gate = prefetch when course selected; inject when `needsCourseRag(message)` **or** top-1 similarity ≥ moderate threshold **or** `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE=1` (#484 smart gate)
+- If inject passes → **`findRelevantContent`** once → **`buildCappedRagContextText`** → **`buildRagSystemBlock`** → appended to **`system`**
 - If no course → default system only (**`maxTokens: 8192`**)
 - On retrieval error, falls back to default system (no excerpts)
 
-**Summary:** both paths preload RAG into `system` whenever a course is selected. `getInformation` is supplemental on the tool path only.
+**Summary:** both paths prefetch on course-scoped chat; excerpts inject when the smart gate passes. `getInformation` is supplemental on the tool path only.
 
 ### RAG caps (constants in `chat-rag.ts`)
 
@@ -206,7 +208,10 @@ Resolved system prompt order: request `systemPrompt` → stored `chat.systemProm
 | Situation | Behavior |
 | --------- | -------- |
 | No course selected | Hybrid `isRAGQuery` is false; `getInformation` returns `{ error: "No course selected for RAG search" }` if called |
-| Hybrid retrieval | Always runs when course is selected — no keyword gate (#484) |
+| Hybrid retrieval | Smart inject gate (`needsCourseRag` + similarity thresholds); prefetch always when course selected. Override: `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE=1` |
+| `CHAT_RAG_INJECT_STRONG_SIM` | 0.8 (or `ROUTING_RAG_STRONG_SIM`) | Inject when top-1 similarity clears bar even if intent skips |
+| `CHAT_RAG_INJECT_MODERATE_SIM` | 0.55 (or `ROUTING_RAG_TIER1_SIM`) | Inject when at least one chunk clears moderate bar |
+| `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE` | off | `1` = inject on every course-scoped message (testing / legacy always-on) |
 | Latency on RAG turns | Cached embed (hit) or one embed API call + one DB query before first token (hybrid), or inside a tool step (tool path) |
 | Credentials | Retrieval embeddings use server Google/OpenAI keys; chat model may be Ollama-only — two credential paths |
 | Auto routing | Not on this branch; client sends `model` as-is. See [`TEAM_ROUTING_LAYER_PLAN.md`](./routing/eduai-summer-2026/TEAM_ROUTING_LAYER_PLAN.md) for planned routing work |
