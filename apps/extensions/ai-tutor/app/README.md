@@ -62,7 +62,6 @@ app/
     utils.ts                        # cn() utility (clsx + tailwind-merge)
     client-auth.ts                  # requireClientUser() route guard
     auth-client.ts                  # Better Auth client + signInWithEduAi()
-    server-api.ts                   # Server-side fetch helpers (unused in SPA mode)
     activityForm.ts                 # Activity form value parsing/validation
     tours/                          # Guided tour engine
       tour-types.ts                 #   Type definitions

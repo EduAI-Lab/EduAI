@@ -4,8 +4,8 @@ import { toast } from "sonner";
 
 import { discoverCanvasMaterials, syncCanvasMaterials } from "~/lib/canvas/client";
 import type { CanvasMaterialDiscoverItem, SyncCanvasMaterialsResult } from "@eduai/types";
-import { Button } from "~/components/ui/button";
-import { Checkbox } from "~/components/ui/checkbox";
+import { Button } from "@eduai/ui";
+import { Checkbox } from "@eduai/ui";
 import {
   Dialog,
   DialogContent,
@@ -13,8 +13,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "~/components/ui/dialog";
-import { Badge } from "~/components/ui/badge";
+} from "@eduai/ui";
+import { Badge } from "@eduai/ui";
 
 export interface CanvasMaterialSyncDialogProps {
   courseId: string;

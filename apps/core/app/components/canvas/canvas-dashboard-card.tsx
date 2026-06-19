@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
-import { Loader2, RefreshCw } from "lucide-react";
+import { IconLoader, IconRefresh } from "@tabler/icons-react";
 
 import { CanvasCourseSyncDialog } from "~/components/canvas/canvas-course-sync-dialog";
-import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
+import { Button } from "@eduai/ui";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@eduai/ui";
 import { getCanvasIntegration, type CanvasIntegrationPublic } from "~/lib/canvas/client";
 
 export function CanvasDashboardCard() {
@@ -43,7 +43,7 @@ export function CanvasDashboardCard() {
         <CardContent className="space-y-4">
           {loading ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <IconLoader className="h-4 w-4 animate-spin" />
               Checking Canvas connection…
             </div>
           ) : integration ? (
@@ -53,7 +53,7 @@ export function CanvasDashboardCard() {
                 {integration.isTestMode ? " (test mode)" : ""}.
               </p>
               <Button type="button" onClick={() => setSyncDialogOpen(true)}>
-                <RefreshCw className="mr-2 h-4 w-4" />
+                <IconRefresh className="mr-2 h-4 w-4" />
                 Sync to Canvas
               </Button>
             </>

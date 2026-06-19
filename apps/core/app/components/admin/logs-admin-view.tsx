@@ -2,17 +2,17 @@ import { useMemo, useState } from "react";
 import { Form, Link } from "react-router";
 
 import { LogDetailsDialog } from "~/components/admin/log-details-dialog";
-import { Badge } from "~/components/ui/badge";
-import { Button } from "~/components/ui/button";
+import { Badge } from "@eduai/ui";
+import { Button } from "@eduai/ui";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "~/components/ui/card";
-import { Input } from "~/components/ui/input";
-import { Label } from "~/components/ui/label";
+} from "@eduai/ui";
+import { Input } from "@eduai/ui";
+import { Label } from "@eduai/ui";
 import {
   Table,
   TableBody,
@@ -20,8 +20,8 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "~/components/ui/table";
-import { Tabs, TabsList, TabsTrigger } from "~/components/ui/tabs";
+} from "@eduai/ui";
+import { Tabs, TabsList, TabsTrigger } from "@eduai/ui";
 
 export type LogsTab = "audit" | "security" | "system";
 

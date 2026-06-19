@@ -3,7 +3,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from "~/components/ui/dialog";
+} from "@eduai/ui";
 
 type LogDetailsDialogProps = {
   title: string;

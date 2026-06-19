@@ -3,20 +3,13 @@
  * Supports creating new assessments, exporting to Canvas/TXT/Word, and importing from Canvas.
  */
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Button } from '../ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
+import { useNavigate } from 'react-router';
 import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle
-} from '../ui/dialog';
-import { Badge } from '../ui/badge';
-import { ScrollArea } from '../ui/scroll-area';
-import { Tooltip } from '../ui/tooltip';
+    Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@eduai/ui';
+import { Button, Card, CardContent, CardHeader, CardTitle, Badge, ScrollArea } from '@eduai/ui';
+import { Tooltip } from '@/components/ui/tooltip';
+import { PermissionGate } from '@/components/rbac/PermissionGate';
+import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
 import {
     Plus,
     ChevronUp,
@@ -55,17 +48,18 @@ type QuestionEntry = {
 };
 
 const getAssessmentTypeColor = (type: string) => {
+    // Uses semantic color tokens via CSS variables for dark+light mode support
     switch (type) {
         case 'Lab':
-            return 'bg-blue-100 text-blue-800';
+            return 'bg-secondary/15 text-secondary';
         case 'Midterm':
-            return 'bg-orange-100 text-orange-800';
+            return 'bg-warning-100 text-warning-700';
         case 'Quiz':
-            return 'bg-green-100 text-green-800';
+            return 'bg-success-100 text-success-700';
         case 'Final':
-            return 'bg-red-100 text-red-800';
+            return 'bg-error-100 text-error-700';
         default:
-            return 'bg-gray-100 text-gray-800';
+            return 'bg-muted text-foreground';
     }
 };
 
@@ -169,6 +163,8 @@ export const AssessmentSection = ({
     onImportFromCanvas
 }: AssessmentSectionProps) => {
     const navigate = useNavigate();
+    const { canManageAssessment, canExportAssessment, canUseVariantWorkflow } =
+        useQmPermissionsForCourse(selectedCourseId ?? null);
     const [expandedAssessment, setExpandedAssessment] = useState<number | null>(null);
     const [isGenerateModalOpen, setIsGenerateModalOpen] = useState(false);
     const [pendingGenerateAction, setPendingGenerateAction] = useState<'create' | null>(null);
@@ -246,10 +242,11 @@ export const AssessmentSection = ({
         <div className="space-y-6">
             <div className="flex justify-between items-center">
                 <div>
-                    <h2 className="text-2xl font-bold text-gray-900">Assessments</h2>
-                    <p className="text-sm text-gray-600">{headerDescription}</p>
+                    <h2 className="text-2xl font-bold text-foreground">Assessments</h2>
+                    <p className="text-sm text-muted-foreground">{headerDescription}</p>
                     {loadError && <p className="text-sm text-red-600 mt-1">{loadError}</p>}
                 </div>
+                <PermissionGate allow={canManageAssessment}>
                 <div className="flex gap-2">
                     {onImportFromCanvas && (
                         <Tooltip content="Import an assessment from your Canvas course" side="bottom">
@@ -288,6 +285,7 @@ export const AssessmentSection = ({
                         </Button>
                     </Tooltip>
                 </div>
+                </PermissionGate>
             </div>
 
             {isLoading ? (
@@ -319,7 +317,7 @@ export const AssessmentSection = ({
                                             {hasDrafts && (
                                                 <Badge
                                                     variant="default"
-                                                    className="bg-amber-100 text-amber-800 hover:bg-amber-200 border-amber-300 flex items-center gap-1"
+                                                    className="flex items-center gap-1 border-warning-500/30 bg-warning-100 text-warning-700"
                                                 >
                                                     <AlertTriangle className="h-3 w-3" />
                                                     Contains Draft questions
@@ -345,6 +343,7 @@ export const AssessmentSection = ({
                                                 </Button>
                                             </Tooltip>
 
+                                            <PermissionGate allow={canUseVariantWorkflow}>
                                             <Tooltip
                                                 content="Open assessment variant workflow with this exam as the baseline"
                                                 side="bottom"
@@ -363,7 +362,9 @@ export const AssessmentSection = ({
                                                     <span>Create variant</span>
                                                 </Button>
                                             </Tooltip>
+                                            </PermissionGate>
 
+                                            <PermissionGate allow={canExportAssessment}>
                                             {hasAnyExportHandler && (
                                                 <Tooltip
                                                     content="Export to Canvas, Word, or plain text"
@@ -381,7 +382,9 @@ export const AssessmentSection = ({
                                                     </Button>
                                                 </Tooltip>
                                             )}
+                                            </PermissionGate>
 
+                                            <PermissionGate allow={canManageAssessment}>
                                             {onDeleteAssessment && (
                                                 <Button
                                                     variant="ghost"
@@ -392,6 +395,7 @@ export const AssessmentSection = ({
                                                     <Trash2 className="h-4 w-4" />
                                                 </Button>
                                             )}
+                                            </PermissionGate>
 
                                             <Button
                                                 variant="ghost"
@@ -412,7 +416,7 @@ export const AssessmentSection = ({
                                     </div>
 
                                     {(assessment.description || blueprint) && (
-                                        <div className="mt-3 space-y-2 text-sm text-gray-600">
+                                        <div className="mt-3 space-y-2 text-sm text-muted-foreground">
                                             {assessment.description && <p>{assessment.description}</p>}
                                             {blueprint && (
                                                 <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
@@ -432,7 +436,7 @@ export const AssessmentSection = ({
                                 {expandedAssessment === assessment.id && (
                                     <CardContent>
                                         <div className="space-y-4">
-                                            <h4 className="font-medium text-gray-900">
+                                            <h4 className="font-medium text-foreground">
                                                 Questions in this assessment
                                             </h4>
                                             <ScrollArea className="h-64 w-full border rounded-lg">
@@ -446,13 +450,13 @@ export const AssessmentSection = ({
                                                         assessmentQuestions.map((question, index) => (
                                                             <div
                                                                 key={question.id}
-                                                                className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                                                                className="flex items-center justify-between p-3 bg-muted rounded-lg"
                                                             >
                                                                 <div className="flex items-center space-x-3">
-                                                                    <span className="text-sm font-medium text-gray-500">
+                                                                    <span className="text-sm font-medium text-muted-foreground">
                                                                         Q{index + 1}
                                                                     </span>
-                                                                    <p className="text-sm text-gray-900 line-clamp-1">
+                                                                    <p className="text-sm text-foreground line-clamp-1">
                                                                         {question.description || 'No description'}
                                                                     </p>
                                                                     <Badge
@@ -478,15 +482,17 @@ export const AssessmentSection = ({
 
             {!isLoading && !hasAssessments && (
                 <div className="text-center py-8">
-                    <p className="text-gray-500 mb-4">No assessments created yet.</p>
+                    <p className="text-muted-foreground mb-4">No assessments created yet.</p>
+                    <PermissionGate allow={canManageAssessment}>
                     <Button
                         onClick={handleOpenCreateModal}
-                        className="flex items-center space-x-2"
+                        className="flex items-center space-x-2 mx-auto"
                         disabled={!selectedCourseId}
                     >
                         <Plus className="h-4 w-4" />
                         <span>Create Your First Assessment</span>
                     </Button>
+                    </PermissionGate>
                 </div>
             )}
 
@@ -515,7 +521,7 @@ export const AssessmentSection = ({
                             <Button
                                 type="button"
                                 variant="outline"
-                                className="w-full justify-start gap-2 bg-black text-white hover:bg-gray-800 hover:text-white border-black disabled:opacity-50"
+                                className="w-full justify-start gap-2 bg-primary text-primary-foreground hover:bg-primary/90 border-primary disabled:opacity-50"
                                 disabled={Boolean(exportDialogBlockReason)}
                                 data-tour-id="export-canvas-btn"
                                 onClick={() => {
@@ -532,7 +538,7 @@ export const AssessmentSection = ({
                             <Button
                                 type="button"
                                 variant="outline"
-                                className="w-full justify-start gap-2 bg-black text-white hover:bg-gray-800 hover:text-white border-black disabled:opacity-50"
+                                className="w-full justify-start gap-2 bg-primary text-primary-foreground hover:bg-primary/90 border-primary disabled:opacity-50"
                                 disabled={Boolean(exportDialogBlockReason)}
                                 data-tour-id="export-word-btn"
                                 onClick={() => {
@@ -551,7 +557,7 @@ export const AssessmentSection = ({
                             <Button
                                 type="button"
                                 variant="outline"
-                                className="w-full justify-start gap-2 bg-black text-white hover:bg-gray-800 hover:text-white border-black disabled:opacity-50"
+                                className="w-full justify-start gap-2 bg-primary text-primary-foreground hover:bg-primary/90 border-primary disabled:opacity-50"
                                 disabled={Boolean(exportDialogBlockReason)}
                                 data-tour-id="export-txt-btn"
                                 onClick={() => {
