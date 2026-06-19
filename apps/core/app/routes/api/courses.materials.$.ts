@@ -9,6 +9,8 @@ import {
   type AccessLevel,
 } from '~/lib/auth/course-access.server';
 import type { Session } from '~/lib/auth/server';
+import { fireAndForget, logAuditAction, logSystemError } from '~/lib/logging.server';
+import { getActorContext, getRequestContext } from '~/lib/request-context.server';
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -57,6 +59,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
   if (resolved.response) return resolved.response;
   const { user, access } = resolved;
 
+  const requestContext = getRequestContext(request);
+
   switch (request.method) {
     case 'POST': {
       // §7: upload is ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C) / TA(C).
@@ -64,7 +68,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       if (access.rank < 1) {
         return json(403, { error: 'Forbidden' });
       }
-      return uploadMaterial(request, courseId, user.id);
+      return uploadMaterial(request, courseId, user, requestContext);
     }
 
     case 'DELETE': {
@@ -75,7 +79,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
       const material = await prisma.courseMaterial.findFirst({
         where: { id: materialId, courseId },
-        select: { id: true, uploadedBy: true },
+        select: { id: true, uploadedBy: true, title: true },
       });
       if (!material) {
         return json(404, { error: 'MATERIAL_NOT_FOUND' });
@@ -91,6 +95,20 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
       // Hard delete — CourseMaterial has no deletedAt; chunks cascade.
       await prisma.courseMaterial.delete({ where: { id: materialId } });
+
+      fireAndForget(
+        logAuditAction({
+          ...getActorContext(user ?? null),
+          ...requestContext,
+          actionCode: 'MATERIAL_DELETED',
+          category: 'MATERIAL',
+          entityType: 'CourseMaterial',
+          entityId: materialId,
+          entityLabel: material.title,
+          details: { courseId },
+        }),
+      );
+
       return new Response(null, { status: 204 });
     }
 
@@ -99,7 +117,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 }
 
-async function uploadMaterial(request: Request, courseId: string, userId: string) {
+async function uploadMaterial(
+  request: Request,
+  courseId: string,
+  user: Session['user'],
+  requestContext: ReturnType<typeof getRequestContext>,
+) {
   const formData = await request.formData();
   const file = formData.get('file') as File;
   const apiKeys = JSON.parse(formData.get('apiKeys') as string);
@@ -131,9 +154,25 @@ async function uploadMaterial(request: Request, courseId: string, userId: string
         checksum: fileInfo.checksum,
         rawText: fileInfo.content,
         status: 'PROCESSING',
-        uploadedBy: userId, // #294: owner FK for TA own-only delete (§7)
+        uploadedBy: user.id, // #294: owner FK for TA own-only delete (§7)
       },
     });
+
+    // Audit the upload as soon as the material row is persisted, independent of embedding.
+    // A material that uploads successfully but later fails to embed is still a real upload
+    // and must leave an audit trail (the embedding failure is recorded separately below).
+    fireAndForget(
+      logAuditAction({
+        ...getActorContext(user ?? null),
+        ...requestContext,
+        actionCode: 'MATERIAL_UPLOADED',
+        category: 'MATERIAL',
+        entityType: 'CourseMaterial',
+        entityId: material.id,
+        entityLabel: material.title,
+        details: { courseId },
+      }),
+    );
 
     try {
       await processMaterialEmbeddings(material.id, fileInfo.content);
@@ -154,6 +193,15 @@ async function uploadMaterial(request: Request, courseId: string, userId: string
         where: { id: material.id },
         data: { status: 'FAILED' },
       });
+      fireAndForget(
+        logSystemError({
+          ...requestContext,
+          source: 'AI',
+          code: 'MATERIAL_EMBED_FAILED',
+          message: 'Material embedding failed during upload processing',
+          error: embeddingError,
+        }),
+      );
       throw embeddingError;
     }
 
@@ -183,12 +231,15 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const materials = await prisma.courseMaterial.findMany({
     where: { courseId },
     include: {
-      chunks: {
-        include: { embedding: true },
-      },
+      _count: { select: { chunks: true } },
     },
     orderBy: { createdAt: 'desc' },
   });
 
-  return json(200, { materials });
+  return json(200, {
+    materials: materials.map(({ _count, ...material }) => ({
+      ...material,
+      chunkCount: _count?.chunks ?? 0,
+    })),
+  });
 }

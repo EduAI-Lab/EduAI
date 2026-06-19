@@ -1,4 +1,5 @@
-export type Role = 'STUDENT' | 'INSTRUCTOR' | 'TA' | 'ADMIN' | 'UNIT_ADMIN';
+import type { UserRole } from '@eduai/types';
+export type Role = UserRole;
 
 export type User = {
   id: string;

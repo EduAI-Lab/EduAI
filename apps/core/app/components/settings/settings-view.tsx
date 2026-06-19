@@ -1,8 +1,11 @@
 import { Form } from "react-router";
 import { useEffect, useState } from "react";
 
-import { CanvasIntegrationSettings } from "~/components/canvas/CanvasIntegrationSettings";
+import { CanvasIntegrationSettings } from "~/components/canvas/canvas-integration-settings";
+import { AccessibilitySettingsTab } from "~/components/settings/accessibility-settings-tab";
+import { StudentNumberSettings } from "~/components/settings/student-number-settings";
 import {
+  Accessibility,
   CheckCircle2,
   Copy,
   Globe,
@@ -41,16 +44,18 @@ const CANVAS_SETTINGS_ROLES = new Set(["INSTRUCTOR", "ADMIN"]);
 
 interface SettingsViewProps {
   role?: string;
+  studentNumber?: string | null;
 }
 
-export function SettingsView({ role }: SettingsViewProps) {
+export function SettingsView({ role, studentNumber = null }: SettingsViewProps) {
   const showCanvasSettings = CANVAS_SETTINGS_ROLES.has(role ?? "");
+  const showStudentNumberSettings = role === "STUDENT";
   const {
     updateProviderSettings,
     removeProviderSettings,
     isProviderConfigured,
   } = useApiKeys();
-  const [activeTab, setActiveTab] = useState("api-keys");
+  const [activeTab, setActiveTab] = useState("accessibility");
   const [serverKeys, setServerKeys] = useState<ServerApiKey[]>([]);
   const [creating, setCreating] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
@@ -117,10 +122,13 @@ export function SettingsView({ role }: SettingsViewProps) {
     <div className="px-4 py-6 max-w-4xl mx-auto w-full">
       <h1 className="text-2xl font-bold mb-2">Settings</h1>
       <p className="text-sm text-muted-foreground mb-4">
-        Manage server API keys and local model provider configuration.
+        Manage account preferences, API keys, and local model provider configuration.
       </p>
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
+        <TabsList className="settings-tabs">
+          <TabsTrigger value="accessibility">
+            <Accessibility className="h-4 w-4" /> Accessibility
+          </TabsTrigger>
           <TabsTrigger value="api-keys">
             <Key className="h-4 w-4" /> API Keys
           </TabsTrigger>
@@ -129,7 +137,15 @@ export function SettingsView({ role }: SettingsViewProps) {
           </TabsTrigger>
         </TabsList>
 
+        <TabsContent value="accessibility">
+          <AccessibilitySettingsTab />
+        </TabsContent>
+
         <TabsContent value="api-keys" className="mt-6 space-y-6">
+          {showStudentNumberSettings && (
+            <StudentNumberSettings initialStudentNumber={studentNumber} />
+          )}
+
           <Card>
             <CardHeader>
               <CardTitle>Server API Keys</CardTitle>

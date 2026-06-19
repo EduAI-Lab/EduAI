@@ -11,6 +11,9 @@ FROM node:20-alpine AS deps
 WORKDIR /app
 
 COPY package.json package-lock.json .npmrc ./
+COPY packages/types/package.json  ./packages/types/
+COPY packages/types/tsconfig.json ./packages/types/
+COPY packages/types/src           ./packages/types/src
 COPY apps/core/package.json                                   ./apps/core/
 COPY apps/extensions/ai-tutor/package.json                    ./apps/extensions/ai-tutor/
 COPY apps/extensions/ai-tutor/server/package.json             ./apps/extensions/ai-tutor/server/
@@ -19,6 +22,9 @@ COPY apps/extensions/question-maker/app/backend/package.json  ./apps/extensions/
 COPY apps/extensions/question-maker/app/frontend/package.json ./apps/extensions/question-maker/app/frontend/
 
 RUN npm ci --ignore-scripts \
+     && npm run build -w @eduai/types \
+     && mkdir -p apps/extensions/question-maker/app/backend/node_modules/@eduai \
+     && ln -s /app/packages/types apps/extensions/question-maker/app/backend/node_modules/@eduai/types \
      && cd apps/extensions/question-maker/app/backend \
      && npm install --ignore-scripts --no-package-lock --workspaces=false
 
@@ -27,6 +33,7 @@ FROM node:20-alpine AS test
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/packages/types ./packages/types
 COPY --from=deps /app/apps/extensions/question-maker/app/backend/node_modules \
      ./apps/extensions/question-maker/app/backend/node_modules
 
@@ -47,6 +54,7 @@ FROM node:20-alpine AS serve
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/packages/types ./packages/types
 
 COPY apps/extensions/question-maker/app/backend/src     ./apps/extensions/question-maker/app/backend/src
 COPY apps/extensions/question-maker/app/backend/scripts ./apps/extensions/question-maker/app/backend/scripts

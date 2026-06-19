@@ -5,9 +5,9 @@ import { QuestionType, ReasoningDataState } from '../../types/question';
 
 export type QuestionSearchFilters = {
   questionTypes: QuestionType[];
-  primaryTopicIds: number[];
-  secondaryTopicIds: number[];
-  excludedTopicIds: number[];
+  primaryTopicIds: string[];
+  secondaryTopicIds: string[];
+  excludedTopicIds: string[];
   difficulty?: Array<'easy' | 'medium' | 'hard'> | null;
   reasoningLevel?: Array<'factual' | 'analytical' | 'application'> | null;
 };

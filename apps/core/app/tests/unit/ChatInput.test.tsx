@@ -26,8 +26,6 @@ const baseModel = {
 const makeProps = (overrides: Record<string, any> = {}) => ({
   input: "",
   isLoading: false,
-  adhdAssist: false,
-  onAssistChange: vi.fn(),
   onInputChange: vi.fn(),
   onSubmit: vi.fn(),
   selectedCourseId: null,
@@ -48,29 +46,6 @@ describe("ChatInput — rendering", () => {
   it("renders the textarea with the correct placeholder", () => {
     render(<ChatInput {...makeProps()} />);
     expect(screen.getByPlaceholderText("Message EduAI...")).toBeInTheDocument();
-  });
-
-  it("renders the assistive mode switch near the input", () => {
-    render(<ChatInput {...makeProps()} />);
-    expect(screen.getByRole("switch", { name: "Assistive mode" })).toBeInTheDocument();
-    expect(screen.getByText("Assistive mode Off")).toBeInTheDocument();
-  });
-
-  it("shows On in the assistive label when enabled", () => {
-    render(<ChatInput {...makeProps({ adhdAssist: true })} />);
-    expect(screen.getByText("Assistive mode On")).toBeInTheDocument();
-  });
-
-  it("calls onAssistChange when the switch is toggled", () => {
-    const onAssistChange = vi.fn();
-    render(<ChatInput {...makeProps({ onAssistChange })} />);
-    fireEvent.click(screen.getByRole("switch", { name: "Assistive mode" }));
-    expect(onAssistChange).toHaveBeenCalledWith(true);
-  });
-
-  it("disables the assistive switch while loading", () => {
-    render(<ChatInput {...makeProps({ isLoading: true })} />);
-    expect(screen.getByRole("switch", { name: "Assistive mode" })).toBeDisabled();
   });
 
   it("renders the settings gear button", () => {

@@ -352,6 +352,7 @@ More detail: [canvas-lms/doc/docker](https://github.com/instructure/canvas-lms/t
 | Port already in use              | Another app on same host port         | Change left side of mapping (e.g. `8080:80` → `8888:80`)         |
 | Core + Canvas both fail on 3000  | Port conflict                         | Map Canvas to 8080 (or another free port)                        |
 | PowerShell `curl` behaves oddly  | `curl` aliases to `Invoke-WebRequest` | Use `curl.exe` or `Invoke-RestMethod` (Windows only)           |
+| File links open `canvas.docker` / “can’t reach page” | `canvas.docker` not in hosts | Add `127.0.0.1 canvas.docker` to hosts (`C:\Windows\System32\drivers\etc\hosts` on Windows). EduAI server-side sync works via `localhost:8080`; browser links need this entry. |
 
 
 ---

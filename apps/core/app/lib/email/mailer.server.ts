@@ -1,5 +1,7 @@
 import nodemailer, { type Transporter } from "nodemailer";
 
+import { fireAndForget, logSystemError } from "~/lib/logging.server";
+
 /**
  * Minimal email sender. The transport is built from SMTP_* env vars
  * (Mailtrap in dev, an institutional relay in prod — no code change, just
@@ -65,12 +67,25 @@ export async function sendEmail(message: EmailMessage): Promise<SendEmailResult>
     return { delivered: false };
   }
 
-  await transport.sendMail({
-    from: readEnv("EMAIL_FROM") ?? DEFAULT_FROM,
-    to: message.to,
-    subject: message.subject,
-    text: message.text,
-    html: message.html,
-  });
+  try {
+    await transport.sendMail({
+      from: readEnv("EMAIL_FROM") ?? DEFAULT_FROM,
+      to: message.to,
+      subject: message.subject,
+      text: message.text,
+      html: message.html,
+    });
+  } catch (error) {
+    // No Request reaches this layer, so the system-error event carries no request context.
+    fireAndForget(
+      logSystemError({
+        source: "MAIL",
+        code: "MAIL_SEND_FAILED",
+        message: "SMTP send failed",
+        error,
+      }),
+    );
+    throw error;
+  }
   return { delivered: true };
 }

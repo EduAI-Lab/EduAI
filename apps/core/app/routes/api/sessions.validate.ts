@@ -2,6 +2,8 @@ import type { ActionFunctionArgs } from "react-router";
 
 import { auth } from "~/lib/auth/server";
 import { isRateLimited } from "~/lib/auth/rate-limit.server";
+import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
+import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== "POST") {
@@ -11,10 +13,23 @@ export async function action({ request }: ActionFunctionArgs) {
     });
   }
 
-  const ip =
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  // Derive the IP once from the shared request-context helper so the rate-limit
+  // key, the logged `ipAddress`, and `details.ip` all agree (the helper also
+  // honors x-real-ip / cf-connecting-ip, not just x-forwarded-for).
+  const requestContext = getRequestContext(request);
+  const ip = requestContext.ipAddress ?? "unknown";
 
   if (isRateLimited(ip)) {
+    fireAndForget(
+      logSecurityEvent({
+        ...getActorContext(null),
+        ...requestContext,
+        actionCode: "RATE_LIMIT_EXCEEDED",
+        outcome: "DENIED",
+        entityType: "Session",
+        details: { ip },
+      }),
+    );
     return new Response(JSON.stringify({ error: "Too Many Requests" }), {
       status: 429,
       headers: { "Content-Type": "application/json" },

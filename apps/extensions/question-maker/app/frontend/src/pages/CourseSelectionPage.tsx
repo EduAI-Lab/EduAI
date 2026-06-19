@@ -1,38 +1,41 @@
 /**
  * Course selection page shown after login. User must select a course card to continue to Question Bank / Assessments.
- * Same header as homepage; content shows "Your Courses", "Add new course" card, and available course cards.
+ * Same header as homepage; content shows course cards and sandbox course option.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { TopNavigation } from '../components/navigation/TopNavigation';
-import { useCourses } from '../hooks/useCourses';
+import { useDisplayCourses } from '../hooks/useDisplayCourses';
 import { Course } from '../types/question';
 import { ProfileCoursesDialog } from '../components/profile/ProfileCoursesDialog';
 import { courseService } from '../services/courseService';
 import { GraduationCap, Plus } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/card';
+import { Badge } from '../components/ui/badge';
 import { Tooltip } from '../components/ui/tooltip';
 import { useGuidedTour } from '../contexts/GuidedTourContext';
 import { assessmentService } from '../services/assessmentService';
+import { isSandboxCourse, SANDBOX_COURSE_CODE, formatCourseTermYear } from '../utils/courseDisplay';
 
-const TEST_COURSE_CODE = 'SANDBOX';
-const TEST_COURSE_NAME = 'Sandbox Course';
-
-function isTestCourse(course: Course): boolean {
-  const code = (course.code ?? '').toUpperCase();
-  const name = (course.name ?? '').toLowerCase();
-  return code === TEST_COURSE_CODE || name.includes('test course');
-}
+const SANDBOX_COURSE_NAME = 'Sandbox Course';
 
 export const CourseSelectionPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { courses, isLoading: isCoursesLoading, fetchCourses } = useCourses();
+  const {
+    courses,
+    displayCourses,
+    showMockLabel,
+    hasCoreCourses,
+    isLoading: isPageLoading,
+    fetchCourses,
+  } = useDisplayCourses();
   const [profileOpen, setProfileOpen] = useState(false);
   const [isStartingTour, setIsStartingTour] = useState(false);
   const { startTour, registerStepAction, isActive: isTourActive } = useGuidedTour();
-  const coursesRef = useRef(courses);
-  coursesRef.current = courses;
+
+  const coursesRef = useRef(displayCourses);
+  coursesRef.current = displayCourses;
 
   const handleSelectCourse = (course: Course) => {
     navigate('/home', { state: { courseId: course.id }, replace: true });
@@ -46,11 +49,11 @@ export const CourseSelectionPage = () => {
     if (isStartingTour) return;
     setIsStartingTour(true);
     try {
-      let testCourse: Course | undefined = courses.find(isTestCourse);
+      let testCourse: Course | undefined = courses.find(isSandboxCourse);
       if (!testCourse) {
         const created = await courseService.createCourse({
-          name: TEST_COURSE_NAME,
-          courseCode: TEST_COURSE_CODE
+          name: SANDBOX_COURSE_NAME,
+          courseCode: SANDBOX_COURSE_CODE
         });
         try {
           await courseService.createTopic(created.id, 'General');
@@ -79,7 +82,7 @@ export const CourseSelectionPage = () => {
   useEffect(() => {
     try {
       if (sessionStorage.getItem('newUserTourPending') !== '1') return;
-      if (isCoursesLoading) return;
+      if (isPageLoading) return;
       const t = setTimeout(() => {
         try {
           sessionStorage.removeItem('newUserTourPending');
@@ -88,7 +91,7 @@ export const CourseSelectionPage = () => {
       }, 400);
       return () => clearTimeout(t);
     } catch (_) {}
-  }, [startTour, isCoursesLoading]);
+  }, [startTour, isPageLoading]);
 
   // When arriving from homepage (e.g. user clicked Guided tour on Assessments tab), start the tour here and register step 1 to return to their course on questions tab.
   useEffect(() => {
@@ -127,8 +130,8 @@ export const CourseSelectionPage = () => {
       (async () => {
         try {
           const created = await courseService.createCourse({
-            name: TEST_COURSE_NAME,
-            courseCode: TEST_COURSE_CODE
+            name: SANDBOX_COURSE_NAME,
+            courseCode: SANDBOX_COURSE_CODE
           });
           try {
             await courseService.createTopic(created.id, 'General');
@@ -157,8 +160,8 @@ export const CourseSelectionPage = () => {
     <div className="min-h-screen bg-background">
       <TopNavigation
         variant="course-selection"
-        courses={courses}
-        isLoadingCourses={isCoursesLoading}
+        courses={displayCourses}
+        isLoadingCourses={isPageLoading}
         onProfileClick={handleProfileClick}
         onGuidedTourClick={handleGuidedTourClick}
       />
@@ -166,25 +169,30 @@ export const CourseSelectionPage = () => {
       <div className="max-w-4xl mx-auto px-6 py-8">
         <h1 className="text-2xl font-bold text-foreground mb-6">Your Courses</h1>
 
+        {isPageLoading ? (
+          <p className="text-sm text-muted-foreground">Loading courses…</p>
+        ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 items-stretch">
-          {/* Add new course card - used as tour target when there are no courses yet */}
-          <Tooltip content="Add or link a course from the AI service to get started" side="top">
+          {/* Sandbox course */}
+          <Tooltip content="Create a local sandbox course for practice" side="top">
             <Card
               className="border-2 border-dashed border-muted-foreground/30 bg-muted/30 hover:border-primary hover:bg-muted/50 cursor-pointer transition-colors flex min-h-[140px]"
-              data-tour-id={courses.length === 0 ? 'course-select' : undefined}
+              data-tour-id={displayCourses.length === 0 ? 'course-select' : undefined}
               onClick={() => setProfileOpen(true)}
             >
               <CardContent className="flex flex-col items-center justify-center flex-1 p-6">
               <div className="rounded-full bg-muted p-3 mb-2">
                 <Plus className="h-6 w-6 text-muted-foreground" />
               </div>
-              <p className="text-sm font-medium text-muted-foreground">Add new course</p>
+              <p className="text-sm font-medium text-muted-foreground">Sandbox course</p>
             </CardContent>
             </Card>
           </Tooltip>
 
           {/* Available course cards */}
-          {courses.map((course, index) => (
+          {displayCourses.map((course, index) => {
+            const termYear = formatCourseTermYear(course);
+            return (
             <Tooltip key={course.id} content={`Open question bank and assessments for ${course.name}`} side="top">
               <Card
                 className="cursor-pointer transition-shadow hover:shadow-md border bg-card text-card-foreground flex min-h-[140px]"
@@ -195,20 +203,30 @@ export const CourseSelectionPage = () => {
                 <div className="flex items-center gap-2 min-w-0">
                   <GraduationCap className="h-5 w-5 text-primary shrink-0" />
                   <span className="font-semibold truncate">{course.name}</span>
+                  {showMockLabel && (
+                    <Badge variant="outline" className="text-xs shrink-0">Mock</Badge>
+                  )}
                 </div>
                 {course.code && (
                   <p className="text-sm text-muted-foreground mt-1">{course.code}</p>
+                )}
+                {termYear && (
+                  <p className="text-sm text-muted-foreground mt-1">{termYear}</p>
                 )}
                 <p className="text-xs text-muted-foreground/80 mt-2">Click to open</p>
               </CardContent>
               </Card>
             </Tooltip>
-          ))}
+            );
+          })}
         </div>
+        )}
 
-        {!isCoursesLoading && courses.length === 0 && (
+        {!isPageLoading && displayCourses.length === 0 && (
           <p className="text-sm text-muted-foreground mt-4">
-            No courses yet. Add a course from your profile to get started.
+            {hasCoreCourses
+              ? 'Your Core courses should appear here after sign-in. Refresh the page if something is missing.'
+              : 'No courses yet. Core courses appear automatically, or create a sandbox course to get started.'}
           </p>
         )}
       </div>

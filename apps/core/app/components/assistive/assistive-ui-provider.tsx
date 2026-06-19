@@ -6,11 +6,11 @@
  * present on <html> and `[data-assistive]`-scoped CSS applies; when OFF, the
  * attribute is absent so the page is pixel-identical to baseline.
  *
- * SSR first paint is handled by Layout in root.tsx (reads the root loader);
- * this provider owns the live client-side state and persistence.
+ * The root loader passes the initial value into this provider; the provider owns
+ * the client-side <html> attribute sync and persistence.
  */
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { postAssistiveEvent } from "~/lib/assistive-events.client";
+import { postAssistiveClientEvent } from "~/lib/assistive-events.client";
 
 type SetAssistiveOptions = {
   /** Skip telemetry and preference persistence (e.g. when syncing from an existing chat). */
@@ -48,7 +48,7 @@ export function AssistiveUiProvider({
   const setAssistive = useCallback((value: boolean, options?: SetAssistiveOptions) => {
     setAssistiveState((prev) => {
       if (!options?.silent && prev !== value) {
-        void postAssistiveEvent({
+        postAssistiveClientEvent({
           eventType: "mode_toggled",
           adhdAssist: value,
           metrics: {

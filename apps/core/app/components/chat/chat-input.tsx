@@ -1,6 +1,4 @@
 import { Button } from "~/components/ui/button";
-import { Label } from "~/components/ui/label";
-import { Switch } from "~/components/ui/switch";
 import { Settings } from "lucide-react";
 import { useState } from "react";
 import { ApiKeySettings } from "./api-key-settings";
@@ -12,12 +10,16 @@ import {
   PromptInputAction
 } from "~/components/ui/prompt-input";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "~/components/ui/select";
+import {
+  ASSISTIVE_FOCUS_CHROME_CLASS,
+  ASSISTIVE_INPUT_ANCHOR_CLASS,
+  CHAT_MESSAGE_INPUT_ID,
+} from "~/components/assistive/active-highlight";
+import { cn } from "~/lib/utils";
 
 interface ChatInputProps {
   input: string;
   isLoading: boolean;
-  adhdAssist: boolean;
-  onAssistChange: (checked: boolean) => void;
   onInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
   onStop?: () => void;
@@ -29,13 +31,12 @@ interface ChatInputProps {
   chatModels: Array<{ id: string; name: string; description: string; provider: string; maxTokens?: number; supportsImages?: boolean; supportsTools?: boolean }>;
   selectedModelInfo?: { id: string; name: string; description: string; provider: string; maxTokens?: number; supportsImages?: boolean; supportsTools?: boolean };
   showCourseSelector?: boolean;
+  assistiveHighlight?: boolean;
 }
 
 export function ChatInput({
   input,
   isLoading,
-  adhdAssist,
-  onAssistChange,
   onInputChange,
   onSubmit,
   onStop,
@@ -47,6 +48,7 @@ export function ChatInput({
   chatModels,
   selectedModelInfo,
   showCourseSelector = true,
+  assistiveHighlight = false,
 }: ChatInputProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const {
@@ -57,7 +59,6 @@ export function ChatInput({
   } = useApiKeys();
 
   const handleValueChange = (value: string) => {
-    // Create a synthetic event to maintain compatibility
     const event = {
       target: { value },
       currentTarget: { value }
@@ -66,15 +67,12 @@ export function ChatInput({
   };
 
   const handleSubmit = () => {
-    // Create a synthetic form event
     const formEvent = {
       preventDefault: () => {},
       currentTarget: {} as HTMLFormElement
     } as React.FormEvent<HTMLFormElement>;
     onSubmit(formEvent);
   };
-
-
 
   return (
     <>
@@ -85,18 +83,20 @@ export function ChatInput({
             onValueChange={handleValueChange}
             onSubmit={handleSubmit}
             isLoading={isLoading}
-            className="shadow-lg border-border/50"
+            className={cn(
+              "shadow-lg border-border/50",
+              assistiveHighlight && ASSISTIVE_INPUT_ANCHOR_CLASS,
+            )}
           >
             <PromptInputTextarea
+              id={CHAT_MESSAGE_INPUT_ID}
               placeholder="Message EduAI..."
               disabled={isLoading}
               className="min-h-[60px] max-h-[200px] resize-none border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 text-base placeholder:text-muted-foreground/60"
             />
             <div className="flex items-center gap-2 pt-2">
               <PromptInputActions>
-                <PromptInputAction
-                  tooltip="API Key Settings"
-                >
+                <PromptInputAction tooltip="API Key Settings">
                   <Button
                     type="button"
                     variant="ghost"
@@ -109,49 +109,39 @@ export function ChatInput({
                 </PromptInputAction>
               </PromptInputActions>
               {showCourseSelector && (
-                <Select value={selectedCourseId || "none"} onValueChange={(value) => setSelectedCourseId(value === "none" ? null : value)}>
-                  <SelectTrigger className="w-[120px] h-8 text-xs">
-                    {selectedCourseId ? (availableCourses.find(c => c.code === selectedCourseId)?.code || 'No Course') : 'No Course'}
+                <div className={ASSISTIVE_FOCUS_CHROME_CLASS}>
+                  <Select value={selectedCourseId || "none"} onValueChange={(value) => setSelectedCourseId(value === "none" ? null : value)}>
+                    <SelectTrigger className="w-[120px] h-8 text-xs">
+                      {selectedCourseId ? (availableCourses.find(c => c.code === selectedCourseId)?.code || "No Course") : "No Course"}
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No Course Selected</SelectItem>
+                      {availableCourses.map((course) => (
+                        <SelectItem key={course.code} value={course.code}>
+                          {course.code}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              <div className={ASSISTIVE_FOCUS_CHROME_CLASS}>
+                <Select value={selectedModel} onValueChange={setSelectedModel}>
+                  <SelectTrigger className="w-[140px] h-8 text-xs">
+                    {selectedModelInfo?.name}
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">No Course Selected</SelectItem>
-                    {availableCourses.map((course) => (
-                      <SelectItem key={course.code} value={course.code}>
-                        {course.code}
+                    {chatModels.map((model) => (
+                      <SelectItem key={model.id} value={model.id}>
+                        {model.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-              )}
-              <Select value={selectedModel} onValueChange={setSelectedModel}>
-                <SelectTrigger className="w-[140px] h-8 text-xs">
-                  {selectedModelInfo?.name}
-                </SelectTrigger>
-                <SelectContent>
-                  {chatModels.map((model) => (
-                    <SelectItem key={model.id} value={model.id}>
-                      {model.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <div className="flex h-8 items-center gap-2">
-                <Switch
-                  id="adhd-assist"
-                  checked={adhdAssist}
-                  disabled={isLoading}
-                  onCheckedChange={(checked) => onAssistChange(Boolean(checked))}
-                  aria-label="Assistive mode"
-                />
-                <Label htmlFor="adhd-assist" className="text-xs whitespace-nowrap">
-                  Assistive mode {adhdAssist ? "On" : "Off"}
-                </Label>
               </div>
               <PromptInputActions className="ml-auto">
                 {isLoading && onStop ? (
-                  <PromptInputAction
-                    tooltip="Stop generating"
-                  >
+                  <PromptInputAction tooltip="Stop generating">
                     <Button
                       type="button"
                       onClick={onStop}
@@ -163,9 +153,7 @@ export function ChatInput({
                     </Button>
                   </PromptInputAction>
                 ) : (
-                  <PromptInputAction
-                    tooltip="Send message"
-                  >
+                  <PromptInputAction tooltip="Send message">
                     <Button
                       type="button"
                       onClick={handleSubmit}
