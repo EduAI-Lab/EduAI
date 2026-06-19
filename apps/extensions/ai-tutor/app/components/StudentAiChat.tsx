@@ -33,10 +33,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@eduai
 import { IconHistory, IconPencilPlus, IconRefresh } from '@tabler/icons-react';
 import { StudentChatHistoryPanel } from '~/components/StudentChatHistoryPanel';
 import {
-  makeSessionId,
-  previewFromMessages,
-  upsertChatSession,
-  type StoredChatSession,
+  loadSessionMessages,
+  type ApiChatSession,
 } from '~/lib/student-chat-history';
 import api from '../lib/api';
 import type { Activity, AiModel, SuggestedPrompt } from '../lib/types';
@@ -201,7 +199,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
     custom: false,
   });
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
 
   // Load API keys from localStorage after hydration
   useEffect(() => {
@@ -232,7 +230,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
   const setupComplete = hasApiKey && Boolean(knowledgeLevel);
 
   const clearActiveTabChat = useCallback(() => {
-    setActiveSessionId(null);
+    setActiveChatId(null);
     setChatState((prev) => ({
       ...prev,
       [activeTab]: { messages: [], input: '', loading: false, chatId: null },
@@ -248,38 +246,26 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
     clearActiveTabChat();
   }, [clearActiveTabChat]);
 
-  const handleRestoreSession = useCallback((session: StoredChatSession) => {
-    setActiveTab(session.tab);
-    setActiveSessionId(session.id);
+  const handleRestoreSession = useCallback(async (session: ApiChatSession) => {
+    setActiveTab(session.mode);
+    setActiveChatId(session.chatId);
     setChatState((prev) => ({
       ...prev,
-      [session.tab]: {
-        messages: session.messages,
-        input: '',
-        loading: false,
-        chatId: session.chatId,
-      },
+      [session.mode]: { messages: [], input: '', loading: true, chatId: session.chatId },
     }));
-  }, []);
+    const messages = await loadSessionMessages(activity?.id ?? 0, session.chatId);
+    setChatState((prev) => ({
+      ...prev,
+      [session.mode]: { ...prev[session.mode as ChatTab], messages, loading: false },
+    }));
+  }, [activity?.id]);
 
+  // Track the active chatId from the current tab's state so the history panel
+  // can highlight the active session.
   useEffect(() => {
-    if (!activity?.id || !setupComplete) return;
-    const tabState = chatState[activeTab];
-    if (tabState.messages.length === 0) return;
-
-    const sessionId = activeSessionId ?? makeSessionId(activity.id, activeTab);
-    if (!activeSessionId) setActiveSessionId(sessionId);
-
-    upsertChatSession({
-      id: sessionId,
-      activityId: activity.id,
-      tab: activeTab,
-      preview: previewFromMessages(tabState.messages),
-      updatedAt: new Date().toISOString(),
-      messages: tabState.messages,
-      chatId: tabState.chatId,
-    });
-  }, [activity?.id, activeTab, activeSessionId, chatState, setupComplete]);
+    const chatId = chatState[activeTab].chatId;
+    if (chatId) setActiveChatId(chatId);
+  }, [activeTab, chatState]);
 
   const availableTabs = useMemo<{ value: ChatTab; label: string; tooltip: string }[]>(() => {
     if (!activity) return [];
@@ -876,8 +862,8 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         open={historyOpen}
         onOpenChange={setHistoryOpen}
         activityId={activity?.id}
-        activeSessionId={activeSessionId}
-        onSelect={handleRestoreSession}
+        activeChatId={activeChatId}
+        onSelect={(session) => { void handleRestoreSession(session); }}
         onNewChat={handleNewChat}
       />
 

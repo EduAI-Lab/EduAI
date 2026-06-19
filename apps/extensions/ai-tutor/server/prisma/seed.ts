@@ -755,8 +755,9 @@ async function seedLearnerData(
     });
 
     // A "teach" chat session and one interaction trace.
-    const existingSession = await prisma.aiChatSession.findUnique({
-      where: { userId_activityId_mode: { userId: learner, activityId: activity.id, mode: 'teach' } },
+    const seedChatId = `seed_chat_${activity.id}_${learner}`;
+    const existingSession = await prisma.aiChatSession.findFirst({
+      where: { chatId: seedChatId },
     });
     const session =
       existingSession ??
@@ -765,7 +766,7 @@ async function seedLearnerData(
           userId: learner,
           activityId: activity.id,
           mode: 'teach',
-          chatId: `seed_chat_${activity.id}_${learner}`,
+          chatId: seedChatId,
           modelId: 'gpt-4o',
         },
       }));
