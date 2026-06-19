@@ -1,8 +1,21 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { STUB_ONLY } from "~/hooks/api/config";
-import { stubBugReports } from "~/hooks/api/fixtures/platform/bug-reports";
+import { apiFetch } from "~/hooks/api/config";
 import type { BugReport, BugReportStatus } from "~/hooks/api/types";
+
+type AdminBugReportsResponse = {
+  reports: Array<{
+    id: string;
+    description: string;
+    status: BugReportStatus;
+    source: BugReport["source"];
+    isAnonymous: boolean;
+    userName: string | null;
+    userEmail: string | null;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+};
 
 export function useBugReports() {
   const [reports, setReports] = useState<BugReport[]>([]);
@@ -14,13 +27,20 @@ export function useBugReports() {
     setError(null);
 
     try {
-      if (STUB_ONLY.bugReports) {
-        setReports(stubBugReports);
-        return;
-      }
-
-      // Future: await apiFetch<BugReport[]>("/api/bug-reports");
-      setReports([]);
+      const data = await apiFetch<AdminBugReportsResponse>("/api/admin/bug-reports");
+      setReports(
+        data.reports.map((r) => ({
+          id: r.id,
+          description: r.description,
+          status: r.status,
+          source: r.source,
+          isAnonymous: r.isAnonymous,
+          reporterName: r.userName,
+          reporterEmail: r.userEmail,
+          createdAt: typeof r.createdAt === "string" ? r.createdAt : new Date(r.createdAt).toISOString(),
+          updatedAt: typeof r.updatedAt === "string" ? r.updatedAt : new Date(r.updatedAt).toISOString(),
+        })),
+      );
     } catch (err) {
       console.error("Failed to fetch bug reports:", err);
       setError(err instanceof Error ? err.message : "Failed to fetch bug reports");
@@ -35,18 +55,17 @@ export function useBugReports() {
 
   const updateReportStatus = useCallback(
     async (id: string, status: BugReportStatus) => {
-      if (STUB_ONLY.bugReports) {
-        setReports((current) =>
-          current.map((report) =>
-            report.id === id
-              ? { ...report, status, updatedAt: new Date().toISOString() }
-              : report,
-          ),
-        );
-        return;
-      }
-
-      // Future: PATCH /api/bug-reports/:id
+      await apiFetch<void>(`/api/admin/bug-reports/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status }),
+      });
+      setReports((current) =>
+        current.map((report) =>
+          report.id === id
+            ? { ...report, status, updatedAt: new Date().toISOString() }
+            : report,
+        ),
+      );
     },
     [],
   );
@@ -57,6 +76,6 @@ export function useBugReports() {
     error,
     refresh,
     updateReportStatus,
-    isStubbed: STUB_ONLY.bugReports,
+    isStubbed: false,
   };
 }

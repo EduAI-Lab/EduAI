@@ -4,24 +4,10 @@
  */
 import { useState, useEffect } from 'react';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '../ui/dialog';
-import { Button } from '../ui/button';
-import { Label } from '../ui/label';
-import { Input } from '../ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../ui/select';
-import { useToast } from '../ui/use-toast';
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@eduai/ui';
+import { Button, Label, Input } from '@eduai/ui';
+import { useToast } from '@/components/ui/use-toast';
+import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
 import canvasService, { CanvasCourse, CanvasIntegration, CanvasQuiz, CanvasSkippedQuestion } from '../../services/canvasService';
 import { courseService } from '../../services/courseService';
 import { Course } from '../../types/question';
@@ -30,15 +16,18 @@ import { Topic } from '../../types/topic';
 interface CanvasImportDialogProps {
   open: boolean;
   onClose: () => void;
+  courseId?: number | null;
   onImportSuccess?: (result: { assessmentId: number; assessmentName: string }) => void;
 }
 
 export const CanvasImportDialog = ({
   open,
   onClose,
+  courseId = null,
   onImportSuccess
 }: CanvasImportDialogProps) => {
   const { toast } = useToast();
+  const { canManageCanvas } = useQmPermissionsForCourse(courseId);
   const [integration, setIntegration] = useState<CanvasIntegration | null>(null);
   const [canvasCourses, setCanvasCourses] = useState<CanvasCourse[]>([]);
   const [localCourses, setLocalCourses] = useState<Course[]>([]);
@@ -344,7 +333,11 @@ export const CanvasImportDialog = ({
           </DialogDescription>
         </DialogHeader>
 
-        {showConnectForm ? (
+        {!canManageCanvas ? (
+          <p className="py-4 text-sm text-muted-foreground">
+            Canvas import is available to instructors and administrators only.
+          </p>
+        ) : showConnectForm ? (
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="canvasUrl">Canvas Instance URL</Label>

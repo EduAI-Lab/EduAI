@@ -2,25 +2,26 @@ import { Form } from "react-router";
 import { useState } from "react";
 
 import { CanvasIntegrationSettings } from "~/components/canvas/canvas-integration-settings";
+import {
+  IconAccessible,
+  IconWorld,
+} from "@tabler/icons-react";
 import { AccessibilitySettingsTab } from "~/components/settings/accessibility-settings-tab";
 import { StudentNumberSettings } from "~/components/settings/student-number-settings";
-import {
-  Accessibility,
-  Globe,
-} from "lucide-react";
 
-import { Badge } from "~/components/ui/badge";
-import { Button } from "~/components/ui/button";
+import { Badge } from "@eduai/ui";
+import { Button } from "@eduai/ui";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "~/components/ui/card";
-import { Input } from "~/components/ui/input";
-import { Label } from "~/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
+} from "@eduai/ui";
+import { Input } from "@eduai/ui";
+import { Label } from "@eduai/ui";
+import { PageTabs, PageTabsList, PageTabsTrigger, PageTabsContent } from "@eduai/ui";
+import { PageHeading } from "@eduai/ui";
 import { useApiKeys } from "~/hooks/use-api-keys";
 
 const CANVAS_SETTINGS_ROLES = new Set(["INSTRUCTOR", "ADMIN"]);
@@ -41,29 +42,34 @@ export function SettingsView({ role, studentNumber = null }: SettingsViewProps) 
   const [activeTab, setActiveTab] = useState("accessibility");
 
   return (
-    <div className="px-4 py-6 max-w-4xl mx-auto w-full">
-      <h1 className="text-2xl font-bold mb-2">Settings</h1>
-      <p className="text-sm text-muted-foreground mb-4">
-        Manage account preferences and local model provider configuration.
-      </p>
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="settings-tabs">
-          <TabsTrigger value="accessibility">
-            <Accessibility className="h-4 w-4" /> Accessibility
-          </TabsTrigger>
-          <TabsTrigger value="providers">
-            <Globe className="h-4 w-4" /> Providers
-          </TabsTrigger>
-        </TabsList>
+    <div className="flex flex-1 flex-col">
+      <div className="@container/main flex flex-1 flex-col gap-2">
+        <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+          <div className="px-4 lg:px-6">
+            <PageHeading
+              heading="Settings"
+              subheading="Manage account preferences and local model provider configuration."
+            />
+          </div>
+          <div className="px-4 lg:px-6">
+            <PageTabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <PageTabsList>
+          <PageTabsTrigger value="accessibility">
+            <IconAccessible className="h-4 w-4" /> Accessibility
+          </PageTabsTrigger>
+          <PageTabsTrigger value="providers">
+            <IconWorld className="h-4 w-4" /> Providers
+          </PageTabsTrigger>
+        </PageTabsList>
 
-        <TabsContent value="accessibility" className="mt-6 space-y-6">
+        <PageTabsContent value="accessibility">
           <AccessibilitySettingsTab />
           {showStudentNumberSettings && (
             <StudentNumberSettings initialStudentNumber={studentNumber} />
           )}
-        </TabsContent>
+        </PageTabsContent>
 
-        <TabsContent value="providers" className="mt-6 space-y-6">
+        <PageTabsContent value="providers">
           {showCanvasSettings && <CanvasIntegrationSettings />}
           <Card>
             <CardHeader>
@@ -173,22 +179,27 @@ export function SettingsView({ role, studentNumber = null }: SettingsViewProps) 
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
-      </Tabs>
+        </PageTabsContent>
+            </PageTabs>
+          </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Account</CardTitle>
-          <CardDescription>Sign out of EduAI on this browser.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Form method="post" action="/auth/logout" replace>
-            <Button type="submit" variant="outline">
-              Log out
-            </Button>
-          </Form>
-        </CardContent>
-      </Card>
+          <div className="px-4 lg:px-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Account</CardTitle>
+                <CardDescription>Sign out of EduAI on this browser.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Form method="post" action="/auth/logout" replace>
+                  <Button type="submit" variant="outline">
+                    Log out
+                  </Button>
+                </Form>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

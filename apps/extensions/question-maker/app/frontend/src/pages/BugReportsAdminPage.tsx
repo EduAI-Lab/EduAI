@@ -2,18 +2,13 @@
  * Admin-only list of bug reports with status updates and attachment viewers.
  */
 import { useEffect, useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { ArrowLeft } from 'lucide-react';
-import { Button } from '../components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle
-} from '../components/ui/dialog';
-import { useToast } from '../components/ui/use-toast';
+import { Button, Dialog, DialogContent, DialogHeader, DialogTitle } from '@eduai/ui';
+import { useToast } from '@/components/ui/use-toast';
 import { bugReportApi, BugReportRow } from '../services/bugReportApi';
 import { useAuth } from '../contexts/AuthContext';
+import { canTriageBugReports } from '@/lib/rbac';
 
 const STATUS_OPTIONS = ['unhandled', 'in progress', 'resolved'] as const;
 
@@ -95,14 +90,15 @@ export function BugReportsAdminPage() {
 
   useEffect(() => {
     if (isLoading) return;
-    if (!user?.isBugReportAdmin) {
+    const qmUser = user ? { id: user.id, role: user.role, authorizedUnits: user.authorizedUnits } : null;
+    if (!canTriageBugReports(qmUser)) {
       navigate('/home', { replace: true });
       return;
     }
     void load();
   }, [isLoading, user, navigate, load]);
 
-  async function handleStatusChange(bugId: number, newStatus: string) {
+  async function handleStatusChange(bugId: string, newStatus: string) {
     try {
       await bugReportApi.updateStatus(bugId, newStatus);
       setRows((prev) => prev.map((b) => (b.id === bugId ? { ...b, status: newStatus } : b)));
@@ -115,13 +111,13 @@ export function BugReportsAdminPage() {
     }
   }
 
-  if (!user?.isBugReportAdmin) {
-    return null;
-  }
+  if (isLoading) return null;
+  const qmUser = user ? { id: user.id, role: user.role, authorizedUnits: user.authorizedUnits } : null;
+  if (!canTriageBugReports(qmUser)) return null;
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <div className="border-b bg-white px-6 py-4 flex items-center gap-4">
+      <div className="border-b bg-card px-6 py-4 flex items-center gap-4">
         <Button variant="ghost" size="sm" onClick={() => navigate('/home')} className="gap-2">
           <ArrowLeft className="h-4 w-4" />
           Back
@@ -137,6 +133,7 @@ export function BugReportsAdminPage() {
             <thead className="bg-muted/50 border-b">
               <tr>
                 <th className="text-left p-3 font-medium">Status</th>
+                <th className="text-left p-3 font-medium">Source</th>
                 <th className="text-left p-3 font-medium">Description</th>
                 <th className="text-left p-3 font-medium">User</th>
                 <th className="text-left p-3 font-medium">Date</th>
@@ -147,7 +144,7 @@ export function BugReportsAdminPage() {
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="p-8 text-center text-muted-foreground">
+                  <td colSpan={7} className="p-8 text-center text-muted-foreground">
                     No bug reports yet.
                   </td>
                 </tr>
@@ -167,10 +164,15 @@ export function BugReportsAdminPage() {
                         ))}
                       </select>
                     </td>
+                    <td className="p-3 align-top whitespace-nowrap">
+                      <span className="text-xs text-muted-foreground uppercase tracking-wide">
+                        {row.source ?? '—'}
+                      </span>
+                    </td>
                     <td className="p-3 align-top max-w-[280px]">
                       <button
                         type="button"
-                        className="truncate text-left w-full hover:text-blue-700"
+                        className="truncate text-left w-full hover:text-primary-text"
                         title={row.description}
                         onClick={() =>
                           setDetail({

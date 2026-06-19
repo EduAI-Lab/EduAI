@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { IconLoader } from "@tabler/icons-react";
 
-import { Button } from "~/components/ui/button";
-import { Checkbox } from "~/components/ui/checkbox";
+import { Button } from "@eduai/ui";
+import { Checkbox } from "@eduai/ui";
 import {
   Dialog,
   DialogContent,
@@ -10,8 +10,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "~/components/ui/dialog";
-import { Label } from "~/components/ui/label";
+} from "@eduai/ui";
+import { Label } from "@eduai/ui";
 import {
   listCanvasCourses,
   syncCanvasCourses,
@@ -107,7 +107,7 @@ export function CanvasCourseSyncDialog({ open, onOpenChange }: CanvasCourseSyncD
 
         {loading ? (
           <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <IconLoader className="h-4 w-4 animate-spin" />
             Loading your Canvas courses…
           </div>
         ) : courses.length === 0 ? (
@@ -174,7 +174,7 @@ export function CanvasCourseSyncDialog({ open, onOpenChange }: CanvasCourseSyncD
           >
             {syncing ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <IconLoader className="mr-2 h-4 w-4 animate-spin" />
                 Syncing…
               </>
             ) : (

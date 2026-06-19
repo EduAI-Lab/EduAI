@@ -5,9 +5,10 @@
 import api from './api';
 import { Course, CourseCreate } from '../types/question';
 import { Topic } from '../types/topic';
+import type { QmCourseAccess } from '@/lib/rbac';
 
 export const courseService = {
-    /** Fetches all courses for the current user. */
+    /** Fetches courses visible to the caller (role-scoped on the server). */
     async getCourses(): Promise<Course[]> {
         const response = await api.get('/api/course');
         return response.data.data;
@@ -17,6 +18,16 @@ export const courseService = {
     async getCourse(id: number): Promise<Course> {
         const response = await api.get(`/api/course/${id}`);
         return response.data.data;
+    },
+
+    /** Resolved access level for UI gating on a course. */
+    async getCourseAccess(id: number): Promise<QmCourseAccess> {
+        const response = await api.get(`/api/course/${id}/access`);
+        const level = response.data.data?.level;
+        if (level === 'admin' || level === 'unit' || level === 'instructor' || level === 'ta') {
+            return level;
+        }
+        return null;
     },
 
     /** Creates a course with the given payload. */

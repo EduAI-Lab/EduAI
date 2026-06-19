@@ -1,0 +1,30 @@
+<!-- @dsCard group="Spacing" viewport="700x200" name="Spacing Scale" subtitle="4px base unit — tokens from space-1 (4px) to space-20 (80px)" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; padding: 20px 24px; font-family: var(--font-sans); background: var(--background); }
+  .rows { display: flex; flex-direction: column; gap: 8px; }
+  .row { display: flex; align-items: center; gap: 12px; }
+  .bar-wrap { flex: 1; height: 20px; display: flex; align-items: center; }
+  .bar { height: 12px; background: var(--primary); border-radius: 2px; opacity: 0.85; min-width: 2px; }
+  .token { font-size: 10px; font-family: var(--font-mono); color: var(--muted-foreground); width: 72px; flex-shrink: 0; }
+  .px { font-size: 10px; color: var(--muted-foreground); width: 36px; }
+</style>
+</head>
+<body>
+  <div class="rows">
+    <div class="row"><div class="token">--space-1</div><div class="px">4px</div><div class="bar-wrap"><div class="bar" style="width:4px"></div></div></div>
+    <div class="row"><div class="token">--space-2</div><div class="px">8px</div><div class="bar-wrap"><div class="bar" style="width:8px"></div></div></div>
+    <div class="row"><div class="token">--space-3</div><div class="px">12px</div><div class="bar-wrap"><div class="bar" style="width:12px"></div></div></div>
+    <div class="row"><div class="token">--space-4</div><div class="px">16px</div><div class="bar-wrap"><div class="bar" style="width:16px"></div></div></div>
+    <div class="row"><div class="token">--space-6</div><div class="px">24px</div><div class="bar-wrap"><div class="bar" style="width:24px"></div></div></div>
+    <div class="row"><div class="token">--space-8</div><div class="px">32px</div><div class="bar-wrap"><div class="bar" style="width:32px"></div></div></div>
+    <div class="row"><div class="token">--space-12</div><div class="px">48px</div><div class="bar-wrap"><div class="bar" style="width:48px"></div></div></div>
+    <div class="row"><div class="token">--space-16</div><div class="px">64px</div><div class="bar-wrap"><div class="bar" style="width:64px"></div></div></div>
+    <div class="row"><div class="token">--space-20</div><div class="px">80px</div><div class="bar-wrap"><div class="bar" style="width:80px"></div></div></div>
+  </div>
+</body>
+</html>

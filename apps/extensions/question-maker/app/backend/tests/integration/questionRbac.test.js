@@ -99,64 +99,19 @@ describe('STUDENT flat-gated off question authoring (§16)', () => {
   });
 });
 
-describe('TA own-only edit/delete (§19)', () => {
-  it('edits own question → 200', async () => {
+describe('TA blocked at platform role gate', () => {
+  it.each([
+    ['put', '/api/questions/7', { description: 'edit' }],
+    ['delete', '/api/questions/7', {}],
+    ['get', '/api/questions?courseId=1', {}],
+    ['get', '/api/questions', {}],
+  ])('%s %s → 403', async (method, path, body) => {
     authAs(TA, 'TA');
-    loadQuestion(TA.id);
-    mockUpdate.mockResolvedValue({ id: 7 });
-    const res = await request(app).put('/api/questions/7').set('Cookie', 'session=v').send({ description: 'edit' });
-    expect(res.status).toBe(200);
-    expect(mockUpdate).toHaveBeenCalled();
-  });
-
-  it("edits another user's question → 403", async () => {
-    authAs(TA, 'TA');
-    loadQuestion('someone-else');
-    const res = await request(app).put('/api/questions/7').set('Cookie', 'session=v').send({ description: 'edit' });
+    const res = await request(app)[method](path).set('Cookie', 'session=v').send(body);
     expect(res.status).toBe(403);
     expect(mockUpdate).not.toHaveBeenCalled();
-  });
-
-  it('deletes own question → 200', async () => {
-    authAs(TA, 'TA');
-    loadQuestion(TA.id);
-    const res = await request(app).delete('/api/questions/7').set('Cookie', 'session=v');
-    expect(res.status).toBe(200);
-    expect(mockDelete).toHaveBeenCalled();
-  });
-
-  it("deletes another user's question → 403", async () => {
-    authAs(TA, 'TA');
-    loadQuestion('someone-else');
-    const res = await request(app).delete('/api/questions/7').set('Cookie', 'session=v');
-    expect(res.status).toBe(403);
     expect(mockDelete).not.toHaveBeenCalled();
-  });
-});
-
-describe('TA can VIEW the whole course bank (§16 view)', () => {
-  it('lists all questions in a course they are enrolled on → owner-scoped', async () => {
-    authAs(TA, 'TA');
-    mockList.mockResolvedValue([{ id: 1 }, { id: 2 }]);
-    const res = await request(app).get('/api/questions?courseId=1').set('Cookie', 'session=v');
-    expect(res.status).toBe(200);
-    expect(res.body.data).toHaveLength(2);
-    // owner-scoped (course owner), not caller-scoped, so the TA sees the whole bank
-    expect(mockList).toHaveBeenCalledWith('owner-1', expect.objectContaining({ courseId: 1 }));
-  });
-
-  it('is forbidden from listing a course they have no access to → 403', async () => {
-    authAs(TA, null); // not enrolled
-    const res = await request(app).get('/api/questions?courseId=1').set('Cookie', 'session=v');
-    expect(res.status).toBe(403);
     expect(mockList).not.toHaveBeenCalled();
-  });
-
-  it('falls back to caller-scoped listing when no courseId is supplied', async () => {
-    authAs(TA, 'TA');
-    const res = await request(app).get('/api/questions').set('Cookie', 'session=v');
-    expect(res.status).toBe(200);
-    expect(mockList).toHaveBeenCalledWith(TA.id, expect.objectContaining({ courseId: undefined }));
   });
 });
 

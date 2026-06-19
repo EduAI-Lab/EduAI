@@ -1,18 +1,6 @@
 import { Form } from "react-router"
-import {
-  IconDotsVertical,
-  IconLogout,
-  IconShield,
-  IconSchool,
-  IconUsers,
-  IconUser,
-} from "@tabler/icons-react"
-
-import {
-  Avatar,
-  AvatarFallback,
-  AvatarImage,
-} from "~/components/ui/avatar"
+import { IconDotsVertical, IconLogout, IconSettings, IconUser } from "@tabler/icons-react"
+import { RoleBadge, Avatar as EduAvatar } from "@eduai/ui"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,14 +8,13 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "~/components/ui/dropdown-menu"
+} from "@eduai/ui"
 import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
   useSidebar,
-} from "~/components/ui/sidebar"
-import { Badge } from "~/components/ui/badge"
+} from "@eduai/ui"
 import type { User } from "~/lib/auth/types"
 
 export interface NavUserProps {
@@ -36,62 +23,6 @@ export interface NavUserProps {
 
 export function NavUser({ user }: NavUserProps) {
   const { isMobile } = useSidebar()
-
-  const getUserInitials = (name: string) => {
-    return name
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2)
-  }
-
-  const getRoleBadge = (role: string) => {
-    switch (role) {
-      case "ADMIN":
-        return (
-          <Badge variant="outline" className="bg-red-500 text-white border-red-500 h-5 px-1.5 gap-1 shrink-0">
-            <IconShield className="h-3 w-3" />
-            <span className="text-xs">Admin</span>
-          </Badge>
-        )
-      case "UNIT_ADMIN":
-        return (
-          <Badge variant="outline" className="bg-orange-500 text-white border-orange-500 h-5 px-1.5 gap-1 shrink-0 whitespace-nowrap">
-            <IconShield className="h-3 w-3" />
-            <span className="text-xs">Unit Admin</span>
-          </Badge>
-        )
-      case "INSTRUCTOR":
-        return (
-          <Badge variant="outline" className="bg-blue-500 text-white border-blue-500 h-5 px-1.5 gap-1 shrink-0">
-            <IconSchool className="h-3 w-3" />
-            <span className="text-xs">Instructor</span>
-          </Badge>
-        )
-      case "TA":
-        return (
-          <Badge variant="outline" className="bg-green-500 text-white border-green-500 h-5 px-1.5 gap-1 shrink-0">
-            <IconUsers className="h-3 w-3" />
-            <span className="text-xs">TA</span>
-          </Badge>
-        )
-      case "STUDENT":
-        return (
-          <Badge variant="outline" className="bg-gray-500 text-white border-gray-500 h-5 px-1.5 gap-1 shrink-0">
-            <IconUser className="h-3 w-3" />
-            <span className="text-xs">Student</span>
-          </Badge>
-        )
-      default:
-        return (
-          <Badge variant="outline" className="bg-gray-500 text-white border-gray-500 h-5 px-1.5 gap-1 shrink-0">
-            <IconUser className="h-3 w-3" />
-            <span className="text-xs">Student</span>
-          </Badge>
-        )
-    }
-  }
 
   return (
     <SidebarMenu>
@@ -102,22 +33,18 @@ export function NavUser({ user }: NavUserProps) {
               size="lg"
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             >
-              <Avatar className="h-8 w-8 rounded-lg">
-                <AvatarImage src={user.image || ""} alt={user.name} />
-                <AvatarFallback className="rounded-lg">
-                  {getUserInitials(user.name)}
-                </AvatarFallback>
-              </Avatar>
-              <div className="grid flex-1 text-left text-sm leading-tight">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="truncate font-medium min-w-0">{user.name}</span>
-                  {getRoleBadge(user.role || "STUDENT")}
+              <EduAvatar name={user.name} src={user.image} size={32} radius={8} />
+              {/* name + role badge row — name truncates, badge never shrinks */}
+              <div className="flex-1 min-w-0 text-left leading-tight">
+                <div className="flex items-center gap-[5px] min-w-0">
+                  <span className="truncate min-w-0 font-medium text-sm">{user.name}</span>
+                  <RoleBadge role={user.role || "STUDENT"} />
                 </div>
-                <span className="text-muted-foreground truncate text-xs">
+                <span className="block truncate text-xs text-sidebar-foreground/50">
                   {user.email}
                 </span>
               </div>
-              <IconDotsVertical className="ml-auto size-4" />
+              <IconDotsVertical size={14} strokeWidth={1.75} className="ml-auto shrink-0 text-sidebar-foreground/50" />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent
@@ -126,30 +53,39 @@ export function NavUser({ user }: NavUserProps) {
             align="end"
             sideOffset={4}
           >
+            {/* Popup header: name + email */}
             <DropdownMenuLabel className="p-0 font-normal">
-              <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
-                <Avatar className="h-8 w-8 rounded-lg">
-                  <AvatarImage src={user.image || ""} alt={user.name} />
-                  <AvatarFallback className="rounded-lg">
-                    {getUserInitials(user.name)}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="grid flex-1 text-left text-sm leading-tight">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate font-medium">{user.name}</span>
-                    {getRoleBadge(user.role || "STUDENT")}
-                  </div>
-                  <span className="text-muted-foreground truncate text-xs">
-                    {user.email}
-                  </span>
+              <div className="flex items-center gap-2 px-3 py-2.5 text-left">
+                <EduAvatar name={user.name} src={user.image} size={32} radius={8} />
+                <div className="flex-1 min-w-0 leading-tight">
+                  <span className="block truncate font-medium text-sm">{user.name}</span>
+                  <span className="block truncate text-xs text-muted-foreground">{user.email}</span>
                 </div>
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
+            {/* Account / Settings */}
             <DropdownMenuItem asChild>
-              <Form method="post" action="/auth/logout" replace>
-                <button type="submit" className="flex w-full cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none hover:bg-accent hover:text-accent-foreground">
-                  <IconLogout />
+              <a href="/settings" className="flex items-center gap-2 cursor-pointer">
+                <IconSettings size={15} strokeWidth={1.75} />
+                Settings
+              </a>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <a href="/settings/account" className="flex items-center gap-2 cursor-pointer">
+                <IconUser size={15} strokeWidth={1.75} />
+                Account
+              </a>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            {/* Log out */}
+            <DropdownMenuItem asChild>
+              <Form method="post" action="/auth/logout" replace className="w-full">
+                <button
+                  type="submit"
+                  className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none text-destructive hover:bg-destructive/10 focus:bg-destructive/10"
+                >
+                  <IconLogout size={15} strokeWidth={1.75} />
                   Log out
                 </button>
               </Form>

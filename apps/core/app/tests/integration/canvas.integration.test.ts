@@ -486,7 +486,7 @@ describe("Canvas API — link-roster", { timeout: 15_000 }, () => {
     }
   });
 
-  it("links student number even when no staged roster matches yet", async () => {
+  it("returns 404 when no staged roster matches the student number", async () => {
     const student = await prisma.user.create({
       data: {
         email: `canvas-no-match-${Date.now()}@test.com`,
@@ -498,17 +498,7 @@ describe("Canvas API — link-roster", { timeout: 15_000 }, () => {
 
     sessionFor(student.id, "STUDENT");
     const res = await call("POST", "link-roster", { studentNumber: "unknown_999" });
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.success).toBe(true);
-    expect(body.data.studentId).toBe("unknown_999");
-    expect(body.data.enrollmentsLinked).toBe(0);
-
-    const updatedUser = await prisma.user.findUnique({
-      where: { id: student.id },
-      select: { studentId: true },
-    });
-    expect(readStoredStudentId(updatedUser?.studentId)).toBe("unknown_999");
+    expect(res.status).toBe(404);
 
     await prisma.user.delete({ where: { id: student.id } });
   });

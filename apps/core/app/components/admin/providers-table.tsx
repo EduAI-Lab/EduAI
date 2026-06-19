@@ -1,9 +1,9 @@
 import { IconEdit, IconTrash } from "@tabler/icons-react";
-import { Button } from "~/components/ui/button";
-import { Badge } from "~/components/ui/badge";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "~/components/ui/table";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "~/components/ui/alert-dialog";
-import { Switch } from "~/components/ui/switch";
+import { Button } from "@eduai/ui";
+import { Badge } from "@eduai/ui";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@eduai/ui";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@eduai/ui";
+import { Switch } from "@eduai/ui";
 
 type AIProvider = {
   id: string;

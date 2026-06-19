@@ -235,7 +235,6 @@ describe("POST /api/courses", () => {
       term: "Fall",
       year: 2025,
       startDate: "2025-09-01",
-      department: "COSC",
       instructorUserIds: instructorId,
     }));
     expect(res.status).toBe(403);
@@ -302,7 +301,6 @@ describe("POST /api/courses", () => {
       term: "Fall",
       year: 2026,
       startDate: "2026-09-01",
-      department: "COSC",
     }));
     // Schema requires >= 1 instructor id → validation failure, nothing persisted.
     expect(res.status).toBe(400);

@@ -30,6 +30,10 @@ vi.mock('~/lib/api', () => ({
   },
 }));
 
+vi.mock('next-themes', () => ({
+  useTheme: () => ({ resolvedTheme: 'light', setTheme: vi.fn() }),
+}));
+
 vi.mock('~/components/TourButton', () => ({
   default: () => null,
 }));
@@ -76,5 +80,17 @@ describe('Nav', () => {
     await renderNav('/admin', { id: 'u3', name: 'Admin', role: 'ADMIN' });
 
     expect(screen.queryByRole('button', { name: 'Report Bug' })).not.toBeInTheDocument();
+  });
+
+  it('shows EduAI Core cross-nav link for authenticated users', async () => {
+    await renderNav('/student', { id: 'u1', name: 'Student', role: 'STUDENT' });
+
+    expect(screen.getByRole('link', { name: 'Open EduAI Core' })).toBeInTheDocument();
+  });
+
+  it('shows theme toggle for authenticated users', async () => {
+    await renderNav('/student', { id: 'u1', name: 'Student', role: 'STUDENT' });
+
+    expect(screen.getByRole('button', { name: 'Account menu' })).toBeInTheDocument();
   });
 });
