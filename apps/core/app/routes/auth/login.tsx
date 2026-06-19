@@ -8,6 +8,7 @@ import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request"
 import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies"
 import { auth } from "~/lib/auth/server"
 import { validateRedirectUrl } from "~/lib/auth/guards.server"
+import { getPolicy } from "~/lib/policy.server"
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url);
@@ -18,7 +19,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return redirect(redirectTo);
   }
 
-  return { redirectTo };
+  // §6b: gate the "Sign up" link server-side (the login page is unauthenticated,
+  // so usePolicies() is unavailable here).
+  const allowRegistration = await getPolicy("auth.allowPublicRegistration");
+
+  return { redirectTo, allowRegistration };
 }
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -86,7 +91,10 @@ export default function LoginPage() {
     fieldErrors?: Partial<Record<keyof SignInInput, string>>;
     formError?: string;
   } | undefined;
-  const { redirectTo } = useLoaderData() as { redirectTo: string };
+  const { redirectTo, allowRegistration } = useLoaderData() as {
+    redirectTo: string;
+    allowRegistration: boolean;
+  };
 
   return (
     <div className="grid min-h-svh lg:grid-cols-2">
@@ -111,6 +119,7 @@ export default function LoginPage() {
               <LoginForm
                 fieldErrors={actionData?.fieldErrors}
                 isLoading={false}
+                allowRegistration={allowRegistration}
               />
             </Form>
           </div>
