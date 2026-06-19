@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Form, Link } from "react-router";
 
 import { LogDetailsDialog } from "~/components/admin/log-details-dialog";
-import { Badge } from "@eduai/ui";
+import { Badge, PageHeading } from "@eduai/ui";
 import { Button } from "@eduai/ui";
 import {
   Card,
@@ -58,7 +58,16 @@ const AUDIT_CATEGORIES = [
 
 const OUTCOMES = ["SUCCESS", "FAILURE", "DENIED"] as const;
 const SYSTEM_LEVELS = ["ERROR", "WARN", "INFO"] as const;
-const SYSTEM_SOURCES = ["ROUTE", "AUTH", "AI", "CANVAS", "MAIL", "DB", "SSR", "API"] as const;
+const SYSTEM_SOURCES = [
+  "ROUTE",
+  "AUTH",
+  "AI",
+  "CANVAS",
+  "MAIL",
+  "DB",
+  "SSR",
+  "API",
+] as const;
 
 /**
  * Builds a query string while preserving existing URL-driven state.
@@ -118,15 +127,21 @@ function getRowValue(row: Record<string, unknown>, key: string) {
 function formatActorDisplay(row: Record<string, unknown>) {
   const user = row.user;
   const userRecord =
-    typeof user === "object" && user !== null ? (user as Record<string, unknown>) : null;
+    typeof user === "object" && user !== null
+      ? (user as Record<string, unknown>)
+      : null;
 
   const actorNameRaw = userRecord?.name;
   const actorRoleRaw = row.actorRole ?? userRecord?.role;
 
   const actorName =
-    typeof actorNameRaw === "string" && actorNameRaw.trim() ? actorNameRaw.trim() : null;
+    typeof actorNameRaw === "string" && actorNameRaw.trim()
+      ? actorNameRaw.trim()
+      : null;
   const actorRole =
-    typeof actorRoleRaw === "string" && actorRoleRaw.trim() ? actorRoleRaw.trim() : null;
+    typeof actorRoleRaw === "string" && actorRoleRaw.trim()
+      ? actorRoleRaw.trim()
+      : null;
 
   if (actorName && actorRole) {
     return `${actorName} (${actorRole})`;
@@ -186,13 +201,17 @@ function buildClearFiltersHref(tab: LogsTab, query: LogsQueryState) {
 const selectClass =
   "border-input bg-transparent dark:bg-input/30 h-9 w-full rounded-md border px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]";
 
-function outcomeVariant(outcome: string): "default" | "secondary" | "destructive" | "outline" {
+function outcomeVariant(
+  outcome: string,
+): "default" | "secondary" | "destructive" | "outline" {
   if (outcome === "DENIED" || outcome === "FAILURE") return "destructive";
   if (outcome === "SUCCESS") return "secondary";
   return "outline";
 }
 
-function levelVariant(level: string): "default" | "secondary" | "destructive" | "outline" {
+function levelVariant(
+  level: string,
+): "default" | "secondary" | "destructive" | "outline" {
   if (level === "ERROR") return "destructive";
   if (level === "WARN") return "default";
   return "secondary";
@@ -215,9 +234,13 @@ export function LogsAdminView({
   query,
   retentionPolicy,
 }: LogsAdminViewProps) {
-  const [selectedRow, setSelectedRow] = useState<Record<string, unknown> | null>(null);
+  const [selectedRow, setSelectedRow] = useState<Record<
+    string,
+    unknown
+  > | null>(null);
 
-  const prevHref = page > 1 ? buildQueryString(query, { page: page - 1 }) : null;
+  const prevHref =
+    page > 1 ? buildQueryString(query, { page: page - 1 }) : null;
   const nextHref = hasMore ? buildQueryString(query, { page: page + 1 }) : null;
 
   const tabLinks = useMemo(
@@ -233,13 +256,15 @@ export function LogsAdminView({
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   return (
-    <div className="flex flex-col gap-4 p-4 md:p-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Logs</h1>
-        <p className="text-muted-foreground text-sm">
-          Audit, security, and system diagnostics for operational investigations.
-        </p>
-      </div>
+    <div className="flex flex-1 flex-col">
+      <div className="@container/main flex flex-1 flex-col gap-2">
+        <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6 px-4 lg:px-6">
+          <div className="flex items-start justify-between gap-4">
+            <PageHeading
+              heading="Logs"
+              subheading="Audit, security, and system diagnostics for operational investigations."
+            />
+          </div>
 
       {/* Tabs are links so each view remains directly shareable by URL. */}
       <Tabs value={tab}>
@@ -267,7 +292,11 @@ export function LogsAdminView({
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div className="grid gap-1.5">
                 <Label className="text-xs">Page size</Label>
-                <select name="pageSize" defaultValue={query.pageSize ?? String(pageSize)} className={selectClass}>
+                <select
+                  name="pageSize"
+                  defaultValue={query.pageSize ?? String(pageSize)}
+                  className={selectClass}
+                >
                   <option value="25">25</option>
                   <option value="50">50</option>
                   <option value="100">100</option>
@@ -276,7 +305,11 @@ export function LogsAdminView({
 
               <div className="grid gap-1.5">
                 <Label className="text-xs">Direction</Label>
-                <select name="direction" defaultValue={query.direction ?? "desc"} className={selectClass}>
+                <select
+                  name="direction"
+                  defaultValue={query.direction ?? "desc"}
+                  className={selectClass}
+                >
                   <option value="desc">Newest first</option>
                   <option value="asc">Oldest first</option>
                 </select>
@@ -284,19 +317,31 @@ export function LogsAdminView({
 
               <div className="grid gap-1.5">
                 <Label className="text-xs">Date from</Label>
-                <Input type="date" name="dateFrom" defaultValue={query.dateFrom ?? ""} />
+                <Input
+                  type="date"
+                  name="dateFrom"
+                  defaultValue={query.dateFrom ?? ""}
+                />
               </div>
 
               <div className="grid gap-1.5">
                 <Label className="text-xs">Date to</Label>
-                <Input type="date" name="dateTo" defaultValue={query.dateTo ?? ""} />
+                <Input
+                  type="date"
+                  name="dateTo"
+                  defaultValue={query.dateTo ?? ""}
+                />
               </div>
 
               {tab === "audit" && (
                 <>
                   <div className="grid gap-1.5">
                     <Label className="text-xs">Category</Label>
-                    <select name="category" defaultValue={query.category ?? ""} className={selectClass}>
+                    <select
+                      name="category"
+                      defaultValue={query.category ?? ""}
+                      className={selectClass}
+                    >
                       <option value="">All</option>
                       {AUDIT_CATEGORIES.map((category) => (
                         <option key={category} value={category}>
@@ -307,19 +352,32 @@ export function LogsAdminView({
                   </div>
                   <div className="grid gap-1.5">
                     <Label className="text-xs">Action code</Label>
-                    <Input name="actionCode" defaultValue={query.actionCode ?? ""} />
+                    <Input
+                      name="actionCode"
+                      defaultValue={query.actionCode ?? ""}
+                    />
                   </div>
                   <div className="grid gap-1.5">
                     <Label className="text-xs">Actor role</Label>
-                    <Input name="actorRole" defaultValue={query.actorRole ?? ""} />
+                    <Input
+                      name="actorRole"
+                      defaultValue={query.actorRole ?? ""}
+                    />
                   </div>
                   <div className="grid gap-1.5">
                     <Label className="text-xs">Entity type</Label>
-                    <Input name="entityType" defaultValue={query.entityType ?? ""} />
+                    <Input
+                      name="entityType"
+                      defaultValue={query.entityType ?? ""}
+                    />
                   </div>
                   <div className="grid gap-1.5">
                     <Label className="text-xs">Outcome</Label>
-                    <select name="outcome" defaultValue={query.outcome ?? ""} className={selectClass}>
+                    <select
+                      name="outcome"
+                      defaultValue={query.outcome ?? ""}
+                      className={selectClass}
+                    >
                       <option value="">All</option>
                       {OUTCOMES.map((outcome) => (
                         <option key={outcome} value={outcome}>
@@ -330,7 +388,10 @@ export function LogsAdminView({
                   </div>
                   <div className="grid gap-1.5">
                     <Label className="text-xs">Route path</Label>
-                    <Input name="routePath" defaultValue={query.routePath ?? ""} />
+                    <Input
+                      name="routePath"
+                      defaultValue={query.routePath ?? ""}
+                    />
                   </div>
                 </>
               )}
@@ -339,11 +400,18 @@ export function LogsAdminView({
                 <>
                   <div className="grid gap-1.5">
                     <Label className="text-xs">Action code</Label>
-                    <Input name="actionCode" defaultValue={query.actionCode ?? ""} />
+                    <Input
+                      name="actionCode"
+                      defaultValue={query.actionCode ?? ""}
+                    />
                   </div>
                   <div className="grid gap-1.5">
                     <Label className="text-xs">Outcome</Label>
-                    <select name="outcome" defaultValue={query.outcome ?? ""} className={selectClass}>
+                    <select
+                      name="outcome"
+                      defaultValue={query.outcome ?? ""}
+                      className={selectClass}
+                    >
                       <option value="">All</option>
                       {OUTCOMES.map((outcome) => (
                         <option key={outcome} value={outcome}>
@@ -354,15 +422,24 @@ export function LogsAdminView({
                   </div>
                   <div className="grid gap-1.5">
                     <Label className="text-xs">Actor role</Label>
-                    <Input name="actorRole" defaultValue={query.actorRole ?? ""} />
+                    <Input
+                      name="actorRole"
+                      defaultValue={query.actorRole ?? ""}
+                    />
                   </div>
                   <div className="grid gap-1.5">
                     <Label className="text-xs">Route path</Label>
-                    <Input name="routePath" defaultValue={query.routePath ?? ""} />
+                    <Input
+                      name="routePath"
+                      defaultValue={query.routePath ?? ""}
+                    />
                   </div>
                   <div className="grid gap-1.5">
                     <Label className="text-xs">IP address</Label>
-                    <Input name="ipAddress" defaultValue={query.ipAddress ?? ""} />
+                    <Input
+                      name="ipAddress"
+                      defaultValue={query.ipAddress ?? ""}
+                    />
                   </div>
                 </>
               )}
@@ -371,7 +448,11 @@ export function LogsAdminView({
                 <>
                   <div className="grid gap-1.5">
                     <Label className="text-xs">Level</Label>
-                    <select name="level" defaultValue={query.level ?? ""} className={selectClass}>
+                    <select
+                      name="level"
+                      defaultValue={query.level ?? ""}
+                      className={selectClass}
+                    >
                       <option value="">All</option>
                       {SYSTEM_LEVELS.map((level) => (
                         <option key={level} value={level}>
@@ -382,7 +463,11 @@ export function LogsAdminView({
                   </div>
                   <div className="grid gap-1.5">
                     <Label className="text-xs">Source</Label>
-                    <select name="source" defaultValue={query.source ?? ""} className={selectClass}>
+                    <select
+                      name="source"
+                      defaultValue={query.source ?? ""}
+                      className={selectClass}
+                    >
                       <option value="">All</option>
                       {SYSTEM_SOURCES.map((source) => (
                         <option key={source} value={source}>
@@ -416,12 +501,17 @@ export function LogsAdminView({
         <CardHeader>
           <CardTitle className="text-base">Retention</CardTitle>
           <CardDescription>
-            Logs older than the configured window are removed on a daily sweep, or on demand below.
+            Logs older than the configured window are removed on a daily sweep,
+            or on demand below.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <Form method="post" className="flex flex-wrap items-end gap-3">
-            <input type="hidden" name="intent" value="updateLogRetentionPolicy" />
+            <input
+              type="hidden"
+              name="intent"
+              value="updateLogRetentionPolicy"
+            />
             <div className="grid gap-1.5">
               <Label className="text-xs">Audit retention (days)</Label>
               <Input
@@ -519,33 +609,47 @@ export function LogsAdminView({
 
               {rows.map((row) => (
                 <TableRow key={getRowValue(row, "id")}>
-                  <TableCell className="whitespace-nowrap">{formatTimestamp(row.createdAt)}</TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {formatTimestamp(row.createdAt)}
+                  </TableCell>
 
                   {tab === "audit" && (
                     <>
-                      <TableCell className="font-medium">{getRowValue(row, "actionCode")}</TableCell>
+                      <TableCell className="font-medium">
+                        {getRowValue(row, "actionCode")}
+                      </TableCell>
                       <TableCell>{getRowValue(row, "category")}</TableCell>
                       <TableCell>{formatActorDisplay(row)}</TableCell>
                       <TableCell>{getRowValue(row, "entityLabel")}</TableCell>
                       <TableCell>
-                        <Badge variant={outcomeVariant(getRowValue(row, "outcome"))}>
+                        <Badge
+                          variant={outcomeVariant(getRowValue(row, "outcome"))}
+                        >
                           {getRowValue(row, "outcome")}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-muted-foreground">{getRowValue(row, "routePath")}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {getRowValue(row, "routePath")}
+                      </TableCell>
                     </>
                   )}
 
                   {tab === "security" && (
                     <>
-                      <TableCell className="font-medium">{getRowValue(row, "actionCode")}</TableCell>
+                      <TableCell className="font-medium">
+                        {getRowValue(row, "actionCode")}
+                      </TableCell>
                       <TableCell>{formatActorDisplay(row)}</TableCell>
                       <TableCell>
-                        <Badge variant={outcomeVariant(getRowValue(row, "outcome"))}>
+                        <Badge
+                          variant={outcomeVariant(getRowValue(row, "outcome"))}
+                        >
                           {getRowValue(row, "outcome")}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-muted-foreground">{getRowValue(row, "routePath")}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {getRowValue(row, "routePath")}
+                      </TableCell>
                       <TableCell>{getRowValue(row, "ipAddress")}</TableCell>
                     </>
                   )}
@@ -553,19 +657,30 @@ export function LogsAdminView({
                   {tab === "system" && (
                     <>
                       <TableCell>
-                        <Badge variant={levelVariant(getRowValue(row, "level"))}>
+                        <Badge
+                          variant={levelVariant(getRowValue(row, "level"))}
+                        >
                           {getRowValue(row, "level")}
                         </Badge>
                       </TableCell>
                       <TableCell>{getRowValue(row, "source")}</TableCell>
-                      <TableCell className="font-medium">{getRowValue(row, "code")}</TableCell>
-                      <TableCell className="max-w-md truncate">{getRowValue(row, "message")}</TableCell>
+                      <TableCell className="font-medium">
+                        {getRowValue(row, "code")}
+                      </TableCell>
+                      <TableCell className="max-w-md truncate">
+                        {getRowValue(row, "message")}
+                      </TableCell>
                     </>
                   )}
 
                   <TableCell className="text-right">
                     {/* Explicit details interaction prevents overloading primary columns with verbose JSON. */}
-                    <Button type="button" size="sm" variant="outline" onClick={() => setSelectedRow(row)}>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setSelectedRow(row)}
+                    >
                       View details
                     </Button>
                   </TableCell>
@@ -579,13 +694,28 @@ export function LogsAdminView({
       {/* Pagination. */}
       <div className="flex items-center justify-between">
         <p className="text-muted-foreground text-sm">
-          Page {page} of {totalPages} ({rows.length} row{rows.length === 1 ? "" : "s"} shown, {total} total)
+          Page {page} of {totalPages} ({rows.length} row
+          {rows.length === 1 ? "" : "s"} shown, {total} total)
         </p>
         <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" disabled={!prevHref} asChild={!!prevHref}>
-            {prevHref ? <Link to={prevHref}>Previous</Link> : <span>Previous</span>}
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!prevHref}
+            asChild={!!prevHref}
+          >
+            {prevHref ? (
+              <Link to={prevHref}>Previous</Link>
+            ) : (
+              <span>Previous</span>
+            )}
           </Button>
-          <Button size="sm" variant="outline" disabled={!nextHref} asChild={!!nextHref}>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!nextHref}
+            asChild={!!nextHref}
+          >
             {nextHref ? <Link to={nextHref}>Next</Link> : <span>Next</span>}
           </Button>
         </div>
@@ -596,6 +726,8 @@ export function LogsAdminView({
         row={selectedRow}
         onClose={() => setSelectedRow(null)}
       />
+        </div>
+      </div>
     </div>
   );
 }
