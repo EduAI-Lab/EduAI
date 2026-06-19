@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef, useEffect } from "react"
 import { IconCheck, IconChevronDown } from "@tabler/icons-react"
 import { Button } from "./button"
 import {
@@ -65,7 +65,7 @@ export function Combobox({
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={setOpen} modal={false}>
       <PopoverTrigger asChild>
         <Button
           type="button"
@@ -151,6 +151,7 @@ export function MultiSelect({
 }: MultiSelectProps) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState("")
+  const containerRef = useRef<HTMLDivElement>(null)
 
   const filtered =
     search.trim() === ""
@@ -166,78 +167,106 @@ export function MultiSelect({
 
   const handleSelect = (selectedValue: string) => {
     const isSelected = value.includes(selectedValue)
-    if (isSelected) {
-      onValueChange(value.filter((v) => v !== selectedValue))
-    } else {
-      onValueChange([...value, selectedValue])
-    }
+    onValueChange(
+      isSelected ? value.filter((v) => v !== selectedValue) : [...value, selectedValue]
+    )
   }
 
-  const triggerText =
-    value.length === 0
-      ? placeholder
-      : `${value.length} selected`
+  useEffect(() => {
+    if (!open) return
+    const handleMouse = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false)
+        setSearch("")
+      }
+    }
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpen(false)
+        setSearch("")
+      }
+    }
+    document.addEventListener("mousedown", handleMouse)
+    document.addEventListener("keydown", handleKey)
+    return () => {
+      document.removeEventListener("mousedown", handleMouse)
+      document.removeEventListener("keydown", handleKey)
+    }
+  }, [open])
+
+  const selectedOptions = options.filter((o) => value.includes(o.value))
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          role="combobox"
-          aria-expanded={open}
-          disabled={disabled}
-          className={cn("w-full justify-between font-normal", className)}
-        >
-          <span
-            className={value.length === 0 ? "text-muted-foreground" : ""}
-          >
-            {triggerText}
-          </span>
-          <IconChevronDown className="ml-2 size-4 shrink-0 opacity-50" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent
-        className="min-w-[--radix-popover-trigger-width] w-auto max-w-[min(28rem,calc(100vw-2rem))] p-0"
-        align="start"
+    <div ref={containerRef} className="relative">
+      <Button
+        type="button"
+        variant="outline"
+        role="combobox"
+        aria-expanded={open}
+        disabled={disabled}
+        className={cn("w-full justify-between font-normal h-auto min-h-9 py-1.5", className)}
+        onClick={() => setOpen((prev) => !prev)}
       >
-        <Command shouldFilter={false}>
-          <CommandInput
-            placeholder={searchPlaceholder}
-            value={search}
-            onValueChange={setSearch}
-            autoFocus
-          />
-          <CommandList>
-            <CommandEmpty>{emptyText}</CommandEmpty>
-            <CommandGroup>
-              {filtered.map((o) => (
-                <CommandItem
-                  key={o.value}
-                  value={o.value}
-                  className="cursor-pointer"
-                  onSelect={() => handleSelect(o.value)}
-                >
-                  <IconCheck
-                    className={cn(
-                      "mr-2 size-4",
-                      value.includes(o.value) ? "opacity-100" : "opacity-0"
-                    )}
-                  />
-                  <div className="flex flex-col">
-                    <span>{o.label}</span>
-                    {o.description && (
-                      <span className="text-muted-foreground text-xs">
-                        {o.description}
-                      </span>
-                    )}
-                  </div>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
+        {value.length === 0 ? (
+          <span className="text-muted-foreground">{placeholder}</span>
+        ) : (
+          <span className="flex flex-wrap gap-1 items-center">
+            {selectedOptions.map((o) => (
+              <span
+                key={o.value}
+                className="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-secondary text-secondary-foreground"
+              >
+                {o.value}
+              </span>
+            ))}
+          </span>
+        )}
+        <IconChevronDown className="ml-2 size-4 shrink-0 opacity-50" />
+      </Button>
+      {open && (
+        <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover shadow-md">
+          <Command shouldFilter={false}>
+            <CommandInput
+              placeholder={searchPlaceholder}
+              value={search}
+              onValueChange={setSearch}
+              autoFocus
+            />
+            <CommandList>
+              <CommandEmpty>{emptyText}</CommandEmpty>
+              <CommandGroup>
+                {filtered.map((o) => (
+                  <CommandItem
+                    key={o.value}
+                    value={o.value}
+                    className="cursor-pointer"
+                    onSelect={() => {}}
+                    onMouseDown={(e) => {
+                      e.preventDefault()
+                      handleSelect(o.value)
+                    }}
+                  >
+                    <IconCheck
+                      className={cn(
+                        "mr-2 size-4",
+                        value.includes(o.value) ? "opacity-100" : "opacity-0"
+                      )}
+                    />
+                    <div className="flex flex-col">
+                      <span>{o.label}</span>
+                      {o.description && (
+                        <span className="text-muted-foreground text-xs">
+                          {o.description}
+                        </span>
+                      )}
+                    </div>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </div>
+      )}
+    </div>
   )
 }
