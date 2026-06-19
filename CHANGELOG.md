@@ -37,6 +37,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ### Removed
 
 - [core] api: Remove the headless `POST /api/invitations/accept` endpoint — the invitation-accept flow is consolidated onto the `/accept-invitation` page route. (#581, @abdullahmoh21, 2026-06-17)
+- [core] security: Remove legacy `x-api-key` / Better Auth API-key plugin — drop `ApiKey` table and migration, strip `x-api-key` header handling from all Core API routes, remove the Settings UI for creating EduAI backend keys, and update docs/examples. Auth now relies on session cookies and `SERVICE_KEY` for internal calls only. (#PR, @evanbones, 2026-06-19)
 
 ### Fixed
 
