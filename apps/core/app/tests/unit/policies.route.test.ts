@@ -69,10 +69,15 @@ describe("GET /api/policies", () => {
     expect(body).toHaveProperty("definitions");
   });
 
-  it("forbids a non-admin session", async () => {
+  it("returns policy values (no definitions) for a non-admin session", async () => {
+    // Non-admins may read flag VALUES so the client can mirror backend gates;
+    // only ADMIN receives the toggle DEFINITIONS for the settings UI.
     vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } } as any);
     const res = await loader({ request: get() } as any);
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toHaveProperty("policies");
+    expect(body).not.toHaveProperty("definitions");
   });
 
   it("401s an anonymous request", async () => {

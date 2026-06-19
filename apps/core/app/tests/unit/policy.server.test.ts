@@ -46,7 +46,10 @@ describe("policy.server", () => {
       { key: "policy.somethingRemoved", value: "true" },
     ]);
     const policies = await getPolicies();
-    expect(policies).toEqual({ [FLAG]: POLICY_FLAGS[FLAG].default });
+    const allDefaults = Object.fromEntries(
+      Object.entries(POLICY_FLAGS).map(([key, def]) => [key, def.default]),
+    );
+    expect(policies).toEqual(allDefaults);
   });
 
   it("caches reads — a second call within the TTL does not re-query", async () => {

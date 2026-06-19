@@ -33,10 +33,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return json({ policies: await getPolicies() });
   }
 
-  // Otherwise: ADMIN session only (the admin dashboard).
+  // Any authenticated user may read policy VALUES so the client can mirror
+  // backend enforcement (hide controls that would otherwise 403). Only ADMIN
+  // additionally receives the toggle DEFINITIONS used to render the admin
+  // settings UI; PATCH stays ADMIN-only.
   const session = await auth.api.getSession(request);
   if (!session?.user) return json({ error: "Unauthorized" }, 401);
-  if (session.user.role !== "ADMIN") return json({ error: "Forbidden" }, 403);
+
+  if (session.user.role !== "ADMIN") {
+    return json({ policies: await getPolicies() });
+  }
 
   return json({
     policies: await getPolicies(),
