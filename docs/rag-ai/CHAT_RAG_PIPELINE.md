@@ -35,7 +35,7 @@ flowchart TB
 
   subgraph hybrid["Hybrid path — no tools"]
     H1["Last user text via extractTextFromMessage"]
-    H2{"courseId set AND<br/>isRAGQuery?"}
+    H2{"courseId set?"}
     H2 -->|no| H3["streamText: default system, maxTokens 8192"]
     H2 -->|yes| H4["findRelevantContent (limit 4)"]
     H5["buildCappedRagContextText → system"]
@@ -46,9 +46,10 @@ flowchart TB
   subgraph toolpath["Tool path — streamText + tools"]
     P1["tools: getInformation, webSearch, fetchPage"]
     P2["maxSteps / maxTokens from env; toolCallStreaming"]
-    P3["getInformation → findRelevantContent → capRagHitsForTool"]
-    P4["Multi-step tool loop"]
-    P1 --> P2 --> P3 --> P4
+    P3["courseId set? → preload findRelevantContent → inject system"]
+    P4["getInformation → findRelevantContent → capRagHitsForTool (supplemental)"]
+    P5["Multi-step tool loop"]
+    P1 --> P2 --> P3 --> P4 --> P5
   end
 
   subgraph ragcore["findRelevantContent — embedding.ts"]
@@ -82,8 +83,8 @@ flowchart TB
 
 ## Notes
 
-- **Hybrid RAG** runs **`findRelevantContent` once** before `streamText` when a **course** is selected and **`isRAGQuery`** is true (keyword heuristics, or always-on when `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE=1`). Hits are formatted with **`buildCappedRagContextText`** (chunk cap **4**, total char cap **14_000**) and injected into **`system`**.
-- **Tool RAG** runs **`findRelevantContent`** only when the model invokes **`getInformation`**. Results pass through **`capRagHitsForTool`** (same chunk cap **4**, **6000** chars per chunk) before returning as tool output.
+- **Hybrid RAG** runs **`findRelevantContent` once** before `streamText` whenever a **course is selected** (`effectiveCourseId` set). Hits are formatted with **`buildCappedRagContextText`** (chunk cap **4**, total char cap **14_000**) and injected into **`system`**. No keyword gate — always retrieves on course-scoped chat (team policy 2026-06, #484).
+- **Tool RAG (preload)** runs **`findRelevantContent` once** before `streamText` whenever a **course is selected** (`effectiveCourseId` set), injecting excerpts into the system prompt. **`getInformation`** remains registered as a supplemental fallback if the preloaded excerpts are insufficient — it is no longer the sole retrieval path. Results pass through **`capRagHitsForTool`** (chunk cap **4**, **6000** chars per chunk).
 - **Query embeddings** use an in-memory cache (`QUERY_EMBED_CACHE_TTL_MS`, `QUERY_EMBED_CACHE_MAX`). **Server** `OPENROUTER_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, or `OPENAI_API_KEY` (first match wins) — independent of the user's chat provider (e.g. Ollama).
 - **Similarity threshold** defaults from **`RAG_SIMILARITY_THRESHOLD`** (default **0.5**) when the caller omits `similarityThreshold`.
 - **Ingestion** (`processMaterialEmbeddings`) fills the vector tables; it does not run on each chat request.
@@ -142,23 +143,20 @@ RAG is **not** one pipeline. It branches on `modelSupportsTools(model)` (from th
 - **`maxSteps`**: `CHAT_TOOL_MAX_STEPS` (default **12**, capped at 32)
 - **`maxTokens`**: `CHAT_TOOL_MAX_OUTPUT_TOKENS` (default **32000**, capped at 128_000)
 - `toolCallStreaming` mirrors client `streaming`
-- Course RAG runs **only if the model calls `getInformation`**, which executes `findRelevantContent(question, effectiveCourseId, HYBRID_RAG_MAX_CHUNKS)` then **`capRagHitsForTool`**
-- Retrieved chunks are **tool output**, not pre-injected into `system`
-- System prompt instructs: course questions → `getInformation` first; external/recent → `webSearch` then `fetchPage`
+- When `effectiveCourseId` is set, **`findRelevantContent`** runs **before** `streamText` and excerpts are injected into the system prompt (same caps as hybrid path). This ensures course context is always present regardless of whether the model calls `getInformation`.
+- **`getInformation`** remains registered as a supplemental tool — the model may call it if preloaded excerpts are insufficient. Its results pass through **`capRagHitsForTool`** (chunk cap **4**, **6000** chars per chunk).
+- System prompt instructs: use preloaded excerpts first; call `getInformation` only if they are insufficient; external/recent info → `webSearch` then `fetchPage`.
 
 ### B. Hybrid path (`supportsTools === false`)
 
 - No tool loop
 - **`extractTextFromMessage`** on the last user turn (string, parts array, or `{ text }` object)
-- **`isRAGQuery`** = `effectiveCourseId` set **and** (
-  `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE=1` **or** message contains any keyword:
-  `course`, `material`, `document`, `chapter`, `lecture`, `assignment`, `explain`, `what is`, `summarize`, `summary`, `content`, `about`
-  )
+- **`isRAGQuery`** = `effectiveCourseId` set (always-on when course is selected — no keyword gate; #484 team policy 2026-06)
 - If true → **`findRelevantContent`** once → **`buildCappedRagContextText`** → appended to **`system`**
-- If false or no course → default system only (**`maxTokens: 8192`**)
+- If no course → default system only (**`maxTokens: 8192`**)
 - On retrieval error, falls back to default system (no excerpts)
 
-**Summary:** tool path = RAG on demand inside multi-step `streamText`; hybrid path = RAG once up front into `system` when course + gate match.
+**Summary:** both paths preload RAG into `system` whenever a course is selected. `getInformation` is supplemental on the tool path only.
 
 ### RAG caps (constants in `chat-rag.ts`)
 
@@ -195,7 +193,6 @@ Resolved system prompt order: request `systemPrompt` → stored `chat.systemProm
 
 | Variable | Default | Effect |
 | -------- | ------- | ------ |
-| `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE` | off | `1` = hybrid RAG on every message when a course is selected (skip keyword gate) |
 | `CHAT_TOOL_MAX_STEPS` | 12 | Tool-path `maxSteps` (1–32) |
 | `CHAT_TOOL_MAX_OUTPUT_TOKENS` | 32000 | Tool-path `maxTokens` (1024–128000) |
 | `RAG_SIMILARITY_THRESHOLD` | 0.5 | Minimum cosine similarity for retrieval hits when caller omits threshold |
@@ -209,7 +206,7 @@ Resolved system prompt order: request `systemPrompt` → stored `chat.systemProm
 | Situation | Behavior |
 | --------- | -------- |
 | No course selected | Hybrid `isRAGQuery` is false; `getInformation` returns `{ error: "No course selected for RAG search" }` if called |
-| Hybrid retrieval | Keyword-gated unless `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE=1` — not embedding-based intent detection |
+| Hybrid retrieval | Always runs when course is selected — no keyword gate (#484) |
 | Latency on RAG turns | Cached embed (hit) or one embed API call + one DB query before first token (hybrid), or inside a tool step (tool path) |
 | Credentials | Retrieval embeddings use server Google/OpenAI keys; chat model may be Ollama-only — two credential paths |
 | Auto routing | Not on this branch; client sends `model` as-is. See [`TEAM_ROUTING_LAYER_PLAN.md`](./routing/eduai-summer-2026/TEAM_ROUTING_LAYER_PLAN.md) for planned routing work |

@@ -30,6 +30,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Changed
 
+- [core] rag: Always run course RAG on both hybrid and tool paths when a course is selected — drops `needsCourseRag` keyword gate on the hybrid path and `courseRagNeeded` guard on the tool-path preload; `getInformation` remains as a supplemental fallback only. Updates `CHAT_RAG_PIPELINE.md` to document always-on policy and preload-on-tool-path behaviour. (#484, @frostbitcactus, 2026-06-19)
+- [core] tests: Add `chat-always-on-rag.route.test.ts` — route-level coverage that `findRelevantContent` fires on both hybrid and tool paths for any query when a course is selected, and is skipped when no course is set. (#484, @frostbitcactus, 2026-06-19)
 - [core] refactor: Create `@eduai/types` shared workspace package — move `UserRole` and `EnrollmentRole` to `packages/types`; Core, AI Tutor, and QM now import from `@eduai/types` instead of maintaining independent copies, eliminating the need for manual sync across apps. (#594, #649, @evanbones, 2026-06-16)
 - [question-maker] refactor: Extract shared `courseCodeUtils.js`, `topicSyncService.js`, and `coreCourseLinkService.js` — dedupe `syncTopicsFromCoreForCourse` / `normalizeCourseCode` from routes and import service; batch topic upserts with two `findAll` queries on the hot `/topics` path. (#578, @GlowyBlack, 2026-06-15)
 - [question-maker] ui: Reuse `normalizeCourseCode` from `courseDisplay.ts` in `ProfileCoursesDialog` and `AddQuestionDialog`. (#578, @GlowyBlack, 2026-06-15)
