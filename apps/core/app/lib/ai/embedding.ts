@@ -243,6 +243,27 @@ function getDefaultRagSimilarityThreshold(): number {
   return n;
 }
 
+/**
+ * True when RAG_HYBRID_BM25=1 is set.
+ * Exported so callers and tests can inspect the active strategy without
+ * reading process.env directly.
+ */
+export function isHybridBm25Enabled(): boolean {
+  return process.env.RAG_HYBRID_BM25 === "1";
+}
+
+/**
+ * Vector weight (α) for hybrid BM25+vector scoring: score = α·vec + (1-α)·bm25.
+ * Defaults to 0.7; override with RAG_HYBRID_BM25_ALPHA (0–1 exclusive).
+ */
+function getHybridAlpha(): number {
+  const raw = process.env.RAG_HYBRID_BM25_ALPHA?.trim();
+  if (!raw) return 0.7;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0 || n >= 1) return 0.7;
+  return n;
+}
+
 function logEmbeddingProvider(
   kind: EmbeddingProviderKind,
   settings: EffectiveEmbeddingSettings,
@@ -608,6 +629,42 @@ export async function findRelevantContent(
     courseSettings?.ragSimilarityThreshold ?? similarityThreshold ?? getDefaultRagSimilarityThreshold();
 
   const queryEmbedding = await generateEmbedding(userQuery, courseId);
+
+  if (isHybridBm25Enabled()) {
+    const alpha = getHybridAlpha();
+    const bm25Weight = 1 - alpha;
+
+    // Hybrid path: weighted sum of vector cosine similarity and BM25 (ts_rank).
+    // No similarity threshold pre-filter — combined score ranking handles relevance.
+    // to_tsvector / plainto_tsquery are built-in PostgreSQL; no extra extension needed.
+    const hybridResults = await prisma.$queryRaw<
+      Array<{ content: string; score: number; material_title: string }>
+    >`
+      SELECT
+        mc.content,
+        cm.title AS material_title,
+        (1 - (me.embedding <=> ${queryEmbedding}::vector)) * ${alpha} +
+        COALESCE(
+          ts_rank(
+            to_tsvector('english', mc.content),
+            plainto_tsquery('english', ${userQuery})
+          ),
+          0
+        ) * ${bm25Weight} AS score
+      FROM material_embeddings me
+      JOIN material_chunks mc ON me."chunkId" = mc.id
+      JOIN course_materials cm ON mc."materialId" = cm.id
+      WHERE cm."courseId" = ${courseId}
+      ORDER BY score DESC
+      LIMIT ${Number(effectiveLimit)}
+    `;
+
+    return hybridResults.map((r) => ({
+      content: r.content,
+      similarity: Number(r.score),
+      materialTitle: r.material_title,
+    }));
+  }
 
   const results = await prisma.$queryRaw<
     Array<{
