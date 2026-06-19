@@ -1,5 +1,5 @@
 import type { Message } from "@ai-sdk/react";
-import { IconInfoCircle } from "@tabler/icons-react";
+import { IconInfoCircle, IconBooksOff } from "@tabler/icons-react";
 import { Alert, AlertDescription } from "@eduai/ui";
 
 import { ChatInput } from "~/components/chat/chat-input";
@@ -57,6 +57,16 @@ export function ChatConversationLayout({
     >
       {/* Disclaimer banner for students in course-scoped chat */}
       <div className="flex-1 flex flex-col min-h-0 relative overflow-hidden">
+        {/* No-courses overlay: covers welcome screen and disables all interaction */}
+        {disabledReason === 'no-courses' && (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-background/85 backdrop-blur-[2px]">
+            <IconBooksOff className="h-10 w-10 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground text-center max-w-xs leading-relaxed">
+              You're not enrolled in any courses.<br />
+              Chat will become available once you're enrolled.
+            </p>
+          </div>
+        )}
         <div className="h-full overflow-y-auto scrollbar-hover">
           <div className="px-6 py-6">
             {isStudentWithCourseChat && (
@@ -74,6 +84,7 @@ export function ChatConversationLayout({
                 <ChatWelcome
                   selectedModelInfo={selectedModelInfo}
                   onSelectPrompt={onSelectPrompt}
+                  disabled={!!disabledReason}
                 />
               ) : (
                 <>
