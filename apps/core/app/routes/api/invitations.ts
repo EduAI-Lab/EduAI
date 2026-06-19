@@ -3,6 +3,8 @@ import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import { requireInviter } from "~/lib/auth/guards.server";
 import { createInvitationSchema } from "~/lib/invitations/schemas";
 import { createInvitation, listInvitations } from "~/lib/invitations/service.server";
+import { fireAndForget, logAuditAction } from "~/lib/logging.server";
+import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -29,6 +31,8 @@ export async function action({ request }: ActionFunctionArgs) {
   const gate = await requireInviter(request);
   if (gate.response) return gate.response;
 
+  const requestContext = getRequestContext(request);
+
   const body = await request.json().catch(() => null);
   const result = createInvitationSchema.safeParse(body);
   if (!result.success) {
@@ -43,6 +47,20 @@ export async function action({ request }: ActionFunctionArgs) {
   if (!created.ok) {
     return json({ error: created.error }, created.status);
   }
+
+  fireAndForget(
+    logAuditAction({
+      ...getActorContext(gate.session?.user ?? null),
+      ...requestContext,
+      actionCode: "INVITATION_CREATED",
+      category: "INVITATION",
+      entityType: "Invitation",
+      entityId: created.invitation.id,
+      // The invited email is the subject of the event and is stored for accountability.
+      entityLabel: created.invitation.email,
+      details: { role: created.invitation.role, email: created.invitation.email },
+    }),
+  );
 
   return json(
     {

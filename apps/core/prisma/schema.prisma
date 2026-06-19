@@ -12,37 +12,39 @@ datasource db {
 }
 
 model User {
-  id                String                 @id @default(cuid())
-  email             String                 @unique
-  name              String
-  image             String?
-  role              UserRole
-  studentId         String?
-  studentIdLookup   String?                @unique
-  isActive          Boolean                @default(true)
-  createdAt         DateTime               @default(now())
-  updatedAt         DateTime               @updatedAt
-  emailVerified     Boolean                @default(false)
-  authorizedUnits   String[]
-  accounts          Account[]
-  aiInteractions    AIInteraction[]
-  enrollments       Enrollment[]
-  questions         Question[]
-  sessions          Session[]
-  providerSettings  UserProviderSettings[]
-  apiKeys           apikey[]
-  chats             Chat[]
-  externalUsers     ExternalUser[]
-  preference        UserPreference?
-  bugReports        BugReport[]
-  assistiveEvents   AssistiveEvent[]
-  uploadedMaterials CourseMaterial[]       @relation("MaterialUploader")
-  createdTopics     CourseTopic[]          @relation("TopicCreator")
+  id                        String                 @id @default(cuid())
+  email                     String                 @unique
+  name                      String
+  image                     String?
+  role                      UserRole
+  studentId                 String?
+  studentIdLookup           String?                @unique
+  isActive                  Boolean                @default(true)
+  createdAt                 DateTime               @default(now())
+  updatedAt                 DateTime               @updatedAt
+  emailVerified             Boolean                @default(false)
+  authorizedUnits           String[]
+  accounts                  Account[]
+  aiInteractions            AIInteraction[]
+  enrollments               Enrollment[]
+  questions                 Question[]
+  sessions                  Session[]
+  providerSettings          UserProviderSettings[]
+  apiKeys                   apikey[]
+  chats                     Chat[]
+  externalUsers             ExternalUser[]
+  preference                UserPreference?
+  bugReports                BugReport[]
+  assistiveEvents           AssistiveEvent[]
+  uploadedMaterials         CourseMaterial[]       @relation("MaterialUploader")
+  createdTopics             CourseTopic[]          @relation("TopicCreator")
   canvasIntegration         CanvasIntegration?
   syncedCanvasRosterMembers CanvasRosterMember[]
-  invitationsSent           Invitation[]         @relation("InvitationsSent")
-  invitationAccepted        Invitation[]         @relation("InvitationAccepted")
-  taughtCourses             Course[]             @relation("CourseInstructor")
+  invitationsSent           Invitation[]           @relation("InvitationsSent")
+  invitationAccepted        Invitation[]           @relation("InvitationAccepted")
+  taughtCourses             Course[]               @relation("CourseInstructor")
+  auditLogs                 AuditLog[]
+  systemLogs                SystemLog[]
 
   @@map("user")
 }
@@ -94,31 +96,31 @@ model Verification {
 }
 
 model Course {
-  id             String           @id @default(cuid())
-  code           String
-  name           String
-  description    String?
-  section        String
-  term           String
-  year           Int
-  isActive       Boolean          @default(true)
-  isPublished    Boolean          @default(false)
-  startDate      DateTime
-  endDate        DateTime?
-  instructorId   String?
-  externalId     String?
-  externalSource String?
-  lastSyncedAt   DateTime?
-  department     String?
-  deletedAt      DateTime?
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
-  aiInstructions         String           @default("")
+  id                     String               @id @default(cuid())
+  code                   String
+  name                   String
+  description            String?
+  section                String
+  term                   String
+  year                   Int
+  isActive               Boolean              @default(true)
+  isPublished            Boolean              @default(false)
+  startDate              DateTime
+  endDate                DateTime?
+  instructorId           String?
+  externalId             String?
+  externalSource         String?
+  lastSyncedAt           DateTime?
+  department             String?
+  deletedAt              DateTime?
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+  aiInstructions         String               @default("")
   /// Per-course RAG chunk limit. Overrides the global HYBRID_RAG_MAX_CHUNKS when set.
   ragTopK                Int?
   /// Per-course cosine-similarity threshold (0–1). Overrides RAG_SIMILARITY_THRESHOLD env when set.
   ragSimilarityThreshold Float?
-  instructor             User?            @relation("CourseInstructor", fields: [instructorId], references: [id])
+  instructor             User?                @relation("CourseInstructor", fields: [instructorId], references: [id])
   /// Per-course override: `local` | `ollama` | `cloud`; null uses server env.
   embeddingProvider      String?
   /// Per-course model id (Ollama or OpenRouter/OpenAI); null uses server default for provider.
@@ -126,14 +128,14 @@ model Course {
   lastEmbeddedAt         DateTime?
   embeddedWithProvider   String?
   embeddedWithModel      String?
-  aiInteractions AIInteraction[]
-  chats          Chat[]           @relation("CourseChats")
-  enrollments    Enrollment[]
-  canvasRosterMembers CanvasRosterMember[]
-  materials           CourseMaterial[]
-  reEmbedJobs    CourseReEmbedJob[]
-  topics         CourseTopic[]
-  questions      Question[]
+  aiInteractions         AIInteraction[]
+  chats                  Chat[]               @relation("CourseChats")
+  enrollments            Enrollment[]
+  canvasRosterMembers    CanvasRosterMember[]
+  materials              CourseMaterial[]
+  reEmbedJobs            CourseReEmbedJob[]
+  topics                 CourseTopic[]
+  questions              Question[]
 
   @@unique([code, startDate, section])
   @@index([externalSource, externalId])
@@ -296,28 +298,29 @@ model UserPreference {
 }
 
 model CourseMaterial {
-  id             String          @id @default(cuid())
-  courseId       String
-  title          String
-  mimeType       String
-  fileSize       Int
-  checksum       String
-  rawText        String?
-  status         MaterialStatus  @default(PROCESSING)
-  externalId     String?
-  externalSource String?
-  uploadedBy     String?
+  id              String          @id @default(cuid())
+  courseId        String
+  title           String
+  mimeType        String
+  fileSize        Int
+  checksum        String
+  rawText         String?
+  status          MaterialStatus  @default(PROCESSING)
+  externalId      String?
+  externalSource  String?
+  canvasUpdatedAt DateTime?
+  uploadedBy      String?
   /// Soft-delete marker. Non-null = removed in EduAI; deletes are ONE-WAY (never
   /// propagated upstream to Canvas). Reads must filter `deletedAt: null`; Canvas
   /// re-sync skips rows with deletedAt set. Lets extensions detect removals.
-  deletedAt      DateTime?
-  deletedBy      String?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  processedAt    DateTime?
-  course         Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  uploader       User?           @relation("MaterialUploader", fields: [uploadedBy], references: [id], onDelete: SetNull)
-  chunks         MaterialChunk[]
+  deletedAt       DateTime?
+  deletedBy       String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  processedAt     DateTime?
+  course          Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  uploader        User?           @relation("MaterialUploader", fields: [uploadedBy], references: [id], onDelete: SetNull)
+  chunks          MaterialChunk[]
 
   @@unique([courseId, checksum])
   @@index([externalSource, externalId])
@@ -460,16 +463,16 @@ model apikey {
 }
 
 model Chat {
-  id           String        @id @default(cuid())
-  userId       String
+  id              String           @id @default(cuid())
+  userId          String
   /// Optional course context. Null = general assistant chat (no course).
   /// SetNull on course delete so history survives a soft/hard course removal.
-  courseId     String?
-  systemPrompt String?
-  title        String?
-  adhdAssist   Boolean  @default(false)
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  courseId        String?
+  systemPrompt    String?
+  title           String?
+  adhdAssist      Boolean          @default(false)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
   user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   course          Course?          @relation("CourseChats", fields: [courseId], references: [id], onDelete: SetNull)
   messages        ChatMessage[]
@@ -681,4 +684,116 @@ enum ReEmbedJobStatus {
   COMPLETED
   PARTIAL
   FAILED
+}
+
+// ─── Logging / Observability ──────────────────────────────────────────────
+// Three append-only streams surfaced in the admin /admin/logs viewer:
+//   AuditLog   — who changed what (domain mutations + accepted invitations)
+//   SystemLog  — server errors / diagnostics (route, AI, mail, db failures)
+//   plus a singleton LogRetentionPolicy that drives periodic cleanup.
+
+enum AuditLogCategory {
+  USER
+  INVITATION
+  COURSE
+  ENROLLMENT
+  MATERIAL
+  TOPIC
+  AI_CONFIG
+  CANVAS
+  BUG_REPORT
+  SECURITY
+}
+
+enum AuditLogOutcome {
+  SUCCESS
+  FAILURE
+  DENIED
+}
+
+enum SystemLogLevel {
+  ERROR
+  WARN
+  INFO
+}
+
+enum SystemLogSource {
+  ROUTE
+  AUTH
+  AI
+  CANVAS
+  MAIL
+  DB
+  SSR
+  API
+}
+
+model AuditLog {
+  id          String           @id @default(cuid())
+  createdAt   DateTime         @default(now())
+  category    AuditLogCategory
+  outcome     AuditLogOutcome  @default(SUCCESS)
+  actionCode  String
+  actorUserId String?
+  actorRole   String?
+  actorType   String           @default("USER")
+  entityType  String
+  entityId    String?
+  entityLabel String?
+  details     Json?
+  requestId   String?
+  routePath   String?
+  httpMethod  String?
+  ipAddress   String?
+  userAgent   String?
+
+  user User? @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([category, createdAt])
+  @@index([actionCode, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([entityType, entityId, createdAt])
+  @@index([routePath, createdAt])
+  @@index([outcome, createdAt])
+  @@map("audit_logs")
+}
+
+model SystemLog {
+  id          String          @id @default(cuid())
+  createdAt   DateTime        @default(now())
+  level       SystemLogLevel
+  source      SystemLogSource
+  code        String
+  message     String
+  errorName   String?
+  stack       String?
+  details     Json?
+  actorUserId String?
+  actorRole   String?
+  requestId   String?
+  routePath   String?
+  httpMethod  String?
+  ipAddress   String?
+  userAgent   String?
+  statusCode  Int?
+
+  user User? @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([level, createdAt])
+  @@index([source, createdAt])
+  @@index([code, createdAt])
+  @@index([actorUserId, createdAt])
+  @@map("system_logs")
+}
+
+model LogRetentionPolicy {
+  id                  String   @id @default("default")
+  auditRetentionDays  Int      @default(365)
+  systemRetentionDays Int      @default(90)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@map("log_retention_policy")
 }

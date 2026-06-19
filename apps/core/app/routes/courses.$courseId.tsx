@@ -24,6 +24,7 @@ import {
   BreadcrumbSeparator,
 } from '@eduai/ui'
 import type { CourseMaterial as UploadMaterial } from '~/components/course-materials-upload'
+import type { CourseDetail } from '~/hooks/api/use-course-detail'
 import { resolveCourseAccess } from '~/lib/rbac/resolve-course-access.server'
 import type { RbacUser } from '~/lib/rbac'
 
@@ -90,10 +91,25 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   return {
     course: {
-      ...course,
+      id: course.id,
+      code: course.code,
+      name: course.name,
+      description: course.description,
+      term: course.term,
+      year: course.year,
+      isActive: course.isActive,
+      isPublished: course.isPublished,
+      aiInstructions: course.aiInstructions,
+      instructorId: course.instructorId,
+      department: course.department,
+      externalSource: course.externalSource,
+      externalId: course.externalId,
       createdAt: course.createdAt.toISOString(),
       updatedAt: course.updatedAt.toISOString(),
-    },
+      instructor: course.instructor ?? undefined,
+      // TA roster is loaded client-side via useCourseTAs (TA = Enrollment
+      // role=TA); the course query no longer includes a CourseTA relation.
+    } satisfies CourseDetail,
     user,
     access,
     instructors,
@@ -105,7 +121,7 @@ export default function CourseDetailPage() {
   const { course, user, access, instructors, taUsers } = useLoaderData<typeof loader>()
   const revalidator = useRevalidator()
   const { topics, createTopic, deleteTopic } = useCourseTopics(course.id)
-  const { enrollments } = useCourseEnrollments(course.id)
+  const { enrollments, loading: enrollmentsLoading, error: enrollmentsError } = useCourseEnrollments(course.id)
   const { materials, uploadMaterial, refetch: refetchMaterials } = useCourseMaterials(course.id)
   const { tas, addTA, removeTA } = useCourseTAs(course.id)
   const { getValidApiKeys } = useApiKeys()
@@ -188,6 +204,8 @@ export default function CourseDetailPage() {
                 access={access}
                 topics={topics}
                 enrollments={enrollments}
+                enrollmentsLoading={enrollmentsLoading}
+                enrollmentsError={enrollmentsError}
                 materials={uploadMaterials}
                 tas={tas}
                 instructors={instructors}
@@ -204,6 +222,12 @@ export default function CourseDetailPage() {
                 onRefreshMaterials={refetchMaterials}
                 courseId={course.id}
                 currentUserId={user.id}
+                showCanvasMaterialSync={
+                  access === 'instructor' &&
+                  course.externalSource === 'canvas' &&
+                  Boolean(course.externalId)
+                }
+                onMaterialsRefresh={() => void refetchMaterials()}
               />
             ) : access === 'ta' ? (
               <CourseDetailTaView

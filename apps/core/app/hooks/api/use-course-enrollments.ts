@@ -13,6 +13,7 @@ export interface CourseEnrollment {
   userName: string
   role: 'INSTRUCTOR' | 'TA' | 'STUDENT'
   isActive: boolean
+  studentNumber?: string | null
   enrolledAt: string
 }
 

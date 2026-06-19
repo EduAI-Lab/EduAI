@@ -164,22 +164,27 @@ describe("updateCourseTopic", () => {
 describe("deleteCourseTopic", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("soft-deletes active topics by setting deletedAt", async () => {
-    prismaMock.courseTopic.updateMany.mockResolvedValue({ count: 1 });
+  it("soft-deletes active topics by setting deletedAt and returns the topic", async () => {
+    prismaMock.courseTopic.findFirst.mockResolvedValue({ id: "t1", name: "Graphs" });
+    prismaMock.courseTopic.update.mockResolvedValue({ id: "t1" });
     const result = await deleteCourseTopic("c1", { topicId: "t1" });
-    expect(result).toEqual({ status: "204" });
-    expect(prismaMock.courseTopic.updateMany).toHaveBeenCalledWith(
+    expect(result).toEqual({ status: "204", topic: { id: "t1", name: "Graphs" } });
+    expect(prismaMock.courseTopic.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { courseId: "c1", deletedAt: null, id: "t1" },
-        data: { deletedAt: expect.any(Date), deletedBy: null },
       }),
     );
+    expect(prismaMock.courseTopic.update).toHaveBeenCalledWith({
+      where: { id: "t1" },
+      data: { deletedAt: expect.any(Date), deletedBy: null },
+    });
   });
 
   it("returns 404 when no active row matches", async () => {
-    prismaMock.courseTopic.updateMany.mockResolvedValue({ count: 0 });
+    prismaMock.courseTopic.findFirst.mockResolvedValue(null);
     const result = await deleteCourseTopic("c1", { name: "Missing" });
     expect(result).toEqual({ status: "404" });
+    expect(prismaMock.courseTopic.update).not.toHaveBeenCalled();
   });
 });
 

@@ -9,6 +9,7 @@ const prismaMock = vi.hoisted(() => ({
   user: { findUnique: vi.fn() },
   enrollment: {
     findMany: vi.fn(),
+    findFirst: vi.fn(),
     findUnique: vi.fn(),
     upsert: vi.fn(),
     updateMany: vi.fn(),
@@ -77,19 +78,24 @@ describe("addCourseTA", () => {
 });
 
 describe("removeCourseTA", () => {
-  it("deactivates the TA enrollment", async () => {
+  it("deactivates the TA enrollment and returns audit fields", async () => {
+    prismaMock.enrollment.findFirst.mockResolvedValue({
+      id: "enr-1",
+      user: { name: USER.name },
+    });
     prismaMock.enrollment.updateMany.mockResolvedValue({ count: 1 });
     const result = await removeCourseTA(COURSE_ID, { userId: USER.id });
     expect(prismaMock.enrollment.updateMany).toHaveBeenCalledWith({
       where: { courseId: COURSE_ID, userId: USER.id, role: "TA", isActive: true },
       data: { isActive: false },
     });
-    expect(result).toEqual({ success: true });
+    expect(result).toEqual({ success: true, taId: "enr-1", taName: USER.name });
   });
 
   it("returns an error when no matching TA enrollment exists", async () => {
-    prismaMock.enrollment.updateMany.mockResolvedValue({ count: 0 });
+    prismaMock.enrollment.findFirst.mockResolvedValue(null);
     const result = await removeCourseTA(COURSE_ID, { userId: USER.id });
     expect(result).toEqual({ error: "TA not found for this course" });
+    expect(prismaMock.enrollment.updateMany).not.toHaveBeenCalled();
   });
 });
