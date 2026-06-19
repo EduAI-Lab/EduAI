@@ -15,6 +15,8 @@ import {
   getCourseTopics,
   getCourseTopic,
 } from "~/lib/courses/server";
+import { fireAndForget, logAuditAction } from "~/lib/logging.server";
+import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 
 async function topicsGetResponse(courseId: string, topicId?: string) {
   if (topicId) {
@@ -164,6 +166,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
       headers: { "Content-Type": "application/json" },
     });
 
+  const requestContext = getRequestContext(request);
+
   switch (request.method) {
     case "POST": {
       // §8: create topic — ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C), plus a TA
@@ -206,6 +210,19 @@ export async function action({ request, params }: ActionFunctionArgs) {
         );
       }
 
+      fireAndForget(
+        logAuditAction({
+          ...getActorContext(session?.user ?? null),
+          ...requestContext,
+          actionCode: "TOPIC_CREATED",
+          category: "TOPIC",
+          entityType: "CourseTopic",
+          entityId: result.topic.id,
+          entityLabel: result.topic.name,
+          details: { courseId },
+        }),
+      );
+
       return new Response(JSON.stringify(result.topic), {
         status: 201,
         headers: { "Content-Type": "application/json" },
@@ -240,6 +257,19 @@ export async function action({ request, params }: ActionFunctionArgs) {
       const result = await updateCourseTopic(courseId, topicId, body);
 
       if (result.status === "200") {
+        fireAndForget(
+          logAuditAction({
+            ...getActorContext(session?.user ?? null),
+            ...requestContext,
+            actionCode: "TOPIC_UPDATED",
+            category: "TOPIC",
+            entityType: "CourseTopic",
+            entityId: result.topic.id,
+            entityLabel: result.topic.name,
+            details: { courseId },
+          }),
+        );
+
         return new Response(JSON.stringify(result.topic), {
           status: 200,
           headers: { "Content-Type": "application/json" },
@@ -311,6 +341,19 @@ export async function action({ request, params }: ActionFunctionArgs) {
           headers: { "Content-Type": "application/json" },
         });
       }
+
+      fireAndForget(
+        logAuditAction({
+          ...getActorContext(session?.user ?? null),
+          ...requestContext,
+          actionCode: "TOPIC_DELETED",
+          category: "TOPIC",
+          entityType: "CourseTopic",
+          entityId: result.topic.id,
+          entityLabel: result.topic.name,
+          details: { courseId },
+        }),
+      );
 
       return new Response(null, { status: 204 });
     }

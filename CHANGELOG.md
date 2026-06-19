@@ -16,6 +16,9 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [ai-tutor] feat: Enforce Core's `instructors.canCreateCourses` policy on `POST /courses` via a cached `policyService` (fetches `GET /api/policies` with the service key, falls back to last-good on outage) and a `requireInstructorPolicy` guard. (#660, @abdullahmoh21, 2026-06-17)
 - [core] tests: Unit tests for `policy.server` (defaults/override/cache) and the `/api/policies` route auth paths, plus instructor-gating cases in `courses.server`. (#660, @abdullahmoh21, 2026-06-17)
 - [ai-tutor] tests: Unit tests for `policyService` (fetch/cache/stale-fallback) and the `requireInstructorPolicy` middleware. (#660, @abdullahmoh21, 2026-06-17)
+- [core] api: Canvas material sync — discover and import Canvas course files into Core `CourseMaterial` with embedding pipeline; instructor UI on course detail (`CanvasMaterialSyncDialog`). (#658, @GlowyBlack, 2026-06-17)
+- [ai-tutor] api: `importEnrolledCoursesFromCore` — mirrors published student enrollments from Core into local offerings on `/api/me` and `GET /courses`. (#658, @GlowyBlack, 2026-06-17)
+- [core] api: `ubcTermFromDate` — UBC academic term codes (W1/W2/S1/S2) from course start dates in `America/Vancouver`. (#658, @GlowyBlack, 2026-06-17)
 - [core] feat: Add an activity logging subsystem — `audit_logs` (administrative mutations + `SECURITY` auth/access events) and `system_logs` (server errors) in Postgres, a redacting logging facade (`logging.server.ts`) that strips credential- and PII-shaped keys before write, request-context capture (actor/IP/user-agent), instrumented backend endpoints and security events, an ADMIN-only viewer at `/admin/logs`, and a configurable retention policy (defaults 365d audit/security, 90d system; viewer-triggered sweep throttled to 24h). (#581, @abdullahmoh21, 2026-06-17)
 - [core] docs: Add `docs/LOGGING.md` — PIA-oriented documentation of the activity logging subsystem (what is recorded, redaction, retention, and access). (#581, @abdullahmoh21, 2026-06-17)
 - [core] tests: Unit tests for the logging subsystem — `db.auditlog.server`, `db.systemlog.server`, `db.log-retention-policy.server`, and `logging.server` (credential/PII redaction, retention cutoffs, singleton-policy create/race). (#581, @abdullahmoh21, 2026-06-17)
@@ -30,6 +33,17 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [question-maker] ui: Reuse `normalizeCourseCode` from `courseDisplay.ts` in `ProfileCoursesDialog` and `AddQuestionDialog`. (#578, @GlowyBlack, 2026-06-15)
 - [question-maker] api: Use `cookieOnly` on user-scoped Core reads (`listCoursesFromCore`, topics) so a stale session does not fall back to the unscoped service key; prefer service key for enrollment roster reads used by RBAC. (#578, @GlowyBlack, 2026-06-15)
 - [ai-tutor] api: Filter auto-import to Core courses where `callerEnrollmentRole` is `INSTRUCTOR` or `TA`. (#578, @GlowyBlack, 2026-06-15)
+- [question-maker] ui: Show Core `term` and `year` on course selection cards and the nav course dropdown (enriched from Core metadata). (#658, @GlowyBlack, 2026-06-17)
+- [core] api: Fall back to Canvas enrollment term `start_at` / `end_at` when course dates are missing; request `include[]=term` on teacher course list. (#658, @GlowyBlack, 2026-06-17)
+- [ai-tutor] api: Treat Core as source of truth — `importTaughtCoursesFromCore` mirrors taught courses on `/api/me` and `GET /courses` (import, topic/enrollment resync, `isPublished` sync) without manual sync endpoints. (#578, #620, @GlowyBlack, 2026-06-16)
+- [ai-tutor] ui: Remove manual Core import panel from instructor dashboard and “Sync students from Core” from the course page — mirroring is automatic. (#578, #620, @GlowyBlack, 2026-06-16)
+- [question-maker] api: Merge full Core mirror into `importTaughtCoursesFromCore` — topic resync on every `/auth/me` and `GET /api/course`; remove manual sync-from-core route. (#578, #620, @GlowyBlack, 2026-06-16)
+- [question-maker] ui: Remove manual “Sync with Core” from profile courses and course selection; update help copy for automatic mirroring. (#578, #620, @GlowyBlack, 2026-06-16)
+- [core] api: Use `ubcTermFromDate` when mapping Canvas courses to Core term/year fields. (#658, @GlowyBlack, 2026-06-17)
+
+### Removed
+
+- [core] api: Remove the headless `POST /api/invitations/accept` endpoint — the invitation-accept flow is consolidated onto the `/accept-invitation` page route. (#581, @abdullahmoh21, 2026-06-17)
 
 ### Fixed
 
@@ -40,7 +54,13 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] security: Block student-number reassignment via `POST /api/canvas/link-roster` after first link (409; contact admin to change). (#578, @GlowyBlack, 2026-06-15)
 - [ai-tutor] fix: Add `updated` to `syncCourseEnrollments` client return type in `api.ts`. (#578, @GlowyBlack, 2026-06-15)
 - [ai-tutor] tests: Extend `enrollmentSync.test.js` — TA rows survive STUDENT-only sync deletes. (#578, @GlowyBlack, 2026-06-15)
+- [ai-tutor] fix: Sync `isPublished` from Core when instructor mirror runs on already-linked offerings. (#578, @GlowyBlack, 2026-06-16)
+- [ai-tutor] ui: Student dashboard empty state notes enrollments sync from Core on sign-in. (#578, @GlowyBlack, 2026-06-16)
+- [ai-tutor] tests: Extend `importTaughtCoursesService.test.js` — `importEnrolledCoursesFromCore` and `isPublished` sync on linked offerings. (#578, @GlowyBlack, 2026-06-16)
+- [core] tests: `resolveCanvasCourseDates` term fallback and `ubcTermFromDate` month boundaries in `canvas-sync-services.test.ts`. (#658, @GlowyBlack, 2026-06-17)
+- [core] tests: Add `canvas-materials.server.test.ts` and `CanvasMaterialSyncDialog.test.tsx` for Canvas file discover/import and sync dialog UX. (#658, @GlowyBlack, 2026-06-17)
 - [core] tests: Update `canvas.integration.test.ts` reassignment case to use a unique student number (avoids `studentIdLookup` collision with seeded data). (#578, @GlowyBlack, 2026-06-15)
+- [core] fix: Stop frontend from retransmitting the full conversation history on every chat request by sending only the newest user message and associated metadata. (#487, @YibingW, 2026-06-15)
 
 ---
 

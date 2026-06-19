@@ -10,40 +10,14 @@ import {
 } from '~/lib/auth/course-access.server';
 import { getPolicy, logPolicyDenial } from '~/lib/policy.server';
 import type { Session } from '~/lib/auth/server';
+import { fireAndForget, logAuditAction, logSystemError } from '~/lib/logging.server';
+import { getActorContext, getRequestContext } from '~/lib/request-context.server';
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { 'Content-Type': 'application/json' },
   });
-}
-
-/**
- * Structured audit line for a successful course-material addition. Records who
- * added it (role/email/name) and what was added (material id/title/type/size).
- * Mirrors the `logPolicyDenial` JSON shape so both feed the same log pipeline.
- */
-function logMaterialAdded(input: {
-  user: Session['user'];
-  role: AccessLevel['level'];
-  courseId: string;
-  material: { id: string; title: string; mimeType: string; fileSize: number };
-}): void {
-  console.info(
-    JSON.stringify({
-      event: 'material_added',
-      role: input.role,
-      userId: input.user.id,
-      email: input.user.email,
-      name: input.user.name,
-      courseId: input.courseId,
-      materialId: input.material.id,
-      title: input.material.title,
-      mimeType: input.material.mimeType,
-      fileSize: input.material.fileSize,
-      at: new Date().toISOString(),
-    }),
-  );
 }
 
 /**
@@ -86,6 +60,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
   if (resolved.response) return resolved.response;
   const { user, access } = resolved;
 
+  const requestContext = getRequestContext(request);
+
   switch (request.method) {
     case 'POST': {
       // §7: upload is ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C) / TA(C).
@@ -114,7 +90,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
         });
         return json(403, { error: 'Forbidden' });
       }
-      return uploadMaterial(request, courseId, user, access.level);
+      return uploadMaterial(request, courseId, user, requestContext);
     }
 
     case 'DELETE': {
@@ -125,7 +101,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
       const material = await prisma.courseMaterial.findFirst({
         where: { id: materialId, courseId },
-        select: { id: true, uploadedBy: true },
+        select: { id: true, uploadedBy: true, title: true },
       });
       if (!material) {
         return json(404, { error: 'MATERIAL_NOT_FOUND' });
@@ -154,6 +130,20 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
       // Hard delete — CourseMaterial has no deletedAt; chunks cascade.
       await prisma.courseMaterial.delete({ where: { id: materialId } });
+
+      fireAndForget(
+        logAuditAction({
+          ...getActorContext(user ?? null),
+          ...requestContext,
+          actionCode: 'MATERIAL_DELETED',
+          category: 'MATERIAL',
+          entityType: 'CourseMaterial',
+          entityId: materialId,
+          entityLabel: material.title,
+          details: { courseId },
+        }),
+      );
+
       return new Response(null, { status: 204 });
     }
 
@@ -166,7 +156,7 @@ async function uploadMaterial(
   request: Request,
   courseId: string,
   user: Session['user'],
-  role: AccessLevel['level'],
+  requestContext: ReturnType<typeof getRequestContext>,
 ) {
   const formData = await request.formData();
   const file = formData.get('file') as File;
@@ -203,7 +193,29 @@ async function uploadMaterial(
       },
     });
 
-    logMaterialAdded({ user, role, courseId, material });
+    // Audit the upload as soon as the material row is persisted, independent of embedding.
+    // A material that uploads successfully but later fails to embed is still a real upload
+    // and must leave an audit trail (the embedding failure is recorded separately below).
+    // actorUserId/actorRole come from getActorContext; email/name and the material's
+    // type/size go in details so the audit line carries who-added-what in full.
+    fireAndForget(
+      logAuditAction({
+        ...getActorContext(user ?? null),
+        ...requestContext,
+        actionCode: 'MATERIAL_UPLOADED',
+        category: 'MATERIAL',
+        entityType: 'CourseMaterial',
+        entityId: material.id,
+        entityLabel: material.title,
+        details: {
+          courseId,
+          actorEmail: user.email,
+          actorName: user.name,
+          mimeType: material.mimeType,
+          fileSize: material.fileSize,
+        },
+      }),
+    );
 
     try {
       await processMaterialEmbeddings(material.id, fileInfo.content);
@@ -224,6 +236,15 @@ async function uploadMaterial(
         where: { id: material.id },
         data: { status: 'FAILED' },
       });
+      fireAndForget(
+        logSystemError({
+          ...requestContext,
+          source: 'AI',
+          code: 'MATERIAL_EMBED_FAILED',
+          message: 'Material embedding failed during upload processing',
+          error: embeddingError,
+        }),
+      );
       throw embeddingError;
     }
 

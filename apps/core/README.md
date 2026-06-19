@@ -24,6 +24,7 @@ A production-ready chat platform with Retrieval-Augmented Generation (RAG) capab
   - **Web tools master**: `chat.webToolsEnabled` (default off) — global on/off for chat web search/fetch for every role. Folds in the former standalone `webToolsEnabled` toggle.
   - **Public registration master**: `auth.allowPublicRegistration` (default on) — gates email/password self-signup at the Better Auth `sign-up/email` chokepoint and hides the signup UI; invitation acceptance and OAuth/SSO are unaffected.
 - **Admin Invitations**: Admins onboard ADMIN / UNIT_ADMIN / INSTRUCTOR users via emailed one-time accept links (`/admin/invitations`) — the invitee sets a password and lands signed in with the invited role; links can be revoked or re-sent (token rotation)
+- **Activity Logging**: Administrative mutations and security events (logins, access denials, rate-limit trips) are recorded to `audit_logs` and server errors to `system_logs`, with credential- and PII-shaped fields redacted before write; admins review them in an ADMIN-only viewer at `/admin/logs` with a configurable retention policy (see [docs/LOGGING.md](../../docs/LOGGING.md))
 - **Multi-Provider AI Support**: Switch between Ollama (local), Google Gemini, and OpenAI with a single configuration change
 - **Retrieval-Augmented Generation**: Ground responses in course materials with source citations to minimize hallucinations
 - **Tool Calling**: Enhanced information retrieval through integrated RAG tools

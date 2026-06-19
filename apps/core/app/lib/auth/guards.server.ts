@@ -1,6 +1,8 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { Session } from "./server";
 import { auth } from "./server";
+import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
+import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 
 const ALLOWED_PROD_SUFFIX = ".eduai.ok.ubc.ca";
 const ALLOWED_PROD_APEX = "eduai.ok.ubc.ca";
@@ -13,7 +15,11 @@ const ALLOWED_PROD_APEX = "eduai.ok.ubc.ca";
  */
 export function validateRedirectUrl(url: string | null): string {
   if (!url) return "/dashboard";
-  if (url.startsWith("/") && !url.startsWith("//")) return url;
+  // Browsers normalize backslashes to forward slashes, so `/\evil.com` becomes the
+  // protocol-relative `//evil.com`. Normalize before the same-origin check so the
+  // backslash variant cannot bypass the `//` open-redirect guard.
+  const normalized = url.replace(/\\/g, "/");
+  if (normalized.startsWith("/") && !normalized.startsWith("//")) return normalized;
   try {
     const { hostname } = new URL(url);
     if (hostname === "localhost" || hostname === "127.0.0.1") return url;
@@ -41,6 +47,18 @@ export async function enforceAdminIfApiKey(request: Request): Promise<GuardResul
 
   const session = await auth.api.getSession(request);
   if (!session?.user || session.user.role !== "ADMIN") {
+    fireAndForget(
+      logSecurityEvent({
+        ...getActorContext(session?.user ?? null),
+        ...getRequestContext(request),
+        actionCode: "API_KEY_DENIED",
+        outcome: "DENIED",
+        entityType: "Auth",
+        entityId: session?.user?.id ?? null,
+        entityLabel: session?.user?.email ?? null,
+        ...(session?.user?.email ? { details: { email: session.user.email } } : {}),
+      }),
+    );
     return {
       response: new Response(
         JSON.stringify({ error: "Forbidden: x-api-key access restricted to admin users" }),
@@ -72,6 +90,23 @@ export async function requireAdmin(request: Request): Promise<AdminGate> {
 
   const resolved = session ?? (await auth.api.getSession(request));
   if (!resolved?.user || resolved.user.role !== "ADMIN") {
+    // Record the rejection so admin-only routes gated solely by this helper
+    // still emit the documented "Admin access denied" security event.
+    // (The x-api-key non-admin case is already logged as API_KEY_DENIED above.)
+    if (!session) {
+      fireAndForget(
+        logSecurityEvent({
+          ...getActorContext(resolved?.user ?? null),
+          ...getRequestContext(request),
+          actionCode: "ADMIN_ACCESS_DENIED",
+          outcome: "DENIED",
+          entityType: "Auth",
+          entityId: resolved?.user?.id ?? null,
+          entityLabel: resolved?.user?.email ?? null,
+          ...(resolved?.user?.email ? { details: { email: resolved.user.email } } : {}),
+        }),
+      );
+    }
     return {
       response: new Response(
         JSON.stringify({ error: "Forbidden: Admins only" }),
@@ -95,6 +130,15 @@ export async function requireServiceKey(request: Request): Promise<Response | nu
   const authHeader = request.headers.get("Authorization");
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    fireAndForget(
+      logSecurityEvent({
+        ...getActorContext(null),
+        ...getRequestContext(request),
+        actionCode: "SERVICE_KEY_MISSING",
+        outcome: "DENIED",
+        entityType: "Auth",
+      }),
+    );
     return new Response(
       JSON.stringify({ error: "MISSING_SERVICE_KEY" }),
       { status: 401, headers: { "Content-Type": "application/json" } }
@@ -105,6 +149,15 @@ export async function requireServiceKey(request: Request): Promise<Response | nu
   const envKey = process.env.EDUAI_API_KEY;
 
   if (!envKey) {
+    fireAndForget(
+      logSecurityEvent({
+        ...getActorContext(null),
+        ...getRequestContext(request),
+        actionCode: "SERVICE_KEY_INVALID",
+        outcome: "DENIED",
+        entityType: "Auth",
+      }),
+    );
     return new Response(
       JSON.stringify({ error: "INVALID_SERVICE_KEY" }),
       { status: 403, headers: { "Content-Type": "application/json" } }
@@ -115,6 +168,15 @@ export async function requireServiceKey(request: Request): Promise<Response | nu
   const keyHash   = createHash("sha256").update(envKey).digest();
 
   if (!timingSafeEqual(tokenHash, keyHash)) {
+    fireAndForget(
+      logSecurityEvent({
+        ...getActorContext(null),
+        ...getRequestContext(request),
+        actionCode: "SERVICE_KEY_INVALID",
+        outcome: "DENIED",
+        entityType: "Auth",
+      }),
+    );
     return new Response(
       JSON.stringify({ error: "INVALID_SERVICE_KEY" }),
       { status: 403, headers: { "Content-Type": "application/json" } }

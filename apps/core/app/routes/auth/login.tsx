@@ -9,6 +9,8 @@ import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies"
 import { auth } from "~/lib/auth/server"
 import { validateRedirectUrl } from "~/lib/auth/guards.server"
 import { getPolicy } from "~/lib/policy.server"
+import { fireAndForget, logSecurityEvent } from "~/lib/logging.server"
+import { getActorContext, getRequestContext } from "~/lib/request-context.server"
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url);
@@ -27,6 +29,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
+  const requestContext = getRequestContext(request);
   const formData = Object.fromEntries(await request.formData());
   const redirectTo = validateRedirectUrl(String(formData.redirectTo || ""));
   const input = {
@@ -65,6 +68,19 @@ export async function action({ request }: ActionFunctionArgs) {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
+      fireAndForget(
+        logSecurityEvent({
+          ...getActorContext(null),
+          ...requestContext,
+          actionCode: "LOGIN_FAILED",
+          outcome: "FAILURE",
+          entityType: "Auth",
+          // The attempted email is the only identifier on a failed login (no actor
+          // exists yet), so it must be stored for security triage.
+          entityLabel: input.email,
+          details: { email: input.email },
+        }),
+      );
       return {
         formError:
           (errorData as { message?: string }).message ||
@@ -76,12 +92,66 @@ export async function action({ request }: ActionFunctionArgs) {
     const headers = new Headers();
     appendAuthSetCookies(response, headers);
 
+    // Attribute the success to the just-authenticated user so the audit log names the actor
+    // instead of "Unknown". The user normally lives in the better-auth sign-in response body.
+    const signedIn = (await response
+      .clone()
+      .json()
+      .catch(() => null)) as { user?: { id?: string; role?: string | null } } | null;
+    let signedInUser = signedIn?.user?.id
+      ? { id: signedIn.user.id, role: signedIn.user.role ?? null }
+      : null;
+
+    // Fallback: if the response body didn't carry the user, resolve the session
+    // from the freshly-issued cookies so a successful login is never logged as
+    // anonymous if better-auth's response shape changes.
+    if (!signedInUser) {
+      const setCookies =
+        typeof headers.getSetCookie === "function" ? headers.getSetCookie() : [];
+      const cookieHeader = setCookies
+        .map((cookie) => cookie.split(";")[0])
+        .filter(Boolean)
+        .join("; ");
+      if (cookieHeader) {
+        const session = await auth.api
+          .getSession(new Request(request.url, { headers: { cookie: cookieHeader } }))
+          .catch(() => null);
+        if (session?.user) {
+          signedInUser = { id: session.user.id, role: session.user.role ?? null };
+        }
+      }
+    }
+
+    fireAndForget(
+      logSecurityEvent({
+        ...getActorContext(signedInUser),
+        ...requestContext,
+        actionCode: "LOGIN_SUCCESS",
+        outcome: "SUCCESS",
+        entityType: "Auth",
+        entityId: signedInUser?.id ?? null,
+        entityLabel: input.email,
+        details: { email: input.email },
+      }),
+    );
+
     return redirect(redirectTo, { headers });
   } catch (err: unknown) {
     let message = "Sign in failed";
     if (typeof err === "object" && err && "message" in err) {
       message = String((err as { message?: string }).message ?? message);
     }
+    fireAndForget(
+      logSecurityEvent({
+        ...getActorContext(null),
+        ...requestContext,
+        actionCode: "LOGIN_FAILED",
+        outcome: "FAILURE",
+        entityType: "Auth",
+        entityLabel: input.email,
+        details: { email: input.email },
+      }),
+    );
     return { formError: message };
   }
 }

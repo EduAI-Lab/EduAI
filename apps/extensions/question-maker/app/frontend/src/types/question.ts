@@ -84,6 +84,8 @@ export interface Course {
     name: string;
     code: string | null;
     coreCourseId?: string | null;
+    term?: string | null;
+    year?: number | null;
     userId?: number;
     createdAt?: string;
     updatedAt?: string;

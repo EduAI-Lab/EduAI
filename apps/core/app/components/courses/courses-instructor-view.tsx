@@ -224,7 +224,7 @@ export function CoursesInstructorView({ courses, onCreateCourse, onEditCourse, o
                 <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                   <div className="flex items-center gap-1">
                     <IconCalendar className="w-4 h-4" />
-                    {course.term} {course.year}
+                    {course.year} {course.term} 
                   </div>
                   {course.department && (
                     <Badge variant="outline">{getDepartmentLabel(course.department)}</Badge>
