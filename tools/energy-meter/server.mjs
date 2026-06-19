@@ -7,18 +7,51 @@
  */
 import { createServer } from "node:http";
 import { readFileSync, readdirSync } from "node:fs";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 
 const HOST = process.env.ENERGY_METER_HOST ?? "127.0.0.1";
 const PORT = Number(process.env.ENERGY_METER_PORT ?? "9100");
 const GRID = Number(process.env.LOCAL_GRID_GCO2_PER_KWH ?? "12");
-const SAMPLE_MS = 100;
+const SAMPLE_MS = Math.max(50, Number(process.env.ENERGY_SAMPLE_MS ?? "1000") || 1000);
 
-/** @type {Map<string, { raplStart: number|null, gpuThread: GpuSampler|null, t0: number }>} */
+/** Comma-separated GPU indices, e.g. "0,1". Default: all visible GPUs. */
+function resolveGpuIndices() {
+  const raw = process.env.ENERGY_GPU_INDICES?.trim();
+  if (raw) {
+    return raw
+      .split(",")
+      .map((s) => Number(s.trim()))
+      .filter((n) => Number.isInteger(n) && n >= 0);
+  }
+  const r = spawnSync("nvidia-smi", ["--query-gpu=index", "--format=csv,noheader"], {
+    encoding: "utf8",
+    timeout: 5000,
+  });
+  if (r.status !== 0) return [0];
+  const indices = String(r.stdout ?? "")
+    .split("\n")
+    .map((l) => Number(l.trim()))
+    .filter((n) => Number.isInteger(n));
+  return indices.length ? indices : [0];
+}
+
+/** @type {Map<string, { raplStart: number|null, gpu: GpuSampler, t0: number }>} */
 const sessions = new Map();
 /** @type {Record<string, unknown>|null} */
 let lastResult = null;
+
+function probeNvmlAvailable() {
+  try {
+    const r = spawnSync("nvidia-smi", ["--query-gpu=index", "--format=csv,noheader"], {
+      encoding: "utf8",
+      timeout: 5000,
+    });
+    return r.status === 0 && String(r.stdout ?? "").trim().length > 0;
+  } catch {
+    return false;
+  }
+}
 
 function readRaplUj() {
   try {
@@ -42,31 +75,46 @@ function readRaplUj() {
 }
 
 class GpuSampler {
-  /** @param {number} gpuIndex */
-  constructor(gpuIndex = 0) {
-    this.gpuIndex = gpuIndex;
-    /** @type {number[]} */
-    this.samplesMw = [];
+  /** @param {number[]} gpuIndices */
+  constructor(gpuIndices) {
+    this.gpuIndices = gpuIndices.length ? gpuIndices : [0];
+    /** @type {{ t: number, mw: number }[]} */
+    this.samples = [];
     this.proc = null;
     this.available = false;
+    /** @type {Map<number, number>} */
+    this.lastPowerByGpu = new Map();
   }
 
   start() {
-    this.samplesMw = [];
+    this.samples = [];
+    this.lastPowerByGpu.clear();
+    // Poll all GPUs: index + power.draw (W), interval in ms (-lms)
     this.proc = spawn("nvidia-smi", [
-      `--query-gpu=power.draw`,
-      `--format=csv,noheader,nounits`,
-      `-lms`,
+      "--query-gpu=index,power.draw",
+      "--format=csv,noheader,nounits",
+      "-lms",
       String(SAMPLE_MS),
-      `-i`,
-      String(this.gpuIndex),
     ]);
     this.available = Boolean(this.proc.stdout);
     if (!this.proc.stdout) return;
     this.proc.stdout.on("data", (buf) => {
       for (const line of String(buf).split("\n")) {
-        const mw = Number(line.trim());
-        if (Number.isFinite(mw)) this.samplesMw.push(mw);
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        const parts = trimmed.split(",").map((s) => s.trim());
+        if (parts.length < 2) continue;
+        const idx = Number(parts[0]);
+        const w = Number(parts[1]);
+        if (!Number.isFinite(w)) continue;
+        if (!this.gpuIndices.includes(idx)) continue;
+        this.lastPowerByGpu.set(idx, w);
+        if (this.lastPowerByGpu.size === this.gpuIndices.length) {
+          let sumMw = 0;
+          for (const v of this.lastPowerByGpu.values()) sumMw += v * 1000;
+          this.samples.push({ t: performance.now(), mw: sumMw });
+          this.lastPowerByGpu.clear();
+        }
       }
     });
     this.proc.on("error", () => {
@@ -79,15 +127,15 @@ class GpuSampler {
       this.proc.kill("SIGTERM");
       this.proc = null;
     }
-    const samples = this.samplesMw;
+    const samples = this.samples;
     if (samples.length < 2) {
-      if (samples.length === 1) return (samples[0] / 1000) * (SAMPLE_MS / 1000);
+      if (samples.length === 1) return (samples[0].mw / 1000) * (SAMPLE_MS / 1000);
       return null;
     }
     let joules = 0;
     const dt = SAMPLE_MS / 1000;
     for (let i = 1; i < samples.length; i++) {
-      joules += ((samples[i - 1] + samples[i]) / 2 / 1000) * dt;
+      joules += ((samples[i - 1].mw + samples[i].mw) / 2 / 1000) * dt;
     }
     return joules;
   }
@@ -155,7 +203,17 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://${HOST}`);
 
   if (req.method === "GET" && url.pathname === "/health") {
-    sendJson(res, 200, { ok: true, service: "eduai-energy-meter-node", port: PORT });
+    const raplAvailable = readRaplUj() != null;
+    const nvmlAvailable = probeNvmlAvailable();
+    sendJson(res, 200, {
+      ok: true,
+      service: "eduai-energy-meter-node",
+      port: PORT,
+      host: HOST,
+      raplAvailable,
+      nvmlAvailable,
+      canMeasure: raplAvailable || nvmlAvailable,
+    });
     return;
   }
 
@@ -172,7 +230,13 @@ const server = createServer(async (req, res) => {
       sendJson(res, 409, { error: `session already active: ${tag}` });
       return;
     }
-    const gpu = new GpuSampler(Number(body.gpuIndex ?? 0));
+    const gpuIndices =
+      body.gpuIndex != null
+        ? [Number(body.gpuIndex)]
+        : body.gpuIndices?.length
+          ? body.gpuIndices.map(Number)
+          : resolveGpuIndices();
+    const gpu = new GpuSampler(gpuIndices);
     gpu.start();
     sessions.set(tag, {
       raplStart: readRaplUj(),

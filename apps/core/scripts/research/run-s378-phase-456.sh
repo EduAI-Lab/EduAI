@@ -26,18 +26,17 @@ fi
 set +a
 unset RESEARCH_RUN_LIMIT
 
-# Energy sidecar
-pkill -f 'energy-meter/server.mjs' 2>/dev/null || true
-sleep 1
-cd "$ENERGY_METER_DIR"
-nohup node server.mjs >>/tmp/energy-meter.log 2>&1 &
-sleep 2
-curl -sf http://127.0.0.1:9100/health || { echo "energy sidecar failed"; exit 1; }
-
-cd "$CORE"
-export ENERGY_SIDECAR_URL=http://127.0.0.1:9100
+# Energy: sidecar must run on cmps01 (GPU host), not s378
+export ENERGY_SIDECAR_URL="${ENERGY_SIDECAR_URL:-http://cmps01.ok.ubc.ca:8001/energy}"
 export RESEARCH_MEASURE_ENERGY=1
 export RESEARCH_RUN_SLEEP_MS="${RESEARCH_RUN_SLEEP_MS:-500}"
+
+echo "=== energy preflight (cmps01) ==="
+node scripts/research/verify-energy-sidecar.mjs || {
+  echo "FAIL: energy sidecar not ready. Deploy on cmps01: tools/energy-meter/deploy-cmps01.sh"
+  echo "      and infra/cmps01/deploy-edge-proxy.sh (ENERGY_SIDECAR_URL=http://cmps01.ok.ubc.ca:8001/energy)."
+  exit 1
+}
 
 # --- Task 4: P1 vs P3a (hybrid) vs P3b on dev (96 prompts) ---
 export RESEARCH_POLICY=ROUTING

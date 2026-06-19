@@ -86,9 +86,15 @@ function policySummary(rows, pol) {
   return out;
 }
 
+function rowsForPolicy(rows, pol) {
+  if (!rows?.length) return rows;
+  return rows.some((r) => r.policy) ? rows.filter((r) => r.policy === pol) : rows;
+}
+
 function summarizeFile(rows, pol) {
   if (!rows?.length) return null;
-  const ok = rows.filter((r) => !r.error && r.response);
+  const scoped = rowsForPolicy(rows, pol);
+  const ok = scoped.filter((r) => !r.error && r.response);
   if (!ok.length) return null;
   const durs = ok.map((r) => r.duration_ms);
   const tiers = { 1: 0, 2: 0, 3: 0, null: 0 };
@@ -110,15 +116,16 @@ function summarizeFile(rows, pol) {
   };
 }
 
-function oracleGap(rows, labels, label) {
+function oracleGap(rows, labels, label, policyFilter) {
   if (!rows?.length || !labels?.length) return null;
+  const scoped = policyFilter ? rowsForPolicy(rows, policyFilter) : rows;
   const labelById = new Map(labels.map((l) => [l.prompt_id, l]));
   let matched = 0;
   let correct = 0;
   let underRoute = 0;
   let overRoute = 0;
 
-  for (const row of rows.filter((r) => !r.error)) {
+  for (const row of scoped.filter((r) => !r.error)) {
     const labelRow = labelById.get(row.prompt_id);
     if (!labelRow || labelRow.min_adequate_tier == null) continue;
     matched++;
@@ -168,16 +175,23 @@ function main() {
     resolveRunsFile("policy-runs-p0-dev.jsonl"),
     "/tmp/policy-runs-p0-dev.jsonl",
   );
+  const routingDevPath = resolveRunsFile("policy-runs-routing-dev-v1.jsonl");
   const p1DevPath = pickPath(
     readEnv("RESEARCH_POLICY_P1_DEV"),
+    routingDevPath,
     resolveRunsFile("policy-runs-p1-dev-v2.jsonl"),
     resolveRunsFile("policy-runs-p1-dev.jsonl"),
     "/tmp/policy-runs-p1-dev-v2.jsonl",
   );
   const p3bDevPath = pickPath(
     readEnv("RESEARCH_POLICY_P3B_DEV"),
+    routingDevPath,
     resolveRunsFile("policy-runs-p3b-dev-v2.jsonl"),
     "/tmp/policy-runs-p3b-dev-v2.jsonl",
+  );
+  const p3aDevPath = pickPath(
+    readEnv("RESEARCH_POLICY_P3A_DEV"),
+    routingDevPath,
   );
   const p1TestPath = pickPath(
     readEnv("RESEARCH_POLICY_P1_TEST"),
@@ -193,6 +207,7 @@ function main() {
   const labels = loadJsonl(labelsPath);
   const p0Dev = loadJsonl(p0DevPath);
   const p1Dev = loadJsonl(p1DevPath);
+  const p3aDev = p3aDevPath && existsSync(p3aDevPath) ? loadJsonl(p3aDevPath) : null;
   const p3bDev = loadJsonl(p3bDevPath);
   const p1Test = loadJsonl(p1TestPath);
   const p3bTest = loadJsonl(p3bTestPath);
@@ -235,15 +250,17 @@ function main() {
 
   const p0s = summarizeFile(p0Dev, "P0");
   const p1s = summarizeFile(p1Dev, "P1");
+  const p3as = p3aDev ? summarizeFile(p3aDev, "P3a") : null;
   const p3bs = summarizeFile(p3bDev, "P3b");
 
-  if (p0s || p1s || p3bs) {
-    lines.push("## Dev split — P0 vs P1 vs P3b", "");
+  if (p0s || p1s || p3as || p3bs) {
+    lines.push("## Dev split — routing policies", "");
     lines.push("| Policy | n | mean (ms) | p50 | p95 | tier 1 | tier 3 | router |");
     lines.push("|--------|---|-----------|-----|-----|--------|--------|--------|");
     for (const [name, s] of [
       ["P0", p0s],
       ["P1", p1s],
+      ["P3a", p3as],
       ["P3b", p3bs],
     ]) {
       if (!s) continue;
@@ -292,9 +309,10 @@ function main() {
   }
 
   for (const gap of [
-    oracleGap(p1Dev, labels, "P1"),
-    oracleGap(p3bDev, labels, "P3b"),
-  ]) {
+    oracleGap(p1Dev, labels, "P1", "P1"),
+    p3aDev ? oracleGap(p3aDev, labels, "P3a", "P3a") : null,
+    oracleGap(p3bDev, labels, "P3b", "P3b"),
+  ].filter(Boolean)) {
     if (!gap) continue;
     lines.push(`## ${gap.label} vs oracle (dev)`, "");
     lines.push(`- Matched prompts: ${gap.matched}`);
@@ -304,11 +322,22 @@ function main() {
     lines.push("");
   }
 
-  lines.push("## Next steps", "");
-  lines.push("1. Strict automated re-label if tier-3 oracle rows needed");
-  lines.push("2. P0 test v2 + energy sidecar batch on cmps01");
-  lines.push("3. P3b dev v3 after mapping tune");
-  lines.push("4. Advisor review — `URA/docs/research/findings/RESULTS.md`");
+  const classroom100 = join(runsDir, "classroom", "classroom-p1-100-v1-summary.txt");
+  if (existsSync(classroom100)) {
+    lines.push("## Classroom stress (100 students)", "");
+    lines.push(`- Summary: \`${classroom100}\``);
+    lines.push("- See `URA/docs/research/findings/STRESS_TEST_REPORT.md`");
+    lines.push("");
+  }
+
+  lines.push("## Remaining work", "");
+  lines.push("- [ ] P0 test v2 — complete sequential test-split triangle");
+  lines.push("- [ ] Energy Joules — fix cmps01 sidecar metering (rows null today)");
+  lines.push("- [ ] Under-route fix — tools/debugging/hard-RAG (10 prompts, strict oracle)");
+  lines.push("- [ ] P3a kNN — rebuild exemplars from `labels-strict.v1.jsonl`, re-eval");
+  lines.push("- [ ] Advisor review — `findings/PAPER1_ROUTING_SECTION.md`");
+  lines.push("");
+  lines.push("**Done (2026-06-18):** strict relabel, P3b mapping tune, P1/P3a/P3b dev benchmark, 100-student classroom.");
   lines.push("");
 
   mkdirSync(dirname(outPath), { recursive: true });

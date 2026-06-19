@@ -39,11 +39,18 @@ On **cmps01** (where vLLM runs), bind locally and point research at the inferenc
 
 ```bash
 cd tools/energy-meter
-nohup node server.mjs >>/tmp/energy-meter.log 2>&1 &
-# apps/core/.env on s378: ENERGY_SIDECAR_URL=http://cmps01.ok.ubc.ca:9100
+bash deploy-cmps01.sh
+# s378 .env.research: ENERGY_SIDECAR_URL=http://cmps01.ok.ubc.ca:8001/energy
+# Then on cmps01: infra/cmps01/deploy-edge-proxy.sh (routes /energy on existing :8001)
 ```
 
-s378 has no RAPL/NVML — the sidecar there returns `energyJoules: null`; real Joules require cmps01.
+Uses **Docker** + `nvidia-smi --query-gpu=index,power.draw -lms 1000` (GPUs 0+1 summed). No host `node`/`pip` install.
+
+**Network:** s378 reaches energy via the **same firewall port as vLLM** (`:8001/energy` through nginx). Direct `:9100` is localhost-only on cmps01 — no IT ticket needed.
+
+Preflight from s378: `ENERGY_SIDECAR_URL=http://cmps01.ok.ubc.ca:8001/energy npm run research:verify-energy`
+
+s378 has no GPU — **do not** start the sidecar on s378; it always returns `energyJoules: null`.
 
 Health check: `curl http://127.0.0.1:9100/health`
 

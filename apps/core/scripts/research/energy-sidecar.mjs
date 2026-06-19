@@ -27,17 +27,34 @@ export async function ensureResearchEnergyReady() {
   const base = resolveSidecarUrl();
   try {
     const res = await fetch(`${base}/health`, {
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) {
       const text = await res.text();
       throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
     }
+    const health = await res.json();
+    if (health.canMeasure === false) {
+      throw new Error(
+        `Sidecar at ${base} has no RAPL/NVML (canMeasure=false). ` +
+          "Run energy-meter on cmps01 (GPU host), not s378.",
+      );
+    }
+    const tag = `preflight-${Date.now()}`;
+    await energyMeasureStart(tag);
+    await new Promise((r) => setTimeout(r, 1500));
+    const probe = await energyMeasureStop(tag);
+    if (probe.energyJoules == null && probe.joulesTotal == null) {
+      throw new Error(
+        `Sidecar at ${base} returned null Joules on probe. ` +
+          "Deploy tools/energy-meter on cmps01 and set ENERGY_SIDECAR_URL (e.g. http://cmps01.ok.ubc.ca:8001/energy via nginx).",
+      );
+    }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     throw new Error(
-      `Energy sidecar not reachable at ${base} (${msg}). ` +
-        "Start tools/energy-meter/server.mjs on the inference host, or set RESEARCH_MEASURE_ENERGY=0.",
+      `Energy sidecar not ready at ${base} (${msg}). ` +
+        "See tools/energy-meter/README.md — cmps01 Docker deploy.",
     );
   }
 }
