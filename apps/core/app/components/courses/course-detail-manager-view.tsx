@@ -24,6 +24,9 @@ import type { CourseEnrollment } from '~/hooks/api/use-course-enrollments'
 import type { CourseTA } from '~/hooks/api/use-course-tas'
 import { canManageTopics, canManageInstructors } from '~/lib/rbac'
 import type { CourseAccess } from '~/lib/rbac'
+import { usePolicies } from '~/hooks/api/use-policies'
+import { useCourseChats } from '~/hooks/api/use-course-chats'
+import { CourseChatsPanel } from '~/components/courses/course-chats-panel'
 
 interface StaffUser {
   id: string
@@ -88,9 +91,21 @@ export function CourseDetailManagerView({
   )
   const [ragSaving, setRagSaving] = useState(false)
   const [ragSaveMsg, setRagSaveMsg] = useState<string | null>(null)
-  const canManage = canManageTopics(access)
+  const { policies } = usePolicies()
+  const canManage = canManageTopics(access, policies['tas.canManageTopics'] ?? false)
   const canManageStaff = canManageInstructors(access)
   const canManageRagSettings = access === 'admin' || access === 'instructor'
+
+  // §5d: a Chats tab visible only to roles whose course-chat-visibility flag is on.
+  const canViewChats =
+    access === 'admin' ||
+    (access === 'instructor' && (policies['instructors.canViewCourseChats'] ?? false)) ||
+    (access === 'unit' && (policies['unitAdmins.canViewUnitChats'] ?? false))
+  const {
+    chats: courseChats,
+    loading: chatsLoading,
+    error: chatsError,
+  } = useCourseChats(courseId, canViewChats)
 
   const availableInstructors = instructors.filter((p) => p.id !== course.instructorId)
   const availableTAs = taUsers.filter(
@@ -211,6 +226,7 @@ export function CourseDetailManagerView({
           <TabsTrigger value="topics">Topics</TabsTrigger>
           <TabsTrigger value="enrollments">Enrollments</TabsTrigger>
           {canManageStaff && <TabsTrigger value="staff">Staff</TabsTrigger>}
+          {canViewChats && <TabsTrigger value="chats">Chats</TabsTrigger>}
           {canManageRagSettings && <TabsTrigger value="settings">Settings</TabsTrigger>}
         </TabsList>
 
@@ -503,6 +519,24 @@ export function CourseDetailManagerView({
                   <p className="text-sm text-muted-foreground">No other TAs available to assign.</p>
                 )}
               </div>
+            </div>
+          </TabsContent>
+        )}
+
+        {canViewChats && (
+          <TabsContent value="chats" forceMount className="data-[state=inactive]:hidden flex-1 outline-none">
+            <div className="flex flex-col gap-4">
+              <CardHeader className="px-0 pt-0">
+                <CardTitle className="text-base">Course Chats</CardTitle>
+                <CardDescription className="px-0">
+                  Read-only view of student chats in this course.
+                </CardDescription>
+              </CardHeader>
+              <CourseChatsPanel
+                chats={courseChats}
+                loading={chatsLoading}
+                error={chatsError}
+              />
             </div>
           </TabsContent>
         )}

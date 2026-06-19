@@ -61,8 +61,15 @@ export function canViewTopics(access: CourseAccess, isPublished: boolean): boole
   return true
 }
 
-export function canManageTopics(access: CourseAccess): boolean {
-  return access === 'admin' || access === 'unit' || access === 'instructor'
+// A TA may manage topics only when the `tas.canManageTopics` grant is on; pass
+// the policy value in from usePolicies() so the UI mirrors backend enforcement.
+export function canManageTopics(
+  access: CourseAccess,
+  taCanManageTopics = false,
+): boolean {
+  if (access === 'admin' || access === 'unit' || access === 'instructor') return true
+  if (access === 'ta') return taCanManageTopics
+  return false
 }
 
 // §19 Cross-cutting

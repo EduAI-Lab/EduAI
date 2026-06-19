@@ -12,6 +12,7 @@ import { Textarea } from '~/components/ui/textarea'
 import { UNIT_OPTIONS, getDepartmentLabel } from '~/lib/units'
 import { DepartmentCombobox } from '~/components/courses/department-combobox'
 import type { Course, CreateCourseInput, UpdateCourseInput } from '~/hooks/api/use-courses'
+import { usePolicies } from '~/hooks/api/use-policies'
 
 interface Instructor {
   id: string
@@ -39,6 +40,10 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, instructors = [
   const [editingCourse, setEditingCourse] = useState<Course | null>(null)
   const [deletingCourse, setDeletingCourse] = useState<Course | null>(null)
   const authorizedDepts = useAuthorizedDepts(authorizedUnits)
+  const { policies } = usePolicies()
+  // §2 gate: hide the delete control when unitAdmins.canDeleteCourses is off
+  // (mirrors the deleteCourse 403). Default true preserves today's behavior.
+  const canDelete = policies['unitAdmins.canDeleteCourses'] ?? true
   const [selectedDept, setSelectedDept] = useState<string>(authorizedDepts[0]?.code ?? '')
   const [selectedTerm, setSelectedTerm] = useState<string>('Fall')
   const [selectedInstructor, setSelectedInstructor] = useState<string>('')
@@ -253,14 +258,16 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, instructors = [
                     >
                       <IconEdit className="w-4 h-4" />
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="text-destructive hover:text-destructive"
-                      onClick={(e) => { e.stopPropagation(); setDeletingCourse(course) }}
-                    >
-                      <IconTrash className="w-4 h-4" />
-                    </Button>
+                    {canDelete && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="text-destructive hover:text-destructive"
+                        onClick={(e) => { e.stopPropagation(); setDeletingCourse(course) }}
+                      >
+                        <IconTrash className="w-4 h-4" />
+                      </Button>
+                    )}
                   </div>
                 </div>
               </CardHeader>

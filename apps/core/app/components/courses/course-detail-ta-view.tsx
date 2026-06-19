@@ -8,6 +8,7 @@ import {
 } from '~/components/course-materials-upload'
 import type { CourseDetail } from '~/hooks/api/use-course-detail'
 import type { CourseTopic } from '~/hooks/api/use-course-topics'
+import { usePolicies } from '~/hooks/api/use-policies'
 
 interface Props {
   course: CourseDetail
@@ -28,6 +29,10 @@ export function CourseDetailTaView({
   materialsSuccess = null,
   onFileSelect,
 }: Props) {
+  const { policies } = usePolicies()
+  // §2 gate: a TA sees upload/delete controls only when tas.canManageMaterials
+  // is on (default true). When off, materials are read-only (mirrors backend).
+  const canManageMaterials = policies['tas.canManageMaterials'] ?? true
 
   return (
     <div className="flex flex-col gap-6">
@@ -68,13 +73,32 @@ export function CourseDetailTaView({
         </TabsContent>
 
         <TabsContent value="materials" forceMount className="data-[state=inactive]:hidden flex-1 outline-none">
-          <CourseMaterialsUpload
-            materials={materials}
-            isUploading={isUploading}
-            error={materialsError}
-            success={materialsSuccess}
-            onFileSelect={onFileSelect}
-          />
+          {canManageMaterials ? (
+            <CourseMaterialsUpload
+              materials={materials}
+              isUploading={isUploading}
+              error={materialsError}
+              success={materialsSuccess}
+              onFileSelect={onFileSelect}
+            />
+          ) : materials.length === 0 ? (
+            <Card>
+              <CardContent className="flex items-center justify-center py-8 text-muted-foreground">
+                No materials available yet.
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-2">
+              {materials.map((m) => (
+                <Card key={m.id}>
+                  <CardContent className="flex items-center gap-2 py-3">
+                    <span className="text-sm font-medium">{m.title}</span>
+                    <Badge variant="outline" className="text-xs ml-auto">{m.mimeType}</Badge>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="topics" forceMount className="data-[state=inactive]:hidden flex-1 outline-none">

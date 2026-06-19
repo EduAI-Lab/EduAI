@@ -5,6 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs'
 import type { CourseDetail } from '~/hooks/api/use-course-detail'
 import type { CourseMaterial } from '~/hooks/api/use-course-materials'
 import type { CourseTopic } from '~/hooks/api/use-course-topics'
+import { usePolicies } from '~/hooks/api/use-policies'
 
 interface Props {
   course: CourseDetail
@@ -13,6 +14,10 @@ interface Props {
 }
 
 export function CourseDetailStudentView({ course, materials, topics }: Props) {
+  const { policies } = usePolicies()
+  // §2 gate: hide the materials section when students.canViewMaterials is off
+  // (mirrors the loader 403). Default true preserves today's behavior.
+  const canViewMaterials = policies['students.canViewMaterials'] ?? true
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -30,7 +35,7 @@ export function CourseDetailStudentView({ course, materials, topics }: Props) {
       <Tabs defaultValue="overview">
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="materials">Materials</TabsTrigger>
+          {canViewMaterials && <TabsTrigger value="materials">Materials</TabsTrigger>}
           {/* No Topics management tab, no Enrollments tab for students — §8, §6 */}
         </TabsList>
 
@@ -56,6 +61,7 @@ export function CourseDetailStudentView({ course, materials, topics }: Props) {
           </Card>
         </TabsContent>
 
+        {canViewMaterials && (
         <TabsContent value="materials" forceMount className="data-[state=inactive]:hidden flex-1 outline-none">
           {/* Read-only — no upload (§7) */}
           {materials.length === 0 ? (
@@ -78,6 +84,7 @@ export function CourseDetailStudentView({ course, materials, topics }: Props) {
             </div>
           )}
         </TabsContent>
+        )}
       </Tabs>
     </div>
   )
