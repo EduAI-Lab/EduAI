@@ -164,90 +164,68 @@ function RowActions({
   row,
   currentUserId,
   onEdit,
-  onDelete,
+  onRequestDelete,
   onToggleActive,
   onViewChatHistory,
 }: {
   row: Row<User>;
   currentUserId: string;
   onEdit: (user: User) => void;
-  onDelete: (id: string) => void;
+  onRequestDelete: (user: User) => void;
   onToggleActive: (user: User) => void;
   onViewChatHistory?: (user: User) => void;
 }) {
   const user = row.original;
   const isCurrentUser = user.id === currentUserId;
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-
-  const handleConfirmDelete = () => {
-    onDelete(user.id);
-    setIsDeleteDialogOpen(false);
-  };
 
   return (
-    <>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-8 w-8 p-0"
-            aria-label="Open menu"
-          >
-            <IconDots className="h-4 w-4" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={() => onEdit(user)}>
-            <IconEdit className="mr-2 h-4 w-4" />
-            Edit
+    // modal={false} so Radix does not lock `body { pointer-events: none }` while
+    // the menu is open. Without it, opening the table-level AlertDialog as this
+    // menu closes leaves the body pointer-events lock stuck → page unclickable.
+    <DropdownMenu modal={false}>
+      <DropdownMenuTrigger asChild>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-8 w-8 p-0"
+          aria-label="Open menu"
+        >
+          <IconDots className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={() => onEdit(user)}>
+          <IconEdit className="mr-2 h-4 w-4" />
+          Edit
+        </DropdownMenuItem>
+        {onViewChatHistory && (
+          <DropdownMenuItem onClick={() => onViewChatHistory(user)}>
+            <IconMessageCircle className="mr-2 h-4 w-4" />
+            View chat history
           </DropdownMenuItem>
-          {onViewChatHistory && (
-            <DropdownMenuItem onClick={() => onViewChatHistory(user)}>
-              <IconMessageCircle className="mr-2 h-4 w-4" />
-              View chat history
-            </DropdownMenuItem>
+        )}
+        <DropdownMenuItem
+          onClick={() => onToggleActive(user)}
+          disabled={isCurrentUser}
+        >
+          {user.isActive ? (
+            <IconUserOff className="mr-2 h-4 w-4" />
+          ) : (
+            <IconUserCheck className="mr-2 h-4 w-4" />
           )}
-          <DropdownMenuItem
-            onClick={() => onToggleActive(user)}
-            disabled={isCurrentUser}
-          >
-            {user.isActive ? (
-              <IconUserOff className="mr-2 h-4 w-4" />
-            ) : (
-              <IconUserCheck className="mr-2 h-4 w-4" />
-            )}
-            {user.isActive ? "Deactivate" : "Activate"}
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            onClick={() => setIsDeleteDialogOpen(true)}
-            disabled={isCurrentUser}
-            className="text-destructive focus:text-destructive"
-          >
-            <IconTrash className="mr-2 h-4 w-4" />
-            Delete
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-
-      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete user?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This permanently deletes {user.name || user.email} and all their data. This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmDelete}>
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
+          {user.isActive ? "Deactivate" : "Activate"}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          onClick={() => onRequestDelete(user)}
+          disabled={isCurrentUser}
+          className="text-destructive focus:text-destructive"
+        >
+          <IconTrash className="mr-2 h-4 w-4" />
+          Delete
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -261,6 +239,7 @@ export function UsersTable({
   onCreateUser
 }: UsersTableProps) {
   const id = useId();
+  const [userToDelete, setUserToDelete] = useState<User | null>(null);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [pagination, setPagination] = useState<PaginationState>({
@@ -388,7 +367,7 @@ export function UsersTable({
             row={row}
             currentUserId={currentUserId}
             onEdit={onEdit}
-            onDelete={onDelete}
+            onRequestDelete={setUserToDelete}
             onToggleActive={onToggleActive}
             onViewChatHistory={onViewChatHistory}
           />
@@ -934,6 +913,33 @@ export function UsersTable({
           </Pagination>
         </div>
       </div>
+
+      {/* Single-user delete dialog — rendered outside the row DropdownMenu so
+          Radix focus management doesn't conflict with the menu's portal. */}
+      <AlertDialog open={!!userToDelete} onOpenChange={(open) => { if (!open) setUserToDelete(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete{" "}
+              {userToDelete?.name || userToDelete?.email} and all their data.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (userToDelete) {
+                  onDelete(userToDelete.id);
+                  setUserToDelete(null);
+                }
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
