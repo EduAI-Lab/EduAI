@@ -70,12 +70,6 @@ export const POLICY_FLAGS = {
       "Allow users with the STUDENT role to upload course materials in courses they are enrolled in.",
     default: false,
   },
-  "students.canUseWebTool": {
-    label: "Students can use web tools in chat",
-    description:
-      "Allow students to use web search/fetch in chat. Requires the global web tools master switch to also be on.",
-    default: false,
-  },
   "chat.webToolsEnabled": {
     label: "Web search tools enabled",
     description:

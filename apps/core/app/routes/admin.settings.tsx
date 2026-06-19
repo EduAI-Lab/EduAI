@@ -24,6 +24,50 @@ import {
 import { usePolicies } from '~/hooks/api/use-policies'
 import { auth } from '~/lib/auth/server'
 
+/**
+ * Permission groups for the admin settings UI, in display order. Each policy
+ * flag is bucketed by its key prefix (`instructors.*`, `students.*`, …) into the
+ * first group whose `match` passes — so `general` (match-all) is the catch-all
+ * for non-role-scoped switches like `chat.*` and `auth.*`.
+ */
+const PERMISSION_GROUPS: {
+  id: string
+  title: string
+  description: string
+  match: (prefix: string) => boolean
+}[] = [
+  {
+    id: 'instructors',
+    title: 'Instructors',
+    description: 'What users with the INSTRUCTOR role may do.',
+    match: (p) => p === 'instructors',
+  },
+  {
+    id: 'students',
+    title: 'Students',
+    description: 'What users with the STUDENT role may do.',
+    match: (p) => p === 'students',
+  },
+  {
+    id: 'tas',
+    title: 'Teaching Assistants',
+    description: 'What users with the TA role may do.',
+    match: (p) => p === 'tas',
+  },
+  {
+    id: 'unitAdmins',
+    title: 'Unit Admins',
+    description: 'What users with the UNIT_ADMIN role may do.',
+    match: (p) => p === 'unitAdmins',
+  },
+  {
+    id: 'general',
+    title: 'General',
+    description: 'Platform-wide switches not scoped to a single role.',
+    match: () => true,
+  },
+]
+
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request)
 
@@ -43,6 +87,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
 export default function PermissionsPage() {
   const { user } = useLoaderData<typeof loader>()
   const { policies, definitions, isLoading, error, setPolicy } = usePolicies()
+
+  // Bucket each flag into the first group whose `match` passes, preserving the
+  // PERMISSION_GROUPS order; drop empty groups so we never render a stray card.
+  const groups = PERMISSION_GROUPS.map((group) => ({
+    ...group,
+    items: definitions.filter(
+      (def) =>
+        PERMISSION_GROUPS.find((g) => g.match(def.key.split('.')[0]))?.id === group.id,
+    ),
+  })).filter((group) => group.items.length > 0)
 
   return (
     <SidebarProvider
@@ -86,35 +140,43 @@ export default function PermissionsPage() {
             <p className="text-destructive text-sm" role="alert">{error}</p>
           ) : null}
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Configurable policies</CardTitle>
-              <CardDescription>
-                These flags govern what each role may do in Core and the connected apps.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-6">
-              {isLoading ? (
+          {isLoading ? (
+            <Card>
+              <CardContent className="pt-6">
                 <p className="text-muted-foreground text-sm">Loading…</p>
-              ) : definitions.length === 0 ? (
+              </CardContent>
+            </Card>
+          ) : groups.length === 0 ? (
+            <Card>
+              <CardContent className="pt-6">
                 <p className="text-muted-foreground text-sm">No configurable policies.</p>
-              ) : (
-                definitions.map((def) => (
-                  <div key={def.key} className="flex items-start justify-between gap-4">
-                    <div className="space-y-1">
-                      <Label htmlFor={def.key} className="text-base">{def.label}</Label>
-                      <p className="text-muted-foreground text-sm">{def.description}</p>
+              </CardContent>
+            </Card>
+          ) : (
+            groups.map((group) => (
+              <Card key={group.id}>
+                <CardHeader>
+                  <CardTitle>{group.title}</CardTitle>
+                  <CardDescription>{group.description}</CardDescription>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-6">
+                  {group.items.map((def) => (
+                    <div key={def.key} className="flex items-start justify-between gap-4">
+                      <div className="space-y-1">
+                        <Label htmlFor={def.key} className="text-base">{def.label}</Label>
+                        <p className="text-muted-foreground text-sm">{def.description}</p>
+                      </div>
+                      <Switch
+                        id={def.key}
+                        checked={policies[def.key] ?? def.default}
+                        onCheckedChange={(value) => setPolicy(def.key, value)}
+                      />
                     </div>
-                    <Switch
-                      id={def.key}
-                      checked={policies[def.key] ?? def.default}
-                      onCheckedChange={(value) => setPolicy(def.key, value)}
-                    />
-                  </div>
-                ))
-              )}
-            </CardContent>
-          </Card>
+                  ))}
+                </CardContent>
+              </Card>
+            ))
+          )}
         </div>
       </SidebarInset>
     </SidebarProvider>

@@ -666,14 +666,10 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    // Master switch (chat.webToolsEnabled) gates web tools globally; the
-    // students.canUseWebTool grant layers under it — a student sees web tools
-    // only when both are on, non-students whenever the master is on. A student
-    // silently losing the tool is not a 403, so no logPolicyDenial here.
-    const webMaster = await getPolicy("chat.webToolsEnabled");
-    const webToolsEnabled =
-      webMaster &&
-      (courseAccess?.level !== "student" || (await getPolicy("students.canUseWebTool")));
+    // Master switch (chat.webToolsEnabled) gates web tools globally for every
+    // role — when on, web tools are available to all chat users; when off they
+    // are never registered for anyone.
+    const webToolsEnabled = await getPolicy("chat.webToolsEnabled");
     const tools = buildChatToolRegistry({ effectiveCourseId, webToolsEnabled });
 
     const supportsTools = await modelSupportsTools(model);

@@ -6,6 +6,7 @@ import { getCourseTA, addCourseTA, removeCourseTA } from "~/lib/courses/tas.serv
 import prisma from "~/lib/prisma.server";
 import { resolveCourseAccess } from "~/lib/rbac/resolve-course-access.server";
 import { canManageInstructors } from "~/lib/rbac/permissions";
+import { getPolicy, logPolicyDenial } from "~/lib/policy.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
@@ -55,7 +56,23 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   };
   const access = await resolveCourseAccess(rbacUser, course);
 
-  if (!canManageInstructors(access)) {
+  // ADMIN / UNIT_ADMIN may always manage TAs. An INSTRUCTOR who owns the course
+  // may also manage TAs when `instructors.canManageEnrollments` is on (mirrors
+  // the enrollments endpoint). Other roles are forbidden.
+  const canManageTAs =
+    canManageInstructors(access) ||
+    (access === "instructor" &&
+      (await getPolicy("instructors.canManageEnrollments")));
+  if (!canManageTAs) {
+    if (access === "instructor") {
+      logPolicyDenial({
+        policyKey: "instructors.canManageEnrollments",
+        userId: session.user.id,
+        role: session.user.role,
+        action: "courseTA.manage",
+        courseId,
+      });
+    }
     return new Response(JSON.stringify({ error: "Forbidden" }), {
       status: 403,
       headers: { "Content-Type": "application/json" },
@@ -117,7 +134,23 @@ export async function action({ request, params }: ActionFunctionArgs) {
   };
   const access = await resolveCourseAccess(rbacUser, course);
 
-  if (!canManageInstructors(access)) {
+  // ADMIN / UNIT_ADMIN may always manage TAs. An INSTRUCTOR who owns the course
+  // may also manage TAs when `instructors.canManageEnrollments` is on (mirrors
+  // the enrollments endpoint). Other roles are forbidden.
+  const canManageTAs =
+    canManageInstructors(access) ||
+    (access === "instructor" &&
+      (await getPolicy("instructors.canManageEnrollments")));
+  if (!canManageTAs) {
+    if (access === "instructor") {
+      logPolicyDenial({
+        policyKey: "instructors.canManageEnrollments",
+        userId: session.user.id,
+        role: session.user.role,
+        action: "courseTA.manage",
+        courseId,
+      });
+    }
     return new Response(JSON.stringify({ error: "Forbidden" }), {
       status: 403,
       headers: { "Content-Type": "application/json" },

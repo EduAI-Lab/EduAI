@@ -19,6 +19,34 @@ function json(status: number, body: unknown) {
 }
 
 /**
+ * Structured audit line for a successful course-material addition. Records who
+ * added it (role/email/name) and what was added (material id/title/type/size).
+ * Mirrors the `logPolicyDenial` JSON shape so both feed the same log pipeline.
+ */
+function logMaterialAdded(input: {
+  user: Session['user'];
+  role: AccessLevel['level'];
+  courseId: string;
+  material: { id: string; title: string; mimeType: string; fileSize: number };
+}): void {
+  console.info(
+    JSON.stringify({
+      event: 'material_added',
+      role: input.role,
+      userId: input.user.id,
+      email: input.user.email,
+      name: input.user.name,
+      courseId: input.courseId,
+      materialId: input.material.id,
+      title: input.material.title,
+      mimeType: input.material.mimeType,
+      fileSize: input.material.fileSize,
+      at: new Date().toISOString(),
+    }),
+  );
+}
+
+/**
  * Shared auth resolution for all material routes: session + §7 course access.
  * Returns a Response on failure, or the session user + access on success.
  */
@@ -86,7 +114,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
         });
         return json(403, { error: 'Forbidden' });
       }
-      return uploadMaterial(request, courseId, user.id);
+      return uploadMaterial(request, courseId, user, access.level);
     }
 
     case 'DELETE': {
@@ -134,7 +162,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 }
 
-async function uploadMaterial(request: Request, courseId: string, userId: string) {
+async function uploadMaterial(
+  request: Request,
+  courseId: string,
+  user: Session['user'],
+  role: AccessLevel['level'],
+) {
   const formData = await request.formData();
   const file = formData.get('file') as File;
   const apiKeys = JSON.parse(formData.get('apiKeys') as string);
@@ -166,9 +199,11 @@ async function uploadMaterial(request: Request, courseId: string, userId: string
         checksum: fileInfo.checksum,
         rawText: fileInfo.content,
         status: 'PROCESSING',
-        uploadedBy: userId, // #294: owner FK for TA own-only delete (§7)
+        uploadedBy: user.id, // #294: owner FK for TA own-only delete (§7)
       },
     });
+
+    logMaterialAdded({ user, role, courseId, material });
 
     try {
       await processMaterialEmbeddings(material.id, fileInfo.content);

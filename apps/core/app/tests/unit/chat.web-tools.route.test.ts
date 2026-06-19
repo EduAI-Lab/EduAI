@@ -95,7 +95,7 @@ function webHeader(res: Response) {
   return res.headers.get("X-Web-Tools-Enabled");
 }
 
-describe("chat.webToolsEnabled master + students.canUseWebTool grant", () => {
+describe("chat.webToolsEnabled master switch", () => {
   it("web tools absent for an instructor when the master is off", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } } as never);
     policy({ "chat.webToolsEnabled": false });
@@ -112,7 +112,7 @@ describe("chat.webToolsEnabled master + students.canUseWebTool grant", () => {
     expect(webHeader(res)).toBe("1");
   });
 
-  it("web tools absent for a student when the master is on but the student grant is off", async () => {
+  it("web tools absent for a student when the master is off", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "s1", role: "STUDENT" } } as never);
     vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
       course: { id: "c1", isPublished: true } as never,
@@ -121,13 +121,13 @@ describe("chat.webToolsEnabled master + students.canUseWebTool grant", () => {
     vi.mocked(prisma.chat.findFirst).mockResolvedValue({
       id: CHAT_ID, userId: "s1", adhdAssist: false, systemPrompt: null,
     } as never);
-    policy({ "chat.webToolsEnabled": true, "students.canUseWebTool": false });
+    policy({ "chat.webToolsEnabled": false });
     const res = await action(makeArgs(baseBody({ courseId: "c1" })));
     expect(res.status).toBe(200);
     expect(webHeader(res)).toBe("0");
   });
 
-  it("web tools present for a student when both the master and the student grant are on", async () => {
+  it("web tools present for a student when the master is on (students follow the master)", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "s1", role: "STUDENT" } } as never);
     vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
       course: { id: "c1", isPublished: true } as never,
@@ -136,7 +136,7 @@ describe("chat.webToolsEnabled master + students.canUseWebTool grant", () => {
     vi.mocked(prisma.chat.findFirst).mockResolvedValue({
       id: CHAT_ID, userId: "s1", adhdAssist: false, systemPrompt: null,
     } as never);
-    policy({ "chat.webToolsEnabled": true, "students.canUseWebTool": true });
+    policy({ "chat.webToolsEnabled": true });
     const res = await action(makeArgs(baseBody({ courseId: "c1" })));
     expect(res.status).toBe(200);
     expect(webHeader(res)).toBe("1");
