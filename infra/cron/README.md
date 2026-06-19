@@ -3,6 +3,8 @@
 Bash scripts for nightly PostgreSQL backups of all three EduAI databases.
 See `docs/implementations/EduAI_CronJob_DataLifecycle_Spec.md` for the full spec.
 
+**Local testing (Windows / WSL / macOS):** [`docs/implementations/server-backup-cron-local-testing.md`](../../docs/implementations/server-backup-cron-local-testing.md) — use `bash infra/cron/dry-run-local.sh all` from repo root.
+
 ## Scripts
 
 | Script | UTC Schedule | Purpose |
