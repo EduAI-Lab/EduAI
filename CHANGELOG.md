@@ -54,6 +54,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] tests: Add `canvas-materials.server.test.ts` and `CanvasMaterialSyncDialog.test.tsx` for Canvas file discover/import and sync dialog UX. (#658, @GlowyBlack, 2026-06-17)
 - [core] tests: Update `canvas.integration.test.ts` reassignment case to use a unique student number (avoids `studentIdLookup` collision with seeded data). (#578, @GlowyBlack, 2026-06-15)
 - [core] fix: Stop frontend from retransmitting the full conversation history on every chat request by sending only the newest user message and associated metadata. (#487, @YibingW, 2026-06-15)
+- [ai-tutor] fix: Route TA promotion through Core — `PATCH /admin/courses/:courseId/enrollments/:userId/role` now calls Core's enrollment-role endpoint before updating locally, keeping Core as the authoritative source; remove the band-aid `local.role !== 'TA'` skip from `syncCourseEnrollments` so Core-initiated TA demotions propagate on the next sync. (#674, @evanbones, 2026-06-19)
 
 ---
 
