@@ -28,7 +28,6 @@ export interface ChatTranscript {
     courseName: string | null;
     ownerId: string;
     ownerName: string | null;
-    ownerEmail: string | null;
     updatedAt: string;
   };
   /** AI-SDK `Message`-shaped objects, ordered. Seed `useChat` or render read-only. */
