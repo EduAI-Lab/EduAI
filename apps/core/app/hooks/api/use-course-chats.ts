@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 
+import { apiFetch } from '~/hooks/api/config'
+
 /** Chat metadata as returned by the course/unit chat-visibility endpoints (§5). */
 export interface CourseChatSummary {
   id: string
@@ -44,9 +46,9 @@ export function useCourseChats(courseId: string | undefined, enabled = true) {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`/api/courses/${courseId}/chats`)
-      if (!res.ok) throw new Error(await res.text())
-      const data = await res.json()
+      const data = await apiFetch<{ chats: CourseChatSummary[] }>(
+        `/api/courses/${courseId}/chats`,
+      )
       setChats(data.chats ?? [])
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to fetch chats')
@@ -73,9 +75,9 @@ export function useUnitChats(department: string | undefined, enabled = true) {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`/api/units/${encodeURIComponent(department)}/chats`)
-      if (!res.ok) throw new Error(await res.text())
-      const data = await res.json()
+      const data = await apiFetch<{ chats: UnitChatSummary[] }>(
+        `/api/units/${encodeURIComponent(department)}/chats`,
+      )
       setChats(data.chats ?? [])
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to fetch chats')
@@ -107,9 +109,7 @@ export function useChatDetail(chatId: string | null) {
     setError(null)
     void (async () => {
       try {
-        const res = await fetch(`/api/chats/${chatId}`)
-        if (!res.ok) throw new Error(await res.text())
-        const data = await res.json()
+        const data = await apiFetch<ChatDetail>(`/api/chats/${chatId}`)
         if (!cancelled) setChat(data)
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to fetch chat')

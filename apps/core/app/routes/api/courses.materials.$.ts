@@ -81,15 +81,11 @@ export async function action({ request, params }: ActionFunctionArgs) {
       // §7/§19: a student may upload only in a PUBLISHED course — mirror the
       // list gate (loader 403s students in unpublished courses) so student
       // content can't be seeded into a draft course's RAG corpus. Higher ranks
-      // legitimately work in unpublished courses.
+      // legitimately work in unpublished courses. This is a publish-state gate,
+      // NOT a policy-flag denial: the `students.canUploadMaterials` grant may be
+      // on, so don't mislabel the audit trail with it — return a distinct 403.
       if (access.level === 'student' && !isPublished) {
-        return denyByPolicy({
-          request,
-          policyKey: 'students.canUploadMaterials',
-          user,
-          action: 'material.upload',
-          courseId,
-        });
+        return json(403, { error: 'COURSE_NOT_PUBLISHED' });
       }
       // Gate: a TA is allowed by default; deny only when the gate is off.
       if (access.level === 'ta' && !(await getPolicy('tas.canManageMaterials'))) {

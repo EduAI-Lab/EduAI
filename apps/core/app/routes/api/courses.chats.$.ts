@@ -16,15 +16,10 @@ import type { LoaderFunctionArgs } from "react-router";
 
 import { auth } from "~/lib/auth/server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { jsonResponse as json } from "~/lib/api/json-response.server";
 import { courseChatViewPolicyKey } from "~/lib/rbac/permissions";
 import { getPolicy, denyByPolicy } from "~/lib/policy.server";
 import prisma from "~/lib/prisma.server";
-
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const courseId = params.courseId;
