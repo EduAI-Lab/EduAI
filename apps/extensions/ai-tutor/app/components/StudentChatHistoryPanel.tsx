@@ -3,7 +3,6 @@ import {
   IconLoader2,
   IconMessageCircle,
   IconPlus,
-  IconTrash,
 } from '@tabler/icons-react';
 import {
   Button,
@@ -14,17 +13,16 @@ import {
   SheetTitle,
 } from '@eduai/ui';
 import {
-  deleteChatSession,
   listChatSessions,
-  type StoredChatSession,
+  type ApiChatSession,
 } from '~/lib/student-chat-history';
 
 type StudentChatHistoryPanelProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   activityId: number | undefined;
-  activeSessionId: string | null;
-  onSelect: (session: StoredChatSession) => void;
+  activeChatId: string | null;
+  onSelect: (session: ApiChatSession) => void;
   onNewChat: () => void;
 };
 
@@ -40,7 +38,7 @@ function relativeTime(iso: string): string {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-const TAB_LABELS: Record<string, string> = {
+const MODE_LABELS: Record<string, string> = {
   teach: 'Teach',
   guide: 'Guide',
   custom: 'Custom',
@@ -50,33 +48,30 @@ export function StudentChatHistoryPanel({
   open,
   onOpenChange,
   activityId,
-  activeSessionId,
+  activeChatId,
   onSelect,
   onNewChat,
 }: StudentChatHistoryPanelProps) {
-  const [sessions, setSessions] = useState<StoredChatSession[]>([]);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<ApiChatSession[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  const refresh = useCallback(() => {
+  const refresh = useCallback(async () => {
     if (!activityId) {
       setSessions([]);
       return;
     }
-    setSessions(listChatSessions(activityId));
+    setLoading(true);
+    try {
+      const rows = await listChatSessions(activityId);
+      setSessions(rows);
+    } finally {
+      setLoading(false);
+    }
   }, [activityId]);
 
   useEffect(() => {
-    if (open) refresh();
+    if (open) void refresh();
   }, [open, refresh]);
-
-  const handleDelete = (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    setDeletingId(id);
-    deleteChatSession(id);
-    if (id === activeSessionId) onNewChat();
-    refresh();
-    setDeletingId(null);
-  };
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -107,6 +102,10 @@ export function StudentChatHistoryPanel({
             <div className="px-5 py-10 text-center text-[13px] text-muted-foreground">
               Open an activity to view chat history.
             </div>
+          ) : loading ? (
+            <div className="flex items-center justify-center py-16">
+              <IconLoader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
           ) : sessions.length === 0 ? (
             <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
               <div
@@ -123,10 +122,10 @@ export function StudentChatHistoryPanel({
           ) : (
             <div className="flex flex-col">
               {sessions.map((session) => {
-                const isActive = session.id === activeSessionId;
+                const isActive = session.chatId === activeChatId;
                 return (
                   <button
-                    key={session.id}
+                    key={session.chatId}
                     type="button"
                     onClick={() => {
                       onSelect(session);
@@ -138,34 +137,14 @@ export function StudentChatHistoryPanel({
                   >
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[13px] font-medium text-foreground">
-                        {session.preview}
+                        {MODE_LABELS[session.mode] ?? session.mode} mode
                       </p>
                       <div className="mt-1 flex items-center gap-2">
-                        <span className="text-[10px] font-semibold text-primary-text">
-                          {TAB_LABELS[session.tab] ?? session.tab}
-                        </span>
                         <span className="text-[11px] text-muted-foreground">
                           {relativeTime(session.updatedAt)}
                         </span>
-                        <span className="text-[11px] text-muted-foreground">
-                          · {session.messages.length} msg
-                          {session.messages.length === 1 ? '' : 's'}
-                        </span>
                       </div>
                     </div>
-                    <span
-                      role="button"
-                      tabIndex={-1}
-                      aria-label="Delete conversation"
-                      onClick={(e) => handleDelete(e, session.id)}
-                      className="flex-shrink-0 rounded-md p-1.5 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
-                    >
-                      {deletingId === session.id ? (
-                        <IconLoader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <IconTrash className="h-3.5 w-3.5" />
-                      )}
-                    </span>
                   </button>
                 );
               })}
