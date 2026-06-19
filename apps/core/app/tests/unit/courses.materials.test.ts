@@ -32,12 +32,23 @@ vi.mock("~/lib/ai/file-processing", () => ({
   processUploadedFile: vi.fn(),
 }));
 
+// getPolicy resolves to each flag's real code default unless a test overrides it.
+vi.mock("~/lib/policy.server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/policy.server")>();
+  return {
+    ...actual,
+    getPolicy: vi.fn(async (key: keyof typeof actual.POLICY_FLAGS) => actual.POLICY_FLAGS[key].default),
+    logPolicyDenial: vi.fn(),
+  };
+});
+
 import { loader, action } from "~/routes/api/courses.materials.$";
 import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import prisma from "~/lib/prisma.server";
 import { processUploadedFile } from "~/lib/ai/file-processing";
+import { getPolicy, POLICY_FLAGS } from "~/lib/policy.server";
 
 const COURSE_ID = "course-1";
 const COURSE = { id: COURSE_ID, isPublished: true, department: null };
@@ -101,6 +112,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(enforceAdminIfApiKey).mockResolvedValue({ response: null, session: null });
   mockAccess({ level: "instructor", rank: 2 });
+  // Reset to code defaults so per-test overrides don't leak across tests.
+  vi.mocked(getPolicy).mockImplementation(async (key) => POLICY_FLAGS[key].default);
 });
 
 // ---------------------------------------------------------------------------
@@ -152,6 +165,23 @@ describe("GET /api/courses/:courseId/materials loader", () => {
     const res = await loader(makeArgs("GET"));
     expect(res.status).toBe(200);
   });
+
+  it("returns 403 for a student when students.canViewMaterials is off", async () => {
+    mockSession("STUDENT");
+    mockAccess({ level: "student", rank: 0 });
+    vi.mocked(getPolicy).mockResolvedValue(false);
+    const res = await loader(makeArgs("GET"));
+    expect(res.status).toBe(403);
+    expect(getPolicy).toHaveBeenCalledWith("students.canViewMaterials");
+  });
+
+  it("returns 200 for a student when students.canViewMaterials is on (default)", async () => {
+    mockSession("STUDENT");
+    mockAccess({ level: "student", rank: 0 });
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([]);
+    const res = await loader(makeArgs("GET"));
+    expect(res.status).toBe(200);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -189,6 +219,30 @@ describe("POST /api/courses/:courseId/materials action", () => {
     vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
     vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-1" } as never);
     vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "mat-1" } as never);
+    const res = await action(stubUploadArgs());
+    expect(res.status).toBe(200);
+  });
+
+  it("returns 403 for a TA upload when tas.canManageMaterials is off", async () => {
+    mockSession("STUDENT", "ta-user");
+    mockAccess({ level: "ta", rank: 1 });
+    vi.mocked(getPolicy).mockResolvedValue(false);
+    const res = await action(makeArgs("POST"));
+    expect(res.status).toBe(403);
+    expect(getPolicy).toHaveBeenCalledWith("tas.canManageMaterials");
+    expect(prisma.courseMaterial.create).not.toHaveBeenCalled();
+  });
+
+  it("admits a STUDENT upload when students.canUploadMaterials is on", async () => {
+    mockSession("STUDENT");
+    mockAccess({ level: "student", rank: 0 });
+    vi.mocked(getPolicy).mockResolvedValue(true);
+    vi.mocked(processUploadedFile).mockResolvedValue({
+      checksum: "c2", title: "f.pdf", mimeType: "application/pdf", fileSize: 1, content: "x",
+    } as never);
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
+    vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-2" } as never);
+    vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "mat-2" } as never);
     const res = await action(stubUploadArgs());
     expect(res.status).toBe(200);
   });
@@ -303,5 +357,19 @@ describe("DELETE /api/courses/:courseId/materials/:materialId action", () => {
     } as never);
     const res = await action(makeDeleteArgs("mat-1"));
     expect(res.status).toBe(403);
+  });
+
+  it("returns 403 for a TA deleting their OWN material when tas.canManageMaterials is off", async () => {
+    mockSession("STUDENT", "ta-user");
+    mockAccess({ level: "ta", rank: 1 });
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "mat-1",
+      uploadedBy: "ta-user",
+    } as never);
+    vi.mocked(getPolicy).mockResolvedValue(false);
+    const res = await action(makeDeleteArgs("mat-1"));
+    expect(res.status).toBe(403);
+    expect(getPolicy).toHaveBeenCalledWith("tas.canManageMaterials");
+    expect(prisma.courseMaterial.delete).not.toHaveBeenCalled();
   });
 });

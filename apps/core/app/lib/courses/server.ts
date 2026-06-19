@@ -7,7 +7,7 @@ import {
   getAuthorizedUnits,
   resolveCourseAccessWithCourse,
 } from "~/lib/auth/course-access.server";
-import { getPolicy } from "~/lib/policy.server";
+import { getPolicy, logPolicyDenial } from "~/lib/policy.server";
 import {
   CreateCourseSchema,
   UpdateCourseSchema,
@@ -126,6 +126,16 @@ export async function createCourse(request: Request) {
     ["ADMIN", "UNIT_ADMIN"].includes(role) ||
     (role === "INSTRUCTOR" && (await getPolicy("instructors.canCreateCourses")));
   if (!session?.user || !canCreate) {
+    // §4: log uniformly when an INSTRUCTOR is denied by the policy flag. The
+    // pure-401 (no session) case stays unlogged.
+    if (session?.user && role === "INSTRUCTOR") {
+      logPolicyDenial({
+        policyKey: "instructors.canCreateCourses",
+        userId: session.user.id,
+        role,
+        action: "course.create",
+      });
+    }
     return new Response(JSON.stringify({ error: "Forbidden" }), {
       status: 403,
       headers: { "Content-Type": "application/json" } as const,
@@ -290,6 +300,37 @@ export async function updateCourse(request: Request, courseId: string) {
     });
   }
 
+  // TA carve-out (tas.canSetAiInstructions, grant): a TA may PATCH the
+  // `aiInstructions` field ONLY, and only when the flag is on. Any other field
+  // in the payload — or the flag being off — keeps the existing 403, so the
+  // grant cannot be ridden into editing the rest of the course.
+  if (access && access.level === "ta") {
+    const taCanSetAi = await getPolicy("tas.canSetAiInstructions");
+    const keys = Object.keys(result.data);
+    const aiInstructionsOnly = keys.length > 0 && keys.every((key) => key === "aiInstructions");
+    if (!taCanSetAi || !aiInstructionsOnly) {
+      logPolicyDenial({
+        policyKey: "tas.canSetAiInstructions",
+        userId: user.id,
+        role: user.role,
+        action: "course.update",
+        courseId,
+      });
+      return new Response(JSON.stringify({ error: "Forbidden" }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" } as const,
+      });
+    }
+    const updated = await prisma.course.update({
+      where: { id: courseId },
+      data: { aiInstructions: result.data.aiInstructions },
+    });
+    return new Response(JSON.stringify(updated), {
+      status: 200,
+      headers: { "Content-Type": "application/json" } as const,
+    });
+  }
+
   if (!access || access.rank < 2) {
     return new Response(JSON.stringify({ error: "Forbidden" }), {
       status: 403,
@@ -382,6 +423,38 @@ export async function deleteCourse(request: Request, courseId: string) {
     });
   }
 
+  // Policy gate: INSTRUCTOR delete is conditional; ADMIN/UNIT_ADMIN unaffected
+  // by this flag (the service-key/enforceAdminIfApiKey path never reaches here
+  // as an instructor).
+  if (access.level === "instructor" && !(await getPolicy("instructors.canDeleteCourses"))) {
+    logPolicyDenial({
+      policyKey: "instructors.canDeleteCourses",
+      userId: session.user.id,
+      role: session.user.role,
+      action: "course.delete",
+      courseId,
+    });
+    return new Response(JSON.stringify({ error: "Forbidden" }), {
+      status: 403,
+      headers: { "Content-Type": "application/json" } as const,
+    });
+  }
+
+  // Policy gate: UNIT_ADMIN delete is conditional; ADMIN is always allowed.
+  if (access.level === "unit" && !(await getPolicy("unitAdmins.canDeleteCourses"))) {
+    logPolicyDenial({
+      policyKey: "unitAdmins.canDeleteCourses",
+      userId: session.user.id,
+      role: session.user.role,
+      action: "course.delete",
+      courseId,
+    });
+    return new Response(JSON.stringify({ error: "Forbidden" }), {
+      status: 403,
+      headers: { "Content-Type": "application/json" } as const,
+    });
+  }
+
   await prisma.course.update({
     where: { id: courseId },
     data: { deletedAt: new Date() },
@@ -444,6 +517,22 @@ export async function setPublishState(request: Request, courseId: string, publis
   }
 
   if (!access || access.rank < 2) {
+    return new Response(JSON.stringify({ error: "Forbidden" }), {
+      status: 403,
+      headers: { "Content-Type": "application/json" } as const,
+    });
+  }
+
+  // Policy gate: an INSTRUCTOR may publish only when the flag is on; higher
+  // ranks (ADMIN / UNIT_ADMIN) are always allowed.
+  if (access.level === "instructor" && !(await getPolicy("instructors.canPublishCourses"))) {
+    logPolicyDenial({
+      policyKey: "instructors.canPublishCourses",
+      userId: session.user.id,
+      role: session.user.role,
+      action: "course.publish",
+      courseId,
+    });
     return new Response(JSON.stringify({ error: "Forbidden" }), {
       status: 403,
       headers: { "Content-Type": "application/json" } as const,

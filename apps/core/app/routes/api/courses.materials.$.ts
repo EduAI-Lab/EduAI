@@ -8,6 +8,7 @@ import {
   resolveCourseAccessWithCourse,
   type AccessLevel,
 } from '~/lib/auth/course-access.server';
+import { getPolicy, logPolicyDenial } from '~/lib/policy.server';
 import type { Session } from '~/lib/auth/server';
 
 function json(status: number, body: unknown) {
@@ -60,8 +61,29 @@ export async function action({ request, params }: ActionFunctionArgs) {
   switch (request.method) {
     case 'POST': {
       // §7: upload is ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C) / TA(C).
-      // Students cannot upload materials.
-      if (access.rank < 1) {
+      // Students cannot upload materials UNLESS the students.canUploadMaterials
+      // grant is explicitly enabled (off by default).
+      const studentUploadAllowed =
+        access.level === 'student' && (await getPolicy('students.canUploadMaterials'));
+      if (access.rank < 1 && !studentUploadAllowed) {
+        logPolicyDenial({
+          policyKey: 'students.canUploadMaterials',
+          userId: user.id,
+          role: access.level,
+          action: 'material.upload',
+          courseId,
+        });
+        return json(403, { error: 'Forbidden' });
+      }
+      // Gate: a TA is allowed by default; deny only when the gate is off.
+      if (access.level === 'ta' && !(await getPolicy('tas.canManageMaterials'))) {
+        logPolicyDenial({
+          policyKey: 'tas.canManageMaterials',
+          userId: user.id,
+          role: access.level,
+          action: 'material.upload',
+          courseId,
+        });
         return json(403, { error: 'Forbidden' });
       }
       return uploadMaterial(request, courseId, user.id);
@@ -79,6 +101,19 @@ export async function action({ request, params }: ActionFunctionArgs) {
       });
       if (!material) {
         return json(404, { error: 'MATERIAL_NOT_FOUND' });
+      }
+
+      // tas.canManageMaterials is a single gate covering upload AND delete, so
+      // an off flag must also block TA deletes (including own uploads).
+      if (access.level === 'ta' && !(await getPolicy('tas.canManageMaterials'))) {
+        logPolicyDenial({
+          policyKey: 'tas.canManageMaterials',
+          userId: user.id,
+          role: access.level,
+          action: 'material.delete',
+          courseId,
+        });
+        return json(403, { error: 'Forbidden' });
       }
 
       // §7: delete is ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C), plus the TA
@@ -173,10 +208,23 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   const resolved = await resolveMaterialsAccess(request, courseId);
   if (resolved.response) return resolved.response;
-  const { access, isPublished } = resolved;
+  const { user, access, isPublished } = resolved;
 
   // §7/§19: students can view materials only in published courses.
   if (access.level === 'student' && !isPublished) {
+    return json(403, { error: 'Forbidden' });
+  }
+
+  // Policy gate (students.canViewMaterials, default true): layers on top of the
+  // publish gate — off means students cannot list materials at all.
+  if (access.level === 'student' && !(await getPolicy('students.canViewMaterials'))) {
+    logPolicyDenial({
+      policyKey: 'students.canViewMaterials',
+      userId: user.id,
+      role: access.level,
+      action: 'material.list',
+      courseId,
+    });
     return json(403, { error: 'Forbidden' });
   }
 
