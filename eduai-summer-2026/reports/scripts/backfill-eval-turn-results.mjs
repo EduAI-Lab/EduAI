@@ -12,6 +12,10 @@ import {
   isStructuralCompliancePass,
 } from "../../../apps/core/app/lib/ai/adhd-metrics.ts";
 
+const LEGACY_FLAT = /^S(\d+)-(on|off)\.md$/;
+const CONDITION_SUBDIR = /^S(\d+)-(.+)\.md$/;
+const CONDITION_DIRS = ["baseline", "assist-prompt-only", "assist-oversight"];
+
 const TURN_SHAPE = {
   "S1.t1": { expectFullStructure: true, label: "tutoring answer" },
   "S2.t1": { expectFullStructure: true, label: "step ladder" },
@@ -66,18 +70,63 @@ function parseTranscriptMd(content, scenarioId, mode) {
   return turns;
 }
 
+/** @returns {Promise<Array<{ file: string; scenarioId: string; mode: string }>>} */
+async function collectTranscriptFiles(runDir) {
+  const entries = [];
+  const topEntries = await readdir(runDir, { withFileTypes: true });
+
+  for (const ent of topEntries) {
+    if (!ent.isFile()) continue;
+    const match = ent.name.match(LEGACY_FLAT);
+    if (!match) continue;
+    entries.push({
+      file: path.join(runDir, ent.name),
+      scenarioId: `S${match[1]}`,
+      mode: match[2],
+    });
+  }
+  if (entries.length > 0) return entries;
+
+  for (const dirName of CONDITION_DIRS) {
+    const subDir = path.join(runDir, dirName);
+    let subFiles;
+    try {
+      subFiles = await readdir(subDir);
+    } catch {
+      continue;
+    }
+    for (const file of subFiles) {
+      const match = file.match(CONDITION_SUBDIR);
+      if (!match) continue;
+      entries.push({
+        file: path.join(subDir, file),
+        scenarioId: `S${match[1]}`,
+        mode: match[2],
+      });
+    }
+  }
+
+  return entries;
+}
+
 async function main() {
   const runDir = path.resolve(process.cwd(), process.argv[2] ?? "");
   if (!runDir) {
     process.stderr.write("Usage: backfill-eval-turn-results.mjs <eval-run-dir>\n");
     process.exit(1);
   }
-  const files = await readdir(runDir);
-  const mdFiles = files.filter((f) => /^S\d+-(on|off)\.md$/.test(f));
+  const mdFiles = await collectTranscriptFiles(runDir);
+  if (mdFiles.length === 0) {
+    process.stderr.write(
+      "warn: no matching transcript files found. " +
+        "Legacy runs use S#-{on|off}.md at the run root; " +
+        "new-format runs use condition subdirs (baseline/, assist-prompt-only/, assist-oversight/).\n",
+    );
+    process.exit(1);
+  }
   const all = [];
-  for (const file of mdFiles) {
-    const [, scenarioId, mode] = file.match(/^(S\d+)-(on|off)\.md$/) ?? [];
-    const content = await readFile(path.join(runDir, file), "utf8");
+  for (const { file, scenarioId, mode } of mdFiles) {
+    const content = await readFile(file, "utf8");
     all.push(...parseTranscriptMd(content, scenarioId, mode));
   }
   const out = path.join(runDir, "turn-results.json");
