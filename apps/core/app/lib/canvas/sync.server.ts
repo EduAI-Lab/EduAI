@@ -18,7 +18,11 @@ import {
   deactivateCourseRoster,
   syncCourseRoster,
 } from "~/lib/canvas/roster.server";
-import type { SyncCanvasCoursesResult } from "~/lib/canvas/schemas";
+import type {
+  SyncCanvasCourseResult,
+  SyncCanvasCoursesResult,
+  UnsyncCanvasCourseResult,
+} from "~/lib/canvas/schemas";
 import prisma from "~/lib/prisma.server";
 
 async function findCanvasCourseByExternalId(
@@ -35,7 +39,7 @@ async function syncSingleCanvasCourse(
   userId: string,
   canvasCourseId: string,
   fetchImpl: typeof fetch,
-): Promise<{ coreCourseId: string; rosterMembersSynced: number; enrollmentsLinked: number }> {
+): Promise<Omit<SyncCanvasCourseResult, 'canvasId'>> {
   const credentials = await requireCanvasCredentials(userId);
   const canvasCourse = await findCanvasCourseByExternalId(canvasCourseId, fetchImpl, userId);
 
@@ -69,7 +73,7 @@ async function syncSingleCanvasCourse(
 async function unsyncSingleCanvasCourse(
   userId: string,
   canvasCourseId: string,
-): Promise<{ coreCourseId: string }> {
+): Promise<Omit<UnsyncCanvasCourseResult, 'canvasId'>> {
   const course = await prisma.course.findFirst({
     where: {
       externalSource: CANVAS_EXTERNAL_SOURCE,

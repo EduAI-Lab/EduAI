@@ -81,7 +81,7 @@ function createFeedbackState(): StudentFeedbackState {
  * sequential because their IDs come out of the lesson row.
  */
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
-  await requireClientUser('STUDENT');
+  await requireClientUser(['STUDENT', 'TA']);
   const lessonId = Number(params.lessonId);
   if (!Number.isFinite(lessonId)) {
     throw new Response('Invalid lesson id', { status: 400 });

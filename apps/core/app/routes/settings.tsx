@@ -42,7 +42,7 @@ export default function SettingsPage() {
       <AppSidebar user={user} />
       <SidebarInset>
         <SiteHeader />
-        <SettingsView role={user.role} studentNumber={studentNumber} />
+        <SettingsView role={user.role ?? undefined} studentNumber={studentNumber} />
       </SidebarInset>
     </SidebarProvider>
   );

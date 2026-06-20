@@ -5,6 +5,11 @@ import { ChatMessage } from "~/components/chat/chat-message";
 import { ChatTypingIndicator } from "~/components/chat/chat-typing-indicator";
 import { ChatWelcome } from "~/components/chat/chat-welcome";
 import type { ChatViewSharedProps } from "~/components/chat/chat-view-types";
+import {
+  ASSISTIVE_CHAT_SURFACE_CLASS,
+  resolveMessageHighlightRole,
+} from "~/components/assistive/active-highlight";
+import { cn } from "~/lib/utils";
 
 type ChatConversationLayoutProps = ChatViewSharedProps & {
   bannerTitle?: string;
@@ -26,10 +31,14 @@ export function ChatConversationLayout({
   messages,
   input,
   isLoading,
-  adhdAssist: _adhdAssist,
-  onAssistChange: _onAssistChange,
-  systemPrompt: _systemPrompt,
-  onSystemPromptSave: _onSystemPromptSave,
+  adhdAssist,
+  assistive,
+  onAssistiveChange,
+  focusMode,
+  onFocusModeChange,
+  webToolsEnabled,
+  systemPrompt,
+  onSystemPromptSave,
   onInputChange,
   onSubmit,
   onStop,
@@ -37,7 +46,10 @@ export function ChatConversationLayout({
 }: ChatConversationLayoutProps) {
   return (
     <div
-      className="flex flex-col h-[calc(100vh-var(--header-height))] bg-background"
+      className={cn(
+        "flex flex-col h-[calc(100vh-var(--header-height))] bg-background",
+        assistive && ASSISTIVE_CHAT_SURFACE_CLASS,
+      )}
     >
       <div className="flex-1 flex flex-col min-h-0 relative overflow-hidden">
         <div className="h-full overflow-y-auto scrollbar-hover">
@@ -59,6 +71,12 @@ export function ChatConversationLayout({
                         key={message.id}
                         message={message as Message}
                         isStreaming={isStreamingMessage}
+                        highlightRole={resolveMessageHighlightRole(
+                          index,
+                          messages,
+                          assistive,
+                        )}
+                        webToolsEnabled={webToolsEnabled}
                       />
                     );
                   })}
@@ -85,6 +103,13 @@ export function ChatConversationLayout({
         chatModels={chatModels}
         selectedModelInfo={selectedModelInfo}
         showCourseSelector={showCourseSelector}
+        adhdAssist={adhdAssist}
+        onAdhdAssistChange={onAssistiveChange}
+        focusMode={focusMode}
+        onFocusModeChange={onFocusModeChange}
+        assistiveHighlight={assistive}
+        systemPrompt={systemPrompt}
+        onSystemPromptSave={onSystemPromptSave}
       />
     </div>
   );

@@ -10,13 +10,14 @@
 6. [EduAI Full Platform End-to-End Tests](#eduai-full-platform-end-to-end-tests)
 7. [EduAI Unit Tests](#eduai-unit-tests)
 8. [EduAI Integration Tests](#eduai-integration-tests)
-9. [AI Tutor Unit Tests](#ai-tutor-unit-tests)
-10. [AI Tutor Integration Tests](#ai-tutor-integration-tests)
-11. [AI Tutor Server Unit Tests](#ai-tutor-server-unit-tests)
-12. [AI Tutor Server Integration Tests](#ai-tutor-server-integration-tests)
-13. [Question Maker Unit Tests](#question-maker-unit-tests)
-14. [Question Maker Integration Tests](#question-maker-integration-tests)
-15. [Extending This Document](#extending-this-document)
+9. [@eduai/ui Component Tests](#eduaiui-component-tests)
+10. [AI Tutor Unit Tests](#ai-tutor-unit-tests)
+11. [AI Tutor Integration Tests](#ai-tutor-integration-tests)
+12. [AI Tutor Server Unit Tests](#ai-tutor-server-unit-tests)
+13. [AI Tutor Server Integration Tests](#ai-tutor-server-integration-tests)
+14. [Question Maker Unit Tests](#question-maker-unit-tests)
+15. [Question Maker Integration Tests](#question-maker-integration-tests)
+16. [Extending This Document](#extending-this-document)
 
 ---
 
@@ -160,6 +161,10 @@ Each section should use this format:
 |-----------|---------------|
 | `invitation-token.test.ts` | `hashToken` determinism and 64-char sha256 hex output, distinct tokens hashing to distinct values, and `generateInviteToken` returning a URL-safe token whose hash matches `hashToken` and is fresh on every call. |
 | `invitation-schemas.test.ts` | `createInvitationSchema` — INSTRUCTOR/ADMIN/UNIT_ADMIN accepted, TA and STUDENT rejected as non-invitable, units required for UNIT_ADMIN and rejected for other roles, invalid email / unknown unit code rejection — and `acceptInvitationSchema` min-8 password, confirmPassword match, and required token/name. |
+| `logging.server.test.ts` | The logging facade redaction: `logAuditAction` replaces credential- and PII-shaped keys (`password`, `phone`, `apiKey`, `secret`, `clientSecret`, `privateKey`, etc.) with `[REDACTED]` while keeping accountability IDs and full emails, handles circular references (`[CIRCULAR]`) and Map/Set values without overflowing; `logSecurityEvent` forces the SECURITY category and still logs full emails; `logSystemError` routes through the centralized helper with redacted details. |
+| `db.auditlog.server.test.ts` | The audit-log data layer: `createAuditLog` stable defaults (`outcome: SUCCESS`, `actorType: USER`), `createSecurityLog` forcing `category: SECURITY`, `listAuditLogs` excluding SECURITY rows by default vs `listSecurityLogs` scoping to them, `getAuditLogById` including the actor relation, and `deleteAuditLogsOlderThan` / `runAuditLogRetention` using timestamp cutoffs so recent rows survive cleanup. |
+| `db.systemlog.server.test.ts` | The system-log data layer: `createSystemLog` write path, fire-and-forget fallback to `console.error` when the DB write fails, `createSystemError` deriving `level: ERROR` / `errorName` / `stack` from an `Error`, paginated and level-filtered `listSystemLogs`, and `deleteSystemLogsOlderThan` / `runSystemLogRetention` timestamp cutoffs. |
+| `db.log-retention-policy.server.test.ts` | The singleton log-retention policy: `getLogRetentionPolicy` returns the existing `default` row, creates it when missing, and recovers the raced row after a P2002 create collision; `updateLogRetentionPolicy` persists normalized integer day counts; `runConfiguredLogRetention` deletes both audit and system rows past their windows and reports the counts. |
 | `course-access.server.test.ts` | The RBAC keystone helpers: `resolveCourseAccess` / `resolveCourseAccessWithCourse` resolution for every role (ADMIN bypass, UNIT_ADMIN unit lock incl. null-department courses, lazy `authorizedUnits` fetch, enrollment.role→access mapping — INSTRUCTOR enrollment returns `instructor`, TA enrollment returns `ta`, other returns `student` — active vs inactive enrollment, no relationship), 404-vs-403 course fetch split, `buildCourseListFilter` per-enrollment-role publish gating (grad-TA mixed case), and `stripAnswerForStudents` answer visibility per access level. |
 | `units.test.ts` | `UnitSchema` accepts the canonical subject codes (and confirms each has a `UNIT_LABELS` entry) and rejects unknown codes, wrong casing, and empty values. |
 | `enrollments.server.test.ts` | `addEnrollment`, `updateEnrollmentRole`, and `deactivateEnrollment`: the §6 permission matrix (INSTRUCTOR may add STUDENT/TA but never a fellow INSTRUCTOR), `ALREADY_ENROLLED` / `USER_NOT_FOUND` errors, and the transactional instructor-floor invariant — any demotion or deactivation leaving a course with zero active instructors is rejected with 409, with no ADMIN override. |
@@ -195,8 +200,10 @@ Each section should use this format:
 | `courses.server.test.ts` | `getCourses` (role-scoped via `buildCourseListFilter`), `createCourse` (incl. UNIT_ADMIN department lock), `updateCourse` (rank gating, UNIT_ADMIN can't move a course outside their units), `deleteCourse` soft-delete, `getCourse`, `getCourseTopics`, `getCourseTopic`, `deleteCourseTopic`, and `setPublishState` (service-key path with `requireServiceKey` guard, session path with rank-gating, 404 for missing course, 400 for missing id, and correct `isPublished` toggling for both publish and unpublish). |
 | `canvas-student-id.test.ts` | `User.studentId` encrypt/decrypt round-trip, `prepareStudentIdStorage`, `prepareRosterSisUserIdStorage` (shared HMAC lookup with roster), `rosterSisUserIdMatchFilter`, and legacy plaintext passthrough. |
 | `canvas-schemas.test.ts` | `ConnectCanvasSchema`, `SyncCanvasCoursesSchema`, and `LinkRosterSchema` validation (canvasUrl normalization, apiKey/test mode rules, empty sync selection, student number trim). |
-| `canvas-sync-services.test.ts` | `normalizeStudentId`, `normalizeRosterEmail`, `mapCanvasCourseToCoreFields`, `SyncCanvasCoursesSchema` coercion, and test-mode `listTeacherCanvasCourses`. |
+| `canvas-sync-services.test.ts` | `normalizeStudentId`, `normalizeRosterEmail`, `ubcTermFromDate` (UBC W1/W2/S1/S2 month boundaries), `mapCanvasCourseToCoreFields`, `SyncCanvasCoursesSchema` coercion, and test-mode `listTeacherCanvasCourses`. |
 | `canvas-sync-delta.test.ts` | `computeCanvasSyncDelta` check/uncheck logic: newly checked courses, omitted courses unsynced, empty selection unsyncs all. |
+| `canvas-materials.server.test.ts` | Canvas material discover/import service — file listing, import status mapping, create/update `CourseMaterial`, and embedding handoff with mocked Canvas + Prisma. |
+| `CanvasMaterialSyncDialog.test.tsx` | Canvas material sync dialog — loads discover results, file selection, sync API call, and success/error toasts. |
 | `canvas-enrollment-link.test.ts` | `linkEnrollmentsFromStagingForCourse` and `resolveCanvasEnrollmentsForUser` with mocked Prisma: matching `studentId` upserts enrollments (including encrypted roster `sisUserId` at rest with `isActive: true` on re-sync), no staging rows returns zero, missing `studentId` skips linking. |
 | `canvas-onboarding.test.ts` | `userNeedsStudentIdOnboarding` returns true for STUDENT/TA without a linked student number and false once linked or for other roles. |
 | `CanvasCourseSyncDialog.test.tsx` | Canvas sync dialog: loads course picker, toggles checkboxes, calls sync API, and shows sync result summary including roster counts and errors. |
@@ -239,12 +246,27 @@ Each section should use this format:
 | [`AccessibilitySettingsTab.test.tsx`](apps/core/app/tests/unit/AccessibilitySettingsTab.test.tsx) | Tests Settings Accessibility tab renders de-stigmatized copy/controls and wires Assistive Mode + reduce motion to shared providers. |
 | [`root-layout.test.tsx`](apps/core/app/tests/unit/root-layout.test.tsx) | Verifies the root document layout renders without route loader context, preventing invalid hook crashes before the app router is available. |
 | [`assistive-reading.test.ts`](apps/core/app/tests/unit/assistive-reading.test.ts) | Verifies `READING_SURFACE_CLASS` matches assistive-reading.css hooks and that typography rules are scoped under `[data-assistive]` with spacing-based defaults (16px base, 1.625 line-height, 65ch measure, no font-family swap). |
+| [`ChatViews.test.tsx`](apps/core/app/tests/unit/ChatViews.test.tsx) | Verifies `ChatGlobalView` renders the "Global" indicator pill and `ChatCourseScopedView` renders the "Select course" selector pill in their input areas (redesigned chat layout — no in-body context banner; assistive/system-prompt controls live in the input footer). |
 | [`active-highlight.test.ts`](apps/core/app/tests/unit/active-highlight.test.ts) | Tests `resolveMessageHighlightRole` / `findLastAssistantIndex` and the `assistive-active-highlight.css` contract — active/inactive message hooks, hover/focus restore, outline+background emphasis, and focus-mode sidebar/chrome hiding under `[data-assistive]`. |
 | [`assistive-events.client.test.ts`](apps/core/app/tests/unit/assistive-events.client.test.ts) | Tests `postAssistiveClientEvent` fire-and-forget POST shape to `/api/assistive-events` (credentials, optional `chatId`, sanitized metrics payload). |
 | [`use-assistive-reorientation.test.tsx`](apps/core/app/tests/unit/use-assistive-reorientation.test.tsx) | Tests `useAssistiveReorientation` records `re_orientation` on pointerdown and non-composer focusin, ignores programmatic `focusin` on the chat composer (post-assistant auto-focus), and stays idle until `epoch > 0`. |
 | [`ChatViews.test.tsx`](apps/core/app/tests/unit/ChatViews.test.tsx) | Verifies `ChatGlobalView` and `ChatCourseScopedView` render their role-specific banner text, and that clicking the Assistive Mode switch calls `onAssistiveChange` with the toggled boolean. |
 | [`NavMain.test.tsx`](apps/core/app/tests/unit/NavMain.test.tsx) | Verifies nav items render as SPA `<Link>` elements, the active item receives `aria-current="page"` based on the current pathname, child routes (e.g. `/courses/abc`) also activate the parent nav item, and an empty items list renders without throwing. |
 | [`SiteHeader.test.tsx`](apps/core/app/tests/unit/SiteHeader.test.tsx) | Verifies the header renders an explicit `title` prop, derives the page title from the current route when no prop is passed, renders optional action slots, and replaces the `<h1>` with the `breadcrumbs` node when that prop is provided. |
+| [`ApiKeySettings.test.tsx`](apps/core/app/tests/unit/ApiKeySettings.test.tsx) | Verifies the API key settings dialog renders OpenAI and Google provider tabs, switches tabs on click, masks existing keys, enables/disables the save button based on input state, calls `onUpdateProvider`/`onRemoveProvider` callbacks, shows a saving state while submitting, and renders nothing when `open` is false. |
+| [`AppSidebar.test.tsx`](apps/core/app/tests/unit/AppSidebar.test.tsx) | Verifies the app sidebar renders role-appropriate nav items for each role (Admin sees admin section, Instructor/TA/Student do not), and renders the signed-in user's name. |
+| [`BugReportsAdminView.test.tsx`](apps/core/app/tests/unit/BugReportsAdminView.test.tsx) | Verifies the bug reports admin view renders stub reports with their title and source tag, and shows a loading state when `isLoading` is true. |
+| [`ChatInput.test.tsx`](apps/core/app/tests/unit/ChatInput.test.tsx) | Verifies the chat input renders the textarea, model selector, course selector, and submit button; submit is disabled when input is empty or loading; the API key settings panel toggles on button click. |
+| [`ChatWelcome.test.tsx`](apps/core/app/tests/unit/ChatWelcome.test.tsx) | Verifies the welcome heading renders, the model name appears when `selectedModelInfo` is provided, "Powered by" is hidden when omitted, all four suggestion cards render, and clicking a card calls `onSelectPrompt` with the prompt text. |
+| [`CourseDetail.test.tsx`](apps/core/app/tests/unit/CourseDetail.test.tsx) | Verifies `CourseDetailManagerView`, `CourseDetailTaView`, and `CourseDetailStudentView` each render the course code and name; manager view shows the Materials tab and upload widget; TA and student views render the overview tab content. |
+| [`CourseMaterialsUpload.test.tsx`](apps/core/app/tests/unit/CourseMaterialsUpload.test.tsx) | Verifies the upload widget renders a file input and supported-formats text; disables the input and shows an uploading message while `isUploading` is true; and displays error or success messages from props. |
+| [`CoursesList.test.tsx`](apps/core/app/tests/unit/CoursesList.test.tsx) | Verifies that all five role-specific course list views (Admin, UnitAdmin, Instructor, TA, Student) render course cards with correct course code and name, and handle empty and mixed published/draft states appropriately. |
+| [`NavDocuments.test.tsx`](apps/core/app/tests/unit/NavDocuments.test.tsx) | Verifies the Documents group label renders, each document item name appears, and the group renders without error when the items list is empty. |
+| [`NavSecondary.test.tsx`](apps/core/app/tests/unit/NavSecondary.test.tsx) | Verifies secondary nav items render as links with correct `href` attributes, and the component renders without throwing when the items list is empty. |
+| [`NavUser.test.tsx`](apps/core/app/tests/unit/NavUser.test.tsx) | Verifies the user's name and email render in the nav user component, the role badge displays the correct label for the admin role, and initials appear in the avatar fallback. |
+| [`ProjectGoals.test.tsx`](apps/core/app/tests/unit/ProjectGoals.test.tsx) | Verifies the "Project goals" section heading renders and the three goal cards (Cognitive AI Models, Personalized Learning, Global Access) are present. |
+| [`SiteFooter.test.tsx`](apps/core/app/tests/unit/SiteFooter.test.tsx) | Verifies the About and Quick Links section headings render, and the current year appears in the copyright line. |
+| [`SuggestedPrompts.test.tsx`](apps/core/app/tests/unit/SuggestedPrompts.test.tsx) | Verifies all six study-focused prompt card titles render (Build a study plan, Explain a concept, Generate practice problems, Review my essay, Debug my code, Summarize key points), and that clicking a card calls `onSelectPrompt` with the correct full prompt string. |
 
 ---
 
@@ -254,13 +276,9 @@ Each section should use this format:
 
 | Test file | What it tests |
 |-----------|---------------|
-| `courses.materials.integration.test.ts` | Materials RBAC on the test DB: an INSTRUCTOR upload → list → DELETE cycle, TA deleting their own upload vs another's (403), and the student upload block. |
-| `me.integration.test.ts` | `GET`/`PATCH /api/me` round-trip against the test DB for each role (STUDENT/INSTRUCTOR/UNIT_ADMIN/ADMIN): profile shape and a name update persisting while role/isActive stay untouched. |
-| `preferences.integration.test.ts` | Assistive preference round-trip against the test DB: defaults OFF, PATCH ON persists and root loader reports assistive, PATCH OFF returns baseline, per-account isolation, guest baseline + 401 on PATCH, and `assistDefault` updates do not clobber `lastCourseCode`. |
-| `canvas.integration.test.ts` | `GET /api/canvas/integration`, `POST /api/canvas/connect`, and `DELETE /api/canvas/disconnect` against the test DB: auth/RBAC, encrypted token storage (no apiKey in responses), test mode, Canvas verification errors, insecure HTTP URL rejection, invalid JSON, idempotent disconnect, and 405 for unsupported methods. |
+| `invitations.integration.test.ts` | The admin invitation workflow on the test DB with the real Better Auth handler: create (admin-only, stores only the token hash, emails the accept link, supersedes prior PENDING invites for the email, 409 when the user exists), list hiding `tokenHash`, revoke and resend (token rotation kills the old link; 404/409 guards), and the accept flow driven through the user-facing page route (`routes/auth/accept-invitation`) — a real logged-in account with the invited role and `authorizedUnits` via a 302 redirect to `/dashboard`, friendly form errors (not status codes) for invalid/expired/revoked tokens (incl. the `INVITATION_REVOKED` code) and squatted emails, and sign-up rollback when the promote step fails so the same invite link still works on retry. |
 | `courses.rag-settings.integration.test.ts` | `GET`/`PATCH /api/courses/:id/rag-settings on the test DB: auth (401/403), validation (422 out-of-range), persist and read back `ragTopK`/`ragSimilarityThreshold`, null clears overrides, 404 for unknown courses. |
 | `courses.embedding-settings.integration.test.ts` | `GET`/`PATCH /api/courses/:courseId/embedding-settings on the test DB: manage-materials RBAC (401/404 for students), instructor read/write of provider+model, reject unknown providers and disallowed models, null clears overrides. |
-| `invitations.integration.test.ts` | The admin invitation workflow on the test DB with the real Better Auth handler: create (admin-only, stores only the token hash, emails the accept link, supersedes prior PENDING invites for the email, 409 when the user exists), list hiding `tokenHash`, revoke and resend (token rotation kills the old link; 404/409 guards), and the accept flow — a real logged-in account with the invited role and `authorizedUnits`, invalid/expired/revoked token rejection (incl. the `INVITATION_REVOKED` code), squatted-email 409, and sign-up rollback when the promote step fails so the same invite link still works on retry. |
 | `bug-reports.integration.test.ts` | `POST /api/bug-reports` against the test DB (401/403 service-key failures, 422 validation and USER_NOT_FOUND, 201 with correct source tag, anonymous reports persisting userId with isAnonymous=true, optional-field round-trip) plus the admin lifecycle: a submitted report surfaces in `GET /api/admin/bug-reports` with the right `source`, a PATCH status transition persists, and the anonymity-masking round-trip (identity nulled in the response, intact in the DB). |
 | `canvas.integration.test.ts` | Full Core Canvas API against the test DB: connect/integration/disconnect auth and encryption; `GET /api/canvas/courses` picker in test mode; `POST /api/canvas/sync` course create, encrypted roster staging, enrollment link by `studentId`, check/uncheck unsync, empty selection unsync-all, invalid payload, course-access 403, sync rate-limit 429; `POST /api/canvas/link-roster` student/TA link, no-match 404, conflict 409, reassignment blocked 409 after first link, instructor 403, and unauthenticated 401. |
 | `courses.enrollments.integration.test.ts` | Enrollments against the test DB: the §6 GET gates (401, 403 invalid key, enrolled STUDENT → 403, 404 nonexistent course, 200 via service key and TA-and-up OAuth, role mapping, active + inactive together) and the management lifecycle — create course with instructor → add a second instructor → remove the first → removing the last active instructor hits the 409 instructor floor. |
@@ -276,6 +294,26 @@ Each section should use this format:
 
 ---
 
+## @eduai/ui Component Tests
+
+**Path:** `packages/ui/src/tests/`
+
+Unit tests for the shared design-system component library (`@eduai/ui`). Run with `npm test` from `packages/ui`, or via `turbo run test` from the repo root.
+
+| Test file | What it tests |
+|-----------|---------------|
+| [`role-badge.test.tsx`](packages/ui/src/tests/role-badge.test.tsx) | `RoleBadge` renders the human-readable label for each known role (Admin, Unit Admin, Instructor, TA, Student), falls back to the Student config for an unknown role, and applies a passed `className`. |
+| [`status-badge.test.tsx`](packages/ui/src/tests/status-badge.test.tsx) | `StatusBadge` renders active/inactive labels, applies defaults, shows the indicator dot, and applies custom classes/styling. |
+| [`avatar.test.tsx`](packages/ui/src/tests/avatar.test.tsx) | `Avatar` renders an image when given a src, falls back to initials, handles image load errors, and forwards custom props. |
+| [`stat-card.test.tsx`](packages/ui/src/tests/stat-card.test.tsx) | `StatCard` renders label and value (including numeric values) and renders positive / negative / zero trend states with their trend labels. |
+| [`course-card.test.tsx`](packages/ui/src/tests/course-card.test.tsx) | `CourseCard` renders course code/name/description, status and badges, the actions menu, and course links. |
+| [`course-hero-card.test.tsx`](packages/ui/src/tests/course-hero-card.test.tsx) | `CourseHeroCard` renders course code/term/year/name, descriptions, topics, badges, and handles year-type variations. |
+| [`course-color-bar.test.tsx`](packages/ui/src/tests/course-color-bar.test.tsx) | `CourseColorBar` applies the expected height, maps color indices, and cycles through `COURSE_COLORS`. |
+| [`page-heading.test.tsx`](packages/ui/src/tests/page-heading.test.tsx) | `PageHeading` renders the heading text and accent bar, and renders an optional subheading including React-node children. |
+| [`page-tabs.test.tsx`](packages/ui/src/tests/page-tabs.test.tsx) | `PageTabs` (List/Trigger/Content) renders the tab structure and default content, reflects active states, and applies custom classes. |
+
+---
+
 ## AI Tutor Unit Tests
 
 **Path:** `apps/extensions/ai-tutor/app/tests/unit/`
@@ -286,10 +324,17 @@ Each section should use this format:
 | `BugReportDialog.test.tsx` | The bug report form rejects descriptions that are too short, takes a screenshot on open, and submits diagnostic data including the reporter's anonymous preference |
 | `BugReportProvider.test.tsx` | Page location and diagnostic capture tools are available to any component that needs to file a bug report |
 | `BugReportsTab.test.tsx` | Admins can view, update status, and copy bug reports; anonymous submissions hide reporter identity in the copied output |
-| `Nav.test.tsx` | The Report Bug button is visible to students and professors but hidden from admins |
+| `Nav.test.tsx` | The Report Bug button is visible to students and professors but hidden from admins; EduAI Core cross-nav link and dark-mode toggle render for authenticated users |
+| `extension-urls.test.ts` | Cross-app URL helpers default to local dev hosts for EduAI Core and AiTutor |
+| `student-chat-history.test.ts` | Client-side chat history persistence — store/list/delete sessions per activity and build message previews |
 | `useLocalUser.test.tsx` | Users can log in, log out, and have their session available across the app; accessing the session outside its provider throws an error |
+| `rbac-permissions.test.ts` | RBAC permission helpers (`canManageContent`, enrollment/analytics gates) and role routing for all five platform roles |
+| `PermissionGate.test.tsx` | Declarative UI gate hides children when `allow` is false and renders optional fallback |
+| `AtRoleBanner.test.tsx` | Role banners show TA read-only copy and unit-admin authorized units |
 
-> **Coverage gap:** `home.tsx` role-based routing (STUDENT→/student, INSTRUCTOR→/instructor, UNIT_ADMIN→/instructor, TA→/unsupported-role, ADMIN→/admin) and `unsupported-role.tsx` role guard (TA stays on page; other roles are redirected to their correct route) are not currently covered by unit tests.
+**E2E (Playwright):** `tests/e2e/ai-tutor-rbac.spec.ts` — login smoke tests for student, instructor, and admin shells (requires Core + AiTutor dev servers).
+
+> **Coverage gap:** `home.tsx` role-based routing is partially covered via `rbac-permissions.test.ts`; full route-loader integration tests remain optional follow-up.
 
 ---
 
@@ -317,6 +362,7 @@ Each section should use this format:
 | `eduaiClient.publishState.test.js` | `setCoreCoursePublishState`: throws when `EDUAI_API_KEY` is not set, calls `PATCH /courses/:id/publish` with Bearer service-key auth, calls `PATCH /courses/:id/unpublish` when `publish` is false, throws with the Core HTTP status on non-2xx responses (403, 404). |
 | `eduaiClient.testableQuestions.test.js` | `listCourseTestableQuestions` fetches a course's testable questions from Core with the service key and maps/handles the response and error cases |
 | `enrollmentSync.test.js` | `syncCourseEnrollments` — early-return guards, STUDENT-only active filter (#578), create/update sync from Core, TA rows preserved on delete when absent from Core STUDENT list, and error propagation |
+| `importTaughtCoursesService.test.js` | `importTaughtCoursesFromCore` and `importEnrolledCoursesFromCore` — instructor mirror skips non-teaching roles, imports unlinked offerings, syncs `isPublished` on linked courses; student mirror upserts enrollments and prunes stale EDUAI links |
 
 ---
 
@@ -327,8 +373,8 @@ Each section should use this format:
 | Test file | What it tests |
 |-----------|---------------|
 | `activities.test.js` | Students see completion status on activities while professors do not; TA sees activities even when unpublished; answer submission (§308) enforces STUDENT-only + active enrollment + full ancestor publish chain (403 for INSTRUCTOR/TA, unenrolled student, and unpublished lesson/module/course); `GET /activities/:id/submissions` and `GET /activities/:id/feedback` admit INSTRUCTOR and course-enrolled TA but 403 students and TAs in a different course; cross-course TA isolation confirmed (TA in course A cannot access course B); teach/guide/custom endpoints enforce the same STUDENT + enrollment + publish gate |
-| `admin.test.js` | Admins can list courses and view API key status; role-update returns 410 (managed by EduAI); all admin endpoints reject non-admin users with 403 |
 | `analytics.test.js` | `GET /courses/:id/submissions` (INSTRUCTOR/UNIT_ADMIN/TA/ADMIN get 200; student gets 403), filterable by activityId and studentId; `GET /courses/:id/student-metrics` and `GET /courses/:id/analytics` (INSTRUCTOR/UNIT_ADMIN/ADMIN get 200; TA and student get 403); `GET /me/submissions` and `GET /me/feedback` own-resource endpoints return the user's own data with no enrollment check (inactive students retain access) |
+| `admin.test.js` | Admins can list courses and view API key status; role-update returns 410 (managed by EduAI); all admin endpoints reject non-admin users with 403 |
 | `auth.test.js` | The current user is returned without their password field; admins are blocked from non-admin endpoints while retaining access to `/api/me` |
 | `bugReports.test.js` | Any authenticated user (student, professor, admin, TA) can submit bug reports (201, `postCoreBugReport` called with correct userId per #309); unauthenticated requests return 401; descriptions that are too short or too long return 400; anonymous reports still pass the real userId to Core; Core errors surface as 500 |
 | `courseCloning.test.js` | Cloning a course copies all modules, lessons, and activities in order, maps topics by name to the target course creating them when missing, and reuses existing topics on name collision |
@@ -362,7 +408,7 @@ Each section should use this format:
 | `coreApiService.test.js` | Core HTTP client — topics, questions, enrollments, profile, and scoped `listCoursesFromCore` / `isCoreCourseInScopedList` / `findScopedCoreCourseByCode` (#578) with cookie-only auth (no service-key fallback on stale session), enrollment reads preferring service key, and cookie forwarding on topics |
 | `coreWiringService.test.js` | `pushVariantToCore` maps variant payloads to Core, lowercases enum values, handles CUID topic ids, and surfaces `INVALID_TOPIC_IDS` |
 | `courseCodeUtils.test.js` | `normalizeCourseCode` lowercases and strips whitespace; returns empty string for null/blank input |
-| `importTaughtCoursesService.test.js` | `importTaughtCoursesFromCore` — skips non-instructor roles, imports unlinked Core courses with Practice Exam + topic sync, links existing local rows by code instead of duplicating, and filters to teaching enrollment roles (`INSTRUCTOR`/`TA`) |
+| `importTaughtCoursesService.test.js` | `importTaughtCoursesFromCore` — skips non-instructor roles, imports unlinked Core courses with Practice Exam + topic sync, links existing local rows by code instead of duplicating, filters to teaching enrollment roles (`INSTRUCTOR`/`TA`), and resyncs topics on mirror |
 | `topicSyncService.test.js` | `syncTopicsFromCoreForCourse` — no-op when unlinked, batched `findAll` upsert (create, link-by-name, rename-by-core-id), skip when `coreTopicId` belongs to another course, and `failOnCoreError` rethrow |
 | `eduaiService.test.js` | `EduAIService` (axios mocked): `chat` success/timeout/unreachable/reset/HTTP-error paths, `generateQuestions` parsing/normalization (MCQ choices, answer-letter, topic dedupe, error envelopes, retries), `listCourses`/`getCourseTopics`/`listAIModels` success and error handling, `testApiKey` outcomes |
 | `encryption.test.js` | Encrypted values round-trip back to the original string, and edge cases like empty input are handled without errors |

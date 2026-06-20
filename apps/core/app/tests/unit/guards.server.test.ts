@@ -127,4 +127,13 @@ describe("validateRedirectUrl", () => {
     it("rejects javascript: URIs and returns /dashboard", () => {
         expect(validateRedirectUrl("javascript:alert(1)")).toBe("/dashboard");
     });
+
+    it("rejects backslash protocol-relative bypass and returns /dashboard", () => {
+        expect(validateRedirectUrl("/\\evil.com/steal-cookies")).toBe("/dashboard");
+    });
+
+    it("normalizes backslashes in accepted relative paths", () => {
+        expect(validateRedirectUrl("\\evil.com")).toBe("/evil.com");
+        expect(validateRedirectUrl("/foo\\bar")).toBe("/foo/bar");
+    });
 });

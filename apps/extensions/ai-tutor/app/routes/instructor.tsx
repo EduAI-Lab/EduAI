@@ -17,8 +17,8 @@
  *     opened (ensureEduAiCourses) to keep the initial route snappy.
  * Related: routes/instructor.course.tsx (drilldown), components/PublishStatusButton
  */
-import { useEffect, useOptimistic, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router';
+import { useOptimistic, useState } from 'react';
+import { useNavigate } from 'react-router';
 import Nav from '../components/Nav';
 import { CreateCourseDialog } from '../components/courses/CreateCourseDialog';
 import { AtRoleBanner } from '../components/rbac/AtRoleBanner';
@@ -48,8 +48,6 @@ export async function clientLoader(_: Route.ClientLoaderArgs) {
  */
 export default function InstructorHome({ loaderData }: Route.ComponentProps) {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const deepLinkHandled = useRef(false);
   const { user } = useLocalUser();
   const perms = useAtPermissions();
   const [courses, setCourses] = useState<Course[]>(loaderData.courses ?? []);
@@ -66,16 +64,6 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
     courses,
     (state, patch: (items: Course[]) => Course[]) => patch(state),
   );
-
-  useEffect(() => {
-    const coreCourseId = searchParams.get('coreCourseId')?.trim();
-    if (!coreCourseId || deepLinkHandled.current) return;
-    const match = courses.find((course) => course.externalId === coreCourseId);
-    if (match) {
-      deepLinkHandled.current = true;
-      navigate(`/instructor/courses/${match.id}`, { replace: true });
-    }
-  }, [courses, navigate, searchParams]);
 
   // The API client throws Errors whose .message is sometimes a raw JSON
   // payload (`{"error":"..."}`) and sometimes a plain string. Try to surface

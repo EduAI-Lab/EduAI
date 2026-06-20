@@ -6,7 +6,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@eduai/ui'
-import { useChatHistory, fetchChatTranscript, type ChatHistoryItem } from '~/hooks/api/use-chat-history'
+import { useChatHistory, fetchChatTranscript, type ChatHistoryItem, type ChatTranscript } from '~/hooks/api/use-chat-history'
 import { ChatTranscriptViewer } from '~/components/chat/chat-transcript-viewer'
 
 interface CourseChatHistoryProps {
@@ -35,7 +35,7 @@ export function CourseChatHistory({ courseId, courseCode }: CourseChatHistoryPro
   const [selectedChat, setSelectedChat] = useState<ChatHistoryItem | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [transcriptLoading, setTranscriptLoading] = useState(false)
-  const [transcriptData, setTranscriptData] = useState<{ chat: { ownerName: string | null; courseCode: string | null }; messages: Array<Record<string, unknown>> } | null>(null)
+  const [transcriptData, setTranscriptData] = useState<ChatTranscript | null>(null)
 
   const handleOpenChat = async (chat: ChatHistoryItem) => {
     setSelectedChat(chat)
@@ -119,6 +119,7 @@ export function CourseChatHistory({ courseId, courseCode }: CourseChatHistoryPro
               ownerName={selectedChat.userName}
               courseCode={courseCode}
               isLoading={transcriptLoading}
+              continueChatId={transcriptData?.canEdit ? selectedChat.id : undefined}
             />
           )}
         </DialogContent>

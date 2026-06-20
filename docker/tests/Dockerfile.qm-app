@@ -40,7 +40,7 @@ COPY apps/extensions/question-maker/app/backend/package.json \
 
 COPY apps/extensions/question-maker/app/frontend/src \
      ./apps/extensions/question-maker/app/frontend/src
-COPY apps/extensions/question-maker/app/frontend/vite.config.ts \
+COPY apps/extensions/question-maker/app/frontend/vite.config.mts \
      ./apps/extensions/question-maker/app/frontend/
 COPY apps/extensions/question-maker/app/frontend/vitest.unit.config.ts \
      ./apps/extensions/question-maker/app/frontend/
@@ -80,6 +80,9 @@ WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
 
+# @eduai/ui is source-only; the node_modules/@eduai/ui symlink points here
+COPY packages/ui ./packages/ui/
+
 COPY apps/extensions/question-maker/app/backend/src \
      ./apps/extensions/question-maker/app/backend/src
 COPY apps/extensions/question-maker/app/backend/package.json \
@@ -102,7 +105,7 @@ COPY --from=build /app/apps/extensions/question-maker/app/frontend/dist \
      ./apps/extensions/question-maker/app/frontend/dist
 COPY apps/extensions/question-maker/app/frontend/package.json \
      ./apps/extensions/question-maker/app/frontend/
-COPY apps/extensions/question-maker/app/frontend/vite.config.ts \
+COPY apps/extensions/question-maker/app/frontend/vite.config.mts \
      ./apps/extensions/question-maker/app/frontend/
 
 ENV PATH="/app/node_modules/.bin:${PATH}"

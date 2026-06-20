@@ -27,12 +27,13 @@ import {
 } from '../services/questionService.js';
 import { generateQuestions, AI_PROVIDERS, extractQuestionsFromText } from '../services/aiService.js';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
-import { AUTHORS } from '../middleware/roles.js';
+import { QM_AUTHORIZED } from '../middleware/roles.js';
 import { requireCourseAccess, resolveCourseAccessWithCourse, LEVELS } from '../middleware/courseAccess.js';
 import { requireQuestionAccess } from '../middleware/resourceAccess.js';
 import { Assessments } from '../schema/index.js';
 
 const router = express.Router();
+
 
 /** Reject a TA editing/deleting a question they did not create (§19, #312). */
 function denyTaNotOwner(req, res) {
@@ -60,7 +61,7 @@ async function assessmentInCourse(assessmentId, courseId) {
 router.post(
   '/',
   authenticateToken,
-  requireRole(AUTHORS),
+  requireRole(QM_AUTHORIZED),
   requireCourseAccess({ min: 'ta', getCourseId: (req) => req.body.courseId ?? req.body.classId }),
   async (req, res, next) => {
     try {
@@ -122,7 +123,7 @@ router.post(
  * by the course owner. Without a courseId the list stays caller-scoped to the
  * user's own courses.
  */
-router.get('/', authenticateToken, requireRole(AUTHORS), async (req, res, next) => {
+router.get('/', authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, next) => {
   try {
     const { courseId, classId, search, limit, offset } = req.query;
     const requestedCourseId = courseId ?? classId;
@@ -163,7 +164,7 @@ router.get('/', authenticateToken, requireRole(AUTHORS), async (req, res, next) 
 });
 
 /** GET /api/questions/stats – returns aggregate stats (counts, types) for the user’s question bank. */
-router.get('/stats', authenticateToken, requireRole(AUTHORS), async (req, res, next) => {
+router.get('/stats', authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, next) => {
   try {
     const stats = await getQuestionStats(req.user.id);
 
@@ -180,7 +181,7 @@ router.get('/stats', authenticateToken, requireRole(AUTHORS), async (req, res, n
 router.get(
   '/:id',
   authenticateToken,
-  requireRole(AUTHORS),
+  requireRole(QM_AUTHORIZED),
   requireQuestionAccess({ min: 'ta' }),
   async (req, res, next) => {
     try {
@@ -200,7 +201,7 @@ router.get(
 router.put(
   '/:id',
   authenticateToken,
-  requireRole(AUTHORS),
+  requireRole(QM_AUTHORIZED),
   requireQuestionAccess({ min: 'ta' }),
   async (req, res, next) => {
     try {
@@ -284,7 +285,7 @@ router.put(
 router.delete(
   '/:id',
   authenticateToken,
-  requireRole(AUTHORS),
+  requireRole(QM_AUTHORIZED),
   requireQuestionAccess({ min: 'ta' }),
   async (req, res, next) => {
     try {
@@ -303,7 +304,7 @@ router.delete(
 );
 
 /** POST /api/questions/generate – triggers legacy AI providers to generate draft questions. */
-router.post('/generate', authenticateToken, requireRole(AUTHORS), async (req, res, next) => {
+router.post('/generate', authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, next) => {
   try {
     const { prompt, provider = AI_PROVIDERS.GROQ, numQuestions = 15, difficultyDistribution } = req.body;
 
@@ -339,7 +340,7 @@ router.post('/generate', authenticateToken, requireRole(AUTHORS), async (req, re
 router.post(
   '/extract',
   authenticateToken,
-  requireRole(AUTHORS),
+  requireRole(QM_AUTHORIZED),
   requireCourseAccess({ min: 'ta', getCourseId: (req) => req.body.courseId }),
   async (req, res, next) => {
     try {
@@ -374,7 +375,7 @@ router.post(
 router.post(
   '/extract/save',
   authenticateToken,
-  requireRole(AUTHORS),
+  requireRole(QM_AUTHORIZED),
   requireCourseAccess({ min: 'ta', getCourseId: (req) => req.body.courseId }),
   async (req, res, next) => {
     try {
@@ -409,7 +410,7 @@ router.post(
 );
 
 /** POST /api/questions/approve – bulk saves approved generated questions into the question bank. */
-router.post('/approve', authenticateToken, requireRole(AUTHORS), async (req, res, next) => {
+router.post('/approve', authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, next) => {
   try {
     const { questions, courseId, classId } = req.body;
 
@@ -462,7 +463,7 @@ router.post('/approve', authenticateToken, requireRole(AUTHORS), async (req, res
 router.put(
   '/:id/order',
   authenticateToken,
-  requireRole(AUTHORS),
+  requireRole(QM_AUTHORIZED),
   requireQuestionAccess({ min: 'instructor' }),
   async (req, res, next) => {
     try {
@@ -501,7 +502,7 @@ router.put(
 router.delete(
   '/:id/order/:assessmentId',
   authenticateToken,
-  requireRole(AUTHORS),
+  requireRole(QM_AUTHORIZED),
   requireQuestionAccess({ min: 'instructor' }),
   async (req, res, next) => {
     try {

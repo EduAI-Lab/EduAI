@@ -96,6 +96,7 @@ export function UserChatHistoryDialog({
               ownerName={userName}
               courseCode={transcript?.chat.courseCode ?? undefined}
               isLoading={transcriptLoading}
+              continueChatId={transcript?.canEdit ? selectedChatId : undefined}
             />
           </div>
         ) : (

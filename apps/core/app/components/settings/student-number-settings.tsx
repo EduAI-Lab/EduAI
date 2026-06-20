@@ -1,17 +1,17 @@
 import { useState } from "react";
-import { GraduationCap, Loader2 } from "lucide-react";
+import { IconLoader, IconSchool } from "@tabler/icons-react";
 
 import { linkCanvasRoster } from "~/lib/canvas/client";
-import { Button } from "@eduai/ui";
 import {
+  Button,
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
+  Input,
+  Label,
 } from "@eduai/ui";
-import { Input } from "@eduai/ui";
-import { Label } from "@eduai/ui";
 
 type StudentNumberSettingsProps = {
   initialStudentNumber: string | null;
@@ -54,7 +54,7 @@ export function StudentNumberSettings({
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <GraduationCap className="h-5 w-5" />
+          <IconSchool className="h-5 w-5" />
           Student number
         </CardTitle>
         <CardDescription>
@@ -98,7 +98,7 @@ export function StudentNumberSettings({
         >
           {saving ? (
             <>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              <IconLoader className="h-4 w-4 mr-2 animate-spin" />
               Saving…
             </>
           ) : (

@@ -311,6 +311,15 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(params),
     }),
+  listChatSessions: (activityId: number) =>
+    http(`/api/activities/${activityId}/chat-sessions`) as Promise<
+      Array<{ id: number; chatId: string; mode: string; modelId: string | null; createdAt: string; updatedAt: string }>
+    >,
+  getChatMessages: (activityId: number, chatId: string) =>
+    http(`/api/activities/${activityId}/chat-sessions/${chatId}/messages`) as Promise<{
+      chat: { id: string; title: string | null };
+      messages: Array<{ messageId: string; role: string; content: unknown }>;
+    }>,
   listAiModels: () => http('/api/ai-models') as Promise<AiModel[]>,
   validateApiKey: (provider: string, apiKey: string) =>
     http('/api/ai-models/validate-key', {
@@ -348,7 +357,7 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ role }),
     }) as Promise<{ ok: true; role: EnrollmentRole }>,
-  syncCourseEnrollments: (courseId: number) =>
+  adminSyncCourseEnrollments: (courseId: number) =>
     http(`/api/admin/courses/${courseId}/sync-enrollments`, {
       method: 'POST',
     }) as Promise<{ ok: true }>,

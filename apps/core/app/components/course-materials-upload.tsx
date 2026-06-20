@@ -17,6 +17,7 @@ export interface CourseMaterial {
   fileSize: number
   status: 'PROCESSING' | 'READY' | 'FAILED'
   createdAt: string
+  chunkCount?: number
   chunks?: Array<{ id: string; content: string }>
 }
 

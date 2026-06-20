@@ -4,7 +4,6 @@ import { Link, redirect, useLoaderData, useFetcher, useSearchParams } from "reac
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { IconHistory, IconPencilPlus } from "@tabler/icons-react";
 
-
 import { AppSidebar } from "~/components/app-sidebar";
 import { ChatCourseScopedView } from "~/components/chat/chat-course-scoped-view";
 import { ChatGlobalView } from "~/components/chat/chat-global-view";
@@ -15,8 +14,10 @@ import type {
   ChatModelOption,
 } from "~/components/chat/chat-view-types";
 import { fetchChatTranscript, type ChatTranscript } from "~/hooks/api/use-chat-history";
+import { useAssistiveUi } from "~/components/assistive/assistive-ui-provider";
+import { CHAT_MESSAGE_INPUT_ID } from "~/components/assistive/active-highlight";
 import { SiteHeader } from "~/components/site-header";
-import { Button, SidebarInset, SidebarProvider } from "@eduai/ui";
+import { Button, SidebarInset, SidebarProvider, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@eduai/ui";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -34,6 +35,7 @@ import {
 } from "@eduai/ui"
 import { fetchChatSession } from "~/hooks/api/use-chat-sessions";
 import { useCourses } from "~/hooks/api/use-courses";
+import { useAssistiveReorientation } from "~/hooks/use-assistive-reorientation";
 import { useApiKeys } from "~/hooks/use-api-keys";
 import { auth } from "~/lib/auth/server";
 import { usesGlobalChat } from "~/lib/rbac";
@@ -41,7 +43,6 @@ import prisma from "~/lib/prisma.server";
 import { getUserPreference, saveUserPreference } from "~/lib/user-preferences.server";
 import { getAccessibleCourseCodes } from "~/lib/courses/server";
 import { parsePreferenceUpdates } from "~/lib/user-preferences";
-import { useAssistiveUi } from "~/components/assistive/assistive-ui-provider";
 
 /**
  * Per-tab marker for the chat the user is actively in. Lives in sessionStorage
@@ -78,9 +79,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
     supportsTools: model.supportsTools,
   }));
 
-  // Validate the persisted course against the courses THIS user can actually
-  // access, so a stale / now-inaccessible `lastCourseCode` is dropped on restore
-  // rather than treated as valid just because the course still exists (#420 review).
   const availableCourseCodes = await getAccessibleCourseCodes(session.user);
   const preferences = await getUserPreference(session.user.id, availableCourseCodes);
 
@@ -91,11 +89,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
   };
 }
 
-/**
- * Persists the per-user chat preferences written from this route (Assistive-mode
- * default + last selected course). Accepts any subset of
- * { assistDefault?: boolean, lastCourseCode?: string | null }.
- */
 export async function action({ request }: ActionFunctionArgs) {
   const session = await auth.api.getSession(request);
   if (!session?.user) {
@@ -118,6 +111,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
 export default function Chat() {
   const { chatModels, user, assistDefault, lastCourseCode } = useLoaderData<typeof loader>();
+  const { assistive, setAssistive } = useAssistiveUi();
   const isGlobalChat = usesGlobalChat(user);
   const { courses } = useCourses();
   const availableCourses: ChatCourseOption[] = isGlobalChat
@@ -131,10 +125,13 @@ export default function Chat() {
   );
   const [chatId, setChatId] = useState<string | null>(null);
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
-  const [adhdAssist, setAdhdAssist] = useState(assistDefault ?? false);
+  const [adhdAssist, setAdhdAssist] = useState(assistDefault ?? assistive);
   const [readOnlyTranscript, setReadOnlyTranscript] = useState<ChatTranscript | null>(null);
+  const [focusMode, setFocusMode] = useState(false);
+  const [reorientationEpoch, setReorientationEpoch] = useState(0);
+  const [webToolsEnabled, setWebToolsEnabled] = useState(false);
+  const wasLoadingRef = useRef(false);
   const { getValidApiKeys } = useApiKeys();
-  const { setAssistive } = useAssistiveUi();
   const prefsFetcher = useFetcher();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -150,15 +147,42 @@ export default function Chat() {
     [prefsFetcher],
   );
 
-  const handleAssistChange = useCallback((checked: boolean) => {
-    setAdhdAssist(checked);
-    setAssistive(checked);
-  }, [setAdhdAssist, setAssistive]);
+  const handleAssistiveChange = useCallback(
+    (checked: boolean) => {
+      setAdhdAssist(checked);
+      if (!checked) {
+        setFocusMode(false);
+      }
+      // setAssistive already persists via PATCH /api/preferences — no extra submit needed.
+      setAssistive(checked);
+    },
+    [setAssistive],
+  );
 
-  const handleCourseChange = useCallback((code: string | null) => {
-    setSelectedCourseCode(code);
-    persistPreference({ lastCourseCode: code });
-  }, [setSelectedCourseCode, persistPreference]);
+  const handleCourseChange = useCallback(
+    (code: string | null) => {
+      setSelectedCourseCode(code);
+      persistPreference({ lastCourseCode: code });
+    },
+    [persistPreference],
+  );
+
+  useEffect(() => {
+    const el = document.documentElement;
+    if (assistive && focusMode) {
+      el.setAttribute("data-assistive-focus-mode", "true");
+    } else {
+      el.removeAttribute("data-assistive-focus-mode");
+    }
+    return () => el.removeAttribute("data-assistive-focus-mode");
+  }, [assistive, focusMode]);
+
+  useAssistiveReorientation({
+    enabled: assistive && reorientationEpoch > 0,
+    adhdAssist,
+    chatId,
+    epoch: reorientationEpoch,
+  });
 
   useEffect(() => {
     if (isGlobalChat) setSelectedCourseCode(null);
@@ -194,24 +218,57 @@ export default function Chat() {
     })();
   }, [chatId, systemPrompt, setAssistive]);
 
+  const requestMetadata = {
+    model: selectedModel,
+    apiKeys: getValidApiKeys(),
+    courseCode: isGlobalChat ? undefined : selectedCourseCode || undefined,
+    chatId: chatId || undefined,
+    systemPrompt: systemPrompt || undefined,
+    adhdAssist,
+  };
+
   const { messages, input, handleInputChange, handleSubmit, isLoading, stop, setMessages } =
     useChat({
       api: "/api/chat",
-      body: {
-        model: selectedModel,
-        apiKeys: getValidApiKeys(),
-        courseCode: isGlobalChat ? undefined : selectedCourseCode || undefined,
-        chatId: chatId || undefined,
-        systemPrompt: systemPrompt || undefined,
-        adhdAssist,
-      },
+      // Persist stable client message ids to the server. Without this, AI SDK v4
+      // strips `id` from the request body, so the server stamps a fresh UUID for
+      // every user message on every turn — defeating the (chatId, messageId)
+      // dedup and re-saving the entire user history each turn (chat-history dup bug).
+      sendExtraMessageFields: true,
+      body: requestMetadata,
+      // #487: send only the latest turn to the server, not the full history.
+      // Spreads requestBody (carrying the stable message id from
+      // sendExtraMessageFields) so dedup + latest-turn-only both hold.
+      experimental_prepareRequestBody: ({ messages, requestBody }) => ({
+        ...(requestBody ?? requestMetadata),
+        messages: messages.slice(-1),
+      }),
       onResponse: async (response) => {
         const chatIdHeader = response.headers.get("X-Chat-Id");
         if (chatIdHeader && !chatId) {
           setChatId(chatIdHeader);
         }
+        const webToolsHeader = response.headers.get("X-Web-Tools-Enabled");
+        if (webToolsHeader !== null) {
+          setWebToolsEnabled(webToolsHeader === "1");
+        }
       },
     });
+
+  useEffect(() => {
+    const finishedLoading = wasLoadingRef.current && !isLoading;
+    wasLoadingRef.current = isLoading;
+
+    if (!assistive || !finishedLoading) return;
+
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage?.role !== "assistant") return;
+
+    setReorientationEpoch((n) => n + 1);
+    requestAnimationFrame(() => {
+      document.getElementById(CHAT_MESSAGE_INPUT_ID)?.focus();
+    });
+  }, [assistive, isLoading, messages]);
 
   const selectedModelInfo = chatModels.find(
     (model) => model.id === selectedModel,
@@ -344,9 +401,13 @@ export default function Chat() {
     input,
     isLoading,
     adhdAssist,
-    onAssistChange: handleAssistChange,
+    assistive,
+    onAssistiveChange: handleAssistiveChange,
+    focusMode,
+    onFocusModeChange: setFocusMode,
     systemPrompt,
     onSystemPromptSave: handleSystemPromptSave,
+    webToolsEnabled,
     onInputChange: handleInputChange,
     onSubmit: handleSubmit,
     onStop: stop,
@@ -389,15 +450,22 @@ export default function Chat() {
                 <IconPencilPlus className="h-4 w-4 sm:mr-1.5" />
                 <span className="hidden sm:inline">New chat</span>
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setHistoryOpen(true)}
-                aria-label="Open chat history"
-              >
-                <IconHistory className="h-4 w-4 sm:mr-1.5" />
-                <span className="hidden sm:inline">History</span>
-              </Button>
+              <TooltipProvider delayDuration={300}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setHistoryOpen((prev) => !prev)}
+                      aria-label="Open chat history"
+                      className="h-8 w-8"
+                    >
+                      <IconHistory className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Chat history</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             </div>
           }
         />

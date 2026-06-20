@@ -1,6 +1,7 @@
-export type CourseAccess = 'admin' | 'unit' | 'instructor' | 'ta' | 'student' | null
+import type { UserRole } from '@eduai/types'
+export type { UserRole }
 
-export type UserRole = 'ADMIN' | 'UNIT_ADMIN' | 'INSTRUCTOR' | 'TA' | 'STUDENT'
+export type CourseAccess = 'admin' | 'unit' | 'instructor' | 'ta' | 'student' | null
 
 export interface RbacUser {
   id: string
@@ -14,7 +15,7 @@ export interface RbacCourse {
   department: string | null
 }
 
-/** Nav item keys — icons are mapped in `app-sidebar.tsx`. */
+/** Icons are mapped in `app-sidebar.tsx`. */
 export type NavItemKey =
   | 'dashboard'
   | 'courses'
@@ -24,6 +25,7 @@ export type NavItemKey =
   | 'admin-ai'
   | 'admin-bugs'
   | 'admin-invites'
+  | 'admin-logs'
   | 'settings'
   | 'ai-tutor'
 

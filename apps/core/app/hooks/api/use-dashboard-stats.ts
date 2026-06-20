@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "~/hooks/api/config";
-import type { DashboardStats } from "~/routes/api/dashboard.stats";
+import type { DashboardStats } from "~/types/dashboard";
 
 export type { DashboardStats };
 
