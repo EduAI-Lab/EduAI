@@ -62,6 +62,15 @@ describe("AssistiveUiProvider", () => {
         body: JSON.stringify({ assistDefault: true }),
       }),
     );
+    const assistiveCall = vi.mocked(fetch).mock.calls.find(([url]) => url === "/api/assistive-events");
+    expect(assistiveCall).toBeDefined();
+    const assistiveBody = JSON.parse(String(assistiveCall![1]?.body));
+    expect(assistiveBody).toMatchObject({
+      eventType: "mode_toggled",
+      adhdAssist: true,
+      metrics: { fromMode: false, toMode: true },
+    });
+    expect(assistiveBody.metrics.clientTimestamp).toEqual(expect.any(String));
   });
 
   it("toggling OFF removes the attribute entirely (not set to 'false')", () => {
@@ -81,6 +90,33 @@ describe("AssistiveUiProvider", () => {
         body: JSON.stringify({ assistDefault: false }),
       }),
     );
+    const assistiveCall = vi.mocked(fetch).mock.calls.find(([url]) => url === "/api/assistive-events");
+    expect(assistiveCall).toBeDefined();
+    const assistiveBody = JSON.parse(String(assistiveCall![1]?.body));
+    expect(assistiveBody).toMatchObject({
+      eventType: "mode_toggled",
+      adhdAssist: false,
+      metrics: { fromMode: true, toMode: false },
+    });
+    expect(assistiveBody.metrics.clientTimestamp).toEqual(expect.any(String));
+  });
+
+  it("setAssistive with silent skips telemetry and preference persistence", () => {
+    function SilentConsumer() {
+      const { setAssistive } = useAssistiveUi();
+      return <button onClick={() => setAssistive(true, { silent: true })}>sync</button>;
+    }
+
+    render(
+      <AssistiveUiProvider initialAssistive={false}>
+        <SilentConsumer />
+      </AssistiveUiProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button"));
+
+    expect(document.documentElement.getAttribute("data-assistive")).toBe("true");
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("useAssistiveUi throws outside the provider", () => {
