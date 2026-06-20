@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { CoursesAdminView } from '~/components/courses/courses-admin-view'
@@ -7,6 +7,15 @@ import { CoursesInstructorView } from '~/components/courses/courses-instructor-v
 import { CoursesTaView } from '~/components/courses/courses-ta-view'
 import { CoursesStudentView } from '~/components/courses/courses-student-view'
 import type { Course } from '~/hooks/api/use-courses'
+
+// The instructor view gates Create/Publish/Delete on usePolicies(); the controls
+// stay hidden until policies load. Default the hook to the loaded state so the
+// policy-default tests assert post-fetch behavior; the loading test overrides it.
+vi.mock('~/hooks/api/use-policies', () => ({
+  usePolicies: vi.fn(() => ({ policies: {}, isLoading: false })),
+}))
+import { usePolicies } from '~/hooks/api/use-policies'
+const mockedUsePolicies = vi.mocked(usePolicies)
 
 const PUBLISHED_COURSE: Course = {
   id: 'c1',
@@ -168,11 +177,33 @@ describe('CoursesUnitAdminView', () => {
 
 // CoursesInstructorView
 describe('CoursesInstructorView', () => {
-  it('does NOT show "Create Course" button', () => {
+  beforeEach(() => {
+    mockedUsePolicies.mockReturnValue({ policies: {}, isLoading: false } as never)
+  })
+
+  it('shows "Create Course" button when policies are loaded and the default is on', () => {
+    // Policies loaded with no overrides → the `?? true` defaults apply, so
+    // create is on.
     wrap(
       <CoursesInstructorView
         courses={[PUBLISHED_COURSE]}
+        onCreateCourse={NOOP}
         onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />
+    )
+    expect(screen.getByRole('button', { name: /create course/i })).toBeInTheDocument()
+  })
+
+  it('hides "Create Course" until policies load (no permission flash)', () => {
+    mockedUsePolicies.mockReturnValue({ policies: {}, isLoading: true } as never)
+    wrap(
+      <CoursesInstructorView
+        courses={[PUBLISHED_COURSE]}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
         onPublishToggle={NOOP}
       />
     )
@@ -183,7 +214,9 @@ describe('CoursesInstructorView', () => {
     wrap(
       <CoursesInstructorView
         courses={[PUBLISHED_COURSE]}
+        onCreateCourse={NOOP}
         onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
         onPublishToggle={NOOP}
       />
     )
@@ -195,7 +228,9 @@ describe('CoursesInstructorView', () => {
     wrap(
       <CoursesInstructorView
         courses={[PUBLISHED_COURSE, DRAFT_COURSE]}
+        onCreateCourse={NOOP}
         onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
         onPublishToggle={NOOP}
       />
     )

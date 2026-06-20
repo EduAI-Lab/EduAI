@@ -72,6 +72,9 @@ export function AiModelsAdminView({
   const [vllmError, setVllmError] = useState<string | null>(null);
   const [vllmFetched, setVllmFetched] = useState(false);
 
+  // Web tools are now governed by the chat.webToolsEnabled policy flag and
+  // render automatically under Admin → Settings (see policy.server.ts).
+
   const handleFetchOllamaModels = useCallback(async () => {
     setFetchingOllamaModels(true);
     setOllamaError(null);

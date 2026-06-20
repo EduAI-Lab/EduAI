@@ -7,12 +7,15 @@ import type { SignInInput } from "~/lib/auth"
 export interface LoginFormProps extends React.ComponentProps<"div"> {
   fieldErrors?: Partial<Record<keyof SignInInput, string>>;
   isLoading?: boolean;
+  /** §6b: hide the "Sign up" link when public registration is disabled. */
+  allowRegistration?: boolean;
 }
 
 export function LoginForm({
   className,
   fieldErrors,
   isLoading = false,
+  allowRegistration = true,
   ...props
 }: LoginFormProps) {
   return (
@@ -65,12 +68,14 @@ export function LoginForm({
           {isLoading ? "Signing in..." : "Sign in"}
         </Button>
       </div>
-      <div className="text-center text-sm">
-        Don&apos;t have an account?{" "}
-        <a href="/auth/register" className="underline underline-offset-4">
-          Sign up
-        </a>
-      </div>
+      {allowRegistration && (
+        <div className="text-center text-sm">
+          Don&apos;t have an account?{" "}
+          <a href="/auth/register" className="underline underline-offset-4">
+            Sign up
+          </a>
+        </div>
+      )}
     </div>
   )
 }
