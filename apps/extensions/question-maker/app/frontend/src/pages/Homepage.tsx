@@ -26,12 +26,15 @@ import { CanvasExportDialog } from '../components/canvas/CanvasExportDialog';
 import { CanvasImportDialog } from '../components/canvas/CanvasImportDialog';
 import { useQmLayout } from '../components/layout/QmLayoutContext';
 import { useGuidedTour } from '../contexts/GuidedTourContext';
+import { dedupeCoursesByCode } from '../utils/courseDisplay';
 import {
     assessmentBlocksToDocxBlob,
     assessmentBlocksToPlainText,
     collectAssessmentExportBlocks,
     slugifyAssessmentBasename
 } from '../utils/assessmentExport';
+
+const TOUR_COURSE_STORAGE_KEY = 'qm:tour-course-id';
 
 export const Homepage = () => {
   const LAST_SELECTED_COURSE_KEY = 'home:last-selected-course';
@@ -69,7 +72,7 @@ export const Homepage = () => {
   const [variantToDelete, setVariantToDelete] = useState<QuestionVariantEntry | null>(null);
   const [isDeletingVariant, setIsDeletingVariant] = useState(false);
   const { toast } = useToast();
-  const { startTour, registerOnTourEnd } = useGuidedTour();
+  const { startTour, registerOnTourEnd, registerStepAction, isActive: isTourActive, activeTourId } = useGuidedTour();
   const { setGuidedTourHandler } = useQmLayout();
   const { canCreateQuestion, hasCourseAccess, accessLoading } = useQmPermissionsForCourse(
     selectedCourse?.id ?? null,
@@ -196,19 +199,30 @@ export const Homepage = () => {
     }
   }, [selectedCourse, loadTopicsForCourse]);
 
-  // When arriving from course selection with "start guided tour", run the tour and return to course selection when done
+  // When arriving from course selection with "start guided tour", continue the tour on this page.
   useEffect(() => {
     const state = location.state as { startGuidedTour?: boolean } | null;
     if (!state?.startGuidedTour || !selectedCourse) return;
     const path = location.pathname + location.search;
-    const timer = setTimeout(() => {
+    const timer = window.setTimeout(() => {
       startTour('main');
       registerOnTourEnd(() => navigate('/courses'));
       navigate(path, { replace: true, state: {} });
-    }, 300);
-    return () => clearTimeout(timer);
+    }, 350);
+    return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state, selectedCourse]);
+
+  // Tour: switch to assessments tab when step 5 runs (sidebar link or direct navigation fallback).
+  useEffect(() => {
+    if (!isTourActive || activeTourId !== 'main') return;
+
+    const unregister = registerStepAction('assessment-tab', () => {
+      navigate('/home?tab=assessments', { replace: true, state: location.state ?? {} });
+    });
+
+    return unregister;
+  }, [isTourActive, activeTourId, registerStepAction, navigate, location.state]);
 
   const fetchAssessments = useCallback(async () => {
     try {
@@ -224,12 +238,17 @@ export const Homepage = () => {
     }
   }, []);
 
-  /** When starting the tour from homepage, go to course-select page first; step 1 Next will return here to this course on questions tab. */
+  /** When starting the tour from homepage, go to course-select page first; step 1 Next returns here on questions tab. */
   const handleGuidedTourClick = useCallback(() => {
     if (!selectedCourse?.id) return;
+    try {
+      sessionStorage.setItem(TOUR_COURSE_STORAGE_KEY, String(selectedCourse.id));
+    } catch {
+      // ignore
+    }
     navigate('/courses', {
-      state: { startGuidedTour: true, returnCourseId: selectedCourse.id, returnTab: 'questions' },
-      replace: true
+      state: { startGuidedTour: true, returnCourseId: selectedCourse.id },
+      replace: true,
     });
   }, [navigate, selectedCourse?.id]);
 
@@ -830,6 +849,11 @@ export const Homepage = () => {
     [filteredAssessments, toast]
   );
 
+  const coursePickerOptions = useMemo(
+    () => dedupeCoursesByCode(displayCourses),
+    [displayCourses],
+  );
+
   return (
     <QmHomeShell>
       {selectedCourse && !accessLoading && !hasCourseAccess && (
@@ -839,23 +863,23 @@ export const Homepage = () => {
         <Select
           value={selectedCourse?.id?.toString() || ''}
           onValueChange={(value) => {
-            const course = courses.find((c) => c.id.toString() === value);
+            const course = coursePickerOptions.find((c) => c.id.toString() === value);
             if (course) setSelectedCourse(course);
           }}
-          disabled={isCoursesLoading || courses.length === 0}
+          disabled={isCoursesLoading || coursePickerOptions.length === 0}
         >
-          <SelectTrigger className="w-80 min-w-80" data-tour-id="course-select">
+          <SelectTrigger className="w-80 min-w-80">
             <SelectValue
               placeholder={isCoursesLoading ? 'Loading courses...' : 'Select Course'}
             />
           </SelectTrigger>
           <SelectContent>
-            {courses.length === 0 ? (
+            {coursePickerOptions.length === 0 ? (
               <SelectItem value="__no_courses" disabled>
                 {isCoursesLoading ? 'Loading...' : 'No courses available'}
               </SelectItem>
             ) : (
-              courses.map((course) => (
+              coursePickerOptions.map((course) => (
                 <SelectItem key={course.id} value={course.id.toString()}>
                   {course.code || '—'} - {course.name}
                 </SelectItem>

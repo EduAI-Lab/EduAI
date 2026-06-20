@@ -234,17 +234,36 @@ router.get('/test-api-key', authenticateToken, async (req, res) => {
   }
 });
 
+const FALLBACK_AI_MODELS = [
+  {
+    id: 'fallback-gemini',
+    name: 'Gemini 2.5 Flash (fallback)',
+    modelId: 'gemini-2.5-flash',
+    description: 'Returned when Core model list is unavailable.',
+    isActive: true,
+    provider: { name: 'google' },
+  },
+  {
+    id: 'fallback-ollama',
+    name: 'Ollama GPT-OSS 120B (fallback)',
+    modelId: 'gpt-oss:120b',
+    description: 'Returned when Core model list is unavailable.',
+    isActive: true,
+    provider: { name: 'ollama' },
+  },
+];
+
 /** GET /api/eduai/ai-models – returns the available AI model identifiers from EduAI. */
 router.get('/ai-models', authenticateToken, async (req, res) => {
   try {
-    const models = await eduaiService.listAIModels();
-    res.json(models);
+    const models = await eduaiService.listAIModels({ cookie: req.headers.cookie ?? '' });
+    if (Array.isArray(models) && models.length > 0) {
+      return res.json(models);
+    }
+    return res.json(FALLBACK_AI_MODELS);
   } catch (error) {
     console.error('EduAI list models error:', error);
-    res.status(500).json({
-      error: 'Failed to retrieve AI models from EduAI',
-      details: error.message
-    });
+    res.json(FALLBACK_AI_MODELS);
   }
 });
 

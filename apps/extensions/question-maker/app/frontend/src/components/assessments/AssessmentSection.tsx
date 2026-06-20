@@ -299,7 +299,7 @@ export const AssessmentSection = ({
                 </div>
             ) : (
                 <div className="space-y-4" data-tour-id="assessment-list">
-                    {assessments.map((assessment) => {
+                    {assessments.map((assessment, assessmentIndex) => {
                         const assessmentQuestions = buildQuestionEntries(assessment);
                         const totalQuestionCount = countTotalQuestions(assessment);
                         const blueprint = assessment.blueprintConfig;
@@ -341,7 +341,7 @@ export const AssessmentSection = ({
                                                         })
                                                     }
                                                     className="flex items-center space-x-1"
-                                                    data-tour-id="assessment-view-btn"
+                                                    data-tour-id={assessmentIndex === 0 ? 'assessment-view-btn' : undefined}
                                                 >
                                                     <Layers3 className="h-4 w-4" />
                                                     <span>Open</span>

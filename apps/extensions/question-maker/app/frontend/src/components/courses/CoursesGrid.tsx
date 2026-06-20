@@ -15,6 +15,8 @@ export type CoursesGridProps = {
   showDepartment?: boolean;
   roleView?: QmRoleView;
   currentUserId?: string;
+  /** Course card to highlight for guided tour step 1 */
+  tourHighlightCourseId?: number | null;
 };
 
 export function CoursesGrid({
@@ -27,7 +29,12 @@ export function CoursesGrid({
   showDepartment = false,
   roleView,
   currentUserId,
+  tourHighlightCourseId = null,
 }: CoursesGridProps) {
+  const highlightId =
+    tourHighlightCourseId ??
+    (courses.length > 0 ? courses[0].id : null);
+
   return (
     <>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 items-stretch">
@@ -48,7 +55,7 @@ export function CoursesGrid({
           </Tooltip>
         )}
 
-        {courses.map((course, index) => (
+        {courses.map((course) => (
           <Tooltip
             key={course.id}
             content={`Open question bank and assessments for ${course.name}`}
@@ -56,7 +63,8 @@ export function CoursesGrid({
           >
             <Card
               className="cursor-pointer transition-shadow hover:shadow-md border bg-card text-card-foreground flex min-h-[140px]"
-              data-tour-id={index === 0 ? 'course-select' : undefined}
+              data-tour-id={course.id === highlightId ? 'course-select' : undefined}
+              data-course-id={course.id}
               onClick={() => onSelectCourse(course)}
             >
               <CardContent className="flex flex-col flex-1 p-6 justify-center">

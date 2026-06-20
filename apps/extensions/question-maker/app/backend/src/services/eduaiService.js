@@ -702,47 +702,64 @@ Please ensure the questions are appropriate for the course level and cover the k
   }
 
   /** Retrieves the list of AI models supported by EduAI for display in pickers. */
-  async listAIModels() {
-    if (!this.isConfigured()) {
+  async listAIModels({ cookie } = {}) {
+    if (!this.isConfigured() && !cookie?.trim()) {
       throw new Error(
         "EduAI service is not configured. Please set EDUAI_API_KEY environment variable."
       );
     }
 
     const url = `${this.baseURL}/api/ai-models`;
+    const headerVariants = [];
+    const trimmedCookie = typeof cookie === "string" ? cookie.trim() : "";
+    if (trimmedCookie) {
+      headerVariants.push({ cookie: trimmedCookie });
+    }
+    if (this.apiKey) {
+      headerVariants.push({ "x-api-key": this.apiKey });
+      headerVariants.push({ Authorization: `Bearer ${this.apiKey}` });
+    }
 
-    try {
-      const response = await axios.get(url, {
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": this.apiKey,
-        },
-        timeout: 60000, // 60 second timeout
-      });
-
-      return response.data;
-    } catch (error) {
-      if (error.response) {
-        const errorMessage =
-          error.response.data?.error ||
-          error.response.data?.message ||
-          error.response.statusText;
-        const statusCode = error.response.status;
-        console.error("EduAI AI models API error:", {
-          status: statusCode,
-          statusText: error.response.statusText,
-          data: error.response.data,
-          url,
+    let lastError;
+    for (const authHeaders of headerVariants) {
+      try {
+        const response = await axios.get(url, {
+          headers: {
+            "Content-Type": "application/json",
+            ...authHeaders,
+          },
+          timeout: 60000,
         });
-        throw new Error(`EduAI API error (${statusCode}): ${errorMessage}`);
-      } else if (error.request) {
-        console.error("EduAI AI models request error:", error.request);
-        throw new Error("EduAI API request failed: No response received");
-      } else {
-        console.error("EduAI AI models error:", error.message);
-        throw new Error(`EduAI API error: ${error.message}`);
+        return response.data;
+      } catch (error) {
+        lastError = error;
       }
     }
+
+    if (lastError?.response) {
+      const errorMessage =
+        lastError.response.data?.error ||
+        lastError.response.data?.message ||
+        lastError.response.statusText;
+      const statusCode = lastError.response.status;
+      console.error("EduAI AI models API error:", {
+        status: statusCode,
+        statusText: lastError.response.statusText,
+        data: lastError.response.data,
+        url,
+      });
+      throw new Error(`EduAI API error (${statusCode}): ${errorMessage}`);
+    } else if (lastError?.request) {
+      console.error("EduAI AI models request error:", lastError.request);
+      throw new Error("EduAI API request failed: No response received");
+    } else if (lastError) {
+      console.error("EduAI AI models error:", lastError.message);
+      throw new Error(`EduAI API error: ${lastError.message}`);
+    }
+
+    throw new Error(
+      "EduAI service is not configured. Please set EDUAI_API_KEY environment variable."
+    );
   }
 
   /** Issues a lightweight chat call to validate Core AI connectivity. */

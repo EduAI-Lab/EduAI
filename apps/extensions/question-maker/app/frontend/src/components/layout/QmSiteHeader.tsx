@@ -2,8 +2,7 @@ import { Button, Separator } from '@eduai/ui';
 import { Tooltip } from '@/components/ui/tooltip';
 import { useContext } from 'react';
 import { useLocation } from 'react-router';
-import { BugOff, HelpCircle, Menu, Moon, Sun, User, X } from 'lucide-react';
-import { useTheme } from '@eduai/ui';
+import { BugOff, Menu, X } from 'lucide-react';
 import { EduAIStatusBadge } from '@/components/eduai/EduAIStatusBadge';
 import { useEduAIStatus } from '@/hooks/useEduAIStatus';
 import { useGuidedTour } from '@/contexts/GuidedTourContext';
@@ -35,9 +34,8 @@ export function QmSiteHeader({ onMenuClick, mobileNavOpen }: QmSiteHeaderProps) 
   const eduaiStatus = useEduAIStatus();
   const { startTour } = useGuidedTour();
   const { courses, isLoading: isCoursesLoading } = useCourses();
-  const { openProfile, guidedTourHandler } = useQmLayout();
+  const { guidedTourHandler } = useQmLayout();
   const bugReportCtx = useContext(BugReportContext);
-  const { resolvedTheme, setTheme } = useTheme();
 
   const handleGuidedTourClick = () => {
     if (guidedTourHandler) {
@@ -45,10 +43,6 @@ export function QmSiteHeader({ onMenuClick, mobileNavOpen }: QmSiteHeaderProps) 
     } else {
       startTour('main');
     }
-  };
-
-  const toggleTheme = () => {
-    setTheme(resolvedTheme === 'dark' ? 'light' : 'dark');
   };
 
   return (
@@ -87,20 +81,6 @@ export function QmSiteHeader({ onMenuClick, mobileNavOpen }: QmSiteHeaderProps) 
             </span>
           )}
         </div>
-        <Tooltip
-          content={resolvedTheme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-          side="bottom"
-        >
-          <Button
-            variant="ghost"
-            size="icon"
-            className="rounded-full"
-            onClick={toggleTheme}
-            aria-label={resolvedTheme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-          >
-            {resolvedTheme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-          </Button>
-        </Tooltip>
         {bugReportCtx && (
           <Tooltip content="Report a bug" side="bottom">
             <Button
@@ -114,30 +94,6 @@ export function QmSiteHeader({ onMenuClick, mobileNavOpen }: QmSiteHeaderProps) 
             </Button>
           </Tooltip>
         )}
-        <Tooltip content="Open help and documentation" side="bottom">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="rounded-full"
-            onClick={() => window.open('/help', '_blank', 'noopener')}
-            aria-label="Open help"
-            data-tour-id="help-button"
-          >
-            <HelpCircle className="h-5 w-5" />
-          </Button>
-        </Tooltip>
-        <Tooltip content="Profile and course settings" side="bottom">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="rounded-full"
-            onClick={openProfile}
-            data-tour-id="profile-courses-button"
-            aria-label="Open profile"
-          >
-            <User className="h-6 w-6" />
-          </Button>
-        </Tooltip>
       </div>
     </header>
   );
