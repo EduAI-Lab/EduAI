@@ -9,6 +9,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
+- [core] feat: Allow admins to invite students — STUDENT added to invitable roles with a "Student / TA" dropdown marker noting a TA is a student elevated per-course. (#687, #691, @abdullahmoh21, 2026-06-20)
+- [core] tests: Cover admin student invites — schema accepts STUDENT and rejects TA, and the integration create→accept yields a STUDENT user with no authorized units. (#687, #691, @abdullahmoh21, 2026-06-20)
 - [core] api: Canvas material sync — discover and import Canvas course files into Core `CourseMaterial` with embedding pipeline; instructor UI on course detail (`CanvasMaterialSyncDialog`). (#658, @GlowyBlack, 2026-06-17)
 - [ai-tutor] api: `importEnrolledCoursesFromCore` — mirrors published student enrollments from Core into local offerings on `/api/me` and `GET /courses`. (#658, @GlowyBlack, 2026-06-17)
 - [core] api: `ubcTermFromDate` — UBC academic term codes (W1/W2/S1/S2) from course start dates in `America/Vancouver`. (#658, @GlowyBlack, 2026-06-17)
