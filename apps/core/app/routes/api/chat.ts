@@ -11,6 +11,11 @@ import {
 import { modelSupportsTools } from "~/lib/ai/providers.server";
 import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
 import {
+  composeSecurityPrompt,
+  filterIncomingClientMessages,
+  sanitizeSystemPrompt,
+} from "~/lib/ai/prompt-safety";
+import {
   auditAndMaybeRewrite,
   buildOverseenAssistantMessagesToPersist,
   emptyOversightAuditResult,
@@ -326,8 +331,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const hasSystemPromptField = Object.prototype.hasOwnProperty.call(body, "systemPrompt");
     let trimmedSystemPrompt: string | null = null;
     if (typeof body.systemPrompt === "string") {
-      const candidate = body.systemPrompt.trim();
-      trimmedSystemPrompt = candidate.length > 0 ? candidate : null;
+      trimmedSystemPrompt = sanitizeSystemPrompt(body.systemPrompt);
     } else if (body.systemPrompt === null) {
       trimmedSystemPrompt = null;
     }
@@ -362,9 +366,11 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     }
 
-    const normalizedIncomingMessages = rawMessages
-      .map((m) => normalizeMessage(m))
-      .filter((m): m is GenericMessage => m !== null);
+    const normalizedIncomingMessages = filterIncomingClientMessages(
+      rawMessages
+        .map((m) => normalizeMessage(m))
+        .filter((m): m is GenericMessage => m !== null),
+    );
 
     // Resolve course code to internal ID when needed
     let resolvedCourseId: string | null = null;
@@ -733,7 +739,8 @@ export async function action({ request }: ActionFunctionArgs) {
 
     let streamConfig;
 
-    const resolvedSystemPrompt = trimmedSystemPrompt ?? chat.systemPrompt ?? null;
+    const resolvedSystemPrompt =
+      trimmedSystemPrompt ?? sanitizeSystemPrompt(chat.systemPrompt) ?? null;
 
     if (!supportsTools) {
       // MODELS WITHOUT TOOL SUPPORT: Use hybrid RAG approach
@@ -874,7 +881,9 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
       bodyValue: adhdAssist,
       chatValue: chat.adhdAssist,
     });
-    streamConfig.system = composeSystemPrompt(streamConfig.system ?? "", { adhdAssist: effectiveAdhdAssist });
+    streamConfig.system = composeSecurityPrompt(
+      composeSystemPrompt(streamConfig.system ?? "", { adhdAssist: effectiveAdhdAssist }),
+    );
 
     const streamStartedAt = Date.now();
     const needsOversight = effectiveAdhdAssist && isAdhdOversightEnabled();
