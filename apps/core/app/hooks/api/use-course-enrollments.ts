@@ -81,8 +81,8 @@ export function useCourseEnrollments(courseId: string) {
       const body = await res.json().catch(() => ({}))
       throw new Error(body.error ?? 'Failed to remove enrollment')
     }
-    setEnrollments((prev) => prev.filter((e) => e.id !== enrollmentId))
-  }, [courseId])
+    await fetchEnrollments()
+  }, [courseId, fetchEnrollments])
 
   const updateRole = useCallback(async (enrollmentId: string, role: CourseEnrollment['role']) => {
     const res = await fetch(`/api/courses/${courseId}/enrollments/${enrollmentId}`, {

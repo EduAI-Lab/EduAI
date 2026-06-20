@@ -55,7 +55,7 @@ export async function action({ request }: ActionFunctionArgs) {
     });
   }
 
-  const source = (body as { source?: string }).source;
+  const source = body && typeof body === "object" ? (body as { source?: string }).source : undefined;
   const extensionSource = source === "AI_TUTOR" || source === "QUESTION_MAKER";
   let sessionUserId: string | null = null;
 
