@@ -888,7 +888,7 @@ async function seedAIProvidersAndModels() {
     },
   });
 
-  await prisma.aIProvider.upsert({
+  const vllm = await prisma.aIProvider.upsert({
     where: { name: 'vllm' },
     update: {},
     create: {
@@ -926,6 +926,37 @@ async function seedAIProvidersAndModels() {
       where: { providerId_modelId: { providerId: google.id, modelId: m.modelId } },
       update: {},
       create: { ...m, type: 'CHAT', supportsImages: true, supportsTools: true, supportsStreaming: true, providerId: google.id },
+    });
+  }
+
+  const vllmModels = [
+    {
+      modelId: 'qwen2.5-7b-instruct',
+      name: 'Qwen 2.5 7B (vLLM)',
+      description: 'House chat — hybrid RAG',
+      maxTokens: 8192,
+      supportsTools: false,
+    },
+    {
+      modelId: 'qwen2.5-32b-instruct',
+      name: 'Qwen 2.5 32B AWQ (vLLM)',
+      description: 'Large tier — tools via Hermes parser',
+      maxTokens: 8192,
+      supportsTools: true,
+    },
+  ];
+
+  for (const m of vllmModels) {
+    await prisma.aIModel.upsert({
+      where: { providerId_modelId: { providerId: vllm.id, modelId: m.modelId } },
+      update: { maxTokens: m.maxTokens, supportsTools: m.supportsTools },
+      create: {
+        ...m,
+        type: 'CHAT',
+        supportsImages: true,
+        supportsStreaming: true,
+        providerId: vllm.id,
+      },
     });
   }
 
