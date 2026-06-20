@@ -1,13 +1,10 @@
 import { auth } from "~/lib/auth/server";
+import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { courseChatViewPolicyKey } from "~/lib/rbac/permissions";
+import { getPolicy } from "~/lib/policy.server";
 import prisma from "~/lib/prisma.server";
-import { canAccessChat } from "~/lib/chat-history/server";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
-/**
- * GET /api/chats/:chatId — chat metadata. Readable by the owner and by anyone
- * with course-staff/admin visibility (see lib/chat-history). `canEdit` is true
- * only for the owner; read-only viewers use it to suppress the composer.
- */
 export async function loader({ request, params }: LoaderFunctionArgs) {
   try {
     const session = await auth.api.getSession(request);
@@ -26,10 +23,19 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       });
     }
 
-    const { chat, canEdit } = await canAccessChat(
-      { id: session.user.id, role: session.user.role },
-      chatId,
-    );
+    const chat = await prisma.chat.findFirst({
+      where: { id: chatId },
+      select: {
+        id: true,
+        userId: true,
+        courseId: true,
+        systemPrompt: true,
+        title: true,
+        adhdAssist: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
 
     if (!chat) {
       return new Response(JSON.stringify({ error: "Chat not found" }), {
@@ -38,26 +44,61 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       });
     }
 
-    return new Response(
-      JSON.stringify({
-        id: chat.id,
-        systemPrompt: chat.systemPrompt,
-        title: chat.title,
-        adhdAssist: chat.adhdAssist,
-        courseId: chat.courseId,
-        courseCode: chat.course?.code ?? null,
-        courseName: chat.course?.name ?? null,
-        ownerId: chat.userId,
-        ownerName: chat.user.name,
-        canEdit,
-        createdAt: chat.createdAt,
-        updatedAt: chat.updatedAt,
-      }),
-      {
-        status: 200,
+    const isOwner = chat.userId === session.user.id;
+
+    // Owner and ADMIN may always read. §5c: a course-authorized viewer
+    // (instructor/unit-admin) may read a course chat when their grant flag is on
+    // — resolved through the shared chat-visibility gate so this route can't
+    // drift from the course/unit chat list endpoints.
+    let authorized = isOwner || session.user.role === "ADMIN";
+    if (!authorized && chat.courseId) {
+      const { access } = await resolveCourseAccessWithCourse(session.user, chat.courseId);
+      const gate = courseChatViewPolicyKey(access?.level ?? null);
+      const gateOpen =
+        gate === "always" || (gate !== "never" && (await getPolicy(gate)));
+      if (gateOpen) {
+        // Oversight is limited to STUDENT-owned chats — the same owner-role
+        // filter the course/unit list endpoints apply. Without this, a
+        // co-instructor/TA/unit-admin with the grant on could read another
+        // staff member's private course chat.
+        const ownerIsStudent = await prisma.enrollment.findFirst({
+          where: {
+            courseId: chat.courseId,
+            userId: chat.userId,
+            role: "STUDENT",
+            isActive: true,
+          },
+          select: { id: true },
+        });
+        authorized = ownerIsStudent !== null;
+      }
+    }
+
+    if (!authorized) {
+      // No existence leak — same 404 a non-owner gets for a missing chat.
+      return new Response(JSON.stringify({ error: "Chat not found" }), {
+        status: 404,
         headers: { "Content-Type": "application/json" },
-      },
-    );
+      });
+    }
+
+    // Message bodies are only needed by the oversight viewer (a non-owner staff
+    // read). The owner's session-resume path (useChatSession) reads metadata
+    // only, so don't pull the full transcript on that hot path.
+    const messages = isOwner
+      ? undefined
+      : await prisma.chatMessage.findMany({
+          where: { chatId: chat.id },
+          select: { messageId: true, role: true, content: true, position: true },
+          orderBy: { position: "asc" },
+        });
+
+    const { userId: _userId, courseId: _courseId, ...meta } = chat;
+    const chatView = messages ? { ...meta, messages } : meta;
+    return new Response(JSON.stringify(chatView), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
   } catch (error) {
     console.error("Chat API error:", error);
     return new Response(JSON.stringify({ error: "Internal server error" }), {

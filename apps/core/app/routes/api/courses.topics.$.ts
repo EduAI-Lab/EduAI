@@ -7,6 +7,7 @@ import {
   type AccessLevel,
 } from "~/lib/auth/course-access.server";
 import prisma from "~/lib/prisma.server";
+import { getPolicy } from "~/lib/policy.server";
 import {
   createCourseTopic,
   updateCourseTopic,
@@ -42,15 +43,22 @@ async function topicsGetResponse(courseId: string, topicId?: string) {
 /**
  * §8 manage tier: ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C) (rank >= 2), plus the
  * TA own-only carve-out (§19) — a TA may edit/delete topics they created.
+ *
+ * When the `tas.canManageTopics` grant is on (passed in as `taCanManageTopics`),
+ * a TA may manage ANY topic in the course, superseding the own-only carve-out.
  */
 async function canManageTopic(
   access: AccessLevel,
   userId: string,
   courseId: string,
   topicId: string | undefined,
+  taCanManageTopics: boolean,
 ): Promise<boolean> {
   if (access.rank >= 2) return true;
-  if (access.level !== "ta" || !topicId) return false;
+  if (access.level !== "ta") return false;
+  // tas.canManageTopics grant: a TA may manage any topic in the course.
+  if (taCanManageTopics) return true;
+  if (!topicId) return false;
   const topic = await prisma.courseTopic.findFirst({
     where: { id: topicId, courseId, deletedAt: null },
     select: { createdBy: true },
@@ -156,8 +164,14 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   switch (request.method) {
     case "POST": {
-      // §8: create topic — ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C).
-      if (!serviceAuth && (!access || access.rank < 2)) {
+      // §8: create topic — ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C), plus a TA
+      // when the tas.canManageTopics grant is on.
+      if (
+        !serviceAuth &&
+        (!access ||
+          (access.rank < 2 &&
+            !(access.level === "ta" && (await getPolicy("tas.canManageTopics")))))
+      ) {
         return forbidden();
       }
 
@@ -221,7 +235,13 @@ export async function action({ request, params }: ActionFunctionArgs) {
       if (
         !serviceAuth &&
         (!access || !session?.user ||
-          !(await canManageTopic(access, session.user.id, courseId, topicId)))
+          !(await canManageTopic(
+            access,
+            session.user.id,
+            courseId,
+            topicId,
+            access.level === "ta" ? await getPolicy("tas.canManageTopics") : false,
+          )))
       ) {
         return forbidden();
       }
@@ -288,7 +308,13 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
         if (
           !access || !session?.user ||
-          !(await canManageTopic(access, session.user.id, courseId, topicId))
+          !(await canManageTopic(
+            access,
+            session.user.id,
+            courseId,
+            topicId,
+            access.level === "ta" ? await getPolicy("tas.canManageTopics") : false,
+          ))
         ) {
           return forbidden();
         }

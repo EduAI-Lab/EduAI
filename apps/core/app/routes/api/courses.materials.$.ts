@@ -7,6 +7,7 @@ import {
   resolveCourseAccessWithCourse,
   type AccessLevel,
 } from '~/lib/auth/course-access.server';
+import { getPolicy, denyByPolicy } from '~/lib/policy.server';
 import type { Session } from '~/lib/auth/server';
 import { fireAndForget, logAuditAction, logSystemError } from '~/lib/logging.server';
 import { getActorContext, getRequestContext } from '~/lib/request-context.server';
@@ -53,16 +54,44 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   const resolved = await resolveMaterialsAccess(request, courseId);
   if (resolved.response) return resolved.response;
-  const { user, access } = resolved;
+  const { user, access, isPublished } = resolved;
 
   const requestContext = getRequestContext(request);
 
   switch (request.method) {
     case 'POST': {
       // §7: upload is ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C) / TA(C).
-      // Students cannot upload materials.
-      if (access.rank < 1) {
-        return json(403, { error: 'Forbidden' });
+      // Students cannot upload materials UNLESS the students.canUploadMaterials
+      // grant is explicitly enabled (off by default).
+      const studentUploadAllowed =
+        access.level === 'student' && (await getPolicy('students.canUploadMaterials'));
+      if (access.rank < 1 && !studentUploadAllowed) {
+        return denyByPolicy({
+          request,
+          policyKey: 'students.canUploadMaterials',
+          user,
+          action: 'material.upload',
+          courseId,
+        });
+      }
+      // §7/§19: a student may upload only in a PUBLISHED course — mirror the
+      // list gate (loader 403s students in unpublished courses) so student
+      // content can't be seeded into a draft course's RAG corpus. Higher ranks
+      // legitimately work in unpublished courses. This is a publish-state gate,
+      // NOT a policy-flag denial: the `students.canUploadMaterials` grant may be
+      // on, so don't mislabel the audit trail with it — return a distinct 403.
+      if (access.level === 'student' && !isPublished) {
+        return json(403, { error: 'COURSE_NOT_PUBLISHED' });
+      }
+      // Gate: a TA is allowed by default; deny only when the gate is off.
+      if (access.level === 'ta' && !(await getPolicy('tas.canManageMaterials'))) {
+        return denyByPolicy({
+          request,
+          policyKey: 'tas.canManageMaterials',
+          user,
+          action: 'material.upload',
+          courseId,
+        });
       }
       return uploadMaterial(request, courseId, user, requestContext);
     }
@@ -79,6 +108,18 @@ export async function action({ request, params }: ActionFunctionArgs) {
       });
       if (!material) {
         return json(404, { error: 'MATERIAL_NOT_FOUND' });
+      }
+
+      // tas.canManageMaterials is a single gate covering upload AND delete, so
+      // an off flag must also block TA deletes (including own uploads).
+      if (access.level === 'ta' && !(await getPolicy('tas.canManageMaterials'))) {
+        return denyByPolicy({
+          request,
+          policyKey: 'tas.canManageMaterials',
+          user,
+          action: 'material.delete',
+          courseId,
+        });
       }
 
       // §7: delete is ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C), plus the TA
@@ -157,6 +198,8 @@ async function uploadMaterial(
     // Audit the upload as soon as the material row is persisted, independent of embedding.
     // A material that uploads successfully but later fails to embed is still a real upload
     // and must leave an audit trail (the embedding failure is recorded separately below).
+    // actorUserId/actorRole come from getActorContext; email/name and the material's
+    // type/size go in details so the audit line carries who-added-what in full.
     fireAndForget(
       logAuditAction({
         ...getActorContext(user ?? null),
@@ -166,7 +209,13 @@ async function uploadMaterial(
         entityType: 'CourseMaterial',
         entityId: material.id,
         entityLabel: material.title,
-        details: { courseId },
+        details: {
+          courseId,
+          actorEmail: user.email,
+          actorName: user.name,
+          mimeType: material.mimeType,
+          fileSize: material.fileSize,
+        },
       }),
     );
 
@@ -217,11 +266,23 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   const resolved = await resolveMaterialsAccess(request, courseId);
   if (resolved.response) return resolved.response;
-  const { access, isPublished } = resolved;
+  const { user, access, isPublished } = resolved;
 
   // §7/§19: students can view materials only in published courses.
   if (access.level === 'student' && !isPublished) {
     return json(403, { error: 'Forbidden' });
+  }
+
+  // Policy gate (students.canViewMaterials, default true): layers on top of the
+  // publish gate — off means students cannot list materials at all.
+  if (access.level === 'student' && !(await getPolicy('students.canViewMaterials'))) {
+    return denyByPolicy({
+      request,
+      policyKey: 'students.canViewMaterials',
+      user,
+      action: 'material.list',
+      courseId,
+    });
   }
 
   const materials = await prisma.courseMaterial.findMany({
