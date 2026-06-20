@@ -38,10 +38,12 @@ import {
 } from "~/lib/ai/course-rag-policy";
 import {
   buildCappedRagContextText,
+  buildEmptyCourseRagBlock,
   buildRagSystemBlock,
   capToolResultsInMessages,
   estimateMessageCharsForModel,
   extractMessageText,
+  LATEST_TURN_FOCUS_INSTRUCTION,
   prepareBoundedSessionContext,
   resolveMaxContextMessages,
   HYBRID_RAG_MAX_CHUNKS,
@@ -679,6 +681,8 @@ export async function action({ request }: ActionFunctionArgs) {
 
 IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.
 
+${LATEST_TURN_FOCUS_INSTRUCTION}
+
 ${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ""}
 
 Be helpful, conversational, and accurate. Use markdown for formatting.`;
@@ -724,7 +728,7 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
 ${buildRagSystemBlock(courseRagContextText)}`
           : `${defaultCourseSystemPrompt}
 
-I don't have access to specific course materials for this question, but I can provide general educational assistance.`;
+${buildEmptyCourseRagBlock()}`;
 
         streamConfig = {
           model: aiModel,
@@ -745,7 +749,9 @@ I don't have access to specific course materials for this question, but I can pr
     } else {
       const baseSystemPrompt = resolvedSystemPrompt || `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
 
-IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.`;
+IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.
+
+${LATEST_TURN_FOCUS_INSTRUCTION}`;
 
       let toolSystemPrompt = buildToolCallingSystemPrompt({
         basePrompt: baseSystemPrompt,
@@ -758,6 +764,10 @@ IMPORTANT: You have access to the full conversation history in the messages arra
         toolSystemPrompt = `${toolSystemPrompt}
 
 ${buildRagSystemBlock(courseRagContextText, { toolPath: true })}`;
+      } else if (courseRagInject) {
+        toolSystemPrompt = `${toolSystemPrompt}
+
+${buildEmptyCourseRagBlock()}`;
       }
 
       streamConfig = {
