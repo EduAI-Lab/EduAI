@@ -147,6 +147,12 @@ describe('CourseDetailManagerView', () => {
 })
 
 // TA view
+const TA_PROPS = {
+  onCreateTopic: NOOP,
+  onDeleteTopic: NOOP,
+  onUpdateAiInstructions: NOOP,
+}
+
 describe('CourseDetailTaView', () => {
   it('does NOT show Enrollments tab', () => {
     wrap(
@@ -155,6 +161,7 @@ describe('CourseDetailTaView', () => {
         topics={[]}
         materials={[]}
         onFileSelect={onFileSelect}
+        {...TA_PROPS}
       />
     )
     expect(screen.queryByRole('tab', { name: /enrollments/i })).not.toBeInTheDocument()
@@ -167,6 +174,7 @@ describe('CourseDetailTaView', () => {
         topics={[]}
         materials={[]}
         onFileSelect={onFileSelect}
+        {...TA_PROPS}
       />
     )
     expect(screen.getAllByRole('button', { name: /upload material/i }).length).toBeGreaterThan(0)
@@ -179,6 +187,7 @@ describe('CourseDetailTaView', () => {
         topics={[TOPIC]}
         materials={[]}
         onFileSelect={onFileSelect}
+        {...TA_PROPS}
       />
     )
     expect(screen.queryByPlaceholderText(/new topic name/i)).not.toBeInTheDocument()
@@ -191,6 +200,7 @@ describe('CourseDetailTaView', () => {
         topics={[TOPIC]}
         materials={[]}
         onFileSelect={onFileSelect}
+        {...TA_PROPS}
       />
     )
     // Topic name appears in both the hero quick-chips and the Topics tab
