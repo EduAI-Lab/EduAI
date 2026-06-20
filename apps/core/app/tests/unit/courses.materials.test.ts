@@ -78,6 +78,21 @@ function makeDeleteArgs(materialId: string) {
   };
 }
 
+function makeRenameArgs(materialId: string, body: unknown) {
+  return {
+    request: new Request(
+      `http://localhost/api/courses/${COURSE_ID}/materials/${materialId}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    ),
+    params: { courseId: COURSE_ID, materialId },
+    context: {} as never,
+  };
+}
+
 function mockSession(role: string, id = "user-1") {
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id, role },
@@ -341,6 +356,95 @@ describe("DELETE /api/courses/:courseId/materials/:materialId action", () => {
       uploadedBy: null,
     } as never);
     const res = await action(makeDeleteArgs("mat-1"));
+    expect(res.status).toBe(403);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// action — PATCH (rename)
+// ---------------------------------------------------------------------------
+
+describe("PATCH /api/courses/:courseId/materials/:materialId action", () => {
+  beforeEach(() => {
+    mockSession("INSTRUCTOR");
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "mat-1",
+      uploadedBy: "other-user",
+      title: "Old name",
+    } as never);
+    vi.mocked(prisma.courseMaterial.update).mockResolvedValue({
+      id: "mat-1",
+      title: "New name",
+    } as never);
+  });
+
+  it("returns 400 when title is missing/blank", async () => {
+    const res = await action(makeRenameArgs("mat-1", { title: "   " }));
+    expect(res.status).toBe(400);
+    expect(prisma.courseMaterial.update).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when title exceeds 255 chars", async () => {
+    const res = await action(makeRenameArgs("mat-1", { title: "x".repeat(256) }));
+    expect(res.status).toBe(400);
+    expect(prisma.courseMaterial.update).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 when the material does not exist in the course", async () => {
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
+    const res = await action(makeRenameArgs("missing", { title: "New name" }));
+    expect(res.status).toBe(404);
+    expect(prisma.courseMaterial.update).not.toHaveBeenCalled();
+  });
+
+  it("returns 200 for an enrolled INSTRUCTOR (renames any material, trims title)", async () => {
+    const res = await action(makeRenameArgs("mat-1", { title: "  New name  " }));
+    expect(res.status).toBe(200);
+    expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "mat-1" },
+        data: { title: "New name" },
+      }),
+    );
+  });
+
+  it("returns 403 for an enrolled STUDENT", async () => {
+    mockSession("STUDENT");
+    mockAccess({ level: "student", rank: 0 });
+    const res = await action(makeRenameArgs("mat-1", { title: "New name" }));
+    expect(res.status).toBe(403);
+    expect(prisma.courseMaterial.update).not.toHaveBeenCalled();
+  });
+
+  it("returns 403 for a TA renaming another user's material (§7 own-only)", async () => {
+    mockSession("STUDENT", "ta-user");
+    mockAccess({ level: "ta", rank: 1 });
+    const res = await action(makeRenameArgs("mat-1", { title: "New name" }));
+    expect(res.status).toBe(403);
+    expect(prisma.courseMaterial.update).not.toHaveBeenCalled();
+  });
+
+  it("returns 200 for a TA renaming their OWN material (§7 own-only)", async () => {
+    mockSession("STUDENT", "ta-user");
+    mockAccess({ level: "ta", rank: 1 });
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "mat-1",
+      uploadedBy: "ta-user",
+      title: "Old name",
+    } as never);
+    const res = await action(makeRenameArgs("mat-1", { title: "New name" }));
+    expect(res.status).toBe(200);
+  });
+
+  it("returns 403 for a TA on an ownerless material (null uploadedBy)", async () => {
+    mockSession("STUDENT", "ta-user");
+    mockAccess({ level: "ta", rank: 1 });
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "mat-1",
+      uploadedBy: null,
+      title: "Old name",
+    } as never);
+    const res = await action(makeRenameArgs("mat-1", { title: "New name" }));
     expect(res.status).toBe(403);
   });
 });

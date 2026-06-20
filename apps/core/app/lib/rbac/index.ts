@@ -19,6 +19,7 @@ export {
   canUploadMaterial,
   canViewMaterial,
   canDeleteMaterial,
+  canRenameMaterial,
   canViewTopics,
   canManageTopics,
   isStudentAccess,

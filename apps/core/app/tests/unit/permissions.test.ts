@@ -10,6 +10,7 @@ import {
   canUploadMaterial,
   canViewMaterial,
   canDeleteMaterial,
+  canRenameMaterial,
   canViewTopics,
   canManageTopics,
   isStudentAccess,
@@ -165,6 +166,23 @@ describe('canDeleteMaterial', () => {
     [null, ownerId, ownerId, false],
   ] as [CourseAccess, string, string, boolean][])('access=%s own=%s → %s', (access, userId, uploadedBy, expected) => {
     expect(canDeleteMaterial(access, userId, uploadedBy)).toBe(expected)
+  })
+})
+
+describe('canRenameMaterial', () => {
+  const ownerId = 'user-1'
+  const otherId = 'user-2'
+
+  it.each([
+    ['admin', ownerId, otherId, true],
+    ['unit', ownerId, otherId, true],
+    ['instructor', ownerId, otherId, true],
+    ['ta', ownerId, ownerId, true],    // own material
+    ['ta', ownerId, otherId, false],   // other's material
+    ['student', ownerId, ownerId, false],
+    [null, ownerId, ownerId, false],
+  ] as [CourseAccess, string, string, boolean][])('access=%s own=%s → %s', (access, userId, uploadedBy, expected) => {
+    expect(canRenameMaterial(access, userId, uploadedBy)).toBe(expected)
   })
 })
 
