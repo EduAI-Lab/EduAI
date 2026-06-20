@@ -3,6 +3,7 @@ import { useRouteLoaderData } from "react-router"
 import {
   IconBooks,
   IconBrain,
+  IconClockCog,
   IconDashboard,
   IconFileText,
   IconListCheck,
@@ -52,6 +53,7 @@ const NAV_ICONS: Record<NavItemKey, Icon> = {
   "admin-settings": IconShieldLock,
   "admin-logs": IconFileText,
   "unitadmin-invites": IconMail,
+  "admin-cron": IconClockCog,
   settings: IconSettings,
   "ai-tutor": IconMessageChatbot,
 }

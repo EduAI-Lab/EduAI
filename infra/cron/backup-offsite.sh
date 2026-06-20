@@ -11,10 +11,12 @@ set -euo pipefail
 source /opt/eduai/cron/lib.sh
 
 DATE=$(date -u '+%Y%m%d')
+cron_start "backup-offsite"
 log "=== Off-site sync for $DATE ==="
 
 aws s3 sync "$BACKUP_DIR" "$OFFSITE_BUCKET" \
   --exclude '*' --include "*_${DATE}.sql.gz" \
-  || die "Off-site sync failed for $DATE"
+  || cron_fail "Off-site sync failed for $DATE"
 
 log "=== Off-site sync complete for $DATE ==="
+cron_finish
