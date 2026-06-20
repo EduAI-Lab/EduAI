@@ -1,22 +1,38 @@
 /**
- * Router responsible for course and topic CRUD scoped to authenticated instructors.
- * Performs ownership checks before touching Sequelize models to keep tenant data isolated.
+ * Router for course and topic CRUD. Read/update/delete are gated per-course via
+ * requireCourseAccess (rbac-matrix §3/§5), which resolves the caller's access from
+ * Core enrollment/unit data — so ADMIN, UNIT_ADMIN (in-unit) and enrolled instructor
+ * peers reach a course, not just its original owner.
  */
 import express from 'express';
 import { Course, Question_Metadata, Topics } from '../schema/index.js';
 import { authenticateToken } from '../middleware/auth.js';
 import {
+  requireCourseAccess,
+  resolveCourseAccessWithCourse,
+} from '../middleware/courseAccess.js';
+import {
   pushTopicToCore,
   isCoreCourseInScopedList,
 } from '../services/coreApiService.js';
-import { resolveCourseAccessWithCourse } from '../middleware/courseAccess.js';
+import { listCoursesForUser } from '../services/courseListService.js';
 import { ensureCoreCourseLink } from '../services/coreCourseLinkService.js';
 import { syncTopicsFromCoreForCourse } from '../services/topicSyncService.js';
+import { importTaughtCoursesFromCore } from '../services/importTaughtCoursesService.js';
 import { logger } from '../utils/logger.js';
 
 const router = express.Router();
 
-/** POST /api/course – creates a course tied to the authenticated user after basic validation. */
+/** Resolves the QM course id from the URL param for per-course access gates. */
+const courseIdFromParam = (req) => req.params.id;
+
+/**
+ * POST /api/course – creates a local QM course owned by the authenticated user.
+ *
+ * NOTE: course creation gating is intentionally left unchanged here — Core is the
+ * intended source of truth for courses and this endpoint is being addressed
+ * separately. Per-course RBAC on read/update/delete is enforced below.
+ */
 router.post('/', authenticateToken, async (req, res, next) => {
   try {
     const { name, courseCode } = req.body;
@@ -44,40 +60,57 @@ router.post('/', authenticateToken, async (req, res, next) => {
   }
 });
 
-/** GET /api/course – lists the user’s courses and optionally includes question/topic stats. */
+/**
+ * GET /api/course – lists the courses the caller may access, role-scoped per the
+ * RBAC matrix (§5): ADMIN sees all, UNIT_ADMIN sees their units, INSTRUCTOR sees
+ * courses they are enrolled in. Optionally includes per-course question/topic stats.
+ */
 router.get('/', authenticateToken, async (req, res, next) => {
   try {
-    const { includeStats = false } = req.query;
-    
-    let includeOptions = [];
-    if (includeStats === 'true') {
-      includeOptions = [
-        {
-          model: Question_Metadata,
-          as: 'questionMetadata',
-          attributes: ['id', 'type', 'description'],
-          required: false
-        },
-        {
-          model: Topics,
-          as: 'topics',
-          attributes: ['id', 'name'],
-          required: false
-        }
-      ];
+    try {
+      await importTaughtCoursesFromCore(
+        req.user.id,
+        req.user.role ?? 'STUDENT',
+        req.headers.cookie ?? '',
+      );
+    } catch (err) {
+      logger.warn({ err, userId: req.user.id }, 'Core course mirror failed on list');
     }
 
-    const courses = await Course.findAll({
-      where: { userId: req.user.id },
-      include: includeOptions,
-      order: [['createdAt', 'DESC']]
-    });
+    const { includeStats = false } = req.query;
 
-    // Add stats if requested
-    if (includeStats === 'true') {
-      const coursesWithStats = courses.map(course => ({
-        ...course.toJSON(),
-        stats: {
+    const courses = await listCoursesForUser(req.user, { cookie: req.headers.cookie });
+
+    if (includeStats !== 'true') {
+      return res.json({ success: true, data: courses });
+    }
+
+    // Stats are scoped to the courses the caller can already see.
+    const visibleIds = courses.map((course) => course.id);
+    const statRows = visibleIds.length
+      ? await Course.findAll({
+          where: { id: visibleIds },
+          include: [
+            {
+              model: Question_Metadata,
+              as: 'questionMetadata',
+              attributes: ['id', 'type', 'description'],
+              required: false
+            },
+            {
+              model: Topics,
+              as: 'topics',
+              attributes: ['id', 'name'],
+              required: false
+            }
+          ]
+        })
+      : [];
+
+    const statsById = new Map(
+      statRows.map((course) => [
+        course.id,
+        {
           totalQuestions: course.questionMetadata?.length || 0,
           totalTopics: course.topics?.length || 0,
           questionTypes: course.questionMetadata?.reduce((acc, q) => {
@@ -85,165 +118,144 @@ router.get('/', authenticateToken, async (req, res, next) => {
             return acc;
           }, {}) || {}
         }
-      }));
-      
-      return res.json({
-        success: true,
-        data: coursesWithStats
-      });
-    }
+      ])
+    );
 
-    res.json({
-      success: true,
-      data: courses
-    });
+    const coursesWithStats = courses.map((course) => ({
+      ...course,
+      stats: statsById.get(course.id) ?? {
+        totalQuestions: 0,
+        totalTopics: 0,
+        questionTypes: {}
+      }
+    }));
+
+    res.json({ success: true, data: coursesWithStats });
   } catch (error) {
     next(error);
   }
 });
 
-/** GET /api/course/:id/access – resolved per-course access for UI gating (§3). */
+/**
+ * GET /api/course/:id/access – resolves the caller's access level for UI gating
+ * (shared contract §3). Returns `{ level, rank }` or null `data` when the caller
+ * has no access; 404 only when the course does not exist.
+ */
 router.get('/:id/access', authenticateToken, async (req, res, next) => {
   try {
     const { course, access } = await resolveCourseAccessWithCourse(req.user, req.params.id, {
-      cookie: req.headers.cookie ?? '',
+      cookie: req.headers.cookie,
     });
 
     if (!course) {
       return res.status(404).json({ success: false, error: 'Course not found' });
     }
-    if (!access) {
-      return res.status(403).json({ success: false, error: 'Insufficient course access' });
-    }
 
-    res.json({
-      success: true,
-      data: { level: access.level, rank: access.rank },
-    });
+    res.json({ success: true, data: access });
   } catch (error) {
     next(error);
   }
 });
 
-/** GET /api/course/:id – fetches a single course with optional details if the requester owns it. */
-router.get('/:id', authenticateToken, async (req, res, next) => {
-  try {
-    const { includeDetails = false } = req.query;
-    
-    let includeOptions = [];
-    if (includeDetails === 'true') {
-      includeOptions = [
-        {
-          model: Question_Metadata,
-          as: 'questionMetadata',
-          attributes: ['id', 'type', 'description', 'questionOrder'],
-          include: [
-            {
-              model: Topics,
-              as: 'primaryTopic',
-              attributes: ['id', 'name']
-            }
-          ]
-        },
-        {
-          model: Topics,
-          as: 'topics',
-          attributes: ['id', 'name']
-        }
-      ];
-    }
+/**
+ * GET /api/course/:id – fetches a single course, optionally with details. Visible
+ * to any caller with at least TA access to the course (§5 view course details).
+ */
+router.get(
+  '/:id',
+  authenticateToken,
+  requireCourseAccess({ min: 'ta', getCourseId: courseIdFromParam }),
+  async (req, res, next) => {
+    try {
+      const { includeDetails = false } = req.query;
 
-    const courseData = await Course.findOne({
-      where: { id: req.params.id, userId: req.user.id },
-      include: includeOptions
-    });
+      if (includeDetails !== 'true') {
+        return res.json({ success: true, data: req.qmCourse });
+      }
 
-    if (!courseData) {
-      return res.status(404).json({
-        success: false,
-        error: 'Course not found'
+      const courseData = await Course.findOne({
+        where: { id: req.qmCourse.id },
+        include: [
+          {
+            model: Question_Metadata,
+            as: 'questionMetadata',
+            attributes: ['id', 'type', 'description', 'questionOrder'],
+            include: [
+              {
+                model: Topics,
+                as: 'primaryTopic',
+                attributes: ['id', 'name']
+              }
+            ]
+          },
+          {
+            model: Topics,
+            as: 'topics',
+            attributes: ['id', 'name']
+          }
+        ]
       });
-    }
 
-    res.json({
-      success: true,
-      data: courseData
-    });
-  } catch (error) {
-    next(error);
+      res.json({ success: true, data: courseData });
+    } catch (error) {
+      next(error);
+    }
   }
-});
+);
 
-/** PUT /api/course/:id – updates course metadata after confirming ownership. */
-router.put('/:id', authenticateToken, async (req, res, next) => {
-  try {
-    const { name, courseCode } = req.body;
+/** PUT /api/course/:id – updates course metadata (§5 edit: instructor access or above). */
+router.put(
+  '/:id',
+  authenticateToken,
+  requireCourseAccess({ min: 'instructor', getCourseId: courseIdFromParam }),
+  async (req, res, next) => {
+    try {
+      const { name, courseCode } = req.body;
+      const courseData = req.qmCourse;
 
-    const courseData = await Course.findOne({
-      where: { id: req.params.id, userId: req.user.id }
-    });
-
-    if (!courseData) {
-      return res.status(404).json({
-        success: false,
-        error: 'Course not found'
+      await courseData.update({
+        ...(name !== undefined && { name: name?.trim() || courseData.name }),
+        ...(courseCode !== undefined && { code: courseCode || null })
       });
+
+      res.json({
+        success: true,
+        message: 'Course updated successfully',
+        data: courseData
+      });
+    } catch (error) {
+      next(error);
     }
-
-    await courseData.update({
-      ...(name !== undefined && { name: name?.trim() || courseData.name }),
-      ...(courseCode !== undefined && { code: courseCode || null })
-    });
-
-    res.json({
-      success: true,
-      message: 'Course updated successfully',
-      data: courseData
-    });
-  } catch (error) {
-    next(error);
   }
-});
+);
 
-/** DELETE /api/course/:id – removes a course and its associations if it belongs to the user. */
-router.delete('/:id', authenticateToken, async (req, res, next) => {
-  try {
-    const courseData = await Course.findOne({
-      where: { id: req.params.id, userId: req.user.id }
-    });
+/** DELETE /api/course/:id – removes a course and its associations (§5 delete: instructor+). */
+router.delete(
+  '/:id',
+  authenticateToken,
+  requireCourseAccess({ min: 'instructor', getCourseId: courseIdFromParam }),
+  async (req, res, next) => {
+    try {
+      await req.qmCourse.destroy();
 
-    if (!courseData) {
-      return res.status(404).json({
-        success: false,
-        error: 'Course not found'
+      res.json({
+        success: true,
+        message: 'Course deleted successfully'
       });
+    } catch (error) {
+      next(error);
     }
-
-    await courseData.destroy();
-
-    res.json({
-      success: true,
-      message: 'Course deleted successfully'
-    });
-  } catch (error) {
-    next(error);
   }
-});
+);
 
-/** GET /api/course/:id/topics – returns the topic list for an owned course. */
-router.get('/:id/topics', authenticateToken, async (req, res, next) => {
+/** GET /api/course/:id/topics – returns the topic list (§8 view topics: TA access or above). */
+router.get(
+  '/:id/topics',
+  authenticateToken,
+  requireCourseAccess({ min: 'ta', getCourseId: courseIdFromParam }),
+  async (req, res, next) => {
   try {
-    // Verify user owns the course
-    const course = await Course.findOne({
-      where: { id: req.params.id, userId: req.user.id }
-    });
-
-    if (!course) {
-      return res.status(404).json({
-        success: false,
-        error: 'Course not found'
-      });
-    }
+    const course = req.qmCourse;
 
     const cookie = req.headers.cookie ?? '';
     if (await ensureCoreCourseLink(course, cookie)) {
@@ -268,8 +280,12 @@ router.get('/:id/topics', authenticateToken, async (req, res, next) => {
   }
 });
 
-/** POST /api/course/:id/topics – adds a topic to the course and pushes it to Core if the course is linked. */
-router.post('/:id/topics', authenticateToken, async (req, res, next) => {
+/** POST /api/course/:id/topics – adds a topic (§8 create topic: instructor access or above). */
+router.post(
+  '/:id/topics',
+  authenticateToken,
+  requireCourseAccess({ min: 'instructor', getCourseId: courseIdFromParam }),
+  async (req, res, next) => {
   try {
     const { name } = req.body;
 
@@ -280,17 +296,7 @@ router.post('/:id/topics', authenticateToken, async (req, res, next) => {
       });
     }
 
-    // Verify user owns the course
-    const course = await Course.findOne({
-      where: { id: req.params.id, userId: req.user.id }
-    });
-
-    if (!course) {
-      return res.status(404).json({
-        success: false,
-        error: 'Course not found'
-      });
-    }
+    const course = req.qmCourse;
 
     const topic = await Topics.create({
       courseId: req.params.id,
@@ -318,8 +324,12 @@ router.post('/:id/topics', authenticateToken, async (req, res, next) => {
   }
 });
 
-/** PATCH /api/course/:id/link-core – stores a Core course CUID on the local course row. */
-router.patch('/:id/link-core', authenticateToken, async (req, res, next) => {
+/** PATCH /api/course/:id/link-core – stores a Core course CUID (§18 link: instructor access or above). */
+router.patch(
+  '/:id/link-core',
+  authenticateToken,
+  requireCourseAccess({ min: 'instructor', getCourseId: courseIdFromParam }),
+  async (req, res, next) => {
   try {
     const { coreCourseId } = req.body;
 
@@ -327,13 +337,7 @@ router.patch('/:id/link-core', authenticateToken, async (req, res, next) => {
       return res.status(400).json({ success: false, error: 'coreCourseId is required' });
     }
 
-    const course = await Course.findOne({
-      where: { id: req.params.id, userId: req.user.id }
-    });
-
-    if (!course) {
-      return res.status(404).json({ success: false, error: 'Course not found' });
-    }
+    const course = req.qmCourse;
 
     const cookie = req.headers.cookie ?? '';
     let linkable = false;
@@ -359,16 +363,14 @@ router.patch('/:id/link-core', authenticateToken, async (req, res, next) => {
   }
 });
 
-/** POST /api/course/:id/sync-topics – pulls topics from Core and upserts them into the local topics table. */
-router.post('/:id/sync-topics', authenticateToken, async (req, res, next) => {
+/** POST /api/course/:id/sync-topics – pulls topics from Core (§18 sync: instructor access or above). */
+router.post(
+  '/:id/sync-topics',
+  authenticateToken,
+  requireCourseAccess({ min: 'instructor', getCourseId: courseIdFromParam }),
+  async (req, res, next) => {
   try {
-    const course = await Course.findOne({
-      where: { id: req.params.id, userId: req.user.id }
-    });
-
-    if (!course) {
-      return res.status(404).json({ success: false, error: 'Course not found' });
-    }
+    const course = req.qmCourse;
 
     const cookie = req.headers.cookie ?? '';
     if (await ensureCoreCourseLink(course, cookie)) {

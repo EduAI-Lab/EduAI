@@ -92,6 +92,8 @@ export interface Course {
     coreCourseId?: string | null;
     department?: string | null;
     accessLevel?: 'admin' | 'unit' | 'instructor' | 'ta' | null;
+    term?: string | null;
+    year?: number | null;
     createdAt?: string;
     updatedAt?: string;
     // Relations
