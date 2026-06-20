@@ -8,7 +8,8 @@ import {
   mergeLocalInferenceFromEnv,
   parseModelIdentifier,
 } from "~/lib/ai/providers";
-import { modelSupportsTools } from "~/lib/ai/providers.server";
+import { getChatModelCapabilities } from "~/lib/ai/providers.server";
+import { resolveToolMaxOutputTokens } from "~/lib/ai/resolve-tool-max-tokens";
 import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
 import { needsCourseRag } from "~/lib/ai/chat-intent";
 import {
@@ -55,11 +56,6 @@ const TOOL_MAX_STEPS = Math.min(
   32,
   Math.max(1, Number(process.env.CHAT_TOOL_MAX_STEPS) || 12),
 );
-const TOOL_MAX_TOKENS = Math.min(
-  128_000,
-  Math.max(1024, Number(process.env.CHAT_TOOL_MAX_OUTPUT_TOKENS) || 32_000),
-);
-
 type GenericMessage = Record<string, any>;
 
 type StoredMessageRecord = {
@@ -668,8 +664,10 @@ export async function action({ request }: ActionFunctionArgs) {
     const webToolsEnabled = await getWebToolsEnabled();
     const tools = buildChatToolRegistry({ effectiveCourseId, webToolsEnabled });
 
-    const supportsTools = await modelSupportsTools(model);
+    const modelCapabilities = await getChatModelCapabilities(model);
+    const supportsTools = modelCapabilities.supportsTools;
     const useToolCalling = supportsTools && !forceHybridRag;
+    const toolMaxTokens = resolveToolMaxOutputTokens(modelCapabilities.maxTokens);
 
     let streamConfig;
 
@@ -774,7 +772,7 @@ ${buildEmptyCourseRagBlock()}`;
         model: aiModel,
         messages: modelMessages,
         temperature: 0.6,
-        maxTokens: TOOL_MAX_TOKENS,
+        maxTokens: toolMaxTokens,
         maxSteps: TOOL_MAX_STEPS,
         tools,
         toolCallStreaming: streaming,
@@ -846,6 +844,7 @@ ${buildEmptyCourseRagBlock()}`;
       webToolsEnabled,
       forceHybridRag,
       approach: useToolCalling ? "tool_calling" : "hybrid_rag",
+      toolMaxTokens: useToolCalling ? toolMaxTokens : undefined,
       adhdOversight: needsOversight,
       ...llmPromptSizeHints(streamConfig.system, modelMessages),
     });
