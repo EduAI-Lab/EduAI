@@ -25,8 +25,10 @@ import {
 } from '@eduai/ui'
 import type { CourseMaterial as UploadMaterial } from '~/components/course-materials-upload'
 import type { CourseDetail } from '~/hooks/api/use-course-detail'
-import { resolveCourseAccess } from '~/lib/rbac/resolve-course-access.server'
-import type { RbacUser } from '~/lib/rbac'
+import {
+  resolveCourseAccessWithCourse,
+} from '~/lib/auth/course-access.server'
+import type { CourseAccess } from '~/lib/rbac'
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request)
@@ -49,7 +51,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   if (!course) return redirect('/courses')
 
   const user = session.user
-  let authorizedUnits: string[] = []
+  let authorizedUnits: string[] | undefined
   if (user.role === 'UNIT_ADMIN') {
     const dbUser = await prisma.user.findUnique({
       where: { id: user.id },
@@ -57,17 +59,12 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     })
     authorizedUnits = dbUser?.authorizedUnits ?? []
   }
-  const rbacUser: RbacUser = {
-    id: user.id,
-    role: user.role as RbacUser['role'],
-    authorizedUnits,
-  }
 
-  const access = await resolveCourseAccess(rbacUser, {
-    id: course.id,
-    instructorId: course.instructorId,
-    department: course.department,
-  })
+  const { access: accessLevel } = await resolveCourseAccessWithCourse(
+    { id: user.id, role: user.role, authorizedUnits },
+    courseId,
+  )
+  const access = (accessLevel?.level ?? null) as CourseAccess
 
   // No access at all — redirect (e.g. TA opened a course they do not assist)
   if (!access) return redirect('/courses?access=denied')
@@ -76,20 +73,35 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   if (access === 'student' && !course.isPublished) return redirect('/courses')
 
   const canManageStaff = access === 'admin' || access === 'unit'
-  const [instructors, taUsers] = canManageStaff
-    ? await Promise.all([
-        prisma.user.findMany({
-          where: { role: 'INSTRUCTOR', isActive: true },
-          select: { id: true, name: true, email: true },
-          orderBy: { name: 'asc' },
-        }),
-        prisma.user.findMany({
-          where: { role: 'TA', isActive: true },
-          select: { id: true, name: true, email: true },
-          orderBy: { name: 'asc' },
-        }),
-      ])
-    : [[], []]
+  const canManageStudentEnrollments =
+    access === 'admin' || access === 'unit' || access === 'instructor'
+
+  let instructors: { id: string; name: string; email: string }[] = []
+  let taUsers: { id: string; name: string; email: string }[] = []
+  let studentUsers: { id: string; name: string; email: string }[] = []
+
+  if (canManageStaff) {
+    ;[instructors, taUsers] = await Promise.all([
+      prisma.user.findMany({
+        where: { role: 'INSTRUCTOR', isActive: true },
+        select: { id: true, name: true, email: true },
+        orderBy: { name: 'asc' },
+      }),
+      prisma.user.findMany({
+        where: { role: 'STUDENT', isActive: true },
+        select: { id: true, name: true, email: true },
+        orderBy: { name: 'asc' },
+      }),
+    ])
+  }
+
+  if (canManageStudentEnrollments) {
+    studentUsers = await prisma.user.findMany({
+      where: { role: 'STUDENT', isActive: true },
+      select: { id: true, name: true, email: true },
+      orderBy: { name: 'asc' },
+    })
+  }
 
   return {
     course: {
@@ -115,14 +127,22 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     access,
     instructors,
     taUsers,
+    studentUsers,
   }
 }
 
 export default function CourseDetailPage() {
-  const { course, user, access, instructors, taUsers } = useLoaderData<typeof loader>()
+  const { course, user, access, instructors, taUsers, studentUsers } =
+    useLoaderData<typeof loader>()
   const revalidator = useRevalidator()
   const { topics, createTopic, deleteTopic } = useCourseTopics(course.id)
-  const { enrollments, loading: enrollmentsLoading, error: enrollmentsError } = useCourseEnrollments(course.id)
+  const {
+    enrollments,
+    loading: enrollmentsLoading,
+    error: enrollmentsError,
+    enroll,
+    removeEnrollment,
+  } = useCourseEnrollments(course.id)
   const { materials, uploadMaterial, refetch: refetchMaterials } = useCourseMaterials(course.id)
   const { tas, addTA, removeTA } = useCourseTAs(course.id)
   const { getValidApiKeys } = useApiKeys()
@@ -142,6 +162,20 @@ export default function CourseDetailPage() {
     }
     revalidator.revalidate()
   }, [course.id, revalidator])
+
+  const handleEnrollStudent = useCallback(
+    async (userId: string) => {
+      await enroll(userId, 'STUDENT')
+    },
+    [enroll],
+  )
+
+  const handleRemoveEnrollment = useCallback(
+    async (enrollmentId: string) => {
+      await removeEnrollment(enrollmentId)
+    },
+    [removeEnrollment],
+  )
 
   const uploadMaterials: UploadMaterial[] = materials.map((m) => ({
     id: m.id,
@@ -210,6 +244,9 @@ export default function CourseDetailPage() {
                 tas={tas}
                 instructors={instructors}
                 taUsers={taUsers}
+                studentUsers={studentUsers}
+                onEnrollStudent={handleEnrollStudent}
+                onRemoveEnrollment={handleRemoveEnrollment}
                 isUploading={isUploading}
                 materialsError={materialsError}
                 materialsSuccess={materialsSuccess}
@@ -232,6 +269,9 @@ export default function CourseDetailPage() {
                 course={course}
                 topics={topics}
                 materials={uploadMaterials}
+                enrollments={enrollments}
+                enrollmentsLoading={enrollmentsLoading}
+                enrollmentsError={enrollmentsError}
                 isUploading={isUploading}
                 materialsError={materialsError}
                 materialsSuccess={materialsSuccess}
