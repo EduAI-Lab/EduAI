@@ -406,6 +406,114 @@ describe('Admin routes', () => {
       expect(res.body.enrolledStudents[0].role).toBe('STUDENT');
     });
 
+    it('returns removed students in availableStudents so they can be re-enrolled', async () => {
+      const enrolledStudent = makeStudent({ id: 'student-enrolled-1' });
+      const availableStudent = makeStudent({ id: 'student-available-1' });
+      await prisma.courseEnrollment.create({
+        data: { courseOfferingId: coscCourse.id, userId: enrolledStudent.id, role: 'STUDENT' },
+      });
+
+      listCoreAdminUsers.mockResolvedValueOnce([
+        {
+          id: enrolledStudent.id,
+          name: enrolledStudent.name,
+          email: enrolledStudent.email,
+          role: 'STUDENT',
+          createdAt: '2026-06-01T12:00:00.000Z',
+        },
+        {
+          id: availableStudent.id,
+          name: availableStudent.name,
+          email: availableStudent.email,
+          role: 'STUDENT',
+          createdAt: '2026-06-02T12:00:00.000Z',
+        },
+        {
+          id: 'instructor-1',
+          name: 'Dr. Ada Lovelace',
+          email: 'instructor.cs@eduai.local',
+          role: 'INSTRUCTOR',
+          createdAt: '2026-06-03T12:00:00.000Z',
+        },
+      ]);
+
+      const res = await request(unitAdminApp).get(
+        `/api/admin/courses/${coscCourse.id}/enrollments`,
+      );
+
+      expect(res.status).toBe(200);
+      expect(res.body.availableStudents).toHaveLength(1);
+      expect(res.body.availableStudents[0].id).toBe(availableStudent.id);
+
+      await request(unitAdminApp).delete(
+        `/api/admin/courses/${coscCourse.id}/enrollments/${enrolledStudent.id}`,
+      );
+
+      listCoreAdminUsers.mockResolvedValueOnce([
+        {
+          id: enrolledStudent.id,
+          name: enrolledStudent.name,
+          email: enrolledStudent.email,
+          role: 'STUDENT',
+          createdAt: '2026-06-01T12:00:00.000Z',
+        },
+        {
+          id: availableStudent.id,
+          name: availableStudent.name,
+          email: availableStudent.email,
+          role: 'STUDENT',
+          createdAt: '2026-06-02T12:00:00.000Z',
+        },
+      ]);
+
+      const afterRemove = await request(unitAdminApp).get(
+        `/api/admin/courses/${coscCourse.id}/enrollments`,
+      );
+
+      expect(afterRemove.status).toBe(200);
+      expect(afterRemove.body.enrolledStudents).toHaveLength(0);
+      expect(afterRemove.body.availableStudents).toHaveLength(2);
+      expect(afterRemove.body.availableStudents.map((s) => s.id)).toEqual(
+        expect.arrayContaining([enrolledStudent.id, availableStudent.id]),
+      );
+    });
+
+    it('uses Core user names for enrolled students with user id fallback', async () => {
+      const student = makeStudent({ id: 'seed_user_student_05', name: 'Alex Patel' });
+      await prisma.courseEnrollment.create({
+        data: { courseOfferingId: coscCourse.id, userId: student.id, role: 'STUDENT' },
+      });
+
+      listCoreAdminUsers.mockResolvedValueOnce([
+        {
+          id: student.id,
+          name: student.name,
+          email: 'alex.patel@eduai.local',
+          role: 'STUDENT',
+          createdAt: '2026-06-01T12:00:00.000Z',
+        },
+      ]);
+
+      const res = await request(unitAdminApp).get(
+        `/api/admin/courses/${coscCourse.id}/enrollments`,
+      );
+
+      expect(res.status).toBe(200);
+      expect(res.body.enrolledStudents[0]).toMatchObject({
+        id: student.id,
+        name: 'Alex Patel',
+        email: 'alex.patel@eduai.local',
+      });
+
+      listCoreAdminUsers.mockResolvedValueOnce([]);
+
+      const fallback = await request(unitAdminApp).get(
+        `/api/admin/courses/${coscCourse.id}/enrollments`,
+      );
+
+      expect(fallback.body.enrolledStudents[0].name).toBe(student.id);
+    });
+
     it('UNIT_ADMIN gets 403 for a course outside their department', async () => {
       const res = await request(unitAdminApp).get(
         `/api/admin/courses/${mathCourse.id}/enrollments`,
