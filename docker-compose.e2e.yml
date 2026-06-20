@@ -66,6 +66,7 @@ services:
       NODE_ENV: test
       PORT: "3000"
       E2E_SEED_SECRET: e2e-seed-secret
+      EDUAI_API_KEY: test-service-key-not-for-production
     ports:
       - "3000:3000"
     depends_on:
@@ -94,6 +95,7 @@ services:
       EDUAI_CLIENT_ID: e2e-client-id
       EDUAI_CLIENT_SECRET: e2e-client-secret
       EDUAI_BASE_URL: http://e2e-eduai-app:3000/api
+      EDUAI_API_KEY: test-service-key-not-for-production
       AI_SUPERVISOR_ENABLED: "false"
     ports:
       - "4000:4000"
