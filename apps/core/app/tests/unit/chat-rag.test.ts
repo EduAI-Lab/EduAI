@@ -3,6 +3,7 @@ import {
   buildCappedRagContextText,
   buildRagAnswerInstructions,
   buildRagSystemBlock,
+  buildEmptyCourseRagBlock,
   capRagHitsForTool,
   capToolResultsInMessages,
   estimateMessageCharsForModel,
@@ -44,6 +45,14 @@ describe("buildRagSystemBlock", () => {
     expect(block).toContain("Here are relevant excerpts");
     expect(block).toContain("Fact one.");
     expect(block).toContain("Course grounding rules");
+  });
+});
+
+describe("buildEmptyCourseRagBlock", () => {
+  it("forbids substituting general knowledge when search returns nothing", () => {
+    const block = buildEmptyCourseRagBlock();
+    expect(block).toContain("did not return relevant excerpts");
+    expect(block).toContain("Do not substitute general world knowledge");
   });
 });
 

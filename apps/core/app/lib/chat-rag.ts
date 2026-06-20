@@ -14,6 +14,17 @@ export type HybridRagHit = { content: string; similarity: number; materialTitle:
 export const RAG_COURSE_GROUNDING_INSTRUCTION =
   "Treat the course excerpts below as authoritative for this course.";
 
+/** Keeps multi-turn chats from turning into cumulative Q&A marathons. */
+export const LATEST_TURN_FOCUS_INSTRUCTION =
+  "Answer only the user's most recent message. Do not recap or re-answer earlier questions in this chat unless the latest message explicitly asks you to.";
+
+/** When retrieval ran but returned no usable excerpts for a course-intent query. */
+export const EMPTY_COURSE_RAG_INSTRUCTION = `The course materials search did not return relevant excerpts for this question. Tell the user clearly that the uploaded materials for this course do not contain an answer. Do not substitute general world knowledge for missing course content.`;
+
+export function buildEmptyCourseRagBlock(): string {
+  return EMPTY_COURSE_RAG_INSTRUCTION;
+}
+
 /** General answer policy appended after excerpts (Layer 1 grounding). */
 export const RAG_ANSWER_RULES = `Course grounding rules (follow strictly):
 1. Answer only from the excerpts below for factual claims about this course.
@@ -232,7 +243,8 @@ function buildSessionDigest<T extends Record<string, unknown>>(
     return "";
   }
 
-  const header = "## Session digest (earlier turns)\n\n";
+  const header =
+    "## Session digest (earlier turns — context only; do not re-answer unless the latest message asks)\n\n";
   // Strict cap: keep the digest `<= maxDigestChars` so it cannot push the
   // assembled session total past `charBudget` and silently drop a recent turn.
   return hardTruncate(`${header}${lines.join("\n")}`, maxDigestChars);
