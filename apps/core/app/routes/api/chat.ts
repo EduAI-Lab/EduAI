@@ -177,6 +177,32 @@ function serializeMessage(message: GenericMessage): Prisma.JsonValue {
 }
 
 /**
+ * Pulls plain text out of AI-SDK `response.messages` (whose `content` is an
+ * array of typed parts) as a fallback for when the `onFinish`/awaited `text`
+ * field is empty. Keeps persisted assistant content as a string so chat history
+ * restore renders real markdown instead of a blank bubble or raw JSON.
+ */
+function extractAssistantText(messages: GenericMessage[] | undefined): string {
+  if (!messages?.length) return "";
+  const collectText = (content: unknown): string => {
+    if (typeof content === "string") return content;
+    if (Array.isArray(content)) {
+      return content
+        .filter((p): p is GenericMessage => !!p && typeof p === "object")
+        .filter((p) => p.type === "text" && typeof p.text === "string")
+        .map((p) => p.text as string)
+        .join("\n");
+    }
+    return "";
+  };
+  return messages
+    .filter((m) => m.role === "assistant")
+    .map((m) => collectText(m.content))
+    .filter((t) => t.length > 0)
+    .join("\n");
+}
+
+/**
  * Maps an external `(provider, id)` pair to an EduAI user, creating the user +
  * `ExternalUser` record when needed. The canonical EduAI email stays unchanged;
  * we only update the mapping's email for reference.
@@ -416,11 +442,21 @@ export async function action({ request }: ActionFunctionArgs) {
         chat = await prisma.chat.create({
           data: {
             userId: actingUser.id,
+            courseId: effectiveCourseId,
             systemPrompt: trimmedSystemPrompt,
             adhdAssist,
           },
         });
       }
+    }
+
+    // Backfill course context onto an existing chat that was created before a
+    // course was selected (e.g. user picked the course mid-conversation).
+    if (chat && effectiveCourseId && chat.courseId !== effectiveCourseId && !chat.courseId) {
+      chat = await prisma.chat.update({
+        where: { id: chat.id },
+        data: { courseId: effectiveCourseId },
+      });
     }
 
     if (hasAdhdAssistField && chat && chat.adhdAssist !== adhdAssist) {
@@ -450,6 +486,7 @@ export async function action({ request }: ActionFunctionArgs) {
       chat = await prisma.chat.create({
         data: {
           userId: actingUser.id,
+          courseId: effectiveCourseId,
           systemPrompt: trimmedSystemPrompt,
           adhdAssist,
         },
@@ -632,7 +669,14 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    await appendMessages(normalizedIncomingMessages);
+    // Persist only client-authored turns (user messages). The assistant reply is
+    // owned by `onFinish`/the awaited path below, which stores it once under a
+    // server id. Clients resend their whole `useChat` transcript every turn, and
+    // their assistant copies carry client-generated ids that never match the
+    // server id — persisting those here is what duplicated history on restore.
+    await appendMessages(
+      normalizedIncomingMessages.filter((message) => message.role !== "assistant"),
+    );
 
     const lastUserMessage = [...trimmedMessages].reverse().find((message) => message.role === "user");
     const userQuestion = extractMessageText(lastUserMessage);
@@ -852,12 +896,24 @@ ${buildEmptyCourseRagBlock()}`;
       ...(streamConfig as Parameters<typeof streamText>[0]),
       onFinish: needsOversight
         ? undefined
-        : async ({ text, usage, finishReason }) => {
+        : async ({ text, usage, finishReason, response }) => {
             logResponseCompliance(text, {
               finishReason,
               promptTokens: usage?.promptTokens,
               completionTokens: usage?.completionTokens,
             });
+            // For streaming responses, persist here. Non-streaming path calls
+            // consumeStream() which also triggers onFinish, so we skip here to
+            // avoid saving the assistant message twice with different UUIDs.
+            if (!streaming) return;
+            const assistantText = text || extractAssistantText(response?.messages);
+            if (assistantText) {
+              await appendMessages([
+                { id: randomUUID(), role: "assistant", content: assistantText },
+              ]).catch((err) => {
+                console.error("[chat-api] failed to persist streaming assistant message", err);
+              });
+            }
           },
     });
 
@@ -1006,14 +1062,17 @@ ${buildEmptyCourseRagBlock()}`;
         if (response?.messages?.length) {
           const assistantMessages = response.messages.filter((message) => message.role === "assistant");
           await appendMessages(assistantMessages);
-        } else if (text) {
-          await appendMessages([
-            {
-              id: randomUUID(),
-              role: "assistant",
-              content: text,
-            },
-          ]);
+        } else {
+          const assistantText = text || extractAssistantText(response?.messages);
+          if (assistantText) {
+            await appendMessages([
+              {
+                id: randomUUID(),
+                role: "assistant",
+                content: assistantText,
+              },
+            ]);
+          }
         }
 
         return new Response(

@@ -1,27 +1,34 @@
+import { useCourses } from "~/hooks/api/use-courses";
+import { useRecentChats } from "~/hooks/api/use-recent-chats";
+import { useDashboardStats } from "~/hooks/api/use-dashboard-stats";
 import { DashboardView } from "~/components/dashboard/dashboard-view";
+import type { DashboardStatDef } from "~/components/dashboard/dashboard-view";
 
 export function DashboardTaView() {
+  const { courses, loading: coursesLoading } = useCourses();
+  const { chats, isLoading: chatsLoading } = useRecentChats();
+  const { stats, isLoading: statsLoading } = useDashboardStats();
+
+  const courseCount = coursesLoading ? "—" : String(courses.length);
+  const studentCount = statsLoading ? "—" : String(stats?.studentCount ?? 0);
+  const materialCount = statsLoading ? "—" : String(stats?.materialCount ?? 0);
+  const aiSessions = statsLoading ? "—" : String(stats?.chatCount ?? 0);
+
+  const statDefs: DashboardStatDef[] = [
+    { label: "Courses assisting", value: courseCount },
+    { label: "Students", value: studentCount },
+    { label: "Materials", value: materialCount },
+    { label: "AI sessions", value: aiSessions },
+  ];
+
   return (
     <DashboardView
-      heading="TA dashboard"
-      subheading="Support instructors by uploading materials and assisting students."
-      actions={[
-        {
-          title: "Assigned Courses",
-          description: "View courses where you are a teaching assistant.",
-          href: "/courses",
-        },
-        {
-          title: "Course Chat",
-          description: "Help students through course-scoped AI chat.",
-          href: "/chat",
-        },
-        {
-          title: "Settings",
-          description: "Manage your API keys and provider preferences.",
-          href: "/settings",
-        },
-      ]}
+      stats={statDefs}
+      courses={courses}
+      coursesLoading={coursesLoading}
+      leftPanelTitle="Assigned courses"
+      recentChats={chats}
+      recentChatsLoading={chatsLoading}
     />
   );
 }

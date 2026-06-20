@@ -9,7 +9,7 @@ import { ChatWelcome } from "~/components/chat/chat-welcome";
 describe("ChatWelcome — rendering", () => {
   it("renders the welcome heading", () => {
     render(<ChatWelcome onSelectPrompt={vi.fn()} />);
-    expect(screen.getByRole("heading", { name: /welcome to eduai/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /what would you like to know/i })).toBeInTheDocument();
   });
 
   it("shows the model name when selectedModelInfo is provided", () => {
@@ -27,14 +27,14 @@ describe("ChatWelcome — rendering", () => {
     expect(screen.queryByText(/powered by/i)).not.toBeInTheDocument();
   });
 
-  it("renders all six suggestion cards", () => {
+  it("renders all six suggestion cards from SuggestedPrompts", () => {
     render(<ChatWelcome onSelectPrompt={vi.fn()} />);
-    expect(screen.getByText("Creative Ideas")).toBeInTheDocument();
-    expect(screen.getByText("Code Review")).toBeInTheDocument();
-    expect(screen.getByText("Learning Path")).toBeInTheDocument();
-    expect(screen.getByText("Problem Solving")).toBeInTheDocument();
-    expect(screen.getByText("Design Ideas")).toBeInTheDocument();
-    expect(screen.getByText("Research & Analysis")).toBeInTheDocument();
+    expect(screen.getByText("Build a study plan")).toBeInTheDocument();
+    expect(screen.getByText("Explain a concept")).toBeInTheDocument();
+    expect(screen.getByText("Generate practice problems")).toBeInTheDocument();
+    expect(screen.getByText("Review my essay")).toBeInTheDocument();
+    expect(screen.getByText("Debug my code")).toBeInTheDocument();
+    expect(screen.getByText("Summarize key points")).toBeInTheDocument();
   });
 });
 
@@ -46,18 +46,18 @@ describe("ChatWelcome — callbacks", () => {
   it("calls onSelectPrompt with the correct prompt when a suggestion is clicked", () => {
     const onSelectPrompt = vi.fn();
     render(<ChatWelcome onSelectPrompt={onSelectPrompt} />);
-    fireEvent.click(screen.getByText("Creative Ideas"));
+    fireEvent.click(screen.getByText("Build a study plan"));
     expect(onSelectPrompt).toHaveBeenCalledWith(
-      "Help me brainstorm creative solutions for organizing a virtual team building event"
+      "Help me create a personalized study plan for my upcoming exam, including key topics to review and a day-by-day schedule."
     );
   });
 
   it("calls onSelectPrompt for each suggestion independently", () => {
     const onSelectPrompt = vi.fn();
     render(<ChatWelcome onSelectPrompt={onSelectPrompt} />);
-    fireEvent.click(screen.getByText("Code Review"));
+    fireEvent.click(screen.getByText("Debug my code"));
     expect(onSelectPrompt).toHaveBeenCalledWith(
-      "Review my React component and suggest improvements for performance and readability"
+      "Help me debug this code, explain what's going wrong, and suggest a clean fix with an explanation."
     );
   });
 });

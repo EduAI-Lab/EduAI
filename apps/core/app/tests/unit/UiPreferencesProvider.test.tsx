@@ -7,21 +7,17 @@ import {
 } from "~/components/assistive/ui-preferences-provider";
 
 function Consumer() {
-  const { motionReduced, density, theme, setMotionReduced, setDensity, setTheme } =
+  const { motionReduced, density, setMotionReduced, setDensity } =
     useUiPreferences();
   return (
     <div>
       <span data-testid="motion">{motionReduced ? "on" : "off"}</span>
       <span data-testid="density">{density}</span>
-      <span data-testid="theme">{theme}</span>
       <button type="button" onClick={() => setMotionReduced(true)}>
         motion-on
       </button>
       <button type="button" onClick={() => setDensity("compact")}>
         density-compact
-      </button>
-      <button type="button" onClick={() => setTheme("dark")}>
-        theme-dark
       </button>
     </div>
   );
@@ -50,7 +46,6 @@ describe("UiPreferencesProvider", () => {
       <UiPreferencesProvider
         initialMotionReduced={false}
         initialDensity="comfortable"
-        initialTheme="system"
       >
         <Consumer />
       </UiPreferencesProvider>,
@@ -58,15 +53,13 @@ describe("UiPreferencesProvider", () => {
 
     expect(document.documentElement.hasAttribute("data-reduce-motion")).toBe(false);
     expect(document.documentElement.hasAttribute("data-density")).toBe(false);
-    expect(document.documentElement.classList.contains("dark")).toBe(false);
   });
 
-  it("sets html hooks for non-default motion, density, and theme", () => {
+  it("sets html hooks for non-default motion and density", () => {
     render(
       <UiPreferencesProvider
         initialMotionReduced={true}
         initialDensity="compact"
-        initialTheme="dark"
       >
         <Consumer />
       </UiPreferencesProvider>,
@@ -74,15 +67,13 @@ describe("UiPreferencesProvider", () => {
 
     expect(document.documentElement.getAttribute("data-reduce-motion")).toBe("true");
     expect(document.documentElement.getAttribute("data-density")).toBe("compact");
-    expect(document.documentElement.classList.contains("dark")).toBe(true);
   });
 
-  it("persists motion, density, and theme via PATCH /api/preferences", () => {
+  it("persists motion and density via PATCH /api/preferences", () => {
     render(
       <UiPreferencesProvider
         initialMotionReduced={false}
         initialDensity="comfortable"
-        initialTheme="system"
       >
         <Consumer />
       </UiPreferencesProvider>,
@@ -90,7 +81,6 @@ describe("UiPreferencesProvider", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "motion-on" }));
     fireEvent.click(screen.getByRole("button", { name: "density-compact" }));
-    fireEvent.click(screen.getByRole("button", { name: "theme-dark" }));
 
     expect(fetch).toHaveBeenCalledWith(
       "/api/preferences",
@@ -104,13 +94,6 @@ describe("UiPreferencesProvider", () => {
       expect.objectContaining({
         method: "PATCH",
         body: JSON.stringify({ density: "compact" }),
-      }),
-    );
-    expect(fetch).toHaveBeenCalledWith(
-      "/api/preferences",
-      expect.objectContaining({
-        method: "PATCH",
-        body: JSON.stringify({ theme: "dark" }),
       }),
     );
   });

@@ -1,27 +1,34 @@
+import { useCourses } from "~/hooks/api/use-courses";
+import { useRecentChats } from "~/hooks/api/use-recent-chats";
+import { useDashboardStats } from "~/hooks/api/use-dashboard-stats";
 import { DashboardView } from "~/components/dashboard/dashboard-view";
+import type { DashboardStatDef } from "~/components/dashboard/dashboard-view";
 
 export function DashboardInstructorView() {
+  const { courses, loading: coursesLoading } = useCourses();
+  const { chats, isLoading: chatsLoading } = useRecentChats();
+  const { stats, isLoading: statsLoading } = useDashboardStats();
+
+  const courseCount = coursesLoading ? "—" : String(courses.length);
+  const studentsEnrolled = statsLoading ? "—" : String(stats?.studentCount ?? 0);
+  const materialsUploaded = statsLoading ? "—" : String(stats?.materialCount ?? 0);
+  const aiInteractions = statsLoading ? "—" : String(stats?.chatCount ?? 0);
+
+  const statDefs: DashboardStatDef[] = [
+    { label: "Courses teaching", value: courseCount },
+    { label: "Students enrolled", value: studentsEnrolled },
+    { label: "Materials uploaded", value: materialsUploaded },
+    { label: "AI interactions", value: aiInteractions },
+  ];
+
   return (
     <DashboardView
-      heading="Instructor dashboard"
-      subheading="Manage your courses, materials, and student interactions."
-      actions={[
-        {
-          title: "My Courses",
-          description: "Edit course details, materials, topics, and enrollments.",
-          href: "/courses",
-        },
-        {
-          title: "Course Chat",
-          description: "Start course-scoped AI conversations with your classes.",
-          href: "/chat",
-        },
-        {
-          title: "Settings",
-          description: "Manage your API keys and provider preferences.",
-          href: "/settings",
-        },
-      ]}
+      stats={statDefs}
+      courses={courses}
+      coursesLoading={coursesLoading}
+      leftPanelTitle="Your courses"
+      recentChats={chats}
+      recentChatsLoading={chatsLoading}
     />
   );
 }

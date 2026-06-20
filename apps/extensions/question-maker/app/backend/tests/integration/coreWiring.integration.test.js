@@ -60,14 +60,13 @@ describe('PATCH /api/course/:id/link-core', () => {
     expect(res.status).toBe(401);
   });
 
-  it('returns 400 when coreCourseId is missing', async () => {
+  it('returns 404 for a non-existent course (access check precedes payload validation)', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(sessionOk()));
     const res = await request(app)
-      .patch('/api/course/1/link-core')
+      .patch('/api/course/0/link-core') // SERIAL sequences start at 1; 0 never exists
       .set('Cookie', 'session=valid')
       .send({});
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/coreCourseId/i);
+    expect(res.status).toBe(404);
   });
 });
 

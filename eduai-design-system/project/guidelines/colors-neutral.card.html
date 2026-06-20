@@ -1,0 +1,40 @@
+<!-- @dsCard group="Colors" viewport="700x200" name="Neutral Scale" subtitle="Achromatic gray ramp — 0 (white) to 950 (near-black)" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; padding: 20px; font-family: var(--font-sans); background: var(--background); }
+  .ramp { display: flex; gap: 4px; border-radius: var(--radius-base); overflow: hidden; border: 1px solid var(--border); margin-bottom: 12px; }
+  .step { flex: 1; height: 56px; display: flex; align-items: flex-end; padding: 5px; }
+  .step-label { font-size: 9px; font-weight: 600; }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; }
+  .lg { font-size: 11px; color: var(--muted-foreground); display: flex; align-items: center; gap: 6px; }
+  .dot { width: 10px; height: 10px; border-radius: 2px; border: 1px solid var(--border); flex-shrink: 0; }
+</style>
+</head>
+<body>
+  <div class="ramp">
+    <div class="step" style="background:var(--color-neutral-0)"><span class="step-label" style="color:#999">0</span></div>
+    <div class="step" style="background:var(--color-neutral-50)"><span class="step-label" style="color:#999">50</span></div>
+    <div class="step" style="background:var(--color-neutral-100)"><span class="step-label" style="color:#777">100</span></div>
+    <div class="step" style="background:var(--color-neutral-200)"><span class="step-label" style="color:#666">200</span></div>
+    <div class="step" style="background:var(--color-neutral-300)"><span class="step-label" style="color:#555">300</span></div>
+    <div class="step" style="background:var(--color-neutral-400)"><span class="step-label" style="color:#fff">400</span></div>
+    <div class="step" style="background:var(--color-neutral-500)"><span class="step-label" style="color:#fff">500</span></div>
+    <div class="step" style="background:var(--color-neutral-600)"><span class="step-label" style="color:#fff">600</span></div>
+    <div class="step" style="background:var(--color-neutral-700)"><span class="step-label" style="color:#fff">700</span></div>
+    <div class="step" style="background:var(--color-neutral-800)"><span class="step-label" style="color:#fff">800</span></div>
+    <div class="step" style="background:var(--color-neutral-900)"><span class="step-label" style="color:#fff">900</span></div>
+    <div class="step" style="background:var(--color-neutral-950)"><span class="step-label" style="color:#fff">950</span></div>
+  </div>
+  <div class="legend">
+    <div class="lg"><div class="dot" style="background:var(--background)"></div>--background (0)</div>
+    <div class="lg"><div class="dot" style="background:var(--muted)"></div>--muted (100)</div>
+    <div class="lg"><div class="dot" style="background:var(--border)"></div>--border (150)</div>
+    <div class="lg"><div class="dot" style="background:var(--muted-foreground)"></div>--muted-foreground (500)</div>
+    <div class="lg"><div class="dot" style="background:var(--foreground)"></div>--foreground (900)</div>
+  </div>
+</body>
+</html>

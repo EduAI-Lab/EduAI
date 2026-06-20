@@ -2,11 +2,11 @@
  * Lightweight multi-select dropdown for topics with outside-click handling.
  * Allows toggling selections while honoring disabled IDs.
  */
+import { Button, Label, Checkbox } from '@eduai/ui';
+
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { Topic } from '../../types/topic';
-import { Button } from '../../components/ui/button';
-import { Label } from '../../components/ui/label';
 
 interface MultiSelectDropdownProps {
   label: string;
@@ -64,7 +64,7 @@ export const MultiSelectDropdown = ({
         onClick={() => setIsOpen((prev) => !prev)}
         className={
           triggerClassName ??
-          'flex w-full items-center justify-between rounded border border-gray-300 bg-white px-3 py-2 text-left text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-primary'
+          'flex w-full items-center justify-between rounded border border-border bg-card px-3 py-2 text-left text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-primary'
         }
       >
         <span>
@@ -73,7 +73,7 @@ export const MultiSelectDropdown = ({
         <ChevronDown className="h-4 w-4 opacity-60" />
       </button>
       {isOpen && (
-        <div className={listClassName ?? 'z-20 mt-1 max-h-56 w-full rounded border border-gray-200 bg-white shadow-lg'}>
+        <div className={listClassName ?? 'z-20 mt-1 max-h-56 w-full rounded border border-border bg-card shadow-lg'}>
           <div className="max-h-56 overflow-y-auto text-sm">
             {options.length === 0 && (
               <div className="px-3 py-2 text-muted-foreground">No topics available</div>
@@ -87,12 +87,10 @@ export const MultiSelectDropdown = ({
                     : 'cursor-pointer hover:bg-secondary/50'
                 }`}
               >
-                <input
-                  type="checkbox"
+                <Checkbox
                   disabled={disabledIds.has(topic.id)}
                   checked={selectedIds.includes(topic.id)}
-                  onChange={() => toggleOption(topic.id)}
-                  className="rounded border-gray-300"
+                  onCheckedChange={() => toggleOption(topic.id)}
                 />
                 <span>{topic.name}</span>
               </label>

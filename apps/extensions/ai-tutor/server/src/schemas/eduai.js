@@ -11,6 +11,7 @@ export const EduAiCourseSchema = z
     isActive: z.boolean().nullable().optional(),
     isPublished: z.boolean().nullable().optional(),
     aiInstructions: z.string().nullable().optional(),
+    department: z.string().nullable().optional(),
   })
   .passthrough();
 
