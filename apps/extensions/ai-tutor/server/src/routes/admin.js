@@ -302,6 +302,7 @@ router.patch(
         return res.status(404).json({ error: 'Enrollment not found' });
       }
 
+      let coreRollback = null;
       if (course.externalId && course.externalSource === 'EDUAI') {
         const coreEnrollments = await listEduAiCourseEnrollmentsServiceKey(course.externalId);
         const coreEnrollment = coreEnrollments.find((e) => e.studentId === userId);
@@ -310,14 +311,20 @@ router.patch(
         }
         const cookie = getEduAiCookieForRequest(req);
         await patchCoreEnrollmentRole(course.externalId, coreEnrollment.id, rawRole, cookie);
+        coreRollback = () =>
+          patchCoreEnrollmentRole(course.externalId, coreEnrollment.id, enrollment.role, cookie).catch(() => {});
       }
 
-      const updated = await prisma.courseEnrollment.update({
-        where: { courseOfferingId_userId: { courseOfferingId: courseId, userId } },
-        data: { role: rawRole },
-      });
-
-      res.json({ ok: true, role: updated.role });
+      try {
+        const updated = await prisma.courseEnrollment.update({
+          where: { courseOfferingId_userId: { courseOfferingId: courseId, userId } },
+          data: { role: rawRole },
+        });
+        res.json({ ok: true, role: updated.role });
+      } catch (dbErr) {
+        coreRollback?.();
+        throw dbErr;
+      }
     } catch (e) {
       const status = Number.isInteger(e?.status) ? e.status : 500;
       res.status(status).json({ error: String(e) });
