@@ -1,8 +1,9 @@
 import { Button, Separator } from '@eduai/ui';
+import { useTheme } from '@eduai/ui';
 import { Tooltip } from '@/components/ui/tooltip';
 import { useContext } from 'react';
 import { useLocation } from 'react-router';
-import { BugOff, Menu, X } from 'lucide-react';
+import { BugOff, Menu, Moon, Sun, X } from 'lucide-react';
 import { EduAIStatusBadge } from '@/components/eduai/EduAIStatusBadge';
 import { useEduAIStatus } from '@/hooks/useEduAIStatus';
 import { useGuidedTour } from '@/contexts/GuidedTourContext';
@@ -31,6 +32,7 @@ type QmSiteHeaderProps = {
 
 export function QmSiteHeader({ onMenuClick, mobileNavOpen }: QmSiteHeaderProps) {
   const { pathname } = useLocation();
+  const { theme, setTheme, resolvedTheme } = useTheme();
   const eduaiStatus = useEduAIStatus();
   const { startTour } = useGuidedTour();
   const { courses, isLoading: isCoursesLoading } = useCourses();
@@ -81,6 +83,20 @@ export function QmSiteHeader({ onMenuClick, mobileNavOpen }: QmSiteHeaderProps) 
             </span>
           )}
         </div>
+        <Tooltip
+          content={resolvedTheme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          side="bottom"
+        >
+          <Button
+            variant="ghost"
+            size="icon"
+            className="rounded-full"
+            aria-label="Toggle theme"
+            onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
+          >
+            {resolvedTheme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+          </Button>
+        </Tooltip>
         {bugReportCtx && (
           <Tooltip content="Report a bug" side="bottom">
             <Button

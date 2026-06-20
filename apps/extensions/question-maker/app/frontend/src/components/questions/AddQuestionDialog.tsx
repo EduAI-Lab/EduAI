@@ -106,6 +106,7 @@ export const AddQuestionDialog = ({
     const [courseDetails, setCourseDetails] = useState<Course | null>(null);
     const [availableModels, setAvailableModels] = useState<EduAIModelOption[]>([]);
     const [providerApiKey, setProviderApiKey] = useState('');
+    const [apiKeySaveState, setApiKeySaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
     const [availableEduCourses, setAvailableEduCourses] = useState<EduAICourseOption[]>([]);
     const [isAiGenerated, setIsAiGenerated] = useState(false);
     const [markAsReviewed, setMarkAsReviewed] = useState(false); // false = draft (default), true = reviewed
@@ -1230,9 +1231,29 @@ export const AddQuestionDialog = ({
                             providerApiKey={providerApiKey}
                             onProviderApiKeyChange={(value) => {
                                 setProviderApiKey(value);
-                                const provider = apiKeyStorage.getProviderFromModel(form.generationModel);
-                                if (provider && value) void apiKeyStorage.setApiKey(provider, value);
+                                setApiKeySaveState('idle');
                             }}
+                            onSaveProviderApiKey={async () => {
+                                const provider = apiKeyStorage.getProviderFromModel(form.generationModel);
+                                if (!provider || !providerApiKey.trim()) return;
+                                setApiKeySaveState('saving');
+                                try {
+                                    await apiKeyStorage.setApiKey(provider, providerApiKey.trim());
+                                    setApiKeySaveState('saved');
+                                    toast({
+                                        title: 'API key saved',
+                                        description: 'Stored locally in your browser for this provider.',
+                                    });
+                                } catch {
+                                    setApiKeySaveState('error');
+                                    toast({
+                                        variant: 'destructive',
+                                        title: 'Failed to save API key',
+                                        description: 'Could not store the key locally. Try again.',
+                                    });
+                                }
+                            }}
+                            apiKeySaveState={apiKeySaveState}
                             status={eduaiStatus.status}
                             statusMessage={eduaiStatus.message}
                             onRefreshStatus={eduaiStatus.refresh}

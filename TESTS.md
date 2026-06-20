@@ -467,6 +467,13 @@ Unit tests for the shared design-system component library (`@eduai/ui`). Run wit
 | Test file | What it tests |
 |-----------|---------------|
 | `LoginPage.test.tsx` | The login page submits credentials, shows errors, switches to registration, renders loading state, and redirects authenticated users |
+| `questionMetadataEdit.test.ts` | Metadata edit builds variant PUT payload only for draft variants when question text or difficulty changed |
+| `mcqChoiceDisplay.test.ts` | Correct-answer MCQ choice rows and summary use strong success styling classes |
+| `courseDisplay.test.ts` | `dedupeCoursesByCode` collapses duplicate codes and prefers Core-linked rows |
+| `rbac-permissions.test.ts` | QM RBAC permission helpers for platform course access and authoring gates |
+| `rbac-roles.test.ts` | Role badge labels and navigation visibility by QM role |
+| `rbac-nav.test.ts` | Sidebar nav items shown per QM role |
+| `rbac-course-labels.test.ts` | Course nav label formatting for RBAC views |
 
 ---
 

@@ -86,6 +86,10 @@ export const canvasService = {
       const integration = await this.connectCanvas(canvasUrl, apiKey, false);
       return { integration, usedTestMode: false };
     } catch (error) {
+      const allowTestFallback = this.prefersTestMode() || import.meta.env.DEV;
+      if (!allowTestFallback) {
+        throw error;
+      }
       console.warn('Canvas live connect failed; retrying in test mode', error);
       const integration = await this.connectCanvas(
         canvasUrl || 'https://canvas.test',

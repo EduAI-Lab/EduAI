@@ -18,6 +18,12 @@ import { MCQChoicesField } from '../questions/MCQChoicesField';
 import { questionService } from '../../services/questionService';
 import { courseService } from '../../services/courseService';
 import { assessmentService } from '../../services/assessmentService';
+import { buildVariantMetadataUpdates } from '../../utils/questionMetadataEdit';
+import {
+    getMcqChoiceRowClasses,
+    getMcqChoiceLetterClasses,
+    CORRECT_ANSWER_SUMMARY_CLASSES,
+} from '../../utils/mcqChoiceDisplay';
 
 const QUESTION_TYPES: QuestionType[] = ['MCQ', 'SA', 'LA'];
 const QUESTION_TYPE_LABELS: Record<QuestionType, string> = {
@@ -80,6 +86,7 @@ interface QuestionDetailViewProps {
             difficulty?: QuestionDifficulty;
             choices?: MCQChoice[] | null;
             answer?: string | null;
+            questionText?: string;
         }
     ) => void;
     onUpdateQuestionMetadata?: (
@@ -114,6 +121,7 @@ export const QuestionDetailView = ({
     const [editAnswer, setEditAnswer] = useState('');
     const [editingMetadata, setEditingMetadata] = useState(false);
     const [editDescription, setEditDescription] = useState('');
+    const [editQuestionText, setEditQuestionText] = useState('');
     const [editPrimaryTopicId, setEditPrimaryTopicId] = useState<string>('');
     const [editType, setEditType] = useState<QuestionType>('MCQ');
     const [editDifficulty, setEditDifficulty] = useState<QuestionDifficulty>('medium');
@@ -177,11 +185,12 @@ export const QuestionDetailView = ({
     useEffect(() => {
         if (editingMetadata) {
             setEditDescription(entry.questionDescription ?? '');
+            setEditQuestionText(variant.questionText ?? '');
             setEditPrimaryTopicId(entry.primaryTopicId != null ? String(entry.primaryTopicId) : '');
             setEditType(entry.questionType);
             setEditDifficulty((entry.variant.difficulty as QuestionDifficulty) ?? 'medium');
         }
-    }, [editingMetadata, entry.questionDescription, entry.primaryTopicId, entry.questionType, entry.variant.difficulty]);
+    }, [editingMetadata, entry.questionDescription, entry.primaryTopicId, entry.questionType, entry.variant.difficulty, variant.questionText]);
     const { variant } = entry;
     const primaryTopicLabel = entry.primaryTopicName ?? `Topic ${entry.primaryTopicId}`;
     const secondaryTopicsDisplay =
@@ -385,9 +394,10 @@ export const QuestionDetailView = ({
                     <X className="h-4 w-4" />
                 </Button>
 
-                <div className="px-6 pt-10 pr-14">
+                <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                <div className="flex-1 overflow-y-auto px-6 pt-10 pb-6">
                     {viewMode === 'variants' ? (
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between pr-10">
                             <div>
                                 <h2 className="text-xl font-semibold text-foreground">All variants for this question</h2>
                                 <p className="mt-1 text-sm text-muted-foreground">
@@ -405,13 +415,19 @@ export const QuestionDetailView = ({
                             </Button>
                         </div>
                     ) : (
-                        <div className={`text-foreground font-semibold ${questionTextClass} max-h-40 overflow-y-auto`}>
-                            {questionTextDisplay}
-                        </div>
+                        <section className="pr-10 border-b border-border pb-6 mb-6">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                                Question text
+                            </p>
+                            <div className={`text-foreground font-semibold ${questionTextClass}`}>
+                                {questionTextDisplay}
+                            </div>
+                            <p className="mt-2 text-xs text-muted-foreground">
+                                Scroll down for synopsis, choices, and metadata.
+                            </p>
+                        </section>
                     )}
-                </div>
 
-                <div className="flex-1 overflow-y-auto px-6 py-6">
                     {viewMode === 'variants' ? (
                         <div className="space-y-6">
                             <div className="rounded-lg border border-border bg-muted p-5 shadow-sm">
@@ -504,6 +520,23 @@ export const QuestionDetailView = ({
                             {editingMetadata ? (
                                 <div className="mt-3 space-y-4 rounded-lg border border-border bg-muted p-4">
                                     <div className="space-y-2">
+                                        <Label htmlFor="detail-question-text">Question text</Label>
+                                        <Textarea
+                                            id="detail-question-text"
+                                            value={editQuestionText}
+                                            onChange={(e) => setEditQuestionText(e.target.value)}
+                                            placeholder="The question students see"
+                                            rows={3}
+                                            className="resize-none"
+                                            disabled={isApproved}
+                                        />
+                                        {isApproved && (
+                                            <p className="text-xs text-muted-foreground">
+                                                Revert to draft to edit question text or difficulty.
+                                            </p>
+                                        )}
+                                    </div>
+                                    <div className="space-y-2">
                                         <Label htmlFor="detail-description">Question synopsis</Label>
                                         <Textarea
                                             id="detail-description"
@@ -551,7 +584,11 @@ export const QuestionDetailView = ({
                                         </div>
                                         <div className="space-y-2">
                                             <Label>Difficulty</Label>
-                                            <Select value={editDifficulty} onValueChange={(v) => setEditDifficulty(v as QuestionDifficulty)}>
+                                            <Select
+                                                value={editDifficulty}
+                                                onValueChange={(v) => setEditDifficulty(v as QuestionDifficulty)}
+                                                disabled={isApproved}
+                                            >
                                                 <SelectTrigger>
                                                     <SelectValue />
                                                 </SelectTrigger>
@@ -579,9 +616,16 @@ export const QuestionDetailView = ({
                                                         type: editType,
                                                         courseId: entry.courseId
                                                     });
-                                                    await questionService.updateVariant(entry.variant.id, {
-                                                        difficulty: editDifficulty
+                                                    const variantUpdates = buildVariantMetadataUpdates({
+                                                        isDraft: !isApproved,
+                                                        currentQuestionText: variant.questionText ?? '',
+                                                        editQuestionText,
+                                                        currentDifficulty: (variant.difficulty as QuestionDifficulty) ?? 'medium',
+                                                        editDifficulty,
                                                     });
+                                                    if (Object.keys(variantUpdates).length > 0) {
+                                                        await questionService.updateVariant(entry.variant.id, variantUpdates);
+                                                    }
                                                     const primaryTopicName = topics.find((t) => t.id === editPrimaryTopicId)?.name;
                                                     onUpdateQuestionMetadata?.(entry.questionId, {
                                                         description: editDescription || null,
@@ -589,9 +633,16 @@ export const QuestionDetailView = ({
                                                         type: editType,
                                                         primaryTopicName
                                                     });
-                                                    onUpdateVariant?.(entry.variant.id, { difficulty: editDifficulty });
+                                                    if (Object.keys(variantUpdates).length > 0) {
+                                                        onUpdateVariant?.(entry.variant.id, variantUpdates);
+                                                    }
                                                     setEditingMetadata(false);
-                                                    toast({ title: 'Metadata saved', description: 'Question metadata and difficulty updated.' });
+                                                    toast({
+                                                        title: 'Metadata saved',
+                                                        description: Object.keys(variantUpdates).length > 0
+                                                            ? 'Question metadata and variant fields updated.'
+                                                            : 'Question metadata updated.'
+                                                    });
                                                 } catch (err: unknown) {
                                                     toast({
                                                         variant: 'destructive',
@@ -765,19 +816,11 @@ export const QuestionDetailView = ({
                                         return (
                                             <div
                                                 key={index}
-                                                className={`rounded-lg border p-4 shadow-sm ${
-                                                    isCorrect
-                                                        ? 'border-success-500/40 bg-success-100'
-                                                        : 'border-border bg-muted'
-                                                }`}
+                                                className={`rounded-lg border p-4 shadow-sm ${getMcqChoiceRowClasses(isCorrect)}`}
                                             >
                                                 <div className="flex items-start gap-3">
                                                     <span
-                                                        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
-                                                            isCorrect
-                                                                ? 'bg-success-500 text-white'
-                                                                : 'bg-muted text-foreground'
-                                                        }`}
+                                                        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${getMcqChoiceLetterClasses(isCorrect)}`}
                                                     >
                                                         {choice.letter}
                                                     </span>
@@ -785,9 +828,9 @@ export const QuestionDetailView = ({
                                                         {choice.text}
                                                     </p>
                                                     {isCorrect && (
-                                                        <span className="text-xs font-semibold text-success-700">
+                                                        <Badge variant="success" size="sm">
                                                             Correct
-                                                        </span>
+                                                        </Badge>
                                                     )}
                                                 </div>
                                             </div>
@@ -826,7 +869,7 @@ export const QuestionDetailView = ({
                                 <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                                     {entry.questionType === 'MCQ' ? 'Correct Answer' : 'Answer'}
                                 </h3>
-                                <div className="mt-3 rounded-lg border border-success-500/30 bg-success-100/60 p-5 shadow-sm">
+                                <div className={`mt-3 rounded-lg border p-5 shadow-sm ${CORRECT_ANSWER_SUMMARY_CLASSES}`}>
                                     <p className="text-sm font-medium text-foreground leading-relaxed whitespace-pre-line">
                                         {entry.questionType === 'MCQ' && variant.choices && variant.choices.length > 0
                                             ? (() => {
@@ -891,7 +934,7 @@ export const QuestionDetailView = ({
 
                 <div className="flex items-center justify-between border-t bg-muted px-6 py-4">
                     <div className="flex items-center gap-2">
-                        <PermissionGate allow={canEditDraft}>
+                        <PermissionGate allow={canEditMetadata}>
                         <Button
                             variant="outline"
                             size="sm"
@@ -936,6 +979,7 @@ export const QuestionDetailView = ({
                         </Button>
                         </PermissionGate>
                     </div>
+                </div>
                 </div>
             </div>
         </div>

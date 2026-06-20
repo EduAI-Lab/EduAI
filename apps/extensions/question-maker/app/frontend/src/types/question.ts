@@ -1,6 +1,8 @@
 /**
  * Core domain types for questions, variants, courses, topics, and assessments.
  */
+import type { Topic } from './topic';
+
 export type { Topic } from './topic';
 
 export type QuestionDifficulty = 'easy' | 'medium' | 'hard';
@@ -19,8 +21,6 @@ export interface MCQChoice {
     letter: string; // "A", "B", "C", "D", etc.
     text: string;
 }
-
-import type { Topic } from './topic';
 
 // Question Metadata (matches backend Question_Metadata schema)
 export interface QuestionMetadata {

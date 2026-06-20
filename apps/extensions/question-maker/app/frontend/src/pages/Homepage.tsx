@@ -319,6 +319,7 @@ export const Homepage = () => {
       difficulty?: import('../types/question').QuestionDifficulty;
       choices?: MCQChoice[] | null;
       answer?: string | null;
+      questionText?: string;
     }
   ) => {
     setQuestions((prev) =>
@@ -333,7 +334,8 @@ export const Homepage = () => {
             ...(updates.testable !== undefined && { testable: updates.testable }),
             ...(updates.difficulty !== undefined && { difficulty: updates.difficulty }),
             ...(updates.choices !== undefined && { choices: updates.choices }),
-            ...(updates.answer !== undefined && { answer: updates.answer })
+            ...(updates.answer !== undefined && { answer: updates.answer }),
+            ...(updates.questionText !== undefined && { questionText: updates.questionText })
           };
           return { ...question, variants: updatedVariants };
         }
