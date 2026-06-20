@@ -48,7 +48,7 @@ vi.mock("~/lib/prisma.server", () => ({
 	    chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
 	    chatMessage: { findMany: vi.fn(), createMany: vi.fn() },
 	    course: { findFirst: vi.fn() },
-	    systemConfig: { findUnique: vi.fn() },
+	    systemConfig: { findUnique: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
 	  },
 	}));
 
@@ -57,7 +57,7 @@ import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 	import { auditAndMaybeRewrite } from "~/lib/ai/adhd-oversight";
 	import { withStructuralPass, computeAdhdResponseMetrics } from "~/lib/ai/adhd-metrics";
-	import { invalidateWebToolsCache } from "~/lib/system-config.server";
+	import { invalidatePolicyCache } from "~/lib/policy.server";
 	import prisma from "~/lib/prisma.server";
 
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
@@ -132,7 +132,7 @@ beforeEach(() => {
   vi.clearAllMocks();
 	  process.env.VLLM_BASE_URL = "http://localhost:8001";
 	  process.env.ADHD_ASSIST_OVERSIGHT = "true";
-	  invalidateWebToolsCache();
+	  invalidatePolicyCache();
 
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: USER_ID, role: "STUDENT" },

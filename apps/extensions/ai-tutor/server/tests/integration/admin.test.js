@@ -13,9 +13,10 @@ vi.mock('../../src/services/eduaiClient.js', () => ({
   getEduAiChatUrl: vi.fn(() => 'http://localhost:5174/api/chat'),
   postCoreBugReport: vi.fn(),
   listCourseTestableQuestions: vi.fn(),
+  patchCoreEnrollmentRole: vi.fn(),
 }));
 
-import { listEduAiCourseEnrollmentsServiceKey } from '../../src/services/eduaiClient.js';
+import { listEduAiCourseEnrollmentsServiceKey, patchCoreEnrollmentRole } from '../../src/services/eduaiClient.js';
 
 describe('Admin routes', () => {
   let admin;
@@ -512,6 +513,96 @@ describe('Admin routes', () => {
         .patch(`/api/admin/courses/${mathCourse.id}/enrollments/${student.id}/role`)
         .send({ role: 'TA' });
       expect(res.status).toBe(403);
+    });
+  });
+
+  // ── PATCH …/role on EduAI-linked courses (#569) ───────────────────
+
+  describe('PATCH …/role on EduAI-linked course', () => {
+    let externalCourse;
+    let student;
+
+    const CORE_ENROLLMENT_ID = 'core-enrollment-cuid-1';
+
+    beforeEach(async () => {
+      vi.clearAllMocks();
+      student = makeStudent();
+      externalCourse = await prisma.courseOffering.create({
+        data: {
+          title: 'EduAI Course',
+          description: 'imported',
+          isPublished: true,
+          externalId: 'core-cuid-ext-1',
+          externalSource: 'EDUAI',
+        },
+      });
+      await prisma.courseEnrollment.create({
+        data: { courseOfferingId: externalCourse.id, userId: student.id, role: 'STUDENT' },
+      });
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([
+        {
+          id: CORE_ENROLLMENT_ID,
+          studentId: student.id,
+          studentEmail: 'student@test.com',
+          studentName: 'Student',
+          enrolledAt: new Date().toISOString(),
+          isActive: true,
+          role: 'STUDENT',
+        },
+      ]);
+      patchCoreEnrollmentRole.mockResolvedValue({ id: CORE_ENROLLMENT_ID, role: 'TA' });
+    });
+
+    it('calls Core PATCH and updates local role on success', async () => {
+      const res = await request(adminApp)
+        .patch(`/api/admin/courses/${externalCourse.id}/enrollments/${student.id}/role`)
+        .send({ role: 'TA' });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ ok: true, role: 'TA' });
+      expect(patchCoreEnrollmentRole).toHaveBeenCalledWith(
+        'core-cuid-ext-1',
+        CORE_ENROLLMENT_ID,
+        'TA',
+        expect.any(String),
+      );
+
+      const row = await prisma.courseEnrollment.findUnique({
+        where: { courseOfferingId_userId: { courseOfferingId: externalCourse.id, userId: student.id } },
+      });
+      expect(row.role).toBe('TA');
+    });
+
+    it('returns Core error and leaves local DB unchanged when Core PATCH fails', async () => {
+      const err = Object.assign(new Error('Forbidden'), { status: 403 });
+      patchCoreEnrollmentRole.mockRejectedValue(err);
+
+      const res = await request(adminApp)
+        .patch(`/api/admin/courses/${externalCourse.id}/enrollments/${student.id}/role`)
+        .send({ role: 'TA' });
+
+      expect(res.status).toBe(403);
+
+      const row = await prisma.courseEnrollment.findUnique({
+        where: { courseOfferingId_userId: { courseOfferingId: externalCourse.id, userId: student.id } },
+      });
+      expect(row.role).toBe('STUDENT');
+    });
+
+    it('returns 404 when user has no enrollment in Core', async () => {
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([]);
+
+      const res = await request(adminApp)
+        .patch(`/api/admin/courses/${externalCourse.id}/enrollments/${student.id}/role`)
+        .send({ role: 'TA' });
+
+      expect(res.status).toBe(404);
+      expect(patchCoreEnrollmentRole).not.toHaveBeenCalled();
+
+      const row = await prisma.courseEnrollment.findUnique({
+        where: { courseOfferingId_userId: { courseOfferingId: externalCourse.id, userId: student.id } },
+      });
+      expect(row.role).toBe('STUDENT');
     });
   });
 });
