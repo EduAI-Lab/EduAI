@@ -15,8 +15,11 @@ export type AccessLevel = {
 export type RbacUser = {
   id: string;
   role?: string | null;
-  /** Optional — fetched from the DB when absent and the user is a UNIT_ADMIN.
-   *  Nullable because the better-auth session field is typed `string[] | null`. */
+  /**
+   * Optional — fetched from the DB when absent and the user is a UNIT_ADMIN.
+   * Accepts `null` so a better-auth session user (whose array additional-field
+   * is typed `string[] | null`) is assignable without a cast.
+   */
   authorizedUnits?: string[] | null;
 };
 

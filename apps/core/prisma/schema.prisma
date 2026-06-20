@@ -469,8 +469,9 @@ model apikey {
 model Chat {
   id           String        @id @default(cuid())
   userId       String
-  /// Optional course context. Null = general assistant chat (no course).
-  /// SetNull on course delete so history survives a soft/hard course removal.
+  /// Optional course context. Null = general (non-course) assistant chat; course
+  /// chats are tagged at creation so instructors/unit-admins can read them (RBAC
+  /// policy expansion §5). SetNull on course delete so history survives removal.
   courseId     String?
   systemPrompt String?
   title        String?

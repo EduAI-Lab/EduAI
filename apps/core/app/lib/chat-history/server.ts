@@ -1,22 +1,20 @@
 import type { Prisma } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
-import { getAuthorizedUnits } from "~/lib/auth/course-access.server";
 
 /**
  * Chat-history access control (#chat-history).
  *
- * Visibility contract — a viewer may READ a chat when ANY of:
- *   - they own it (chat.userId === viewer.id), OR
- *   - the chat is course-scoped and the viewer holds staff access
- *     (EnrollmentRole INSTRUCTOR|TA) to that course, OR
- *   - the viewer is UNIT_ADMIN and the chat's course department is in their
- *     authorized units, OR
- *   - the viewer is ADMIN (sees everything).
+ * This legacy listing path (GET /api/chats, GET /api/chats/:id/messages) is
+ * scoped to OWN chats only, plus ADMIN who sees everything. Staff oversight of
+ * student course chats is a policy-gated, student-owner-scoped capability served
+ * exclusively by the §5c endpoints (/api/courses/:id/chats, /api/units/:dept/chats,
+ * /api/chats/:id) via courseChatViewPolicyKey — it is intentionally NOT granted
+ * here, so an instructor/TA/unit-admin cannot read another user's chats through
+ * this path regardless of any flag.
  *
- * EDIT (append/continue) is owner-only — every other reader is strictly
- * read-only. The visibility filter is composed as a Prisma OR so listing is
- * secure by construction: narrowing by courseId/userId can never widen what a
- * viewer is allowed to see.
+ * EDIT (append/continue) is owner-only. The visibility filter is composed as a
+ * Prisma WHERE so listing is secure by construction: narrowing by courseId/userId
+ * can never widen what a viewer is allowed to see.
  */
 
 export type ChatHistoryViewer = {
@@ -77,45 +75,18 @@ function truncate(text: string | null, max = 120): string | null {
 }
 
 /**
- * Prisma WHERE filter scoping chat listing to what `viewer` may read.
- * ADMIN gets an empty filter (everything); everyone else gets an OR of the
- * visibility branches above.
+ * Prisma WHERE filter scoping chat listing to what `viewer` may read on this
+ * legacy path. ADMIN gets an empty filter (everything); every other viewer is
+ * scoped to their OWN chats. Policy-gated staff oversight of student course
+ * chats is served only by the §5c endpoints and is never widened here.
  */
 export async function buildChatVisibilityFilter(
   viewer: ChatHistoryViewer,
 ): Promise<Prisma.ChatWhereInput> {
+  // ADMIN oversight is unconditional (courseChatViewPolicyKey('admin') ===
+  // 'always'); everyone else sees only the chats they own.
   if (viewer.role === "ADMIN") return {};
-
-  const branches: Prisma.ChatWhereInput[] = [
-    // Own chats — always visible.
-    { userId: viewer.id },
-    // Course-scoped chats where the viewer is staff of the course. Mirror every
-    // path resolveCourseAccess honours so a TA/instructor sees course history
-    // regardless of HOW they were attached: enrollment role, CourseTA junction,
-    // or direct course.instructorId.
-    {
-      course: {
-        enrollments: {
-          some: {
-            userId: viewer.id,
-            isActive: true,
-            role: { in: ["INSTRUCTOR", "TA"] },
-          },
-        },
-      },
-    },
-    { course: { tas: { some: { userId: viewer.id } } } },
-    { course: { instructorId: viewer.id } },
-  ];
-
-  if (viewer.role === "UNIT_ADMIN") {
-    const units = await getAuthorizedUnits(viewer);
-    if (units.length > 0) {
-      branches.push({ course: { department: { in: units } } });
-    }
-  }
-
-  return { OR: branches };
+  return { userId: viewer.id };
 }
 
 /**

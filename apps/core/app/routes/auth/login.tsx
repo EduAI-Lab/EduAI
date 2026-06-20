@@ -8,6 +8,7 @@ import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request"
 import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies"
 import { auth } from "~/lib/auth/server"
 import { validateRedirectUrl } from "~/lib/auth/guards.server"
+import { getPolicy } from "~/lib/policy.server"
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server"
 import { getActorContext, getRequestContext } from "~/lib/request-context.server"
 
@@ -20,7 +21,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return redirect(redirectTo);
   }
 
-  return { redirectTo };
+  // §6b: gate the "Sign up" link server-side (the login page is unauthenticated,
+  // so usePolicies() is unavailable here).
+  const allowRegistration = await getPolicy("auth.allowPublicRegistration");
+
+  return { redirectTo, allowRegistration };
 }
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -156,7 +161,10 @@ export default function LoginPage() {
     fieldErrors?: Partial<Record<keyof SignInInput, string>>;
     formError?: string;
   } | undefined;
-  const { redirectTo } = useLoaderData() as { redirectTo: string };
+  const { redirectTo, allowRegistration } = useLoaderData() as {
+    redirectTo: string;
+    allowRegistration: boolean;
+  };
 
   return (
     <div
@@ -186,7 +194,11 @@ export default function LoginPage() {
           {actionData?.formError && (
             <p className="text-sm text-destructive mb-4 text-center">{actionData.formError}</p>
           )}
-          <LoginForm fieldErrors={actionData?.fieldErrors} isLoading={false} />
+          <LoginForm
+            fieldErrors={actionData?.fieldErrors}
+            isLoading={false}
+            allowRegistration={allowRegistration}
+          />
         </Form>
 
         <DemoLoginButtons redirectTo={redirectTo} />
