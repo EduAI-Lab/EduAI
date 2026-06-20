@@ -27,8 +27,14 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const id = params.id;
   if (!id) return new Response("Missing invitation ID", { status: 400 });
 
+  const actor = {
+    id: gate.session.user.id,
+    name: gate.session.user.name,
+    role: gate.session.user.role ?? "",
+  };
+
   if (request.method === "DELETE") {
-    const result = await revokeInvitation(id);
+    const result = await revokeInvitation(id, actor);
     if (!result.ok) return json({ error: result.error }, result.status);
 
     fireAndForget(
@@ -49,11 +55,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 
   if (request.method === "POST") {
-    const result = await resendInvitation(id, {
-      id: gate.session.user.id,
-      name: gate.session.user.name,
-      role: gate.session.user.role ?? "",
-    });
+    const result = await resendInvitation(id, actor);
     if (!result.ok) return json({ error: result.error }, result.status);
 
     fireAndForget(

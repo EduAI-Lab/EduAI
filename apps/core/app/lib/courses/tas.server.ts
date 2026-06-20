@@ -28,10 +28,16 @@ export async function addCourseTA(courseId: string, payload: AddTAInput) {
 
   const user = await prisma.user.findUnique({
     where: { id: parsed.data.userId },
-    select: { id: true },
+    select: { id: true, role: true },
   });
 
   if (!user) return { error: "User not found" } as const;
+
+  // A TA is a STUDENT platform user with an EnrollmentRole.TA enrollment.
+  // Promoting an INSTRUCTOR/ADMIN/UNIT_ADMIN to a course TA is not a valid op.
+  if (user.role !== "STUDENT") {
+    return { error: "Only STUDENT users can be added as a course TA" } as const;
+  }
 
   const existing = await prisma.enrollment.findUnique({
     where: { courseId_userId: { courseId, userId: parsed.data.userId } },
@@ -39,6 +45,14 @@ export async function addCourseTA(courseId: string, payload: AddTAInput) {
   });
   if (existing?.role === "TA" && existing.isActive) {
     return { error: "User is already a TA for this course" } as const;
+  }
+  // Never silently overwrite an existing INSTRUCTOR enrollment with a TA role —
+  // the upsert's `update` branch would otherwise demote a course instructor.
+  // (A plain STUDENT enrollment may still be promoted to TA.)
+  if (existing?.role === "INSTRUCTOR") {
+    return {
+      error: "User is an instructor for this course and cannot be made a TA",
+    } as const;
   }
 
   const enrollment = await prisma.enrollment.upsert({

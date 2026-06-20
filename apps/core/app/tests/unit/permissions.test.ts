@@ -29,7 +29,7 @@ describe('canCreateCourse', () => {
     ['ADMIN', true],
     ['UNIT_ADMIN', true],
     ['INSTRUCTOR', false],
-    ['TA', false],
+    // No platform TA role — a course TA is a STUDENT-platform user (covered below).
     ['STUDENT', false],
   ] as const)('role=%s → %s', (role, expected) => {
     expect(canCreateCourse(makeUser(role))).toBe(expected)
