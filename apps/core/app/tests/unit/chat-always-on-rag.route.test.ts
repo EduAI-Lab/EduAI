@@ -196,6 +196,19 @@ describe("Smart course RAG gate (#484)", () => {
       expect(lastStreamSystem()).toContain("Gradient descent minimizes loss.");
     });
 
+    it("injects empty-material instruction when course-intent query has no hits", async () => {
+      vi.mocked(findRelevantContent).mockResolvedValue([]);
+      mockStream();
+      const res = await action(
+        makeRequest(baseBody({
+          messages: [{ id: "msg-1", role: "user", content: "What did chapter 3 say about trees?" }],
+        })),
+      );
+      expect(res.status).toBe(200);
+      expect(lastStreamSystem()).toContain("did not return relevant excerpts");
+      expect(lastStreamSystem()).not.toContain("Course grounding rules");
+    });
+
     it("does not prefetch when no course is selected", async () => {
       mockStream();
       const res = await action(makeRequest(baseBody({ courseId: undefined })));
