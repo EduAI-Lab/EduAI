@@ -65,13 +65,13 @@ describe('AppSiteHeader', () => {
   it('shows Report Bug for STUDENT', async () => {
     await renderHeader('/student', { id: 'u1', name: 'Student', role: 'STUDENT' });
 
-    expect(screen.getByRole('button', { name: 'Report Bug' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Report bug' })).toBeInTheDocument();
   });
 
   it('shows Report Bug for INSTRUCTOR', async () => {
     await renderHeader('/instructor', { id: 'u2', name: 'Professor', role: 'INSTRUCTOR' });
 
-    expect(screen.getByRole('button', { name: 'Report Bug' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Report bug' })).toBeInTheDocument();
   });
 
   it('shows theme toggle in the header', async () => {

@@ -2,7 +2,8 @@ import { Link } from 'react-router';
 import {
   IconBooks,
   IconExternalLink,
-  IconSettings,
+  IconReport,
+  IconUsers,
 } from '@tabler/icons-react';
 import type { Icon } from '@tabler/icons-react';
 import {
@@ -26,7 +27,9 @@ import TourButton from '../TourButton';
 const NAV_ICONS: Record<AtNavItemKey, Icon> = {
   'my-courses': IconBooks,
   teaching: IconBooks,
-  admin: IconSettings,
+  'admin-users': IconUsers,
+  'admin-enrollments': IconBooks,
+  'admin-bug-reports': IconReport,
   enrollments: IconBooks,
   analytics: IconBooks,
 };

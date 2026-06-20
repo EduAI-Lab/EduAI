@@ -1,5 +1,5 @@
-import { useNavigate } from 'react-router';
-import { IconDotsVertical, IconLogout } from '@tabler/icons-react';
+import { Link, useNavigate } from 'react-router';
+import { IconDotsVertical, IconLogout, IconSettings, IconUser } from '@tabler/icons-react';
 import {
   Avatar,
   DropdownMenu,
@@ -17,6 +17,7 @@ import {
 
 import type { User } from '~/lib/types';
 import { useLocalUser } from '~/hooks/useLocalUser';
+import { getEduAiAppUrl } from '~/lib/extension-urls';
 
 type AiTutorSidebarUserProps = {
   user: User;
@@ -30,6 +31,7 @@ export function AiTutorSidebarUser({ user }: AiTutorSidebarUserProps) {
   const { isMobile } = useSidebar();
   const { logout } = useLocalUser();
   const navigate = useNavigate();
+  const eduAiUrl = getEduAiAppUrl();
 
   const handleLogout = async () => {
     await logout();
@@ -76,9 +78,27 @@ export function AiTutorSidebarUser({ user }: AiTutorSidebarUserProps) {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
+            {user.role === 'ADMIN' ? (
+              <DropdownMenuItem asChild>
+                <Link to="/settings" className="flex cursor-pointer items-center gap-2">
+                  <IconSettings size={15} strokeWidth={1.75} />
+                  Settings
+                </Link>
+              </DropdownMenuItem>
+            ) : null}
+            <DropdownMenuItem asChild>
+              <a
+                href={`${eduAiUrl}/settings/account`}
+                className="flex cursor-pointer items-center gap-2"
+              >
+                <IconUser size={15} strokeWidth={1.75} />
+                Account
+              </a>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" onSelect={() => void handleLogout()}>
               <IconLogout size={15} strokeWidth={1.75} />
-              Sign out
+              Log out
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

@@ -19,17 +19,35 @@ type AiTutorNavMainProps = {
   items: AiTutorNavMainItem[];
 };
 
+function isNavItemActive(pathname: string, search: string, item: AiTutorNavMainItem): boolean {
+  if (item.external) {
+    return false;
+  }
+
+  if (item.url.includes('?')) {
+    const [path, query] = item.url.split('?');
+    const normalizedSearch = search.startsWith('?') ? search.slice(1) : search;
+    if (pathname !== path) {
+      return false;
+    }
+    if (query === 'tab=users') {
+      return normalizedSearch === query || normalizedSearch === '';
+    }
+    return normalizedSearch === query;
+  }
+
+  return pathname === item.url || pathname.startsWith(`${item.url}/`);
+}
+
 export function AiTutorNavMain({ items }: AiTutorNavMainProps) {
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
 
   return (
     <SidebarGroup>
       <SidebarGroupContent className="flex flex-col gap-0.5">
         <SidebarMenu>
           {items.map((item) => {
-            const isActive =
-              !item.external &&
-              (pathname === item.url || pathname.startsWith(`${item.url}/`));
+            const isActive = isNavItemActive(pathname, search, item);
             const Icon = item.icon;
 
             return (
