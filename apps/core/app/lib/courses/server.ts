@@ -8,6 +8,8 @@ import {
   resolveCourseAccessWithCourse,
 } from "~/lib/auth/course-access.server";
 import { getPolicy, denyByPolicy } from "~/lib/policy.server";
+import { canCreateCourse } from "~/lib/rbac/permissions";
+import type { RbacUser } from "~/lib/rbac/types";
 import {
   CreateCourseSchema,
   UpdateCourseSchema,
@@ -122,8 +124,11 @@ export async function createCourse(request: Request) {
 
   const session = apiKeySession ?? (await auth.api.getSession(request));
   const role = session?.user?.role ?? "";
+  // Base create rights (ADMIN / UNIT_ADMIN) come from the shared RBAC helper so
+  // this can't drift from the rest of course management; an INSTRUCTOR may
+  // self-create only when the policy flag is on.
   const canCreate =
-    ["ADMIN", "UNIT_ADMIN"].includes(role) ||
+    (session?.user != null && canCreateCourse(session.user as RbacUser)) ||
     (role === "INSTRUCTOR" && (await getPolicy("instructors.canCreateCourses")));
   if (!session?.user || !canCreate) {
     // §4: log uniformly when an INSTRUCTOR is denied by the policy flag. The

@@ -63,7 +63,7 @@ export const POLICY_FLAGS = {
   "tas.canManageMaterials": {
     label: "TAs can manage course materials",
     description:
-      "Allow users with the TA role to upload and delete course materials. Instructors, unit admins, and admins are unaffected.",
+      "Allow users with the TA role to upload course materials, and delete materials they uploaded themselves. Instructors, unit admins, and admins are unaffected.",
     default: true,
   },
   "students.canUploadMaterials": {
