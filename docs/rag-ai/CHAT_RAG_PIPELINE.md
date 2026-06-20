@@ -137,13 +137,13 @@ Debug hooks (`chatApiDebug`) log history merge counts and pre-stream prompt size
 
 ## 3. Two RAG behaviors (split on `supportsTools`)
 
-RAG is **not** one pipeline. It branches on `modelSupportsTools(model)` (from the `AIModel` row in the DB).
+RAG is **not** one pipeline. It branches on `getChatModelCapabilities(model).supportsTools` (from the `AIModel` row in the DB).
 
 ### A. Tool-calling path (`supportsTools === true`)
 
 - `streamText` with **`getInformation`**, **`webSearch`**, **`fetchPage`**
 - **`maxSteps`**: `CHAT_TOOL_MAX_STEPS` (default **12**, capped at 32)
-- **`maxTokens`**: `CHAT_TOOL_MAX_OUTPUT_TOKENS` (default **32000**, capped at 128_000)
+- **`maxTokens`**: `resolveToolMaxOutputTokens(AIModel.maxTokens)` — env cap from `CHAT_TOOL_MAX_OUTPUT_TOKENS` (default **8192**, max 128_000), further clamped to the model's DB `maxTokens` when set (vLLM models seeded at **8192**)
 - `toolCallStreaming` mirrors client `streaming`
 - When `effectiveCourseId` is set, **`findRelevantContent`** runs **before** `streamText` (prefetch). Excerpts are injected only when **`shouldInjectCourseRag`** is true: `needsCourseRag(message)`, strong/moderate similarity, or `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE=1`.
 - **`getInformation`** remains registered as a supplemental tool — the model may call it if preloaded excerpts are insufficient. Its results pass through **`capRagHitsForTool`** (chunk cap **4**, **6000** chars per chunk).
@@ -196,7 +196,7 @@ Resolved system prompt order: request `systemPrompt` → stored `chat.systemProm
 | Variable | Default | Effect |
 | -------- | ------- | ------ |
 | `CHAT_TOOL_MAX_STEPS` | 12 | Tool-path `maxSteps` (1–32) |
-| `CHAT_TOOL_MAX_OUTPUT_TOKENS` | 32000 | Tool-path `maxTokens` (1024–128000) |
+| `CHAT_TOOL_MAX_OUTPUT_TOKENS` | 8192 | Tool-path env cap for `maxTokens` (1024–128000); clamped to `AIModel.maxTokens` when set |
 | `RAG_SIMILARITY_THRESHOLD` | 0.5 | Minimum cosine similarity for retrieval hits when caller omits threshold |
 | `QUERY_EMBED_CACHE_TTL_MS` | 90000 | Query embedding cache TTL |
 | `QUERY_EMBED_CACHE_MAX` | 300 | Max cached query embeddings |
