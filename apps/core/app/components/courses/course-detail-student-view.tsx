@@ -13,11 +13,13 @@ import { Avatar } from '@eduai/ui'
 import type { CourseDetail } from '~/hooks/api/use-course-detail'
 import type { CourseMaterial } from '~/hooks/api/use-course-materials'
 import type { CourseTopic } from '~/hooks/api/use-course-topics'
+import type { CourseTA } from '~/hooks/api/use-course-tas'
 
 interface Props {
   course: CourseDetail
   materials: CourseMaterial[]
   topics: CourseTopic[]
+  tas?: CourseTA[]
 }
 
 function MaterialStatusIcon({ status }: { status: CourseMaterial['status'] }) {
@@ -40,7 +42,7 @@ function formatSize(bytes: number): string {
   return mb >= 1 ? `${mb.toFixed(1)} MB` : `${(bytes / 1024).toFixed(0)} KB`
 }
 
-export function CourseDetailStudentView({ course, materials, topics }: Props) {
+export function CourseDetailStudentView({ course, materials, topics, tas = [] }: Props) {
   // Top-right hero badges: enrollment + AI status
   const topRightBadges: string[] = ['Enrolled', ...(course.aiInstructions ? ['AI-enabled'] : [])]
 
@@ -66,7 +68,7 @@ export function CourseDetailStudentView({ course, materials, topics }: Props) {
           />
 
           {/* B3: Enriched info card — always show; B1: no empty gaps */}
-          <div className={`grid gap-4 mb-4 ${course.instructor ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
+          <div className="grid gap-4 mb-4 grid-cols-1 sm:grid-cols-2">
             <Card>
               <CardContent className="pt-5 pb-5 flex flex-col gap-4">
                 <p className="text-[13px] font-semibold text-foreground">Course information</p>
@@ -101,11 +103,11 @@ export function CourseDetailStudentView({ course, materials, topics }: Props) {
               </CardContent>
             </Card>
 
-            {/* B4: Instructor card — always rendered when instructor exists */}
-            {course.instructor && (
+            {/* Instructor + TAs — visible to students so they know their teaching team */}
+            {course.instructor ? (
               <Card>
                 <CardContent className="pt-5 pb-5 flex flex-col gap-4">
-                  <p className="text-[13px] font-semibold text-foreground">Instructor</p>
+                  <p className="text-sm font-semibold text-foreground">Instructor</p>
                   <div className="flex items-center gap-3">
                     <Avatar name={course.instructor.name} size={40} radius={9} />
                     <div>
@@ -113,24 +115,58 @@ export function CourseDetailStudentView({ course, materials, topics }: Props) {
                       <p className="text-xs text-muted-foreground">{course.instructor.email}</p>
                     </div>
                   </div>
+                  <div>
+                    <p className="text-xs font-semibold tracking-wide text-foreground mb-2">
+                      Teaching assistants
+                    </p>
+                    {tas.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {tas.map((ta) => (
+                          <div key={ta.id} className="flex items-center gap-1.5">
+                            <Avatar name={ta.user.name} size={22} radius={5} />
+                            <span className="text-xs text-foreground">{ta.user.name}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs text-muted-foreground">No TAs assigned</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card>
+                <CardContent className="pt-5 pb-5 flex flex-0 flex-col gap-2">
+                  <p className="text-sm font-semibold text-foreground">Instructor</p>
+                  <p className="text-xs text-muted-foreground">No professor assigned</p>
+                  <p className="text-xs font-semibold tracking-wide text-foreground mt-2 mb-1">
+                    Teaching assistants
+                  </p>
+                  {tas.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {tas.map((ta) => (
+                        <div key={ta.id} className="flex items-center gap-1.5">
+                          <Avatar name={ta.user.name} size={22} radius={5} />
+                          <span className="text-xs text-foreground">{ta.user.name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-muted-foreground">No TAs assigned</span>
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             )}
           </div>
 
-          {/* About / AI instructions — only shown when data exists (B1: no empty gap) */}
-          {(course.description || course.aiInstructions) && (
-            <div className="flex flex-col gap-4">
-              {course.description && (
-                <Card>
-                  <CardContent className="pt-5 pb-5">
-                    <p className="text-[13px] font-semibold text-foreground mb-2">About this course</p>
-                    <p className="text-sm text-muted-foreground leading-relaxed">{course.description}</p>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-          )}
         </PageTabsContent>
 
         {/* ── Materials (read-only) ── */}
