@@ -45,8 +45,8 @@ describe("getCourseTA", () => {
 });
 
 describe("addCourseTA", () => {
-  it("upserts an Enrollment with role=TA for an existing user", async () => {
-    prismaMock.user.findUnique.mockResolvedValue({ id: USER.id });
+  it("upserts an Enrollment with role=TA for an existing STUDENT user", async () => {
+    prismaMock.user.findUnique.mockResolvedValue({ id: USER.id, role: "STUDENT" });
     prismaMock.enrollment.findUnique.mockResolvedValue(null);
     prismaMock.enrollment.upsert.mockResolvedValue({ id: "enr-1", user: USER });
 
@@ -61,6 +61,16 @@ describe("addCourseTA", () => {
     expect(result).toEqual({ ta: { id: "enr-1", user: USER } });
   });
 
+  it("promotes an existing STUDENT enrollment to TA", async () => {
+    prismaMock.user.findUnique.mockResolvedValue({ id: USER.id, role: "STUDENT" });
+    prismaMock.enrollment.findUnique.mockResolvedValue({ role: "STUDENT", isActive: true });
+    prismaMock.enrollment.upsert.mockResolvedValue({ id: "enr-1", user: USER });
+
+    const result = await addCourseTA(COURSE_ID, { userId: USER.id });
+    expect(prismaMock.enrollment.upsert).toHaveBeenCalled();
+    expect(result).toEqual({ ta: { id: "enr-1", user: USER } });
+  });
+
   it("rejects an unknown user", async () => {
     prismaMock.user.findUnique.mockResolvedValue(null);
     const result = await addCourseTA(COURSE_ID, { userId: "ghost" });
@@ -68,8 +78,26 @@ describe("addCourseTA", () => {
     expect(prismaMock.enrollment.upsert).not.toHaveBeenCalled();
   });
 
+  it("rejects a non-STUDENT platform user (e.g. an INSTRUCTOR account)", async () => {
+    prismaMock.user.findUnique.mockResolvedValue({ id: USER.id, role: "INSTRUCTOR" });
+    const result = await addCourseTA(COURSE_ID, { userId: USER.id });
+    expect(result).toEqual({ error: "Only STUDENT users can be added as a course TA" });
+    expect(prismaMock.enrollment.findUnique).not.toHaveBeenCalled();
+    expect(prismaMock.enrollment.upsert).not.toHaveBeenCalled();
+  });
+
+  it("never overwrites an existing INSTRUCTOR enrollment with a TA role", async () => {
+    prismaMock.user.findUnique.mockResolvedValue({ id: USER.id, role: "STUDENT" });
+    prismaMock.enrollment.findUnique.mockResolvedValue({ role: "INSTRUCTOR", isActive: true });
+    const result = await addCourseTA(COURSE_ID, { userId: USER.id });
+    expect(result).toEqual({
+      error: "User is an instructor for this course and cannot be made a TA",
+    });
+    expect(prismaMock.enrollment.upsert).not.toHaveBeenCalled();
+  });
+
   it("rejects a user already an active TA", async () => {
-    prismaMock.user.findUnique.mockResolvedValue({ id: USER.id });
+    prismaMock.user.findUnique.mockResolvedValue({ id: USER.id, role: "STUDENT" });
     prismaMock.enrollment.findUnique.mockResolvedValue({ role: "TA", isActive: true });
     const result = await addCourseTA(COURSE_ID, { userId: USER.id });
     expect(result).toEqual({ error: "User is already a TA for this course" });

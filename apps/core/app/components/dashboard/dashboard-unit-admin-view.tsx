@@ -39,7 +39,7 @@ export function DashboardUnitAdminView() {
     },
     {
       label: "Course chat",
-      description: "Use global chat for unit-wide support and questions.",
+      description: "Chat within a course for unit-wide support and questions.",
       href: "/chat",
       color: "var(--color-course-2)",
       icon: <IconMessageCircle size={16} stroke={1.75} />,

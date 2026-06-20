@@ -378,11 +378,21 @@ export async function action({ request }: ActionFunctionArgs) {
     }
     const effectiveCourseId = resolvedCourseId || courseId || null;
 
+    // #657: the global "general assistant" chat was removed — every interactive
+    // chat is now course-scoped. Server-to-server callers (admin API key /
+    // ai-tutor proxy) may still omit a course; regular sessions may not.
+    const isApiKeyCaller = Boolean(apiKeySession) || Boolean(apiKeyHeader);
+    if (!effectiveCourseId && !isApiKeyCaller) {
+      return new Response(JSON.stringify({ error: "COURSE_REQUIRED" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     // §10 (#302): course-scoped chats require course access for the acting
     // user. Students need an active enrollment AND a published course; an
     // inactive enrollment blocks new chats but never own-history reads
     // (GET /api/chats/:chatId is ownership-scoped and unaffected).
-    // Chats without a course context (general assistant) are not gated.
     if (effectiveCourseId) {
       const { course, access } = await resolveCourseAccessWithCourse(
         actingUser,

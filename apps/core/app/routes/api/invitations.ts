@@ -18,7 +18,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const gate = await requireInviter(request);
   if (gate.response) return gate.response;
 
-  const invitations = await listInvitations();
+  // UNIT_ADMINs only see invitations they created; ADMINs see all.
+  const invitations = await listInvitations({
+    id: gate.session.user.id,
+    name: gate.session.user.name,
+    role: gate.session.user.role ?? "",
+  });
   return json(invitations);
 }
 

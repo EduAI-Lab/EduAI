@@ -151,6 +151,10 @@ export async function resendInvitation(
 ): Promise<ResendInvitationResult> {
   const invitation = await prisma.invitation.findUnique({ where: { id } });
   if (!invitation) return { ok: false, status: 404, error: "NOT_FOUND" };
+  // A non-ADMIN inviter may only resend invites they created.
+  if (!canActOnInvitation(invitation, invitedBy)) {
+    return { ok: false, status: 403, error: "FORBIDDEN" };
+  }
   if (invitation.status !== "PENDING") {
     return { ok: false, status: 409, error: "NOT_PENDING" };
   }
@@ -168,17 +172,37 @@ export async function resendInvitation(
   return { ok: true, invitation: toPublic(updated), acceptUrl, emailDelivered };
 }
 
-export async function listInvitations(): Promise<PublicInvitation[]> {
+/**
+ * List invitations visible to `viewer`. ADMINs see everything; any other
+ * inviter (UNIT_ADMIN) only sees invitations they created — they must not be
+ * able to enumerate ADMIN/other-unit invites they don't own.
+ */
+export async function listInvitations(viewer?: Inviter): Promise<PublicInvitation[]> {
   const invitations = await prisma.invitation.findMany({
+    where: viewer && viewer.role !== "ADMIN" ? { invitedById: viewer.id } : undefined,
     orderBy: { createdAt: "desc" },
   });
   return invitations.map(toPublic);
 }
 
-export async function revokeInvitation(id: string): Promise<RevokeInvitationResult> {
+/** True when `actor` may act on `invitation` (revoke/resend). */
+function canActOnInvitation(invitation: Invitation, actor?: Inviter): boolean {
+  if (!actor) return true; // server-to-server / API-key caller
+  if (actor.role === "ADMIN") return true;
+  return invitation.invitedById === actor.id;
+}
+
+export async function revokeInvitation(
+  id: string,
+  actor?: Inviter,
+): Promise<RevokeInvitationResult> {
   const invitation = await prisma.invitation.findUnique({ where: { id } });
   if (!invitation) {
     return { ok: false, status: 404, error: "NOT_FOUND" };
+  }
+  // A non-ADMIN inviter may only revoke invites they created.
+  if (!canActOnInvitation(invitation, actor)) {
+    return { ok: false, status: 403, error: "FORBIDDEN" };
   }
   if (invitation.status !== "PENDING") {
     return { ok: false, status: 409, error: "NOT_PENDING" };
