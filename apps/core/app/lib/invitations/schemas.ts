@@ -2,11 +2,12 @@ import { z } from "zod";
 import { UnitSchema } from "~/lib/units";
 
 /**
- * Platform roles an admin may issue an invitation for. Deliberately excludes
- * STUDENT (self-registers) and TA (a course-enrollment role, not a platform
- * role — a course TA is a STUDENT user with an EnrollmentRole.TA enrollment).
+ * Platform roles an admin may issue an invitation for. Includes STUDENT (admins
+ * may invite students directly) but excludes TA, which is a course-enrollment
+ * role rather than a platform role — a course TA is a STUDENT user with an
+ * EnrollmentRole.TA enrollment.
  */
-export const INVITABLE_ROLES = ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR"] as const;
+export const INVITABLE_ROLES = ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "STUDENT"] as const;
 export type InvitableRole = (typeof INVITABLE_ROLES)[number];
 
 export const createInvitationSchema = z
