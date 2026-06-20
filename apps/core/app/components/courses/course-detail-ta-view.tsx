@@ -7,9 +7,13 @@ import {
   IconUpload,
   IconSettings,
   IconBook,
+  IconPlus,
+  IconTrash,
 } from '@tabler/icons-react'
 import { Card, CardContent } from '@eduai/ui'
 import { Button } from '@eduai/ui'
+import { Input } from '@eduai/ui'
+import { Textarea } from '@eduai/ui'
 import {
   Dialog,
   DialogContent,
@@ -37,6 +41,9 @@ interface Props {
   materialsSuccess?: string | null
   onFileSelect: (file: File) => void
   courseId?: string
+  onCreateTopic: (name: string) => Promise<void>
+  onDeleteTopic: (id: string) => Promise<void>
+  onUpdateAiInstructions: (aiInstructions: string) => Promise<void>
 }
 
 function fileTypeColor(mime: string): string {
@@ -84,14 +91,47 @@ export function CourseDetailTaView({
   materialsSuccess = null,
   onFileSelect,
   courseId,
+  onCreateTopic,
+  onDeleteTopic,
+  onUpdateAiInstructions,
 }: Props) {
   const { policies } = usePolicies()
   // §2 gate: a TA sees upload/embedding controls only when tas.canManageMaterials
   // is on (default true). When off, materials are read-only (mirrors backend).
   const canManageMaterials = policies['tas.canManageMaterials'] ?? true
+  // tas.canSetAiInstructions grant (default off): a TA may edit the AI
+  // instructions field only. When off, the field is read-only (mirrors backend).
+  const canSetAiInstructions = policies['tas.canSetAiInstructions'] ?? false
+  // tas.canManageTopics grant (default off): a TA may create/delete any topic.
+  // When off, topics are read-only (mirrors backend §8).
+  const canManageTopics = policies['tas.canManageTopics'] ?? false
 
   const [uploadOpen, setUploadOpen] = useState(false)
   const [embeddingOpen, setEmbeddingOpen] = useState(false)
+  const [newTopic, setNewTopic] = useState('')
+  const [aiInstructions, setAiInstructions] = useState(course.aiInstructions ?? '')
+  const [aiSaving, setAiSaving] = useState(false)
+  const [aiSaveMsg, setAiSaveMsg] = useState<string | null>(null)
+
+  const handleTopicCreate = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newTopic.trim()) return
+    await onCreateTopic(newTopic.trim())
+    setNewTopic('')
+  }
+
+  const handleAiSave = async () => {
+    setAiSaving(true)
+    setAiSaveMsg(null)
+    try {
+      await onUpdateAiInstructions(aiInstructions)
+      setAiSaveMsg('Saved.')
+    } catch (err) {
+      setAiSaveMsg(err instanceof Error ? err.message : 'Save failed.')
+    } finally {
+      setAiSaving(false)
+    }
+  }
 
   // Close upload modal when success arrives (not on file select — upload may fail)
   const prevSuccessRef = useRef(materialsSuccess)
@@ -203,11 +243,33 @@ export function CourseDetailTaView({
                     <p className="text-sm text-foreground">{materials.filter(m => m.status === 'READY').length} of {materials.length}</p>
                   </div>
                 </div>
-                {course.aiInstructions && (
-                  <div className="pt-3 border-t border-border">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">AI instructions</p>
-                    <p className="text-[13px] text-muted-foreground leading-relaxed">{course.aiInstructions}</p>
+                {/* tas.canSetAiInstructions: editable field when granted, else
+                    the redesigned read-only display (mirrors backend). */}
+                {canSetAiInstructions ? (
+                  <div className="pt-3 border-t border-border grid gap-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">AI instructions</p>
+                    <Textarea
+                      value={aiInstructions}
+                      onChange={(e) => setAiInstructions(e.target.value)}
+                      rows={4}
+                      placeholder="Guidance applied to the AI tutor for this course."
+                    />
+                    <div className="flex items-center gap-3">
+                      <Button onClick={handleAiSave} disabled={aiSaving} size="sm" className="self-start">
+                        {aiSaving ? 'Saving…' : 'Save instructions'}
+                      </Button>
+                      {aiSaveMsg && (
+                        <span className="text-sm text-muted-foreground">{aiSaveMsg}</span>
+                      )}
+                    </div>
                   </div>
+                ) : (
+                  course.aiInstructions && (
+                    <div className="pt-3 border-t border-border">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">AI instructions</p>
+                      <p className="text-[13px] text-muted-foreground leading-relaxed">{course.aiInstructions}</p>
+                    </div>
+                  )
                 )}
               </CardContent>
             </Card>
@@ -316,23 +378,51 @@ export function CourseDetailTaView({
           )}
         </PageTabsContent>
 
-        {/* ── Topics (read-only for TA) ── */}
+        {/* ── Topics (§8: add/delete only when tas.canManageTopics is on) ── */}
         <PageTabsContent value="topics" forceMount className="data-[state=inactive]:hidden flex-1 outline-none">
-          {topics.length === 0 ? (
-            <Card>
-              <CardContent className="flex items-center justify-center py-8 text-muted-foreground">
-                No topics yet.
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="grid gap-2">
-              {topics.map((t) => (
-                <Card key={t.id}>
-                  <CardContent className="py-3 text-sm">{t.name}</CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
+          <div className="flex flex-col gap-4">
+            {canManageTopics && (
+              <form onSubmit={handleTopicCreate} className="flex gap-2">
+                <Input
+                  value={newTopic}
+                  onChange={(e) => setNewTopic(e.target.value)}
+                  placeholder="New topic name"
+                />
+                <Button type="submit" disabled={!newTopic.trim()}>
+                  <IconPlus className="w-4 h-4 mr-1" />
+                  Add
+                </Button>
+              </form>
+            )}
+            {topics.length === 0 ? (
+              <Card>
+                <CardContent className="flex items-center justify-center py-8 text-muted-foreground">
+                  No topics yet.
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid gap-2">
+                {topics.map((t) => (
+                  <Card key={t.id}>
+                    <CardContent className="flex items-center justify-between py-3">
+                      <span className="text-sm">{t.name}</span>
+                      {canManageTopics && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label="Delete topic"
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => onDeleteTopic(t.id)}
+                        >
+                          <IconTrash className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
         </PageTabsContent>
       </PageTabs>
     </div>
