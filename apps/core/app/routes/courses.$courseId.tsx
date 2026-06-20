@@ -241,12 +241,14 @@ export default function CourseDetailPage() {
                 courseId={course.id}
                 currentUserId={user.id}
                 onRefreshMaterials={refetchMaterials}
+                tas={tas}
               />
             ) : (
               <CourseDetailStudentView
                 course={course}
                 materials={materials}
                 topics={topics}
+                tas={tas}
               />
             )}
           </div>

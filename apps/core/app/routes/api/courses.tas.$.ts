@@ -57,7 +57,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   };
   const access = await resolveCourseAccess(rbacUser, course);
 
-  if (!canManageInstructors(access)) {
+  // Reading the TA roster is allowed for anyone with course access (students,
+  // TAs, instructors, admins). Mutations remain gated in `action` below.
+  if (!access) {
     return new Response(JSON.stringify({ error: "Forbidden" }), {
       status: 403,
       headers: { "Content-Type": "application/json" },
