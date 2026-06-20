@@ -31,13 +31,27 @@ describe("createInvitationSchema", () => {
     expect(r.success).toBe(true);
   });
 
-  it("rejects TA and STUDENT (not platform-invitable)", () => {
+  it("accepts a STUDENT invite without units", () => {
+    const r = createInvitationSchema.safeParse({
+      email: "s@test.local",
+      role: "STUDENT",
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("rejects TA (a course-enrollment role, not platform-invitable)", () => {
     expect(
       createInvitationSchema.safeParse({ email: "ta@test.local", role: "TA" }).success,
     ).toBe(false);
-    expect(
-      createInvitationSchema.safeParse({ email: "s@test.local", role: "STUDENT" }).success,
-    ).toBe(false);
+  });
+
+  it("rejects units on a STUDENT invite", () => {
+    const r = createInvitationSchema.safeParse({
+      email: "s@test.local",
+      role: "STUDENT",
+      authorizedUnits: ["COSC"],
+    });
+    expect(r.success).toBe(false);
   });
 
   it("requires units for UNIT_ADMIN", () => {
