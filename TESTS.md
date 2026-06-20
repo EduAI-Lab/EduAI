@@ -420,7 +420,7 @@ Unit tests for the shared design-system component library (`@eduai/ui`). Run wit
 | `errorHandler.test.js` | `notFound` and `errorHandler` Express middleware return the correct status codes and JSON error envelopes |
 | `generateBankVariants.test.js` | `generateBankVariantsForQuestions` — validation guards, per-question orchestration, and MCQ choice-count retry |
 | `courseAccess.test.js` | `resolveCourseAccess` derives the caller's access level (ADMIN/UNIT_ADMIN/INSTRUCTOR/TA/STUDENT) from course ownership, Core enrollments, and unit-department matching, and the `requireCourseAccess` middleware enforces a minimum rank — 401 unauthenticated, 404 missing course, 403 below the required rank. |
-| `resourceAccessIdGuard.test.js` | The resource-access loaders (`requireVariantAccess`/`requireQuestionAccess`/`requireAssessmentAccess`) reject a non-integer id with 404 before any DB query, so a `NaN` never reaches the INTEGER PK and leaks a 500. |
+| `resourceAccessIdGuard.test.js` | The resource-access loaders (`requireVariantAccess`/`requireQuestionAccess`/`requireAssessmentAccess`) reject a non-integer or non-positive id (e.g. `0`, `abc`) with 404 before any DB query, so invalid ids never reach the INTEGER PK and leak a 500. |
 
 ---
 
@@ -455,7 +455,7 @@ Unit tests for the shared design-system component library (`@eduai/ui`). Run wit
 | `authMeBugReport.test.js` | `GET /api/auth/me` returns `isBugReportAdmin=true` only for ADMIN, with the legacy `BUG_REPORT_ADMIN_EMAILS` allowlist ignored so UNIT_ADMIN/INSTRUCTOR/TA/STUDENT all resolve to false. |
 | `canvasRbac.test.js` | Canvas RBAC: integration save/get/delete are INSTRUCTOR-only own-scoped (TA/STUDENT → 403), and course-mapping reads and assessment export are course-scoped INSTRUCTOR-only (TA → 403). |
 | `questionRbac.test.js` | Question route RBAC: STUDENT blocked from all writes (403), TA may view the whole course bank but edit/delete only their own questions (`createdBy`, else 403), and INSTRUCTOR may create/edit/delete any question in the course. |
-| `variantRbac.test.js` | Variant route RBAC: STUDENT blocked from edits/deletes/creates (403), TA own-only draft edit/delete (`createdBy`, else 403), INSTRUCTOR-only approval and draft-revert (TA → 403/409), approved variants locked against edits (409 `VARIANT_LOCKED`), and `PATCH` testable INSTRUCTOR-gated ahead of payload validation. |
+| `variantRbac.test.js` | Variant route RBAC: STUDENT blocked from edits/deletes/creates (403), TA own-only draft edit/delete (`createdBy`, else 403), INSTRUCTOR-only approval and draft-revert (TA → 403/409), approved variants locked against content edits (409 `VARIANT_LOCKED`) but allow tag-only `isAiGenerated` toggle, and `PATCH` testable INSTRUCTOR-gated ahead of payload validation. |
 | `crossCourseScoping.integration.test.js` | Section/variant/question write services reject a child resource from a different course owned by the same user (cross-course linking, section/variant hijack, and `addQuestionToAssessment`/`removeQuestionFromAssessment`), while same-course writes still succeed. |
 | `questionOrderRbac.test.js` | Question-order routes (`PUT /:id/order`, `DELETE /:id/order/:assessmentId`) are instructor-only (TA → 403, §17) and reject an `assessmentId` from a different course than the question (→ 404). |
 | `approveTopicValidation.test.js` | `POST /api/questions/approve` rejects a question with no/invalid `primaryTopicId` with 400 before reaching the service, and forwards a real CUID topic id unchanged. |

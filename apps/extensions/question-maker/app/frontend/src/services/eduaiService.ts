@@ -93,22 +93,7 @@ export interface EduAITopicOption {
     name: string;
 }
 
-/** Shown when Core model list is unreachable (offline / auth). */
-const FALLBACK_AI_MODELS: EduAIModelOption[] = [
-    {
-        id: 'google:gemini-2.5-flash',
-        label: 'Gemini 2.5 Flash (fallback)',
-        provider: 'google',
-        description: 'Used when the live model list cannot be loaded.',
-        isDefault: true,
-    },
-    {
-        id: 'ollama:gpt-oss:120b',
-        label: 'Ollama GPT-OSS 120B (fallback)',
-        provider: 'ollama',
-    },
-];
-
+/** Shown when Core course list is unreachable (offline / auth). */
 const FALLBACK_COURSE_OPTIONS: EduAICourseOption[] = [
     {
         id: 'fallback-cosc211',
@@ -181,7 +166,8 @@ class EduAIService {
             const models = response.data;
 
             if (!Array.isArray(models) || models.length === 0) {
-                return FALLBACK_AI_MODELS;
+                console.warn('AI model list empty — check Core session or EDUAI_API_KEY');
+                return [];
             }
 
             return models
@@ -195,7 +181,7 @@ class EduAIService {
                 }));
         } catch (error) {
             console.error('Failed to fetch AI models from the AI service:', error);
-            return FALLBACK_AI_MODELS;
+            return [];
         }
     }
 

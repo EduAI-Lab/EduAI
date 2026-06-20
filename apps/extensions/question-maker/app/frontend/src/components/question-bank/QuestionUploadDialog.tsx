@@ -290,6 +290,7 @@ export const QuestionUploadDialog = ({
     const [availableModels, setAvailableModels] = useState<EduAIModelOption[]>([]);
     const [aiModel, setAiModel] = useState('ollama:gpt-oss:120b');
     const [providerApiKey, setProviderApiKey] = useState('');
+    const [apiKeySaveState, setApiKeySaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
     const [uploadSectionCollapsed, setUploadSectionCollapsed] = useState(true);
     const [showHistoryPanel, setShowHistoryPanel] = useState(false);
     const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
@@ -420,7 +421,29 @@ export const QuestionUploadDialog = ({
         };
 
         void loadApiKey();
+        setApiKeySaveState('idle');
     }, [aiModel]);
+
+    const saveProviderApiKey = useCallback(async () => {
+        const provider = apiKeyStorage.getProviderFromModel(aiModel);
+        if (!provider || !providerApiKey.trim()) return;
+        setApiKeySaveState('saving');
+        try {
+            await apiKeyStorage.setApiKey(provider, providerApiKey.trim());
+            setApiKeySaveState('saved');
+            toast({
+                title: 'API key saved',
+                description: 'Stored locally in your browser for this provider.',
+            });
+        } catch {
+            setApiKeySaveState('error');
+            toast({
+                variant: 'destructive',
+                title: 'Failed to save API key',
+                description: 'Could not store the key locally. Try again.',
+            });
+        }
+    }, [aiModel, providerApiKey, toast]);
 
     const performPdfOcr = useCallback(async (file: File, onProgress: (value: number) => void) => {
         const arrayBuffer = await file.arrayBuffer();
@@ -1139,20 +1162,32 @@ export const QuestionUploadDialog = ({
                                                             </Button>
                                                         </div>
                                                     ) : (
-                                                        <Input
-                                                            id="provider-api-key-expanded"
-                                                            type="password"
-                                                            placeholder={`Enter your ${apiKeyStorage.getProviderFromModel(aiModel)?.toUpperCase()} API key`}
-                                                            value={providerApiKey}
-                                                            onChange={(e) => {
-                                                                const value = e.target.value;
-                                                                setProviderApiKey(value);
-                                                                const provider = apiKeyStorage.getProviderFromModel(aiModel);
-                                                                if (provider && value) {
-                                                                    void apiKeyStorage.setApiKey(provider, value);
-                                                                }
-                                                            }}
-                                                        />
+                                                        <div className="flex gap-2">
+                                                            <Input
+                                                                id="provider-api-key-expanded"
+                                                                type="password"
+                                                                className="flex-1"
+                                                                placeholder={`Enter your ${apiKeyStorage.getProviderFromModel(aiModel)?.toUpperCase()} API key`}
+                                                                value={providerApiKey}
+                                                                onChange={(e) => {
+                                                                    setProviderApiKey(e.target.value);
+                                                                    setApiKeySaveState('idle');
+                                                                }}
+                                                            />
+                                                            <Button
+                                                                type="button"
+                                                                variant="outline"
+                                                                size="sm"
+                                                                disabled={!providerApiKey.trim() || apiKeySaveState === 'saving'}
+                                                                onClick={() => void saveProviderApiKey()}
+                                                            >
+                                                                {apiKeySaveState === 'saving'
+                                                                    ? 'Saving…'
+                                                                    : apiKeySaveState === 'saved'
+                                                                        ? 'Saved'
+                                                                        : 'Save key'}
+                                                            </Button>
+                                                        </div>
                                                     )}
                                                     <p className="text-xs text-muted-foreground">
                                                         Your API key is stored locally in your browser and never sent to our servers.
@@ -1432,20 +1467,32 @@ export const QuestionUploadDialog = ({
                                             </Button>
                                         </div>
                                     ) : (
-                                        <Input
-                                            id="provider-api-key"
-                                            type="password"
-                                            placeholder={`Enter your ${apiKeyStorage.getProviderFromModel(aiModel)?.toUpperCase()} API key`}
-                                            value={providerApiKey}
-                                            onChange={(e) => {
-                                                const value = e.target.value;
-                                                setProviderApiKey(value);
-                                                const provider = apiKeyStorage.getProviderFromModel(aiModel);
-                                                if (provider && value) {
-                                                    void apiKeyStorage.setApiKey(provider, value);
-                                                }
-                                            }}
-                                        />
+                                        <div className="flex gap-2">
+                                            <Input
+                                                id="provider-api-key"
+                                                type="password"
+                                                className="flex-1"
+                                                placeholder={`Enter your ${apiKeyStorage.getProviderFromModel(aiModel)?.toUpperCase()} API key`}
+                                                value={providerApiKey}
+                                                onChange={(e) => {
+                                                    setProviderApiKey(e.target.value);
+                                                    setApiKeySaveState('idle');
+                                                }}
+                                            />
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                disabled={!providerApiKey.trim() || apiKeySaveState === 'saving'}
+                                                onClick={() => void saveProviderApiKey()}
+                                            >
+                                                {apiKeySaveState === 'saving'
+                                                    ? 'Saving…'
+                                                    : apiKeySaveState === 'saved'
+                                                        ? 'Saved'
+                                                        : 'Save key'}
+                                            </Button>
+                                        </div>
                                     )}
                                     <p className="text-xs text-muted-foreground">
                                         Your API key is stored locally in your browser and never sent to our servers.

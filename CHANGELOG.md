@@ -60,7 +60,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [question-maker] fix: Dedupe duplicate course rows for ADMIN on course selection (frontend `dedupeCoursesByCode` + backend admin list). (#676, @GlowyBlack, 2026-06-20)
 - [question-maker] fix: Student/TA access denied no longer crashes (Router wraps access gate); allow AI tag toggle on reviewed variants. (#676, @GlowyBlack, 2026-06-20)
 - [question-maker] ui: Question detail modal uses single scroll area; theme toggle beside bug report; explicit API key save with confirmation. (#676, @GlowyBlack, 2026-06-20)
-- [question-maker] security: Restrict Vite env exposure to `VITE_` prefix; gate Canvas test-mode fallback to dev; surface AI model fetch errors instead of silent fallbacks. (#676, @GlowyBlack, 2026-06-20)
+- [question-maker] security: Restrict Vite env exposure to `VITE_` prefix; gate Canvas test-mode fallback to dev; surface AI model fetch errors instead of silent fallbacks (backend + frontend). (#676, @GlowyBlack, 2026-06-20)
+- [question-maker] fix: Apply explicit API key save + toast in Upload dialog; treat id `0` as not-found in resource/course access guards (fixes `coreWiring.integration.test.js`). (#676, @GlowyBlack, 2026-06-20)
 - [ai-tutor] fix: Route TA promotion through Core — `PATCH /admin/courses/:courseId/enrollments/:userId/role` now calls Core's enrollment-role endpoint before updating locally, keeping Core as the authoritative source; remove the band-aid `local.role !== 'TA'` skip from `syncCourseEnrollments` so Core-initiated TA demotions propagate on the next sync. (#674, @evanbones, 2026-06-19)
 
 ---
