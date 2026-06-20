@@ -41,6 +41,7 @@ apps/core/logs/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+playwright-report/
 
 # Build outputs
 build/

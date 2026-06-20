@@ -1,7 +1,6 @@
 import { Link } from 'react-router'
-import { IconBook, IconCalendar } from '@tabler/icons-react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
-import { Badge } from '~/components/ui/badge'
+import { IconBook } from '@tabler/icons-react'
+import { Card, CardContent, CourseCard, PageHeading } from '@eduai/ui'
 import type { Course } from '~/hooks/api/use-courses'
 
 interface Props {
@@ -14,10 +13,7 @@ export function CoursesStudentView({ courses }: Props) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        <h2 className="text-2xl font-bold">My Courses</h2>
-        <p className="text-muted-foreground">Your enrolled courses</p>
-      </div>
+      <PageHeading heading="My Courses" subheading="Your enrolled courses" />
 
       {visible.length === 0 ? (
         <Card>
@@ -28,24 +24,22 @@ export function CoursesStudentView({ courses }: Props) {
         </Card>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {visible.map((course) => (
-            <Card key={course.id} className="hover:shadow-md transition-shadow">
-              <Link to={`/courses/${course.id}`} className="block">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-lg">{course.code}</CardTitle>
-                  <CardDescription>{course.name}</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <div className="flex items-center gap-1">
-                      <IconCalendar className="w-4 h-4" />
-                      {course.term} {course.year}
-                    </div>
-                    <Badge variant="default">Enrolled</Badge>
-                  </div>
-                </CardContent>
-              </Link>
-            </Card>
+          {visible.map((course, index) => (
+            <CourseCard
+              key={course.id}
+              id={course.id}
+              code={course.code}
+              name={course.name}
+              description={course.description}
+              term={course.term}
+              year={course.year}
+              isPublished={course.isPublished}
+              department={course.department}
+              extraBadges={["Enrolled"]}
+              colorIndex={index}
+              href={`/courses/${course.id}`}
+              LinkComponent={Link}
+            />
           ))}
         </div>
       )}

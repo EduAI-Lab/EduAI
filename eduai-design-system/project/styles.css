@@ -1,0 +1,10 @@
+/*
+ * EduAI Design System — Root Stylesheet
+ * Import this single file to get all tokens, fonts, and base styles.
+ * Never add inline rules here — add to the appropriate token file.
+ */
+
+@import "./tokens/colors.css";
+@import "./tokens/typography.css";
+@import "./tokens/spacing.css";
+@import "./tokens/shadows.css";

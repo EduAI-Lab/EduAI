@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeAll } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { ChatMessage } from "~/components/chat/chat-message";
+import { ChatMessage, coerceMessageContent } from "~/components/chat/chat-message";
 import type { Message } from "ai";
 
 beforeAll(() => {
@@ -99,5 +99,54 @@ describe("ChatMessage — streaming", () => {
     const streamingMessage: Message = { ...aiMessage, content: "Partial response..." };
     render(<ChatMessage message={streamingMessage} isStreaming={true} />);
     expect(screen.getByText("Partial response...")).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// coerceMessageContent — unit tests for the content-coercion helper
+// ---------------------------------------------------------------------------
+
+describe("coerceMessageContent", () => {
+  it("returns a string as-is", () => {
+    expect(coerceMessageContent("hello")).toBe("hello");
+  });
+
+  it("returns empty string for null", () => {
+    expect(coerceMessageContent(null)).toBe("");
+  });
+
+  it("returns empty string for undefined", () => {
+    expect(coerceMessageContent(undefined)).toBe("");
+  });
+
+  it("extracts .text from a plain object (DB-revived JSON content)", () => {
+    expect(coerceMessageContent({ text: "restored text" })).toBe("restored text");
+  });
+
+  it("joins text parts from an array of AI-SDK parts", () => {
+    const parts = [
+      { type: "text", text: "Hello" },
+      { type: "text", text: "World" },
+    ];
+    expect(coerceMessageContent(parts)).toBe("Hello\nWorld");
+  });
+
+  it("skips non-text parts in an array", () => {
+    const parts = [
+      { type: "tool-invocation", toolInvocation: {} },
+      { type: "text", text: "Only this" },
+    ];
+    expect(coerceMessageContent(parts)).toBe("Only this");
+  });
+
+  it("falls back to JSON.stringify for an unrecognised object", () => {
+    const obj = { someField: 42 };
+    expect(coerceMessageContent(obj)).toBe(JSON.stringify(obj));
+  });
+
+  it("never returns a value that would render as [object Object]", () => {
+    const result = coerceMessageContent({ role: "assistant" });
+    expect(typeof result).toBe("string");
+    expect(result).not.toBe("[object Object]");
   });
 });

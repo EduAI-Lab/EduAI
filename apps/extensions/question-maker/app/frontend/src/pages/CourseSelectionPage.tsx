@@ -3,57 +3,51 @@
  * Same header as homepage; content shows course cards and sandbox course option.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { TopNavigation } from '../components/navigation/TopNavigation';
-import { useDisplayCourses } from '../hooks/useDisplayCourses';
+import { useLocation, useNavigate } from 'react-router';
+import { useAuth } from '@/contexts/AuthContext';
+import { useQmLayout } from '../components/layout/QmLayoutContext';
+import { CoursesAdminView } from '@/components/courses/courses-admin-view';
+import { CoursesInstructorView } from '@/components/courses/courses-instructor-view';
+import { CoursesUnitAdminView } from '@/components/courses/courses-unit-admin-view';
+import { useCourses } from '../hooks/useCourses';
 import { Course } from '../types/question';
-import { ProfileCoursesDialog } from '../components/profile/ProfileCoursesDialog';
 import { courseService } from '../services/courseService';
-import { GraduationCap, Plus } from 'lucide-react';
-import { Card, CardContent } from '../components/ui/card';
-import { Badge } from '../components/ui/badge';
-import { Tooltip } from '../components/ui/tooltip';
 import { useGuidedTour } from '../contexts/GuidedTourContext';
 import { assessmentService } from '../services/assessmentService';
-import { isSandboxCourse, SANDBOX_COURSE_CODE, formatCourseTermYear } from '../utils/courseDisplay';
 
-const SANDBOX_COURSE_NAME = 'Sandbox Course';
+const TEST_COURSE_CODE = 'SANDBOX';
+const TEST_COURSE_NAME = 'Sandbox Course';
+
+function isTestCourse(course: Course): boolean {
+  const code = (course.code ?? '').toUpperCase();
+  const name = (course.name ?? '').toLowerCase();
+  return code === TEST_COURSE_CODE || name.includes('test course');
+}
 
 export const CourseSelectionPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const {
-    courses,
-    displayCourses,
-    showMockLabel,
-    hasCoreCourses,
-    isLoading: isPageLoading,
-    fetchCourses,
-  } = useDisplayCourses();
-  const [profileOpen, setProfileOpen] = useState(false);
+  const { user } = useAuth();
+  const { courses, isLoading: isCoursesLoading, fetchCourses } = useCourses();
   const [isStartingTour, setIsStartingTour] = useState(false);
+  const { setGuidedTourHandler, openProfile } = useQmLayout();
   const { startTour, registerStepAction, isActive: isTourActive } = useGuidedTour();
-
-  const coursesRef = useRef(displayCourses);
-  coursesRef.current = displayCourses;
+  const coursesRef = useRef(courses);
+  coursesRef.current = courses;
 
   const handleSelectCourse = (course: Course) => {
     navigate('/home', { state: { courseId: course.id }, replace: true });
-  };
-
-  const handleProfileClick = () => {
-    setProfileOpen(true);
   };
 
   const handleGuidedTourClick = useCallback(async () => {
     if (isStartingTour) return;
     setIsStartingTour(true);
     try {
-      let testCourse: Course | undefined = courses.find(isSandboxCourse);
+      let testCourse: Course | undefined = courses.find(isTestCourse);
       if (!testCourse) {
         const created = await courseService.createCourse({
-          name: SANDBOX_COURSE_NAME,
-          courseCode: SANDBOX_COURSE_CODE
+          name: TEST_COURSE_NAME,
+          courseCode: TEST_COURSE_CODE
         });
         try {
           await courseService.createTopic(created.id, 'General');
@@ -82,7 +76,7 @@ export const CourseSelectionPage = () => {
   useEffect(() => {
     try {
       if (sessionStorage.getItem('newUserTourPending') !== '1') return;
-      if (isPageLoading) return;
+      if (isCoursesLoading) return;
       const t = setTimeout(() => {
         try {
           sessionStorage.removeItem('newUserTourPending');
@@ -91,7 +85,7 @@ export const CourseSelectionPage = () => {
       }, 400);
       return () => clearTimeout(t);
     } catch (_) {}
-  }, [startTour, isPageLoading]);
+  }, [startTour, isCoursesLoading]);
 
   // When arriving from homepage (e.g. user clicked Guided tour on Assessments tab), start the tour here and register step 1 to return to their course on questions tab.
   useEffect(() => {
@@ -130,8 +124,8 @@ export const CourseSelectionPage = () => {
       (async () => {
         try {
           const created = await courseService.createCourse({
-            name: SANDBOX_COURSE_NAME,
-            courseCode: SANDBOX_COURSE_CODE
+            name: TEST_COURSE_NAME,
+            courseCode: TEST_COURSE_CODE
           });
           try {
             await courseService.createTopic(created.id, 'General');
@@ -156,87 +150,23 @@ export const CourseSelectionPage = () => {
     return unregister;
   }, [isTourActive, registerStepAction, navigate, location.state, fetchCourses]);
 
-  return (
-    <div className="min-h-screen bg-background">
-      <TopNavigation
-        variant="course-selection"
-        courses={displayCourses}
-        isLoadingCourses={isPageLoading}
-        onProfileClick={handleProfileClick}
-        onGuidedTourClick={handleGuidedTourClick}
-      />
+  useEffect(() => {
+    setGuidedTourHandler(handleGuidedTourClick);
+    return () => setGuidedTourHandler(null);
+  }, [handleGuidedTourClick, setGuidedTourHandler]);
 
-      <div className="max-w-4xl mx-auto px-6 py-8">
-        <h1 className="text-2xl font-bold text-foreground mb-6">Your Courses</h1>
+  const gridProps = {
+    courses,
+    isLoading: isCoursesLoading,
+    onSelectCourse: handleSelectCourse,
+    onAddCourse: openProfile,
+  };
 
-        {isPageLoading ? (
-          <p className="text-sm text-muted-foreground">Loading courses…</p>
-        ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 items-stretch">
-          {/* Sandbox course */}
-          <Tooltip content="Create a local sandbox course for practice" side="top">
-            <Card
-              className="border-2 border-dashed border-muted-foreground/30 bg-muted/30 hover:border-primary hover:bg-muted/50 cursor-pointer transition-colors flex min-h-[140px]"
-              data-tour-id={displayCourses.length === 0 ? 'course-select' : undefined}
-              onClick={() => setProfileOpen(true)}
-            >
-              <CardContent className="flex flex-col items-center justify-center flex-1 p-6">
-              <div className="rounded-full bg-muted p-3 mb-2">
-                <Plus className="h-6 w-6 text-muted-foreground" />
-              </div>
-              <p className="text-sm font-medium text-muted-foreground">Sandbox course</p>
-            </CardContent>
-            </Card>
-          </Tooltip>
-
-          {/* Available course cards */}
-          {displayCourses.map((course, index) => {
-            const termYear = formatCourseTermYear(course);
-            return (
-            <Tooltip key={course.id} content={`Open question bank and assessments for ${course.name}`} side="top">
-              <Card
-                className="cursor-pointer transition-shadow hover:shadow-md border bg-card text-card-foreground flex min-h-[140px]"
-                data-tour-id={index === 0 ? 'course-select' : undefined}
-                onClick={() => handleSelectCourse(course)}
-              >
-                <CardContent className="flex flex-col flex-1 p-6 justify-center">
-                <div className="flex items-center gap-2 min-w-0">
-                  <GraduationCap className="h-5 w-5 text-primary shrink-0" />
-                  <span className="font-semibold truncate">{course.name}</span>
-                  {showMockLabel && (
-                    <Badge variant="outline" className="text-xs shrink-0">Mock</Badge>
-                  )}
-                </div>
-                {course.code && (
-                  <p className="text-sm text-muted-foreground mt-1">{course.code}</p>
-                )}
-                {termYear && (
-                  <p className="text-sm text-muted-foreground mt-1">{termYear}</p>
-                )}
-                <p className="text-xs text-muted-foreground/80 mt-2">Click to open</p>
-              </CardContent>
-              </Card>
-            </Tooltip>
-            );
-          })}
-        </div>
-        )}
-
-        {!isPageLoading && displayCourses.length === 0 && (
-          <p className="text-sm text-muted-foreground mt-4">
-            {hasCoreCourses
-              ? 'Your Core courses should appear here after sign-in. Refresh the page if something is missing.'
-              : 'No courses yet. Core courses appear automatically, or create a sandbox course to get started.'}
-          </p>
-        )}
-      </div>
-
-      <ProfileCoursesDialog
-        open={profileOpen}
-        onClose={() => setProfileOpen(false)}
-        existingCourses={courses}
-        onCoursesAdded={fetchCourses}
-      />
-    </div>
-  );
+  if (user?.role === 'ADMIN') {
+    return <CoursesAdminView {...gridProps} />;
+  }
+  if (user?.role === 'UNIT_ADMIN') {
+    return <CoursesUnitAdminView {...gridProps} />;
+  }
+  return <CoursesInstructorView {...gridProps} />;
 };

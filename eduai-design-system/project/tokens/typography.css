@@ -1,0 +1,106 @@
+/*
+ * EduAI Design System — Typography Tokens
+ *
+ * Primary font: Outfit (Google Fonts variable weight)
+ *   — Current production font; substitutes for licensed Whitney (UBC brand).
+ *   — Open Sans is the UBC-approved free alternative if Outfit is replaced.
+ *   — To adopt Whitney, provide the font files and update @font-face below.
+ *
+ * Monospace: JetBrains Mono — used in code blocks, API key display.
+ * Serif: System serif fallback — rarely used.
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/*
+ * Cambria — system serif font (pre-installed on Windows & macOS).
+ * Using local() src so no binary file needs to be bundled or uploaded.
+ * The fallback stack (ui-serif → Georgia → Cambria → Times) will render
+ * correctly on all platforms; Cambria is used where system-installed.
+ */
+@font-face {
+  font-family: 'Cambria';
+  src: local('Cambria'), local('Cambria-Regular'), local('Cambria Math');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Cambria';
+  src: local('Cambria Bold'), local('Cambria-Bold');
+  font-weight: 700;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Cambria';
+  src: local('Cambria Italic'), local('Cambria-Italic');
+  font-weight: 400;
+  font-style: italic;
+}
+
+:root {
+  /* ── Font stacks ────────────────────────────────────────── */
+  --font-sans:  "Outfit", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono:  "JetBrains Mono", ui-monospace, "Fira Code", "Cascadia Code", monospace;
+  --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", serif;
+
+  /* ── Type scale (rem) ───────────────────────────────────── */
+  --text-xs:   0.75rem;    /* 12px — labels, captions            */
+  --text-sm:   0.875rem;   /* 14px — secondary UI, table cells   */
+  --text-base: 1rem;       /* 16px — body                        */
+  --text-lg:   1.125rem;   /* 18px — lead text, card titles      */
+  --text-xl:   1.25rem;    /* 20px — subheadings                 */
+  --text-2xl:  1.5rem;     /* 24px — page headings               */
+  --text-3xl:  1.875rem;   /* 30px — section display             */
+  --text-4xl:  2.25rem;    /* 36px — hero / large display        */
+  --text-5xl:  3rem;       /* 48px — hero display (desktop)      */
+
+  /* ── Line heights ───────────────────────────────────────── */
+  --leading-none:    1;
+  --leading-tight:   1.25;
+  --leading-snug:    1.375;
+  --leading-normal:  1.5;
+  --leading-relaxed: 1.625;  /* used by Assistive Mode */
+  --leading-loose:   2;
+
+  /* ── Font weights ───────────────────────────────────────── */
+  --font-light:     300;
+  --font-regular:   400;
+  --font-medium:    500;
+  --font-semibold:  600;
+  --font-bold:      700;
+  --font-extrabold: 800;
+
+  /* ── Letter spacing ─────────────────────────────────────── */
+  --tracking-tight:   -0.025em;
+  --tracking-normal:   0.025em;   /* Outfit default — slightly wide */
+  --tracking-wide:     0.05em;
+  --tracking-wider:    0.08em;
+  --tracking-widest:   0.12em;    /* used for uppercase labels */
+
+  /* ── Semantic aliases ───────────────────────────────────── */
+  --text-display:    var(--text-4xl);
+  --text-title:      var(--text-2xl);
+  --text-heading:    var(--text-xl);
+  --text-subheading: var(--text-lg);
+  --text-body:       var(--text-base);
+  --text-small:      var(--text-sm);
+  --text-caption:    var(--text-xs);
+
+  --weight-display:  var(--font-bold);
+  --weight-heading:  var(--font-semibold);
+  --weight-body:     var(--font-regular);
+  --weight-label:    var(--font-medium);
+  --weight-caption:  var(--font-regular);
+
+  /* ── Assistive Mode reading surface ────────────────────────
+   * These match the existing assistive-reading.css contract.
+   * Do NOT change these — they are part of a BREB-approved study.
+   * ─────────────────────────────────────────────────────────── */
+  --assistive-text-size:     1rem;          /* 16px */
+  --assistive-line-height:   1.625;         /* 1.625 */
+  --assistive-letter-spacing: 0.035em;
+  --assistive-word-spacing:  0.1em;
+  --assistive-max-width:     65ch;
+}

@@ -1,6 +1,6 @@
 import type { MouseEvent } from 'react';
-import { Button } from '~/components/ui/button';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui/tooltip';
+import { Button } from '@eduai/ui';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@eduai/ui';
 import { cn } from '~/lib/utils';
 
 type PublishStatusButtonProps = {

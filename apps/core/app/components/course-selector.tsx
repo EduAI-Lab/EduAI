@@ -1,6 +1,6 @@
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
-import { BookOpen, MessageSquare } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@eduai/ui';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@eduai/ui';
+import { IconBook, IconMessage } from '@tabler/icons-react';
 
 export interface Course {
   id: string;
@@ -30,7 +30,7 @@ export function CourseSelector({
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <BookOpen className="h-5 w-5" />
+          <IconBook className="h-5 w-5" />
           Course Selection
         </CardTitle>
         <CardDescription>
@@ -62,7 +62,7 @@ export function CourseSelector({
 
           {selectedCourseId && (
             <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
-              <MessageSquare className="h-4 w-4 text-blue-500" />
+              <IconMessage className="h-4 w-4 text-blue-500" />
               <span className="text-sm">
                 Chat will now search through materials from the selected course
               </span>
@@ -71,7 +71,7 @@ export function CourseSelector({
 
           {!selectedCourseId && (
             <div className="flex items-center gap-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-              <BookOpen className="h-4 w-4 text-yellow-500" />
+              <IconBook className="h-4 w-4 text-yellow-500" />
               <span className="text-sm text-yellow-700">
                 Select a course to enable RAG chat with course materials
               </span>

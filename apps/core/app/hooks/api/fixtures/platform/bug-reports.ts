@@ -1,12 +1,11 @@
 import type { BugReport } from "~/hooks/api/types";
 
-/** Fixture data until Core bug API (#304). */
+/** Fixture data — not used in production; real API at /api/admin/bug-reports. */
 export const stubBugReports: BugReport[] = [
   {
     id: "bug-stub-001",
-    title: "Chat session lost after refresh",
     description: "User reported chatId not persisting in local state.",
-    status: "OPEN",
+    status: "UNHANDLED",
     source: "CORE",
     isAnonymous: false,
     reporterName: "Test Student",
@@ -16,7 +15,6 @@ export const stubBugReports: BugReport[] = [
   },
   {
     id: "bug-stub-002",
-    title: "Model selector empty on first load",
     description: "AI models dropdown sometimes renders with no options.",
     status: "IN_PROGRESS",
     source: "AI_TUTOR",
@@ -28,7 +26,6 @@ export const stubBugReports: BugReport[] = [
   },
   {
     id: "bug-stub-003",
-    title: "Export fails for large question banks",
     description: "Timeout when exporting more than 500 questions.",
     status: "RESOLVED",
     source: "QUESTION_MAKER",

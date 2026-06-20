@@ -3,6 +3,7 @@ import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
 import { createBugReport, listOwnBugReports } from "~/lib/bug-reports/server";
 
+
 /**
  * GET /api/bug-reports?mine=true (#304, §11) — own submitted reports for any
  * authenticated user (own-resource fallback, §19).
@@ -33,14 +34,30 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-  const guard = await requireServiceKey(request);
-  if (guard) return guard;
-
   if (request.method !== "POST") {
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
       status: 405,
       headers: { "Content-Type": "application/json" },
     });
+  }
+
+  // Accept both service-to-service (Bearer token) and browser session auth.
+  // Session auth is limited to source="CORE" with userId inferred from session.
+  const authHeader = request.headers.get("Authorization");
+  let sessionUserId: string | null = null;
+
+  if (authHeader?.startsWith("Bearer ")) {
+    const guard = await requireServiceKey(request);
+    if (guard) return guard;
+  } else {
+    const session = await auth.api.getSession(request);
+    if (!session?.user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    sessionUserId = session.user.id;
   }
 
   let body: unknown;
@@ -51,6 +68,11 @@ export async function action({ request }: ActionFunctionArgs) {
       status: 422,
       headers: { "Content-Type": "application/json" },
     });
+  }
+
+  // For session-auth requests, override userId and source from the verified session.
+  if (sessionUserId) {
+    body = { ...(body as Record<string, unknown>), userId: sessionUserId, source: "CORE" };
   }
 
   const result = await createBugReport(body);

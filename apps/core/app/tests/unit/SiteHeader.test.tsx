@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { SiteHeader } from "~/components/site-header";
-import { SidebarProvider } from "~/components/ui/sidebar";
+import { SidebarProvider } from "@eduai/ui";
 
 function renderWithSidebar(ui: React.ReactElement, { path = "/" } = {}) {
   return render(

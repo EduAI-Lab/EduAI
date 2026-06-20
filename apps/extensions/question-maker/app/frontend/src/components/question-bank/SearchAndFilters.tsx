@@ -2,11 +2,9 @@
  * Search and sort controls for the question bank panel.
  * Provides a text filter and filter dropdowns that feed parent callbacks.
  */
+import { Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Card, CardContent, CardHeader, CardTitle, Button, Checkbox } from '@eduai/ui';
+
 import { useEffect, useRef, useState } from 'react';
-import { Input } from '../ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
-import { Button } from '../ui/button';
 import { ChevronDown, X } from 'lucide-react';
 import { QuestionType, QuestionDifficulty, ReasoningLevel } from '../../types/question';
 
@@ -79,11 +77,9 @@ const MultiSelect = ({ placeholder, options, selected, onChange, displayValue }:
                 key={option}
                 className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 hover:bg-accent"
               >
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={selected.includes(option)}
-                  onChange={() => toggleOption(option)}
-                  className="h-4 w-4 rounded border-gray-300"
+                  onCheckedChange={() => toggleOption(option)}
                 />
                 <span className="text-sm">{displayValue ? displayValue(option) : option}</span>
               </label>

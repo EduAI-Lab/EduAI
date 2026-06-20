@@ -98,38 +98,11 @@ describe('STUDENT blocked from assessments (§17)', () => {
   });
 });
 
-describe('TA is view-only (§17)', () => {
-  it('GET /assessments/:id → 200', async () => {
-    authAs(TA, 'TA');
-    svc.getAssessmentById.mockResolvedValue({ id: 5 });
-    const res = await request(app).get('/api/assessments/5').set('Cookie', 'session=v');
-    expect(res.status).toBe(200);
-  });
-
-  it('GET /assessments/:id/sections → 200', async () => {
-    authAs(TA, 'TA');
-    sectionSvc.getSectionsForAssessment.mockResolvedValue([]);
-    const res = await request(app).get('/api/assessments/5/sections').set('Cookie', 'session=v');
-    expect(res.status).toBe(200);
-  });
-
-  it('lists all assessments in a course they are enrolled on → owner-scoped', async () => {
-    authAs(TA, 'TA');
-    svc.getAssessmentsByUser.mockResolvedValue([{ id: 1 }, { id: 2 }]);
-    const res = await request(app).get('/api/assessments?courseId=1').set('Cookie', 'session=v');
-    expect(res.status).toBe(200);
-    expect(res.body.data).toHaveLength(2);
-    expect(svc.getAssessmentsByUser).toHaveBeenCalledWith('owner-1', expect.objectContaining({ courseId: 1 }));
-  });
-
-  it('is forbidden from listing a course they have no access to → 403', async () => {
-    authAs(TA, null); // not enrolled
-    const res = await request(app).get('/api/assessments?courseId=1').set('Cookie', 'session=v');
-    expect(res.status).toBe(403);
-    expect(svc.getAssessmentsByUser).not.toHaveBeenCalled();
-  });
-
+describe('TA blocked at platform role gate (§17)', () => {
   it.each([
+    ['get', '/api/assessments/5', {}],
+    ['get', '/api/assessments/5/sections', {}],
+    ['get', '/api/assessments?courseId=1', {}],
     ['post', '/api/assessments', { type: 'EXAM', name: 'x', semester: 'F25', courseId: 1 }],
     ['put', '/api/assessments/5', { name: 'x' }],
     ['delete', '/api/assessments/5', {}],
@@ -137,13 +110,16 @@ describe('TA is view-only (§17)', () => {
     ['post', '/api/assessments/5/questions', { questionId: 1, orderNumber: 1 }],
     ['post', '/api/assessment-variant/assemble-variants', { referenceAssessmentId: 1, courseId: 1 }],
     ['patch', '/api/assessment-variant/assessments/5/role', { studyRole: 'x' }],
-  ])('write %s %s → 403', async (method, path, body) => {
+  ])('%s %s → 403', async (method, path, body) => {
     authAs(TA, 'TA');
     const res = await request(app)[method](path).set('Cookie', 'session=v').send(body);
     expect(res.status).toBe(403);
     expect(svc.createAssessment).not.toHaveBeenCalled();
     expect(svc.updateAssessment).not.toHaveBeenCalled();
     expect(svc.deleteAssessment).not.toHaveBeenCalled();
+    expect(svc.getAssessmentById).not.toHaveBeenCalled();
+    expect(svc.getAssessmentsByUser).not.toHaveBeenCalled();
+    expect(sectionSvc.getSectionsForAssessment).not.toHaveBeenCalled();
   });
 });
 
