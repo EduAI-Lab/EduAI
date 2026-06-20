@@ -2,7 +2,10 @@ import type { Invitation } from "@prisma/client";
 
 import prisma from "~/lib/prisma.server";
 import { auth, authBaseURL } from "~/lib/auth/server";
-import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
+import {
+  INTERNAL_INVITE_SIGNUP_HEADER,
+  buildAuthSubRequest,
+} from "~/lib/auth/auth-handler-request";
 import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies";
 import { sendEmail } from "~/lib/email/mailer.server";
 import { buildInvitationEmail } from "~/lib/email/templates/invitation";
@@ -252,10 +255,16 @@ export async function acceptInvitation(
     return { ok: false, status: 409, error: "USER_EXISTS" };
   }
 
-  // Create the credential account + session through Better Auth.
+  // Create the credential account + session through Better Auth. The marker
+  // header exempts this from the public-registration gate (§6a): an invitee was
+  // vetted by an admin/unit-admin, so account creation must work even when
+  // `auth.allowPublicRegistration` is off.
   const authRequest = buildAuthSubRequest("/api/auth/sign-up/email", request, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      [INTERNAL_INVITE_SIGNUP_HEADER]: "1",
+    },
     body: JSON.stringify({
       name: input.name,
       email: invite.email,
