@@ -48,11 +48,13 @@ describe("MultiSelect", () => {
     expect(screen.getByText("Add staff")).toBeInTheDocument();
   });
 
-  it("summarises the number of selected options", () => {
+  it("renders a chip for each selected option", () => {
     render(
       <MultiSelect options={options} value={["u1", "u3"]} onValueChange={() => {}} />,
     );
-    expect(screen.getByText("2 selected")).toBeInTheDocument();
+    expect(screen.getByText("Ada Lovelace")).toBeInTheDocument();
+    expect(screen.getByText("Grace Hopper")).toBeInTheDocument();
+    expect(screen.queryByText("Alan Turing")).not.toBeInTheDocument();
   });
 
   it("disables the trigger when disabled", () => {
