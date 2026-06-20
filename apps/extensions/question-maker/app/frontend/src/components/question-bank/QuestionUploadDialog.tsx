@@ -65,6 +65,44 @@ const questionTypeLabels: Record<QuestionType, string> = {
 };
 const assessmentTypes = ['Assignment', 'Lab', 'Quiz', 'Midterm', 'Final'] as const;
 
+function QuestionFileUploadZone({
+    id,
+    disabled,
+    onFileSelected,
+}: {
+    id: string;
+    disabled?: boolean;
+    onFileSelected: (file: File) => void;
+}) {
+    return (
+        <label
+            htmlFor={id}
+            data-tour-id="upload-file"
+            className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-muted-foreground/30 bg-muted/30 p-6 text-center transition hover:border-primary hover:bg-muted/50 cursor-pointer"
+        >
+            <UploadCloud className="h-10 w-10 text-muted-foreground" />
+            <div className="space-y-1">
+                <p className="text-sm font-medium">Drop PDF, image, or TXT file here</p>
+                <p className="text-xs text-muted-foreground">We support PDF, PNG, JPG, TXT and other common formats.</p>
+            </div>
+            <input
+                id={id}
+                type="file"
+                accept=".pdf,image/*,.txt,text/plain"
+                className="hidden"
+                onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) {
+                        onFileSelected(file);
+                    }
+                    event.target.value = '';
+                }}
+                disabled={disabled}
+            />
+        </label>
+    );
+}
+
 /** Callback when background extraction finishes (so the parent can update OCR job status). */
 export type OnExtractionComplete = (
     status: 'success' | 'error',
@@ -524,16 +562,6 @@ export const QuestionUploadDialog = ({
             });
         }
     }, [courseId, courseName, handleExtractQuestions, performOcr, toast, onExtractInBackground, onClose, aiModel, addJob, updateJobStatus, assessmentType, assessmentName, assessmentSemester]);
-
-    const handleFileChange = useCallback(
-        (event: React.ChangeEvent<HTMLInputElement>) => {
-            const file = event.target.files?.[0];
-            if (file) {
-                void processFile(file);
-            }
-        },
-        [processFile]
-    );
 
     const updateDraft = useCallback((id: string, updates: Partial<DraftQuestion>) => {
         setDraftQuestions((prev) =>
@@ -1141,6 +1169,15 @@ export const QuestionUploadDialog = ({
                                                     </Button>
                                                 </div>
                                             )}
+                                            <QuestionFileUploadZone
+                                                id="question-upload-review"
+                                                disabled={
+                                                    processingStage === 'ocr' ||
+                                                    processingStage === 'extracting' ||
+                                                    processingStage === 'saving'
+                                                }
+                                                onFileSelected={(file) => void processFile(file)}
+                                            />
                                         </CardContent>
                                     </Card>
                                 )}
@@ -1417,25 +1454,15 @@ export const QuestionUploadDialog = ({
                             )}
 
                             {(!lastFileName && draftQuestions.length === 0) && (
-                                <label
-                                    htmlFor="question-upload"
-                                    data-tour-id="upload-file"
-                                    className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-muted-foreground/30 bg-muted/30 p-6 text-center transition hover:border-primary hover:bg-muted/50 cursor-pointer"
-                                >
-                                    <UploadCloud className="h-10 w-10 text-muted-foreground" />
-                                    <div className="space-y-1">
-                                        <p className="text-sm font-medium">Drop PDF, image, or TXT file here</p>
-                                        <p className="text-xs text-muted-foreground">We support PDF, PNG, JPG, TXT and other common formats.</p>
-                                    </div>
-                                    <input
-                                        id="question-upload"
-                                        type="file"
-                                        accept=".pdf,image/*,.txt,text/plain"
-                                        className="hidden"
-                                        onChange={handleFileChange}
-                                        disabled={processingStage === 'ocr' || processingStage === 'extracting' || processingStage === 'saving'}
-                                    />
-                                </label>
+                                <QuestionFileUploadZone
+                                    id="question-upload"
+                                    disabled={
+                                        processingStage === 'ocr' ||
+                                        processingStage === 'extracting' ||
+                                        processingStage === 'saving'
+                                    }
+                                    onFileSelected={(file) => void processFile(file)}
+                                />
                             )}
                             {lastFileName && (
                                 <div className="flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm">

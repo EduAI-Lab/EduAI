@@ -3,6 +3,8 @@ export type Role = UserRole;
 
 export type EnrollmentRole = 'STUDENT' | 'TA' | 'INSTRUCTOR';
 
+export type EnrollmentRole = 'STUDENT' | 'TA' | 'INSTRUCTOR';
+
 export type User = {
   id: string;
   name: string;

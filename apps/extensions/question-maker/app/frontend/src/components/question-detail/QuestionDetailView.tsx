@@ -6,11 +6,12 @@ import { ReactNode, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import {
     Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@eduai/ui';
-import { Button, Badge, Label, Textarea } from '@eduai/ui';
+import { Button, Badge, Label, Textarea, Switch } from '@eduai/ui';
 import { useToast } from '@/components/ui/use-toast';
 import { PermissionGate } from '@/components/rbac/PermissionGate';
 import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
-import { X, Copy, Trash2, ArrowLeft, Sparkles, FileEdit, Pencil } from 'lucide-react';
+import { getAiTutorInstructorUrl } from '@/lib/coreUrl';
+import { X, Copy, Trash2, ArrowLeft, Sparkles, FileEdit, Pencil, ExternalLink } from 'lucide-react';
 import { QuestionVariantEntry, MCQChoice, QuestionType, QuestionDifficulty } from '../../types/question';
 import { Topic } from '../../types/topic';
 import { MCQChoicesField } from '../questions/MCQChoicesField';
@@ -75,6 +76,7 @@ interface QuestionDetailViewProps {
         updates: {
             isAiGenerated?: boolean;
             isDraft?: boolean;
+            testable?: boolean;
             difficulty?: QuestionDifficulty;
             choices?: MCQChoice[] | null;
             answer?: string | null;
@@ -105,6 +107,8 @@ export const QuestionDetailView = ({
     const [viewMode, setViewMode] = useState<'detail' | 'variants'>('detail');
     const [isToggling, setIsToggling] = useState(false);
     const [isTogglingDraft, setIsTogglingDraft] = useState(false);
+    const [isTestable, setIsTestable] = useState(entry.variant.testable ?? false);
+    const [isTogglingTestable, setIsTogglingTestable] = useState(false);
     const [editingChoices, setEditingChoices] = useState(false);
     const [editChoices, setEditChoices] = useState<MCQChoice[]>([]);
     const [editAnswer, setEditAnswer] = useState('');
@@ -115,6 +119,7 @@ export const QuestionDetailView = ({
     const [editDifficulty, setEditDifficulty] = useState<QuestionDifficulty>('medium');
     const [topics, setTopics] = useState<Topic[]>([]);
     const [topicsLoading, setTopicsLoading] = useState(false);
+    const [coreCourseId, setCoreCourseId] = useState<string | null>(null);
     const [savingMetadata, setSavingMetadata] = useState(false);
     const { toast } = useToast();
     const {
@@ -125,8 +130,32 @@ export const QuestionDetailView = ({
     } = useQmPermissionsForCourse(entry.courseId ?? null);
     const owner = { createdBy: entry.variant.createdBy ?? null };
     const isApproved = entry.isDraft === false;
+    const coreQuestionId = entry.variant.coreQuestionId ?? null;
     const canEditDraft = canEditResource(owner) && !isApproved;
     const canEditMetadata = canEditResource(owner);
+
+    useEffect(() => {
+        setIsTestable(entry.variant.testable ?? false);
+    }, [entry.variant.id, entry.variant.testable]);
+
+    useEffect(() => {
+        if (!entry.courseId) {
+            setCoreCourseId(null);
+            return;
+        }
+        let cancelled = false;
+        courseService
+            .getCourse(entry.courseId)
+            .then((course) => {
+                if (!cancelled) setCoreCourseId(course.coreCourseId ?? null);
+            })
+            .catch(() => {
+                if (!cancelled) setCoreCourseId(null);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [entry.courseId]);
 
     useEffect(() => {
         if (!entry.courseId) return;
@@ -286,6 +315,56 @@ export const QuestionDetailView = ({
         } finally {
             setIsTogglingDraft(false);
         }
+    };
+
+    const handleToggleTestable = async (next: boolean) => {
+        if (!coreQuestionId) {
+            toast({
+                variant: 'destructive',
+                title: 'Not synced to Core',
+                description:
+                    'Mark the variant as reviewed and ensure the course is linked to Core before enabling AI Tutor preview.',
+            });
+            return;
+        }
+
+        try {
+            setIsTogglingTestable(true);
+            const result = await questionService.setVariantTestable(entry.variant.id, next);
+            setIsTestable(result.testable);
+            const updatedEntry: QuestionVariantEntry = {
+                ...entry,
+                variant: { ...entry.variant, testable: result.testable },
+            };
+            onSelectVariant(updatedEntry);
+            onUpdateVariant?.(entry.variant.id, { testable: result.testable });
+            toast({
+                title: result.testable ? 'Available in AI Tutor' : 'Removed from AI Tutor',
+                description: result.testable
+                    ? 'Students may encounter this question in AI Tutor tutoring sessions for this course.'
+                    : 'This question is no longer marked testable on Core.',
+            });
+        } catch (error: unknown) {
+            const message =
+                error instanceof Error
+                    ? error.message
+                    : 'Could not update testable status.';
+            toast({
+                variant: 'destructive',
+                title: 'Failed to update AI Tutor visibility',
+                description: message,
+            });
+        } finally {
+            setIsTogglingTestable(false);
+        }
+    };
+
+    const handleOpenAiTutor = () => {
+        window.open(
+            getAiTutorInstructorUrl({ coreCourseId }),
+            '_blank',
+            'noopener,noreferrer',
+        );
     };
 
     useEffect(() => {
@@ -762,6 +841,51 @@ export const QuestionDetailView = ({
                             </section>
                         )}
                     </div>
+                    )}
+
+                    {isApproved && (
+                        <PermissionGate allow={canApproveVariant}>
+                            <section className="rounded-lg border border-border bg-muted/40 px-4 py-4 space-y-3">
+                                <div className="flex items-start justify-between gap-4">
+                                    <div className="space-y-1">
+                                        <h3 className="text-sm font-semibold text-foreground">AI Tutor preview</h3>
+                                        <p className="text-xs text-muted-foreground">
+                                            Testable questions are injected into AI Tutor teach/guide sessions for this course.
+                                            Draft or unpublished variants are never exposed to students.
+                                        </p>
+                                    </div>
+                                    {isTestable && (
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            className="shrink-0 gap-1.5"
+                                            onClick={handleOpenAiTutor}
+                                        >
+                                            <ExternalLink className="h-3.5 w-3.5" />
+                                            Open AI Tutor
+                                        </Button>
+                                    )}
+                                </div>
+                                {!coreQuestionId ? (
+                                    <p className="text-xs text-amber-700 dark:text-amber-400">
+                                        This variant is not synced to Core yet. Link the course to Core and approve the variant first.
+                                    </p>
+                                ) : (
+                                    <div className="flex items-center gap-3">
+                                        <Switch
+                                            id={`testable-${entry.variant.id}`}
+                                            checked={isTestable}
+                                            disabled={isTogglingTestable}
+                                            onCheckedChange={(checked) => void handleToggleTestable(checked)}
+                                        />
+                                        <Label htmlFor={`testable-${entry.variant.id}`} className="text-sm font-normal">
+                                            {isTestable ? 'Testable in AI Tutor' : 'Not testable in AI Tutor'}
+                                        </Label>
+                                    </div>
+                                )}
+                            </section>
+                        </PermissionGate>
                     )}
                 </div>
 
