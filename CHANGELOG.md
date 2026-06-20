@@ -9,6 +9,13 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
+- [core] feat: One-way soft-delete for course materials and topics — `DELETE` sets `deletedAt`/`deletedBy` instead of hard-deleting; re-uploading a previously-deleted material restores it; all reads (RAG, API list, dashboard stats) filter `deletedAt IS NULL`; topics gain a `deletedBy` column. EduAI deletions are never propagated to Canvas (prep so AI Tutor / Question Maker can consume deletes like renames). Add a delete action to the materials section of course detail. (#654, @yta3216, 2026-06-19)
+- [core] feat: Course-scoped chat — all users chat within a selected course (a course is selected by default); the global / "no course selected" view is removed, including for admins. Students with no enrolled courses keep the chat visible but disabled with an explicit "no courses" reason threaded through `ChatInput`. Add a student visibility disclaimer banner (chats viewable by prof / unit admin / admin). Move the chatbot to the secondary sidebar (bottom), grouped with the QM / AI Tutor cross-nav links. (#53, #657, @yta3216, 2026-06-19)
+- [core] feat: Searchable staff multiselect — add `Combobox` and `MultiSelect` primitives to `@eduai/ui` and export theme-sync utilities; the staff tab in course overview and the department combobox use the shared primitive. (#665, @yta3216, 2026-06-19)
+- [core] feat: `UNIT_ADMIN` can invite `INSTRUCTOR` and `STUDENT` users (role-gated: `ADMIN` → all, `UNIT_ADMIN` → `INSTRUCTOR`/`STUDENT`); admin invitations route, API, and email template updated for the new role labels. (@yta3216, 2026-06-19)
+- [core] feat: Admin single user-delete confirmation modal with cascade warning (parity with batch delete); bug-reports admin view gains status / source / reporter filters and text search; AI models table shows a Cloud/Local badge (Ollama = local). (@yta3216, 2026-06-19)
+- [core] feat: Theme-sync across all three apps via `BroadcastChannel` — dark mode toggled in one app reflects in the others (`ThemeSyncInitializer` in Core, AI Tutor, Question Maker). (@yta3216, 2026-06-19)
+
 - [core] api: Canvas material sync — discover and import Canvas course files into Core `CourseMaterial` with embedding pipeline; instructor UI on course detail (`CanvasMaterialSyncDialog`). (#658, @GlowyBlack, 2026-06-17)
 - [ai-tutor] api: `importEnrolledCoursesFromCore` — mirrors published student enrollments from Core into local offerings on `/api/me` and `GET /courses`. (#658, @GlowyBlack, 2026-06-17)
 - [core] api: `ubcTermFromDate` — UBC academic term codes (W1/W2/S1/S2) from course start dates in `America/Vancouver`. (#658, @GlowyBlack, 2026-06-17)
@@ -21,6 +28,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Changed
 
+- [core] refactor!: Unify the TA role onto `Enrollment(role=TA)` — drop the `CourseTA` junction table and the `TA` platform role; TAs are now `STUDENT`-platform users with a per-course `Enrollment(role=TA)`. Migration removes `course_tas`; all RBAC guards, course-access resolution, dashboard TA detection, and the e2e promote helper read `Enrollment(role=TA)`. (#664, @yta3216, 2026-06-19)
+- [core] ui: Move settings buttons onto the shared `@eduai/ui` library; align the logs screen with other screens. (@yta3216, 2026-06-19)
 - [core] refactor: Create `@eduai/types` shared workspace package — move `UserRole` and `EnrollmentRole` to `packages/types`; Core, AI Tutor, and QM now import from `@eduai/types` instead of maintaining independent copies, eliminating the need for manual sync across apps. (#594, #649, @evanbones, 2026-06-16)
 - [question-maker] refactor: Extract shared `courseCodeUtils.js`, `topicSyncService.js`, and `coreCourseLinkService.js` — dedupe `syncTopicsFromCoreForCourse` / `normalizeCourseCode` from routes and import service; batch topic upserts with two `findAll` queries on the hot `/topics` path. (#578, @GlowyBlack, 2026-06-15)
 - [question-maker] ui: Reuse `normalizeCourseCode` from `courseDisplay.ts` in `ProfileCoursesDialog` and `AddQuestionDialog`. (#578, @GlowyBlack, 2026-06-15)
@@ -37,8 +46,16 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ### Removed
 
 - [core] api: Remove the headless `POST /api/invitations/accept` endpoint — the invitation-accept flow is consolidated onto the `/accept-invitation` page route. (#581, @abdullahmoh21, 2026-06-17)
+- [core] feat!: Remove the global / "no course selected" chat view — chat is always course-scoped. (#53, #657, @yta3216, 2026-06-19)
+- [core] schema: Remove the `CourseTA` junction table and `TA` platform role (superseded by `Enrollment(role=TA)`). (#664, @yta3216, 2026-06-19)
 
 ### Fixed
+
+- [core] fix: Fix crash when changing the theme. (@yta3216, 2026-06-19)
+- [core] fix: Focus mode now hides the sidebar-container element, fixing a visible border gap. (@yta3216, 2026-06-19)
+- [core] fix: Students bypassing onboarding when invited. (@yta3216, 2026-06-19)
+- [core] fix: Students could not see course instructor/TA information. (@yta3216, 2026-06-19)
+- [ci] fix: Add the `@eduai/ui` (`packages/ui`) test suite to the Docker test suite. (@yta3216, 2026-06-19)
 
 - [question-maker] security: Forward session cookie on `GET /api/eduai/courses/:courseId/topics` so Core applies enrollment scope. (#578, @GlowyBlack, 2026-06-15)
 - [question-maker] security: Remove full-catalog service-key fallback from `findScopedCoreCourseByCode` — scoped cookie list only. (#578, @GlowyBlack, 2026-06-15)

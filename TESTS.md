@@ -268,6 +268,12 @@ Each section should use this format:
 | [`ProjectGoals.test.tsx`](apps/core/app/tests/unit/ProjectGoals.test.tsx) | Verifies the "Project goals" section heading renders and the three goal cards (Cognitive AI Models, Personalized Learning, Global Access) are present. |
 | [`SiteFooter.test.tsx`](apps/core/app/tests/unit/SiteFooter.test.tsx) | Verifies the About and Quick Links section headings render, and the current year appears in the copyright line. |
 | [`SuggestedPrompts.test.tsx`](apps/core/app/tests/unit/SuggestedPrompts.test.tsx) | Verifies all six study-focused prompt card titles render (Build a study plan, Explain a concept, Generate practice problems, Review my essay, Debug my code, Summarize key points), and that clicking a card calls `onSelectPrompt` with the correct full prompt string. |
+| [`dashboard-ta-view.test.tsx`](apps/core/app/tests/unit/dashboard-ta-view.test.tsx) | Verifies `DashboardTaView` (TA as `Enrollment(role=TA)`, not a platform role) does not show the Question Maker dashboard card. |
+| [`dashboard-student-view.test.tsx`](apps/core/app/tests/unit/dashboard-student-view.test.tsx) | Verifies `DashboardStudentView` does not show the Question Maker dashboard card and renders student course/chat actions (incl. the no-courses state). |
+| [`ChatTranscriptViewer.test.tsx`](apps/core/app/tests/unit/ChatTranscriptViewer.test.tsx) | Verifies the read-only transcript viewer renders its banner, empty state, loading spinner, and shows a "Continue in chat" link only when `continueChatId` is provided. |
+| [`ChatMessage.test.tsx`](apps/core/app/tests/unit/ChatMessage.test.tsx) | Verifies user vs AI message rendering — text content, right-aligned user layout, `U`/`AI` avatar fallbacks, AI copy button, and that both mark their content as a reading surface. |
+| [`revive-stored-message.test.ts`](apps/core/app/tests/unit/revive-stored-message.test.ts) | Verifies `messageToText` / `reviveStoredMessage` recover persisted chat history across storage shapes (plain string, AI-SDK content array, double-serialized message, UIMessage parts) so restored chats render without duplication or loss. |
+| [`canvas-material-sync-dialog.test.tsx`](apps/core/app/tests/unit/canvas-material-sync-dialog.test.tsx) | Verifies the Canvas material sync dialog loads Canvas files on open (pre-checking `not_imported` files), syncs the selected files, and shows failed-sync details after refresh. |
 
 ---
 
