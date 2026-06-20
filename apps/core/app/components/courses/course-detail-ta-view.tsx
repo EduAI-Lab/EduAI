@@ -8,15 +8,18 @@ import {
   IconSettings,
   IconBook,
   IconTrash,
+  IconPencil,
 } from '@tabler/icons-react'
 import { Card, CardContent } from '@eduai/ui'
 import { Button } from '@eduai/ui'
+import { Input } from '@eduai/ui'
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  DialogFooter,
 } from '@eduai/ui'
 import {
   AlertDialog,
@@ -104,6 +107,42 @@ export function CourseDetailTaView({
   const [embeddingOpen, setEmbeddingOpen] = useState(false)
   const [deleteMaterialId, setDeleteMaterialId] = useState<string | null>(null)
   const [deletingMaterial, setDeletingMaterial] = useState(false)
+  const [renameMaterialId, setRenameMaterialId] = useState<string | null>(null)
+  const [renameTitle, setRenameTitle] = useState('')
+  const [renamingMaterial, setRenamingMaterial] = useState(false)
+  const [renameError, setRenameError] = useState<string | null>(null)
+
+  const handleRenameMaterial = async () => {
+    if (!renameMaterialId || !courseId) return
+    const title = renameTitle.trim()
+    if (!title) {
+      setRenameError('Name is required')
+      return
+    }
+    setRenamingMaterial(true)
+    setRenameError(null)
+    try {
+      const res = await fetch(
+        `/api/courses/${courseId}/materials/${renameMaterialId}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title }),
+        },
+      )
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err?.error ?? 'Failed to rename material')
+      }
+      setRenameMaterialId(null)
+      setRenameTitle('')
+      if (onRefreshMaterials) await onRefreshMaterials()
+    } catch (e) {
+      setRenameError(e instanceof Error ? e.message : 'Failed to rename material')
+    } finally {
+      setRenamingMaterial(false)
+    }
+  }
 
   const handleDeleteMaterial = async () => {
     if (!deleteMaterialId || !courseId) return
@@ -167,6 +206,62 @@ export function CourseDetailTaView({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Rename material modal (TA own uploads only) */}
+      <Dialog
+        open={!!renameMaterialId}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRenameMaterialId(null)
+            setRenameTitle('')
+            setRenameError(null)
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md rounded-[var(--radius-xl)]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <IconPencil className="h-4 w-4" />
+              Rename material
+            </DialogTitle>
+            <DialogDescription>
+              Change the display name of this course material.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              handleRenameMaterial()
+            }}
+            className="flex flex-col gap-3"
+          >
+            <Input
+              value={renameTitle}
+              onChange={(e) => setRenameTitle(e.target.value)}
+              placeholder="Material name"
+              maxLength={255}
+              autoFocus
+            />
+            {renameError && <p className="text-[13px] text-destructive">{renameError}</p>}
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setRenameMaterialId(null)
+                  setRenameTitle('')
+                  setRenameError(null)
+                }}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={renamingMaterial || !renameTitle.trim()}>
+                {renamingMaterial ? 'Saving…' : 'Save'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* A2: Upload modal */}
       <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
@@ -357,17 +452,31 @@ export function CourseDetailTaView({
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <MaterialStatusChip status={m.status} />
                     <MaterialStatusIcon status={m.status} />
-                    {/* §7: TA may delete only their own uploads. */}
+                    {/* §7: TA may rename/delete only their own uploads. */}
                     {!!currentUserId && m.uploadedBy === currentUserId && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label="Delete material"
-                        className="text-destructive hover:text-destructive"
-                        onClick={() => setDeleteMaterialId(m.id)}
-                      >
-                        <IconTrash className="w-4 h-4" />
-                      </Button>
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label="Rename material"
+                          onClick={() => {
+                            setRenameMaterialId(m.id)
+                            setRenameTitle(m.title)
+                            setRenameError(null)
+                          }}
+                        >
+                          <IconPencil className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label="Delete material"
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => setDeleteMaterialId(m.id)}
+                        >
+                          <IconTrash className="w-4 h-4" />
+                        </Button>
+                      </>
                     )}
                   </div>
                 </div>

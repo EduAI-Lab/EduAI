@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import {
   IconTrash,
+  IconPencil,
   IconPlus,
   IconUsers,
   IconUserCheck,
@@ -24,6 +25,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  DialogFooter,
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -197,6 +199,10 @@ export function CourseDetailManagerView({
   const [embeddingOpen, setEmbeddingOpen] = useState(false);
   const [deleteMaterialId, setDeleteMaterialId] = useState<string | null>(null);
   const [deletingMaterial, setDeletingMaterial] = useState(false);
+  const [renameMaterialId, setRenameMaterialId] = useState<string | null>(null);
+  const [renameTitle, setRenameTitle] = useState("");
+  const [renamingMaterial, setRenamingMaterial] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
   const [ragTopK, setRagTopK] = useState<string>(course.ragTopK?.toString() ?? "");
   const [ragThreshold, setRagThreshold] = useState<string>(
     course.ragSimilarityThreshold?.toString() ?? "",
@@ -224,6 +230,17 @@ export function CourseDetailManagerView({
   const canDeleteMaterial = (material: CourseMaterial) => {
     if (canManage) return true;
     // TA own-only: check if this is their upload.
+    return (
+      access === 'ta' &&
+      material.uploadedBy !== null &&
+      material.uploadedBy !== undefined &&
+      material.uploadedBy === currentUserId
+    );
+  };
+
+  // Rename mirrors delete: ADMIN/UNIT_ADMIN/INSTRUCTOR any, TA own-upload only.
+  const canRenameMaterial = (material: CourseMaterial) => {
+    if (canManage) return true;
     return (
       access === 'ta' &&
       material.uploadedBy !== null &&
@@ -322,6 +339,40 @@ export function CourseDetailManagerView({
       console.error(e);
     } finally {
       setDeletingMaterial(false);
+    }
+  };
+
+  const handleRenameMaterial = async () => {
+    if (!renameMaterialId || !courseId) return;
+    const title = renameTitle.trim();
+    if (!title) {
+      setRenameError("Name is required");
+      return;
+    }
+    setRenamingMaterial(true);
+    setRenameError(null);
+    try {
+      const res = await fetch(
+        `/api/courses/${courseId}/materials/${renameMaterialId}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title }),
+        },
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error ?? "Failed to rename material");
+      }
+      setRenameMaterialId(null);
+      setRenameTitle("");
+      if (onRefreshMaterials) {
+        await onRefreshMaterials();
+      }
+    } catch (e) {
+      setRenameError(e instanceof Error ? e.message : "Failed to rename material");
+    } finally {
+      setRenamingMaterial(false);
     }
   };
 
@@ -433,6 +484,64 @@ export function CourseDetailManagerView({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Rename material modal */}
+      <Dialog
+        open={!!renameMaterialId}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRenameMaterialId(null);
+            setRenameTitle("");
+            setRenameError(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md rounded-[var(--radius-xl)]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <IconPencil className="h-4 w-4" />
+              Rename material
+            </DialogTitle>
+            <DialogDescription>
+              Change the display name of this course material.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleRenameMaterial();
+            }}
+            className="flex flex-col gap-3"
+          >
+            <Input
+              value={renameTitle}
+              onChange={(e) => setRenameTitle(e.target.value)}
+              placeholder="Material name"
+              maxLength={255}
+              autoFocus
+            />
+            {renameError && (
+              <p className="text-[13px] text-destructive">{renameError}</p>
+            )}
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setRenameMaterialId(null);
+                  setRenameTitle("");
+                  setRenameError(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={renamingMaterial || !renameTitle.trim()}>
+                {renamingMaterial ? "Saving…" : "Save"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* Canvas material sync */}
       {showCanvasMaterialSync && courseId && (
@@ -743,6 +852,20 @@ export function CourseDetailManagerView({
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <MaterialStatusChip status={m.status} />
                     <MaterialStatusIcon status={m.status} />
+                    {canRenameMaterial(m) && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label="Rename material"
+                        onClick={() => {
+                          setRenameMaterialId(m.id);
+                          setRenameTitle(m.title);
+                          setRenameError(null);
+                        }}
+                      >
+                        <IconPencil className="w-4 h-4" />
+                      </Button>
+                    )}
                     {canDeleteMaterial(m) && (
                       <Button
                         variant="ghost"

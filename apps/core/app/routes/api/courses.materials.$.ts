@@ -77,6 +77,64 @@ export async function action({ request, params }: ActionFunctionArgs) {
       return uploadMaterial(request, courseId, user, requestContext);
     }
 
+    case 'PATCH':
+    case 'PUT': {
+      const materialId = params.materialId;
+      if (!materialId) {
+        return json(400, { error: 'MATERIAL_ID_REQUIRED' });
+      }
+
+      let body: { title?: unknown };
+      try {
+        body = await request.json();
+      } catch {
+        return json(400, { error: 'INVALID_BODY' });
+      }
+      const rawTitle = typeof body.title === 'string' ? body.title.trim() : '';
+      if (!rawTitle) {
+        return json(400, { error: 'TITLE_REQUIRED' });
+      }
+      if (rawTitle.length > 255) {
+        return json(400, { error: 'TITLE_TOO_LONG' });
+      }
+
+      const material = await prisma.courseMaterial.findFirst({
+        where: { id: materialId, courseId, deletedAt: null },
+        select: { id: true, uploadedBy: true, title: true },
+      });
+      if (!material) {
+        return json(404, { error: 'MATERIAL_NOT_FOUND' });
+      }
+
+      // §7: rename mirrors delete — ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C), plus
+      // the TA own-only carve-out via uploadedBy. Null uploadedBy = no owner, TA denied.
+      const isOwnTaRename = access.level === 'ta' && material.uploadedBy === user.id;
+      if (access.rank < 2 && !isOwnTaRename) {
+        return json(403, { error: 'Forbidden' });
+      }
+
+      const updated = await prisma.courseMaterial.update({
+        where: { id: materialId },
+        data: { title: rawTitle },
+        select: { id: true, title: true },
+      });
+
+      fireAndForget(
+        logAuditAction({
+          ...getActorContext(user ?? null),
+          ...requestContext,
+          actionCode: 'MATERIAL_RENAMED',
+          category: 'MATERIAL',
+          entityType: 'CourseMaterial',
+          entityId: materialId,
+          entityLabel: updated.title,
+          details: { courseId, previousTitle: material.title, newTitle: updated.title },
+        }),
+      );
+
+      return json(200, { success: true, material: updated });
+    }
+
     case 'DELETE': {
       const materialId = params.materialId;
       if (!materialId) {
