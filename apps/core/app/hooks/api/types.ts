@@ -31,13 +31,12 @@ export type ChatSessionMeta = {
   updatedAt: string;
 };
 
-export type BugReportStatus = "OPEN" | "IN_PROGRESS" | "RESOLVED" | "CLOSED";
+export type BugReportStatus = "UNHANDLED" | "IN_PROGRESS" | "RESOLVED";
 
 export type BugReportSource = "CORE" | "AI_TUTOR" | "QUESTION_MAKER";
 
 export type BugReport = {
   id: string;
-  title: string;
   description: string;
   status: BugReportStatus;
   source: BugReportSource;
@@ -49,7 +48,7 @@ export type BugReport = {
 };
 
 export type SubmitBugReportInput = {
-  title: string;
+  /** Merged description to persist (title, if any, should be folded in by the caller). */
   description: string;
   isAnonymous?: boolean;
 };

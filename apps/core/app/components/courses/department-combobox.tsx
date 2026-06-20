@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
-import { CheckIcon, ChevronsUpDownIcon } from 'lucide-react'
-import { Button } from '~/components/ui/button'
+import { IconCheck, IconSelector } from '@tabler/icons-react'
+import { Button } from '@eduai/ui'
 import {
   Command,
   CommandEmpty,
@@ -8,7 +8,7 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-} from '~/components/ui/command'
+} from '@eduai/ui'
 import { cn } from '~/lib/utils'
 
 interface Department {
@@ -86,7 +86,7 @@ export function DepartmentCombobox({
         ) : (
           <span className="text-muted-foreground">{placeholder}</span>
         )}
-        <ChevronsUpDownIcon className="ml-2 size-4 shrink-0 opacity-50" />
+        <IconSelector className="ml-2 size-4 shrink-0 opacity-50" />
       </Button>
       {open && (
         <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover shadow-md">
@@ -117,7 +117,7 @@ export function DepartmentCombobox({
                       setSearch('')
                     }}
                   >
-                    <CheckIcon
+                    <IconCheck
                       className={cn('mr-2 size-4', value === d.code ? 'opacity-100' : 'opacity-0')}
                     />
                     {d.label}{' '}

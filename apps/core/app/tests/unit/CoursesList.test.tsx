@@ -75,7 +75,7 @@ describe('CoursesAdminView', () => {
     expect(screen.getByText('COSC 201')).toBeInTheDocument()
   })
 
-  it('shows publish, edit, and delete icon buttons per course', () => {
+  it('shows a course actions menu button per course', () => {
     wrap(
       <CoursesAdminView
         courses={[PUBLISHED_COURSE]}
@@ -85,9 +85,8 @@ describe('CoursesAdminView', () => {
         onPublishToggle={NOOP}
       />
     )
-    // Create + publish + edit + delete
-    const btns = screen.getAllByRole('button')
-    expect(btns.length).toBeGreaterThanOrEqual(4)
+    // Each card has a "Course actions" 3-dot dropdown button
+    expect(screen.getByRole('button', { name: /course actions/i })).toBeInTheDocument()
   })
 })
 
@@ -137,7 +136,7 @@ describe('CoursesUnitAdminView', () => {
     expect(screen.queryByText('MATH 101')).not.toBeInTheDocument()
   })
 
-  it('shows publish, edit, and delete icon buttons per course', () => {
+  it('shows a course actions menu button per course', () => {
     wrap(
       <CoursesUnitAdminView
         courses={[PUBLISHED_COURSE]}
@@ -148,8 +147,8 @@ describe('CoursesUnitAdminView', () => {
         onPublishToggle={NOOP}
       />
     )
-    const btns = screen.getAllByRole('button')
-    expect(btns.length).toBeGreaterThanOrEqual(4)
+    // Each card has a "Course actions" 3-dot dropdown button
+    expect(screen.getByRole('button', { name: /course actions/i })).toBeInTheDocument()
   })
 
   it('disables Create Course when no authorized units match departments', () => {
@@ -184,7 +183,7 @@ describe('CoursesInstructorView', () => {
     expect(screen.getByRole('button', { name: /create course/i })).toBeInTheDocument()
   })
 
-  it('shows publish, edit, and delete buttons per course', () => {
+  it('shows a course actions menu button per course', () => {
     wrap(
       <CoursesInstructorView
         courses={[PUBLISHED_COURSE]}
@@ -194,8 +193,8 @@ describe('CoursesInstructorView', () => {
         onPublishToggle={NOOP}
       />
     )
-    const btns = screen.getAllByRole('button')
-    expect(btns.length).toBeGreaterThanOrEqual(3) // publish + edit + delete
+    // Actions are in a 3-dot dropdown per card
+    expect(screen.getByRole('button', { name: /course actions/i })).toBeInTheDocument()
   })
 
   it('renders both published and draft courses', () => {

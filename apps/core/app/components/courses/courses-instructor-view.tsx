@@ -1,15 +1,29 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router'
-import { IconPlus, IconEdit, IconTrash, IconBook, IconCalendar, IconEye, IconEyeOff } from '@tabler/icons-react'
-import { Button } from '~/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
-import { Badge } from '~/components/ui/badge'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '~/components/ui/dialog'
-import { Input } from '~/components/ui/input'
-import { Label } from '~/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select'
-import { Textarea } from '~/components/ui/textarea'
-import { UNIT_OPTIONS, getDepartmentLabel } from '~/lib/units'
+import { IconBook, IconPlus } from '@tabler/icons-react'
+import {
+  Button,
+  Card,
+  CardContent,
+  CourseCard,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  Input,
+  Label,
+  PageHeading,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Textarea,
+} from '@eduai/ui'
+import { UNIT_OPTIONS } from '~/lib/units'
 import { DepartmentCombobox } from '~/components/courses/department-combobox'
 import type { Course, CreateCourseInput, UpdateCourseInput } from '~/hooks/api/use-courses'
 import { usePolicies } from '~/hooks/api/use-policies'
@@ -35,6 +49,14 @@ export function CoursesInstructorView({ courses, onCreateCourse, onEditCourse, o
   const canCreate = policies['instructors.canCreateCourses'] ?? true
   const canPublish = policies['instructors.canPublishCourses'] ?? true
   const canDelete = policies['instructors.canDeleteCourses'] ?? true
+
+  // Safety cleanup: if the Radix DropdownMenu→Dialog lifecycle race left
+  // pointer-events:none on <body>, clear it once no dialog is open.
+  useEffect(() => {
+    if (!editingCourse && !deletingCourse) {
+      document.body.style.pointerEvents = ''
+    }
+  }, [editingCourse, deletingCourse])
 
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -72,30 +94,27 @@ export function CoursesInstructorView({ courses, onCreateCourse, onEditCourse, o
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold">My Courses</h2>
-          <p className="text-muted-foreground">Courses you are teaching</p>
-        </div>
+      <div className="flex items-start justify-between gap-4">
+        <PageHeading heading="My Courses" subheading="Courses you are teaching" />
 
         {canCreate && (
           <Dialog open={createOpen} onOpenChange={setCreateOpen}>
             <DialogTrigger asChild>
               <Button>
                 <IconPlus className="w-4 h-4 mr-2" />
-                Create Course
+                Create course
               </Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Create Course</DialogTitle>
+                <DialogTitle>Create course</DialogTitle>
                 <DialogDescription>
                   You will be assigned as the instructor for this course.
                 </DialogDescription>
               </DialogHeader>
               <form onSubmit={handleCreate} className="grid gap-4 py-4">
                 <div className="grid gap-2">
-                  <Label htmlFor="ins-name">Course Name</Label>
+                  <Label htmlFor="ins-name">Course name</Label>
                   <Input id="ins-name" name="name" placeholder="Introduction to Computer Science" required />
                 </div>
                 <div className="grid gap-2">
@@ -108,7 +127,7 @@ export function CoursesInstructorView({ courses, onCreateCourse, onEditCourse, o
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="ins-code">Course Number</Label>
+                  <Label htmlFor="ins-code">Course number</Label>
                   <div className="flex items-center gap-2">
                     <span className="shrink-0 rounded-md border bg-muted px-3 py-2 text-sm font-mono text-muted-foreground">
                       {selectedDept || '—'}
@@ -128,7 +147,7 @@ export function CoursesInstructorView({ courses, onCreateCourse, onEditCourse, o
                     <Input name="section" placeholder="01" defaultValue="01" required />
                   </div>
                   <div className="grid gap-2">
-                    <Label>Start Date</Label>
+                    <Label>Start date</Label>
                     <Input name="startDate" type="date" required />
                   </div>
                 </div>
@@ -151,12 +170,12 @@ export function CoursesInstructorView({ courses, onCreateCourse, onEditCourse, o
                   </div>
                 </div>
                 <div className="grid gap-2">
-                  <Label>AI Instructions</Label>
+                  <Label>AI instructions</Label>
                   <Textarea name="aiInstructions" rows={2} />
                 </div>
                 <div className="flex justify-end gap-2">
                   <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
-                  <Button type="submit">Create Course</Button>
+                  <Button type="submit">Create course</Button>
                 </div>
               </form>
             </DialogContent>
@@ -172,69 +191,39 @@ export function CoursesInstructorView({ courses, onCreateCourse, onEditCourse, o
             {canCreate && (
               <Button className="mt-4" onClick={() => setCreateOpen(true)}>
                 <IconPlus className="w-4 h-4 mr-2" />
-                Create First Course
+                Create first course
               </Button>
             )}
           </CardContent>
         </Card>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {courses.map((course) => (
-            <Card key={course.id} className="hover:shadow-md transition-shadow">
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between">
-                  <Link to={`/courses/${course.id}`} className="flex-1 min-w-0">
-                    <CardTitle className="text-lg truncate">{course.code}</CardTitle>
-                    <CardDescription className="mt-1 line-clamp-2">{course.name}</CardDescription>
-                  </Link>
-                  <div className="flex gap-1 shrink-0 ml-2" onClick={(e) => e.stopPropagation()}>
-                    {canPublish && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        title={course.isPublished ? 'Unpublish' : 'Publish'}
-                        onClick={() => onPublishToggle(course.id, !course.isPublished)}
-                      >
-                        {course.isPublished
-                          ? <IconEyeOff className="w-4 h-4 text-muted-foreground" />
-                          : <IconEye className="w-4 h-4 text-blue-600" />}
-                      </Button>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setEditingCourse(course)}
-                    >
-                      <IconEdit className="w-4 h-4" />
-                    </Button>
-                    {canDelete && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="text-destructive hover:text-destructive"
-                        onClick={() => setDeletingCourse(course)}
-                      >
-                        <IconTrash className="w-4 h-4" />
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                  <div className="flex items-center gap-1">
-                    <IconCalendar className="w-4 h-4" />
-                    {course.year} {course.term} 
-                  </div>
-                  {course.department && (
-                    <Badge variant="outline">{getDepartmentLabel(course.department)}</Badge>
-                  )}
-                  <Badge variant={course.isPublished ? 'default' : 'secondary'}>
-                    {course.isPublished ? 'Published' : 'Draft'}
-                  </Badge>
-                </div>
-              </CardContent>
-            </Card>
+          {courses.map((course, index) => (
+            <CourseCard
+              key={course.id}
+              id={course.id}
+              code={course.code}
+              name={course.name}
+              description={course.description}
+              term={course.term}
+              year={course.year}
+              isPublished={course.isPublished}
+              department={course.department}
+              colorIndex={index}
+              href={`/courses/${course.id}`}
+              LinkComponent={Link}
+              actions={{
+                // §2 gates mirror the backend: only surface controls the
+                // requesting instructor's policy flags actually permit.
+                showPublish: canPublish,
+                isPublished: course.isPublished,
+                onPublishToggle: () => onPublishToggle(course.id, !course.isPublished),
+                showEdit: true,
+                onEdit: () => setTimeout(() => setEditingCourse(course), 0),
+                showDelete: canDelete,
+                onDelete: () => setTimeout(() => setDeletingCourse(course), 0),
+              }}
+            />
           ))}
         </div>
       )}
@@ -242,7 +231,7 @@ export function CoursesInstructorView({ courses, onCreateCourse, onEditCourse, o
       <Dialog open={!!deletingCourse} onOpenChange={(open) => !open && setDeletingCourse(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete Course</DialogTitle>
+            <DialogTitle>Delete course</DialogTitle>
             <DialogDescription>
               Delete <strong>{deletingCourse?.code} — {deletingCourse?.name}</strong>? This cannot be undone.
             </DialogDescription>
@@ -266,20 +255,20 @@ export function CoursesInstructorView({ courses, onCreateCourse, onEditCourse, o
 
       <Dialog open={!!editingCourse} onOpenChange={(open) => !open && setEditingCourse(null)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Edit Course</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Edit course</DialogTitle></DialogHeader>
           {editingCourse && (
             <form onSubmit={handleEdit} className="grid gap-4 py-4">
               <div className="grid gap-2">
-                <Label htmlFor="edit-name">Course Name</Label>
+                <Label htmlFor="edit-name">Course name</Label>
                 <Input id="edit-name" name="name" defaultValue={editingCourse.name} required />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="edit-ai">AI Instructions</Label>
+                <Label htmlFor="edit-ai">AI instructions</Label>
                 <Textarea id="edit-ai" name="aiInstructions" defaultValue={editingCourse.aiInstructions} rows={2} />
               </div>
               <div className="flex justify-end gap-2">
                 <Button type="button" variant="outline" onClick={() => setEditingCourse(null)}>Cancel</Button>
-                <Button type="submit">Save Changes</Button>
+                <Button type="submit">Save changes</Button>
               </div>
             </form>
           )}

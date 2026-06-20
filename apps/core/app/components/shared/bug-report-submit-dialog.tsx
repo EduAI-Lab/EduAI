@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { IconBug } from "@tabler/icons-react";
 
-import { Button } from "~/components/ui/button";
+import { Button } from "@eduai/ui";
 import {
   Dialog,
   DialogContent,
@@ -10,11 +10,11 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "~/components/ui/dialog";
-import { Input } from "~/components/ui/input";
-import { Label } from "~/components/ui/label";
-import { Textarea } from "~/components/ui/textarea";
-import { Switch } from "~/components/ui/switch";
+} from "@eduai/ui";
+import { Input } from "@eduai/ui";
+import { Label } from "@eduai/ui";
+import { Textarea } from "@eduai/ui";
+import { Switch } from "@eduai/ui";
 import { useSubmitBugReport } from "~/hooks/api/use-submit-bug-report";
 
 type BugReportSubmitDialogProps = {
@@ -32,8 +32,13 @@ export function BugReportSubmitDialog({
   const { submitBugReport, isSubmitting, isStubbed } = useSubmitBugReport();
 
   const handleSubmit = async () => {
-    const result = await submitBugReport({ title, description, isAnonymous });
-    if (result) {
+    // Fold the optional title into the description before sending — the DB schema
+    // has no separate title column (removed in #304).
+    const mergedDescription = title.trim()
+      ? `${title.trim()}\n\n${description.trim()}`
+      : description.trim();
+    const ok = await submitBugReport({ description: mergedDescription, isAnonymous });
+    if (ok) {
       setSubmitted(true);
       setTitle("");
       setDescription("");

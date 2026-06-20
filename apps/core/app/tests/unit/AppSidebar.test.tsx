@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 
 import { AppSidebar } from "~/components/app-sidebar";
-import { SidebarProvider } from "~/components/ui/sidebar";
+import { SidebarProvider } from "@eduai/ui";
 import type { User } from "~/lib/auth/types";
 
 beforeEach(() => {
@@ -54,6 +54,13 @@ describe("AppSidebar — rendering", () => {
     expect(screen.getByRole("link", { name: "Dashboard" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Courses" })).toBeInTheDocument();
   });
+
+  it("renders AI Tutor extension link", () => {
+    renderSidebar("STUDENT");
+    const link = screen.getByRole("link", { name: "AI Tutor" });
+    expect(link).toBeInTheDocument();
+    expect(link).toHaveAttribute("href", "http://localhost:3001");
+  });
 });
 
 describe("AppSidebar — role-gated nav", () => {
@@ -70,7 +77,7 @@ describe("AppSidebar — role-gated nav", () => {
     expect(screen.queryByText("AI Management")).not.toBeInTheDocument();
     expect(screen.queryByText("Bug Reports")).not.toBeInTheDocument();
     expect(screen.getByText("Courses")).toBeInTheDocument();
-    expect(screen.getByText("Settings")).toBeInTheDocument();
+    expect(screen.getByText("AI Tutor")).toBeInTheDocument();
   });
 
   it("hides admin links for INSTRUCTOR", () => {

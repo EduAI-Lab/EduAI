@@ -20,6 +20,7 @@ export type NavItemKey =
   | 'dashboard'
   | 'courses'
   | 'chat'
+  | 'question-maker'
   | 'admin-users'
   | 'admin-ai'
   | 'admin-bugs'
@@ -27,11 +28,13 @@ export type NavItemKey =
   | 'admin-settings'
   | 'admin-logs'
   | 'settings'
+  | 'ai-tutor'
 
 export type NavItem = {
   key: NavItemKey
   title: string
   url: string
+  external?: boolean
 }
 
 export type NavUser = {

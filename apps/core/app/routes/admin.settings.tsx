@@ -3,24 +3,23 @@ import type { LoaderFunctionArgs } from 'react-router'
 
 import { AppSidebar } from '~/components/app-sidebar'
 import { SiteHeader } from '~/components/site-header'
-import { SidebarInset, SidebarProvider } from '~/components/ui/sidebar'
 import {
+  SidebarInset,
+  SidebarProvider,
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from '~/components/ui/card'
-import { Label } from '~/components/ui/label'
-import { Switch } from '~/components/ui/switch'
-import {
+  Label,
+  Switch,
   Breadcrumb,
   BreadcrumbItem,
   BreadcrumbLink,
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from '~/components/ui/breadcrumb'
+} from '@eduai/ui'
 import { usePolicies } from '~/hooks/api/use-policies'
 import { auth } from '~/lib/auth/server'
 

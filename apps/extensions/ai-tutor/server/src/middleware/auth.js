@@ -105,7 +105,10 @@ export function isUnitAdminForCourse(user, course) {
 export function isCourseAdmin(user, course) {
   if (user?.role === 'ADMIN') return true;
   if (isUnitAdminForCourse(user, course)) return true;
-  if (user?.role === 'INSTRUCTOR' && course?.instructors?.some((i) => i.userId === user.id))
+  if (
+    (user?.role === 'INSTRUCTOR' || user?.role === 'UNIT_ADMIN') &&
+    course?.instructors?.some((i) => i.userId === user.id)
+  )
     return true;
   return false;
 }

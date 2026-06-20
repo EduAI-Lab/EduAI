@@ -5,18 +5,17 @@ import { BugReportsAdminView } from "~/components/admin/bug-reports-admin-view";
 import { stubBugReports } from "~/hooks/api/fixtures/platform/bug-reports";
 
 describe("BugReportsAdminView", () => {
-  it("renders stub bug reports for admin triage", () => {
+  it("renders bug reports for admin triage", () => {
     render(
       <BugReportsAdminView
         reports={stubBugReports}
         isLoading={false}
-        isStubbed
         onUpdateStatus={vi.fn()}
       />,
     );
 
-    expect(screen.getByText("Bug Reports")).toBeInTheDocument();
-    expect(screen.getByText("Chat session lost after refresh")).toBeInTheDocument();
+    expect(screen.getByText("Bug reports")).toBeInTheDocument();
+    expect(screen.getByText("User reported chatId not persisting in local state.")).toBeInTheDocument();
     expect(screen.getByText("CORE")).toBeInTheDocument();
   });
 
@@ -25,7 +24,6 @@ describe("BugReportsAdminView", () => {
       <BugReportsAdminView
         reports={[]}
         isLoading
-        isStubbed
         onUpdateStatus={vi.fn()}
       />,
     );

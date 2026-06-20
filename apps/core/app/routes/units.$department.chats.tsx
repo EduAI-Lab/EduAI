@@ -5,15 +5,16 @@ import { auth } from '~/lib/auth/server'
 import prisma from '~/lib/prisma.server'
 import { AppSidebar } from '~/components/app-sidebar'
 import { SiteHeader } from '~/components/site-header'
-import { SidebarInset, SidebarProvider } from '~/components/ui/sidebar'
 import {
+  SidebarInset,
+  SidebarProvider,
   Breadcrumb,
   BreadcrumbItem,
   BreadcrumbLink,
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from '~/components/ui/breadcrumb'
+} from '@eduai/ui'
 import { getDepartmentLabel } from '~/lib/units'
 import { CourseChatsPanel } from '~/components/courses/course-chats-panel'
 import { useUnitChats } from '~/hooks/api/use-course-chats'

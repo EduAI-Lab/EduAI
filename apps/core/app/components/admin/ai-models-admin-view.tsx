@@ -5,17 +5,18 @@ import { AIModelsTable } from "~/components/admin/ai-models-table";
 import { ModelFormDialog } from "~/components/admin/model-form-dialog";
 import { ProviderFormDialog } from "~/components/admin/provider-form-dialog";
 import { ProvidersTable } from "~/components/admin/providers-table";
-import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
-import { Input } from "~/components/ui/input";
+import { Button } from "@eduai/ui";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@eduai/ui";
+import { Input } from "@eduai/ui";
+import { PageHeading } from "@eduai/ui";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "~/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
+} from "@eduai/ui";
+import { PageTabs, PageTabsList, PageTabsTrigger, PageTabsContent } from "@eduai/ui";
 import type { AIModel, AIProvider } from "~/hooks/api/types";
 import type { OllamaModel, VllmModel } from "~/components/admin/model-form-dialog";
 
@@ -215,7 +216,7 @@ export function AiModelsAdminView({
   if (isLoading) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900" />
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-foreground" />
         <p className="mt-4 text-sm text-muted-foreground">Loading...</p>
       </div>
     );
@@ -226,14 +227,10 @@ export function AiModelsAdminView({
       <div className="@container/main flex flex-1 flex-col gap-2">
         <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
           <div className="px-4 lg:px-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-2xl font-bold">AI Management</h2>
-                <p className="text-muted-foreground">
-                  Manage AI providers and models for your platform
-                </p>
-              </div>
-            </div>
+            <PageHeading
+              heading="AI management"
+              subheading="Manage AI providers and models for your platform"
+            />
           </div>
 
           {error && (
@@ -243,13 +240,13 @@ export function AiModelsAdminView({
           )}
 
           <div className="px-4 lg:px-6">
-            <Tabs defaultValue="models" className="w-full">
-              <TabsList>
-                <TabsTrigger value="models">Models</TabsTrigger>
-                <TabsTrigger value="providers">Providers</TabsTrigger>
-              </TabsList>
+            <PageTabs defaultValue="models" className="w-full">
+              <PageTabsList>
+                <PageTabsTrigger value="models">Models</PageTabsTrigger>
+                <PageTabsTrigger value="providers">Providers</PageTabsTrigger>
+              </PageTabsList>
 
-              <TabsContent value="models" className="space-y-4">
+              <PageTabsContent value="models" className="space-y-4">
                 <Card>
                   <CardHeader>
                     <div className="flex items-center justify-between">
@@ -312,9 +309,9 @@ export function AiModelsAdminView({
                     />
                   </CardContent>
                 </Card>
-              </TabsContent>
+              </PageTabsContent>
 
-              <TabsContent value="providers" className="space-y-4">
+              <PageTabsContent value="providers" className="space-y-4">
                 <Card>
                   <CardHeader>
                     <div className="flex items-center justify-between">
@@ -347,9 +344,8 @@ export function AiModelsAdminView({
                     />
                   </CardContent>
                 </Card>
-              </TabsContent>
-
-            </Tabs>
+              </PageTabsContent>
+            </PageTabs>
           </div>
         </div>
       </div>

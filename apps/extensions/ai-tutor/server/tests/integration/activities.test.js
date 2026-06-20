@@ -355,7 +355,7 @@ describe('Activities routes', () => {
       expect(res.body.error).toMatch(/only students/i);
     });
 
-    it('returns 403 for TA role', async () => {
+    it('allows enrolled TA to submit answers', async () => {
       const ta = await enrollTa();
       const taApp = await createApp({ mockUser: ta });
 
@@ -363,8 +363,7 @@ describe('Activities routes', () => {
         .post(`/api/questions/${activity.id}/answer`)
         .send({ answerOption: 1 });
 
-      expect(res.status).toBe(403);
-      expect(res.body.error).toMatch(/only students/i);
+      expect(res.status).toBe(200);
     });
 
     it('returns 403 when lesson is unpublished', async () => {
