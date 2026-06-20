@@ -667,7 +667,7 @@ export function CourseDetailManagerView({
               </p>
             </div>
             <div className="flex items-center gap-2">
-              {courseId && (
+              {showCanvasMaterialSync && courseId && (
                 <Button
                   variant="outline"
                   size="sm"

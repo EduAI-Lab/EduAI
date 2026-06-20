@@ -49,7 +49,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         courseName: chat.course?.name ?? null,
         ownerId: chat.userId,
         ownerName: chat.user.name,
-        ownerEmail: chat.user.email,
         canEdit,
         createdAt: chat.createdAt,
         updatedAt: chat.updatedAt,

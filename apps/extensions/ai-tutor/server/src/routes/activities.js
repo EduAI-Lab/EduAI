@@ -46,7 +46,7 @@ import {
   generateTeachResponse,
 } from '../services/aiGuidance.js';
 import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
-import { listCourseTestableQuestions } from '../services/eduaiClient.js';
+import { getEduAiBaseUrl, listCourseTestableQuestions } from '../services/eduaiClient.js';
 import {
   ActivityFeedbackRequestSchema,
   CustomRequestSchema,
@@ -104,31 +104,16 @@ function resolveTopicName(activity, topicId) {
   return activity.mainTopic?.name;
 }
 
-// Chat sessions are keyed by (user, activity, mode) so a student keeps a single
-// continuous conversation per AI mode on a given activity. Skipped when no
-// upstream chatId came back (nothing meaningful to remember).
+// Each chatId is unique across sessions. When Core returns the same chatId
+// (continuing an existing session) we update the row; when it mints a new one
+// (student started a fresh chat) we insert a new row so history is preserved.
 async function upsertChatSession({ userId, activityId, mode, chatId, tutorModelId }) {
   if (!chatId) return null;
 
   return prisma.aiChatSession.upsert({
-    where: {
-      userId_activityId_mode: {
-        userId,
-        activityId,
-        mode,
-      },
-    },
-    update: {
-      chatId,
-      modelId: tutorModelId ?? null,
-    },
-    create: {
-      userId,
-      activityId,
-      mode,
-      chatId,
-      modelId: tutorModelId ?? null,
-    },
+    where: { chatId },
+    update: { modelId: tutorModelId ?? null },
+    create: { userId, activityId, mode, chatId, modelId: tutorModelId ?? null },
   });
 }
 
@@ -239,18 +224,12 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
   }
 
   try {
-    // Stage 2: lookup prior session only when the client already holds a chatId,
-    // so the very first call doesn't pay the DB roundtrip.
+    // Stage 2: verify the client's chatId belongs to this user. Skip when no
+    // chatId provided (new session — Core will mint one after the response).
     const existingSession =
       payload.chatId && payload.chatId.trim().length > 0
-        ? await prisma.aiChatSession.findUnique({
-            where: {
-              userId_activityId_mode: {
-                userId: authUser.id,
-                activityId,
-                mode,
-              },
-            },
+        ? await prisma.aiChatSession.findFirst({
+            where: { chatId: payload.chatId, userId: authUser.id, activityId, mode },
           })
         : null;
 
@@ -1475,6 +1454,75 @@ router.get('/me/feedback', async (req, res) => {
       orderBy: { createdAt: 'asc' },
     });
     res.json(feedback);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+/**
+ * GET /activities/:activityId/chat-sessions — list all AI chat sessions the
+ * authenticated student has started for this activity, newest-first.
+ *
+ * Auth: STUDENT enrolled in the activity's course.
+ */
+router.get('/activities/:activityId/chat-sessions', async (req, res) => {
+  try {
+    const authUser = req.user;
+    const activityId = Number(req.params.activityId);
+    if (!Number.isFinite(activityId)) return res.status(400).json({ error: 'Invalid activityId' });
+
+    const activity = await loadActivityForChat(activityId);
+    if (!activity) return res.status(404).json({ error: 'Activity not found' });
+
+    const course = activity.lesson?.module?.courseOffering;
+    if (!course) return res.status(500).json({ error: 'Activity course context missing' });
+
+    const isEnrolled = course.enrollments.some((e) => e.userId === authUser.id);
+    if (authUser.role !== 'STUDENT' || !isEnrolled) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const sessions = await prisma.aiChatSession.findMany({
+      where: { userId: authUser.id, activityId },
+      orderBy: { updatedAt: 'desc' },
+      select: { id: true, chatId: true, mode: true, modelId: true, createdAt: true, updatedAt: true },
+    });
+
+    return res.json(sessions);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+/**
+ * GET /activities/:activityId/chat-sessions/:chatId/messages — proxy the Core
+ * message list for a specific session. Verifies the session belongs to the
+ * requesting student before forwarding.
+ *
+ * Auth: STUDENT who owns the session.
+ */
+router.get('/activities/:activityId/chat-sessions/:chatId/messages', async (req, res) => {
+  try {
+    const authUser = req.user;
+    const activityId = Number(req.params.activityId);
+    const { chatId } = req.params;
+    if (!Number.isFinite(activityId)) return res.status(400).json({ error: 'Invalid activityId' });
+
+    const session = await prisma.aiChatSession.findFirst({
+      where: { chatId, userId: authUser.id, activityId },
+    });
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    const cookie = getEduAiCookieForRequest(req);
+    const coreUrl = getEduAiBaseUrl().replace(/\/api$/, '');
+    const upstream = await fetch(`${coreUrl}/api/chats/${chatId}/messages`, {
+      headers: { 'Content-Type': 'application/json', ...(cookie ? { cookie } : {}) },
+    });
+    if (!upstream.ok) {
+      return res.status(upstream.status).json({ error: 'Failed to fetch messages from Core' });
+    }
+    const data = await upstream.json();
+    return res.json(data);
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
