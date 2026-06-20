@@ -104,7 +104,9 @@ beforeEach(async () => {
 afterAll(async () => {
   await prisma.invitation.deleteMany({ where: { email: { in: emails } } });
   await prisma.user.deleteMany({ where: { email: { in: emails } } });
-  await prisma.systemConfig.deleteMany({ where: { key: "policy.unitAdmins.canInvite" } });
+  await prisma.systemConfig.deleteMany({
+    where: { key: { in: ["policy.unitAdmins.canInvite", "policy.auth.allowPublicRegistration"] } },
+  });
   invalidatePolicyCache();
   await cleanupRbac({ userIds: [adminId, unitAdminId] });
   await prisma.$disconnect();
@@ -407,6 +409,38 @@ describe("accept flow", () => {
     const user = await prisma.user.findUnique({ where: { email } });
     expect(user?.role).toBe("UNIT_ADMIN");
     expect(user?.authorizedUnits).toEqual(["COSC"]);
+  });
+
+  it("accepts an invite even when public registration is disabled", async () => {
+    // Regression: invite acceptance reuses /sign-up/email, which the §6a hook
+    // gates on auth.allowPublicRegistration. The invitee was vetted by an admin,
+    // so the gate must not block them (the sub-request carries an internal
+    // marker). Before the fix this returned { formError: "Something went
+    // wrong…" } with HTTP 200 instead of creating the account.
+    asAdmin();
+    const email = uniqueEmail();
+    const created = await (await createAction(createReq({ email, role: "INSTRUCTOR" }))).json();
+    const token = tokenFromAcceptUrl(created.acceptUrl);
+
+    await setPolicy("auth.allowPublicRegistration", false, adminId);
+    try {
+      // Step past Better Auth's per-IP sign-up rate window (see note below).
+      const realNow = Date.now;
+      const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => realNow() + 11_000);
+      let res: Response;
+      try {
+        res = (await acceptAction(
+          acceptReq({ token, name: "Reg Off", password: "supersecret1", confirmPassword: "supersecret1" }),
+        )) as Response;
+      } finally {
+        nowSpy.mockRestore();
+      }
+      expect(res.status).toBe(302); // account created + logged in despite the gate
+      expect(res.headers.get("Location")).toBe("/dashboard");
+      expect((await prisma.user.findUnique({ where: { email } }))?.role).toBe("INSTRUCTOR");
+    } finally {
+      await setPolicy("auth.allowPublicRegistration", true, adminId);
+    }
   });
 
   it("surfaces a friendly error for invalid, expired, and revoked tokens", async () => {
