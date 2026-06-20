@@ -40,6 +40,11 @@ vi.mock("~/lib/auth/course-access.server", () => ({
 }));
 
 vi.mock("~/lib/ai/providers.server", () => ({
+  getChatModelCapabilities: vi.fn().mockResolvedValue({
+    supportsTools: false,
+    maxTokens: null,
+    name: null,
+  }),
   modelSupportsTools: vi.fn().mockResolvedValue(false),
 }));
 
@@ -70,7 +75,7 @@ import { streamText } from "ai";
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 import { findRelevantContent } from "~/lib/ai/embedding";
-import { modelSupportsTools } from "~/lib/ai/providers.server";
+import { getChatModelCapabilities } from "~/lib/ai/providers.server";
 import prisma from "~/lib/prisma.server";
 
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
@@ -115,9 +120,11 @@ function baseBody(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function lastStreamSystem(): string {
-  const call = vi.mocked(streamText).mock.calls.at(-1)?.[0] as { system?: string } | undefined;
-  return call?.system ?? "";
+function lastStreamConfig(): { system?: string; maxTokens?: number } {
+  const call = vi.mocked(streamText).mock.calls.at(-1)?.[0] as
+    | { system?: string; maxTokens?: number }
+    | undefined;
+  return call ?? {};
 }
 
 beforeEach(() => {
@@ -144,7 +151,11 @@ beforeEach(() => {
 describe("Smart course RAG gate (#484)", () => {
   describe("hybrid path (supportsTools = false)", () => {
     beforeEach(() => {
-      vi.mocked(modelSupportsTools).mockResolvedValue(false);
+      vi.mocked(getChatModelCapabilities).mockResolvedValue({
+        supportsTools: false,
+        maxTokens: null,
+        name: null,
+      });
     });
 
     it("prefetches but does not inject for generic queries with weak hits", async () => {
@@ -155,7 +166,7 @@ describe("Smart course RAG gate (#484)", () => {
       const res = await action(makeRequest(baseBody()));
       expect(res.status).toBe(200);
       expect(findRelevantContent).toHaveBeenCalled();
-      expect(lastStreamSystem()).not.toContain("Course grounding rules");
+      expect(lastStreamConfig().system).not.toContain("Course grounding rules");
     });
 
     it("injects grounding block for course-intent queries", async () => {
@@ -169,8 +180,8 @@ describe("Smart course RAG gate (#484)", () => {
         })),
       );
       expect(res.status).toBe(200);
-      expect(lastStreamSystem()).toContain("Course grounding rules");
-      expect(lastStreamSystem()).toContain("Trees are hierarchical.");
+      expect(lastStreamConfig().system).toContain("Course grounding rules");
+      expect(lastStreamConfig().system).toContain("Trees are hierarchical.");
     });
 
     it("prefetches but skips inject for greetings with weak hits", async () => {
@@ -183,7 +194,7 @@ describe("Smart course RAG gate (#484)", () => {
       );
       expect(res.status).toBe(200);
       expect(findRelevantContent).toHaveBeenCalled();
-      expect(lastStreamSystem()).not.toContain("Course grounding rules");
+      expect(lastStreamConfig().system).not.toContain("Course grounding rules");
     });
 
     it("injects on strong similarity even for generic phrasing", async () => {
@@ -193,7 +204,7 @@ describe("Smart course RAG gate (#484)", () => {
       mockStream();
       const res = await action(makeRequest(baseBody()));
       expect(res.status).toBe(200);
-      expect(lastStreamSystem()).toContain("Gradient descent minimizes loss.");
+      expect(lastStreamConfig().system).toContain("Gradient descent minimizes loss.");
     });
 
     it("injects empty-material instruction when course-intent query has no hits", async () => {
@@ -205,8 +216,8 @@ describe("Smart course RAG gate (#484)", () => {
         })),
       );
       expect(res.status).toBe(200);
-      expect(lastStreamSystem()).toContain("did not return relevant excerpts");
-      expect(lastStreamSystem()).not.toContain("Course grounding rules");
+      expect(lastStreamConfig().system).toContain("did not return relevant excerpts");
+      expect(lastStreamConfig().system).not.toContain("Course grounding rules");
     });
 
     it("does not prefetch when no course is selected", async () => {
@@ -219,7 +230,19 @@ describe("Smart course RAG gate (#484)", () => {
 
   describe("tool path (supportsTools = true)", () => {
     beforeEach(() => {
-      vi.mocked(modelSupportsTools).mockResolvedValue(true);
+      vi.mocked(getChatModelCapabilities).mockResolvedValue({
+        supportsTools: true,
+        maxTokens: 8192,
+        name: "Test tool model",
+      });
+    });
+
+    it("caps tool-path maxTokens against model maxTokens", async () => {
+      vi.mocked(findRelevantContent).mockResolvedValue([]);
+      mockStream();
+      const res = await action(makeRequest(baseBody()));
+      expect(res.status).toBe(200);
+      expect(lastStreamConfig().maxTokens).toBe(8192);
     });
 
     it("preloads only when inject gate passes", async () => {
@@ -228,7 +251,7 @@ describe("Smart course RAG gate (#484)", () => {
       const res = await action(makeRequest(baseBody()));
       expect(res.status).toBe(200);
       expect(findRelevantContent).toHaveBeenCalled();
-      expect(lastStreamSystem()).not.toContain("Course grounding rules");
+      expect(lastStreamConfig().system).not.toContain("Course grounding rules");
     });
 
     it("preloads grounding for course-intent queries", async () => {
@@ -242,8 +265,8 @@ describe("Smart course RAG gate (#484)", () => {
         })),
       );
       expect(res.status).toBe(200);
-      expect(lastStreamSystem()).toContain("Late work loses 10%");
-      expect(lastStreamSystem()).toContain("getInformation");
+      expect(lastStreamConfig().system).toContain("Late work loses 10%");
+      expect(lastStreamConfig().system).toContain("getInformation");
     });
   });
 });
