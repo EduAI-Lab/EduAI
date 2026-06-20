@@ -26,11 +26,17 @@ import { CourseEmbeddingSettings } from '~/components/course-embedding-settings'
 import type { CourseMaterial } from '~/components/course-materials-upload'
 import type { CourseDetail } from '~/hooks/api/use-course-detail'
 import type { CourseTopic } from '~/hooks/api/use-course-topics'
+import type { CourseEnrollment } from '~/hooks/api/use-course-enrollments'
+import { IconUsers } from '@tabler/icons-react'
+import { Badge } from '@eduai/ui'
 
 interface Props {
   course: CourseDetail
   topics: CourseTopic[]
   materials: CourseMaterial[]
+  enrollments?: CourseEnrollment[]
+  enrollmentsLoading?: boolean
+  enrollmentsError?: string | null
   isUploading?: boolean
   materialsError?: string | null
   materialsSuccess?: string | null
@@ -78,6 +84,9 @@ export function CourseDetailTaView({
   course,
   topics,
   materials,
+  enrollments = [],
+  enrollmentsLoading = false,
+  enrollmentsError = null,
   isUploading = false,
   materialsError = null,
   materialsSuccess = null,
@@ -145,6 +154,7 @@ export function CourseDetailTaView({
           <PageTabsTrigger value="overview">Overview</PageTabsTrigger>
           <PageTabsTrigger value="materials">Materials</PageTabsTrigger>
           <PageTabsTrigger value="topics">Topics</PageTabsTrigger>
+          <PageTabsTrigger value="enrollments">Enrollments</PageTabsTrigger>
         </PageTabsList>
 
         {/* ── Overview ── */}
@@ -314,6 +324,59 @@ export function CourseDetailTaView({
               ))}
             </div>
           )}
+        </PageTabsContent>
+
+        {/* ── Enrollments (read-only for TA) ── */}
+        <PageTabsContent
+          value="enrollments"
+          forceMount
+          className="data-[state=inactive]:hidden flex-1 outline-none"
+        >
+          <div className="flex flex-col gap-4">
+            <p className="text-sm font-medium flex items-center gap-2">
+              <IconUsers className="w-4 h-4" />
+              Enrolled users
+            </p>
+            {enrollmentsLoading ? (
+              <Card>
+                <CardContent className="flex items-center justify-center py-8 text-muted-foreground">
+                  Loading enrollments…
+                </CardContent>
+              </Card>
+            ) : enrollmentsError ? (
+              <Card>
+                <CardContent className="flex items-center justify-center py-8 text-destructive">
+                  {enrollmentsError}
+                </CardContent>
+              </Card>
+            ) : enrollments.filter((e) => e.isActive).length === 0 ? (
+              <Card>
+                <CardContent className="flex items-center justify-center py-8 text-muted-foreground">
+                  No enrollments yet.
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid gap-2">
+                {enrollments
+                  .filter((e) => e.isActive)
+                  .map((e) => (
+                    <Card key={e.id}>
+                      <CardContent className="flex items-center justify-between py-3">
+                        <div>
+                          <span className="text-sm font-medium">{e.userName}</span>
+                          <span className="text-xs text-muted-foreground ml-2">
+                            {e.userEmail}
+                          </span>
+                        </div>
+                        <Badge variant={e.role === 'INSTRUCTOR' ? 'default' : 'secondary'}>
+                          {e.role}
+                        </Badge>
+                      </CardContent>
+                    </Card>
+                  ))}
+              </div>
+            )}
+          </div>
         </PageTabsContent>
       </PageTabs>
     </div>

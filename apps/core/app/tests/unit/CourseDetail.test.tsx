@@ -61,9 +61,12 @@ const STAFF_PROPS = {
   tas: [],
   instructors: [],
   taUsers: [],
+  studentUsers: [],
   onAssignInstructor: NOOP,
   onAddTA: NOOP,
   onRemoveTA: NOOP,
+  onEnrollStudent: NOOP,
+  onRemoveEnrollment: NOOP,
 }
 
 function wrap(ui: React.ReactElement) {
@@ -144,20 +147,50 @@ describe('CourseDetailManagerView', () => {
     // unit access can manage topics
     expect(screen.getByPlaceholderText(/new topic name/i)).toBeInTheDocument()
   })
+
+  it('shows remove control for student enrollments when instructor can manage students', () => {
+    wrap(
+      <CourseDetailManagerView
+        course={COURSE}
+        access="instructor"
+        topics={[]}
+        enrollments={[
+          {
+            id: 'enr-1',
+            courseId: 'c1',
+            userId: 'student-1',
+            userEmail: 'student@test.com',
+            userName: 'Student One',
+            studentNumber: null,
+            role: 'STUDENT',
+            isActive: true,
+            enrolledAt: null,
+          },
+        ]}
+        materials={[]}
+        onFileSelect={onFileSelect}
+        onCreateTopic={NOOP}
+        onDeleteTopic={NOOP}
+        {...STAFF_PROPS}
+      />
+    )
+    expect(screen.getByRole('button', { name: /remove student/i })).toBeInTheDocument()
+  })
 })
 
 // TA view
 describe('CourseDetailTaView', () => {
-  it('does NOT show Enrollments tab', () => {
+  it('shows read-only Enrollments tab', () => {
     wrap(
       <CourseDetailTaView
         course={COURSE}
         topics={[]}
         materials={[]}
+        enrollments={[]}
         onFileSelect={onFileSelect}
       />
     )
-    expect(screen.queryByRole('tab', { name: /enrollments/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /enrollments/i })).toBeInTheDocument()
   })
 
   it('renders "Upload material" button in Materials content', () => {

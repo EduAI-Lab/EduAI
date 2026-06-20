@@ -91,6 +91,7 @@ async function enrollmentsResponse(courseId: string) {
 
   // Map Prisma model to the API contract shape (see api-wiring.md)
   const mapped = enrollments.map((e) => ({
+    id: e.id,
     studentId: e.userId,
     studentEmail: e.user.email,
     studentName: e.user.name,
