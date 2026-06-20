@@ -190,7 +190,8 @@ Each section should use this format:
 | `chat-always-on-rag.route.test.ts` | Route tests for smart course RAG on `POST /api/chat` (#484): prefetch on course-scoped turns; inject grounding block for course-intent or strong-similarity hits; skip inject for greetings/generic queries with weak hits; tool path uses same gate and caps `maxTokens` against model DB limit. |
 | `resolve-tool-max-tokens.test.ts` | Unit tests for tool-path `maxTokens` resolution — env cap default 8192, `CHAT_TOOL_MAX_OUTPUT_TOKENS` override, and clamping against `AIModel.maxTokens`. |
 | `chat-intent.test.ts` | Tests `needsCourseRag` intent routing — greetings, generic knowledge, course keywords, code requests, and borderline escalation when a course is selected. |
-| `chat-rag.test.ts` | Tests `buildCappedRagContextText` and `capRagHitsForTool` chunk/char caps for hybrid and tool RAG paths. |
+| `chat-rag.test.ts` | Tests `buildCappedRagContextText` and `capRagHitsForTool` chunk/char caps for hybrid and tool RAG paths; untrusted excerpt wrapping (#86). |
+| `prompt-safety.test.ts` | Unit tests for prompt-injection defenses (#86): `composeSecurityPrompt`, `sanitizeSystemPrompt` / max chars, `filterIncomingClientMessages`, and untrusted reference wrapping. |
 | `chat-tools.test.ts` | Tests `buildChatToolRegistry` — when web tools are OFF only `getInformation` is registered; when ON, `webSearch` and `fetchPage` are added. |
 | `model-tool-capability.test.ts` | Tests `isSmallModelSlug` heuristics (migration backfill) and `allowsSupportsToolsToggle` — toggle shown only for CHAT-type models (including small slugs). |
 | `ModelFormDialog.test.tsx` | Admin model form dialog — title, submit/cancel, Ollama/vLLM model pickers, Supports Tools toggle for CHAT models, and confirmation dialog before enabling tools. |
