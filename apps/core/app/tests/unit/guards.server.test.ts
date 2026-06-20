@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { requireServiceKey, validateRedirectUrl } from "~/lib/auth/guards.server";
+import { requireInviter, requireServiceKey, validateRedirectUrl } from "~/lib/auth/guards.server";
+import { auth } from "~/lib/auth/server";
 
 vi.mock("~/lib/auth/server", () => ({
     auth: { api: { getSession: vi.fn() } },
@@ -72,6 +73,60 @@ describe("requireServiceKey", () => {
         const res = await requireServiceKey(makeRequest(`Bearer ${longer}`));
         expect(res).not.toBeNull();
         expect(res!.status).toBe(403);
+    });
+});
+
+describe("requireInviter", () => {
+    const sessionReq = () => new Request("http://localhost/api/invitations");
+    const apiKeyReq = () =>
+        new Request("http://localhost/api/invitations", { headers: { "x-api-key": "k" } });
+
+    beforeEach(() => {
+        vi.mocked(auth.api.getSession).mockReset();
+    });
+
+    it("admits an ADMIN session", async () => {
+        vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "a1", role: "ADMIN" } } as never);
+        const gate = await requireInviter(sessionReq());
+        expect(gate.response).toBeNull();
+        expect(gate.session?.user.role).toBe("ADMIN");
+    });
+
+    it("admits a UNIT_ADMIN session", async () => {
+        vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "UNIT_ADMIN" } } as never);
+        const gate = await requireInviter(sessionReq());
+        expect(gate.response).toBeNull();
+        expect(gate.session?.user.role).toBe("UNIT_ADMIN");
+    });
+
+    it("403s a STUDENT/INSTRUCTOR/TA (non-platform-admin) and yields no session", async () => {
+        for (const role of ["STUDENT", "INSTRUCTOR", "TA"]) {
+            vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "x", role } } as never);
+            const gate = await requireInviter(sessionReq());
+            expect(gate.response?.status).toBe(403);
+            expect(gate.session).toBeNull();
+        }
+    });
+
+    it("403s an anonymous request", async () => {
+        vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+        const gate = await requireInviter(sessionReq());
+        expect(gate.response?.status).toBe(403);
+        expect(gate.session).toBeNull();
+    });
+
+    it("rejects an x-api-key request from a UNIT_ADMIN (api key is ADMIN-only)", async () => {
+        vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "UNIT_ADMIN" } } as never);
+        const gate = await requireInviter(apiKeyReq());
+        expect(gate.response?.status).toBe(403);
+        expect(gate.session).toBeNull();
+    });
+
+    it("admits an x-api-key request from an ADMIN", async () => {
+        vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "a1", role: "ADMIN" } } as never);
+        const gate = await requireInviter(apiKeyReq());
+        expect(gate.response).toBeNull();
+        expect(gate.session?.user.role).toBe("ADMIN");
     });
 });
 

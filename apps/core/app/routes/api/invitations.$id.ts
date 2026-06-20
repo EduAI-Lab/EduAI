@@ -48,7 +48,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
     fireAndForget(
       logAuditAction({
-        ...getActorContext(gate.session?.user ?? null),
+        ...getActorContext(user),
         ...requestContext,
         actionCode: "INVITATION_REVOKED",
         category: "INVITATION",
@@ -69,7 +69,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
     fireAndForget(
       logAuditAction({
-        ...getActorContext(gate.session?.user ?? null),
+        ...getActorContext(user),
         ...requestContext,
         actionCode: "INVITATION_RESENT",
         category: "INVITATION",

@@ -173,6 +173,9 @@ export async function resendInvitation(
 export async function listInvitations(
   opts?: { invitedById?: string },
 ): Promise<PublicInvitation[]> {
+  // Fail closed: a scope object MUST carry a non-empty id. Otherwise a future
+  // falsy value would silently collapse the filter to "all invitations".
+  if (opts && !opts.invitedById) return [];
   const invitations = await prisma.invitation.findMany({
     where: opts?.invitedById ? { invitedById: opts.invitedById } : undefined,
     orderBy: { createdAt: "desc" },

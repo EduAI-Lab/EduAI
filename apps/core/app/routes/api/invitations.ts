@@ -86,7 +86,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
   fireAndForget(
     logAuditAction({
-      ...getActorContext(gate.session?.user ?? null),
+      ...getActorContext(user),
       ...requestContext,
       actionCode: "INVITATION_CREATED",
       category: "INVITATION",

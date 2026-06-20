@@ -203,7 +203,12 @@ export default function UnitAdminInvitationsPage() {
   const confirmCancel = async () => {
     if (!cancelTarget) return;
     const res = await fetch(`/api/invitations/${cancelTarget.id}`, { method: "DELETE" });
-    if (res.ok) await fetchInvites();
+    if (res.ok) {
+      await fetchInvites();
+    } else {
+      const data = await res.json().catch(() => ({}));
+      setNotice({ message: `Could not cancel: ${errorMessage(data?.error, res.status)}` });
+    }
     setCancelTarget(null);
   };
 
