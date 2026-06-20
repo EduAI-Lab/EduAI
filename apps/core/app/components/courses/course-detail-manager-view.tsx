@@ -47,7 +47,7 @@ import {
 import { Checkbox } from "@eduai/ui";
 import { CourseMaterialsUpload } from "~/components/course-materials-upload";
 import { CourseEmbeddingSettings } from "~/components/course-embedding-settings";
-import { CourseChatHistory } from "~/components/courses/course-chat-history";
+import { CourseChatsTab } from "~/components/courses/course-chats-panel";
 import type { CourseMaterial } from "~/components/course-materials-upload";
 import { CanvasMaterialSyncDialog } from "~/components/canvas/canvas-material-sync-dialog";
 import type { CourseDetail } from "~/hooks/api/use-course-detail";
@@ -199,15 +199,19 @@ export function CourseDetailManagerView({
     prevSuccessRef.current = materialsSuccess;
   }, [materialsSuccess]);
 
-  const { policies } = usePolicies();
+  const { policies, isLoading: policiesLoading } = usePolicies();
   const canManage = canManageTopics(access, policies["tas.canManageTopics"] ?? false);
   // Reassigning the instructor stays ADMIN/UNIT_ADMIN only; the Staff tab (TA
   // management) also opens to an owning instructor when the enrollment policy is
-  // on. Mirrors the TA endpoint and loader gates.
+  // on. Mirrors the TA endpoint and loader gates. The instructor branch stays
+  // restrictive until policies load so a disabled flag can't briefly flash the
+  // staff controls (admin/unit access is role-based and not gated on the fetch).
   const canAssignInstructor = canManageInstructors(access);
   const canManageStaff =
     canAssignInstructor ||
-    (access === "instructor" && (policies["instructors.canManageEnrollments"] ?? true));
+    (!policiesLoading &&
+      access === "instructor" &&
+      (policies["instructors.canManageEnrollments"] ?? true));
   const canManageRagSettings = access === "admin" || access === "instructor";
 
   // §5d: the Chat history tab is visible only to roles whose course-chat-
@@ -1103,7 +1107,7 @@ export function CourseDetailManagerView({
             forceMount
             className="data-[state=inactive]:hidden flex-1 outline-none"
           >
-            <CourseChatHistory courseId={course.id} courseCode={course.code} />
+            <CourseChatsTab courseId={course.id} />
           </PageTabsContent>
         )}
       </PageTabs>

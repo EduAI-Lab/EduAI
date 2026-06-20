@@ -43,12 +43,13 @@ export function CoursesInstructorView({ courses, onCreateCourse, onEditCourse, o
   const [selectedDept, setSelectedDept] = useState<string>('')
   const [selectedTerm, setSelectedTerm] = useState<string>('Fall')
 
-  const { policies } = usePolicies()
+  const { policies, isLoading: policiesLoading } = usePolicies()
   // Mirror the backend policy gates so the UI never offers an action the server
-  // will 403. Defaults match the policy defaults (create/publish/delete are on).
-  const canCreate = policies['instructors.canCreateCourses'] ?? true
-  const canPublish = policies['instructors.canPublishCourses'] ?? true
-  const canDelete = policies['instructors.canDeleteCourses'] ?? true
+  // will 403. Stay restrictive until policies load — otherwise a disabled flag
+  // would briefly flash Create/Publish/Delete before the fetch resolves.
+  const canCreate = !policiesLoading && (policies['instructors.canCreateCourses'] ?? true)
+  const canPublish = !policiesLoading && (policies['instructors.canPublishCourses'] ?? true)
+  const canDelete = !policiesLoading && (policies['instructors.canDeleteCourses'] ?? true)
 
   // Safety cleanup: if the Radix DropdownMenu→Dialog lifecycle race left
   // pointer-events:none on <body>, clear it once no dialog is open.
