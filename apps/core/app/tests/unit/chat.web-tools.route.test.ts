@@ -84,6 +84,12 @@ beforeEach(() => {
   vi.mocked(prisma.chat.findFirst).mockResolvedValue({
     id: CHAT_ID, userId: "u1", adhdAssist: false, systemPrompt: null,
   } as never);
+  // Course-context backfill (tagging an existing chat with its course) calls
+  // chat.update; echo the patched row so the chat stays resolved on that path.
+  vi.mocked(prisma.chat.update).mockImplementation(
+    (async (args: { data?: Record<string, unknown> }) =>
+      ({ id: CHAT_ID, userId: "u1", adhdAssist: false, systemPrompt: null, ...(args.data ?? {}) })) as never,
+  );
 });
 
 afterEach(() => {

@@ -34,6 +34,7 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@eduai/types": "*",
+    "@eduai/ui": "*",
     "@hookform/resolvers": "^5.2.2",
     "@mendable/firecrawl-js": "^4.3.8",
     "@opendocsg/pdf2md": "^0.2.1",

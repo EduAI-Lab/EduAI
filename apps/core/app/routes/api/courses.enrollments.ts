@@ -25,7 +25,6 @@ import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { getPolicy, denyByPolicy } from "~/lib/policy.server";
 import { getCourse } from "~/lib/courses/server";
 import { addEnrollment, getCourseEnrollments } from "~/lib/courses/enrollments.server";
-import { readStoredStudentId } from "~/lib/canvas/student-id.server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 
@@ -93,11 +92,10 @@ async function enrollmentsResponse(courseId: string) {
 
   // Map Prisma model to the API contract shape (see api-wiring.md)
   const mapped = enrollments.map((e) => ({
-    id: e.id,
     studentId: e.userId,
     studentEmail: e.user.email,
     studentName: e.user.name,
-    studentNumber: readStoredStudentId(e.user.studentId),
+    studentNumber: e.user.studentId,
     enrolledAt: e.enrolledAt?.toISOString() ?? null,
     isActive: e.isActive,
     role: e.role,

@@ -32,9 +32,9 @@ export type ChatViewSharedProps = {
   onFocusModeChange: (value: boolean) => void;
   systemPrompt: string | null;
   onSystemPromptSave: (prompt: string | null) => Promise<void>;
+  webToolsEnabled: boolean;
   onInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
   onStop?: () => void;
   onSelectPrompt: (prompt: string) => void;
-  webToolsEnabled: boolean;
 };

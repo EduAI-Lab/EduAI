@@ -1,28 +1,14 @@
 import { useState, useEffect } from "react";
-import { Button } from "~/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "~/components/ui/dialog";
-import { Input } from "~/components/ui/input";
-import { Label } from "~/components/ui/label";
-import { Textarea } from "~/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
-import { Switch } from "~/components/ui/switch";
-import { Alert, AlertDescription } from "~/components/ui/alert";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "~/components/ui/alert-dialog";
-import { Loader } from "~/components/ui/loader";
+import { Button } from "@eduai/ui";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@eduai/ui";
+import { Input } from "@eduai/ui";
+import { Label } from "@eduai/ui";
+import { Textarea } from "@eduai/ui";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@eduai/ui";
+import { Switch } from "@eduai/ui";
+import { Alert, AlertDescription } from "@eduai/ui";
+import { Loader } from "@eduai/ui";
 import type { AIProvider, AIModel } from "~/types/ai";
-import { AlertTriangle } from "lucide-react";
-import { allowsSupportsToolsToggle } from "~/lib/ai/model-tool-capability";
-import { CHAT_TOOLS_TOOLTIP } from "~/lib/ai/tools-help";
-import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 
 export type OllamaModel = {
   name: string;
@@ -102,7 +88,6 @@ export function ModelFormDialog({
 
   const [selectedOllamaModel, setSelectedOllamaModel] = useState<string>("");
   const [selectedVllmModel, setSelectedVllmModel] = useState<string>("");
-  const [toolsEnableWarningOpen, setToolsEnableWarningOpen] = useState(false);
 
   useEffect(() => {
     if (model) {
@@ -147,20 +132,6 @@ export function ModelFormDialog({
   const providerName = selectedProvider?.name?.toLowerCase() ?? "";
   const isOllamaProvider = providerName === "ollama";
   const isVllmProvider = providerName === "vllm";
-  const showSupportsToolsToggle = allowsSupportsToolsToggle(formData.modelId, formData.type);
-
-  const handleSupportsToolsChange = (checked: boolean) => {
-    if (checked) {
-      setToolsEnableWarningOpen(true);
-      return;
-    }
-    setFormData({ ...formData, supportsTools: false });
-  };
-
-  const confirmEnableTools = () => {
-    setFormData((prev) => ({ ...prev, supportsTools: true }));
-    setToolsEnableWarningOpen(false);
-  };
 
   useEffect(() => {
     if (!open || !isVllmProvider || !onFetchVllmModels || vllmFetched) return;
@@ -188,7 +159,7 @@ export function ModelFormDialog({
         type: "CHAT",
         maxTokens: "",
         supportsImages: selected.name.toLowerCase().includes("vision") || selected.name.toLowerCase().includes("llava"),
-        supportsTools: false,
+        supportsTools: true,
         supportsStreaming: true,
         inputPricing: "0",
         outputPricing: "0",
@@ -224,7 +195,6 @@ export function ModelFormDialog({
     e.preventDefault();
     onSubmit({
       ...formData,
-      supportsTools: showSupportsToolsToggle ? formData.supportsTools : false,
       maxTokens: formData.maxTokens ? Number(formData.maxTokens) : undefined,
       inputPricing: formData.inputPricing ? Number(formData.inputPricing) : undefined,
       outputPricing: formData.outputPricing ? Number(formData.outputPricing) : undefined,
@@ -506,41 +476,14 @@ export function ModelFormDialog({
                 <Label htmlFor="supportsImages">Supports Images</Label>
               </div>
 
-              {showSupportsToolsToggle ? (
-                <div className="flex items-center space-x-2">
-                  <Switch
-                    id="supportsTools"
-                    checked={formData.supportsTools}
-                    onCheckedChange={handleSupportsToolsChange}
-                  />
-                  <Label htmlFor="supportsTools" className="flex items-center gap-1">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className="cursor-help underline decoration-dotted underline-offset-4">
-                          Supports Tools
-                        </span>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="max-w-xs">
-                        {CHAT_TOOLS_TOOLTIP}
-                      </TooltipContent>
-                    </Tooltip>
-                  </Label>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        className="inline-flex text-amber-600 hover:text-amber-700 dark:text-amber-500"
-                        aria-label="Tool calling requirement"
-                      >
-                        <AlertTriangle className="h-4 w-4" />
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-xs">
-                      Only enable if this model supports tool/function calling on its provider.
-                    </TooltipContent>
-                  </Tooltip>
-                </div>
-              ) : null}
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="supportsTools"
+                  checked={formData.supportsTools}
+                  onCheckedChange={(checked) => setFormData({ ...formData, supportsTools: checked })}
+                />
+                <Label htmlFor="supportsTools">Supports Tools</Label>
+              </div>
             </div>
 
             <div className="space-y-4">
@@ -573,25 +516,6 @@ export function ModelFormDialog({
             </Button>
           </div>
         </form>
-
-        <AlertDialog open={toolsEnableWarningOpen} onOpenChange={setToolsEnableWarningOpen}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Enable tool calling for this model?</AlertDialogTitle>
-              <AlertDialogDescription>
-                Confirm that {formData.modelId ? `"${formData.modelId}"` : "this model"} supports
-                tool/function calling on its provider. If it does not, chat may fail, skip tools, or
-                return unreliable results.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={confirmEnableTools}>
-                Enable tools
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
       </DialogContent>
     </Dialog>
   );

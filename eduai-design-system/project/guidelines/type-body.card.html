@@ -1,0 +1,29 @@
+<!-- @dsCard group="Type" viewport="700x200" name="Body Text" subtitle="Paragraph, lead, muted, code — in context" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; padding: 20px 24px; font-family: var(--font-sans); background: var(--background); color: var(--foreground); display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  p { margin: 0 0 6px; font-size: var(--text-base); line-height: var(--leading-normal); }
+  .lead { font-size: var(--text-lg); font-weight: var(--font-medium); color: var(--foreground); }
+  .muted { color: var(--muted-foreground); font-size: var(--text-sm); }
+  .link { color: var(--secondary); text-decoration: underline; text-underline-offset: 3px; }
+  code { font-family: var(--font-mono); font-size: 13px; background: var(--muted); padding: 1px 5px; border-radius: 3px; color: var(--foreground); }
+  .label-style { font-size: var(--text-xs); font-weight: var(--font-medium); letter-spacing: var(--tracking-wider); text-transform: uppercase; color: var(--muted-foreground); }
+</style>
+</head>
+<body>
+  <div>
+    <p class="lead">Welcome to EduAI.</p>
+    <p>Your AI-powered study companion, grounded in your course materials. Ask questions, explore topics, and get explanations tailored to your curriculum.</p>
+    <p class="muted">Last synced 3 minutes ago · <a class="link" href="#">View source</a></p>
+  </div>
+  <div>
+    <p class="label-style">Course code</p>
+    <p>CPSC 110 — Computation, Programs, and Programming</p>
+    <p class="muted">To embed course materials, upload PDFs or link your Canvas course. Model will reference <code>chunk_size=512</code> tokens.</p>
+  </div>
+</body>
+</html>

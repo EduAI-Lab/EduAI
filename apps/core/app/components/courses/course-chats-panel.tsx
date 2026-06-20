@@ -1,6 +1,5 @@
 import { useState } from 'react'
-import { Card, CardContent } from '~/components/ui/card'
-import { Button } from '~/components/ui/button'
+import { Card, CardContent, Button } from '@eduai/ui'
 import { useChatDetail, type CourseChatSummary } from '~/hooks/api/use-course-chats'
 
 /** Best-effort plain-text extraction from a stored chat message `content` JSON. */

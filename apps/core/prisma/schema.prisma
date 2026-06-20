@@ -130,6 +130,7 @@ model Course {
   embeddedWithProvider   String?
   embeddedWithModel      String?
   aiInteractions AIInteraction[]
+  chats          Chat[]           @relation("CourseChats")
   enrollments    Enrollment[]
   tas                 CourseTA[]
   canvasRosterMembers CanvasRosterMember[]
@@ -137,7 +138,6 @@ model Course {
   reEmbedJobs    CourseReEmbedJob[]
   topics         CourseTopic[]
   questions      Question[]
-  chats          Chat[]
 
   @@unique([code, startDate, section])
   @@index([externalSource, externalId])
@@ -469,8 +469,9 @@ model apikey {
 model Chat {
   id           String        @id @default(cuid())
   userId       String
-  /// Nullable: general (non-course) chats stay null; course chats are tagged at
-  /// creation so instructors/unit-admins can read them (RBAC policy expansion §5).
+  /// Optional course context. Null = general (non-course) assistant chat; course
+  /// chats are tagged at creation so instructors/unit-admins can read them (RBAC
+  /// policy expansion §5). SetNull on course delete so history survives removal.
   courseId     String?
   systemPrompt String?
   title        String?
@@ -478,12 +479,12 @@ model Chat {
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  course          Course?          @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  course          Course?          @relation("CourseChats", fields: [courseId], references: [id], onDelete: SetNull)
   messages        ChatMessage[]
   assistiveEvents AssistiveEvent[]
 
   @@index([userId])
-  @@index([courseId])
+  @@index([courseId, updatedAt])
   @@map("chats")
 }
 

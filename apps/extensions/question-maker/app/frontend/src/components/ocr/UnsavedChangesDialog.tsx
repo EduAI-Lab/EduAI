@@ -1,14 +1,8 @@
+import { Button } from '@eduai/ui';
+
 import { AlertTriangle } from 'lucide-react';
 import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '../ui/alert-dialog';
-import { Button } from '../ui/button';
-
+  AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@eduai/ui';
 interface UnsavedChangesDialogProps {
   open: boolean;
   questionsCount: number;

@@ -16,15 +16,14 @@ describe("StudentIdOnboardingForm", () => {
   it("renders the student number field and actions", () => {
     renderForm();
 
-    expect(screen.getByRole("heading", { name: /link your student number/i })).toBeInTheDocument();
-    expect(screen.getByLabelText("Student number")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Continue" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Skip for now" })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /link your ubc student number/i })).toBeInTheDocument();
+    expect(screen.getByLabelText("UBC Student Number")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Link student number" })).toBeInTheDocument();
   });
 
   it("shows a form error when provided", () => {
-    renderForm({ formError: "This student number is already linked to another account." });
+    renderForm({ formError: "No Canvas enrollments found for this student number." });
 
-    expect(screen.getByRole("alert")).toHaveTextContent("already linked");
+    expect(screen.getByRole("alert")).toHaveTextContent("No Canvas enrollments found");
   });
 });
