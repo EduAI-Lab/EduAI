@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useTheme } from '@eduai/ui';
-import { IconMoon, IconSun } from '@tabler/icons-react';
+import { IconBug, IconMoon, IconSun } from '@tabler/icons-react';
 import { Button, Separator, SidebarTrigger } from '@eduai/ui';
 
-import { useAtPermissions } from '~/hooks/useAtPermissions';
+import { useLocalUser } from '~/hooks/useLocalUser';
 import { BugReportDialog } from '../bug-report/BugReportDialog';
 import { useBugReport } from '../bug-report/useBugReport';
 
@@ -19,10 +19,10 @@ export type AppSiteHeaderProps = {
 export function AppSiteHeader({ breadcrumbs, actions }: AppSiteHeaderProps) {
   const [bugReportOpen, setBugReportOpen] = useState(false);
   const [capturingScreenshot, setCapturingScreenshot] = useState(false);
-  const { canSubmitBugReport } = useAtPermissions();
+  const { user } = useLocalUser();
   const { captureScreenshot } = useBugReport();
   const { resolvedTheme, setTheme } = useTheme();
-  const canReportBug = canSubmitBugReport;
+  const canReportBug = Boolean(user);
 
   const handleOpenBugReport = async () => {
     setCapturingScreenshot(true);
@@ -56,13 +56,13 @@ export function AppSiteHeader({ breadcrumbs, actions }: AppSiteHeaderProps) {
           ) : (
             <div className="flex-1" />
           )}
-          <div className="ml-auto flex h-full items-center gap-3 sm:gap-4">
+          <div className="ml-auto flex h-full shrink-0 items-center gap-3 sm:gap-4">
             {actions}
             <button
               type="button"
               onClick={toggleTheme}
               aria-label={resolvedTheme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-              className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               {resolvedTheme === 'dark' ? (
                 <IconSun size={18} aria-hidden="true" />
@@ -73,12 +73,14 @@ export function AppSiteHeader({ breadcrumbs, actions }: AppSiteHeaderProps) {
             {canReportBug ? (
               <Button
                 type="button"
-                variant="ghost"
+                variant="outline"
                 size="sm"
                 onClick={() => void handleOpenBugReport()}
                 disabled={capturingScreenshot}
+                className="shrink-0"
               >
-                {capturingScreenshot ? 'Preparing…' : 'Report Bug'}
+                <IconBug className="mr-1 h-4 w-4" aria-hidden="true" />
+                {capturingScreenshot ? 'Preparing…' : 'Report bug'}
               </Button>
             ) : null}
           </div>
