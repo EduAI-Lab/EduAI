@@ -31,8 +31,6 @@ export { Button, buttonVariants } from "./ui/button"
 export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter, CardAction } from "./ui/card"
 export { Badge, badgeVariants } from "./ui/badge"
 export { Input } from "./ui/input"
-export { Combobox, MultiSelect } from "./ui/combobox"
-export type { ComboboxOption, ComboboxProps, MultiSelectProps } from "./ui/combobox"
 
 // ── shadcn primitives ──────────────────────────────────────────────────────
 export * from "./ui/accordion"
