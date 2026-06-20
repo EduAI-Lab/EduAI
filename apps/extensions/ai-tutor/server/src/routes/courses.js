@@ -26,7 +26,7 @@
 
 import express from 'express';
 import { prisma } from '../config/database.js';
-import { requireRole, isUnitAdminForCourse, isCourseAdmin } from '../middleware/auth.js';
+import { requireRole, requireInstructorPolicy, isUnitAdminForCourse, isCourseAdmin } from '../middleware/auth.js';
 import { mapCourseOffering, mapProgressData } from '../utils/mappers.js';
 import { cloneCourseContent, cloneLessonsFromOffering } from '../services/courseCloning.js';
 import { calculateCourseProgress } from '../services/progressCalculation.js';
@@ -340,7 +340,7 @@ router.get('/courses/:courseId', async (req, res) => {
  * Why: clone path lets instructors duplicate a previous term's course without
  * re-importing from EduAI or rebuilding lessons by hand.
  */
-router.post('/courses', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
+router.post('/courses', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), requireInstructorPolicy('instructors.canCreateCourses'), async (req, res) => {
   const authUser = req.user;
   const { title, description, sourceCourseId, startDate, endDate, department } = req.body || {};
 

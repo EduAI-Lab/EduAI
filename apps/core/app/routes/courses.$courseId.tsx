@@ -26,6 +26,7 @@ import {
 import type { CourseMaterial as UploadMaterial } from '~/components/course-materials-upload'
 import type { CourseDetail } from '~/hooks/api/use-course-detail'
 import { resolveCourseAccess } from '~/lib/rbac/resolve-course-access.server'
+import { getPolicy } from '~/lib/policy.server'
 import type { RbacUser } from '~/lib/rbac'
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
@@ -75,21 +76,29 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   // Students cannot view unpublished courses by direct URL
   if (access === 'student' && !course.isPublished) return redirect('/courses')
 
+  // Reassigning the instructor is ADMIN/UNIT_ADMIN only; managing TAs also opens
+  // to an owning INSTRUCTOR when `instructors.canManageEnrollments` is on
+  // (mirrors the TA endpoint gate). Load each user list only when usable.
   const canManageStaff = access === 'admin' || access === 'unit'
-  const [instructors, taUsers] = canManageStaff
-    ? await Promise.all([
-        prisma.user.findMany({
+  const canManageTAs =
+    canManageStaff ||
+    (access === 'instructor' && (await getPolicy('instructors.canManageEnrollments')))
+  const [instructors, taUsers] = await Promise.all([
+    canManageStaff
+      ? prisma.user.findMany({
           where: { role: 'INSTRUCTOR', isActive: true },
           select: { id: true, name: true, email: true },
           orderBy: { name: 'asc' },
-        }),
-        prisma.user.findMany({
+        })
+      : Promise.resolve([]),
+    canManageTAs
+      ? prisma.user.findMany({
           where: { role: 'TA', isActive: true },
           select: { id: true, name: true, email: true },
           orderBy: { name: 'asc' },
-        }),
-      ])
-    : [[], []]
+        })
+      : Promise.resolve([]),
+  ])
 
   return {
     course: {
@@ -139,6 +148,19 @@ export default function CourseDetailPage() {
     if (!res.ok) {
       const body = await res.json().catch(() => ({}))
       throw new Error(body.error ?? 'Failed to assign instructor')
+    }
+    revalidator.revalidate()
+  }, [course.id, revalidator])
+
+  const handleUpdateAiInstructions = useCallback(async (aiInstructions: string) => {
+    const res = await fetch(`/api/courses/${course.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ aiInstructions }),
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new Error(body.error ?? 'Failed to update AI instructions')
     }
     revalidator.revalidate()
   }, [course.id, revalidator])
@@ -237,12 +259,19 @@ export default function CourseDetailPage() {
                 materialsSuccess={materialsSuccess}
                 onFileSelect={handleFileSelect}
                 courseId={course.id}
+                onCreateTopic={async (name) => { await createTopic(name) }}
+                onDeleteTopic={async (id) => { await deleteTopic(id) }}
+                onUpdateAiInstructions={handleUpdateAiInstructions}
               />
             ) : (
               <CourseDetailStudentView
                 course={course}
-                materials={materials}
+                materials={uploadMaterials}
                 topics={topics}
+                isUploading={isUploading}
+                materialsError={materialsError}
+                materialsSuccess={materialsSuccess}
+                onFileSelect={handleFileSelect}
               />
             )}
           </div>

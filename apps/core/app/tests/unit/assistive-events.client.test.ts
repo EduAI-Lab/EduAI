@@ -52,4 +52,22 @@ describe("postAssistiveClientEvent", () => {
       adhdAssist: false,
     });
   });
+
+  it("swallows network errors without throwing", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(fetch).mockRejectedValueOnce(new Error("offline"));
+
+    expect(() =>
+      postAssistiveClientEvent({
+        eventType: "mode_toggled",
+        adhdAssist: true,
+        metrics: { fromMode: false, toMode: true },
+      }),
+    ).not.toThrow();
+
+    await Promise.resolve();
+
+    expect(consoleSpy).toHaveBeenCalled();
+    consoleSpy.mockRestore();
+  });
 });

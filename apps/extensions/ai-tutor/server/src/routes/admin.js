@@ -33,7 +33,7 @@ import { getAiModelPolicyState, setAiModelPolicy } from '../services/aiModelPoli
 import { mapAdminUser, mapCourseOffering } from '../utils/mappers.js';
 import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
 import { syncCourseEnrollments } from '../services/enrollmentSync.js';
-import { listEduAiCourseEnrollmentsServiceKey } from '../services/eduaiClient.js';
+import { listEduAiCourseEnrollmentsServiceKey, patchCoreEnrollmentRole } from '../services/eduaiClient.js';
 
 const router = express.Router();
 
@@ -302,14 +302,32 @@ router.patch(
         return res.status(404).json({ error: 'Enrollment not found' });
       }
 
-      const updated = await prisma.courseEnrollment.update({
-        where: { courseOfferingId_userId: { courseOfferingId: courseId, userId } },
-        data: { role: rawRole },
-      });
+      let coreRollback = null;
+      if (course.externalId && course.externalSource === 'EDUAI') {
+        const coreEnrollments = await listEduAiCourseEnrollmentsServiceKey(course.externalId);
+        const coreEnrollment = coreEnrollments.find((e) => e.studentId === userId);
+        if (!coreEnrollment) {
+          return res.status(404).json({ error: 'Enrollment not found in Core' });
+        }
+        const cookie = getEduAiCookieForRequest(req);
+        await patchCoreEnrollmentRole(course.externalId, coreEnrollment.id, rawRole, cookie);
+        coreRollback = () =>
+          patchCoreEnrollmentRole(course.externalId, coreEnrollment.id, enrollment.role, cookie).catch(() => {});
+      }
 
-      res.json({ ok: true, role: updated.role });
+      try {
+        const updated = await prisma.courseEnrollment.update({
+          where: { courseOfferingId_userId: { courseOfferingId: courseId, userId } },
+          data: { role: rawRole },
+        });
+        res.json({ ok: true, role: updated.role });
+      } catch (dbErr) {
+        coreRollback?.();
+        throw dbErr;
+      }
     } catch (e) {
-      res.status(500).json({ error: String(e) });
+      const status = Number.isInteger(e?.status) ? e.status : 500;
+      res.status(status).json({ error: String(e) });
     }
   },
 );
