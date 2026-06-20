@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { messageToText, reviveStoredMessage } from "~/routes/api/chats.$chatId.messages";
+import { messageToText, reviveStoredMessage } from "~/lib/chat-history/revive";
 
 /**
  * Regression tests for chat-history restore rendering. The DB has accumulated
