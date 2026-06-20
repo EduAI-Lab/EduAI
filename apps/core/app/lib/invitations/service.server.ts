@@ -142,9 +142,13 @@ export type ResendInvitationResult =
 export async function resendInvitation(
   id: string,
   invitedBy?: Inviter,
+  opts?: OwnershipScope,
 ): Promise<ResendInvitationResult> {
   const invitation = await prisma.invitation.findUnique({ where: { id } });
   if (!invitation) return { ok: false, status: 404, error: "NOT_FOUND" };
+  if (opts?.restrictToInviterId && invitation.invitedById !== opts.restrictToInviterId) {
+    return { ok: false, status: 404, error: "NOT_FOUND" };
+  }
   if (invitation.status !== "PENDING") {
     return { ok: false, status: 409, error: "NOT_PENDING" };
   }
@@ -162,16 +166,36 @@ export async function resendInvitation(
   return { ok: true, invitation: toPublic(updated), acceptUrl, emailDelivered };
 }
 
-export async function listInvitations(): Promise<PublicInvitation[]> {
+/**
+ * List invitations, newest first. Pass `invitedById` to scope the list to a
+ * single inviter (used so a UNIT_ADMIN only sees the invitations they sent).
+ */
+export async function listInvitations(
+  opts?: { invitedById?: string },
+): Promise<PublicInvitation[]> {
   const invitations = await prisma.invitation.findMany({
+    where: opts?.invitedById ? { invitedById: opts.invitedById } : undefined,
     orderBy: { createdAt: "desc" },
   });
   return invitations.map(toPublic);
 }
 
-export async function revokeInvitation(id: string): Promise<RevokeInvitationResult> {
+/**
+ * Optional ownership scope for a single-invitation mutation. When
+ * `restrictToInviterId` is set, an invite created by a different inviter is
+ * treated as not-found (404, not 403) so a non-owner can't probe invite IDs.
+ */
+type OwnershipScope = { restrictToInviterId?: string };
+
+export async function revokeInvitation(
+  id: string,
+  opts?: OwnershipScope,
+): Promise<RevokeInvitationResult> {
   const invitation = await prisma.invitation.findUnique({ where: { id } });
   if (!invitation) {
+    return { ok: false, status: 404, error: "NOT_FOUND" };
+  }
+  if (opts?.restrictToInviterId && invitation.invitedById !== opts.restrictToInviterId) {
     return { ok: false, status: 404, error: "NOT_FOUND" };
   }
   if (invitation.status !== "PENDING") {

@@ -9,6 +9,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
+- [core] feat: Let unit admins invite instructors and students — gated by the new `unitAdmins.canInvite` policy flag, with a dedicated `/unit-admin/invitations` page, a policy-gated nav link, and own-only scoping over the shared `/api/invitations` endpoints. (#686, @abdullahmoh21, 2026-06-19)
+- [core] tests: Add unit-admin invitation coverage — route policy/role-allowlist/own-scoping unit tests plus a create→accept integration path for a student invite. (#686, @abdullahmoh21, 2026-06-19)
 - [core] feat: Expand the configurable RBAC policy registry (#660) with instructor/TA/student/unit-admin gates & grants, a `chat.webToolsEnabled` master that folds in the standalone `webToolsEnabled` toggle, an `auth.allowPublicRegistration` signup gate enforced at the Better Auth chokepoint, live frontend control gating via `usePolicies()`, and structured `policy_denied` 403 audit logging. (#660, @abdullahmoh21, 2026-06-18)
 - [core] feat: Add course/unit chat visibility — a nullable `Chat.courseId` tagged at chat creation, `GET /api/courses/:id/chats` and `GET /api/units/:department/chats` endpoints gated by `instructors.canViewCourseChats` / `unitAdmins.canViewUnitChats`, and a read-only Chats tab plus a unit chats page. (#660, @abdullahmoh21, 2026-06-18)
 - [core] tests: Add denied/allowed unit cases for every new policy flag across publish/delete/update, materials, enrollments, canvas, topics, chat web tools, the chat-visibility endpoints, and the registration loaders. (#660, @abdullahmoh21, 2026-06-18)

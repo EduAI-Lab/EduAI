@@ -33,6 +33,15 @@ const ADMIN_NAV: NavItem[] = [
   { key: 'admin-logs', title: 'Logs', url: '/admin/logs' },
 ]
 
+/**
+ * Unit-admin invitations link. Surfaced only when the `unitAdmins.canInvite`
+ * policy flag is on — that gate is applied client-side in `app-sidebar.tsx`
+ * (which has the flag values), so this list always includes it for UNIT_ADMIN.
+ */
+const UNIT_ADMIN_NAV: NavItem[] = [
+  { key: 'unitadmin-invites', title: 'Invitations', url: '/unit-admin/invitations' },
+]
+
 /** Main sidebar links per rbac-matrix §4, §10–13 shell rules. */
 export function getNavForUser(user: NavUser): NavItem[] {
   const role = user.role ?? 'STUDENT'
@@ -42,7 +51,11 @@ export function getNavForUser(user: NavUser): NavItem[] {
     return [...nav, ...ADMIN_NAV]
   }
 
-  // UNIT_ADMIN, INSTRUCTOR, TA, STUDENT — no platform admin section
+  if (role === 'UNIT_ADMIN') {
+    return [...nav, ...UNIT_ADMIN_NAV]
+  }
+
+  // INSTRUCTOR, TA, STUDENT — no platform admin section
   return nav
 }
 

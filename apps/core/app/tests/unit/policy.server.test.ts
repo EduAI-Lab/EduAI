@@ -81,6 +81,12 @@ describe("policy.server", () => {
     expect(prismaMock.systemConfig.findMany).toHaveBeenCalledTimes(2);
   });
 
+  it("registers unitAdmins.canInvite defaulting to false (opt-in)", async () => {
+    expect(POLICY_FLAGS["unitAdmins.canInvite"].default).toBe(false);
+    prismaMock.systemConfig.findMany.mockResolvedValue([]);
+    expect(await getPolicy("unitAdmins.canInvite")).toBe(false);
+  });
+
   it("isPolicyKey guards unknown keys", () => {
     expect(isPolicyKey(FLAG)).toBe(true);
     expect(isPolicyKey("nope")).toBe(false);
