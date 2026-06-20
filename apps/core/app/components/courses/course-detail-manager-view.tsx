@@ -57,8 +57,6 @@ import type { CourseTA } from "~/hooks/api/use-course-tas";
 import { canManageTopics, canManageInstructors, canViewCourseChats } from "~/lib/rbac";
 import type { CourseAccess } from "~/lib/rbac";
 import { usePolicies } from "~/hooks/api/use-policies";
-import { useCourseChats } from "~/hooks/api/use-course-chats";
-import { CourseChatsPanel } from "~/components/courses/course-chats-panel";
 
 interface StaffUser {
   id: string;
@@ -212,15 +210,10 @@ export function CourseDetailManagerView({
     (access === "instructor" && (policies["instructors.canManageEnrollments"] ?? true));
   const canManageRagSettings = access === "admin" || access === "instructor";
 
-  // §5d: a Chats tab visible only to roles whose course-chat-visibility flag is
-  // on. Uses the shared gate so the UI mirrors the backend chat routes exactly.
+  // §5d: the Chat history tab is visible only to roles whose course-chat-
+  // visibility flag is on. Uses the shared gate so the UI mirrors the backend
+  // chat routes exactly.
   const canViewChats = canViewCourseChats(access, policies);
-  const {
-    chats: courseChats,
-    loading: chatsLoading,
-    error: chatsError,
-  } = useCourseChats(courseId, canViewChats);
-
 
   const availableInstructors = instructors.filter(
     (p) => p.id !== course.instructorId,
@@ -398,13 +391,12 @@ export function CourseDetailManagerView({
           {canManageStaff && (
             <PageTabsTrigger value="staff">Staff</PageTabsTrigger>
           )}
-          {canViewChats && (
-            <PageTabsTrigger value="chats">Chats</PageTabsTrigger>
-          )}
           {canManageRagSettings && (
             <PageTabsTrigger value="settings">Settings</PageTabsTrigger>
           )}
-          <PageTabsTrigger value="chat-history">Chat history</PageTabsTrigger>
+          {canViewChats && (
+            <PageTabsTrigger value="chat-history">Chat history</PageTabsTrigger>
+          )}
         </PageTabsList>
 
         {/* ── Overview ── */}
@@ -1023,29 +1015,6 @@ export function CourseDetailManagerView({
           </PageTabsContent>
         )}
 
-        {/* ── Chats oversight (§5d) ── */}
-        {canViewChats && (
-          <PageTabsContent
-            value="chats"
-            forceMount
-            className="data-[state=inactive]:hidden flex-1 outline-none"
-          >
-            <div className="flex flex-col gap-4">
-              <CardHeader className="px-0 pt-0">
-                <CardTitle className="text-base">Course Chats</CardTitle>
-                <CardDescription className="px-0">
-                  Read-only view of student chats in this course.
-                </CardDescription>
-              </CardHeader>
-              <CourseChatsPanel
-                chats={courseChats}
-                loading={chatsLoading}
-                error={chatsError}
-              />
-            </div>
-          </PageTabsContent>
-        )}
-
         {/* ── Settings (RAG retrieval tuning) ── */}
         {canManageRagSettings && (
           <PageTabsContent
@@ -1127,14 +1096,16 @@ export function CourseDetailManagerView({
           </PageTabsContent>
         )}
 
-        {/* ── Chat history ── */}
-        <PageTabsContent
-          value="chat-history"
-          forceMount
-          className="data-[state=inactive]:hidden flex-1 outline-none"
-        >
-          <CourseChatHistory courseId={course.id} courseCode={course.code} />
-        </PageTabsContent>
+        {/* ── Chat history (§5d: gated on the course-chat-visibility policy) ── */}
+        {canViewChats && (
+          <PageTabsContent
+            value="chat-history"
+            forceMount
+            className="data-[state=inactive]:hidden flex-1 outline-none"
+          >
+            <CourseChatHistory courseId={course.id} courseCode={course.code} />
+          </PageTabsContent>
+        )}
       </PageTabs>
     </div>
   );
