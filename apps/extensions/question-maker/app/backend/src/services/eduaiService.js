@@ -36,6 +36,11 @@ class EduAIService {
     return Boolean(this.baseURL);
   }
 
+  /** True when a service API key is available (required for key-only endpoints). */
+  hasApiKey() {
+    return Boolean(this.apiKey?.trim());
+  }
+
   /** Builds auth headers for Core /api/chat — session cookie (local dev) or x-api-key. */
   buildChatAuthHeaders(cookie) {
     const trimmedCookie = typeof cookie === "string" ? cookie.trim() : "";
@@ -590,7 +595,7 @@ Please ensure the questions are appropriate for the course level and cover the k
 
   /** Lists EduAI-managed courses for onboarding flows. Excludes courses in config.eduaiIgnoredCourseCodes. */
   async listCourses() {
-    if (!this.isConfigured()) {
+    if (!this.isConfigured() || !this.hasApiKey()) {
       throw new Error(
         "EduAI service is not configured. Please set EDUAI_API_KEY environment variable."
       );
@@ -655,7 +660,7 @@ Please ensure the questions are appropriate for the course level and cover the k
 
   /** Fetches topic metadata for an EduAI course identifier. */
   async getCourseTopics(courseId) {
-    if (!this.isConfigured()) {
+    if (!this.isConfigured() || !this.hasApiKey()) {
       throw new Error(
         "EduAI service is not configured. Please set EDUAI_API_KEY environment variable."
       );
