@@ -37,6 +37,7 @@ import {
   getNavSecondaryForUser,
   type NavItemKey,
 } from "~/lib/rbac"
+import { usePolicies } from "~/hooks/api/use-policies"
 
 const NAV_ICONS: Record<NavItemKey, Icon> = {
   dashboard: IconDashboard,
@@ -49,6 +50,7 @@ const NAV_ICONS: Record<NavItemKey, Icon> = {
   "admin-invites": IconMail,
   "admin-settings": IconShieldLock,
   "admin-logs": IconFileText,
+  "unitadmin-invites": IconMail,
   settings: IconSettings,
   "ai-tutor": IconMessageChatbot,
 }
@@ -90,7 +92,16 @@ export function AppSidebar({
   variant = "sidebar",
   ...props
 }: AppSidebarProps) {
-  const navMain = navMainOverride ?? toNavMainItems(getNavForUser(user))
+  const { policies } = usePolicies()
+
+  // Policy-gated nav: a UNIT_ADMIN only sees the Invitations link when
+  // `unitAdmins.canInvite` is on (matches the server-side gate on the route).
+  const navItems = getNavForUser(user).filter((item) =>
+    item.key === "unitadmin-invites"
+      ? Boolean(policies["unitAdmins.canInvite"])
+      : true,
+  )
+  const navMain = navMainOverride ?? toNavMainItems(navItems)
   const navSecondary =
     navSecondaryOverride ?? toNavSecondaryItems(getNavSecondaryForUser(user))
 

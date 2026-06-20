@@ -119,6 +119,44 @@ export async function requireAdmin(request: Request): Promise<AdminGate> {
 }
 
 /**
+ * Resolve a session for an invitation endpoint: the actor must be an active
+ * ADMIN or UNIT_ADMIN. Honors the `x-api-key`→ADMIN rule and reuses that
+ * session. Role-membership only — the per-flag policy gate for UNIT_ADMIN
+ * (`unitAdmins.canInvite`) is enforced by the caller via `denyByPolicy`.
+ */
+export async function requireInviter(request: Request): Promise<AdminGate> {
+  const { response, session } = await enforceAdminIfApiKey(request);
+  if (response) return { response, session: null };
+
+  const resolved = session ?? (await auth.api.getSession(request));
+  const role = resolved?.user?.role;
+  if (!resolved?.user || (role !== "ADMIN" && role !== "UNIT_ADMIN")) {
+    if (!session) {
+      fireAndForget(
+        logSecurityEvent({
+          ...getActorContext(resolved?.user ?? null),
+          ...getRequestContext(request),
+          actionCode: "ADMIN_ACCESS_DENIED",
+          outcome: "DENIED",
+          entityType: "Auth",
+          entityId: resolved?.user?.id ?? null,
+          entityLabel: resolved?.user?.email ?? null,
+          ...(resolved?.user?.email ? { details: { email: resolved.user.email } } : {}),
+        }),
+      );
+    }
+    return {
+      response: new Response(
+        JSON.stringify({ error: "Forbidden" }),
+        { status: 403, headers: { "Content-Type": "application/json" } },
+      ),
+      session: null,
+    };
+  }
+  return { response: null, session: resolved };
+}
+
+/**
  * Enforce: request must carry `Authorization: Bearer <EDUAI_API_KEY>` for
  * server-to-server calls from AI Tutor and Question Maker.
  *
