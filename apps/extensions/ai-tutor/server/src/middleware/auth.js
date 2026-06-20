@@ -5,6 +5,8 @@
  * `POST /api/sessions/validate` endpoint and populates `req.user`.
  */
 
+import { getPolicy } from '../services/policyService.js';
+
 const VALID_ROLES = new Set(['STUDENT', 'INSTRUCTOR', 'TA', 'ADMIN', 'UNIT_ADMIN']);
 
 function normalizeRole(role) {
@@ -58,6 +60,29 @@ export function requireRole(allowed) {
 }
 
 export const requireRoles = requireRole;
+
+/**
+ * Gate that blocks INSTRUCTOR users when a Core policy flag is disabled.
+ * ADMIN / UNIT_ADMIN are unaffected — they always hold the capability.
+ * Place AFTER `requireRole` so role membership is already enforced; this only
+ * narrows the INSTRUCTOR case based on the centrally-configured flag.
+ *
+ * Example: requireInstructorPolicy('instructors.canCreateCourses')
+ */
+export function requireInstructorPolicy(flagKey) {
+  return async (req, res, next) => {
+    if (req.user?.role !== 'INSTRUCTOR') {
+      return next();
+    }
+    const allowed = await getPolicy(flagKey).catch(() => false);
+    if (!allowed) {
+      return res
+        .status(403)
+        .json({ error: 'Instructors are not permitted to perform this action' });
+    }
+    next();
+  };
+}
 
 /**
  * Returns true when the user is a UNIT_ADMIN whose authorizedUnits includes

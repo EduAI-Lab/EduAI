@@ -31,13 +31,16 @@ import { resolveAdhdResponseWordCap } from "~/lib/ai/adhd-metrics";
 import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
 import { findRelevantContent } from "~/lib/ai/embedding";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import {
+  resolveCourseAccessWithCourse,
+  type AccessLevel,
+} from "~/lib/auth/course-access.server";
 import { auth } from "~/lib/auth/server";
 import type { ActionFunctionArgs } from "react-router";
 import prisma from "~/lib/prisma.server";
 import { chatApiDebug } from "~/lib/chat-api-log";
 import { clientApiKeysBodySchema, toUserProviderSettings } from "~/lib/chat-api-keys.schema";
-import { getWebToolsEnabled } from "~/lib/system-config.server";
+import { getPolicy } from "~/lib/policy.server";
 import {
   shouldInjectCourseRag,
   shouldPrefetchCourseRag,
@@ -397,6 +400,9 @@ export async function action({ request }: ActionFunctionArgs) {
     // inactive enrollment blocks new chats but never own-history reads
     // (GET /api/chats/:chatId is ownership-scoped and unaffected).
     // Chats without a course context (general assistant) are not gated.
+    // Hoisted so the web-tools gate (below) can read the caller's course access
+    // level — null for general (non-course) chats.
+    let courseAccess: AccessLevel | null = null;
     if (effectiveCourseId) {
       const { course, access } = await resolveCourseAccessWithCourse(
         actingUser,
@@ -414,6 +420,7 @@ export async function action({ request }: ActionFunctionArgs) {
           headers: { "Content-Type": "application/json" },
         });
       }
+      courseAccess = access;
     }
 
     // Handle chat lookup and system prompt persistence
@@ -448,7 +455,7 @@ export async function action({ request }: ActionFunctionArgs) {
         chat = await prisma.chat.create({
           data: {
             userId: actingUser.id,
-            courseId: effectiveCourseId,
+            courseId: effectiveCourseId, // §5b: tag for course-chat visibility
             systemPrompt: trimmedSystemPrompt,
             adhdAssist,
           },
@@ -492,7 +499,7 @@ export async function action({ request }: ActionFunctionArgs) {
       chat = await prisma.chat.create({
         data: {
           userId: actingUser.id,
-          courseId: effectiveCourseId,
+          courseId: effectiveCourseId, // §5b: tag for course-chat visibility
           systemPrompt: trimmedSystemPrompt,
           adhdAssist,
         },
@@ -711,7 +718,7 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    const webToolsEnabled = await getWebToolsEnabled();
+    const webToolsEnabled = await getPolicy("chat.webToolsEnabled");
     const tools = buildChatToolRegistry({ effectiveCourseId, webToolsEnabled });
 
     const modelCapabilities = await getChatModelCapabilities(model);
@@ -988,6 +995,8 @@ ${buildEmptyCourseRagBlock()}`;
             "Transfer-Encoding": "chunked",
             Connection: "keep-alive",
           };
+          // Surface the resolved web-tools master state to clients/tests.
+          headers["X-Web-Tools-Enabled"] = webToolsEnabled ? "1" : "0";
           if (chat?.id) {
             headers["X-Chat-Id"] = chat.id;
           }
@@ -1050,6 +1059,8 @@ ${buildEmptyCourseRagBlock()}`;
         "Transfer-Encoding": "chunked",
         Connection: "keep-alive",
       };
+      // Surface the resolved web-tools master state to clients/tests.
+      headers["X-Web-Tools-Enabled"] = webToolsEnabled ? "1" : "0";
       if (chat?.id) {
         headers["X-Chat-Id"] = chat.id;
       }

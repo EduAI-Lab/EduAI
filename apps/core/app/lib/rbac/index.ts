@@ -21,6 +21,9 @@ export {
   canDeleteMaterial,
   canViewTopics,
   canManageTopics,
+  courseChatViewPolicyKey,
+  canViewCourseChats,
   isStudentAccess,
 } from './permissions'
+export type { ChatViewGate } from './permissions'
 export { getNavForUser, getNavSecondaryForUser, usesGlobalChat } from './nav'
