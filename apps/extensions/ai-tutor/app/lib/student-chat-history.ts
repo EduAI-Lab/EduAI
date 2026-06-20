@@ -1,55 +1,62 @@
+/**
+ * Chat session helpers — API-backed (replaces localStorage).
+ *
+ * Sessions are persisted server-side in AiChatSession (ai-tutor DB) keyed by
+ * the Core chatId. The client only holds messages in-memory during a session;
+ * restoring a past session fetches messages from Core via the server proxy.
+ */
+import api from './api';
 import type { ChatTab, ChatMessage } from './student-chat-history-types';
 
 export type { ChatTab, ChatMessage };
 
-export type StoredChatSession = {
-  id: string;
-  activityId: number;
-  tab: ChatTab;
-  preview: string;
+export type ApiChatSession = {
+  id: number;
+  chatId: string;
+  mode: ChatTab;
+  modelId: string | null;
+  createdAt: string;
   updatedAt: string;
-  messages: ChatMessage[];
-  chatId: string | null;
 };
 
-const STORAGE_KEY = 'ai-tutor:chat-history';
-
-function readStore(): StoredChatSession[] {
-  if (typeof window === 'undefined') return [];
+export async function listChatSessions(activityId: number): Promise<ApiChatSession[]> {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as StoredChatSession[]) : [];
+    const rows = await api.listChatSessions(activityId);
+    return rows.map((r) => ({ ...r, mode: r.mode as ChatTab }));
   } catch {
     return [];
   }
 }
 
-function writeStore(sessions: StoredChatSession[]) {
-  if (typeof window === 'undefined') return;
+export async function loadSessionMessages(
+  activityId: number,
+  chatId: string,
+): Promise<ChatMessage[]> {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
+    const data = await api.getChatMessages(activityId, chatId);
+    return data.messages
+      .filter((m) => m.role === 'user' || m.role === 'assistant')
+      .map((m) => ({
+        id: m.messageId,
+        role: m.role as 'user' | 'assistant',
+        content: typeof m.content === 'string' ? m.content : extractText(m.content),
+      }));
   } catch {
-    // quota / private mode — ignore
+    return [];
   }
 }
 
-export function listChatSessions(activityId: number): StoredChatSession[] {
-  return readStore()
-    .filter((s) => s.activityId === activityId)
-    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-}
-
-export function upsertChatSession(session: StoredChatSession) {
-  const all = readStore().filter((s) => s.id !== session.id);
-  writeStore([session, ...all].slice(0, 50));
-}
-
-export function deleteChatSession(id: string) {
-  writeStore(readStore().filter((s) => s.id !== id));
-}
-
-export function makeSessionId(activityId: number, tab: ChatTab): string {
-  return `${activityId}:${tab}:${Date.now()}`;
+function extractText(content: unknown): string {
+  if (!content || typeof content !== 'object') return '';
+  const obj = content as Record<string, unknown>;
+  if (typeof obj.content === 'string') return obj.content;
+  if (Array.isArray(obj.parts)) {
+    return obj.parts
+      .filter((p): p is { type: string; text: string } => !!p && typeof p === 'object' && (p as any).type === 'text')
+      .map((p) => p.text)
+      .join(' ');
+  }
+  return '';
 }
 
 export function previewFromMessages(messages: ChatMessage[]): string {

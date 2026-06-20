@@ -5,8 +5,7 @@ import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, For
 import { Input } from "@eduai/ui";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@eduai/ui";
 import { Switch } from "@eduai/ui";
-import { Checkbox } from "@eduai/ui";
-import { Badge } from "@eduai/ui";
+import { MultiSelect } from "@eduai/ui";
 import { useForm, useWatch } from "react-hook-form";
 import { createUserSchema, updateUserSchema } from "~/lib/auth/schemas";
 import { UNIT_OPTIONS } from "~/lib/units";
@@ -80,12 +79,6 @@ export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormD
       setSelectedUnits([]);
     }
   }, [user, form]);
-
-  const toggleUnit = (code: string) => {
-    setSelectedUnits((prev) =>
-      prev.includes(code) ? prev.filter((u) => u !== code) : [...prev, code]
-    );
-  };
 
   const handleSubmit = (data: FormData) => {
     const payload = {
@@ -173,30 +166,17 @@ export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormD
                 <FormDescription>
                   Select the departments this administrator can manage.
                 </FormDescription>
-                <div className="grid grid-cols-2 gap-2 rounded-md border p-3">
-                  {UNIT_OPTIONS.map((dept) => (
-                    <label
-                      key={dept.code}
-                      className="flex items-center gap-2 cursor-pointer select-none"
-                    >
-                      <Checkbox
-                        checked={selectedUnits.includes(dept.code)}
-                        onCheckedChange={() => toggleUnit(dept.code)}
-                      />
-                      <span className="text-sm">
-                        {dept.label}
-                        <span className="ml-1 text-xs text-muted-foreground">({dept.code})</span>
-                      </span>
-                    </label>
-                  ))}
-                </div>
-                {selectedUnits.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {selectedUnits.map((code) => (
-                      <Badge key={code} variant="secondary" className="text-xs">{code}</Badge>
-                    ))}
-                  </div>
-                )}
+                <MultiSelect
+                  options={UNIT_OPTIONS.map((dept) => ({
+                    value: dept.code,
+                    label: dept.label,
+                    description: dept.code,
+                  }))}
+                  value={selectedUnits}
+                  onValueChange={setSelectedUnits}
+                  placeholder="Select departments"
+                  searchPlaceholder="Search departments..."
+                />
               </FormItem>
             )}
 
