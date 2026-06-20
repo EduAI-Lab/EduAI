@@ -272,6 +272,15 @@ describe("POST /api/invitations/:id (resend)", () => {
 });
 
 describe("unit-admin invitations (unitAdmins.canInvite)", () => {
+  // These tests flip unitAdmins.canInvite on; reset it (DB row + policy cache)
+  // when the block finishes so its on-state can't leak into later describes.
+  afterAll(async () => {
+    await prisma.systemConfig.deleteMany({
+      where: { key: "policy.unitAdmins.canInvite" },
+    });
+    invalidatePolicyCache();
+  });
+
   it("denies a UNIT_ADMIN while the flag is off (403)", async () => {
     await setPolicy("unitAdmins.canInvite", false, adminId);
     asUnitAdmin();
