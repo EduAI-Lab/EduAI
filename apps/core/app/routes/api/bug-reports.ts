@@ -41,12 +41,25 @@ export async function action({ request }: ActionFunctionArgs) {
     });
   }
 
-  // Accept both service-to-service (Bearer token) and browser session auth.
-  // Session auth is limited to source="CORE" with userId inferred from session.
+  // Accept service-to-service (Bearer) and browser session auth for CORE.
+  // Extension sources (AI_TUTOR, QUESTION_MAKER) always require a service key.
   const authHeader = request.headers.get("Authorization");
+
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return new Response(JSON.stringify({ error: "VALIDATION_ERROR", fields: { body: "invalid JSON" } }), {
+      status: 422,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const source = (body as { source?: string }).source;
+  const extensionSource = source === "AI_TUTOR" || source === "QUESTION_MAKER";
   let sessionUserId: string | null = null;
 
-  if (authHeader?.startsWith("Bearer ")) {
+  if (extensionSource || authHeader?.startsWith("Bearer ")) {
     const guard = await requireServiceKey(request);
     if (guard) return guard;
   } else {
@@ -58,16 +71,6 @@ export async function action({ request }: ActionFunctionArgs) {
       });
     }
     sessionUserId = session.user.id;
-  }
-
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return new Response(JSON.stringify({ error: "VALIDATION_ERROR", fields: { body: "invalid JSON" } }), {
-      status: 422,
-      headers: { "Content-Type": "application/json" },
-    });
   }
 
   // For session-auth requests, override userId and source from the verified session.
