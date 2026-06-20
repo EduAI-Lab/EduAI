@@ -1,0 +1,87 @@
+import type { Prisma } from "@prisma/client";
+
+const isNonEmptyString = (value: unknown): value is string =>
+  typeof value === "string" && value.trim().length > 0;
+
+/**
+ * Recursively flattens any stored message-content shape down to its display
+ * text. The DB has accumulated several historical shapes due to past save bugs:
+ *
+ *   - clean string:           "**Hello**"
+ *   - AI-SDK content array:    [{ type: "text", text: "**Hello**" }]
+ *   - UIMessage parts:         { parts: [{ type: "text", text: "..." }] }
+ *   - double-serialized:       a text part whose `.text` is the JSON string of
+ *                              a whole message object (cascaded corruption)
+ *
+ * We unwrap all of them — including JSON re-serialized into a text field — so
+ * restore and the read-only transcript always render the real markdown text
+ * instead of "[object Object]", a blank bubble, or a raw JSON blob.
+ */
+export function messageToText(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (
+      trimmed.startsWith("{") &&
+      (trimmed.includes('"role"') || trimmed.includes('"parts"') || trimmed.includes('"content"'))
+    ) {
+      try {
+        const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+        if (parsed && typeof parsed === "object") {
+          return messageToText(parsed.content ?? parsed.parts ?? "");
+        }
+      } catch {
+        // Not actually JSON — fall through and treat as plain text.
+      }
+    }
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value
+      .filter((p): p is Record<string, unknown> => p !== null && typeof p === "object")
+      .filter((p) => p.type === "text" || typeof p.text === "string")
+      .map((p) => messageToText(p.text))
+      .filter((t) => t.length > 0)
+      .join("\n");
+  }
+  if (typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    if (typeof obj.text === "string") return messageToText(obj.text);
+    if (obj.content !== undefined && obj.content !== null) return messageToText(obj.content);
+    if (obj.parts !== undefined && obj.parts !== null) return messageToText(obj.parts);
+  }
+  return "";
+}
+
+/**
+ * Rehydrates a stored ChatMessage row back into an AI-SDK `Message` envelope so
+ * the client can seed `useChat` (restore) or render a read-only transcript.
+ *
+ * Both `content` (string) and `parts` (text part) are normalized to the same
+ * recovered text so ChatMessage renders consistent markdown regardless of which
+ * field it reads first, and so legacy corrupted rows display correctly without a
+ * data migration.
+ */
+export function reviveStoredMessage(record: {
+  messageId: string;
+  role: string;
+  content: Prisma.JsonValue;
+}): Record<string, unknown> {
+  const parsed: Record<string, unknown> =
+    record.content && typeof record.content === "object" && !Array.isArray(record.content)
+      ? (record.content as Record<string, unknown>)
+      : {};
+
+  const source =
+    isNonEmptyString(parsed.content)
+      ? parsed.content
+      : (parsed.parts ?? parsed.content ?? record.content);
+  const text = messageToText(source);
+
+  return {
+    id: isNonEmptyString(parsed.id) ? parsed.id : record.messageId,
+    role: isNonEmptyString(parsed.role) ? parsed.role : record.role,
+    content: text,
+    parts: [{ type: "text", text }],
+  };
+}

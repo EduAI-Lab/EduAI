@@ -2,10 +2,11 @@
  * ChatHistoryPanel — slide-over list of the current user's own conversations.
  *
  * Owner-scoped (scope=own): every chat here is editable/restorable by the
- * viewer. Selecting one restores it into the live chat screen; staff/admin view
- * OTHER users' history read-only elsewhere (course detail, admin), never here.
+ * viewer. Selecting one navigates to /chat/:chatId for SSR restore; staff/admin
+ * view OTHER users' history read-only elsewhere (course detail, admin), never here.
  */
 import { useState } from "react";
+import { useNavigate } from "react-router";
 import {
   IconPlus,
   IconMessageCircle,
@@ -28,7 +29,6 @@ interface ChatHistoryPanelProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   activeChatId: string | null;
-  onSelect: (chatId: string) => void;
   onNewChat: () => void;
 }
 
@@ -52,7 +52,6 @@ export function ChatHistoryPanel({
   open,
   onOpenChange,
   activeChatId,
-  onSelect,
   onNewChat,
 }: ChatHistoryPanelProps) {
   const { chats, isLoading, error, refresh } = useChatHistory({
@@ -61,6 +60,7 @@ export function ChatHistoryPanel({
     enabled: open,
   });
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   const handleDelete = async (e: React.MouseEvent, chatId: string) => {
     e.stopPropagation();
@@ -107,20 +107,20 @@ export function ChatHistoryPanel({
             </div>
           ) : error ? (
             <div className="px-5 py-10 text-center">
-              <p className="text-[13px] text-destructive">{error}</p>
+              <p className="text-[13px] text-destructive">{error}</p >
             </div>
           ) : chats.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
               <div
-                className="w-12 h-12 rounded-[12px] flex items-center justify-center mb-3"
+                className="w-12 h-12 rounded-xl flex items-center justify-center mb-3"
                 style={{ background: "var(--muted)" }}
               >
                 <IconMessageCircle size={22} className="text-muted-foreground" stroke={1.5} />
               </div>
-              <p className="text-[14px] font-semibold text-foreground mb-1">No conversations yet</p>
+              <p className="text-[14px] font-semibold text-foreground mb-1">No conversations yet</p >
               <p className="text-[12px] text-muted-foreground">
                 Start chatting and your history will appear here.
-              </p>
+              </p >
             </div>
           ) : (
             <div className="flex flex-col">
@@ -130,7 +130,10 @@ export function ChatHistoryPanel({
                   <button
                     key={chat.id}
                     type="button"
-                    onClick={() => onSelect(chat.id)}
+                    onClick={() => {
+                      navigate(`/chat/${chat.id}`);
+                      onOpenChange(false);
+                    }}
                     className={`group flex items-start gap-3 px-5 py-3 text-left border-b border-border transition-colors hover:bg-muted/40 ${
                       isActive ? "bg-muted/60" : ""
                     }`}
@@ -138,7 +141,7 @@ export function ChatHistoryPanel({
                     <div className="flex-1 min-w-0">
                       <p className="text-[13px] font-medium text-foreground truncate">
                         {rowLabel(chat)}
-                      </p>
+                      </p >
                       <div className="flex items-center gap-2 mt-1">
                         {chat.courseCode && (
                           <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-primary-text">
@@ -159,7 +162,7 @@ export function ChatHistoryPanel({
                       tabIndex={-1}
                       aria-label="Delete conversation"
                       onClick={(e) => handleDelete(e, chat.id)}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                      className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                     >
                       {deletingId === chat.id ? (
                         <IconLoader2 className="h-3.5 w-3.5 animate-spin" />
