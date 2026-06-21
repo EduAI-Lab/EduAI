@@ -144,14 +144,16 @@ beforeEach(() => {
     systemPrompt: null,
   } as never);
 
-  vi.mocked(prisma.chat.update).mockImplementation(async ({ data }) => ({
-    id: CHAT_ID,
-    userId: "user-1",
-    courseId: COURSE_ID,
-    adhdAssist: false,
-    systemPrompt: null,
-    ...data,
-  }) as never);
+  vi.mocked(prisma.chat.update).mockImplementation(
+    (async (args: { data?: Record<string, unknown> }) => ({
+      id: CHAT_ID,
+      userId: "user-1",
+      courseId: COURSE_ID,
+      adhdAssist: false,
+      systemPrompt: null,
+      ...(args.data ?? {}),
+    })) as never,
+  );
 
   vi.mocked(prisma.chatMessage.findMany).mockResolvedValue([]);
   vi.mocked(prisma.chatMessage.createMany).mockResolvedValue({ count: 1 });
