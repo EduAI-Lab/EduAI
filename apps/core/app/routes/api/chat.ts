@@ -917,6 +917,9 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
     });
 
     const streamStartedAt = Date.now();
+    // Set by onStepFinish when any tool (RAG / web) runs this turn; used to
+    // score whether a Sources footer was required (citation compliance).
+    let adhdToolsUsed = false;
     const needsOversight =
       effectiveAdhdAssist &&
       isAdhdOversightEnabled() &&
@@ -967,6 +970,7 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
           oversightCompletionTokens: extras?.oversightCompletionTokens,
           responseProfile: adhdProfile,
           profileStructuralPass,
+          toolsUsed: adhdToolsUsed,
         },
       }).catch((err) => {
         console.error("[assistive-events] response_compliance log failed", err);
@@ -982,6 +986,11 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
     });
     const result = await streamText({
       ...(streamConfig as Parameters<typeof streamText>[0]),
+      onStepFinish: ({ toolCalls, toolResults }) => {
+        if ((toolCalls?.length ?? 0) > 0 || (toolResults?.length ?? 0) > 0) {
+          adhdToolsUsed = true;
+        }
+      },
       onFinish: needsOversight
         ? undefined
         : async ({ text, usage, finishReason, response }) => {
