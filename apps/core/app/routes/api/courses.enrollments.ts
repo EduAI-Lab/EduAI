@@ -23,6 +23,7 @@ import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { getCourse } from "~/lib/courses/server";
+import { readStoredStudentId } from "~/lib/canvas/student-id.server";
 import { addEnrollment, getCourseEnrollments } from "~/lib/courses/enrollments.server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
@@ -95,7 +96,7 @@ async function enrollmentsResponse(courseId: string) {
     studentId: e.userId,
     studentEmail: e.user.email,
     studentName: e.user.name,
-    studentNumber: e.user.studentId,
+    studentNumber: readStoredStudentId(e.user.studentId),
     enrolledAt: e.enrolledAt?.toISOString() ?? null,
     isActive: e.isActive,
     role: e.role,

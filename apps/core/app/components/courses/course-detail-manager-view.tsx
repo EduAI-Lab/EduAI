@@ -45,6 +45,7 @@ import {
   SelectValue,
 } from "@eduai/ui";
 import { Checkbox } from "@eduai/ui";
+import { MultiSelect } from "@eduai/ui";
 import { CourseMaterialsUpload } from "~/components/course-materials-upload";
 import { CourseEmbeddingSettings } from "~/components/course-embedding-settings";
 import { CourseChatHistory } from "~/components/courses/course-chat-history";
@@ -73,7 +74,6 @@ interface Props {
   materials: CourseMaterial[];
   tas: CourseTA[];
   instructors: StaffUser[];
-  taUsers: StaffUser[];
   studentUsers: StaffUser[];
   isUploading?: boolean;
   materialsError?: string | null;
@@ -162,7 +162,6 @@ export function CourseDetailManagerView({
   materials,
   tas,
   instructors,
-  taUsers,
   studentUsers,
   isUploading = false,
   materialsError = null,
@@ -194,7 +193,7 @@ export function CourseDetailManagerView({
   );
   const [ragSaving, setRagSaving] = useState(false);
   const [ragSaveMsg, setRagSaveMsg] = useState<string | null>(null);
-  const [selectedStudentId, setSelectedStudentId] = useState<string>("");
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   const [enrollingStudent, setEnrollingStudent] = useState(false);
   const [enrollmentActionError, setEnrollmentActionError] = useState<string | null>(null);
   const [enrollmentActionSuccess, setEnrollmentActionSuccess] = useState<string | null>(null);
@@ -215,16 +214,14 @@ export function CourseDetailManagerView({
   const canManageRagSettings = access === "admin" || access === "instructor";
 
   const activeEnrollments = enrollments.filter((e) => e.isActive);
-  const instructorEnrollments = activeEnrollments.filter((e) => e.role === "INSTRUCTOR");
   const studentEnrollments = activeEnrollments.filter((e) => e.role === "STUDENT");
   const enrolledStudentIds = new Set(studentEnrollments.map((e) => e.userId));
   const availableStudents = studentUsers.filter((u) => !enrolledStudentIds.has(u.id));
 
-
   const availableInstructors = instructors.filter(
     (p) => p.id !== course.instructorId,
   );
-  const availableTAs = taUsers.filter(
+  const availableTAs = studentUsers.filter(
     (u) => !tas.some((ta) => ta.userId === u.id),
   );
 
@@ -298,21 +295,30 @@ export function CourseDetailManagerView({
     }
   };
 
-  const handleEnrollStudent = async () => {
-    if (!selectedStudentId) return;
+  const handleEnrollStudents = async () => {
+    if (selectedStudentIds.length === 0) return;
     setEnrollingStudent(true);
     setEnrollmentActionError(null);
     setEnrollmentActionSuccess(null);
-    try {
-      await onEnrollStudent(selectedStudentId);
-      setEnrollmentActionSuccess("Student enrolled successfully");
-      setSelectedStudentId("");
-    } catch (e) {
-      setEnrollmentActionError(
-        e instanceof Error ? e.message : "Failed to enroll student",
+    const ids = [...selectedStudentIds];
+    const failed: string[] = [];
+    for (const id of ids) {
+      try {
+        await onEnrollStudent(id);
+      } catch {
+        failed.push(id);
+      }
+    }
+    setEnrollingStudent(false);
+    setSelectedStudentIds([]);
+    if (failed.length === 0) {
+      setEnrollmentActionSuccess(
+        `${ids.length} student${ids.length > 1 ? "s" : ""} enrolled successfully`,
       );
-    } finally {
-      setEnrollingStudent(false);
+    } else {
+      setEnrollmentActionError(
+        `${failed.length} of ${ids.length} students failed to enroll`,
+      );
     }
   };
 
@@ -792,8 +798,8 @@ export function CourseDetailManagerView({
                 Enrolled users
               </CardTitle>
               <CardDescription>
-                Instructors are read-only here — manage them on the Staff tab. TA
-                assignments also live on Staff.
+                Manage student enrollments here. Instructor and TA assignments
+                are on the Staff tab.
               </CardDescription>
             </CardHeader>
 
@@ -819,33 +825,6 @@ export function CourseDetailManagerView({
             ) : (
               <>
                 <div className="flex flex-col gap-3">
-                  <p className="text-sm font-medium">Instructors</p>
-                  {instructorEnrollments.length === 0 ? (
-                    <Card>
-                      <CardContent className="flex items-center justify-center py-6 text-muted-foreground text-sm">
-                        No instructors enrolled.
-                      </CardContent>
-                    </Card>
-                  ) : (
-                    <div className="grid gap-2">
-                      {instructorEnrollments.map((e) => (
-                        <Card key={e.id}>
-                          <CardContent className="flex items-center justify-between py-3">
-                            <div>
-                              <span className="text-sm font-medium">{e.userName}</span>
-                              <span className="text-xs text-muted-foreground ml-2">
-                                {e.userEmail}
-                              </span>
-                            </div>
-                            <Badge>Instructor</Badge>
-                          </CardContent>
-                        </Card>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex flex-col gap-3">
                   <p className="text-sm font-medium">Students</p>
                   {studentEnrollments.length === 0 ? (
                     <Card>
@@ -865,7 +844,7 @@ export function CourseDetailManagerView({
                               </span>
                               {e.studentNumber && (
                                 <span className="block text-xs text-muted-foreground mt-1">
-                                  Student number on file
+                                  Student #{e.studentNumber}
                                 </span>
                               )}
                             </div>
@@ -893,29 +872,32 @@ export function CourseDetailManagerView({
                   {canManageStudentEnrollments && availableStudents.length > 0 && (
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
                       <div className="flex-1 space-y-2">
-                        <Label htmlFor="enroll-student">Add student</Label>
-                        <Select
-                          value={selectedStudentId || undefined}
-                          onValueChange={setSelectedStudentId}
-                        >
-                          <SelectTrigger id="enroll-student">
-                            <SelectValue placeholder="Select a student to enroll" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {availableStudents.map((u) => (
-                              <SelectItem key={u.id} value={u.id}>
-                                {u.name} ({u.email})
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <Label htmlFor="enroll-student">Add students</Label>
+                        <MultiSelect
+                          options={availableStudents.map((u) => ({
+                            value: u.id,
+                            label: u.name,
+                            description: u.email,
+                          }))}
+                          value={selectedStudentIds}
+                          onValueChange={setSelectedStudentIds}
+                          placeholder="Search and select students to enroll"
+                          searchPlaceholder="Search by name or email…"
+                          emptyText="No matching students."
+                        />
                       </div>
                       <Button
-                        onClick={() => void handleEnrollStudent()}
-                        disabled={!selectedStudentId || enrollingStudent}
+                        onClick={() => void handleEnrollStudents()}
+                        disabled={selectedStudentIds.length === 0 || enrollingStudent}
                       >
                         <IconUserPlus className="w-4 h-4 mr-1" />
-                        {enrollingStudent ? "Enrolling…" : "Enroll student"}
+                        {enrollingStudent
+                          ? "Enrolling…"
+                          : `Enroll${
+                              selectedStudentIds.length > 0
+                                ? ` ${selectedStudentIds.length}`
+                                : ""
+                            } student${selectedStudentIds.length !== 1 ? "s" : ""}`}
                       </Button>
                     </div>
                   )}
