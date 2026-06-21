@@ -22,25 +22,17 @@
  *          components/bug-report/useBugReport
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router';
-import Nav from '../components/Nav';
 import { ProgressBar } from '../components/ProgressBar';
 import StudentActivityFeedbackCard from '../components/StudentActivityFeedbackCard';
 import StudentAiChat, { type StudentAiChatHandle } from '../components/StudentAiChat';
-import {
-  Breadcrumb,
-  BreadcrumbList,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from '@eduai/ui';
 import api from '../lib/api';
 import type { Activity, Course, Lesson, ModuleDetail } from '../lib/types';
 import type { Route } from './+types/student.list';
 import { requireClientUser } from '~/lib/client-auth';
 import { useLocalUser } from '~/hooks/useLocalUser';
 import { useBugReport } from '~/components/bug-report/useBugReport';
+import { AppShell } from '~/components/layout/AppShell';
+import { ShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbs';
 
 type StudentFeedbackState = {
   rating: number | null;
@@ -390,70 +382,20 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
       ]
     : [];
 
+  const breadcrumbItems = [
+    { label: 'My courses', href: '/student' },
+    ...(course && module
+      ? [{ label: course.title, href: `/student/courses/${module.courseOfferingId}` }]
+      : [{ label: 'Course' }]),
+    ...(module && lesson
+      ? [{ label: module.title, href: `/student/module/${lesson.moduleId}` }]
+      : [{ label: 'Module' }]),
+    { label: lesson?.title || 'Lesson' },
+  ];
+
   return (
-    <div className="min-h-dvh bg-background">
-      <Nav />
-
-      {/* Background decoration */}
-      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-        <div className="absolute top-0 right-0 w-[800px] h-[800px] bg-primary/3 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3" />
-        <div className="absolute bottom-0 left-0 w-[600px] h-[600px] bg-accent/5 rounded-full blur-3xl translate-y-1/2 -translate-x-1/3" />
-      </div>
-
-      <div className="container mx-auto px-6 py-8">
-        {/* Breadcrumb */}
-        <Breadcrumb className="mb-6 animate-fade-in" data-tour="student-lesson-breadcrumb">
-          <BreadcrumbList>
-            <BreadcrumbItem>
-              <BreadcrumbLink asChild>
-                <Link
-                  to="/student"
-                  className="text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  My Courses
-                </Link>
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator className="text-border">/</BreadcrumbSeparator>
-            <BreadcrumbItem>
-              {course && module ? (
-                <BreadcrumbLink asChild>
-                  <Link
-                    to={`/student/courses/${module.courseOfferingId}`}
-                    className="text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    {course.title}
-                  </Link>
-                </BreadcrumbLink>
-              ) : (
-                <BreadcrumbPage>Course</BreadcrumbPage>
-              )}
-            </BreadcrumbItem>
-            <BreadcrumbSeparator className="text-border">/</BreadcrumbSeparator>
-            <BreadcrumbItem>
-              {module && lesson ? (
-                <BreadcrumbLink asChild>
-                  <Link
-                    to={`/student/module/${lesson.moduleId}`}
-                    className="text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    {module.title}
-                  </Link>
-                </BreadcrumbLink>
-              ) : (
-                <BreadcrumbPage>Module</BreadcrumbPage>
-              )}
-            </BreadcrumbItem>
-            <BreadcrumbSeparator className="text-border">/</BreadcrumbSeparator>
-            <BreadcrumbItem>
-              <BreadcrumbPage className="font-medium text-foreground">
-                {lesson?.title || 'Lesson'}
-              </BreadcrumbPage>
-            </BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
-
-        {/* Lesson Progress */}
+    <AppShell breadcrumbs={<ShellBreadcrumbs items={breadcrumbItems} />}>
+      <div className="space-y-6">
         {orderedActivities.length > 0 && (
           <div className="mb-8 animate-fade-up">
             <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-5" data-tour="student-lesson-progress">
@@ -846,6 +788,6 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
           </div>
         )}
       </div>
-    </div>
+    </AppShell>
   );
 }

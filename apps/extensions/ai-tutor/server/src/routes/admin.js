@@ -30,17 +30,28 @@ import {
   setSystemSetting,
 } from '../services/systemSettings.js';
 import { getAiModelPolicyState, setAiModelPolicy } from '../services/aiModelPolicy.js';
-import { mapAdminUser, mapCourseOffering } from '../utils/mappers.js';
+import { mapCoreAdminUser, mapCourseOffering } from '../utils/mappers.js';
 import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
 import { syncCourseEnrollments } from '../services/enrollmentSync.js';
-import { listEduAiCourseEnrollmentsServiceKey, patchCoreEnrollmentRole } from '../services/eduaiClient.js';
+import {
+  listCoreAdminUsers,
+  listEduAiCourseEnrollmentsServiceKey,
+  patchCoreEnrollmentRole,
+} from '../services/eduaiClient.js';
 
 const router = express.Router();
 
 
-router.get('/admin/users', requireRole('ADMIN'), async (_req, res) => {
-  // User records live in Core; the AT schema has no local User table post-auth-migration.
-  res.json([]);
+router.get('/admin/users', requireRole('ADMIN'), async (req, res) => {
+  try {
+    const cookie = req.headers.cookie ?? '';
+    const users = await listCoreAdminUsers(cookie);
+    const rows = Array.isArray(users) ? users : [];
+    res.json(rows.map(mapCoreAdminUser));
+  } catch (e) {
+    const status = typeof e?.status === 'number' ? e.status : 500;
+    res.status(status).json({ error: String(e.message ?? e) });
+  }
 });
 
 /**
@@ -103,18 +114,36 @@ router.get(
         return res.status(403).json({ error: 'Not authorized for this course' });
       }
 
-      // Fetch real names/emails from Core when the course has an externalId.
-      // Fall back to userId if Core is unavailable (fail-soft).
-      let coreNameMap = new Map();
+      // Fetch real names/emails from Core users (primary) and course enrollments (secondary).
+      let coreEnrollmentMap = new Map();
       if (course.externalId) {
         try {
           const coreEnrollments = await listEduAiCourseEnrollmentsServiceKey(course.externalId);
           for (const e of coreEnrollments) {
-            coreNameMap.set(e.studentId, { name: e.studentName, email: e.studentEmail });
+            coreEnrollmentMap.set(e.studentId, { name: e.studentName, email: e.studentEmail });
           }
         } catch (err) {
           console.warn('[admin] Could not fetch Core enrollment names for course', courseId, err.message);
         }
+      }
+
+      const enrolledUserIds = new Set(course.enrollments.map((e) => e.userId));
+      let coreUserMap = new Map();
+      let availableStudents = [];
+
+      try {
+        const cookie = req.headers.cookie ?? '';
+        const coreUsers = await listCoreAdminUsers(cookie);
+        const rows = Array.isArray(coreUsers) ? coreUsers : [];
+        for (const user of rows.map(mapCoreAdminUser)) {
+          coreUserMap.set(user.id, { name: user.name, email: user.email });
+        }
+        availableStudents = rows
+          .map(mapCoreAdminUser)
+          .filter((user) => user.role === 'STUDENT' && !enrolledUserIds.has(user.id))
+          .toSorted((a, b) => a.name.localeCompare(b.name));
+      } catch (err) {
+        console.warn('[admin] Could not fetch Core users for enrollment display', courseId, err.message);
       }
 
       res.json({
@@ -122,16 +151,17 @@ router.get(
         enrolledStudents: course.enrollments
           .toSorted((a, b) => a.userId.localeCompare(b.userId))
           .map((e) => {
-            const coreInfo = coreNameMap.get(e.userId);
+            const userInfo = coreUserMap.get(e.userId) ?? coreEnrollmentMap.get(e.userId);
+            const displayName = userInfo?.name?.trim() || e.userId;
             return {
               id: e.userId,
-              name: coreInfo?.name ?? e.userId,
-              email: coreInfo?.email ?? '',
+              name: displayName,
+              email: userInfo?.email ?? '',
               role: e.role,
               createdAt: e.createdAt,
             };
           }),
-        availableStudents: [],
+        availableStudents,
       });
     } catch (e) {
       res.status(500).json({ error: String(e) });

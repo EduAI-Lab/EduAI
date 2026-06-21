@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Badge, Button } from '@eduai/ui';
+import { toast } from 'sonner';
 import api from '~/lib/api';
 import type { AdminEnrollmentData, EnrollmentRole } from '~/lib/types';
 import { PermissionGate } from '~/components/rbac/PermissionGate';
@@ -19,7 +20,6 @@ export function CourseEnrollmentsPanel({
   const [loading, setLoading] = useState(true);
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -41,14 +41,14 @@ export function CourseEnrollmentsPanel({
 
   const updateRole = async (userId: string, role: EnrollmentRole) => {
     setUpdatingUserId(userId);
-    setError(null);
-    setMessage(null);
     try {
       await api.updateEnrollmentRole(courseId, userId, role);
       await refresh();
-      setMessage(role === 'TA' ? 'Teaching assistant role assigned.' : 'Enrollment updated.');
+      toast.success(
+        role === 'TA' ? 'Teaching assistant role assigned.' : 'Enrollment updated.',
+      );
     } catch {
-      setError('Could not update enrollment role.');
+      toast.error('Could not update enrollment role.');
     } finally {
       setUpdatingUserId(null);
     }
@@ -56,14 +56,12 @@ export function CourseEnrollmentsPanel({
 
   const removeStudent = async (userId: string) => {
     setUpdatingUserId(userId);
-    setError(null);
-    setMessage(null);
     try {
       await api.removeStudentFromCourse(courseId, userId);
       await refresh();
-      setMessage('Student removed from course.');
+      toast.success('Student removed from course.');
     } catch {
-      setError('Could not remove enrollment.');
+      toast.error('Could not remove enrollment.');
     } finally {
       setUpdatingUserId(null);
     }
@@ -95,18 +93,6 @@ export function CourseEnrollmentsPanel({
         </p>
       </div>
 
-      {(error || message) && (
-        <div
-          className={`rounded-md border px-3 py-2 text-sm ${
-            error
-              ? 'border-destructive/30 bg-destructive/10 text-destructive'
-              : 'border-accent/30 bg-accent/10 text-accent-foreground'
-          }`}
-        >
-          {error ?? message}
-        </div>
-      )}
-
       {data.enrolledStudents.length === 0 ? (
         <p className="text-sm text-muted-foreground">No students enrolled yet.</p>
       ) : (
@@ -122,6 +108,11 @@ export function CourseEnrollmentsPanel({
                 <div className="space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-medium text-foreground">{student.name || student.id}</span>
+                    {student.name && student.name !== student.id ? (
+                      <span className="rounded-md border border-border bg-muted/40 px-2 py-0.5 font-mono text-xs text-muted-foreground">
+                        {student.id}
+                      </span>
+                    ) : null}
                     <Badge variant="outline">{enrollmentRole}</Badge>
                   </div>
                   {student.email ? (
