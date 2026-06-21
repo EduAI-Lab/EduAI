@@ -48,7 +48,7 @@ Track A isolates retrieval; Tracks B/C measure full `/api/chat` under fixed mode
 |-------|----------|-----------------|-----------------|
 | **7B** | `vllm:qwen2.5-7b-instruct` | 180s | 180s |
 | **32B** | `vllm:qwen2.5-32b-instruct` | 300s | 300s |
-| **120B** | `ollama:gpt-oss:120b` | 300s | 300s |
+| ~~**120B**~~ | _(skipped for #501)_ | — | — |
 
 Run **one model at a time** — 7B and 32B share the vLLM host.
 

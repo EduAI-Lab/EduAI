@@ -13,7 +13,7 @@ $RunsDir = if ($env:RESEARCH_RUNS_DIR) { $env:RESEARCH_RUNS_DIR } else {
     Join-Path $CoreDir "..\..\docs\research\data\runs\issue-501"
 }
 $GitSha = try { git -C $CoreDir rev-parse --short HEAD } catch { "unknown" }
-$Models = @("7B", "32B", "120B")
+$Models = @("7B", "32B")
 
 New-Item -ItemType Directory -Force -Path $RunsDir | Out-Null
 

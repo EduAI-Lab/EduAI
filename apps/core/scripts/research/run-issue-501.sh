@@ -22,7 +22,7 @@ for arg in "$@"; do
   esac
 done
 GIT_SHA="$(git -C "$CORE_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)"
-MODELS=(7B 32B 120B)
+MODELS=(7B 32B)
 
 mkdir -p "$RUNS_DIR"
 cd "$CORE_DIR"
