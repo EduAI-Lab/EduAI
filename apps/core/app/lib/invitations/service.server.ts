@@ -252,6 +252,13 @@ export async function acceptInvitation(
   // Race guard: someone may have registered this email since the invite was sent.
   const existingUser = await prisma.user.findUnique({ where: { email: invite.email } });
   if (existingUser) {
+    // The email now has an account, so this invite can never be accepted via
+    // sign-up. Revoke it (guarded on PENDING for idempotency) so the live link
+    // and its actionable pending row don't linger until natural expiry.
+    await prisma.invitation.updateMany({
+      where: { id: invite.id, status: "PENDING" },
+      data: { status: "REVOKED" },
+    });
     return { ok: false, status: 409, error: "USER_EXISTS" };
   }
 
