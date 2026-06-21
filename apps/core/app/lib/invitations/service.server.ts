@@ -2,7 +2,10 @@ import type { Invitation } from "@prisma/client";
 
 import prisma from "~/lib/prisma.server";
 import { auth, authBaseURL } from "~/lib/auth/server";
-import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
+import {
+  INTERNAL_INVITE_SIGNUP_HEADER,
+  buildAuthSubRequest,
+} from "~/lib/auth/auth-handler-request";
 import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies";
 import { sendEmail } from "~/lib/email/mailer.server";
 import { buildInvitationEmail } from "~/lib/email/templates/invitation";
@@ -142,9 +145,13 @@ export type ResendInvitationResult =
 export async function resendInvitation(
   id: string,
   invitedBy?: Inviter,
+  opts?: OwnershipScope,
 ): Promise<ResendInvitationResult> {
   const invitation = await prisma.invitation.findUnique({ where: { id } });
   if (!invitation) return { ok: false, status: 404, error: "NOT_FOUND" };
+  if (opts?.restrictToInviterId && invitation.invitedById !== opts.restrictToInviterId) {
+    return { ok: false, status: 404, error: "NOT_FOUND" };
+  }
   if (invitation.status !== "PENDING") {
     return { ok: false, status: 409, error: "NOT_PENDING" };
   }
@@ -162,16 +169,49 @@ export async function resendInvitation(
   return { ok: true, invitation: toPublic(updated), acceptUrl, emailDelivered };
 }
 
-export async function listInvitations(): Promise<PublicInvitation[]> {
+/**
+ * Hard cap on how many invitations a single list call returns. The list grows
+ * for the platform's lifetime (PENDING/ACCEPTED/REVOKED all persist), so bound
+ * it to keep the query and payload from growing unboundedly. Newest-first, so
+ * the most actionable rows are always the ones kept.
+ */
+const INVITATIONS_LIST_LIMIT = 500;
+
+/**
+ * List invitations, newest first (capped at `INVITATIONS_LIST_LIMIT`). Pass
+ * `invitedById` to scope the list to a single inviter (used so a UNIT_ADMIN only
+ * sees the invitations they sent).
+ */
+export async function listInvitations(
+  opts?: { invitedById?: string },
+): Promise<PublicInvitation[]> {
+  // Fail closed: a scope object MUST carry a non-empty id. Otherwise a future
+  // falsy value would silently collapse the filter to "all invitations".
+  if (opts && !opts.invitedById) return [];
   const invitations = await prisma.invitation.findMany({
+    where: opts?.invitedById ? { invitedById: opts.invitedById } : undefined,
     orderBy: { createdAt: "desc" },
+    take: INVITATIONS_LIST_LIMIT,
   });
   return invitations.map(toPublic);
 }
 
-export async function revokeInvitation(id: string): Promise<RevokeInvitationResult> {
+/**
+ * Optional ownership scope for a single-invitation mutation. When
+ * `restrictToInviterId` is set, an invite created by a different inviter is
+ * treated as not-found (404, not 403) so a non-owner can't probe invite IDs.
+ */
+type OwnershipScope = { restrictToInviterId?: string };
+
+export async function revokeInvitation(
+  id: string,
+  opts?: OwnershipScope,
+): Promise<RevokeInvitationResult> {
   const invitation = await prisma.invitation.findUnique({ where: { id } });
   if (!invitation) {
+    return { ok: false, status: 404, error: "NOT_FOUND" };
+  }
+  if (opts?.restrictToInviterId && invitation.invitedById !== opts.restrictToInviterId) {
     return { ok: false, status: 404, error: "NOT_FOUND" };
   }
   if (invitation.status !== "PENDING") {
@@ -222,13 +262,26 @@ export async function acceptInvitation(
   // Race guard: someone may have registered this email since the invite was sent.
   const existingUser = await prisma.user.findUnique({ where: { email: invite.email } });
   if (existingUser) {
+    // The email now has an account, so this invite can never be accepted via
+    // sign-up. Revoke it (guarded on PENDING for idempotency) so the live link
+    // and its actionable pending row don't linger until natural expiry.
+    await prisma.invitation.updateMany({
+      where: { id: invite.id, status: "PENDING" },
+      data: { status: "REVOKED" },
+    });
     return { ok: false, status: 409, error: "USER_EXISTS" };
   }
 
-  // Create the credential account + session through Better Auth.
+  // Create the credential account + session through Better Auth. The marker
+  // header exempts this from the public-registration gate (§6a): an invitee was
+  // vetted by an admin/unit-admin, so account creation must work even when
+  // `auth.allowPublicRegistration` is off.
   const authRequest = buildAuthSubRequest("/api/auth/sign-up/email", request, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      [INTERNAL_INVITE_SIGNUP_HEADER]: "1",
+    },
     body: JSON.stringify({
       name: input.name,
       email: invite.email,

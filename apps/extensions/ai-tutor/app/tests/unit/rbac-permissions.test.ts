@@ -38,10 +38,10 @@ describe('rbac permissions', () => {
     expect(canAssignTaRole({ id: '1', role: 'INSTRUCTOR' })).toBe(true);
   });
 
-  it('allows course creation for instructor and unit admin', () => {
-    expect(canCreateCourse({ id: '1', role: 'INSTRUCTOR' })).toBe(true);
-    expect(canCreateCourse({ id: '1', role: 'UNIT_ADMIN' })).toBe(true);
-    expect(canCreateCourse({ id: '1', role: 'TA' })).toBe(false);
+  it('disallows local course creation — courses are created in EduAI Core (#632)', () => {
+    expect(canCreateCourse({ id: '1', role: 'INSTRUCTOR' })).toBe(false);
+    expect(canCreateCourse({ id: '1', role: 'UNIT_ADMIN' })).toBe(false);
+    expect(canCreateCourse({ id: '1', role: 'ADMIN' })).toBe(false);
   });
 
   it('limits bug reports to student and instructor', () => {

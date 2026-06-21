@@ -469,34 +469,34 @@ export default function Chat() {
               </BreadcrumbList>
             </Breadcrumb>
           }
+          leadingActions={
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleNewChat}
+              aria-label="Start a new chat"
+            >
+              <IconPencilPlus className="h-4 w-4 sm:mr-1.5" />
+              <span className="hidden sm:inline">New chat</span>
+            </Button>
+          }
           actions={
-            <div className="flex items-center gap-1.5">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleNewChat}
-                aria-label="Start a new chat"
-              >
-                <IconPencilPlus className="h-4 w-4 sm:mr-1.5" />
-                <span className="hidden sm:inline">New chat</span>
-              </Button>
-              <TooltipProvider delayDuration={300}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setHistoryOpen((prev) => !prev)}
-                      aria-label="Open chat history"
-                      className="h-8 w-8"
-                    >
-                      <IconHistory className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">Chat history</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </div>
+            <TooltipProvider delayDuration={300}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setHistoryOpen((prev) => !prev)}
+                    aria-label="Open chat history"
+                    className="h-8 w-8"
+                  >
+                    <IconHistory className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Chat history</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           }
         />
         <ChatHistoryPanel
