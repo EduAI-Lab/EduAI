@@ -32,7 +32,8 @@
     "research:run-classroom": "node ./scripts/research/run-classroom-sim.mjs",
     "research:eval-rag": "tsx ./scripts/research/eval-rag-retrieval.ts",
     "research:summarize-501": "node ./scripts/research/summarize-issue-501.mjs",
-    "research:issue-501": "bash ./scripts/research/run-issue-501.sh"
+    "research:issue-501": "bash ./scripts/research/run-issue-501.sh",
+    "research:verify-energy": "node ./scripts/research/verify-energy-sidecar.mjs"
   },
   "dependencies": {
     "@ai-sdk/google": "^1.2.22",

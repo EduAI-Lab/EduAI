@@ -158,6 +158,76 @@ bash scripts/research/run-issue-501.sh latest    # or main-baseline
 
 Runs Track A + Track B (all models) + C1/C2 sequentially. Edit the script to skip tracks or models.
 
+With energy measurement (cmps01 sidecar):
+
+```bash
+bash scripts/research/run-issue-501.sh latest --with-energy
+```
+
+---
+
+## Energy measurement
+
+Energy tracking uses the **cmps01 GPU sidecar** (`tools/energy-meter`), proxied at `http://cmps01.ok.ubc.ca:8001/energy`. The sidecar must run on **cmps01** (where vLLM/Ollama GPUs live), not on s378.
+
+| Track | Granularity | Fields in JSONL |
+|-------|-------------|-----------------|
+| **B** (sequential) | Per prompt | `energy_joules`, `joules_gpu`, `joules_cpu`, `joules_dram` |
+| **C** (classroom) | Per concurrent wave + run total | `wave_energy_joules` on each row; summary has per-wave + total J |
+| **A** (retrieval) | Not measured | Embeds are lightweight vs chat; skip unless needed |
+
+**Enable:**
+
+```bash
+export RESEARCH_MEASURE_ENERGY=1
+export ENERGY_SIDECAR_URL=http://cmps01.ok.ubc.ca:8001/energy
+npm run research:verify-energy   # preflight — must pass before batch
+bash scripts/research/run-issue-501.sh latest --with-energy
+```
+
+If preflight fails, deploy the sidecar on cmps01 (see `run-s378-phase-456.sh` comments and `tools/energy-meter/`). Set `RESEARCH_MEASURE_ENERGY=0` to skip energy and still run latency tests.
+
+Summarize runs with Joules:
+
+```bash
+node scripts/research/summarize-issue-501.mjs docs/research/data/runs/issue-501/track-b-7b-latest.jsonl
+```
+
+---
+
+## SSH handoff (if automated SSH fails)
+
+Automated SSH from this machine reaches s378 but the shell session closes immediately after key auth (likely a server-side session policy). **You can unblock by running on s378 directly:**
+
+```bash
+ssh eduai-dev   # or: ssh ssaada08@dev.eduai.ok.ubc.ca
+
+cd /srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore/apps/core
+git fetch origin
+git checkout feat/501-rag-stress-test
+git pull origin feat/501-rag-stress-test
+
+# Ensure .env.research exists (copy from env.research.s378.example; set RESEARCH_RUN_X_API_KEY)
+set -a && source .env && source .env.research && set +a
+
+nohup bash scripts/research/run-on-s378-handoff.sh >> /tmp/issue-501.log 2>&1 &
+tail -f /tmp/issue-501.log
+```
+
+**Pull results to your laptop** (after `ALL_DONE` in the log):
+
+```powershell
+scp -r eduai-dev:/srv/www/dev.eduai.ok.ubc.ca/EduAICore/docs/research/data/runs/issue-501 `
+  "c:\Users\SyedS\Documents\UBCO Courses\URA\EduAICoreLearning\docs\research\data\runs\"
+```
+
+**Ways you can help:**
+
+1. Confirm `ssh eduai-dev` opens an interactive shell on your machine (if it does, paste the block above).
+2. Ensure `.env.research` on s378 has `RESEARCH_RUN_X_API_KEY` (admin API key from dev).
+3. Verify energy sidecar: `ENERGY_SIDECAR_URL=http://cmps01.ok.ubc.ca:8001/energy npm run research:verify-energy`
+4. Share `/tmp/issue-501.log` tail if the batch fails partway.
+
 ---
 
 ## Deliverable checklist (#501)

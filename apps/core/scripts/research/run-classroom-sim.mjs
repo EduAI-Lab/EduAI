@@ -24,7 +24,12 @@ import {
   DEFAULT_CLASSROOM_SUMMARY,
   PROMPTS_PATH,
 } from "./paths.mjs";
-import { ensureResearchEnergyReady } from "./energy-sidecar.mjs";
+import {
+  ensureResearchEnergyReady,
+  flattenEnergyFields,
+  isEnergyMeasurementEnabled,
+  withEnergyMeasurement,
+} from "./energy-sidecar.mjs";
 import {
   resolveResearchChatFlags,
   resolveResearchTimeoutMs,
@@ -154,17 +159,50 @@ async function postChat({
   };
 }
 
-async function runWave(jobs, concurrency) {
+async function runWave(jobs, concurrency, { runLabel, measureEnergy } = {}) {
   const results = [];
+  const waveEnergies = [];
   for (let i = 0; i < jobs.length; i += concurrency) {
     const batch = jobs.slice(i, i + concurrency);
-    const batchResults = await Promise.all(batch.map((job) => job()));
-    results.push(...batchResults);
+    const waveNum = Math.floor(i / concurrency);
+    let batchResults;
+    let waveEnergy = null;
+    if (measureEnergy) {
+      const tag = `${runLabel}-wave-${waveNum}`;
+      const wrapped = await withEnergyMeasurement(tag, () =>
+        Promise.all(batch.map((job) => job())),
+      );
+      batchResults = wrapped.result;
+      waveEnergy = flattenEnergyFields(wrapped.energy);
+      waveEnergies.push({ wave: waveNum, ...waveEnergy });
+    } else {
+      batchResults = await Promise.all(batch.map((job) => job()));
+    }
+    for (const row of batchResults) {
+      if (waveEnergy) {
+        row.wave_energy_joules = waveEnergy.energy_joules;
+        row.joules_cpu = waveEnergy.joules_cpu;
+        row.joules_gpu = waveEnergy.joules_gpu;
+        row.joules_dram = waveEnergy.joules_dram;
+        row.measure_energy = true;
+      }
+      results.push(row);
+    }
   }
-  return results;
+  return { rows: results, waveEnergies };
 }
 
-function buildSummary({ rows, wallMs, policy, model, students, concurrency, split }) {
+function buildSummary({
+  rows,
+  wallMs,
+  policy,
+  model,
+  students,
+  concurrency,
+  split,
+  runEnergy,
+  waveEnergies,
+}) {
   const ok = rows.filter((r) => !r.error && r.response);
   const durs = ok.map((r) => r.duration_ms).sort((a, b) => a - b);
   const tiers = { 1: 0, 3: 0, null: 0 };
@@ -193,11 +231,37 @@ function buildSummary({ rows, wallMs, policy, model, students, concurrency, spli
     `  max: ${durs.length ? durs[durs.length - 1] : 0}`,
     "",
     `routing_tier: tier1=${tiers[1]} tier3=${tiers[3]} unknown=${tiers.null}`,
+  ];
+  if (runEnergy?.energy_joules != null) {
+    lines.push(
+      "",
+      "Energy (cmps01 sidecar, entire run):",
+      `  total_joules: ${runEnergy.energy_joules}`,
+      `  joules_gpu: ${runEnergy.joules_gpu ?? "?"}`,
+      `  joules_cpu: ${runEnergy.joules_cpu ?? "?"}`,
+    );
+  }
+  if (waveEnergies?.length) {
+    const waveTotal = waveEnergies.reduce(
+      (sum, w) => sum + (Number(w.energy_joules) || 0),
+      0,
+    );
+    lines.push(
+      "",
+      `Energy per wave (${waveEnergies.length} waves, sum=${waveTotal.toFixed(2)} J):`,
+      ...waveEnergies.map(
+        (w) =>
+          `  wave ${w.wave}: ${w.energy_joules ?? "?"} J (gpu=${w.joules_gpu ?? "?"})`,
+      ),
+    );
+  }
+  lines.push(
     "",
     "Interpretation:",
     "- Compare p50/p95 to sequential Step 5 means (~11s test P1).",
     "- Higher p95 under concurrency indicates GPU queueing on single vLLM host.",
-  ];
+    "- Per-wave Joules approximate GPU draw during each concurrent batch.",
+  );
   return lines.join("\n");
 }
 
@@ -272,6 +336,7 @@ async function main() {
   console.log("output:", outPath);
   console.log("");
 
+  const measureEnergy = isEnergyMeasurementEnabled();
   const wallT0 = performance.now();
   const jobs = assignments.map((row) => async () => {
     const hybridFlags = resolveResearchChatFlags(row);
@@ -322,8 +387,28 @@ async function main() {
     return record;
   });
 
-  const rows = await runWave(jobs, concurrency);
+  const { rows, waveEnergies } = await runWave(jobs, concurrency, {
+    runLabel,
+    measureEnergy,
+  });
   const wallMs = Math.round(performance.now() - wallT0);
+  const runEnergy =
+    waveEnergies.length > 0
+      ? {
+          energy_joules: waveEnergies.reduce(
+            (sum, w) => sum + (Number(w.energy_joules) || 0),
+            0,
+          ),
+          joules_gpu: waveEnergies.reduce(
+            (sum, w) => sum + (Number(w.joules_gpu) || 0),
+            0,
+          ),
+          joules_cpu: waveEnergies.reduce(
+            (sum, w) => sum + (Number(w.joules_cpu) || 0),
+            0,
+          ),
+        }
+      : null;
 
   writeFileSync(outPath, `${rows.map((r) => JSON.stringify(r)).join("\n")}\n`, "utf8");
 
@@ -335,6 +420,8 @@ async function main() {
     students,
     concurrency,
     split: splitFilter,
+    runEnergy,
+    waveEnergies,
   });
   writeFileSync(summaryPath, `${summary}\n`, "utf8");
 

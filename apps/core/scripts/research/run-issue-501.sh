@@ -3,6 +3,7 @@
 #
 # Usage:
 #   bash scripts/research/run-issue-501.sh [pipeline-label]
+#   bash scripts/research/run-issue-501.sh latest --with-energy
 #
 # pipeline-label defaults to "latest". Set RESEARCH_ISSUE_501_SKIP=* to skip tracks.
 # Requires .env.research loaded (see env.research.s378.example).
@@ -12,19 +13,33 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CORE_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 RUNS_DIR="${RESEARCH_RUNS_DIR:-$CORE_DIR/../../docs/research/data/runs/issue-501}"
-PIPELINE_LABEL="${1:-latest}"
+PIPELINE_LABEL="latest"
+WITH_ENERGY=0
+for arg in "$@"; do
+  case "$arg" in
+    --with-energy) WITH_ENERGY=1 ;;
+    *) PIPELINE_LABEL="$arg" ;;
+  esac
+done
 GIT_SHA="$(git -C "$CORE_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 MODELS=(7B 32B 120B)
 
 mkdir -p "$RUNS_DIR"
+cd "$CORE_DIR"
 
 export RESEARCH_PIPELINE_LABEL="$PIPELINE_LABEL"
 export RESEARCH_GIT_SHA="$GIT_SHA"
 export RESEARCH_RUN_SPLIT="${RESEARCH_RUN_SPLIT:-dev}"
 export RESEARCH_RUN_SLEEP_MS="${RESEARCH_RUN_SLEEP_MS:-500}"
-export RESEARCH_MEASURE_ENERGY="${RESEARCH_MEASURE_ENERGY:-0}"
 
-cd "$CORE_DIR"
+if [[ "$WITH_ENERGY" == "1" || "${RESEARCH_MEASURE_ENERGY:-}" == "1" ]]; then
+  export RESEARCH_MEASURE_ENERGY=1
+  export ENERGY_SIDECAR_URL="${ENERGY_SIDECAR_URL:-http://cmps01.ok.ubc.ca:8001/energy}"
+  echo "=== energy preflight ==="
+  node scripts/research/verify-energy-sidecar.mjs
+else
+  export RESEARCH_MEASURE_ENERGY="${RESEARCH_MEASURE_ENERGY:-0}"
+fi
 
 run_track_a() {
   echo "=== Track A: retrieval ($PIPELINE_LABEL) ==="
