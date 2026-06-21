@@ -21,6 +21,7 @@ import { SidebarInset, SidebarProvider } from "@eduai/ui";
 import { redirectToStudentIdOnboardingIfNeeded } from "~/lib/canvas/onboarding.server";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
+import { usePolicies } from "~/hooks/api/use-policies";
 import type { User } from "~/lib/auth/types";
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -86,7 +87,14 @@ function DashboardHero({ user, isTA }: { user: User; isTA: boolean }) {
 }
 
 function DashboardContent({ user, isTA }: { user: User; isTA: boolean }) {
-  const showCanvasSync = CANVAS_SYNC_ROLES.has(user.role ?? "");
+  const { policies } = usePolicies();
+  // Instructors only see the Canvas sync card when the policy is on; ADMIN is
+  // unaffected. Mirrors the `instructors.canManageCanvasIntegration` gate on
+  // the Canvas API (canvas.$.ts).
+  const canvasPolicyOk =
+    user.role === "ADMIN" ||
+    (policies["instructors.canManageCanvasIntegration"] ?? true);
+  const showCanvasSync = CANVAS_SYNC_ROLES.has(user.role ?? "") && canvasPolicyOk;
 
   let view;
   switch (user.role) {

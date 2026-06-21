@@ -179,6 +179,21 @@ describe('syncCourseEnrollments', () => {
 
       expect(prisma.courseEnrollment.update).not.toHaveBeenCalled();
     });
+
+    it('updates local TA to STUDENT when Core demotes back to STUDENT (#569)', async () => {
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([
+        { ...ACTIVE_ENROLLMENT, studentId: 'user-cuid-ta', role: 'STUDENT' },
+      ]);
+      prisma.courseEnrollment.findMany.mockResolvedValue([{ userId: 'user-cuid-ta', role: 'TA' }]);
+
+      const result = await syncCourseEnrollments(1);
+
+      expect(prisma.courseEnrollment.update).toHaveBeenCalledWith({
+        where: { courseOfferingId_userId: { courseOfferingId: 1, userId: 'user-cuid-ta' } },
+        data: { role: 'STUDENT' },
+      });
+      expect(result).toEqual({ synced: 1, created: 0, updated: 1, deleted: 0, errors: [] });
+    });
   });
 
   describe('delete path', () => {
