@@ -25,7 +25,14 @@
     "test:embedding": "tsx scripts/test-embedding.ts",
     "re-embed:course": "tsx scripts/re-embed-course.ts",
     "eval:rag:seed": "tsx scripts/eval-rag-seed.ts",
-    "eval:rag": "tsx scripts/eval-rag.ts"
+    "eval:rag": "tsx scripts/eval-rag.ts",
+    "research:validate-suite": "node ./scripts/research/validate-task-suite.mjs",
+    "research:run-policy": "node ./scripts/research/run-policy-comparison.mjs",
+    "research:summarize-policy": "node ./scripts/research/summarize-policy-runs.mjs",
+    "research:run-classroom": "node ./scripts/research/run-classroom-sim.mjs",
+    "research:eval-rag": "tsx ./scripts/research/eval-rag-retrieval.ts",
+    "research:summarize-501": "node ./scripts/research/summarize-issue-501.mjs",
+    "research:issue-501": "bash ./scripts/research/run-issue-501.sh"
   },
   "dependencies": {
     "@ai-sdk/google": "^1.2.22",

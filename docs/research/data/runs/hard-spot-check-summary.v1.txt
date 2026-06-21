@@ -1,0 +1,19 @@
+=== Hard prompt spot-check (strict judge) ===
+Generated: 2026-06-10T04:09:16.008Z
+prompts: 10
+
+ts-037: prior_tier=1 strict_tier=3 strict_sensitive=true
+ts-038: prior_tier=1 strict_tier=1 strict_sensitive=false
+ts-039: prior_tier=1 strict_tier=1 strict_sensitive=false
+ts-041: prior_tier=1 strict_tier=1 strict_sensitive=false
+ts-042: prior_tier=1 strict_tier=1 strict_sensitive=false
+ts-045: prior_tier=1 strict_tier=1 strict_sensitive=false
+ts-106: prior_tier=1 strict_tier=1 strict_sensitive=false
+ts-111: prior_tier=1 strict_tier=1 strict_sensitive=false
+ts-112: prior_tier=1 strict_tier=1 strict_sensitive=false
+ts-118: prior_tier=1 strict_tier=1 strict_sensitive=true
+
+agree min_adequate_tier: 9/10
+disagree: 1
+strict tier_sensitive: 2/10
+output: /tmp/hard-spot-check.v1.jsonl

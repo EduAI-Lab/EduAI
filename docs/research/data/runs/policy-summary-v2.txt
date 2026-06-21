@@ -1,0 +1,46 @@
+=== Policy comparison v2 (vLLM-only routing) ===
+Generated: 2026-06-10T02:58:47.599Z
+
+--- Test split (n=24 prompts, P0+P1 each) ---
+P0 OK: 23/24  errors: ts-043
+P1 OK: 23/24  errors: ts-043
+P0 mean latency (OK only): 11805 ms
+P1 mean latency (OK only): 11277 ms
+P1 savings vs P0: 528 ms (4.5%)
+P1 routing (test OK): tier1=6 tier3=17
+Paired OK prompts: 23
+P1 faster: 14, P0 faster: 9, tie: 0
+
+P1 test by stratum:
+  easy: n=5 tier1=5 tier3=0 mean_ms=3526
+  hard: n=8 tier1=0 tier3=8 mean_ms=16325
+  medium: n=10 tier1=1 tier3=9 mean_ms=11115
+
+--- P1 dev oracle gap ---
+matched: 91 correct: 32 (35.2%)
+over-routed: 59 under-routed: 0
+P1 dev OK: 91/96 errors: ts-031, ts-032, ts-101, ts-102, ts-118
+P1 dev routing (OK): tier1=32 tier3=59
+P1 dev mean latency: 9057 ms
+
+--- v1 vs v2 (routing fix) ---
+v1 P1 OK: 6/24
+v2 P1 OK: 23/24
+
+--- Energy/latency proxy (baseline tier means) ---
+baseline tier1 mean: 6791 ms (n=98)
+baseline tier3 mean: 9404 ms (n=98)
+P1 dev actual total latency: 824199 ms
+P1 dev if all tier1 (oracle): 617974 ms
+P0 equivalent (all tier3): 855719 ms
+P1 vs P0 savings: 3.7% total latency
+
+--- Tool prompt failures (webSearch/fetchPage) ---
+test: ts-043 (P0+P1 timeout 180s)
+dev P1: ts-031, ts-032, ts-101, ts-102, ts-118 (timeout)
+retries (360s): all 7 failed (fetch failed / timeout) — tool path unreliable
+
+--- Step 5 status: COMPLETE (non-tool prompts) ---
+Files: docs/research/data/runs/policy-runs-test.v2.jsonl (48 rows)
+       docs/research/data/runs/policy-runs-p1-dev.v2.jsonl (96 rows)
+       docs/research/data/runs/policy-summary-v2.txt

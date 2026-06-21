@@ -1,0 +1,23 @@
+=== Classroom simulation replicates ===
+Generated: 2026-06-10T06:45:06.934Z
+runs dir: ../../docs/research/data/runs
+
+P1 (auto) (n=3 runs):
+  mean latency: 10977 ± 95 ms
+  p50:          11774 ± 432 ms
+  p95:          20230 ± 1667 ms
+  wall time:    103343 ± 1319 ms
+  per-run mean: [10982, 11070, 10880]
+  per-run p95:  [21458, 20900, 18333]
+  tier1/tier3 (mean): 9.0 / 21.0
+
+P0 (always 32B) (n=3 runs):
+  mean latency: 11439 ± 213 ms
+  p50:          11420 ± 573 ms
+  p95:          20361 ± 3046 ms
+  wall time:    100800 ± 3721 ms
+  per-run mean: [11212, 11635, 11469]
+  per-run p95:  [17193, 23268, 20622]
+  tier1/tier3 (mean): 0.0 / 30.0
+
+Mean latency P1 vs P0 (across replicate means): 10977 vs 11439 (4.0% lower for P1)

@@ -1,0 +1,6 @@
+{
+  "vllm": {
+    "apiKey": "vllm-local",
+    "isEnabled": true
+  }
+}
