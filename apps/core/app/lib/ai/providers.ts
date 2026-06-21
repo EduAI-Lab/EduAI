@@ -31,10 +31,24 @@ export {
 export function createAIProviderRegistry(userSettings: UserProviderSettings) {
   const providers: Record<string, any> = {};
 
-  // OpenAI
+  // OpenAI (also OpenRouter when baseUrl points at openrouter.ai)
   if (userSettings.openai?.isEnabled && userSettings.openai?.apiKey) {
+    const baseURL = userSettings.openai.baseUrl?.replace(/\/$/, "");
+    const isOpenRouter = baseURL?.includes("openrouter.ai");
     providers.openai = createOpenAI({
       apiKey: userSettings.openai.apiKey,
+      ...(baseURL ? { baseURL } : {}),
+      ...(isOpenRouter
+        ? {
+            headers: {
+              "HTTP-Referer":
+                process.env.OPENROUTER_HTTP_REFERER?.trim() ||
+                process.env.BETTER_AUTH_URL?.trim() ||
+                "https://dev.eduai.ok.ubc.ca",
+              "X-Title": process.env.OPENROUTER_APP_TITLE?.trim() || "EduAI",
+            },
+          }
+        : {}),
     });
   }
 

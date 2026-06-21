@@ -21,6 +21,16 @@ export const ISSUE_501_MODELS = {
     model: "ollama:gpt-oss:120b",
     timeoutMs: 300_000,
   },
+  GEMINI: {
+    label: "GEMINI",
+    model: "google:gemini-2.5-flash",
+    timeoutMs: 120_000,
+  },
+  OPENROUTER: {
+    label: "OPENROUTER",
+    model: "openai:google/gemini-2.5-flash",
+    timeoutMs: 120_000,
+  },
 };
 
 /** @param {(primary: string, alias?: string) => string | undefined} readEnv */

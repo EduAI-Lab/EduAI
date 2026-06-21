@@ -151,13 +151,14 @@ async function postChat({
     });
   } catch (e) {
     const durationMs = Math.round(performance.now() - t0);
+    const cause = e instanceof Error && e.cause instanceof Error ? e.cause.message : null;
     const message = e instanceof Error ? e.message : String(e);
     return {
       httpStatus: 0,
       durationMs,
       responseText: "",
       finishReason: null,
-      error: message,
+      error: cause ? `${message}: ${cause}` : message,
     routedModel: null,
     routingTier: null,
     routerVersion: null,

@@ -1,0 +1,7 @@
+{
+  "openai": {
+    "apiKey": "YOUR_OPENROUTER_API_KEY",
+    "baseUrl": "https://openrouter.ai/api/v1",
+    "isEnabled": true
+  }
+}

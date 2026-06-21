@@ -90,6 +90,7 @@ async function main() {
   prompts = prompts.slice(0, limit);
 
   mkdirSync(dirname(outPath), { recursive: true });
+  mkdirSync(dirname(summaryPath), { recursive: true });
 
   const runStarted = new Date().toISOString();
   const rows: Array<Record<string, unknown>> = [];

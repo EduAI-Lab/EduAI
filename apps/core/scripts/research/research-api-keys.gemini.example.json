@@ -1,0 +1,6 @@
+{
+  "google": {
+    "apiKey": "YOUR_GOOGLE_GENERATIVE_AI_API_KEY",
+    "isEnabled": true
+  }
+}

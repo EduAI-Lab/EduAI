@@ -8,7 +8,10 @@ ecosystem.config.cjs
 
 # Local research / bench artifacts (dev server — never commit secrets or run output)
 .env.research
+.env.research.cookie
 /logs/
 /output/
 /scripts/research/.env.research
+/scripts/research/research-api-keys.gemini.json
+/scripts/research/research-api-keys.openrouter.json
 /scripts/research/data/runs/
