@@ -9,6 +9,8 @@ import { deleteAdminUser } from "../app/lib/agent-tools/admin-mutations.server";
 const stamp = Date.now();
 const testEmail = `smoke-admin-${stamp}@eduai.local`;
 
+const toolExec = { toolCallId: "smoke" as const };
+
 async function main() {
   const admin = await prisma.user.findUnique({
     where: { email: "admin@eduai.local" },
@@ -32,12 +34,15 @@ async function main() {
   });
 
   // 1. confirmed:false should not write
-  const preview = await tools.createUser.execute({
-    confirmed: false,
-    name: "Smoke Preview",
-    email: testEmail,
-    role: "STUDENT",
-  });
+  const preview = await tools.createUser.execute(
+    {
+      confirmed: false,
+      name: "Smoke Preview",
+      email: testEmail,
+      role: "STUDENT",
+    },
+    toolExec,
+  );
   if (
     typeof preview === "object" &&
     preview !== null &&
@@ -59,13 +64,16 @@ async function main() {
   }
 
   // 2. confirmed:true should write
-  const created = await tools.createUser.execute({
-    confirmed: true,
-    name: `Smoke User ${stamp}`,
-    email: testEmail,
-    role: "STUDENT",
-    isActive: true,
-  });
+  const created = await tools.createUser.execute(
+    {
+      confirmed: true,
+      name: `Smoke User ${stamp}`,
+      email: testEmail,
+      role: "STUDENT",
+      isActive: true,
+    },
+    toolExec,
+  );
   if (
     typeof created === "object" &&
     created !== null &&
@@ -89,7 +97,7 @@ async function main() {
   console.log("OK: user visible in database", inDb);
 
   // 3. listUsers includes new user
-  const listed = await tools.listUsers.execute({ limit: 200 });
+  const listed = await tools.listUsers.execute({ limit: 200 }, toolExec);
   if (
     typeof listed === "object" &&
     listed !== null &&
@@ -107,12 +115,15 @@ async function main() {
   if (course) {
     const student = await prisma.user.findUnique({ where: { email: testEmail } });
     if (student) {
-      const enrollPreview = await tools.createCourseEnrollment.execute({
-        confirmed: false,
-        userEmail: testEmail,
-        role: "STUDENT",
-        courseCode: course.code,
-      });
+      const enrollPreview = await tools.createCourseEnrollment.execute(
+        {
+          confirmed: false,
+          userEmail: testEmail,
+          role: "STUDENT",
+          courseCode: course.code,
+        },
+        toolExec,
+      );
       if (
         typeof enrollPreview === "object" &&
         enrollPreview !== null &&

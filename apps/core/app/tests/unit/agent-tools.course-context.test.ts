@@ -80,7 +80,7 @@ describe("listAccessibleCourseTopics", () => {
       access: { level: "student", rank: 0 },
     });
     vi.mocked(getCourseTopics).mockResolvedValue([
-      { id: "t1", courseId: "c1", name: "Loops", createdAt: new Date(), updatedAt: new Date() },
+      { id: "t1", courseId: "c1", name: "Loops", createdAt: new Date(), updatedAt: new Date(), createdBy: null, deletedAt: null },
     ]);
 
     const result = await listAccessibleCourseTopics(USER, "c1");
