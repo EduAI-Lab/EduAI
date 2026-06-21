@@ -123,6 +123,12 @@ describe("POST /api/bug-reports — validation", () => {
     expect(body.fields.source).toBeDefined();
   });
 
+  it("returns 422 (not 500) when the JSON body is literal null", async () => {
+    const res = await action(makeActionArgs(null, `Bearer ${VALID_SERVICE_KEY}`));
+    expect(res.status).toBe(422);
+    expect((await res.json()).error).toBe("VALIDATION_ERROR");
+  });
+
   it("returns 422 USER_NOT_FOUND when userId does not exist in Core", async () => {
     const res = await action(
       makeActionArgs(

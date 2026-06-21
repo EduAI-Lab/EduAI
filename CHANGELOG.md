@@ -9,6 +9,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
+- [core] feat: Let unit admins invite instructors and students — gated by the new `unitAdmins.canInvite` policy flag, with a dedicated `/unit-admin/invitations` page, a policy-gated nav link, and own-only scoping over the shared `/api/invitations` endpoints. (#686, @abdullahmoh21, 2026-06-19)
+- [core] tests: Add unit-admin invitation coverage across the route, schema, and integration suites. (#686, @abdullahmoh21, 2026-06-19)
 - [core] feat: Expand the configurable RBAC policy registry (#660) with instructor/TA/student/unit-admin gates & grants, a `chat.webToolsEnabled` master that folds in the standalone `webToolsEnabled` toggle, an `auth.allowPublicRegistration` signup gate enforced at the Better Auth chokepoint, live frontend control gating via `usePolicies()`, and structured `policy_denied` 403 audit logging. (#660, @abdullahmoh21, 2026-06-18)
 - [core] feat: Add course/unit chat visibility — a nullable `Chat.courseId` tagged at chat creation, `GET /api/courses/:id/chats` and `GET /api/units/:department/chats` endpoints gated by `instructors.canViewCourseChats` / `unitAdmins.canViewUnitChats`, and a read-only Chats tab plus a unit chats page. (#660, @abdullahmoh21, 2026-06-18)
 - [core] tests: Add denied/allowed unit cases for every new policy flag across publish/delete/update, materials, enrollments, canvas, topics, chat web tools, the chat-visibility endpoints, and the registration loaders. (#660, @abdullahmoh21, 2026-06-18)
@@ -69,6 +71,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [question-maker] ui: Question detail modal uses single scroll area; theme toggle beside bug report; explicit API key save with confirmation. (#676, @GlowyBlack, 2026-06-20)
 - [question-maker] security: Restrict Vite env exposure to `VITE_` prefix; gate Canvas test-mode fallback to dev; surface AI model fetch errors instead of silent fallbacks (backend + frontend). (#676, @GlowyBlack, 2026-06-20)
 - [question-maker] fix: Apply explicit API key save + toast in Upload dialog; treat id `0` as not-found in resource/course access guards (fixes `coreWiring.integration.test.js`). (#676, @GlowyBlack, 2026-06-20)
+- [core] fix: Restore course Enrollments tab — re-wire `useCourseEnrollments` to `GET /api/courses/:id/enrollments` after merge conflict reverted the hook to an empty stub; API returns enrollment `id` and decrypted `studentNumber`. ([#684], @GlowyBlack, 2026-06-18)
+- [core] fix: Dev startup seed — targeted `db:seed:student-ids` backfill for seed students instead of full re-seed when `studentId` is missing (avoids `studentIdLookup` unique constraint collisions). (#684, @GlowyBlack, 2026-06-18)
+- [core] fix: `POST /api/bug-reports` — extension sources (`AI_TUTOR`, `QUESTION_MAKER`) require service key again; session auth remains for `CORE` only. (#684, @GlowyBlack, 2026-06-18)
+- [core] tests: Align course-create integration tests with required `department` field; session-validate expects `authorizedUnits` in user payload. (#684, @GlowyBlack, 2026-06-18)
 - [ai-tutor] fix: Route TA promotion through Core — `PATCH /admin/courses/:courseId/enrollments/:userId/role` now calls Core's enrollment-role endpoint before updating locally, keeping Core as the authoritative source; remove the band-aid `local.role !== 'TA'` skip from `syncCourseEnrollments` so Core-initiated TA demotions propagate on the next sync. (#674, @evanbones, 2026-06-19)
 
 ---

@@ -114,6 +114,12 @@ export const POLICY_FLAGS = {
       "Allow users with the UNIT_ADMIN role to read student chats across courses in their units.",
     default: false,
   },
+  "unitAdmins.canInvite": {
+    label: "Unit admins can invite users",
+    description:
+      "Allow users with the UNIT_ADMIN role to invite instructors and students to the platform. ADMIN is always allowed.",
+    default: false,
+  },
   "auth.allowPublicRegistration": {
     label: "Allow public registration",
     description:
