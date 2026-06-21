@@ -126,9 +126,22 @@ export default function UnitAdminInvitationsPage() {
   // Invite pending cancellation; drives the confirmation dialog.
   const [cancelTarget, setCancelTarget] = useState<Invitation | null>(null);
 
+  // Error from loading the invitation list (policy turned off mid-session, expired cookie, network failure) 
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  // In-flight guards: prevent double-submit from rapid clicks (resend rotates the link twice and invalidates the first; cancel's second DELETE 409s)
+  const [resendingId, setResendingId] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+
   const fetchInvites = async () => {
+    setFetchError(null);
     const res = await fetch("/api/invitations");
-    if (res.ok) setInvites(await res.json());
+    if (res.ok) {
+      setInvites(await res.json());
+    } else {
+      const data = await res.json().catch(() => ({}));
+      setFetchError(errorMessage(data?.error, res.status));
+    }
   };
 
   useEffect(() => {
@@ -185,31 +198,42 @@ export default function UnitAdminInvitationsPage() {
   };
 
   const handleResend = async (invite: Invitation) => {
-    const res = await fetch(`/api/invitations/${invite.id}`, { method: "POST" });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      setNotice({ message: `Could not resend: ${errorMessage(data?.error, res.status)}` });
-      return;
+    if (resendingId) return;
+    setResendingId(invite.id);
+    try {
+      const res = await fetch(`/api/invitations/${invite.id}`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setNotice({ message: `Could not resend: ${errorMessage(data?.error, res.status)}` });
+        return;
+      }
+      setNotice({
+        message: data.emailDelivered
+          ? `Invitation re-sent to ${invite.email}.`
+          : `New link generated for ${invite.email} (email not configured — copy below).`,
+        link: data.acceptUrl,
+      });
+      await fetchInvites();
+    } finally {
+      setResendingId(null);
     }
-    setNotice({
-      message: data.emailDelivered
-        ? `Invitation re-sent to ${invite.email}.`
-        : `New link generated for ${invite.email} (email not configured — copy below).`,
-      link: data.acceptUrl,
-    });
-    await fetchInvites();
   };
 
   const confirmCancel = async () => {
-    if (!cancelTarget) return;
-    const res = await fetch(`/api/invitations/${cancelTarget.id}`, { method: "DELETE" });
-    if (res.ok) {
-      await fetchInvites();
-    } else {
-      const data = await res.json().catch(() => ({}));
-      setNotice({ message: `Could not cancel: ${errorMessage(data?.error, res.status)}` });
+    if (!cancelTarget || cancelling) return;
+    setCancelling(true);
+    try {
+      const res = await fetch(`/api/invitations/${cancelTarget.id}`, { method: "DELETE" });
+      if (res.ok) {
+        await fetchInvites();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setNotice({ message: `Could not cancel: ${errorMessage(data?.error, res.status)}` });
+      }
+    } finally {
+      setCancelling(false);
+      setCancelTarget(null);
     }
-    setCancelTarget(null);
   };
 
   return (
@@ -291,7 +315,9 @@ export default function UnitAdminInvitationsPage() {
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
-                    {loading ? (
+                    {fetchError ? (
+                      <p className="text-sm text-destructive">{fetchError}</p>
+                    ) : loading ? (
                       <p className="text-sm text-muted-foreground">Loading…</p>
                     ) : (
                       <div className="overflow-hidden rounded-md border">
@@ -337,7 +363,10 @@ export default function UnitAdminInvitationsPage() {
                                           </Button>
                                         </DropdownMenuTrigger>
                                         <DropdownMenuContent align="end">
-                                          <DropdownMenuItem onClick={() => handleResend(invite)}>
+                                          <DropdownMenuItem
+                                            onClick={() => handleResend(invite)}
+                                            disabled={resendingId === invite.id}
+                                          >
                                             <IconMailForward className="mr-2 h-4 w-4" />
                                             Resend / copy link
                                           </DropdownMenuItem>
@@ -437,7 +466,9 @@ export default function UnitAdminInvitationsPage() {
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Keep invitation</AlertDialogCancel>
-              <AlertDialogAction onClick={confirmCancel}>Cancel invitation</AlertDialogAction>
+              <AlertDialogAction onClick={confirmCancel} disabled={cancelling}>
+                Cancel invitation
+              </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
