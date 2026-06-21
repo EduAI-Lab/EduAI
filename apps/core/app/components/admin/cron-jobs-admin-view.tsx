@@ -214,8 +214,8 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
   return (
     <div className="flex flex-1 flex-col gap-6 p-6">
       <PageHeading
-        title="Cron Jobs"
-        description="Registered server cron jobs and their current status"
+        heading="Cron Jobs"
+        subheading="Registered server cron jobs and their current status"
       />
 
       <div className="grid grid-cols-3 gap-4">
