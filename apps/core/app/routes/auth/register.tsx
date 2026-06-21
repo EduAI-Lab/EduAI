@@ -8,6 +8,7 @@ import { signUpSchema, type SignUpInput } from "~/lib/auth"
 import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request"
 import { appendAuthSetCookies } from "~/lib/auth/forward-session-cookies"
 import { auth } from "~/lib/auth/server"
+import { getPolicy } from "~/lib/policy.server"
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request);
@@ -22,6 +23,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
       return onboardingRedirect;
     }
     return redirect("/dashboard");
+  }
+
+  // §6b: when public registration is disabled, deep-linking /auth/register must
+  // not show the form. Read the flag server-side (the signup page is
+  // unauthenticated, so usePolicies() is unavailable here).
+  if (!(await getPolicy("auth.allowPublicRegistration"))) {
+    return redirect("/auth/login");
   }
 
   return {};

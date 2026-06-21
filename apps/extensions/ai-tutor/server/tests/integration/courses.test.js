@@ -26,6 +26,17 @@ import { findEduAiCourseById } from '../../src/services/eduaiClient.js';
 import { syncExternalCourseTopics } from '../../src/services/topicSync.js';
 import { syncCourseEnrollments } from '../../src/services/enrollmentSync.js';
 
+// Course routes call Core's policy service (instructors.canCreateCourses) via
+// requireInstructorPolicy. Core isn't reachable in the integration env, so the
+// real service fails closed (deny). Stub it to the flag's enabled default —
+// the deny/cache/stale-fallback behaviour is covered by policyService.test.js.
+vi.mock('../../src/services/policyService.js', () => ({
+  getPolicy: vi.fn().mockResolvedValue(true),
+  getPolicies: vi.fn().mockResolvedValue({ 'instructors.canCreateCourses': true }),
+  invalidatePolicyCache: vi.fn(),
+  __resetPolicyServiceState: vi.fn(),
+}));
+
 vi.mock('../../src/services/topicSync.js', () => ({
   syncExternalCourseTopics: vi.fn().mockResolvedValue(undefined),
 }));
