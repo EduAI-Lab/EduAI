@@ -19,7 +19,11 @@ SELECT
   true
 FROM "course_tas" ct
 ON CONFLICT ("courseId", "userId")
-DO UPDATE SET "role" = 'TA'::"EnrollmentRole", "isActive" = true, "updatedAt" = now();
+-- Only promote a plain STUDENT enrollment to TA. An existing INSTRUCTOR row for
+-- the same (courseId, userId) must never be silently demoted, and an existing TA
+-- row needs no change (#685 review).
+DO UPDATE SET "role" = 'TA'::"EnrollmentRole", "isActive" = true, "updatedAt" = now()
+WHERE "enrollments"."role" = 'STUDENT'::"EnrollmentRole";
 
 -- 2. Demote legacy platform-level TA users to STUDENT (their course-level TA
 --    status now lives entirely in enrollments). Defensive: also covers any

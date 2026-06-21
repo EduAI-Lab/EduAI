@@ -220,7 +220,11 @@ async function uploadMaterial(
           },
         });
         try {
-          await processMaterialEmbeddings(existingMaterial.id, fileInfo.content);
+          // Replace any stale chunks/embeddings from before the soft-delete so
+          // restoring a material doesn't append duplicate RAG content (#685 review).
+          await processMaterialEmbeddings(existingMaterial.id, fileInfo.content, {
+            replace: true,
+          });
           await prisma.courseMaterial.update({
             where: { id: existingMaterial.id },
             data: { status: 'READY', processedAt: new Date() },
