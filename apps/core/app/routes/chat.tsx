@@ -43,6 +43,7 @@ import prisma from "~/lib/prisma.server";
 import { getUserPreference, saveUserPreference } from "~/lib/user-preferences.server";
 import { getAccessibleCourseCodes } from "~/lib/courses/server";
 import { parsePreferenceUpdates } from "~/lib/user-preferences";
+import { postAssistiveClientEvent } from "~/lib/assistive-events.client";
 
 /**
  * Per-tab marker for the chat the user is actively in. Lives in sessionStorage
@@ -131,6 +132,7 @@ export default function Chat() {
   const [reorientationEpoch, setReorientationEpoch] = useState(0);
   const [webToolsEnabled, setWebToolsEnabled] = useState(false);
   const wasLoadingRef = useRef(false);
+  const mountTimeRef = useRef(Date.now());
   const { getValidApiKeys } = useApiKeys();
   const prefsFetcher = useFetcher();
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -214,7 +216,7 @@ export default function Chat() {
         setSystemPrompt(session.systemPrompt);
       }
       setAdhdAssist(Boolean(session.adhdAssist));
-      setAssistive(Boolean(session.adhdAssist));
+      setAssistive(Boolean(session.adhdAssist), { silent: true });
     })();
   }, [chatId, systemPrompt, setAssistive]);
 
@@ -254,6 +256,34 @@ export default function Chat() {
         }
       },
     });
+
+  const onSubmit = useCallback(
+    (e: React.FormEvent<HTMLFormElement>) => {
+      if (!chatId) {
+        postAssistiveClientEvent({
+          eventType: "task_initiation",
+          adhdAssist,
+          metrics: {
+            durationMs: Date.now() - mountTimeRef.current,
+            success: true,
+            clientTimestamp: new Date().toISOString(),
+          },
+        });
+      } else {
+        postAssistiveClientEvent({
+          eventType: "re_orientation",
+          chatId,
+          adhdAssist,
+          metrics: {
+            success: true,
+            clientTimestamp: new Date().toISOString(),
+          },
+        });
+      }
+      handleSubmit(e);
+    },
+    [adhdAssist, chatId, handleSubmit],
+  );
 
   useEffect(() => {
     const finishedLoading = wasLoadingRef.current && !isLoading;
@@ -385,7 +415,7 @@ export default function Chat() {
         preventDefault: () => {},
         currentTarget: {} as HTMLFormElement,
       } as React.FormEvent<HTMLFormElement>;
-      handleSubmit(formEvent);
+      onSubmit(formEvent);
     });
   };
 
@@ -409,7 +439,7 @@ export default function Chat() {
     onSystemPromptSave: handleSystemPromptSave,
     webToolsEnabled,
     onInputChange: handleInputChange,
-    onSubmit: handleSubmit,
+    onSubmit,
     onStop: stop,
     onSelectPrompt: handlePromptSelect,
   };

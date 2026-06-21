@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Card, CardContent, Button } from '@eduai/ui'
-import { useChatDetail, type CourseChatSummary } from '~/hooks/api/use-course-chats'
+import { useChatDetail, useCourseChats, type CourseChatSummary } from '~/hooks/api/use-course-chats'
 
 /** Best-effort plain-text extraction from a stored chat message `content` JSON. */
 function messageText(content: unknown): string {
@@ -136,4 +136,15 @@ export function CourseChatsPanel({ chats, loading = false, error = null, seconda
       </Card>
     </div>
   )
+}
+
+/**
+ * Course chat-history tab (§5d). Fetches the course's student chats through the
+ * policy-gated §5c endpoint (`useCourseChats` → GET /api/courses/:id/chats) and
+ * renders them read-only. Replaces the legacy `useChatHistory` oversight path,
+ * which no longer grants staff access to other users' chats.
+ */
+export function CourseChatsTab({ courseId }: { courseId: string }) {
+  const { chats, loading, error } = useCourseChats(courseId)
+  return <CourseChatsPanel chats={chats} loading={loading} error={error} />
 }
