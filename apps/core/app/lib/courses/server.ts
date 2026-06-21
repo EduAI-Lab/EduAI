@@ -23,7 +23,10 @@ import {
 } from "./schemas";
 
 
-async function parseCreateCourseBody(request: Request) {
+async function parseCreateCourseBody(
+  request: Request,
+  opts?: { forceInstructorUserIds?: string[] },
+) {
   const contentType = request.headers.get("content-type") ?? "";
 
   if (contentType.includes("application/json")) {
@@ -32,6 +35,9 @@ async function parseCreateCourseBody(request: Request) {
       body = await request.json();
     } catch {
       return { ok: false as const, response: apiError(422, "VALIDATION_ERROR", { body: "invalid JSON" }) };
+    }
+    if (opts?.forceInstructorUserIds?.length && body && typeof body === "object") {
+      body = { ...body, instructorUserIds: opts.forceInstructorUserIds };
     }
     const parsed = CreateCourseSchema.safeParse(body);
     if (!parsed.success) {
@@ -60,6 +66,11 @@ async function parseCreateCourseBody(request: Request) {
         instructorUserIds.push(rawInstructorUserIds);
       }
     }
+  }
+
+  if (opts?.forceInstructorUserIds?.length) {
+    instructorUserIds.length = 0;
+    instructorUserIds.push(...opts.forceInstructorUserIds);
   }
 
   const data = {
@@ -202,13 +213,12 @@ export async function createCourse(request: Request) {
     return apiError(403, "Forbidden");
   }
 
-  const parsedBody = await parseCreateCourseBody(request);
+  const parsedBody = await parseCreateCourseBody(
+    request,
+    session.user.role === "INSTRUCTOR" ? { forceInstructorUserIds: [session.user.id] } : undefined,
+  );
   if (!parsedBody.ok) {
     return parsedBody.response;
-  }
-
-  if (session.user.role === "INSTRUCTOR") {
-    parsedBody.data.instructorUserIds = [session.user.id];
   }
 
   const result = { success: true as const, data: parsedBody.data };
