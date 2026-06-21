@@ -803,6 +803,18 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
             />
           </svg>
         </div>
+        {setupComplete ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleNewChat}
+            aria-label="Clear and start new chat"
+            className="min-w-[44px] shrink-0"
+          >
+            <IconPencilPlus className="h-4 w-4 sm:mr-1.5" />
+            <span className="hidden sm:inline">New chat</span>
+          </Button>
+        ) : null}
         <div className="min-w-0 flex-1">
           <div className="font-semibold text-foreground">AI Study Buddy</div>
           <div className="text-xs text-muted-foreground">Hints, not answers</div>
@@ -814,21 +826,11 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
                 variant="ghost"
                 size="sm"
                 onClick={handleRefreshChat}
-                aria-label="Start a new chat"
+                aria-label="Refresh chat"
                 className="min-w-[44px]"
               >
                 <IconRefresh className="h-4 w-4 sm:mr-1.5" />
                 <span className="hidden sm:inline">Refresh</span>
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleNewChat}
-                aria-label="Clear and start new chat"
-                className="min-w-[44px]"
-              >
-                <IconPencilPlus className="h-4 w-4 sm:mr-1.5" />
-                <span className="hidden sm:inline">New chat</span>
               </Button>
               <Button
                 variant="outline"

@@ -5,7 +5,6 @@ import {
   listAdminBugReports,
   updateBugReportStatus,
 } from '../services/bugReports.js';
-import { mapAdminBugReportRow } from '../utils/bugReportMappers.js';
 import { requireRole } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -24,19 +23,24 @@ router.post('/bug-reports', async (req, res) => {
   }
 });
 
-router.get('/admin/bug-reports', requireRole('ADMIN'), async (_req, res) => {
+router.get('/admin/bug-reports', requireRole('ADMIN'), async (req, res) => {
   try {
-    const rows = await listAdminBugReports();
-    res.json(rows.map(mapAdminBugReportRow));
+    const rows = await listAdminBugReports(req.headers.cookie ?? '');
+    res.json(rows);
   } catch (error) {
-    res.status(500).json({ error: String(error) });
+    const status = typeof error?.status === 'number' ? error.status : 500;
+    res.status(status).json({ error: String(error.message ?? error) });
   }
 });
 
 router.patch('/admin/bug-reports/:bugReportId', requireRole('ADMIN'), async (req, res) => {
   try {
-    const updated = await updateBugReportStatus(req.params.bugReportId, req.body?.status);
-    res.json(mapAdminBugReportRow(updated));
+    const updated = await updateBugReportStatus(
+      req.params.bugReportId,
+      req.body?.status,
+      req.headers.cookie ?? '',
+    );
+    res.json(updated);
   } catch (error) {
     if (error instanceof BugReportError) {
       return res.status(error.status).json({ error: error.message });

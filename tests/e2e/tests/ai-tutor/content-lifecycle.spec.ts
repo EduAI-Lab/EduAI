@@ -1,7 +1,7 @@
 /**
  * AI Tutor INSTRUCTOR content authoring and publish-state visibility E2E tests.
  *
- * Covers: INSTRUCTOR creates courses / modules / lessons; the publish hierarchy
+ * Covers: Core-imported courses; INSTRUCTOR creates modules / lessons; the publish hierarchy
  * (course must be published before a module, module before a lesson); STUDENT
  * visibility gates at every level; cascade unpublish; AI Tutor admin endpoints.
  *
@@ -13,6 +13,7 @@
 import { test, expect } from '@playwright/test';
 import { AI_TUTOR_API_URL, CORE_URL } from '../../playwright.config';
 import { createAdmin, createInstructor, registerUser } from '../helpers/auth';
+import { importAtCourseForInstructor } from '../helpers/at-courses';
 
 const AT = AI_TUTOR_API_URL;
 
@@ -21,26 +22,24 @@ const AT = AI_TUTOR_API_URL;
 // ---------------------------------------------------------------------------
 
 test.describe('AI Tutor INSTRUCTOR content authoring', () => {
-  test('INSTRUCTOR can create a course', async ({ request }) => {
+  test('POST /api/courses returns 403 — course creation is managed in EduAI Core', async ({
+    request,
+  }) => {
     await createInstructor(request, { prefix: 'at-create-course' });
 
     const res = await request.post(`${AT}/api/courses`, {
       data: { title: 'E2E Lifecycle Course' },
     });
-    expect(res.status()).toBe(201);
-
-    const course = await res.json();
-    expect(typeof course.id).toBe('number');
-    expect(course.title).toBe('E2E Lifecycle Course');
-    expect(course.isPublished).toBe(false);
+    expect(res.status()).toBe(403);
+    expect((await res.json()).error).toMatch(/EduAI Core/i);
   });
 
-  test('INSTRUCTOR can create a module in their course', async ({ request }) => {
+  test('INSTRUCTOR can create a module in their course', async ({ request, playwright }) => {
     await createInstructor(request, { prefix: 'at-create-module' });
 
-    const { id: courseId } = await (
-      await request.post(`${AT}/api/courses`, { data: { title: 'Module Host Course' } })
-    ).json();
+    const { atCourseId: courseId } = await importAtCourseForInstructor(playwright, request, {
+      name: 'Module Host Course',
+    });
 
     const modRes = await request.post(`${AT}/api/courses/${courseId}/modules`, {
       data: { title: 'Week 1: Introduction' },
@@ -53,12 +52,12 @@ test.describe('AI Tutor INSTRUCTOR content authoring', () => {
     expect(module.isPublished).toBe(false);
   });
 
-  test('INSTRUCTOR can create a lesson in their module', async ({ request }) => {
+  test('INSTRUCTOR can create a lesson in their module', async ({ request, playwright }) => {
     await createInstructor(request, { prefix: 'at-create-lesson' });
 
-    const { id: courseId } = await (
-      await request.post(`${AT}/api/courses`, { data: { title: 'Lesson Host Course' } })
-    ).json();
+    const { atCourseId: courseId } = await importAtCourseForInstructor(playwright, request, {
+      name: 'Lesson Host Course',
+    });
     const { id: moduleId } = await (
       await request.post(`${AT}/api/courses/${courseId}/modules`, { data: { title: 'Module for Lesson' } })
     ).json();
@@ -74,12 +73,15 @@ test.describe('AI Tutor INSTRUCTOR content authoring', () => {
     expect(lesson.isPublished).toBe(false);
   });
 
-  test('INSTRUCTOR sees their unpublished course in GET /api/courses', async ({ request }) => {
+  test('INSTRUCTOR sees their unpublished course in GET /api/courses', async ({
+    request,
+    playwright,
+  }) => {
     await createInstructor(request, { prefix: 'at-list-course' });
 
-    const { id: courseId } = await (
-      await request.post(`${AT}/api/courses`, { data: { title: 'Unlisted Draft Course' } })
-    ).json();
+    const { atCourseId: courseId } = await importAtCourseForInstructor(playwright, request, {
+      name: 'Unlisted Draft Course',
+    });
 
     const listRes = await request.get(`${AT}/api/courses`);
     expect(listRes.status()).toBe(200);
@@ -103,12 +105,15 @@ test.describe('AI Tutor INSTRUCTOR content authoring', () => {
 // ---------------------------------------------------------------------------
 
 test.describe('AI Tutor publish hierarchy pre-conditions', () => {
-  test('publishing a module when its parent course is unpublished returns 400', async ({ request }) => {
+  test('publishing a module when its parent course is unpublished returns 400', async ({
+    request,
+    playwright,
+  }) => {
     await createInstructor(request, { prefix: 'at-mod-pre' });
 
-    const { id: courseId } = await (
-      await request.post(`${AT}/api/courses`, { data: { title: 'Pre-publish Course' } })
-    ).json();
+    const { atCourseId: courseId } = await importAtCourseForInstructor(playwright, request, {
+      name: 'Pre-publish Course',
+    });
     const { id: moduleId } = await (
       await request.post(`${AT}/api/courses/${courseId}/modules`, { data: { title: 'Orphan Module' } })
     ).json();
@@ -117,12 +122,15 @@ test.describe('AI Tutor publish hierarchy pre-conditions', () => {
     expect(res.status()).toBe(400);
   });
 
-  test('publishing a lesson when its parent module is unpublished returns 400', async ({ request }) => {
+  test('publishing a lesson when its parent module is unpublished returns 400', async ({
+    request,
+    playwright,
+  }) => {
     await createInstructor(request, { prefix: 'at-lesson-pre' });
 
-    const { id: courseId } = await (
-      await request.post(`${AT}/api/courses`, { data: { title: 'Pre-lesson Course' } })
-    ).json();
+    const { atCourseId: courseId } = await importAtCourseForInstructor(playwright, request, {
+      name: 'Pre-lesson Course',
+    });
     const { id: moduleId } = await (
       await request.post(`${AT}/api/courses/${courseId}/modules`, { data: { title: 'Pre-lesson Module' } })
     ).json();
@@ -153,9 +161,9 @@ test.describe('AI Tutor publish-state controls STUDENT visibility', () => {
 
       const { id: studentId } = await (await studentCtx.get(`${CORE_URL}/api/me`)).json();
 
-      const { id: courseId } = await (
-        await instrCtx.post(`${AT}/api/courses`, { data: { title: 'Unpublished Course' } })
-      ).json();
+      const { atCourseId: courseId } = await importAtCourseForInstructor(playwright, instrCtx, {
+        name: 'Unpublished Course',
+      });
 
       await instrCtx.post(`${AT}/api/admin/courses/${courseId}/enrollments`, {
         data: { userId: studentId, role: 'STUDENT' },
@@ -181,9 +189,9 @@ test.describe('AI Tutor publish-state controls STUDENT visibility', () => {
 
       const { id: studentId } = await (await studentCtx.get(`${CORE_URL}/api/me`)).json();
 
-      const { id: courseId } = await (
-        await instrCtx.post(`${AT}/api/courses`, { data: { title: 'To-be-Published Course' } })
-      ).json();
+      const { atCourseId: courseId } = await importAtCourseForInstructor(playwright, instrCtx, {
+        name: 'To-be-Published Course',
+      });
 
       await instrCtx.post(`${AT}/api/admin/courses/${courseId}/enrollments`, {
         data: { userId: studentId, role: 'STUDENT' },
@@ -215,9 +223,9 @@ test.describe('AI Tutor publish-state controls STUDENT visibility', () => {
 
       const { id: studentId } = await (await studentCtx.get(`${CORE_URL}/api/me`)).json();
 
-      const { id: courseId } = await (
-        await instrCtx.post(`${AT}/api/courses`, { data: { title: 'Full Hierarchy Course' } })
-      ).json();
+      const { atCourseId: courseId } = await importAtCourseForInstructor(playwright, instrCtx, {
+        name: 'Full Hierarchy Course',
+      });
       const { id: moduleId } = await (
         await instrCtx.post(`${AT}/api/courses/${courseId}/modules`, { data: { title: 'Module 1' } })
       ).json();
@@ -263,9 +271,9 @@ test.describe('AI Tutor publish-state controls STUDENT visibility', () => {
 
       const { id: studentId } = await (await studentCtx.get(`${CORE_URL}/api/me`)).json();
 
-      const { id: courseId } = await (
-        await instrCtx.post(`${AT}/api/courses`, { data: { title: 'Module Visibility Course' } })
-      ).json();
+      const { atCourseId: courseId } = await importAtCourseForInstructor(playwright, instrCtx, {
+        name: 'Module Visibility Course',
+      });
       const { id: moduleId } = await (
         await instrCtx.post(`${AT}/api/courses/${courseId}/modules`, { data: { title: 'Draft Module' } })
       ).json();
@@ -298,12 +306,12 @@ test.describe('AI Tutor publish-state controls STUDENT visibility', () => {
 // ---------------------------------------------------------------------------
 
 test.describe('AI Tutor cascade unpublish', () => {
-  test('unpublishing a course cascades to all modules and lessons', async ({ request }) => {
+  test('unpublishing a course cascades to all modules and lessons', async ({ request, playwright }) => {
     await createInstructor(request, { prefix: 'at-cascade-instr' });
 
-    const { id: courseId } = await (
-      await request.post(`${AT}/api/courses`, { data: { title: 'Cascade Unpublish Course' } })
-    ).json();
+    const { atCourseId: courseId } = await importAtCourseForInstructor(playwright, request, {
+      name: 'Cascade Unpublish Course',
+    });
     const { id: moduleId } = await (
       await request.post(`${AT}/api/courses/${courseId}/modules`, { data: { title: 'Cascade Module' } })
     ).json();
@@ -328,12 +336,12 @@ test.describe('AI Tutor cascade unpublish', () => {
     expect((await lessonRes.json()).isPublished).toBe(false);
   });
 
-  test('unpublishing a module cascades to its lessons', async ({ request }) => {
+  test('unpublishing a module cascades to its lessons', async ({ request, playwright }) => {
     await createInstructor(request, { prefix: 'at-mod-cascade-instr' });
 
-    const { id: courseId } = await (
-      await request.post(`${AT}/api/courses`, { data: { title: 'Module Cascade Course' } })
-    ).json();
+    const { atCourseId: courseId } = await importAtCourseForInstructor(playwright, request, {
+      name: 'Module Cascade Course',
+    });
     const { id: moduleId } = await (
       await request.post(`${AT}/api/courses/${courseId}/modules`, { data: { title: 'Cascade Module' } })
     ).json();

@@ -21,16 +21,8 @@
  */
 import type { FormEvent } from 'react';
 import { useOptimistic, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router';
-import Nav from '../components/Nav';
-import {
-  Breadcrumb,
-  BreadcrumbList,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from '@eduai/ui';
+import { useNavigate, useParams } from 'react-router';
+import { PageHeading } from '@eduai/ui';
 import { PublishStatusButton } from '../components/PublishStatusButton';
 import api from '../lib/api';
 import type { Course, Lesson, Module, ModuleDetail } from '../lib/types';
@@ -38,6 +30,8 @@ import type { Route } from './+types/instructor.topic';
 import { PermissionGate } from '../components/rbac/PermissionGate';
 import { useAtPermissions } from '../hooks/useAtPermissions';
 import { requireClientUser } from '~/lib/client-auth';
+import { AppShell } from '~/components/layout/AppShell';
+import { ShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbs';
 
 /**
  * Loads the module + its lessons in parallel; then fetches the parent course
@@ -268,37 +262,19 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
     }
   };
 
+  const breadcrumbItems = [
+    { label: 'Teaching', href: '/instructor' },
+    ...(course && module
+      ? [{ label: course.title, href: `/instructor/courses/${module.courseOfferingId}` }]
+      : [{ label: 'Course' }]),
+    { label: module?.title || 'Module' },
+  ];
+
   return (
-    <div className="min-h-dvh bg-background">
-      <Nav />
-      <div className="container mx-auto px-4 py-8 space-y-6">
-        <Breadcrumb className="mb-6">
-          <BreadcrumbList>
-            <BreadcrumbItem>
-              <BreadcrumbLink asChild>
-                <Link to="/instructor">Teaching</Link>
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator>/</BreadcrumbSeparator>
-            <BreadcrumbItem>
-              {course && module ? (
-                <BreadcrumbLink asChild>
-                  <Link to={`/instructor/courses/${module.courseOfferingId}`}>{course.title}</Link>
-                </BreadcrumbLink>
-              ) : (
-                <BreadcrumbPage>Course</BreadcrumbPage>
-              )}
-            </BreadcrumbItem>
-            <BreadcrumbSeparator>/</BreadcrumbSeparator>
-            <BreadcrumbItem>
-              <BreadcrumbPage>{module?.title || 'Module'}</BreadcrumbPage>
-            </BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
+    <AppShell breadcrumbs={<ShellBreadcrumbs items={breadcrumbItems} />}>
+      <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-semibold text-foreground">Lessons</h2>
-          </div>
+          <PageHeading heading={module?.title || 'Module'} subheading="Module lessons" />
           <PermissionGate allow={perms.canManageContent}>
           <button
             onClick={() => {
@@ -508,6 +484,6 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
           </div>
         )}
       </div>
-    </div>
+    </AppShell>
   );
 }
