@@ -134,12 +134,17 @@ describe("findRelevantContent — hybrid path (RAG_HYBRID_BM25=1)", () => {
     expect(sql).toContain("to_tsvector");
   });
 
-  it("does not include the similarity threshold pre-filter — orders by combined score only", async () => {
+  it("applies the vector similarity threshold and orders by combined score", async () => {
     await findRelevantContent(QUERY, COURSE_ID, 4);
     const sql = capturedSql();
     expect(sql).toContain("ORDER BY score DESC");
-    // Pure-vector path filters with `> threshold`; hybrid uses LIMIT-only ranking.
-    expect(sql).not.toContain("AND 1 -");
+    expect(sql).toContain("AND 1 -");
+  });
+
+  it("passes the effective similarity threshold to the hybrid query", async () => {
+    await findRelevantContent(QUERY, COURSE_ID, 4, 0.62);
+    const params = capturedParams();
+    expect(params).toContain(0.62);
   });
 
   it("maps the score column to the similarity field in the returned shape", async () => {
