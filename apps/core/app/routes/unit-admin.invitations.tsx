@@ -4,6 +4,7 @@ import type { LoaderFunctionArgs } from "react-router";
 import { IconPlus, IconDots, IconCopy, IconMailForward, IconBan } from "@tabler/icons-react";
 
 import { auth } from "~/lib/auth/server";
+import { getPolicy } from "~/lib/policy.server";
 import {
   Button,
   Badge,
@@ -17,7 +18,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
   AlertDialog,
@@ -56,16 +56,14 @@ import {
 import { AppSidebar } from "~/components/app-sidebar";
 import { SiteHeader } from "~/components/site-header";
 
-type InviteRole = "ADMIN" | "UNIT_ADMIN" | "INSTRUCTOR";
+// Unit admins may invite instructors and students only.
+type InviteRole = "INSTRUCTOR" | "STUDENT";
 
 type Invitation = {
   id: string;
   email: string;
   name: string | null;
-  // The admin create form only issues InviteRole, but the shared
-  // /api/invitations list (ADMIN sees all) can include STUDENT invites a
-  // unit admin created via the unitAdmins.canInvite flow.
-  role: InviteRole | "STUDENT";
+  role: InviteRole;
   authorizedUnits: string[];
   status: "PENDING" | "ACCEPTED" | "REVOKED";
   expiresAt: string;
@@ -76,13 +74,10 @@ type Invitation = {
 
 const ROLE_OPTIONS: { value: InviteRole; label: string }[] = [
   { value: "INSTRUCTOR", label: "Professor (Instructor)" },
-  { value: "UNIT_ADMIN", label: "Unit Administrator" },
-  { value: "ADMIN", label: "Administrator" },
+  { value: "STUDENT", label: "Student" },
 ];
 
-const ROLE_LABEL: Record<InviteRole | "STUDENT", string> = {
-  ADMIN: "Administrator",
-  UNIT_ADMIN: "Unit Admin",
+const ROLE_LABEL: Record<InviteRole, string> = {
   INSTRUCTOR: "Instructor",
   STUDENT: "Student",
 };
@@ -90,7 +85,9 @@ const ROLE_LABEL: Record<InviteRole | "STUDENT", string> = {
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request);
   if (!session?.user) return redirect("/auth/login");
-  if (session.user.role !== "ADMIN") return redirect("/dashboard");
+  if (session.user.role !== "UNIT_ADMIN") return redirect("/dashboard");
+  // The whole surface is gated by the policy flag — when off, it doesn't exist.
+  if (!(await getPolicy("unitAdmins.canInvite"))) return redirect("/dashboard");
   return { user: session.user };
 }
 
@@ -109,7 +106,7 @@ function StatusBadge({ invite }: { invite: Invitation }) {
   return <Badge variant="outline" className={map[invite.status]}>{invite.status}</Badge>;
 }
 
-export default function InvitationsPage() {
+export default function UnitAdminInvitationsPage() {
   const { user } = useLoaderData<typeof loader>();
   const [invites, setInvites] = useState<Invitation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -119,7 +116,6 @@ export default function InvitationsPage() {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [role, setRole] = useState<InviteRole>("INSTRUCTOR");
-  const [unitsText, setUnitsText] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -130,9 +126,22 @@ export default function InvitationsPage() {
   // Invite pending cancellation; drives the confirmation dialog.
   const [cancelTarget, setCancelTarget] = useState<Invitation | null>(null);
 
+  // Error from loading the invitation list (policy turned off mid-session, expired cookie, network failure) 
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  // In-flight guards: prevent double-submit from rapid clicks (resend rotates the link twice and invalidates the first; cancel's second DELETE 409s)
+  const [resendingId, setResendingId] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+
   const fetchInvites = async () => {
+    setFetchError(null);
     const res = await fetch("/api/invitations");
-    if (res.ok) setInvites(await res.json());
+    if (res.ok) {
+      setInvites(await res.json());
+    } else {
+      const data = await res.json().catch(() => ({}));
+      setFetchError(errorMessage(data?.error, res.status));
+    }
   };
 
   useEffect(() => {
@@ -143,7 +152,6 @@ export default function InvitationsPage() {
     setEmail("");
     setName("");
     setRole("INSTRUCTOR");
-    setUnitsText("");
     setFormError(null);
   };
 
@@ -161,13 +169,8 @@ export default function InvitationsPage() {
     e.preventDefault();
     setSubmitting(true);
     setFormError(null);
-    const units = unitsText
-      .split(",")
-      .map((u) => u.trim().toUpperCase())
-      .filter(Boolean);
     const body: Record<string, unknown> = { email, role };
     if (name.trim()) body.name = name.trim();
-    if (role === "UNIT_ADMIN") body.authorizedUnits = units;
 
     try {
       const res = await fetch("/api/invitations", {
@@ -195,26 +198,42 @@ export default function InvitationsPage() {
   };
 
   const handleResend = async (invite: Invitation) => {
-    const res = await fetch(`/api/invitations/${invite.id}`, { method: "POST" });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      setNotice({ message: `Could not resend: ${errorMessage(data?.error, res.status)}` });
-      return;
+    if (resendingId) return;
+    setResendingId(invite.id);
+    try {
+      const res = await fetch(`/api/invitations/${invite.id}`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setNotice({ message: `Could not resend: ${errorMessage(data?.error, res.status)}` });
+        return;
+      }
+      setNotice({
+        message: data.emailDelivered
+          ? `Invitation re-sent to ${invite.email}.`
+          : `New link generated for ${invite.email} (email not configured — copy below).`,
+        link: data.acceptUrl,
+      });
+      await fetchInvites();
+    } finally {
+      setResendingId(null);
     }
-    setNotice({
-      message: data.emailDelivered
-        ? `Invitation re-sent to ${invite.email}.`
-        : `New link generated for ${invite.email} (email not configured — copy below).`,
-      link: data.acceptUrl,
-    });
-    await fetchInvites();
   };
 
   const confirmCancel = async () => {
-    if (!cancelTarget) return;
-    const res = await fetch(`/api/invitations/${cancelTarget.id}`, { method: "DELETE" });
-    if (res.ok) await fetchInvites();
-    setCancelTarget(null);
+    if (!cancelTarget || cancelling) return;
+    setCancelling(true);
+    try {
+      const res = await fetch(`/api/invitations/${cancelTarget.id}`, { method: "DELETE" });
+      if (res.ok) {
+        await fetchInvites();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setNotice({ message: `Could not cancel: ${errorMessage(data?.error, res.status)}` });
+      }
+    } finally {
+      setCancelling(false);
+      setCancelTarget(null);
+    }
   };
 
   return (
@@ -237,10 +256,6 @@ export default function InvitationsPage() {
                 </BreadcrumbItem>
                 <BreadcrumbSeparator />
                 <BreadcrumbItem>
-                  <BreadcrumbPage>Admin</BreadcrumbPage>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator />
-                <BreadcrumbItem>
                   <BreadcrumbPage>Invitations</BreadcrumbPage>
                 </BreadcrumbItem>
               </BreadcrumbList>
@@ -254,7 +269,7 @@ export default function InvitationsPage() {
                 <div className="flex items-start justify-between gap-4">
                   <PageHeading
                     heading="Invitations"
-                    subheading="Invite administrators, unit admins, and instructors to the platform"
+                    subheading="Invite instructors and students to the platform"
                   />
                   <Button onClick={() => { resetForm(); setDialogOpen(true); }}>
                     <IconPlus className="-ms-1 opacity-60" size={16} aria-hidden="true" />
@@ -300,7 +315,9 @@ export default function InvitationsPage() {
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
-                    {loading ? (
+                    {fetchError ? (
+                      <p className="text-sm text-destructive">{fetchError}</p>
+                    ) : loading ? (
                       <p className="text-sm text-muted-foreground">Loading…</p>
                     ) : (
                       <div className="overflow-hidden rounded-md border">
@@ -333,11 +350,6 @@ export default function InvitationsPage() {
                                   </TableCell>
                                   <TableCell>
                                     <Badge variant="outline">{ROLE_LABEL[invite.role] ?? invite.role}</Badge>
-                                    {invite.role === "UNIT_ADMIN" && invite.authorizedUnits.length > 0 && (
-                                      <div className="mt-1 text-xs text-muted-foreground">
-                                        {invite.authorizedUnits.join(", ")}
-                                      </div>
-                                    )}
                                   </TableCell>
                                   <TableCell><StatusBadge invite={invite} /></TableCell>
                                   <TableCell className="text-sm">{formatDate(invite.createdAt)}</TableCell>
@@ -351,7 +363,10 @@ export default function InvitationsPage() {
                                           </Button>
                                         </DropdownMenuTrigger>
                                         <DropdownMenuContent align="end">
-                                          <DropdownMenuItem onClick={() => handleResend(invite)}>
+                                          <DropdownMenuItem
+                                            onClick={() => handleResend(invite)}
+                                            disabled={resendingId === invite.id}
+                                          >
                                             <IconMailForward className="mr-2 h-4 w-4" />
                                             Resend / copy link
                                           </DropdownMenuItem>
@@ -423,20 +438,6 @@ export default function InvitationsPage() {
                   </SelectContent>
                 </Select>
               </div>
-              {role === "UNIT_ADMIN" && (
-                <div className="space-y-2">
-                  <Label htmlFor="invite-units">Authorized units</Label>
-                  <Input
-                    id="invite-units"
-                    value={unitsText}
-                    onChange={(e) => setUnitsText(e.target.value)}
-                    placeholder="Comma-separated codes, e.g. COSC, MATH"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Required for a unit administrator — they manage only these subject units.
-                  </p>
-                </div>
-              )}
               {formError && <p className="text-sm text-destructive">{formError}</p>}
               <div className="flex justify-end gap-2 pt-2">
                 <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
@@ -465,7 +466,9 @@ export default function InvitationsPage() {
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Keep invitation</AlertDialogCancel>
-              <AlertDialogAction onClick={confirmCancel}>Cancel invitation</AlertDialogAction>
+              <AlertDialogAction onClick={confirmCancel} disabled={cancelling}>
+                Cancel invitation
+              </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
@@ -478,8 +481,10 @@ function errorMessage(code: unknown, status: number): string {
   switch (code) {
     case "USER_EXISTS":
       return "A user with that email already exists.";
+    case "FORBIDDEN_ROLE":
+      return "You can only invite instructors and students.";
     case "Invalid input":
-      return "Please check the fields and try again (units are required for a unit admin).";
+      return "Please check the fields and try again.";
     case "NOT_PENDING":
       return "This invitation is no longer pending.";
     case "NOT_FOUND":
