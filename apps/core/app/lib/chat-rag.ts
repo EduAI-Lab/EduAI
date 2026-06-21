@@ -197,6 +197,50 @@ function buildSessionDigest<T extends Record<string, unknown>>(
   return hardTruncate(`${header}${lines.join("\n")}`, maxDigestChars);
 }
 
+/** Synthetic id for cross-chat continuity digest (request-scoped, never persisted). */
+export const PRIOR_CHAT_DIGEST_MESSAGE_ID = "prior-chat-digest";
+
+const PRIOR_CHAT_DIGEST_HEADER =
+  "## Prior chat digest (previous session)\n\nThe user started a new chat thread. Use this ONLY when they resume a plan or refer to earlier work. Do not invent details not listed here.\n\n";
+
+/**
+ * Builds a request-scoped user message summarizing a prior chat thread for
+ * cross-session continuity (Form A S3 / interruption resumption).
+ */
+export function buildPriorChatDigestMessage<T extends Record<string, unknown>>(
+  messages: T[],
+  opts?: {
+    maxDigestChars?: number;
+    previewText?: (message?: T) => string;
+  },
+): T | null {
+  const previewText = opts?.previewText ?? extractMessageText;
+  const maxDigestChars = opts?.maxDigestChars ?? resolveSessionDigestMaxChars();
+  const lines: string[] = [];
+
+  for (const message of messages) {
+    const role = typeof message.role === "string" ? message.role : "unknown";
+    const normalized = previewText(message).replace(/\s+/g, " ").trim();
+    if (!normalized) {
+      continue;
+    }
+    const preview =
+      normalized.length > 200 ? `${normalized.slice(0, 200)}…` : normalized;
+    lines.push(`- **${role}**: ${preview}`);
+  }
+
+  if (lines.length === 0) {
+    return null;
+  }
+
+  const body = hardTruncate(`${PRIOR_CHAT_DIGEST_HEADER}${lines.join("\n")}`, maxDigestChars);
+  return {
+    id: PRIOR_CHAT_DIGEST_MESSAGE_ID,
+    role: "user",
+    content: body,
+  } as unknown as T;
+}
+
 const DIGEST_MESSAGE_ID = "session-digest";
 
 /**

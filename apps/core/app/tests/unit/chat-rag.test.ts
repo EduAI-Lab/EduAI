@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import {
   buildCappedRagContextText,
+  buildPriorChatDigestMessage,
   capRagHitsForTool,
   capToolResultsInMessages,
   estimateMessageCharsForModel,
@@ -377,6 +378,22 @@ describe("prepareBoundedSessionContext", () => {
 
     expect(bounded.length).toBeLessThan(messages.length);
     expect(totalModelChars(bounded)).toBeLessThanOrEqual(500);
+  });
+});
+
+describe("buildPriorChatDigestMessage", () => {
+  it("returns null for an empty prior thread", () => {
+    expect(buildPriorChatDigestMessage([])).toBeNull();
+  });
+
+  it("labels prior session turns for cross-chat continuity", () => {
+    const digest = buildPriorChatDigestMessage([
+      { id: "1", role: "user", content: "Plan my study session." },
+      { id: "2", role: "assistant", content: "Hour 1: review chapter 2." },
+    ]);
+    expect(digest?.role).toBe("user");
+    expect(String(digest?.content)).toContain("Prior chat digest");
+    expect(String(digest?.content)).toContain("Hour 1");
   });
 });
 

@@ -43,6 +43,8 @@ import {
   HYBRID_RAG_MAX_CHUNKS,
   HYBRID_RAG_MAX_CONTEXT_CHARS,
 } from "~/lib/chat-rag";
+import { loadPriorChatDigestForNewThread } from "~/lib/chat-cross-session.server";
+import { buildDefaultEduAiSystemPrompt } from "~/lib/chat-default-system-prompt";
 
 const TOOL_MAX_STEPS = Math.min(
   32,
@@ -526,7 +528,25 @@ export async function action({ request }: ActionFunctionArgs) {
       incomingCount: normalizedIncomingMessages.length,
     });
 
-    const mergedMessages = mergeMessages(storedMessages, normalizedIncomingMessages);
+    let mergedMessages = mergeMessages(storedMessages, normalizedIncomingMessages);
+
+    const priorChatDigest = chat
+      ? await loadPriorChatDigestForNewThread(prisma, {
+          userId: actingUser.id,
+          courseId: chat.courseId ?? effectiveCourseId ?? null,
+          currentChatId: chat.id,
+          storedMessageCount: storedMessages.length,
+          incomingMessageCount: normalizedIncomingMessages.length,
+          reviveStoredMessage,
+        })
+      : null;
+
+    if (priorChatDigest) {
+      mergedMessages = [priorChatDigest, ...mergedMessages];
+    }
+
+    const includesPriorChatDigest = priorChatDigest !== null;
+
     const trimmedMessages =
       mergedMessages.length > maxContextMessages
         ? mergedMessages.slice(-maxContextMessages)
@@ -536,6 +556,7 @@ export async function action({ request }: ActionFunctionArgs) {
       mergedCount: mergedMessages.length,
       trimmedCount: trimmedMessages.length,
       maxContextMessages,
+      includesPriorChatDigest,
     });
 
     // Cap oversized tool results (#260), then digest older turns when the thread
@@ -790,13 +811,13 @@ export async function action({ request }: ActionFunctionArgs) {
                 )
               : "";
 
-          const baseSystemPrompt = resolvedSystemPrompt || `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
-
-IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.
-
-${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ``}
-
-Always be helpful, accurate, and cite the course materials when using them in your response. Use markdown for formatting.`;
+          const baseSystemPrompt =
+            resolvedSystemPrompt ||
+            buildDefaultEduAiSystemPrompt({
+              courseCode,
+              includesPriorChatDigest,
+              supportsTools: false,
+            });
 
           const systemWithRAG = contextText
             ? `${baseSystemPrompt}
@@ -817,13 +838,13 @@ Based on this information, provide a comprehensive answer to the user's question
           };
         } catch (error) {
           console.error("Error finding relevant content for model without tool support:", error);
-          const defaultSystemPrompt = resolvedSystemPrompt || `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
-
-IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.
-
-${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ""}
-
-Be helpful, conversational, and accurate. Use markdown for formatting.`;
+          const defaultSystemPrompt =
+            resolvedSystemPrompt ||
+            buildDefaultEduAiSystemPrompt({
+              courseCode,
+              includesPriorChatDigest,
+              supportsTools: false,
+            });
 
           streamConfig = {
             model: aiModel,
@@ -834,13 +855,13 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
           };
         }
       } else {
-        const defaultSystemPrompt = resolvedSystemPrompt || `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
-
-IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.
-
-${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ""}
-
-Be helpful, conversational, and accurate. Use markdown for formatting.`;
+        const defaultSystemPrompt =
+          resolvedSystemPrompt ||
+          buildDefaultEduAiSystemPrompt({
+            courseCode,
+            includesPriorChatDigest,
+            supportsTools: false,
+          });
 
         streamConfig = {
           model: aiModel,
@@ -851,25 +872,13 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
         };
       }
     } else {
-      const defaultSystemPrompt = resolvedSystemPrompt || `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
-
-IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.
-
-You have access to two tools:
-- getInformation: searches uploaded course materials (syllabi, lectures, assignments, etc.)
-- webSearch: searches the web for current information, reviews, discussions, news, etc.
-- fetchPage: opens a URL and returns the main page content as markdown for deeper reading. If a page fails to load, try other sources. Try and give a correct response to the user's query even if the page fails to load.
-
-When answering questions:
-1. For course content questions, call getInformation first to retrieve relevant materials.
-2. If the user asks for reviews, opinions, recent updates, or external information (e.g., "what do students say about this course?" or "latest developments"), call webSearch after checking course materials. Prefer queries that include "UBCO" with the course code/name and the instructor name when known.
-3. After webSearch, call fetchPage on promising sources (e.g., RateMyProfessors, Reddit threads, official pages) to read the page content before answering. If the page fails to load, try other sources. Try and give a correct response to the user's query even if the page fails to load.
-4. You may call tools multiple times in sequence if needed to give a complete answer.
-5. Always cite your sources: mention course material titles for RAG results and include URLs for web results.
-
-${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ""}
-
-Be helpful, conversational, and accurate. Use markdown for formatting.`;
+      const defaultSystemPrompt =
+        resolvedSystemPrompt ||
+        buildDefaultEduAiSystemPrompt({
+          courseCode,
+          includesPriorChatDigest,
+          supportsTools: true,
+        });
 
       streamConfig = {
         model: aiModel,

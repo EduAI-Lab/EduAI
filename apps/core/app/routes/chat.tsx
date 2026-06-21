@@ -370,10 +370,13 @@ export default function Chat() {
     setChatId(null);
     setMessages([]);
     setSystemPrompt(null);
+    setAdhdAssist(assistDefault);
+    setAssistive(assistDefault, { silent: true });
+    setSelectedCourseCode(lastCourseCode ?? null);
     if (typeof window !== "undefined") {
       window.sessionStorage.removeItem(ACTIVE_CHAT_KEY);
     }
-  }, [setMessages]);
+  }, [setMessages, assistDefault, lastCourseCode, setAssistive]);
 
   const handleSystemPromptSave = async (prompt: string | null) => {
     setSystemPrompt(prompt);
