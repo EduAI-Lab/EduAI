@@ -8,7 +8,7 @@ import {
 describe("createInvitationSchema", () => {
   it("accepts an INSTRUCTOR invite without units", () => {
     const r = createInvitationSchema.safeParse({
-      email: "prof@test.local",
+      email: "prof@ubc.ca",
       role: "INSTRUCTOR",
     });
     expect(r.success).toBe(true);
@@ -16,7 +16,7 @@ describe("createInvitationSchema", () => {
 
   it("accepts an ADMIN invite with an optional name", () => {
     const r = createInvitationSchema.safeParse({
-      email: "admin@test.local",
+      email: "admin@ubc.ca",
       name: "Ada Admin",
       role: "ADMIN",
     });
@@ -25,7 +25,7 @@ describe("createInvitationSchema", () => {
 
   it("accepts a UNIT_ADMIN invite with at least one unit", () => {
     const r = createInvitationSchema.safeParse({
-      email: "unit@test.local",
+      email: "unit@ubc.ca",
       role: "UNIT_ADMIN",
       authorizedUnits: ["COSC", "MATH"],
     });
@@ -34,7 +34,7 @@ describe("createInvitationSchema", () => {
 
   it("accepts a STUDENT invite without units (unit-admin flow)", () => {
     const r = createInvitationSchema.safeParse({
-      email: "s@test.local",
+      email: "s@ubc.ca",
       role: "STUDENT",
     });
     expect(r.success).toBe(true);
@@ -42,13 +42,13 @@ describe("createInvitationSchema", () => {
 
   it("rejects TA (not platform-invitable)", () => {
     expect(
-      createInvitationSchema.safeParse({ email: "ta@test.local", role: "TA" }).success,
+      createInvitationSchema.safeParse({ email: "ta@ubc.ca", role: "TA" }).success,
     ).toBe(false);
   });
 
   it("rejects units on a STUDENT invite", () => {
     const r = createInvitationSchema.safeParse({
-      email: "s@test.local",
+      email: "s@ubc.ca",
       role: "STUDENT",
       authorizedUnits: ["COSC"],
     });
@@ -57,7 +57,7 @@ describe("createInvitationSchema", () => {
 
   it("requires units for UNIT_ADMIN", () => {
     const r = createInvitationSchema.safeParse({
-      email: "unit@test.local",
+      email: "unit@ubc.ca",
       role: "UNIT_ADMIN",
     });
     expect(r.success).toBe(false);
@@ -68,7 +68,7 @@ describe("createInvitationSchema", () => {
 
   it("rejects units on a non-UNIT_ADMIN invite", () => {
     const r = createInvitationSchema.safeParse({
-      email: "prof@test.local",
+      email: "prof@ubc.ca",
       role: "INSTRUCTOR",
       authorizedUnits: ["COSC"],
     });
@@ -81,11 +81,28 @@ describe("createInvitationSchema", () => {
     ).toBe(false);
     expect(
       createInvitationSchema.safeParse({
-        email: "unit@test.local",
+        email: "unit@ubc.ca",
         role: "UNIT_ADMIN",
         authorizedUnits: ["NOTAUNIT"],
       }).success,
     ).toBe(false);
+  });
+
+  it("rejects a well-formed non-UBC email on the email path (#567)", () => {
+    const r = createInvitationSchema.safeParse({ email: "prof@gmail.com", role: "INSTRUCTOR" });
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      expect(r.error.issues.some((i) => i.path[0] === "email")).toBe(true);
+    }
+  });
+
+  it("accepts UBC subdomains for both students and staff (#567)", () => {
+    expect(
+      createInvitationSchema.safeParse({ email: "stu@student.ubc.ca", role: "INSTRUCTOR" }).success,
+    ).toBe(true);
+    expect(
+      createInvitationSchema.safeParse({ email: "dept@cs.ubc.ca", role: "INSTRUCTOR" }).success,
+    ).toBe(true);
   });
 });
 

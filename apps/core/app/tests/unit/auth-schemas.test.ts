@@ -39,7 +39,7 @@ describe("signInSchema", () => {
 describe("signUpSchema", () => {
   const valid = {
     name: "Ada",
-    email: "a@b.com",
+    email: "ada@ubc.ca",
     password: "12345678",
     confirmPassword: "12345678",
   };
@@ -59,6 +59,18 @@ describe("signUpSchema", () => {
       const mismatch = r.error.issues.find((i) => i.path[0] === "confirmPassword");
       expect(mismatch?.message).toBe("Passwords don't match");
     }
+  });
+
+  it("rejects a well-formed non-UBC email on the email path (#567)", () => {
+    const r = signUpSchema.safeParse({ ...valid, email: "ada@gmail.com" });
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      expect(r.error.issues.some((i) => i.path[0] === "email")).toBe(true);
+    }
+  });
+
+  it("accepts a UBC student subdomain (#567)", () => {
+    expect(signUpSchema.safeParse({ ...valid, email: "ada@student.ubc.ca" }).success).toBe(true);
   });
 });
 
