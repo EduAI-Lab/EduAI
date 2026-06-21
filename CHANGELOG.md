@@ -64,6 +64,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] tests: Update `canvas.integration.test.ts` reassignment case to use a unique student number (avoids `studentIdLookup` collision with seeded data). (#578, @GlowyBlack, 2026-06-15)
 - [ai-tutor] feat: RBAC UI for all five role views (#616) — add `app/lib/rbac/` permission helpers, `PermissionGate`, `AtRoleBanner`, and `useAtPermissions`; gate instructor shell for TA read-only; add `CreateCourseDialog`, course tabs (content/enrollments/submissions/analytics), `CourseEnrollmentsPanel` with TA role assignment, admin EduAI enrollment sync; extend `api.ts` with analytics/enrollment endpoints; document endpoint audit in `docs/rbac-endpoints-ai-tutor.md` (#614). Closes #614, #616, #617 (AiTutor). ([#619](https://github.com/EduAI-Lab/EduAI/pull/619), @Ayyhab, 2026-06-14)
 - [core] fix: Stop frontend from retransmitting the full conversation history on every chat request by sending only the newest user message and associated metadata. (#487, @YibingW, 2026-06-15)
+- [ai-tutor] fix: Route TA promotion through Core — `PATCH /admin/courses/:courseId/enrollments/:userId/role` now calls Core's enrollment-role endpoint before updating locally, keeping Core as the authoritative source; remove the band-aid `local.role !== 'TA'` skip from `syncCourseEnrollments` so Core-initiated TA demotions propagate on the next sync. (#674, @evanbones, 2026-06-19)
 
 ---
 ## [Week 6 — June 8–14, 2026]

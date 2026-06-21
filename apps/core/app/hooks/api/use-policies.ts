@@ -41,8 +41,14 @@ export function usePolicies() {
   }, [refresh]);
 
   const setPolicy = useCallback(async (key: string, value: boolean) => {
-    // Optimistic update so the switch responds immediately.
-    setPolicies((prev) => ({ ...prev, [key]: value }));
+    // Optimistic update so the switch responds immediately. Capture the true
+    // prior value first so a failed PATCH restores exactly what Core still holds
+    // (don't assume it was `!value` — a race or repeat could make that wrong).
+    let previous: boolean | undefined;
+    setPolicies((prev) => {
+      previous = prev[key];
+      return { ...prev, [key]: value };
+    });
     try {
       const data = await apiFetch<PoliciesResponse>("/api/policies", {
         method: "PATCH",
@@ -52,8 +58,8 @@ export function usePolicies() {
     } catch (err) {
       console.error("Failed to update policy:", err);
       setError(err instanceof Error ? err.message : "Failed to update policy");
-      // Roll back on failure.
-      setPolicies((prev) => ({ ...prev, [key]: !value }));
+      // Roll back to the captured prior value.
+      setPolicies((prev) => ({ ...prev, [key]: previous ?? !value }));
     }
   }, []);
 

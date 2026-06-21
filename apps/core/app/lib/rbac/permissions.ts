@@ -76,11 +76,13 @@ export function canManageTopics(
 }
 
 // §5c Course chat visibility
-// Single source of truth for "who may read a course's chats", consumed by all
-// three chat routes (course / unit / single-chat) and the course UI so they
-// cannot drift. Returns the policy flag that gates the level, or the sentinels
-// 'always' (ADMIN — no flag needed) / 'never' (TA/STUDENT/none — no flag can
-// grant it).
+// Single source of truth for "who may read another user's course chats". The
+// §5c oversight endpoints (/api/courses/:id/chats, /api/units/:dept/chats,
+// /api/chats/:id) resolve staff access through this gate; the legacy listing
+// path (/api/chats, /api/chats/:id/messages) is own-chats + ADMIN only and never
+// performs staff oversight, so the two cannot drift. Returns the policy flag
+// that gates the level, or the sentinels 'always' (ADMIN — no flag needed) /
+// 'never' (TA/STUDENT/none — no flag can grant it).
 export type ChatViewGate = PolicyKey | 'always' | 'never'
 
 export function courseChatViewPolicyKey(access: CourseAccess): ChatViewGate {
@@ -93,6 +95,40 @@ export function courseChatViewPolicyKey(access: CourseAccess): ChatViewGate {
       return 'unitAdmins.canViewUnitChats'
     default:
       return 'never'
+  }
+}
+
+// §6 Enrollment & TA management gate. ADMIN/UNIT_ADMIN always; INSTRUCTOR via
+// `instructors.canManageEnrollments`; TA/STUDENT never. Mirrors
+// courseChatViewPolicyKey so the enrollments and TA routes share one source.
+export function manageEnrollmentsPolicyKey(access: CourseAccess): ChatViewGate {
+  switch (access) {
+    case 'admin':
+    case 'unit':
+      return 'always'
+    case 'instructor':
+      return 'instructors.canManageEnrollments'
+    default:
+      return 'never'
+  }
+}
+
+// Course-scoped capabilities whose policy gate is resolved centrally, so adding
+// a flag is one entry here instead of an edit to every route that enforces it.
+export type CourseCapability = 'viewChats' | 'manageEnrollments'
+
+// Resolve the policy gate governing `capability` for a given access level —
+// a PolicyKey to check, or the 'always'/'never' sentinels. Pair with `getPolicy`
+// on the server, or read the resolved flag from a policy map in the UI.
+export function resolvePolicyGate(
+  access: CourseAccess,
+  capability: CourseCapability,
+): ChatViewGate {
+  switch (capability) {
+    case 'viewChats':
+      return courseChatViewPolicyKey(access)
+    case 'manageEnrollments':
+      return manageEnrollmentsPolicyKey(access)
   }
 }
 

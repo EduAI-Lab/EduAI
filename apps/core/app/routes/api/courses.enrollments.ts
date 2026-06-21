@@ -23,6 +23,7 @@ import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { getPolicy, denyByPolicy } from "~/lib/policy.server";
+import { resolvePolicyGate } from "~/lib/rbac/permissions";
 import { getCourse } from "~/lib/courses/server";
 import { addEnrollment, getCourseEnrollments } from "~/lib/courses/enrollments.server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
@@ -152,12 +153,20 @@ export async function action({ request, params }: ActionFunctionArgs) {
     });
   }
 
-  // Policy gate: an INSTRUCTOR may add/remove students & TAs only when the flag
-  // is on; ADMIN / UNIT_ADMIN are unaffected.
-  if (access.level === "instructor" && !(await getPolicy("instructors.canManageEnrollments"))) {
+  // Policy gate (resolved centrally via resolvePolicyGate so the enrollments and
+  // TA routes share one source of truth): an INSTRUCTOR may add/remove students
+  // & TAs only when the flag is on; ADMIN / UNIT_ADMIN are unaffected. The rank
+  // check above already rejects TA/STUDENT, so the gate here is 'always' or the
+  // instructor flag.
+  const enrollmentGate = resolvePolicyGate(access.level, "manageEnrollments");
+  if (
+    enrollmentGate !== "always" &&
+    enrollmentGate !== "never" &&
+    !(await getPolicy(enrollmentGate))
+  ) {
     return denyByPolicy({
       request,
-      policyKey: "instructors.canManageEnrollments",
+      policyKey: enrollmentGate,
       user: session.user,
       action: "enrollment.add",
       courseId,
