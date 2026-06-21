@@ -376,4 +376,53 @@ ${longBody}`,
     expect(result.text).toBe(messy);
     expect(result.rewritten).toBe(false);
   });
+
+  it("rewrites a structurally valid draft that still contains urgency language", async () => {
+    vi.mocked(generateText).mockResolvedValue({
+      text: `**Top summary**
+- Take your time with this step.
+
+**Next?** Want to try step one?`,
+      usage: { promptTokens: 8, completionTokens: 12 },
+    } as never);
+
+    const urgent = `**Top summary**
+- Do this quickly before the exam.
+
+**Next?** Want to try step one?`;
+    const result = await auditAndMaybeRewrite({
+      draft: urgent,
+      model: mockModel,
+      profile: "full_tutoring",
+    });
+    expect(result.rewritten).toBe(true);
+    expect(result.method).toBe("llm");
+    expect(result.afterMetrics.noUrgency).toBe(true);
+    expect(result.text).not.toMatch(/quickly/i);
+    expect(generateText).toHaveBeenCalledOnce();
+  });
+
+  it("rejects an LLM rewrite that still contains urgency, keeping the draft", async () => {
+    vi.mocked(generateText).mockResolvedValue({
+      text: `**Top summary**
+- Still do this quickly.
+
+**Next?** Want to try step one?`,
+      usage: { promptTokens: 8, completionTokens: 12 },
+    } as never);
+
+    const urgent = `**Top summary**
+- Do this quickly before the exam.
+
+**Next?** Want to try step one?`;
+    const result = await auditAndMaybeRewrite({
+      draft: urgent,
+      model: mockModel,
+      profile: "full_tutoring",
+    });
+    expect(result.rewritten).toBe(false);
+    expect(result.method).toBe("none");
+    expect(result.text).toBe(urgent);
+    expect(generateText).toHaveBeenCalledOnce();
+  });
 });
