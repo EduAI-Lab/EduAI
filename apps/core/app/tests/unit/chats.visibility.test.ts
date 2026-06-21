@@ -34,6 +34,7 @@ vi.mock("~/lib/policy.server", () => ({
 import { loader as courseChatsLoader } from "~/routes/api/courses.chats.$";
 import { loader as unitChatsLoader } from "~/routes/api/units.chats.$";
 import { loader as chatDetailLoader } from "~/routes/api/chats.$chatId";
+import { loader as chatMessagesLoader } from "~/routes/api/chats.$chatId.messages";
 import { auth } from "~/lib/auth/server";
 import {
   resolveCourseAccessWithCourse,
@@ -321,6 +322,77 @@ describe("GET /api/chats/:chatId (course-authorized viewer)", () => {
     session("ADMIN", "admin-1");
     prismaMock.chat.findFirst.mockResolvedValue(CHAT_ROW);
     const res = await chatDetailLoader(detailArgs());
+    expect(res.status).toBe(200);
+  });
+});
+
+// The transcript route must honour the SAME §5c oversight gate as the metadata
+// route above — both resolve access through `resolveChatReadAccess`, so the two
+// can never drift. These cases pin the leaks the shared gate closes: a staff
+// viewer with the flag OFF, and a staff viewer reading a non-student chat.
+const MSG_CHAT_ROW = {
+  ...CHAT_ROW,
+  course: { id: "c1", code: "COSC101", name: "Intro" },
+  user: { id: "owner-1", name: "Stu Dent", email: "stu@ubc.ca" },
+};
+
+function messagesArgs(chatId = "chat-1") {
+  return {
+    request: new Request(`http://localhost/api/chats/${chatId}/messages`),
+    params: { chatId },
+    context: {} as never,
+  };
+}
+
+describe("GET /api/chats/:chatId/messages (transcript oversight gate)", () => {
+  it("lets the owner read their own transcript", async () => {
+    session("STUDENT", "owner-1");
+    prismaMock.chat.findFirst.mockResolvedValue(MSG_CHAT_ROW);
+    const res = await chatMessagesLoader(messagesArgs());
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.messages).toHaveLength(1);
+    expect(body.canEdit).toBe(true);
+  });
+
+  it("lets a course INSTRUCTOR read a STUDENT transcript when the flag is on", async () => {
+    session("INSTRUCTOR", "instr-1");
+    prismaMock.chat.findFirst.mockResolvedValue(MSG_CHAT_ROW);
+    access("instructor", 2);
+    vi.mocked(getPolicy).mockResolvedValue(true);
+    prismaMock.enrollment.findFirst.mockResolvedValue({ id: "e1" });
+    const res = await chatMessagesLoader(messagesArgs());
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.messages).toHaveLength(1);
+    expect(body.canEdit).toBe(false); // oversight read is never editable
+  });
+
+  it("404s a non-owner INSTRUCTOR when the flag is OFF (gate not bypassable via /messages)", async () => {
+    session("INSTRUCTOR", "instr-1");
+    prismaMock.chat.findFirst.mockResolvedValue(MSG_CHAT_ROW);
+    access("instructor", 2);
+    vi.mocked(getPolicy).mockResolvedValue(false);
+    const res = await chatMessagesLoader(messagesArgs());
+    expect(res.status).toBe(404);
+    expect(prismaMock.chatMessage.findMany).not.toHaveBeenCalled();
+  });
+
+  it("404s an INSTRUCTOR reading a NON-student (staff) transcript even with the flag on", async () => {
+    session("INSTRUCTOR", "instr-1");
+    prismaMock.chat.findFirst.mockResolvedValue(MSG_CHAT_ROW);
+    access("instructor", 2);
+    vi.mocked(getPolicy).mockResolvedValue(true);
+    prismaMock.enrollment.findFirst.mockResolvedValue(null); // owner is not an active STUDENT
+    const res = await chatMessagesLoader(messagesArgs());
+    expect(res.status).toBe(404);
+    expect(prismaMock.chatMessage.findMany).not.toHaveBeenCalled();
+  });
+
+  it("ADMIN reads any transcript", async () => {
+    session("ADMIN", "admin-1");
+    prismaMock.chat.findFirst.mockResolvedValue(MSG_CHAT_ROW);
+    const res = await chatMessagesLoader(messagesArgs());
     expect(res.status).toBe(200);
   });
 });
