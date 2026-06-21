@@ -68,18 +68,21 @@ describe("createAdminChatTools read execute", () => {
     });
 
     const tools = createAdminChatTools(ctx);
-    const result = await tools.listCourseTopics.execute({ courseCode: "COSC 111" });
+    const result = await tools.listCourseTopics.execute({ courseCode: "COSC 111" }, { toolCallId: "test" });
     expect(resolveAdminCourseId).toHaveBeenCalled();
     expect(listAdminCourseTopics).toHaveBeenCalledWith(ADMIN, "course-1");
     expect(result).toMatchObject({ count: 0, dataSource: "database" });
   });
   it("returns CONFIRMATION_REQUIRED for createCourseTopic when confirmed is false", async () => {
     const tools = createAdminChatTools(ctx);
-    const result = await tools.createCourseTopic.execute({
-      confirmed: false,
-      courseCode: "COSC 111",
-      name: "New Topic",
-    });
+    const result = await tools.createCourseTopic.execute(
+      {
+        confirmed: false,
+        courseCode: "COSC 111",
+        name: "New Topic",
+      },
+      { toolCallId: "test" },
+    );
     expect(result).toMatchObject({
       writeSucceeded: false,
       error: "CONFIRMATION_REQUIRED",
@@ -90,12 +93,15 @@ describe("createAdminChatTools read execute", () => {
 describe("createAdminChatTools write execute", () => {
   it("returns CONFIRMATION_REQUIRED for createUser when confirmed is false", async () => {
     const tools = createAdminChatTools(ctx);
-    const result = await tools.createUser.execute({
-      confirmed: false,
-      name: "Test User",
-      email: "test@example.com",
-      role: "STUDENT",
-    });
+    const result = await tools.createUser.execute(
+      {
+        confirmed: false,
+        name: "Test User",
+        email: "test@example.com",
+        role: "STUDENT",
+      },
+      { toolCallId: "test" },
+    );
     expect(result).toMatchObject({
       writeSucceeded: false,
       error: "CONFIRMATION_REQUIRED",
@@ -105,10 +111,13 @@ describe("createAdminChatTools write execute", () => {
 
   it("returns user ref validation error without crashing for updateUser", async () => {
     const tools = createAdminChatTools(ctx);
-    const result = await tools.updateUser.execute({
-      confirmed: true,
-      name: "Updated",
-    });
+    const result = await tools.updateUser.execute(
+      {
+        confirmed: true,
+        name: "Updated",
+      },
+      { toolCallId: "test" },
+    );
     expect(result).toMatchObject({
       writeSucceeded: false,
       error: "VALIDATION_ERROR",

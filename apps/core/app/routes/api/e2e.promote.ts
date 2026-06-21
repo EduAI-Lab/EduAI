@@ -5,6 +5,7 @@
  * so the endpoint is completely invisible in production environments that omit
  * the variable. Never import or call this from application code.
  */
+import type { UserRole } from "@prisma/client";
 import type { ActionFunctionArgs } from "react-router";
 import prisma from "~/lib/prisma.server";
 
@@ -57,7 +58,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
   const updated = await prisma.user.update({
     where: { email },
-    data: { role },
+    data: { role: role as UserRole },
     select: { id: true, email: true, role: true, name: true },
   });
 
