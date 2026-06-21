@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { Session } from "./server";
 import { auth } from "./server";
+import { denyByPolicy, getPolicy } from "~/lib/policy.server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 
@@ -120,11 +121,16 @@ export async function requireAdmin(request: Request): Promise<AdminGate> {
 
 /**
  * Resolve a session for an invitation endpoint: the actor must be an active
- * ADMIN or UNIT_ADMIN. Honors the `x-api-key`→ADMIN rule and reuses that
- * session. Role-membership only — the per-flag policy gate for UNIT_ADMIN
- * (`unitAdmins.canInvite`) is enforced by the caller via `denyByPolicy`.
+ * ADMIN, or a UNIT_ADMIN with the `unitAdmins.canInvite` policy flag on. Honors
+ * the `x-api-key`→ADMIN rule and reuses that session. The flag is enforced HERE,
+ * not by callers, so no invitation endpoint can accidentally skip it — ADMIN is
+ * always allowed. `action` tags the policy-denial audit line (e.g.
+ * "invitation.create").
  */
-export async function requireInviter(request: Request): Promise<AdminGate> {
+export async function requireInviter(
+  request: Request,
+  action: string,
+): Promise<AdminGate> {
   const { response, session } = await enforceAdminIfApiKey(request);
   if (response) return { response, session: null };
 
@@ -153,6 +159,22 @@ export async function requireInviter(request: Request): Promise<AdminGate> {
       session: null,
     };
   }
+
+  // A UNIT_ADMIN additionally needs the `unitAdmins.canInvite` flag; ADMIN is
+  // always allowed. Enforced in the guard so every invitation endpoint inherits
+  // the gate and a new one cannot forget it.
+  if (role !== "ADMIN" && !(await getPolicy("unitAdmins.canInvite"))) {
+    return {
+      response: denyByPolicy({
+        policyKey: "unitAdmins.canInvite",
+        user: resolved.user,
+        action,
+        request,
+      }),
+      session: null,
+    };
+  }
+
   return { response: null, session: resolved };
 }
 

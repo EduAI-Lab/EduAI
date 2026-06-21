@@ -2,7 +2,6 @@ import type { ActionFunctionArgs } from "react-router";
 
 import { requireInviter } from "~/lib/auth/guards.server";
 import { resendInvitation, revokeInvitation } from "~/lib/invitations/service.server";
-import { denyByPolicy, getPolicy } from "~/lib/policy.server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 
@@ -21,19 +20,11 @@ function json(data: unknown, status = 200): Response {
  * A UNIT_ADMIN may only act on invitations they themselves sent.
  */
 export async function action({ request, params }: ActionFunctionArgs) {
-  const gate = await requireInviter(request);
+  const gate = await requireInviter(request, "invitation.manage");
   if (gate.response) return gate.response;
 
   const user = gate.session.user;
   const isAdmin = user.role === "ADMIN";
-  if (!isAdmin && !(await getPolicy("unitAdmins.canInvite"))) {
-    return denyByPolicy({
-      policyKey: "unitAdmins.canInvite",
-      user,
-      action: "invitation.manage",
-      request,
-    });
-  }
   // A UNIT_ADMIN is scoped to invitations they sent; ADMIN is unrestricted.
   const scope = isAdmin ? undefined : { restrictToInviterId: user.id };
 
