@@ -52,7 +52,7 @@ describe("listAdminUsers", () => {
     prismaMock.user.findMany.mockResolvedValue([{ id: "u1", email: "a@test.com" }]);
     prismaMock.user.count.mockResolvedValue(1);
     const result = await listAdminUsers(ADMIN);
-    expect(result.users).toHaveLength(1);
+    expect("users" in result && result.users).toHaveLength(1);
     if ("total" in result) {
       expect(result.total).toBe(1);
     }
@@ -90,7 +90,7 @@ describe("listAdminCourseEnrollments", () => {
     const result = await listAdminCourseEnrollments(ADMIN, "c1", {
       enrolledSince: "2026-06-01T00:00:00.000Z",
     });
-    expect(result.count).toBe(1);
+    expect("count" in result && result.count).toBe(1);
     expect(prismaMock.enrollment.findMany).toHaveBeenCalled();
   });
 
@@ -167,7 +167,7 @@ describe("listAdminBugReportsForChat", () => {
     } as never);
 
     const result = await listAdminBugReportsForChat(ADMIN, { status: "UNHANDLED" });
-    expect(result.total).toBe(1);
+    expect("total" in result && result.total).toBe(1);
     expect(listBugReports).toHaveBeenCalledWith({
       status: "UNHANDLED",
       source: undefined,
