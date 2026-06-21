@@ -22,6 +22,7 @@ import {
   ADHD_CLARIFICATION_WORD_CAP,
   ADHD_TUTORING_WORD_CAP,
   computeAdhdResponseMetrics,
+  isProfileStructuralPass,
   isStructuralCompliancePass,
 } from "~/lib/ai/adhd-metrics";
 import {
@@ -202,7 +203,18 @@ describe("tryDeterministicStructuralFix", () => {
     expect(isStructuralCompliancePass(computeAdhdResponseMetrics(fixed!))).toBe(true);
   });
 
-  it("fixes archived S2-on turn 2 redirect turn", () => {
+  it("passes redirect drafts without Top summary when profile is redirect", () => {
+    const fixed = tryDeterministicStructuralFix(S2_ON_T2_ASSISTANT, {
+      profile: "redirect",
+      wordCap: ADHD_CLARIFICATION_WORD_CAP,
+    });
+    expect(fixed).not.toBeNull();
+    expect(fixed!.startsWith("**Top summary**")).toBe(false);
+    const metrics = computeAdhdResponseMetrics(fixed!, { wordCap: ADHD_CLARIFICATION_WORD_CAP });
+    expect(isProfileStructuralPass(metrics, "redirect", fixed!)).toBe(true);
+  });
+
+  it("fixes archived S2-on turn 2 redirect turn (legacy global path)", () => {
     const fixed = tryDeterministicStructuralFix(S2_ON_T2_ASSISTANT);
     expect(fixed).not.toBeNull();
     expect(fixed).toContain("**Next?** Want to come back to the dishwashing steps first");
@@ -276,7 +288,36 @@ describe("auditAndMaybeRewrite", () => {
 
 **Next?** More?`;
 
-    const result = await auditAndMaybeRewrite({ draft: compliant, model: mockModel });
+    const result = await auditAndMaybeRewrite({
+      draft: compliant,
+      model: mockModel,
+      profile: "full_tutoring",
+    });
+    expect(result.rewritten).toBe(false);
+    expect(result.method).toBe("none");
+    expect(generateText).not.toHaveBeenCalled();
+  });
+
+  it("skips Dean rewrite for greeting profile", async () => {
+    const greeting = "Hello! How can I help you today?";
+    const result = await auditAndMaybeRewrite({
+      draft: greeting,
+      model: mockModel,
+      profile: "greeting",
+      wordCap: 80,
+    });
+    expect(result.rewritten).toBe(false);
+    expect(result.method).toBe("none");
+    expect(generateText).not.toHaveBeenCalled();
+  });
+
+  it("passes redirect drafts that already meet profile rules", async () => {
+    const result = await auditAndMaybeRewrite({
+      draft: S2_ON_T2_ASSISTANT,
+      model: mockModel,
+      profile: "redirect",
+      wordCap: ADHD_CLARIFICATION_WORD_CAP,
+    });
     expect(result.rewritten).toBe(false);
     expect(result.method).toBe("none");
     expect(generateText).not.toHaveBeenCalled();
