@@ -1,5 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { requireAuth, requireRole, requireRoles, isUnitAdminForCourse } from '../../src/middleware/auth.js';
+
+vi.mock('../../src/services/policyService.js', () => ({
+  getPolicy: vi.fn(),
+}));
+
+import {
+  requireAuth,
+  requireRole,
+  requireRoles,
+  requireInstructorPolicy,
+  isUnitAdminForCourse,
+} from '../../src/middleware/auth.js';
+import { getPolicy } from '../../src/services/policyService.js';
 
 process.env.CORE_URL = 'http://core.test';
 
@@ -191,6 +203,39 @@ describe('requireRole', () => {
 describe('requireRoles (backward-compat alias)', () => {
   it('is the same function reference as requireRole', () => {
     expect(requireRoles).toBe(requireRole);
+  });
+});
+
+describe('requireInstructorPolicy', () => {
+  let next;
+
+  beforeEach(() => {
+    next = vi.fn();
+    vi.clearAllMocks();
+  });
+
+  it('passes non-instructors through without consulting the policy (ADMIN unaffected)', async () => {
+    const req = { user: { role: 'ADMIN' } };
+    await requireInstructorPolicy('instructors.canCreateCourses')(req, makeRes(), next);
+    expect(next).toHaveBeenCalledOnce();
+    expect(getPolicy).not.toHaveBeenCalled();
+  });
+
+  it('allows an INSTRUCTOR when the policy flag is enabled', async () => {
+    getPolicy.mockResolvedValue(true);
+    const req = { user: { role: 'INSTRUCTOR' } };
+    await requireInstructorPolicy('instructors.canCreateCourses')(req, makeRes(), next);
+    expect(next).toHaveBeenCalledOnce();
+    expect(getPolicy).toHaveBeenCalledWith('instructors.canCreateCourses');
+  });
+
+  it('blocks an INSTRUCTOR with 403 when the policy flag is disabled', async () => {
+    getPolicy.mockResolvedValue(false);
+    const req = { user: { role: 'INSTRUCTOR' } };
+    const res = makeRes();
+    await requireInstructorPolicy('instructors.canCreateCourses')(req, res, next);
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
   });
 });
 

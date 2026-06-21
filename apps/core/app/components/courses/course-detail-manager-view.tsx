@@ -58,15 +58,16 @@ import {
 import { Checkbox } from "@eduai/ui";
 import { CourseMaterialsUpload } from "~/components/course-materials-upload";
 import { CourseEmbeddingSettings } from "~/components/course-embedding-settings";
-import { CourseChatHistory } from "~/components/courses/course-chat-history";
+import { CourseChatsTab } from "~/components/courses/course-chats-panel";
 import type { CourseMaterial } from "~/components/course-materials-upload";
 import { CanvasMaterialSyncDialog } from "~/components/canvas/canvas-material-sync-dialog";
 import type { CourseDetail } from "~/hooks/api/use-course-detail";
 import type { CourseTopic } from "~/hooks/api/use-course-topics";
 import type { CourseEnrollment } from "~/hooks/api/use-course-enrollments";
 import type { CourseTA } from "~/hooks/api/use-course-tas";
-import { canManageTopics, canManageInstructors } from "~/lib/rbac";
+import { canManageTopics, canManageInstructors, canViewCourseChats } from "~/lib/rbac";
 import type { CourseAccess } from "~/lib/rbac";
+import { usePolicies } from "~/hooks/api/use-policies";
 
 interface StaffUser {
   id: string;
@@ -219,10 +220,25 @@ export function CourseDetailManagerView({
     prevSuccessRef.current = materialsSuccess;
   }, [materialsSuccess]);
 
-  const canManage = canManageTopics(access);
-  const canManageStaff = canManageInstructors(access);
+  const { policies, isLoading: policiesLoading } = usePolicies();
+  const canManage = canManageTopics(access, policies["tas.canManageTopics"] ?? false);
+  // Reassigning the instructor stays ADMIN/UNIT_ADMIN only; the Staff tab (TA
+  // management) also opens to an owning instructor when the enrollment policy is
+  // on. Mirrors the TA endpoint and loader gates. The instructor branch stays
+  // restrictive until policies load so a disabled flag can't briefly flash the
+  // staff controls (admin/unit access is role-based and not gated on the fetch).
+  const canAssignInstructor = canManageInstructors(access);
+  const canManageStaff =
+    canAssignInstructor ||
+    (!policiesLoading &&
+      access === "instructor" &&
+      (policies["instructors.canManageEnrollments"] ?? true));
   const canManageRagSettings = access === "admin" || access === "instructor";
 
+  // §5d: the Chat history tab is visible only to roles whose course-chat-
+  // visibility flag is on. Uses the shared gate so the UI mirrors the backend
+  // chat routes exactly.
+  const canViewChats = canViewCourseChats(access, policies);
 
   // Check if current user can delete a material (either manage rank >= 2, or TA own-upload).
   // canManage covers ADMIN/UNIT_ADMIN/INSTRUCTOR.
@@ -565,7 +581,9 @@ export function CourseDetailManagerView({
           {canManageRagSettings && (
             <PageTabsTrigger value="settings">Settings</PageTabsTrigger>
           )}
-          <PageTabsTrigger value="chat-history">Chat history</PageTabsTrigger>
+          {canViewChats && (
+            <PageTabsTrigger value="chat-history">Chat history</PageTabsTrigger>
+          )}
         </PageTabsList>
 
         {/* ── Overview ── */}
@@ -1026,7 +1044,8 @@ export function CourseDetailManagerView({
                 <p className="text-sm text-green-600">{staffSuccess}</p>
               )}
 
-              {/* Instructor */}
+              {/* Instructor assignment — ADMIN/UNIT_ADMIN only */}
+              {canAssignInstructor && (
               <div className="flex flex-col gap-3">
                 <p className="text-sm font-medium">Instructor</p>
                 {course.instructor ? (
@@ -1115,6 +1134,7 @@ export function CourseDetailManagerView({
                   </>
                 )}
               </div>
+              )}
 
               {/* TAs */}
               <div className="flex flex-col gap-3">
@@ -1272,14 +1292,16 @@ export function CourseDetailManagerView({
           </PageTabsContent>
         )}
 
-        {/* ── Chat history ── */}
-        <PageTabsContent
-          value="chat-history"
-          forceMount
-          className="data-[state=inactive]:hidden flex-1 outline-none"
-        >
-          <CourseChatHistory courseId={course.id} courseCode={course.code} />
-        </PageTabsContent>
+        {/* ── Chat history (§5d: gated on the course-chat-visibility policy) ── */}
+        {canViewChats && (
+          <PageTabsContent
+            value="chat-history"
+            forceMount
+            className="data-[state=inactive]:hidden flex-1 outline-none"
+          >
+            <CourseChatsTab courseId={course.id} />
+          </PageTabsContent>
+        )}
       </PageTabs>
     </div>
   );

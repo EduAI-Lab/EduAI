@@ -21,12 +21,23 @@ vi.mock("~/lib/courses/enrollments.server", () => ({
   addEnrollment: vi.fn(),
 }));
 
+// getPolicy resolves to each flag's real code default unless a test overrides it.
+vi.mock("~/lib/policy.server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/policy.server")>();
+  return {
+    ...actual,
+    getPolicy: vi.fn(async (key: keyof typeof actual.POLICY_FLAGS) => actual.POLICY_FLAGS[key].default),
+    logPolicyDenial: vi.fn(),
+  };
+});
+
 import { loader, action } from "~/routes/api/courses.enrollments";
 import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { getCourse } from "~/lib/courses/server";
 import { getCourseEnrollments, addEnrollment } from "~/lib/courses/enrollments.server";
+import { getPolicy, POLICY_FLAGS } from "~/lib/policy.server";
 
 const VALID_KEY = "test-service-key";
 
@@ -103,6 +114,7 @@ beforeEach(() => {
   vi.mocked(getCourse).mockResolvedValue(MOCK_COURSE as never);
   vi.mocked(getCourseEnrollments).mockResolvedValue(MOCK_ENROLLMENTS as never);
   mockAccess({ level: "instructor", rank: 2 });
+  vi.mocked(getPolicy).mockImplementation(async (key) => POLICY_FLAGS[key].default);
 });
 
 afterEach(() => vi.unstubAllEnvs());
@@ -303,6 +315,22 @@ describe("POST /api/courses/:id/enrollments action (#305)", () => {
     const res = await action(makePost("course-1", { userId: "u9", role: "INSTRUCTOR" }));
     expect(res.status).toBe(403);
     expect(addEnrollment).not.toHaveBeenCalled();
+  });
+
+  it("returns 403 for an INSTRUCTOR when instructors.canManageEnrollments is off", async () => {
+    mockAccess({ level: "instructor", rank: 2 });
+    vi.mocked(getPolicy).mockResolvedValue(false);
+    const res = await action(makePost("course-1", { userId: "u9", role: "STUDENT" }));
+    expect(res.status).toBe(403);
+    expect(getPolicy).toHaveBeenCalledWith("instructors.canManageEnrollments");
+    expect(addEnrollment).not.toHaveBeenCalled();
+  });
+
+  it("ADMIN add is unaffected by instructors.canManageEnrollments (201 even when off)", async () => {
+    mockAccess({ level: "admin", rank: 4 });
+    vi.mocked(getPolicy).mockResolvedValue(false);
+    const res = await action(makePost("course-1", { userId: "u9", role: "STUDENT" }));
+    expect(res.status).toBe(201);
   });
 
   it("lets UNIT_ADMIN add an INSTRUCTOR", async () => {

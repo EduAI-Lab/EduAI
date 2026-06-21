@@ -29,6 +29,16 @@ vi.mock("~/lib/courses/server", () => ({
   deleteCourseTopic: vi.fn(),
 }));
 
+// getPolicy resolves to each flag's real code default unless a test overrides it.
+vi.mock("~/lib/policy.server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/policy.server")>();
+  return {
+    ...actual,
+    getPolicy: vi.fn(async (key: keyof typeof actual.POLICY_FLAGS) => actual.POLICY_FLAGS[key].default),
+    logPolicyDenial: vi.fn(),
+  };
+});
+
 import { loader, action } from "~/routes/api/courses.topics.$";
 import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
@@ -40,6 +50,7 @@ import {
   updateCourseTopic,
   deleteCourseTopic,
 } from "~/lib/courses/server";
+import { getPolicy, POLICY_FLAGS } from "~/lib/policy.server";
 
 const COURSE_ID = "course-1";
 const VALID_KEY = "test-service-key";
@@ -124,6 +135,7 @@ beforeEach(() => {
   vi.mocked(getCourseTopics).mockResolvedValue([]);
   vi.mocked(getCourseTopic).mockResolvedValue(TOPIC);
   mockAccess({ level: "admin", rank: 4 });
+  vi.mocked(getPolicy).mockImplementation(async (key) => POLICY_FLAGS[key].default);
 });
 
 afterEach(() => vi.unstubAllEnvs());
@@ -241,6 +253,16 @@ describe("courses.topics action — POST", () => {
     expect(res.status).toBe(403);
   });
 
+  it("admits a TA create when tas.canManageTopics is on", async () => {
+    mockUser("ta-1");
+    mockAccess({ level: "ta", rank: 1 });
+    vi.mocked(getPolicy).mockResolvedValue(true);
+    vi.mocked(createCourseTopic).mockResolvedValue({ status: "201", topic: TOPIC });
+    const res = await action(makePost({ name: "Heaps" }));
+    expect(res.status).toBe(201);
+    expect(getPolicy).toHaveBeenCalledWith("tas.canManageTopics");
+  });
+
   it("returns 201 for an enrolled INSTRUCTOR (#299 — no longer ADMIN-only)", async () => {
     mockUser("u1", "INSTRUCTOR");
     mockAccess({ level: "instructor", rank: 2 });
@@ -346,6 +368,16 @@ describe("courses.topics action — PATCH (#299 new route)", () => {
     expect(res.status).toBe(403);
   });
 
+  it("admits a TA on another user's topic when tas.canManageTopics is on", async () => {
+    mockUser("ta-1");
+    mockAccess({ level: "ta", rank: 1 });
+    prismaMock.courseTopic.findFirst.mockResolvedValue({ createdBy: "someone-else" });
+    vi.mocked(getPolicy).mockResolvedValue(true);
+    vi.mocked(updateCourseTopic).mockResolvedValue({ status: "200", topic: TOPIC });
+    const res = await action(makePatch({ name: "Renamed" }, "topic-1"));
+    expect(res.status).toBe(200);
+  });
+
   it("rejects a TA on an ownerless topic (null createdBy)", async () => {
     mockUser("ta-1");
     mockAccess({ level: "ta", rank: 1 });
@@ -418,6 +450,16 @@ describe("courses.topics action — DELETE", () => {
     const res = await action(makeDelete({ topicId: "topic-1" }));
     expect(res.status).toBe(403);
     expect(deleteCourseTopic).not.toHaveBeenCalled();
+  });
+
+  it("admits a TA deleting another user's topic when tas.canManageTopics is on", async () => {
+    mockUser("ta-1");
+    mockAccess({ level: "ta", rank: 1 });
+    prismaMock.courseTopic.findFirst.mockResolvedValue({ createdBy: "someone-else" });
+    vi.mocked(getPolicy).mockResolvedValue(true);
+    vi.mocked(deleteCourseTopic).mockResolvedValue({ status: "204", topic: { id: TOPIC.id, name: TOPIC.name } });
+    const res = await action(makeDelete({ topicId: "topic-1" }));
+    expect(res.status).toBe(204);
   });
 
   it("resolves delete-by-name to a topic id for the TA own-only check", async () => {

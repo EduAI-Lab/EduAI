@@ -20,7 +20,10 @@ import { resolveAdhdResponseWordCap } from "~/lib/ai/adhd-metrics";
 import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
 import { findRelevantContent } from "~/lib/ai/embedding";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import {
+  resolveCourseAccessWithCourse,
+  type AccessLevel,
+} from "~/lib/auth/course-access.server";
 import { auth } from "~/lib/auth/server";
 import type { ActionFunctionArgs } from "react-router";
 import { z } from "zod";
@@ -28,6 +31,7 @@ import { webSearch, fetchPage } from "~/lib/ai/tools";
 import prisma from "~/lib/prisma.server";
 import { chatApiDebug } from "~/lib/chat-api-log";
 import { clientApiKeysBodySchema, toUserProviderSettings } from "~/lib/chat-api-keys.schema";
+import { getPolicy } from "~/lib/policy.server";
 import {
   buildCappedRagContextText,
   capRagHitsForTool,
@@ -415,6 +419,9 @@ export async function action({ request }: ActionFunctionArgs) {
     // user. Students need an active enrollment AND a published course; an
     // inactive enrollment blocks new chats but never own-history reads
     // (GET /api/chats/:chatId is ownership-scoped and unaffected).
+    // Hoisted so the web-tools gate (below) can read the caller's course access
+    // level — null for general (non-course) chats.
+    let courseAccess: AccessLevel | null = null;
     if (effectiveCourseId) {
       const { course, access } = await resolveCourseAccessWithCourse(
         actingUser,
@@ -432,6 +439,7 @@ export async function action({ request }: ActionFunctionArgs) {
           headers: { "Content-Type": "application/json" },
         });
       }
+      courseAccess = access;
     }
 
     // Persist any system-prompt change onto the chat loaded above.
@@ -447,7 +455,7 @@ export async function action({ request }: ActionFunctionArgs) {
         chat = await prisma.chat.create({
           data: {
             userId: actingUser.id,
-            courseId: effectiveCourseId,
+            courseId: effectiveCourseId, // §5b: tag for course-chat visibility
             systemPrompt: trimmedSystemPrompt,
             adhdAssist,
           },
@@ -491,7 +499,7 @@ export async function action({ request }: ActionFunctionArgs) {
       chat = await prisma.chat.create({
         data: {
           userId: actingUser.id,
-          courseId: effectiveCourseId,
+          courseId: effectiveCourseId, // §5b: tag for course-chat visibility
           systemPrompt: trimmedSystemPrompt,
           adhdAssist,
         },
@@ -705,6 +713,11 @@ export async function action({ request }: ActionFunctionArgs) {
       normalizedIncomingMessages.filter((message) => message.role !== "assistant"),
     );
 
+    // Master switch (chat.webToolsEnabled) gates web tools globally for every
+    // role — when on, web tools are available to all chat users; when off they
+    // are never registered for anyone.
+    const webToolsEnabled = await getPolicy("chat.webToolsEnabled");
+
     // Define tools for RAG functionality and external web search
     const tools = {
       getInformation: tool({
@@ -737,8 +750,9 @@ export async function action({ request }: ActionFunctionArgs) {
           }
         },
       }),
-      webSearch,
-      fetchPage,
+      // Web tools are registered only when the chat.webToolsEnabled master
+      // switch is on; off = never available to any chat user (mirrors backend).
+      ...(webToolsEnabled ? { webSearch, fetchPage } : {}),
     };
 
     // Check if the model supports tool calling
@@ -1030,6 +1044,8 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
             "Transfer-Encoding": "chunked",
             Connection: "keep-alive",
           };
+          // Surface the resolved web-tools master state to clients/tests.
+          headers["X-Web-Tools-Enabled"] = webToolsEnabled ? "1" : "0";
           if (chat?.id) {
             headers["X-Chat-Id"] = chat.id;
           }
@@ -1091,6 +1107,8 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
         "Transfer-Encoding": "chunked",
         Connection: "keep-alive",
       };
+      // Surface the resolved web-tools master state to clients/tests.
+      headers["X-Web-Tools-Enabled"] = webToolsEnabled ? "1" : "0";
       if (chat?.id) {
         headers["X-Chat-Id"] = chat.id;
       }

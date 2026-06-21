@@ -14,6 +14,9 @@ import {
   canViewTopics,
   canManageTopics,
   isStudentAccess,
+  courseChatViewPolicyKey,
+  manageEnrollmentsPolicyKey,
+  resolvePolicyGate,
 } from '~/lib/rbac/permissions'
 import type { CourseAccess, RbacUser } from '~/lib/rbac/types'
 
@@ -234,5 +237,34 @@ describe('isStudentAccess', () => {
     [null, false],
   ] as [CourseAccess, boolean][])('access=%s → %s', (access, expected) => {
     expect(isStudentAccess(access)).toBe(expected)
+  })
+})
+
+// §6 Enrollment & TA management gate
+describe('manageEnrollmentsPolicyKey', () => {
+  it.each([
+    ['admin', 'always'],
+    ['unit', 'always'],
+    ['instructor', 'instructors.canManageEnrollments'],
+    ['ta', 'never'],
+    ['student', 'never'],
+    [null, 'never'],
+  ] as [CourseAccess, string][])('access=%s → %s', (access, expected) => {
+    expect(manageEnrollmentsPolicyKey(access)).toBe(expected)
+  })
+})
+
+// Central capability → gate resolver (single source of truth for routes/UI)
+describe('resolvePolicyGate', () => {
+  it('delegates viewChats to courseChatViewPolicyKey for every access level', () => {
+    for (const access of ALL_ACCESS) {
+      expect(resolvePolicyGate(access, 'viewChats')).toBe(courseChatViewPolicyKey(access))
+    }
+  })
+
+  it('delegates manageEnrollments to manageEnrollmentsPolicyKey for every access level', () => {
+    for (const access of ALL_ACCESS) {
+      expect(resolvePolicyGate(access, 'manageEnrollments')).toBe(manageEnrollmentsPolicyKey(access))
+    }
   })
 })

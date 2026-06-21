@@ -37,6 +37,15 @@ vi.mock("~/lib/auth/guards.server", () => ({
   enforceAdminIfApiKey: vi.fn().mockResolvedValue({ response: null, session: null }),
 }));
 
+// #657: chat is course-scoped. These oversight tests run a course-tagged chat,
+// so the acting student passes the course-access gate.
+vi.mock("~/lib/auth/course-access.server", () => ({
+  resolveCourseAccessWithCourse: vi.fn().mockResolvedValue({
+    course: { id: "c1", isPublished: true },
+    access: { level: "student", rank: 0 },
+  }),
+}));
+
 vi.mock("~/lib/ai/providers.server", () => ({
   modelSupportsTools: vi.fn().mockResolvedValue(false),
 }));
@@ -50,7 +59,7 @@ vi.mock("~/lib/prisma.server", () => ({
 	    chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
 	    chatMessage: { findMany: vi.fn(), createMany: vi.fn() },
 	    course: { findFirst: vi.fn() },
-	    systemConfig: { findUnique: vi.fn() },
+	    systemConfig: { findUnique: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
 	  },
 	}));
 
@@ -59,7 +68,7 @@ import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 	import { auditAndMaybeRewrite } from "~/lib/ai/adhd-oversight";
 	import { withStructuralPass, computeAdhdResponseMetrics } from "~/lib/ai/adhd-metrics";
-	import { invalidateWebToolsCache } from "~/lib/system-config.server";
+	import { invalidatePolicyCache } from "~/lib/policy.server";
 	import prisma from "~/lib/prisma.server";
 
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
@@ -134,7 +143,7 @@ beforeEach(() => {
   vi.clearAllMocks();
 	  process.env.VLLM_BASE_URL = "http://localhost:8001";
 	  process.env.ADHD_ASSIST_OVERSIGHT = "true";
-	  invalidateWebToolsCache();
+	  invalidatePolicyCache();
 
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: USER_ID, role: "STUDENT" },
@@ -143,6 +152,7 @@ beforeEach(() => {
   vi.mocked(prisma.chat.findFirst).mockResolvedValue({
     id: CHAT_ID,
     userId: USER_ID,
+    courseId: "c1",
     adhdAssist: true,
     systemPrompt: null,
   } as never);

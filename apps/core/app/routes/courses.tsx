@@ -131,7 +131,9 @@ export default function CoursesPage() {
         ) : isInstructor ? (
           <CoursesInstructorView
             courses={courses}
+            onCreateCourse={async (data) => { await createCourse(data) }}
             onEditCourse={async (id, data) => { await updateCourse(id, data) }}
+            onDeleteCourse={async (id) => { await deleteCourse(id) }}
             onPublishToggle={handlePublishToggle}
           />
         ) : isTA ? (
