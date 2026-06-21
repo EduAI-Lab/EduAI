@@ -1,5 +1,5 @@
 import { useChat } from "@ai-sdk/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, redirect, useLoaderData } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 
@@ -99,36 +99,24 @@ export default function AdminChatPage() {
 
   const { getValidApiKeys } = useApiKeys();
 
-  const requestContextRef = useRef({
-    selectedModel,
-    chatId,
-    systemPrompt,
+  const requestMetadata = {
+    chatMode: "admin" as const,
+    model: selectedModel,
+    apiKeys: getValidApiKeys(),
+    chatId: chatId || undefined,
+    systemPrompt: systemPrompt || undefined,
     adhdAssist,
-    getValidApiKeys,
-  });
-  requestContextRef.current = {
-    selectedModel,
-    chatId,
-    systemPrompt,
-    adhdAssist,
-    getValidApiKeys,
   };
 
   const { messages, input, handleInputChange, handleSubmit, isLoading, stop } = useChat({
     api: "/api/chat",
-    experimental_prepareRequestBody: ({ messages: chatMessages, requestBody }) => {
-      const ctx = requestContextRef.current;
-      return {
-        ...requestBody,
-        messages: chatMessages.slice(-1),
-        chatMode: "admin",
-        model: ctx.selectedModel,
-        apiKeys: ctx.getValidApiKeys(),
-        chatId: ctx.chatId || undefined,
-        systemPrompt: ctx.systemPrompt || undefined,
-        adhdAssist: ctx.adhdAssist,
-      };
-    },
+    sendExtraMessageFields: true,
+    body: requestMetadata,
+    experimental_prepareRequestBody: ({ messages: chatMessages, requestBody }) => ({
+      ...(requestBody ?? requestMetadata),
+      chatMode: "admin",
+      messages: chatMessages.slice(-1),
+    }),
     onResponse: async (response) => {
       await logChatApiResponse(response, "admin-chat");
       const chatIdHeader = response.headers.get("X-Chat-Id");
