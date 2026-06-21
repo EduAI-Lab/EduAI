@@ -1,5 +1,14 @@
 import type { AdhdTurnProfile } from "~/lib/ai/adhd-turn-profile";
 
+/**
+ * Version stamp for the ADHD Assist response-format policy. Logged on every
+ * Assist turn so study cohorts before/after a policy change stay separable
+ * (no pooling across policy_version without PI signoff). v1.1 layers the
+ * anti-urgency, citation, progressive-disclosure, exec-cue, connections and
+ * gated-diagram rules on top of the turn-profile system.
+ */
+export const ADHD_ASSIST_POLICY_VERSION = "1.1";
+
 export const ADHD_ASSIST_POLICY_BLOCK = `=== ADHD ASSIST MODE ===
 You are responding to a learner who benefits from low cognitive load and
 clear structure. Follow these rules in every response.
