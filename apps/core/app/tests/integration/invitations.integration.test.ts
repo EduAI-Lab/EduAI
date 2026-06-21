@@ -535,5 +535,10 @@ describe("accept flow", () => {
       acceptReq({ token, name: "Late Comer", password: "supersecret1", confirmPassword: "supersecret1" }),
     )) as any;
     expect(res.formError).toMatch(/already exists/i);
+
+    // The invite can never be accepted now, so it is revoked rather than left
+    // PENDING with a live link lingering until natural expiry.
+    const invite = await prisma.invitation.findUnique({ where: { tokenHash: hashToken(token) } });
+    expect(invite?.status).toBe("REVOKED");
   });
 });
