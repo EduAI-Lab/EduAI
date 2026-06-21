@@ -376,7 +376,29 @@ export async function action({ request }: ActionFunctionArgs) {
         console.error("Failed to resolve course by code", e);
       }
     }
-    const effectiveCourseId = resolvedCourseId || courseId || null;
+    // Load the owned chat up front so a follow-up turn that sends a `chatId`
+    // but no `courseId`/`courseCode` can inherit the course from the persisted
+    // chat row, instead of failing COURSE_REQUIRED below (#685 review).
+    let chat = null;
+    if (chatId) {
+      chat = await prisma.chat.findFirst({
+        where: { id: chatId, userId: actingUser.id },
+      });
+      if (!chat) {
+        return new Response(
+          JSON.stringify({
+            error: "Chat not found",
+            chatDeleted: true,
+          }),
+          {
+            status: 410,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+    }
+
+    const effectiveCourseId = resolvedCourseId || courseId || chat?.courseId || null;
 
     // #657: the global "general assistant" chat was removed — every interactive
     // chat is now course-scoped. Server-to-server callers (admin API key /
@@ -412,26 +434,7 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     }
 
-    // Handle chat lookup and system prompt persistence
-    let chat = null;
-    if (chatId) {
-      chat = await prisma.chat.findFirst({
-        where: { id: chatId, userId: actingUser.id },
-      });
-      if (!chat) {
-        return new Response(
-          JSON.stringify({
-            error: "Chat not found",
-            chatDeleted: true,
-          }),
-          {
-            status: 410,
-            headers: { "Content-Type": "application/json" },
-          },
-        );
-      }
-    }
-
+    // Persist any system-prompt change onto the chat loaded above.
     if (hasSystemPromptField) {
       if (chat) {
         if (chat.systemPrompt !== trimmedSystemPrompt) {
