@@ -193,6 +193,8 @@ Each section should use this format:
 | `chat-api-keys.schema.test.ts` | Validates `clientApiKeysBodySchema` and `toUserProviderSettings` coercion defaults for chat `apiKeys` body parsing. |
 | `chat-intent.test.ts` | Tests `needsCourseRag` intent routing — greetings, generic knowledge, course keywords, code requests, and borderline escalation when a course is selected. |
 | `chat-rag.test.ts` | Tests `buildCappedRagContextText` and `capRagHitsForTool` chunk/char caps for hybrid and tool RAG paths. |
+| [`chat-cross-session.test.ts`](apps/core/app/tests/unit/chat-cross-session.test.ts) | Tests `loadPriorChatDigestForNewThread` — returns null when the new thread already has stored messages or no prior same-course chat exists, and builds a prior-chat digest from the most recent prior thread for cross-session continuity. |
+| [`chat-default-system-prompt.test.ts`](apps/core/app/tests/unit/chat-default-system-prompt.test.ts) | Tests `buildDefaultEduAiSystemPrompt` — no full-history claim without a digest, documents prior-chat digest usage when injected, and includes tool guidance when `supportsTools` is true. |
 | `chat-tools.test.ts` | Tests `buildChatToolRegistry` — when web tools are OFF only `getInformation` is registered; when ON, `webSearch` and `fetchPage` are added. |
 | `model-tool-capability.test.ts` | Tests `isSmallModelSlug` heuristics (migration backfill) and `allowsSupportsToolsToggle` — toggle shown only for CHAT-type models (including small slugs). |
 | `ModelFormDialog.test.tsx` | Admin model form dialog — title, submit/cancel, Ollama/vLLM model pickers, Supports Tools toggle for CHAT models, and confirmation dialog before enabling tools. |
