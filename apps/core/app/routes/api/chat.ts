@@ -11,12 +11,17 @@ import {
 import { modelSupportsTools } from "~/lib/ai/providers.server";
 import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
 import {
+  getProfileRequirements,
+  resolveAdhdTurnProfile,
+  type AdhdTurnProfile,
+} from "~/lib/ai/adhd-turn-profile";
+import {
   auditAndMaybeRewrite,
   buildOverseenAssistantMessagesToPersist,
   emptyOversightAuditResult,
   isAdhdOversightEnabled,
 } from "~/lib/ai/adhd-oversight";
-import { resolveAdhdResponseWordCap } from "~/lib/ai/adhd-metrics";
+import { resolveAdhdResponseWordCap, isProfileStructuralPass, computeAdhdResponseMetrics } from "~/lib/ai/adhd-metrics";
 import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
 import { findRelevantContent } from "~/lib/ai/embedding";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
@@ -888,14 +893,36 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
       bodyValue: adhdAssist,
       chatValue: chat.adhdAssist,
     });
-    streamConfig.system = composeSystemPrompt(streamConfig.system ?? "", { adhdAssist: effectiveAdhdAssist });
 
-    const streamStartedAt = Date.now();
-    const needsOversight = effectiveAdhdAssist && isAdhdOversightEnabled();
     const lastUserText = extractMessageText(
       [...trimmedMessages].reverse().find((message) => message.role === "user"),
     );
-    const adhdWordCap = resolveAdhdResponseWordCap(lastUserText);
+    const priorAssistantText = extractMessageText(
+      [...trimmedMessages].reverse().find((message) => message.role === "assistant"),
+    );
+
+    let adhdProfile: AdhdTurnProfile | undefined;
+    let adhdProfileRequirements:
+      | ReturnType<typeof getProfileRequirements>
+      | undefined;
+
+    if (effectiveAdhdAssist) {
+      adhdProfile = resolveAdhdTurnProfile({ userText: lastUserText, priorAssistantText });
+      adhdProfileRequirements = getProfileRequirements(adhdProfile);
+    }
+
+    streamConfig.system = composeSystemPrompt(streamConfig.system ?? "", {
+      adhdAssist: effectiveAdhdAssist,
+      profile: adhdProfile,
+    });
+
+    const streamStartedAt = Date.now();
+    const needsOversight =
+      effectiveAdhdAssist &&
+      isAdhdOversightEnabled() &&
+      (adhdProfileRequirements?.runDean ?? true);
+    const adhdWordCap =
+      adhdProfileRequirements?.wordCap ?? resolveAdhdResponseWordCap(lastUserText);
 
     const logResponseCompliance = (
       assistantText: string,
@@ -909,10 +936,17 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
         oversightDurationMs?: number;
         oversightPromptTokens?: number;
         oversightCompletionTokens?: number;
+        responseProfile?: AdhdTurnProfile;
+        profileStructuralPass?: boolean;
       },
     ) => {
       const trimmed = assistantText?.trim();
       if (!trimmed) return;
+      const metrics = computeAdhdResponseMetrics(trimmed, { wordCap: adhdWordCap });
+      const profileStructuralPass =
+        adhdProfile != null
+          ? isProfileStructuralPass(metrics, adhdProfile, trimmed)
+          : undefined;
       void recordResponseComplianceEvent({
         userId: actingUser.id,
         chatId: chat.id,
@@ -931,6 +965,8 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
           oversightDurationMs: extras?.oversightDurationMs,
           oversightPromptTokens: extras?.oversightPromptTokens,
           oversightCompletionTokens: extras?.oversightCompletionTokens,
+          responseProfile: adhdProfile,
+          profileStructuralPass,
         },
       }).catch((err) => {
         console.error("[assistive-events] response_compliance log failed", err);
@@ -1002,6 +1038,7 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
               draft,
               model: aiModel,
               wordCap: adhdWordCap,
+              profile: adhdProfile ?? "full_tutoring",
             })
           : emptyOversightAuditResult();
 
