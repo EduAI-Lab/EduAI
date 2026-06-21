@@ -1,14 +1,39 @@
 import prisma from "~/lib/prisma.server";
 import { AddTASchema, RemoveTASchema, type AddTAInput, type RemoveTAInput } from "./schemas";
 
+/** Platform roles that may receive a course-level TA enrollment (§6). */
+const TA_ASSIGNABLE_PLATFORM_ROLES = new Set(["STUDENT", "TA"]);
+
 export async function getCourseTA(courseId: string) {
-  return prisma.courseTA.findMany({
-    where: { courseId },
-    include: {
-      user: { select: { id: true, name: true, email: true } },
-    },
-    orderBy: { createdAt: "asc" },
-  });
+  const [courseTAs, enrollmentTAs] = await Promise.all([
+    prisma.courseTA.findMany({
+      where: { courseId },
+      include: {
+        user: { select: { id: true, name: true, email: true } },
+      },
+      orderBy: { createdAt: "asc" },
+    }),
+    prisma.enrollment.findMany({
+      where: { courseId, role: "TA", isActive: true },
+      include: {
+        user: { select: { id: true, name: true, email: true } },
+      },
+      orderBy: { enrolledAt: "asc" },
+    }),
+  ]);
+
+  const seen = new Set(courseTAs.map((ta) => ta.userId));
+  const fromEnrollments = enrollmentTAs
+    .filter((e) => !seen.has(e.userId))
+    .map((e) => ({
+      id: e.id,
+      courseId,
+      userId: e.userId,
+      createdAt: e.enrolledAt,
+      user: e.user,
+    }));
+
+  return [...courseTAs, ...fromEnrollments];
 }
 
 export async function addCourseTA(courseId: string, payload: AddTAInput) {
@@ -23,12 +48,18 @@ export async function addCourseTA(courseId: string, payload: AddTAInput) {
   });
 
   if (!user) return { error: "User not found" } as const;
-  if (user.role !== "TA") return { error: "User must have TA role" } as const;
+  if (!TA_ASSIGNABLE_PLATFORM_ROLES.has(user.role)) {
+    return { error: "User must be a student or TA to assign as course TA" } as const;
+  }
 
   try {
     const ta = await prisma.$transaction(async (tx) => {
-      const created = await tx.courseTA.create({
-        data: { courseId, userId: parsed.data.userId },
+      const created = await tx.courseTA.upsert({
+        where: {
+          courseId_userId: { courseId, userId: parsed.data.userId },
+        },
+        create: { courseId, userId: parsed.data.userId },
+        update: {},
         include: { user: { select: { id: true, name: true, email: true } } },
       });
       await tx.enrollment.upsert({
@@ -52,8 +83,6 @@ export async function removeCourseTA(courseId: string, payload: RemoveTAInput) {
   }
 
   const result = await prisma.$transaction(async (tx) => {
-    // Capture the TA record before deletion so the audit log can record the
-    // actual CourseTA id and the TA's name (both gone once the row is removed).
     const existing = await tx.courseTA.findFirst({
       where: { courseId, userId: parsed.data.userId },
       select: { id: true, user: { select: { name: true } } },
@@ -61,13 +90,37 @@ export async function removeCourseTA(courseId: string, payload: RemoveTAInput) {
     const deleted = await tx.courseTA.deleteMany({
       where: { courseId, userId: parsed.data.userId },
     });
+
     if (deleted.count > 0) {
       await tx.enrollment.updateMany({
         where: { courseId, userId: parsed.data.userId, role: "TA" },
         data: { isActive: false },
       });
+      return { count: deleted.count, ta: existing };
     }
-    return { count: deleted.count, ta: existing };
+
+    const enrollment = await tx.enrollment.findUnique({
+      where: { courseId_userId: { courseId, userId: parsed.data.userId } },
+      select: {
+        id: true,
+        role: true,
+        isActive: true,
+        user: { select: { name: true } },
+      },
+    });
+
+    if (enrollment?.role === "TA" && enrollment.isActive) {
+      await tx.enrollment.update({
+        where: { courseId_userId: { courseId, userId: parsed.data.userId } },
+        data: { isActive: false },
+      });
+      return {
+        count: 1,
+        ta: { id: enrollment.id, user: { name: enrollment.user.name } },
+      };
+    }
+
+    return { count: 0, ta: existing };
   });
 
   if (result.count === 0) return { error: "TA not found for this course" } as const;

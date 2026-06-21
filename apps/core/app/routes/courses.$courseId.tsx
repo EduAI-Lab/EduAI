@@ -76,32 +76,23 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const canManageStudentEnrollments =
     access === 'admin' || access === 'unit' || access === 'instructor'
 
-  let instructors: { id: string; name: string; email: string }[] = []
-  let taUsers: { id: string; name: string; email: string }[] = []
-  let studentUsers: { id: string; name: string; email: string }[] = []
-
-  if (canManageStaff) {
-    ;[instructors, taUsers] = await Promise.all([
-      prisma.user.findMany({
-        where: { role: 'INSTRUCTOR', isActive: true },
-        select: { id: true, name: true, email: true },
-        orderBy: { name: 'asc' },
-      }),
-      prisma.user.findMany({
-        where: { role: 'STUDENT', isActive: true },
-        select: { id: true, name: true, email: true },
-        orderBy: { name: 'asc' },
-      }),
-    ])
-  }
-
-  if (canManageStudentEnrollments) {
-    studentUsers = await prisma.user.findMany({
-      where: { role: 'STUDENT', isActive: true },
-      select: { id: true, name: true, email: true },
-      orderBy: { name: 'asc' },
-    })
-  }
+  const needsStudentUsers = canManageStaff || canManageStudentEnrollments
+  const [instructors, studentUsers] = await Promise.all([
+    canManageStaff
+      ? prisma.user.findMany({
+          where: { role: 'INSTRUCTOR', isActive: true },
+          select: { id: true, name: true, email: true },
+          orderBy: { name: 'asc' },
+        })
+      : Promise.resolve([]),
+    needsStudentUsers
+      ? prisma.user.findMany({
+          where: { role: 'STUDENT', isActive: true },
+          select: { id: true, name: true, email: true },
+          orderBy: { name: 'asc' },
+        })
+      : Promise.resolve([]),
+  ])
 
   return {
     course: {
@@ -126,13 +117,12 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     user,
     access,
     instructors,
-    taUsers,
     studentUsers,
   }
 }
 
 export default function CourseDetailPage() {
-  const { course, user, access, instructors, taUsers, studentUsers } =
+  const { course, user, access, instructors, studentUsers } =
     useLoaderData<typeof loader>()
   const revalidator = useRevalidator()
   const { topics, createTopic, deleteTopic } = useCourseTopics(course.id)
@@ -142,6 +132,7 @@ export default function CourseDetailPage() {
     error: enrollmentsError,
     enroll,
     removeEnrollment,
+    refetch: refetchEnrollments,
   } = useCourseEnrollments(course.id)
   const { materials, uploadMaterial, refetch: refetchMaterials } = useCourseMaterials(course.id)
   const { tas, addTA, removeTA } = useCourseTAs(course.id)
@@ -161,7 +152,8 @@ export default function CourseDetailPage() {
       throw new Error(body.error ?? 'Failed to assign instructor')
     }
     revalidator.revalidate()
-  }, [course.id, revalidator])
+    await refetchEnrollments()
+  }, [course.id, revalidator, refetchEnrollments])
 
   const handleEnrollStudent = useCallback(
     async (userId: string) => {
@@ -243,7 +235,6 @@ export default function CourseDetailPage() {
                 materials={uploadMaterials}
                 tas={tas}
                 instructors={instructors}
-                taUsers={taUsers}
                 studentUsers={studentUsers}
                 onEnrollStudent={handleEnrollStudent}
                 onRemoveEnrollment={handleRemoveEnrollment}
