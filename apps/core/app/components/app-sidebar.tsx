@@ -94,13 +94,11 @@ export function AppSidebar({
 }: AppSidebarProps) {
   const { policies } = usePolicies()
 
-  // Policy-gated nav: a UNIT_ADMIN only sees the Invitations link when
-  // `unitAdmins.canInvite` is on (matches the server-side gate on the route).
-  const navItems = getNavForUser(user).filter((item) =>
-    item.key === "unitadmin-invites"
-      ? Boolean(policies["unitAdmins.canInvite"])
-      : true,
-  )
+  // Policy-gated nav lives in getNavForUser: a UNIT_ADMIN only sees the
+  // Invitations link when `unitAdmins.canInvite` is on (matches the route gate).
+  const navItems = getNavForUser(user, {
+    canInvite: Boolean(policies["unitAdmins.canInvite"]),
+  })
   const navMain = navMainOverride ?? toNavMainItems(navItems)
   const navSecondary =
     navSecondaryOverride ?? toNavSecondaryItems(getNavSecondaryForUser(user))
