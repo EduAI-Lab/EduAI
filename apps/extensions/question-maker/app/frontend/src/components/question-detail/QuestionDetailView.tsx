@@ -136,9 +136,10 @@ export const QuestionDetailView = ({
         canEditResource,
         canDeleteResource,
     } = useQmPermissionsForCourse(entry.courseId ?? null);
-    const owner = { createdBy: entry.variant.createdBy ?? null };
+    const { variant } = entry;
+    const owner = { createdBy: variant.createdBy ?? null };
     const isApproved = entry.isDraft === false;
-    const coreQuestionId = entry.variant.coreQuestionId ?? null;
+    const coreQuestionId = variant.coreQuestionId ?? null;
     const canEditDraft = canEditResource(owner) && !isApproved;
     const canEditMetadata = canEditResource(owner);
 
@@ -190,8 +191,7 @@ export const QuestionDetailView = ({
             setEditType(entry.questionType);
             setEditDifficulty((entry.variant.difficulty as QuestionDifficulty) ?? 'medium');
         }
-    }, [editingMetadata, entry.questionDescription, entry.primaryTopicId, entry.questionType, entry.variant.difficulty, variant.questionText]);
-    const { variant } = entry;
+    }, [editingMetadata, entry.questionDescription, entry.primaryTopicId, entry.questionType, entry.variant.difficulty, entry.variant.questionText]);
     const primaryTopicLabel = entry.primaryTopicName ?? `Topic ${entry.primaryTopicId}`;
     const secondaryTopicsDisplay =
         entry.secondaryTopicNames && entry.secondaryTopicNames.length > 0
@@ -812,7 +812,10 @@ export const QuestionDetailView = ({
                                 </div>
                                 <div className="mt-3 space-y-2">
                                     {variant.choices.map((choice, index) => {
-                                        const isCorrect = variant.answer && choice.letter === variant.answer.trim().toUpperCase();
+                                        const isCorrect = Boolean(
+                                            variant.answer &&
+                                                choice.letter === variant.answer.trim().toUpperCase()
+                                        );
                                         return (
                                             <div
                                                 key={index}

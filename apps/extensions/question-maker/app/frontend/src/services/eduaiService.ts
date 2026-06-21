@@ -209,11 +209,14 @@ class EduAIService {
             return [];
         } catch (error) {
             console.error('Failed to fetch courses from the AI service:', error);
-            return FALLBACK_COURSE_OPTIONS;
+            return import.meta.env.DEV ? FALLBACK_COURSE_OPTIONS : [];
         }
     }
 
     private fallbackTopicsForCode(courseIdOrCode: string, courseCode?: string): EduAITopicOption[] {
+        if (!import.meta.env.DEV) {
+            return [];
+        }
         const codeToMatch = courseCode || courseIdOrCode;
         const normalizedCode = codeToMatch.replace(/\s+/g, '').toUpperCase();
         return FALLBACK_TOPICS_BY_CODE[normalizedCode] ?? [];

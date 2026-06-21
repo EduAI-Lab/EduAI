@@ -34,8 +34,8 @@ function App() {
     <ThemeProvider defaultTheme="system" storageKey="theme">
       <AuthProvider>
         <Router>
-          <QmAppGate>
-            <GuidedTourProvider>
+          <GuidedTourProvider>
+            <QmAppGate>
               <BugReportProvider>
                 <div className="min-h-screen bg-background">
                   <Routes>
@@ -58,8 +58,8 @@ function App() {
                   <Toaster />
                 </div>
               </BugReportProvider>
-            </GuidedTourProvider>
-          </QmAppGate>
+            </QmAppGate>
+          </GuidedTourProvider>
         </Router>
       </AuthProvider>
     </ThemeProvider>

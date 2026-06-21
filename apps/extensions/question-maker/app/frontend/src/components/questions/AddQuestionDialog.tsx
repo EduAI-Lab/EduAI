@@ -3,7 +3,7 @@
  * Handles course/topic selection, validation, assessment linkage, and optional AI generation hooks.
  */
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@eduai/ui';
-import { Button, Input, Textarea, Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, ScrollArea } from '@eduai/ui';
+import { Button, Input, Textarea, Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@eduai/ui';
 import { useToast, ToastAction } from '@/components/ui/use-toast';
 import { Tooltip } from '@/components/ui/tooltip';
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -228,7 +228,7 @@ export const AddQuestionDialog = ({
                 variantChoices: copiedChoices,
                 variantSecondaryTopics: (presetVariant.variant.secondaryTopicsId || []).map(String),
                 variantAssessmentId: presetVariant.variant.assessmentId ? presetVariant.variant.assessmentId.toString() : 'none',
-                generationPrompt: 'Create a variant of this question...'
+                generationPrompt: ''
             });
         } else {
             setForm(defaultForm);
@@ -1049,10 +1049,10 @@ export const AddQuestionDialog = ({
                     </>
                 )}
 
-                <div className="grid gap-6 lg:grid-cols-[340px_1fr] h-[70vh] min-h-0">
-                    {/* LEFT: scrollable params + sticky AI Configuration at bottom */}
-                    <div className="flex flex-col min-h-0 gap-4">
-                        <ScrollArea className="flex-1 min-h-0">
+                <div className="h-[70vh] min-h-0 overflow-y-auto">
+                    <div className="grid gap-6 lg:grid-cols-[340px_1fr] pb-4">
+                    {/* LEFT: parameters + AI configuration in one scroll column */}
+                    <div className="flex flex-col gap-4">
                             <div className="space-y-4 pr-4">
                                 {mode === 'variant' && presetVariant && (
                                     <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
@@ -1211,14 +1211,11 @@ export const AddQuestionDialog = ({
                                         </div>
                                     </div>
                                 )}
+                                </div>
                             </div>
 
                             {error && <p className="text-sm text-destructive">{error}</p>}
-                        </div>
-                    </ScrollArea>
 
-                    {/* AI Configuration: sticky at bottom of left column so it stays visible on small screens */}
-                    <div className="flex-shrink-0">
                         <QuestionAIControls
                             value={{
                                 generationPrompt: form.generationPrompt,
@@ -1263,14 +1260,9 @@ export const AddQuestionDialog = ({
                             disabled={isSubmitting}
                         />
                     </div>
-                </div>
 
                     {/* RIGHT: Question content */}
-                    <div className="flex flex-col min-h-0 overflow-hidden">
-                        <div
-                            className="rounded-lg border border-border bg-card p-5 flex-1 min-h-0 overflow-auto flex flex-col"
-                            data-tour-id="aq-form-fields"
-                        >
+                    <div className="rounded-lg border border-border bg-card p-5 flex flex-col" data-tour-id="aq-form-fields">
                             <QuestionOutputPanel
                                 questionType={form.questionType}
                                 variantText={form.variantText}
@@ -1291,7 +1283,7 @@ export const AddQuestionDialog = ({
                                 }}
                                 idPrefix="aq"
                             />
-                        </div>
+                    </div>
                     </div>
                 </div>
 

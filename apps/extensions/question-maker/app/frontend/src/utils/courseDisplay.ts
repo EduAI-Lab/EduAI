@@ -113,11 +113,12 @@ export function dedupeCoursesByCode(courses: Course[]): Course[] {
 
 export function filterCoursesForCourseSelection(
   localCourses: Course[] | undefined,
-  coreCourses: EduAICourseOption[]
+  coreCourses: EduAICourseOption[],
+  options?: { bypassCoreEnrollmentFilter?: boolean }
 ): { courses: Course[]; showMockLabel: boolean } {
   const local = dedupeCoursesByCode(localCourses ?? []);
-  if (coreCourses.length === 0) {
-    return { courses: local, showMockLabel: true };
+  if (options?.bypassCoreEnrollmentFilter || coreCourses.length === 0) {
+    return { courses: local, showMockLabel: coreCourses.length === 0 };
   }
 
   const coreIds = new Set(coreCourses.map((course) => course.id));
