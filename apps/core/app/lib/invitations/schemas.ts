@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { UnitSchema } from "~/lib/units";
+import { isUbcEmail, UBC_EMAIL_MESSAGE } from "~/lib/auth/ubc-email";
 
 /**
  * Roles an invitation may carry at the schema level — the union across all
@@ -33,6 +34,15 @@ export const createInvitationSchema = z
     authorizedUnits: z.array(UnitSchema).optional(),
   })
   .superRefine((data, ctx) => {
+    // §567: UBC-only rule, shared by both the admin and unit-admin invite flows
+    // (both validate via this schema). The accept flow reuses this vetted email.
+    if (!isUbcEmail(data.email)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["email"],
+        message: UBC_EMAIL_MESSAGE,
+      });
+    }
     const units = data.authorizedUnits ?? [];
     if (data.role === "UNIT_ADMIN") {
       if (units.length === 0) {

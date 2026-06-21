@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { UnitSchema } from "~/lib/units";
+import { isUbcEmail, UBC_EMAIL_MESSAGE } from "./ubc-email";
 
 export const signInSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
@@ -15,6 +16,9 @@ export const signUpSchema = z.object({
 }).refine((data) => data.password === data.confirmPassword, {
   message: "Passwords don't match",
   path: ["confirmPassword"],
+}).refine((data) => isUbcEmail(data.email), {
+  message: UBC_EMAIL_MESSAGE,
+  path: ["email"],
 });
 
 export const forgotPasswordSchema = z.object({
