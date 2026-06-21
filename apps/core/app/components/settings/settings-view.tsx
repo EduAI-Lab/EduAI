@@ -27,6 +27,7 @@ import { Label } from "@eduai/ui";
 import { PageTabs, PageTabsList, PageTabsTrigger, PageTabsContent } from "@eduai/ui";
 import { PageHeading } from "@eduai/ui";
 import { useApiKeys } from "~/hooks/use-api-keys";
+import { usePolicies } from "~/hooks/api/use-policies";
 import { authClient } from "~/lib/auth/client";
 
 type ServerApiKey = {
@@ -47,7 +48,14 @@ interface SettingsViewProps {
 }
 
 export function SettingsView({ role, studentNumber = null }: SettingsViewProps) {
-  const showCanvasSettings = CANVAS_SETTINGS_ROLES.has(role ?? "");
+  const { policies } = usePolicies();
+  // Instructors only see Canvas settings when the policy is on; ADMIN is
+  // unaffected. Mirrors the `instructors.canManageCanvasIntegration` gate on
+  // the Canvas API (canvas.$.ts).
+  const canvasPolicyOk =
+    role === "ADMIN" ||
+    (policies["instructors.canManageCanvasIntegration"] ?? true);
+  const showCanvasSettings = CANVAS_SETTINGS_ROLES.has(role ?? "") && canvasPolicyOk;
   const showStudentNumberSettings = role === "STUDENT";
   const {
     updateProviderSettings,

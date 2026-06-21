@@ -20,6 +20,7 @@ import {
 import { LinkRosterError, linkCanvasRoster } from "~/lib/canvas/link-roster.server";
 import { ConnectCanvasSchema, LinkRosterSchema, SyncCanvasCoursesSchema } from "~/lib/canvas/schemas";
 import { syncCanvasCourses } from "~/lib/canvas/sync.server";
+import { getPolicy, logPolicyDenial } from "~/lib/policy.server";
 import { fireAndForget, logAuditAction, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
@@ -70,6 +71,22 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
         ...(session.user.email ? { details: { email: session.user.email } } : {}),
       }),
     );
+    return json({ success: false, error: "Forbidden: instructors only" }, 403);
+  }
+
+  // Policy gate: an INSTRUCTOR may manage Canvas only when the flag is on;
+  // ADMIN is unaffected. The guard above stays pure/sync — the async policy
+  // read happens here in the route.
+  if (
+    session.user.role === "INSTRUCTOR" &&
+    !(await getPolicy("instructors.canManageCanvasIntegration"))
+  ) {
+    logPolicyDenial({
+      request,
+      policyKey: "instructors.canManageCanvasIntegration",
+      user: session.user,
+      action: "canvas.manage",
+    });
     return json({ success: false, error: "Forbidden: instructors only" }, 403);
   }
 
