@@ -149,7 +149,7 @@ export default function AddActivityPanel({ lessonId, onActivityCreated }: AddAct
   };
 
   return (
-    <form onSubmit={handleAddActivity} className="card-editorial p-5 space-y-4">
+    <form onSubmit={handleAddActivity} className="rounded-lg border bg-card text-card-foreground shadow-sm p-5 space-y-4">
       <div className="font-semibold text-foreground">Add Activity</div>
       <div className="flex gap-2 text-sm">
         <label

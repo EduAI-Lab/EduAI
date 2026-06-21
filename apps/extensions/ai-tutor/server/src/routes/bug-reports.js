@@ -7,7 +7,6 @@ import {
   listAdminBugReports,
   updateBugReportStatus,
 } from '../services/bugReports.js';
-import { mapCoreAdminBugReportRow } from '../utils/bugReportMappers.js';
 
 const router = express.Router();
 
@@ -29,16 +28,21 @@ router.get('/admin/bug-reports', requireRole('ADMIN'), async (req, res) => {
   try {
     const cookie = getEduAiCookieForRequest(req);
     const rows = await listAdminBugReports(cookie);
-    res.json(rows.map(mapCoreAdminBugReportRow));
+    res.json(rows);
   } catch (error) {
-    res.status(500).json({ error: String(error) });
+    const status = typeof error?.status === 'number' ? error.status : 500;
+    res.status(status).json({ error: String(error.message ?? error) });
   }
 });
 
 router.patch('/admin/bug-reports/:bugReportId', requireRole('ADMIN'), async (req, res) => {
   try {
     const cookie = getEduAiCookieForRequest(req);
-    const updated = await updateBugReportStatus(cookie, req.params.bugReportId, req.body?.status);
+    const updated = await updateBugReportStatus(
+      req.params.bugReportId,
+      req.body?.status,
+      cookie,
+    );
     res.json(updated);
   } catch (error) {
     if (error instanceof BugReportError) {

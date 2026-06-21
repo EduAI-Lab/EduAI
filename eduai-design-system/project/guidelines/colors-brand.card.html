@@ -1,0 +1,53 @@
+<!-- @dsCard group="Colors" viewport="700x180" name="Brand Palette" subtitle="UBC Blue, Gold, Light Blue — the three official brand colors" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; padding: 20px; font-family: var(--font-sans); background: var(--background); display: flex; gap: 12px; }
+  .swatch { flex: 1; border-radius: var(--radius-base); overflow: hidden; border: 1px solid var(--border); }
+  .swatch-color { height: 80px; }
+  .swatch-info { padding: 10px 12px; }
+  .swatch-name { font-size: 13px; font-weight: 600; color: var(--foreground); }
+  .swatch-hex  { font-size: 11px; color: var(--muted-foreground); font-family: var(--font-mono); margin-top: 2px; }
+  .swatch-note { font-size: 10px; color: var(--muted-foreground); margin-top: 4px; font-style: italic; }
+  .gold-stripe { height: 6px; background: var(--gold); border-radius: 0 0 3px 3px; }
+</style>
+</head>
+<body>
+  <div class="swatch">
+    <div class="swatch-color" style="background: var(--primary);"></div>
+    <div class="swatch-info">
+      <div class="swatch-name">UBC Blue</div>
+      <div class="swatch-hex">#002145 · oklch(0.198 0.060 259)</div>
+      <div class="swatch-note">Primary — nav, buttons, headings</div>
+    </div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-color" style="background: var(--secondary);"></div>
+    <div class="swatch-info">
+      <div class="swatch-name">UBC Light Blue</div>
+      <div class="swatch-hex">#0055B3 · oklch(0.418 0.171 257)</div>
+      <div class="swatch-note">Secondary — interactive elements, links</div>
+    </div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-color" style="background: var(--gold);"></div>
+    <div class="swatch-info">
+      <div class="swatch-name">UBC Gold ⚠</div>
+      <div class="swatch-hex">#FFD100 · oklch(0.882 0.188 89)</div>
+      <div class="swatch-note">Decorative only — never as text color</div>
+    </div>
+    <div class="gold-stripe"></div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-color" style="background: var(--accent);"></div>
+    <div class="swatch-info">
+      <div class="swatch-name">Accent Blue</div>
+      <div class="swatch-hex">oklch(0.684 0.140 232)</div>
+      <div class="swatch-note">Accent — sidebar active, highlights</div>
+    </div>
+  </div>
+</body>
+</html>

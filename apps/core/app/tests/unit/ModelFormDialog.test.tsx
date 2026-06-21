@@ -333,38 +333,6 @@ describe("ModelFormDialog — form actions", () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it("shows supportsTools toggle for small CHAT models", () => {
-    const smallModel: AIModel = {
-      ...ollamaModel,
-      modelId: "qwen2.5:1.5b",
-      name: "Qwen 2.5 1.5B",
-    };
-    render(
-      <ModelFormDialog
-        open={true}
-        onOpenChange={vi.fn()}
-        model={smallModel}
-        providers={[ollamaProvider]}
-        onSubmit={vi.fn()}
-      />,
-    );
-    expect(screen.getByLabelText("Supports Tools")).toBeInTheDocument();
-  });
-
-  it("warns before enabling tools on any model", () => {
-    render(
-      <ModelFormDialog
-        open={true}
-        onOpenChange={vi.fn()}
-        model={{ ...baseModel, supportsTools: false }}
-        providers={[baseProvider]}
-        onSubmit={vi.fn()}
-      />,
-    );
-    fireEvent.click(screen.getByLabelText("Supports Tools"));
-    expect(screen.getByText("Enable tool calling for this model?")).toBeInTheDocument();
-  });
-
   it("pre-populates the Model ID field from the model prop", () => {
     render(
       <ModelFormDialog

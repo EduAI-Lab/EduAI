@@ -25,7 +25,7 @@ export default function UnsupportedRolePage() {
     <main className="relative min-h-dvh overflow-hidden bg-background">
       <div className="absolute inset-0 dots-pattern" />
       <div className="relative container mx-auto flex min-h-dvh items-center justify-center px-6 py-12">
-        <div className="card-editorial w-full max-w-xl p-8 sm:p-10">
+        <div className="rounded-lg border bg-card text-card-foreground shadow-sm w-full max-w-xl p-8 sm:p-10">
           <div className="mb-6 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-accent/15 text-accent">
             <svg
               className="h-7 w-7"
@@ -42,7 +42,7 @@ export default function UnsupportedRolePage() {
             </svg>
           </div>
 
-          <h1 className="mb-3 font-display text-3xl font-bold text-foreground">
+          <h1 className="mb-3 text-3xl font-bold text-foreground">
             Your role is not supported yet
           </h1>
           <p className="mb-4 text-base text-muted-foreground">

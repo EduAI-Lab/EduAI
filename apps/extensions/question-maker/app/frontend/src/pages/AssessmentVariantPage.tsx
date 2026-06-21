@@ -3,23 +3,13 @@
  * (3) assemble one variant exam matching baseline structure → (4) AI review.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 import { ArrowLeft, CheckCircle2, ClipboardList, History, Loader2, Sparkles, Trash2, Upload, XCircle } from 'lucide-react';
-import { Button } from '../components/ui/button';
-import { Textarea } from '../components/ui/textarea';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog';
-import { ScrollArea } from '../components/ui/scroll-area';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue
-} from '../components/ui/select';
-import { Badge } from '../components/ui/badge';
-import { Tooltip } from '../components/ui/tooltip';
-import { useToast } from '../components/ui/use-toast';
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@eduai/ui';
+import { Button, Textarea, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, ScrollArea, Badge } from '@eduai/ui';
+import { Tooltip } from '@/components/ui/tooltip';
+import { useToast } from '@/components/ui/use-toast';
 import { useCourses } from '../hooks/useCourses';
 import { courseService } from '../services/courseService';
 import assessmentService from '../services/assessmentService';
@@ -30,6 +20,9 @@ import { CanvasImportDialog } from '../components/canvas/CanvasImportDialog';
 import type { Assessment, Course, Question } from '../types/question';
 import type { Topic } from '../types/topic';
 import { buildAiReviewDocxBlob } from '../utils/aiReviewExportDocx';
+import { QmHomeShell } from '../components/home/QmHomeShell';
+import { PermissionGate } from '@/components/rbac/PermissionGate';
+import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
 
 /** Hover text for the Variants column — counts are reviewed-only (drafts excluded). */
 const REVIEWED_VARIANTS_TOOLTIP =
@@ -211,6 +204,9 @@ export function AssessmentVariantPage() {
   const { courses, isLoading: coursesLoading, fetchCourses } = useCourses();
 
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
+  const { canManageAssessment, canRunAiReview, canManageCanvas } = useQmPermissionsForCourse(
+    selectedCourse?.id ?? null,
+  );
   const [topics, setTopics] = useState<Topic[]>([]);
   const [assessments, setAssessments] = useState<Assessment[]>([]);
   const [baselineAssessmentId, setBaselineAssessmentId] = useState<string>('');
@@ -625,7 +621,7 @@ export function AssessmentVariantPage() {
           {title} ({items.length})
         </p>
         {items.map((item) => (
-          <div key={item.id} className="rounded border bg-white p-2 text-xs">
+          <div key={item.id} className="rounded border bg-card p-2 text-xs">
             <button
               type="button"
               className="w-full text-left"
@@ -693,19 +689,20 @@ export function AssessmentVariantPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100/80">
-      <header className="border-b border-slate-200 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-4 px-4 py-4">
+    <QmHomeShell>
+      <div className="min-h-full bg-background">
+      <div className="mx-auto max-w-5xl space-y-6">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="sm" asChild className="gap-1.5 text-muted-foreground">
               <Link to="/home?tab=assessments">
                 <ArrowLeft className="h-4 w-4" />
-                Home
+                Assessments
               </Link>
             </Button>
             <div className="flex items-center gap-2">
-              <Sparkles className="h-6 w-6 text-indigo-600" />
-              <h1 className="text-lg font-semibold tracking-tight text-slate-900">Assessment variant workflow</h1>
+              <Sparkles className="h-6 w-6 text-primary" />
+              <h1 className="text-lg font-semibold tracking-tight text-foreground">Assessment variant workflow</h1>
             </div>
           </div>
           <div className="flex min-w-[220px] flex-1 items-center justify-end gap-2 sm:max-w-md">
@@ -730,9 +727,8 @@ export function AssessmentVariantPage() {
             </Select>
           </div>
         </div>
-      </header>
 
-      <main className="mx-auto max-w-5xl space-y-8 px-4 py-10">
+      <div className="space-y-8">
         <p className="text-sm text-muted-foreground">
           <strong className="font-medium text-foreground">Order:</strong> set the baseline reference exam, ensure each base
           question has enough variants (or generate one AI variant per question that still needs an alternate),
@@ -740,7 +736,7 @@ export function AssessmentVariantPage() {
         </p>
 
         <section className="space-y-4">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">1 · Baseline reference exam</h2>
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">1 · Baseline reference exam</h2>
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
@@ -753,13 +749,17 @@ export function AssessmentVariantPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-wrap gap-3">
+              <PermissionGate allow={canManageAssessment}>
               <Button type="button" variant="secondary" disabled={!selectedCourse?.id} onClick={() => setExamUploadOpen(true)}>
                 <Upload className="mr-2 h-4 w-4" />
                 OCR upload
               </Button>
+              </PermissionGate>
+              <PermissionGate allow={canManageCanvas}>
               <Button type="button" variant="outline" disabled={!selectedCourse?.id} onClick={() => setCanvasImportOpen(true)}>
                 Import from Canvas
               </Button>
+              </PermissionGate>
             </CardContent>
           </Card>
 
@@ -788,9 +788,11 @@ export function AssessmentVariantPage() {
                   </SelectContent>
                 </Select>
               </div>
+              <PermissionGate allow={canManageAssessment}>
               <Button type="button" variant="outline" onClick={markBaseline} disabled={!baselineAssessmentId}>
                 Mark as reference baseline
               </Button>
+              </PermissionGate>
               {baselineAssessment?.blueprintConfig?.studyRole === 'reference_baseline' && (
                 <Badge className="w-fit bg-indigo-700">Reference</Badge>
               )}
@@ -799,7 +801,7 @@ export function AssessmentVariantPage() {
         </section>
 
         <section className="space-y-4">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">2 · Generate variants from baseline</h2>
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">2 · Generate variants from baseline</h2>
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
@@ -913,7 +915,7 @@ export function AssessmentVariantPage() {
                 </>
               )}
               <div className="space-y-2">
-                <label htmlFor="variant-ai-prompt" className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                <label htmlFor="variant-ai-prompt" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   Optional instructions for the AI
                 </label>
                 <Textarea
@@ -927,7 +929,7 @@ export function AssessmentVariantPage() {
               </div>
               <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
                 <div className="min-w-[260px] space-y-1">
-                  <span className="text-xs font-medium uppercase tracking-wide text-slate-500">AI model</span>
+                  <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">AI model</span>
                   <Select value={variantModel} onValueChange={setVariantModel} disabled={generatingVariants}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select model" />
@@ -945,6 +947,7 @@ export function AssessmentVariantPage() {
                     </SelectContent>
                   </Select>
                 </div>
+                <PermissionGate allow={canManageAssessment}>
                 <div className="flex min-w-[min(100%,280px)] flex-col gap-2">
                   <Button
                     type="button"
@@ -985,13 +988,14 @@ export function AssessmentVariantPage() {
                     </Button>
                   )}
                 </div>
+                </PermissionGate>
               </div>
             </CardContent>
           </Card>
         </section>
 
         <section className="space-y-4">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">3 · Assemble variant exam</h2>
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">3 · Assemble variant exam</h2>
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Match baseline structure</CardTitle>
@@ -1001,6 +1005,7 @@ export function AssessmentVariantPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <PermissionGate allow={canManageAssessment}>
               <Button
                 type="button"
                 onClick={assembleStructureMatchedExams}
@@ -1026,17 +1031,18 @@ export function AssessmentVariantPage() {
                       >
                         {a.name}
                       </button>{' '}
-                      <span className="text-slate-400">#{a.id}</span>
+                      <span className="text-muted-foreground">#{a.id}</span>
                     </li>
                   ))}
                 </ul>
               )}
+              </PermissionGate>
             </CardContent>
           </Card>
         </section>
 
         <section className="space-y-4">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">4 · AI review</h2>
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">4 · AI review</h2>
           <Card>
             <CardHeader>
               <div className="flex flex-wrap items-start justify-between gap-2">
@@ -1063,7 +1069,7 @@ export function AssessmentVariantPage() {
               <div className={`space-y-4 transition-all duration-200 ${aiReviewHistoryOpen ? 'lg:pr-80' : 'pr-0'}`}>
                 <div className="grid gap-3 md:grid-cols-3">
                   <div className="space-y-1">
-                    <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Baseline exam</span>
+                    <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Baseline exam</span>
                     <Select value={aiReviewBaselineEffectiveId} onValueChange={setAiReviewBaselineId} disabled={!selectedCourse?.id}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select baseline exam" />
@@ -1078,7 +1084,7 @@ export function AssessmentVariantPage() {
                     </Select>
                   </div>
                   <div className="space-y-1">
-                    <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Exam variant</span>
+                    <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Exam variant</span>
                     <Select value={aiReviewVariantId} onValueChange={setAiReviewVariantId} disabled={!selectedCourse?.id}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select exam variant" />
@@ -1093,7 +1099,7 @@ export function AssessmentVariantPage() {
                     </Select>
                   </div>
                   <div className="space-y-1">
-                    <span className="text-xs font-medium uppercase tracking-wide text-slate-500">AI model</span>
+                    <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">AI model</span>
                     <Select value={aiReviewModel} onValueChange={setAiReviewModel} disabled={aiReviewLoading}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select model" />
@@ -1113,6 +1119,7 @@ export function AssessmentVariantPage() {
                   </div>
                 </div>
 
+                <PermissionGate allow={canRunAiReview}>
                 <div className="flex flex-wrap gap-2">
                   <Button type="button" variant="outline" onClick={() => setAiReviewRubricOpen(true)}>
                     Rubric
@@ -1128,9 +1135,10 @@ export function AssessmentVariantPage() {
                     )}
                   </Button>
                 </div>
+                </PermissionGate>
 
                 {aiReviewResult && (
-                  <div className="space-y-4 rounded-lg border bg-white p-4 text-sm">
+                  <div className="space-y-4 rounded-lg border bg-card p-4 text-sm">
                     <div className="flex flex-wrap gap-2">
                       <Button type="button" variant="outline" onClick={() => void exportAiReviewWord()}>
                         Export Word (.docx)
@@ -1149,8 +1157,8 @@ export function AssessmentVariantPage() {
                       {typeof aiReviewResult.reviewTimeMs === 'number' ? (aiReviewResult.reviewTimeMs / 1000).toFixed(1) : 'n/a'}s
                     </p>
 
-                    <div className="rounded border bg-slate-50 p-3">
-                      <p className="text-sm font-semibold text-slate-900">
+                    <div className="rounded border bg-muted p-3">
+                      <p className="text-sm font-semibold text-foreground">
                         Overall variant score:{' '}
                         {typeof aiReviewResult.examVariantScoreFinal0to100 === 'number'
                           ? aiReviewResult.examVariantScoreFinal0to100.toFixed(0)
@@ -1187,7 +1195,7 @@ export function AssessmentVariantPage() {
                     </div>
 
                     <div className="grid gap-2 grid-cols-2 sm:grid-cols-5">
-                      <div className="rounded border bg-white p-2">
+                      <div className="rounded border bg-card p-2">
                         <span className="font-medium">Concept</span>
                         <div className="text-xs text-muted-foreground">
                           {typeof aiReviewResult.averages.conceptual_equivalence === 'number'
@@ -1196,7 +1204,7 @@ export function AssessmentVariantPage() {
                           /5
                         </div>
                       </div>
-                      <div className="rounded border bg-white p-2">
+                      <div className="rounded border bg-card p-2">
                         <span className="font-medium">Difficulty</span>
                         <div className="text-xs text-muted-foreground">
                           {typeof aiReviewResult.averages.difficulty_similarity === 'number'
@@ -1205,7 +1213,7 @@ export function AssessmentVariantPage() {
                           /5
                         </div>
                       </div>
-                      <div className="rounded border bg-white p-2">
+                      <div className="rounded border bg-card p-2">
                         <span className="font-medium">Structure</span>
                         <div className="text-xs text-muted-foreground">
                           {typeof aiReviewResult.averages.structural_validity === 'number'
@@ -1214,7 +1222,7 @@ export function AssessmentVariantPage() {
                           /5
                         </div>
                       </div>
-                      <div className="rounded border bg-white p-2">
+                      <div className="rounded border bg-card p-2">
                         <span className="font-medium">Answer</span>
                         <div className="text-xs text-muted-foreground">
                           {typeof aiReviewResult.averages.answer_correctness === 'number'
@@ -1223,7 +1231,7 @@ export function AssessmentVariantPage() {
                           /5
                         </div>
                       </div>
-                      <div className="rounded border bg-white p-2">
+                      <div className="rounded border bg-card p-2">
                         <span className="font-medium">Topic</span>
                         <div className="text-xs text-muted-foreground">
                           {typeof aiReviewResult.averages.topic_alignment === 'number'
@@ -1234,7 +1242,7 @@ export function AssessmentVariantPage() {
                       </div>
                     </div>
 
-                    <div className="rounded border bg-white p-3">
+                    <div className="rounded border bg-card p-3">
                       <p className="text-sm font-semibold">Instructor summary</p>
                       <p className="text-xs text-muted-foreground">
                         {aiReviewResult.overallSummary?.summaryText ?? 'n/a'}
@@ -1252,11 +1260,11 @@ export function AssessmentVariantPage() {
                     </div>
 
                     <div className="grid gap-2 sm:grid-cols-3">
-                      <div className="rounded border bg-slate-50 p-2">Usable as-is: {aiReviewResult.usabilityCounts.usable_as_is}</div>
-                      <div className="rounded border bg-slate-50 p-2">
+                      <div className="rounded border bg-muted p-2">Usable as-is: {aiReviewResult.usabilityCounts.usable_as_is}</div>
+                      <div className="rounded border bg-muted p-2">
                         Usable w/ edits: {aiReviewResult.usabilityCounts.usable_with_edits}
                       </div>
-                      <div className="rounded border bg-slate-50 p-2">Unusable: {aiReviewResult.usabilityCounts.unusable}</div>
+                      <div className="rounded border bg-muted p-2">Unusable: {aiReviewResult.usabilityCounts.unusable}</div>
                     </div>
                     <div className="overflow-x-auto">
                       <table className="w-full min-w-[820px] border-collapse text-left text-xs">
@@ -1302,7 +1310,7 @@ export function AssessmentVariantPage() {
                         </thead>
                         <tbody>
                           {aiReviewResult.perQuestion.map((row) => (
-                            <tr key={`${row.slot}-${row.variantVariantId}`} className="border-b border-slate-100">
+                            <tr key={`${row.slot}-${row.variantVariantId}`} className="border-b border-border">
                               <td className="p-2">{row.slot}</td>
                               <td className="p-2">{row.conceptual_equivalence ?? '-'}</td>
                               <td className="p-2">{row.difficulty_similarity ?? '-'}</td>
@@ -1321,7 +1329,7 @@ export function AssessmentVariantPage() {
                 )}
               </div>
               <aside
-                className={`absolute bottom-0 right-0 top-0 w-72 border-l bg-slate-50/95 shadow-sm transition-transform duration-200 ${
+                className={`absolute bottom-0 right-0 top-0 w-72 border-l bg-muted/95 shadow-sm transition-transform duration-200 ${
                   aiReviewHistoryOpen ? 'translate-x-0' : 'translate-x-full'
                 }`}
                 aria-hidden={!aiReviewHistoryOpen}
@@ -1356,7 +1364,7 @@ export function AssessmentVariantPage() {
             </CardContent>
           </Card>
         </section>
-      </main>
+      </div>
 
       {selectedCourse?.id && (
         <>
@@ -1373,7 +1381,12 @@ export function AssessmentVariantPage() {
             }}
             onQuestionsSaved={handleExamQuestionsSaved}
           />
-          <CanvasImportDialog open={canvasImportOpen} onClose={() => setCanvasImportOpen(false)} onImportSuccess={handleCanvasImport} />
+          <CanvasImportDialog
+            open={canvasImportOpen}
+            onClose={() => setCanvasImportOpen(false)}
+            courseId={selectedCourse?.id ?? null}
+            onImportSuccess={handleCanvasImport}
+          />
           <Dialog open={aiReviewRubricOpen} onOpenChange={setAiReviewRubricOpen}>
             <DialogContent className="max-w-3xl">
               <DialogHeader>
@@ -1399,6 +1412,8 @@ export function AssessmentVariantPage() {
           </Dialog>
         </>
       )}
+      </div>
     </div>
+    </QmHomeShell>
   );
 }

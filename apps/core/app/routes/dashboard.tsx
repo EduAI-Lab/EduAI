@@ -1,3 +1,4 @@
+import React from "react";
 import { redirect, useLoaderData } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import {
@@ -5,7 +6,8 @@ import {
   BreadcrumbItem,
   BreadcrumbList,
   BreadcrumbPage,
-} from "~/components/ui/breadcrumb"
+  PageHeading,
+} from "@eduai/ui"
 
 import { AppSidebar } from "~/components/app-sidebar";
 import { CanvasDashboardCard } from "~/components/canvas/canvas-dashboard-card";
@@ -15,9 +17,10 @@ import { DashboardStudentView } from "~/components/dashboard/dashboard-student-v
 import { DashboardTaView } from "~/components/dashboard/dashboard-ta-view";
 import { DashboardUnitAdminView } from "~/components/dashboard/dashboard-unit-admin-view";
 import { SiteHeader } from "~/components/site-header";
-import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
+import { SidebarInset, SidebarProvider } from "@eduai/ui";
 import { redirectToStudentIdOnboardingIfNeeded } from "~/lib/canvas/onboarding.server";
 import { auth } from "~/lib/auth/server";
+import { usePolicies } from "~/hooks/api/use-policies";
 import type { User } from "~/lib/auth/types";
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -43,8 +46,45 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 const CANVAS_SYNC_ROLES = new Set(["INSTRUCTOR", "ADMIN"]);
 
+function DashboardHero({ user }: { user: User }) {
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const name = (user.name ?? "").split(" ");
+  const firstName = (name.length == 3 && name[0].endsWith('.') ? name[1] : name[0])
+  const heroTitle =
+    user.role === "ADMIN" ? "Platform overview" :
+    user.role === "UNIT_ADMIN" ? `Welcome back, ${firstName}.` :
+    user.role === "INSTRUCTOR" ? `Welcome back, ${firstName}.` :
+    `${greeting}, ${firstName}.`;
+  const heroSub =
+    user.role === "ADMIN" ? "EduAI platform health and usage at a glance." :
+    user.role === "UNIT_ADMIN" ? "Your unit courses and administration." :
+    user.role === "INSTRUCTOR" ? "Your courses and teaching activity." :
+    user.role === "TA" ? "Your assigned courses and student activity." :
+    "Your AI-powered learning companion.";
+  const dateStr = new Date().toLocaleDateString("en-US", {
+    weekday: "long", month: "long", day: "numeric", year: "numeric",
+  });
+
+  return (
+    <div className="px-4 lg:px-6 pt-6 pb-4">
+      <PageHeading
+        heading={heroTitle}
+        subheading={`${dateStr} · ${heroSub}`}
+      />
+    </div>
+  );
+}
+
 function DashboardContent({ user }: { user: User }) {
-  const showCanvasSync = CANVAS_SYNC_ROLES.has(user.role ?? "");
+  const { policies } = usePolicies();
+  // Instructors only see the Canvas sync card when the policy is on; ADMIN is
+  // unaffected. Mirrors the `instructors.canManageCanvasIntegration` gate on
+  // the Canvas API (canvas.$.ts).
+  const canvasPolicyOk =
+    user.role === "ADMIN" ||
+    (policies["instructors.canManageCanvasIntegration"] ?? true);
+  const showCanvasSync = CANVAS_SYNC_ROLES.has(user.role ?? "") && canvasPolicyOk;
 
   let view;
   switch (user.role) {
@@ -68,9 +108,10 @@ function DashboardContent({ user }: { user: User }) {
 
   return (
     <>
+      <DashboardHero user={user} />
       {view}
       {showCanvasSync && (
-        <div className="px-4 lg:px-6 pb-6">
+        <div className="px-4 lg:px-6 pb-6 w-auto">
           <CanvasDashboardCard />
         </div>
       )}
@@ -90,7 +131,7 @@ export default function Page() {
         } as React.CSSProperties
       }
     >
-      <AppSidebar variant="inset" user={user} />
+      <AppSidebar user={user} />
       <SidebarInset>
         <SiteHeader
           breadcrumbs={

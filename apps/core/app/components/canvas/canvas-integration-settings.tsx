@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link2, Loader2, Trash2 } from "lucide-react";
+import { IconLink, IconLoader, IconTrash } from "@tabler/icons-react";
 
 import {
   connectCanvas,
@@ -7,12 +7,12 @@ import {
   getCanvasIntegration,
   type CanvasIntegrationPublic,
 } from "~/lib/canvas/client";
-import { Badge } from "~/components/ui/badge";
-import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
-import { Checkbox } from "~/components/ui/checkbox";
-import { Input } from "~/components/ui/input";
-import { Label } from "~/components/ui/label";
+import { Badge } from "@eduai/ui";
+import { Button } from "@eduai/ui";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@eduai/ui";
+import { Checkbox } from "@eduai/ui";
+import { Input } from "@eduai/ui";
+import { Label } from "@eduai/ui";
 
 const PRODUCTION_CANVAS_URL = "https://canvas.ubc.ca";
 const LOCAL_CANVAS_URL = "http://localhost:8080";
@@ -100,7 +100,7 @@ export function CanvasIntegrationSettings() {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Link2 className="h-5 w-5" />
+          <IconLink className="h-5 w-5" />
           Canvas Integration
         </CardTitle>
         <CardDescription>
@@ -111,7 +111,7 @@ export function CanvasIntegrationSettings() {
       <CardContent className="space-y-5">
         {loading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <IconLoader className="h-4 w-4 animate-spin" />
             Loading Canvas status…
           </div>
         ) : (
@@ -134,9 +134,9 @@ export function CanvasIntegrationSettings() {
                   aria-label="Disconnect Canvas"
                 >
                   {disconnecting ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <IconLoader className="h-4 w-4 animate-spin" />
                   ) : (
-                    <Trash2 className="h-4 w-4" />
+                    <IconTrash className="h-4 w-4" />
                   )}
                 </Button>
               </div>
@@ -189,7 +189,7 @@ export function CanvasIntegrationSettings() {
             <Button onClick={() => void handleConnect()} disabled={!canConnect}>
               {connecting ? (
                 <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  <IconLoader className="h-4 w-4 mr-2 animate-spin" />
                   Connecting…
                 </>
               ) : integration ? (

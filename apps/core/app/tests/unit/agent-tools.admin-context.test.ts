@@ -93,6 +93,31 @@ describe("listAdminCourseEnrollments", () => {
     expect(result.count).toBe(1);
     expect(prismaMock.enrollment.findMany).toHaveBeenCalled();
   });
+
+  it("applies both enrolledSince and enrolledBefore as a single range", async () => {
+    vi.mocked(getAccessibleCourse).mockResolvedValue({
+      course: { id: "c1", code: "COSC 111" },
+    } as never);
+    prismaMock.enrollment.findMany.mockResolvedValue([]);
+    prismaMock.enrollment.count.mockResolvedValue(0);
+
+    await listAdminCourseEnrollments(ADMIN, "c1", {
+      enrolledSince: "2026-06-01T00:00:00.000Z",
+      enrolledBefore: "2026-06-15T00:00:00.000Z",
+    });
+
+    expect(prismaMock.enrollment.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          courseId: "c1",
+          enrolledAt: {
+            gte: new Date("2026-06-01T00:00:00.000Z"),
+            lte: new Date("2026-06-15T00:00:00.000Z"),
+          },
+        },
+      }),
+    );
+  });
 });
 
 describe("listAdminCourseTopics", () => {

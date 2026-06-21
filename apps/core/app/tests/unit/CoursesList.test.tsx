@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { CoursesAdminView } from '~/components/courses/courses-admin-view'
@@ -7,6 +7,15 @@ import { CoursesInstructorView } from '~/components/courses/courses-instructor-v
 import { CoursesTaView } from '~/components/courses/courses-ta-view'
 import { CoursesStudentView } from '~/components/courses/courses-student-view'
 import type { Course } from '~/hooks/api/use-courses'
+
+// The instructor view gates Create/Publish/Delete on usePolicies(); the controls
+// stay hidden until policies load. Default the hook to the loaded state so the
+// policy-default tests assert post-fetch behavior; the loading test overrides it.
+vi.mock('~/hooks/api/use-policies', () => ({
+  usePolicies: vi.fn(() => ({ policies: {}, isLoading: false })),
+}))
+import { usePolicies } from '~/hooks/api/use-policies'
+const mockedUsePolicies = vi.mocked(usePolicies)
 
 const PUBLISHED_COURSE: Course = {
   id: 'c1',
@@ -75,7 +84,7 @@ describe('CoursesAdminView', () => {
     expect(screen.getByText('COSC 201')).toBeInTheDocument()
   })
 
-  it('shows publish, edit, and delete icon buttons per course', () => {
+  it('shows a course actions menu button per course', () => {
     wrap(
       <CoursesAdminView
         courses={[PUBLISHED_COURSE]}
@@ -85,9 +94,8 @@ describe('CoursesAdminView', () => {
         onPublishToggle={NOOP}
       />
     )
-    // Create + publish + edit + delete
-    const btns = screen.getAllByRole('button')
-    expect(btns.length).toBeGreaterThanOrEqual(4)
+    // Each card has a "Course actions" 3-dot dropdown button
+    expect(screen.getByRole('button', { name: /course actions/i })).toBeInTheDocument()
   })
 })
 
@@ -137,7 +145,7 @@ describe('CoursesUnitAdminView', () => {
     expect(screen.queryByText('MATH 101')).not.toBeInTheDocument()
   })
 
-  it('shows publish, edit, and delete icon buttons per course', () => {
+  it('shows a course actions menu button per course', () => {
     wrap(
       <CoursesUnitAdminView
         courses={[PUBLISHED_COURSE]}
@@ -148,8 +156,8 @@ describe('CoursesUnitAdminView', () => {
         onPublishToggle={NOOP}
       />
     )
-    const btns = screen.getAllByRole('button')
-    expect(btns.length).toBeGreaterThanOrEqual(4)
+    // Each card has a "Course actions" 3-dot dropdown button
+    expect(screen.getByRole('button', { name: /course actions/i })).toBeInTheDocument()
   })
 
   it('disables Create Course when no authorized units match departments', () => {
@@ -169,34 +177,60 @@ describe('CoursesUnitAdminView', () => {
 
 // CoursesInstructorView
 describe('CoursesInstructorView', () => {
-  it('does NOT show "Create Course" button', () => {
+  beforeEach(() => {
+    mockedUsePolicies.mockReturnValue({ policies: {}, isLoading: false } as never)
+  })
+
+  it('shows "Create Course" button when policies are loaded and the default is on', () => {
+    // Policies loaded with no overrides → the `?? true` defaults apply, so
+    // create is on.
     wrap(
       <CoursesInstructorView
         courses={[PUBLISHED_COURSE]}
+        onCreateCourse={NOOP}
         onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />
+    )
+    expect(screen.getByRole('button', { name: /create course/i })).toBeInTheDocument()
+  })
+
+  it('hides "Create Course" until policies load (no permission flash)', () => {
+    mockedUsePolicies.mockReturnValue({ policies: {}, isLoading: true } as never)
+    wrap(
+      <CoursesInstructorView
+        courses={[PUBLISHED_COURSE]}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
         onPublishToggle={NOOP}
       />
     )
     expect(screen.queryByRole('button', { name: /create course/i })).not.toBeInTheDocument()
   })
 
-  it('shows publish and edit buttons per course', () => {
+  it('shows a course actions menu button per course', () => {
     wrap(
       <CoursesInstructorView
         courses={[PUBLISHED_COURSE]}
+        onCreateCourse={NOOP}
         onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
         onPublishToggle={NOOP}
       />
     )
-    const btns = screen.getAllByRole('button')
-    expect(btns.length).toBeGreaterThanOrEqual(2) // publish + edit
+    // Actions are in a 3-dot dropdown per card
+    expect(screen.getByRole('button', { name: /course actions/i })).toBeInTheDocument()
   })
 
   it('renders both published and draft courses', () => {
     wrap(
       <CoursesInstructorView
         courses={[PUBLISHED_COURSE, DRAFT_COURSE]}
+        onCreateCourse={NOOP}
         onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
         onPublishToggle={NOOP}
       />
     )

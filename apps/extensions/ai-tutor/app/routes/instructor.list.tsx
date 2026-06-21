@@ -35,20 +35,11 @@
  *          components/TopicSyncMappingDialog, hooks/useCourseTopics
  */
 import { useEffect, useOptimistic, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router';
+import { useParams } from 'react-router';
 import AddActivityPanel from '../components/AddActivityPanel';
 import ActivityDetailsCard from '../components/ActivityDetailsCard';
 import EditActivityPanel from '../components/EditActivityPanel';
 import AddCourseTopicsButton from '../components/AddCourseTopicsButton';
-import Nav from '../components/Nav';
-import {
-  Breadcrumb,
-  BreadcrumbList,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from '../components/ui/breadcrumb';
 import api from '../lib/api';
 import type { Activity, Course, Lesson, ModuleDetail, Topic } from '../lib/types';
 import { CourseTopicsProvider, useCourseTopics } from '../hooks/useCourseTopics';
@@ -56,9 +47,19 @@ import type { Route } from './+types/instructor.list';
 import { requireClientUser } from '~/lib/client-auth';
 
 import type { ActivityUpdatePayload } from '../lib/activityForm';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui/tooltip';
+import {
+  PageHeading,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@eduai/ui';
 import TopicSyncMappingDialog from '~/components/TopicSyncMappingDialog';
 import { useBugReport } from '~/components/bug-report/useBugReport';
+import { PermissionGate } from '~/components/rbac/PermissionGate';
+import { useAtPermissions } from '~/hooks/useAtPermissions';
+import { AppShell } from '~/components/layout/AppShell';
+import { ShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbs';
 
 /**
  * Tooltip-wrapped sync trigger surfaced only for EduAI-sourced courses. The
@@ -130,6 +131,7 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
 export default function InstructorLessonBuilder({ loaderData }: Route.ComponentProps) {
   const { lessonId } = useParams();
   const numericLessonId = lessonId ? Number(lessonId) : null;
+  const perms = useAtPermissions();
   const { course, module, lesson, activities: initialActivities } = loaderData;
   const [activities, setActivities] = useState<Activity[]>(initialActivities);
   const [oActivities, addActivityOpt] = useOptimistic(
@@ -515,53 +517,26 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     }
   };
 
+  const breadcrumbItems = [
+    { label: 'Teaching', href: '/instructor' },
+    ...(course && module
+      ? [{ label: course.title, href: `/instructor/courses/${module.courseOfferingId}` }]
+      : [{ label: 'Course' }]),
+    ...(module && lesson
+      ? [{ label: module.title, href: `/instructor/module/${lesson.moduleId}` }]
+      : [{ label: 'Module' }]),
+    { label: lesson?.title || 'Lesson' },
+  ];
+
   return (
     <CourseTopicsProvider value={courseTopics}>
-      <div className="min-h-dvh bg-background">
-        <Nav />
-        <div className="container mx-auto px-4 py-8">
-          <Breadcrumb className="mb-6">
-            <BreadcrumbList>
-              <BreadcrumbItem>
-                <BreadcrumbLink asChild>
-                  <Link to="/instructor">Teaching</Link>
-                </BreadcrumbLink>
-              </BreadcrumbItem>
-              <BreadcrumbSeparator>/</BreadcrumbSeparator>
-              <BreadcrumbItem>
-                {course && module ? (
-                  <BreadcrumbLink asChild>
-                    <Link to={`/instructor/courses/${module.courseOfferingId}`}>
-                      {course.title}
-                    </Link>
-                  </BreadcrumbLink>
-                ) : (
-                  <BreadcrumbPage>Course</BreadcrumbPage>
-                )}
-              </BreadcrumbItem>
-              <BreadcrumbSeparator>/</BreadcrumbSeparator>
-              <BreadcrumbItem>
-                {module && lesson ? (
-                  <BreadcrumbLink asChild>
-                    <Link to={`/instructor/module/${lesson.moduleId}`}>{module.title}</Link>
-                  </BreadcrumbLink>
-                ) : (
-                  <BreadcrumbPage>Module</BreadcrumbPage>
-                )}
-              </BreadcrumbItem>
-              <BreadcrumbSeparator>/</BreadcrumbSeparator>
-              <BreadcrumbItem>
-                <BreadcrumbPage>{lesson?.title || 'Lesson'}</BreadcrumbPage>
-              </BreadcrumbItem>
-            </BreadcrumbList>
-          </Breadcrumb>
-          <h2 className="font-display text-2xl font-semibold text-foreground mb-6">
-            {lesson?.title || 'Lesson'}
-          </h2>
+      <AppShell breadcrumbs={<ShellBreadcrumbs items={breadcrumbItems} />}>
+        <div className="space-y-6">
+          <PageHeading heading={lesson?.title || 'Lesson'} subheading="Activity editor" />
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+          <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
             <div className="lg:col-span-2 space-y-4">
-              <div className="card-editorial p-5">
+              <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-5">
                 <div className="font-semibold mb-3 text-foreground">Activities</div>
                 {oActivities.length === 0 ? (
                   <div className="text-muted-foreground">No activities yet.</div>
@@ -589,7 +564,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div className="flex items-start gap-3">
-                              <span className="flex-shrink-0 w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center font-display font-semibold text-xs">
+                              <span className="flex-shrink-0 w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center font-semibold text-xs">
                                 {i + 1}
                               </span>
                               <div>
@@ -606,6 +581,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                                 )}
                               </div>
                             </div>
+                            <PermissionGate allow={perms.canManageContent}>
                             <div className="flex gap-2">
                               {isEditing ? (
                                 <span className="tag bg-accent text-accent-foreground">
@@ -632,9 +608,10 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                                 </>
                               )}
                             </div>
+                            </PermissionGate>
                           </div>
 
-                          {isEditing ? (
+                          {isEditing && perms.canManageContent ? (
                             <EditActivityPanel
                               key={activity.id}
                               activity={activity}
@@ -877,6 +854,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                 )}
               </div>
 
+              <PermissionGate allow={perms.canManageContent}>
               <div className="flex justify-center">
                 <button
                   type="button"
@@ -893,10 +871,11 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                   onActivityCreated={refreshActivities}
                 />
               )}
+              </PermissionGate>
             </div>
 
             <aside className="space-y-4">
-              <div className="card-editorial p-5 space-y-3">
+              <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-5 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="font-semibold text-foreground">Course Topics</div>
                   {lesson?.courseOfferingId && (
@@ -906,6 +885,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                   )}
                 </div>
                 {topicsError && <p className="text-xs text-destructive">{topicsError}</p>}
+                <PermissionGate allow={perms.canManageTopics}>
                 <div className="flex items-center gap-2">
                   {!!course?.externalId || course?.externalSource === 'EDUAI' ? (
                     // EduAI course: Show only sync button
@@ -944,6 +924,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                     <AddCourseTopicsButton disabled={!lesson?.courseOfferingId} />
                   )}
                 </div>
+                </PermissionGate>
                 <div className="space-y-1.5 max-h-48 overflow-y-auto text-sm">
                   {topics.length === 0 ? (
                     <div className="text-muted-foreground text-xs">No topics yet.</div>
@@ -959,7 +940,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
             </aside>
           </div>
         </div>
-      </div>
+      </AppShell>
       <TopicSyncMappingDialog
         open={showMapping}
         onClose={() => setShowMapping(false)}

@@ -6,7 +6,7 @@ import { AccessibilitySettingsTab } from "~/components/settings/accessibility-se
 const setAssistive = vi.fn();
 const setMotionReduced = vi.fn();
 const setDensity = vi.fn();
-const setTheme = vi.fn();
+const setNextTheme = vi.fn();
 
 vi.mock("~/components/assistive/assistive-ui-provider", () => ({
   useAssistiveUi: () => ({
@@ -19,12 +19,19 @@ vi.mock("~/components/assistive/ui-preferences-provider", () => ({
   useUiPreferences: () => ({
     motionReduced: false,
     density: "comfortable",
-    theme: "system",
     setMotionReduced,
     setDensity,
-    setTheme,
   }),
 }));
+
+// Theme is owned by next-themes (re-exported from @eduai/ui); mock only useTheme.
+vi.mock("@eduai/ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@eduai/ui")>();
+  return {
+    ...actual,
+    useTheme: () => ({ theme: "system", setTheme: setNextTheme }),
+  };
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
