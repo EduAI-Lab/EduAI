@@ -1,6 +1,6 @@
 import type { ActionFunctionArgs } from "react-router";
 
-import { requireAdmin } from "~/lib/auth/guards.server";
+import { requireInviter } from "~/lib/auth/guards.server";
 import { resendInvitation, revokeInvitation } from "~/lib/invitations/service.server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
@@ -13,14 +13,20 @@ function json(data: unknown, status = 200): Response {
 }
 
 /**
- * /api/invitations/:id (ADMIN):
+ * /api/invitations/:id (ADMIN, or UNIT_ADMIN when `unitAdmins.canInvite` is on):
  *   DELETE — revoke a pending invitation.
  *   POST   — resend it (rotate token, refresh expiry, re-email); returns the
  *            new accept link.
+ * A UNIT_ADMIN may only act on invitations they themselves sent.
  */
 export async function action({ request, params }: ActionFunctionArgs) {
-  const gate = await requireAdmin(request);
+  const gate = await requireInviter(request, "invitation.manage");
   if (gate.response) return gate.response;
+
+  const user = gate.session.user;
+  const isAdmin = user.role === "ADMIN";
+  // A UNIT_ADMIN is scoped to invitations they sent; ADMIN is unrestricted.
+  const scope = isAdmin ? undefined : { restrictToInviterId: user.id };
 
   const requestContext = getRequestContext(request);
 
@@ -28,12 +34,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
   if (!id) return new Response("Missing invitation ID", { status: 400 });
 
   if (request.method === "DELETE") {
-    const result = await revokeInvitation(id);
+    const result = await revokeInvitation(id, scope);
     if (!result.ok) return json({ error: result.error }, result.status);
 
     fireAndForget(
       logAuditAction({
-        ...getActorContext(gate.session?.user ?? null),
+        ...getActorContext(user),
         ...requestContext,
         actionCode: "INVITATION_REVOKED",
         category: "INVITATION",
@@ -49,15 +55,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 
   if (request.method === "POST") {
-    const result = await resendInvitation(id, {
-      id: gate.session.user.id,
-      name: gate.session.user.name,
-    });
+    const result = await resendInvitation(id, { id: user.id, name: user.name }, scope);
     if (!result.ok) return json({ error: result.error }, result.status);
 
     fireAndForget(
       logAuditAction({
-        ...getActorContext(gate.session?.user ?? null),
+        ...getActorContext(user),
         ...requestContext,
         actionCode: "INVITATION_RESENT",
         category: "INVITATION",

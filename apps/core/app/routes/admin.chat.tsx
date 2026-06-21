@@ -7,7 +7,6 @@ import { AdminChatView } from "~/components/chat/admin-chat-view";
 import { AppSidebar } from "~/components/app-sidebar";
 import type { ChatModelOption } from "~/components/chat/chat-view-types";
 import { SiteHeader } from "~/components/site-header";
-import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -15,7 +14,9 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from "~/components/ui/breadcrumb";
+  SidebarInset,
+  SidebarProvider,
+} from "@eduai/ui";
 import { fetchChatSession } from "~/hooks/api/use-chat-sessions";
 import { useApiKeys } from "~/hooks/use-api-keys";
 import { auth } from "~/lib/auth/server";
@@ -119,7 +120,7 @@ export default function AdminChatPage() {
       const ctx = requestContextRef.current;
       return {
         ...requestBody,
-        messages: chatMessages,
+        messages: chatMessages.slice(-1),
         chatMode: "admin",
         model: ctx.selectedModel,
         apiKeys: ctx.getValidApiKeys(),

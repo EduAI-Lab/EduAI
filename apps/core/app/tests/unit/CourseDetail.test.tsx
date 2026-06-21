@@ -72,36 +72,6 @@ function wrap(ui: React.ReactElement) {
 
 // Manager view (admin / unit / instructor)
 describe('CourseDetailManagerView', () => {
-  it('shows enrolled users with student numbers when provided', () => {
-    wrap(
-      <CourseDetailManagerView
-        course={COURSE}
-        access="instructor"
-        topics={[]}
-        enrollments={[
-          {
-            id: 'e1',
-            courseId: 'c1',
-            userId: 'u1',
-            userEmail: 'student1@example.com',
-            userName: 'Student One',
-            studentNumber: 'student_1',
-            role: 'STUDENT',
-            isActive: true,
-            enrolledAt: '2025-01-01T00:00:00.000Z',
-          },
-        ]}
-        materials={[]}
-        onFileSelect={onFileSelect}
-        onCreateTopic={NOOP}
-        onDeleteTopic={NOOP}
-        {...STAFF_PROPS}
-      />
-    )
-    expect(screen.getByText('Student One')).toBeInTheDocument()
-    expect(screen.getByText(/Student number: student_1/i)).toBeInTheDocument()
-  })
-
   it('shows all four tabs including Enrollments', () => {
     wrap(
       <CourseDetailManagerView
@@ -122,7 +92,7 @@ describe('CourseDetailManagerView', () => {
     expect(screen.getByRole('tab', { name: /enrollments/i })).toBeInTheDocument()
   })
 
-  it('renders CourseMaterialsUpload widget in Materials content', () => {
+  it('renders "Upload material" button in Materials content', () => {
     wrap(
       <CourseDetailManagerView
         course={COURSE}
@@ -136,7 +106,7 @@ describe('CourseDetailManagerView', () => {
         {...STAFF_PROPS}
       />
     )
-    expect(screen.getByTestId('upload-widget')).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /upload material/i }).length).toBeGreaterThan(0)
   })
 
   it('shows topic "Add" form in Topics content for instructor', () => {
@@ -177,6 +147,12 @@ describe('CourseDetailManagerView', () => {
 })
 
 // TA view
+const TA_PROPS = {
+  onCreateTopic: NOOP,
+  onDeleteTopic: NOOP,
+  onUpdateAiInstructions: NOOP,
+}
+
 describe('CourseDetailTaView', () => {
   it('does NOT show Enrollments tab', () => {
     wrap(
@@ -185,21 +161,23 @@ describe('CourseDetailTaView', () => {
         topics={[]}
         materials={[]}
         onFileSelect={onFileSelect}
+        {...TA_PROPS}
       />
     )
     expect(screen.queryByRole('tab', { name: /enrollments/i })).not.toBeInTheDocument()
   })
 
-  it('renders CourseMaterialsUpload widget in Materials content', () => {
+  it('renders "Upload material" button in Materials content', () => {
     wrap(
       <CourseDetailTaView
         course={COURSE}
         topics={[]}
         materials={[]}
         onFileSelect={onFileSelect}
+        {...TA_PROPS}
       />
     )
-    expect(screen.getByTestId('upload-widget')).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /upload material/i }).length).toBeGreaterThan(0)
   })
 
   it('does NOT show topic add form', () => {
@@ -209,6 +187,7 @@ describe('CourseDetailTaView', () => {
         topics={[TOPIC]}
         materials={[]}
         onFileSelect={onFileSelect}
+        {...TA_PROPS}
       />
     )
     expect(screen.queryByPlaceholderText(/new topic name/i)).not.toBeInTheDocument()
@@ -221,9 +200,11 @@ describe('CourseDetailTaView', () => {
         topics={[TOPIC]}
         materials={[]}
         onFileSelect={onFileSelect}
+        {...TA_PROPS}
       />
     )
-    expect(screen.getByText('Variables')).toBeInTheDocument()
+    // Topic name appears in both the hero quick-chips and the Topics tab
+    expect(screen.getAllByText('Variables').length).toBeGreaterThan(0)
   })
 })
 

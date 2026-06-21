@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 
-const VALID_SOURCES = ["AI_TUTOR", "QUESTION_MAKER"] as const;
+const VALID_SOURCES = ["CORE", "AI_TUTOR", "QUESTION_MAKER"] as const;
 type BugReportSource = (typeof VALID_SOURCES)[number];
 
 export type CreateBugReportResult =

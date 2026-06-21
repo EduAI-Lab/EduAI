@@ -3,14 +3,14 @@
  */
 import * as React from 'react';
 import {
+  Button,
   Dialog,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from './dialog';
-import { Button } from './button';
+} from '@eduai/ui';
 import { AlertTriangle } from 'lucide-react';
 
 interface DeleteConfirmationModalProps {
@@ -47,10 +47,10 @@ export const DeleteConfirmationModal = ({
         <DialogHeader>
           <div className="flex items-center gap-3">
             <div className={`flex h-10 w-10 items-center justify-center rounded-full ${
-              variant === 'destructive' ? 'bg-red-100 dark:bg-red-900/20' : 'bg-gray-100 dark:bg-gray-800'
+              variant === 'destructive' ? 'bg-red-100 dark:bg-red-900/20' : 'bg-muted dark:bg-muted'
             }`}>
               <AlertTriangle className={`h-5 w-5 ${
-                variant === 'destructive' ? 'text-red-600 dark:text-red-400' : 'text-gray-600 dark:text-gray-400'
+                variant === 'destructive' ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground dark:text-muted-foreground'
               }`} />
             </div>
             <DialogTitle className="text-left">{title}</DialogTitle>

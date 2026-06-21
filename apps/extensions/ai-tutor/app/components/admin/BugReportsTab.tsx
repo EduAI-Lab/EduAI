@@ -31,14 +31,21 @@
  */
 
 import { useMemo, useState } from 'react';
-import { Button } from '~/components/ui/button';
+import { Button } from '@eduai/ui';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '~/components/ui/dialog';
+} from '@eduai/ui';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@eduai/ui';
 import api from '~/lib/api';
 import type { AdminBugReportRow, BugReportStatus } from '~/lib/types';
 
@@ -66,6 +73,11 @@ type NetworkLogEntry = {
 };
 
 const STATUS_OPTIONS: BugReportStatus[] = ['unhandled', 'in progress', 'resolved'];
+const STATUS_LABELS: Record<BugReportStatus, string> = {
+  unhandled: 'Unhandled',
+  'in progress': 'In progress',
+  resolved: 'Resolved',
+};
 const CONSOLE_LEVELS = ['all', 'log', 'warn', 'error'] as const;
 const NETWORK_TABS = ['meta', 'request', 'response', 'headers'] as const;
 const COPY_FEEDBACK_DURATION_MS = 2_000;
@@ -127,10 +139,35 @@ function getPathLabel(pageUrl: string | null | undefined) {
   }
 }
 
-function getStatusClasses(status: BugReportStatus) {
-  if (status === 'resolved') return 'bg-green-500/10 text-green-700 dark:text-green-400';
-  if (status === 'in progress') return 'bg-amber-500/10 text-amber-700 dark:text-amber-400';
-  return 'bg-red-500/10 text-red-700 dark:text-red-400';
+function StatusSelect({
+  reportId,
+  status,
+  disabled,
+  onStatusChange,
+}: {
+  reportId: string;
+  status: BugReportStatus;
+  disabled: boolean;
+  onStatusChange: (reportId: string, status: BugReportStatus) => void;
+}) {
+  return (
+    <Select
+      value={status}
+      onValueChange={(value) => onStatusChange(reportId, value as BugReportStatus)}
+      disabled={disabled}
+    >
+      <SelectTrigger className="h-9 w-[140px]" aria-label={`Update status for report ${reportId}`}>
+        <SelectValue>{STATUS_LABELS[status]}</SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        {STATUS_OPTIONS.map((option) => (
+          <SelectItem key={option} value={option}>
+            {STATUS_LABELS[option]}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
 }
 
 function buildContextSummary(report: AdminBugReportRow) {
@@ -631,12 +668,12 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
   };
 
   return (
-    <div className="card-editorial p-6 sm:p-8 space-y-6 animate-fade-up delay-150">
+    <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6 sm:p-8 space-y-6 animate-fade-up delay-150">
       <div className="space-y-2">
-        <h2 className="font-display text-xl font-bold text-foreground">Bug Reports</h2>
+        <h2 className="text-xl font-bold text-foreground">Bug Reports</h2>
         <p className="text-sm text-muted-foreground max-w-3xl">
-          Review incoming reports from students and professors, inspect captured diagnostics, and
-          move each report through triage status.
+          Review AI Tutor bug reports only (submitted from this platform). QM and Core reports
+          are triaged in their respective admin surfaces.
         </p>
       </div>
 
@@ -647,7 +684,17 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
       ) : null}
 
       <div className="overflow-x-auto rounded-2xl border border-border/70 bg-card/80">
-        <table className="w-full min-w-[1080px] border-collapse">
+        <table className="w-full min-w-[1080px] table-fixed border-collapse">
+          <colgroup>
+            <col className="w-[150px]" />
+            <col className="w-[28%]" />
+            <col className="w-[16%]" />
+            <col className="w-[90px]" />
+            <col className="w-[150px]" />
+            <col className="w-[16%]" />
+            <col className="w-[12%]" />
+            <col className="w-[200px]" />
+          </colgroup>
           <thead className="border-b border-border/70 bg-muted/30">
             <tr>
               <th className="px-3 py-3 text-left">
@@ -729,57 +776,47 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
               sortedReports.map((report) => (
                 <tr key={report.id} className="border-b border-border/50 align-top last:border-b-0">
                   <td className="px-3 py-3">
-                    <div className="space-y-2">
-                      <span
-                        className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${getStatusClasses(report.status)}`}
-                      >
-                        {report.status}
-                      </span>
-                      <select
-                        aria-label={`Update status for report ${report.id}`}
-                        className="input-field h-8 text-xs"
-                        value={report.status}
-                        onChange={(event) =>
-                          onStatusChange(report.id, event.target.value as BugReportStatus)
-                        }
-                        disabled={updatingReportId === report.id}
-                      >
-                        {STATUS_OPTIONS.map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                    <StatusSelect
+                      reportId={report.id}
+                      status={report.status}
+                      disabled={updatingReportId === report.id}
+                      onStatusChange={onStatusChange}
+                    />
                   </td>
-                  <td className="max-w-[320px] px-3 py-3 text-sm">
+                  <td className="overflow-hidden px-3 py-3 text-sm">
                     <button
                       type="button"
-                      className="truncate text-left text-foreground hover:text-primary"
+                      className="line-clamp-3 w-full break-words text-left text-foreground hover:text-primary"
                       title={report.description}
                       onClick={() => openViewer('description', report.id)}
                     >
                       {report.description}
                     </button>
                   </td>
-                  <td className="max-w-[220px] px-3 py-3 text-sm text-foreground">
+                  <td className="overflow-hidden px-3 py-3 text-sm text-foreground">
                     {report.isAnonymous ? (
                       <span className="italic text-muted-foreground">Anonymous</span>
                     ) : (
-                      getReporterLabel(report)
+                      <span className="block truncate" title={getReporterLabel(report)}>
+                        {getReporterLabel(report)}
+                      </span>
                     )}
                   </td>
-                  <td className="px-3 py-3 text-sm text-muted-foreground">
-                    {getReporterRole(report) ?? '-'}
+                  <td className="overflow-hidden px-3 py-3 text-sm text-muted-foreground">
+                    <span className="block truncate">{getReporterRole(report) ?? '-'}</span>
                   </td>
-                  <td className="px-3 py-3 text-sm text-muted-foreground">
-                    {formatDateTime(report.createdAt)}
+                  <td className="overflow-hidden px-3 py-3 text-sm text-muted-foreground">
+                    <span className="block truncate">{formatDateTime(report.createdAt)}</span>
                   </td>
-                  <td className="max-w-[260px] px-3 py-3 text-sm text-muted-foreground">
-                    <span title={getContextLabel(report)}>{getContextLabel(report)}</span>
+                  <td className="overflow-hidden px-3 py-3 text-sm text-muted-foreground">
+                    <span className="line-clamp-2 break-words" title={getContextLabel(report)}>
+                      {getContextLabel(report)}
+                    </span>
                   </td>
-                  <td className="max-w-[220px] px-3 py-3 text-sm text-muted-foreground">
-                    <span title={report.pageUrl ?? ''}>{getPathLabel(report.pageUrl)}</span>
+                  <td className="overflow-hidden px-3 py-3 text-sm text-muted-foreground">
+                    <span className="block truncate" title={report.pageUrl ?? ''}>
+                      {getPathLabel(report.pageUrl)}
+                    </span>
                   </td>
                   <td className="px-3 py-3">
                     <div className="flex flex-wrap gap-2">

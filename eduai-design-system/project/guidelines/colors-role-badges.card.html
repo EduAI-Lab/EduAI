@@ -1,0 +1,35 @@
+<!-- @dsCard group="Colors" viewport="700x130" name="Role Badge Colors" subtitle="Semantic color tokens for the five user roles in NavUser" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; padding: 20px; font-family: var(--font-sans); background: var(--background); display: flex; gap: 10px; align-items: center; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 4px 10px; border-radius: var(--radius-full);
+    font-size: 12px; font-weight: 600; color: #fff;
+    white-space: nowrap;
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,0.5); }
+</style>
+</head>
+<body>
+  <div class="badge" style="background: var(--color-role-admin)">
+    <div class="dot"></div> Admin
+  </div>
+  <div class="badge" style="background: var(--color-role-unit-admin)">
+    <div class="dot"></div> Unit Admin
+  </div>
+  <div class="badge" style="background: var(--color-role-instructor)">
+    <div class="dot"></div> Instructor
+  </div>
+  <div class="badge" style="background: var(--color-role-ta)">
+    <div class="dot"></div> TA
+  </div>
+  <div class="badge" style="background: var(--color-role-student)">
+    <div class="dot"></div> Student
+  </div>
+</body>
+</html>

@@ -5,7 +5,8 @@ import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { getCourseTA, addCourseTA, removeCourseTA } from "~/lib/courses/tas.server";
 import prisma from "~/lib/prisma.server";
 import { resolveCourseAccess } from "~/lib/rbac/resolve-course-access.server";
-import { canManageInstructors } from "~/lib/rbac/permissions";
+import { resolvePolicyGate } from "~/lib/rbac/permissions";
+import { getPolicy, denyByPolicy } from "~/lib/policy.server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 
@@ -57,10 +58,24 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   };
   const access = await resolveCourseAccess(rbacUser, course);
 
-  if (!canManageInstructors(access)) {
+  // ADMIN / UNIT_ADMIN may always manage TAs. An INSTRUCTOR who owns the course
+  // may also manage TAs when `instructors.canManageEnrollments` is on; the gate
+  // is resolved centrally so this mirrors the enrollments endpoint and can't
+  // drift. Other roles are forbidden.
+  const taGate = resolvePolicyGate(access, "manageEnrollments");
+  if (taGate === "never") {
     return new Response(JSON.stringify({ error: "Forbidden" }), {
       status: 403,
       headers: { "Content-Type": "application/json" },
+    });
+  }
+  if (taGate !== "always" && !(await getPolicy(taGate))) {
+    return denyByPolicy({
+      request,
+      policyKey: taGate,
+      user: session.user,
+      action: "courseTA.manage",
+      courseId,
     });
   }
 
@@ -119,10 +134,24 @@ export async function action({ request, params }: ActionFunctionArgs) {
   };
   const access = await resolveCourseAccess(rbacUser, course);
 
-  if (!canManageInstructors(access)) {
+  // ADMIN / UNIT_ADMIN may always manage TAs. An INSTRUCTOR who owns the course
+  // may also manage TAs when `instructors.canManageEnrollments` is on; the gate
+  // is resolved centrally so this mirrors the enrollments endpoint and can't
+  // drift. Other roles are forbidden.
+  const taGate = resolvePolicyGate(access, "manageEnrollments");
+  if (taGate === "never") {
     return new Response(JSON.stringify({ error: "Forbidden" }), {
       status: 403,
       headers: { "Content-Type": "application/json" },
+    });
+  }
+  if (taGate !== "always" && !(await getPolicy(taGate))) {
+    return denyByPolicy({
+      request,
+      policyKey: taGate,
+      user: session.user,
+      action: "courseTA.manage",
+      courseId,
     });
   }
 

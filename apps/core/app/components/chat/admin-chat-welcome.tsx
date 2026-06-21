@@ -1,5 +1,5 @@
 import { Shield } from "lucide-react";
-import { PromptSuggestion } from "~/components/ui/prompt-suggestion";
+import { PromptSuggestion } from "@eduai/ui";
 
 export interface AdminChatWelcomeProps {
   selectedModelInfo?: {

@@ -8,6 +8,9 @@ import {
   getAuthorizedUnits,
   resolveCourseAccessWithCourse,
 } from "~/lib/auth/course-access.server";
+import { getPolicy, denyByPolicy } from "~/lib/policy.server";
+import { canCreateCourse } from "~/lib/rbac/permissions";
+import type { RbacUser } from "~/lib/rbac/types";
 import {
   CreateCourseSchema,
   UpdateCourseSchema,
@@ -172,15 +175,30 @@ export async function getCourses(request: Request) {
 }
 
 /**
- * POST /api/courses — create a course (ADMIN, or UNIT_ADMIN within their
- * authorized units).
+ * POST /api/courses — create a course.
+ *
+ * Authorized for ADMIN and UNIT_ADMIN (within their authorized units). An
+ * INSTRUCTOR may also self-create when the `instructors.canCreateCourses` policy
+ * flag is enabled; they are auto-enrolled as the course instructor.
  */
 export async function createCourse(request: Request) {
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
   if (apiKeyGuard) return apiKeyGuard;
 
   const session = apiKeySession ?? (await auth.api.getSession(request));
-  if (!session?.user || !["ADMIN", "UNIT_ADMIN"].includes(session.user.role ?? "")) {
+  const role = session?.user?.role ?? "";
+  const canCreate =
+    (session?.user != null && canCreateCourse(session.user as RbacUser)) ||
+    (role === "INSTRUCTOR" && (await getPolicy("instructors.canCreateCourses")));
+  if (!session?.user || !canCreate) {
+    if (session?.user && role === "INSTRUCTOR") {
+      return denyByPolicy({
+        request,
+        policyKey: "instructors.canCreateCourses",
+        user: session.user,
+        action: "course.create",
+      });
+    }
     return apiError(403, "Forbidden");
   }
 
@@ -188,6 +206,11 @@ export async function createCourse(request: Request) {
   if (!parsedBody.ok) {
     return parsedBody.response;
   }
+
+  if (session.user.role === "INSTRUCTOR") {
+    parsedBody.data.instructorUserIds = [session.user.id];
+  }
+
   const result = { success: true as const, data: parsedBody.data };
 
   // §5/§19 unit lock: a UNIT_ADMIN can only create courses inside their
@@ -274,6 +297,33 @@ export async function updateCourse(request: Request, courseId: string) {
   if (!course) {
     return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
       status: 404,
+      headers: { "Content-Type": "application/json" } as const,
+    });
+  }
+
+  // TA carve-out (tas.canSetAiInstructions, grant): a TA may PATCH the
+  // `aiInstructions` field ONLY, and only when the flag is on. Any other field
+  // in the payload — or the flag being off — keeps the existing 403, so the
+  // grant cannot be ridden into editing the rest of the course.
+  if (access && access.level === "ta") {
+    const taCanSetAi = await getPolicy("tas.canSetAiInstructions");
+    const keys = Object.keys(result.data);
+    const aiInstructionsOnly = keys.length > 0 && keys.every((key) => key === "aiInstructions");
+    if (!taCanSetAi || !aiInstructionsOnly) {
+      return denyByPolicy({
+        request,
+        policyKey: "tas.canSetAiInstructions",
+        user,
+        action: "course.update",
+        courseId,
+      });
+    }
+    const updated = await prisma.course.update({
+      where: { id: courseId },
+      data: { aiInstructions: result.data.aiInstructions },
+    });
+    return new Response(JSON.stringify(updated), {
+      status: 200,
       headers: { "Content-Type": "application/json" } as const,
     });
   }
@@ -370,6 +420,30 @@ export async function deleteCourse(request: Request, courseId: string) {
     });
   }
 
+  // Policy gate: INSTRUCTOR delete is conditional; ADMIN/UNIT_ADMIN unaffected
+  // by this flag (the service-key/enforceAdminIfApiKey path never reaches here
+  // as an instructor).
+  if (access.level === "instructor" && !(await getPolicy("instructors.canDeleteCourses"))) {
+    return denyByPolicy({
+      request,
+      policyKey: "instructors.canDeleteCourses",
+      user: session.user,
+      action: "course.delete",
+      courseId,
+    });
+  }
+
+  // Policy gate: UNIT_ADMIN delete is conditional; ADMIN is always allowed.
+  if (access.level === "unit" && !(await getPolicy("unitAdmins.canDeleteCourses"))) {
+    return denyByPolicy({
+      request,
+      policyKey: "unitAdmins.canDeleteCourses",
+      user: session.user,
+      action: "course.delete",
+      courseId,
+    });
+  }
+
   await prisma.course.update({
     where: { id: courseId },
     data: { deletedAt: new Date() },
@@ -435,6 +509,18 @@ export async function setPublishState(request: Request, courseId: string, publis
     return new Response(JSON.stringify({ error: "Forbidden" }), {
       status: 403,
       headers: { "Content-Type": "application/json" } as const,
+    });
+  }
+
+  // Policy gate: an INSTRUCTOR may publish only when the flag is on; higher
+  // ranks (ADMIN / UNIT_ADMIN) are always allowed.
+  if (access.level === "instructor" && !(await getPolicy("instructors.canPublishCourses"))) {
+    return denyByPolicy({
+      request,
+      policyKey: "instructors.canPublishCourses",
+      user: session.user,
+      action: "course.publish",
+      courseId,
     });
   }
 

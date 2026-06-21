@@ -37,7 +37,7 @@ describe("createBugReport — validation", () => {
   });
 
   it("rejects invalid source value", async () => {
-    const r = await createBugReport({ ...BASE_PAYLOAD, source: "CORE" });
+    const r = await createBugReport({ ...BASE_PAYLOAD, source: "INVALID_SOURCE" });
     expect(r).toMatchObject({ ok: false, error: "VALIDATION_ERROR", fields: { source: expect.any(String) } });
     expect(prismaMock.bugReport.create).not.toHaveBeenCalled();
   });

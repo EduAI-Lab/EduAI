@@ -153,11 +153,18 @@ export async function listAdminCourseEnrollments(
 
   const clampedLimit = Math.min(Math.max(Math.floor(opts.limit ?? DEFAULT_LIST_LIMIT), 1), DEFAULT_LIST_LIMIT);
 
+  const enrolledAtFilter =
+    enrolledSince instanceof Date || enrolledBefore instanceof Date
+      ? {
+          ...(enrolledSince instanceof Date ? { gte: enrolledSince } : {}),
+          ...(enrolledBefore instanceof Date ? { lte: enrolledBefore } : {}),
+        }
+      : undefined;
+
   const where = {
     courseId,
     ...(typeof opts.isActive === "boolean" ? { isActive: opts.isActive } : {}),
-    ...(enrolledSince instanceof Date ? { enrolledAt: { gte: enrolledSince } } : {}),
-    ...(enrolledBefore instanceof Date ? { enrolledAt: { lte: enrolledBefore } } : {}),
+    ...(enrolledAtFilter ? { enrolledAt: enrolledAtFilter } : {}),
   };
 
   const [enrollments, total] = await Promise.all([

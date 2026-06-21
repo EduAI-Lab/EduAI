@@ -1,9 +1,8 @@
+import { Button, ScrollArea } from '@eduai/ui';
+import { Tooltip } from '@/components/ui/tooltip';
 import { useMemo, useState } from 'react';
 import { History, Trash2, X, ChevronDown, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Button } from '../ui/button';
-import { ScrollArea } from '../ui/scroll-area';
-import { Tooltip } from '../ui/tooltip';
 import { OCRJobCard } from './OCRJobCard';
 import type { OCRJob } from '../../types/ocr';
 
@@ -124,7 +123,7 @@ export function OCRHistoryPanel({
               <History className="size-4" />
               <h3 className="text-sm font-medium">Upload History</h3>
               {inProgressCount > 0 && (
-                <span className="flex size-5 items-center justify-center rounded-full bg-blue-500 text-[10px] font-medium text-white">
+                <span className="flex size-5 items-center justify-center rounded-full bg-primary text-[10px] font-medium text-white">
                   {inProgressCount}
                 </span>
               )}

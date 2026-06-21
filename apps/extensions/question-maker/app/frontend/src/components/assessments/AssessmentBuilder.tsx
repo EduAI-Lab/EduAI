@@ -1,7 +1,7 @@
+import { Button, ScrollArea } from '@eduai/ui';
+
 import React, { useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
-import { Button } from '../ui/button';
-import { ScrollArea } from '../ui/scroll-area';
 import { Assessment, AssessmentSection, QuestionVariantEntry, Topic } from '../../types/question';
 import { AssessmentSectionCard } from './AssessmentSectionCard';
 import { AssessmentQuestionPicker } from './AssessmentQuestionPicker';
@@ -18,6 +18,7 @@ interface AssessmentBuilderProps {
     onViewQuestion?: (entry: QuestionVariantEntry) => void;
     onToggleDraft?: (entry: QuestionVariantEntry, nextDraft: boolean) => void;
     onCreateVariant?: (entry: QuestionVariantEntry) => void;
+    readOnly?: boolean;
 }
 
 export function AssessmentBuilder({
@@ -31,7 +32,8 @@ export function AssessmentBuilder({
     onRemoveQuestionFromSection,
     onViewQuestion,
     onToggleDraft,
-    onCreateVariant
+    onCreateVariant,
+    readOnly = false,
 }: AssessmentBuilderProps) {
     const [pickerOpen, setPickerOpen] = useState(false);
     const [pickerSectionId, setPickerSectionId] = useState<number | null>(null);
@@ -54,13 +56,13 @@ export function AssessmentBuilder({
                 <ScrollArea className="h-full pr-2">
                     <div className="flex flex-col gap-4">
                         <div className="flex items-center justify-between">
-                            <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+                            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                                 Sections
                             </h3>
                         </div>
 
                         {sections.length === 0 ? (
-                            <div className="rounded border border-dashed border-gray-200 bg-gray-50 p-8 text-center text-sm text-gray-500">
+                            <div className="rounded border border-dashed border-border bg-muted p-8 text-center text-sm text-muted-foreground">
                                 No sections yet. Click &quot;Add section&quot; to get started.
                             </div>
                         ) : (
@@ -84,21 +86,24 @@ export function AssessmentBuilder({
                                             setPickerSectionId(section.id);
                                             setPickerOpen(true);
                                         }}
+                                        readOnly={readOnly}
                                     />
                                 ))}
                             </div>
                         )}
+                        {!readOnly && (
                         <div className="pt-3">
                             <Button
                                 type="button"
                                 size="sm"
-                                className="gap-1.5 bg-slate-800 text-white hover:bg-slate-700"
+                                className="gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90"
                                 onClick={onAddSection}
                             >
                                 <Plus className="h-3.5 w-3.5" />
                                 Add section
                             </Button>
                         </div>
+                        )}
                     </div>
                 </ScrollArea>
             </div>

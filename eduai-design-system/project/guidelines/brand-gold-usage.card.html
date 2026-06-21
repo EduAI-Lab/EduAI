@@ -1,0 +1,35 @@
+<!-- @dsCard group="Brand" viewport="700x140" name="Gold Usage" subtitle="UBC Gold — correct decorative uses vs. forbidden text uses" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; padding: 20px 24px; font-family: var(--font-sans); background: var(--background); display: flex; gap: 16px; }
+  .col { flex: 1; }
+  .title { font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 10px; }
+  .do { color: var(--color-success-500); }
+  .dont { color: var(--color-error-500); }
+  .example { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 13px; }
+  .swatch { width: 32px; height: 20px; border-radius: 3px; flex-shrink: 0; }
+  .strike { text-decoration: line-through; color: var(--muted-foreground); }
+  .accent-strip { background: var(--gold); height: 4px; width: 60px; border-radius: 2px; }
+  .badge-eg { padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+</style>
+</head>
+<body>
+  <div class="col">
+    <div class="title do">✓ Correct uses</div>
+    <div class="example"><div class="accent-strip"></div> Decorative stripe / divider</div>
+    <div class="example"><div class="swatch" style="background:var(--gold)"></div> Data viz / chart fill</div>
+    <div class="example"><div class="swatch" style="background:var(--color-gold-100); border:1px solid var(--color-gold-400)"></div> Tinted surface accent</div>
+    <div class="example"><div class="badge-eg" style="background:var(--color-gold-100); color:var(--color-gold-700); border:1px solid var(--color-gold-400)">Featured</div> Badge with dark text on tint</div>
+  </div>
+  <div class="col" style="border-left:1px solid var(--border); padding-left:16px">
+    <div class="title dont">✗ Never do this</div>
+    <div class="example"><div class="swatch" style="background:var(--color-neutral-0); border:1px solid var(--border)"></div> <span class="strike" style="color:var(--gold)">Gold text on white (1.4:1)</span></div>
+    <div class="example"><div class="swatch" style="background:var(--gold)"></div> <span style="color:#fff; background:var(--gold); padding:1px 4px; font-size:11px; opacity:0.7">White on gold — fails AA</span></div>
+    <div class="example"><div class="swatch" style="background:var(--gold)"></div> <span class="strike" style="font-size:12px; color:var(--muted-foreground)">Primary action button in gold</span></div>
+  </div>
+</body>
+</html>

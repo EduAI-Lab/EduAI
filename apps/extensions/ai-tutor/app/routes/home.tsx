@@ -40,7 +40,7 @@ export default function Home() {
           <div className="absolute inset-0 rounded-full border-4 border-primary border-t-transparent animate-spin" />
           <BrainCircuit className="absolute inset-0 m-auto h-6 w-6 animate-pulse text-primary" />
         </div>
-        <div className="animate-pulse font-display text-lg font-medium text-muted-foreground">
+        <div className="animate-pulse text-lg font-medium text-muted-foreground">
           Initializing your workspace...
         </div>
       </div>

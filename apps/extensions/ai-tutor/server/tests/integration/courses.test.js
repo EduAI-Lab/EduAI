@@ -26,6 +26,17 @@ import { findEduAiCourseById } from '../../src/services/eduaiClient.js';
 import { syncExternalCourseTopics } from '../../src/services/topicSync.js';
 import { syncCourseEnrollments } from '../../src/services/enrollmentSync.js';
 
+// Course routes call Core's policy service (instructors.canCreateCourses) via
+// requireInstructorPolicy. Core isn't reachable in the integration env, so the
+// real service fails closed (deny). Stub it to the flag's enabled default —
+// the deny/cache/stale-fallback behaviour is covered by policyService.test.js.
+vi.mock('../../src/services/policyService.js', () => ({
+  getPolicy: vi.fn().mockResolvedValue(true),
+  getPolicies: vi.fn().mockResolvedValue({ 'instructors.canCreateCourses': true }),
+  invalidatePolicyCache: vi.fn(),
+  __resetPolicyServiceState: vi.fn(),
+}));
+
 vi.mock('../../src/services/topicSync.js', () => ({
   syncExternalCourseTopics: vi.fn().mockResolvedValue(undefined),
 }));
@@ -198,29 +209,13 @@ describe('Courses routes', () => {
   // ── POST /api/courses ─────────────────────────────────────────────
 
   describe('POST /api/courses', () => {
-    it('creates a new course with instructor assignment', async () => {
+    it('returns 403 — course creation is managed in EduAI Core (#632)', async () => {
       const res = await request(profApp)
         .post('/api/courses')
         .send({ title: 'New Course', description: 'A brand new course' });
 
-      expect(res.status).toBe(201);
-      expect(res.body.title).toBe('New Course');
-
-      // Verify the instructor assignment was created
-      const assignment = await prisma.courseInstructor.findFirst({
-        where: { courseOfferingId: res.body.id, userId: prof.id },
-      });
-      expect(assignment).not.toBeNull();
-      expect(assignment.role).toBe('LEAD');
-    });
-
-    it('returns 400 without title', async () => {
-      const res = await request(profApp)
-        .post('/api/courses')
-        .send({ description: 'No title provided' });
-
-      expect(res.status).toBe(400);
-      expect(res.body.error).toMatch(/title/i);
+      expect(res.status).toBe(403);
+      expect(res.body.error).toMatch(/EduAI Core/i);
     });
   });
 

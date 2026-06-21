@@ -3,6 +3,8 @@
  */
 export type { Topic } from './topic';
 
+import type { Topic } from './topic';
+
 export type QuestionDifficulty = 'easy' | 'medium' | 'hard';
 export type QuestionType = 'MCQ' | 'SA' | 'LA';
 export type ReasoningLevel = 'factual' | 'analytical' | 'application';
@@ -19,8 +21,6 @@ export interface MCQChoice {
     letter: string; // "A", "B", "C", "D", etc.
     text: string;
 }
-
-import type { Topic } from './topic';
 
 // Question Metadata (matches backend Question_Metadata schema)
 export interface QuestionMetadata {
@@ -52,6 +52,7 @@ export interface QuestionVariant {
     choices?: MCQChoice[] | null; // For MCQ questions only
     isAiGenerated?: boolean; // Indicates if this variant was generated using AI
     isDraft?: boolean; // Indicates if this variant is a draft and needs review
+    createdBy?: string | null;
     createdAt?: string;
     updatedAt?: string;
     // Relations
@@ -83,10 +84,12 @@ export interface Course {
     id: number;
     name: string;
     code: string | null;
+    userId?: string;
     coreCourseId?: string | null;
+    department?: string | null;
+    accessLevel?: 'admin' | 'unit' | 'instructor' | 'ta' | null;
     term?: string | null;
     year?: number | null;
-    userId?: number;
     createdAt?: string;
     updatedAt?: string;
     // Relations

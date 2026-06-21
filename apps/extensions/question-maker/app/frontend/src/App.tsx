@@ -1,16 +1,18 @@
 /**
- * Root app component: wires theme/auth providers, router, and top-level pages.
+ * Root app component: wires auth providers, router, and top-level pages.
  * Defines navigation for login, homepage, assessments, help, and an optional API test route.
  */
-import { BrowserRouter as Router, Routes, Route, Navigate, useParams, useSearchParams } from 'react-router-dom';
-import { Toaster } from './components/ui/toaster';
-import { ThemeProvider } from './components/theme-provider';
+import { BrowserRouter as Router, Routes, Route, Navigate, useParams, useSearchParams } from 'react-router';
+import { Toaster, ThemeProvider } from '@eduai/ui';
 import { AuthProvider } from './contexts/AuthContext';
+import { QmAppGate } from './components/auth/QmAppGate';
+import { QmAppLayout } from './components/layout/QmAppLayout';
 import { CourseSelectionPage } from './pages/CourseSelectionPage';
 import { Homepage } from './pages/Homepage';
 import { ApiTestPage } from './pages/ApiTestPage';
 import AssessmentBuilderPage from './pages/AssessmentBuilderPage';
 import { HelpPage } from './pages/HelpPage';
+import { BugReportsAdminPage } from './pages/BugReportsAdminPage';
 import { AssessmentVariantPage } from './pages/AssessmentVariantPage';
 import { GuidedTourProvider } from './contexts/GuidedTourContext';
 import { BugReportProvider } from './contexts/BugReportContext';
@@ -29,32 +31,37 @@ function RedirectLegacyStudyRoute() {
 
 function App() {
   return (
-    <ThemeProvider defaultTheme="light" storageKey="eduquery-theme">
+    <ThemeProvider defaultTheme="system" storageKey="theme">
       <AuthProvider>
+      <QmAppGate>
         <GuidedTourProvider>
           <Router>
             <BugReportProvider>
               <div className="min-h-screen bg-background">
                 <Routes>
-                  <Route path="/courses" element={<CourseSelectionPage />} />
-                  <Route path="/home" element={<Homepage />} />
+                  <Route element={<QmAppLayout />}>
+                    <Route path="/courses" element={<CourseSelectionPage />} />
+                    <Route path="/home" element={<Homepage />} />
+                    <Route path="/assessments/:id/builder" element={<AssessmentBuilderPage />} />
+                    <Route path="/help" element={<HelpPage />} />
+                    <Route path="/admin/bug-reports" element={<BugReportsAdminPage />} />
+                    <Route path="/assessment-variant" element={<AssessmentVariantPage />} />
+                  </Route>
                   <Route path="/landing" element={<Navigate to="/home" replace />} />
                   {import.meta.env.DEV && (
                     <Route path="/api-test" element={<ApiTestPage />} />
                   )}
                   <Route path="/assessments/:id" element={<RedirectAssessmentToBuilder />} />
-                  <Route path="/assessments/:id/builder" element={<AssessmentBuilderPage />} />
-                  <Route path="/help" element={<HelpPage />} />
-                  <Route path="/assessment-variant" element={<AssessmentVariantPage />} />
                   <Route path="/study" element={<RedirectLegacyStudyRoute />} />
-<Route path="/" element={<Navigate to="/courses" replace />} />
+                  <Route path="/" element={<Navigate to="/courses" replace />} />
                 </Routes>
                 <Toaster />
               </div>
             </BugReportProvider>
           </Router>
         </GuidedTourProvider>
-      </AuthProvider>
+      </QmAppGate>
+    </AuthProvider>
     </ThemeProvider>
   );
 }
