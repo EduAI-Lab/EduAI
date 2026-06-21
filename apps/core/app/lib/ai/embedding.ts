@@ -635,7 +635,7 @@ export async function findRelevantContent(
     const bm25Weight = 1 - alpha;
 
     // Hybrid path: weighted sum of vector cosine similarity and BM25 (ts_rank).
-    // No similarity threshold pre-filter — combined score ranking handles relevance.
+    // Same vector similarity floor as the pure-vector path; combined score ranks survivors.
     // to_tsvector / plainto_tsquery are built-in PostgreSQL; no extra extension needed.
     const hybridResults = await prisma.$queryRaw<
       Array<{ content: string; score: number; material_title: string }>
@@ -655,6 +655,7 @@ export async function findRelevantContent(
       JOIN material_chunks mc ON me."chunkId" = mc.id
       JOIN course_materials cm ON mc."materialId" = cm.id
       WHERE cm."courseId" = ${courseId}
+        AND 1 - (me.embedding <=> ${queryEmbedding}::vector) > ${threshold}
       ORDER BY score DESC
       LIMIT ${Number(effectiveLimit)}
     `;
