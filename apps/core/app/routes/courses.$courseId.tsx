@@ -25,10 +25,9 @@ import {
 } from '@eduai/ui'
 import type { CourseMaterial as UploadMaterial } from '~/components/course-materials-upload'
 import type { CourseDetail } from '~/hooks/api/use-course-detail'
-import {
-  resolveCourseAccessWithCourse,
-} from '~/lib/auth/course-access.server'
-import type { CourseAccess } from '~/lib/rbac'
+import { resolveCourseAccess } from '~/lib/rbac/resolve-course-access.server'
+import { getPolicy } from '~/lib/policy.server'
+import type { RbacUser } from '~/lib/rbac'
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request)
@@ -51,7 +50,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   if (!course) return redirect('/courses')
 
   const user = session.user
-  let authorizedUnits: string[] | undefined
+  let authorizedUnits: string[] = []
   if (user.role === 'UNIT_ADMIN') {
     const dbUser = await prisma.user.findUnique({
       where: { id: user.id },
@@ -59,12 +58,17 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     })
     authorizedUnits = dbUser?.authorizedUnits ?? []
   }
+  const rbacUser: RbacUser = {
+    id: user.id,
+    role: user.role as RbacUser['role'],
+    authorizedUnits,
+  }
 
-  const { access: accessLevel } = await resolveCourseAccessWithCourse(
-    { id: user.id, role: user.role, authorizedUnits },
-    courseId,
-  )
-  const access = (accessLevel?.level ?? null) as CourseAccess
+  const access = await resolveCourseAccess(rbacUser, {
+    id: course.id,
+    instructorId: course.instructorId,
+    department: course.department,
+  })
 
   // No access at all — redirect (e.g. TA opened a course they do not assist)
   if (!access) return redirect('/courses?access=denied')
@@ -72,11 +76,17 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   // Students cannot view unpublished courses by direct URL
   if (access === 'student' && !course.isPublished) return redirect('/courses')
 
+  // Reassigning the instructor is ADMIN/UNIT_ADMIN only; managing TAs also opens
+  // to an owning INSTRUCTOR when `instructors.canManageEnrollments` is on
+  // (mirrors the TA endpoint gate). Load each user list only when usable.
   const canManageStaff = access === 'admin' || access === 'unit'
   const canManageStudentEnrollments =
     access === 'admin' || access === 'unit' || access === 'instructor'
+  const canManageTAs =
+    canManageStaff ||
+    (access === 'instructor' && (await getPolicy('instructors.canManageEnrollments')))
 
-  const needsStudentUsers = canManageStaff || canManageStudentEnrollments
+  const needsStudentUsers = canManageStudentEnrollments || canManageTAs
   const [instructors, studentUsers] = await Promise.all([
     canManageStaff
       ? prisma.user.findMany({
@@ -169,6 +179,19 @@ export default function CourseDetailPage() {
     [removeEnrollment],
   )
 
+  const handleUpdateAiInstructions = useCallback(async (aiInstructions: string) => {
+    const res = await fetch(`/api/courses/${course.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ aiInstructions }),
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new Error(body.error ?? 'Failed to update AI instructions')
+    }
+    revalidator.revalidate()
+  }, [course.id, revalidator])
+
   const uploadMaterials: UploadMaterial[] = materials.map((m) => ({
     id: m.id,
     title: m.title,
@@ -260,20 +283,24 @@ export default function CourseDetailPage() {
                 course={course}
                 topics={topics}
                 materials={uploadMaterials}
-                enrollments={enrollments}
-                enrollmentsLoading={enrollmentsLoading}
-                enrollmentsError={enrollmentsError}
                 isUploading={isUploading}
                 materialsError={materialsError}
                 materialsSuccess={materialsSuccess}
                 onFileSelect={handleFileSelect}
                 courseId={course.id}
+                onCreateTopic={async (name) => { await createTopic(name) }}
+                onDeleteTopic={async (id) => { await deleteTopic(id) }}
+                onUpdateAiInstructions={handleUpdateAiInstructions}
               />
             ) : (
               <CourseDetailStudentView
                 course={course}
-                materials={materials}
+                materials={uploadMaterials}
                 topics={topics}
+                isUploading={isUploading}
+                materialsError={materialsError}
+                materialsSuccess={materialsSuccess}
+                onFileSelect={handleFileSelect}
               />
             )}
           </div>

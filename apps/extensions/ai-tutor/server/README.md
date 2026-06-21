@@ -94,6 +94,9 @@ The middleware chain in `app.js` processes requests in this order:
 | `requireAuth(req, res, next)` | Returns 401 if `req.user` is null |
 | `requireRole(role)` | Returns 403 if `req.user.role !== role` |
 | `requireRoles([...])` | Returns 403 if `req.user.role` not in array |
+| `requireInstructorPolicy(flag)` | Returns 403 for an `INSTRUCTOR` when the named Core policy flag is disabled (ADMIN/UNIT_ADMIN unaffected) |
+
+Configurable permissions are owned by Core. `services/policyService.js` fetches `GET {EDUAI_BASE_URL}/policies` with the service key and caches the result on a short TTL (falling back to the last known-good value on a Core outage). `requireInstructorPolicy('instructors.canCreateCourses')` gates `POST /courses` so an admin can enable/disable instructor course creation centrally.
 
 ### Admin Isolation
 
@@ -172,6 +175,7 @@ Source of truth: `server/.env.example`.
 | `EDUAI_BASE_URL` | No | `http://localhost:5174/api` | EduAI API base URL |
 | `EDUAI_API_KEY` | Recommended | - | Default EduAI API key |
 | `EDUAI_MODEL` | No | `google:gemini-2.5-flash` | Default tutor model |
+| `POLICY_CACHE_TTL_MS` | No | `30000` | TTL for the cached Core RBAC policy flags (`policyService`) |
 
 ### EduAI API Key Precedence
 
