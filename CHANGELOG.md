@@ -9,7 +9,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
-- [core] security: Enforce UBC-only emails (`ubc.ca` and its subdomains) on public registration and admin/unit-admin invitations via a shared `isUbcEmail` gate applied at the signup schema, the Better Auth before-hook, and the invitation schema. (#567, @abdullahmoh21, 2026-06-20)
+- [core] security: Enforce UBC-only emails (`ubc.ca` and its subdomains) on public registration and admin/unit-admin invitations via a shared `isUbcEmail` gate applied at the signup schema, the Better Auth before-hook, and the invitation schema. (#567, #692, @abdullahmoh21, 2026-06-20)
 - [core] feat: Let unit admins invite instructors and students — gated by the new `unitAdmins.canInvite` policy flag, with a dedicated `/unit-admin/invitations` page, a policy-gated nav link, and own-only scoping over the shared `/api/invitations` endpoints. (#686, @abdullahmoh21, 2026-06-19)
 - [core] tests: Add unit-admin invitation coverage across the route, schema, and integration suites. (#686, @abdullahmoh21, 2026-06-19)
 - [core] feat: Expand the configurable RBAC policy registry (#660) with instructor/TA/student/unit-admin gates & grants, a `chat.webToolsEnabled` master that folds in the standalone `webToolsEnabled` toggle, an `auth.allowPublicRegistration` signup gate enforced at the Better Auth chokepoint, live frontend control gating via `usePolicies()`, and structured `policy_denied` 403 audit logging. (#660, @abdullahmoh21, 2026-06-18)
