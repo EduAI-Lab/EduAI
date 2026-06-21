@@ -31,25 +31,76 @@ class EduAIService {
     }
   }
 
-  /** Returns true when the base URL/API key are available and the service can make requests. */
+  /** Returns true when the Core/EduAI base URL is configured. */
   isConfigured() {
-    return !!this.apiKey;
+    return Boolean(this.baseURL);
+  }
+
+  /** True when a service API key is available (required for key-only endpoints). */
+  hasApiKey() {
+    return Boolean(this.apiKey?.trim());
+  }
+
+  /** Builds auth headers for Core /api/chat — session cookie (local dev) or x-api-key. */
+  buildChatAuthHeaders(cookie) {
+    const trimmedCookie = typeof cookie === "string" ? cookie.trim() : "";
+    if (trimmedCookie) {
+      return { cookie: trimmedCookie };
+    }
+    if (this.apiKey) {
+      return { "x-api-key": this.apiKey };
+    }
+    return null;
+  }
+
+  /** Picks a lightweight model for connectivity checks (Google when configured, else Ollama). */
+  getConnectivityTestParams() {
+    const googleKey = config.googleGenerativeAiApiKey?.trim();
+    if (googleKey) {
+      return {
+        model: "google:gemini-2.5-flash",
+        apiKeys: {
+          google: { apiKey: googleKey, isEnabled: true },
+        },
+      };
+    }
+    return {
+      model: "ollama:gpt-oss:120b",
+      apiKeys: { ollama: { isEnabled: true } },
+    };
+  }
+
+  /** Fills in server-side provider keys when the client did not supply one (local dev). */
+  mergeApiKeysForModel(model, clientApiKeys = {}) {
+    const merged = { ...(clientApiKeys || {}) };
+    const provider = typeof model === "string" ? model.split(":")[0] : "";
+    const googleKey = config.googleGenerativeAiApiKey?.trim();
+
+    if (provider === "google" && googleKey && !merged.google?.apiKey?.trim()) {
+      merged.google = { apiKey: googleKey, isEnabled: true };
+    }
+    if (provider === "ollama" && !merged.ollama) {
+      merged.ollama = { isEnabled: true };
+    }
+    return merged;
   }
 
   /** Sends a chat payload to EduAI, handling logging, timeouts, and API error translation. */
   async chat(params) {
-    if (!this.isConfigured()) {
+    const authHeaders = this.buildChatAuthHeaders(params.cookie);
+    if (!authHeaders) {
       throw new Error(
-        "EduAI service is not configured. Please set EDUAI_API_KEY environment variable."
+        "EduAI service is not configured. Set EDUAI_API_KEY or sign in via Core."
       );
     }
 
     let chatStartMs;
     try {
+      const model = params.model || "google:gemini-2.5-flash";
       const requestPayload = {
         messages: params.messages || [],
-        model: params.model || "google:gemini-2.5-flash",
-        apiKeys: params.apiKeys || {},
+        model,
+        apiKeys: this.mergeApiKeysForModel(model, params.apiKeys || {}),
         courseCode: params.courseCode,
         streaming: params.streaming || false,
       };
@@ -73,7 +124,7 @@ class EduAIService {
         {
           headers: {
             "Content-Type": "application/json",
-            "x-api-key": this.apiKey,
+            ...authHeaders,
           },
           timeout: timeoutMs,
         }
@@ -172,6 +223,7 @@ class EduAIService {
       systemPromptOverride,
       userPromptOverride,
       mcqRequiredChoiceCount,
+      cookie,
     } = params;
 
     if (!prompt || !courseCode) {
@@ -269,6 +321,7 @@ Please ensure the questions are appropriate for the course level and cover the k
         courseCode,
         streaming: false,
         timeoutMs: 180000, // 3 minutes for question generation/extraction
+        cookie,
       });
 
       const genElapsedMs = Date.now() - genStartMs;
@@ -542,7 +595,7 @@ Please ensure the questions are appropriate for the course level and cover the k
 
   /** Lists EduAI-managed courses for onboarding flows. Excludes courses in config.eduaiIgnoredCourseCodes. */
   async listCourses() {
-    if (!this.isConfigured()) {
+    if (!this.isConfigured() || !this.hasApiKey()) {
       throw new Error(
         "EduAI service is not configured. Please set EDUAI_API_KEY environment variable."
       );
@@ -607,7 +660,7 @@ Please ensure the questions are appropriate for the course level and cover the k
 
   /** Fetches topic metadata for an EduAI course identifier. */
   async getCourseTopics(courseId) {
-    if (!this.isConfigured()) {
+    if (!this.isConfigured() || !this.hasApiKey()) {
       throw new Error(
         "EduAI service is not configured. Please set EDUAI_API_KEY environment variable."
       );
@@ -654,51 +707,68 @@ Please ensure the questions are appropriate for the course level and cover the k
   }
 
   /** Retrieves the list of AI models supported by EduAI for display in pickers. */
-  async listAIModels() {
-    if (!this.isConfigured()) {
+  async listAIModels({ cookie } = {}) {
+    if (!this.isConfigured() && !cookie?.trim()) {
       throw new Error(
         "EduAI service is not configured. Please set EDUAI_API_KEY environment variable."
       );
     }
 
     const url = `${this.baseURL}/api/ai-models`;
+    const headerVariants = [];
+    const trimmedCookie = typeof cookie === "string" ? cookie.trim() : "";
+    if (trimmedCookie) {
+      headerVariants.push({ cookie: trimmedCookie });
+    }
+    if (this.apiKey) {
+      headerVariants.push({ "x-api-key": this.apiKey });
+      headerVariants.push({ Authorization: `Bearer ${this.apiKey}` });
+    }
 
-    try {
-      const response = await axios.get(url, {
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": this.apiKey,
-        },
-        timeout: 60000, // 60 second timeout
-      });
-
-      return response.data;
-    } catch (error) {
-      if (error.response) {
-        const errorMessage =
-          error.response.data?.error ||
-          error.response.data?.message ||
-          error.response.statusText;
-        const statusCode = error.response.status;
-        console.error("EduAI AI models API error:", {
-          status: statusCode,
-          statusText: error.response.statusText,
-          data: error.response.data,
-          url,
+    let lastError;
+    for (const authHeaders of headerVariants) {
+      try {
+        const response = await axios.get(url, {
+          headers: {
+            "Content-Type": "application/json",
+            ...authHeaders,
+          },
+          timeout: 60000,
         });
-        throw new Error(`EduAI API error (${statusCode}): ${errorMessage}`);
-      } else if (error.request) {
-        console.error("EduAI AI models request error:", error.request);
-        throw new Error("EduAI API request failed: No response received");
-      } else {
-        console.error("EduAI AI models error:", error.message);
-        throw new Error(`EduAI API error: ${error.message}`);
+        return response.data;
+      } catch (error) {
+        lastError = error;
       }
     }
+
+    if (lastError?.response) {
+      const errorMessage =
+        lastError.response.data?.error ||
+        lastError.response.data?.message ||
+        lastError.response.statusText;
+      const statusCode = lastError.response.status;
+      console.error("EduAI AI models API error:", {
+        status: statusCode,
+        statusText: lastError.response.statusText,
+        data: lastError.response.data,
+        url,
+      });
+      throw new Error(`EduAI API error (${statusCode}): ${errorMessage}`);
+    } else if (lastError?.request) {
+      console.error("EduAI AI models request error:", lastError.request);
+      throw new Error("EduAI API request failed: No response received");
+    } else if (lastError) {
+      console.error("EduAI AI models error:", lastError.message);
+      throw new Error(`EduAI API error: ${lastError.message}`);
+    }
+
+    throw new Error(
+      "EduAI service is not configured. Please set EDUAI_API_KEY environment variable."
+    );
   }
 
-  /** Issues a lightweight chat call to validate whether the configured EduAI API key works. */
-  async testApiKey() {
+  /** Issues a lightweight chat call to validate Core AI connectivity. */
+  async testApiKey({ cookie } = {}) {
     if (!this.isConfigured()) {
       return {
         success: false,
@@ -706,18 +776,22 @@ Please ensure the questions are appropriate for the course level and cover the k
       };
     }
 
+    if (!this.apiKey && !cookie?.trim()) {
+      return {
+        success: false,
+        error: "EduAI API key not configured",
+      };
+    }
+
     try {
-      // Test the API key by making a minimal chat request with Ollama
+      const { model, apiKeys } = this.getConnectivityTestParams();
       const response = await this.chat({
         messages: [{ role: "user", content: "test" }],
-        model: "ollama:gpt-oss:120b", // Use Ollama which doesn't need API key
-        apiKeys: {
-          ollama: {
-            isEnabled: true,
-          },
-        },
+        model,
+        apiKeys,
         courseCode: "COSC 121",
         streaming: false,
+        cookie,
       });
 
       return {

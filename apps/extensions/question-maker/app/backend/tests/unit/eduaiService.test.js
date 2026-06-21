@@ -58,8 +58,13 @@ describe('isConfigured', () => {
     expect(eduaiService.isConfigured()).toBe(true);
   });
 
-  it('is false when the API key is blank', () => {
+  it('is true when base URL is set even if the API key is blank', () => {
     eduaiService.apiKey = '';
+    expect(eduaiService.isConfigured()).toBe(true);
+  });
+
+  it('is false when the base URL is blank', () => {
+    eduaiService.baseURL = '';
     expect(eduaiService.isConfigured()).toBe(false);
   });
 });

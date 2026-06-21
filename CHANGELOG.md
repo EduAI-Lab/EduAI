@@ -62,6 +62,13 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] tests: Update `canvas.integration.test.ts` reassignment case to use a unique student number (avoids `studentIdLookup` collision with seeded data). (#578, @GlowyBlack, 2026-06-15)
 - [ai-tutor] feat: RBAC UI for all five role views (#616) — add `app/lib/rbac/` permission helpers, `PermissionGate`, `AtRoleBanner`, and `useAtPermissions`; gate instructor shell for TA read-only; add `CreateCourseDialog`, course tabs (content/enrollments/submissions/analytics), `CourseEnrollmentsPanel` with TA role assignment, admin EduAI enrollment sync; extend `api.ts` with analytics/enrollment endpoints; document endpoint audit in `docs/rbac-endpoints-ai-tutor.md` (#614). Closes #614, #616, #617 (AiTutor). ([#619](https://github.com/EduAI-Lab/EduAI/pull/619), @Ayyhab, 2026-06-14)
 - [core] fix: Stop frontend from retransmitting the full conversation history on every chat request by sending only the newest user message and associated metadata. (#487, @YibingW, 2026-06-15)
+- [question-maker] fix: Question metadata edit saves question text and avoids VARIANT_LOCKED error on reviewed variants when only synopsis/topic/type change. (#676, @GlowyBlack, 2026-06-20)
+- [question-maker] ui: Stronger correct-answer highlight in question detail view (success tokens, visible in dark mode). (#676, @GlowyBlack, 2026-06-20)
+- [question-maker] fix: Dedupe duplicate course rows for ADMIN on course selection (frontend `dedupeCoursesByCode` + backend admin list). (#676, @GlowyBlack, 2026-06-20)
+- [question-maker] fix: Student/TA access denied no longer crashes (Router wraps access gate); allow AI tag toggle on reviewed variants. (#676, @GlowyBlack, 2026-06-20)
+- [question-maker] ui: Question detail modal uses single scroll area; theme toggle beside bug report; explicit API key save with confirmation. (#676, @GlowyBlack, 2026-06-20)
+- [question-maker] security: Restrict Vite env exposure to `VITE_` prefix; gate Canvas test-mode fallback to dev; surface AI model fetch errors instead of silent fallbacks (backend + frontend). (#676, @GlowyBlack, 2026-06-20)
+- [question-maker] fix: Apply explicit API key save + toast in Upload dialog; treat id `0` as not-found in resource/course access guards (fixes `coreWiring.integration.test.js`). (#676, @GlowyBlack, 2026-06-20)
 - [ai-tutor] fix: Route TA promotion through Core — `PATCH /admin/courses/:courseId/enrollments/:userId/role` now calls Core's enrollment-role endpoint before updating locally, keeping Core as the authoritative source; remove the band-aid `local.role !== 'TA'` skip from `syncCourseEnrollments` so Core-initiated TA demotions propagate on the next sync. (#674, @evanbones, 2026-06-19)
 
 ---
