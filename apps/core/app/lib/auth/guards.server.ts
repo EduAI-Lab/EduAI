@@ -142,7 +142,7 @@ export async function requireInviter(
         logSecurityEvent({
           ...getActorContext(resolved?.user ?? null),
           ...getRequestContext(request),
-          actionCode: "ADMIN_ACCESS_DENIED",
+          actionCode: "INVITATION_ACCESS_DENIED",
           outcome: "DENIED",
           entityType: "Auth",
           entityId: resolved?.user?.id ?? null,
@@ -160,12 +160,10 @@ export async function requireInviter(
     };
   }
 
-  // A UNIT_ADMIN additionally needs the `unitAdmins.canInvite` flag; ADMIN is
-  // always allowed. Enforced in the guard so every invitation endpoint inherits
-  // the gate and a new one cannot forget it.
+  // A UNIT_ADMIN additionally needs the `unitAdmins.canInvite` flag
   if (role !== "ADMIN" && !(await getPolicy("unitAdmins.canInvite"))) {
     return {
-      response: denyByPolicy({
+      response: denyByPolicy({ 
         policyKey: "unitAdmins.canInvite",
         user: resolved.user,
         action,
