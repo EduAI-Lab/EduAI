@@ -33,35 +33,35 @@ function App() {
   return (
     <ThemeProvider defaultTheme="system" storageKey="theme">
       <AuthProvider>
-      <QmAppGate>
-        <GuidedTourProvider>
-          <Router>
-            <BugReportProvider>
-              <div className="min-h-screen bg-background">
-                <Routes>
-                  <Route element={<QmAppLayout />}>
-                    <Route path="/courses" element={<CourseSelectionPage />} />
-                    <Route path="/home" element={<Homepage />} />
-                    <Route path="/assessments/:id/builder" element={<AssessmentBuilderPage />} />
-                    <Route path="/help" element={<HelpPage />} />
-                    <Route path="/admin/bug-reports" element={<BugReportsAdminPage />} />
-                    <Route path="/assessment-variant" element={<AssessmentVariantPage />} />
-                  </Route>
-                  <Route path="/landing" element={<Navigate to="/home" replace />} />
-                  {import.meta.env.DEV && (
-                    <Route path="/api-test" element={<ApiTestPage />} />
-                  )}
-                  <Route path="/assessments/:id" element={<RedirectAssessmentToBuilder />} />
-                  <Route path="/study" element={<RedirectLegacyStudyRoute />} />
-                  <Route path="/" element={<Navigate to="/courses" replace />} />
-                </Routes>
-                <Toaster />
-              </div>
-            </BugReportProvider>
-          </Router>
-        </GuidedTourProvider>
-      </QmAppGate>
-    </AuthProvider>
+        <Router>
+          <GuidedTourProvider>
+            <QmAppGate>
+              <BugReportProvider>
+                <div className="min-h-screen bg-background">
+                  <Routes>
+                    <Route element={<QmAppLayout />}>
+                      <Route path="/courses" element={<CourseSelectionPage />} />
+                      <Route path="/home" element={<Homepage />} />
+                      <Route path="/assessments/:id/builder" element={<AssessmentBuilderPage />} />
+                      <Route path="/help" element={<HelpPage />} />
+                      <Route path="/admin/bug-reports" element={<BugReportsAdminPage />} />
+                      <Route path="/assessment-variant" element={<AssessmentVariantPage />} />
+                    </Route>
+                    <Route path="/landing" element={<Navigate to="/home" replace />} />
+                    {import.meta.env.DEV && (
+                      <Route path="/api-test" element={<ApiTestPage />} />
+                    )}
+                    <Route path="/assessments/:id" element={<RedirectAssessmentToBuilder />} />
+                    <Route path="/study" element={<RedirectLegacyStudyRoute />} />
+                    <Route path="/" element={<Navigate to="/courses" replace />} />
+                  </Routes>
+                  <Toaster />
+                </div>
+              </BugReportProvider>
+            </QmAppGate>
+          </GuidedTourProvider>
+        </Router>
+      </AuthProvider>
     </ThemeProvider>
   );
 }
