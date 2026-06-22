@@ -52,9 +52,9 @@ export function canViewTeachingContent(user: AtUser | null | undefined): boolean
   return usesInstructorShell(user);
 }
 
-export function canCreateCourse(user: AtUser | null | undefined): boolean {
-  if (!user?.role) return false;
-  return user.role === 'ADMIN' || user.role === 'UNIT_ADMIN' || user.role === 'INSTRUCTOR';
+/** Course lifecycle is owned by EduAI Core (#632); AI Tutor only imports/enables. */
+export function canCreateCourse(_user: AtUser | null | undefined): boolean {
+  return false;
 }
 
 export function canImportFromEduAi(user: AtUser | null | undefined): boolean {

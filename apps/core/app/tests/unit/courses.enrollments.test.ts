@@ -43,22 +43,25 @@ const VALID_KEY = "test-service-key";
 
 const MOCK_ENROLLMENTS = [
   {
+    id: "enr-1",
     userId: "user-1",
-    user: { email: "alice@test.com", name: "Alice" },
+    user: { email: "alice@test.com", name: "Alice", studentId: null },
     enrolledAt: new Date("2025-09-01T00:00:00.000Z"),
     isActive: true,
     role: "STUDENT",
   },
   {
+    id: "enr-2",
     userId: "user-2",
-    user: { email: "bob@test.com", name: "Bob" },
+    user: { email: "bob@test.com", name: "Bob", studentId: null },
     enrolledAt: new Date("2025-09-02T00:00:00.000Z"),
     isActive: false,
     role: "TA",
   },
   {
+    id: "enr-3",
     userId: "user-3",
-    user: { email: "carol@test.com", name: "Carol" },
+    user: { email: "carol@test.com", name: "Carol", studentId: null },
     enrolledAt: null,
     isActive: true,
     role: "INSTRUCTOR",
@@ -228,9 +231,11 @@ describe("GET /api/courses/:id/enrollments loader", () => {
       (e: Record<string, unknown>) => e.role === "STUDENT"
     );
     expect(student).toEqual({
+      id: "enr-1",
       studentId: "user-1",
       studentEmail: "alice@test.com",
       studentName: "Alice",
+      studentNumber: null,
       enrolledAt: "2025-09-01T00:00:00.000Z",
       isActive: true,
       role: "STUDENT",
@@ -244,9 +249,11 @@ describe("GET /api/courses/:id/enrollments loader", () => {
       (e: Record<string, unknown>) => e.role === "INSTRUCTOR"
     );
     expect(instructor).toEqual({
+      id: "enr-3",
       studentId: "user-3",
       studentEmail: "carol@test.com",
       studentName: "Carol",
+      studentNumber: null,
       enrolledAt: null,
       isActive: true,
       role: "INSTRUCTOR",

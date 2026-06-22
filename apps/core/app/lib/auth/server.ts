@@ -3,6 +3,7 @@ import { createAuthMiddleware, APIError } from "better-auth/api";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import prisma from "../prisma.server";
 import { getPolicy, logPolicyDenial } from "../policy.server";
+import { INTERNAL_INVITE_SIGNUP_HEADER } from "./auth-handler-request";
 
 export const authBaseURL =
   process.env.BETTER_AUTH_URL?.trim() ||
@@ -24,17 +25,20 @@ export const auth = betterAuth({
     autoSignIn: true,
   },
   hooks: {
-    // §6a: single chokepoint for the public-registration toggle. Both sign-up
-    // entry points (the register.tsx action sub-request and a direct POST to
-    // the catch-all /api/auth/*) flow through auth.handler(), so enforcing here
-    // covers both. Invitation acceptance and OAuth/SSO are different paths and
-    // stay open. `policy.server` imports prisma + the logging facade, neither of
-    // which imports this file — no cycle.
+    // §6a: single chokepoint for the public-registration toggle. Both public
+    // sign-up entry points (the register.tsx action sub-request and a direct
+    // POST to the catch-all /api/auth/*) flow through auth.handler(), so
+    // enforcing here covers both. Invitation acceptance reuses the same
+    // /sign-up/email endpoint but is NOT public registration — it carries an
+    // internal marker (stripped from every inbound request at the /api/auth/*
+    // boundary, so a browser can't forge it) and stays open regardless of the
+    // toggle. OAuth/SSO are different paths and also stay open. `policy.server`
+    // imports prisma + the logging facade, neither of which imports this file —
+    // no cycle.
     before: createAuthMiddleware(async (ctx) => {
-      if (
-        ctx.path === "/sign-up/email" &&
-        !(await getPolicy("auth.allowPublicRegistration"))
-      ) {
+      if (ctx.path !== "/sign-up/email") return;
+      if (ctx.headers?.has(INTERNAL_INVITE_SIGNUP_HEADER)) return;
+      if (!(await getPolicy("auth.allowPublicRegistration"))) {
         logPolicyDenial({
           policyKey: "auth.allowPublicRegistration",
           user: null,

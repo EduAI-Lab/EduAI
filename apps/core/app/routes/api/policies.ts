@@ -4,6 +4,8 @@ import { z } from "zod";
 import { auth } from "~/lib/auth/server";
 import { requireAdmin, requireServiceKey } from "~/lib/auth/guards.server";
 import { jsonResponse as json } from "~/lib/api/json-response.server";
+import { fireAndForget, logAuditAction } from "~/lib/logging.server";
+import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import {
   getPolicies,
   getPolicyDefinitions,
@@ -72,5 +74,21 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   await setPolicy(parsed.data.key, parsed.data.value, session.user.id);
+
+  // A policy flag is a runtime permission gate — record who toggled it so the
+  // change to a security control is auditable at /admin/logs.
+  fireAndForget(
+    logAuditAction({
+      ...getActorContext(session.user),
+      ...getRequestContext(request),
+      actionCode: "POLICY_FLAG_UPDATED",
+      category: "SECURITY",
+      entityType: "PolicyFlag",
+      entityId: parsed.data.key,
+      entityLabel: parsed.data.key,
+      details: { key: parsed.data.key, value: parsed.data.value },
+    }),
+  );
+
   return json({ policies: await getPolicies() });
 }

@@ -1,7 +1,7 @@
 import type { LoaderFunctionArgs } from "react-router";
 import type { Prisma } from "@prisma/client";
 import { auth } from "~/lib/auth/server";
-import { canAccessChat, getChatMessages } from "~/lib/chat-history/server";
+import { resolveChatReadAccess, getChatMessages } from "~/lib/chat-history/server";
 
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0;
@@ -116,18 +116,20 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       });
     }
 
-    const { chat, canEdit } = await canAccessChat(
+    const access = await resolveChatReadAccess(
       { id: session.user.id, role: session.user.role },
       chatId,
     );
 
-    if (!chat) {
+    if (!access) {
+      // Missing chat OR not authorized — same 404, no existence leak.
       return new Response(JSON.stringify({ error: "Chat not found" }), {
         status: 404,
         headers: { "Content-Type": "application/json" },
       });
     }
 
+    const { chat, canEdit } = access;
     const rows = await getChatMessages(chatId);
     const messages = rows.map(reviveStoredMessage);
 
