@@ -9,7 +9,9 @@ vi.mock("~/lib/auth/server", () => ({
   auth: { api: { getSession: vi.fn() } },
 }));
 
-vi.mock("~/lib/auth/guards.server", () => ({}));
+vi.mock("~/lib/auth/guards.server", () => ({
+  enforceAdminIfApiKey: vi.fn().mockResolvedValue({ response: null, session: null }),
+}));
 
 vi.mock("~/lib/auth/course-access.server", () => ({
   resolveCourseAccessWithCourse: vi.fn(),
@@ -24,6 +26,7 @@ vi.mock("~/lib/prisma.server", () => ({
 
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
+import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 
 const COURSE = { id: "c1", isPublished: true, department: null };

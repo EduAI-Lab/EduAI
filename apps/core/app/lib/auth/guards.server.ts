@@ -31,6 +31,50 @@ export function validateRedirectUrl(url: string | null): string {
   return "/dashboard";
 }
 
+type GuardResult = {
+  response: Response | null;
+  session: Session | null;
+};
+
+/**
+ * Enforce: if request includes `x-api-key`, only ADMIN users may proceed.
+ * Returns `{ response, session }` so callers can reuse the fetched session.
+ */
+export async function enforceAdminIfApiKey(request: Request): Promise<GuardResult> {
+  const apiKeyHeader = request.headers.get("x-api-key");
+  if (!apiKeyHeader) {
+    return { response: null, session: null };
+  }
+
+  const session = await auth.api.getSession(request);
+  if (!session?.user || session.user.role !== "ADMIN") {
+    fireAndForget(
+      logSecurityEvent({
+        ...getActorContext(session?.user ?? null),
+        ...getRequestContext(request),
+        actionCode: "API_KEY_DENIED",
+        outcome: "DENIED",
+        entityType: "Auth",
+        entityId: session?.user?.id ?? null,
+        entityLabel: session?.user?.email ?? null,
+        ...(session?.user?.email ? { details: { email: session.user.email } } : {}),
+      }),
+    );
+    return {
+      response: new Response(
+        JSON.stringify({ error: "Forbidden: x-api-key access restricted to admin users" }),
+        {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+      session,
+    };
+  }
+
+  return { response: null, session };
+}
+
 type AdminGate =
   | { response: Response; session: null }
   | { response: null; session: Session };

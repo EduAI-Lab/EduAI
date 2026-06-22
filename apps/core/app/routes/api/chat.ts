@@ -22,6 +22,7 @@ import {
   resolveCourseAccessWithCourse,
   type AccessLevel,
 } from "~/lib/auth/course-access.server";
+import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { auth } from "~/lib/auth/server";
 import type { ActionFunctionArgs } from "react-router";
 import { z } from "zod";
@@ -206,7 +207,11 @@ function extractAssistantText(messages: GenericMessage[] | undefined): string {
  */
 export async function action({ request }: ActionFunctionArgs) {
   try {
-    const session = await auth.api.getSession(request);
+    const apiKeyHeader = request.headers.get("x-api-key");
+    const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
+    if (apiKeyGuard) return apiKeyGuard;
+
+    const session = apiKeySession ?? (await auth.api.getSession(request));
     if (!session?.user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
