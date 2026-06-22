@@ -43,6 +43,7 @@ export function useCourseEnrollments(courseId: string) {
   const [error, setError] = useState<string | null>(null)
 
   const fetchEnrollments = useCallback(async () => {
+    if (!courseId) return
     setLoading(true)
     setError(null)
     try {

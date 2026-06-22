@@ -27,6 +27,7 @@ import { resolvePolicyGate } from "~/lib/rbac/permissions";
 import { getCourse } from "~/lib/courses/server";
 import { readStoredStudentId } from "~/lib/canvas/student-id.server";
 import { addEnrollment, getCourseEnrollments } from "~/lib/courses/enrollments.server";
+import { readStoredStudentId } from "~/lib/canvas/student-id.server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 
