@@ -3,6 +3,7 @@ import { marked } from "marked"
 import { memo, useId, useMemo, lazy, Suspense } from "react"
 import type { Components } from "react-markdown"
 import { CodeBlock, CodeBlockCode } from "./code-block"
+import { streamdownPlugins } from "./streamdown-config"
 
 // Lazy load Streamdown to avoid SSR issues with KaTeX CSS
 const Streamdown = lazy(() => import('streamdown').then(module => ({ default: module.Streamdown })))
@@ -15,6 +16,11 @@ export type MarkdownProps = {
 }
 
 function parseMarkdownIntoBlocks(markdown: string): string[] {
+  // Keep math in one Streamdown pass — marked.lexer can split `$...$` / `$$...$$` blocks.
+  if (/(?<!\\)\$\$|(?<!\\)\$[^$\n]+\$/.test(markdown)) {
+    return [markdown];
+  }
+
   const tokens = marked.lexer(markdown)
   return tokens.map((token) => token.raw)
 }
@@ -35,6 +41,7 @@ const MemoizedMarkdownBlock = memo(
       <Suspense fallback={<div className="animate-pulse">{content}</div>}>
         <Streamdown
           parseIncompleteMarkdown={true}
+          plugins={streamdownPlugins}
           shikiTheme={["github-light", "github-dark"]}
           className="streamdown-content"
         >

@@ -1,4 +1,5 @@
 import { lazy, Suspense } from 'react';
+import { streamdownPlugins } from '@eduai/ui';
 import { READING_SURFACE_CLASS } from '~/components/assistive/reading-surface';
 import { cn } from '~/lib/utils';
 
@@ -24,6 +25,7 @@ export function MarkdownRenderer({ content, className }: MarkdownRendererProps) 
       <Suspense fallback={<div className="animate-pulse">{content}</div>}>
         <Streamdown
           parseIncompleteMarkdown={true}
+          plugins={streamdownPlugins}
           className="streamdown-content"
           shikiTheme={["github-light", "github-dark"]}
         >
