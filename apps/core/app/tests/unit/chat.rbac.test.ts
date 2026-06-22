@@ -108,7 +108,19 @@ describe("POST /api/chat — §10 course gate (#302)", () => {
     expect(res.status).toBe(200);
   });
 
-  it("does not gate chats without a course context", async () => {
+  it("rejects an interactive chat with no course context (global chat removed, #657)", async () => {
+    const res = await action(makeArgs({ messages: [] }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "COURSE_REQUIRED" });
+    expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
+  });
+
+  it("still allows a server-to-server (API-key) caller to omit a course", async () => {
+    // ai-tutor proxy / admin API-key callers persist history without a course.
+    vi.mocked(enforceAdminIfApiKey).mockResolvedValue({
+      response: null,
+      session: { user: { id: "svc", role: "ADMIN" } },
+    } as never);
     const res = await action(makeArgs({ messages: [] }));
     expect(res.status).toBe(200);
     expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();

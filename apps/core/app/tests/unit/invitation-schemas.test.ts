@@ -90,10 +90,9 @@ describe("createInvitationSchema", () => {
 });
 
 describe("invitableRolesFor", () => {
-  it("lets an ADMIN invite admins, unit admins, and instructors (no students)", () => {
+  it("lets an ADMIN invite every invitable role incl. students (superset of lower roles)", () => {
     const roles = invitableRolesFor("ADMIN");
-    expect([...roles]).toEqual(["ADMIN", "UNIT_ADMIN", "INSTRUCTOR"]);
-    expect(roles).not.toContain("STUDENT");
+    expect([...roles]).toEqual(["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "STUDENT"]);
   });
 
   it("lets a UNIT_ADMIN invite instructors and students only", () => {

@@ -380,13 +380,56 @@ export async function action({ request }: ActionFunctionArgs) {
         console.error("Failed to resolve course by code", e);
       }
     }
-    const effectiveCourseId = resolvedCourseId || courseId || null;
+    // Load the owned chat up front so a follow-up turn that sends a `chatId`
+    // but no `courseId`/`courseCode` can inherit the course from the persisted
+    // chat row, instead of failing COURSE_REQUIRED below (#685 review).
+    let chat = null;
+    if (chatId) {
+      chat = await prisma.chat.findFirst({
+        where: { id: chatId, userId: actingUser.id },
+      });
+      if (!chat) {
+        return new Response(
+          JSON.stringify({
+            error: "Chat not found",
+            chatDeleted: true,
+          }),
+          {
+            status: 410,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+    }
+
+    // A persisted chat is pinned to its course. If a follow-up turn explicitly
+    // names a *different* course, reject — silently switching would split the
+    // chat's RAG context and message history across courses (#685 review).
+    const requestedCourseId = resolvedCourseId || courseId || null;
+    if (chat?.courseId && requestedCourseId && requestedCourseId !== chat.courseId) {
+      return new Response(JSON.stringify({ error: "COURSE_MISMATCH" }), {
+        status: 409,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const effectiveCourseId = resolvedCourseId || courseId || chat?.courseId || null;
+
+    // #657: the global "general assistant" chat was removed — every interactive
+    // chat is now course-scoped. Server-to-server callers (admin API key /
+    // ai-tutor proxy) may still omit a course; regular sessions may not.
+    const isApiKeyCaller = Boolean(apiKeySession) || Boolean(apiKeyHeader);
+    if (!effectiveCourseId && !isApiKeyCaller) {
+      return new Response(JSON.stringify({ error: "COURSE_REQUIRED" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
 
     // §10 (#302): course-scoped chats require course access for the acting
     // user. Students need an active enrollment AND a published course; an
     // inactive enrollment blocks new chats but never own-history reads
     // (GET /api/chats/:chatId is ownership-scoped and unaffected).
-    // Chats without a course context (general assistant) are not gated.
     // Hoisted so the web-tools gate (below) can read the caller's course access
     // level — null for general (non-course) chats.
     let courseAccess: AccessLevel | null = null;
@@ -410,26 +453,7 @@ export async function action({ request }: ActionFunctionArgs) {
       courseAccess = access;
     }
 
-    // Handle chat lookup and system prompt persistence
-    let chat = null;
-    if (chatId) {
-      chat = await prisma.chat.findFirst({
-        where: { id: chatId, userId: actingUser.id },
-      });
-      if (!chat) {
-        return new Response(
-          JSON.stringify({
-            error: "Chat not found",
-            chatDeleted: true,
-          }),
-          {
-            status: 410,
-            headers: { "Content-Type": "application/json" },
-          },
-        );
-      }
-    }
-
+    // Persist any system-prompt change onto the chat loaded above.
     if (hasSystemPromptField) {
       if (chat) {
         if (chat.systemPrompt !== trimmedSystemPrompt) {

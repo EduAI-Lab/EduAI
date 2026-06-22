@@ -104,16 +104,25 @@ function webHeader(res: Response) {
 describe("chat.webToolsEnabled master switch", () => {
   it("web tools absent for an instructor when the master is off", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } } as never);
+    // #657: chat is course-scoped — give the instructor a course context.
+    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+      course: { id: "c1", isPublished: true } as never,
+      access: { level: "instructor", rank: 2 } as never,
+    });
     policy({ "chat.webToolsEnabled": false });
-    const res = await action(makeArgs(baseBody()));
+    const res = await action(makeArgs(baseBody({ courseId: "c1" })));
     expect(res.status).toBe(200);
     expect(webHeader(res)).toBe("0");
   });
 
   it("web tools present for a non-student when the master is on", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } } as never);
+    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+      course: { id: "c1", isPublished: true } as never,
+      access: { level: "instructor", rank: 2 } as never,
+    });
     policy({ "chat.webToolsEnabled": true });
-    const res = await action(makeArgs(baseBody()));
+    const res = await action(makeArgs(baseBody({ courseId: "c1" })));
     expect(res.status).toBe(200);
     expect(webHeader(res)).toBe("1");
   });
