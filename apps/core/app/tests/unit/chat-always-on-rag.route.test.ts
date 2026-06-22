@@ -57,9 +57,9 @@ vi.mock("~/lib/ai/adhd-oversight", async (importOriginal) => {
   return { ...actual, auditAndMaybeRewrite: vi.fn() };
 });
 
-vi.mock("~/lib/system-config.server", () => ({
-  getWebToolsEnabled: vi.fn().mockResolvedValue(false),
-  invalidateWebToolsCache: vi.fn(),
+vi.mock("~/lib/policy.server", () => ({
+  getPolicy: vi.fn().mockResolvedValue(false),
+  invalidatePolicyCache: vi.fn(),
 }));
 
 vi.mock("~/lib/prisma.server", () => ({
