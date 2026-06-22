@@ -79,7 +79,17 @@ export async function requireInviter(
 ): Promise<AdminGate> {
   const resolved = await auth.api.getSession(request);
   const role = resolved?.user?.role;
+
   if (!resolved?.user || (role !== "ADMIN" && role !== "UNIT_ADMIN")) {
+    if (!resolved?.user) {
+      const serviceKeyError = await requireServiceKey(request);
+      if (!serviceKeyError) {
+        return {
+          response: null,
+          session: { user: { id: "service", name: "Service", role: "ADMIN" } } as unknown as Session,
+        };
+      }
+    }
     fireAndForget(
       logSecurityEvent({
         ...getActorContext(resolved?.user ?? null),
@@ -104,7 +114,7 @@ export async function requireInviter(
   // A UNIT_ADMIN additionally needs the `unitAdmins.canInvite` flag
   if (role !== "ADMIN" && !(await getPolicy("unitAdmins.canInvite"))) {
     return {
-      response: denyByPolicy({ 
+      response: denyByPolicy({
         policyKey: "unitAdmins.canInvite",
         user: resolved.user,
         action,
