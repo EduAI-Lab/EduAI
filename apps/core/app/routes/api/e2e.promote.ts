@@ -6,6 +6,7 @@
  * the variable. Never import or call this from application code.
  */
 import type { ActionFunctionArgs } from "react-router";
+import type { UserRole } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 
 const VALID_ROLES = new Set(['ADMIN', 'UNIT_ADMIN', 'INSTRUCTOR', 'TA', 'STUDENT']);
@@ -57,7 +58,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
   const updated = await prisma.user.update({
     where: { email },
-    data: { role },
+    data: { role: role as UserRole },
     select: { id: true, email: true, role: true, name: true },
   });
 
