@@ -823,7 +823,7 @@ IMPORTANT: You have access to the full conversation history in the messages arra
 
 ${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ""}
 
-Be helpful, conversational, and accurate. Use markdown for formatting.`;
+Be helpful, conversational, and accurate. Use markdown for formatting. For mathematical expressions, use LaTeX delimiters: inline math with $...$ and display math with $$...$$.`;
 
           streamConfig = {
             model: aiModel,
