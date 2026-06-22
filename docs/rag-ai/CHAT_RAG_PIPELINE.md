@@ -56,7 +56,7 @@ flowchart TB
     R1["generateEmbedding (cached query embed)"]
     R2["pgvector: material_embeddings → chunks → course_materials"]
     R3{"RAG_HYBRID_BM25=1?"}
-    R3 -->|yes| R4["hybrid: vector×α + ts_rank×(1−α), ORDER BY score DESC, LIMIT"]
+    R3 -->|yes| R4["hybrid: vector > threshold, then vector×α + ts_rank×(1−α), ORDER BY score DESC, LIMIT"]
     R3 -->|no| R5["pure-vector: similarity > threshold, ORDER BY similarity DESC, LIMIT"]
     R1 --> R2 --> R3
   end
@@ -88,7 +88,7 @@ flowchart TB
 - **Hybrid RAG** prefetches **`findRelevantContent`** on every course-scoped turn. Excerpts inject when **`shouldInjectCourseRag`** passes (`needsCourseRag`, similarity thresholds, or `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE=1`), formatted with **`buildCappedRagContextText`** and **`buildRagSystemBlock`** (chunk cap **4**, char cap **14_000**).
 - **Tool RAG (preload)** shares the same prefetch + inject gate. When injection passes, excerpts use **`buildRagSystemBlock({ toolPath: true })`**. **`getInformation`** remains a supplemental fallback (`capRagHitsForTool`, **6000** chars per chunk).
 - **Query embeddings** use an in-memory cache (`QUERY_EMBED_CACHE_TTL_MS`, `QUERY_EMBED_CACHE_MAX`). **Server** `OPENROUTER_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, or `OPENAI_API_KEY` (first match wins) — independent of the user's chat provider (e.g. Ollama).
-- **Similarity threshold** defaults from **`RAG_SIMILARITY_THRESHOLD`** (default **0.5**) when the caller omits `similarityThreshold`.
+- **Similarity threshold** applies to both retrieval paths: chunks must clear the vector cosine floor before ranking. Defaults from **`RAG_SIMILARITY_THRESHOLD`** (default **0.5**) when the caller omits `similarityThreshold`; per-course `ragSimilarityThreshold` overrides when set.
 - **Ingestion** (`processMaterialEmbeddings`) fills the vector tables; it does not run on each chat request.
 
 ## Code references
@@ -179,11 +179,11 @@ Defined in [`embedding.ts`](../../apps/core/app/lib/ai/embedding.ts):
 
 1. **`generateEmbedding(userQuery)`** — `embed()` via OpenRouter `google/gemini-embedding-001` (if `OPENROUTER_API_KEY`), else direct Gemini `gemini-embedding-001`, else OpenAI `text-embedding-3-small`. Normalized query text is cached in-memory (`QUERY_EMBED_CACHE_TTL_MS` default 90s, `QUERY_EMBED_CACHE_MAX` default 300 entries).
 2. **Retrieval SQL** — branches on **`RAG_HYBRID_BM25`**:
-   - **Hybrid path** (`RAG_HYBRID_BM25=1`, recommended): combines pgvector cosine similarity and PostgreSQL full-text BM25 rank in one query: `score = (1 − (embedding <=> query)) × α + ts_rank(content, query) × (1−α)`, where α = **`RAG_HYBRID_BM25_ALPHA`** (default **0.7**). Results are ordered by the combined `score DESC` with no threshold pre-filter. Improves label queries ("assignment 4") and vague queries ("I'm confused about what prof said") that pure vector search misses.
+   - **Hybrid path** (`RAG_HYBRID_BM25=1`, recommended): pre-filters with the same vector cosine floor as the pure-vector path (`1 − (embedding <=> query) > threshold`), then ranks survivors by combined score: `(1 − (embedding <=> query)) × α + ts_rank(content, query) × (1−α)`, where α = **`RAG_HYBRID_BM25_ALPHA`** (default **0.7**). `ORDER BY score DESC`, `LIMIT`. Improves label queries ("assignment 4") and vague queries ("I'm confused about what prof said") that pure vector search misses, without returning top-k chunks that fail the similarity floor.
    - **Pure-vector path** (default when flag is off): `1 - (embedding <=> query)`, filtered by threshold from **`RAG_SIMILARITY_THRESHOLD`** (default **0.5**), `ORDER BY similarity DESC`.
 3. **Returns** `{ content, similarity, materialTitle }[]` — same shape for both paths; `similarity` holds the combined score in hybrid mode.
 
-Signature: `findRelevantContent(userQuery, courseId, limit = 6, similarityThreshold?: number)` — omitting `similarityThreshold` reads **`RAG_SIMILARITY_THRESHOLD`** from the environment (threshold is ignored in hybrid mode).
+Signature: `findRelevantContent(userQuery, courseId, limit = 6, similarityThreshold?: number)` — omitting `similarityThreshold` reads **`RAG_SIMILARITY_THRESHOLD`** from the environment. Both hybrid and pure-vector paths apply the effective threshold as a vector cosine pre-filter; hybrid then ranks survivors by combined score.
 
 **Ingestion (offline):** `processMaterialEmbeddings` → `resolveMaterialChunks` (semantic chunks from upload when `SEMANTIC_CHUNK_SEPARATOR` is present, else `generateChunks` at 800 chars / 80 overlap) → `generateEmbeddings` via batched `embedMany` (`EMBED_MANY_BATCH_SIZE` default 64) → batch `MaterialChunk` insert + `material_embeddings` in one transaction. Re-upload materials to pick up improved chunk boundaries for files indexed before this fix.
 
@@ -203,7 +203,7 @@ Resolved system prompt order: request `systemPrompt` → stored `chat.systemProm
 | `CHAT_TOOL_MAX_OUTPUT_TOKENS` | 8192 | Tool-path env cap for `maxTokens` (1024–128000); clamped to `AIModel.maxTokens` when set |
 | `RAG_HYBRID_BM25` | off | `1` = enable hybrid BM25+vector retrieval in `findRelevantContent` (recommended; improves label and vague queries) |
 | `RAG_HYBRID_BM25_ALPHA` | 0.7 | Vector weight in hybrid score (0–1 exclusive); BM25 weight = 1−α. Ignored when hybrid is off. |
-| `RAG_SIMILARITY_THRESHOLD` | 0.5 | Minimum cosine similarity for retrieval hits — pure-vector path only; ignored when hybrid is on |
+| `RAG_SIMILARITY_THRESHOLD` | 0.5 | Minimum vector cosine similarity for retrieval hits — pre-filter on both pure-vector and hybrid BM25 paths |
 | `CHAT_RAG_INJECT_STRONG_SIM` | 0.8 (or `ROUTING_RAG_STRONG_SIM`) | Inject when top-1 similarity clears bar even if intent skips |
 | `CHAT_RAG_INJECT_MODERATE_SIM` | 0.55 (or `ROUTING_RAG_TIER1_SIM`) | Inject when at least one chunk clears moderate bar |
 | `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE` | off | `1` = inject on every course-scoped message (testing / legacy always-on) |
@@ -218,7 +218,7 @@ Resolved system prompt order: request `systemPrompt` → stored `chat.systemProm
 | --------- | -------- |
 | No course selected | Hybrid `isRAGQuery` is false; `getInformation` returns `{ error: "No course selected for RAG search" }` if called |
 | Hybrid retrieval (inject) | Smart inject gate (`needsCourseRag` + similarity thresholds); prefetch always when course selected. Override: `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE=1` |
-| BM25 hybrid retrieval | `RAG_HYBRID_BM25=1` combines vector + full-text BM25 ranking; no schema migration needed (uses built-in PostgreSQL `ts_rank`/`plainto_tsquery`). Recommended for production. |
+| BM25 hybrid retrieval | `RAG_HYBRID_BM25=1` combines vector + full-text BM25 ranking after the same vector similarity floor as pure-vector search; no schema migration needed (uses built-in PostgreSQL `ts_rank`/`plainto_tsquery`). Recommended for production. |
 | Latency on RAG turns | Cached embed (hit) or one embed API call + one DB query before first token (hybrid), or inside a tool step (tool path) |
 | Credentials | Retrieval embeddings use server Google/OpenAI keys; chat model may be Ollama-only — two credential paths |
 | Auto routing | Not on this branch; client sends `model` as-is. See [`TEAM_ROUTING_LAYER_PLAN.md`](./routing/eduai-summer-2026/TEAM_ROUTING_LAYER_PLAN.md) for planned routing work |
