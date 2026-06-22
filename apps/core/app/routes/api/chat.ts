@@ -37,7 +37,7 @@ import type { ActionFunctionArgs } from "react-router";
 import prisma from "~/lib/prisma.server";
 import { chatApiDebug } from "~/lib/chat-api-log";
 import { clientApiKeysBodySchema, toUserProviderSettings } from "~/lib/chat-api-keys.schema";
-import { getWebToolsEnabled } from "~/lib/system-config.server";
+import { getPolicy } from "~/lib/policy.server";
 import {
   shouldInjectCourseRag,
   shouldPrefetchCourseRag,
@@ -667,7 +667,7 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    const webToolsEnabled = await getWebToolsEnabled();
+    const webToolsEnabled = await getPolicy("chat.webToolsEnabled");
     const tools = buildChatToolRegistry({ effectiveCourseId, webToolsEnabled });
 
     const modelCapabilities = await getChatModelCapabilities(model);
