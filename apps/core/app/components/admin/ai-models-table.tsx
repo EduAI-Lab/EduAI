@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { IconEdit, IconTrash, IconPlus } from "@tabler/icons-react";
+import { IconEdit, IconTrash, IconPlus, IconCloud, IconServer } from "@tabler/icons-react";
 import { Button } from "@eduai/ui";
 import { Badge } from "@eduai/ui";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@eduai/ui";
@@ -80,6 +80,10 @@ const getTypeColor = (type: string) => {
   }
 };
 
+const isLocalProvider = (provider: AIProvider) => {
+  return provider.name === "ollama";
+};
+
 export function AIModelsTable({ models, onEdit, onDelete, onToggleActive }: AIModelsTableProps) {
   return (
     <div className="rounded-md border">
@@ -112,7 +116,24 @@ export function AIModelsTable({ models, onEdit, onDelete, onToggleActive }: AIMo
                   <div className="text-sm text-muted-foreground">{model.modelId}</div>
                 </div>
               </TableCell>
-              <TableCell>{model.provider.displayName}</TableCell>
+              <TableCell>
+                <div className="flex items-center gap-2">
+                  <span>{model.provider.displayName}</span>
+                  <Badge variant="outline" className="text-xs">
+                    {isLocalProvider(model.provider) ? (
+                      <>
+                        <IconServer size={12} className="mr-1" />
+                        Local
+                      </>
+                    ) : (
+                      <>
+                        <IconCloud size={12} className="mr-1" />
+                        Cloud
+                      </>
+                    )}
+                  </Badge>
+                </div>
+              </TableCell>
               <TableCell>
                 <Badge variant="outline" className={getTypeColor(model.type)}>
                   {model.type}

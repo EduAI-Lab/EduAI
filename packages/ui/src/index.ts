@@ -3,6 +3,8 @@ export { cn, getInitials } from "./utils"
 
 // ── Theme ──────────────────────────────────────────────────────────────────
 export { ThemeProvider, useTheme } from "./theme-provider"
+export { initThemeSync, broadcastThemeChange, closeThemeSync } from "./lib/theme-sync"
+export type { Theme as ThemeType } from "./lib/theme-sync"
 
 // ── Domain components ──────────────────────────────────────────────────────
 export { RoleBadge } from "./role-badge"

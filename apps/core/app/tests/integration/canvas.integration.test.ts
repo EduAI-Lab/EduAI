@@ -100,7 +100,7 @@ beforeAll(async () => {
     data: {
       email: "canvas-ta@test.com",
       name: "Canvas TA",
-      role: "TA",
+      role: "STUDENT",
       emailVerified: true,
     },
   });
@@ -565,13 +565,14 @@ describe("Canvas API — link-roster", { timeout: 15_000 }, () => {
       data: {
         email: `canvas-unlinked-ta-${Date.now()}@test.com`,
         name: "Unlinked TA",
-        role: "TA",
+        role: "STUDENT",
         emailVerified: true,
       },
     });
 
     try {
-      sessionFor(unlinkedTa.id, "TA");
+      // A TA is a STUDENT at the platform level; TA-ness is the Enrollment role.
+      sessionFor(unlinkedTa.id, "STUDENT");
       const res = await call("POST", "link-roster", { studentNumber: "student_2" });
       expect(res.status).toBe(200);
     } finally {
