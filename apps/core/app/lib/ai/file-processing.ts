@@ -23,6 +23,18 @@ export function isDocumentSectionBoundary(line: string): boolean {
   if (/^\d+(?:\.\d+)+\s+\S/.test(trimmed)) return true;
   if (/^\d+\.\s+\S/.test(trimmed)) return true;
 
+  // Clinical / health-science section markers (SOAP, discharge summaries, etc.)
+  if (/^(?:S|O|A|P):\s*\S/i.test(trimmed)) return true;
+  if (/^(?:SUBJECTIVE|OBJECTIVE|ASSESSMENT|PLAN)(?:\s*:|$)/i.test(trimmed)) return true;
+  if (
+    /^(?:CHIEF COMPLAINT|HISTORY OF PRESENT ILLNESS|REVIEW OF SYSTEMS|PAST MEDICAL HISTORY|PHYSICAL EXAMINATION|DISCHARGE SUMMARY|MEDICATIONS|ALLERGIES|VITAL SIGNS|LAB RESULTS)\b/i.test(
+      trimmed,
+    )
+  ) {
+    return true;
+  }
+  if (/^ICD(?:-10)?:\s*[A-Z]\d/i.test(trimmed)) return true;
+
   if (trimmed.length >= 3 && trimmed.length <= 60 && !/[.!?]/.test(trimmed)) {
     const letters = trimmed.replace(/[^a-zA-Z]/g, '');
     if (letters.length >= 3) {
@@ -32,6 +44,154 @@ export function isDocumentSectionBoundary(line: string): boolean {
   }
 
   return false;
+}
+
+/** Ranges of inline `$...$` and display `$$...$$` math that must not be split during chunking. */
+export function findEquationSpans(content: string): Array<{ start: number; end: number }> {
+  const spans: Array<{ start: number; end: number }> = [];
+  let i = 0;
+
+  while (i < content.length) {
+    if (content.startsWith('$$', i)) {
+      const close = content.indexOf('$$', i + 2);
+      if (close !== -1) {
+        spans.push({ start: i, end: close + 2 });
+        i = close + 2;
+        continue;
+      }
+    }
+
+    if (content[i] === '$' && content[i - 1] !== '\\') {
+      const close = content.indexOf('$', i + 1);
+      if (close !== -1 && content[close - 1] !== '\\') {
+        spans.push({ start: i, end: close + 1 });
+        i = close + 1;
+        continue;
+      }
+    }
+
+    i++;
+  }
+
+  return spans;
+}
+
+function isInsideEquationSpan(index: number, spans: Array<{ start: number; end: number }>): boolean {
+  return spans.some((span) => index > span.start && index < span.end);
+}
+
+function findSafeSplitIndex(text: string, preferredIndex: number, spans: Array<{ start: number; end: number }>): number {
+  if (!isInsideEquationSpan(preferredIndex, spans)) {
+    return preferredIndex;
+  }
+
+  for (let i = preferredIndex; i > 0; i--) {
+    if (!isInsideEquationSpan(i, spans)) {
+      return i;
+    }
+  }
+
+  return preferredIndex;
+}
+
+function stripInlineHtml(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function convertTableHtmlToMarkdown(tableHtml: string): string {
+  const rows: string[][] = [];
+  const rowMatches = tableHtml.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi);
+
+  for (const rowMatch of rowMatches) {
+    const cells: string[] = [];
+    const cellMatches = rowMatch[1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi);
+    for (const cellMatch of cellMatches) {
+      cells.push(stripInlineHtml(cellMatch[1]).replace(/\|/g, '\\|'));
+    }
+    if (cells.length > 0) rows.push(cells);
+  }
+
+  if (rows.length === 0) return '';
+
+  const colCount = Math.max(...rows.map((row) => row.length));
+  const normalized = rows.map((row) => {
+    const copy = [...row];
+    while (copy.length < colCount) copy.push('');
+    return copy;
+  });
+
+  const header = normalized[0];
+  const separator = header.map(() => '---');
+  const body = normalized.slice(1);
+  const lines = [
+    `| ${header.join(' | ')} |`,
+    `| ${separator.join(' | ')} |`,
+    ...body.map((row) => `| ${row.join(' | ')} |`),
+  ];
+
+  return lines.join('\n');
+}
+
+function mathMlFragmentToLatex(mathml: string): string {
+  const fracMatch = mathml.match(
+    /<m:fraction[^>]*>[\s\S]*?<m:num[^>]*>([\s\S]*?)<\/m:num>[\s\S]*?<m:den[^>]*>([\s\S]*?)<\/m:den>/i,
+  );
+  if (fracMatch) {
+    const num = mathMlFragmentToLatex(fracMatch[1]) || stripInlineHtml(fracMatch[1]);
+    const den = mathMlFragmentToLatex(fracMatch[2]) || stripInlineHtml(fracMatch[2]);
+    return `\\frac{${num}}{${den}}`;
+  }
+
+  const supMatch = mathml.match(/<m:sSup[^>]*>[\s\S]*?<m:e[^>]*>([\s\S]*?)<\/m:e>[\s\S]*?<m:sup[^>]*>([\s\S]*?)<\/m:sup>/i);
+  if (supMatch) {
+    const base = mathMlFragmentToLatex(supMatch[1]) || stripInlineHtml(supMatch[1]);
+    const exp = mathMlFragmentToLatex(supMatch[2]) || stripInlineHtml(supMatch[2]);
+    return `${base}^{${exp}}`;
+  }
+
+  const text = stripInlineHtml(mathml);
+  return text;
+}
+
+function convertMathHtmlToMarkdown(markup: string): string {
+  const latex = mathMlFragmentToLatex(markup);
+  if (!latex) return '';
+  const trimmed = latex.trim();
+  if (trimmed.includes('\n')) return `\n$$\n${trimmed}\n$$\n`;
+  return ` $${trimmed}$ `;
+}
+
+/**
+ * Normalize extracted document text: preserve LaTeX delimiters and convert common
+ * math/table markup into markdown-friendly forms before chunking.
+ */
+export function enrichExtractedDocumentContent(content: string): string {
+  let enriched = content;
+
+  enriched = enriched.replace(/<table[^>]*>([\s\S]*?)<\/table>/gi, (_, tableBody) => {
+    const tableMarkdown = convertTableHtmlToMarkdown(tableBody);
+    return tableMarkdown ? `\n${tableMarkdown}\n` : '';
+  });
+
+  enriched = enriched.replace(/\\\(([\s\S]*?)\\\)/g, (_, body) => `$${body.trim()}$`);
+  enriched = enriched.replace(/\\\[([\s\S]*?)\\\]/g, (_, body) => `\n$$\n${body.trim()}\n$$\n`);
+
+  enriched = enriched.replace(/<math[^>]*>([\s\S]*?)<\/math>/gi, (_, mathBody) =>
+    convertMathHtmlToMarkdown(mathBody),
+  );
+  enriched = enriched.replace(/<m:oMath[^>]*>([\s\S]*?)<\/m:oMath>/gi, (_, mathBody) =>
+    convertMathHtmlToMarkdown(mathBody),
+  );
+
+  return sanitizeTextContent(enriched);
 }
 
 function isHeadingOnlySection(lines: string[]): boolean {
@@ -187,6 +347,20 @@ export function sanitizeTextContent(content: string): string {
  */
 function convertHtmlToMarkdown(html: string): string {
   let markdown = html;
+
+  // Preserve tables as markdown before stripping remaining HTML
+  markdown = markdown.replace(/<table[^>]*>([\s\S]*?)<\/table>/gi, (_, tableBody) => {
+    const tableMarkdown = convertTableHtmlToMarkdown(tableBody);
+    return tableMarkdown ? `\n${tableMarkdown}\n` : '';
+  });
+
+  // Preserve equations from MathML / Office Math markup
+  markdown = markdown.replace(/<math[^>]*>([\s\S]*?)<\/math>/gi, (_, mathBody) =>
+    convertMathHtmlToMarkdown(mathBody),
+  );
+  markdown = markdown.replace(/<m:oMath[^>]*>([\s\S]*?)<\/m:oMath>/gi, (_, mathBody) =>
+    convertMathHtmlToMarkdown(mathBody),
+  );
 
   // Convert headers
   markdown = markdown.replace(/<h([1-6])[^>]*>(.*?)<\/h[1-6]>/gi, (match, level, content) => {
@@ -540,6 +714,7 @@ function applyStandardChunking(content: string, maxChunkSize: number): string[] 
 }
 
 function chunkSectionByParagraphs(section: string, maxChunkSize: number): string[] {
+  const equationSpans = findEquationSpans(section);
   const paragraphs = section.split(/\n\s*\n/).filter((p) => p.trim().length > 0);
   const chunks: string[] = [];
   let currentChunk = '';
@@ -571,7 +746,30 @@ function chunkSectionByParagraphs(section: string, maxChunkSize: number): string
     chunks.push(currentChunk.trim());
   }
 
-  return chunks;
+  if (equationSpans.length === 0) {
+    return chunks;
+  }
+
+  const safeChunks: string[] = [];
+  for (const chunk of chunks) {
+    if (chunk.length <= maxChunkSize) {
+      safeChunks.push(chunk);
+      continue;
+    }
+
+    let start = 0;
+    while (start < chunk.length) {
+      let end = Math.min(start + maxChunkSize, chunk.length);
+      if (end < chunk.length) {
+        end = findSafeSplitIndex(chunk, end, equationSpans);
+      }
+      const piece = chunk.slice(start, end).trim();
+      if (piece.length > 0) safeChunks.push(piece);
+      start = end;
+    }
+  }
+
+  return safeChunks;
 }
 
 /**
@@ -647,6 +845,8 @@ export async function processUploadedFile(file: File): Promise<FileInfo> {
       default:
         throw new Error(`Unsupported file type: ${file.type}`);
     }
+
+    content = enrichExtractedDocumentContent(content);
 
     const maxChunkSize = 1500;
     const chunks = applySemanticChunking(content, maxChunkSize);

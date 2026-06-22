@@ -24,11 +24,26 @@ import {
 } from "@eduai/ui";
 import { Input } from "@eduai/ui";
 import { Label } from "@eduai/ui";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@eduai/ui";
 import { PageTabs, PageTabsList, PageTabsTrigger, PageTabsContent } from "@eduai/ui";
 import { PageHeading } from "@eduai/ui";
 import { useApiKeys } from "~/hooks/use-api-keys";
 import { usePolicies } from "~/hooks/api/use-policies";
 import { authClient } from "~/lib/auth/client";
+import {
+  API_KEY_EXPIRATION_OPTIONS,
+  DEFAULT_API_KEY_EXPIRATION_CHOICE,
+  expirationChoiceToSeconds,
+  formatExpirationLabel,
+  getApiKeyExpirationStatus,
+  type ApiKeyExpirationChoice,
+} from "~/lib/api-keys/expiration";
 
 type ServerApiKey = {
   id: string;
@@ -66,6 +81,9 @@ export function SettingsView({ role, studentNumber = null }: SettingsViewProps) 
   const [serverKeys, setServerKeys] = useState<ServerApiKey[]>([]);
   const [creating, setCreating] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
+  const [expirationChoice, setExpirationChoice] = useState<ApiKeyExpirationChoice>(
+    DEFAULT_API_KEY_EXPIRATION_CHOICE,
+  );
   const [createdKeyPlain, setCreatedKeyPlain] = useState<string | null>(null);
   const [copyOk, setCopyOk] = useState(false);
 
@@ -87,10 +105,11 @@ export function SettingsView({ role, studentNumber = null }: SettingsViewProps) 
     try {
       setCreating(true);
       setCreatedKeyPlain(null);
+      const expiresIn = expirationChoiceToSeconds(expirationChoice);
       const { data, error } = await authClient.apiKey.create({
         name: newKeyName || undefined,
         prefix: FIXED_PREFIX,
-        expiresIn: 60 * 60 * 24 * 30,
+        ...(expiresIn ? { expiresIn } : {}),
       });
       if (error) throw new Error(error.message);
       if (data?.key) {
@@ -170,7 +189,7 @@ export function SettingsView({ role, studentNumber = null }: SettingsViewProps) 
                 <Label htmlFor="key-name" className="mb-1">
                   Name
                 </Label>
-                <div className="flex gap-2">
+                <div className="flex flex-col gap-3 sm:flex-row">
                   <Input
                     id="key-name"
                     placeholder="My Integration"
@@ -178,14 +197,34 @@ export function SettingsView({ role, studentNumber = null }: SettingsViewProps) 
                     onChange={(e) => setNewKeyName(e.target.value)}
                     className="flex-1"
                   />
-                  <Button onClick={createServerKey} disabled={creating}>
+                  <div className="sm:w-44">
+                    <Label htmlFor="key-expiration" className="sr-only">
+                      Expiration
+                    </Label>
+                    <Select
+                      value={expirationChoice}
+                      onValueChange={(value) => setExpirationChoice(value as ApiKeyExpirationChoice)}
+                    >
+                      <SelectTrigger id="key-expiration">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {API_KEY_EXPIRATION_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button onClick={createServerKey} disabled={creating} className="sm:self-end">
                     <IconPlus className="h-4 w-4 mr-1" /> Create
                   </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Keys are created with prefix{" "}
-                  <span className="font-mono">{FIXED_PREFIX}-</span> followed by
-                  a random string.
+                  <span className="font-mono">{FIXED_PREFIX}-</span> followed by a random string.
+                  Email reminders are sent at 14, 7, and 1 day(s) before expiration when SMTP is configured.
                 </p>
               </div>
 
@@ -235,8 +274,18 @@ export function SettingsView({ role, studentNumber = null }: SettingsViewProps) 
                         </div>
                       </div>
                       {k.expiresAt && (
-                        <div className="text-xs text-muted-foreground text-right shrink-0">
-                          Expires {new Date(k.expiresAt).toLocaleDateString()}
+                        <div className="text-xs text-right shrink-0">
+                          <div
+                            className={
+                              getApiKeyExpirationStatus(k.expiresAt) === "expired"
+                                ? "text-destructive"
+                                : getApiKeyExpirationStatus(k.expiresAt) === "expiring-soon"
+                                  ? "text-amber-600 dark:text-amber-400"
+                                  : "text-muted-foreground"
+                            }
+                          >
+                            {formatExpirationLabel(k.expiresAt)}
+                          </div>
                         </div>
                       )}
                       {!k.enabled && (

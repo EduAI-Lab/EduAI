@@ -24,7 +24,8 @@
     "bench:chat": "node ./scripts/chat-latency-bench.mjs",
     "vllm:smoke": "node ./scripts/vllm-smoke.mjs",
     "test:embedding": "tsx scripts/test-embedding.ts",
-    "re-embed:course": "tsx scripts/re-embed-course.ts"
+    "re-embed:course": "tsx scripts/re-embed-course.ts",
+    "api-keys:send-reminders": "tsx ./scripts/send-api-key-expiration-reminders.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^1.2.22",
