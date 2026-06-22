@@ -84,7 +84,7 @@ export function Combobox({
         </Button>
       </PopoverTrigger>
       <PopoverContent
-        className="min-w-[--radix-popover-trigger-width] w-auto max-w-[min(28rem,calc(100vw-2rem))] p-0"
+        className="w-[--radix-popover-trigger-width] p-0"
         align="start"
       >
         <Command shouldFilter={false}>
