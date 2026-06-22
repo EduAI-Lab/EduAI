@@ -130,8 +130,9 @@ describe('BugReportsTab', () => {
 
     render(<BugReportsTab initialReports={[baseReport]} />);
 
-    const select = screen.getByLabelText(`Update status for report ${baseReport.id}`);
-    fireEvent.change(select, { target: { value: 'resolved' } });
+    const trigger = screen.getByLabelText(`Update status for report ${baseReport.id}`);
+    fireEvent.click(trigger);
+    fireEvent.click(await screen.findByRole('option', { name: 'Resolved' }));
 
     await waitFor(() => {
       expect(mockUpdateAdminBugReportStatus).toHaveBeenCalledWith(baseReport.id, {
@@ -139,7 +140,7 @@ describe('BugReportsTab', () => {
       });
     });
 
-    expect((select as HTMLSelectElement).value).toBe('resolved');
+    expect(trigger).toHaveTextContent('Resolved');
   });
 
   it('opens description, console, network, and screenshot viewers', async () => {

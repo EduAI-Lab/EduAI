@@ -18,10 +18,16 @@ vi.mock("~/lib/policy.server", () => ({
   setPolicy: vi.fn(),
 }));
 
+vi.mock("~/lib/logging.server", () => ({
+  fireAndForget: vi.fn(),
+  logAuditAction: vi.fn(),
+}));
+
 import { loader, action } from "~/routes/api/policies";
 import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { getPolicies, getPolicyDefinitions, isPolicyKey, setPolicy } from "~/lib/policy.server";
+import { logAuditAction } from "~/lib/logging.server";
 
 const POLICIES = { "instructors.canCreateCourses": true };
 
@@ -112,11 +118,26 @@ describe("PATCH /api/policies", () => {
     expect(setPolicy).toHaveBeenCalledWith("instructors.canCreateCourses", false, "a1");
   });
 
+  it("audit-logs the policy-flag change (who/what/value)", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "a1", role: "ADMIN" } } as any);
+    await action({ request: patch({ key: "instructors.canCreateCourses", value: false }) } as any);
+    expect(logAuditAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actionCode: "POLICY_FLAG_UPDATED",
+        category: "SECURITY",
+        actorUserId: "a1",
+        entityId: "instructors.canCreateCourses",
+        details: { key: "instructors.canCreateCourses", value: false },
+      }),
+    );
+  });
+
   it("forbids a non-admin", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } } as any);
     const res = await action({ request: patch({ key: "instructors.canCreateCourses", value: false }) } as any);
     expect(res.status).toBe(403);
     expect(setPolicy).not.toHaveBeenCalled();
+    expect(logAuditAction).not.toHaveBeenCalled();
   });
 
   it("404s an unknown policy key", async () => {

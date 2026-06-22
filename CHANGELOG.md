@@ -9,6 +9,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
+- [core] feat: Let unit admins invite instructors and students — gated by the new `unitAdmins.canInvite` policy flag, with a dedicated `/unit-admin/invitations` page, a policy-gated nav link, and own-only scoping over the shared `/api/invitations` endpoints. (#686, @abdullahmoh21, 2026-06-19)
+- [core] tests: Add unit-admin invitation coverage across the route, schema, and integration suites. (#686, @abdullahmoh21, 2026-06-19)
 - [core] feat: Expand the configurable RBAC policy registry (#660) with instructor/TA/student/unit-admin gates & grants, a `chat.webToolsEnabled` master that folds in the standalone `webToolsEnabled` toggle, an `auth.allowPublicRegistration` signup gate enforced at the Better Auth chokepoint, live frontend control gating via `usePolicies()`, and structured `policy_denied` 403 audit logging. (#660, @abdullahmoh21, 2026-06-18)
 - [core] feat: Add course/unit chat visibility — a nullable `Chat.courseId` tagged at chat creation, `GET /api/courses/:id/chats` and `GET /api/units/:department/chats` endpoints gated by `instructors.canViewCourseChats` / `unitAdmins.canViewUnitChats`, and a read-only Chats tab plus a unit chats page. (#660, @abdullahmoh21, 2026-06-18)
 - [core] tests: Add denied/allowed unit cases for every new policy flag across publish/delete/update, materials, enrollments, canvas, topics, chat web tools, the chat-visibility endpoints, and the registration loaders. (#660, @abdullahmoh21, 2026-06-18)
@@ -62,6 +64,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] tests: Update `canvas.integration.test.ts` reassignment case to use a unique student number (avoids `studentIdLookup` collision with seeded data). (#578, @GlowyBlack, 2026-06-15)
 - [ai-tutor] feat: RBAC UI for all five role views (#616) — add `app/lib/rbac/` permission helpers, `PermissionGate`, `AtRoleBanner`, and `useAtPermissions`; gate instructor shell for TA read-only; add `CreateCourseDialog`, course tabs (content/enrollments/submissions/analytics), `CourseEnrollmentsPanel` with TA role assignment, admin EduAI enrollment sync; extend `api.ts` with analytics/enrollment endpoints; document endpoint audit in `docs/rbac-endpoints-ai-tutor.md` (#614). Closes #614, #616, #617 (AiTutor). ([#619](https://github.com/EduAI-Lab/EduAI/pull/619), @Ayyhab, 2026-06-14)
 - [core] fix: Stop frontend from retransmitting the full conversation history on every chat request by sending only the newest user message and associated metadata. (#487, @YibingW, 2026-06-15)
+- [core] fix: Restore course Enrollments tab — re-wire `useCourseEnrollments` to `GET /api/courses/:id/enrollments` after merge conflict reverted the hook to an empty stub; API returns enrollment `id` and decrypted `studentNumber`. ([#684], @GlowyBlack, 2026-06-18)
+- [core] fix: Dev startup seed — targeted `db:seed:student-ids` backfill for seed students instead of full re-seed when `studentId` is missing (avoids `studentIdLookup` unique constraint collisions). (#684, @GlowyBlack, 2026-06-18)
+- [core] fix: `POST /api/bug-reports` — extension sources (`AI_TUTOR`, `QUESTION_MAKER`) require service key again; session auth remains for `CORE` only. (#684, @GlowyBlack, 2026-06-18)
+- [core] tests: Align course-create integration tests with required `department` field; session-validate expects `authorizedUnits` in user payload. (#684, @GlowyBlack, 2026-06-18)
 - [ai-tutor] fix: Route TA promotion through Core — `PATCH /admin/courses/:courseId/enrollments/:userId/role` now calls Core's enrollment-role endpoint before updating locally, keeping Core as the authoritative source; remove the band-aid `local.role !== 'TA'` skip from `syncCourseEnrollments` so Core-initiated TA demotions propagate on the next sync. (#674, @evanbones, 2026-06-19)
 
 ---

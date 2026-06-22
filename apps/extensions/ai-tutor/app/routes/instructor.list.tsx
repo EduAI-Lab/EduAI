@@ -35,12 +35,11 @@
  *          components/TopicSyncMappingDialog, hooks/useCourseTopics
  */
 import { useEffect, useOptimistic, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router';
+import { useParams } from 'react-router';
 import AddActivityPanel from '../components/AddActivityPanel';
 import ActivityDetailsCard from '../components/ActivityDetailsCard';
 import EditActivityPanel from '../components/EditActivityPanel';
 import AddCourseTopicsButton from '../components/AddCourseTopicsButton';
-import Nav from '../components/Nav';
 import api from '../lib/api';
 import type { Activity, Course, Lesson, ModuleDetail, Topic } from '../lib/types';
 import { CourseTopicsProvider, useCourseTopics } from '../hooks/useCourseTopics';
@@ -49,12 +48,7 @@ import { requireClientUser } from '~/lib/client-auth';
 
 import type { ActivityUpdatePayload } from '../lib/activityForm';
 import {
-  Breadcrumb,
-  BreadcrumbList,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
+  PageHeading,
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -64,6 +58,8 @@ import TopicSyncMappingDialog from '~/components/TopicSyncMappingDialog';
 import { useBugReport } from '~/components/bug-report/useBugReport';
 import { PermissionGate } from '~/components/rbac/PermissionGate';
 import { useAtPermissions } from '~/hooks/useAtPermissions';
+import { AppShell } from '~/components/layout/AppShell';
+import { ShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbs';
 
 /**
  * Tooltip-wrapped sync trigger surfaced only for EduAI-sourced courses. The
@@ -521,51 +517,24 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     }
   };
 
+  const breadcrumbItems = [
+    { label: 'Teaching', href: '/instructor' },
+    ...(course && module
+      ? [{ label: course.title, href: `/instructor/courses/${module.courseOfferingId}` }]
+      : [{ label: 'Course' }]),
+    ...(module && lesson
+      ? [{ label: module.title, href: `/instructor/module/${lesson.moduleId}` }]
+      : [{ label: 'Module' }]),
+    { label: lesson?.title || 'Lesson' },
+  ];
+
   return (
     <CourseTopicsProvider value={courseTopics}>
-      <div className="min-h-dvh bg-background">
-        <Nav />
-        <div className="container mx-auto px-4 py-8">
-          <Breadcrumb className="mb-6">
-            <BreadcrumbList>
-              <BreadcrumbItem>
-                <BreadcrumbLink asChild>
-                  <Link to="/instructor">Teaching</Link>
-                </BreadcrumbLink>
-              </BreadcrumbItem>
-              <BreadcrumbSeparator>/</BreadcrumbSeparator>
-              <BreadcrumbItem>
-                {course && module ? (
-                  <BreadcrumbLink asChild>
-                    <Link to={`/instructor/courses/${module.courseOfferingId}`}>
-                      {course.title}
-                    </Link>
-                  </BreadcrumbLink>
-                ) : (
-                  <BreadcrumbPage>Course</BreadcrumbPage>
-                )}
-              </BreadcrumbItem>
-              <BreadcrumbSeparator>/</BreadcrumbSeparator>
-              <BreadcrumbItem>
-                {module && lesson ? (
-                  <BreadcrumbLink asChild>
-                    <Link to={`/instructor/module/${lesson.moduleId}`}>{module.title}</Link>
-                  </BreadcrumbLink>
-                ) : (
-                  <BreadcrumbPage>Module</BreadcrumbPage>
-                )}
-              </BreadcrumbItem>
-              <BreadcrumbSeparator>/</BreadcrumbSeparator>
-              <BreadcrumbItem>
-                <BreadcrumbPage>{lesson?.title || 'Lesson'}</BreadcrumbPage>
-              </BreadcrumbItem>
-            </BreadcrumbList>
-          </Breadcrumb>
-          <h2 className="text-2xl font-semibold text-foreground mb-6">
-            {lesson?.title || 'Lesson'}
-          </h2>
+      <AppShell breadcrumbs={<ShellBreadcrumbs items={breadcrumbItems} />}>
+        <div className="space-y-6">
+          <PageHeading heading={lesson?.title || 'Lesson'} subheading="Activity editor" />
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+          <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
             <div className="lg:col-span-2 space-y-4">
               <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-5">
                 <div className="font-semibold mb-3 text-foreground">Activities</div>
@@ -971,7 +940,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
             </aside>
           </div>
         </div>
-      </div>
+      </AppShell>
       <TopicSyncMappingDialog
         open={showMapping}
         onClose={() => setShowMapping(false)}
