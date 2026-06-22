@@ -14,6 +14,13 @@ import {
 import { Input } from "@eduai/ui";
 import { Label } from "@eduai/ui";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@eduai/ui";
+import {
   Table,
   TableBody,
   TableCell,
@@ -196,10 +203,48 @@ function buildClearFiltersHref(tab: LogsTab, query: LogsQueryState) {
   });
 }
 
-// Native <select> styled to match the shadcn input — used so filters submit via the GET <Form>
-// without wiring controlled state into the Radix Select (which posts through a hidden input).
-const selectClass =
-  "border-input bg-transparent dark:bg-input/30 h-9 w-full rounded-md border px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]";
+// Sentinel for the "All" / empty option — Radix Select disallows an empty-string
+// item value, so we map "" <-> this sentinel and submit "" through the hidden input.
+const ALL_VALUE = "__all";
+
+/**
+ * Design-system Select wired into the surrounding GET <Form>: a hidden input
+ * carries the chosen value so filters still submit via the URL on "Apply",
+ * while the visible control matches every other dropdown on the platform.
+ */
+function FilterSelect({
+  name,
+  defaultValue,
+  placeholder,
+  options,
+}: {
+  name: string;
+  defaultValue: string;
+  placeholder: string;
+  options: { value: string; label: string }[];
+}) {
+  const [value, setValue] = useState(defaultValue);
+  return (
+    <>
+      <input type="hidden" name={name} value={value} />
+      <Select
+        value={value === "" ? ALL_VALUE : value}
+        onValueChange={(v) => setValue(v === ALL_VALUE ? "" : v)}
+      >
+        <SelectTrigger className="w-full">
+          <SelectValue placeholder={placeholder} />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((o) => (
+            <SelectItem key={o.value === "" ? ALL_VALUE : o.value} value={o.value === "" ? ALL_VALUE : o.value}>
+              {o.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </>
+  );
+}
 
 function outcomeVariant(
   outcome: string,
@@ -292,27 +337,29 @@ export function LogsAdminView({
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div className="grid gap-1.5">
                 <Label className="text-xs">Page size</Label>
-                <select
+                <FilterSelect
                   name="pageSize"
                   defaultValue={query.pageSize ?? String(pageSize)}
-                  className={selectClass}
-                >
-                  <option value="25">25</option>
-                  <option value="50">50</option>
-                  <option value="100">100</option>
-                </select>
+                  placeholder="Page size"
+                  options={[
+                    { value: "25", label: "25" },
+                    { value: "50", label: "50" },
+                    { value: "100", label: "100" },
+                  ]}
+                />
               </div>
 
               <div className="grid gap-1.5">
                 <Label className="text-xs">Direction</Label>
-                <select
+                <FilterSelect
                   name="direction"
                   defaultValue={query.direction ?? "desc"}
-                  className={selectClass}
-                >
-                  <option value="desc">Newest first</option>
-                  <option value="asc">Oldest first</option>
-                </select>
+                  placeholder="Direction"
+                  options={[
+                    { value: "desc", label: "Newest first" },
+                    { value: "asc", label: "Oldest first" },
+                  ]}
+                />
               </div>
 
               <div className="grid gap-1.5">
@@ -337,18 +384,15 @@ export function LogsAdminView({
                 <>
                   <div className="grid gap-1.5">
                     <Label className="text-xs">Category</Label>
-                    <select
+                    <FilterSelect
                       name="category"
                       defaultValue={query.category ?? ""}
-                      className={selectClass}
-                    >
-                      <option value="">All</option>
-                      {AUDIT_CATEGORIES.map((category) => (
-                        <option key={category} value={category}>
-                          {category}
-                        </option>
-                      ))}
-                    </select>
+                      placeholder="Category"
+                      options={[
+                        { value: "", label: "All" },
+                        ...AUDIT_CATEGORIES.map((category) => ({ value: category, label: category })),
+                      ]}
+                    />
                   </div>
                   <div className="grid gap-1.5">
                     <Label className="text-xs">Action code</Label>
@@ -373,18 +417,15 @@ export function LogsAdminView({
                   </div>
                   <div className="grid gap-1.5">
                     <Label className="text-xs">Outcome</Label>
-                    <select
+                    <FilterSelect
                       name="outcome"
                       defaultValue={query.outcome ?? ""}
-                      className={selectClass}
-                    >
-                      <option value="">All</option>
-                      {OUTCOMES.map((outcome) => (
-                        <option key={outcome} value={outcome}>
-                          {outcome}
-                        </option>
-                      ))}
-                    </select>
+                      placeholder="Outcome"
+                      options={[
+                        { value: "", label: "All" },
+                        ...OUTCOMES.map((outcome) => ({ value: outcome, label: outcome })),
+                      ]}
+                    />
                   </div>
                   <div className="grid gap-1.5">
                     <Label className="text-xs">Route path</Label>
@@ -407,18 +448,15 @@ export function LogsAdminView({
                   </div>
                   <div className="grid gap-1.5">
                     <Label className="text-xs">Outcome</Label>
-                    <select
+                    <FilterSelect
                       name="outcome"
                       defaultValue={query.outcome ?? ""}
-                      className={selectClass}
-                    >
-                      <option value="">All</option>
-                      {OUTCOMES.map((outcome) => (
-                        <option key={outcome} value={outcome}>
-                          {outcome}
-                        </option>
-                      ))}
-                    </select>
+                      placeholder="Outcome"
+                      options={[
+                        { value: "", label: "All" },
+                        ...OUTCOMES.map((outcome) => ({ value: outcome, label: outcome })),
+                      ]}
+                    />
                   </div>
                   <div className="grid gap-1.5">
                     <Label className="text-xs">Actor role</Label>
@@ -448,33 +486,27 @@ export function LogsAdminView({
                 <>
                   <div className="grid gap-1.5">
                     <Label className="text-xs">Level</Label>
-                    <select
+                    <FilterSelect
                       name="level"
                       defaultValue={query.level ?? ""}
-                      className={selectClass}
-                    >
-                      <option value="">All</option>
-                      {SYSTEM_LEVELS.map((level) => (
-                        <option key={level} value={level}>
-                          {level}
-                        </option>
-                      ))}
-                    </select>
+                      placeholder="Level"
+                      options={[
+                        { value: "", label: "All" },
+                        ...SYSTEM_LEVELS.map((level) => ({ value: level, label: level })),
+                      ]}
+                    />
                   </div>
                   <div className="grid gap-1.5">
                     <Label className="text-xs">Source</Label>
-                    <select
+                    <FilterSelect
                       name="source"
                       defaultValue={query.source ?? ""}
-                      className={selectClass}
-                    >
-                      <option value="">All</option>
-                      {SYSTEM_SOURCES.map((source) => (
-                        <option key={source} value={source}>
-                          {source}
-                        </option>
-                      ))}
-                    </select>
+                      placeholder="Source"
+                      options={[
+                        { value: "", label: "All" },
+                        ...SYSTEM_SOURCES.map((source) => ({ value: source, label: source })),
+                      ]}
+                    />
                   </div>
                   <div className="grid gap-1.5">
                     <Label className="text-xs">Code</Label>
