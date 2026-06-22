@@ -12,6 +12,7 @@ const ROLE_LABELS: Record<string, string> = {
   ADMIN: "Administrator",
   UNIT_ADMIN: "Unit Administrator",
   INSTRUCTOR: "Instructor",
+  STUDENT: "Student",
 };
 
 const ERROR_MESSAGES: Record<string, string> = {

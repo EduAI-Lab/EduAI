@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { Session } from "./server";
 import { auth } from "./server";
+import { denyByPolicy, getPolicy } from "~/lib/policy.server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 
@@ -118,30 +119,60 @@ export async function requireAdmin(request: Request): Promise<AdminGate> {
   return { response: null, session: resolved };
 }
 
-type InviterGate =
-  | { response: Response; session: null }
-  | { response: null; session: Session };
-
 /**
- * Resolve a session for an inviter-only endpoint (ADMIN or UNIT_ADMIN).
- * Honors the x-api-key rule (`enforceAdminIfApiKey`) and reuses that session
- * to avoid a second lookup. Returns `{ response }` (403/forbidden) when the
- * caller is not an active ADMIN or UNIT_ADMIN, otherwise `{ session }`.
+ * Resolve a session for an invitation endpoint: the actor must be an active
+ * ADMIN, or a UNIT_ADMIN with the `unitAdmins.canInvite` policy flag on. Honors
+ * the `x-api-key`→ADMIN rule and reuses that session. The flag is enforced HERE,
+ * not by callers, so no invitation endpoint can accidentally skip it — ADMIN is
+ * always allowed. `action` tags the policy-denial audit line (e.g.
+ * "invitation.create").
  */
-export async function requireInviter(request: Request): Promise<InviterGate> {
+export async function requireInviter(
+  request: Request,
+  action: string,
+): Promise<AdminGate> {
   const { response, session } = await enforceAdminIfApiKey(request);
   if (response) return { response, session: null };
 
   const resolved = session ?? (await auth.api.getSession(request));
-  if (!resolved?.user || !["ADMIN", "UNIT_ADMIN"].includes(resolved.user.role ?? "")) {
+  const role = resolved?.user?.role;
+  if (!resolved?.user || (role !== "ADMIN" && role !== "UNIT_ADMIN")) {
+    if (!session) {
+      fireAndForget(
+        logSecurityEvent({
+          ...getActorContext(resolved?.user ?? null),
+          ...getRequestContext(request),
+          actionCode: "INVITATION_ACCESS_DENIED",
+          outcome: "DENIED",
+          entityType: "Auth",
+          entityId: resolved?.user?.id ?? null,
+          entityLabel: resolved?.user?.email ?? null,
+          ...(resolved?.user?.email ? { details: { email: resolved.user.email } } : {}),
+        }),
+      );
+    }
     return {
       response: new Response(
-        JSON.stringify({ error: "Forbidden: Admins or unit admins only" }),
+        JSON.stringify({ error: "Forbidden" }),
         { status: 403, headers: { "Content-Type": "application/json" } },
       ),
       session: null,
     };
   }
+
+  // A UNIT_ADMIN additionally needs the `unitAdmins.canInvite` flag
+  if (role !== "ADMIN" && !(await getPolicy("unitAdmins.canInvite"))) {
+    return {
+      response: denyByPolicy({ 
+        policyKey: "unitAdmins.canInvite",
+        user: resolved.user,
+        action,
+        request,
+      }),
+      session: null,
+    };
+  }
+
   return { response: null, session: resolved };
 }
 

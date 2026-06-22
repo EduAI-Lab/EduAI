@@ -1,9 +1,11 @@
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { hashPassword } from 'better-auth/crypto';
 import { clearStudentIdStorage, prepareStudentIdStorage } from '../app/lib/canvas/student-id.server';
 import { UNITS } from '../app/lib/units';
 
-const prisma = new PrismaClient();
+export const prisma = new PrismaClient();
 
 /**
  * Deterministic IDs for cross-app linking. AI Tutor's `coreOfferingId` /
@@ -931,7 +933,24 @@ async function seedAIProvidersAndModels() {
 
 }
 
-async function seedUsers() {
+async function releaseStudentIdClaim(
+  studentNumber: string,
+  keepUserId: string,
+  lookup: string,
+) {
+  await prisma.user.updateMany({
+    where: {
+      OR: [
+        { studentIdLookup: lookup },
+        { studentId: studentNumber, studentIdLookup: null },
+      ],
+      NOT: { id: keepUserId },
+    },
+    data: clearStudentIdStorage(),
+  });
+}
+
+export async function seedUsers() {
   type SeededUser = {
     id: string;
     email: string;
@@ -966,6 +985,14 @@ async function seedUsers() {
     const studentIdFields = user.studentNumber
       ? prepareStudentIdStorage(user.studentNumber)
       : clearStudentIdStorage();
+
+    if (user.studentNumber && studentIdFields.studentIdLookup) {
+      await releaseStudentIdClaim(
+        user.studentNumber,
+        user.id,
+        studentIdFields.studentIdLookup,
+      );
+    }
 
     await prisma.user.upsert({
       where: { id: user.id },
@@ -1487,12 +1514,18 @@ async function main() {
   console.log(`Cross-app links exported via SEED_IDS in apps/core/prisma/seed.ts`);
 }
 
-main()
-  .then(async () => {
-    await prisma.$disconnect();
-  })
-  .catch(async (e) => {
-    console.error('Seed failed:', e);
-    await prisma.$disconnect();
-    process.exit(1);
-  });
+const isMainModule =
+  process.argv[1] != null &&
+  path.resolve(fileURLToPath(import.meta.url)) === path.resolve(process.argv[1]);
+
+if (isMainModule) {
+  main()
+    .then(async () => {
+      await prisma.$disconnect();
+    })
+    .catch(async (e) => {
+      console.error('Seed failed:', e);
+      await prisma.$disconnect();
+      process.exit(1);
+    });
+}

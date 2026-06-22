@@ -402,6 +402,17 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     }
 
+    // A persisted chat is pinned to its course. If a follow-up turn explicitly
+    // names a *different* course, reject — silently switching would split the
+    // chat's RAG context and message history across courses (#685 review).
+    const requestedCourseId = resolvedCourseId || courseId || null;
+    if (chat?.courseId && requestedCourseId && requestedCourseId !== chat.courseId) {
+      return new Response(JSON.stringify({ error: "COURSE_MISMATCH" }), {
+        status: 409,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     const effectiveCourseId = resolvedCourseId || courseId || chat?.courseId || null;
 
     // #657: the global "general assistant" chat was removed — every interactive

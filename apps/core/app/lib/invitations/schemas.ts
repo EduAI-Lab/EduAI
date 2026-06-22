@@ -2,26 +2,24 @@ import { z } from "zod";
 import { UnitSchema } from "~/lib/units";
 
 /**
- * Platform roles an admin may issue an invitation for. Deliberately excludes
- * TA (a course-enrollment role, not a platform role — a course TA is a
- * STUDENT user with an EnrollmentRole.TA enrollment). STUDENT is included so
- * admins/unit admins can pre-invite students who'd otherwise self-register.
+ * Roles an invitation may carry at the schema level — the union across all
+ * inviters. TA is excluded (a course TA is a STUDENT user with an
+ * EnrollmentRole.TA enrollment, not a platform role). STUDENT is invitable only
+ * via the UNIT_ADMIN flow; admins do not invite students (they self-register).
+ * The per-inviter restriction is enforced in the route via `invitableRolesFor`.
  */
 export const INVITABLE_ROLES = ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "STUDENT"] as const;
 export type InvitableRole = (typeof INVITABLE_ROLES)[number];
 
-/** Which platform roles each inviter role may issue. */
-export const ROLE_INVITE_MATRIX: Record<string, InvitableRole[]> = {
-  ADMIN: ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "STUDENT"],
-  UNIT_ADMIN: ["INSTRUCTOR", "STUDENT"],
-};
-
-export function getInvitableRoles(role: string | null | undefined): InvitableRole[] {
-  return ROLE_INVITE_MATRIX[role ?? ""] ?? [];
-}
-
-export function canInvite(inviterRole: string | null | undefined, targetRole: InvitableRole): boolean {
-  return getInvitableRoles(inviterRole).includes(targetRole);
+/**
+ * Which roles a given actor may issue invitations for. ADMIN keeps its original
+ * set (no STUDENT — students self-register); UNIT_ADMIN may invite instructors
+ * and students only. Any other actor may invite no one.
+ */
+export function invitableRolesFor(actorRole: string | null | undefined): readonly InvitableRole[] {
+  if (actorRole === "ADMIN") return ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR"];
+  if (actorRole === "UNIT_ADMIN") return ["INSTRUCTOR", "STUDENT"];
+  return [];
 }
 
 export const createInvitationSchema = z

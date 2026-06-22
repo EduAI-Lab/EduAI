@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   createInvitationSchema,
   acceptInvitationSchema,
+  invitableRolesFor,
 } from "~/lib/invitations/schemas";
 
 describe("createInvitationSchema", () => {
@@ -31,13 +32,27 @@ describe("createInvitationSchema", () => {
     expect(r.success).toBe(true);
   });
 
-  it("rejects TA (not platform-invitable; created via enrollment) but accepts STUDENT", () => {
+  it("accepts a STUDENT invite without units (unit-admin flow)", () => {
+    const r = createInvitationSchema.safeParse({
+      email: "s@test.local",
+      role: "STUDENT",
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("rejects TA (not platform-invitable)", () => {
     expect(
       createInvitationSchema.safeParse({ email: "ta@test.local", role: "TA" }).success,
     ).toBe(false);
-    expect(
-      createInvitationSchema.safeParse({ email: "s@test.local", role: "STUDENT" }).success,
-    ).toBe(true);
+  });
+
+  it("rejects units on a STUDENT invite", () => {
+    const r = createInvitationSchema.safeParse({
+      email: "s@test.local",
+      role: "STUDENT",
+      authorizedUnits: ["COSC"],
+    });
+    expect(r.success).toBe(false);
   });
 
   it("requires units for UNIT_ADMIN", () => {
@@ -71,6 +86,24 @@ describe("createInvitationSchema", () => {
         authorizedUnits: ["NOTAUNIT"],
       }).success,
     ).toBe(false);
+  });
+});
+
+describe("invitableRolesFor", () => {
+  it("lets an ADMIN invite admins, unit admins, and instructors (no students)", () => {
+    const roles = invitableRolesFor("ADMIN");
+    expect([...roles]).toEqual(["ADMIN", "UNIT_ADMIN", "INSTRUCTOR"]);
+    expect(roles).not.toContain("STUDENT");
+  });
+
+  it("lets a UNIT_ADMIN invite instructors and students only", () => {
+    expect([...invitableRolesFor("UNIT_ADMIN")]).toEqual(["INSTRUCTOR", "STUDENT"]);
+  });
+
+  it("lets any other role invite no one", () => {
+    expect(invitableRolesFor("INSTRUCTOR")).toEqual([]);
+    expect(invitableRolesFor("STUDENT")).toEqual([]);
+    expect(invitableRolesFor(null)).toEqual([]);
   });
 });
 
