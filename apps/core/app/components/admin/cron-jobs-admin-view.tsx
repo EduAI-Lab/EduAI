@@ -23,12 +23,22 @@ import type { CronJobEntry, CronJobRunRow, CronJobStatusValue } from "~/lib/db.c
 
 // ── Status badge ─────────────────────────────────────────────────────────────
 
-function CronStatusBadge({ status }: { status: CronJobStatusValue | null }) {
+function CronStatusBadge({ status, external }: { status: CronJobStatusValue | null; external?: boolean }) {
+  if (external) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded-full"
+        style={{ background: "var(--muted)", color: "var(--muted-foreground)" }}>
+        <span className="w-[5px] h-[5px] rounded-full shrink-0"
+          style={{ background: "var(--muted-foreground)" }} />
+        External
+      </span>
+    );
+  }
   if (!status) {
     return (
       <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded-full"
         style={{ background: "var(--muted)", color: "var(--muted-foreground)" }}>
-        <span className="w-[5px] h-[5px] rounded-full flex-shrink-0"
+        <span className="w-[5px] h-[5px] rounded-full shrink-0"
           style={{ background: "var(--muted-foreground)" }} />
         Never run
       </span>
@@ -257,7 +267,7 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
         <CardHeader>
           <CardTitle>Registered jobs</CardTitle>
           <CardDescription>
-            All cron jobs defined in <code>infra/cron/eduai.crontab</code>
+            All registered cron jobs (infra shell scripts and extension-managed in-process jobs)
             {hasRunning && (
               <span className="ml-2 text-xs" style={{ color: "var(--color-warning-700, oklch(0.55 0.12 85))" }}>
                 · auto-refreshing
@@ -308,24 +318,26 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
                         : "—"}
                     </TableCell>
                     <TableCell>
-                      <CronStatusBadge status={job.lastRun?.status ?? null} />
+                      <CronStatusBadge status={job.lastRun?.status ?? null} external={job.triggerEnabled === false} />
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button
                           onClick={() => setHistoryJob(job.name)}
-                          className="text-xs text-primary underline-offset-2 hover:underline"
+                          className="text-xs text-primary-text underline-offset-2 hover:underline"
                         >
                           History
                         </button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={isRunning || isTriggeringThis}
-                          onClick={() => triggerJob(job.name)}
-                        >
-                          {isRunning || isTriggeringThis ? "Running…" : "Run now"}
-                        </Button>
+                        {job.triggerEnabled !== false && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={isRunning || isTriggeringThis}
+                            onClick={() => triggerJob(job.name)}
+                          >
+                            {isRunning || isTriggeringThis ? "Running…" : "Run now"}
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>

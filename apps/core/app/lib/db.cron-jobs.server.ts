@@ -10,6 +10,7 @@ export interface KnownCronJob {
   schedule: string;
   scheduleLabel: string;
   script: string;
+  triggerEnabled?: boolean;
 }
 
 export const KNOWN_CRON_JOBS: KnownCronJob[] = [
@@ -33,6 +34,22 @@ export const KNOWN_CRON_JOBS: KnownCronJob[] = [
     schedule: "15 3 * * *",
     scheduleLabel: "Daily at 03:15 UTC",
     script: "backup-rotate.sh",
+  },
+  {
+    name: "ai-tutor-reconcile",
+    description: "Nullify stale coreOfferingId / coreTopicId references on Core 404",
+    schedule: "0 2 * * *",
+    scheduleLabel: "Daily at 02:00 UTC (AI Tutor server)",
+    script: "",
+    triggerEnabled: false,
+  },
+  {
+    name: "qm-reconcile",
+    description: "Nullify stale core_course_id / core_topic_id / core_question_id references on Core 404",
+    schedule: "0 2 * * *",
+    scheduleLabel: "Daily at 02:00 UTC (QM server)",
+    script: "",
+    triggerEnabled: false,
   },
 ];
 

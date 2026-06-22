@@ -53,6 +53,9 @@ export async function action({ request }: ActionFunctionArgs) {
     if (!job) {
       return data({ error: `Unknown job: ${jobName}` }, { status: 400 });
     }
+    if (job.triggerEnabled === false) {
+      return data({ error: `Job "${jobName}" is managed by an extension server and cannot be triggered from Core` }, { status: 400 });
+    }
 
     const runId = await startCronRun(jobName);
     triggerCronJobAsync(jobName, job.script, runId);
