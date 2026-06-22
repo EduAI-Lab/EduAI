@@ -59,6 +59,7 @@ export default [
   route("/admin/bug-reports", "routes/admin.bug-reports.tsx"),
   route("/admin/settings", "routes/admin.settings.tsx"),
   route("/admin/logs", "routes/admin.logs.tsx"),
+  route("/unit-admin/invitations", "routes/unit-admin.invitations.tsx"),
   route("/api/ai-providers/*", "routes/api/ai-providers.$.ts"),
   route("/api/ai-models/*", "routes/api/ai-models.$.ts"),
   route("/api/me", "routes/api/me.ts"),

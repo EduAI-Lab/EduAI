@@ -27,6 +27,7 @@ export type NavItemKey =
   | 'admin-invites'
   | 'admin-settings'
   | 'admin-logs'
+  | 'unitadmin-invites'
   | 'settings'
   | 'ai-tutor'
 

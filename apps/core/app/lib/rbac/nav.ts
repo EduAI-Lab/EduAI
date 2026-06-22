@@ -5,13 +5,8 @@ import { getAiTutorAppUrl } from '~/lib/extension-urls'
 const CORE_NAV: NavItem[] = [
   { key: 'dashboard', title: 'Dashboard', url: '/dashboard' },
   { key: 'courses', title: 'Courses', url: '/courses' },
+  { key: 'chat', title: 'Chatbot', url: '/chat' },
 ]
-
-const CHAT_NAV_ITEM: NavItem = {
-  key: 'chat',
-  title: 'Chatbot',
-  url: '/chat',
-}
 
 const QM_NAV_ITEM: NavItem = {
   key: 'question-maker',
@@ -38,8 +33,24 @@ const ADMIN_NAV: NavItem[] = [
   { key: 'admin-logs', title: 'Logs', url: '/admin/logs' },
 ]
 
+/**
+ * Unit-admin invitations link. Surfaced only when the `unitAdmins.canInvite`
+ * policy flag is on, passed in via `opts.canInvite` (the flag values live
+ * client-side; the caller resolves them and threads the result here so the
+ * gating decision lives in this one function).
+ */
+const UNIT_ADMIN_NAV: NavItem[] = [
+  { key: 'unitadmin-invites', title: 'Invitations', url: '/unit-admin/invitations' },
+]
+
+/** Options that gate policy-dependent nav items. */
+export type NavOptions = {
+  /** Whether `unitAdmins.canInvite` is on (shows the UNIT_ADMIN Invitations link). */
+  canInvite?: boolean
+}
+
 /** Main sidebar links per rbac-matrix §4, §10–13 shell rules. */
-export function getNavForUser(user: NavUser): NavItem[] {
+export function getNavForUser(user: NavUser, opts: NavOptions = {}): NavItem[] {
   const role = user.role ?? 'STUDENT'
   const nav = [...CORE_NAV]
 
@@ -48,20 +59,23 @@ export function getNavForUser(user: NavUser): NavItem[] {
   }
 
   if (role === 'UNIT_ADMIN') {
-    return [...nav, { key: 'admin-invites', title: 'Invitations', url: '/admin/invitations' }]
+    return opts.canInvite ? [...nav, ...UNIT_ADMIN_NAV] : [...nav]
   }
 
   // INSTRUCTOR, TA, STUDENT — no platform admin section
   return nav
 }
 
+/** ADMIN / UNIT_ADMIN use global chat; others use course-scoped chat (§10). */
+export function usesGlobalChat(user: NavUser): boolean {
+  const role = user.role ?? 'STUDENT'
+  return role === 'ADMIN' || role === 'UNIT_ADMIN'
+}
+
 /** Secondary sidebar links (bottom of sidebar). */
 export function getNavSecondaryForUser(user: NavUser): NavItem[] {
   const role = user.role ?? 'STUDENT'
   const items: NavItem[] = []
-
-  // Chatbot link is available for all roles
-  items.push(CHAT_NAV_ITEM)
 
   if (QM_NAV_ROLES.has(role)) {
     items.push(QM_NAV_ITEM)

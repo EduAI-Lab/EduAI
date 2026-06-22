@@ -56,6 +56,27 @@ export function mapAdminUser(user) {
 }
 
 /**
+ * Map a Core `/api/users` row into the AI Tutor admin user list shape.
+ */
+export function mapCoreAdminUser(user) {
+  const createdAt = user?.createdAt;
+  return {
+    id: user.id,
+    name: user.name ?? '',
+    email: user.email ?? '',
+    role: user.role,
+    createdAt:
+      createdAt instanceof Date
+        ? createdAt.toISOString()
+        : typeof createdAt === 'string'
+          ? createdAt
+          : createdAt
+            ? String(createdAt)
+            : new Date(0).toISOString(),
+  };
+}
+
+/**
  * Map a CourseOffering row to its public DTO.
  *
  * Why: The `external*` fields are nullable for native courses but populated

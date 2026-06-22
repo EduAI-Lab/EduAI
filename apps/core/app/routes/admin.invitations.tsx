@@ -4,7 +4,7 @@ import type { LoaderFunctionArgs } from "react-router";
 import { IconPlus, IconDots, IconCopy, IconMailForward, IconBan } from "@tabler/icons-react";
 
 import { auth } from "~/lib/auth/server";
-import { getInvitableRoles } from "~/lib/invitations/schemas";
+import { invitableRolesFor } from "~/lib/invitations/schemas";
 import {
   Button,
   Badge,
@@ -63,7 +63,10 @@ type Invitation = {
   id: string;
   email: string;
   name: string | null;
-  role: InviteRole;
+  // The admin create form only issues InviteRole, but the shared
+  // /api/invitations list (ADMIN sees all) can include STUDENT invites a
+  // unit admin created via the unitAdmins.canInvite flow.
+  role: InviteRole | "STUDENT";
   authorizedUnits: string[];
   status: "PENDING" | "ACCEPTED" | "REVOKED";
   expiresAt: string;
@@ -79,7 +82,7 @@ const ROLE_OPTIONS: { value: InviteRole; label: string }[] = [
   { value: "ADMIN", label: "Administrator" },
 ];
 
-const ROLE_LABEL: Record<InviteRole, string> = {
+const ROLE_LABEL: Record<InviteRole | "STUDENT", string> = {
   ADMIN: "Administrator",
   UNIT_ADMIN: "Unit Admin",
   INSTRUCTOR: "Instructor",
@@ -92,7 +95,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   if (!["ADMIN", "UNIT_ADMIN"].includes(session.user.role ?? "")) return redirect("/dashboard");
   return {
     user: session.user,
-    invitableRoles: getInvitableRoles(session.user.role),
+    invitableRoles: invitableRolesFor(session.user.role),
   };
 }
 
@@ -334,7 +337,7 @@ export default function InvitationsPage() {
                                     )}
                                   </TableCell>
                                   <TableCell>
-                                    <Badge variant="outline">{ROLE_LABEL[invite.role]}</Badge>
+                                    <Badge variant="outline">{ROLE_LABEL[invite.role] ?? invite.role}</Badge>
                                     {invite.role === "UNIT_ADMIN" && invite.authorizedUnits.length > 0 && (
                                       <div className="mt-1 text-xs text-muted-foreground">
                                         {invite.authorizedUnits.join(", ")}
