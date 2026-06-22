@@ -17,6 +17,7 @@ import prisma from "~/lib/prisma.server";
 import { auth } from "~/lib/auth/server";
 import { sendEmail } from "~/lib/email/mailer.server";
 import { hashToken } from "~/lib/invitations/token.server";
+import { setPolicy, invalidatePolicyCache } from "~/lib/policy.server";
 import { seedUser, cleanupRbac } from "../helpers/rbac";
 
 import { loader as listLoader, action as createAction } from "~/routes/api/invitations";
@@ -33,6 +34,7 @@ const sendEmailMock = vi.mocked(sendEmail);
 
 const emails: string[] = [];
 let adminId = "";
+let unitAdminId = "";
 
 function uniqueEmail(): string {
   const email = `invite-${randomUUID().slice(0, 8)}@test.local`;
@@ -43,6 +45,11 @@ function uniqueEmail(): string {
 function asAdmin() {
   getSessionSpy.mockResolvedValue({
     user: { id: adminId, role: "ADMIN", name: "Admin" },
+  } as never);
+}
+function asUnitAdmin() {
+  getSessionSpy.mockResolvedValue({
+    user: { id: unitAdminId, role: "UNIT_ADMIN", name: "Unit Admin" },
   } as never);
 }
 function asRole(role: string) {
@@ -88,12 +95,20 @@ beforeEach(async () => {
     const admin = await seedUser({ role: "ADMIN" });
     adminId = admin.id;
   }
+  if (!unitAdminId) {
+    const ua = await seedUser({ role: "UNIT_ADMIN", authorizedUnits: ["COSC"] });
+    unitAdminId = ua.id;
+  }
 });
 
 afterAll(async () => {
   await prisma.invitation.deleteMany({ where: { email: { in: emails } } });
   await prisma.user.deleteMany({ where: { email: { in: emails } } });
-  await cleanupRbac({ userIds: [adminId] });
+  await prisma.systemConfig.deleteMany({
+    where: { key: { in: ["policy.unitAdmins.canInvite", "policy.auth.allowPublicRegistration"] } },
+  });
+  invalidatePolicyCache();
+  await cleanupRbac({ userIds: [adminId, unitAdminId] });
   await prisma.$disconnect();
 });
 
@@ -256,6 +271,98 @@ describe("POST /api/invitations/:id (resend)", () => {
   });
 });
 
+describe("unit-admin invitations (unitAdmins.canInvite)", () => {
+  // These tests flip unitAdmins.canInvite on; reset it (DB row + policy cache)
+  // when the block finishes so its on-state can't leak into later describes.
+  afterAll(async () => {
+    await prisma.systemConfig.deleteMany({
+      where: { key: "policy.unitAdmins.canInvite" },
+    });
+    invalidatePolicyCache();
+  });
+
+  it("denies a UNIT_ADMIN while the flag is off (403)", async () => {
+    await setPolicy("unitAdmins.canInvite", false, adminId);
+    asUnitAdmin();
+    const res = await createAction(createReq({ email: uniqueEmail(), role: "INSTRUCTOR" }));
+    expect(res.status).toBe(403);
+  });
+
+  it("lets a UNIT_ADMIN invite a STUDENT when the flag is on, and the student can accept", async () => {
+    await setPolicy("unitAdmins.canInvite", true, adminId);
+    asUnitAdmin();
+    const email = uniqueEmail();
+    const created = await createAction(createReq({ email, role: "STUDENT" }));
+    expect(created.status).toBe(201);
+    const body = await created.json();
+    expect(body.invitation.role).toBe("STUDENT");
+    expect(body.invitation.invitedById).toBe(unitAdminId);
+
+    const token = tokenFromAcceptUrl(body.acceptUrl);
+    const res = (await acceptAction(
+      acceptReq({ token, name: "Sam Student", password: "supersecret1", confirmPassword: "supersecret1" }),
+    )) as Response;
+    expect(res.status).toBe(302);
+    const user = await prisma.user.findUnique({ where: { email } });
+    expect(user?.role).toBe("STUDENT");
+    expect(user?.authorizedUnits).toEqual([]);
+  });
+
+  it("forbids a UNIT_ADMIN from inviting an ADMIN (403 FORBIDDEN_ROLE)", async () => {
+    await setPolicy("unitAdmins.canInvite", true, adminId);
+    asUnitAdmin();
+    const res = await createAction(createReq({ email: uniqueEmail(), role: "ADMIN" }));
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "FORBIDDEN_ROLE" });
+  });
+
+  it("scopes the list to invitations the unit admin sent", async () => {
+    await setPolicy("unitAdmins.canInvite", true, adminId);
+
+    // An admin-issued invite the unit admin must not see.
+    asAdmin();
+    const adminInviteEmail = uniqueEmail();
+    await createAction(createReq({ email: adminInviteEmail, role: "INSTRUCTOR" }));
+
+    // The unit admin's own invite.
+    asUnitAdmin();
+    const ownEmail = uniqueEmail();
+    await createAction(createReq({ email: ownEmail, role: "INSTRUCTOR" }));
+
+    const res = await listLoader({
+      request: new Request("http://localhost/api/invitations"),
+      params: {},
+      ...ctx,
+    });
+    expect(res.status).toBe(200);
+    const list = await res.json();
+    expect(list.every((i: { invitedById: string }) => i.invitedById === unitAdminId)).toBe(true);
+    const listedEmails = list.map((i: { email: string }) => i.email);
+    expect(listedEmails).toContain(ownEmail);
+    expect(listedEmails).not.toContain(adminInviteEmail);
+  });
+
+  it("revoking another inviter's invitation reads as not-found (404)", async () => {
+    await setPolicy("unitAdmins.canInvite", true, adminId);
+
+    asAdmin();
+    const created = await (
+      await createAction(createReq({ email: uniqueEmail(), role: "INSTRUCTOR" }))
+    ).json();
+    const id = created.invitation.id;
+
+    asUnitAdmin();
+    const res = await invitationIdAction({
+      request: new Request(`http://localhost/api/invitations/${id}`, { method: "DELETE" }),
+      params: { id },
+      ...ctx,
+    });
+    expect(res.status).toBe(404);
+    // The admin's invite is untouched.
+    expect((await prisma.invitation.findUnique({ where: { id } }))?.status).toBe("PENDING");
+  });
+});
+
 describe("accept flow", () => {
   it("loader validates a token and returns email + role", async () => {
     asAdmin();
@@ -311,6 +418,38 @@ describe("accept flow", () => {
     const user = await prisma.user.findUnique({ where: { email } });
     expect(user?.role).toBe("UNIT_ADMIN");
     expect(user?.authorizedUnits).toEqual(["COSC"]);
+  });
+
+  it("accepts an invite even when public registration is disabled", async () => {
+    // Regression: invite acceptance reuses /sign-up/email, which the §6a hook
+    // gates on auth.allowPublicRegistration. The invitee was vetted by an admin,
+    // so the gate must not block them (the sub-request carries an internal
+    // marker). Before the fix this returned { formError: "Something went
+    // wrong…" } with HTTP 200 instead of creating the account.
+    asAdmin();
+    const email = uniqueEmail();
+    const created = await (await createAction(createReq({ email, role: "INSTRUCTOR" }))).json();
+    const token = tokenFromAcceptUrl(created.acceptUrl);
+
+    await setPolicy("auth.allowPublicRegistration", false, adminId);
+    try {
+      // Step past Better Auth's per-IP sign-up rate window (see note below).
+      const realNow = Date.now;
+      const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => realNow() + 11_000);
+      let res: Response;
+      try {
+        res = (await acceptAction(
+          acceptReq({ token, name: "Reg Off", password: "supersecret1", confirmPassword: "supersecret1" }),
+        )) as Response;
+      } finally {
+        nowSpy.mockRestore();
+      }
+      expect(res.status).toBe(302); // account created + logged in despite the gate
+      expect(res.headers.get("Location")).toBe("/dashboard");
+      expect((await prisma.user.findUnique({ where: { email } }))?.role).toBe("INSTRUCTOR");
+    } finally {
+      await setPolicy("auth.allowPublicRegistration", true, adminId);
+    }
   });
 
   it("surfaces a friendly error for invalid, expired, and revoked tokens", async () => {
@@ -396,5 +535,10 @@ describe("accept flow", () => {
       acceptReq({ token, name: "Late Comer", password: "supersecret1", confirmPassword: "supersecret1" }),
     )) as any;
     expect(res.formError).toMatch(/already exists/i);
+
+    // The invite can never be accepted now, so it is revoked rather than left
+    // PENDING with a live link lingering until natural expiry.
+    const invite = await prisma.invitation.findUnique({ where: { tokenHash: hashToken(token) } });
+    expect(invite?.status).toBe("REVOKED");
   });
 });
