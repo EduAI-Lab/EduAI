@@ -1,97 +1,127 @@
-# Issue #501 — trimmed run (15–30 min)
+# Issue #501 — Trimmed Runbook
 
-Focused comparison of **latest RAG pipeline** vs **`main` baseline** without the full 3–5 hour batch.
+**~15–30 min** comparison of **latest RAG pipeline** vs **`main` baseline** (without the full 3–5 hour batch).
 
-## What it proves
+For presentation-ready results, see **[ISSUE_501_TRIM_REPORT.md](./ISSUE_501_TRIM_REPORT.md)**.
 
-| Track | Time | What improves on latest |
-|-------|------|-------------------------|
-| **A** — retrieval only | ~1 min | Higher hit / strong-hit rate; lower retrieval latency (hybrid BM25, chunking, per-course settings) |
-| **B** — 12 fixed RAG chat prompts (7B) | ~4–6 min | End-to-end latency + success on course-grounded questions |
-| **C** — 30 students @ c=5 (7B) | ~2 min | Load behavior under classroom concurrency |
+---
+
+## Tracks at a glance
+
+| Track | Time | Question | RAG quality? |
+|-------|------|----------|:------------:|
+| **A** — Retrieval | ~1 min | Can we find relevant chunks? | **Yes** |
+| **B** — Sequential chat | ~4–6 min | Does `/api/chat` work? | No |
+| **C** — Classroom load | ~2 min | Does concurrency work? | No |
 
 **Skipped vs full #501:** 32B model, 96-prompt sweep, 100-student C1/C2 stress.
 
+---
+
 ## Time budget
 
-| Step | Per pipeline | Notes |
-|------|--------------|-------|
-| Track A | ~1 min | Needs `DATABASE_URL` (same DB as deployed app) |
-| Track B | ~4–6 min | 12 prompts × 7B, 200 ms sleep |
-| Track C | ~2 min | Matches prior 30-student reference run |
-| **One pipeline total** | **~8–10 min** | |
-| **Both pipelines (parallel)** | **~10–15 min** | dev = latest, my.eduai = main |
-| **Both pipelines (sequential)** | **~18–22 min** | Redeploy between runs on one host |
+| Step | Duration | Notes |
+|------|----------|-------|
+| Track A | ~1 min | Needs `DATABASE_URL`. **On dev → COSC 121 only** |
+| Track B | ~4–6 min | 12 prompts × 7B |
+| Track C | ~2 min | 30 students, c=5 |
+| **One pipeline** | **~8–10 min** | |
+| **Both (parallel)** | **~10–15 min** | dev = latest, my.eduai = main |
+| **Both (sequential)** | **~18–22 min** | Redeploy between runs |
+
+---
 
 ## Run commands
 
-### 1. Latest on dev (s378)
+### Latest on dev (s378)
 
 ```bash
 cd /srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore/apps/core
 set -a && source .env && source .env.research && set +a
 
 export RESEARCH_RUN_URL=http://127.0.0.1:3000/api/chat
-bash scripts/research/run-issue-501-trim.sh latest
-# optional energy:
-# bash scripts/research/run-issue-501-trim.sh latest --with-energy
+export ENERGY_SIDECAR_URL=http://cmps01.ok.ubc.ca:8001/energy
+export RESEARCH_MEASURE_ENERGY=1
+npm run research:verify-energy
+bash scripts/research/run-issue-501-trim.sh latest --with-energy
 ```
 
-### 2. Main baseline on my.eduai (s348) — parallel option
+### Track A only — COSC 121 (20 prompts)
+
+Dev `.env` sets `RESEARCH_RUN_LIMIT=2`. Override **after** sourcing `.env`:
 
 ```bash
-cd /path/to/EduAICore/apps/core   # main branch deploy
+set -a && source .env && set +a
+export RESEARCH_PROMPTS_FILE=scripts/research/data/task-suite/prompts-cosc121-rag.v1.jsonl
+export RESEARCH_RUN_LIMIT=20
+export RESEARCH_EVAL_RAG_OUT=../../docs/research/data/runs/issue-501-trim/track-a-latest-cosc121.jsonl
+export RESEARCH_EVAL_RAG_SUMMARY=../../docs/research/data/runs/issue-501-trim/track-a-latest-cosc121-summary.txt
+npm run research:eval-rag
+```
+
+Tracks **B** and **C** do not need a COSC 121 rerun.
+
+### Main baseline on my.eduai (s348)
+
+```bash
+cd /path/to/EduAICore/apps/core
 set -a && source .env && source .env.research && set +a
-
 export RESEARCH_RUN_URL=http://127.0.0.1:3000/api/chat
-# Track A needs dev DB — skip on my if DATABASE_URL points elsewhere:
-RESEARCH_ISSUE_501_SKIP=A bash scripts/research/run-issue-501-trim.sh main-baseline
+RESEARCH_ISSUE_501_SKIP=A bash scripts/research/run-issue-501-trim.sh main-baseline --with-energy
 ```
 
-Or from laptop against public URLs (cookie / admin key in `.env.research`):
+Skip Track A if `DATABASE_URL` does not point at the dev DB with indexed materials.
 
-```powershell
-cd apps/core
-. .\scripts\research\load-research-env.ps1
-$env:RESEARCH_RUN_URL = "https://my.eduai.ok.ubc.ca/api/chat"
-$env:RESEARCH_ISSUE_501_SKIP = "A"
-bash scripts/research/run-issue-501-trim.sh main-baseline
-```
-
-### 3. Compare
+### Compare pipelines
 
 ```bash
-node scripts/research/compare-issue-501-trim.mjs \
-  docs/research/data/runs/issue-501-trim
+node scripts/research/compare-issue-501-trim.mjs docs/research/data/runs/issue-501-trim
 ```
 
-Copy both hosts' `issue-501-trim/` folders into one directory before comparing if you ran in parallel.
+Merge both hosts' `issue-501-trim/` folders into one directory if you ran in parallel.
 
-## Fixed Track B prompt IDs
+---
 
-Same 12 prompts on both pipelines (cross-course RAG):
+## Interpreting results
 
-`ts-020, ts-023, ts-025, ts-033, ts-044, ts-047, ts-070, ts-075, ts-081, ts-087, ts-104, ts-111`
+| Track | Look for |
+|-------|----------|
+| **A** | Fetch rate ↑, strong-match rate ↑, median fetch time ↓ |
+| **B** | Success rate, median response time, slow-tail response time, energy per prompt |
+| **C** | Success under concurrency, wall time, per-wave energy |
 
-Override: `RESEARCH_TRIM_PROMPT_IDS=...`
+Empty `rag_chunk_count` on B/C is expected on dev (most courses lack materials). Not a pass/fail criterion for those tracks.
+
+---
 
 ## Outputs
 
 ```
 docs/research/data/runs/issue-501-trim/
-  track-a-{latest|main-baseline}.jsonl
-  track-a-*-summary.txt
+  track-a-latest-cosc121.jsonl
   track-b-7b-*.jsonl
   track-c1-7b-*.jsonl
-  track-c1-7b-*.txt
 ```
 
-## Interpreting results for #501
+**Track B prompt IDs:** `ts-020, ts-023, ts-025, ts-033, ts-044, ts-047, ts-070, ts-075, ts-081, ts-087, ts-104, ts-111`
 
-Post `compare-issue-501-trim.mjs` output to the issue. Lead with **Track A**:
+Override: `RESEARCH_TRIM_PROMPT_IDS=...`
 
-- **Hit rate ↑** → retrieval finds more relevant chunks
-- **Strong-hit rate ↑** → top chunk above similarity threshold more often
-- **Retrieval p50 ↓** → faster `findRelevantContent` (batch embeds, hybrid index)
+---
 
-Track B/C confirm the chat path still works under sequential and light concurrent load.
+## Energy setup
+
+| URL | Purpose |
+|-----|---------|
+| `http://cmps01.ok.ubc.ca:8001/v1/*` | LiteLLM / vLLM |
+| `http://cmps01.ok.ubc.ca:8001/energy/*` | NVML sidecar |
+
+Runs must execute **on s378** — laptops often cannot reach cmps01.
+
+```bash
+export ENERGY_SIDECAR_URL=http://cmps01.ok.ubc.ca:8001/energy
+export RESEARCH_MEASURE_ENERGY=1
+npm run research:verify-energy   # expect ~15–20 J GPU probe
+```
+
+Use `--with-energy` on the trim script, or set `RESEARCH_MEASURE_ENERGY=1` in `.env`.

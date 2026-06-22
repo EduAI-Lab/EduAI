@@ -55,9 +55,10 @@ async function main() {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("\nFAIL: cannot reach sidecar:", msg);
     console.error("\nFix:");
-    console.error("  1. Start sidecar ON cmps01: bash tools/energy-meter/deploy-cmps01.sh");
-    console.error("  2. Route /energy via nginx on :8001: bash infra/cmps01/deploy-edge-proxy.sh");
-    console.error("  3. Set ENERGY_SIDECAR_URL=http://cmps01.ok.ubc.ca:8001/energy in .env.research");
+    console.error("  1. Sidecar runs on cmps01 :9100, proxied at :8001/energy (not :8001/health).");
+    console.error("  2. Set ENERGY_SIDECAR_URL=http://cmps01.ok.ubc.ca:8001/energy");
+    console.error("  3. Run research scripts FROM s378 (laptop often cannot reach cmps01).");
+    console.error("  4. If sidecar down on cmps01: bash tools/energy-meter/deploy-cmps01.sh");
     process.exit(1);
   }
 

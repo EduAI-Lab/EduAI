@@ -8,7 +8,8 @@
  * Env:
  *   RESEARCH_RUN_SPLIT       dev (default) | test
  *   RESEARCH_RUN_LIMIT       default 20
- *   RESEARCH_EVAL_RAG_OUT    JSONL output path
+ *   RESEARCH_PROMPTS_FILE    optional JSONL (default prompts.v1.jsonl)
+ *   RESEARCH_RUN_COURSE_CODE optional filter e.g. "COSC 121"
  *   RESEARCH_EVAL_RAG_SUMMARY text summary path
  *   DATABASE_URL             required (same DB as dev)
  */
@@ -35,7 +36,8 @@ function readEnv(name: string, fallback?: string) {
 }
 
 function loadPrompts(): PromptRow[] {
-  const raw = readFileSync(PROMPTS_PATH, "utf8").trim();
+  const path = readEnv("RESEARCH_PROMPTS_FILE") ?? PROMPTS_PATH;
+  const raw = readFileSync(path, "utf8").trim();
   if (!raw) return [];
   return raw.split("\n").map((line, i) => {
     try {
@@ -83,6 +85,10 @@ async function main() {
   let prompts = loadPrompts().filter(
     (p) => p.split === split && p.category === "rag_grounded",
   );
+  const courseFilter = readEnv("RESEARCH_RUN_COURSE_CODE");
+  if (courseFilter) {
+    prompts = prompts.filter((p) => p.course_code === courseFilter);
+  }
   if (!prompts.length) {
     console.error(`No rag_grounded prompts for split=${split}.`);
     process.exit(1);
