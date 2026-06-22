@@ -790,3 +790,12 @@ model CronJobRun {
   @@index([jobName, startedAt])
   @@map("cron_job_runs")
 }
+
+model CronJobScheduleOverride {
+  jobName       String   @id
+  schedule      String
+  scheduleLabel String
+  updatedAt     DateTime @updatedAt
+
+  @@map("cron_job_schedule_overrides")
+}

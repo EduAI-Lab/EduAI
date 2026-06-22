@@ -65,25 +65,29 @@ export interface CronJobRunRow {
 
 export interface CronJobEntry extends KnownCronJob {
   lastRun: CronJobRunRow | null;
+  scheduleOverridden?: boolean;
 }
 
 export async function listCronJobStatuses(): Promise<CronJobEntry[]> {
-  const latestRuns = await prisma.$queryRaw<
-    Array<{
-      id: string;
-      jobName: string;
-      status: CronJobStatusValue;
-      startedAt: Date;
-      finishedAt: Date | null;
-      message: string | null;
-      exitCode: number | null;
-    }>
-  >`
-    SELECT DISTINCT ON ("jobName")
-      id, "jobName", status, "startedAt", "finishedAt", message, "exitCode"
-    FROM cron_job_runs
-    ORDER BY "jobName", "startedAt" DESC
-  `;
+  const [latestRuns, overrides] = await Promise.all([
+    prisma.$queryRaw<
+      Array<{
+        id: string;
+        jobName: string;
+        status: CronJobStatusValue;
+        startedAt: Date;
+        finishedAt: Date | null;
+        message: string | null;
+        exitCode: number | null;
+      }>
+    >`
+      SELECT DISTINCT ON ("jobName")
+        id, "jobName", status, "startedAt", "finishedAt", message, "exitCode"
+      FROM cron_job_runs
+      ORDER BY "jobName", "startedAt" DESC
+    `,
+    prisma.cronJobScheduleOverride.findMany(),
+  ]);
 
   const runByName = new Map(
     latestRuns.map((r) => [
@@ -100,10 +104,34 @@ export async function listCronJobStatuses(): Promise<CronJobEntry[]> {
     ]),
   );
 
-  return KNOWN_CRON_JOBS.map((job) => ({
-    ...job,
-    lastRun: runByName.get(job.name) ?? null,
-  }));
+  const overrideByName = new Map(overrides.map((o) => [o.jobName, o]));
+
+  return KNOWN_CRON_JOBS.map((job) => {
+    const override = overrideByName.get(job.name);
+    return {
+      ...job,
+      schedule: override?.schedule ?? job.schedule,
+      scheduleLabel: override?.scheduleLabel ?? job.scheduleLabel,
+      scheduleOverridden: override != null,
+      lastRun: runByName.get(job.name) ?? null,
+    };
+  });
+}
+
+export async function updateCronSchedule(
+  jobName: string,
+  schedule: string,
+  scheduleLabel: string,
+): Promise<void> {
+  await prisma.cronJobScheduleOverride.upsert({
+    where: { jobName },
+    create: { jobName, schedule, scheduleLabel },
+    update: { schedule, scheduleLabel },
+  });
+}
+
+export async function resetCronSchedule(jobName: string): Promise<void> {
+  await prisma.cronJobScheduleOverride.deleteMany({ where: { jobName } });
 }
 
 export async function getRecentCronJobRuns(jobName: string, limit = 10): Promise<CronJobRunRow[]> {
