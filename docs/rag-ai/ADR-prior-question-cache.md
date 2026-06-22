@@ -1,9 +1,9 @@
 # ADR: Prior-question cache
 
-**Status:** Proposed  
-**Date:** 2026-06-10  
-**Issue:** [#367](https://github.com/EduAI-Lab/EduAI/issues/367)  
-**Parent:** [#360](https://github.com/EduAI-Lab/EduAI/issues/360)  
+**Status:** Proposed
+**Date:** 2026-06-10
+**Issue:** [#367](https://github.com/EduAI-Lab/EduAI/issues/367)
+**Parent:** [#360](https://github.com/EduAI-Lab/EduAI/issues/360)
 **Blocked by:** [#203](https://github.com/EduAI-Lab/EduAI/issues/203) (latency sprint) — do not wire into `chat.ts` until that PR merges
 
 ---
@@ -208,13 +208,13 @@ ALTER TABLE "cached_question_answers"
 
 ## Alternatives considered
 
-**Reuse `AIInteraction` table for cache lookups**  
+**Reuse `AIInteraction` table for cache lookups**
 `AIInteraction` already stores `query` and `response` per course. We could query it with a similarity search instead of a dedicated table. Rejected: `AIInteraction` has no vector column, is append-only, accumulates all interactions including non-RAG and errored ones, and is the telemetry record of truth — adding cache-read logic on top of it conflates two concerns.
 
-**In-memory LRU cache (no DB)**  
+**In-memory LRU cache (no DB)**
 Simple and zero-migration. Rejected: cache would not survive server restarts, would not be shared across multiple Node processes, and gives no visibility into what is cached or how often entries are hit.
 
-**Lower similarity threshold (e.g. 0.9)**  
+**Lower similarity threshold (e.g. 0.9)**
 Would increase cache hit rate at the cost of serving potentially wrong answers to different-but-related questions. The 0.999 threshold is intentionally conservative for an educational context where accuracy matters more than hit rate.
 
 ---
