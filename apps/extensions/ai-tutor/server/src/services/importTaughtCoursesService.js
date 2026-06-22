@@ -411,3 +411,20 @@ export async function importEnrolledCoursesFromCore(student, cookie) {
 
   return { enrolled, skipped, removed };
 }
+
+/**
+ * True when Core reports the caller holds a TA enrollment in any course.
+ *
+ * Core's TA-on-Enrollment migration (#664) dropped the platform-level
+ * UserRole.TA: a course TA is now a STUDENT-platform user with an
+ * Enrollment(role=TA). AI Tutor's client RBAC still selects its role *view*
+ * (nav, route shell, access level) from a single role string, so `/api/me`
+ * uses this to surface an effective TA role. Core's per-course
+ * `callerEnrollmentRole` is the source of truth — the local mirror flattens
+ * student-side enrollments to STUDENT and cannot be trusted for this.
+ */
+export async function userHasCoreTaEnrollment(cookie) {
+  const coreCourses = await listEduAiCourses({ cookie });
+  if (!Array.isArray(coreCourses)) return false;
+  return coreCourses.some((course) => course?.callerEnrollmentRole === 'TA');
+}
