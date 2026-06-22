@@ -6,7 +6,13 @@ import { AppSidebar } from "~/components/app-sidebar";
 import { SidebarProvider } from "@eduai/ui";
 import type { User } from "~/lib/auth/types";
 
+vi.mock("~/hooks/api/use-policies", () => ({
+  usePolicies: vi.fn(() => ({ policies: {} })),
+}));
+import { usePolicies } from "~/hooks/api/use-policies";
+
 beforeEach(() => {
+  vi.mocked(usePolicies).mockReturnValue({ policies: {} } as never);
   Object.defineProperty(window, "matchMedia", {
     writable: true,
     configurable: true,
@@ -92,5 +98,17 @@ describe("AppSidebar — role-gated nav", () => {
     expect(screen.queryByText("AI Management")).not.toBeInTheDocument();
     expect(screen.queryByText("Bug Reports")).not.toBeInTheDocument();
     expect(screen.getByText("Courses")).toBeInTheDocument();
+  });
+
+  it("shows the Invitations link for UNIT_ADMIN when unitAdmins.canInvite is on", () => {
+    vi.mocked(usePolicies).mockReturnValue({ policies: { "unitAdmins.canInvite": true } } as never);
+    renderSidebar("UNIT_ADMIN");
+    const link = screen.getByRole("link", { name: "Invitations" });
+    expect(link).toHaveAttribute("href", "/unit-admin/invitations");
+  });
+
+  it("hides the Invitations link for UNIT_ADMIN when the flag is off", () => {
+    renderSidebar("UNIT_ADMIN");
+    expect(screen.queryByRole("link", { name: "Invitations" })).not.toBeInTheDocument();
   });
 });

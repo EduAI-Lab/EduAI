@@ -18,10 +18,12 @@ const ROUTE_TITLES: Record<string, string> = {
 export interface SiteHeaderProps {
   title?: string
   actions?: React.ReactNode
+  /** Renders after breadcrumbs on the left (e.g. chat "New chat" on Week 7 #659). */
+  leadingActions?: React.ReactNode
   breadcrumbs?: React.ReactNode
 }
 
-export function SiteHeader({ title, actions, breadcrumbs }: SiteHeaderProps) {
+export function SiteHeader({ title, actions, leadingActions, breadcrumbs }: SiteHeaderProps) {
   const { pathname } = useLocation()
   const { resolvedTheme, setTheme } = useTheme()
   const resolvedTitle = title
@@ -53,6 +55,9 @@ export function SiteHeader({ title, actions, breadcrumbs }: SiteHeaderProps) {
         ) : (
           <h1 className="text-sm font-normal text-foreground">{resolvedTitle}</h1>
         )}
+        {leadingActions ? (
+          <div className="flex h-full shrink-0 items-center gap-1.5">{leadingActions}</div>
+        ) : null}
         <div className="ml-auto flex h-full items-center gap-3 sm:gap-4">
           {actions}
           <button

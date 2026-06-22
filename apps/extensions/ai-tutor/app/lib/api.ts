@@ -82,17 +82,6 @@ export const api = {
   listCourses: () => http('/api/courses'),
   listEduAiCourses: () => http('/api/eduai/courses') as Promise<EduAiCourse[]>,
   courseById: (courseId: number) => http(`/api/courses/${courseId}`),
-  createCourse: (payload: {
-    title: string;
-    description?: string;
-    sourceCourseId?: number;
-    startDate?: string;
-    endDate?: string;
-  }) =>
-    http('/api/courses', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    }),
   updateCourse: (
     courseId: number,
     payload: {
