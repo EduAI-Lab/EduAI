@@ -19,6 +19,12 @@ import {
 import { PageTabs, PageTabsList, PageTabsTrigger, PageTabsContent } from "@eduai/ui";
 import type { AIModel, AIProvider } from "~/hooks/api/types";
 import type { OllamaModel, VllmModel } from "~/components/admin/model-form-dialog";
+import {
+  buildOllamaModelCreatePayload,
+  buildVllmModelCreatePayload,
+  formatLocalModelSyncMessage,
+  syncLocalModels,
+} from "~/lib/ai/local-model-sync";
 
 function isVllmFetchNotFound(message: string, httpStatus?: number): boolean {
   return (
@@ -71,69 +77,141 @@ export function AiModelsAdminView({
   const [fetchingVllmModels, setFetchingVllmModels] = useState(false);
   const [vllmError, setVllmError] = useState<string | null>(null);
   const [vllmFetched, setVllmFetched] = useState(false);
+  const [ollamaFetched, setOllamaFetched] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [syncingProvider, setSyncingProvider] = useState<"ollama" | "vllm" | null>(null);
 
-  // Web tools are now governed by the chat.webToolsEnabled policy flag and
-  // render automatically under Admin → Settings (see policy.server.ts).
+  const ollamaProvider = useMemo(
+    () => providers.find((provider) => provider.name === "ollama" && provider.isActive),
+    [providers],
+  );
+  const vllmProvider = useMemo(
+    () => providers.find((provider) => provider.name === "vllm" && provider.isActive),
+    [providers],
+  );
 
-  const handleFetchOllamaModels = useCallback(async () => {
-    setFetchingOllamaModels(true);
-    setOllamaError(null);
-    try {
-      const res = await fetch("/api/ollama-models");
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to fetch Ollama models");
-      setOllamaModels(data.models ?? []);
-    } catch (err) {
-      setOllamaError(err instanceof Error ? err.message : "Failed to fetch Ollama models");
-    } finally {
-      setFetchingOllamaModels(false);
-    }
-  }, []);
+  const registerDiscoveredModels = useCallback(
+    async (
+      provider: AIProvider,
+      providerLabel: string,
+      payloads: Record<string, unknown>[],
+    ) => {
+      const result = await syncLocalModels(models, provider.id, payloads, onCreateModel);
+      setSyncMessage(formatLocalModelSyncMessage(providerLabel, result));
+      return result;
+    },
+    [models, onCreateModel],
+  );
 
-  const handleFetchVllmModels = useCallback(async () => {
-    setFetchingVllmModels(true);
-    setVllmError(null);
-    setVllmFetched(false);
-    try {
-      const res = await fetch("/api/vllm-models");
-      let data: { error?: string; models?: VllmModel[] } = {};
+  const handleFetchOllamaModels = useCallback(
+    async (options?: { autoRegister?: boolean }) => {
+      setFetchingOllamaModels(true);
+      setOllamaError(null);
+      setOllamaFetched(false);
       try {
-        data = await res.json();
-      } catch {
-        throw new Error(
-          `Invalid response from server (HTTP ${res.status}). Restart dev server if /api/vllm-models is missing.`,
-        );
+        const res = await fetch("/api/ollama-models");
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Failed to fetch Ollama models");
+        const discovered = data.models ?? [];
+        setOllamaModels(discovered);
+
+        if (options?.autoRegister !== false && ollamaProvider && discovered.length > 0) {
+          await registerDiscoveredModels(
+            ollamaProvider,
+            "Ollama",
+            discovered.map(buildOllamaModelCreatePayload),
+          );
+        }
+      } catch (err) {
+        setOllamaError(err instanceof Error ? err.message : "Failed to fetch Ollama models");
+        setOllamaModels([]);
+      } finally {
+        setFetchingOllamaModels(false);
+        setOllamaFetched(true);
       }
-      if (!res.ok) {
-        const err = new Error(
-          data.error ?? `Failed to fetch vLLM models (HTTP ${res.status})`,
-        ) as Error & { httpStatus?: number };
-        err.httpStatus = res.status;
-        throw err;
+    },
+    [ollamaProvider, registerDiscoveredModels],
+  );
+
+  const handleFetchVllmModels = useCallback(
+    async (options?: { autoRegister?: boolean }) => {
+      setFetchingVllmModels(true);
+      setVllmError(null);
+      setVllmFetched(false);
+      try {
+        const res = await fetch("/api/vllm-models");
+        let data: { error?: string; models?: VllmModel[] } = {};
+        try {
+          data = await res.json();
+        } catch {
+          throw new Error(
+            `Invalid response from server (HTTP ${res.status}). Restart dev server if /api/vllm-models is missing.`,
+          );
+        }
+        if (!res.ok) {
+          const err = new Error(
+            data.error ?? `Failed to fetch vLLM models (HTTP ${res.status})`,
+          ) as Error & { httpStatus?: number };
+          err.httpStatus = res.status;
+          throw err;
+        }
+        const discovered = data.models ?? [];
+        setVllmModels(discovered);
+
+        if (options?.autoRegister !== false && vllmProvider && discovered.length > 0) {
+          await registerDiscoveredModels(
+            vllmProvider,
+            "vLLM",
+            discovered.map(buildVllmModelCreatePayload),
+          );
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "Failed to fetch vLLM models";
+        const httpStatus = (err as { httpStatus?: number }).httpStatus;
+        if (isVllmFetchNotFound(message, httpStatus)) {
+          setVllmError(
+            "Cannot reach /api/vllm-models — pull latest feat/VLLM and restart the EduAI dev server.",
+          );
+        } else {
+          setVllmError(message);
+        }
+        setVllmModels([]);
+      } finally {
+        setFetchingVllmModels(false);
+        setVllmFetched(true);
       }
-      setVllmModels(data.models ?? []);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Failed to fetch vLLM models";
-      const httpStatus = (err as { httpStatus?: number }).httpStatus;
-      if (isVllmFetchNotFound(message, httpStatus)) {
-        setVllmError(
-          "Cannot reach /api/vllm-models — pull latest feat/VLLM and restart the EduAI dev server.",
-        );
-      } else {
-        setVllmError(message);
-      }
-      setVllmModels([]);
-    } finally {
-      setFetchingVllmModels(false);
-      setVllmFetched(true);
+    },
+    [registerDiscoveredModels, vllmProvider],
+  );
+
+  const handleSyncOllamaFromTab = useCallback(async () => {
+    if (!ollamaProvider) {
+      setSyncMessage("Enable the Ollama provider first under Settings → Providers.");
+      return;
     }
-  }, []);
+    setSyncingProvider("ollama");
+    setSyncMessage(null);
+    await handleFetchOllamaModels();
+    setSyncingProvider(null);
+  }, [handleFetchOllamaModels, ollamaProvider]);
+
+  const handleSyncVllmFromTab = useCallback(async () => {
+    if (!vllmProvider) {
+      setSyncMessage("Enable the vLLM provider first under Settings → Providers.");
+      return;
+    }
+    setSyncingProvider("vllm");
+    setSyncMessage(null);
+    await handleFetchVllmModels();
+    setSyncingProvider(null);
+  }, [handleFetchVllmModels, vllmProvider]);
 
   const handleModelDialogChange = useCallback((open: boolean) => {
     setModelDialogOpen(open);
     if (!open) {
       setOllamaModels([]);
       setOllamaError(null);
+      setOllamaFetched(false);
       setVllmModels([]);
       setVllmError(null);
       setVllmFetched(false);
@@ -256,18 +334,54 @@ export function AiModelsAdminView({
                           Manage AI models across all providers
                         </CardDescription>
                       </div>
-                      <Button
-                        onClick={() => {
-                          setEditingModel(null);
-                          handleModelDialogChange(true);
-                        }}
-                      >
-                        <IconPlus className="h-4 w-4 mr-2" />
-                        Add Model
-                      </Button>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {ollamaProvider && (
+                          <Button
+                            variant="outline"
+                            onClick={() => void handleSyncOllamaFromTab()}
+                            disabled={syncingProvider !== null}
+                          >
+                            {syncingProvider === "ollama" ? "Syncing Ollama…" : "Sync Ollama models"}
+                          </Button>
+                        )}
+                        {vllmProvider && (
+                          <Button
+                            variant="outline"
+                            onClick={() => void handleSyncVllmFromTab()}
+                            disabled={syncingProvider !== null}
+                          >
+                            {syncingProvider === "vllm" ? "Syncing vLLM…" : "Sync vLLM models"}
+                          </Button>
+                        )}
+                        <Button
+                          onClick={() => {
+                            setEditingModel(null);
+                            handleModelDialogChange(true);
+                          }}
+                        >
+                          <IconPlus className="h-4 w-4 mr-2" />
+                          Add Model
+                        </Button>
+                      </div>
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-4">
+                    {(syncMessage || ollamaError || vllmError) && (
+                      <div className="space-y-2">
+                        {syncMessage && (
+                          <p className="text-sm text-muted-foreground rounded-lg border border-border bg-muted/40 px-3 py-2">
+                            {syncMessage}
+                          </p>
+                        )}
+                        {ollamaError && !modelDialogOpen && (
+                          <p className="text-sm text-destructive">{ollamaError}</p>
+                        )}
+                        {vllmError && !modelDialogOpen && (
+                          <p className="text-sm text-destructive">{vllmError}</p>
+                        )}
+                      </div>
+                    )}
+
                     <div className="flex items-center gap-4">
                       <div className="relative flex-1 max-w-sm">
                         <IconSearch className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -359,12 +473,14 @@ export function AiModelsAdminView({
         ollamaModels={ollamaModels}
         fetchingOllamaModels={fetchingOllamaModels}
         ollamaError={ollamaError}
-        onFetchOllamaModels={handleFetchOllamaModels}
+        ollamaFetched={ollamaFetched}
+        onFetchOllamaModels={() => void handleFetchOllamaModels()}
         vllmModels={vllmModels}
         fetchingVllmModels={fetchingVllmModels}
         vllmError={vllmError}
         vllmFetched={vllmFetched}
-        onFetchVllmModels={handleFetchVllmModels}
+        onFetchVllmModels={() => void handleFetchVllmModels()}
+        syncMessage={syncMessage}
       />
 
       <ProviderFormDialog
