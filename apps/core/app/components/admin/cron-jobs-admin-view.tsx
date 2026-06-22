@@ -9,8 +9,11 @@ import {
   CardTitle,
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
+  Input,
+  Label,
   PageHeading,
   Table,
   TableBody,
@@ -157,6 +160,189 @@ function RunHistoryDialog({ jobName, open, onClose }: RunHistoryDialogProps) {
   );
 }
 
+// ── Cron expression helpers ───────────────────────────────────────────────────
+
+const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+function deriveCronLabel(expr: string): string {
+  const parts = expr.trim().split(/\s+/);
+  if (parts.length !== 5) return expr;
+  const [min, hour, dom, month, dow] = parts;
+  const allStar = (v: string) => v === "*";
+
+  if (allStar(dom) && allStar(month) && allStar(dow)) {
+    if (allStar(min) && allStar(hour)) return "Every minute";
+    if (allStar(min)) return `Every hour`;
+    if (allStar(hour)) return `Every day at minute ${min}`;
+    const h = parseInt(hour, 10);
+    const m = parseInt(min, 10);
+    if (!isNaN(h) && !isNaN(m)) {
+      const hh = String(h).padStart(2, "0");
+      const mm = String(m).padStart(2, "0");
+      return `Daily at ${hh}:${mm} UTC`;
+    }
+  }
+
+  if (allStar(dom) && allStar(month) && !allStar(dow)) {
+    const h = parseInt(hour, 10);
+    const m = parseInt(min, 10);
+    const d = parseInt(dow, 10);
+    if (!isNaN(h) && !isNaN(m) && !isNaN(d) && d >= 0 && d <= 6) {
+      const hh = String(h).padStart(2, "0");
+      const mm = String(m).padStart(2, "0");
+      return `Weekly on ${DAYS[d]} at ${hh}:${mm} UTC`;
+    }
+  }
+
+  if (!allStar(dom) && allStar(month) && allStar(dow)) {
+    const h = parseInt(hour, 10);
+    const m = parseInt(min, 10);
+    const d = parseInt(dom, 10);
+    if (!isNaN(h) && !isNaN(m) && !isNaN(d)) {
+      const hh = String(h).padStart(2, "0");
+      const mm = String(m).padStart(2, "0");
+      return `Monthly on day ${d} at ${hh}:${mm} UTC`;
+    }
+  }
+
+  return expr;
+}
+
+const CRON_RE = /^[\d,\-*/]+ [\d,\-*/]+ [\d,\-*/]+ [\d,\-*/]+ [\d,\-*/]+$/;
+
+// ── Edit schedule dialog ──────────────────────────────────────────────────────
+
+interface EditScheduleDialogProps {
+  job: CronJobEntry | null;
+  open: boolean;
+  onClose: () => void;
+  onSaved: (jobs: CronJobEntry[]) => void;
+  triggerEnabled: boolean;
+}
+
+function EditScheduleDialog({ job, open, onClose, onSaved, triggerEnabled }: EditScheduleDialogProps) {
+  const [expr, setExpr] = useState("");
+  const [label, setLabel] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (job) {
+      setExpr(job.schedule);
+      setLabel(job.scheduleLabel);
+      setError(null);
+    }
+  }, [job]);
+
+  useEffect(() => {
+    if (CRON_RE.test(expr.trim())) {
+      setLabel(deriveCronLabel(expr.trim()));
+    }
+  }, [expr]);
+
+  async function save() {
+    if (!job) return;
+    if (!CRON_RE.test(expr.trim())) {
+      setError("Invalid cron expression. Expected 5 space-separated fields.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/cron-jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ intent: "update-schedule", jobName: job.name, schedule: expr.trim(), scheduleLabel: label.trim() || deriveCronLabel(expr.trim()) }),
+      });
+      const body = await res.json() as { jobs?: CronJobEntry[]; error?: string };
+      if (!res.ok || body.error) {
+        setError(body.error ?? "Failed to save");
+        return;
+      }
+      if (body.jobs) onSaved(body.jobs);
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function reset() {
+    if (!job) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/cron-jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ intent: "reset-schedule", jobName: job.name }),
+      });
+      const body = await res.json() as { jobs?: CronJobEntry[]; error?: string };
+      if (!res.ok || body.error) {
+        setError(body.error ?? "Failed to reset");
+        return;
+      }
+      if (body.jobs) onSaved(body.jobs);
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(v: boolean) => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit schedule — {job?.name}</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-4 py-2">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="cron-expr">Cron expression</Label>
+            <Input
+              id="cron-expr"
+              className="font-mono"
+              placeholder="0 2 * * *"
+              value={expr}
+              onChange={(e) => { setExpr(e.target.value); setError(null); }}
+            />
+            <p className="text-xs text-muted-foreground">
+              Format: <span className="font-mono">minute hour day-of-month month day-of-week</span>
+            </p>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="cron-label">Human-readable label</Label>
+            <Input
+              id="cron-label"
+              placeholder="Daily at 02:00 UTC"
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">Auto-filled from common patterns. Edit freely.</p>
+          </div>
+          {!triggerEnabled && (
+            <p className="text-xs text-muted-foreground rounded-md border px-3 py-2" style={{ borderColor: "var(--border)" }}>
+              This job is managed by an extension server. The saved schedule is informational — the extension server must be reconfigured separately to change when it runs.
+            </p>
+          )}
+          {error && (
+            <p className="text-sm" style={{ color: "var(--destructive)" }}>{error}</p>
+          )}
+        </div>
+        <DialogFooter className="flex items-center gap-2">
+          {job?.scheduleOverridden && (
+            <Button variant="ghost" size="sm" onClick={reset} disabled={saving} className="mr-auto">
+              Reset to default
+            </Button>
+          )}
+          <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button onClick={save} disabled={saving}>
+            {saving ? "Saving…" : "Save"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ── Main view ─────────────────────────────────────────────────────────────────
 
 export interface CronJobsAdminViewProps {
@@ -167,6 +353,7 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
   const [jobs, setJobs] = useState<CronJobEntry[]>(initialJobs);
   const [triggering, setTriggering] = useState<Set<string>>(new Set());
   const [historyJob, setHistoryJob] = useState<string | null>(null);
+  const [editScheduleJob, setEditScheduleJob] = useState<CronJobEntry | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const hasRunning = jobs.some((j) => j.lastRun?.status === "RUNNING");
@@ -299,10 +486,28 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
                       <div className="text-xs text-muted-foreground">{job.description}</div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline" className="font-mono text-xs">
-                        {job.schedule}
-                      </Badge>
-                      <div className="text-xs text-muted-foreground mt-1">{job.scheduleLabel}</div>
+                      <div className="flex items-center gap-1.5">
+                        <Badge variant="outline" className="font-mono text-xs">
+                          {job.schedule}
+                        </Badge>
+                        {job.scheduleOverridden && (
+                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+                            style={{ background: "var(--color-warning-100, oklch(0.96 0.05 85))", color: "var(--color-warning-700, oklch(0.55 0.12 85))" }}>
+                            custom
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-xs text-muted-foreground">{job.scheduleLabel}</span>
+                        {job.triggerEnabled !== false && (
+                          <button
+                            onClick={() => setEditScheduleJob(job)}
+                            className="text-[11px] text-primary-text underline-offset-2 hover:underline cursor-pointer"
+                          >
+                            Edit
+                          </button>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground">
                       {job.script}
@@ -324,7 +529,7 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
                       <div className="flex items-center justify-end gap-2">
                         <button
                           onClick={() => setHistoryJob(job.name)}
-                          className="text-xs text-primary-text underline-offset-2 hover:underline"
+                          className="text-xs text-primary-text underline-offset-2 hover:underline cursor-pointer"
                         >
                           History
                         </button>
@@ -352,6 +557,14 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
         jobName={historyJob ?? ""}
         open={historyJob !== null}
         onClose={() => setHistoryJob(null)}
+      />
+
+      <EditScheduleDialog
+        job={editScheduleJob}
+        open={editScheduleJob !== null}
+        onClose={() => setEditScheduleJob(null)}
+        onSaved={(updated) => { setJobs(updated); setEditScheduleJob(null); }}
+        triggerEnabled={editScheduleJob?.triggerEnabled !== false}
       />
     </div>
   );

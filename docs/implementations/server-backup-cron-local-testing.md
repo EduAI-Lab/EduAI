@@ -1,6 +1,6 @@
 # Server backup cron — local testing (Windows / WSL / macOS)
 
-Validate `infra/cron/` backup scripts against dev Docker databases before installing them on production (`/opt/eduai/cron`, `/etc/cron.d/eduai`).
+Validate `infra/cron/` backup scripts against dev Docker databases before deploying them to production (`/opt/eduai/cron`).
 
 **Related:**
 - Spec: [`EduAI_CronJob_DataLifecycle_Spec.md`](./EduAI_CronJob_DataLifecycle_Spec.md)
@@ -273,5 +273,5 @@ When local dry-runs pass:
 
 1. Deploy scripts per [`infra/cron/README.md`](../../infra/cron/README.md)
 2. Use **one** `DB_PASS` in `/etc/eduai/cron.env` (production typically uses one credential for all DBs)
-3. Install `/etc/cron.d/eduai` and verify with `sudo -u eduai-cron /opt/eduai/cron/backup-nightly.sh`
+3. Verify with `sudo -u eduai-cron /opt/eduai/cron/backup-nightly.sh` — scheduling is handled by the Core in-process scheduler
 4. Retire per-app QM-only backup cron if the platform job covers all three databases

@@ -37,14 +37,14 @@ sudo mkdir -p /var/log/eduai
 sudo chown eduai-cron:adm /var/log/eduai
 sudo chmod 750 /var/log/eduai
 
-# 5. Install crontab and logrotate
-sudo cp infra/cron/eduai.crontab /etc/cron.d/eduai
-sudo chmod 644 /etc/cron.d/eduai
+# 5. Install logrotate
 sudo cp infra/cron/logrotate.conf /etc/logrotate.d/eduai-cron
 
 # 6. Dry-run the nightly backup to verify connectivity before the first scheduled run
 sudo -u eduai-cron /opt/eduai/cron/backup-nightly.sh
 ```
+
+> **Note:** these scripts are scheduled by the Core in-process scheduler (`CRON_SCRIPT_DIR` env var must point to the directory containing them). Schedules are managed via the Admin → Cron Jobs panel and stored in the database — there is no system crontab entry for these jobs.
 
 ## Off-site storage
 
