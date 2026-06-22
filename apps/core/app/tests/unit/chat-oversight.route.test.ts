@@ -33,7 +33,9 @@ vi.mock("~/lib/auth/server", () => ({
   auth: { api: { getSession: vi.fn() } },
 }));
 
-vi.mock("~/lib/auth/guards.server", () => ({}));
+vi.mock("~/lib/auth/guards.server", () => ({
+  enforceAdminIfApiKey: vi.fn().mockResolvedValue({ response: null, session: null }),
+}));
 
 // #657: chat is course-scoped. These oversight tests run a course-tagged chat,
 // so the acting student passes the course-access gate.
