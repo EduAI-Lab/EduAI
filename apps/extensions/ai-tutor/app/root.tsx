@@ -13,6 +13,7 @@ import { AuthProvider } from '~/hooks/useLocalUser';
 import { TourProvider } from '~/components/TourProvider';
 import { BugReportProvider } from '~/components/bug-report/BugReportProvider';
 import { ThemeProvider } from '~/components/theme-provider';
+import { ThemeSyncInitializer } from '~/components/theme-sync-initializer';
 import { Toaster } from '@eduai/ui';
 
 export const links: Route.LinksFunction = () => [
@@ -67,6 +68,7 @@ export default function App() {
     <AuthProvider initialUser={null}>
       <BugReportProvider>
         <TourProvider>
+          <ThemeSyncInitializer />
           <Outlet />
         </TourProvider>
       </BugReportProvider>

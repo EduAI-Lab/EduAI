@@ -189,7 +189,7 @@ describe("deleteCourseTopic", () => {
     );
     expect(prismaMock.courseTopic.update).toHaveBeenCalledWith({
       where: { id: "t1" },
-      data: { deletedAt: expect.any(Date) },
+      data: { deletedAt: expect.any(Date), deletedBy: null },
     });
   });
 

@@ -40,10 +40,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     where: { id: courseId },
     include: {
       instructor: { select: { id: true, name: true, email: true } },
-      tas: {
-        include: { user: { select: { id: true, name: true, email: true } } },
-        orderBy: { createdAt: 'asc' },
-      },
     },
   })
 
@@ -93,7 +89,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       : Promise.resolve([]),
     canManageTAs
       ? prisma.user.findMany({
-          where: { role: 'TA', isActive: true },
+          // TA candidates are STUDENT-platform users; assigning one creates an
+          // Enrollment(role=TA). There is no platform-level TA role anymore.
+          where: { role: 'STUDENT', isActive: true },
           select: { id: true, name: true, email: true },
           orderBy: { name: 'asc' },
         })
@@ -118,7 +116,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       createdAt: course.createdAt.toISOString(),
       updatedAt: course.updatedAt.toISOString(),
       instructor: course.instructor ?? undefined,
-      tas: course.tas.map(({ id, userId, user }) => ({ id, userId, user })),
+      // TA roster is loaded client-side via useCourseTAs (TA = Enrollment
+      // role=TA); the course query no longer includes a CourseTA relation.
     } satisfies CourseDetail,
     user,
     access,
@@ -173,6 +172,7 @@ export default function CourseDetailPage() {
     status: m.status,
     createdAt: m.createdAt,
     chunkCount: m.chunkCount,
+    uploadedBy: m.uploadedBy ?? null,
   }))
 
   const handleFileSelect = async (file: File) => {
@@ -241,7 +241,9 @@ export default function CourseDetailPage() {
                 onAssignInstructor={handleAssignInstructor}
                 onAddTA={addTA}
                 onRemoveTA={removeTA}
+                onRefreshMaterials={refetchMaterials}
                 courseId={course.id}
+                currentUserId={user.id}
                 showCanvasMaterialSync={
                   access === 'instructor' &&
                   course.externalSource === 'canvas' &&
@@ -259,6 +261,9 @@ export default function CourseDetailPage() {
                 materialsSuccess={materialsSuccess}
                 onFileSelect={handleFileSelect}
                 courseId={course.id}
+                currentUserId={user.id}
+                onRefreshMaterials={refetchMaterials}
+                tas={tas}
                 onCreateTopic={async (name) => { await createTopic(name) }}
                 onDeleteTopic={async (id) => { await deleteTopic(id) }}
                 onUpdateAiInstructions={handleUpdateAiInstructions}
@@ -268,6 +273,7 @@ export default function CourseDetailPage() {
                 course={course}
                 materials={uploadMaterials}
                 topics={topics}
+                tas={tas}
                 isUploading={isUploading}
                 materialsError={materialsError}
                 materialsSuccess={materialsSuccess}

@@ -34,7 +34,8 @@
 
 [data-assistive][data-assistive-focus-mode] [data-sidebar="sidebar"],
 [data-assistive][data-assistive-focus-mode] [data-sidebar="trigger"],
-[data-assistive][data-assistive-focus-mode] [data-slot="sidebar-gap"] {
+[data-assistive][data-assistive-focus-mode] [data-slot="sidebar-gap"],
+[data-assistive][data-assistive-focus-mode] [data-slot="sidebar-container"] {
   display: none !important;
 }
 
