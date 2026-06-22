@@ -1,3 +1,9 @@
+/**
+ * Course materials API. DELETE uses soft-delete (sets deletedAt/deletedBy).
+ * One-way contract: material deletes are NEVER propagated to Canvas — Core owns the deletion.
+ * Extensions may rely on deletedAt being set to detect EduAI-side removals.
+ */
+
 import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router';
 import { processMaterialEmbeddings } from '~/lib/ai/embedding';
 import { processUploadedFile } from '~/lib/ai/file-processing';
@@ -96,6 +102,64 @@ export async function action({ request, params }: ActionFunctionArgs) {
       return uploadMaterial(request, courseId, user, requestContext);
     }
 
+    case 'PATCH':
+    case 'PUT': {
+      const materialId = params.materialId;
+      if (!materialId) {
+        return json(400, { error: 'MATERIAL_ID_REQUIRED' });
+      }
+
+      let body: { title?: unknown };
+      try {
+        body = await request.json();
+      } catch {
+        return json(400, { error: 'INVALID_BODY' });
+      }
+      const rawTitle = typeof body.title === 'string' ? body.title.trim() : '';
+      if (!rawTitle) {
+        return json(400, { error: 'TITLE_REQUIRED' });
+      }
+      if (rawTitle.length > 255) {
+        return json(400, { error: 'TITLE_TOO_LONG' });
+      }
+
+      const material = await prisma.courseMaterial.findFirst({
+        where: { id: materialId, courseId, deletedAt: null },
+        select: { id: true, uploadedBy: true, title: true },
+      });
+      if (!material) {
+        return json(404, { error: 'MATERIAL_NOT_FOUND' });
+      }
+
+      // §7: rename mirrors delete — ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C), plus
+      // the TA own-only carve-out via uploadedBy. Null uploadedBy = no owner, TA denied.
+      const isOwnTaRename = access.level === 'ta' && material.uploadedBy === user.id;
+      if (access.rank < 2 && !isOwnTaRename) {
+        return json(403, { error: 'Forbidden' });
+      }
+
+      const updated = await prisma.courseMaterial.update({
+        where: { id: materialId },
+        data: { title: rawTitle },
+        select: { id: true, title: true },
+      });
+
+      fireAndForget(
+        logAuditAction({
+          ...getActorContext(user ?? null),
+          ...requestContext,
+          actionCode: 'MATERIAL_RENAMED',
+          category: 'MATERIAL',
+          entityType: 'CourseMaterial',
+          entityId: materialId,
+          entityLabel: updated.title,
+          details: { courseId, previousTitle: material.title, newTitle: updated.title },
+        }),
+      );
+
+      return json(200, { success: true, material: updated });
+    }
+
     case 'DELETE': {
       const materialId = params.materialId;
       if (!materialId) {
@@ -103,7 +167,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       }
 
       const material = await prisma.courseMaterial.findFirst({
-        where: { id: materialId, courseId },
+        where: { id: materialId, courseId, deletedAt: null },
         select: { id: true, uploadedBy: true, title: true },
       });
       if (!material) {
@@ -130,8 +194,11 @@ export async function action({ request, params }: ActionFunctionArgs) {
         return json(403, { error: 'Forbidden' });
       }
 
-      // Hard delete — CourseMaterial has no deletedAt; chunks cascade.
-      await prisma.courseMaterial.delete({ where: { id: materialId } });
+      // Soft delete: set deletedAt and deletedBy. One-way: never propagated to Canvas.
+      await prisma.courseMaterial.update({
+        where: { id: materialId },
+        data: { deletedAt: new Date(), deletedBy: user.id },
+      });
 
       fireAndForget(
         logAuditAction({
@@ -176,6 +243,43 @@ async function uploadMaterial(
     });
 
     if (existingMaterial) {
+      // If the existing material is soft-deleted, restore it instead of 409.
+      if (existingMaterial.deletedAt) {
+        // Restore: clear deletedAt/deletedBy, reset status to PROCESSING, re-run embeddings.
+        await prisma.courseMaterial.update({
+          where: { id: existingMaterial.id },
+          data: {
+            deletedAt: null,
+            deletedBy: null,
+            status: 'PROCESSING',
+            uploadedBy: user.id,
+            processedAt: null,
+          },
+        });
+        try {
+          // Replace any stale chunks/embeddings from before the soft-delete so
+          // restoring a material doesn't append duplicate RAG content (#685 review).
+          await processMaterialEmbeddings(existingMaterial.id, fileInfo.content, {
+            replace: true,
+          });
+          await prisma.courseMaterial.update({
+            where: { id: existingMaterial.id },
+            data: { status: 'READY', processedAt: new Date() },
+          });
+          return json(200, {
+            success: true,
+            materialId: existingMaterial.id,
+            message: 'Material restored and processed successfully',
+          });
+        } catch (embeddingError) {
+          await prisma.courseMaterial.update({
+            where: { id: existingMaterial.id },
+            data: { status: 'FAILED' },
+          });
+          throw embeddingError;
+        }
+      }
+      // Not soft-deleted: it's a real duplicate.
       return json(409, {
         error: 'A file with identical content already exists in this course',
         materialId: existingMaterial.id,
@@ -286,7 +390,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }
 
   const materials = await prisma.courseMaterial.findMany({
-    where: { courseId },
+    where: { courseId, deletedAt: null },
     include: {
       _count: { select: { chunks: true } },
     },

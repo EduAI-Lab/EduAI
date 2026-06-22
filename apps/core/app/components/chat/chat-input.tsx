@@ -6,10 +6,10 @@ import {
   IconChevronDown,
   IconSend,
   IconPlayerStop,
-  IconWorld,
   IconBrain,
   IconBan,
   IconFocusCentered,
+  IconBooksOff,
 } from "@tabler/icons-react";
 import { useState } from "react";
 import { ApiKeySettings } from "./api-key-settings";
@@ -51,6 +51,7 @@ interface ChatInputProps {
   assistiveHighlight?: boolean;
   systemPrompt?: string | null;
   onSystemPromptSave?: (p: string | null) => void;
+  disabledReason?: string;
 }
 
 export function ChatInput({
@@ -74,6 +75,7 @@ export function ChatInput({
   assistiveHighlight = false,
   systemPrompt,
   onSystemPromptSave,
+  disabledReason,
 }: ChatInputProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const {
@@ -105,7 +107,7 @@ export function ChatInput({
     ? (availableCourses.find(c => c.code === selectedCourseId)?.code ?? selectedCourseId)
     : null;
 
-  const canSend = !isLoading && input.trim().length > 0;
+  const canSend = !isLoading && !disabledReason && input.trim().length > 0;
 
   return (
     <>
@@ -114,30 +116,14 @@ export function ChatInput({
         <div className="max-w-[720px] mx-auto px-6 pt-3 pb-4">
 
           {/* Selector pills row */}
-          <div className="flex items-center gap-2 mb-2.5">
-            {/* Global chat static indicator */}
-            {!showCourseSelector && (
-              <TooltipProvider delayDuration={300}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className={cn("inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full border border-primary-text/40 bg-primary-text/10 text-primary-text min-h-[28px] select-none cursor-default", ASSISTIVE_FOCUS_CHROME_CLASS)}>
-                      <IconWorld size={12} stroke={2} />
-                      Global
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="max-w-[220px] text-center">
-                    Platform-wide chat — not tied to any course. Your messages use general AI knowledge only.
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
-
+          <div className={cn("flex items-center gap-2 mb-2.5", disabledReason && "pointer-events-none opacity-40")}>
             {/* Course selector pill */}
             {showCourseSelector && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
+                    disabled={!!disabledReason}
                     className={cn("inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full border border-border transition-all duration-150 cursor-pointer min-h-[28px]", ASSISTIVE_FOCUS_CHROME_CLASS)}
                     style={{
                       background: selectedCourseId ? "var(--primary)" : "var(--muted)",
@@ -150,12 +136,6 @@ export function ChatInput({
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" side="top" className="min-w-[220px]">
-                  <DropdownMenuItem
-                    onSelect={() => setSelectedCourseId(null)}
-                    className={!selectedCourseId ? "bg-primary/5 font-medium" : ""}
-                  >
-                    No course (general)
-                  </DropdownMenuItem>
                   {availableCourses.map((course) => (
                     <DropdownMenuItem
                       key={course.code}
@@ -175,6 +155,7 @@ export function ChatInput({
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
+                  disabled={!!disabledReason}
                   className={cn("inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full border border-border bg-muted text-muted-foreground transition-all duration-150 cursor-pointer min-h-[28px] hover:text-foreground", ASSISTIVE_FOCUS_CHROME_CLASS)}
                 >
                   <IconRobot size={12} stroke={2} />
@@ -223,6 +204,7 @@ export function ChatInput({
                         <Switch
                           id="adhd-assist-composer"
                           checked={adhdAssist}
+                          disabled={!!disabledReason}
                           onCheckedChange={(checked) => onAdhdAssistChange(Boolean(checked))}
                           aria-label="Assistive mode"
                           className="shrink-0"
@@ -264,7 +246,7 @@ export function ChatInput({
                         <Switch
                           id="assistive-focus-composer"
                           checked={focusMode}
-                          disabled={!adhdAssist}
+                          disabled={!adhdAssist || !!disabledReason}
                           onCheckedChange={(checked) => onFocusModeChange(Boolean(checked))}
                           aria-label="Focus mode"
                           className={adhdAssist ? "shrink-0 cursor-pointer" : "shrink-0 cursor-pointer disabled:opacity-70"}
@@ -284,14 +266,25 @@ export function ChatInput({
                 type="button"
                 variant="ghost"
                 size="sm"
+                disabled={!!disabledReason}
                 onClick={() => setSettingsOpen(true)}
-                className="h-7 w-7 p-0 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                className="h-7 w-7 p-0 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:pointer-events-none"
                 aria-label="Chat settings"
               >
                 <IconSettings size={14} stroke={2} />
               </Button>
             </div>
           </div>
+
+          {/* Disabled reason notice (if present) */}
+          {disabledReason === 'no-courses' && (
+            <div className="mb-2.5 flex items-start gap-2 p-3 rounded-[var(--radius-lg)] bg-muted">
+              <IconBooksOff size={16} className="flex-shrink-0 mt-0.5 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">
+                Chat is disabled — you are not enrolled in any courses. Once you're enrolled in a course, you can start chatting.
+              </span>
+            </div>
+          )}
 
           {/* Textarea + send row */}
           <div className="flex items-end gap-2.5">
@@ -308,8 +301,8 @@ export function ChatInput({
               <PromptInputTextarea
                 id={CHAT_MESSAGE_INPUT_ID}
                 placeholder={selectedCourseLabel ? `Ask about ${selectedCourseLabel} materials…` : "Ask anything…"}
-                disabled={isLoading}
-                className="min-h-[44px] max-h-[120px] resize-none border-none bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 text-sm text-foreground placeholder:text-muted-foreground/60 px-3.5 py-2.5"
+                disabled={isLoading || !!disabledReason}
+                className="min-h-[44px] max-h-[120px] resize-none border-none bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 text-sm text-foreground placeholder:text-muted-foreground/60 px-3.5 py-2.5 disabled:opacity-60"
               />
             </PromptInput>
 

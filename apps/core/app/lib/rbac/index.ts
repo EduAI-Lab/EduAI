@@ -19,6 +19,7 @@ export {
   canUploadMaterial,
   canViewMaterial,
   canDeleteMaterial,
+  canRenameMaterial,
   canViewTopics,
   canManageTopics,
   courseChatViewPolicyKey,
@@ -26,4 +27,4 @@ export {
   isStudentAccess,
 } from './permissions'
 export type { ChatViewGate } from './permissions'
-export { getNavForUser, getNavSecondaryForUser, usesGlobalChat } from './nav'
+export { getNavForUser, getNavSecondaryForUser } from './nav'

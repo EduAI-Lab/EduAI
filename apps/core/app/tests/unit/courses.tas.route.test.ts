@@ -20,8 +20,10 @@ vi.mock("~/lib/policy.server", () => ({
 
 vi.mock("~/lib/courses/tas.server", () => ({
   getCourseTA: vi.fn().mockResolvedValue([]),
-  addCourseTA: vi.fn().mockResolvedValue({ ta: { id: "ta1" } }),
-  removeCourseTA: vi.fn().mockResolvedValue({ ok: true }),
+  addCourseTA: vi
+    .fn()
+    .mockResolvedValue({ ta: { id: "ta1", user: { id: "ta9", name: "TA Nine" } } }),
+  removeCourseTA: vi.fn().mockResolvedValue({ ok: true, taId: "ta1", taName: "TA Nine" }),
 }));
 
 vi.mock("~/lib/rbac/resolve-course-access.server", () => ({
@@ -62,19 +64,27 @@ beforeEach(() => {
 });
 
 describe("courses.tas — instructors.canManageEnrollments gate", () => {
-  it("GET: returns 403 for an owning INSTRUCTOR when the flag is off", async () => {
-    vi.mocked(resolveCourseAccess).mockResolvedValue("instructor");
+  // Reading the TA roster is open to anyone with course access (students see
+  // their teaching team, #532590c9); only mutations are gated in `action`.
+  it("GET: a student with course access may read the roster (200, no policy gate)", async () => {
+    vi.mocked(resolveCourseAccess).mockResolvedValue("student");
     vi.mocked(getPolicy).mockResolvedValue(false);
-    const res = await loader(loaderArgs("INSTRUCTOR"));
-    expect(res.status).toBe(403);
-    expect(getPolicy).toHaveBeenCalledWith("instructors.canManageEnrollments");
+    const res = await loader(loaderArgs("STUDENT"));
+    expect(res.status).toBe(200);
+    expect(getPolicy).not.toHaveBeenCalled();
   });
 
-  it("GET: admits an owning INSTRUCTOR when the flag is on", async () => {
-    vi.mocked(resolveCourseAccess).mockResolvedValue("instructor");
-    vi.mocked(getPolicy).mockResolvedValue(true);
-    const res = await loader(loaderArgs("INSTRUCTOR"));
+  it("GET: a TA with course access may read the roster (200)", async () => {
+    vi.mocked(resolveCourseAccess).mockResolvedValue("ta");
+    vi.mocked(getPolicy).mockResolvedValue(false);
+    const res = await loader(loaderArgs("TA"));
     expect(res.status).toBe(200);
+  });
+
+  it("GET: returns 403 only when the viewer has no course access", async () => {
+    vi.mocked(resolveCourseAccess).mockResolvedValue(null as never);
+    const res = await loader(loaderArgs("STUDENT"));
+    expect(res.status).toBe(403);
   });
 
   it("POST: admits an owning INSTRUCTOR when the flag is on (201)", async () => {
@@ -91,7 +101,7 @@ describe("courses.tas — instructors.canManageEnrollments gate", () => {
     expect(res.status).toBe(403);
   });
 
-  it("ADMIN is unaffected by the flag (200 even when off, policy not consulted)", async () => {
+  it("ADMIN reads the roster without consulting any policy (200)", async () => {
     vi.mocked(resolveCourseAccess).mockResolvedValue("admin");
     vi.mocked(getPolicy).mockResolvedValue(false);
     const res = await loader(loaderArgs("ADMIN"));
@@ -99,10 +109,10 @@ describe("courses.tas — instructors.canManageEnrollments gate", () => {
     expect(getPolicy).not.toHaveBeenCalled();
   });
 
-  it("a TA (non-owner) is forbidden regardless of the flag", async () => {
+  it("POST (mutation): a TA is forbidden regardless of the flag", async () => {
     vi.mocked(resolveCourseAccess).mockResolvedValue("ta");
     vi.mocked(getPolicy).mockResolvedValue(true);
-    const res = await loader(loaderArgs("TA"));
+    const res = await action(postArgs("TA"));
     expect(res.status).toBe(403);
   });
 });

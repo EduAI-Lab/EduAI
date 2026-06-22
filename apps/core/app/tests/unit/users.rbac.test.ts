@@ -14,6 +14,7 @@ vi.mock("~/lib/auth/guards.server", () => ({}));
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     user: { findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
+    enrollment: { count: vi.fn() },
   },
 }));
 
@@ -46,6 +47,7 @@ beforeEach(() => {
     id: "target",
     _count: { enrollments: 0, courseTAs: 0, taughtCourses: 0, aiInteractions: 0 },
   } as never);
+  vi.mocked(prisma.enrollment.count).mockResolvedValue(0);
 });
 
 describe("PATCH /api/users/:id — self guards (#297)", () => {

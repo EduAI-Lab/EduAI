@@ -24,6 +24,11 @@ export default [
   route("/courses/:courseId", "routes/courses.$courseId.tsx"),
   route("/units/:department/chats", "routes/units.$department.chats.tsx"),
   route("/api/courses/:courseId/materials", "routes/api/courses.materials.$.ts"),
+  route(
+    "/api/courses/:courseId/materials/:materialId",
+    "routes/api/courses.materials.$.ts",
+    { id: "routes/api/courses.materials.$:materialId" },
+  ),
   route("/api/courses/:courseId/canvas-materials", "routes/api/courses.canvas-materials.$.ts"),
   route("/api/courses/:courseId/re-embed", "routes/api/courses.re-embed.$.ts"),
   route("/api/courses/:courseId/re-embed/:jobId", "routes/api/courses.re-embed.$jobId.ts"),
