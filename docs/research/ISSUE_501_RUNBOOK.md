@@ -149,6 +149,18 @@ git worktree add ../EduAI-main-baseline main
 
 ---
 
+## Trimmed run (15–30 min)
+
+For a shorter RAG-focused comparison, see **[ISSUE_501_TRIM.md](./ISSUE_501_TRIM.md)** and:
+
+```bash
+bash scripts/research/run-issue-501-trim.sh latest
+bash scripts/research/run-issue-501-trim.sh main-baseline
+node scripts/research/compare-issue-501-trim.mjs docs/research/data/runs/issue-501-trim
+```
+
+---
+
 ## Orchestrated batch (s378)
 
 ```bash
@@ -187,7 +199,7 @@ bash scripts/research/run-issue-501.sh latest --with-energy
 
 If preflight fails, deploy the sidecar on cmps01 (see `run-s378-phase-456.sh` comments and `tools/energy-meter/`). Set `RESEARCH_MEASURE_ENERGY=0` to skip energy and still run latency tests.
 
-Summarize runs with Joules:
+**Provenance + RAG metrics (Track B/C JSONL):** `run-issue-501.sh` sets `RESEARCH_PIPELINE_LABEL` and `RESEARCH_GIT_SHA`. Each row also records `rag_injected`, `rag_top_similarity`, `rag_chunk_count`, `chat_approach`, `total_tokens`, and `joules_per_token` (when energy is on). Summarize:
 
 ```bash
 node scripts/research/summarize-issue-501.mjs docs/research/data/runs/issue-501/track-b-7b-latest.jsonl

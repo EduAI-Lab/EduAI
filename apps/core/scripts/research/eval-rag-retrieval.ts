@@ -178,6 +178,9 @@ async function main() {
   const ok = rows.filter((r) => !r.error);
   const withChunks = ok.filter((r) => (r.chunks_retrieved as number) > 0);
   const strongHits = ok.filter((r) => r.strong_hit);
+  const top1Sims = ok
+    .map((r) => r.top1_similarity as number)
+    .filter((v) => v != null && Number.isFinite(v));
   const latencies = ok
     .map((r) => r.retrieval_latency_ms as number)
     .sort((a, b) => a - b);
@@ -194,6 +197,7 @@ async function main() {
     "",
     `hit_rate (chunks > 0): ${withChunks.length}/${ok.length}`,
     `strong_hit_rate (top1 >= threshold): ${strongHits.length}/${ok.length}`,
+    `mean_top1_similarity: ${top1Sims.length ? (top1Sims.reduce((a, b) => a + b, 0) / top1Sims.length).toFixed(3) : "—"}`,
     "",
     "Retrieval latency (ms):",
     `  p50: ${percentile(latencies, 50)}`,

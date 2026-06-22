@@ -29,6 +29,12 @@ import {
   resolveResearchTimeoutMs,
 } from "./research-chat-body.mjs";
 import { resolveFixedModel } from "./research-models.mjs";
+import {
+  computeEfficiencyMetrics,
+  extractRagTelemetry,
+  extractUsageTokens,
+  readRunProvenance,
+} from "./research-chat-metrics.mjs";
 
 const POLICIES = {
   P0: {
@@ -189,10 +195,8 @@ async function postChat({
     null;
 
   const usage = json?.usage ?? null;
-  const promptTokens =
-    usage?.promptTokens ?? usage?.inputTokens ?? usage?.prompt_tokens ?? null;
-  const completionTokens =
-    usage?.completionTokens ?? usage?.outputTokens ?? usage?.completion_tokens ?? null;
+  const tokenFields = extractUsageTokens(json);
+  const ragFields = extractRagTelemetry(json, res.headers);
 
   return {
     httpStatus: res.status,
@@ -203,8 +207,8 @@ async function postChat({
     routedModel,
     routingTier: Number.isFinite(routingTier) ? routingTier : null,
     routerVersion,
-    promptTokens,
-    completionTokens,
+    ...tokenFields,
+    ...ragFields,
   };
 }
 
@@ -260,6 +264,13 @@ async function main() {
     const ids = new Set(idsFilter.split(",").map((s) => s.trim()).filter(Boolean));
     prompts = prompts.filter((p) => ids.has(p.id));
   }
+  const categoryFilter = readEnv("RESEARCH_RUN_CATEGORY");
+  if (categoryFilter) {
+    const cats = new Set(
+      categoryFilter.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean),
+    );
+    prompts = prompts.filter((p) => cats.has((p.category ?? "").toLowerCase()));
+  }
   if (limit) prompts = prompts.slice(0, limit);
 
   if (prompts.length === 0) {
@@ -270,6 +281,7 @@ async function main() {
   mkdirSync(dirname(outPath), { recursive: true });
 
   const runStarted = new Date().toISOString();
+  const provenance = readRunProvenance();
 
   console.log("=== policy comparison run ===");
   console.log("label:", runLabel);
@@ -326,8 +338,15 @@ async function main() {
             error: e instanceof Error ? e.message : String(e),
             routedModel: null,
             routingTier: null,
-            promptTokens: null,
-            completionTokens: null,
+            prompt_tokens: null,
+            completion_tokens: null,
+            total_tokens: null,
+            rag_chunk_count: null,
+            rag_top_similarity: null,
+            rag_injected: null,
+            rag_needed: null,
+            rag_context_chars: null,
+            chat_approach: null,
           };
         }
 
@@ -348,12 +367,22 @@ async function main() {
           );
         }
 
+        const energyFields = flattenEnergyFields(energy);
+        const efficiency = computeEfficiencyMetrics({
+          energy_joules: energyFields.energy_joules,
+          prompt_tokens: result.prompt_tokens,
+          completion_tokens: result.completion_tokens,
+          duration_ms: result.durationMs,
+          response_chars: result.responseText?.length ?? 0,
+        });
+
         appendFileSync(
           outPath,
           `${JSON.stringify({
             run_label: runLabel,
             run_started: runStarted,
             recorded_at: new Date().toISOString(),
+            ...provenance,
             replicate: rep,
             policy: policy.policy,
             policy_description: policy.description,
@@ -370,17 +399,27 @@ async function main() {
             hybrid_web_tools: hybridFlags.hybridWebTools,
             tool_execution_mode: hybridFlags.tool_execution_mode,
             routed_model: result.routedModel,
-            routing_tier: result.routingTier,
+            routing_tier: result.routing_tier,
             router_version: result.routerVersion,
             duration_ms: result.durationMs,
-            prompt_tokens: result.promptTokens,
-            completion_tokens: result.completionTokens,
+            prompt_tokens: result.prompt_tokens,
+            completion_tokens: result.completion_tokens,
+            total_tokens: result.total_tokens,
+            rag_chunk_count: result.rag_chunk_count,
+            rag_top_similarity: result.rag_top_similarity,
+            rag_injected: result.rag_injected,
+            rag_needed: result.rag_needed,
+            rag_context_chars: result.rag_context_chars,
+            chat_approach: result.chat_approach,
+            response_chars: efficiency.response_chars,
+            joules_per_token: efficiency.joules_per_token,
+            ms_per_completion_token: efficiency.ms_per_completion_token,
             http_status: result.httpStatus,
             finish_reason: result.finishReason,
             response: result.responseText,
             error: result.error,
             measure_energy: measureEnergy,
-            ...flattenEnergyFields(energy),
+            ...energyFields,
           })}\n`,
           "utf8",
         );

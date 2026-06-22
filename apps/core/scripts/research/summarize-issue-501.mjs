@@ -6,6 +6,7 @@
  *   node scripts/research/summarize-issue-501.mjs path/to/run.jsonl
  */
 import { readFileSync } from "node:fs";
+import { summarizeRagRows } from "./research-chat-metrics.mjs";
 
 function percentile(sorted, p) {
   if (!sorted.length) return 0;
@@ -31,10 +32,18 @@ function summarizeRows(rows) {
   const energies = rows
     .map((r) => r.energy_joules)
     .filter((v) => v != null && Number.isFinite(v));
+  const joulesPerToken = ok
+    .map((r) => r.joules_per_token)
+    .filter((v) => v != null && Number.isFinite(v));
   const model =
     rows[0]?.requested_model ?? rows[0]?.routed_model ?? rows[0]?.policy ?? "?";
+  const pipeline = rows[0]?.pipeline_label ?? "—";
+  const gitSha = rows[0]?.git_sha ?? "—";
+
   return {
     model,
+    pipeline,
+    gitSha,
     total: rows.length,
     ok: ok.length,
     errors: rows.length - ok.length,
@@ -48,6 +57,12 @@ function summarizeRows(rows) {
         : null,
     totalJoules:
       energies.length ? Math.round(energies.reduce((a, b) => a + b, 0) * 100) / 100 : null,
+    meanJoulesPerToken:
+      joulesPerToken.length
+        ? Math.round((joulesPerToken.reduce((a, b) => a + b, 0) / joulesPerToken.length) * 10000) /
+          10000
+        : null,
+    rag: summarizeRagRows(ok),
   };
 }
 
@@ -57,14 +72,28 @@ if (!paths.length) {
   process.exit(1);
 }
 
-console.log("| run | model | OK | errors | OK % | mean ms | p50 ms | p95 ms | mean J | total J |");
-console.log("| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |");
+console.log(
+  "| run | pipeline | git | model | OK | mean ms | p50 | p95 | rag inject % | mean sim | mean J | J/tok |",
+);
+console.log("| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |");
 
 for (const path of paths) {
   const rows = loadJsonl(path);
   const s = summarizeRows(rows);
   const label = path.split(/[/\\]/).pop();
   console.log(
-    `| ${label} | ${s.model} | ${s.ok}/${s.total} | ${s.errors} | ${s.okPct} | ${s.meanMs} | ${s.p50Ms} | ${s.p95Ms} | ${s.meanJoules ?? "—"} | ${s.totalJoules ?? "—"} |`,
+    `| ${label} | ${s.pipeline} | ${s.gitSha} | ${s.model} | ${s.ok}/${s.total} | ${s.meanMs} | ${s.p50Ms} | ${s.p95Ms} | ${s.rag.rag_inject_rate_pct ?? "—"} | ${s.rag.mean_top_similarity ?? "—"} | ${s.meanJoules ?? "—"} | ${s.meanJoulesPerToken ?? "—"} |`,
+  );
+}
+
+console.log("\n### RAG-grounded subset (category=rag_grounded)\n");
+for (const path of paths) {
+  const rows = loadJsonl(path).filter((r) => !r.error && r.category === "rag_grounded");
+  if (!rows.length) continue;
+  const label = path.split(/[/\\]/).pop();
+  const durs = rows.map((r) => r.duration_ms).filter(Number.isFinite).sort((a, b) => a - b);
+  const rag = summarizeRagRows(rows);
+  console.log(
+    `- **${label}**: n=${rows.length}, p50=${percentile(durs, 50)} ms, inject=${rag.rag_inject_rate_pct ?? "?"}%, mean_top_sim=${rag.mean_top_similarity ?? "—"}, mean_chunks=${rag.mean_chunk_count ?? "—"}`,
   );
 }

@@ -33,6 +33,8 @@
     "research:eval-rag": "tsx ./scripts/research/eval-rag-retrieval.ts",
     "research:summarize-501": "node ./scripts/research/summarize-issue-501.mjs",
     "research:issue-501": "bash ./scripts/research/run-issue-501.sh",
+    "research:issue-501-trim": "bash ./scripts/research/run-issue-501-trim.sh",
+    "research:compare-501-trim": "node ./scripts/research/compare-issue-501-trim.mjs",
     "research:verify-energy": "node ./scripts/research/verify-energy-sidecar.mjs",
     "research:probe": "node ./scripts/research/research-probe.mjs"
   },

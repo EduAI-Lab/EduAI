@@ -1106,10 +1106,27 @@ ${buildEmptyCourseRagBlock()}`;
             responseId: response?.id,
             courseCode,
             chatId: chat?.id,
+            rag: {
+              chunkCount: courseRagHits.length,
+              topSimilarity: courseRagHits[0]?.similarity ?? null,
+              injected: courseRagInject,
+              needed: courseRagNeeded,
+              contextChars: courseRagContextText.length,
+              approach: useToolCalling ? "tool_calling" : "hybrid_rag",
+            },
           }),
           {
             status: 200,
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              "X-Rag-Chunk-Count": String(courseRagHits.length),
+              "X-Rag-Top-Similarity":
+                courseRagHits[0]?.similarity != null
+                  ? String(courseRagHits[0].similarity)
+                  : "",
+              "X-Rag-Injected": courseRagInject ? "1" : "0",
+              "X-Chat-Approach": useToolCalling ? "tool_calling" : "hybrid_rag",
+            },
           },
         );
       } catch (error) {

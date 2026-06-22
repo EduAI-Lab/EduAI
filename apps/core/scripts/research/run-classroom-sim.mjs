@@ -35,6 +35,13 @@ import {
   resolveResearchTimeoutMs,
 } from "./research-chat-body.mjs";
 import { resolveFixedModel } from "./research-models.mjs";
+import {
+  computeEfficiencyMetrics,
+  extractRagTelemetry,
+  extractUsageTokens,
+  readRunProvenance,
+  summarizeRagRows,
+} from "./research-chat-metrics.mjs";
 
 const POLICIES = {
   P0: { policy: "P0", requested_model: "vllm:qwen2.5-32b-instruct" },
@@ -149,6 +156,9 @@ async function postChat({
     ? Number(routingTierHeader)
     : inferTierFromModel(routedModel);
 
+  const tokenFields = extractUsageTokens(json);
+  const ragFields = extractRagTelemetry(json, res.headers);
+
   return {
     httpStatus: res.status,
     durationMs,
@@ -156,6 +166,8 @@ async function postChat({
     error: json?.error ?? (res.status >= 400 ? text.slice(0, 200) : null),
     routedModel,
     routingTier: Number.isFinite(routingTier) ? routingTier : null,
+    ...tokenFields,
+    ...ragFields,
   };
 }
 
@@ -210,6 +222,10 @@ function buildSummary({
     const t = r.routing_tier ?? null;
     tiers[t] = (tiers[t] ?? 0) + 1;
   }
+  const rag = summarizeRagRows(ok);
+  const tokens = ok
+    .map((r) => r.total_tokens)
+    .filter((v) => v != null && Number.isFinite(v));
 
   const lines = [
     "=== Classroom simulation (Step 6) ===",
@@ -231,6 +247,12 @@ function buildSummary({
     `  max: ${durs.length ? durs[durs.length - 1] : 0}`,
     "",
     `routing_tier: tier1=${tiers[1]} tier3=${tiers[3]} unknown=${tiers.null}`,
+    "",
+    "RAG (course prompts, OK rows):",
+    `  inject_rate: ${rag.rag_inject_rate_pct ?? "?"}% (${rag.rag_inject_count}/${rag.course_prompts})`,
+    `  mean_top_similarity: ${rag.mean_top_similarity ?? "?"}`,
+    `  mean_chunk_count: ${rag.mean_chunk_count ?? "?"}`,
+    `  mean_total_tokens: ${tokens.length ? Math.round(tokens.reduce((a, b) => a + b, 0) / tokens.length) : "?"}`,
   ];
   if (runEnergy?.energy_joules != null) {
     lines.push(
@@ -302,6 +324,13 @@ async function main() {
   }
 
   let prompts = loadPrompts().filter((p) => p.split === splitFilter);
+  const categoryFilter = readEnv("RESEARCH_RUN_CATEGORY");
+  if (categoryFilter) {
+    const cats = new Set(
+      categoryFilter.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean),
+    );
+    prompts = prompts.filter((p) => cats.has((p.category ?? "").toLowerCase()));
+  }
   if (!prompts.length) {
     console.error(`No prompts for split=${splitFilter}.`);
     process.exit(1);
@@ -315,6 +344,7 @@ async function main() {
   mkdirSync(dirname(outPath), { recursive: true });
 
   const runStarted = new Date().toISOString();
+  const provenance = readRunProvenance();
   const assignments = Array.from({ length: students }, (_, i) => {
     const promptRow = prompts[i % prompts.length];
     return {
@@ -353,10 +383,19 @@ async function main() {
       timeoutMs: fixedModel?.timeoutMs ?? resolveResearchTimeoutMs(readEnv, row),
     });
 
+    const efficiency = computeEfficiencyMetrics({
+      energy_joules: null,
+      prompt_tokens: result.prompt_tokens,
+      completion_tokens: result.completion_tokens,
+      duration_ms: result.durationMs,
+      response_chars: result.responseText?.length ?? 0,
+    });
+
     const record = {
       run_label: runLabel,
       run_started: runStarted,
       recorded_at: new Date().toISOString(),
+      ...provenance,
       sim_type: "classroom",
       policy: policy.policy,
       requested_model: policy.requested_model,
@@ -367,6 +406,7 @@ async function main() {
       stratum: row.stratum,
       category: row.category,
       split: row.split,
+      course_code: row.course_code,
       tools_expected: row.tools_expected,
       force_hybrid_rag: hybridFlags.forceHybridRag,
       hybrid_web_tools: hybridFlags.hybridWebTools,
@@ -375,6 +415,17 @@ async function main() {
       routing_tier: result.routingTier,
       duration_ms: result.durationMs,
       queue_proxy_ms: Math.round(performance.now() - tDispatch - result.durationMs),
+      prompt_tokens: result.prompt_tokens,
+      completion_tokens: result.completion_tokens,
+      total_tokens: result.total_tokens,
+      rag_chunk_count: result.rag_chunk_count,
+      rag_top_similarity: result.rag_top_similarity,
+      rag_injected: result.rag_injected,
+      rag_needed: result.rag_needed,
+      rag_context_chars: result.rag_context_chars,
+      chat_approach: result.chat_approach,
+      response_chars: efficiency.response_chars,
+      ms_per_completion_token: efficiency.ms_per_completion_token,
       http_status: result.httpStatus,
       response: result.responseText,
       error: result.error,

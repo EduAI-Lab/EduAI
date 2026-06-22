@@ -168,6 +168,23 @@ describe("Smart course RAG gate (#484)", () => {
       });
     });
 
+    it("returns rag telemetry on non-streaming responses", async () => {
+      vi.mocked(findRelevantContent).mockResolvedValue([
+        { content: "Gradient descent minimizes loss.", similarity: 0.91, materialTitle: "Lecture 3" },
+      ]);
+      mockStream();
+      const res = await action(makeRequest(baseBody()));
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.rag).toMatchObject({
+        chunkCount: 1,
+        topSimilarity: 0.91,
+        injected: true,
+        approach: "hybrid_rag",
+      });
+      expect(res.headers.get("X-Rag-Injected")).toBe("1");
+    });
+
     it("prefetches but does not inject for generic queries with weak hits", async () => {
       vi.mocked(findRelevantContent).mockResolvedValue([
         { content: "noise", similarity: 0.2, materialTitle: "Doc" },
