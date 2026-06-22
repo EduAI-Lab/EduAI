@@ -9,6 +9,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
+- [core] feat: Let unit admins invite instructors and students — gated by the new `unitAdmins.canInvite` policy flag, with a dedicated `/unit-admin/invitations` page, a policy-gated nav link, and own-only scoping over the shared `/api/invitations` endpoints. (#686, @abdullahmoh21, 2026-06-19)
+- [core] tests: Add unit-admin invitation coverage across the route, schema, and integration suites. (#686, @abdullahmoh21, 2026-06-19)
 - [core] feat: Expand the configurable RBAC policy registry (#660) with instructor/TA/student/unit-admin gates & grants, a `chat.webToolsEnabled` master that folds in the standalone `webToolsEnabled` toggle, an `auth.allowPublicRegistration` signup gate enforced at the Better Auth chokepoint, live frontend control gating via `usePolicies()`, and structured `policy_denied` 403 audit logging. (#660, @abdullahmoh21, 2026-06-18)
 - [core] feat: Add course/unit chat visibility — a nullable `Chat.courseId` tagged at chat creation, `GET /api/courses/:id/chats` and `GET /api/units/:department/chats` endpoints gated by `instructors.canViewCourseChats` / `unitAdmins.canViewUnitChats`, and a read-only Chats tab plus a unit chats page. (#660, @abdullahmoh21, 2026-06-18)
 - [core] tests: Add denied/allowed unit cases for every new policy flag across publish/delete/update, materials, enrollments, canvas, topics, chat web tools, the chat-visibility endpoints, and the registration loaders. (#660, @abdullahmoh21, 2026-06-18)
@@ -70,6 +72,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] tests: Update `canvas.integration.test.ts` reassignment case to use a unique student number (avoids `studentIdLookup` collision with seeded data). (#578, @GlowyBlack, 2026-06-15)
 - [ai-tutor] feat: RBAC UI for all five role views (#616) — add `app/lib/rbac/` permission helpers, `PermissionGate`, `AtRoleBanner`, and `useAtPermissions`; gate instructor shell for TA read-only; add `CreateCourseDialog`, course tabs (content/enrollments/submissions/analytics), `CourseEnrollmentsPanel` with TA role assignment, admin EduAI enrollment sync; extend `api.ts` with analytics/enrollment endpoints; document endpoint audit in `docs/rbac-endpoints-ai-tutor.md` (#614). Closes #614, #616, #617 (AiTutor). ([#619](https://github.com/EduAI-Lab/EduAI/pull/619), @Ayyhab, 2026-06-14)
 - [core] fix: Stop frontend from retransmitting the full conversation history on every chat request by sending only the newest user message and associated metadata. (#487, @YibingW, 2026-06-15)
+- [core] fix: Restore course Enrollments tab — re-wire `useCourseEnrollments` to `GET /api/courses/:id/enrollments` after merge conflict reverted the hook to an empty stub; API returns enrollment `id` and decrypted `studentNumber`. ([#684], @GlowyBlack, 2026-06-18)
+- [core] fix: Dev startup seed — targeted `db:seed:student-ids` backfill for seed students instead of full re-seed when `studentId` is missing (avoids `studentIdLookup` unique constraint collisions). (#684, @GlowyBlack, 2026-06-18)
+- [core] fix: `POST /api/bug-reports` — extension sources (`AI_TUTOR`, `QUESTION_MAKER`) require service key again; session auth remains for `CORE` only. (#684, @GlowyBlack, 2026-06-18)
+- [core] tests: Align course-create integration tests with required `department` field; session-validate expects `authorizedUnits` in user payload. (#684, @GlowyBlack, 2026-06-18)
 - [ai-tutor] fix: Route TA promotion through Core — `PATCH /admin/courses/:courseId/enrollments/:userId/role` now calls Core's enrollment-role endpoint before updating locally, keeping Core as the authoritative source; remove the band-aid `local.role !== 'TA'` skip from `syncCourseEnrollments` so Core-initiated TA demotions propagate on the next sync. (#674, @evanbones, 2026-06-19)
 
 ---
@@ -146,6 +152,40 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] ui: Add Staff tab to Course Detail with `useCourseTAs` hook — lists current instructor and TAs with reassignment controls for admin/unit admin. (#491, @yta3216, 2026-06-08)
 - [core] [ai-tutor] api: Move course publish state to Core as source of truth (#477) — new `PATCH /api/courses/:id/publish` and `/unpublish` endpoints on Core (service-key + session auth, rank ≥ 2); AI Tutor write-through calls Core before updating local DB; `coreOfferingId` set at import time and `isPublished` synced from Core; native courses skip the Core call; unpublish cascades to child modules and lessons. (#510, @evanbones, 2026-06-08)
 - [all] tests: Backend E2E Playwright suite (#398) — 8 spec files covering Core, AI Tutor, and Question Maker: auth flows, RBAC enforcement (STUDENT-blocked routes, unauthenticated 401 gates, role-escalation prevention), cross-service session propagation and cascading logout, and two-user data isolation; QM RBAC — question/assessment routes blocked for STUDENT (403), course routes open to all; Core RBAC — admin-only routes, invitation management, bug-report ownership scope; AI Tutor RBAC — course/module mutation gates and admin route gates; fix AI Tutor import-external integration test (500→201) by switching `vi.restoreAllMocks()` to `vi.unstubAllGlobals()` in afterEach to preserve the setup.js console.error spy; fix QM variant ID collision in `coreWiring.integration.test.js` (403→404) by using variant id `0` (PostgreSQL SERIAL sequences start at 1, so 0 can never be auto-generated) and upgrading `truncateTestDatabase()` to reset ALL table sequences (not just `users`) so IDs never accumulate across test files. (#398, @evanbones, 2026-06-14)
+
+- [core] docs: Design prior-question cache ADR — `CachedQuestionAnswer` table shape, pgvector embed store reusing `generateEmbedding()`, ~0.999 similarity threshold (env-configurable), course-scoped privacy model, `onFinish`-based write conditions, re-embed invalidation, and Prisma migration stub; wiring into `chat.ts` gated on #203. (#367, #360, @frostbitcactus, 2026-06-10)
+
+---
+
+## [Week 6 — June 8–12, 2026]
+
+### Added
+
+- [question-maker] api: Enforce the §16–§18 RBAC matrices — session-role gates, per-course access middleware, `createdBy` TA own-only authoring, instructor-only approval/assessments, owner-keyed Canvas mappings, and ADMIN-only bug-report triage. (#518, @abdullahmoh21, 2026-06-08)
+- [question-maker] tests: Add RBAC coverage — `courseAccess` unit tests plus role×route matrix tests across questions, variants, assessments, and Canvas. (#518, @abdullahmoh21, 2026-06-08)
+
+### Changed
+
+- [monorepo] docs: Document scoped extension course listing and AI Tutor enrollment sync in `docs/implementations/api-wiring.md`. (#578, @GlowyBlack, 2026-06-11)
+- [question-maker] api: Prefer Core session cookie over service key in `coreApiService.fetchFromCore` for user-scoped Core calls; support string CUID topic ids in Add Question and topic sync. (#578, @GlowyBlack, 2026-06-11)
+- [ai-tutor] infra: Default AI Tutor server `.env.example` and test env to `127.0.0.1` for Postgres on Windows. (#578, @GlowyBlack, 2026-06-11)
+- [core] rag: Cap cloud `embedMany` batch size at the provider limit of 100 (was 128) so `EMBED_MANY_BATCH_SIZE` env overrides cannot exceed Gemini's "At most 100 requests per batch" ceiling; add unit tests verifying 250-chunk materials split correctly and preserve order. (#52, #504, @ebabar5, 2026-06-10)
+- [core] ui: Wire course detail Enrollments tab to `GET /api/courses/:id/enrollments` via `useCourseEnrollments`; show enrolled users with name, email, student number, role, and active state. (#577, @GlowyBlack, 2026-06-12)
+- [core] rag: Cap cloud `embedMany` batch size at the provider limit of 100 (was 128) so `EMBED_MANY_BATCH_SIZE` env overrides cannot exceed Gemini's "At most 100 requests per batch" ceiling; add unit tests verifying 250-chunk materials split correctly and preserve order. (#52, #504, @ebabar5, 2026-06-10)
+- [core] api: Auto-publish Canvas-synced courses (`isPublished: true`) so linked students can list them under the student publish gate. (#511, @GlowyBlack, 2026-06-10)
+- [core] refactor: `eval-adhd-assist.mjs` imports shared `adhd-metrics.ts` instead of duplicating compliance scoring; `eval:adhd` runs via `tsx`. (#521, #532, @Ayyhab, 2026-06-09)
+- [core] fix: `report-adhd-metrics.ts` now reports the `task_initiation` / `re_orientation` / `session_completion` behavioural events alongside `response_compliance`, and renders `—` instead of `NaN` for empty cohorts or an under-powered Cohen's d (< 2 samples per side). (#521, #532, @Ayyhab, 2026-06-10)
+- [core] fix: #264 / #348 review follow-ups — migration backfill clears `supportsTools` on non-CHAT and known small-model slugs; runtime `modelSupportsTools()` applies the same guard; chat UI reads `X-Web-Tools-Enabled` and hides web-tool labels when the admin toggle is OFF; admin Supports Tools shows a confirmation dialog (toggle remains visible for all CHAT models). ([#529](https://github.com/EduAI-Lab/EduAI/pull/529), @superbolt08, 2026-06-10)
+- [monorepo] docs: Mark Question Maker §16–§18 as implemented in `rbac-matrix.md`. (#518, @abdullahmoh21, 2026-06-08)
+
+### Fixed
+
+- [core] fix: Remove the root document layout's route-data hook so development pages no longer crash with an invalid hook error before the router context is available. (#591, #592, @Whiteknight07, 2026-06-14)
+- [core] fix: Resolve `feat/eduai-redesign` ↔ `development` merge without losing features — restore the ADHD Assist oversight flow (`needsOversight` audit/rewrite branch, overseen-message persistence) in `POST /api/chat` that a prior merge had dropped, while keeping the redesigned chat-history header actions and in-input assistive/system-prompt controls; restore assistive prop destructuring in `chat-conversation-layout`; migrate `development`'s new `admin.invitations` screen off the deleted local UI kit onto `@eduai/ui`; drop the obsolete chat header-controls-placement unit test (assistive controls now render in the input footer by design). ([#583](https://github.com/EduAI-Lab/EduAI/pull/583), @yta3216, 2026-06-15)
+- [core] fix: `re-embed-course` script resolves courses by code with `findFirst` since `code` alone is not unique. (#561, @abdullahmoh21, 2026-06-11)
+
+### Fixed
+- [core] fix: ADHD oversight edge cases from pre-PR review (#493, #533) — preserve ineligible draft text instead of empty responses; reject LLM rewrites that exceed word cap; persist all assistant tool-step messages with overseen text on the final turn; return overseen draft on post-audit persistence failures instead of 500. (#493, #533, @Ayyhab, 2026-06-09)
 
 ---
 

@@ -31,10 +31,7 @@ import { resolveAdhdResponseWordCap } from "~/lib/ai/adhd-metrics";
 import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
 import { findRelevantContent } from "~/lib/ai/embedding";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
-import {
-  resolveCourseAccessWithCourse,
-  type AccessLevel,
-} from "~/lib/auth/course-access.server";
+import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { auth } from "~/lib/auth/server";
 import type { ActionFunctionArgs } from "react-router";
 import prisma from "~/lib/prisma.server";
@@ -182,32 +179,6 @@ function serializeMessage(message: GenericMessage): Prisma.JsonValue {
   } catch {
     return JSON.parse(JSON.stringify(message)) as Prisma.JsonValue;
   }
-}
-
-/**
- * Pulls plain text out of AI-SDK `response.messages` (whose `content` is an
- * array of typed parts) as a fallback for when the `onFinish`/awaited `text`
- * field is empty. Keeps persisted assistant content as a string so chat history
- * restore renders real markdown instead of a blank bubble or raw JSON.
- */
-function extractAssistantText(messages: GenericMessage[] | undefined): string {
-  if (!messages?.length) return "";
-  const collectText = (content: unknown): string => {
-    if (typeof content === "string") return content;
-    if (Array.isArray(content)) {
-      return content
-        .filter((p): p is GenericMessage => !!p && typeof p === "object")
-        .filter((p) => p.type === "text" && typeof p.text === "string")
-        .map((p) => p.text as string)
-        .join("\n");
-    }
-    return "";
-  };
-  return messages
-    .filter((m) => m.role === "assistant")
-    .map((m) => collectText(m.content))
-    .filter((t) => t.length > 0)
-    .join("\n");
 }
 
 /**
@@ -400,9 +371,6 @@ export async function action({ request }: ActionFunctionArgs) {
     // inactive enrollment blocks new chats but never own-history reads
     // (GET /api/chats/:chatId is ownership-scoped and unaffected).
     // Chats without a course context (general assistant) are not gated.
-    // Hoisted so the web-tools gate (below) can read the caller's course access
-    // level — null for general (non-course) chats.
-    let courseAccess: AccessLevel | null = null;
     if (effectiveCourseId) {
       const { course, access } = await resolveCourseAccessWithCourse(
         actingUser,
@@ -420,7 +388,6 @@ export async function action({ request }: ActionFunctionArgs) {
           headers: { "Content-Type": "application/json" },
         });
       }
-      courseAccess = access;
     }
 
     // Handle chat lookup and system prompt persistence
@@ -455,21 +422,11 @@ export async function action({ request }: ActionFunctionArgs) {
         chat = await prisma.chat.create({
           data: {
             userId: actingUser.id,
-            courseId: effectiveCourseId, // §5b: tag for course-chat visibility
             systemPrompt: trimmedSystemPrompt,
             adhdAssist,
           },
         });
       }
-    }
-
-    // Backfill course context onto an existing chat that was created before a
-    // course was selected (e.g. user picked the course mid-conversation).
-    if (chat && effectiveCourseId && chat.courseId !== effectiveCourseId && !chat.courseId) {
-      chat = await prisma.chat.update({
-        where: { id: chat.id },
-        data: { courseId: effectiveCourseId },
-      });
     }
 
     if (hasAdhdAssistField && chat && chat.adhdAssist !== adhdAssist) {
@@ -499,7 +456,6 @@ export async function action({ request }: ActionFunctionArgs) {
       chat = await prisma.chat.create({
         data: {
           userId: actingUser.id,
-          courseId: effectiveCourseId, // §5b: tag for course-chat visibility
           systemPrompt: trimmedSystemPrompt,
           adhdAssist,
         },
@@ -912,24 +868,12 @@ ${buildEmptyCourseRagBlock()}`;
       ...(streamConfig as Parameters<typeof streamText>[0]),
       onFinish: needsOversight
         ? undefined
-        : async ({ text, usage, finishReason, response }) => {
+        : async ({ text, usage, finishReason }) => {
             logResponseCompliance(text, {
               finishReason,
               promptTokens: usage?.promptTokens,
               completionTokens: usage?.completionTokens,
             });
-            // For streaming responses, persist here. Non-streaming path calls
-            // consumeStream() which also triggers onFinish, so we skip here to
-            // avoid saving the assistant message twice with different UUIDs.
-            if (!streaming) return;
-            const assistantText = text || extractAssistantText(response?.messages);
-            if (assistantText) {
-              await appendMessages([
-                { id: randomUUID(), role: "assistant", content: assistantText },
-              ]).catch((err) => {
-                console.error("[chat-api] failed to persist streaming assistant message", err);
-              });
-            }
           },
     });
 
@@ -995,8 +939,6 @@ ${buildEmptyCourseRagBlock()}`;
             "Transfer-Encoding": "chunked",
             Connection: "keep-alive",
           };
-          // Surface the resolved web-tools master state to clients/tests.
-          headers["X-Web-Tools-Enabled"] = webToolsEnabled ? "1" : "0";
           if (chat?.id) {
             headers["X-Chat-Id"] = chat.id;
           }
@@ -1059,8 +1001,6 @@ ${buildEmptyCourseRagBlock()}`;
         "Transfer-Encoding": "chunked",
         Connection: "keep-alive",
       };
-      // Surface the resolved web-tools master state to clients/tests.
-      headers["X-Web-Tools-Enabled"] = webToolsEnabled ? "1" : "0";
       if (chat?.id) {
         headers["X-Chat-Id"] = chat.id;
       }

@@ -75,7 +75,6 @@ export function wrapUntrustedReferenceContent(content: string): string {
   return `${UNTRUSTED_RAG_OPEN}\n${trimmed}\n${UNTRUSTED_RAG_CLOSE}`;
 }
 
-
 /** Hybrid RAG + tool `getInformation`: pgvector row cap (default was 6). */
 export const HYBRID_RAG_MAX_CHUNKS = 4;
 /** Max characters from excerpts injected into hybrid `system` (non-tool models). */
