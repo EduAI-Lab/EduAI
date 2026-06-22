@@ -249,7 +249,7 @@ Retrieve the catalog of configured AI models.
 
 **Headers**:
 - `Content-Type: application/json`
-- `Authorization: Bearer <EDUAI_API_KEY>` (service key; admin session cookie also accepted)
+- `Cookie: <session>` (ADMIN role required)
 
 #### Response
 
