@@ -22,8 +22,8 @@ describe("StudentIdOnboardingForm", () => {
   });
 
   it("shows a form error when provided", () => {
-    renderForm({ formError: "No Canvas enrollments found for this student number." });
+    renderForm({ formError: "This student number is already linked to another account." });
 
-    expect(screen.getByRole("alert")).toHaveTextContent("No Canvas enrollments found");
+    expect(screen.getByRole("alert")).toHaveTextContent("already linked to another account");
   });
 });
