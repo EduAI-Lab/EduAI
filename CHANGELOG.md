@@ -9,7 +9,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
-- [core] feat: Human-readable math in chat — normalizeMathMarkdown, Streamdown math plugin, KaTeX CSS, prose-vs-equation guards (#142, @superbolt08, 2026-06-23) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+- [core] feat: Human-readable math in chat — normalizeMathMarkdown, Streamdown math plugin, KaTeX CSS, prose-vs-equation guards (#142, @superbolt08, 2026-06-23) — [#757](https://github.com/EduAI-Lab/EduAI/pull/757)
 
 ### Fixed
 
