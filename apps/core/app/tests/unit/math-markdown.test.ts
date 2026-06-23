@@ -27,6 +27,15 @@ describe("normalizeMathMarkdown", () => {
     expect(result).toContain("$$");
   });
 
+  it("wraps whole-line a\\left(...\\right) without splitting on inner \\left", () => {
+    const input =
+      "a\\left(x^2 + \\frac{b}{a}x + \\left(\\frac{b}{2a}\\right)^2 - \\left(\\frac{b}{2a}\\right)^2\\right) = -c";
+    const result = normalizeMathMarkdown(input);
+    expect(result).toMatch(/^\$\$/m);
+    expect(result).toContain("\\left(x^2 + \\frac{b}{a}x");
+    expect(result).not.toContain("a\\left(x^2 + \\frac{b}{a}x + \n\n$$"); // no bad split
+  });
+
   it("wraps ax^2 + bx = -c without delimiters", () => {
     const result = normalizeMathMarkdown("ax^2 + bx = - c");
     expect(result).toContain("$$");

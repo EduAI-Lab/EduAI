@@ -236,26 +236,40 @@ function mergeUnbalancedDollarLines(text: string): string {
   return merged.join("\n");
 }
 
+function isWholeLineEquation(line: string): boolean {
+  const t = line.trim();
+  if (!t || /^\d+\.\s/.test(t)) return false;
+  // Step heading + prose on same line (keep trailing-equation extraction).
+  if (/:\*\*\s/.test(t) || (/\*\*/.test(t) && /[A-Za-z]{4,}/.test(t.replace(/\*\*/g, " ")))) {
+    return false;
+  }
+  return looksLikeDisplayMathLine(t);
+}
+
 function normalizeFragmentedLine(line: string): string {
   const trimmed = line.trim();
   if (!trimmed || /^\$\$/.test(trimmed)) return line;
 
-  if (looksLikeDisplayMathLine(trimmed) && !hasFragmentedEquationMath(trimmed)) {
-    return line;
+  const indent = line.match(/^\s*/)?.[0] ?? "";
+
+  if (isWholeLineEquation(trimmed)) {
+    return `${indent}${wrapDisplayMath(trimmed)}`;
   }
 
   if (!hasFragmentedEquationMath(trimmed)) return line;
 
   const trailing = extractTrailingEquation(trimmed);
   if (trailing) {
-    const indent = line.match(/^\s*/)?.[0] ?? "";
     const prefix = trailing.prefix.trimEnd();
     const block = wrapDisplayMath(trailing.equation);
     return prefix ? `${indent}${prefix}\n\n${block}` : `${indent}${block}`;
   }
 
-  if (looksLikeEquationTail(trimmed) || (/\\left/.test(trimmed) && MATH_COMMAND.test(trimmed))) {
-    const indent = line.match(/^\s*/)?.[0] ?? "";
+  if (
+    !/\*\*/.test(trimmed) &&
+    !/^\d+\.\s/.test(trimmed) &&
+    (looksLikeEquationTail(trimmed) || (/\\left/.test(trimmed) && MATH_COMMAND.test(trimmed)))
+  ) {
     return `${indent}${wrapDisplayMath(trimmed)}`;
   }
 
