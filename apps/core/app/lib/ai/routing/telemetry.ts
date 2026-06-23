@@ -14,7 +14,25 @@ export type NormalizedTokenUsage = {
 };
 
 function asTokenCount(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    return null;
+  }
+  return value;
+}
+
+/** vLLM/LiteLLM may return zeros when stream usage was not requested. */
+function isMissingUsage(
+  promptTokens: number | null,
+  completionTokens: number | null,
+  totalTokens: number | null,
+): boolean {
+  if (promptTokens == null && completionTokens == null && totalTokens == null) {
+    return true;
+  }
+  const prompt = promptTokens ?? 0;
+  const completion = completionTokens ?? 0;
+  const total = totalTokens ?? prompt + completion;
+  return prompt === 0 && completion === 0 && total === 0;
 }
 
 /** AI SDK / OpenAI-compatible providers may use promptTokens or inputTokens. */
@@ -38,6 +56,9 @@ export function normalizeTokenUsage(
     (promptTokens != null && completionTokens != null
       ? promptTokens + completionTokens
       : null);
+  if (isMissingUsage(promptTokens, completionTokens, totalTokens)) {
+    return { promptTokens: null, completionTokens: null, totalTokens: null };
+  }
   return { promptTokens, completionTokens, totalTokens };
 }
 
@@ -47,7 +68,11 @@ export function coalesceTokenUsage(
 ): NormalizedTokenUsage {
   for (const source of sources) {
     const normalized = normalizeTokenUsage(source);
-    if (normalized.promptTokens != null || normalized.completionTokens != null) {
+    if (
+      normalized.promptTokens != null ||
+      normalized.completionTokens != null ||
+      normalized.totalTokens != null
+    ) {
       return normalized;
     }
   }

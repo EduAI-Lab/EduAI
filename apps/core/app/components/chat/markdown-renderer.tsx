@@ -1,4 +1,5 @@
 import { lazy, Suspense } from 'react';
+import { streamdownPlugins } from '~/lib/ai/streamdown-config';
 import { cn } from '~/lib/utils';
 
 // Lazy load Streamdown to avoid SSR issues with KaTeX CSS
@@ -15,6 +16,7 @@ export function MarkdownRenderer({ content, className }: MarkdownRendererProps) 
       <Suspense fallback={<div className="animate-pulse">{content}</div>}>
         <Streamdown
           parseIncompleteMarkdown={true}
+          plugins={streamdownPlugins}
           className="streamdown-content"
           shikiTheme={["github-light", "github-dark"]}
         >

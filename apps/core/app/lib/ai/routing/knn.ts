@@ -10,6 +10,8 @@ export type KnnExemplar = {
   prompt: string;
   tier: 1 | 2 | 3;
   tags?: string[];
+  /** Pre-computed offline (see `npm run research:embed-knn-exemplars`). */
+  embedding?: number[];
 };
 
 export type KnnExemplarFile = {
@@ -68,13 +70,29 @@ export async function loadCachedKnnExemplars(
   if (!exemplarLoadPromise) {
     exemplarLoadPromise = (async () => {
       const file = loadExemplarFile(filePath);
-      const prompts = file.exemplars.map((e) => e.prompt.trim());
-      const embedded = await generateEmbeddings(prompts);
-      const cached: CachedExemplar[] = file.exemplars.map((ex, i) => ({
+      const trimmed = file.exemplars.map((ex) => ({
         ...ex,
         prompt: ex.prompt.trim(),
-        embedding: embedded[i].embedding,
       }));
+      const missingIndexes = trimmed
+        .map((ex, i) => (ex.embedding?.length ? -1 : i))
+        .filter((i) => i >= 0);
+      if (missingIndexes.length === 0) {
+        const cached: CachedExemplar[] = trimmed.map((ex) => ({
+          ...ex,
+          embedding: ex.embedding!,
+        }));
+        exemplarCache = cached;
+        return cached;
+      }
+      const prompts = missingIndexes.map((i) => trimmed[i].prompt);
+      const embedded = await generateEmbeddings(prompts);
+      const cached: CachedExemplar[] = trimmed.map((ex, i) => {
+        const missingIdx = missingIndexes.indexOf(i);
+        const embedding =
+          missingIdx >= 0 ? embedded[missingIdx].embedding : ex.embedding!;
+        return { ...ex, embedding };
+      });
       exemplarCache = cached;
       return cached;
     })();

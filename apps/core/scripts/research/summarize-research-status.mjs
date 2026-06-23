@@ -169,7 +169,11 @@ function main() {
     readEnv("RESEARCH_STATUS_OUT") ??
     join(runsDir, "status", `research-status-${date}.md`);
 
-  const labelsPath = readEnv("RESEARCH_LABEL_OUT") ?? DEFAULT_LABELS_OUT;
+  const labelsPath =
+    readEnv("RESEARCH_LABEL_OUT") ??
+    (existsSync(resolveRunsFile("labels-strict.v1.jsonl"))
+      ? resolveRunsFile("labels-strict.v1.jsonl")
+      : DEFAULT_LABELS_OUT);
   const p0DevPath = pickPath(
     readEnv("RESEARCH_POLICY_P0_DEV"),
     resolveRunsFile("policy-runs-p0-dev.jsonl"),
@@ -332,11 +336,12 @@ function main() {
 
   lines.push("## Remaining work", "");
   lines.push("- [ ] P0 test v2 — complete sequential test-split triangle");
-  lines.push("- [ ] Energy Joules — fix cmps01 sidecar metering (rows null today)");
+  lines.push("- [ ] #501 main-baseline on my.eduai — compare RAG pipeline vs latest");
   lines.push("- [ ] Under-route fix — tools/debugging/hard-RAG (10 prompts, strict oracle)");
-  lines.push("- [ ] P3a kNN — rebuild exemplars from `labels-strict.v1.jsonl`, re-eval");
-  lines.push("- [ ] Advisor review — `findings/PAPER1_ROUTING_SECTION.md`");
+  lines.push("- [ ] P3a kNN — embed strict exemplars + leave-one-out eval (offline after `research:embed-knn-exemplars`)");
+  lines.push("- [ ] Policy-scale energy — P0/P1 with Joules after token usage fix deploys");
   lines.push("");
+  lines.push("**Done (2026-06-23):** #501 trim (RAG + energy via :8001 proxy), strict kNN exemplars built, token usage fix (`generateText` + stream `includeUsage`), advisor memo refresh.");
   lines.push("**Done (2026-06-18):** strict relabel, P3b mapping tune, P1/P3a/P3b dev benchmark, 100-student classroom.");
   lines.push("");
 

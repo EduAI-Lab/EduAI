@@ -57,8 +57,9 @@ async function predictLeaveOneOut(
 ): Promise<{ tier: 1 | 2 | 3; confidence: number }> {
   const exemplars = await loadCachedKnnExemplars(exemplarPath);
   const trimmed = prompt.trim();
+  const self = exemplars.find((ex) => ex.prompt === trimmed);
   const pool = exemplars.filter((ex) => ex.prompt !== trimmed);
-  const queryEmbedding = await generateEmbedding(trimmed);
+  const queryEmbedding = self?.embedding ?? (await generateEmbedding(trimmed));
 
   const ranked = pool
     .map((ex) => ({

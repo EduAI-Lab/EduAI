@@ -1,7 +1,7 @@
 import type { Prisma, User } from "@prisma/client";
 import { UserRole } from "@prisma/client";
 import { randomUUID } from "crypto";
-import { streamText, tool } from "ai";
+import { streamText, generateText, tool } from "ai";
 import {
   createAIProviderRegistry,
   listEnabledRegistryProviders,
@@ -16,6 +16,7 @@ import {
 } from "~/lib/ai/routing/router";
 import {
   coalesceTokenUsage,
+  normalizeTokenUsage,
   persistAiInteractionTelemetry,
 } from "~/lib/ai/routing/telemetry";
 import { modelSupportsTools } from "~/lib/ai/providers.server";
@@ -66,6 +67,16 @@ function autoRoutingHeaders(
     headers["X-Router-Version"] = routerVersion ?? activeRouterVersion();
   }
   return headers;
+}
+
+/** OpenAI-compatible local backends need explicit stream usage for token telemetry. */
+function usageProviderOptions(
+  providerId: string,
+): Record<string, Record<string, unknown>> | undefined {
+  if (providerId === "vllm" || providerId === "ollama") {
+    return { [providerId]: { streamOptions: { includeUsage: true } } };
+  }
+  return undefined;
 }
 
 function resolveAutoRouting(
@@ -1103,8 +1114,83 @@ ${buildRagSystemBlock(preloadedRagContext, { toolPath: true })}`;
       ...llmPromptSizeHints(streamConfig.system, modelMessages),
     });
 
+    const providerOptions = usageProviderOptions(parsedModel.providerId);
+
+    if (!streaming && !useToolCalling) {
+      const genResult = await generateText({
+        model: streamConfig.model,
+        messages: streamConfig.messages,
+        system: streamConfig.system,
+        temperature: streamConfig.temperature,
+        maxTokens: streamConfig.maxTokens,
+        ...(providerOptions ? { providerOptions } : {}),
+      });
+
+      const normalizedUsage = normalizeTokenUsage(
+        genResult.usage as Record<string, unknown> | undefined,
+      );
+      const finishReason = String(genResult.finishReason ?? "stop");
+
+      await persistAiInteractionTelemetry({
+        userId: actingUser.id,
+        courseId: effectiveCourseId,
+        resolvedModelId,
+        query: lastUserMessageTextForTelemetry,
+        responseText: genResult.text ?? "",
+        usage: {
+          promptTokens: normalizedUsage.promptTokens ?? undefined,
+          completionTokens: normalizedUsage.completionTokens ?? undefined,
+          totalTokens: normalizedUsage.totalTokens ?? undefined,
+        },
+        finishReason,
+        durationMs: Date.now() - requestStartMs,
+        wasAuto,
+        routingTier,
+        routerVersion: wasAuto ? resolvedRouterVersion : null,
+        routerFeatures: routerContext,
+      });
+
+      if (genResult.text) {
+        await appendMessages([
+          {
+            id: randomUUID(),
+            role: "assistant",
+            content: genResult.text,
+          },
+        ]);
+      }
+
+      return new Response(
+        JSON.stringify({
+          content: genResult.text,
+          model: resolvedModelId,
+          routedModel: resolvedModelId,
+          usage: normalizedUsage,
+          finishReason,
+          sources: [],
+          reasoning: undefined,
+          responseId: genResult.response?.id,
+          courseCode,
+          chatId: chat?.id,
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            ...autoRoutingHeaders(
+              resolvedModelId,
+              routingTier,
+              wasAuto,
+              resolvedRouterVersion,
+            ),
+          },
+        },
+      );
+    }
+
     const result = await streamText({
       ...(streamConfig as Parameters<typeof streamText>[0]),
+      ...(providerOptions ? { providerOptions } : {}),
       onFinish: async ({ usage, finishReason, text }) => {
         finishMeta.usage = usage as Record<string, unknown> | undefined;
         finishMeta.finishReason = String(finishReason ?? "");

@@ -41,3 +41,4 @@ curl -sf -X POST http://127.0.0.1:8001/energy/measure-stop \
   -H 'Content-Type: application/json' -d "{\"tag\":\"$TAG\"}"
 echo ""
 echo "=== done — s378: ENERGY_SIDECAR_URL=http://cmps01.ok.ubc.ca:8001/energy ==="
+echo "=== research laptop: OLLAMA_BASE_URL=http://cmps01.ok.ubc.ca:8001/ollama (kNN embed) ==="

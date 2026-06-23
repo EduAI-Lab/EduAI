@@ -10,6 +10,7 @@ import {
   MessageAction
 } from "~/components/ui/message";
 import { Tool } from "~/components/ui/tool";
+import { normalizeMathMarkdown } from "~/lib/ai/math-markdown";
 
 export interface ChatMessageProps {
   message: Message;
@@ -47,7 +48,8 @@ export function ChatMessage({
 
   // If no parts, fallback to message content
   const hasTextContent = textParts.length > 0 || message.content;
-  const textContent = textParts.map(part => part.text).join("\n") || message.content || "";
+  const rawTextContent = textParts.map(part => part.text).join("\n") || message.content || "";
+  const textContent = isUser ? rawTextContent : normalizeMathMarkdown(rawTextContent);
 
   // Convert tool parts to the format expected by Tool component
   const convertToolPart = (part: any) => {
