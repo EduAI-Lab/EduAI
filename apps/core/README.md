@@ -261,14 +261,14 @@ Returns an array of AI model objects, each including its associated provider met
 ```powershell
 curl -X GET "https://eduai.ok.ubc.ca/api/ai-models" `
   -H "Content-Type: application/json" `
-  -H "Authorization: Bearer YOUR_EDUAI_API_KEY"
+  -H "Cookie: YOUR_SESSION_COOKIE"
 ```
 
 ##### Get AI Models (Linux/macOS)
 ```bash
 curl -X GET "https://eduai.ok.ubc.ca/api/ai-models" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_EDUAI_API_KEY"
+  -H "Cookie: YOUR_SESSION_COOKIE"
 ```
 
 ### Course Topics Endpoint
