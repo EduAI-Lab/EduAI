@@ -198,16 +198,23 @@ function resolveScriptDir(): string {
   if (process.env.CRON_SCRIPT_DIR) {
     return process.env.CRON_SCRIPT_DIR;
   }
-  // Default: walk up from apps/core to the repo root, then into infra/cron.
-  // Works whether cwd is the repo root or apps/core.
-  const fromCwd = path.resolve(process.cwd(), "infra/cron");
-  const fromAppsCore = path.resolve(process.cwd(), "../../infra/cron");
-  // Pick whichever resolves to something that looks right; the caller will handle missing scripts.
-  return path.resolve(process.cwd()).endsWith("apps/core") ? fromAppsCore : fromCwd;
+  const cwd = path.resolve(process.cwd());
+  // Normalize separators for the check so this works on Windows (path.resolve
+  // produces backslashes there, making endsWith("apps/core") always false).
+  const cwdNorm = cwd.replace(/\\/g, "/");
+  const fromAppsCore = path.resolve(cwd, "../../infra/cron");
+  const fromCwd = path.resolve(cwd, "infra/cron");
+  return cwdNorm.endsWith("apps/core") ? fromAppsCore : fromCwd;
+}
+
+function toBashPath(p: string): string {
+  return p
+    .replace(/^([A-Za-z]):[/\\]/, (_, d: string) => `/${d.toLowerCase()}/`)
+    .replace(/\\/g, "/");
 }
 
 export function triggerCronJobAsync(jobName: string, script: string, runId: string): void {
-  const scriptPath = path.join(resolveScriptDir(), script);
+  const scriptPath = toBashPath(path.join(resolveScriptDir(), script));
 
   const child = spawn("bash", [scriptPath], {
     env: { ...process.env },
