@@ -9,7 +9,7 @@ import {
   IconWorldOff,
   IconWorldUpload,
 } from "@tabler/icons-react"
-import { CourseColorBar } from "./course-color-bar"
+import { CourseCardHero } from "./course-color-bar"
 import { StatusBadge } from "./status-badge"
 import {
   DropdownMenu,
@@ -119,10 +119,9 @@ export function CourseCard({
         "shadow-[0_1px_3px_rgba(0,0,0,0.06)] transition-shadow duration-150 hover:shadow-[0_6px_20px_rgba(0,0,0,0.10)]",
         className,
       )}
-      style={{ minHeight: 192 }}
+      style={{ minHeight: 220 }}
     >
-      {/* Colour accent bar */}
-      <CourseColorBar index={colorIndex} />
+      <CourseCardHero index={colorIndex} code={code} />
 
       {/* Stretched-link overlay — makes the entire card clickable */}
       <TitleEl
@@ -137,10 +136,7 @@ export function CourseCard({
         <div className="flex items-start gap-2">
           {/* Title text — visually styled but non-interactive (overlay handles nav) */}
           <div className="flex-1 min-w-0">
-            <div className="text-base font-bold leading-tight text-foreground">
-              {code}
-            </div>
-            <div className="mt-0.5 text-[13px] leading-snug text-muted-foreground line-clamp-2">
+            <div className="text-base font-bold leading-tight text-foreground line-clamp-2">
               {name}
             </div>
           </div>

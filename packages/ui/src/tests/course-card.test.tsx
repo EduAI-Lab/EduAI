@@ -233,4 +233,18 @@ describe("CourseCard", () => {
     );
     expect(screen.getByLabelText("CPSC 110 Computation, Programs, and Programming")).toBeInTheDocument();
   });
+
+  it("renders a colour hero header band", () => {
+    render(
+      <CourseCard
+        id="1"
+        code="CPSC 110"
+        name="Test Course"
+        term="Winter"
+        isPublished={true}
+        href="/courses/1"
+      />
+    );
+    expect(screen.getByTestId("course-card-hero")).toBeInTheDocument();
+  });
 });

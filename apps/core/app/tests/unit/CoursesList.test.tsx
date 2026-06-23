@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { CoursesAdminView } from '~/components/courses/courses-admin-view'
 import { CoursesUnitAdminView } from '~/components/courses/courses-unit-admin-view'
@@ -47,6 +47,14 @@ const MATH_COURSE: Course = {
   code: 'MATH 101',
   name: 'Calculus I',
   department: 'MATH',
+}
+
+const SPRING_COURSE: Course = {
+  ...PUBLISHED_COURSE,
+  id: 'c4',
+  code: 'COSC 301',
+  name: 'Algorithms',
+  term: 'Spring',
 }
 
 const NOOP = async () => {}
@@ -268,5 +276,19 @@ describe('CoursesStudentView', () => {
   it('shows empty state when no published courses', () => {
     wrap(<CoursesStudentView courses={[DRAFT_COURSE]} />)
     expect(screen.getByText(/no published courses available/i)).toBeInTheDocument()
+  })
+
+  it('filters courses by term bucket', () => {
+    wrap(<CoursesStudentView courses={[PUBLISHED_COURSE, SPRING_COURSE]} />)
+    expect(screen.getByText('COSC 101')).toBeInTheDocument()
+    expect(screen.getByText('COSC 301')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Term 1' }))
+    expect(screen.getByText('COSC 101')).toBeInTheDocument()
+    expect(screen.queryByText('COSC 301')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Term 2' }))
+    expect(screen.queryByText('COSC 101')).not.toBeInTheDocument()
+    expect(screen.getByText('COSC 301')).toBeInTheDocument()
   })
 })
