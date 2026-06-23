@@ -95,4 +95,18 @@ describe("normalizeMathMarkdown", () => {
     expect(result).toContain("\\right)^2");
     expect(result).not.toMatch(/\$\$\^2/);
   });
+
+  it("keeps euler prose with inline math out of display blocks", () => {
+    const raw = `This identity elegantly links five fundamental mathematical constants: the number \\(e\\), the imaginary unit \\(i\\), \\(\\pi\\), 1, and 0. To prove this identity, we need to start with Euler's formula.
+
+where \\(i\\) is the imaginary unit, satisfying \\(i^2 = -1\\).`;
+
+    const result = normalizeMathMarkdown(raw);
+    expect(result).toContain("This identity elegantly links");
+    expect(result).toContain("$e$");
+    expect(result).toContain("$i$");
+    expect(result).not.toContain("Thisidentity");
+    expect(result).not.toContain("$$This identity");
+    expect(result).not.toContain("$$where i");
+  });
 });

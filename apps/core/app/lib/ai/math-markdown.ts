@@ -74,19 +74,41 @@ function hasBareMathOutsideDelimiters(line: string): boolean {
   );
 }
 
+function stripInlineMath(line: string): string {
+  return line.replace(INLINE_MATH_RE, " ");
+}
+
+/** Prose sentences that mention variables via `$...$` are not fragmented equations. */
+function looksLikeProseWithInlineMath(line: string): boolean {
+  const outside = stripInlineMath(line);
+  if (/[a-zA-Z]\^[0-9{]/.test(outside) && /=/.test(outside)) return false;
+  if (/\\frac|\\left|\\sqrt/.test(outside)) return false;
+
+  const words = outside.match(/\b[A-Za-z]{3,}\b/g) ?? [];
+  if (words.length < 4) return false;
+
+  return /\b(where|the|and|is|are|this|that|with|from|which|to|of|we|you|it|links|satisfying|number|unit|formula|identity|prove|need|start|derived|function|series|expansions|trigonometric|sine|cosine|constants|fundamental|mathematical|remarkable|states|certainly|remarkable|imaginary|exponential)\b/i.test(
+    outside,
+  );
+}
+
 function hasFragmentedEquationMath(line: string): boolean {
   if (/\$\s*\\left\s*\(\s*\$/.test(line)) return true;
 
   const segments = countInlineMathSegments(line);
-  if (segments >= 2 && (/=/.test(line) || MATH_COMMAND.test(line))) {
+  const outside = stripInlineMath(line);
+
+  if (segments >= 2 && (/=/.test(outside) || MATH_COMMAND.test(outside))) {
+    if (looksLikeProseWithInlineMath(line)) return false;
     return true;
   }
 
   if (!hasBareMathOutsideDelimiters(line)) return false;
-  return segments >= 1 || MATH_COMMAND.test(line);
+  return segments >= 1 || MATH_COMMAND.test(outside);
 }
 
 function looksLikeEquationTail(text: string): boolean {
+  if (looksLikeProseWithInlineMath(text)) return false;
   const t = consolidateEquationText(text);
   if (!t) return false;
   return /=/.test(t) && (MATH_COMMAND.test(t) || /[a-zA-Z]\^/.test(t));
@@ -94,7 +116,7 @@ function looksLikeEquationTail(text: string): boolean {
 
 function findEquationTailStart(line: string): number {
   let best = -1;
-  const patterns = [/\ba\\left/g, /\bx\^2/g, /\bx\s*=/g, /\\frac/g, /\\left/g];
+  const patterns = [/\ba\\left/g, /\bi\^2/g, /\bx\^2/g, /\bx\s*=/g, /\\frac/g, /\\left/g];
 
   for (const pattern of patterns) {
     let match: RegExpExecArray | null;
@@ -119,7 +141,7 @@ function extractTrailingEquation(line: string): { prefix: string; equation: stri
   }
 
   const tailStart = findEquationTailStart(line);
-  if (tailStart <= 0) return null;
+  if (tailStart < 0) return null;
 
   const equation = line.slice(tailStart).trim();
   const prefix = line.slice(0, tailStart).trimEnd();
@@ -149,14 +171,16 @@ function looksLikeDisplayMathLine(line: string): boolean {
   const t = line.trim();
   if (!t || t.length > 800) return false;
   if (/^\$\$/.test(t)) return false;
-  if (hasFragmentedEquationMath(t)) return true;
   if (lineHasMathDelimiters(t)) return false;
+  if (looksLikeProseWithInlineMath(t)) return false;
+  if (hasFragmentedEquationMath(t)) return true;
   if (/^#{1,6}\s/.test(t)) return false;
-  if (/^\*\*[^*]+/.test(t) && !MATH_COMMAND.test(t)) return false;
+  if (/^\*\*[^*]+/.test(t) && !MATH_COMMAND.test(stripInlineMath(t))) return false;
 
-  const hasLatexCommand = MATH_COMMAND.test(t);
-  const hasSupSub = /[a-zA-Z0-9]\^[{0-9a-zA-Z+]|_[{0-9a-zA-Z]/.test(t);
-  const hasEquation = /=/.test(t);
+  const outside = stripInlineMath(t);
+  const hasLatexCommand = MATH_COMMAND.test(outside);
+  const hasSupSub = /[a-zA-Z0-9]\^[{0-9a-zA-Z+]|_[{0-9a-zA-Z]/.test(outside);
+  const hasEquation = /=/.test(outside);
 
   if (hasLatexCommand && (hasEquation || hasSupSub || /\\left/.test(t))) return true;
   if (hasEquation && hasSupSub && /^[0-9a-zA-Z\s\\^_{}+\-*/().=,\[\]|]+$/.test(t)) {
@@ -216,6 +240,7 @@ function normalizeFragmentedLine(line: string): string {
   if (
     !/\*\*/.test(trimmed) &&
     !/^\d+\.\s/.test(trimmed) &&
+    !looksLikeProseWithInlineMath(trimmed) &&
     (looksLikeEquationTail(trimmed) || (/\\left/.test(trimmed) && MATH_COMMAND.test(trimmed)))
   ) {
     return `${indent}${wrapDisplayMath(trimmed)}`;
