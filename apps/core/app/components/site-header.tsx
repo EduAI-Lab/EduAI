@@ -1,8 +1,7 @@
 import { useLocation } from "react-router"
 import { useTheme } from "@eduai/ui"
 import { BugReportSubmitDialog } from "~/components/shared/bug-report-submit-dialog";
-import { Separator } from "@eduai/ui"
-import { SidebarTrigger } from "@eduai/ui"
+import { Separator, SidebarTrigger, useSidebar } from "@eduai/ui"
 import { IconSun, IconMoon } from "@tabler/icons-react"
 
 const ROUTE_TITLES: Record<string, string> = {
@@ -23,6 +22,24 @@ export interface SiteHeaderProps {
   breadcrumbs?: React.ReactNode
 }
 
+/** Shown only when the app sidebar is collapsed (desktop) or on mobile — not beside page titles when expanded. */
+function SiteHeaderSidebarTrigger() {
+  const { isMobile, state } = useSidebar()
+  if (!isMobile && state === "expanded") {
+    return null
+  }
+
+  return (
+    <>
+      <SidebarTrigger className="-ml-1" />
+      <Separator
+        orientation="vertical"
+        className="mx-2 data-[orientation=vertical]:h-4"
+      />
+    </>
+  )
+}
+
 export function SiteHeader({ title, actions, leadingActions, breadcrumbs }: SiteHeaderProps) {
   const { pathname } = useLocation()
   const { resolvedTheme, setTheme } = useTheme()
@@ -35,13 +52,9 @@ export function SiteHeader({ title, actions, leadingActions, breadcrumbs }: Site
   }
 
   return (
-    <header className="sticky top-0 z-20 flex h-[var(--header-height)] shrink-0 items-center border-b bg-background">
-      <div className="flex h-full w-full items-center gap-1 px-4 lg:gap-2 lg:px-6">
-        <SidebarTrigger className="-ml-1" />
-        <Separator
-          orientation="vertical"
-          className="mx-2 data-[orientation=vertical]:h-4"
-        />
+    <header className="sticky top-0 z-[20] flex h-[var(--header-height)] shrink-0 items-center border-b bg-background">
+      <div className="flex h-full w-full items-center gap-1 px-4 lg:gap-2 lg:px-6 lg:py-0">
+        <SiteHeaderSidebarTrigger />
         {breadcrumbs ? (
           <>
             <h1 className="sr-only">{resolvedTitle}</h1>

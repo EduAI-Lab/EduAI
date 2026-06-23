@@ -2,20 +2,15 @@ import { type Message } from "ai";
 import { Button } from "@eduai/ui";
 import { IconCopy, IconCheck } from "@tabler/icons-react";
 import { useState } from "react";
-import {
-  Message as BasicMessage,
-  MessageAvatar,
-  MessageContent,
-  MessageActions,
-  MessageAction
-} from "@eduai/ui";
-import { READING_SURFACE_CLASS } from "~/components/assistive/reading-surface";
 import { Tool } from "@eduai/ui";
+import { READING_SURFACE_CLASS } from "~/components/assistive/reading-surface";
+import { MarkdownRenderer } from "~/components/chat/markdown-renderer";
 import {
   CHAT_MESSAGE_ACTIVE_CLASS,
   CHAT_MESSAGE_INACTIVE_CLASS,
   type MessageHighlightRole,
 } from "~/components/assistive/active-highlight";
+import { transformAssistiveDisplayCopy } from "~/components/chat/assistive-display-transform";
 import { isWebChatToolName } from "~/lib/ai/web-tool-ui";
 import { cn } from "~/lib/utils";
 
@@ -24,32 +19,22 @@ export interface ChatMessageProps {
   isStreaming?: boolean;
   highlightRole?: MessageHighlightRole;
   webToolsEnabled?: boolean;
+  /** When true, relabel Assistive policy headings at display time only (#699). */
+  assistiveDisplay?: boolean;
 }
 
 /**
  * Safely coerces an unknown message content value to a display string.
- *
- * Restored messages from the DB have a `content` field typed as Prisma's
- * `JsonValue`, which survives JSON deserialization as a plain object. Rendering
- * that object directly as a React child produces "[object Object]". This helper
- * extracts a human-readable string from any shape we might receive:
- *
- *   - string  → returned as-is
- *   - object with `.text` string  → use that
- *   - array of parts with `.type === "text"` → join their `.text` values
- *   - anything else  → JSON.stringify (last resort, always a string)
  */
 export function coerceMessageContent(content: unknown): string {
   if (typeof content === "string") return content;
   if (content === null || content === undefined) return "";
   if (Array.isArray(content)) {
-    // Array of message parts — gather text parts
     const texts = content
       .filter((p): p is Record<string, unknown> => p !== null && typeof p === "object")
       .filter((p) => p.type === "text" && typeof p.text === "string")
       .map((p) => p.text as string);
     if (texts.length > 0) return texts.join("\n");
-    // Fall through to JSON.stringify below
   }
   if (typeof content === "object") {
     const obj = content as Record<string, unknown>;
@@ -63,11 +48,11 @@ export function ChatMessage({
   isStreaming = false,
   highlightRole = null,
   webToolsEnabled = false,
+  assistiveDisplay = false,
 }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
-    // Extract text content from all text parts
     const textContent = message.parts
       ?.filter((part) => part != null && part.type === "text")
       .map((part) => (part as any).text as string)
@@ -80,12 +65,10 @@ export function ChatMessage({
 
   const isUser = message.role === "user";
 
-  // Convert tool parts to the format expected by Tool component
   const convertToolPart = (part: any) => {
     if (!part || typeof part.type !== "string") return null;
 
     if (part.type === "tool-invocation") {
-      // Guard against missing toolInvocation on a nominally-typed part
       if (!part.toolInvocation) return null;
       return {
         type: part.toolInvocation.toolName ?? "unknown",
@@ -99,7 +82,6 @@ export function ChatMessage({
       };
     }
 
-    // Handle dynamic tool parts from AI SDK v5+ format
     if (part.type.startsWith("tool-")) {
       return {
         type: part.toolName || part.type.replace("tool-", ""),
@@ -114,7 +96,6 @@ export function ChatMessage({
     return null;
   };
 
-  // Filter out null/undefined parts before splitting by type
   const safeParts = message.parts?.filter((part) => part != null) ?? [];
   const textParts = safeParts.filter((part) => part.type === "text");
   const toolParts = safeParts.filter((part) => {
@@ -122,8 +103,6 @@ export function ChatMessage({
     if (!(typeof t === "string" && (t === "tool-invocation" || t.startsWith("tool-")))) {
       return false;
     }
-
-    // Hide web tools (webSearch/fetchPage) when the deployment disables them
     const toolPart = convertToolPart(part);
     if (!toolPart) return false;
     if (!webToolsEnabled && isWebChatToolName(toolPart.type)) {
@@ -132,10 +111,13 @@ export function ChatMessage({
     return true;
   });
 
-  // If no parts, fallback to message content — coerce to string regardless of DB shape
   const rawTextFromParts = textParts.map((part) => (part as any).text as string).join("\n");
   const textContent = rawTextFromParts || coerceMessageContent(message.content);
-  const hasTextContent = textContent.length > 0;
+  const displayContent =
+    assistiveDisplay && !isUser
+      ? transformAssistiveDisplayCopy(textContent)
+      : textContent;
+  const hasTextContent = displayContent.length > 0;
 
   const highlightClass =
     highlightRole === "active"
@@ -145,39 +127,29 @@ export function ChatMessage({
         : undefined;
 
   if (isUser) {
-    // User message - right aligned, limited width
     return (
-      <div className={cn("flex justify-end mb-4", highlightClass)}>
-        <div className="flex items-end gap-3 max-w-[80%] min-w-0">
-          <div
-            className="px-4 py-3 bg-primary text-primary-foreground min-w-0"
-            style={{ borderRadius: "16px 16px 4px 16px" }}
-          >
-            <div className={cn("whitespace-pre-wrap break-words [overflow-wrap:anywhere]", READING_SURFACE_CLASS)}>
-              {textContent}
-            </div>
+      <div className={cn("w-full py-2", highlightClass)}>
+        <div
+          className={cn(
+            "rounded-2xl bg-muted/60 px-4 py-3 text-[15px] leading-relaxed",
+            READING_SURFACE_CLASS,
+          )}
+        >
+          <div className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+            {displayContent}
           </div>
-          <MessageAvatar
-            src=""
-            alt="User"
-            fallback="U"
-            className="h-8 w-8"
-          />
         </div>
       </div>
     );
   }
 
-  // AI message with tool calls
   return (
-    <div className={cn("space-y-4 mb-4", highlightClass)}>
-      {/* Tool calls rendered FIRST, before message content */}
+    <div className={cn("w-full py-3 group", highlightClass)}>
       {toolParts.length > 0 && (
-        <div className="space-y-3 ml-12">
+        <div className="space-y-2 mb-3">
           {toolParts.map((part, index) => {
             const toolPart = convertToolPart(part);
             if (!toolPart) return null;
-
             return (
               <Tool
                 key={`tool-${toolPart.toolCallId || index}`}
@@ -189,42 +161,27 @@ export function ChatMessage({
         </div>
       )}
 
-      {/* AI message content rendered AFTER tool calls */}
       {hasTextContent && (
-        <BasicMessage className="group">
-          <MessageAvatar
-            src=""
-            alt="EduAI"
-            fallback="AI"
-            className="h-8 w-8"
-          />
-
-          <div className="flex flex-col gap-2 flex-1 max-w-[80%] min-w-0">
-            <MessageContent
-              markdown={true}
-              className="px-4 py-3 bg-card border border-border text-foreground [border-radius:4px_16px_16px_16px]"
-            >
-              {textContent}
-            </MessageContent>
-
-            <MessageActions className="opacity-0 group-hover:opacity-100 transition-opacity">
-              <MessageAction tooltip="Copy message">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleCopy}
-                  className="h-8 w-8 p-0"
-                >
-                  {copied ? (
-                    <IconCheck className="h-4 w-4 text-green-600 dark:text-green-400" />
-                  ) : (
-                    <IconCopy className="h-4 w-4" />
-                  )}
-                </Button>
-              </MessageAction>
-            </MessageActions>
+        <div className="relative">
+          <div className={cn("text-[15px] leading-relaxed text-foreground", isStreaming && "animate-pulse")}>
+            <MarkdownRenderer content={displayContent} />
           </div>
-        </BasicMessage>
+          <div className="mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleCopy}
+              className="h-7 px-2 text-muted-foreground"
+              aria-label="Copy message"
+            >
+              {copied ? (
+                <IconCheck className="h-3.5 w-3.5 text-green-600 dark:text-green-400" />
+              ) : (
+                <IconCopy className="h-3.5 w-3.5" />
+              )}
+            </Button>
+          </div>
+        </div>
       )}
     </div>
   );

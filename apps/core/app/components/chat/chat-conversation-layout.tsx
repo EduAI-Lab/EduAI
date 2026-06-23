@@ -1,6 +1,5 @@
 import type { Message } from "@ai-sdk/react";
-import { IconInfoCircle, IconBooksOff } from "@tabler/icons-react";
-import { Alert, AlertDescription } from "@eduai/ui";
+import { IconBooksOff } from "@tabler/icons-react";
 
 import { ChatInput } from "~/components/chat/chat-input";
 import { ChatMessage } from "~/components/chat/chat-message";
@@ -67,19 +66,16 @@ export function ChatConversationLayout({
             </p>
           </div>
         )}
-        <div className="h-full overflow-y-auto scrollbar-hover">
-          <div className="px-6 py-6">
+        <div className="h-full overflow-y-auto scrollbar-hover scroll-smooth">
+          <div className="px-4 py-4 md:px-6 md:py-6">
             {isStudentWithCourseChat && (
-                <div className="max-w-[720px] mx-auto">
-                  <Alert className="border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950">
-                    <IconInfoCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                    <AlertDescription className="text-sm text-amber-900 dark:text-amber-100">
-                      Heads up: your course chats can be viewed by your instructor, unit admin, and platform admins.
-                    </AlertDescription>
-                  </Alert>
-                </div>
+              <div className="max-w-3xl mx-auto mb-4">
+                <p className="text-xs text-muted-foreground text-center">
+                  Course chats may be viewed by your instructor and platform admins.
+                </p>
+              </div>
             )}
-            <div className="max-w-[720px] mx-auto space-y-5">
+            <div className="max-w-3xl mx-auto space-y-1">
               {messages.length === 0 ? (
                 <ChatWelcome
                   selectedModelInfo={selectedModelInfo}
@@ -103,6 +99,7 @@ export function ChatConversationLayout({
                           assistive,
                         )}
                         webToolsEnabled={webToolsEnabled}
+                        assistiveDisplay={adhdAssist}
                       />
                     );
                   })}

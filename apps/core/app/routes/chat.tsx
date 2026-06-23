@@ -1,30 +1,23 @@
 import { useChat } from "@ai-sdk/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, redirect, useLoaderData, useFetcher, useSearchParams } from "react-router";
+import { redirect, useLoaderData, useFetcher, useSearchParams } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import { IconHistory, IconPencilPlus } from "@tabler/icons-react";
+import { IconHistory } from "@tabler/icons-react";
 
 import { AppSidebar } from "~/components/app-sidebar";
 import { ChatCourseScopedView } from "~/components/chat/chat-course-scoped-view";
 import { ChatHistoryPanel } from "~/components/chat/chat-history-panel";
+import { ChatHistoryRail } from "~/components/chat/chat-history-rail";
 import { ChatTranscriptViewer } from "~/components/chat/chat-transcript-viewer";
 import type {
   ChatCourseOption,
   ChatModelOption,
 } from "~/components/chat/chat-view-types";
-import { fetchChatTranscript, type ChatTranscript } from "~/hooks/api/use-chat-history";
+import { fetchChatTranscript, type ChatTranscript, useChatHistory } from "~/hooks/api/use-chat-history";
 import { useAssistiveUi } from "~/components/assistive/assistive-ui-provider";
 import { CHAT_MESSAGE_INPUT_ID } from "~/components/assistive/active-highlight";
 import { SiteHeader } from "~/components/site-header";
 import { Button, SidebarInset, SidebarProvider, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@eduai/ui";
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "@eduai/ui"
 import {
   Sheet,
   SheetContent,
@@ -142,6 +135,8 @@ export default function Chat() {
   const { getValidApiKeys } = useApiKeys();
   const prefsFetcher = useFetcher();
   const [historyOpen, setHistoryOpen] = useState(false);
+  const { chats, isLoading: historyLoading, error: historyError, refresh: refreshHistory } =
+    useChatHistory({ scope: "own", limit: 50 });
   const [searchParams, setSearchParams] = useSearchParams();
   // Guards the one-shot auto-restore so it never re-fires on later renders.
   const restoreAttempted = useRef(false);
@@ -261,6 +256,7 @@ export default function Chat() {
         const chatIdHeader = response.headers.get("X-Chat-Id");
         if (chatIdHeader && !chatId) {
           setChatId(chatIdHeader);
+          void refreshHistory();
         }
         const webToolsHeader = response.headers.get("X-Web-Tools-Enabled");
         if (webToolsHeader !== null) {
@@ -373,7 +369,6 @@ export default function Chat() {
   const handleSelectChat = useCallback(
     async (id: string) => {
       await restoreChat(id);
-      setHistoryOpen(false);
     },
     [restoreChat],
   );
@@ -386,6 +381,16 @@ export default function Chat() {
       window.sessionStorage.removeItem(ACTIVE_CHAT_KEY);
     }
   }, [setMessages]);
+
+  const historyListProps = {
+    chats,
+    isLoading: historyLoading,
+    error: historyError,
+    activeChatId: chatId,
+    onSelect: handleSelectChat,
+    onNewChat: handleNewChat,
+    onRefresh: refreshHistory,
+  };
 
   const handleSystemPromptSave = async (prompt: string | null) => {
     setSystemPrompt(prompt);
@@ -468,32 +473,9 @@ export default function Chat() {
       }
     >
       <AppSidebar user={user} />
-      <SidebarInset>
+      <SidebarInset className="flex flex-col min-h-0">
         <SiteHeader
-          breadcrumbs={
-            <Breadcrumb>
-              <BreadcrumbList>
-                <BreadcrumbItem>
-                  <BreadcrumbLink asChild><Link to="/dashboard">Home</Link></BreadcrumbLink>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator />
-                <BreadcrumbItem>
-                  <BreadcrumbPage>Chat</BreadcrumbPage>
-                </BreadcrumbItem>
-              </BreadcrumbList>
-            </Breadcrumb>
-          }
-          leadingActions={
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleNewChat}
-              aria-label="Start a new chat"
-            >
-              <IconPencilPlus className="h-4 w-4 sm:mr-1.5" />
-              <span className="hidden sm:inline">New chat</span>
-            </Button>
-          }
+          title="Chat"
           actions={
             <TooltipProvider delayDuration={300}>
               <Tooltip>
@@ -503,7 +485,7 @@ export default function Chat() {
                     size="icon"
                     onClick={() => setHistoryOpen((prev) => !prev)}
                     aria-label="Open chat history"
-                    className="h-8 w-8"
+                    className="h-8 w-8 md:hidden"
                   >
                     <IconHistory className="h-4 w-4" />
                   </Button>
@@ -513,12 +495,16 @@ export default function Chat() {
             </TooltipProvider>
           }
         />
+        <div className="flex flex-1 min-h-0 overflow-hidden">
+          <ChatHistoryRail {...historyListProps} />
+          <div className="flex-1 min-w-0 flex flex-col min-h-0">
+            <ChatCourseScopedView {...sharedViewProps} />
+          </div>
+        </div>
         <ChatHistoryPanel
           open={historyOpen}
           onOpenChange={setHistoryOpen}
-          activeChatId={chatId}
-          onSelect={handleSelectChat}
-          onNewChat={handleNewChat}
+          {...historyListProps}
         />
         {/* Read-only view for non-owned chats (deep links, dashboard recent chats) */}
         <Sheet open={readOnlyTranscript !== null} onOpenChange={(open) => { if (!open) setReadOnlyTranscript(null); }}>
@@ -545,7 +531,6 @@ export default function Chat() {
             </div>
           </SheetContent>
         </Sheet>
-        <ChatCourseScopedView {...sharedViewProps} />
       </SidebarInset>
     </SidebarProvider>
   );
