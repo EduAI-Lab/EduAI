@@ -60,6 +60,58 @@ function readLatexExpression(text: string, start: number): number {
   return Math.max(i, start + 1);
 }
 
+function lineHasMathDelimiters(line: string): boolean {
+  const t = line.trim();
+  return /(?<!\\)\$\$/.test(t) || /(?<!\\)\$[^$\n]+\$/.test(t);
+}
+
+function looksLikeDisplayMathLine(line: string): boolean {
+  const t = line.trim();
+  if (!t || t.length > 600) return false;
+  if (lineHasMathDelimiters(t)) return false;
+
+  // Markdown structure — not a bare equation line
+  if (/^#{1,6}\s/.test(t)) return false;
+  if (/^\*\*[^*]+/.test(t) && !MATH_COMMAND.test(t)) return false;
+  if (/^[-*+]\s+\S/.test(t) && !MATH_COMMAND.test(t) && !/[a-zA-Z]\^/.test(t)) return false;
+
+  const hasLatexCommand = MATH_COMMAND.test(t);
+  const hasSupSub = /[a-zA-Z0-9]\^[{0-9a-zA-Z+]|_[{0-9a-zA-Z]/.test(t);
+  const hasEquation = /=/.test(t);
+
+  if (hasLatexCommand && (hasEquation || hasSupSub)) return true;
+
+  // e.g. x^2 + bx = -c (no leading backslash)
+  if (hasEquation && hasSupSub && /^[0-9a-zA-Z\s\\^_{}+\-*/().=,\[\]|]+$/.test(t)) {
+    return true;
+  }
+
+  return false;
+}
+
+function wrapBareDisplayMathLines(text: string): string {
+  return text
+    .split("\n")
+    .map((line) => {
+      const trimmed = line.trim();
+      if (!looksLikeDisplayMathLine(trimmed)) return line;
+      const indent = line.match(/^\s*/)?.[0] ?? "";
+      return `${indent}$$\n${trimmed}\n$$`;
+    })
+    .join("\n");
+}
+
+/** Model sometimes emits `* * S i m p l i f y ... * *` instead of `**Simplify...**`. */
+function repairSpacedBoldMarkers(text: string): string {
+  return text.replace(/^\*\s+\*\s+(.+?)\s+\*\s+\*$/gm, (match, inner: string) => {
+    const parts = inner.trim().split(/\s+/);
+    if (parts.length < 4) return match;
+    const singleCharRatio = parts.filter((p) => p.length === 1).length / parts.length;
+    if (singleCharRatio < 0.65) return match;
+    return `**${parts.join("")}**`;
+  });
+}
+
 function wrapBareLatexExpressions(text: string): string {
   let result = "";
   let cursor = 0;
@@ -104,13 +156,18 @@ function wrapBareLatexExpressions(text: string): string {
  * Convert common LaTeX delimiter styles and bare commands into `$...$` / `$$...$$`.
  */
 export function normalizeMathMarkdown(text: string): string {
-  if (!text || !/\\|(?<!\\)\$/.test(text)) {
-    return text;
+  if (!text) return text;
+
+  const mayContainMath = /\\|(?<!\\)\$|[a-zA-Z]\^|_\{|=/.test(text);
+  if (!mayContainMath) {
+    return repairSpacedBoldMarkers(text);
   }
 
   let result = decodeHtmlEntities(text);
+  result = repairSpacedBoldMarkers(result);
   result = result.replace(DISPLAY_DELIM_RE, (_, body) => `$$\n${body.trim()}\n$$`);
   result = result.replace(INLINE_DELIM_RE, (_, body) => `$${body.trim()}$`);
+  result = wrapBareDisplayMathLines(result);
   result = wrapBareLatexExpressions(result);
   return result;
 }
