@@ -3,8 +3,6 @@ export { cn, getInitials } from "./utils"
 
 // ── Theme ──────────────────────────────────────────────────────────────────
 export { ThemeProvider, useTheme } from "./theme-provider"
-export { initThemeSync, broadcastThemeChange, closeThemeSync } from "./lib/theme-sync"
-export type { Theme as ThemeType } from "./lib/theme-sync"
 
 // ── Domain components ──────────────────────────────────────────────────────
 export { RoleBadge } from "./role-badge"
@@ -58,6 +56,7 @@ export * from "./ui/input-otp"
 export * from "./ui/label"
 export * from "./ui/loader"
 export * from "./ui/markdown"
+export { streamdownPlugins } from "./ui/streamdown-config"
 export * from "./ui/menubar"
 export * from "./ui/navigation-menu"
 export * from "./ui/pagination"
