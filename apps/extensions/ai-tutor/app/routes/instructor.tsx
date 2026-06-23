@@ -12,11 +12,12 @@
  *     the optimistic value to drop on the next render.
  *   - Courses are created and synced from EduAI Core (source of truth); there
  *     is no in-app import — they appear here automatically.
+ *   - Shares the role-scoped RoleDashboard shell with student/admin so all
+ *     three dashboards render the same layout.
  * Related: routes/instructor.course.tsx (drilldown), components/PublishStatusButton
  */
 import { useMemo, useOptimistic, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { PageHeading } from '@eduai/ui';
 import { AtRoleBanner } from '../components/rbac/AtRoleBanner';
 import { PermissionGate } from '../components/rbac/PermissionGate';
 import { PublishStatusButton } from '../components/PublishStatusButton';
@@ -29,8 +30,8 @@ import type { Route } from './+types/instructor';
 import { requireClientUser } from '~/lib/client-auth';
 import { AppShell } from '~/components/layout/AppShell';
 import { ShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbs';
-import { DashboardStatGrid } from '~/components/dashboard/DashboardStatGrid';
-import { buildInstructorDashboardStats } from '~/lib/dashboard-stats';
+import { RoleDashboard } from '~/components/dashboard/RoleDashboard';
+import { buildDashboardStats } from '~/lib/dashboard-stats';
 
 /**
  * Loads the instructor's course list. The backend scopes /courses to the
@@ -58,7 +59,10 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
     courses,
     (state, patch: (items: Course[]) => Course[]) => patch(state),
   );
-  const stats = useMemo(() => buildInstructorDashboardStats(oCourses), [oCourses]);
+  const stats = useMemo(
+    () => buildDashboardStats(user?.role, { courses: oCourses }),
+    [user?.role, oCourses],
+  );
 
   // Optimistic publish toggle: addCourseOpt flips the badge instantly via
   // useOptimistic, then the server response confirms or the catch branch
@@ -91,16 +95,14 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
 
   return (
     <AppShell breadcrumbs={<ShellBreadcrumbs items={[{ label: 'Courses' }]} />}>
-      <div className="space-y-8">
-        {user ? (
-          <AtRoleBanner role={user.role} authorizedUnits={user.authorizedUnits} />
-        ) : null}
-
-        <PageHeading heading="Courses" subheading="Manage courses and publish content." />
-
-        <DashboardStatGrid stats={stats} />
-
-        {/* Course list */}
+      <RoleDashboard
+        banner={
+          user ? <AtRoleBanner role={user.role} authorizedUnits={user.authorizedUnits} /> : null
+        }
+        heading="Courses"
+        subheading="Manage courses and publish content."
+        stats={stats}
+      >
         {oCourses.length === 0 ? (
           <div className="animate-fade-up delay-150">
             <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-12 text-center max-w-lg mx-auto">
@@ -221,7 +223,7 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
             ))}
           </div>
         )}
-      </div>
+      </RoleDashboard>
     </AppShell>
   );
 }
