@@ -5,6 +5,12 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
 
+## [Week 9 — June 29 – July 5, 2026]
+
+### Added
+
+- [core] feat: Streamline admin local model workflow — auto-sync Ollama/vLLM models into AI Management (#180, @superbolt08, 2026-06-23) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
 ## [Week 7 — June 15–21, 2026]
 
 ### Added
