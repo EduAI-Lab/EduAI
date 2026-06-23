@@ -207,17 +207,13 @@ function resolveScriptDir(): string {
   return cwdNorm.endsWith("apps/core") ? fromAppsCore : fromCwd;
 }
 
-function toBashPath(p: string): string {
-  return p
-    .replace(/^([A-Za-z]):[/\\]/, (_, d: string) => `/${d.toLowerCase()}/`)
-    .replace(/\\/g, "/");
-}
-
 export function triggerCronJobAsync(jobName: string, script: string, runId: string): void {
-  const scriptPath = toBashPath(path.join(resolveScriptDir(), script));
+  // Pass the script dir as cwd so Node sets the working directory at the OS level
+  const scriptDir = resolveScriptDir();
 
-  const child = spawn("bash", [scriptPath], {
+  const child = spawn("bash", [`./${script}`], {
     env: { ...process.env },
+    cwd: scriptDir,
     timeout: 10 * 60 * 1000,
   });
 
