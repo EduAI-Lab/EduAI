@@ -21,12 +21,15 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
 } from "@eduai/ui";
 import type { CronJobEntry, CronJobRunRow, CronJobStatusValue } from "~/lib/db.cron-jobs.server";
 
 // ── Status badge ─────────────────────────────────────────────────────────────
 
-function CronStatusBadge({ status, external }: { status: CronJobStatusValue | null; external?: boolean }) {
+function CronStatusBadge({ status, external, message }: { status: CronJobStatusValue | null; external?: boolean; message?: string | null }) {
   if (external) {
     return (
       <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded-full"
@@ -67,13 +70,27 @@ function CronStatusBadge({ status, external }: { status: CronJobStatusValue | nu
       </span>
     );
   }
-  return (
+
+  const badge = (
     <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded-full"
       style={{ background: "var(--color-error-100)", color: "var(--destructive)" }}>
       <span className="w-[5px] h-[5px] rounded-full flex-shrink-0"
         style={{ background: "var(--destructive)" }} />
       Error
     </span>
+  );
+
+  if (!message) return badge;
+
+  const preview = message.length > 300 ? message.slice(0, 300) + "…" : message;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{badge}</TooltipTrigger>
+      <TooltipContent className="max-w-xs whitespace-pre-wrap font-mono text-[11px]">
+        {preview}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -104,6 +121,7 @@ interface RunHistoryDialogProps {
 function RunHistoryDialog({ jobName, open, onClose }: RunHistoryDialogProps) {
   const [runs, setRuns] = useState<CronJobRunRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [expandedMessage, setExpandedMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open || !jobName) return;
@@ -116,47 +134,69 @@ function RunHistoryDialog({ jobName, open, onClose }: RunHistoryDialogProps) {
   }, [open, jobName]);
 
   return (
-    <Dialog open={open} onOpenChange={(v: boolean) => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Run history — {jobName}</DialogTitle>
-        </DialogHeader>
-        {loading ? (
-          <div className="flex items-center justify-center py-8">
-            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-foreground" />
-          </div>
-        ) : runs.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-4">No runs recorded yet.</p>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Started</TableHead>
-                <TableHead>Duration</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Message</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {runs.map((run) => (
-                <TableRow key={run.id}>
-                  <TableCell className="text-sm">{formatDateTime(run.startedAt)}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {formatDuration(run.startedAt, run.finishedAt)}
-                  </TableCell>
-                  <TableCell>
-                    <CronStatusBadge status={run.status} />
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground max-w-xs truncate">
-                    {run.message ?? "—"}
-                  </TableCell>
+    <>
+      <Dialog open={open} onOpenChange={(v: boolean) => { if (!v) onClose(); }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Run history — {jobName}</DialogTitle>
+          </DialogHeader>
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-foreground" />
+            </div>
+          ) : runs.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4">No runs recorded yet.</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Started</TableHead>
+                  <TableHead>Duration</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Message</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </DialogContent>
-    </Dialog>
+              </TableHeader>
+              <TableBody>
+                {runs.map((run) => (
+                  <TableRow key={run.id}>
+                    <TableCell className="text-sm">{formatDateTime(run.startedAt)}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {formatDuration(run.startedAt, run.finishedAt)}
+                    </TableCell>
+                    <TableCell>
+                      <CronStatusBadge status={run.status} message={run.message} />
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground max-w-xs">
+                      {run.message ? (
+                        <button
+                          onClick={() => setExpandedMessage(run.message)}
+                          className="text-left truncate max-w-xs block hover:underline underline-offset-2 cursor-pointer"
+                          title="Click to view full output"
+                        >
+                          {run.message}
+                        </button>
+                      ) : "—"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={expandedMessage !== null} onOpenChange={(v) => { if (!v) setExpandedMessage(null); }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Run output — {jobName}</DialogTitle>
+          </DialogHeader>
+          <pre className="text-xs font-mono whitespace-pre-wrap overflow-y-auto max-h-[60vh] rounded-md p-4"
+            style={{ background: "var(--muted)", color: "var(--muted-foreground)" }}>
+            {expandedMessage}
+          </pre>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -523,7 +563,7 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
                         : "—"}
                     </TableCell>
                     <TableCell>
-                      <CronStatusBadge status={job.lastRun?.status ?? null} external={job.triggerEnabled === false} />
+                      <CronStatusBadge status={job.lastRun?.status ?? null} external={job.triggerEnabled === false} message={job.lastRun?.message} />
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">
