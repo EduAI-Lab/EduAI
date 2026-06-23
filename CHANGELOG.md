@@ -9,7 +9,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
-- [core] feat: RAG ingestion preserves LaTeX equations, converts HTML tables to markdown, and chunks at clinical/slide section boundaries (#90, #91, #93, @superbolt08, 2026-06-23) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+- [core] feat: RAG ingestion preserves LaTeX equations, converts HTML tables to markdown, and chunks at clinical/slide section boundaries (#90, #91, #93, @superbolt08, 2026-06-23) — [#755](https://github.com/EduAI-Lab/EduAI/pull/755)
 
 ## [Week 7 — June 15–21, 2026]
 
