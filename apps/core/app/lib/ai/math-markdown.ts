@@ -9,6 +9,7 @@ const MATH_COMMAND =
 
 const DISPLAY_DELIM_RE = /\\\[([\s\S]*?)\\\]/g;
 const INLINE_DELIM_RE = /\\\(([\s\S]*?)\\\)/g;
+const DISPLAY_BLOCK_RE = /(\$\$[\s\S]*?\$\$)/g;
 const INLINE_MATH_RE = /(?<!\\)\$([^$\n]+?)(?<!\\)\$/g;
 
 function decodeHtmlEntities(text: string): string {
@@ -129,7 +130,14 @@ function extractTrailingEquation(line: string): { prefix: string; equation: stri
 }
 
 function wrapDisplayMath(equation: string): string {
-  return `$$\n${consolidateEquationText(equation)}\n$$`;
+  return `$$${consolidateEquationText(equation)}$$`;
+}
+
+function processOutsideDisplayBlocks(text: string, transform: (plain: string) => string): string {
+  return text
+    .split(DISPLAY_BLOCK_RE)
+    .map((part) => (part.startsWith("$$") ? part : transform(part)))
+    .join("");
 }
 
 function lineHasMathDelimiters(line: string): boolean {
@@ -263,14 +271,15 @@ export function normalizeMathMarkdown(text: string): string {
   result = mergeUnbalancedDollarLines(result);
   debugMathMarkdown("after-merge-dollars", { after: result });
 
-  result = result.replace(DISPLAY_DELIM_RE, (_, body) => `$$\n${body.trim()}\n$$`);
+  result = result.replace(DISPLAY_DELIM_RE, (_, body) => `$$${body.trim()}$$`);
   result = result.replace(INLINE_DELIM_RE, (_, body) => `$${body.trim()}$`);
   debugMathMarkdown("after-delimiter-convert", { after: result });
 
-  result = normalizeLineMath(result);
-  debugMathMarkdown("after-normalize-lines", { after: result });
-
-  result = wrapBareDisplayMathLines(result);
+  result = processOutsideDisplayBlocks(result, (plain) => {
+    let section = normalizeLineMath(plain);
+    section = wrapBareDisplayMathLines(section);
+    return section;
+  });
   debugMathMarkdown("output", { after: result });
 
   return result;

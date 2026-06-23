@@ -65,7 +65,7 @@ describe("normalizeMathMarkdown", () => {
     const input =
       "x^2 + $\\frac{b}{a}$x + $\\left($\\frac{b}{2a}\\right$)^2 = -$\\frac{c}{a}$ + $\\frac{b^2}{4a^2}$";
     const result = normalizeMathMarkdown(input);
-    expect(result).toContain("$$\n");
+    expect(result).toContain("$$");
     expect(result).toContain("\\left(\\frac{b}{2a}\\right)^2");
     expect(result).not.toContain("$\\left($");
   });
@@ -78,6 +78,13 @@ describe("normalizeMathMarkdown", () => {
     expect(result).toContain("\\right)^2");
     expect(result).not.toMatch(/\$\$\^2/);
     expect(result).not.toMatch(/\\right\)\s*\$\$/);
+  });
+
+  it("does not split existing display math blocks during line normalization", () => {
+    const input = "\\[ a(x^2 + \\frac{b}{a}x) = -c \\]";
+    const result = normalizeMathMarkdown(input);
+    expect(result).toBe("$$a(x^2 + \\frac{b}{a}x) = -c$$");
+    expect(result).not.toMatch(/\$\$\s*\$\$/);
   });
 
   it("wraps step lines with trailing a\\left equations", () => {
