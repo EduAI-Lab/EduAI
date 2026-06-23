@@ -35,7 +35,6 @@ import type {
   BugReportStatus,
   Course,
   EduAiApiKeyStatus,
-  EduAiCourse,
   EnrollmentRole,
   StudentMetricRow,
   SubmissionRow,
@@ -80,7 +79,6 @@ async function http(path: string, init?: RequestInit) {
 export const api = {
   me: () => http('/api/me') as Promise<{ user: User | null }>,
   listCourses: () => http('/api/courses'),
-  listEduAiCourses: () => http('/api/eduai/courses') as Promise<EduAiCourse[]>,
   courseById: (courseId: number) => http(`/api/courses/${courseId}`),
   updateCourse: (
     courseId: number,
@@ -113,11 +111,6 @@ export const api = {
     },
   ) =>
     http(`/api/courses/${courseId}/import`, {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    }),
-  importEduAiCourse: (payload: { externalCourseId: string }) =>
-    http('/api/courses/import-external', {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
@@ -332,11 +325,6 @@ export const api = {
   listAdminCourses: () => http('/api/admin/courses') as Promise<Course[]>,
   getAdminCourseEnrollments: (courseId: number) =>
     http(`/api/admin/courses/${courseId}/enrollments`) as Promise<AdminEnrollmentData>,
-  enrollStudentInCourse: (courseId: number, userId: string) =>
-    http(`/api/admin/courses/${courseId}/enrollments`, {
-      method: 'POST',
-      body: JSON.stringify({ userId }),
-    }) as Promise<{ ok: true }>,
   removeStudentFromCourse: (courseId: number, userId: string) =>
     http(`/api/admin/courses/${courseId}/enrollments/${userId}`, {
       method: 'DELETE',
@@ -346,10 +334,6 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ role }),
     }) as Promise<{ ok: true; role: EnrollmentRole }>,
-  adminSyncCourseEnrollments: (courseId: number) =>
-    http(`/api/admin/courses/${courseId}/sync-enrollments`, {
-      method: 'POST',
-    }) as Promise<{ ok: true }>,
   courseSubmissions: (
     courseId: number,
     params?: { activityId?: number; studentId?: string; take?: number; skip?: number },
