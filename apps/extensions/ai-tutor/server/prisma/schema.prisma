@@ -46,6 +46,7 @@ model CourseOffering {
   id               Int       @id @default(autoincrement())
   title            String
   description      String?
+  department       String?
   startDate        DateTime?
   endDate          DateTime?
   isPublished      Boolean   @default(false)
@@ -76,11 +77,13 @@ model CourseInstructor {
   @@id([userId, courseOfferingId])
 }
 
-/// Student enrollment for a course offering.
-/// `userId` is the Core CUID of the student; no local FK — User table is owned by Core.
+/// Student or TA enrollment for a course offering.
+/// `role` mirrors Core's EnrollmentRole: "STUDENT", "TA", or "INSTRUCTOR".
+/// `userId` is the Core CUID of the enrollee; no local FK — User table is owned by Core.
 model CourseEnrollment {
   userId           String
   courseOfferingId Int
+  role             String         @default("STUDENT")
   createdAt        DateTime       @default(now())
   courseOffering   CourseOffering @relation(fields: [courseOfferingId], references: [id], onDelete: Cascade)
 
@@ -296,12 +299,10 @@ model SuggestedPrompt {
   updatedAt DateTime @updatedAt
 }
 
-/// One AI chat session per (user, activity, mode) tuple.
-///
-/// The unique constraint `[userId, activityId, mode]` is intentional:
-/// switching modes (teach/guide/custom) for the same activity yields a
-/// distinct session so chat history doesn't bleed across pedagogies, but
-/// re-entering the same mode resumes the existing conversation.
+/// One row per AI chat session a student starts for a given (activity, mode).
+/// Multiple rows per (userId, activityId, mode) are allowed so the history
+/// panel can list past conversations. Each row's chatId is the Core Chat id
+/// where the full message transcript lives.
 ///
 /// `userId` stores the Core CUID; no local FK — User table is owned by Core.
 model AiChatSession {
@@ -310,13 +311,14 @@ model AiChatSession {
   activity            Activity             @relation(fields: [activityId], references: [id], onDelete: Cascade)
   activityId          Int
   mode                String
-  chatId              String
+  chatId              String               @unique
   modelId             String?
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
   aiInteractionTraces AiInteractionTrace[]
 
-  @@unique([userId, activityId, mode])
+  @@index([userId, activityId])
+  @@index([userId, activityId, mode])
 }
 
 /// `userId` stores the Core CUID; no local FK — User table is owned by Core.

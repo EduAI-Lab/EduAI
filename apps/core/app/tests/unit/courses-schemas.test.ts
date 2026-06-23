@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   CreateCourseSchema,
   UpdateCourseSchema,
+  UpdateCourseRagSettingsSchema,
   CreateCourseTopicSchema,
   DeleteCourseTopicSchema,
 } from "~/lib/courses/schemas";
@@ -15,6 +16,7 @@ describe("CreateCourseSchema", () => {
       term: "Fall",
       year: 2025,
       startDate: "2025-09-01",
+      department: "COSC",
       instructorUserIds: ["user-1"],
     });
     expect(r.success).toBe(true);
@@ -78,6 +80,45 @@ describe("UpdateCourseSchema", () => {
 
   it("rejects a non-integer year when provided", () => {
     expect(UpdateCourseSchema.safeParse({ year: 2025.5 }).success).toBe(false);
+  });
+});
+
+describe("UpdateCourseRagSettingsSchema", () => {
+  it("accepts valid ragTopK and ragSimilarityThreshold", () => {
+    const result = UpdateCourseRagSettingsSchema.safeParse({
+      ragTopK: 6,
+      ragSimilarityThreshold: 0.6,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).toEqual({ ragTopK: 6, ragSimilarityThreshold: 0.6 });
+    }
+  });
+
+  it("accepts null to clear overrides", () => {
+    const result = UpdateCourseRagSettingsSchema.safeParse({
+      ragTopK: null,
+      ragSimilarityThreshold: null,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts an empty patch", () => {
+    expect(UpdateCourseRagSettingsSchema.safeParse({}).success).toBe(true);
+  });
+
+  it("rejects ragTopK below 1 or above 20", () => {
+    expect(UpdateCourseRagSettingsSchema.safeParse({ ragTopK: 0 }).success).toBe(false);
+    expect(UpdateCourseRagSettingsSchema.safeParse({ ragTopK: 21 }).success).toBe(false);
+  });
+
+  it("rejects ragSimilarityThreshold outside (0, 1)", () => {
+    expect(UpdateCourseRagSettingsSchema.safeParse({ ragSimilarityThreshold: 0 }).success).toBe(
+      false,
+    );
+    expect(UpdateCourseRagSettingsSchema.safeParse({ ragSimilarityThreshold: 1 }).success).toBe(
+      false,
+    );
   });
 });
 

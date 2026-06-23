@@ -1,0 +1,765 @@
+import { useMemo, useState } from "react";
+import { Form, Link } from "react-router";
+
+import { LogDetailsDialog } from "~/components/admin/log-details-dialog";
+import { Badge, PageHeading } from "@eduai/ui";
+import { Button } from "@eduai/ui";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@eduai/ui";
+import { Input } from "@eduai/ui";
+import { Label } from "@eduai/ui";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@eduai/ui";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@eduai/ui";
+import { Tabs, TabsList, TabsTrigger } from "@eduai/ui";
+
+export type LogsTab = "audit" | "security" | "system";
+
+type LogsQueryState = Record<string, string | undefined>;
+
+type LogRetentionPolicy = {
+  auditRetentionDays: number;
+  systemRetentionDays: number;
+};
+
+type LogsAdminViewProps = {
+  tab: LogsTab;
+  rows: Array<Record<string, unknown>>;
+  total: number;
+  page: number;
+  pageSize: number;
+  hasMore: boolean;
+  query: LogsQueryState;
+  retentionPolicy: LogRetentionPolicy;
+};
+
+// Audit categories exclude SECURITY — security events have their own hard-scoped tab.
+const AUDIT_CATEGORIES = [
+  "USER",
+  "INVITATION",
+  "COURSE",
+  "ENROLLMENT",
+  "MATERIAL",
+  "TOPIC",
+  "AI_CONFIG",
+  "CANVAS",
+  "BUG_REPORT",
+] as const;
+
+const OUTCOMES = ["SUCCESS", "FAILURE", "DENIED"] as const;
+const SYSTEM_LEVELS = ["ERROR", "WARN", "INFO"] as const;
+const SYSTEM_SOURCES = [
+  "ROUTE",
+  "AUTH",
+  "AI",
+  "CANVAS",
+  "MAIL",
+  "DB",
+  "SSR",
+  "API",
+] as const;
+
+/**
+ * Builds a query string while preserving existing URL-driven state.
+ */
+function buildQueryString(
+  current: LogsQueryState,
+  overrides: Record<string, string | number | undefined | null>,
+) {
+  const params = new URLSearchParams();
+
+  // Preserving existing values keeps tab/filter transitions bookmarkable.
+  for (const [key, value] of Object.entries(current)) {
+    if (typeof value === "string" && value.trim()) {
+      params.set(key, value.trim());
+    }
+  }
+
+  // Overrides can either set a new value or clear a key completely.
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value === undefined || value === null || String(value).trim() === "") {
+      params.delete(key);
+    } else {
+      params.set(key, String(value));
+    }
+  }
+
+  const next = params.toString();
+  return next ? `?${next}` : "?";
+}
+
+/**
+ * Formats timestamps consistently across all log tabs.
+ */
+function formatTimestamp(value: unknown) {
+  if (typeof value !== "string") {
+    return "-";
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
+}
+
+/**
+ * Keeps row-key lookup stable while allowing mixed log row shapes.
+ */
+function getRowValue(row: Record<string, unknown>, key: string) {
+  const value = row[key];
+  if (value === null || value === undefined || value === "") {
+    return "-";
+  }
+  return String(value);
+}
+
+/**
+ * Combines live user-join data with stored actorRole so actor attribution remains readable over time.
+ */
+function formatActorDisplay(row: Record<string, unknown>) {
+  const user = row.user;
+  const userRecord =
+    typeof user === "object" && user !== null
+      ? (user as Record<string, unknown>)
+      : null;
+
+  const actorNameRaw = userRecord?.name;
+  const actorRoleRaw = row.actorRole ?? userRecord?.role;
+
+  const actorName =
+    typeof actorNameRaw === "string" && actorNameRaw.trim()
+      ? actorNameRaw.trim()
+      : null;
+  const actorRole =
+    typeof actorRoleRaw === "string" && actorRoleRaw.trim()
+      ? actorRoleRaw.trim()
+      : null;
+
+  if (actorName && actorRole) {
+    return `${actorName} (${actorRole})`;
+  }
+  if (actorName) {
+    return actorName;
+  }
+  if (actorRole) {
+    return actorRole;
+  }
+  return "Unknown";
+}
+
+/**
+ * Removes only tab-specific filters while preserving shared pagination/sort controls.
+ */
+function buildClearFiltersHref(tab: LogsTab, query: LogsQueryState) {
+  if (tab === "audit") {
+    return buildQueryString(query, {
+      page: 1,
+      category: undefined,
+      actionCode: undefined,
+      actorRole: undefined,
+      entityType: undefined,
+      outcome: undefined,
+      routePath: undefined,
+      dateFrom: undefined,
+      dateTo: undefined,
+    });
+  }
+
+  if (tab === "security") {
+    return buildQueryString(query, {
+      page: 1,
+      actionCode: undefined,
+      actorRole: undefined,
+      outcome: undefined,
+      routePath: undefined,
+      ipAddress: undefined,
+      dateFrom: undefined,
+      dateTo: undefined,
+    });
+  }
+
+  return buildQueryString(query, {
+    page: 1,
+    level: undefined,
+    source: undefined,
+    code: undefined,
+    dateFrom: undefined,
+    dateTo: undefined,
+  });
+}
+
+// Sentinel for the "All" / empty option — Radix Select disallows an empty-string
+// item value, so we map "" <-> this sentinel and submit "" through the hidden input.
+const ALL_VALUE = "__all";
+
+/**
+ * Design-system Select wired into the surrounding GET <Form>: a hidden input
+ * carries the chosen value so filters still submit via the URL on "Apply",
+ * while the visible control matches every other dropdown on the platform.
+ */
+function FilterSelect({
+  name,
+  defaultValue,
+  placeholder,
+  options,
+}: {
+  name: string;
+  defaultValue: string;
+  placeholder: string;
+  options: { value: string; label: string }[];
+}) {
+  const [value, setValue] = useState(defaultValue);
+  return (
+    <>
+      <input type="hidden" name={name} value={value} />
+      <Select
+        value={value === "" ? ALL_VALUE : value}
+        onValueChange={(v) => setValue(v === ALL_VALUE ? "" : v)}
+      >
+        <SelectTrigger className="w-full">
+          <SelectValue placeholder={placeholder} />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((o) => (
+            <SelectItem key={o.value === "" ? ALL_VALUE : o.value} value={o.value === "" ? ALL_VALUE : o.value}>
+              {o.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </>
+  );
+}
+
+function outcomeVariant(
+  outcome: string,
+): "default" | "secondary" | "destructive" | "outline" {
+  if (outcome === "DENIED" || outcome === "FAILURE") return "destructive";
+  if (outcome === "SUCCESS") return "secondary";
+  return "outline";
+}
+
+function levelVariant(
+  level: string,
+): "default" | "secondary" | "destructive" | "outline" {
+  if (level === "ERROR") return "destructive";
+  if (level === "WARN") return "default";
+  return "secondary";
+}
+
+/**
+ * Shared admin view for audit/security/system log browsing.
+ *
+ * Keeps filtering, pagination, and details UX consistent so admin users can
+ * investigate incidents from a single predictable surface. All filter state is
+ * URL-driven (GET <Form>), so every view is directly shareable/bookmarkable.
+ */
+export function LogsAdminView({
+  tab,
+  rows,
+  total,
+  page,
+  pageSize,
+  hasMore,
+  query,
+  retentionPolicy,
+}: LogsAdminViewProps) {
+  const [selectedRow, setSelectedRow] = useState<Record<
+    string,
+    unknown
+  > | null>(null);
+
+  const prevHref =
+    page > 1 ? buildQueryString(query, { page: page - 1 }) : null;
+  const nextHref = hasMore ? buildQueryString(query, { page: page + 1 }) : null;
+
+  const tabLinks = useMemo(
+    () => ({
+      audit: buildQueryString(query, { tab: "audit", page: 1 }),
+      security: buildQueryString(query, { tab: "security", page: 1 }),
+      system: buildQueryString(query, { tab: "system", page: 1 }),
+    }),
+    [query],
+  );
+
+  const clearFiltersHref = buildClearFiltersHref(tab, query);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  return (
+    <div className="flex flex-1 flex-col">
+      <div className="@container/main flex flex-1 flex-col gap-2">
+        <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6 px-4 lg:px-6">
+          <div className="flex items-start justify-between gap-4">
+            <PageHeading
+              heading="Logs"
+              subheading="Audit, security, and system diagnostics for operational investigations."
+            />
+          </div>
+
+      {/* Tabs are links so each view remains directly shareable by URL. */}
+      <Tabs value={tab}>
+        <TabsList>
+          <TabsTrigger value="audit" asChild>
+            <Link to={tabLinks.audit}>Audit</Link>
+          </TabsTrigger>
+          <TabsTrigger value="security" asChild>
+            <Link to={tabLinks.security}>Security</Link>
+          </TabsTrigger>
+          <TabsTrigger value="system" asChild>
+            <Link to={tabLinks.system}>System</Link>
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {/* Filters — GET form so the URL stays the source of truth. */}
+      <Card>
+        <CardContent className="pt-6">
+          <Form method="get">
+            <input type="hidden" name="tab" value={tab} />
+            {/* Filter submits always reset to page 1 so newly narrowed results start at a valid index. */}
+            <input type="hidden" name="page" value="1" />
+
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="grid gap-1.5">
+                <Label className="text-xs">Page size</Label>
+                <FilterSelect
+                  name="pageSize"
+                  defaultValue={query.pageSize ?? String(pageSize)}
+                  placeholder="Page size"
+                  options={[
+                    { value: "25", label: "25" },
+                    { value: "50", label: "50" },
+                    { value: "100", label: "100" },
+                  ]}
+                />
+              </div>
+
+              <div className="grid gap-1.5">
+                <Label className="text-xs">Direction</Label>
+                <FilterSelect
+                  name="direction"
+                  defaultValue={query.direction ?? "desc"}
+                  placeholder="Direction"
+                  options={[
+                    { value: "desc", label: "Newest first" },
+                    { value: "asc", label: "Oldest first" },
+                  ]}
+                />
+              </div>
+
+              <div className="grid gap-1.5">
+                <Label className="text-xs">Date from</Label>
+                <Input
+                  type="date"
+                  name="dateFrom"
+                  defaultValue={query.dateFrom ?? ""}
+                />
+              </div>
+
+              <div className="grid gap-1.5">
+                <Label className="text-xs">Date to</Label>
+                <Input
+                  type="date"
+                  name="dateTo"
+                  defaultValue={query.dateTo ?? ""}
+                />
+              </div>
+
+              {tab === "audit" && (
+                <>
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs">Category</Label>
+                    <FilterSelect
+                      name="category"
+                      defaultValue={query.category ?? ""}
+                      placeholder="Category"
+                      options={[
+                        { value: "", label: "All" },
+                        ...AUDIT_CATEGORIES.map((category) => ({ value: category, label: category })),
+                      ]}
+                    />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs">Action code</Label>
+                    <Input
+                      name="actionCode"
+                      defaultValue={query.actionCode ?? ""}
+                    />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs">Actor role</Label>
+                    <Input
+                      name="actorRole"
+                      defaultValue={query.actorRole ?? ""}
+                    />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs">Entity type</Label>
+                    <Input
+                      name="entityType"
+                      defaultValue={query.entityType ?? ""}
+                    />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs">Outcome</Label>
+                    <FilterSelect
+                      name="outcome"
+                      defaultValue={query.outcome ?? ""}
+                      placeholder="Outcome"
+                      options={[
+                        { value: "", label: "All" },
+                        ...OUTCOMES.map((outcome) => ({ value: outcome, label: outcome })),
+                      ]}
+                    />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs">Route path</Label>
+                    <Input
+                      name="routePath"
+                      defaultValue={query.routePath ?? ""}
+                    />
+                  </div>
+                </>
+              )}
+
+              {tab === "security" && (
+                <>
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs">Action code</Label>
+                    <Input
+                      name="actionCode"
+                      defaultValue={query.actionCode ?? ""}
+                    />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs">Outcome</Label>
+                    <FilterSelect
+                      name="outcome"
+                      defaultValue={query.outcome ?? ""}
+                      placeholder="Outcome"
+                      options={[
+                        { value: "", label: "All" },
+                        ...OUTCOMES.map((outcome) => ({ value: outcome, label: outcome })),
+                      ]}
+                    />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs">Actor role</Label>
+                    <Input
+                      name="actorRole"
+                      defaultValue={query.actorRole ?? ""}
+                    />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs">Route path</Label>
+                    <Input
+                      name="routePath"
+                      defaultValue={query.routePath ?? ""}
+                    />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs">IP address</Label>
+                    <Input
+                      name="ipAddress"
+                      defaultValue={query.ipAddress ?? ""}
+                    />
+                  </div>
+                </>
+              )}
+
+              {tab === "system" && (
+                <>
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs">Level</Label>
+                    <FilterSelect
+                      name="level"
+                      defaultValue={query.level ?? ""}
+                      placeholder="Level"
+                      options={[
+                        { value: "", label: "All" },
+                        ...SYSTEM_LEVELS.map((level) => ({ value: level, label: level })),
+                      ]}
+                    />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs">Source</Label>
+                    <FilterSelect
+                      name="source"
+                      defaultValue={query.source ?? ""}
+                      placeholder="Source"
+                      options={[
+                        { value: "", label: "All" },
+                        ...SYSTEM_SOURCES.map((source) => ({ value: source, label: source })),
+                      ]}
+                    />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs">Code</Label>
+                    <Input name="code" defaultValue={query.code ?? ""} />
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <Button type="submit" size="sm">
+                Apply filters
+              </Button>
+              <Button type="button" size="sm" variant="outline" asChild>
+                <Link to={clearFiltersHref}>Clear filters</Link>
+              </Button>
+            </div>
+          </Form>
+        </CardContent>
+      </Card>
+
+      {/* Retention policy + manual cleanup. */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Retention</CardTitle>
+          <CardDescription>
+            Logs older than the configured window are removed on a daily sweep,
+            or on demand below.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Form method="post" className="flex flex-wrap items-end gap-3">
+            <input
+              type="hidden"
+              name="intent"
+              value="updateLogRetentionPolicy"
+            />
+            <div className="grid gap-1.5">
+              <Label className="text-xs">Audit retention (days)</Label>
+              <Input
+                type="number"
+                name="auditRetentionDays"
+                min={1}
+                max={3650}
+                defaultValue={retentionPolicy.auditRetentionDays}
+                className="w-40"
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label className="text-xs">System retention (days)</Label>
+              <Input
+                type="number"
+                name="systemRetentionDays"
+                min={1}
+                max={3650}
+                defaultValue={retentionPolicy.systemRetentionDays}
+                className="w-40"
+              />
+            </div>
+            <Button type="submit" size="sm">
+              Save retention policy
+            </Button>
+          </Form>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Form method="post">
+              <input type="hidden" name="intent" value="cleanupAuditLogsNow" />
+              <Button type="submit" size="sm" variant="outline">
+                Cleanup audit &gt; {retentionPolicy.auditRetentionDays} days
+              </Button>
+            </Form>
+            <Form method="post">
+              <input type="hidden" name="intent" value="cleanupSystemLogsNow" />
+              <Button type="submit" size="sm" variant="outline">
+                Cleanup system &gt; {retentionPolicy.systemRetentionDays} days
+              </Button>
+            </Form>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Results table. */}
+      <Card>
+        <CardContent className="overflow-x-auto pt-6">
+          <Table>
+            <TableHeader>
+              {tab === "audit" && (
+                <TableRow>
+                  <TableHead>Created</TableHead>
+                  <TableHead>Action</TableHead>
+                  <TableHead>Category</TableHead>
+                  <TableHead>Actor</TableHead>
+                  <TableHead>Entity</TableHead>
+                  <TableHead>Outcome</TableHead>
+                  <TableHead>Route</TableHead>
+                  <TableHead className="text-right">Details</TableHead>
+                </TableRow>
+              )}
+              {tab === "security" && (
+                <TableRow>
+                  <TableHead>Created</TableHead>
+                  <TableHead>Action</TableHead>
+                  <TableHead>Actor</TableHead>
+                  <TableHead>Outcome</TableHead>
+                  <TableHead>Route</TableHead>
+                  <TableHead>IP</TableHead>
+                  <TableHead className="text-right">Details</TableHead>
+                </TableRow>
+              )}
+              {tab === "system" && (
+                <TableRow>
+                  <TableHead>Created</TableHead>
+                  <TableHead>Level</TableHead>
+                  <TableHead>Source</TableHead>
+                  <TableHead>Code</TableHead>
+                  <TableHead>Message</TableHead>
+                  <TableHead className="text-right">Details</TableHead>
+                </TableRow>
+              )}
+            </TableHeader>
+            <TableBody>
+              {rows.length === 0 && (
+                <TableRow>
+                  <TableCell
+                    colSpan={tab === "audit" ? 8 : tab === "security" ? 7 : 6}
+                    className="text-muted-foreground py-8 text-center"
+                  >
+                    No logs found for the selected filters.
+                  </TableCell>
+                </TableRow>
+              )}
+
+              {rows.map((row) => (
+                <TableRow key={getRowValue(row, "id")}>
+                  <TableCell className="whitespace-nowrap">
+                    {formatTimestamp(row.createdAt)}
+                  </TableCell>
+
+                  {tab === "audit" && (
+                    <>
+                      <TableCell className="font-medium">
+                        {getRowValue(row, "actionCode")}
+                      </TableCell>
+                      <TableCell>{getRowValue(row, "category")}</TableCell>
+                      <TableCell>{formatActorDisplay(row)}</TableCell>
+                      <TableCell>{getRowValue(row, "entityLabel")}</TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={outcomeVariant(getRowValue(row, "outcome"))}
+                        >
+                          {getRowValue(row, "outcome")}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {getRowValue(row, "routePath")}
+                      </TableCell>
+                    </>
+                  )}
+
+                  {tab === "security" && (
+                    <>
+                      <TableCell className="font-medium">
+                        {getRowValue(row, "actionCode")}
+                      </TableCell>
+                      <TableCell>{formatActorDisplay(row)}</TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={outcomeVariant(getRowValue(row, "outcome"))}
+                        >
+                          {getRowValue(row, "outcome")}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {getRowValue(row, "routePath")}
+                      </TableCell>
+                      <TableCell>{getRowValue(row, "ipAddress")}</TableCell>
+                    </>
+                  )}
+
+                  {tab === "system" && (
+                    <>
+                      <TableCell>
+                        <Badge
+                          variant={levelVariant(getRowValue(row, "level"))}
+                        >
+                          {getRowValue(row, "level")}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{getRowValue(row, "source")}</TableCell>
+                      <TableCell className="font-medium">
+                        {getRowValue(row, "code")}
+                      </TableCell>
+                      <TableCell className="max-w-md truncate">
+                        {getRowValue(row, "message")}
+                      </TableCell>
+                    </>
+                  )}
+
+                  <TableCell className="text-right">
+                    {/* Explicit details interaction prevents overloading primary columns with verbose JSON. */}
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setSelectedRow(row)}
+                    >
+                      View details
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      {/* Pagination. */}
+      <div className="flex items-center justify-between">
+        <p className="text-muted-foreground text-sm">
+          Page {page} of {totalPages} ({rows.length} row
+          {rows.length === 1 ? "" : "s"} shown, {total} total)
+        </p>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!prevHref}
+            asChild={!!prevHref}
+          >
+            {prevHref ? (
+              <Link to={prevHref}>Previous</Link>
+            ) : (
+              <span>Previous</span>
+            )}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!nextHref}
+            asChild={!!nextHref}
+          >
+            {nextHref ? <Link to={nextHref}>Next</Link> : <span>Next</span>}
+          </Button>
+        </div>
+      </div>
+
+      <LogDetailsDialog
+        title={`${tab.toUpperCase()} log details`}
+        row={selectedRow}
+        onClose={() => setSelectedRow(null)}
+      />
+        </div>
+      </div>
+    </div>
+  );
+}

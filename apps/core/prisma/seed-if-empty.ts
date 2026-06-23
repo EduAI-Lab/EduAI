@@ -1,17 +1,36 @@
 import { PrismaClient } from '@prisma/client';
 import { execSync } from 'child_process';
+import { SEED_IDS } from './seed';
 
 const prisma = new PrismaClient();
 
-// Always sync providers/models (vLLM, routing tiers) — seed-if-empty skips full seed when users exist.
-execSync('npx tsx prisma/sync-ai-providers.ts', { stdio: 'inherit' });
+const SEED_STUDENT_IDS = [
+  SEED_IDS.users.student1,
+  SEED_IDS.users.student2,
+  SEED_IDS.users.student3,
+  SEED_IDS.users.student4,
+  SEED_IDS.users.student5,
+];
 
-const count = await prisma.user.count();
+const [userCount, seedStudentsNeedingBackfill] = await Promise.all([
+  prisma.user.count(),
+  prisma.user.count({
+    where: {
+      id: { in: [...SEED_STUDENT_IDS] },
+      OR: [{ studentId: null }, { studentIdLookup: null }],
+    },
+  }),
+]);
 await prisma.$disconnect();
 
-if (count === 0) {
+if (userCount === 0) {
   console.log('[auto-seed] No data found, seeding core database...');
   execSync('npm run db:seed', { stdio: 'inherit' });
+} else if (seedStudentsNeedingBackfill > 0) {
+  console.log(
+    `[auto-seed] ${seedStudentsNeedingBackfill} seed student(s) need student ID backfill — running targeted update...`,
+  );
+  execSync('tsx prisma/seed-backfill-student-ids.ts', { stdio: 'inherit' });
 } else {
-  console.log(`[auto-seed] Core database already has ${count} users, skipping full seed.`);
+  console.log(`[auto-seed] Core database already has ${userCount} users, skipping seed.`);
 }

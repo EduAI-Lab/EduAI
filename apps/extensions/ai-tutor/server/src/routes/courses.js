@@ -26,18 +26,32 @@
 
 import express from 'express';
 import { prisma } from '../config/database.js';
-import { requireRole } from '../middleware/auth.js';
+import { requireRole, isUnitAdminForCourse, isCourseAdmin } from '../middleware/auth.js';
 import { mapCourseOffering, mapProgressData } from '../utils/mappers.js';
 import { cloneCourseContent, cloneLessonsFromOffering } from '../services/courseCloning.js';
 import { calculateCourseProgress } from '../services/progressCalculation.js';
-import { findEduAiCourseById, listEduAiCourses } from '../services/eduaiClient.js';
-import { syncExternalCourseTopics } from '../services/topicSync.js';
+import { findEduAiCourseById, listEduAiCourses, setCoreCoursePublishState } from '../services/eduaiClient.js';
+import { mapEduAiServiceKeyError } from '../services/eduaiServiceKeyErrors.js';
 import { syncCourseEnrollments } from '../services/enrollmentSync.js';
+import {
+  importEnrolledCoursesFromCore,
+  importExternalCourseForUser,
+  importTaughtCoursesFromCore,
+} from '../services/importTaughtCoursesService.js';
 
 const router = express.Router();
 
 function isSupportedCourseRole(role) {
-  return role === 'INSTRUCTOR' || role === 'STUDENT';
+  return role === 'INSTRUCTOR' || role === 'STUDENT' || role === 'TA' || role === 'UNIT_ADMIN';
+}
+
+function respondEduAiUpstreamError(res, error, fallbackMessage) {
+  const mapped = mapEduAiServiceKeyError(error);
+  if (mapped) {
+    return res.status(mapped.status).json({ error: mapped.message, code: mapped.code });
+  }
+  const status = Number.isInteger(error?.status) ? error.status : 502;
+  return res.status(status).json({ error: error.message || fallbackMessage });
 }
 
 /**
@@ -50,24 +64,28 @@ function isSupportedCourseRole(role) {
  * Why: filtering by THIS instructor (not globally) lets multiple instructors
  * import the same EduAI course independently into their own offerings.
  */
-router.get('/eduai/courses', requireRole('INSTRUCTOR'), async (req, res) => {
+router.get('/eduai/courses', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
   try {
-    // Fetch available courses from Core using the service key
-    const courses = await listEduAiCourses();
+    // #578: list the caller's Core-scoped courses using their session cookie
+    // (the service key would return the full catalog). Mirrors the import path.
+    const courses = await listEduAiCourses({ cookie: req.headers.cookie });
 
-    // Exclude any EduAI course already imported by this instructor
-    // We identify imported ones via CourseOffering.externalId (source id) scoped to the instructor
-    const instructorId = req.user?.id;
+    // Exclude any EduAI course already mirrored into AI Tutor. coreOfferingId is
+    // @unique (one offering per Core course globally), so a hit on either the Core
+    // link or the legacy externalId means the course is already in the system.
     const imported = await prisma.courseOffering.findMany({
       where: {
         externalSource: 'EDUAI',
-        externalId: { not: null },
-        instructors: { some: { userId: instructorId } },
+        OR: [{ coreOfferingId: { not: null } }, { externalId: { not: null } }],
       },
-      select: { externalId: true },
+      select: { coreOfferingId: true, externalId: true },
     });
 
-    const importedIds = new Set(imported.map((c) => c.externalId).filter(Boolean));
+    const importedIds = new Set();
+    for (const row of imported) {
+      if (row.coreOfferingId) importedIds.add(row.coreOfferingId);
+      if (row.externalId) importedIds.add(row.externalId);
+    }
     const filtered = Array.isArray(courses)
       ? courses.filter((c) => c && typeof c.id === 'string' && !importedIds.has(c.id))
       : [];
@@ -75,8 +93,7 @@ router.get('/eduai/courses', requireRole('INSTRUCTOR'), async (req, res) => {
     res.json(filtered);
   } catch (error) {
     console.error('[eduai] Failed to list courses', error);
-    const status = Number.isInteger(error?.status) ? error.status : 502;
-    res.status(status).json({ error: error.message || 'Unable to fetch EduAI courses' });
+    return respondEduAiUpstreamError(res, error, 'Unable to fetch EduAI courses');
   }
 });
 
@@ -98,13 +115,77 @@ router.get('/courses', async (req, res) => {
   }
 
   try {
+    if (authUser.role === 'STUDENT' || authUser.role === 'TA') {
+      try {
+        await importEnrolledCoursesFromCore(authUser, getEduAiCookieForRequest(req));
+      } catch (err) {
+        console.error('[eduai] Core enrollment mirror failed on list', err);
+      }
+    }
+
     if (authUser.role === 'INSTRUCTOR') {
-      // Instructors see all their courses regardless of publish status (no progress)
+      try {
+        await importTaughtCoursesFromCore(authUser, getEduAiCookieForRequest(req));
+      } catch (err) {
+        console.error('[eduai] Core course mirror failed on list', err);
+      }
+
       const courses = await prisma.courseOffering.findMany({
         where: { instructors: { some: { userId: authUser.id } } },
         orderBy: { createdAt: 'desc' },
       });
       res.json(courses.map(mapCourseOffering));
+    } else if (authUser.role === 'UNIT_ADMIN') {
+      // UNIT_ADMINs see every course in their authorized units (regardless of
+      // publish state), plus any course they personally lead — so the courses
+      // they create or import are always visible even before a department is set.
+      const units = Array.isArray(authUser.authorizedUnits) ? authUser.authorizedUnits : [];
+      const courses = await prisma.courseOffering.findMany({
+        where: {
+          OR: [
+            ...(units.length > 0 ? [{ department: { in: units } }] : []),
+            { instructors: { some: { userId: authUser.id } } },
+          ],
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      res.json(courses.map(mapCourseOffering));
+    } else if (authUser.role === 'TA') {
+      // TAs see all TA-enrolled courses regardless of publish state (no progress),
+      // plus published student-enrolled courses (with progress).
+      const allEnrollments = await prisma.courseEnrollment.findMany({
+        where: { userId: authUser.id },
+        select: { courseOfferingId: true, role: true },
+      });
+      const taOfferingIds = allEnrollments
+        .filter((e) => e.role === 'TA')
+        .map((e) => e.courseOfferingId);
+      const studentOfferingIds = allEnrollments
+        .filter((e) => e.role === 'STUDENT')
+        .map((e) => e.courseOfferingId);
+
+      const taCourses = taOfferingIds.length > 0
+        ? await prisma.courseOffering.findMany({
+            where: { id: { in: taOfferingIds } },
+            orderBy: { createdAt: 'desc' },
+          })
+        : [];
+
+      const studentCourses = studentOfferingIds.length > 0
+        ? await prisma.courseOffering.findMany({
+            where: { id: { in: studentOfferingIds }, isPublished: true },
+            orderBy: { createdAt: 'desc' },
+          })
+        : [];
+
+      const studentCoursesWithProgress = await Promise.all(
+        studentCourses.map(async (course) => {
+          const progress = await calculateCourseProgress(course.id, authUser.id);
+          return { ...mapCourseOffering(course), progress: mapProgressData(progress) };
+        }),
+      );
+
+      res.json([...taCourses.map(mapCourseOffering), ...studentCoursesWithProgress]);
     } else {
       // Students only see published courses they're enrolled in (with progress)
       const courses = await prisma.courseOffering.findMany({
@@ -145,7 +226,7 @@ router.get('/courses', async (req, res) => {
  * for one of {topics, enrollments} doesn't block the other or roll back the
  * import. The instructor can rerun sync explicitly afterwards.
  */
-router.post('/courses/import-external', requireRole('INSTRUCTOR'), async (req, res) => {
+router.post('/courses/import-external', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
   const instructor = req.user;
   const { externalCourseId } = req.body || {};
 
@@ -154,77 +235,58 @@ router.post('/courses/import-external', requireRole('INSTRUCTOR'), async (req, r
   }
 
   try {
-    const externalCourse = await findEduAiCourseById(externalCourseId);
+    // #578: only courses in the instructor's Core-scoped list are importable.
+    // A miss means the caller is not authorized for this Core course (not a 404).
+    const externalCourse = await findEduAiCourseById(externalCourseId, { cookie: req.headers.cookie });
     if (!externalCourse) {
-      return res.status(404).json({ error: 'EduAI course not found' });
+      return res.status(403).json({ error: 'CORE_COURSE_NOT_AUTHORIZED' });
     }
 
-    const alreadyImported = await prisma.courseOffering.findFirst({
-      where: {
-        externalId: externalCourseId,
-        instructors: { some: { userId: instructor.id } },
-      },
-    });
-
-    if (alreadyImported) {
+    // coreOfferingId is @unique — one AI Tutor offering per Core course regardless of instructor.
+    const { offering, created } = await importExternalCourseForUser(instructor, externalCourse);
+    if (!created) {
       return res.status(409).json({ error: 'Course already imported' });
     }
 
-    const titleParts = [
-      typeof externalCourse.code === 'string' ? externalCourse.code.trim() : null,
-      typeof externalCourse.name === 'string' ? externalCourse.name.trim() : null,
-    ].filter(Boolean);
-
-    const derivedTitle =
-      titleParts.join(' - ') ||
-      (typeof externalCourse.name === 'string' ? externalCourse.name : null) ||
-      (typeof externalCourse.code === 'string' ? externalCourse.code : null) ||
-      'Imported Course';
-
-    const derivedDescription =
-      typeof externalCourse.description === 'string' && externalCourse.description.trim()
-        ? externalCourse.description
-        : [externalCourse.term, externalCourse.year].filter(Boolean).join(' ') || null;
-
-    const created = await prisma.$transaction(async (tx) => {
-      const offering = await tx.courseOffering.create({
-        data: {
-          title: derivedTitle,
-          description: derivedDescription,
-          externalId: externalCourse.id,
-          externalSource: 'EDUAI',
-          externalMetadata: externalCourse,
-        },
-      });
-
-      await tx.courseInstructor.create({
-        data: {
-          courseOfferingId: offering.id,
-          userId: instructor.id,
-          role: 'LEAD',
-        },
-      });
-
-      return offering;
-    });
-
-    // Sync topics and enrollments from Core concurrently (independent operations)
-    const [topicResult, enrollmentResult] = await Promise.allSettled([
-      syncExternalCourseTopics(created.id),
-      syncCourseEnrollments(created.id),
-    ]);
-    if (topicResult.status === 'rejected') {
-      console.error('[eduai] Failed to sync topics for imported course', topicResult.reason);
-    }
-    if (enrollmentResult.status === 'rejected') {
-      console.error('[eduai] Failed to sync enrollments for imported course', enrollmentResult.reason);
-    }
-
-    res.status(201).json(mapCourseOffering(created));
+    res.status(201).json(mapCourseOffering(offering));
   } catch (error) {
     console.error('[eduai] Failed to import course', error);
-    const status = Number.isInteger(error?.status) ? error.status : 500;
-    res.status(status).json({ error: error.message || 'Unable to import course' });
+    return respondEduAiUpstreamError(res, error, 'Unable to import course');
+  }
+});
+
+/**
+ * POST /courses/:courseId/sync-enrollments — refresh student enrollments from Core (#578).
+ *
+ * Auth: course admin (LEAD instructor / unit-admin / admin).
+ * Only EduAI-imported courses can sync; a native course has no Core roster to
+ * pull from, so it returns 400 rather than a misleading empty sync.
+ */
+router.post('/courses/:courseId/sync-enrollments', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
+  const authUser = req.user;
+  const courseId = Number(req.params.courseId);
+  if (!Number.isFinite(courseId)) {
+    return res.status(400).json({ error: 'Invalid course id' });
+  }
+
+  try {
+    const course = await prisma.courseOffering.findUnique({
+      where: { id: courseId },
+      include: { instructors: { select: { userId: true } } },
+    });
+    if (!course) return res.status(404).json({ error: 'Course not found' });
+    if (!isCourseAdmin(authUser, course)) {
+      return res.status(403).json({ error: 'Not authorized for this course' });
+    }
+    if (course.externalSource !== 'EDUAI' || !course.externalId) {
+      return res.status(400).json({ error: 'Course was not imported from EduAI' });
+    }
+
+    const result = await syncCourseEnrollments(courseId, { course });
+    res.json(result);
+  } catch (error) {
+    console.error('[eduai] Failed to sync enrollments', error);
+    return respondEduAiUpstreamError(res, error, 'Unable to sync enrollments');
   }
 });
 
@@ -245,7 +307,7 @@ router.get('/courses/:courseId', async (req, res) => {
       where: { id: courseId },
       include: {
         instructors: { select: { userId: true } },
-        enrollments: { select: { userId: true } },
+        enrollments: { select: { userId: true, role: true } },
       },
     });
 
@@ -254,9 +316,11 @@ router.get('/courses/:courseId', async (req, res) => {
     }
 
     const isInstructor = course.instructors.some((i) => i.userId === authUser.id);
-    const isStudent = course.enrollments.some((e) => e.userId === authUser.id);
+    const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
+    const unitAdmin = isUnitAdminForCourse(authUser, course);
+    const isMember = isInstructor || enrollment != null || unitAdmin;
 
-    if (!isInstructor && !isStudent) {
+    if (!isMember) {
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
 
@@ -267,84 +331,18 @@ router.get('/courses/:courseId', async (req, res) => {
 });
 
 /**
- * POST /courses — create a native course, optionally cloning content from another.
- *
- * Auth: INSTRUCTOR; if `sourceCourseId` is given the caller must instruct it.
- * Side effects: creates CourseOffering + CourseInstructor; if cloning, deep-
- *   copies modules/lessons/activities via `cloneCourseContent`.
- *
- * Why: clone path lets instructors duplicate a previous term's course without
- * re-importing from EduAI or rebuilding lessons by hand.
+ * POST /courses — deprecated (#632). Course creation is owned by EduAI Core.
+ * Always returns 403 so legacy clients cannot create offerings locally.
  */
-router.post('/courses', requireRole('INSTRUCTOR'), async (req, res) => {
-  const instructor = req.user;
-  const { title, description, sourceCourseId, startDate, endDate } = req.body || {};
-
-  if (!title) {
-    return res.status(400).json({ error: 'title is required' });
-  }
-
-  const numericSourceCourseId =
-    typeof sourceCourseId === 'number' || typeof sourceCourseId === 'string'
-      ? Number(sourceCourseId)
-      : null;
-
-  if (numericSourceCourseId !== null && !Number.isFinite(numericSourceCourseId)) {
-    return res.status(400).json({ error: 'Invalid sourceCourseId' });
-  }
-
-  try {
-    if (numericSourceCourseId !== null) {
-      const instructorAssignment = await prisma.courseInstructor.findFirst({
-        where: { courseOfferingId: numericSourceCourseId, userId: instructor.id },
-      });
-
-      if (!instructorAssignment) {
-        return res.status(403).json({ error: 'Not authorized for source course' });
-      }
-    }
-
-    const offering = await prisma.courseOffering.create({
-      data: {
-        title,
-        description,
-        startDate: startDate ? new Date(startDate) : null,
-        endDate: endDate ? new Date(endDate) : null,
-      },
-    });
-
-    await prisma.courseInstructor.create({
-      data: {
-        courseOfferingId: offering.id,
-        userId: instructor.id,
-        role: 'LEAD',
-      },
-    });
-
-    if (numericSourceCourseId !== null) {
-      await cloneCourseContent(numericSourceCourseId, offering.id);
-    }
-
-    const created = await prisma.courseOffering.findUnique({
-      where: { id: offering.id },
-      include: {
-        modules: {
-          orderBy: { position: 'asc' },
-          include: {
-            lessons: { orderBy: { position: 'asc' } },
-          },
-        },
-      },
-    });
-
-    res.status(201).json(created);
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
+router.post('/courses', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (_req, res) => {
+  return res.status(403).json({
+    error:
+      'Course creation is managed in EduAI Core. Import or enable courses from Core instead.',
+  });
 });
 
-router.patch('/courses/:courseId', requireRole('INSTRUCTOR'), async (req, res) => {
-  const instructor = req.user;
+router.patch('/courses/:courseId', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
+  const authUser = req.user;
   const courseId = Number(req.params.courseId);
   if (!Number.isFinite(courseId)) {
     return res.status(400).json({ error: 'Invalid course id' });
@@ -357,10 +355,12 @@ router.patch('/courses/:courseId', requireRole('INSTRUCTOR'), async (req, res) =
   }
 
   try {
-    const instructorAssignment = await prisma.courseInstructor.findFirst({
-      where: { courseOfferingId: courseId, userId: instructor.id },
+    const course = await prisma.courseOffering.findUnique({
+      where: { id: courseId },
+      include: { instructors: { select: { userId: true } } },
     });
-    if (!instructorAssignment) {
+    if (!course) return res.status(404).json({ error: 'Course not found' });
+    if (!isCourseAdmin(authUser, course)) {
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
 
@@ -394,8 +394,8 @@ router.patch('/courses/:courseId', requireRole('INSTRUCTOR'), async (req, res) =
  * lessons have no implicit destination, whereas module-level imports preserve
  * their structure.
  */
-router.post('/courses/:courseId/import', requireRole('INSTRUCTOR'), async (req, res) => {
-  const instructor = req.user;
+router.post('/courses/:courseId/import', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
+  const authUser = req.user;
   const courseId = Number(req.params.courseId);
   if (!Number.isFinite(courseId)) {
     return res.status(400).json({ error: 'Invalid course id' });
@@ -430,10 +430,12 @@ router.post('/courses/:courseId/import', requireRole('INSTRUCTOR'), async (req, 
   }
 
   try {
-    const instructorAssignment = await prisma.courseInstructor.findFirst({
-      where: { courseOfferingId: courseId, userId: instructor.id },
+    const destCourse = await prisma.courseOffering.findUnique({
+      where: { id: courseId },
+      include: { instructors: { select: { userId: true } } },
     });
-    if (!instructorAssignment) {
+    if (!destCourse) return res.status(404).json({ error: 'Course not found' });
+    if (!isCourseAdmin(authUser, destCourse)) {
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
 
@@ -442,10 +444,11 @@ router.post('/courses/:courseId/import', requireRole('INSTRUCTOR'), async (req, 
         return res.status(400).json({ error: 'sourceCourseId required when importing modules' });
       }
 
-      const sourceAccess = await prisma.courseInstructor.findFirst({
-        where: { courseOfferingId: numericSourceCourseId, userId: instructor.id },
+      const sourceCourse = await prisma.courseOffering.findUnique({
+        where: { id: numericSourceCourseId },
+        include: { instructors: { select: { userId: true } } },
       });
-      if (!sourceAccess) {
+      if (!sourceCourse || !isCourseAdmin(authUser, sourceCourse)) {
         return res.status(403).json({ error: 'Not authorized for source course' });
       }
 
@@ -496,11 +499,12 @@ router.post('/courses/:courseId/import', requireRole('INSTRUCTOR'), async (req, 
 
       const sourceCourseIds = new Set(lessons.map((lesson) => lesson.module.courseOfferingId));
 
-      for (const course of sourceCourseIds) {
-        const assignment = await prisma.courseInstructor.findFirst({
-          where: { courseOfferingId: course, userId: instructor.id },
+      for (const scId of sourceCourseIds) {
+        const sc = await prisma.courseOffering.findUnique({
+          where: { id: scId },
+          include: { instructors: { select: { userId: true } } },
         });
-        if (!assignment) {
+        if (!sc || !isCourseAdmin(authUser, sc)) {
           return res.status(403).json({ error: 'Not authorized for lesson source course' });
         }
       }
@@ -540,19 +544,27 @@ router.post('/courses/:courseId/import', requireRole('INSTRUCTOR'), async (req, 
  * its modules/lessons; the instructor must opt them in individually so a
  * half-finished module can't leak to students.
  */
-router.patch('/courses/:courseId/publish', requireRole('INSTRUCTOR'), async (req, res) => {
-  const instructor = req.user;
+router.patch('/courses/:courseId/publish', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
+  const authUser = req.user;
   const courseId = Number(req.params.courseId);
   if (!Number.isFinite(courseId)) {
     return res.status(400).json({ error: 'Invalid course id' });
   }
 
   try {
-    const instructorAssignment = await prisma.courseInstructor.findFirst({
-      where: { courseOfferingId: courseId, userId: instructor.id },
+    const course = await prisma.courseOffering.findUnique({
+      where: { id: courseId },
+      include: { instructors: { select: { userId: true } } },
     });
-    if (!instructorAssignment) {
+    if (!course) return res.status(404).json({ error: 'Course not found' });
+    if (!isCourseAdmin(authUser, course)) {
       return res.status(403).json({ error: 'Not authorized for this course' });
+    }
+
+    // #477: write through to Core first. If Core rejects, surface 500 and leave
+    // local state untouched so the two never diverge silently.
+    if (course.coreOfferingId) {
+      await setCoreCoursePublishState(course.coreOfferingId, true);
     }
 
     const updated = await prisma.courseOffering.update({
@@ -577,19 +589,26 @@ router.patch('/courses/:courseId/publish', requireRole('INSTRUCTOR'), async (req
  * immediately hide ALL child content from students; without the cascade a
  * module/lesson could remain reachable by direct URL.
  */
-router.patch('/courses/:courseId/unpublish', requireRole('INSTRUCTOR'), async (req, res) => {
-  const instructor = req.user;
+router.patch('/courses/:courseId/unpublish', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
+  const authUser = req.user;
   const courseId = Number(req.params.courseId);
   if (!Number.isFinite(courseId)) {
     return res.status(400).json({ error: 'Invalid course id' });
   }
 
   try {
-    const instructorAssignment = await prisma.courseInstructor.findFirst({
-      where: { courseOfferingId: courseId, userId: instructor.id },
+    const courseForAuth = await prisma.courseOffering.findUnique({
+      where: { id: courseId },
+      include: { instructors: { select: { userId: true } } },
     });
-    if (!instructorAssignment) {
+    if (!courseForAuth) return res.status(404).json({ error: 'Course not found' });
+    if (!isCourseAdmin(authUser, courseForAuth)) {
       return res.status(403).json({ error: 'Not authorized for this course' });
+    }
+
+    // #477: write through to Core first; a Core failure aborts the local cascade.
+    if (courseForAuth.coreOfferingId) {
+      await setCoreCoursePublishState(courseForAuth.coreOfferingId, false);
     }
 
     // Unpublish course and cascade to all modules and lessons
@@ -626,6 +645,149 @@ router.patch('/courses/:courseId/unpublish', requireRole('INSTRUCTOR'), async (r
     });
 
     res.json(mapCourseOffering(updated));
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// ── Course-level analytics (§310) ─────────────────────────────────
+
+/**
+ * GET /courses/:courseId/submissions — all submissions in the course.
+ *
+ * Auth: ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C) / TA(C).
+ * Query params: activityId, studentId, take (default 50, max 200), skip (default 0).
+ */
+router.get('/courses/:courseId/submissions', async (req, res) => {
+  const authUser = req.user;
+  if (!authUser) return res.status(401).json({ error: 'Authentication required' });
+  const courseId = Number(req.params.courseId);
+  if (!Number.isFinite(courseId)) return res.status(400).json({ error: 'Invalid course id' });
+
+  try {
+    const course = await prisma.courseOffering.findUnique({
+      where: { id: courseId },
+      include: {
+        instructors: { select: { userId: true } },
+        enrollments: { select: { userId: true, role: true } },
+      },
+    });
+    if (!course) return res.status(404).json({ error: 'Course not found' });
+
+    const hasAdminAccess = isCourseAdmin(authUser, course);
+    const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
+    const isTa = enrollment?.role === 'TA';
+    if (!hasAdminAccess && !isTa) {
+      return res.status(403).json({ error: 'Not authorized for this course' });
+    }
+
+    const { activityId, studentId } = req.query;
+    if (req.query.take !== undefined && !Number.isFinite(Number(req.query.take))) {
+      return res.status(400).json({ error: 'take must be a number' });
+    }
+    if (req.query.skip !== undefined && !Number.isFinite(Number(req.query.skip))) {
+      return res.status(400).json({ error: 'skip must be a number' });
+    }
+    const take = Math.min(Math.max(Number(req.query.take) || 50, 1), 200);
+    const skip = Math.max(Number(req.query.skip) || 0, 0);
+
+    const where = {
+      activity: { lesson: { module: { courseOfferingId: courseId } } },
+    };
+    if (activityId) where.activityId = Number(activityId);
+    if (studentId) where.userId = studentId;
+
+    const submissions = await prisma.submission.findMany({
+      where,
+      orderBy: [{ activityId: 'asc' }, { userId: 'asc' }, { attemptNumber: 'asc' }],
+      take,
+      skip,
+    });
+
+    res.json(submissions);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+/**
+ * GET /courses/:courseId/student-metrics — per-student aggregated metrics.
+ *
+ * Auth: ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C). TA not admitted per §15.
+ */
+router.get('/courses/:courseId/student-metrics', async (req, res) => {
+  const authUser = req.user;
+  if (!authUser) return res.status(401).json({ error: 'Authentication required' });
+  const courseId = Number(req.params.courseId);
+  if (!Number.isFinite(courseId)) return res.status(400).json({ error: 'Invalid course id' });
+
+  try {
+    const course = await prisma.courseOffering.findUnique({
+      where: { id: courseId },
+      include: { instructors: { select: { userId: true } } },
+    });
+    if (!course) return res.status(404).json({ error: 'Course not found' });
+
+    if (!isCourseAdmin(authUser, course)) {
+      return res.status(403).json({ error: 'Not authorized for this course' });
+    }
+
+    const rawMetrics = await prisma.activityStudentMetric.findMany({
+      where: { activity: { lesson: { module: { courseOfferingId: courseId } } } },
+    });
+
+    const byStudent = {};
+    for (const m of rawMetrics) {
+      if (!byStudent[m.userId]) {
+        byStudent[m.userId] = {
+          userId: m.userId,
+          submissionCount: 0,
+          correctSubmissionCount: 0,
+          incorrectSubmissionCount: 0,
+          helpRequestCount: 0,
+        };
+      }
+      byStudent[m.userId].submissionCount += m.submissionCount;
+      byStudent[m.userId].correctSubmissionCount += m.correctSubmissionCount;
+      byStudent[m.userId].incorrectSubmissionCount += m.incorrectSubmissionCount;
+      byStudent[m.userId].helpRequestCount += m.helpRequestCount;
+    }
+
+    res.json(Object.values(byStudent));
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+/**
+ * GET /courses/:courseId/analytics — per-activity aggregate analytics.
+ *
+ * Auth: ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C). TA not admitted per §15.
+ */
+router.get('/courses/:courseId/analytics', async (req, res) => {
+  const authUser = req.user;
+  if (!authUser) return res.status(401).json({ error: 'Authentication required' });
+  const courseId = Number(req.params.courseId);
+  if (!Number.isFinite(courseId)) return res.status(400).json({ error: 'Invalid course id' });
+
+  try {
+    const course = await prisma.courseOffering.findUnique({
+      where: { id: courseId },
+      include: { instructors: { select: { userId: true } } },
+    });
+    if (!course) return res.status(404).json({ error: 'Course not found' });
+
+    if (!isCourseAdmin(authUser, course)) {
+      return res.status(403).json({ error: 'Not authorized for this course' });
+    }
+
+    const analytics = await prisma.activityAnalytics.findMany({
+      where: { activity: { lesson: { module: { courseOfferingId: courseId } } } },
+      include: { activity: { select: { id: true, title: true, lessonId: true } } },
+      orderBy: { activityId: 'asc' },
+    });
+
+    res.json(analytics);
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }

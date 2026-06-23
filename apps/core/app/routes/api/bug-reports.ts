@@ -3,6 +3,7 @@ import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
 import { createBugReport, listOwnBugReports } from "~/lib/bug-reports/server";
 
+
 /**
  * GET /api/bug-reports?mine=true (#304, §11) — own submitted reports for any
  * authenticated user (own-resource fallback, §19).
@@ -33,15 +34,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-  const guard = await requireServiceKey(request);
-  if (guard) return guard;
-
   if (request.method !== "POST") {
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
       status: 405,
       headers: { "Content-Type": "application/json" },
     });
   }
+
+  // Accept service-to-service (Bearer) and browser session auth for CORE.
+  // Extension sources (AI_TUTOR, QUESTION_MAKER) always require a service key.
+  const authHeader = request.headers.get("Authorization");
 
   let body: unknown;
   try {
@@ -51,6 +53,29 @@ export async function action({ request }: ActionFunctionArgs) {
       status: 422,
       headers: { "Content-Type": "application/json" },
     });
+  }
+
+  const source = body && typeof body === "object" ? (body as { source?: string }).source : undefined;
+  const extensionSource = source === "AI_TUTOR" || source === "QUESTION_MAKER";
+  let sessionUserId: string | null = null;
+
+  if (extensionSource || authHeader?.startsWith("Bearer ")) {
+    const guard = await requireServiceKey(request);
+    if (guard) return guard;
+  } else {
+    const session = await auth.api.getSession(request);
+    if (!session?.user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    sessionUserId = session.user.id;
+  }
+
+  // For session-auth requests, override userId and source from the verified session.
+  if (sessionUserId) {
+    body = { ...(body as Record<string, unknown>), userId: sessionUserId, source: "CORE" };
   }
 
   const result = await createBugReport(body);

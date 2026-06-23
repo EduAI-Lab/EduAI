@@ -1,9 +1,12 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
 import { auth } from "~/lib/auth/server";
-import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
+import { requireServiceKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { getCourse, updateCourse, deleteCourse } from "~/lib/courses/server";
+import { UpdateCourseSchema } from "~/lib/courses/schemas";
+import { fireAndForget, logAuditAction } from "~/lib/logging.server";
+import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const courseId = params.id;
@@ -32,10 +35,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
   }
 
-  const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
-  if (apiKeyGuard) return apiKeyGuard;
-
-  const session = apiKeySession ?? (await auth.api.getSession(request));
+  const session = await auth.api.getSession(request);
 
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -77,11 +77,75 @@ export async function action({ request, params }: ActionFunctionArgs) {
     });
   }
 
+  const requestContext = getRequestContext(request);
+
+  const session = await auth.api.getSession(request);
+
   switch (request.method) {
-    case "PATCH":
-      return updateCourse(request, courseId);
-    case "DELETE":
-      return deleteCourse(request, courseId);
+    case "PATCH": {
+      // Read the validated field names from a clone so the service still owns the body.
+      const validated = await request
+        .clone()
+        .json()
+        .then((body) => UpdateCourseSchema.safeParse(body))
+        .catch(() => null);
+      const requestedFields =
+        validated && validated.success ? Object.keys(validated.data) : [];
+
+      const response = await updateCourse(request, courseId);
+
+      if (response.status === 200) {
+        const updated = await response
+          .clone()
+          .json()
+          .catch(() => null);
+        // updateCourse strips instructorId/department for callers below rank 3, so
+        // only report them as changed when the persisted course actually reflects
+        // the requested value — otherwise the audit trail overstates the change.
+        const changedFields =
+          updated && validated && validated.success
+            ? requestedFields.filter((field) => {
+                if (field === "instructorId")
+                  return updated.instructorId === validated.data.instructorId;
+                if (field === "department")
+                  return updated.department === validated.data.department;
+                return true;
+              })
+            : requestedFields;
+        fireAndForget(
+          logAuditAction({
+            ...getActorContext(session?.user ?? null),
+            ...requestContext,
+            actionCode: "COURSE_UPDATED",
+            category: "COURSE",
+            entityType: "Course",
+            entityId: updated?.id ?? courseId,
+            entityLabel: updated?.code ?? updated?.name ?? null,
+            details: { changedFields },
+          }),
+        );
+      }
+
+      return response;
+    }
+    case "DELETE": {
+      const response = await deleteCourse(request, courseId);
+
+      if (response.status === 204) {
+        fireAndForget(
+          logAuditAction({
+            ...getActorContext(session?.user ?? null),
+            ...requestContext,
+            actionCode: "COURSE_DELETED",
+            category: "COURSE",
+            entityType: "Course",
+            entityId: courseId,
+          }),
+        );
+      }
+
+      return response;
+    }
     default:
       return new Response(JSON.stringify({ error: "Method not allowed" }), {
         status: 405,

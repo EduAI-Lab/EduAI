@@ -45,6 +45,14 @@ function coreErr(data, status) {
   return { ok: false, status, json: () => Promise.resolve(data) };
 }
 
+// Per-course access gate (requireCourseAccess) resolves a LINKED course's access
+// from Core enrollment, so any route on a linked course makes one enrollment
+// fetch before the handler runs. This reply lists TEST_USER as an active
+// instructor so the gate grants access.
+function enrollmentOk() {
+  return coreOk({ enrollments: [{ studentId: TEST_USER.id, role: 'INSTRUCTOR', isActive: true }] });
+}
+
 describeDb('Core wiring DB integration', () => {
   let connectTestDatabase, truncateTestDatabase, sequelize;
   let User, Course, Topics, Question_Metadata, Variants;
@@ -102,7 +110,10 @@ describeDb('Core wiring DB integration', () => {
   // ---------------------------------------------------------------------------
   describe('PATCH /api/course/:id/link-core', () => {
     it('stores coreCourseId on the course', async () => {
-      vi.stubGlobal('fetch', makeFetch());
+      vi.stubGlobal(
+        'fetch',
+        makeFetch(coreOk({ courses: [{ id: 'cuid-core-course', code: 'COSC 111' }] })),
+      );
 
       const res = await request(app)
         .patch(`/api/course/${courseId}/link-core`)
@@ -116,8 +127,29 @@ describeDb('Core wiring DB integration', () => {
       expect(updated.coreCourseId).toBe('cuid-core-course');
     });
 
+    it('returns 403 when coreCourseId is outside the instructor scoped Core list (#578)', async () => {
+      vi.stubGlobal(
+        'fetch',
+        makeFetch(coreOk({ courses: [{ id: 'cuid-other', code: 'MATH 101' }] })),
+      );
+
+      const res = await request(app)
+        .patch(`/api/course/${courseId}/link-core`)
+        .set(cookie())
+        .send({ coreCourseId: 'cuid-core-course' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe('CORE_COURSE_NOT_AUTHORIZED');
+
+      const unchanged = await Course.findByPk(courseId);
+      expect(unchanged.coreCourseId).toBeNull();
+    });
+
     it('returns 404 for a course the user does not own', async () => {
-      vi.stubGlobal('fetch', makeFetch());
+      vi.stubGlobal(
+        'fetch',
+        makeFetch(coreOk({ courses: [{ id: 'cuid-core-course', code: 'COSC 111' }] })),
+      );
 
       const res = await request(app)
         .patch('/api/course/99999/link-core')
@@ -150,7 +182,7 @@ describeDb('Core wiring DB integration', () => {
         { id: 'cuid-t1', name: 'Chapter 1' }, // matches existing local topic by name
         { id: 'cuid-t2', name: 'Chapter 2' }, // new
       ];
-      vi.stubGlobal('fetch', makeFetch(coreOk({ topics: coreTopics })));
+      vi.stubGlobal('fetch', makeFetch(enrollmentOk(), coreOk({ topics: coreTopics })));
 
       const res = await request(app)
         .post(`/api/course/${courseId}/sync-topics`)
@@ -169,7 +201,7 @@ describeDb('Core wiring DB integration', () => {
     it('returns 502 when Core fetch fails', async () => {
       await Course.update({ coreCourseId: 'cuid-core-course' }, { where: { id: courseId } });
 
-      vi.stubGlobal('fetch', makeFetch(coreErr({ error: 'Service Unavailable' }, 503)));
+      vi.stubGlobal('fetch', makeFetch(enrollmentOk(), coreErr({ error: 'Service Unavailable' }, 503)));
 
       const res = await request(app)
         .post(`/api/course/${courseId}/sync-topics`)
@@ -186,8 +218,8 @@ describeDb('Core wiring DB integration', () => {
     it('pushes to Core and stores coreTopicId when course is linked', async () => {
       await Course.update({ coreCourseId: 'cuid-core-course' }, { where: { id: courseId } });
 
-      // fetch: session validate, then Core POST /topics
-      vi.stubGlobal('fetch', makeFetch(coreOk({ id: 'cuid-new-topic', name: 'Sorting' }, 201)));
+      // fetch: session validate, enrollment access check, then Core POST /topics
+      vi.stubGlobal('fetch', makeFetch(enrollmentOk(), coreOk({ id: 'cuid-new-topic', name: 'Sorting' }, 201)));
 
       const res = await request(app)
         .post(`/api/course/${courseId}/topics`)
@@ -204,7 +236,7 @@ describeDb('Core wiring DB integration', () => {
     it('creates topic locally even when Core push fails', async () => {
       await Course.update({ coreCourseId: 'cuid-core-course' }, { where: { id: courseId } });
 
-      vi.stubGlobal('fetch', makeFetch({ ok: false, status: 503, json: () => Promise.resolve({}) }));
+      vi.stubGlobal('fetch', makeFetch(enrollmentOk(), { ok: false, status: 503, json: () => Promise.resolve({}) }));
 
       const res = await request(app)
         .post(`/api/course/${courseId}/topics`)
@@ -224,7 +256,7 @@ describeDb('Core wiring DB integration', () => {
 
       vi.stubGlobal(
         'fetch',
-        makeFetch({
+        makeFetch(enrollmentOk(), {
           ok: false,
           status: 409,
           json: () => Promise.resolve({ error: 'TOPIC_ALREADY_EXISTS', existingId: 'cuid-existing-topic' }),
@@ -246,6 +278,17 @@ describeDb('Core wiring DB integration', () => {
   // PATCH /api/questions/variants/:variantId/testable
   // ---------------------------------------------------------------------------
   describe('PATCH /api/questions/variants/:variantId/testable', () => {
+    it('returns 404 for a non-existent variant (access check precedes payload validation)', async () => {
+      vi.stubGlobal('fetch', makeFetch());
+
+      const res = await request(app)
+        .patch('/api/questions/variants/999999/testable')
+        .set(cookie())
+        .send({ testable: 'yes' });
+
+      expect(res.status).toBe(404);
+    });
+
     it('returns 400 when variant has no coreQuestionId', async () => {
       vi.stubGlobal('fetch', makeFetch());
 

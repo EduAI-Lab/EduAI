@@ -1,0 +1,44 @@
+/*
+ * Active-element highlighting + focus mode — only when `<html data-assistive>` is set.
+ * Uses outline, opacity, and background together (WCAG 1.4.1 — not color-only).
+ */
+
+[data-assistive] .chat-message--inactive {
+  opacity: 0.55;
+  transition: opacity 0.2s ease;
+}
+
+[data-assistive] .chat-message--inactive:hover,
+[data-assistive] .chat-message--inactive:focus-within {
+  opacity: 1;
+}
+
+[data-assistive] .chat-message--active {
+  outline: 2px solid var(--ring);
+  outline-offset: 4px;
+  border-radius: var(--radius-lg);
+  background-color: color-mix(in oklch, var(--accent) 12%, transparent);
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+[data-assistive] .assistive-input-anchor {
+  outline: 2px solid color-mix(in oklch, var(--ring) 75%, transparent);
+  outline-offset: 2px;
+  background-color: color-mix(in oklch, var(--muted) 35%, var(--background));
+}
+
+[data-assistive] .assistive-chat-surface :focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 3px;
+}
+
+[data-assistive][data-assistive-focus-mode] [data-sidebar="sidebar"],
+[data-assistive][data-assistive-focus-mode] [data-sidebar="trigger"],
+[data-assistive][data-assistive-focus-mode] [data-slot="sidebar-gap"],
+[data-assistive][data-assistive-focus-mode] [data-slot="sidebar-container"] {
+  display: none !important;
+}
+
+[data-assistive][data-assistive-focus-mode] .assistive-focus-chrome {
+  display: none;
+}

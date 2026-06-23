@@ -15,6 +15,10 @@ EduAI/
 │           └── app/
 │               ├── backend/         # Question Maker Express/Sequelize API
 │               └── frontend/        # Question Maker Vite/React frontend
+├── packages/
+│   ├── ui/                          # @eduai/ui — shared shadcn component library + design system components
+│   └── types/                       # @eduai/types — shared UserRole and EnrollmentRole types
+├── eduai-design-system/             # EduAI design system bundle (tokens, guidelines, Figma UI kit exports)
 ├── scripts/                         # Repo-level setup and dev utilities
 ├── docs/                            # System-wide architecture and planning docs
 │   ├── rag-ai/                      # EduAI chat, RAG, latency (#203), routing (#197)
@@ -30,7 +34,7 @@ EduAI/
 
 ### [EduAI](apps/core/)
 
-RAG-powered chat platform and the central API layer for the EduAI ecosystem. Handles AI provider routing, course-aware retrieval, auth, and exposes the API that AI Tutor and Question Maker integrate with.
+RAG-powered chat platform and the central API layer for the EduAI ecosystem. Handles AI provider routing, course-aware retrieval, auth, account-level Assistive Mode (`data-assistive` gating), and exposes the API that AI Tutor and Question Maker integrate with.
 
 ### [AI Tutor](apps/extensions/ai-tutor/)
 
@@ -72,6 +76,8 @@ node ./scripts/chat-latency-bench.mjs
 ```
 
 Required environment variables and auth options (`CHAT_BENCH_URL`, `CHAT_BENCH_MODEL`, `CHAT_BENCH_API_KEYS`, cookies or API key) are documented in the script header in [`apps/core/scripts/chat-latency-bench.mjs`](apps/core/scripts/chat-latency-bench.mjs).
+
+**Hybrid RAG** (optional, `#203 L03`): set `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE` in [`apps/core/.env.example`](apps/core/.env.example) to force hybrid RAG whenever a course is selected. Chat always uses the model the user selected (no automatic tier downgrade). Admin `webToolsEnabled` is seeded `false` in `system_config`.
 
 ## Getting started
 

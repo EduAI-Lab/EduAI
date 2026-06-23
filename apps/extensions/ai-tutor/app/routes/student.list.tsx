@@ -22,25 +22,17 @@
  *          components/bug-report/useBugReport
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router';
-import Nav from '../components/Nav';
 import { ProgressBar } from '../components/ProgressBar';
 import StudentActivityFeedbackCard from '../components/StudentActivityFeedbackCard';
 import StudentAiChat, { type StudentAiChatHandle } from '../components/StudentAiChat';
-import {
-  Breadcrumb,
-  BreadcrumbList,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from '../components/ui/breadcrumb';
 import api from '../lib/api';
 import type { Activity, Course, Lesson, ModuleDetail } from '../lib/types';
 import type { Route } from './+types/student.list';
 import { requireClientUser } from '~/lib/client-auth';
 import { useLocalUser } from '~/hooks/useLocalUser';
 import { useBugReport } from '~/components/bug-report/useBugReport';
+import { AppShell } from '~/components/layout/AppShell';
+import { ShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbs';
 
 type StudentFeedbackState = {
   rating: number | null;
@@ -81,7 +73,7 @@ function createFeedbackState(): StudentFeedbackState {
  * sequential because their IDs come out of the lesson row.
  */
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
-  await requireClientUser('STUDENT');
+  await requireClientUser(['STUDENT', 'TA']);
   const lessonId = Number(params.lessonId);
   if (!Number.isFinite(lessonId)) {
     throw new Response('Invalid lesson id', { status: 400 });
@@ -390,73 +382,23 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
       ]
     : [];
 
+  const breadcrumbItems = [
+    { label: 'My courses', href: '/student' },
+    ...(course && module
+      ? [{ label: course.title, href: `/student/courses/${module.courseOfferingId}` }]
+      : [{ label: 'Course' }]),
+    ...(module && lesson
+      ? [{ label: module.title, href: `/student/module/${lesson.moduleId}` }]
+      : [{ label: 'Module' }]),
+    { label: lesson?.title || 'Lesson' },
+  ];
+
   return (
-    <div className="min-h-dvh bg-background">
-      <Nav />
-
-      {/* Background decoration */}
-      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-        <div className="absolute top-0 right-0 w-[800px] h-[800px] bg-primary/3 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3" />
-        <div className="absolute bottom-0 left-0 w-[600px] h-[600px] bg-accent/5 rounded-full blur-3xl translate-y-1/2 -translate-x-1/3" />
-      </div>
-
-      <div className="container mx-auto px-6 py-8">
-        {/* Breadcrumb */}
-        <Breadcrumb className="mb-6 animate-fade-in" data-tour="student-lesson-breadcrumb">
-          <BreadcrumbList>
-            <BreadcrumbItem>
-              <BreadcrumbLink asChild>
-                <Link
-                  to="/student"
-                  className="text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  My Courses
-                </Link>
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator className="text-border">/</BreadcrumbSeparator>
-            <BreadcrumbItem>
-              {course && module ? (
-                <BreadcrumbLink asChild>
-                  <Link
-                    to={`/student/courses/${module.courseOfferingId}`}
-                    className="text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    {course.title}
-                  </Link>
-                </BreadcrumbLink>
-              ) : (
-                <BreadcrumbPage>Course</BreadcrumbPage>
-              )}
-            </BreadcrumbItem>
-            <BreadcrumbSeparator className="text-border">/</BreadcrumbSeparator>
-            <BreadcrumbItem>
-              {module && lesson ? (
-                <BreadcrumbLink asChild>
-                  <Link
-                    to={`/student/module/${lesson.moduleId}`}
-                    className="text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    {module.title}
-                  </Link>
-                </BreadcrumbLink>
-              ) : (
-                <BreadcrumbPage>Module</BreadcrumbPage>
-              )}
-            </BreadcrumbItem>
-            <BreadcrumbSeparator className="text-border">/</BreadcrumbSeparator>
-            <BreadcrumbItem>
-              <BreadcrumbPage className="font-medium text-foreground">
-                {lesson?.title || 'Lesson'}
-              </BreadcrumbPage>
-            </BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
-
-        {/* Lesson Progress */}
+    <AppShell breadcrumbs={<ShellBreadcrumbs items={breadcrumbItems} />}>
+      <div className="space-y-6">
         {orderedActivities.length > 0 && (
           <div className="mb-8 animate-fade-up">
-            <div className="card-editorial p-5" data-tour="student-lesson-progress">
+            <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-5" data-tour="student-lesson-progress">
               <div className="flex items-center gap-4 mb-3">
                 <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
                   <svg
@@ -474,7 +416,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
                   </svg>
                 </div>
                 <div className="flex-1">
-                  <h1 className="font-display text-xl font-bold text-foreground">
+                  <h1 className="text-xl font-bold text-foreground">
                     {lesson?.title || 'Lesson'}
                   </h1>
                   <p className="text-sm text-muted-foreground">
@@ -496,7 +438,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
           {/* Main content area */}
           <div className="space-y-6 animate-fade-up delay-150">
             {/* Question card */}
-            <div className="card-editorial p-6" data-tour="student-question-card">
+            <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6" data-tour="student-question-card">
               <div className="flex items-center gap-2 mb-4">
                 <span className="tag tag-primary">Question</span>
                 {activity?.mainTopic && (
@@ -523,8 +465,8 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
             </div>
 
             {/* Answer card */}
-            <div className="card-editorial p-6 space-y-5" data-tour="student-answer-card">
-              <h2 className="font-display text-lg font-bold text-foreground">Your Answer</h2>
+            <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6 space-y-5" data-tour="student-answer-card">
+              <h2 className="text-lg font-bold text-foreground">Your Answer</h2>
 
               {activity?.type === 'MCQ' ? (
                 Array.isArray(activity?.options?.choices) ? (
@@ -776,7 +718,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
         {/* Pre-Chat Modal */}
         {showKnowledgeModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/20 backdrop-blur-sm p-4 animate-fade-in">
-            <div className="max-w-lg w-full card-editorial p-8 space-y-6 animate-scale-in">
+            <div className="max-w-lg w-full rounded-lg border bg-card text-card-foreground shadow-sm p-8 space-y-6 animate-scale-in">
               <div>
                 <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary mb-4">
                   <svg
@@ -793,7 +735,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
                     />
                   </svg>
                 </div>
-                <h2 className="font-display text-2xl font-bold text-foreground">
+                <h2 className="text-2xl font-bold text-foreground">
                   Before we start...
                 </h2>
                 <p className="text-muted-foreground mt-1">
@@ -846,6 +788,6 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
           </div>
         )}
       </div>
-    </div>
+    </AppShell>
   );
 }

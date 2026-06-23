@@ -22,8 +22,13 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { getPolicy, denyByPolicy } from "~/lib/policy.server";
+import { resolvePolicyGate } from "~/lib/rbac/permissions";
 import { getCourse } from "~/lib/courses/server";
 import { addEnrollment, getCourseEnrollments } from "~/lib/courses/enrollments.server";
+import { readStoredStudentId } from "~/lib/canvas/student-id.server";
+import { fireAndForget, logAuditAction } from "~/lib/logging.server";
+import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const courseId = params.id;
@@ -89,9 +94,11 @@ async function enrollmentsResponse(courseId: string) {
 
   // Map Prisma model to the API contract shape (see api-wiring.md)
   const mapped = enrollments.map((e) => ({
+    id: e.id,
     studentId: e.userId,
     studentEmail: e.user.email,
     studentName: e.user.name,
+    studentNumber: readStoredStudentId(e.user.studentId),
     enrolledAt: e.enrolledAt?.toISOString() ?? null,
     isActive: e.isActive,
     role: e.role,
@@ -148,10 +155,42 @@ export async function action({ request, params }: ActionFunctionArgs) {
     });
   }
 
+  // Policy gate (resolved centrally via resolvePolicyGate so the enrollments and
+  // TA routes share one source of truth): an INSTRUCTOR may add/remove students
+  // & TAs only when the flag is on; ADMIN / UNIT_ADMIN are unaffected. The rank
+  // check above already rejects TA/STUDENT, so the gate here is 'always' or the
+  // instructor flag.
+  const enrollmentGate = resolvePolicyGate(access.level, "manageEnrollments");
+  if (
+    enrollmentGate !== "always" &&
+    enrollmentGate !== "never" &&
+    !(await getPolicy(enrollmentGate))
+  ) {
+    return denyByPolicy({
+      request,
+      policyKey: enrollmentGate,
+      user: session.user,
+      action: "enrollment.add",
+      courseId,
+    });
+  }
+
+  const requestContext = getRequestContext(request);
   const result = await addEnrollment(courseId, body ?? {});
 
   switch (result.status) {
     case "201":
+      fireAndForget(
+        logAuditAction({
+          ...getActorContext(session?.user ?? null),
+          ...requestContext,
+          actionCode: "ENROLLMENT_ADDED",
+          category: "ENROLLMENT",
+          entityType: "Enrollment",
+          entityId: result.enrollment.id,
+          details: { courseId, role: result.enrollment.role, targetUserId: result.enrollment.userId },
+        }),
+      );
       return new Response(JSON.stringify(result.enrollment), {
         status: 201,
         headers: { "Content-Type": "application/json" },

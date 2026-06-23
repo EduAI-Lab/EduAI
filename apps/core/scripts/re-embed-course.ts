@@ -61,29 +61,13 @@ async function resolveCourse(ref: string) {
   });
   if (byId) return byId;
 
+  // `code` is not unique on its own (see @@unique([code, startDate, section])),
+  // so resolve the first course matching the code.
   const byCode = await prisma.course.findFirst({
-    where: { code: { equals: ref, mode: "insensitive" } },
+    where: { code: ref },
     select: { id: true, code: true, name: true },
   });
   if (byCode) return byCode;
-
-  const spaced = ref.replace(/^([A-Za-z]+)(\d)/, "$1 $2");
-  if (spaced !== ref) {
-    const bySpaced = await prisma.course.findFirst({
-      where: { code: { equals: spaced, mode: "insensitive" } },
-      select: { id: true, code: true, name: true },
-    });
-    if (bySpaced) return bySpaced;
-  }
-
-  const compact = ref.replace(/\s+/g, "");
-  if (compact !== ref) {
-    const byCompact = await prisma.course.findFirst({
-      where: { code: { equals: compact, mode: "insensitive" } },
-      select: { id: true, code: true, name: true },
-    });
-    if (byCompact) return byCompact;
-  }
 
   const needle = ref.toLowerCase();
   const suggestions = await prisma.course.findMany({

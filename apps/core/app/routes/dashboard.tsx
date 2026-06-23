@@ -1,30 +1,134 @@
-import { redirect } from "react-router"
-import type { LoaderFunctionArgs } from "react-router"
-import { useLoaderData } from "react-router"
-
-import { AppSidebar } from "~/components/app-sidebar"
-import { SiteHeader } from "~/components/site-header"
+import React from "react";
+import { redirect, useLoaderData } from "react-router";
+import type { LoaderFunctionArgs } from "react-router";
 import {
-  SidebarInset,
-  SidebarProvider,
-} from "~/components/ui/sidebar"
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbList,
+  BreadcrumbPage,
+  PageHeading,
+} from "@eduai/ui"
 
-import { auth } from "~/lib/auth/server"
+import { AppSidebar } from "~/components/app-sidebar";
+import { CanvasDashboardCard } from "~/components/canvas/canvas-dashboard-card";
+import { DashboardAdminView } from "~/components/dashboard/dashboard-admin-view";
+import { DashboardInstructorView } from "~/components/dashboard/dashboard-instructor-view";
+import { DashboardStudentView } from "~/components/dashboard/dashboard-student-view";
+import { DashboardTaView } from "~/components/dashboard/dashboard-ta-view";
+import { DashboardUnitAdminView } from "~/components/dashboard/dashboard-unit-admin-view";
+import { SiteHeader } from "~/components/site-header";
+import { SidebarInset, SidebarProvider } from "@eduai/ui";
+import { redirectToStudentIdOnboardingIfNeeded } from "~/lib/canvas/onboarding.server";
+import { auth } from "~/lib/auth/server";
+import prisma from "~/lib/prisma.server";
+import { usePolicies } from "~/hooks/api/use-policies";
+import type { User } from "~/lib/auth/types";
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession(request)
+  const session = await auth.api.getSession(request);
 
   if (!session?.user) {
-    return redirect("/auth/login")
+    return redirect("/auth/login");
   }
+
+  const onboardingRedirect = await redirectToStudentIdOnboardingIfNeeded(
+    session.user.id,
+    session.user.role,
+    request,
+  );
+  if (onboardingRedirect) {
+    return onboardingRedirect;
+  }
+
+  // A TA is a STUDENT-platform user holding an Enrollment(role=TA). Surface that
+  // so the dashboard can show the TA experience instead of the student one.
+  const isTA =
+    session.user.role === "STUDENT" &&
+    (await prisma.enrollment.count({
+      where: { userId: session.user.id, role: "TA", isActive: true },
+    })) > 0;
 
   return {
     user: session.user,
+    isTA,
+  };
+}
+
+const CANVAS_SYNC_ROLES = new Set(["INSTRUCTOR", "ADMIN"]);
+
+function DashboardHero({ user, isTA }: { user: User; isTA: boolean }) {
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const name = (user.name ?? "").split(" ");
+  const firstName = (name.length == 3 && name[0].endsWith('.') ? name[1] : name[0])
+  const heroTitle =
+    user.role === "ADMIN" ? "Platform overview" :
+    user.role === "UNIT_ADMIN" ? `Welcome back, ${firstName}.` :
+    user.role === "INSTRUCTOR" ? `Welcome back, ${firstName}.` :
+    `${greeting}, ${firstName}.`;
+  const heroSub =
+    user.role === "ADMIN" ? "EduAI platform health and usage at a glance." :
+    user.role === "UNIT_ADMIN" ? "Your unit courses and administration." :
+    user.role === "INSTRUCTOR" ? "Your courses and teaching activity." :
+    isTA ? "Your assigned courses and student activity." :
+    "Your AI-powered learning companion.";
+  const dateStr = new Date().toLocaleDateString("en-US", {
+    weekday: "long", month: "long", day: "numeric", year: "numeric",
+  });
+
+  return (
+    <div className="px-4 lg:px-6 pt-6 pb-4">
+      <PageHeading
+        heading={heroTitle}
+        subheading={`${dateStr} · ${heroSub}`}
+      />
+    </div>
+  );
+}
+
+function DashboardContent({ user, isTA }: { user: User; isTA: boolean }) {
+  const { policies } = usePolicies();
+  // Instructors only see the Canvas sync card when the policy is on; ADMIN is
+  // unaffected. Mirrors the `instructors.canManageCanvasIntegration` gate on
+  // the Canvas API (canvas.$.ts).
+  const canvasPolicyOk =
+    user.role === "ADMIN" ||
+    (policies["instructors.canManageCanvasIntegration"] ?? true);
+  const showCanvasSync = CANVAS_SYNC_ROLES.has(user.role ?? "") && canvasPolicyOk;
+
+  let view;
+  switch (user.role) {
+    case "ADMIN":
+      view = <DashboardAdminView />;
+      break;
+    case "UNIT_ADMIN":
+      view = <DashboardUnitAdminView />;
+      break;
+    case "INSTRUCTOR":
+      view = <DashboardInstructorView />;
+      break;
+    case "STUDENT":
+    default:
+      // STUDENT-platform users who hold a TA enrollment get the TA dashboard.
+      view = isTA ? <DashboardTaView /> : <DashboardStudentView />;
+      break;
   }
+
+  return (
+    <>
+      <DashboardHero user={user} isTA={isTA} />
+      {view}
+      {showCanvasSync && (
+        <div className="px-4 lg:px-6 pb-6 w-auto">
+          <CanvasDashboardCard />
+        </div>
+      )}
+    </>
+  );
 }
 
 export default function Page() {
-  const { user } = useLoaderData<typeof loader>()
+  const { user, isTA } = useLoaderData<typeof loader>();
 
   return (
     <SidebarProvider
@@ -35,22 +139,21 @@ export default function Page() {
         } as React.CSSProperties
       }
     >
-      <AppSidebar variant="inset" user={user} />
+      <AppSidebar user={user} />
       <SidebarInset>
-        <SiteHeader />
-        <div className="flex flex-1 flex-col">
-          <div className="@container/main flex flex-1 flex-col gap-2">
-            <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-              <div className="px-4 lg:px-6">
-                <h2 className="text-2xl font-bold">Welcome to EduAI</h2>
-                <p className="text-muted-foreground">
-                  Your AI-powered learning platform
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
+        <SiteHeader
+          breadcrumbs={
+            <Breadcrumb>
+              <BreadcrumbList>
+                <BreadcrumbItem>
+                  <BreadcrumbPage>Home</BreadcrumbPage>
+                </BreadcrumbItem>
+              </BreadcrumbList>
+            </Breadcrumb>
+          }
+        />
+        <DashboardContent user={user} isTA={isTA} />
       </SidebarInset>
     </SidebarProvider>
-  )
+  );
 }

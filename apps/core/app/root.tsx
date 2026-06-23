@@ -6,9 +6,21 @@ import {
   Scripts,
   ScrollRestoration,
 } from "react-router";
+import type { LoaderFunctionArgs } from "react-router";
 
 import type { Route } from "./+types/root";
 import "./app.css";
+
+import { auth } from "~/lib/auth/server";
+import prisma from "~/lib/prisma.server";
+import { getPolicy } from "~/lib/policy.server";
+import { AssistiveUiProvider } from "~/components/assistive/assistive-ui-provider";
+import { ThemeProvider } from "~/components/theme-provider";
+import { Toaster } from "@eduai/ui";
+import { UiPreferencesProvider } from "~/components/assistive/ui-preferences-provider";
+import { DEFAULT_ACCOUNT_PREFERENCES } from "~/lib/user-preferences";
+import { isUiDensity, isUiTheme } from "~/lib/ui-preferences";
+import { ThemeSyncInitializer } from "~/components/theme-sync-initializer";
 
 export const links: Route.LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -19,9 +31,56 @@ export const links: Route.LinksFunction = () => [
   },
   {
     rel: "stylesheet",
-    href: "https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap",
+    href: "https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&display=swap",
   },
 ];
+
+const GUEST_ROOT_PREFERENCES = {
+  assistive: false,
+  motionReduced: false,
+  density: DEFAULT_ACCOUNT_PREFERENCES.density,
+  theme: DEFAULT_ACCOUNT_PREFERENCES.theme,
+  // Whether the signed-in user may issue invitations (UNIT_ADMIN gated by the
+  // `unitAdmins.canInvite` policy). Resolved server-side and read by the sidebar
+  // so the Invitations link doesn't depend on a client-side policy fetch.
+  canInvite: false,
+} as const;
+
+/**
+ * Resolves account-level UI preferences for every page render.
+ * Guests always get defaults, guaranteeing baseline UI on public pages.
+ */
+export async function loader({ request }: LoaderFunctionArgs) {
+  const session = await auth.api.getSession(request);
+  if (!session?.user) {
+    return GUEST_ROOT_PREFERENCES;
+  }
+
+  const row = await prisma.userPreference.findUnique({
+    where: { userId: session.user.id },
+    select: {
+      assistDefault: true,
+      motionReduced: true,
+      density: true,
+      theme: true,
+    },
+  });
+
+  // ADMIN always sees its admin nav (incl. Invitations); only a UNIT_ADMIN's
+  // link is policy-gated, so only that role needs the extra lookup.
+  const canInvite =
+    session.user.role === "UNIT_ADMIN"
+      ? await getPolicy("unitAdmins.canInvite")
+      : false;
+
+  return {
+    assistive: row?.assistDefault ?? false,
+    motionReduced: row?.motionReduced ?? false,
+    density: isUiDensity(row?.density) ? row.density : DEFAULT_ACCOUNT_PREFERENCES.density,
+    theme: isUiTheme(row?.theme) ? row.theme : DEFAULT_ACCOUNT_PREFERENCES.theme,
+    canInvite,
+  };
+}
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
@@ -31,9 +90,18 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <Meta />
         <Links />
+        {/* Inline script: set .dark on <html> before first paint to prevent flash */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('theme');if(t==='dark'||(t==='system'||!t)&&window.matchMedia('(prefers-color-scheme: dark)').matches){document.documentElement.classList.add('dark')}}catch(e){}})()`,
+          }}
+        />
       </head>
       <body>
-        {children}
+        <ThemeProvider>
+          {children}
+          <Toaster />
+        </ThemeProvider>
         <ScrollRestoration />
         <Scripts />
       </body>
@@ -41,8 +109,18 @@ export function Layout({ children }: { children: React.ReactNode }) {
   );
 }
 
-export default function App() {
-  return <Outlet />;
+export default function App({ loaderData }: Route.ComponentProps) {
+  return (
+    <UiPreferencesProvider
+      initialMotionReduced={loaderData?.motionReduced ?? false}
+      initialDensity={loaderData?.density ?? DEFAULT_ACCOUNT_PREFERENCES.density}
+    >
+      <AssistiveUiProvider initialAssistive={loaderData?.assistive ?? false}>
+        <ThemeSyncInitializer />
+        <Outlet />
+      </AssistiveUiProvider>
+    </UiPreferencesProvider>
+  );
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {

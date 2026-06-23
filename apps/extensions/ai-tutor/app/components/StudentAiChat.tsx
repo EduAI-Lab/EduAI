@@ -27,8 +27,15 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '~/components/ui/dialog';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui/tooltip';
+  Button,
+} from '@eduai/ui';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@eduai/ui';
+import { IconHistory, IconPencilPlus, IconRefresh } from '@tabler/icons-react';
+import { StudentChatHistoryPanel } from '~/components/StudentChatHistoryPanel';
+import {
+  loadSessionMessages,
+  type ApiChatSession,
+} from '~/lib/student-chat-history';
 import api from '../lib/api';
 import type { Activity, AiModel, SuggestedPrompt } from '../lib/types';
 
@@ -191,6 +198,8 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
     guide: false,
     custom: false,
   });
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
 
   // Load API keys from localStorage after hydration
   useEffect(() => {
@@ -219,6 +228,44 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
   const currentApiKey = providerApiKeys[currentProvider] || '';
   const hasApiKey = apiKeysLoaded && Boolean(currentApiKey);
   const setupComplete = hasApiKey && Boolean(knowledgeLevel);
+
+  const clearActiveTabChat = useCallback(() => {
+    setActiveChatId(null);
+    setChatState((prev) => ({
+      ...prev,
+      [activeTab]: { messages: [], input: '', loading: false, chatId: null },
+    }));
+    setPromptsDismissed((prev) => ({ ...prev, [activeTab]: false }));
+  }, [activeTab]);
+
+  const handleNewChat = useCallback(() => {
+    clearActiveTabChat();
+  }, [clearActiveTabChat]);
+
+  const handleRefreshChat = useCallback(() => {
+    clearActiveTabChat();
+  }, [clearActiveTabChat]);
+
+  const handleRestoreSession = useCallback(async (session: ApiChatSession) => {
+    setActiveTab(session.mode);
+    setActiveChatId(session.chatId);
+    setChatState((prev) => ({
+      ...prev,
+      [session.mode]: { messages: [], input: '', loading: true, chatId: session.chatId },
+    }));
+    const messages = await loadSessionMessages(activity?.id ?? 0, session.chatId);
+    setChatState((prev) => ({
+      ...prev,
+      [session.mode]: { ...prev[session.mode as ChatTab], messages, loading: false },
+    }));
+  }, [activity?.id]);
+
+  // Track the active chatId from the current tab's state so the history panel
+  // can highlight the active session.
+  useEffect(() => {
+    const chatId = chatState[activeTab].chatId;
+    if (chatId) setActiveChatId(chatId);
+  }, [activeTab, chatState]);
 
   const availableTabs = useMemo<{ value: ChatTab; label: string; tooltip: string }[]>(() => {
     if (!activity) return [];
@@ -582,7 +629,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
   );
 
   const renderSetupCard = () => (
-    <div className="mx-auto max-w-sm card-editorial p-6 space-y-5 animate-scale-in">
+    <div className="mx-auto max-w-sm rounded-lg border bg-card text-card-foreground shadow-sm p-6 space-y-5 animate-scale-in">
       <div className="text-center">
         <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-primary/10 flex items-center justify-center text-primary">
           <svg
@@ -599,7 +646,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
             />
           </svg>
         </div>
-        <h3 className="font-display text-lg font-bold text-foreground">
+        <h3 className="text-lg font-bold text-foreground">
           Set up your AI Study Buddy
         </h3>
         <p className="text-xs text-muted-foreground mt-1">Complete these steps to start chatting</p>
@@ -737,16 +784,17 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
   );
 
   return (
-    <aside className="flex h-[700px] flex-col card-editorial overflow-hidden" data-tour="student-ai-chat">
+    <aside className="flex h-[700px] flex-col rounded-lg border bg-card text-card-foreground shadow-sm overflow-hidden" data-tour="student-ai-chat">
       {/* Header */}
-      <div className="flex items-center gap-3 p-5 border-b border-border">
-        <div className="w-11 h-11 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
+      <div className="flex items-center gap-3 border-b border-border p-5">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
           <svg
-            className="w-6 h-6"
+            className="h-6 w-6"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
             strokeWidth={1.5}
+            aria-hidden
           >
             <path
               strokeLinecap="round"
@@ -755,13 +803,46 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
             />
           </svg>
         </div>
-        <div className="flex-1 min-w-0">
-          <div className="font-display font-bold text-foreground">AI Study Buddy</div>
+        {setupComplete ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleNewChat}
+            aria-label="Clear and start new chat"
+            className="min-w-[44px] shrink-0"
+          >
+            <IconPencilPlus className="h-4 w-4 sm:mr-1.5" />
+            <span className="hidden sm:inline">New chat</span>
+          </Button>
+        ) : null}
+        <div className="min-w-0 flex-1">
+          <div className="font-semibold text-foreground">AI Study Buddy</div>
           <div className="text-xs text-muted-foreground">Hints, not answers</div>
         </div>
-        {/* Status badges when setup complete */}
         {setupComplete && (
-          <div className="flex items-center gap-1.5 flex-shrink-0">
+          <div className="flex shrink-0 items-center gap-1.5">
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleRefreshChat}
+                aria-label="Refresh chat"
+                className="min-w-[44px]"
+              >
+                <IconRefresh className="h-4 w-4 sm:mr-1.5" />
+                <span className="hidden sm:inline">Refresh</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setHistoryOpen((prev) => !prev)}
+                aria-label="Open chat history"
+                className="min-w-[44px]"
+              >
+                <IconHistory className="h-4 w-4 sm:mr-1.5" />
+                <span className="hidden sm:inline">History</span>
+              </Button>
+            </div>
             <button
               type="button"
               onClick={onAdjustKnowledgeLevel}
@@ -779,6 +860,14 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
           </div>
         )}
       </div>
+      <StudentChatHistoryPanel
+        open={historyOpen}
+        onOpenChange={setHistoryOpen}
+        activityId={activity?.id}
+        activeChatId={activeChatId}
+        onSelect={(session) => { void handleRestoreSession(session); }}
+        onNewChat={handleNewChat}
+      />
 
       {/* Tab toggle + topic selector */}
       {setupComplete && (
@@ -1026,7 +1115,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
 
       {/* API Key Edit Dialog */}
       <Dialog open={showApiKeyDialog} onOpenChange={setShowApiKeyDialog}>
-        <DialogContent className="sm:max-w-md card-editorial">
+        <DialogContent className="sm:max-w-md rounded-lg border bg-card text-card-foreground shadow-sm">
           <DialogHeader>
             <DialogTitle className="font-display">
               {getProviderLabel(currentProvider)} API Key

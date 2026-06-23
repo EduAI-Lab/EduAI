@@ -10,6 +10,10 @@ FROM node:20-alpine AS deps
 WORKDIR /app
 
 COPY package.json package-lock.json .npmrc ./
+COPY packages/ui/package.json                                 ./packages/ui/
+COPY packages/types/package.json  ./packages/types/
+COPY packages/types/tsconfig.json ./packages/types/
+COPY packages/types/src           ./packages/types/src
 COPY apps/core/package.json                                   ./apps/core/
 COPY apps/extensions/ai-tutor/package.json                    ./apps/extensions/ai-tutor/
 COPY apps/extensions/ai-tutor/server/package.json             ./apps/extensions/ai-tutor/server/
@@ -17,14 +21,17 @@ COPY apps/extensions/question-maker/package.json              ./apps/extensions/
 COPY apps/extensions/question-maker/app/backend/package.json  ./apps/extensions/question-maker/app/backend/
 COPY apps/extensions/question-maker/app/frontend/package.json ./apps/extensions/question-maker/app/frontend/
 
-RUN npm ci --ignore-scripts
+RUN npm ci --ignore-scripts \
+     && npm run build -w @eduai/types
 
 # ── Target: test ───────────────────────────────────────────────────────────
 FROM node:20-alpine AS test
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/packages/types ./packages/types
 
+COPY packages/ui                 ./packages/ui/
 COPY apps/core/app               ./apps/core/app
 COPY apps/core/prisma            ./apps/core/prisma
 COPY apps/core/vitest.config.ts  ./apps/core/
@@ -44,8 +51,12 @@ CMD ["npx", "vitest", "run"]
 FROM node:20-alpine AS build
 WORKDIR /app
 
-COPY --from=deps /app/node_modules ./node_modules
-COPY apps/core ./apps/core
+COPY --from=deps /app/package.json      ./
+COPY --from=deps /app/package-lock.json ./
+COPY --from=deps /app/node_modules      ./node_modules
+COPY --from=deps /app/packages/types    ./packages/types
+COPY packages/ui                        ./packages/ui/
+COPY apps/core                          ./apps/core
 
 ENV PATH="/app/node_modules/.bin:${PATH}"
 # prisma generate does not connect to the DB; placeholder prevents any env check
@@ -62,9 +73,11 @@ COPY --from=deps /app/node_modules            ./node_modules
 COPY --from=build /app/apps/core/build        ./apps/core/build
 COPY --from=build /app/apps/core/node_modules ./apps/core/node_modules
 COPY --from=build /app/apps/core/prisma       ./apps/core/prisma
-COPY apps/core/package.json                   ./apps/core/
 
 ENV PATH="/app/node_modules/.bin:${PATH}"
 
+# Note: package.json is intentionally omitted. apps/core has "type":"module",
+# which makes Node treat the React Router server bundle (CommonJS) as ESM,
+# causing __dirname to be undefined. Without package.json Node defaults to CJS.
 WORKDIR /app/apps/core
-CMD ["sh", "-c", "npx prisma migrate deploy && npm run start"]
+CMD ["sh", "-c", "npx prisma migrate deploy && react-router-serve ./build/server/index.js"]

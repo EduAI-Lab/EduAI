@@ -1,8 +1,11 @@
-import { PrismaClient } from '@prisma/client';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+import { PrismaClient, Prisma } from '@prisma/client';
 import { hashPassword } from 'better-auth/crypto';
+import { clearStudentIdStorage, prepareStudentIdStorage } from '../app/lib/canvas/student-id.server';
 import { UNITS } from '../app/lib/units';
 
-const prisma = new PrismaClient();
+export const prisma = new PrismaClient();
 
 /**
  * Deterministic IDs for cross-app linking. AI Tutor's `coreOfferingId` /
@@ -29,6 +32,14 @@ export const SEED_IDS = {
     student3: 'seed_user_student_03',
     student4: 'seed_user_student_04',
     student5: 'seed_user_student_05',
+  },
+  /** Canvas-compatible sis_user_id values for seeded students (matches mock roster + local Canvas seed). */
+  studentNumbers: {
+    student1: 'student_1',
+    student2: 'student_2',
+    student3: 'student_3',
+    student4: 'student_4',
+    student5: 'student_5',
   },
   courses: {
     cosc101: 'seed_course_cosc101',
@@ -1007,14 +1018,34 @@ async function seedAIProvidersAndModels() {
   await applyRoutingTierAssignments();
 }
 
-async function seedUsers() {
+async function releaseStudentIdClaim(
+  studentNumber: string,
+  keepUserId: string,
+  lookup: string,
+) {
+  await prisma.user.updateMany({
+    where: {
+      OR: [
+        { studentIdLookup: lookup },
+        { studentId: studentNumber, studentIdLookup: null },
+      ],
+      NOT: { id: keepUserId },
+    },
+    data: clearStudentIdStorage(),
+  });
+}
+
+export async function seedUsers() {
   type SeededUser = {
     id: string;
     email: string;
     name: string;
-    role: 'ADMIN' | 'INSTRUCTOR' | 'TA' | 'STUDENT' | 'UNIT_ADMIN';
+    role: 'ADMIN' | 'INSTRUCTOR' | 'STUDENT' | 'UNIT_ADMIN';
     authorizedUnits?: string[];
+    studentNumber?: string;
   };
+
+  const sn = SEED_IDS.studentNumbers;
 
   const users: SeededUser[] = [
     { id: u.admin, email: 'admin@eduai.local', name: 'EduAI Admin', role: 'ADMIN' },
@@ -1024,16 +1055,30 @@ async function seedUsers() {
     { id: u.instructorMath, email: 'instructor.math@eduai.local', name: 'Dr. Emmy Noether', role: 'INSTRUCTOR' },
     { id: u.instructorSci, email: 'instructor.sci@eduai.local', name: 'Dr. Marie Curie', role: 'INSTRUCTOR' },
     { id: u.instructorHum, email: 'instructor.hum@eduai.local', name: 'Dr. Hannah Arendt', role: 'INSTRUCTOR' },
-    { id: u.taCS, email: 'ta.cs@eduai.local', name: 'Sam Carter', role: 'TA' },
-    { id: u.taMath, email: 'ta.math@eduai.local', name: 'Riley Chen', role: 'TA' },
-    { id: u.student1, email: 'student1@eduai.local', name: 'Alex Patel', role: 'STUDENT' },
-    { id: u.student2, email: 'student2@eduai.local', name: 'Brooke Kim', role: 'STUDENT' },
-    { id: u.student3, email: 'student3@eduai.local', name: 'Cameron Lee', role: 'STUDENT' },
-    { id: u.student4, email: 'student4@eduai.local', name: 'Devon Singh', role: 'STUDENT' },
-    { id: u.student5, email: 'student5@eduai.local', name: 'Erin Walsh', role: 'STUDENT' },
+    // TAs are STUDENT-platform users; their TA status is the Enrollment(role=TA)
+    // created from course.taIds below.
+    { id: u.taCS, email: 'ta.cs@eduai.local', name: 'Sam Carter', role: 'STUDENT' },
+    { id: u.taMath, email: 'ta.math@eduai.local', name: 'Riley Chen', role: 'STUDENT' },
+    { id: u.student1, email: 'student1@eduai.local', name: 'Alex Patel', role: 'STUDENT', studentNumber: sn.student1 },
+    { id: u.student2, email: 'student2@eduai.local', name: 'Brooke Kim', role: 'STUDENT', studentNumber: sn.student2 },
+    { id: u.student3, email: 'student3@eduai.local', name: 'Cameron Lee', role: 'STUDENT', studentNumber: sn.student3 },
+    { id: u.student4, email: 'student4@eduai.local', name: 'Devon Singh', role: 'STUDENT', studentNumber: sn.student4 },
+    { id: u.student5, email: 'student5@eduai.local', name: 'Erin Walsh', role: 'STUDENT', studentNumber: sn.student5 },
   ];
 
   for (const user of users) {
+    const studentIdFields = user.studentNumber
+      ? prepareStudentIdStorage(user.studentNumber)
+      : clearStudentIdStorage();
+
+    if (user.studentNumber && studentIdFields.studentIdLookup) {
+      await releaseStudentIdClaim(
+        user.studentNumber,
+        user.id,
+        studentIdFields.studentIdLookup,
+      );
+    }
+
     await prisma.user.upsert({
       where: { id: user.id },
       update: {
@@ -1043,6 +1088,7 @@ async function seedUsers() {
         authorizedUnits: user.authorizedUnits ?? [],
         isActive: true,
         emailVerified: true,
+        ...studentIdFields,
       },
       create: {
         id: user.id,
@@ -1052,6 +1098,7 @@ async function seedUsers() {
         authorizedUnits: user.authorizedUnits ?? [],
         isActive: true,
         emailVerified: true,
+        ...studentIdFields,
       },
     });
   }
@@ -1296,6 +1343,218 @@ async function seedBugReports() {
   }
 }
 
+async function seedChats() {
+  type SeedChat = {
+    id: string;
+    /** Chat owner — always a student so instructor/unit-admin visibility is meaningful. */
+    userId: string;
+    /**
+     * Course the chat is tagged to (RBAC policy expansion §5). `null` = a
+     * general chat that course/unit chat views must exclude. Course chats use a
+     * course the owner is actually enrolled in, so resolved access is real.
+     */
+    courseId: string | null;
+    title: string;
+    messages: { role: 'user' | 'assistant'; text: string }[];
+  };
+
+  // Coverage map:
+  //   - COSC unit-admin (unitadmin.cosc, scope COSC): COSC 101 + COSC 121 → aggregate spans 2 courses.
+  //   - Multi-unit admin (unitadmin.multi, scope MATH/STAT/DATA): MATH 200, STAT 300, DATA 310.
+  //   - PSYO 121: out-of-unit for both admins (proves unit scoping excludes it).
+  //   - One null-course chat: proves course/unit views exclude general chats.
+  // Every owner below is enrolled in the tagged course (see COURSES above).
+  const chats: SeedChat[] = [
+    {
+      id: 'seed_chat_cosc101_s1',
+      userId: u.student1,
+      courseId: c.cosc101,
+      title: 'Understanding decomposition',
+      messages: [
+        { role: 'user', text: 'Can you explain what "decomposition" means in computational thinking?' },
+        { role: 'assistant', text: 'Decomposition is breaking a complex problem into smaller, more manageable parts you can tackle one at a time. For example, building a website breaks into layout, content, and styling sub-problems.' },
+        { role: 'user', text: 'So it is like splitting a big assignment into steps?' },
+      ],
+    },
+    {
+      id: 'seed_chat_cosc101_s2',
+      userId: u.student2,
+      courseId: c.cosc101,
+      title: 'How many bits for 256 values?',
+      messages: [
+        { role: 'user', text: 'Why do I need 8 bits to represent 256 different values?' },
+        { role: 'assistant', text: 'Each bit doubles the number of representable values: n bits give 2^n combinations. 2^8 = 256, so 8 bits cover exactly 256 distinct values (0–255).' },
+      ],
+    },
+    {
+      id: 'seed_chat_cosc121_s1',
+      userId: u.student1,
+      courseId: c.cosc121,
+      title: 'Arrays vs linked lists',
+      messages: [
+        { role: 'user', text: 'When should I pick a linked list over an array?' },
+        { role: 'assistant', text: 'Choose a linked list when you do frequent insertions/removals at known positions and rarely need random access. Arrays win when you need O(1) indexing and predictable memory locality.' },
+      ],
+    },
+    {
+      id: 'seed_chat_cosc121_s4',
+      userId: u.student4,
+      courseId: c.cosc121,
+      title: 'When are TDD tests written?',
+      messages: [
+        { role: 'user', text: 'In test-driven development, do I write tests before or after the code?' },
+        { role: 'assistant', text: 'Before. In TDD you write a failing unit test first, then write just enough implementation to make it pass, then refactor — the red/green/refactor loop.' },
+        { role: 'user', text: 'That feels backwards but I think I get it.' },
+      ],
+    },
+    {
+      id: 'seed_chat_math200_s3',
+      userId: u.student3,
+      courseId: c.math200,
+      title: 'Partial derivative intuition',
+      messages: [
+        { role: 'user', text: 'What does the partial derivative of f(x, y) with respect to x actually measure?' },
+        { role: 'assistant', text: 'It measures how f changes as you nudge x while holding y fixed — the slope of the surface in the x-direction at that point. Geometrically, slice the surface with a plane y = const and take the ordinary derivative of that curve.' },
+      ],
+    },
+    {
+      id: 'seed_chat_stat300_s2',
+      userId: u.student2,
+      courseId: c.stat300,
+      title: 'Interpreting a p-value',
+      messages: [
+        { role: 'user', text: 'If my p-value is 0.03 at alpha = 0.05, what do I conclude?' },
+        { role: 'assistant', text: 'Since 0.03 < 0.05, you reject the null hypothesis at the 5% level. Note this does not mean the null is "0.03 likely" — it means data this extreme would occur only 3% of the time if the null were true.' },
+      ],
+    },
+    {
+      id: 'seed_chat_data310_s3',
+      userId: u.student3,
+      courseId: c.data310,
+      title: 'k-means vs hierarchical clustering',
+      messages: [
+        { role: 'user', text: 'When would I prefer hierarchical clustering over k-means?' },
+        { role: 'assistant', text: 'Prefer hierarchical clustering when you do not know the number of clusters up front and want a dendrogram to inspect structure, and when n is moderate. Prefer k-means at scale when k is known and clusters are roughly spherical.' },
+      ],
+    },
+    {
+      id: 'seed_chat_psyo121_s2',
+      userId: u.student2,
+      courseId: c.psyo121,
+      title: 'Classical vs operant conditioning',
+      messages: [
+        { role: 'user', text: 'What is the difference between classical and operant conditioning?' },
+        { role: 'assistant', text: 'Classical conditioning pairs a neutral stimulus with one that already triggers a response (Pavlov\'s dog salivating to a bell). Operant conditioning shapes behavior through consequences — reinforcement or punishment after the behavior (a rat pressing a lever for food).' },
+      ],
+    },
+    {
+      id: 'seed_chat_general_s1',
+      userId: u.student1,
+      courseId: null,
+      title: 'General study tips',
+      messages: [
+        { role: 'user', text: 'Any general advice for studying across multiple courses this term?' },
+        { role: 'assistant', text: 'Space your review sessions instead of cramming, mix topics within a session (interleaving), and self-test rather than re-reading. A short weekly plan per course keeps things from piling up.' },
+      ],
+    },
+  ];
+
+  for (const chat of chats) {
+    await prisma.chat.upsert({
+      where: { id: chat.id },
+      update: { userId: chat.userId, courseId: chat.courseId, title: chat.title },
+      create: { id: chat.id, userId: chat.userId, courseId: chat.courseId, title: chat.title },
+    });
+
+    // Rewrite messages for idempotency (mirrors the secondary-topics pattern).
+    // Array order is preserved by the autoincrement `position`, which the
+    // chat-detail read orders by.
+    await prisma.chatMessage.deleteMany({ where: { chatId: chat.id } });
+    await prisma.chatMessage.createMany({
+      data: chat.messages.map((m, i) => {
+        const messageId = `${chat.id}_m${i + 1}`;
+        return {
+          chatId: chat.id,
+          messageId,
+          role: m.role,
+          // Stored shape mirrors chat.ts `serializeMessage` (AI-SDK message):
+          // the frontend renders `parts[].text` with a `content` fallback.
+          content: {
+            id: messageId,
+            role: m.role,
+            parts: [{ type: 'text', text: m.text }],
+          } as Prisma.InputJsonValue,
+        };
+      }),
+    });
+  }
+}
+
+async function seedMaterials() {
+  // Data-driven off COURSES so EVERY course gets materials — no matter which
+  // account logs in, the courses it can see have materials. Each course gets:
+  //   1. an instructor-owned overview, and
+  //   2. a topic-notes file owned by the course TA when one exists (exercises
+  //      the own-TA delete carve-out, `isOwnTa`), else by the instructor.
+  // Bare rows (no chunks/embeddings — those are RAG-only and need an embedding
+  // API key); listing and every materials RBAC gate read only the
+  // CourseMaterial row. status READY so they appear fully processed.
+  type SeedMaterial = { id: string; courseId: string; title: string; uploadedBy: string; rawText: string };
+
+  // Clear prior seed materials (incl. legacy ids from earlier seed versions) so
+  // re-seeds stay idempotent and never leave orphans. Chunks cascade; seed
+  // materials have none.
+  await prisma.courseMaterial.deleteMany({ where: { id: { startsWith: 'seed_material_' } } });
+
+  for (const course of COURSES) {
+    const courseSlug = course.id.replace(/^seed_course_/, '');
+    const taId = course.taIds?.[0];
+    const firstTopic = course.topics[0];
+    const topicNames = course.topics.map((t) => t.name).join(', ');
+
+    const materials: SeedMaterial[] = [
+      {
+        id: `seed_material_${courseSlug}_overview`,
+        courseId: course.id,
+        title: `${course.code} — Course Overview`,
+        uploadedBy: course.instructorId,
+        rawText: `${course.name}. ${course.description} Topics covered: ${topicNames}.`,
+      },
+      {
+        id: `seed_material_${courseSlug}_notes`,
+        courseId: course.id,
+        title: `${course.code} — ${firstTopic.name} Notes`,
+        // TA-owned when the course has a TA, else instructor-owned.
+        uploadedBy: taId ?? course.instructorId,
+        rawText: `Lecture notes on ${firstTopic.name} for ${course.code} (${course.name}). ${course.aiInstructions}`,
+      },
+    ];
+
+    for (const m of materials) {
+      const fileSize = Buffer.byteLength(m.rawText, 'utf8');
+      // Deterministic checksum keyed by material id — unique within the
+      // course (courseId, checksum) constraint and stable across re-seeds.
+      const checksum = `seed-${m.id}`;
+      const data = {
+        courseId: m.courseId,
+        title: m.title,
+        mimeType: 'text/plain',
+        fileSize,
+        checksum,
+        rawText: m.rawText,
+        status: 'READY' as const,
+        uploadedBy: m.uploadedBy,
+        processedAt: new Date(),
+      };
+      await prisma.courseMaterial.upsert({
+        where: { id: m.id },
+        update: data,
+        create: { id: m.id, ...data },
+      });
+    }
+  }
+}
+
 async function main() {
   console.log(`Seeding Core (units registry: ${UNITS.length} subjects)...`);
 
@@ -1304,7 +1563,9 @@ async function main() {
 
   await seedUsers();
   await seedPasswords();
-  console.log('  Users seeded (admin, 2 unit admins, 4 instructors, 2 TAs, 5 students) with default password');
+  console.log(
+    '  Users seeded (admin, 2 unit admins, 4 instructors, 2 TAs, 5 students with student_1–student_5 IDs) with default password',
+  );
 
   await seedCourses();
   console.log(`  ${COURSES.length} courses seeded with topics, enrollments, and questions`);
@@ -1312,29 +1573,44 @@ async function main() {
   await seedBugReports();
   console.log('  Bug reports seeded');
 
+  await seedChats();
+  console.log('  Course-tagged + general chats seeded (instructor/unit-admin chat visibility)');
+
+  await seedMaterials();
+  console.log('  Course materials seeded (student view + TA manage gates)');
+
   // Sanity counts so the operator can see what they got.
-  const [userCount, courseCount, topicCount, questionCount, enrollmentCount, bugCount] = await Promise.all([
+  const [userCount, courseCount, topicCount, questionCount, enrollmentCount, bugCount, chatCount, materialCount] = await Promise.all([
     prisma.user.count(),
     prisma.course.count(),
     prisma.courseTopic.count(),
     prisma.question.count(),
     prisma.enrollment.count(),
     prisma.bugReport.count(),
+    prisma.chat.count(),
+    prisma.courseMaterial.count(),
   ]);
 
   console.log(
     `Seed complete — ${userCount} users, ${courseCount} courses, ${topicCount} topics, ` +
-      `${questionCount} questions, ${enrollmentCount} enrollments, ${bugCount} bug reports`,
+      `${questionCount} questions, ${enrollmentCount} enrollments, ${bugCount} bug reports, ` +
+      `${chatCount} chats, ${materialCount} materials`,
   );
   console.log(`Cross-app links exported via SEED_IDS in apps/core/prisma/seed.ts`);
 }
 
-main()
-  .then(async () => {
-    await prisma.$disconnect();
-  })
-  .catch(async (e) => {
-    console.error('Seed failed:', e);
-    await prisma.$disconnect();
-    process.exit(1);
-  });
+const isMainModule =
+  process.argv[1] != null &&
+  path.resolve(fileURLToPath(import.meta.url)) === path.resolve(process.argv[1]);
+
+if (isMainModule) {
+  main()
+    .then(async () => {
+      await prisma.$disconnect();
+    })
+    .catch(async (e) => {
+      console.error('Seed failed:', e);
+      await prisma.$disconnect();
+      process.exit(1);
+    });
+}

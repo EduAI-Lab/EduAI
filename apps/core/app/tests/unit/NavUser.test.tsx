@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { NavUser } from "~/components/nav-user";
-import { SidebarProvider } from "~/components/ui/sidebar";
+import { SidebarProvider } from "@eduai/ui";
 import type { User } from "~/lib/auth/types";
 
 const user = {

@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { IconEdit, IconTrash, IconPlus } from "@tabler/icons-react";
-import { Button } from "~/components/ui/button";
-import { Badge } from "~/components/ui/badge";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "~/components/ui/table";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "~/components/ui/alert-dialog";
-import { Switch } from "~/components/ui/switch";
+import { IconEdit, IconTrash, IconPlus, IconCloud, IconServer } from "@tabler/icons-react";
+import { Button } from "@eduai/ui";
+import { Badge } from "@eduai/ui";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@eduai/ui";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@eduai/ui";
+import { Switch } from "@eduai/ui";
 
 type AIProvider = {
   id: string;
@@ -64,20 +64,24 @@ const formatTokens = (tokens?: number) => {
 const getTypeColor = (type: string) => {
   switch (type) {
     case "CHAT":
-      return "bg-blue-50 text-blue-700 border-blue-200";
+      return "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800";
     case "COMPLETION":
-      return "bg-green-50 text-green-700 border-green-200";
+      return "bg-green-50 text-green-700 border-green-200 dark:bg-green-950/40 dark:text-green-300 dark:border-green-800";
     case "EMBEDDING":
-      return "bg-purple-50 text-purple-700 border-purple-200";
+      return "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800";
     case "IMAGE":
-      return "bg-pink-50 text-pink-700 border-pink-200";
+      return "bg-pink-50 text-pink-700 border-pink-200 dark:bg-pink-950/40 dark:text-pink-300 dark:border-pink-800";
     case "AUDIO":
-      return "bg-orange-50 text-orange-700 border-orange-200";
+      return "bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950/40 dark:text-orange-300 dark:border-orange-800";
     case "VIDEO":
-      return "bg-red-50 text-red-700 border-red-200";
+      return "bg-red-50 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-800";
     default:
-      return "bg-gray-50 text-gray-700 border-gray-200";
+      return "bg-muted text-muted-foreground border-border";
   }
+};
+
+const isLocalProvider = (provider: AIProvider) => {
+  return provider.name === "ollama";
 };
 
 export function AIModelsTable({ models, onEdit, onDelete, onToggleActive }: AIModelsTableProps) {
@@ -112,7 +116,24 @@ export function AIModelsTable({ models, onEdit, onDelete, onToggleActive }: AIMo
                   <div className="text-sm text-muted-foreground">{model.modelId}</div>
                 </div>
               </TableCell>
-              <TableCell>{model.provider.displayName}</TableCell>
+              <TableCell>
+                <div className="flex items-center gap-2">
+                  <span>{model.provider.displayName}</span>
+                  <Badge variant="outline" className="text-xs">
+                    {isLocalProvider(model.provider) ? (
+                      <>
+                        <IconServer size={12} className="mr-1" />
+                        Local
+                      </>
+                    ) : (
+                      <>
+                        <IconCloud size={12} className="mr-1" />
+                        Cloud
+                      </>
+                    )}
+                  </Badge>
+                </div>
+              </TableCell>
               <TableCell>
                 <Badge variant="outline" className={getTypeColor(model.type)}>
                   {model.type}

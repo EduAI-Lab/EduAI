@@ -1,18 +1,18 @@
-import { IconCirclePlusFilled, IconMail, type Icon } from "@tabler/icons-react"
+import { Link, useLocation } from "react-router"
+import { type Icon } from "@tabler/icons-react"
 
-import { Button } from "~/components/ui/button"
 import {
   SidebarGroup,
   SidebarGroupContent,
   SidebarMenu,
-  SidebarMenuButton,
   SidebarMenuItem,
-} from "~/components/ui/sidebar"
+} from "@eduai/ui"
 
 export interface NavMainItem {
   title: string
   url: string
   icon?: Icon
+  external?: boolean
 }
 
 export interface NavMainProps {
@@ -20,39 +20,92 @@ export interface NavMainProps {
 }
 
 export function NavMain({ items }: NavMainProps) {
+  const { pathname } = useLocation()
   return (
     <SidebarGroup>
-      <SidebarGroupContent className="flex flex-col gap-2">
+      <SidebarGroupContent className="flex flex-col gap-0.5">
         <SidebarMenu>
-          <SidebarMenuItem className="flex items-center gap-2">
-            <SidebarMenuButton
-              tooltip="Quick Create"
-              className="bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground active:bg-primary/90 active:text-primary-foreground min-w-8 duration-200 ease-linear"
-            >
-              <IconCirclePlusFilled />
-              <span>Quick Create</span>
-            </SidebarMenuButton>
-            <Button
-              size="icon"
-              className="size-8 group-data-[collapsible=icon]:opacity-0"
-              variant="outline"
-            >
-              <IconMail />
-              <span className="sr-only">Inbox</span>
-            </Button>
-          </SidebarMenuItem>
-        </SidebarMenu>
-        <SidebarMenu>
-          {items.map((item) => (
-            <SidebarMenuItem key={item.title}>
-              <SidebarMenuButton asChild tooltip={item.title}>
-                <a href={item.url} className="flex items-center gap-2 w-full">
-                  {item.icon && <item.icon />}
-                  <span>{item.title}</span>
-                </a>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          ))}
+          {items.map((item) => {
+            const isActive =
+              !item.external &&
+              (pathname === item.url || pathname.startsWith(item.url + "/"))
+            const linkClassName =
+              "relative flex items-center gap-[10px] w-full px-[14px] py-[9px] rounded-[7px] text-[13.5px] outline-none select-none"
+            const linkStyle = {
+              background: isActive ? "oklch(0.248 0.055 259)" : "transparent",
+              color: isActive ? "#fff" : "rgba(255,255,255,0.82)",
+              fontWeight: isActive ? 500 : 400,
+              transition: "background 120ms",
+              paddingLeft: "16px",
+            } as const
+
+            const linkBody = (
+              <>
+                {isActive && (
+                  <span
+                    aria-hidden
+                    className="absolute left-0 rounded-[0_2px_2px_0] pointer-events-none"
+                    style={{
+                      top: "8px",
+                      bottom: "8px",
+                      width: "3px",
+                      background: "var(--gold)",
+                    }}
+                  />
+                )}
+                {item.icon && <item.icon size={16} strokeWidth={1.75} />}
+                <span className="flex-1">{item.title}</span>
+              </>
+            )
+
+            return (
+              <SidebarMenuItem key={item.title}>
+                {item.external ? (
+                  <a
+                    href={item.url}
+                    className={linkClassName}
+                    style={linkStyle}
+                    rel="noopener noreferrer"
+                    onMouseEnter={(e) => {
+                      if (!isActive) {
+                        ;(e.currentTarget as HTMLAnchorElement).style.background =
+                          "oklch(0.218 0.050 259)"
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isActive) {
+                        ;(e.currentTarget as HTMLAnchorElement).style.background =
+                          "transparent"
+                      }
+                    }}
+                  >
+                    {linkBody}
+                  </a>
+                ) : (
+                  <Link
+                    to={item.url}
+                    aria-current={isActive ? "page" : undefined}
+                    className={linkClassName}
+                    style={linkStyle}
+                    onMouseEnter={(e) => {
+                      if (!isActive) {
+                        ;(e.currentTarget as HTMLAnchorElement).style.background =
+                          "oklch(0.218 0.050 259)"
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isActive) {
+                        ;(e.currentTarget as HTMLAnchorElement).style.background =
+                          "transparent"
+                      }
+                    }}
+                  >
+                    {linkBody}
+                  </Link>
+                )}
+              </SidebarMenuItem>
+            )
+          })}
         </SidebarMenu>
       </SidebarGroupContent>
     </SidebarGroup>

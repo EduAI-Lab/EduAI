@@ -1,5 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { requireAuth, requireRole, requireRoles } from '../../src/middleware/auth.js';
+
+vi.mock('../../src/services/policyService.js', () => ({
+  getPolicy: vi.fn(),
+}));
+
+import {
+  requireAuth,
+  requireRole,
+  requireRoles,
+  requireInstructorPolicy,
+  isUnitAdminForCourse,
+} from '../../src/middleware/auth.js';
+import { getPolicy } from '../../src/services/policyService.js';
 
 process.env.CORE_URL = 'http://core.test';
 
@@ -191,5 +203,80 @@ describe('requireRole', () => {
 describe('requireRoles (backward-compat alias)', () => {
   it('is the same function reference as requireRole', () => {
     expect(requireRoles).toBe(requireRole);
+  });
+});
+
+describe('requireInstructorPolicy', () => {
+  let next;
+
+  beforeEach(() => {
+    next = vi.fn();
+    vi.clearAllMocks();
+  });
+
+  it('passes non-instructors through without consulting the policy (ADMIN unaffected)', async () => {
+    const req = { user: { role: 'ADMIN' } };
+    await requireInstructorPolicy('instructors.canCreateCourses')(req, makeRes(), next);
+    expect(next).toHaveBeenCalledOnce();
+    expect(getPolicy).not.toHaveBeenCalled();
+  });
+
+  it('allows an INSTRUCTOR when the policy flag is enabled', async () => {
+    getPolicy.mockResolvedValue(true);
+    const req = { user: { role: 'INSTRUCTOR' } };
+    await requireInstructorPolicy('instructors.canCreateCourses')(req, makeRes(), next);
+    expect(next).toHaveBeenCalledOnce();
+    expect(getPolicy).toHaveBeenCalledWith('instructors.canCreateCourses');
+  });
+
+  it('blocks an INSTRUCTOR with 403 when the policy flag is disabled', async () => {
+    getPolicy.mockResolvedValue(false);
+    const req = { user: { role: 'INSTRUCTOR' } };
+    const res = makeRes();
+    await requireInstructorPolicy('instructors.canCreateCourses')(req, res, next);
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+});
+
+describe('isUnitAdminForCourse', () => {
+  const course = { department: 'COSC' };
+  const courseNoDept = { department: null };
+  const unitAdminCosc = { role: 'UNIT_ADMIN', authorizedUnits: ['COSC', 'MATH'] };
+  const unitAdminOther = { role: 'UNIT_ADMIN', authorizedUnits: ['PHYS'] };
+  const unitAdminEmpty = { role: 'UNIT_ADMIN', authorizedUnits: [] };
+  const instructor = { role: 'INSTRUCTOR', authorizedUnits: ['COSC'] };
+
+  it('returns true when role is UNIT_ADMIN and department is in authorizedUnits', () => {
+    expect(isUnitAdminForCourse(unitAdminCosc, course)).toBe(true);
+  });
+
+  it('returns false when authorizedUnits does not include the department', () => {
+    expect(isUnitAdminForCourse(unitAdminOther, course)).toBe(false);
+  });
+
+  it('returns false when authorizedUnits is empty', () => {
+    expect(isUnitAdminForCourse(unitAdminEmpty, course)).toBe(false);
+  });
+
+  it('returns false when course.department is null (null never matches)', () => {
+    expect(isUnitAdminForCourse(unitAdminCosc, courseNoDept)).toBe(false);
+  });
+
+  it('returns false when role is not UNIT_ADMIN', () => {
+    expect(isUnitAdminForCourse(instructor, course)).toBe(false);
+  });
+
+  it('returns false when user is null', () => {
+    expect(isUnitAdminForCourse(null, course)).toBe(false);
+  });
+
+  it('returns false when course is null', () => {
+    expect(isUnitAdminForCourse(unitAdminCosc, null)).toBe(false);
+  });
+
+  it('returns false when authorizedUnits is not an array', () => {
+    const user = { role: 'UNIT_ADMIN', authorizedUnits: 'COSC' };
+    expect(isUnitAdminForCourse(user, course)).toBe(false);
   });
 });

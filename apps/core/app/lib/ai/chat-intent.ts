@@ -32,8 +32,7 @@ const COURSE_RAG_KEYWORDS = [
   "about the",
 ];
 
-const GREETING_PATTERN =
-  /^(hi|hello|hey|good morning|good afternoon|good evening|thanks|thank you|ok|okay|bye)\b/i;
+const GREETING_PATTERN = /^(hi|hello|hey|good morning|good afternoon|good evening|thanks|thank you|ok|okay|bye)\b/i;
 
 const GENERIC_KNOWLEDGE_PATTERN = /^what is\b/i;
 
@@ -60,10 +59,7 @@ export function needsCourseRag(message: string, hasCourse: boolean): boolean {
     return false;
   }
 
-  if (
-    GENERIC_KNOWLEDGE_PATTERN.test(lower) &&
-    !COURSE_RAG_KEYWORDS.some((kw) => lower.includes(kw))
-  ) {
+  if (GENERIC_KNOWLEDGE_PATTERN.test(lower) && !COURSE_RAG_KEYWORDS.some((kw) => lower.includes(kw))) {
     return false;
   }
 

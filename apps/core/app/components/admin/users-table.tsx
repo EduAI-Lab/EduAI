@@ -34,7 +34,12 @@ import {
   IconChevronsRight,
   IconColumns,
   IconPlus,
+  IconUserCheck,
+  IconUserOff,
+  IconMessageCircle,
 } from "@tabler/icons-react";
+
+import { RoleBadge, Avatar as EduAvatar, StatusBadge } from "@eduai/ui";
 
 import { cn } from "~/lib/utils";
 import {
@@ -47,10 +52,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from "~/components/ui/alert-dialog";
-import { Badge } from "~/components/ui/badge";
-import { Button } from "~/components/ui/button";
-import { Checkbox } from "~/components/ui/checkbox";
+} from "@eduai/ui";
+import { Badge } from "@eduai/ui";
+import { Button } from "@eduai/ui";
+import { Checkbox } from "@eduai/ui";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -59,26 +64,26 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "~/components/ui/dropdown-menu";
-import { Input } from "~/components/ui/input";
-import { Label } from "~/components/ui/label";
+} from "@eduai/ui";
+import { Input } from "@eduai/ui";
+import { Label } from "@eduai/ui";
 import {
   Pagination,
   PaginationContent,
   PaginationItem,
-} from "~/components/ui/pagination";
+} from "@eduai/ui";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "~/components/ui/popover";
+} from "@eduai/ui";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "~/components/ui/select";
+} from "@eduai/ui";
 import {
   Table,
   TableBody,
@@ -86,18 +91,18 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "~/components/ui/table";
-import { Switch } from "~/components/ui/switch";
-import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
+} from "@eduai/ui";
+import { Switch } from "@eduai/ui";
 
 export type User = {
   id: string;
   email: string;
   name: string;
   image?: string;
-  role: "ADMIN" | "INSTRUCTOR" | "TA" | "STUDENT";
+  role: "ADMIN" | "UNIT_ADMIN" | "INSTRUCTOR" | "STUDENT";
   isActive: boolean;
   emailVerified: boolean;
+  authorizedUnits: string[];
   createdAt: string;
   updatedAt: string;
   _count: {
@@ -114,6 +119,7 @@ export interface UsersTableProps {
   onEdit: (user: User) => void;
   onDelete: (id: string) => void;
   onToggleActive: (user: User) => void;
+  onViewChatHistory?: (user: User) => void;
   onCreateUser?: () => void;
 }
 
@@ -123,29 +129,6 @@ const formatDate = (dateString: string) => {
     month: 'short',
     day: 'numeric',
   });
-};
-
-const getRoleColor = (role: string) => {
-  switch (role) {
-    case "ADMIN":
-      return "bg-red-50 text-red-700 border-red-200";
-    case "INSTRUCTOR":
-      return "bg-blue-50 text-blue-700 border-blue-200";
-    case "TA":
-      return "bg-green-50 text-green-700 border-green-200";
-    case "STUDENT":
-      return "bg-gray-50 text-gray-700 border-gray-200";
-    default:
-      return "bg-gray-50 text-gray-700 border-gray-200";
-  }
-};
-
-const getInitials = (name: string) => {
-  return name
-    .split(' ')
-    .map((n) => n[0])
-    .join('')
-    .toUpperCase();
 };
 
 // Custom filter function for multi-column searching
@@ -181,20 +164,25 @@ function RowActions({
   row,
   currentUserId,
   onEdit,
-  onDelete,
-  onToggleActive
+  onRequestDelete,
+  onToggleActive,
+  onViewChatHistory,
 }: {
   row: Row<User>;
   currentUserId: string;
   onEdit: (user: User) => void;
-  onDelete: (id: string) => void;
+  onRequestDelete: (user: User) => void;
   onToggleActive: (user: User) => void;
+  onViewChatHistory?: (user: User) => void;
 }) {
   const user = row.original;
   const isCurrentUser = user.id === currentUserId;
 
   return (
-    <DropdownMenu>
+    // modal={false} so Radix does not lock `body { pointer-events: none }` while
+    // the menu is open. Without it, opening the table-level AlertDialog as this
+    // menu closes leaves the body pointer-events lock stuck → page unclickable.
+    <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
         <Button
           size="sm"
@@ -210,20 +198,26 @@ function RowActions({
           <IconEdit className="mr-2 h-4 w-4" />
           Edit
         </DropdownMenuItem>
+        {onViewChatHistory && (
+          <DropdownMenuItem onClick={() => onViewChatHistory(user)}>
+            <IconMessageCircle className="mr-2 h-4 w-4" />
+            View chat history
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem
           onClick={() => onToggleActive(user)}
           disabled={isCurrentUser}
         >
-          <Switch
-            checked={user.isActive}
-            className="mr-2 h-4 w-4"
-            disabled
-          />
+          {user.isActive ? (
+            <IconUserOff className="mr-2 h-4 w-4" />
+          ) : (
+            <IconUserCheck className="mr-2 h-4 w-4" />
+          )}
           {user.isActive ? "Deactivate" : "Activate"}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
-          onClick={() => onDelete(user.id)}
+          onClick={() => onRequestDelete(user)}
           disabled={isCurrentUser}
           className="text-destructive focus:text-destructive"
         >
@@ -241,9 +235,11 @@ export function UsersTable({
   onEdit,
   onDelete,
   onToggleActive,
+  onViewChatHistory,
   onCreateUser
 }: UsersTableProps) {
   const id = useId();
+  const [userToDelete, setUserToDelete] = useState<User | null>(null);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [pagination, setPagination] = useState<PaginationState>({
@@ -289,12 +285,7 @@ export function UsersTable({
         accessorKey: "name",
         cell: ({ row }) => (
           <div className="flex items-center gap-3">
-            <Avatar className="h-8 w-8">
-              <AvatarImage src={row.original.image} alt={row.original.name} />
-              <AvatarFallback className="text-xs">
-                {getInitials(row.original.name)}
-              </AvatarFallback>
-            </Avatar>
+            <EduAvatar name={row.original.name} src={row.original.image} size={32} radius={8} />
             <div>
               <div className="font-medium">{row.original.name}</div>
               <div className="text-sm text-muted-foreground">{row.original.email}</div>
@@ -309,9 +300,7 @@ export function UsersTable({
         header: "Role",
         accessorKey: "role",
         cell: ({ row }) => (
-          <Badge variant="outline" className={getRoleColor(row.getValue("role"))}>
-            {row.getValue("role")}
-          </Badge>
+          <RoleBadge role={row.getValue("role")} />
         ),
         size: 120,
         filterFn: roleFilterFn,
@@ -363,18 +352,10 @@ export function UsersTable({
       {
         header: "Status",
         accessorKey: "isActive",
-        cell: ({ row }) => (
-          <div className="flex items-center space-x-2">
-            <Switch
-              checked={row.getValue("isActive")}
-              onCheckedChange={() => onToggleActive(row.original)}
-              disabled={row.original.id === currentUserId}
-            />
-            <span className="text-sm">
-              {row.getValue("isActive") ? "Active" : "Inactive"}
-            </span>
-          </div>
-        ),
+        cell: ({ row }) => {
+          const isActive = row.getValue("isActive") as boolean;
+          return <StatusBadge active={isActive} />;
+        },
         size: 120,
         filterFn: statusFilterFn,
       },
@@ -386,8 +367,9 @@ export function UsersTable({
             row={row}
             currentUserId={currentUserId}
             onEdit={onEdit}
-            onDelete={onDelete}
+            onRequestDelete={setUserToDelete}
             onToggleActive={onToggleActive}
+            onViewChatHistory={onViewChatHistory}
           />
         ),
         size: 60,
@@ -395,7 +377,7 @@ export function UsersTable({
         enableSorting: false,
       },
     ],
-    [currentUserId, onEdit, onDelete, onToggleActive]
+    [currentUserId, onEdit, onDelete, onToggleActive, onViewChatHistory]
   );
 
   const table = useReactTable({
@@ -931,6 +913,33 @@ export function UsersTable({
           </Pagination>
         </div>
       </div>
+
+      {/* Single-user delete dialog — rendered outside the row DropdownMenu so
+          Radix focus management doesn't conflict with the menu's portal. */}
+      <AlertDialog open={!!userToDelete} onOpenChange={(open) => { if (!open) setUserToDelete(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete{" "}
+              {userToDelete?.name || userToDelete?.email} and all their data.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (userToDelete) {
+                  onDelete(userToDelete.id);
+                  setUserToDelete(null);
+                }
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

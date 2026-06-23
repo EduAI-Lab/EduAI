@@ -3,18 +3,13 @@
  * Loads latest question data, displays metadata, and surfaces variant management controls.
  */
 import { ReactNode, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Button } from '../ui/button';
-import { Badge } from '../ui/badge';
-import { Label } from '../ui/label';
+import { useNavigate } from 'react-router';
 import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue
-} from '../ui/select';
-import { Textarea } from '../ui/textarea';
+    Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@eduai/ui';
+import { Button, Badge, Label, Textarea } from '@eduai/ui';
+import { useToast } from '@/components/ui/use-toast';
+import { PermissionGate } from '@/components/rbac/PermissionGate';
+import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
 import { X, Copy, Trash2, ArrowLeft, Sparkles, FileEdit, Pencil } from 'lucide-react';
 import { QuestionVariantEntry, MCQChoice, QuestionType, QuestionDifficulty } from '../../types/question';
 import { Topic } from '../../types/topic';
@@ -22,7 +17,6 @@ import { MCQChoicesField } from '../questions/MCQChoicesField';
 import { questionService } from '../../services/questionService';
 import { courseService } from '../../services/courseService';
 import { assessmentService } from '../../services/assessmentService';
-import { useToast } from '../ui/use-toast';
 
 const QUESTION_TYPES: QuestionType[] = ['MCQ', 'SA', 'LA'];
 const QUESTION_TYPE_LABELS: Record<QuestionType, string> = {
@@ -48,20 +42,20 @@ const DetailItem = ({
             <button
                 type="button"
                 onClick={onClick}
-                className={`rounded-lg border border-gray-200 bg-gray-50 p-4 text-left shadow-sm transition hover:border-blue-200 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 ${spanFull ? 'sm:col-span-2' : ''}`}
+                className={`rounded-lg border border-border bg-muted p-4 text-left shadow-sm transition hover:border-primary/30 hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${spanFull ? 'sm:col-span-2' : ''}`}
             >
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
-                <div className="mt-2 text-sm font-medium text-gray-900 leading-relaxed whitespace-pre-line">
+                <div className="mt-2 text-sm font-medium text-foreground leading-relaxed whitespace-pre-line">
                     {value}
                 </div>
-                <p className="mt-3 text-xs font-medium text-blue-600">View all variants</p>
+                <p className="mt-3 text-xs font-medium text-primary-text">View all variants</p>
             </button>
         ) : (
             <div
-                className={`rounded-lg border border-gray-200 bg-gray-50 p-4 shadow-sm ${spanFull ? 'sm:col-span-2' : ''}`}
+                className={`rounded-lg border border-border bg-muted p-4 shadow-sm ${spanFull ? 'sm:col-span-2' : ''}`}
             >
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
-                <div className="mt-2 text-sm font-medium text-gray-900 leading-relaxed whitespace-pre-line">
+                <div className="mt-2 text-sm font-medium text-foreground leading-relaxed whitespace-pre-line">
                     {value}
                 </div>
             </div>
@@ -90,7 +84,7 @@ interface QuestionDetailViewProps {
         questionId: number,
         updates: {
             description?: string | null;
-            primaryTopicId?: number;
+            primaryTopicId?: string;
             type?: QuestionType;
             primaryTopicName?: string;
         }
@@ -123,6 +117,16 @@ export const QuestionDetailView = ({
     const [topicsLoading, setTopicsLoading] = useState(false);
     const [savingMetadata, setSavingMetadata] = useState(false);
     const { toast } = useToast();
+    const {
+        canApproveVariant,
+        canCreateQuestion,
+        canEditResource,
+        canDeleteResource,
+    } = useQmPermissionsForCourse(entry.courseId ?? null);
+    const owner = { createdBy: entry.variant.createdBy ?? null };
+    const isApproved = entry.isDraft === false;
+    const canEditDraft = canEditResource(owner) && !isApproved;
+    const canEditMetadata = canEditResource(owner);
 
     useEffect(() => {
         if (!entry.courseId) return;
@@ -291,7 +295,7 @@ export const QuestionDetailView = ({
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
             <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-            <div className="relative flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="relative flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg bg-card shadow-2xl" onClick={(e) => e.stopPropagation()}>
                 <Button
                     variant="ghost"
                     size="icon"
@@ -306,7 +310,7 @@ export const QuestionDetailView = ({
                     {viewMode === 'variants' ? (
                         <div className="flex items-center justify-between">
                             <div>
-                                <h2 className="text-xl font-semibold text-gray-900">All variants for this question</h2>
+                                <h2 className="text-xl font-semibold text-foreground">All variants for this question</h2>
                                 <p className="mt-1 text-sm text-muted-foreground">
                                     {entry.questionDescription || 'Question metadata'}
                                 </p>
@@ -322,7 +326,7 @@ export const QuestionDetailView = ({
                             </Button>
                         </div>
                     ) : (
-                        <div className={`text-gray-900 font-semibold ${questionTextClass} max-h-40 overflow-y-auto`}>
+                        <div className={`text-foreground font-semibold ${questionTextClass} max-h-40 overflow-y-auto`}>
                             {questionTextDisplay}
                         </div>
                     )}
@@ -331,27 +335,27 @@ export const QuestionDetailView = ({
                 <div className="flex-1 overflow-y-auto px-6 py-6">
                     {viewMode === 'variants' ? (
                         <div className="space-y-6">
-                            <div className="rounded-lg border border-gray-200 bg-gray-50 p-5 shadow-sm">
+                            <div className="rounded-lg border border-border bg-muted p-5 shadow-sm">
                                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                                     Question synopsis
                                 </p>
-                                <p className="mt-2 text-sm font-medium text-gray-900 leading-relaxed">
+                                <p className="mt-2 text-sm font-medium text-foreground leading-relaxed">
                                     {entry.questionDescription || '—'}
                                 </p>
                                 <div className="mt-3 flex flex-wrap items-center gap-2">
                                     <Badge variant="outline">{entry.primaryTopicName ?? `Topic ${entry.primaryTopicId}`}</Badge>
                                     <Badge variant="secondary" className="uppercase">{entry.questionType}</Badge>
                                     {entry.isAiGenerated && (
-                                        <Badge variant="default" className="bg-purple-100 text-purple-800 hover:bg-purple-200 border-purple-300">
+                                        <Badge variant="default" className="bg-secondary/15 text-secondary border-secondary/30 hover:bg-secondary/25">
                                             AI Generated
                                         </Badge>
                                     )}
                                     {entry.isDraft ? (
-                                        <Badge variant="default" className="bg-amber-100 text-amber-800 hover:bg-amber-200 border-amber-300">
+                                        <Badge variant="default" className="bg-warning-100 text-warning-700 border-warning-500/30">
                                             Draft
                                         </Badge>
                                     ) : (
-                                        <Badge variant="default" className="bg-green-100 text-green-800 hover:bg-green-200 border-green-300">
+                                        <Badge variant="default" className="bg-success-100 text-success-700 border-success-500/30">
                                             Reviewed
                                         </Badge>
                                     )}
@@ -370,12 +374,12 @@ export const QuestionDetailView = ({
                                             onClick={() => handleSelectVariant(item)}
                                             className={`w-full rounded-lg border p-4 text-left shadow-sm transition ${
                                                 isActive
-                                                    ? 'border-blue-500 bg-blue-50'
-                                                    : 'border-gray-200 bg-white hover:border-blue-200 hover:bg-blue-50'
+                                                    ? 'border-primary bg-primary/10'
+                                                    : 'border-border bg-card hover:border-primary/30 hover:bg-primary/10'
                                             }`}
                                             >
                                                 <div className="flex flex-wrap items-center justify-between gap-3">
-                                                    <div className="text-sm font-semibold text-gray-900">
+                                                    <div className="text-sm font-semibold text-foreground">
                                                     Variant {index + 1}
                                                     </div>
                                                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -385,7 +389,7 @@ export const QuestionDetailView = ({
                                                     <span>{formatTimestamp(timestamp)}</span>
                                                 </div>
                                             </div>
-                                            <p className="mt-2 text-sm text-gray-700 line-clamp-3 leading-relaxed">
+                                            <p className="mt-2 text-sm text-foreground line-clamp-3 leading-relaxed">
                                                 {item.variant.questionText}
                                             </p>
                                         </button>
@@ -393,7 +397,7 @@ export const QuestionDetailView = ({
                                 })}
 
                                 {siblingVariants.length === 0 && (
-                                    <div className="rounded-lg border border-dashed border-gray-200 p-6 text-center text-sm text-muted-foreground">
+                                    <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
                                         No variants available for this question metadata yet.
                                     </div>
                                 )}
@@ -406,7 +410,7 @@ export const QuestionDetailView = ({
                                 <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                                     Synopsis
                                 </h3>
-                                {!editingMetadata && onUpdateQuestionMetadata && (
+                                {!editingMetadata && onUpdateQuestionMetadata && canEditMetadata && (
                                     <Button
                                         variant="ghost"
                                         size="sm"
@@ -419,7 +423,7 @@ export const QuestionDetailView = ({
                                 )}
                             </div>
                             {editingMetadata ? (
-                                <div className="mt-3 space-y-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
+                                <div className="mt-3 space-y-4 rounded-lg border border-border bg-muted p-4">
                                     <div className="space-y-2">
                                         <Label htmlFor="detail-description">Question synopsis</Label>
                                         <Textarea
@@ -487,23 +491,22 @@ export const QuestionDetailView = ({
                                             size="sm"
                                             disabled={savingMetadata || !editPrimaryTopicId}
                                             onClick={async () => {
-                                                const primaryId = parseInt(editPrimaryTopicId, 10);
-                                                if (Number.isNaN(primaryId)) return;
+                                                if (!editPrimaryTopicId) return;
                                                 setSavingMetadata(true);
                                                 try {
                                                     await questionService.updateQuestion(entry.questionId, {
                                                         description: editDescription || undefined,
-                                                        primaryTopicId: primaryId,
+                                                        primaryTopicId: editPrimaryTopicId,
                                                         type: editType,
                                                         courseId: entry.courseId
                                                     });
                                                     await questionService.updateVariant(entry.variant.id, {
                                                         difficulty: editDifficulty
                                                     });
-                                                    const primaryTopicName = topics.find((t) => t.id === primaryId)?.name;
+                                                    const primaryTopicName = topics.find((t) => t.id === editPrimaryTopicId)?.name;
                                                     onUpdateQuestionMetadata?.(entry.questionId, {
                                                         description: editDescription || null,
-                                                        primaryTopicId: primaryId,
+                                                        primaryTopicId: editPrimaryTopicId,
                                                         type: editType,
                                                         primaryTopicName
                                                     });
@@ -596,19 +599,19 @@ export const QuestionDetailView = ({
                                 Relationships
                             </h3>
                             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 shadow-sm">
+                                <div className="rounded-lg border border-border bg-muted p-4 shadow-sm">
                                     <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                                         Assessment linkage
                                     </p>
                                     {variant.assessment ? (
                                         <button
                                             onClick={() => navigate(`/assessments/${variant.assessment!.id}`)}
-                                            className="mt-2 text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline text-left"
+                                            className="mt-2 text-sm font-medium text-primary-text hover:text-primary-text hover:underline text-left"
                                         >
                                             {variant.assessment.name} ({variant.assessment.semester})
                                         </button>
                                     ) : (
-                                        <p className="mt-2 text-sm font-medium text-gray-900">Not linked</p>
+                                        <p className="mt-2 text-sm font-medium text-foreground">Not linked</p>
                                     )}
                                 </div>
                                 <DetailItem label="Reference variant" value={variant.referenceId ?? 'None'} />
@@ -685,25 +688,25 @@ export const QuestionDetailView = ({
                                                 key={index}
                                                 className={`rounded-lg border p-4 shadow-sm ${
                                                     isCorrect
-                                                        ? 'border-emerald-300 bg-emerald-50'
-                                                        : 'border-gray-200 bg-gray-50'
+                                                        ? 'border-success-500/40 bg-success-100'
+                                                        : 'border-border bg-muted'
                                                 }`}
                                             >
                                                 <div className="flex items-start gap-3">
                                                     <span
                                                         className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
                                                             isCorrect
-                                                                ? 'bg-emerald-500 text-white'
-                                                                : 'bg-gray-200 text-gray-700'
+                                                                ? 'bg-success-500 text-white'
+                                                                : 'bg-muted text-foreground'
                                                         }`}
                                                     >
                                                         {choice.letter}
                                                     </span>
-                                                    <p className="flex-1 text-sm font-medium text-gray-900 leading-relaxed">
+                                                    <p className="flex-1 text-sm font-medium text-foreground leading-relaxed">
                                                         {choice.text}
                                                     </p>
                                                     {isCorrect && (
-                                                        <span className="text-xs font-semibold text-emerald-700">
+                                                        <span className="text-xs font-semibold text-success-700">
                                                             Correct
                                                         </span>
                                                     )}
@@ -744,8 +747,8 @@ export const QuestionDetailView = ({
                                 <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                                     {entry.questionType === 'MCQ' ? 'Correct Answer' : 'Answer'}
                                 </h3>
-                                <div className="mt-3 rounded-lg border border-gray-200 bg-emerald-50/60 p-5 shadow-sm">
-                                    <p className="text-sm font-medium text-gray-900 leading-relaxed whitespace-pre-line">
+                                <div className="mt-3 rounded-lg border border-success-500/30 bg-success-100/60 p-5 shadow-sm">
+                                    <p className="text-sm font-medium text-foreground leading-relaxed whitespace-pre-line">
                                         {entry.questionType === 'MCQ' && variant.choices && variant.choices.length > 0
                                             ? (() => {
                                                 const letter = variant.answer.trim().toUpperCase().charAt(0);
@@ -762,36 +765,43 @@ export const QuestionDetailView = ({
                     )}
                 </div>
 
-                <div className="flex items-center justify-between border-t bg-gray-50 px-6 py-4">
+                <div className="flex items-center justify-between border-t bg-muted px-6 py-4">
                     <div className="flex items-center gap-2">
+                        <PermissionGate allow={canEditDraft}>
                         <Button
                             variant="outline"
                             size="sm"
                             onClick={handleToggleAiTag}
                             disabled={isToggling}
-                            className="flex items-center gap-2 text-xs border-purple-300 text-purple-700 hover:bg-purple-50"
+                            className="flex items-center gap-2 text-xs"
                             title="Toggle AI Generated status"
                         >
                             <Sparkles className="h-3 w-3" />
                             <span>{entry.isAiGenerated ? 'Remove AI Tag' : 'Add AI Tag'}</span>
                         </Button>
+                        </PermissionGate>
+                        <PermissionGate allow={canApproveVariant}>
                         <Button
                             variant="outline"
                             size="sm"
                             onClick={handleToggleDraft}
                             disabled={isTogglingDraft}
-                            className="flex items-center gap-2 text-xs border-amber-300 text-amber-700 hover:bg-amber-50"
+                            className="flex items-center gap-2 text-xs"
                             title="Toggle review status"
                         >
                             <FileEdit className="h-3 w-3" />
                             <span>{entry.isDraft ? 'Mark as Reviewed' : 'Mark as Draft'}</span>
                         </Button>
+                        </PermissionGate>
                     </div>
                     <div className="flex items-center gap-2">
+                        <PermissionGate allow={canCreateQuestion}>
                         <Button variant="outline" onClick={() => onCreateVariant(entry)} className="flex items-center gap-2">
                             <Copy className="h-4 w-4" />
                             <span>Create variant</span>
                         </Button>
+                        </PermissionGate>
+                        <PermissionGate allow={canDeleteResource(owner)}>
                         <Button
                             variant="destructive"
                             onClick={() => onDeleteVariant(entry)}
@@ -800,6 +810,7 @@ export const QuestionDetailView = ({
                             <Trash2 className="h-4 w-4" />
                             <span>Delete variant</span>
                         </Button>
+                        </PermissionGate>
                     </div>
                 </div>
             </div>

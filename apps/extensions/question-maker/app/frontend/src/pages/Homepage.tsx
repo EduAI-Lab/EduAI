@@ -2,10 +2,15 @@
  * Main product homepage showing questions and assessments with creation/import/export flows.
  * Handles course/topic loading, tab state, and orchestrates dialogs for questions, variants, Canvas, and uploads.
  */
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@eduai/ui';
+import { ToastAction } from '@/components/ui/use-toast';
+import { useToast } from '@/components/ui/use-toast';
+import { DeleteConfirmationModal } from '@/components/ui/DeleteConfirmationModal';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { TopNavigation } from '../components/navigation/TopNavigation';
+import { useLocation, useNavigate } from 'react-router';
 import { QuestionBank } from '../components/question-bank/QuestionBank';
+import { QmHomeShell } from '../components/home/QmHomeShell';
+import { useQmPermissionsForCourse } from '../hooks/useQmPermissions';
 import { AssessmentSection } from '../components/assessments/AssessmentSection';
 import { QuestionDetailView } from '../components/question-detail/QuestionDetailView';
 import { Course, Question, Assessment, QuestionVariantEntry, AssessmentGenerationParams, MCQChoice } from '../types/question';
@@ -16,12 +21,9 @@ import { courseService } from '../services/courseService';
 import assessmentService from '../services/assessmentService';
 import { AddQuestionDialog } from '../components/questions/AddQuestionDialog';
 import { QuestionUploadDialog, mapExtractedToDraftQuestions } from '../components/question-bank/QuestionUploadDialog';
-import { ToastAction } from '../components/ui/toast';
-import { ProfileCoursesDialog } from '../components/profile/ProfileCoursesDialog';
 import { CanvasExportDialog } from '../components/canvas/CanvasExportDialog';
 import { CanvasImportDialog } from '../components/canvas/CanvasImportDialog';
-import { useToast } from '../components/ui/use-toast';
-import { DeleteConfirmationModal } from '../components/ui/DeleteConfirmationModal';
+import { useQmLayout } from '../components/layout/QmLayoutContext';
 import { useGuidedTour } from '../contexts/GuidedTourContext';
 import {
     assessmentBlocksToDocxBlob,
@@ -56,7 +58,6 @@ export const Homepage = () => {
   const [pendingExtractionDrafts, setPendingExtractionDrafts] = useState<ReturnType<typeof mapExtractedToDraftQuestions> | null>(null);
   const [presetVariant, setPresetVariant] = useState<QuestionVariantEntry | null>(null);
   const [topicsByCourse, setTopicsByCourse] = useState<Record<number, Topic[]>>({});
-  const [isProfileDialogOpen, setIsProfileDialogOpen] = useState(false);
   const [isCanvasExportOpen, setIsCanvasExportOpen] = useState(false);
   const [selectedAssessmentForExport, setSelectedAssessmentForExport] = useState<{ id: number; name: string } | null>(null);
   const [isCanvasImportOpen, setIsCanvasImportOpen] = useState(false);
@@ -68,6 +69,10 @@ export const Homepage = () => {
   const [isDeletingVariant, setIsDeletingVariant] = useState(false);
   const { toast } = useToast();
   const { startTour, registerOnTourEnd } = useGuidedTour();
+  const { setGuidedTourHandler } = useQmLayout();
+  const { canCreateQuestion, hasCourseAccess, accessLoading } = useQmPermissionsForCourse(
+    selectedCourse?.id ?? null,
+  );
 
   const loadTopicsForCourse = useCallback(async (courseId: number, options: { force?: boolean } = {}) => {
     if (!courseId) {
@@ -125,27 +130,27 @@ export const Homepage = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state, courses]);
 
-  // Update tab based on URL query (e.g., /home?tab=assessments)
+  // URL is authoritative for tab. When URL has a valid tab param, sync state to
+  // it. When URL lacks the param (e.g. bare /home), push the current state tab.
+  // Using a single effect avoids the stale-closure loop that two competing
+  // effects cause: effect A sets state, effect B reads the old state and
+  // navigates back before the state update flushes.
   useEffect(() => {
     const params = new URLSearchParams(location.search);
-    const tab = params.get('tab');
-    if (tab === 'assessments' || tab === 'questions') {
-      setActiveTab(tab);
+    const urlTab = params.get('tab');
+    if (urlTab === 'assessments' || urlTab === 'questions') {
+      setActiveTab(urlTab);
+    } else {
+      params.set('tab', activeTab);
+      navigate(
+        { pathname: location.pathname, search: params.toString() },
+        { replace: true, state: location.state }
+      );
     }
-  }, [location.search]);
-
-  // Keep URL query in sync with selected tab to make refreshes stable (preserve location.state e.g. startGuidedTour)
-  useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const currentTab = params.get('tab');
-    if (currentTab === activeTab) return;
-
-    params.set('tab', activeTab);
-    navigate(
-      { pathname: location.pathname, search: params.toString() },
-      { replace: true, state: location.state }
-    );
-  }, [activeTab, location.pathname, location.search, location.state, navigate]);
+  // activeTab excluded from deps intentionally — URL is always authoritative
+  // when it has a valid tab; we only write to the URL when it's missing the param.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search, location.pathname, location.state, navigate]);
 
   // Choose course based on preference when courses list updates
   useEffect(() => {
@@ -228,6 +233,11 @@ export const Homepage = () => {
   }, [navigate, selectedCourse?.id]);
 
   useEffect(() => {
+    setGuidedTourHandler(handleGuidedTourClick);
+    return () => setGuidedTourHandler(null);
+  }, [handleGuidedTourClick, setGuidedTourHandler]);
+
+  useEffect(() => {
     void fetchAssessments();
   }, [fetchAssessments]);
 
@@ -240,7 +250,7 @@ export const Homepage = () => {
     return filteredQuestions.flatMap((question) => {
       const topics = topicsByCourse[question.courseId] ?? [];
       const topicNameMap = new Map(topics.map((topic) => [topic.id, topic.name]));
-      const resolveTopicName = (topicId: number) => topicNameMap.get(topicId) ?? `Topic ${topicId}`;
+      const resolveTopicName = (topicId: string) => topicNameMap.get(topicId) ?? `Topic ${topicId}`;
 
       return (question.variants || []).map((variant) => {
         const secondaryTopicNames = Array.isArray(variant.secondaryTopicsId)
@@ -268,7 +278,7 @@ export const Homepage = () => {
   const emptyStateMessage = selectedCourse
     ? questionsError || 'No questions found for this course yet. Try adding or uploading questions.'
     : courses.length === 0
-      ? 'No courses available. Start the guided tour to add courses from the AI service.'
+      ? 'No courses available. Core courses appear after sign-in, or start the guided tour for a sandbox course.'
       : 'Select a course to view its questions.';
 
   const filteredAssessments = useMemo(() => {
@@ -315,7 +325,7 @@ export const Homepage = () => {
       questionId: number,
       updates: {
         description?: string | null;
-        primaryTopicId?: number;
+        primaryTopicId?: string;
         type?: import('../types/question').QuestionType;
         primaryTopicName?: string;
       }
@@ -818,21 +828,50 @@ export const Homepage = () => {
   );
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <TopNavigation
-        selectedCourse={selectedCourse}
-        onCourseChange={setSelectedCourse}
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-        courses={courses}
-        isLoadingCourses={isCoursesLoading}
-        onProfileClick={() => setIsProfileDialogOpen(true)}
-        showBackButton
-        onBackClick={() => navigate('/courses')}
-        onGuidedTourClick={handleGuidedTourClick}
-      />
+    <QmHomeShell>
+      {selectedCourse && !accessLoading && !hasCourseAccess && (
+        <div
+          role="alert"
+          className="rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+        >
+          You do not have access to this course. Choose a course from the list or return to{' '}
+          <button type="button" className="underline" onClick={() => navigate('/courses')}>
+            course selection
+          </button>
+          .
+        </div>
+      )}
+      <div className="flex flex-wrap items-center gap-4">
+        <Select
+          value={selectedCourse?.id?.toString() || ''}
+          onValueChange={(value) => {
+            const course = courses.find((c) => c.id.toString() === value);
+            if (course) setSelectedCourse(course);
+          }}
+          disabled={isCoursesLoading || courses.length === 0}
+        >
+          <SelectTrigger className="w-80 min-w-80" data-tour-id="course-select">
+            <SelectValue
+              placeholder={isCoursesLoading ? 'Loading courses...' : 'Select Course'}
+            />
+          </SelectTrigger>
+          <SelectContent>
+            {courses.length === 0 ? (
+              <SelectItem value="__no_courses" disabled>
+                {isCoursesLoading ? 'Loading...' : 'No courses available'}
+              </SelectItem>
+            ) : (
+              courses.map((course) => (
+                <SelectItem key={course.id} value={course.id.toString()}>
+                  {course.code || '—'} - {course.name}
+                </SelectItem>
+              ))
+            )}
+          </SelectContent>
+        </Select>
+      </div>
 
-      <div className="max-w-7xl mx-auto px-6 py-8">
+      <div>
         {activeTab === 'questions' ? (
           <QuestionBank
             variants={variantEntries}
@@ -843,8 +882,8 @@ export const Homepage = () => {
             isLoading={isQuestionsLoading}
             courseName={selectedCourse?.name}
             emptyMessage={emptyStateMessage}
-            disableAdd={!selectedCourse}
-            disableUpload={!selectedCourse}
+            disableAdd={!selectedCourse || !canCreateQuestion}
+            disableUpload={!selectedCourse || !canCreateQuestion}
             onOpenProfile={() => startTour('main')}
           />
         ) : (
@@ -924,13 +963,6 @@ export const Homepage = () => {
         totalQuestionsInBank={variantEntries.length}
       />
 
-      <ProfileCoursesDialog
-        open={isProfileDialogOpen}
-        onClose={() => setIsProfileDialogOpen(false)}
-        existingCourses={courses}
-        onCoursesAdded={fetchCourses}
-      />
-
       {selectedAssessmentForExport && (
         <CanvasExportDialog
           open={isCanvasExportOpen}
@@ -940,6 +972,7 @@ export const Homepage = () => {
           }}
           assessmentId={selectedAssessmentForExport.id}
           assessmentName={selectedAssessmentForExport.name}
+          courseId={selectedCourse?.id ?? null}
           onExportSuccess={(result) => {
             toast({
               title: 'Export successful!',
@@ -952,6 +985,7 @@ export const Homepage = () => {
       <CanvasImportDialog
         open={isCanvasImportOpen}
         onClose={() => setIsCanvasImportOpen(false)}
+        courseId={selectedCourse?.id ?? null}
         onImportSuccess={async (result) => {
           // Refresh assessments list
           await fetchAssessments();
@@ -999,6 +1033,6 @@ export const Homepage = () => {
         confirmLabel="Delete"
         isLoading={isDeletingAssessment}
       />
-    </div>
+    </QmHomeShell>
   );
 };

@@ -1,8 +1,11 @@
 /**
- * No-DB integration tests for QM → Core wiring routes.
+ * Integration tests for QM → Core wiring routes.
  *
  * Auth (Core session validate) and all outbound Core calls are mocked through
- * global fetch — no DB required. DB-backed tests live in coreWiringDb.integration.test.js.
+ * global fetch. The resource-access middleware (makeGuard) queries the real DB to
+ * check whether the target variant exists. Tests that expect 404 use variant id 0 —
+ * PostgreSQL SERIAL sequences start at 1, so id 0 can never be auto-generated and
+ * requires no DB truncation. DB-backed route tests live in coreWiringDb.integration.test.js.
  */
 import { vi, describe, it, expect, afterEach } from 'vitest';
 import request from 'supertest';
@@ -57,14 +60,13 @@ describe('PATCH /api/course/:id/link-core', () => {
     expect(res.status).toBe(401);
   });
 
-  it('returns 400 when coreCourseId is missing', async () => {
+  it('returns 404 for a non-existent course (access check precedes payload validation)', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(sessionOk()));
     const res = await request(app)
-      .patch('/api/course/1/link-core')
+      .patch('/api/course/0/link-core') // SERIAL sequences start at 1; 0 never exists
       .set('Cookie', 'session=valid')
       .send({});
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/coreCourseId/i);
+    expect(res.status).toBe(404);
   });
 });
 
@@ -91,13 +93,12 @@ describe('PATCH /api/questions/variants/:variantId/testable', () => {
     expect(res.status).toBe(401);
   });
 
-  it('returns 400 when testable is not a boolean', async () => {
+  it('returns 404 for a non-existent variant (access check precedes payload validation)', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(sessionOk()));
     const res = await request(app)
-      .patch('/api/questions/variants/999/testable')
+      .patch('/api/questions/variants/0/testable') // SERIAL sequences start at 1; 0 never exists
       .set('Cookie', 'session=valid')
       .send({ testable: 'yes' });
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/boolean/i);
+    expect(res.status).toBe(404);
   });
 });

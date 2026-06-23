@@ -1,17 +1,31 @@
 import express from 'express';
 import { requireAuth } from '../middleware/auth.js';
 import { config } from '../config/settings.js';
+import { getMyProfileFromCore } from '../services/coreApiService.js';
 
 const router = express.Router();
 
-const BUG_REPORT_ADMIN_ROLES = new Set(['ADMIN', 'UNIT_ADMIN']);
+// §11: bug-report triage is ADMIN-only (role-based, replacing the prior email allowlist).
+router.get('/auth/me', requireAuth, async (req, res, next) => {
+  try {
+    const isBugReportAdmin = req.user.role === 'ADMIN';
+    let authorizedUnits;
 
-router.get('/auth/me', requireAuth, (req, res) => {
-  const isBugReportAdmin =
-    BUG_REPORT_ADMIN_ROLES.has(req.user.role) ||
-    config.bugReportAdminEmails.includes(req.user.email);
+    if (req.user.role === 'UNIT_ADMIN') {
+      const profile = await getMyProfileFromCore(req.headers.cookie).catch(() => null);
+      authorizedUnits = Array.isArray(profile?.authorizedUnits) ? profile.authorizedUnits : [];
+    }
 
-  res.json({ user: { ...req.user, isBugReportAdmin } });
+    res.json({
+      user: {
+        ...req.user,
+        isBugReportAdmin,
+        ...(authorizedUnits !== undefined ? { authorizedUnits } : {}),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
 // Proxy sign-out to Core server-to-server, avoiding browser CORS restrictions.

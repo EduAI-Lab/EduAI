@@ -3,20 +3,13 @@ import { useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { useLocalUser } from '../hooks/useLocalUser';
 import { BrainCircuit } from 'lucide-react';
-import type { Role } from '../lib/types';
+import { routeForRole } from '../lib/role-routing';
 
 export function meta({}: Route.MetaArgs) {
   return [
     { title: 'AI Tutor' },
     { name: 'description', content: 'AI Tutor — Loading' },
   ];
-}
-
-function routeForRole(role: Role) {
-  if (role === 'STUDENT') return '/student';
-  if (role === 'INSTRUCTOR') return '/instructor';
-  if (role === 'TA') return '/unsupported-role';
-  return '/admin';
 }
 
 export default function Home() {
@@ -47,7 +40,7 @@ export default function Home() {
           <div className="absolute inset-0 rounded-full border-4 border-primary border-t-transparent animate-spin" />
           <BrainCircuit className="absolute inset-0 m-auto h-6 w-6 animate-pulse text-primary" />
         </div>
-        <div className="animate-pulse font-display text-lg font-medium text-muted-foreground">
+        <div className="animate-pulse text-lg font-medium text-muted-foreground">
           Initializing your workspace...
         </div>
       </div>

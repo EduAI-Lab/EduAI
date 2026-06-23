@@ -15,6 +15,17 @@ A production-ready chat platform with Retrieval-Augmented Generation (RAG) capab
 
 ## Features
 
+- **Configurable Permissions**: Admins toggle role-based capabilities at runtime from an ADMIN-only page at `/admin/settings` — backed by a `SystemConfig` policy registry and exposed over `GET /api/policies` (service key for the extension apps, ADMIN session for the dashboard; any authenticated user may read the flag *values* so the UI mirrors backend gates). Each flag live-gates both backend enforcement (403 / hidden data) and the matching UI control with no redeploy, and a flag-caused 403 emits a structured `{"event":"policy_denied",...}` audit line. The registry covers:
+  - **Instructor gates** (default on): `instructors.canCreateCourses` (Core + AI Tutor), `instructors.canPublishCourses`, `instructors.canManageEnrollments`, `instructors.canManageCanvasIntegration`, `instructors.canDeleteCourses`.
+  - **TA gates / grants**: `tas.canManageMaterials` (gate, default on — upload **and** delete), `tas.canSetAiInstructions` (grant, default off — edit a course's AI-instructions field only), `tas.canManageTopics` (grant, default off — full topic CRUD).
+  - **Student grants** (default off): `students.canUploadMaterials`; plus `students.canViewMaterials` (gate, default on).
+  - **Unit-admin gates**: `unitAdmins.canDeleteCourses` (default on; ADMIN always allowed); `unitAdmins.canInvite` (grant, default off) — lets a UNIT_ADMIN invite instructors and students (see Unit-Admin Invitations below).
+  - **Chat visibility** (grants, default off): `instructors.canViewCourseChats`, `unitAdmins.canViewUnitChats` — read student chats in a course / across a unit (new `Chats` tab and unit chats view, backed by `GET /api/courses/:id/chats` and `GET /api/units/:department/chats`).
+  - **Web tools master**: `chat.webToolsEnabled` (default off) — global on/off for chat web search/fetch for every role. Folds in the former standalone `webToolsEnabled` toggle.
+  - **Public registration master**: `auth.allowPublicRegistration` (default on) — gates email/password self-signup at the Better Auth `sign-up/email` chokepoint and hides the signup UI; invitation acceptance and OAuth/SSO are unaffected.
+- **Admin Invitations**: Admins onboard ADMIN / UNIT_ADMIN / INSTRUCTOR users via emailed one-time accept links (`/admin/invitations`) — the invitee sets a password and lands signed in with the invited role; links can be revoked or re-sent (token rotation)
+- **Unit-Admin Invitations**: When the `unitAdmins.canInvite` flag is on, unit admins get a dedicated `/unit-admin/invitations` page (and a policy-gated nav link that disappears when the flag is off) to invite INSTRUCTOR and STUDENT users only. They see and manage just the invites they sent; the flow reuses the same `/api/invitations` endpoints, emails, and accept page as the admin flow
+- **Activity Logging**: Administrative mutations and security events (logins, access denials, rate-limit trips) are recorded to `audit_logs` and server errors to `system_logs`, with credential- and PII-shaped fields redacted before write; admins review them in an ADMIN-only viewer at `/admin/logs` with a configurable retention policy (see [docs/LOGGING.md](../../docs/LOGGING.md))
 - **Multi-Provider AI Support**: Switch between Ollama (local), Google Gemini, and OpenAI with a single configuration change
 - **Retrieval-Augmented Generation**: Ground responses in course materials with source citations to minimize hallucinations
 - **Tool Calling**: Enhanced information retrieval through integrated RAG tools
@@ -24,6 +35,8 @@ A production-ready chat platform with Retrieval-Augmented Generation (RAG) capab
 - **Vector Storage**: PGVector-powered embeddings on PostgreSQL for efficient similarity search
 - **Role-based Access**: Support for students, professors, and administrators
 - **Persisted Chat Preferences**: Assistive mode and the selected course are saved per user, restored on every page load and new chat, and cleared on logout
+- **Account-level Assistive Mode**: Shell-wide `AssistiveUiProvider` sets `data-assistive` on `<html>` when ON (absent when OFF so baseline CSS is unchanged); preference persists via `UserPreference.assistDefault` and syncs with the `/chat` header toggle
+- **Assistive active highlighting**: On `/chat`, emphasizes the latest assistant reply, de-emphasizes older messages, anchors the composer, auto-focuses input after responses, and offers optional focus mode to hide non-essential chrome
 
 ## Prerequisites
 
@@ -81,8 +94,11 @@ DATABASE_URL="postgresql://USER:PASSWORD@HOST:PORT/DATABASE?schema=public"
 BETTER_AUTH_SECRET="" # REQUIRED: Generate a strong random secret (e.g., `openssl rand -base64 32`)
 BETTER_AUTH_URL="http://localhost:5173" # Base URL of your app
 
-OPENROUTER_API_KEY="" # Embeddings via OpenRouter (recommended if you have one key for many models)
-GOOGLE_GENERATIVE_AI_API_KEY="" # Direct Gemini embeddings (used when OPENROUTER_API_KEY is unset)
+OPENROUTER_API_KEY="" # Embeddings — see docs/rag-ai/EMBEDDINGS.md (local Ollama or cloud 1024-dim)
+GOOGLE_GENERATIVE_AI_API_KEY="" # Direct Gemini embeddings (legacy 3072 path only)
+EMBEDDING_PROVIDER="local" # local | cloud — dev server uses Ollama mxbai-embed-large
+EMBEDDING_DIMENSION="1024" # Must match pgvector column (LOCAL-EMBEDDINGS)
+OLLAMA_EMBEDDING_MODEL="mxbai-embed-large"
 OLLAMA_BASE_URL="http://localhost:11434/"  # dev server: http://cmps01.ok.ubc.ca:11434
 # VLLM_PORT=8001
 # VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"  # after IT firewall; see docs/rag-ai/VLLM.md
@@ -90,6 +106,19 @@ FIRECRAWL_API_KEY="" # Required for Firecrawl web search tool. If not set, web s
 
 # Canvas instructor API tokens (AES-256-GCM; same format as Question Maker ENCRYPTION_KEY)
 ENCRYPTION_KEY="" # REQUIRED for POST /api/canvas/connect — generate e.g. openssl rand -hex 32
+
+# Invitation emails (optional — when SMTP_HOST is unset, the accept link is logged
+# to the console and shown in the admin UI instead of being emailed)
+SMTP_HOST=""
+SMTP_PORT="587"
+SMTP_SECURE="false" # true for implicit TLS (port 465)
+SMTP_USER=""
+SMTP_PASS=""
+EMAIL_FROM="EduAI <no-reply@eduai.local>"
+INVITE_EXPIRY_HOURS="72" # invitation link lifetime in hours
+
+# ADHD Assist Phase 3 oversight — second-pass structural audit when Assistive Mode is ON (default: enabled)
+# ADHD_ASSIST_OVERSIGHT="false"              # Set to false/0/off to disable rewrite pass
 ```
 
 ## Usage
@@ -104,21 +133,11 @@ ENCRYPTION_KEY="" # REQUIRED for POST /api/canvas/connect — generate e.g. open
 
 ### Programmatic Access
 
-API key usage is restricted to admins. Create API keys through the web interface under Settings > API Keys. Requests that include `x-api-key` require the authenticated user to have role `ADMIN` across `/api/*`. Non-admin users should access features via the web UI with their session cookies.
+Core API routes authenticate via **session cookie** (user-context calls) or **`Authorization: Bearer <EDUAI_API_KEY>`** service key (server-to-server calls). The legacy `x-api-key` Better Auth API-key plugin has been removed (#158). Extensions should use `getEduAiCookieForRequest` for user-context calls and the `EDUAI_API_KEY` service key for server-to-server calls.
 
 ## API Documentation
 
-Note on authentication: Using `x-api-key` is restricted to ADMIN users across all `/api/*` endpoints. Non-admin users should access functionality via the web UI with their session cookies. Any request that includes `x-api-key` from a non-admin user returns 403.
-
-### Testing Admin-Only x-api-key
-
-- Admin key, expect success (200/201/… depending on route):
-  - `curl -i -X GET "https://eduai.ok.ubc.ca/api/ai-providers" -H "x-api-key: ADMIN_API_KEY"`
-- Non-admin key, expect 403 Forbidden:
-  - `curl -i -X GET "https://eduai.ok.ubc.ca/api/ai-providers" -H "x-api-key: STUDENT_API_KEY"`
-- Chat via curl (admin only with key):
-  - `curl -i -X POST "https://eduai.ok.ubc.ca/api/chat" -H "Content-Type: application/json" -H "x-api-key: ADMIN_API_KEY" -d '{"messages":[{"role":"user","content":"hello"}],"model":"google:gemini-2.5-flash","apiKeys":{"google":{"apiKey":"YOUR_GOOGLE_API_KEY","isEnabled":true}},"streaming":false}'`
-- Chat via UI (students): use browser at `/chat`; no `x-api-key` sent; should work as before.
+Note on authentication: User-facing routes require a valid session cookie. Server-to-server calls from extensions use `Authorization: Bearer <EDUAI_API_KEY>`. See `app/lib/auth/guards.server.ts` (`requireServiceKey`) for the service-key implementation.
 
 ### Chat Endpoint
 
@@ -130,7 +149,7 @@ Send chat messages with course context for grounded responses.
 
 **Headers**:
 - `Content-Type: application/json`
-- `x-api-key: YOUR_API_KEY` (admin only; requests with this header require an ADMIN user)
+- `Cookie: <session cookie>` (auth via session; use `--cookie` in curl or a browser session)
 
 **Body Parameters**:
 - `messages` (array): Chat message history
@@ -138,8 +157,7 @@ Send chat messages with course context for grounded responses.
 - `apiKeys` (object): Provider-specific API keys
 - `courseCode` (string): Target course identifier
 - `streaming` (boolean): Enable response streaming
-- `adhdAssist` (boolean, optional): Opt-in flag persisted on `Chat.adhdAssist` (default `false`). When `true`, the resolved system prompt is prepended with the verbatim ADHD Assist policy block from `docs/literature/adhd-assist-prompt-policy.md` §3 before being passed to `streamText`. Style is the only IV — model, retrieval, tools, temperature, and streaming behavior are unchanged. UI toggle lives at the top of the chat header on `/chat`. If the field is omitted from the request body, the request falls back to the persisted `Chat.adhdAssist` for the resolved chat — same precedence pattern as `systemPrompt`. If the field is present, it overrides the persisted value (and updates it).
-- `proxyUser` (object, optional): Only for admin `x-api-key` calls. Allows services like Aitutor to act on behalf of a user; see [Proxy Delegation (`proxyUser`)](#proxy-delegation-proxyuser).
+- `adhdAssist` (boolean, optional): Opt-in flag persisted on `Chat.adhdAssist` (default `false`). When `true`, the resolved system prompt is prepended with the verbatim ADHD Assist policy block from `docs/literature/adhd-assist-prompt-policy.md` §3 before being passed to `streamText`. Style is the only IV — model, retrieval, tools, temperature, and streaming behavior are unchanged. UI toggle lives at the top of the chat header on `/chat`. If the field is omitted from the request body, the request falls back to the persisted `Chat.adhdAssist` for the resolved chat — same precedence pattern as `systemPrompt`. If the field is present, it overrides the persisted value (and updates it). When Assist is ON, Phase 3 oversight (`ADHD_ASSIST_OVERSIGHT` env, default enabled) audits the full draft for structural compliance (`**Top summary**`, `**Next?**`, word cap) before emit; set `ADHD_ASSIST_OVERSIGHT=false` to disable the rewrite pass.
 
 #### Examples
 
@@ -147,7 +165,7 @@ Send chat messages with course context for grounded responses.
 ```powershell
 curl -X POST "https://eduai.ok.ubc.ca/api/chat" `
   -H "Content-Type: application/json" `
-  -H "x-api-key: YOUR_API_KEY" `
+  -H "Cookie: YOUR_SESSION_COOKIE" `
   -d '{
     "messages": [
       {
@@ -171,7 +189,7 @@ curl -X POST "https://eduai.ok.ubc.ca/api/chat" `
 ```bash
 curl -X POST "https://eduai.ok.ubc.ca/api/chat" \
   -H "Content-Type: application/json" \
-  -H "x-api-key: YOUR_API_KEY" \
+  -H "Cookie: YOUR_SESSION_COOKIE" \
   -d '{
     "messages": [
       {
@@ -195,7 +213,7 @@ curl -X POST "https://eduai.ok.ubc.ca/api/chat" \
 ```bash
 curl -X POST "https://eduai.ok.ubc.ca/api/chat" \
   -H "Content-Type: application/json" \
-  -H "x-api-key: YOUR_API_KEY" \
+  -H "Cookie: YOUR_SESSION_COOKIE" \
   -d '{
     "messages": [
       {
@@ -214,32 +232,12 @@ curl -X POST "https://eduai.ok.ubc.ca/api/chat" \
   }'
 ```
 
-#### Proxy Delegation (`proxyUser`)
-
-Third-party services (e.g., Aitutor) that call `/api/chat` with an admin `x-api-key` can add a `proxyUser` block:
-
-```json
-{
-  "proxyUser": {
-    "provider": "aitutor",
-    "id": "aitutor-user-123",
-    "email": "student123@example.com"
-  }
-}
-```
-
-EduAI auto-provisions (or reuses) an internal `User` keyed by `(provider, id)` and stores all chat history under that account. The provided email is treated as metadata for the `ExternalUser` record; the canonical EduAI login email remains whatever was set when the user was created.
-
 #### Chat History & Message Persistence
 
 - The backend now stores every chat turn in the `chat_messages` table. Clients only need to send the newest user message plus the `chatId`; the API reconstructs context from the database and trims to the most recent 20 messages for inference.
 - **Chat IDs**: The `chatId` is strictly server-generated (CUID). Clients should not attempt to generate their own chat IDs.
 - **Message IDs**: Clients **SHOULD** generate a UUID v4 for every message (`message.id`) before sending it. This enables optimistic UI updates and allows the server to deduplicate retries safely.
 - If a client references a `chatId` that no longer exists for that user, the API returns `410 Gone` with `{ "chatDeleted": true }`. Callers should drop the stale ID and start a new chat.
-
-#### ExternalUser Email Semantics
-
-`ExternalUser.email` captures the upstream provider’s latest email for diagnostics, but `User.email` remains the primary login/contact field inside EduAI. We do **not** overwrite the user’s canonical email automatically when proxy requests send new values; update the `User` record directly if you need to promote an alias.
 
 ### AI Models Endpoint
 
@@ -251,7 +249,7 @@ Retrieve the catalog of configured AI models.
 
 **Headers**:
 - `Content-Type: application/json`
-- `x-api-key: YOUR_API_KEY`
+- `Cookie: <session>` (ADMIN role required)
 
 #### Response
 
@@ -263,14 +261,14 @@ Returns an array of AI model objects, each including its associated provider met
 ```powershell
 curl -X GET "https://eduai.ok.ubc.ca/api/ai-models" `
   -H "Content-Type: application/json" `
-  -H "x-api-key: YOUR_API_KEY"
+  -H "Cookie: YOUR_SESSION_COOKIE"
 ```
 
 ##### Get AI Models (Linux/macOS)
 ```bash
 curl -X GET "https://eduai.ok.ubc.ca/api/ai-models" \
   -H "Content-Type: application/json" \
-  -H "x-api-key: YOUR_API_KEY"
+  -H "Cookie: YOUR_SESSION_COOKIE"
 ```
 
 ### Course Topics Endpoint
@@ -286,7 +284,7 @@ Manage topics for a specific course. Admin role required for creating and deleti
 
 **Headers**:
 - `Content-Type: application/json`
-- `x-api-key: YOUR_API_KEY`
+- `Authorization: Bearer <EDUAI_API_KEY>` (service key; admin session cookie also accepted)
 
 **URL Parameters**:
 - `courseId` (string): Course identifier
@@ -305,21 +303,21 @@ Manage topics for a specific course. Admin role required for creating and deleti
 ```powershell
 curl -X GET "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" `
   -H "Content-Type: application/json" `
-  -H "x-api-key: YOUR_API_KEY"
+  -H "Authorization: Bearer YOUR_EDUAI_API_KEY"
 ```
 
 ##### Get Course Topics (Linux/macOS)
 ```bash
 curl -X GET "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" \
   -H "Content-Type: application/json" \
-  -H "x-api-key: YOUR_API_KEY"
+  -H "Authorization: Bearer YOUR_EDUAI_API_KEY"
 ```
 
 ##### Create Course Topic (Windows - PowerShell)
 ```powershell
 curl -X POST "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" `
   -H "Content-Type: application/json" `
-  -H "x-api-key: YOUR_API_KEY" `
+  -H "Authorization: Bearer YOUR_EDUAI_API_KEY" `
   -d '{
     "name": "Introduction to Machine Learning"
   }'
@@ -329,7 +327,7 @@ curl -X POST "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" `
 ```bash
 curl -X POST "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" \
   -H "Content-Type: application/json" \
-  -H "x-api-key: YOUR_API_KEY" \
+  -H "Authorization: Bearer YOUR_EDUAI_API_KEY" \
   -d '{
     "name": "Introduction to Machine Learning"
   }'
@@ -339,7 +337,7 @@ curl -X POST "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" \
 ```powershell
 curl -X DELETE "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" `
   -H "Content-Type: application/json" `
-  -H "x-api-key: YOUR_API_KEY" `
+  -H "Authorization: Bearer YOUR_EDUAI_API_KEY" `
   -d '{
     "topicId": "TOPIC_ID"
   }'
@@ -349,15 +347,45 @@ curl -X DELETE "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" `
 ```bash
 curl -X DELETE "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" \
   -H "Content-Type: application/json" \
-  -H "x-api-key: YOUR_API_KEY" \
+  -H "Authorization: Bearer YOUR_EDUAI_API_KEY" \
   -d '{
     "topicId": "TOPIC_ID"
   }'
 ```
 
+### User Preferences Endpoints
+
+Read and update the authenticated user's UI preferences (`UserPreference` row). Requires a Better Auth **session cookie**. Used by `AssistiveUiProvider` in the app shell and the `/chat` assist toggle.
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| `GET` | `/api/preferences` | Returns `{ assistDefault, lastCourseCode, motionReduced, density, theme }` — defaults to `{ assistDefault: false, lastCourseCode: null, motionReduced: false, density: "comfortable", theme: "system" }` when no row exists |
+| `PATCH` | `/api/preferences` | Partial update; accepts `assistDefault` (boolean), `lastCourseCode` (string or `null`), `motionReduced` (boolean), `density` (`comfortable` \| `compact`), and/or `theme` (`system` \| `light` \| `dark`) |
+
+When `assistDefault` is `true`, the root layout sets `data-assistive="true"` on `<html>` for CSS scoping; when `false`, the attribute is **absent** (not `"false"`) so baseline styles are unchanged. Non-default `motionReduced`, `density`, and `theme` values set `data-reduce-motion`, `data-density="compact"`, or `light`/`dark` classes on `<html>`; defaults remove those hooks so OFF states stay pixel-identical.
+
+**Settings → Accessibility tab:** `/settings` exposes Assistive Mode, reduce motion, density, and theme controls. Assistive Mode uses `AssistiveUiProvider`; motion/density/theme use `UiPreferencesProvider`. Both persist through `/api/preferences`.
+
+**Assistive reading typography:** Elements marked with the `reading-surface` class (chat messages, course overview text, etc.) pick up spacing-only typography under `[data-assistive]` — 16px base, ~1.625 line-height, 65ch max measure, increased paragraph/letter spacing. No font-family swap; OFF state is pixel-identical because the attribute is absent.
+
+**Active highlighting + focus mode (#525):** On `/chat` when `[data-assistive]` is set, the latest assistant message is emphasized (outline + background), older messages are de-emphasized (lower opacity, full opacity on hover/focus), the composer is subtly anchored, `:focus-visible` rings are strengthened, and the input auto-focuses after each assistant turn. **Focus mode** (header toggle, assistive ON only) sets `data-assistive-focus-mode` on `<html>` to hide the sidebar and course/model selectors. Client `re_orientation` events record re-orientation latency via `POST /api/assistive-events`.
+
+**Example** (browser session — toggle Assistive Mode on):
+
+```javascript
+fetch("/api/preferences", {
+  method: "PATCH",
+  credentials: "include",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ assistDefault: true }),
+});
+```
+
+The Settings Accessibility tab ships in #530 (`/settings` → Accessibility).
+
 ### Canvas Integration Endpoints
 
-Store an instructor's Canvas personal access token on Core (encrypted at rest). Used for future roster sync and Canvas REST calls. Requires a Better Auth **session cookie** — not `x-api-key`. Only users with role **`INSTRUCTOR`** or **`ADMIN`** may connect.
+Store an instructor's Canvas personal access token on Core (encrypted at rest). Used for future roster sync and Canvas REST calls. Requires a Better Auth **session cookie**. Only users with role **`INSTRUCTOR`** or **`ADMIN`** may connect.
 
 Set `ENCRYPTION_KEY` in `apps/core/.env` before calling connect (see [Configuration](#configuration)). Token format and local Canvas setup: [`docs/implementations/canvas-api-integration-guide.md`](../../docs/implementations/canvas-api-integration-guide.md) and [`docs/CANVAS.md`](../../docs/CANVAS.md).
 

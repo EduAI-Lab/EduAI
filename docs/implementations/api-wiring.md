@@ -40,7 +40,7 @@
 
 ## Auth
 
-> **Updated after the auth-unification work.** Earlier drafts of this doc described user calls arriving as `Authorization: Bearer <user-oauth-token>` validated as a session. That is **not** how it works: Core's Better Auth has only the `apiKey` (x-api-key) plugin — **no `bearer` plugin** — so `auth.api.getSession()` reads **session cookies only**, never an `Authorization` header. There is no `getEduAiAccessTokenForUser`; the helper is `getEduAiCookieForRequest`.
+> **Updated after the auth-unification work.** Core's Better Auth has **no `bearer` or `apiKey` plugin** — `auth.api.getSession()` reads **session cookies only**, never an `Authorization` or `x-api-key` header. The legacy `x-api-key` backend API key plugin has been removed (#158). There is no `getEduAiAccessTokenForUser`; the helper is `getEduAiCookieForRequest`.
 
 ### User auth — session cookie forwarding (existing)
 
@@ -66,7 +66,7 @@ Standard RFC 6750 Bearer. Both extensions read `EDUAI_API_KEY` from env. Used fo
 3. Return `401 { "error": "MISSING_SERVICE_KEY" }` if the header is absent / not `Bearer`
 4. Return `403 { "error": "INVALID_SERVICE_KEY" }` if the token does not match (or `EDUAI_API_KEY` is unset)
 
-> **`enforceAdminIfApiKey` is unchanged.** It reads `x-api-key` and requires an ADMIN session — a session-escalation guard, not a service-key validator. `requireServiceKey` is separate. The `x-api-key` header is not used for service-to-service auth.
+> **`enforceAdminIfApiKey` has been removed** (#158). The legacy `x-api-key` plugin is gone. `requireServiceKey` is the only non-cookie auth path: it validates `Authorization: Bearer <EDUAI_API_KEY>` for server-to-server calls. All user-facing routes authenticate via session cookie only.
 
 ### RBAC scope (per #275 / #292)
 
@@ -340,7 +340,13 @@ Per #275, new endpoints ship with **minimum-viable auth**, not the full role mat
 
 ### GET /api/courses
 
-**Local wiring:** When an instructor selects a Core course in QM, call `GET /api/courses` and store the returned CUID in `courses.core_course_id`. No new Core endpoint needed.
+**Local wiring:** When an instructor selects a Core course in QM or imports one in AI Tutor, call `GET /api/courses` with the **caller's Core session cookie forwarded** (not the service key). Core applies `buildCourseListFilter` so the list matches Canvas-synced instructor enrollments (#578). Store the returned CUID in `courses.core_course_id` (QM) or import into a local offering (AI Tutor).
+
+**Service key:** Reserve `Authorization: Bearer EDUAI_API_KEY` for server-to-server reads by course id (enrollments, topics, reconciliation) — not for instructor course pickers.
+
+**AI Tutor enrollment sync (#578):** After importing a Core course, instructors call `POST /api/courses/:courseId/sync-enrollments` (or use the course UI) to pull active **STUDENT** enrollments from Core into local `CourseEnrollment` rows. QM RBAC for linked courses reads enrollments from Core on each request — Canvas roster updates are visible once Core sync completes, with no QM-side sync step.
+
+**Manual E2E:** See [canvas-extension-course-alignment-e2e.md](./canvas-extension-course-alignment-e2e.md) for the full verification checklist and automated regression commands.
 
 ---
 

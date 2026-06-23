@@ -17,21 +17,30 @@
  *     opened (ensureEduAiCourses) to keep the initial route snappy.
  * Related: routes/instructor.course.tsx (drilldown), components/PublishStatusButton
  */
-import { useOptimistic, useState } from 'react';
+import { useMemo, useOptimistic, useState } from 'react';
 import { useNavigate } from 'react-router';
-import Nav from '../components/Nav';
+import { PageHeading } from '@eduai/ui';
+import { AtRoleBanner } from '../components/rbac/AtRoleBanner';
+import { PermissionGate } from '../components/rbac/PermissionGate';
 import { PublishStatusButton } from '../components/PublishStatusButton';
+import { useAtPermissions } from '../hooks/useAtPermissions';
+import { useLocalUser } from '../hooks/useLocalUser';
 import api from '../lib/api';
+import { getEduAiAppUrl } from '../lib/extension-urls';
 import type { Course, EduAiCourse } from '../lib/types';
 import type { Route } from './+types/instructor';
 import { requireClientUser } from '~/lib/client-auth';
+import { AppShell } from '~/components/layout/AppShell';
+import { ShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbs';
+import { DashboardStatGrid } from '~/components/dashboard/DashboardStatGrid';
+import { buildInstructorDashboardStats } from '~/lib/dashboard-stats';
 
 /**
  * Loads the instructor's course list. The backend scopes /courses to the
  * authenticated user's role, so this is the full set the instructor can act on.
  */
 export async function clientLoader(_: Route.ClientLoaderArgs) {
-  await requireClientUser('INSTRUCTOR');
+  await requireClientUser(['INSTRUCTOR', 'UNIT_ADMIN', 'TA']);
   const courses = (await api.listCourses()) as Course[];
   return { courses };
 }
@@ -43,6 +52,8 @@ export async function clientLoader(_: Route.ClientLoaderArgs) {
  */
 export default function InstructorHome({ loaderData }: Route.ComponentProps) {
   const navigate = useNavigate();
+  const { user } = useLocalUser();
+  const perms = useAtPermissions();
   const [courses, setCourses] = useState<Course[]>(loaderData.courses ?? []);
   const [loading, setLoading] = useState(false);
   const [showEduAiImport, setShowEduAiImport] = useState(false);
@@ -56,11 +67,10 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
     courses,
     (state, patch: (items: Course[]) => Course[]) => patch(state),
   );
+  const stats = useMemo(() => buildInstructorDashboardStats(oCourses), [oCourses]);
 
   // The API client throws Errors whose .message is sometimes a raw JSON
-  // payload (`{"error":"..."}`) and sometimes a plain string. Try to surface
-  // the structured `error` field when present; otherwise fall back to the
-  // raw message. Returns a generic line for non-Error values.
+  // string; parse it to extract the structured `error` field when present.
   const parseErrorMessage = (error: unknown) => {
     if (error instanceof Error) {
       try {
@@ -152,73 +162,47 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
     }
   };
 
+  const headerActions = (
+    <div className="flex flex-wrap gap-2">
+      <PermissionGate allow={perms.canBrowseEduAiCatalog || perms.canImportFromEduAi}>
+        <button
+          type="button"
+          onClick={() => {
+            setShowEduAiImport((prev) => {
+              const next = !prev;
+              if (next) ensureEduAiCourses();
+              else setEduAiError(null);
+              return next;
+            });
+          }}
+          className="btn-primary"
+        >
+          {showEduAiImport ? 'Close import' : 'Import from EduAI'}
+        </button>
+      </PermissionGate>
+    </div>
+  );
+
   return (
-    <div className="min-h-dvh bg-background">
-      <Nav />
+    <AppShell
+      breadcrumbs={<ShellBreadcrumbs items={[{ label: 'Teaching' }]} />}
+      actions={headerActions}
+    >
+      <div className="space-y-8">
+        {user ? (
+          <AtRoleBanner role={user.role} authorizedUnits={user.authorizedUnits} />
+        ) : null}
 
-      {/* Background decoration */}
-      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-        <div className="absolute top-0 left-1/2 w-[1000px] h-[600px] bg-primary/3 rounded-full blur-3xl -translate-y-1/2 -translate-x-1/2" />
-        <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-accent/5 rounded-full blur-3xl translate-y-1/3 translate-x-1/4" />
-        <div className="absolute inset-0 grid-lines opacity-30" />
-      </div>
+        <PageHeading
+          heading="Teaching"
+          subheading="Manage courses, publish content, and import offerings from EduAI Core."
+        />
 
-      <div className="container mx-auto px-6 py-10 space-y-8">
-        {/* Page header */}
-        <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 animate-fade-up">
-          <div>
-            <p className="text-sm font-medium text-muted-foreground mb-1">Dashboard</p>
-            <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-foreground">
-              Teaching
-            </h1>
-          </div>
-          <button
-            onClick={() => {
-              setShowEduAiImport((prev) => {
-                const next = !prev;
-                if (next) {
-                  ensureEduAiCourses();
-                } else {
-                  setEduAiError(null);
-                }
-                return next;
-              });
-            }}
-            className="btn-primary"
-          >
-            {showEduAiImport ? (
-              <>
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-                Close Import
-              </>
-            ) : (
-              <>
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                </svg>
-                Import from EduAI
-              </>
-            )}
-          </button>
-        </header>
+        <DashboardStatGrid stats={stats} />
 
         {/* EduAI Import Panel */}
-        {showEduAiImport && (
-          <div className="card-editorial p-6 space-y-5 animate-scale-in">
+        {showEduAiImport && (perms.canBrowseEduAiCatalog || perms.canImportFromEduAi) && (
+          <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6 space-y-5 animate-scale-in">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <div className="flex items-center gap-2 mb-1">
@@ -237,7 +221,7 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
                       />
                     </svg>
                   </div>
-                  <h2 className="font-display text-xl font-bold text-foreground">
+                  <h2 className="text-xl font-bold text-foreground">
                     Import from EduAI
                   </h2>
                 </div>
@@ -347,7 +331,7 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
                       <div className="flex-1 space-y-2">
                         {course.code && <span className="tag tag-primary">{course.code}</span>}
                         {course.name && (
-                          <h3 className="font-display text-lg font-bold text-foreground">
+                          <h3 className="text-lg font-bold text-foreground">
                             {course.name}
                           </h3>
                         )}
@@ -438,7 +422,7 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
           </div>
         ) : oCourses.length === 0 ? (
           <div className="animate-fade-up delay-150">
-            <div className="card-editorial p-12 text-center max-w-lg mx-auto">
+            <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-12 text-center max-w-lg mx-auto">
               <div className="w-16 h-16 mx-auto mb-6 rounded-2xl bg-secondary flex items-center justify-center">
                 <svg
                   className="w-8 h-8 text-muted-foreground"
@@ -454,11 +438,18 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
                   />
                 </svg>
               </div>
-              <h2 className="font-display text-xl font-bold text-foreground mb-2">
+              <h2 className="text-xl font-bold text-foreground mb-2">
                 No courses yet
               </h2>
               <p className="text-muted-foreground text-sm">
-                Import one from EduAI to get started with your teaching materials.
+                Courses are created in{' '}
+                <a
+                  href={`${getEduAiAppUrl()}/courses`}
+                  className="font-medium text-primary underline underline-offset-2"
+                >
+                  EduAI Core
+                </a>
+                . Import an enabled course from EduAI to get started here.
               </p>
             </div>
           </div>
@@ -476,7 +467,7 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
                     navigate(`/instructor/courses/${c.id}`);
                   }
                 }}
-                className="group card-editorial p-6 cursor-pointer transition-all duration-300 hover:shadow-xl hover:-translate-y-1 glow flex flex-col animate-fade-up focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                className="group rounded-lg border bg-card text-card-foreground shadow-sm p-6 cursor-pointer transition-all duration-300 hover:shadow-xl hover:-translate-y-1 glow flex flex-col animate-fade-up focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 style={{ animationDelay: `${150 + index * 50}ms` }}
               >
                 {/* Header */}
@@ -502,7 +493,7 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
 
                 {/* Course info */}
                 <div className="flex-1 mb-4">
-                  <h3 className="font-display text-lg font-bold text-foreground mb-1 group-hover:text-primary transition-colors line-clamp-2">
+                  <h3 className="text-lg font-bold text-foreground mb-1 group-hover:text-primary transition-colors line-clamp-2">
                     {c.title}
                   </h3>
                   {c.description && (
@@ -531,25 +522,27 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
                     </span>
                   </div>
 
-                  <div
-                    onClick={(event) => event.stopPropagation()}
-                    onKeyDown={(event) => event.stopPropagation()}
-                  >
-                    <PublishStatusButton
-                      isPublished={c.isPublished}
-                      pending={publishingId === c.id}
-                      onClick={() => {
-                        if (publishingId === c.id) return;
-                        togglePublish(c.id, c.isPublished);
-                      }}
-                    />
-                  </div>
+                  <PermissionGate allow={perms.canPublishContent}>
+                    <div
+                      onClick={(event) => event.stopPropagation()}
+                      onKeyDown={(event) => event.stopPropagation()}
+                    >
+                      <PublishStatusButton
+                        isPublished={c.isPublished}
+                        pending={publishingId === c.id}
+                        onClick={() => {
+                          if (publishingId === c.id) return;
+                          togglePublish(c.id, c.isPublished);
+                        }}
+                      />
+                    </div>
+                  </PermissionGate>
                 </div>
               </div>
             ))}
           </div>
         )}
       </div>
-    </div>
+    </AppShell>
   );
 }

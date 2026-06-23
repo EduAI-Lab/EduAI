@@ -9,6 +9,7 @@ const baseUser = {
   role: "STUDENT" as const,
   isActive: true,
   emailVerified: true,
+  authorizedUnits: [] as string[],
   createdAt: "2024-01-01T00:00:00.000Z",
   updatedAt: "2024-01-01T00:00:00.000Z",
   _count: {
@@ -117,12 +118,13 @@ describe("UsersTable — row actions", () => {
     expect(onEdit).toHaveBeenCalledWith(baseUser);
   });
 
-  it("calls onToggleActive with the user when the status switch is clicked", () => {
+  it("calls onToggleActive with the user when the status badge is clicked via row menu", () => {
     const onToggleActive = vi.fn();
     render(<UsersTable {...defaultProps} onToggleActive={onToggleActive} />);
-    // The status switch in the table row is not disabled for non-current users
-    const switches = screen.getAllByRole("switch");
-    fireEvent.click(switches[0]);
+    // Open the row actions menu
+    openRowMenu();
+    // Click the deactivate/activate menu item
+    fireEvent.click(screen.getByRole("menuitem", { name: /deactivate|activate/i }));
     expect(onToggleActive).toHaveBeenCalledWith(baseUser);
   });
 

@@ -3,14 +3,17 @@
  * All routes require authentication and delegate to eduaiService for actual API interactions.
  */
 import express from 'express';
-import { authenticateToken } from '../middleware/auth.js';
+import { authenticateToken, requireRole } from '../middleware/auth.js';
+import { QM_AUTHORIZED } from '../middleware/roles.js';
 import eduaiService from '../services/eduaiService.js';
 import { Course } from '../schema/Course.js';
 
 const router = express.Router();
 
+router.use(authenticateToken, requireRole(QM_AUTHORIZED));
+
 /** POST /api/eduai/chat – proxies streaming chat prompts to EduAI with the given course code. */
-router.post('/chat', authenticateToken, async (req, res) => {
+router.post('/chat', async (req, res) => {
   try {
     const { messages, model, apiKeys, courseCode, streaming } = req.body;
     const userId = req.user.id;
@@ -61,7 +64,7 @@ router.post('/chat', authenticateToken, async (req, res) => {
 });
 
 /** POST /api/eduai/generate-questions – requests generated questions from EduAI using the provided prompt and options. */
-router.post('/generate-questions', authenticateToken, async (req, res) => {
+router.post('/generate-questions', async (req, res) => {
   try {
     const { 
       prompt, 
@@ -136,7 +139,7 @@ router.post('/generate-questions', authenticateToken, async (req, res) => {
 });
 
 /** GET /api/eduai/courses – fetches the list of EduAI-managed courses for selection. */
-router.get('/courses', authenticateToken, async (req, res) => {
+router.get('/courses', async (req, res) => {
   try {
     const coursesData = await eduaiService.listCourses();
 
@@ -154,7 +157,7 @@ router.get('/courses', authenticateToken, async (req, res) => {
 });
 
 /** GET /api/eduai/courses/:courseId/topics – retrieves EduAI topics for the given course ID. */
-router.get('/courses/:courseId/topics', authenticateToken, async (req, res) => {
+router.get('/courses/:courseId/topics', async (req, res) => {
   try {
     const { courseId } = req.params;
 
@@ -178,7 +181,7 @@ router.get('/courses/:courseId/topics', authenticateToken, async (req, res) => {
 });
 
 /** GET /api/eduai/test-api-key – validates that the configured EduAI credentials work. */
-router.get('/test-api-key', authenticateToken, async (req, res) => {
+router.get('/test-api-key', async (req, res) => {
   try {
     const result = await eduaiService.testApiKey();
 
@@ -205,7 +208,7 @@ router.get('/test-api-key', authenticateToken, async (req, res) => {
 });
 
 /** GET /api/eduai/ai-models – returns the available AI model identifiers from EduAI. */
-router.get('/ai-models', authenticateToken, async (req, res) => {
+router.get('/ai-models', async (req, res) => {
   try {
     const models = await eduaiService.listAIModels();
     res.json(models);

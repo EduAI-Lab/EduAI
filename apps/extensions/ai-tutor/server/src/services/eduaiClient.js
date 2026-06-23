@@ -99,14 +99,127 @@ export async function postCoreBugReport(userId, payload) {
   return null;
 }
 
-export async function listEduAiCourses() {
+function getCoreBaseUrl() {
+  const raw = process.env.CORE_URL || 'http://localhost:3000';
+  return raw.endsWith('/') ? raw.slice(0, -1) : raw;
+}
+
+/**
+ * GET Core admin bug reports (ADMIN session cookie). Used for AI Tutor-scoped triage (#648).
+ */
+export async function listCoreAdminBugReports(cookie, { source = 'AI_TUTOR', limit = 100, offset = 0 } = {}) {
+  if (!cookie) {
+    const error = new Error('Session cookie is required to list Core bug reports');
+    error.status = 401;
+    throw error;
+  }
+
+  const params = new URLSearchParams({
+    source,
+    limit: String(limit),
+    offset: String(offset),
+  });
+  const url = `${getCoreBaseUrl()}/api/admin/bug-reports?${params}`;
+  const response = await fetch(url, {
+    headers: { cookie },
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    const error = new Error(errorText || `Core bug report list failed with status ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+
+  return response.json();
+}
+
+/**
+ * GET Core platform users (ADMIN session cookie). Identity is owned by Core.
+ */
+export async function listCoreAdminUsers(cookie) {
+  if (!cookie) {
+    const error = new Error('Session cookie is required to list Core users');
+    error.status = 401;
+    throw error;
+  }
+
+  const url = `${getCoreBaseUrl()}/api/users`;
+  const response = await fetch(url, {
+    headers: { cookie },
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    const error = new Error(errorText || `Core user list failed with status ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+
+  return response.json();
+}
+
+/**
+ * PATCH Core admin bug report status (ADMIN session cookie).
+ */
+export async function patchCoreAdminBugReportStatus(cookie, bugReportId, coreStatus) {
+  if (!cookie) {
+    const error = new Error('Session cookie is required to update Core bug reports');
+    error.status = 401;
+    throw error;
+  }
+
+  const url = `${getCoreBaseUrl()}/api/admin/bug-reports/${bugReportId}`;
+  const response = await fetch(url, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie,
+    },
+    body: JSON.stringify({ status: coreStatus }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    const error = new Error(errorText || `Core bug report PATCH failed with status ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+
+  return response.json();
+}
+
+ 
+/**
+ * Propagate a publish/unpublish action to Core for a linked course offering.
+ * Called by the AI Tutor publish/unpublish routes when `coreOfferingId` is set.
+ * Uses the service key — Core verifies the key and applies the change.
+ * Throws an Error with `status` set on HTTP failure.
+ */
+export async function setCoreCoursePublishState(coreOfferingId, publish) {
   const serviceKey = process.env.EDUAI_API_KEY;
   if (!serviceKey) {
     throw new Error('EDUAI_API_KEY not configured');
   }
-  const data = await requestEduAi('/courses', {
+  const action = publish ? 'publish' : 'unpublish';
+  return requestEduAi(`/courses/${coreOfferingId}/${action}`, {
+    method: 'PATCH',
     headers: { Authorization: `Bearer ${serviceKey}` },
   });
+}
+ 
+/**   
+ * Lists Core courses visible to the caller (#578). Requires the user's Core
+ * session cookie — do not use the service key (that returns the full catalog).
+ */
+export async function listEduAiCourses(options = {}) {
+  const cookie = typeof options.cookie === 'string' ? options.cookie : '';
+  if (!cookie) {
+    const error = new Error('Session cookie is required to list EduAI courses');
+    error.status = 401;
+    throw error;
+  }
+  const data = await requestEduAi('/courses', { cookie });
   try {
     const parsed = EduAiCourseListSchema.parse(data);
     return parsed.courses;
@@ -118,9 +231,9 @@ export async function listEduAiCourses() {
   }
 }
 
-export async function findEduAiCourseById(courseId) {
+export async function findEduAiCourseById(courseId, options = {}) {
   if (!courseId) return null;
-  const courses = await listEduAiCourses();
+  const courses = await listEduAiCourses(options);
   return courses.find((course) => course.id === courseId) ?? null;
 }
 
@@ -170,6 +283,24 @@ export async function listEduAiModels() {
     throw new Error('Invalid response from EduAI models endpoint');
   }
   return data;
+}
+
+/**
+ * Update an enrollment's role in Core, forwarding the acting user's session cookie.
+ * Core's enrollment-role endpoint requires user session auth (not service key).
+ * Throws an Error with `status` set on HTTP failure.
+ */
+export async function patchCoreEnrollmentRole(externalCourseId, enrollmentId, role, cookie) {
+  if (!cookie) {
+    const error = new Error('Session cookie required to update enrollment role in Core');
+    error.status = 401;
+    throw error;
+  }
+  return requestEduAi(`/courses/${externalCourseId}/enrollments/${enrollmentId}`, {
+    method: 'PATCH',
+    cookie,
+    body: { role },
+  });
 }
 
 /**

@@ -2,17 +2,10 @@
  * AI configuration block: status badge, prompt, model, difficulty/reasoning, API key, Generate button.
  * For use in AddQuestionDialog right column (prototype-style layout).
  */
-import { Label } from '../ui/label';
-import { Button } from '../ui/button';
-import { Input } from '../ui/input';
-import { Textarea } from '../ui/textarea';
+import { Label, Button, Input, Textarea } from '@eduai/ui';
+
 import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue
-} from '../ui/select';
+    Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@eduai/ui';
 import { EduAIStatusBadge } from '../eduai/EduAIStatusBadge';
 import { apiKeyStorage } from '../../services/apiKeyStorage';
 import type { EduAIModelOption } from '../../services/eduaiService';
@@ -100,7 +93,7 @@ export function QuestionAIControls({
                             : 'e.g., Time complexity of quicksort'
                     }
                     disabled={disabled}
-                    className="bg-secondary border-border resize-none text-sm min-h-16"
+                    className="resize-none text-sm min-h-16"
                     rows={3}
                 />
             </div>
@@ -124,7 +117,7 @@ export function QuestionAIControls({
                                 type="text"
                                 value={`${providerApiKey.substring(0, 8)}${'•'.repeat(Math.max(0, providerApiKey.length - 8))}`}
                                 disabled
-                                className="h-9 text-xs flex-1 bg-secondary border-border"
+                                className="h-9 text-xs flex-1"
                             />
                             <Button
                                 type="button"
@@ -144,7 +137,7 @@ export function QuestionAIControls({
                             type="password"
                             placeholder={`Enter your ${providerName.toUpperCase()} API key`}
                             value={providerApiKey}
-                            className="h-9 text-xs bg-secondary border-border"
+                            className="h-9 text-xs"
                             onChange={(e) => onProviderApiKeyChange(e.target.value)}
                         />
                     )}

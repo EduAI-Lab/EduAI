@@ -4,8 +4,7 @@ export const HelpPage = () => {
     const { startTour } = useGuidedTour();
 
     return (
-        <div className="min-h-screen bg-background text-foreground">
-            <div className="mx-auto max-w-4xl px-6 py-10 space-y-10 text-base">
+        <div className="mx-auto max-w-4xl px-6 py-10 space-y-10 text-base">
                 <header className="space-y-2">
                     <p className="text-xs uppercase tracking-wide text-muted-foreground">Help Center</p>
                     <h1 className="text-3xl font-bold">Question Maker User Guide</h1>
@@ -13,7 +12,7 @@ export const HelpPage = () => {
                         <button
                             type="button"
                             onClick={() => startTour('main')}
-                            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-800 hover:border-gray-400"
+                            className="rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:border-border"
                         >
                             Start Guided Tour
                         </button>
@@ -23,27 +22,27 @@ export const HelpPage = () => {
                 <section className="space-y-2">
                     <h2 className="text-xl font-semibold" id="toc">Table of Contents</h2>
                     <ol className="list-decimal list-inside space-y-1">
-                        <li><a href="#before-you-start" className="text-primary hover:underline">Before You Start</a></li>
-                        <li><a href="#course-selection-tour" className="text-primary hover:underline">Course Selection and Guided Tour</a></li>
-                        <li><a href="#onboarding" className="text-primary hover:underline">Onboarding: Add Courses and Topics</a></li>
+                        <li><a href="#before-you-start" className="text-primary-text hover:underline">Before You Start</a></li>
+                        <li><a href="#course-selection-tour" className="text-primary-text hover:underline">Course Selection and Guided Tour</a></li>
+                        <li><a href="#onboarding" className="text-primary-text hover:underline">Onboarding: Add Courses and Topics</a></li>
                         <li>
-                            <a href="#create-questions" className="text-primary hover:underline">Create Questions</a>
+                            <a href="#create-questions" className="text-primary-text hover:underline">Create Questions</a>
                             <ul className="list-disc list-inside pl-4 text-xs space-y-1">
                                 <li>Manual</li>
                                 <li>AI service–assisted</li>
                             </ul>
                         </li>
                         <li>
-                            <a href="#variants" className="text-primary hover:underline">Create Variants</a>
+                            <a href="#variants" className="text-primary-text hover:underline">Create Variants</a>
                             <ul className="list-disc list-inside pl-4 text-xs space-y-1">
                                 <li>Manual</li>
                                 <li>Copy Fields</li>
                                 <li>AI service–assisted</li>
                             </ul>
                         </li>
-                        <li><a href="#upload" className="text-primary hover:underline">Upload PDF/Image → Extract Questions</a></li>
+                        <li><a href="#upload" className="text-primary-text hover:underline">Upload PDF/Image → Extract Questions</a></li>
                         <li>
-                            <a href="#assessments" className="text-primary hover:underline">Build Assessments</a>
+                            <a href="#assessments" className="text-primary-text hover:underline">Build Assessments</a>
                             <ul className="list-disc list-inside pl-4 text-xs space-y-1">
                                 <li>Create/Edit Blueprint</li>
                                 <li>Create Sections &amp; Select Questions</li>
@@ -54,10 +53,10 @@ export const HelpPage = () => {
                                 <li>Export to Word</li>
                             </ul>
                         </li>
-                        <li><a href="#assessment-variant-workflow" className="text-primary hover:underline">Assessment Variant Workflow</a></li>
-                        <li><a href="#ai-models" className="text-primary hover:underline">AI Models and API Keys</a></li>
-                        <li><a href="#bug-reporting" className="text-primary hover:underline">Report Bugs and Track Status</a></li>
-                        <li><a href="#tips" className="text-primary hover:underline">Tips &amp; Common Issues</a></li>
+                        <li><a href="#assessment-variant-workflow" className="text-primary-text hover:underline">Assessment Variant Workflow</a></li>
+                        <li><a href="#ai-models" className="text-primary-text hover:underline">AI Models and API Keys</a></li>
+                        <li><a href="#bug-reporting" className="text-primary-text hover:underline">Report Bugs and Track Status</a></li>
+                        <li><a href="#tips" className="text-primary-text hover:underline">Tips &amp; Common Issues</a></li>
                     </ol>
                 </section>
 
@@ -82,20 +81,15 @@ export const HelpPage = () => {
                 </section>
 
                 <section id="onboarding" className="space-y-2">
-                    <h2 className="text-xl font-semibold">3. Onboarding: Add Courses and Topics</h2>
-                    <p className="text-sm text-muted-foreground">Flow: top nav profile icon (👤) on `/courses` or `/home` → “Link courses from AI service”.</p>
+                    <h2 className="text-xl font-semibold">3. Onboarding: Courses and Topics</h2>
+                    <p className="text-sm text-muted-foreground">Courses you teach in Core are added automatically when you sign in.</p>
                     <ol className="list-decimal list-inside space-y-1">
-                        <li>Open the profile button in the top-right of the Home page.</li>
-                        <li>In “Link courses from AI service”, pick the courses you teach.
-                            <ul className="list-disc list-inside pl-4 space-y-1">
-                                <li>“Already added” badge means it’s already in your library.</li>
-                                <li>Each course imports its topics automatically from the AI service.</li>
-                            </ul>
-                        </li>
-                        <li>Click “Add selected courses”. Courses + topics are created locally.</li>
-                        <li>(Optional) Use the “Logout” button in this dialog to end the session.</li>
+                        <li>After login, your taught courses from Core appear on the course selection page.</li>
+                        <li>Topics are kept in sync with Core automatically.</li>
+                        <li>For practice without Core, create a <strong>Sandbox course</strong> from your profile menu.</li>
+                        <li>(Optional) Use <strong>Logout</strong> in the courses dialog to end the session.</li>
                     </ol>
-                    <p className="text-sm">Tip: Add courses before creating questions or assessments.</p>
+                    <p className="text-sm">Tip: Wait for courses to load before creating questions or assessments.</p>
                 </section>
 
                 <section id="create-questions" className="space-y-4">
@@ -160,7 +154,7 @@ export const HelpPage = () => {
                             <img
                                 src="/help/variant.png"
                                 alt="Create Variant form"
-                                className="w-full md:w-5/6 rounded-md border bg-white"
+                                className="w-full md:w-5/6 rounded-md border bg-card"
                             />
                         </div>
                     </div>
@@ -209,7 +203,7 @@ export const HelpPage = () => {
                         <img
                             src="/help/upload-assessment.png"
                             alt="Upload questions dialog with assessment details and review list"
-                            className="w-full md:w-5/6 rounded-md border bg-white"
+                            className="w-full md:w-5/6 rounded-md border bg-card"
                         />
                     </div>
                 </section>
@@ -230,7 +224,7 @@ export const HelpPage = () => {
                             <img
                                 src="/help/add-assessment-blueprint.png"
                                 alt="Add Assessment blueprint modal"
-                                className="w-full md:w-5/6 rounded-md border bg-white"
+                                className="w-full md:w-5/6 rounded-md border bg-card"
                             />
                         </div>
                     </div>
@@ -246,7 +240,7 @@ export const HelpPage = () => {
                             <img
                                 src="/help/edit-assessment-blueprint.png"
                                 alt="Edit Assessment blueprint modal"
-                                className="w-full md:w-5/6 rounded-md border bg-white"
+                                className="w-full md:w-5/6 rounded-md border bg-card"
                             />
                         </div>
                     </div>
@@ -263,7 +257,7 @@ export const HelpPage = () => {
                             <img
                                 src="/help/create-section.png"
                                 alt="Create Section panel with filters and search results"
-                                className="w-full md:w-5/6 rounded-md border bg-white"
+                                className="w-full md:w-5/6 rounded-md border bg-card"
                             />
                         </div>
                     </div>
@@ -278,7 +272,7 @@ export const HelpPage = () => {
                             <img
                                 src="/help/create-section.png"
                                 alt="Inline create options while building a section"
-                                className="w-full md:w-5/6 rounded-md border bg-white"
+                                className="w-full md:w-5/6 rounded-md border bg-card"
                             />
                         </div>
                     </div>
@@ -305,7 +299,7 @@ export const HelpPage = () => {
                             <img
                                 src="/help/export-to-txt-canvas.png"
                                 alt="Canvas export dialog with connection and course selection"
-                                className="w-full md:w-5/6 rounded-md border bg-white"
+                                className="w-full md:w-5/6 rounded-md border bg-card"
                             />
                         </div>
                     </div>
@@ -316,7 +310,7 @@ export const HelpPage = () => {
                             <img
                                 src="/help/export-to-txt-canvas.png"
                                 alt="Export to TXT action"
-                                className="w-full md:w-5/6 rounded-md border bg-white"
+                                className="w-full md:w-5/6 rounded-md border bg-card"
                             />
                         </div>
                     </div>
@@ -371,7 +365,7 @@ export const HelpPage = () => {
                       <img
                         src="/help/ai-models.png"
                         alt="Model picker showing Internal and External groups"
-                        className="w-full md:w-1/2 rounded-md border bg-white"
+                        className="w-full md:w-1/2 rounded-md border bg-card"
                       />
                     </div>
                 </section>
@@ -396,7 +390,6 @@ export const HelpPage = () => {
                         <li>Upload save requires at least one included question and filled assessment fields (type/name/semester).</li>
                     </ul>
                 </section>
-            </div>
         </div>
     );
 };

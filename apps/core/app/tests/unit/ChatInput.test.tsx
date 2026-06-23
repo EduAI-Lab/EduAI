@@ -2,6 +2,20 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { ChatInput } from "~/components/chat/chat-input";
 
+vi.mock("~/components/chat/api-key-settings", () => ({
+  ApiKeySettings: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="api-key-settings">Chat Settings</div> : null,
+}));
+
+vi.mock("~/hooks/use-api-keys", () => ({
+  useApiKeys: () => ({
+    apiKeys: {},
+    isProviderConfigured: vi.fn(),
+    updateProviderSettings: vi.fn(),
+    removeProviderSettings: vi.fn(),
+  }),
+}));
+
 const baseModel = {
   id: "m1",
   name: "GPT-4o",
@@ -14,7 +28,6 @@ const makeProps = (overrides: Record<string, any> = {}) => ({
   isLoading: false,
   onInputChange: vi.fn(),
   onSubmit: vi.fn(),
-  onOpenSettings: vi.fn(),
   selectedCourseId: null,
   setSelectedCourseId: vi.fn(),
   availableCourses: [],
@@ -32,13 +45,13 @@ const makeProps = (overrides: Record<string, any> = {}) => ({
 describe("ChatInput — rendering", () => {
   it("renders the textarea with the correct placeholder", () => {
     render(<ChatInput {...makeProps()} />);
-    expect(screen.getByPlaceholderText("Message EduAI...")).toBeInTheDocument();
+    // No course selected → "Ask anything…"
+    expect(screen.getByPlaceholderText("Ask anything…")).toBeInTheDocument();
   });
 
   it("renders the settings gear button", () => {
     render(<ChatInput {...makeProps()} />);
-    const [settingsBtn] = screen.getAllByRole("button");
-    expect(settingsBtn).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /chat settings/i })).toBeInTheDocument();
   });
 });
 
@@ -47,12 +60,10 @@ describe("ChatInput — rendering", () => {
 // ---------------------------------------------------------------------------
 
 describe("ChatInput — settings button", () => {
-  it("calls onOpenSettings when the settings gear button is clicked", () => {
-    const onOpenSettings = vi.fn();
-    render(<ChatInput {...makeProps({ onOpenSettings })} />);
-    const [settingsBtn] = screen.getAllByRole("button");
-    fireEvent.click(settingsBtn);
-    expect(onOpenSettings).toHaveBeenCalled();
+  it("opens chat settings when the settings gear button is clicked", () => {
+    render(<ChatInput {...makeProps()} />);
+    fireEvent.click(screen.getByRole("button", { name: /chat settings/i }));
+    expect(screen.getByTestId("api-key-settings")).toBeInTheDocument();
   });
 });
 
@@ -63,28 +74,24 @@ describe("ChatInput — settings button", () => {
 describe("ChatInput — send button", () => {
   it("disables the send button when input is empty", () => {
     render(<ChatInput {...makeProps({ input: "" })} />);
-    const [, sendBtn] = screen.getAllByRole("button");
-    expect(sendBtn).toBeDisabled();
+    expect(screen.getByRole("button", { name: /send message/i })).toBeDisabled();
   });
 
   it("disables the send button when isLoading is true", () => {
     // No onStop provided — send button is still rendered but disabled
     render(<ChatInput {...makeProps({ input: "hello", isLoading: true })} />);
-    const [, sendBtn] = screen.getAllByRole("button");
-    expect(sendBtn).toBeDisabled();
+    expect(screen.getByRole("button", { name: /send message/i })).toBeDisabled();
   });
 
   it("enables the send button when input is non-empty and not loading", () => {
     render(<ChatInput {...makeProps({ input: "hello" })} />);
-    const [, sendBtn] = screen.getAllByRole("button");
-    expect(sendBtn).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: /send message/i })).not.toBeDisabled();
   });
 
   it("calls onSubmit when the send button is clicked", () => {
     const onSubmit = vi.fn();
     render(<ChatInput {...makeProps({ input: "hello", onSubmit })} />);
-    const [, sendBtn] = screen.getAllByRole("button");
-    fireEvent.click(sendBtn);
+    fireEvent.click(screen.getByRole("button", { name: /send message/i }));
     expect(onSubmit).toHaveBeenCalled();
   });
 });
@@ -97,17 +104,17 @@ describe("ChatInput — stop button", () => {
   it("shows the stop button instead of send when isLoading and onStop are both set", () => {
     const onStop = vi.fn();
     render(<ChatInput {...makeProps({ isLoading: true, onStop })} />);
-    // Settings + stop = 2 buttons; the stop button is not disabled
-    const buttons = screen.getAllByRole("button");
-    expect(buttons).toHaveLength(2);
-    expect(buttons[1]).not.toBeDisabled();
+    // Stop button is rendered (not disabled), send button is absent
+    const stopBtn = screen.getByRole("button", { name: /stop generating/i });
+    expect(stopBtn).toBeInTheDocument();
+    expect(stopBtn).not.toBeDisabled();
+    expect(screen.queryByRole("button", { name: /send message/i })).not.toBeInTheDocument();
   });
 
   it("calls onStop when the stop button is clicked", () => {
     const onStop = vi.fn();
     render(<ChatInput {...makeProps({ isLoading: true, onStop })} />);
-    const [, stopBtn] = screen.getAllByRole("button");
-    fireEvent.click(stopBtn);
+    fireEvent.click(screen.getByRole("button", { name: /stop generating/i }));
     expect(onStop).toHaveBeenCalled();
   });
 });

@@ -50,22 +50,22 @@ const INSTRUCTOR_SESSION = {
 // Seed / teardown
 // ---------------------------------------------------------------------------
 
-let professorId: string;
+let instructorId: string;
 let adminId: string;
 let courseId: string;
 const createdCourseIds: string[] = [];
 
 beforeAll(async () => {
-  const professor = await prisma.user.create({
+  const instructor = await prisma.user.create({
     data: {
       email: "integration-courses-test@example.com",
-      name: "Integration Professor",
+      name: "Integration Instructor",
       role: "INSTRUCTOR",
       emailVerified: false,
     },
   });
-  professorId = professor.id;
-  INSTRUCTOR_SESSION.user.id = professorId;
+  instructorId = instructor.id;
+  INSTRUCTOR_SESSION.user.id = instructorId;
 
   const admin = await prisma.user.create({
     data: {
@@ -91,7 +91,7 @@ beforeAll(async () => {
   courseId = course.id;
 
   await prisma.enrollment.create({
-    data: { courseId, userId: professorId, role: "INSTRUCTOR" },
+    data: { courseId, userId: instructorId, role: "INSTRUCTOR" },
   });
 });
 
@@ -102,7 +102,7 @@ afterAll(async () => {
   }
   await prisma.enrollment.deleteMany({ where: { courseId } });
   await prisma.course.deleteMany({ where: { id: courseId } });
-  await prisma.user.deleteMany({ where: { id: { in: [professorId, adminId] } } });
+  await prisma.user.deleteMany({ where: { id: { in: [instructorId, adminId] } } });
   await prisma.$disconnect();
 });
 
@@ -235,7 +235,7 @@ describe("POST /api/courses", () => {
       term: "Fall",
       year: 2025,
       startDate: "2025-09-01",
-      instructorUserIds: professorId,
+      instructorUserIds: instructorId,
     }));
     expect(res.status).toBe(403);
   });
@@ -259,6 +259,7 @@ describe("POST /api/courses", () => {
       term: "Fall",
       year: 2025,
       startDate: "2025-09-01",
+      department: "COSC",
       instructorUserIds: adminId,
     }));
     expect(res.status).toBe(422);
@@ -275,7 +276,8 @@ describe("POST /api/courses", () => {
       term: "Winter",
       year: 2026,
       startDate: "2026-01-01",
-      instructorUserIds: professorId,
+      department: "COSC",
+      instructorUserIds: instructorId,
     }));
 
     expect(res.status).toBe(201);
@@ -285,7 +287,7 @@ describe("POST /api/courses", () => {
     createdCourseIds.push(body.id);
 
     const enrollment = await prisma.enrollment.findFirst({
-      where: { courseId: body.id, userId: professorId, role: "INSTRUCTOR", isActive: true },
+      where: { courseId: body.id, userId: instructorId, role: "INSTRUCTOR", isActive: true },
     });
     expect(enrollment).not.toBeNull();
   });
@@ -318,7 +320,7 @@ describe("POST /api/courses", () => {
         year: 2026,
         startDate: "2026-09-01",
         department: "COSC",
-        instructorUserIds: professorId,
+        instructorUserIds: instructorId,
       }));
       expect(res.status).toBe(403);
       expect(await res.json()).toEqual({ error: "DEPARTMENT_NOT_AUTHORIZED" });
@@ -339,7 +341,7 @@ describe("POST /api/courses", () => {
         year: 2026,
         startDate: "2026-09-01",
         department: "COSC",
-        instructorUserIds: professorId,
+        instructorUserIds: instructorId,
       }));
       expect(res.status).toBe(201);
       const body = await res.json();

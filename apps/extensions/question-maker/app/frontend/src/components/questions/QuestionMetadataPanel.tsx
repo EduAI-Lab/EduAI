@@ -2,16 +2,10 @@
  * Question parameters panel: type, primary topic, secondary topics, difficulty, reasoning, description.
  * Matches prototype layout (compact labels, card-style) for use in AddQuestionDialog left column.
  */
-import { Label } from '../ui/label';
-import { Input } from '../ui/input';
-import { Textarea } from '../ui/textarea';
+import { Label, Input, Textarea } from '@eduai/ui';
+
 import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue
-} from '../ui/select';
+    Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@eduai/ui';
 import {
     QuestionType,
     QuestionDifficulty,
@@ -26,7 +20,7 @@ export interface QuestionMetadataPanelValue {
     questionDescription: string;
     variantDifficulty: QuestionDifficulty;
     variantReasoningLevel: ReasoningLevel;
-    variantSecondaryTopics: number[];
+    variantSecondaryTopics: string[];
 }
 
 interface QuestionMetadataPanelProps {
@@ -38,7 +32,7 @@ interface QuestionMetadataPanelProps {
     /** In variant mode, primary topic is read-only from preset; still need to show it */
     mode: 'new' | 'variant';
     primaryTopicName?: string;
-    onToggleSecondaryTopic: (topicId: number, checked: boolean) => void;
+    onToggleSecondaryTopic: (topicId: string, checked: boolean) => void;
 }
 
 const difficultyOptions: QuestionDifficulty[] = ['easy', 'medium', 'hard'];
@@ -74,7 +68,7 @@ export function QuestionMetadataPanel({
                         onValueChange={(v) => onChange('questionType', v as QuestionType)}
                         disabled={disabled}
                     >
-                        <SelectTrigger className="bg-secondary border-border h-9">
+                        <SelectTrigger className="h-9">
                             <SelectValue placeholder="Select question type" />
                         </SelectTrigger>
                         <SelectContent>
@@ -100,7 +94,7 @@ export function QuestionMetadataPanel({
                         onValueChange={(v) => onChange('primaryTopicId', v)}
                         disabled={disabled || topics.length === 0}
                     >
-                        <SelectTrigger className="bg-secondary border-border h-9">
+                        <SelectTrigger className="h-9">
                             <SelectValue
                                 placeholder={
                                     topics.length === 0
@@ -132,7 +126,7 @@ export function QuestionMetadataPanel({
                 <Label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                     Secondary Topics <span className="text-muted-foreground font-normal">(optional)</span>
                 </Label>
-                <div className="border rounded-md p-3 space-y-2 max-h-40 overflow-auto bg-secondary/30">
+                <div className="border rounded-md p-3 space-y-2 max-h-40 overflow-auto bg-muted/50">
                     {topics.length === 0 ? (
                         <p className="text-xs text-muted-foreground">
                             {isAuxLoading ? 'Loading topics...' : 'No topics available'}
@@ -144,16 +138,16 @@ export function QuestionMetadataPanel({
                             return (
                                 <label
                                     key={topic.id}
-                                    className={`flex items-center space-x-2 text-sm ${isPrimary ? 'text-muted-foreground/70' : 'text-foreground'}`}
+                                    className={`flex items-center space-x-2 text-sm cursor-pointer ${isPrimary ? 'opacity-50 cursor-not-allowed' : ''}`}
                                 >
                                     <input
                                         type="checkbox"
-                                        className="h-4 w-4"
+                                        className="h-4 w-4 rounded border-border bg-background ring-ring cursor-pointer accent-accent"
                                         checked={checked}
                                         disabled={isPrimary}
                                         onChange={(event) => onToggleSecondaryTopic(topic.id, event.target.checked)}
                                     />
-                                    <span>{topic.name}</span>
+                                    <span className={isPrimary ? 'text-muted-foreground' : 'text-foreground'}>{topic.name}</span>
                                 </label>
                             );
                         })
@@ -171,7 +165,7 @@ export function QuestionMetadataPanel({
                         onValueChange={(v) => onChange('variantDifficulty', v as QuestionDifficulty)}
                         disabled={disabled}
                     >
-                        <SelectTrigger className="bg-secondary border-border h-9">
+                        <SelectTrigger className="h-9">
                             <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -192,7 +186,7 @@ export function QuestionMetadataPanel({
                         onValueChange={(v) => onChange('variantReasoningLevel', v as ReasoningLevel)}
                         disabled={disabled}
                     >
-                        <SelectTrigger className="bg-secondary border-border h-9">
+                        <SelectTrigger className="h-9">
                             <SelectValue />
                         </SelectTrigger>
                         <SelectContent>

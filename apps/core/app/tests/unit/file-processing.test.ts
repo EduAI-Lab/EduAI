@@ -4,6 +4,11 @@ import {
   generateChecksum,
   validateFile,
   applySemanticChunking,
+  applyChunkOverlap,
+  enforceMaxChunkLength,
+  isDocumentSectionBoundary,
+  joinSemanticChunks,
+  DEFAULT_SEMANTIC_CHUNK_OVERLAP,
   extractTextFromFile,
 } from "~/lib/ai/file-processing";
 
@@ -176,6 +181,137 @@ describe("applySemanticChunking", () => {
     const chunks = applySemanticChunking(content, 1500);
     for (const chunk of chunks) {
       expect(chunk.trim().length).toBeGreaterThan(0);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isDocumentSectionBoundary
+// ---------------------------------------------------------------------------
+
+describe("isDocumentSectionBoundary", () => {
+  it("detects slide markers from PPTX extraction", () => {
+    expect(isDocumentSectionBoundary("--- Slide 3 ---")).toBe(true);
+  });
+
+  it("detects Chapter/Section/Part headings", () => {
+    expect(isDocumentSectionBoundary("Chapter 3: Advanced Topics")).toBe(true);
+    expect(isDocumentSectionBoundary("Section 2")).toBe(true);
+    expect(isDocumentSectionBoundary("Part 1")).toBe(true);
+  });
+
+  it("detects numbered headings", () => {
+    expect(isDocumentSectionBoundary("3.1 Assignment Overview")).toBe(true);
+    expect(isDocumentSectionBoundary("1) First question")).toBe(true);
+  });
+
+  it("detects all-caps short section titles", () => {
+    expect(isDocumentSectionBoundary("GRADING RUBRIC")).toBe(true);
+  });
+
+  it("does not treat normal sentences as section boundaries", () => {
+    expect(isDocumentSectionBoundary("This is a normal paragraph sentence.")).toBe(false);
+    expect(isDocumentSectionBoundary("")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyStandardChunking (via applySemanticChunking non-markdown path)
+// ---------------------------------------------------------------------------
+
+describe("applyStandardChunking section splits", () => {
+  it("splits PDF-like text at Chapter boundaries", () => {
+    const sectionA = "word ".repeat(120);
+    const sectionB = "term ".repeat(120);
+    const content = `Chapter 1\n\n${sectionA}\n\nChapter 2\n\n${sectionB}`;
+    const chunks = applySemanticChunking(content, 500);
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.some((c) => c.includes("Chapter 1"))).toBe(true);
+    expect(chunks.some((c) => c.includes("Chapter 2"))).toBe(true);
+  });
+
+  it("splits at slide markers", () => {
+    const slide1 = "Intro content here. ".repeat(30);
+    const slide2 = "Details content here. ".repeat(30);
+    const content = `--- Slide 1 ---\n${slide1}\n--- Slide 2 ---\n${slide2}`;
+    const chunks = applySemanticChunking(content, 400);
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.some((c) => c.includes("Slide 1"))).toBe(true);
+    expect(chunks.some((c) => c.includes("Slide 2"))).toBe(true);
+  });
+
+  it("keeps consecutive heading lines with the following section body", () => {
+    const body = "Actual content about the introduction topic. ".repeat(20);
+    const content = `Chapter 1\n1.1 Introduction\n${body}`;
+    const chunks = applySemanticChunking(content, 500);
+    expect(chunks.some((c) => c.includes("Chapter 1") && c.includes("1.1 Introduction"))).toBe(true);
+    expect(chunks.some((c) => c.includes("Actual content"))).toBe(true);
+    expect(chunks.some((c) => c.trim() === "Chapter 1")).toBe(false);
+  });
+
+  it("still splits on paragraph breaks when no section markers exist", () => {
+    const para = "word ".repeat(200);
+    const content = `${para}\n\n${para}`;
+    const chunks = applySemanticChunking(content, 500);
+    expect(chunks.length).toBeGreaterThan(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyChunkOverlap
+// ---------------------------------------------------------------------------
+
+describe("applyChunkOverlap", () => {
+  it("returns a single chunk unchanged", () => {
+    expect(applyChunkOverlap(["Only chunk."])).toEqual(["Only chunk."]);
+  });
+
+  it("returns empty array for empty input", () => {
+    expect(applyChunkOverlap([])).toEqual([]);
+  });
+
+  it("prefixes later chunks with trailing text from the previous chunk", () => {
+    const first = "Alpha beta gamma delta epsilon zeta eta theta iota kappa lambda.";
+    const second = "Mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega.";
+    const overlapped = applyChunkOverlap([first, second], 40);
+
+    expect(overlapped).toHaveLength(2);
+    expect(overlapped[0]).toBe(first);
+    const endWords = first.split(" ").slice(-3).join(" ");
+    expect(overlapped[1]).toContain(endWords.split(" ")[0]);
+  });
+
+  it("uses the default overlap constant", () => {
+    expect(DEFAULT_SEMANTIC_CHUNK_OVERLAP).toBe(80);
+  });
+
+  it("does not inject the chunk separator into overlap text", () => {
+    const chunks = ["First chunk content.", "Second chunk content."];
+    const overlapped = applyChunkOverlap(chunks, DEFAULT_SEMANTIC_CHUNK_OVERLAP);
+    const joined = joinSemanticChunks(overlapped);
+    expect(joined).toContain("--- CHUNK SEPARATOR ---");
+    expect(joined.split("--- CHUNK SEPARATOR ---")).toHaveLength(2);
+  });
+
+  it("does not duplicate a short previous chunk as overlap", () => {
+    const shortHeading = "Chapter 1";
+    const second = "Long body content here. ".repeat(30);
+    const overlapped = applyChunkOverlap([shortHeading, second], DEFAULT_SEMANTIC_CHUNK_OVERLAP);
+    expect(overlapped[1]).toBe(second.trim());
+    expect(overlapped[1]).not.toContain("Chapter 1");
+  });
+
+  it("keeps overlapped chunks within the max size margin", () => {
+    const maxChunkSize = 500;
+    const nearLimit = "word ".repeat(115).trim();
+    const second = "term ".repeat(115).trim();
+    const overlapped = enforceMaxChunkLength(
+      applyChunkOverlap([nearLimit, second], DEFAULT_SEMANTIC_CHUNK_OVERLAP),
+      maxChunkSize,
+    );
+    const limit = Math.floor(maxChunkSize * 1.2);
+    for (const chunk of overlapped) {
+      expect(chunk.length).toBeLessThanOrEqual(limit);
     }
   });
 });

@@ -2,13 +2,14 @@
  * Question bank list with search/sort controls, add/upload actions, and variant cards.
  * Filters variants client-side and exposes callbacks for viewing/creating variants.
  */
+import { Button } from '@eduai/ui';
+
 import { useState, useMemo } from 'react';
 import { QuestionVariantEntry, QuestionType, QuestionDifficulty, ReasoningLevel } from '../../types/question';
 import { QuestionCard } from './QuestionCard';
 import { SearchAndFilters, QuestionFilters } from './SearchAndFilters';
 import { QuestionBankHeader } from './QuestionBankHeader';
 import { Loader2, User, Info } from 'lucide-react';
-import { Button } from '../ui/button';
 
 interface QuestionBankProps {
   variants: QuestionVariantEntry[];
@@ -161,9 +162,9 @@ export const QuestionBank = ({
             <div className="text-center py-8">
               {!courseName && onOpenProfile ? (
                 <div className="flex flex-col items-center space-y-4 py-4">
-                  <div className="flex items-center gap-2 text-blue-600">
+                  <div className="flex items-center gap-2 text-muted-foreground">
                     <Info className="h-5 w-5" />
-                    <p className="text-gray-700 font-medium">{emptyMessage || 'No courses available.'}</p>
+                    <p className="text-foreground font-medium">{emptyMessage || 'No courses available.'}</p>
                   </div>
                   <Button onClick={onOpenProfile} className="flex items-center gap-2">
                     <User className="h-4 w-4" />
@@ -171,7 +172,7 @@ export const QuestionBank = ({
                   </Button>
                 </div>
               ) : (
-                <p className="text-gray-500">{emptyMessage || 'No variants available for this course yet.'}</p>
+                <p className="text-muted-foreground">{emptyMessage || 'No variants available for this course yet.'}</p>
               )}
             </div>
           )}

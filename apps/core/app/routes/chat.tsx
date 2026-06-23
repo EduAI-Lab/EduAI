@@ -1,34 +1,54 @@
-import { useChat } from '@ai-sdk/react';
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { redirect, useLoaderData, useFetcher } from "react-router";
+import { useChat } from "@ai-sdk/react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link, redirect, useLoaderData, useFetcher, useSearchParams } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import { ChatWelcome } from "~/components/chat/chat-welcome";
-import { ChatMessage } from "~/components/chat/chat-message";
-import { ChatInput } from "~/components/chat/chat-input";
-import { ChatTypingIndicator } from "~/components/chat/chat-typing-indicator";
-import { ChatHeaderControls } from "~/components/chat/chat-header-controls";
-import { ApiKeySettings } from "~/components/chat/api-key-settings";
-import { useApiKeys } from "~/hooks/use-api-keys";
-import { AppSidebar } from "~/components/app-sidebar";
-import { SiteHeader } from "~/components/site-header";
-import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
+import { IconHistory, IconPencilPlus } from "@tabler/icons-react";
 
+import { AppSidebar } from "~/components/app-sidebar";
+import { ChatCourseScopedView } from "~/components/chat/chat-course-scoped-view";
+import { ChatHistoryPanel } from "~/components/chat/chat-history-panel";
+import { ChatTranscriptViewer } from "~/components/chat/chat-transcript-viewer";
+import type {
+  ChatCourseOption,
+  ChatModelOption,
+} from "~/components/chat/chat-view-types";
+import { fetchChatTranscript, type ChatTranscript } from "~/hooks/api/use-chat-history";
+import { useAssistiveUi } from "~/components/assistive/assistive-ui-provider";
+import { CHAT_MESSAGE_INPUT_ID } from "~/components/assistive/active-highlight";
+import { SiteHeader } from "~/components/site-header";
+import { Button, SidebarInset, SidebarProvider, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@eduai/ui";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@eduai/ui"
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@eduai/ui"
+import { fetchChatSession } from "~/hooks/api/use-chat-sessions";
+import { useCourses } from "~/hooks/api/use-courses";
+import { useAssistiveReorientation } from "~/hooks/use-assistive-reorientation";
+import { useApiKeys } from "~/hooks/use-api-keys";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
-import {
-  type ChatModelOption,
-  defaultChatModelId,
-  displayNameForRegistryId,
-  isAutoRoutingModelId,
-  withAutoChatModel,
-} from "~/lib/chat-auto-model";
-import {
-  routerAutoDefaultEnabled,
-  routingPickerEnabled,
-} from "~/lib/router-env.server";
 import { getUserPreference, saveUserPreference } from "~/lib/user-preferences.server";
 import { getAccessibleCourseCodes } from "~/lib/courses/server";
-import { parsePreferenceUpdates, resolveSelectedCourse } from "~/lib/user-preferences";
+import { parsePreferenceUpdates } from "~/lib/user-preferences";
+import { postAssistiveClientEvent } from "~/lib/assistive-events.client";
+
+/**
+ * Per-tab marker for the chat the user is actively in. Lives in sessionStorage
+ * so it survives navigating away and back within the same tab (temporary leave)
+ * but clears when the tab closes (fresh start) — the "smart restore" heuristic.
+ */
+const ACTIVE_CHAT_KEY = "eduai:activeChatId";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request);
@@ -37,23 +57,18 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return redirect("/auth/login");
   }
 
-  const routerAutoEnabled = routerAutoDefaultEnabled();
-  const showRoutingModels = routingPickerEnabled();
-
-  // Fetch AI models from database
   const dbModels = await prisma.aIModel.findMany({
     where: { isActive: true },
     include: {
       provider: true,
     },
     orderBy: [
-      { provider: { name: 'asc' } },
-      { name: 'asc' }
-    ]
+      { provider: { name: "asc" } },
+      { name: "asc" },
+    ],
   });
 
-  // Transform database models to match our interface
-  const registryModels: ChatModelOption[] = dbModels.map((model: any) => ({
+  const chatModels: ChatModelOption[] = dbModels.map((model) => ({
     id: `${model.provider.name}:${model.modelId}`,
     name: model.name,
     description: model.description,
@@ -63,28 +78,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
     supportsTools: model.supportsTools,
   }));
 
-  const chatModels = withAutoChatModel(registryModels, showRoutingModels);
-
-  // Validate the persisted course against the courses THIS user can actually
-  // access, so a stale / now-inaccessible `lastCourseCode` is dropped on restore
-  // rather than treated as valid just because the course still exists (#420 review).
   const availableCourseCodes = await getAccessibleCourseCodes(session.user);
   const preferences = await getUserPreference(session.user.id, availableCourseCodes);
 
   return {
     chatModels,
-    routerAutoEnabled,
-    showRoutingModels,
     user: session.user,
     ...preferences,
   };
 }
 
-/**
- * Persists the per-user chat preferences written from this route (Assistive-mode
- * default + last selected course). Accepts any subset of
- * { assistDefault?: boolean, lastCourseCode?: string | null }.
- */
 export async function action({ request }: ActionFunctionArgs) {
   const session = await auth.api.getSession(request);
   if (!session?.user) {
@@ -106,45 +109,62 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function Chat() {
-  const { chatModels, routerAutoEnabled, user, assistDefault, lastCourseCode } =
-    useLoaderData<typeof loader>();
-  const [selectedModel, setSelectedModel] = useState(() =>
-    defaultChatModelId(chatModels, routerAutoEnabled),
+  const { chatModels, user, assistDefault, lastCourseCode } = useLoaderData<typeof loader>();
+  const { assistive, setAssistive } = useAssistiveUi();
+  const { courses } = useCourses();
+  // Every chat is course-scoped now (global/no-course chat was removed). The
+  // course list is already RBAC-filtered: ADMIN sees all courses, UNIT_ADMIN
+  // sees courses in their authorized units, others see their enrollments.
+  const availableCourses: ChatCourseOption[] = courses.map((c) => ({
+    id: c.id,
+    name: c.name,
+    code: c.code,
+  }));
+
+  const isStudentWithCourseChat = user.role === 'STUDENT';
+  const hasNoCourses = availableCourses.length === 0;
+  const disabledReason = hasNoCourses ? 'no-courses' : undefined;
+  const [selectedModel, setSelectedModel] = useState(
+    chatModels.length > 0 ? chatModels[0].id : "",
   );
-  const [selectedCourseCode, setSelectedCourseCode] = useState<string | null>(lastCourseCode);
-  const [availableCourses, setAvailableCourses] = useState<Array<{ id: string; name: string; code: string }>>([]);
+  const [selectedCourseCode, setSelectedCourseCode] = useState<string | null>(
+    lastCourseCode ?? null,
+  );
   const [chatId, setChatId] = useState<string | null>(null);
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
-  const [adhdAssist, setAdhdAssist] = useState(assistDefault);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  /** Registry ids from `X-Routed-Model`, keyed by assistant message id after each turn. */
-  const [routedModelByMessageId, setRoutedModelByMessageId] = useState<
-    Record<string, string>
-  >({});
-  /** Latest streamed response registry id (shown on the in-flight assistant bubble). */
-  const [streamingRoutedRegistryId, setStreamingRoutedRegistryId] = useState<
-    string | null
-  >(null);
-  const pendingRoutedRegistryIdRef = useRef<string | null>(null);
-  const { apiKeys, getValidApiKeys, updateProviderSettings, removeProviderSettings, isProviderConfigured } = useApiKeys();
+  const [adhdAssist, setAdhdAssist] = useState(assistDefault ?? assistive);
+  const [readOnlyTranscript, setReadOnlyTranscript] = useState<ChatTranscript | null>(null);
+  const [focusMode, setFocusMode] = useState(false);
+  const [reorientationEpoch, setReorientationEpoch] = useState(0);
+  const [webToolsEnabled, setWebToolsEnabled] = useState(false);
+  const wasLoadingRef = useRef(false);
+  const mountTimeRef = useRef(Date.now());
+  const { getValidApiKeys } = useApiKeys();
   const prefsFetcher = useFetcher();
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  // Guards the one-shot auto-restore so it never re-fires on later renders.
+  const restoreAttempted = useRef(false);
+  // One-shot flag so ?courseCode= param is only applied on mount.
+  const courseParamApplied = useRef(false);
 
   const persistPreference = useCallback(
     (updates: { assistDefault?: boolean; lastCourseCode?: string | null }) => {
-      prefsFetcher.submit(updates, {
-        method: "post",
-        encType: "application/json",
-      });
+      prefsFetcher.submit(updates, { method: "post", encType: "application/json" });
     },
     [prefsFetcher],
   );
 
-  const handleAssistChange = useCallback(
+  const handleAssistiveChange = useCallback(
     (checked: boolean) => {
       setAdhdAssist(checked);
-      persistPreference({ assistDefault: checked });
+      if (!checked) {
+        setFocusMode(false);
+      }
+      // setAssistive already persists via PATCH /api/preferences — no extra submit needed.
+      setAssistive(checked);
     },
-    [persistPreference],
+    [setAssistive],
   );
 
   const handleCourseChange = useCallback(
@@ -155,139 +175,225 @@ export default function Chat() {
     [persistPreference],
   );
 
-  const chatOptsRef = useRef({
-    selectedModel,
-    selectedCourseCode,
-    chatId,
-    systemPrompt,
-    adhdAssist,
-    getValidApiKeys,
-  });
-
   useEffect(() => {
-    chatOptsRef.current = {
-      selectedModel,
-      selectedCourseCode,
-      chatId,
-      systemPrompt,
-      adhdAssist,
-      getValidApiKeys,
-    };
-  }, [selectedModel, selectedCourseCode, chatId, systemPrompt, adhdAssist, getValidApiKeys]);
-
-  const buildChatRequestBody = useCallback(
-    () => ({
-      model: chatOptsRef.current.selectedModel,
-      apiKeys: chatOptsRef.current.getValidApiKeys(),
-      courseCode: chatOptsRef.current.selectedCourseCode || undefined,
-      chatId: chatOptsRef.current.chatId || undefined,
-      systemPrompt: chatOptsRef.current.systemPrompt || undefined,
-      adhdAssist: chatOptsRef.current.adhdAssist,
-    }),
-    [],
-  );
-
-  const chatBody = useMemo(
-    () => buildChatRequestBody(),
-    [buildChatRequestBody, selectedModel, selectedCourseCode, chatId, systemPrompt, adhdAssist, apiKeys],
-  );
-
-  const { messages, input, handleInputChange, handleSubmit: useChatHandleSubmit, isLoading, stop } = useChat({
-    api: "/api/chat",
-    body: chatBody,
-    experimental_prepareRequestBody: ({ id, messages, requestData, requestBody }) => ({
-      id,
-      messages,
-      data: requestData,
-      ...buildChatRequestBody(),
-      ...requestBody,
-    }),
-    onResponse: async (response) => {
-      if (!response.ok) {
-        const text = await response.clone().text().catch(() => "");
-        console.error("[chat] request failed", response.status, text);
-      }
-
-      const routedHeader = response.headers.get("X-Routed-Model")?.trim();
-      const routed =
-        routedHeader && routedHeader.length > 0 ? routedHeader : null;
-      pendingRoutedRegistryIdRef.current = routed;
-      setStreamingRoutedRegistryId(routed);
-
-      const chatIdHeader = response.headers.get("X-Chat-Id");
-      if (chatIdHeader && !chatId) {
-        setChatId(chatIdHeader);
-      }
-    },
-    onFinish: (message) => {
-      const routed = pendingRoutedRegistryIdRef.current;
-      if (message.role === "assistant" && routed) {
-        setRoutedModelByMessageId((prev) => ({ ...prev, [message.id]: routed }));
-      }
-      pendingRoutedRegistryIdRef.current = null;
-      setStreamingRoutedRegistryId(null);
-    },
-    onError: (error) => {
-      console.error("[chat] stream error", error);
-      pendingRoutedRegistryIdRef.current = null;
-      setStreamingRoutedRegistryId(null);
-    },
-  });
-
-  const handleSubmit = useCallback(
-    (event: React.FormEvent<HTMLFormElement>) => {
-      useChatHandleSubmit(event, { body: buildChatRequestBody() });
-    },
-    [useChatHandleSubmit, buildChatRequestBody],
-  );
-
-  // Fetch available courses
-  useEffect(() => {
-    const fetchCourses = async () => {
-      try {
-        const response = await fetch('/api/courses');
-        const data = await response.json();
-        const courses: Array<{ id: string; name: string; code: string }> = data.courses || [];
-        const courseCodes = courses.map((c) => c.code);
-        setAvailableCourses(courses);
-        setSelectedCourseCode((current) => {
-          const resolved = resolveSelectedCourse(current, courseCodes);
-          if (current && resolved === null) {
-            persistPreference({ lastCourseCode: null });
-          }
-          return resolved;
-        });
-      } catch (error) {
-        console.error('Failed to fetch courses:', error);
-      }
-    };
-    fetchCourses();
-  }, [persistPreference]);
-
-  // Load system prompt when chatId is set
-  useEffect(() => {
-    if (chatId && !systemPrompt) {
-      fetch(`/api/chats/${chatId}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.systemPrompt) {
-            setSystemPrompt(data.systemPrompt);
-          }
-          setAdhdAssist(Boolean(data.adhdAssist));
-        })
-        .catch(console.error);
+    const el = document.documentElement;
+    if (assistive && focusMode) {
+      el.setAttribute("data-assistive-focus-mode", "true");
+    } else {
+      el.removeAttribute("data-assistive-focus-mode");
     }
-  }, [chatId, systemPrompt]);
+    return () => el.removeAttribute("data-assistive-focus-mode");
+  }, [assistive, focusMode]);
 
-  const selectedModelInfo = chatModels.find((model: any) => model.id === selectedModel);
+  useAssistiveReorientation({
+    enabled: assistive && reorientationEpoch > 0,
+    adhdAssist,
+    chatId,
+    epoch: reorientationEpoch,
+  });
+
+  // Apply ?courseCode= deep-link param once on mount, then strip it from URL.
+  useEffect(() => {
+    if (courseParamApplied.current) return;
+    const code = searchParams.get("courseCode");
+    if (!code) return;
+    courseParamApplied.current = true;
+    setSelectedCourseCode(code);
+    const next = new URLSearchParams(searchParams);
+    next.delete("courseCode");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
+
+  // Default to a course so chat always has context (no "no course" option). Picks
+  // the first available course unless a valid one is already selected.
+  useEffect(() => {
+    if (availableCourses.length === 0) return;
+    const isValid =
+      selectedCourseCode !== null &&
+      availableCourses.some((c) => c.code === selectedCourseCode);
+    if (!isValid) setSelectedCourseCode(availableCourses[0].code);
+  }, [selectedCourseCode, availableCourses]);
+
+  useEffect(() => {
+    if (!chatId || systemPrompt) {
+      return;
+    }
+
+    void (async () => {
+      const session = await fetchChatSession(chatId);
+      if (!session) {
+        return;
+      }
+      if (session.systemPrompt) {
+        setSystemPrompt(session.systemPrompt);
+      }
+      setAdhdAssist(Boolean(session.adhdAssist));
+      setAssistive(Boolean(session.adhdAssist), { silent: true });
+    })();
+  }, [chatId, systemPrompt, setAssistive]);
+
+  const requestMetadata = {
+    model: selectedModel,
+    apiKeys: getValidApiKeys(),
+    courseCode: selectedCourseCode || undefined,
+    chatId: chatId || undefined,
+    systemPrompt: systemPrompt || undefined,
+    adhdAssist,
+  };
+
+  const { messages, input, handleInputChange, handleSubmit, isLoading, stop, setMessages } =
+    useChat({
+      api: "/api/chat",
+      // Persist stable client message ids to the server. Without this, AI SDK v4
+      // strips `id` from the request body, so the server stamps a fresh UUID for
+      // every user message on every turn — defeating the (chatId, messageId)
+      // dedup and re-saving the entire user history each turn (chat-history dup bug).
+      sendExtraMessageFields: true,
+      body: requestMetadata,
+      // #487: send only the latest turn to the server, not the full history.
+      // Spreads requestBody (carrying the stable message id from
+      // sendExtraMessageFields) so dedup + latest-turn-only both hold.
+      experimental_prepareRequestBody: ({ messages, requestBody }) => ({
+        ...(requestBody ?? requestMetadata),
+        messages: messages.slice(-1),
+      }),
+      onResponse: async (response) => {
+        const chatIdHeader = response.headers.get("X-Chat-Id");
+        if (chatIdHeader && !chatId) {
+          setChatId(chatIdHeader);
+        }
+        const webToolsHeader = response.headers.get("X-Web-Tools-Enabled");
+        if (webToolsHeader !== null) {
+          setWebToolsEnabled(webToolsHeader === "1");
+        }
+      },
+    });
+
+  const onSubmit = useCallback(
+    (e: React.FormEvent<HTMLFormElement>) => {
+      if (!chatId) {
+        postAssistiveClientEvent({
+          eventType: "task_initiation",
+          adhdAssist,
+          metrics: {
+            durationMs: Date.now() - mountTimeRef.current,
+            success: true,
+            clientTimestamp: new Date().toISOString(),
+          },
+        });
+      } else {
+        postAssistiveClientEvent({
+          eventType: "re_orientation",
+          chatId,
+          adhdAssist,
+          metrics: {
+            success: true,
+            clientTimestamp: new Date().toISOString(),
+          },
+        });
+      }
+      handleSubmit(e);
+    },
+    [adhdAssist, chatId, handleSubmit],
+  );
+
+  useEffect(() => {
+    const finishedLoading = wasLoadingRef.current && !isLoading;
+    wasLoadingRef.current = isLoading;
+
+    if (!assistive || !finishedLoading) return;
+
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage?.role !== "assistant") return;
+
+    setReorientationEpoch((n) => n + 1);
+    requestAnimationFrame(() => {
+      document.getElementById(CHAT_MESSAGE_INPUT_ID)?.focus();
+    });
+  }, [assistive, isLoading, messages]);
+
+  const selectedModelInfo = chatModels.find(
+    (model) => model.id === selectedModel,
+  );
+
+  // Persist the active chat per-tab so it can be restored on a temporary leave.
+  useEffect(() => {
+    if (typeof window === "undefined" || !chatId) return;
+    window.sessionStorage.setItem(ACTIVE_CHAT_KEY, chatId);
+  }, [chatId]);
+
+  const restoreChat = useCallback(
+    async (id: string): Promise<boolean> => {
+      const transcript = await fetchChatTranscript(id);
+      // Non-owner chats open read-only; never hydrate them into the live composer.
+      if (!transcript) {
+        window.sessionStorage.removeItem(ACTIVE_CHAT_KEY);
+        return false;
+      }
+      if (!transcript.canEdit) {
+        window.sessionStorage.removeItem(ACTIVE_CHAT_KEY);
+        setReadOnlyTranscript(transcript);
+        return false;
+      }
+      setChatId(id);
+      setMessages(transcript.messages as never);
+      setSystemPrompt(transcript.chat.systemPrompt ?? null);
+      setAdhdAssist(Boolean(transcript.chat.adhdAssist));
+      setAssistive(Boolean(transcript.chat.adhdAssist));
+      if (transcript.chat.courseCode) {
+        setSelectedCourseCode(transcript.chat.courseCode);
+      }
+      window.sessionStorage.setItem(ACTIVE_CHAT_KEY, id);
+      return true;
+    },
+    [setMessages, setAssistive],
+  );
+
+  // Smart auto-restore on mount: an explicit ?chatId deep link wins; otherwise
+  // the per-tab marker means the user only briefly left — resume that chat. A
+  // fresh tab has no marker, so it starts clean.
+  useEffect(() => {
+    if (restoreAttempted.current || typeof window === "undefined") return;
+    restoreAttempted.current = true;
+
+    const deepLinkId = searchParams.get("chatId");
+    const sessionId = window.sessionStorage.getItem(ACTIVE_CHAT_KEY);
+    const target = deepLinkId || sessionId;
+    if (!target) return;
+
+    void (async () => {
+      const ok = await restoreChat(target);
+      if (ok && deepLinkId) {
+        searchParams.delete("chatId");
+        setSearchParams(searchParams, { replace: true });
+      }
+    })();
+  }, [restoreChat, searchParams, setSearchParams]);
+
+  const handleSelectChat = useCallback(
+    async (id: string) => {
+      await restoreChat(id);
+      setHistoryOpen(false);
+    },
+    [restoreChat],
+  );
+
+  const handleNewChat = useCallback(() => {
+    setChatId(null);
+    setMessages([]);
+    setSystemPrompt(null);
+    if (typeof window !== "undefined") {
+      window.sessionStorage.removeItem(ACTIVE_CHAT_KEY);
+    }
+  }, [setMessages]);
 
   const handleSystemPromptSave = async (prompt: string | null) => {
     setSystemPrompt(prompt);
 
     try {
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           chatId: chatId || undefined,
           systemPrompt: prompt,
@@ -304,27 +410,52 @@ export default function Chat() {
         setChatId(data.chatId);
       }
     } catch (error) {
-      console.error('Failed to save system prompt:', error);
+      console.error("Failed to save system prompt:", error);
     }
   };
 
   const handlePromptSelect = (prompt: string) => {
-    // Create proper synthetic events
     const inputEvent = {
       target: { value: prompt },
-      currentTarget: { value: prompt }
+      currentTarget: { value: prompt },
     } as React.ChangeEvent<HTMLInputElement>;
 
     handleInputChange(inputEvent);
 
-    // Use requestAnimationFrame for better timing
     requestAnimationFrame(() => {
       const formEvent = {
         preventDefault: () => {},
-        currentTarget: {} as HTMLFormElement
+        currentTarget: {} as HTMLFormElement,
       } as React.FormEvent<HTMLFormElement>;
-      handleSubmit(formEvent);
+      onSubmit(formEvent);
     });
+  };
+
+  const sharedViewProps = {
+    chatModels,
+    selectedModel,
+    setSelectedModel,
+    selectedModelInfo,
+    selectedCourseCode,
+    setSelectedCourseCode: handleCourseChange,
+    availableCourses,
+    messages,
+    input,
+    isLoading,
+    adhdAssist,
+    assistive,
+    onAssistiveChange: handleAssistiveChange,
+    focusMode,
+    onFocusModeChange: setFocusMode,
+    systemPrompt,
+    onSystemPromptSave: handleSystemPromptSave,
+    webToolsEnabled,
+    onInputChange: handleInputChange,
+    onSubmit,
+    onStop: stop,
+    onSelectPrompt: handlePromptSelect,
+    isStudentWithCourseChat,
+    disabledReason,
   };
 
   return (
@@ -332,93 +463,89 @@ export default function Chat() {
       style={
         {
           "--sidebar-width": "calc(var(--spacing) * 72)",
-          "--header-height": "calc(var(--spacing) * 14)",
+          "--header-height": "calc(var(--spacing) * 12)",
         } as React.CSSProperties
       }
     >
-      <AppSidebar variant="inset" user={user} />
+      <AppSidebar user={user} />
       <SidebarInset>
         <SiteHeader
-          title="Chat"
+          breadcrumbs={
+            <Breadcrumb>
+              <BreadcrumbList>
+                <BreadcrumbItem>
+                  <BreadcrumbLink asChild><Link to="/dashboard">Home</Link></BreadcrumbLink>
+                </BreadcrumbItem>
+                <BreadcrumbSeparator />
+                <BreadcrumbItem>
+                  <BreadcrumbPage>Chat</BreadcrumbPage>
+                </BreadcrumbItem>
+              </BreadcrumbList>
+            </Breadcrumb>
+          }
+          leadingActions={
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleNewChat}
+              aria-label="Start a new chat"
+            >
+              <IconPencilPlus className="h-4 w-4 sm:mr-1.5" />
+              <span className="hidden sm:inline">New chat</span>
+            </Button>
+          }
           actions={
-            <ChatHeaderControls
-              adhdAssist={adhdAssist}
-              onAdhdAssistChange={handleAssistChange}
-              systemPrompt={systemPrompt}
-              onSystemPromptSave={handleSystemPromptSave}
-            />
+            <TooltipProvider delayDuration={300}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setHistoryOpen((prev) => !prev)}
+                    aria-label="Open chat history"
+                    className="h-8 w-8"
+                  >
+                    <IconHistory className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Chat history</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           }
         />
-        <div className="flex flex-col h-[calc(100vh-var(--header-height))] bg-gradient-to-br from-background via-background to-muted/20">
-          {/* Main content area */}
-          <div className="flex-1 flex flex-col min-h-0 relative">
-            <div className="h-full overflow-y-auto scrollbar-hover">
-              <div className="px-4 py-6">
-                <div className="max-w-4xl mx-auto space-y-6">
-                  {messages.length === 0 ? (
-                    <ChatWelcome
-                      selectedModelInfo={selectedModelInfo}
-                      onSelectPrompt={handlePromptSelect}
-                    />
-                  ) : (
-                    <>
-                      {messages.map((message, index) => {
-                        const isLastMessage = index === messages.length - 1;
-                        const isStreamingMessage = isLastMessage && isLoading;
-
-                        const routedRegistryId =
-                          message.role === "assistant"
-                            ? (routedModelByMessageId[message.id] ??
-                              (isStreamingMessage ? streamingRoutedRegistryId : null))
-                            : null;
-                        const answeredByLabel =
-                          isAutoRoutingModelId(selectedModel) && routedRegistryId
-                            ? displayNameForRegistryId(routedRegistryId, chatModels)
-                            : undefined;
-
-                        return (
-                          <ChatMessage
-                            key={message.id}
-                            message={message}
-                            isStreaming={isStreamingMessage}
-                            answeredByLabel={answeredByLabel}
-                          />
-                        );
-                      })}
-
-                      {isLoading && <ChatTypingIndicator />}
-                    </>
-                  )}
-                </div>
-              </div>
+        <ChatHistoryPanel
+          open={historyOpen}
+          onOpenChange={setHistoryOpen}
+          activeChatId={chatId}
+          onSelect={handleSelectChat}
+          onNewChat={handleNewChat}
+        />
+        {/* Read-only view for non-owned chats (deep links, dashboard recent chats) */}
+        <Sheet open={readOnlyTranscript !== null} onOpenChange={(open) => { if (!open) setReadOnlyTranscript(null); }}>
+          <SheetContent side="right" className="w-full sm:max-w-xl flex flex-col p-0">
+            <SheetHeader className="px-5 pt-5 pb-3 border-b border-border flex-shrink-0">
+              <SheetTitle className="text-[15px]">
+                {readOnlyTranscript?.chat.title ?? "Conversation"}
+              </SheetTitle>
+              <SheetDescription className="text-[13px]">
+                {readOnlyTranscript?.chat.ownerName
+                  ? `${readOnlyTranscript.chat.ownerName}'s conversation`
+                  : "Read-only conversation"}
+                {readOnlyTranscript?.chat.courseCode
+                  ? ` · ${readOnlyTranscript.chat.courseCode}`
+                  : null}
+              </SheetDescription>
+            </SheetHeader>
+            <div className="flex-1 overflow-y-auto px-5 py-4">
+              <ChatTranscriptViewer
+                messages={readOnlyTranscript?.messages ?? []}
+                ownerName={readOnlyTranscript?.chat.ownerName}
+                courseCode={readOnlyTranscript?.chat.courseCode}
+              />
             </div>
-          </div>
-
-          {/* Sticky input at bottom with integrated selectors */}
-          <ChatInput
-            input={input}
-            isLoading={isLoading}
-            onInputChange={handleInputChange}
-            onSubmit={handleSubmit}
-            onStop={stop}
-            onOpenSettings={() => setSettingsOpen(true)}
-            selectedCourseId={selectedCourseCode}
-            setSelectedCourseId={handleCourseChange}
-            availableCourses={availableCourses}
-            selectedModel={selectedModel}
-            setSelectedModel={setSelectedModel}
-            chatModels={chatModels}
-            selectedModelInfo={selectedModelInfo}
-          />
-          <ApiKeySettings
-            open={settingsOpen}
-            onOpenChange={setSettingsOpen}
-            apiKeys={apiKeys}
-            isProviderConfigured={isProviderConfigured}
-            onUpdateProvider={updateProviderSettings}
-            onRemoveProvider={removeProviderSettings}
-          />
-        </div>
+          </SheetContent>
+        </Sheet>
+        <ChatCourseScopedView {...sharedViewProps} />
       </SidebarInset>
     </SidebarProvider>
   );

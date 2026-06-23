@@ -3,7 +3,9 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOllama } from "ollama-ai-provider";
 import prisma from "../prisma.server";
+import { getCourseRagSettings } from "../courses/server";
 import { randomUUID } from "crypto";
+import { SEMANTIC_CHUNK_SEPARATOR } from "./file-processing";
 import {
   type EffectiveEmbeddingSettings,
   DEFAULT_OLLAMA_EMBEDDING_MODEL,
@@ -14,15 +16,18 @@ import {
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
+/** Provider hard limit (e.g. Google Gemini embedMany — "At most 100 requests per batch"). */
+const CLOUD_EMBED_MANY_MAX_BATCH_SIZE = 100;
+
 /** pgvector column dimension — must match LOCAL-EMBEDDINGS and `EMBEDDING_DIMENSION`. */
 export const DEFAULT_EMBEDDING_DIMENSION = 1024;
 
 /** Cloud Gemini default (legacy 3072 path — only if EMBEDDING_DIMENSION=3072). */
 const DEFAULT_OPENROUTER_GEMINI_MODEL = "google/gemini-embedding-001";
 
-/** Max inputs per `embedMany` batch for cloud providers. */
+/** Max inputs per `embedMany` batch for cloud providers (env override, capped at provider limit). */
 const CLOUD_EMBED_MANY_BATCH_SIZE = Math.min(
-  128,
+  CLOUD_EMBED_MANY_MAX_BATCH_SIZE,
   Math.max(8, Number(process.env.EMBED_MANY_BATCH_SIZE) || 64),
 );
 
@@ -394,6 +399,22 @@ function getLocalEmbeddingModel(
   return { model: ollama.embedding(modelId), kind: "ollama-local" };
 }
 
+/** Resolve ingest chunks: preserve upload-path semantic chunks or fall back to sentence splitting. */
+export function resolveMaterialChunks(
+  content: string,
+  maxChunkSize: number = 800,
+  overlap: number = 80,
+): string[] {
+  if (content.includes(SEMANTIC_CHUNK_SEPARATOR)) {
+    return content
+      .split(SEMANTIC_CHUNK_SEPARATOR)
+      .map((chunk) => chunk.trim())
+      .filter((chunk) => chunk.length > 0);
+  }
+
+  return generateChunks(content, maxChunkSize, overlap);
+}
+
 /**
  * Cloud embedding model for the configured dimension.
  * Resolution: OpenRouter → Google (3072 only) → OpenAI.
@@ -566,7 +587,13 @@ export async function generateEmbedding(query: string, courseId?: string): Promi
 
 /**
  * Find relevant content using cosine similarity search.
- * `similarityThreshold` defaults from env `RAG_SIMILARITY_THRESHOLD` (0–1) when omitted.
+ *
+ * Resolution order for each tunable:
+ *   1. Course-level setting (`ragTopK` / `ragSimilarityThreshold` on the Course row) — wins when non-null.
+ *   2. Caller-supplied `limit` / `similarityThreshold` arguments.
+ *   3. Global env default (`RAG_SIMILARITY_THRESHOLD`, falls back to 0.5).
+ *
+ * This lets individual courses be tuned independently without touching global config.
  */
 export async function findRelevantContent(
   userQuery: string,
@@ -574,7 +601,12 @@ export async function findRelevantContent(
   limit: number = 6,
   similarityThreshold?: number,
 ): Promise<Array<{ content: string; similarity: number; materialTitle: string }>> {
-  const threshold = similarityThreshold ?? getDefaultRagSimilarityThreshold();
+  // Fetch per-course RAG overrides; both fields are nullable — null means "use default".
+  const courseSettings = await getCourseRagSettings(courseId);
+  const effectiveLimit = courseSettings?.ragTopK ?? limit;
+  const threshold =
+    courseSettings?.ragSimilarityThreshold ?? similarityThreshold ?? getDefaultRagSimilarityThreshold();
+
   const queryEmbedding = await generateEmbedding(userQuery, courseId);
 
   const results = await prisma.$queryRaw<
@@ -592,9 +624,10 @@ export async function findRelevantContent(
     JOIN material_chunks mc ON me."chunkId" = mc.id
     JOIN course_materials cm ON mc."materialId" = cm.id
     WHERE cm."courseId" = ${courseId}
+      AND cm."deletedAt" IS NULL
       AND 1 - (me.embedding <=> ${queryEmbedding}::vector) > ${threshold}
     ORDER BY similarity DESC
-    LIMIT ${Number(limit)}
+    LIMIT ${Number(effectiveLimit)}
   `;
 
   return results.map((result) => ({
@@ -647,7 +680,7 @@ export async function reEmbedCourseMaterials(
   total: number;
 }> {
   const materials = await prisma.courseMaterial.findMany({
-    where: { courseId, rawText: { not: null } },
+    where: { courseId, deletedAt: null, rawText: { not: null } },
     select: { id: true, rawText: true, title: true },
   });
 
@@ -730,7 +763,7 @@ export async function processMaterialEmbeddings(
 
   const settings = await loadEffectiveEmbeddingSettings(material.courseId);
   const { maxChunkSize, overlap } = resolveChunkParams(settings.wantsLocal);
-  const chunks = generateChunks(content, maxChunkSize, overlap);
+  const chunks = resolveMaterialChunks(content, maxChunkSize, overlap);
 
   if (chunks.length === 0) {
     throw new Error("No content chunks generated");
@@ -743,17 +776,16 @@ export async function processMaterialEmbeddings(
       await tx.materialChunk.deleteMany({ where: { materialId } });
     }
 
-    for (let i = 0; i < chunks.length; i++) {
-      const createdChunk = await tx.materialChunk.create({
-        data: {
-          materialId,
-          index: i,
-          content: chunks[i],
-        },
-      });
+    const createdChunks = await tx.materialChunk.createManyAndReturn({
+      data: chunks.map((chunkContent, i) => ({ materialId, index: i, content: chunkContent })),
+    });
+
+    const chunksByIndex = [...createdChunks].sort((a, b) => a.index - b.index);
+
+    for (let i = 0; i < chunksByIndex.length; i++) {
       await tx.$executeRaw`
         INSERT INTO material_embeddings (id, "chunkId", embedding, "createdAt")
-        VALUES (${randomUUID()}, ${createdChunk.id}, ${embeddings[i].embedding}::vector, NOW())
+        VALUES (${randomUUID()}, ${chunksByIndex[i].id}, ${embeddings[i].embedding}::vector, NOW())
       `;
     }
   });

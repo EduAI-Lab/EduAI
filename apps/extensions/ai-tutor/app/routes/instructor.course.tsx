@@ -20,28 +20,30 @@
  */
 import type { FormEvent } from 'react';
 import { useOptimistic, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router';
-import Nav from '../components/Nav';
-import {
-  Breadcrumb,
-  BreadcrumbList,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from '../components/ui/breadcrumb';
+import { useNavigate, useParams } from 'react-router';
+import { PageHeading } from '@eduai/ui';
 import { PublishStatusButton } from '../components/PublishStatusButton';
 import api from '../lib/api';
 import type { Course, Module } from '../lib/types';
 import type { Route } from './+types/instructor.course';
 import { requireClientUser } from '~/lib/client-auth';
+import { useLocalUser } from '../hooks/useLocalUser';
+import { useAtPermissions } from '../hooks/useAtPermissions';
+import { CourseAnalyticsPanel } from '../components/courses/CourseAnalyticsPanel';
+import { CourseEnrollmentsPanel } from '../components/courses/CourseEnrollmentsPanel';
+import { CourseStudentMetricsPanel } from '../components/courses/CourseStudentMetricsPanel';
+import { CourseSubmissionsPanel } from '../components/courses/CourseSubmissionsPanel';
+import { PermissionGate } from '../components/rbac/PermissionGate';
+import { getCourseDetailTabs } from '~/lib/rbac/nav';
+import { AppShell } from '~/components/layout/AppShell';
+import { ShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbs';
 
 /**
  * Loads the course header and its modules in parallel. Throws a 400 Response
  * if the route param isn't numeric so the router renders the error boundary.
  */
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
-  await requireClientUser('INSTRUCTOR');
+  await requireClientUser(['INSTRUCTOR', 'UNIT_ADMIN', 'TA']);
   const courseId = Number(params.courseId);
   if (!Number.isFinite(courseId)) {
     throw new Response('Invalid course id', { status: 400 });
@@ -64,6 +66,10 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
   const navigate = useNavigate();
   const { courseId } = useParams();
   const numericCourseId = courseId ? Number(courseId) : null;
+  const { user } = useLocalUser();
+  const perms = useAtPermissions();
+  const tabs = getCourseDetailTabs(user ? { id: user.id, role: user.role, authorizedUnits: user.authorizedUnits } : null);
+  const [activeTab, setActiveTab] = useState<(typeof tabs)[number]['id']>('content');
   const { course, modules: initialModules } = loaderData;
   const [modules, setModules] = useState<Module[]>(initialModules);
   const [title, setTitle] = useState('');
@@ -218,26 +224,58 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
   };
 
   return (
-    <div className="min-h-dvh bg-background">
-      <Nav />
-      <div className="container mx-auto px-4 py-8 space-y-6">
-        <Breadcrumb className="mb-6">
-          <BreadcrumbList>
-            <BreadcrumbItem>
-              <BreadcrumbLink asChild>
-                <Link to="/instructor">Teaching</Link>
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator>/</BreadcrumbSeparator>
-            <BreadcrumbItem>
-              <BreadcrumbPage>{course?.title || 'Course'}</BreadcrumbPage>
-            </BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
-        <div className="flex items-center justify-between">
-          <h2 className="font-display text-2xl font-semibold text-foreground">Modules</h2>
-          <div className="flex items-center gap-2">
+    <AppShell
+      breadcrumbs={
+        <ShellBreadcrumbs
+          items={[
+            { label: 'Teaching', href: '/instructor' },
+            { label: course?.title || 'Course' },
+          ]}
+        />
+      }
+    >
+      <div className="space-y-6">
+        <PageHeading heading={course?.title || 'Course'} subheading="Course content and analytics" />
+
+        <div className="flex flex-wrap gap-2">
+          {tabs.map((tab) => (
             <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={activeTab === tab.id ? 'btn-primary' : 'btn-secondary'}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {activeTab === 'enrollments' && numericCourseId ? (
+          <CourseEnrollmentsPanel
+            courseId={numericCourseId}
+            canManage={perms.canManageEnrollments}
+            canAssignTa={perms.canAssignTaRole}
+          />
+        ) : null}
+
+        {activeTab === 'submissions' && numericCourseId ? (
+          <CourseSubmissionsPanel courseId={numericCourseId} />
+        ) : null}
+
+        {activeTab === 'analytics' && numericCourseId ? (
+          <div className="space-y-6">
+            <CourseStudentMetricsPanel courseId={numericCourseId} />
+            <CourseAnalyticsPanel courseId={numericCourseId} />
+          </div>
+        ) : null}
+
+        {activeTab === 'content' ? (
+          <>
+        <div className="flex items-center justify-between">
+          <h2 className="text-2xl font-semibold text-foreground">Modules</h2>
+          <PermissionGate allow={perms.canManageContent}>
+            <div className="flex items-center gap-2">
+              <button
               onClick={() => {
                 if (!showImport) {
                   ensureSourceCoursesLoaded();
@@ -250,11 +288,13 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
             >
               {showImport ? 'Close' : 'Import'}
             </button>
-          </div>
+            </div>
+          </PermissionGate>
         </div>
 
+        <PermissionGate allow={perms.canManageContent}>
         {showImport && (
-          <div className="card-editorial p-5 space-y-4">
+          <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-5 space-y-4">
             <div>
               <label className="block text-sm font-semibold mb-1 text-foreground">
                 Choose course to copy
@@ -335,7 +375,9 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
             )}
           </div>
         )}
+        </PermissionGate>
 
+        <PermissionGate allow={perms.canManageContent}>
         <form onSubmit={onCreateModule} className="flex gap-3">
           <input
             value={title}
@@ -347,6 +389,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
             {creating ? 'Adding…' : 'Add Module'}
           </button>
         </form>
+        </PermissionGate>
 
         {oModules.length === 0 ? (
           <div className="text-muted-foreground">No modules yet.</div>
@@ -362,7 +405,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
               return (
                 <div
                   key={m.id}
-                  className="card-editorial p-5 hover:shadow-lg transition group cursor-pointer flex flex-col h-full animate-fade-up"
+                  className="rounded-lg border bg-card text-card-foreground shadow-sm p-5 hover:shadow-lg transition group cursor-pointer flex flex-col h-full animate-fade-up"
                   style={{ animationDelay: `${idx * 50}ms` }}
                   onClick={() => navigate(`/instructor/module/${m.id}`)}
                   role="button"
@@ -375,7 +418,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                   }}
                 >
                   <div className="flex items-start gap-3">
-                    <span className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-display font-semibold text-sm">
+                    <span className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-semibold text-sm">
                       {idx + 1}
                     </span>
                     <div className="flex-1 min-w-0">
@@ -389,27 +432,31 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                   </div>
                   <div className="flex-grow"></div>
                   <div className="mt-4 flex justify-end">
-                    <div
-                      onClick={(e) => e.stopPropagation()}
-                      onKeyDown={(e) => e.stopPropagation()}
-                    >
-                      <PublishStatusButton
-                        isPublished={m.isPublished}
-                        pending={busy}
-                        blockedReason={tooltipMessage}
-                        onClick={() => {
-                          if (busy || blocked) return;
-                          togglePublish(m.id, m.isPublished);
-                        }}
-                      />
-                    </div>
+                    <PermissionGate allow={perms.canPublishContent}>
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                      >
+                        <PublishStatusButton
+                          isPublished={m.isPublished}
+                          pending={busy}
+                          blockedReason={tooltipMessage}
+                          onClick={() => {
+                            if (busy || blocked) return;
+                            togglePublish(m.id, m.isPublished);
+                          }}
+                        />
+                      </div>
+                    </PermissionGate>
                   </div>
                 </div>
               );
             })}
           </div>
         )}
+          </>
+        ) : null}
       </div>
-    </div>
+    </AppShell>
   );
 }

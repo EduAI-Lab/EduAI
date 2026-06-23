@@ -1,4 +1,5 @@
 import { auth } from "~/lib/auth/server";
+import { resolveChatReadAccess } from "~/lib/chat-history/server";
 import prisma from "~/lib/prisma.server";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
@@ -20,26 +21,44 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       });
     }
 
-    const chat = await prisma.chat.findFirst({
-      where: { id: chatId, userId: session.user.id },
-      select: {
-        id: true,
-        systemPrompt: true,
-        title: true,
-        adhdAssist: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
+    // §5c oversight gate, shared with /api/chats/:id/messages so the two routes
+    // can never drift. Returns null for a missing chat OR an unauthorized viewer.
+    const access = await resolveChatReadAccess(
+      { id: session.user.id, role: session.user.role },
+      chatId,
+    );
 
-    if (!chat) {
+    if (!access) {
+      // No existence leak — same 404 a non-owner gets for a missing chat.
       return new Response(JSON.stringify({ error: "Chat not found" }), {
         status: 404,
         headers: { "Content-Type": "application/json" },
       });
     }
 
-    return new Response(JSON.stringify(chat), {
+    const { chat, isOwner } = access;
+
+    // Message bodies are only needed by the oversight viewer (a non-owner staff
+    // read). The owner's session-resume path (useChatSession) reads metadata
+    // only, so don't pull the full transcript on that hot path.
+    const messages = isOwner
+      ? undefined
+      : await prisma.chatMessage.findMany({
+          where: { chatId: chat.id },
+          select: { messageId: true, role: true, content: true, position: true },
+          orderBy: { position: "asc" },
+        });
+
+    const meta = {
+      id: chat.id,
+      title: chat.title,
+      systemPrompt: chat.systemPrompt,
+      adhdAssist: chat.adhdAssist,
+      createdAt: chat.createdAt,
+      updatedAt: chat.updatedAt,
+    };
+    const chatView = messages ? { ...meta, messages } : meta;
+    return new Response(JSON.stringify(chatView), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });

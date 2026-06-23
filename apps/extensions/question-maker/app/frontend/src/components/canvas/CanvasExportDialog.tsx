@@ -4,24 +4,11 @@
  */
 import { useState, useEffect } from 'react';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '../ui/dialog';
-import { Button } from '../ui/button';
-import { Label } from '../ui/label';
-import { Input } from '../ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../ui/select';
-import { useToast } from '../ui/use-toast';
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@eduai/ui';
+import { Button, Label, Input } from '@eduai/ui';
+import { useToast } from '@/components/ui/use-toast';
+import { PermissionGate } from '@/components/rbac/PermissionGate';
+import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
 import canvasService, { CanvasCourse, CanvasIntegration } from '../../services/canvasService';
 
 interface CanvasExportDialogProps {
@@ -29,6 +16,7 @@ interface CanvasExportDialogProps {
   onClose: () => void;
   assessmentId: number;
   assessmentName: string;
+  courseId?: number | null;
   onExportSuccess?: (result: { quizId: number; canvasUrl: string }) => void;
 }
 
@@ -37,9 +25,11 @@ export const CanvasExportDialog = ({
   onClose,
   assessmentId,
   assessmentName,
+  courseId = null,
   onExportSuccess
 }: CanvasExportDialogProps) => {
   const { toast } = useToast();
+  const { canManageCanvas } = useQmPermissionsForCourse(courseId);
   const [integration, setIntegration] = useState<CanvasIntegration | null>(null);
   const [courses, setCourses] = useState<CanvasCourse[]>([]);
   const [selectedCourseId, setSelectedCourseId] = useState<string>('');
@@ -174,7 +164,11 @@ export const CanvasExportDialog = ({
           </DialogDescription>
         </DialogHeader>
 
-        {showConnectForm ? (
+        {!canManageCanvas ? (
+          <p className="py-4 text-sm text-muted-foreground">
+            Canvas export is available to instructors and administrators only.
+          </p>
+        ) : showConnectForm ? (
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="canvasUrl">Canvas Instance URL</Label>

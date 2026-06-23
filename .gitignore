@@ -11,7 +11,7 @@
 CLAUDE.md
 
 # please put any notes, to-dos or personal documents you have over here instead of adding new folders to the .gitignore
-misc/
+.misc/
 
 # OS
 .DS_Store
@@ -36,10 +36,12 @@ node_modules/
 *.swo
 
 # Logs
+apps/core/logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+playwright-report/
 
 # Build outputs
 build/
@@ -62,3 +64,5 @@ apps/**/package-lock.json
 docs/research/data/runs/
 apps/core/scripts/research/research-api-keys.gemini.json
 apps/core/scripts/research/research-api-keys.openrouter.json
+
+.claude/memory
