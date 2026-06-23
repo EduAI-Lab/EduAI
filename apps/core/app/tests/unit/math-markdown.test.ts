@@ -11,8 +11,8 @@ describe("normalizeMathMarkdown", () => {
     expect(result).not.toMatch(/\$\$[\s\S]*\$\$[\s\S]*\$\$/); // no double-wrap
   });
 
-  it("merges equations split across lines with unbalanced dollars", () => {
-    const input = "$a(x^2 +$\n$\\frac{b}{a}x) = - c$";
+  it("merges fragmented dollar pairs on one line", () => {
+    const input = "$a(x^2 +$\\frac{b}{a}x) = - c$";
     const result = normalizeMathMarkdown(input);
     expect(result).toContain("$$");
     expect(result).toContain("\\frac{b}{a}");

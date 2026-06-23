@@ -134,8 +134,14 @@ function hasBareMathOutsideDelimiters(line: string): boolean {
 
 function hasFragmentedEquationMath(line: string): boolean {
   if (/\$\s*\\left\s*\(\s*\$/.test(line)) return true;
+
+  const segments = countInlineMathSegments(line);
+  if (segments >= 2 && (/=/.test(line) || MATH_COMMAND.test(line))) {
+    return true;
+  }
+
   if (!hasBareMathOutsideDelimiters(line)) return false;
-  return countInlineMathSegments(line) >= 1 || MATH_COMMAND.test(line);
+  return segments >= 1 || MATH_COMMAND.test(line);
 }
 
 function looksLikeEquationTail(text: string): boolean {
