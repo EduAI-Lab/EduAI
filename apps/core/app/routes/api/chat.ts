@@ -1,7 +1,7 @@
 import type { Prisma, User } from "@prisma/client";
 import { UserRole } from "@prisma/client";
 import { randomUUID } from "crypto";
-import { streamText, generateText, tool } from "ai";
+import { createDataStreamResponse, formatDataStreamPart, generateText, streamText, tool } from "ai";
 import {
   createAIProviderRegistry,
   listEnabledRegistryProviders,
@@ -21,9 +21,17 @@ import {
 } from "~/lib/ai/routing/telemetry";
 import { modelSupportsTools } from "~/lib/ai/providers.server";
 import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
+import {
+  auditAndMaybeRewrite,
+  buildOverseenAssistantMessagesToPersist,
+  emptyOversightAuditResult,
+  isAdhdOversightEnabled,
+} from "~/lib/ai/adhd-oversight";
+import { resolveAdhdResponseWordCap } from "~/lib/ai/adhd-metrics";
+import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
 import { needsCourseRag } from "~/lib/ai/chat-intent";
 import { findRelevantContent } from "~/lib/ai/embedding";
-import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
+import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { auth } from "~/lib/auth/server";
 import type { ActionFunctionArgs } from "react-router";
@@ -37,6 +45,7 @@ import { webSearch, fetchPage } from "~/lib/ai/tools";
 import prisma from "~/lib/prisma.server";
 import { chatApiDebug } from "~/lib/chat-api-log";
 import { clientApiKeysBodySchema, toUserProviderSettings } from "~/lib/chat-api-keys.schema";
+import { getPolicy } from "~/lib/policy.server";
 import {
   buildCappedRagContextText,
   buildRagSystemBlock,
@@ -299,6 +308,19 @@ function serializeMessage(message: GenericMessage): Prisma.JsonValue {
   }
 }
 
+function extractAssistantText(messages: unknown): string {
+  if (!Array.isArray(messages)) return "";
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const msg = messages[i];
+    if (!msg || typeof msg !== "object") continue;
+    const role = (msg as { role?: unknown }).role;
+    if (role !== "assistant") continue;
+    const text = extractMessageText(msg as GenericMessage);
+    if (text.trim()) return text;
+  }
+  return "";
+}
+
 /**
  * Maps an external `(provider, id)` pair to an EduAI user, creating the user +
  * `ExternalUser` record when needed. The canonical EduAI email stays unchanged;
@@ -402,15 +424,13 @@ async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
 export async function action({ request }: ActionFunctionArgs) {
   try {
     const apiKeyHeader = request.headers.get("x-api-key");
-    const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
-    if (apiKeyGuard) return apiKeyGuard;
-
-    const session = apiKeySession ?? (await auth.api.getSession(request));
+    let session = await auth.api.getSession(request);
+    let isServiceKeyCaller = false;
     if (!session?.user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      });
+      const serviceKeyError = await requireServiceKey(request);
+      if (serviceKeyError) return serviceKeyError;
+      isServiceKeyCaller = true;
+      session = { user: { id: "service", name: "Service", role: "ADMIN" } } as unknown as typeof session;
     }
 
     const body = await request.json();
@@ -458,7 +478,7 @@ export async function action({ request }: ActionFunctionArgs) {
       trimmedSystemPrompt = null;
     }
 
-    let actingUser = session.user;
+    let actingUser = session!.user;
     if (proxyUserPayload) {
       if (!apiKeyHeader) {
         return new Response(JSON.stringify({ error: "proxyUser requires admin API key access" }), {
@@ -502,33 +522,10 @@ export async function action({ request }: ActionFunctionArgs) {
         console.error("Failed to resolve course by code", e);
       }
     }
-    const effectiveCourseId = resolvedCourseId || courseId || null;
 
-    // §10 (#302): course-scoped chats require course access for the acting
-    // user. Students need an active enrollment AND a published course; an
-    // inactive enrollment blocks new chats but never own-history reads
-    // (GET /api/chats/:chatId is ownership-scoped and unaffected).
-    // Chats without a course context (general assistant) are not gated.
-    if (effectiveCourseId) {
-      const { course, access } = await resolveCourseAccessWithCourse(
-        actingUser,
-        effectiveCourseId,
-      );
-      if (!course) {
-        return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
-          status: 404,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      if (!access || (access.level === "student" && !course.isPublished)) {
-        return new Response(JSON.stringify({ error: "Forbidden" }), {
-          status: 403,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-    }
-
-    // Handle chat lookup and system prompt persistence
+    // Load the owned chat up front so a follow-up turn that sends a `chatId`
+    // but no `courseId`/`courseCode` can inherit the course from the persisted
+    // chat row, instead of failing COURSE_REQUIRED below (#685 review).
     let chat = null;
     if (chatId) {
       chat = await prisma.chat.findFirst({
@@ -548,6 +545,51 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     }
 
+    const requestedCourseId = resolvedCourseId || courseId || null;
+    if (chat?.courseId && requestedCourseId && requestedCourseId !== chat.courseId) {
+      return new Response(JSON.stringify({ error: "COURSE_MISMATCH" }), {
+        status: 409,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const effectiveCourseId = resolvedCourseId || courseId || chat?.courseId || null;
+
+    // #657: the global "general assistant" chat was removed ? every interactive
+    // chat is now course-scoped. Server-to-server callers may still omit a course;
+    // regular sessions may not.
+    const isApiKeyCaller = isServiceKeyCaller;
+    if (!effectiveCourseId && !isApiKeyCaller) {
+      return new Response(JSON.stringify({ error: "COURSE_REQUIRED" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // Section 10 (#302): course-scoped chats require course access for the acting
+    // user. Students need an active enrollment AND a published course; an
+    // inactive enrollment blocks new chats but never own-history reads
+    // (GET /api/chats/:chatId is ownership-scoped and unaffected).
+    if (effectiveCourseId) {
+      const { course, access } = await resolveCourseAccessWithCourse(
+        actingUser,
+        effectiveCourseId,
+      );
+      if (!course) {
+        return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (!access || (access.level === "student" && !course.isPublished)) {
+        return new Response(JSON.stringify({ error: "Forbidden" }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    // Persist any system-prompt change onto the chat loaded above.
     if (hasSystemPromptField) {
       if (chat) {
         if (chat.systemPrompt !== trimmedSystemPrompt) {
@@ -560,11 +602,19 @@ export async function action({ request }: ActionFunctionArgs) {
         chat = await prisma.chat.create({
           data: {
             userId: actingUser.id,
+            courseId: effectiveCourseId,
             systemPrompt: trimmedSystemPrompt,
             adhdAssist,
           },
         });
       }
+    }
+
+    if (chat && effectiveCourseId && chat.courseId !== effectiveCourseId && !chat.courseId) {
+      chat = await prisma.chat.update({
+        where: { id: chat.id },
+        data: { courseId: effectiveCourseId },
+      });
     }
 
     if (hasAdhdAssistField && chat && chat.adhdAssist !== adhdAssist) {
@@ -594,6 +644,7 @@ export async function action({ request }: ActionFunctionArgs) {
       chat = await prisma.chat.create({
         data: {
           userId: actingUser.id,
+          courseId: effectiveCourseId,
           systemPrompt: trimmedSystemPrompt,
           adhdAssist,
         },
@@ -879,6 +930,8 @@ export async function action({ request }: ActionFunctionArgs) {
 
     await appendMessages(normalizedIncomingMessages);
 
+    const webToolsEnabled = await getPolicy("chat.webToolsEnabled");
+
     // Define tools for RAG functionality and external web search
     const tools = {
       getInformation: tool({
@@ -911,8 +964,7 @@ export async function action({ request }: ActionFunctionArgs) {
           }
         },
       }),
-      webSearch,
-      fetchPage,
+      ...(webToolsEnabled ? { webSearch, fetchPage } : {}),
     };
 
     // Check if the model supports tool calling (research baseline may force hybrid RAG)
@@ -1093,21 +1145,63 @@ ${buildRagSystemBlock(preloadedRagContext, { toolPath: true })}`;
     streamConfig.system = composeSystemPrompt(streamConfig.system ?? "", { adhdAssist: effectiveAdhdAssist });
 
     const requestStartMs = Date.now();
+    const needsOversight = effectiveAdhdAssist && isAdhdOversightEnabled();
+    const lastUserText = extractMessageText(
+      [...trimmedMessages].reverse().find((message) => message.role === "user"),
+    );
+    const adhdWordCap = resolveAdhdResponseWordCap(lastUserText);
+
+    const logResponseCompliance = (
+      assistantText: string,
+      extras?: {
+        finishReason?: string | null;
+        promptTokens?: number;
+        completionTokens?: number;
+        oversightRewritten?: boolean;
+        oversightMethod?: "none" | "deterministic" | "llm" | "llm_failed";
+        preStructuralPass?: boolean;
+        oversightDurationMs?: number;
+        oversightPromptTokens?: number;
+        oversightCompletionTokens?: number;
+      },
+    ) => {
+      const trimmed = assistantText?.trim();
+      if (!trimmed) return;
+      void recordResponseComplianceEvent({
+        userId: actingUser.id,
+        chatId: chat.id,
+        adhdAssist: effectiveAdhdAssist,
+        assistantText: trimmed,
+        extras: {
+          model: resolvedModelId,
+          wordCap: adhdWordCap,
+          durationMs: Date.now() - requestStartMs,
+          finishReason: extras?.finishReason ?? null,
+          promptTokens: extras?.promptTokens,
+          completionTokens: extras?.completionTokens,
+          oversightRewritten: extras?.oversightRewritten,
+          oversightMethod: extras?.oversightMethod,
+          preStructuralPass: extras?.preStructuralPass,
+          oversightDurationMs: extras?.oversightDurationMs,
+          oversightPromptTokens: extras?.oversightPromptTokens,
+          oversightCompletionTokens: extras?.oversightCompletionTokens,
+        },
+      }).catch((err) => {
+        console.error("[assistive-events] response_compliance log failed", err);
+      });
+    };
 
     const finishMeta: {
       ready: boolean;
       usage?: Record<string, unknown>;
       finishReason: string;
     } = { ready: false, finishReason: "" };
-    let resolveFinishSnapshot: (() => void) | null = null;
-    const finishSnapshotReady = new Promise<void>((resolve) => {
-      resolveFinishSnapshot = resolve;
-    });
 
     chatApiDebug("Starting LLM stream", {
       model: resolvedModelId,
       routedByAuto: wasAuto,
       approach: useToolCalling ? "tool_calling" : "hybrid_rag",
+      adhdOversight: needsOversight,
       forceHybridRag,
       hybridWebTools: shouldPrefetchWebTools ?? false,
       courseRagNeeded,
@@ -1116,7 +1210,7 @@ ${buildRagSystemBlock(preloadedRagContext, { toolPath: true })}`;
 
     const providerOptions = usageProviderOptions(parsedModel.providerId);
 
-    if (!streaming && !useToolCalling) {
+    if (!streaming && !useToolCalling && !needsOversight && !effectiveAdhdAssist) {
       const genResult = await generateText({
         model: streamConfig.model,
         messages: streamConfig.messages as Parameters<typeof generateText>[0]["messages"],
@@ -1151,6 +1245,11 @@ ${buildRagSystemBlock(preloadedRagContext, { toolPath: true })}`;
       });
 
       if (genResult.text) {
+        logResponseCompliance(genResult.text, {
+          finishReason,
+          promptTokens: normalizedUsage.promptTokens ?? undefined,
+          completionTokens: normalizedUsage.completionTokens ?? undefined,
+        });
         await appendMessages([
           {
             id: randomUUID(),
@@ -1191,13 +1290,89 @@ ${buildRagSystemBlock(preloadedRagContext, { toolPath: true })}`;
     const result = await streamText({
       ...(streamConfig as Parameters<typeof streamText>[0]),
       ...(providerOptions ? { providerOptions } : {}),
-      onFinish: async ({ usage, finishReason, text }) => {
-        finishMeta.usage = usage as Record<string, unknown> | undefined;
-        finishMeta.finishReason = String(finishReason ?? "");
-        finishMeta.ready = true;
-        resolveFinishSnapshot?.();
-        const normalizedFinishUsage = coalesceTokenUsage(
-          finishMeta.usage,
+      onFinish: needsOversight
+        ? undefined
+        : async ({ usage, finishReason, text, response }) => {
+            finishMeta.usage = usage as Record<string, unknown> | undefined;
+            finishMeta.finishReason = String(finishReason ?? "");
+            finishMeta.ready = true;
+            const normalizedFinishUsage = coalesceTokenUsage(
+              finishMeta.usage,
+              usage as Record<string, unknown> | undefined,
+            );
+            await persistAiInteractionTelemetry({
+              userId: actingUser.id,
+              courseId: effectiveCourseId,
+              resolvedModelId,
+              query: lastUserMessageTextForTelemetry,
+              responseText: text ?? "",
+              usage: {
+                promptTokens: normalizedFinishUsage.promptTokens ?? undefined,
+                completionTokens: normalizedFinishUsage.completionTokens ?? undefined,
+                totalTokens: normalizedFinishUsage.totalTokens ?? undefined,
+              },
+              finishReason: finishMeta.finishReason,
+              durationMs: Date.now() - requestStartMs,
+              wasAuto,
+              routingTier,
+              routerVersion: wasAuto ? resolvedRouterVersion : null,
+              routerFeatures: routerContext,
+            });
+            const assistantTextForCompliance = text || extractAssistantText(response?.messages);
+            logResponseCompliance(assistantTextForCompliance, {
+              finishReason,
+              promptTokens: normalizedFinishUsage.promptTokens ?? undefined,
+              completionTokens: normalizedFinishUsage.completionTokens ?? undefined,
+            });
+            if (!streaming) return;
+            if (assistantTextForCompliance) {
+              await appendMessages([
+                { id: randomUUID(), role: "assistant", content: assistantTextForCompliance },
+              ]).catch((err) => {
+                console.error("[chat-api] failed to persist streaming assistant message", err);
+              });
+            }
+          },
+    });
+
+    if (needsOversight) {
+      let draft = "";
+      let finalText = "";
+      let usage: Awaited<typeof result.usage> | undefined;
+      let finishReason: Awaited<typeof result.finishReason> | undefined;
+      let sources: Awaited<typeof result.sources> | undefined;
+      let reasoning: Awaited<typeof result.reasoning> | undefined;
+      let response: Awaited<typeof result.response> | undefined;
+
+      try {
+        await result.consumeStream();
+
+        const consumed = await Promise.all([
+          result.text,
+          result.usage,
+          result.finishReason,
+          result.sources,
+          result.reasoning,
+          result.response,
+        ]);
+        const text = consumed[0];
+        usage = consumed[1];
+        finishReason = consumed[2];
+        sources = consumed[3];
+        reasoning = consumed[4];
+        response = consumed[5];
+
+        draft = (text ?? "").trim();
+        const audited = draft
+          ? await auditAndMaybeRewrite({
+              draft,
+              model: aiModel,
+              wordCap: adhdWordCap,
+            })
+          : emptyOversightAuditResult();
+
+        finalText = audited.text || draft;
+        const normalizedOversightUsage = normalizeTokenUsage(
           usage as Record<string, unknown> | undefined,
         );
         await persistAiInteractionTelemetry({
@@ -1205,21 +1380,114 @@ ${buildRagSystemBlock(preloadedRagContext, { toolPath: true })}`;
           courseId: effectiveCourseId,
           resolvedModelId,
           query: lastUserMessageTextForTelemetry,
-          responseText: text ?? "",
+          responseText: finalText,
           usage: {
-            promptTokens: normalizedFinishUsage.promptTokens ?? undefined,
-            completionTokens: normalizedFinishUsage.completionTokens ?? undefined,
-            totalTokens: normalizedFinishUsage.totalTokens ?? undefined,
+            promptTokens: normalizedOversightUsage.promptTokens ?? undefined,
+            completionTokens: normalizedOversightUsage.completionTokens ?? undefined,
+            totalTokens: normalizedOversightUsage.totalTokens ?? undefined,
           },
-          finishReason: finishMeta.finishReason,
+          finishReason: String(finishReason ?? "stop"),
           durationMs: Date.now() - requestStartMs,
           wasAuto,
           routingTier,
           routerVersion: wasAuto ? resolvedRouterVersion : null,
           routerFeatures: routerContext,
         });
-      },
-    });
+        logResponseCompliance(finalText, {
+          finishReason,
+          promptTokens: normalizedOversightUsage.promptTokens ?? undefined,
+          completionTokens: normalizedOversightUsage.completionTokens ?? undefined,
+          oversightRewritten: audited.rewritten,
+          oversightMethod: audited.method,
+          preStructuralPass: audited.beforeMetrics.structuralPass,
+          oversightDurationMs: audited.oversightDurationMs,
+          oversightPromptTokens: audited.oversightUsage?.promptTokens,
+          oversightCompletionTokens: audited.oversightUsage?.completionTokens,
+        });
+
+        const persistOverseenAssistantMessages = async (text: string) => {
+          const toPersist = buildOverseenAssistantMessagesToPersist(response?.messages, text);
+          if (toPersist.length > 0) {
+            await appendMessages(toPersist);
+          }
+        };
+
+        if (streaming) {
+          const headers: Record<string, string> = {
+            "Content-Encoding": "none",
+            "Transfer-Encoding": "chunked",
+            Connection: "keep-alive",
+            ...autoRoutingHeaders(
+              resolvedModelId,
+              routingTier,
+              wasAuto,
+              resolvedRouterVersion,
+            ),
+          };
+          if (chat?.id) {
+            headers["X-Chat-Id"] = chat.id;
+          }
+          headers["X-Web-Tools-Enabled"] = webToolsEnabled ? "1" : "0";
+
+          await persistOverseenAssistantMessages(finalText);
+
+          return createDataStreamResponse({
+            headers,
+            execute: (dataStream) => {
+              if (finalText) {
+                dataStream.write(formatDataStreamPart("text", finalText));
+              }
+              dataStream.write(
+                formatDataStreamPart("finish_message", {
+                  finishReason: finishReason ?? "stop",
+                }),
+              );
+            },
+          });
+        }
+
+        await persistOverseenAssistantMessages(finalText);
+
+        return new Response(
+          JSON.stringify({
+            content: finalText,
+            model: resolvedModelId,
+            routedModel: resolvedModelId,
+            usage: normalizedOversightUsage,
+            finishReason,
+            sources: sources || [],
+            reasoning,
+            responseId: response?.id,
+            courseCode,
+            chatId: chat?.id,
+          }),
+          {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+              ...autoRoutingHeaders(
+                resolvedModelId,
+                routingTier,
+                wasAuto,
+                resolvedRouterVersion,
+              ),
+            },
+          },
+        );
+      } catch (error) {
+        console.error("Error in ADHD oversight response:", error);
+        return new Response(
+          JSON.stringify({
+            error: "Failed to generate overseen response",
+            details: error instanceof Error ? error.message : "Unknown error",
+          }),
+          {
+            status: 500,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+    }
 
     if (streaming) {
       const headers: Record<string, string> = {
@@ -1236,11 +1504,11 @@ ${buildRagSystemBlock(preloadedRagContext, { toolPath: true })}`;
       if (chat?.id) {
         headers["X-Chat-Id"] = chat.id;
       }
+      headers["X-Web-Tools-Enabled"] = webToolsEnabled ? "1" : "0";
       return result.toDataStreamResponse({ headers });
     } else {
       try {
         await result.consumeStream();
-        await finishSnapshotReady;
 
         const [text, usage, finishReason, sources, reasoning, response] = await Promise.all([
           result.text,
@@ -1254,14 +1522,17 @@ ${buildRagSystemBlock(preloadedRagContext, { toolPath: true })}`;
         if (response?.messages?.length) {
           const assistantMessages = response.messages.filter((message) => message.role === "assistant");
           await appendMessages(assistantMessages);
-        } else if (text) {
-          await appendMessages([
-            {
-              id: randomUUID(),
-              role: "assistant",
-              content: text,
-            },
-          ]);
+        } else {
+          const assistantText = text || extractAssistantText(response?.messages);
+          if (assistantText) {
+            await appendMessages([
+              {
+                id: randomUUID(),
+                role: "assistant",
+                content: assistantText,
+              },
+            ]);
+          }
         }
 
         const rawResponse = response as
