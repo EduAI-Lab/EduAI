@@ -12,9 +12,9 @@ describe("normalizeMathMarkdown", () => {
     expect(result).toContain("E = mc^2");
   });
 
-  it("wraps bare LaTeX commands in inline delimiters", () => {
+  it("leaves bare LaTeX in prose unchanged (no equation context)", () => {
     const result = normalizeMathMarkdown("The value is \\frac{1}{2} of the total.");
-    expect(result).toContain("$\\frac{1}{2}$");
+    expect(result).toBe("The value is \\frac{1}{2} of the total.");
   });
 
   it("does not double-wrap existing inline math", () => {
@@ -70,12 +70,22 @@ describe("normalizeMathMarkdown", () => {
     expect(result).not.toContain("$\\left($");
   });
 
-  it("splits prose prefix from trailing fragmented equation", () => {
+  it("does not emit stray $$ around superscripts on a\\left lines", () => {
     const input =
-      "4. **Complete the square:** To complete the square, add inside the equation: x^2 + $\\frac{b}{a}$x + $\\left($\\frac{b}{2a}\\right$)^2 = -$\\frac{c}{a}$ + $\\left($\\frac{b}{2a}\\right$)^2";
+      "a\\left(x + \\frac{b}{2a}\\right)^2 - a\\left(\\frac{b}{2a}\\right)^2 = - c";
     const result = normalizeMathMarkdown(input);
-    expect(result).toContain("4. **Complete the square:** To complete the square, add inside the equation:");
-    expect(result).toContain("$$\n");
-    expect(result).toContain("\\frac{b}{a}");
+    expect(result).toContain("$$");
+    expect(result).toContain("\\right)^2");
+    expect(result).not.toMatch(/\$\$\^2/);
+    expect(result).not.toMatch(/\\right\)\s*\$\$/);
+  });
+
+  it("wraps step lines with trailing a\\left equations", () => {
+    const input =
+      "**Distribute a:** a\\left(x + \\frac{b}{2a}\\right)^2 - a\\left(\\frac{b}{2a}\\right)^2 = - c";
+    const result = normalizeMathMarkdown(input);
+    expect(result).toContain("**Distribute a:**");
+    expect(result).toContain("\\right)^2");
+    expect(result).not.toMatch(/\$\$\^2/);
   });
 });
