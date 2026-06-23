@@ -5,6 +5,12 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
 
+## [Week 8 — June 22–28, 2026]
+
+### Added
+
+- [core] feat: Configurable API key expiration in Settings (30d–1y or never) with status labels on the key list. Email reminders deferred to #747. (#46, @superbolt08, 2026-06-23) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
 ## [Week 7 — June 15–21, 2026]
 
 ### Added
