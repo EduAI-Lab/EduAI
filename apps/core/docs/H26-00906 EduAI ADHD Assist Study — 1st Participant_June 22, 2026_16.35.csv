@@ -1,0 +1,85 @@
+StartDate,EndDate,Status,IPAddress,Progress,Duration (in seconds),Finished,RecordedDate,ResponseId,RecipientLastName,RecipientFirstName,RecipientEmail,ExternalReference,LocationLatitude,LocationLongitude,DistributionChannel,UserLanguage,Q3_Consent,Q4_ADHD,Q8_Checkpoint,Q9_NavTimeFirst,Q10_NavTimeSecond,Q12_A_TLX_1,Q12_A_TLX_2,Q12_A_TLX_3,Q12_A_TLX_4,Q12_A_TLX_5,Q13_A_SUS_1,Q13_A_SUS_2,Q13_A_SUS_3,Q13_A_SUS_4,Q13_A_SUS_5,Q13_A_SUS_6,Q13_A_SUS_7,Q13_A_SUS_8,Q13_A_SUS_9,Q13_A_SUS_10,Q14_A_Comp1,Q15_A_Comp2,Q16_A_UX_1,Q16_A_UX_2,Q16_A_UX_3,Q16_A_UX_4,Q16_A_UX_5,Q18_B_TLX_1,Q18_B_TLX_2,Q18_B_TLX_3,Q18_B_TLX_4,Q18_B_TLX_5,Q19_B_SUS_1,Q19_B_SUS_2,Q19_B_SUS_3,Q19_B_SUS_4,Q19_B_SUS_5,Q19_B_SUS_6,Q19_B_SUS_7,Q19_B_SUS_8,Q19_B_SUS_9,Q19_B_SUS_10,Q20_B_Comp1,Q21_B_Comp2,Q22_B_UX_1,Q22_B_UX_2,Q22_B_UX_3,Q22_B_UX_4,Q22_B_UX_5,Q23_Prefer,Q24_BackOnTask,Q25_ReadScan,Q26_OpenFeedback,Q27_TechProblems,group
+Start Date,End Date,Response Type,IP Address,Progress,Duration (in seconds),Finished,Recorded Date,Response ID,Recipient Last Name,Recipient First Name,Recipient Email,External Data Reference,Location Latitude,Location Longitude,Distribution Channel,User Language,I have read the consent information and agree to participate.,Do you identify as having ADHD or related attention or learning differences?,Please confirm before continuing:,Approximately how many seconds did it take to find your chat again after the Task 4 navigation — in your FIRST mode? (Leave blank if you did not time it.),Approximately how many seconds did it take to find your chat again after the Task 4 navigation — in your SECOND mode? (Leave blank if you did not time it.),"NASA-TLX — Condition A
+Rate each dimension for the first mode you used.
+1 = Very Low / Not at all • 7 = Very High / Extremely - Mental Demand — How mentally demanding was this mode?","NASA-TLX — Condition A
+Rate each dimension for the first mode you used.
+1 = Very Low / Not at all • 7 = Very High / Extremely - Temporal Demand — How hurried or rushed did you feel?","NASA-TLX — Condition A
+Rate each dimension for the first mode you used.
+1 = Very Low / Not at all • 7 = Very High / Extremely - Effort — How hard did you have to work?","NASA-TLX — Condition A
+Rate each dimension for the first mode you used.
+1 = Very Low / Not at all • 7 = Very High / Extremely - Frustration — How insecure, discouraged, irritated, or stressed were you?","NASA-TLX — Condition A
+Rate each dimension for the first mode you used.
+1 = Very Low / Not at all • 7 = Very High / Extremely - Performance — How successful were you? (Higher = more successful)","System Usability Scale (SUS) — Condition A
+Rate this mode on each statement.
+1 = Strongly Disagree • 7 = Strongly Agree - 1. I think I would like to use this mode of EduAI frequently.","System Usability Scale (SUS) — Condition A
+Rate this mode on each statement.
+1 = Strongly Disagree • 7 = Strongly Agree - 2. I found this mode unnecessarily complex.","System Usability Scale (SUS) — Condition A
+Rate this mode on each statement.
+1 = Strongly Disagree • 7 = Strongly Agree - 3. I thought this mode was easy to use.","System Usability Scale (SUS) — Condition A
+Rate this mode on each statement.
+1 = Strongly Disagree • 7 = Strongly Agree - 4. I think I would need technical support to use this mode.","System Usability Scale (SUS) — Condition A
+Rate this mode on each statement.
+1 = Strongly Disagree • 7 = Strongly Agree - 5. I found the various functions in this mode were well integrated.","System Usability Scale (SUS) — Condition A
+Rate this mode on each statement.
+1 = Strongly Disagree • 7 = Strongly Agree - 6. I thought there was too much inconsistency in this mode.","System Usability Scale (SUS) — Condition A
+Rate this mode on each statement.
+1 = Strongly Disagree • 7 = Strongly Agree - 7. I imagine most students would learn to use this mode quickly.","System Usability Scale (SUS) — Condition A
+Rate this mode on each statement.
+1 = Strongly Disagree • 7 = Strongly Agree - 8. I found this mode very cumbersome to use.","System Usability Scale (SUS) — Condition A
+Rate this mode on each statement.
+1 = Strongly Disagree • 7 = Strongly Agree - 9. I felt very confident using this mode.","System Usability Scale (SUS) — Condition A
+Rate this mode on each statement.
+1 = Strongly Disagree • 7 = Strongly Agree - 10. I needed to learn a lot before I could get going with this mode.","Comprehension — Condition A
+I could explain the main ideas from the tutoring tasks in my own words.",I understood the gradient descent explanation I received in Condition A.,"UI/UX — Condition A
+1 = Strongly Disagree • 7 = Strongly Agree. (R) = reverse-scored. - UX1. I could find my place again quickly after leaving and returning to the chat.","UI/UX — Condition A
+1 = Strongly Disagree • 7 = Strongly Agree. (R) = reverse-scored. - UX2. The layout made it easy to scan the tutor's answers.","UI/UX — Condition A
+1 = Strongly Disagree • 7 = Strongly Agree. (R) = reverse-scored. - UX3. The interface pulled my attention away from learning. (R)","UI/UX — Condition A
+1 = Strongly Disagree • 7 = Strongly Agree. (R) = reverse-scored. - UX4. Visual clutter or busy design made it hard to focus. (R)","UI/UX — Condition A
+1 = Strongly Disagree • 7 = Strongly Agree. (R) = reverse-scored. - UX5. I felt oriented — I always knew where I was in the app.","NASA-TLX — Condition B
+Rate each dimension for the second mode you used.
+1 = Very Low / Not at all • 7 = Very High / Extremely - Mental Demand — How mentally demanding was this mode?","NASA-TLX — Condition B
+Rate each dimension for the second mode you used.
+1 = Very Low / Not at all • 7 = Very High / Extremely - Temporal Demand — How hurried or rushed did you feel?","NASA-TLX — Condition B
+Rate each dimension for the second mode you used.
+1 = Very Low / Not at all • 7 = Very High / Extremely - Effort — How hard did you have to work?","NASA-TLX — Condition B
+Rate each dimension for the second mode you used.
+1 = Very Low / Not at all • 7 = Very High / Extremely - Frustration — How insecure, discouraged, irritated, or stressed were you?","NASA-TLX — Condition B
+Rate each dimension for the second mode you used.
+1 = Very Low / Not at all • 7 = Very High / Extremely - Performance — How successful were you? (Higher = more successful)","System Usability Scale (SUS) — Condition B
+Rate this mode on each statement.
+1 = Strongly Disagree • 7 = Strongly Agree - 1. I think I would like to use this mode of EduAI frequently.","System Usability Scale (SUS) — Condition B
+Rate this mode on each statement.
+1 = Strongly Disagree • 7 = Strongly Agree - 2. I found this mode unnecessarily complex.","System Usability Scale (SUS) — Condition B
+Rate this mode on each statement.
+1 = Strongly Disagree • 7 = Strongly Agree - 3. I thought this mode was easy to use.","System Usability Scale (SUS) — Condition B
+Rate this mode on each statement.
+1 = Strongly Disagree • 7 = Strongly Agree - 4. I think I would need technical support to use this mode.","System Usability Scale (SUS) — Condition B
+Rate this mode on each statement.
+1 = Strongly Disagree • 7 = Strongly Agree - 5. I found the various functions in this mode were well integrated.","System Usability Scale (SUS) — Condition B
+Rate this mode on each statement.
+1 = Strongly Disagree • 7 = Strongly Agree - 6. I thought there was too much inconsistency in this mode.","System Usability Scale (SUS) — Condition B
+Rate this mode on each statement.
+1 = Strongly Disagree • 7 = Strongly Agree - 7. I imagine most students would learn to use this mode quickly.","System Usability Scale (SUS) — Condition B
+Rate this mode on each statement.
+1 = Strongly Disagree • 7 = Strongly Agree - 8. I found this mode very cumbersome to use.","System Usability Scale (SUS) — Condition B
+Rate this mode on each statement.
+1 = Strongly Disagree • 7 = Strongly Agree - 9. I felt very confident using this mode.","System Usability Scale (SUS) — Condition B
+Rate this mode on each statement.
+1 = Strongly Disagree • 7 = Strongly Agree - 10. I needed to learn a lot before I could get going with this mode.","Comprehension — Condition B
+I could explain the main ideas from the tutoring tasks in my own words.",I understood the gradient descent explanation I received in Condition B.,"UI/UX — Condition B
+1 = Strongly Disagree • 7 = Strongly Agree. (R) = reverse-scored. - UX1. I could find my place again quickly after leaving and returning to the chat.","UI/UX — Condition B
+1 = Strongly Disagree • 7 = Strongly Agree. (R) = reverse-scored. - UX2. The layout made it easy to scan the tutor's answers.","UI/UX — Condition B
+1 = Strongly Disagree • 7 = Strongly Agree. (R) = reverse-scored. - UX3. The interface pulled my attention away from learning. (R)","UI/UX — Condition B
+1 = Strongly Disagree • 7 = Strongly Agree. (R) = reverse-scored. - UX4. Visual clutter or busy design made it hard to focus. (R)","UI/UX — Condition B
+1 = Strongly Disagree • 7 = Strongly Agree. (R) = reverse-scored. - UX5. I felt oriented — I always knew where I was in the app.","ComparisonOverall, which mode did you prefer for learning?",Which mode made it easier to get back on task after a distraction or navigation (Task 4)?,Which mode felt easier to read and scan?,What helped or hurt in each mode? Please write 2–3 sentences describing your experience.,"Any technical problems? (e.g., toggle reset, lost chat, page reload issues) Optional.",group
+"{""ImportId"":""startDate"",""timeZone"":""America/Denver""}","{""ImportId"":""endDate"",""timeZone"":""America/Denver""}","{""ImportId"":""status""}","{""ImportId"":""ipAddress""}","{""ImportId"":""progress""}","{""ImportId"":""duration""}","{""ImportId"":""finished""}","{""ImportId"":""recordedDate"",""timeZone"":""America/Denver""}","{""ImportId"":""_recordId""}","{""ImportId"":""recipientLastName""}","{""ImportId"":""recipientFirstName""}","{""ImportId"":""recipientEmail""}","{""ImportId"":""externalDataReference""}","{""ImportId"":""locationLatitude""}","{""ImportId"":""locationLongitude""}","{""ImportId"":""distributionChannel""}","{""ImportId"":""userLanguage""}","{""ImportId"":""QID3""}","{""ImportId"":""QID4""}","{""ImportId"":""QID8""}","{""ImportId"":""QID9_TEXT""}","{""ImportId"":""QID10_TEXT""}","{""ImportId"":""QID12_1""}","{""ImportId"":""QID12_2""}","{""ImportId"":""QID12_3""}","{""ImportId"":""QID12_4""}","{""ImportId"":""QID12_5""}","{""ImportId"":""QID13_1""}","{""ImportId"":""QID13_2""}","{""ImportId"":""QID13_3""}","{""ImportId"":""QID13_4""}","{""ImportId"":""QID13_5""}","{""ImportId"":""QID13_6""}","{""ImportId"":""QID13_7""}","{""ImportId"":""QID13_8""}","{""ImportId"":""QID13_9""}","{""ImportId"":""QID13_10""}","{""ImportId"":""QID14""}","{""ImportId"":""QID15""}","{""ImportId"":""QID16_1""}","{""ImportId"":""QID16_2""}","{""ImportId"":""QID16_3""}","{""ImportId"":""QID16_4""}","{""ImportId"":""QID16_5""}","{""ImportId"":""QID18_1""}","{""ImportId"":""QID18_2""}","{""ImportId"":""QID18_3""}","{""ImportId"":""QID18_4""}","{""ImportId"":""QID18_5""}","{""ImportId"":""QID19_1""}","{""ImportId"":""QID19_2""}","{""ImportId"":""QID19_3""}","{""ImportId"":""QID19_4""}","{""ImportId"":""QID19_5""}","{""ImportId"":""QID19_6""}","{""ImportId"":""QID19_7""}","{""ImportId"":""QID19_8""}","{""ImportId"":""QID19_9""}","{""ImportId"":""QID19_10""}","{""ImportId"":""QID20""}","{""ImportId"":""QID21""}","{""ImportId"":""QID22_1""}","{""ImportId"":""QID22_2""}","{""ImportId"":""QID22_3""}","{""ImportId"":""QID22_4""}","{""ImportId"":""QID22_5""}","{""ImportId"":""QID23""}","{""ImportId"":""QID24""}","{""ImportId"":""QID25""}","{""ImportId"":""QID26_TEXT""}","{""ImportId"":""QID27_TEXT""}","{""ImportId"":""group""}"
+2026-06-13 15:14:44,2026-06-13 16:19:47,Survey Preview,,100,3903,True,2026-06-13 16:19:48,R_1aWFtw2Cuo6fig1,,,,,49.2292,-122.9932,preview,EN,I agree,Yes,I have completed BOTH modes on EduAI (Baseline and Assistive Mode) including all chat tasks and the navigation task in each mode.,A few seconds,,4Moderate,4Moderate,5,4Moderate,3,3,5,3,1StronglyDisagree,4Neither,5,4Neither,3,5,3,3,Somewhat,6,6,3,3,3,3,3,3,3,5,5,3,5,1StronglyDisagree,5,3,6,3,5,2,6,Yes,5,5,2,2,5,Assistive Mode On,Assistive Mode On,Assistive Mode On,"Mode B: The offer from the model itself, to incentivize the user to interact, is quite humane and also helps keep one's mind on track; hence, the back-and-forth conversation offered by the model.
+
+Mode A: Not a bad experience, albeit the lack of the ability to recall previous conversations from memory, unlike the other mode, was quite noticeable.",,A
+2026-06-16 13:22:53,2026-06-16 14:30:58,Survey Preview,,100,4085,True,2026-06-16 14:30:58,R_6QQ9vHabrRXhwek,,,,,49.9501,-119.4376,preview,EN,I agree,Yes,I have completed BOTH modes on EduAI (Baseline and Assistive Mode) including all chat tasks and the navigation task in each mode.,,,3,3,3,4Moderate,5,5,4Neither,5,2,5,5,5,4Neither,4Neither,5,4 — Neither agree nor disagree,Yes,5,5,1StronglyDisagree,1StronglyDisagree,5,3,3,3,3,6,6,3,6,2,5,5,5,3,5,3,5,Yes,6,6,1StronglyDisagree,1StronglyDisagree,5,No preference,Baseline (Assistive Mode Off),Assistive Mode On,"In the Baseline mode, I really liked the storytelling way of explaining things, I think it better retains focus and so better for understanding.
+In the Assistive mode, I liked the one sentence summary at the beginning.",Had to reload the chat once.,B
+2026-06-18 17:58:18,2026-06-18 18:49:59,Survey Preview,,100,3100,True,2026-06-18 18:50:00,R_6tbYrqJKBKTMyaX,,,,,49.9501,-119.4376,preview,EN,I agree,Yes,I have completed BOTH modes on EduAI (Baseline and Assistive Mode) including all chat tasks and the navigation task in each mode.,1 second,,1Very Low,1Very Low,1Very Low,1Very Low,7Very High,6,1StronglyDisagree,7StronglyAgree,1StronglyDisagree,7StronglyAgree,1StronglyDisagree,7StronglyAgree,1StronglyDisagree,7StronglyAgree,1StronglyDisagree,4 — Neither agree nor disagree,Somewhat,7StronglyAgree,7StronglyAgree,1StronglyDisagree,1StronglyDisagree,7StronglyAgree,1Very Low,1Very Low,1Very Low,1Very Low,7Very High,7StronglyAgree,1StronglyDisagree,7StronglyAgree,1StronglyDisagree,7StronglyAgree,1StronglyDisagree,7StronglyAgree,1StronglyDisagree,7StronglyAgree,1StronglyDisagree,7 — Strongly Agree,Yes,7StronglyAgree,7StronglyAgree,1StronglyDisagree,1StronglyDisagree,7StronglyAgree,Assistive Mode On,Assistive Mode On,Assistive Mode On,"In assistive mode, the concise and summative answers were nice however, it would be nice to have definitions still in the answer. ",None.,A
+2026-06-19 17:41:41,2026-06-19 17:55:29,Survey Preview,,100,828,True,2026-06-19 17:55:30,R_6Beop6eAiABbhzX,,,,,49.9501,-119.4376,preview,EN,I agree,Yes,I have completed BOTH modes on EduAI (Baseline and Assistive Mode) including all chat tasks and the navigation task in each mode.,"2 sec ","3 sec ",4Moderate,4Moderate,5,5,3,3,4Neither,5,4Neither,3,4Neither,4Neither,4Neither,5,3,3,Yes,5,3,4Neither,6,2,2,4Moderate,3,3,5,6,3,4Neither,2,4Neither,3,5,4Neither,6,2,5,Yes,5,5,2,3,4Neither,Assistive Mode On,Assistive Mode On,Assistive Mode On,"Accent background color, Bold Texts, short and simple sentences were a help. For the base mode, make more space between the end of each point and the beginning of the next one. ",,A
+2026-06-13 15:16:57,2026-06-13 15:21:23,IP Address,209.53.30.117,15,265,False,2026-06-20 15:21:37,R_1MFC6ewmIanWoV3,,,,,49.2292,-122.9932,anonymous,EN,I agree,Yes,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,A
+2026-06-20 18:26:02,2026-06-20 19:32:32,Survey Preview,,100,3990,True,2026-06-20 19:32:32,R_62F6naaHk7ItKgb,,,,,50.0528,-119.2858,preview,EN,I agree,Yes,I have completed BOTH modes on EduAI (Baseline and Assistive Mode) including all chat tasks and the navigation task in each mode.,,,5,4Moderate,6,5,3,2,6,3,2,4Neither,6,2,6,4Neither,4Neither,3,Somewhat,6,6,4Neither,4Neither,5,2,2,2,2,5,6,2,5,1StronglyDisagree,5,2,5,2,5,3,6,Somewhat,6,6,6,2,7StronglyAgree,Assistive Mode On,Assistive Mode On,Assistive Mode On,"Baseline mode had too much word vomit when answering questions. Assistive mode was more helpful when answering basic questions, however, it could still use some more work on clarity when explaining more complex concepts (e.g. Gradient Descent). ",,B
+2026-06-14 07:52:41,2026-06-14 07:54:34,IP Address,94.207.14.202,15,112,False,2026-06-21 07:54:37,R_95KiGoSJC6a5Hx3,,,,,25.0734,55.2979,anonymous,EN,I agree,Yes,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,B
