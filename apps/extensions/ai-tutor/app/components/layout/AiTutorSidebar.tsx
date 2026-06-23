@@ -3,7 +3,6 @@ import {
   IconBooks,
   IconExternalLink,
   IconReport,
-  IconUsers,
 } from '@tabler/icons-react';
 import type { Icon } from '@tabler/icons-react';
 import {
@@ -27,8 +26,6 @@ import TourButton from '../TourButton';
 const NAV_ICONS: Record<AtNavItemKey, Icon> = {
   'my-courses': IconBooks,
   teaching: IconBooks,
-  'admin-users': IconUsers,
-  'admin-enrollments': IconBooks,
   'admin-bug-reports': IconReport,
   enrollments: IconBooks,
   analytics: IconBooks,
