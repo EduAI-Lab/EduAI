@@ -3,6 +3,8 @@ import { marked } from "marked"
 import { memo, useId, useMemo, lazy, Suspense } from "react"
 import type { Components } from "react-markdown"
 import { CodeBlock, CodeBlockCode } from "./code-block"
+import { streamdownPlugins } from "./streamdown-config"
+import { debugStreamdownMarkdown, isMathMarkdownDebugEnabled } from "../utils/math-markdown-debug"
 
 // Lazy load Streamdown to avoid SSR issues with KaTeX CSS
 const Streamdown = lazy(() => import('streamdown').then(module => ({ default: module.Streamdown })))
@@ -15,6 +17,11 @@ export type MarkdownProps = {
 }
 
 function parseMarkdownIntoBlocks(markdown: string): string[] {
+  // Keep math in one Streamdown pass — marked.lexer splits on headings/lists and can break equations.
+  if (/(?<!\\)\$\$|(?<!\\)\$[^$\n]+\$|\\frac|\\sqrt|[a-zA-Z]\^/.test(markdown)) {
+    return [markdown];
+  }
+
   const tokens = marked.lexer(markdown)
   return tokens.map((token) => token.raw)
 }
@@ -35,6 +42,7 @@ const MemoizedMarkdownBlock = memo(
       <Suspense fallback={<div className="animate-pulse">{content}</div>}>
         <Streamdown
           parseIncompleteMarkdown={true}
+          plugins={streamdownPlugins}
           shikiTheme={["github-light", "github-dark"]}
           className="streamdown-content"
         >
@@ -57,7 +65,16 @@ function MarkdownComponent({
 }: MarkdownProps) {
   const generatedId = useId()
   const blockId = id ?? generatedId
-  const blocks = useMemo(() => parseMarkdownIntoBlocks(children), [children])
+  const blocks = useMemo(() => {
+    const parsed = parseMarkdownIntoBlocks(children);
+    if (isMathMarkdownDebugEnabled()) {
+      debugStreamdownMarkdown("parse-blocks", {
+        content: children,
+        blockCount: parsed.length,
+      });
+    }
+    return parsed;
+  }, [children])
 
   return (
     <div className={className}>

@@ -16,6 +16,8 @@ import {
   CHAT_MESSAGE_INACTIVE_CLASS,
   type MessageHighlightRole,
 } from "~/components/assistive/active-highlight";
+import { normalizeMathMarkdown } from "~/lib/ai/math-markdown";
+import { debugMathMarkdown, isMathMarkdownDebugEnabled } from "~/lib/ai/math-markdown-debug";
 import { isWebChatToolName } from "~/lib/ai/web-tool-ui";
 import { cn } from "~/lib/utils";
 
@@ -134,7 +136,16 @@ export function ChatMessage({
 
   // If no parts, fallback to message content — coerce to string regardless of DB shape
   const rawTextFromParts = textParts.map((part) => (part as any).text as string).join("\n");
-  const textContent = rawTextFromParts || coerceMessageContent(message.content);
+  const rawTextContent = rawTextFromParts || coerceMessageContent(message.content);
+  const textContent = isUser ? rawTextContent : normalizeMathMarkdown(rawTextContent);
+
+  if (!isUser && isMathMarkdownDebugEnabled() && rawTextContent !== textContent) {
+    debugMathMarkdown("chat-message", {
+      before: rawTextContent,
+      after: textContent,
+      meta: { messageId: message.id, role: message.role },
+    });
+  }
   const hasTextContent = textContent.length > 0;
 
   const highlightClass =

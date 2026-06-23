@@ -13,14 +13,12 @@ import "./app.css";
 
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
-import { getPolicy } from "~/lib/policy.server";
 import { AssistiveUiProvider } from "~/components/assistive/assistive-ui-provider";
 import { ThemeProvider } from "~/components/theme-provider";
 import { Toaster } from "@eduai/ui";
 import { UiPreferencesProvider } from "~/components/assistive/ui-preferences-provider";
 import { DEFAULT_ACCOUNT_PREFERENCES } from "~/lib/user-preferences";
 import { isUiDensity, isUiTheme } from "~/lib/ui-preferences";
-import { ThemeSyncInitializer } from "~/components/theme-sync-initializer";
 
 export const links: Route.LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -40,10 +38,6 @@ const GUEST_ROOT_PREFERENCES = {
   motionReduced: false,
   density: DEFAULT_ACCOUNT_PREFERENCES.density,
   theme: DEFAULT_ACCOUNT_PREFERENCES.theme,
-  // Whether the signed-in user may issue invitations (UNIT_ADMIN gated by the
-  // `unitAdmins.canInvite` policy). Resolved server-side and read by the sidebar
-  // so the Invitations link doesn't depend on a client-side policy fetch.
-  canInvite: false,
 } as const;
 
 /**
@@ -66,34 +60,26 @@ export async function loader({ request }: LoaderFunctionArgs) {
     },
   });
 
-  // ADMIN always sees its admin nav (incl. Invitations); only a UNIT_ADMIN's
-  // link is policy-gated, so only that role needs the extra lookup.
-  const canInvite =
-    session.user.role === "UNIT_ADMIN"
-      ? await getPolicy("unitAdmins.canInvite")
-      : false;
-
   return {
     assistive: row?.assistDefault ?? false,
     motionReduced: row?.motionReduced ?? false,
     density: isUiDensity(row?.density) ? row.density : DEFAULT_ACCOUNT_PREFERENCES.density,
     theme: isUiTheme(row?.theme) ? row.theme : DEFAULT_ACCOUNT_PREFERENCES.theme,
-    canInvite,
   };
 }
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <Meta />
         <Links />
-        {/* Inline script: set .dark on <html> before first paint to prevent flash */}
+        {/* Inline script: match next-themes class + color-scheme before hydration */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem('theme');if(t==='dark'||(t==='system'||!t)&&window.matchMedia('(prefers-color-scheme: dark)').matches){document.documentElement.classList.add('dark')}}catch(e){}})()`,
+            __html: `(function(){try{var t=localStorage.getItem('theme');var d=t==='dark'||((t==='system'||!t)&&window.matchMedia('(prefers-color-scheme: dark)').matches);var r=document.documentElement;r.classList.add(d?'dark':'light');r.style.colorScheme=d?'dark':'light'}catch(e){}})()`,
           }}
         />
       </head>
@@ -116,7 +102,6 @@ export default function App({ loaderData }: Route.ComponentProps) {
       initialDensity={loaderData?.density ?? DEFAULT_ACCOUNT_PREFERENCES.density}
     >
       <AssistiveUiProvider initialAssistive={loaderData?.assistive ?? false}>
-        <ThemeSyncInitializer />
         <Outlet />
       </AssistiveUiProvider>
     </UiPreferencesProvider>
