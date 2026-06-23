@@ -43,7 +43,7 @@ export default function AdminCronJobsRoute() {
         } as React.CSSProperties
       }
     >
-      <AppSidebar variant="inset" user={user} />
+      <AppSidebar user={user} />
       <SidebarInset>
         <SiteHeader
           breadcrumbs={
