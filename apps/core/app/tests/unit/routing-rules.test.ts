@@ -77,7 +77,7 @@ describe("matchPhase1Rules", () => {
     });
     expect(match.rule).not.toBe("rule2_tools_tier_ge_2");
     expect(match.rule).toBe("rule6_default_tier_1_energy");
-    expect(match.pick.tier).toBe(1);
+    expect(match.pick).toEqual({ kind: "exactTier", tier: 1, tieBreak: "energy" });
   });
 
   it("rule 4: strong RAG hits use tier 1 (any chunk count)", () => {
