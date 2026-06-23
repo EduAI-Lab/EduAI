@@ -10,7 +10,6 @@ vi.mock("~/lib/auth/server", () => ({
 }));
 
 vi.mock("~/lib/auth/guards.server", () => ({
-  enforceAdminIfApiKey: vi.fn().mockResolvedValue({ response: null, session: null }),
   requireServiceKey: vi.fn(),
 }));
 
@@ -28,7 +27,6 @@ vi.mock("~/lib/prisma.server", () => ({
 import { loader as adminLoader, action as adminAction } from "~/routes/api/admin.bug-reports";
 import { loader as mineLoader } from "~/routes/api/bug-reports";
 import { auth } from "~/lib/auth/server";
-import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import prisma from "~/lib/prisma.server";
 
 const REPORT = {
@@ -69,7 +67,6 @@ function mockUser(role: string | null, id = "u1") {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(enforceAdminIfApiKey).mockResolvedValue({ response: null, session: null });
   vi.mocked(prisma.bugReport.findMany).mockResolvedValue([REPORT] as never);
   vi.mocked(prisma.bugReport.count).mockResolvedValue(1);
 });

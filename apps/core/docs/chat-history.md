@@ -47,46 +47,4 @@ Send only the new user message. Server loads last 20 messages from DB, merges, d
 
 ## Authentication
 
-- **With API key**: `x-api-key` header required, must be admin user. Can use `proxyUser`.
-- **Without API key**: Falls back to session-based auth (cookies). Used by frontend UI.
-
-## Proxy Users
-
-External services (e.g., AITutor) can make requests on behalf of their users without requiring them to have EduAI accounts.
-
-### Requirements
-
-- Admin API key via `x-api-key` header
-- `proxyUser` object in request body
-
-### Example Request
-
-```json
-POST /api/chat
-Headers: { "x-api-key": "admin-api-key" }
-
-{
-  "proxyUser": {
-    "provider": "aitutor",
-    "id": "external-user-123",
-    "email": "student@example.com"
-  },
-  "messages": [{ "id": "uuid-v4", "role": "user", "content": "Hello" }],
-  "model": "gpt-4",
-  "apiKeys": { ... }
-}
-```
-
-### How It Works
-
-1. EduAI looks up `(provider, id)` in `ExternalUser` table
-2. If not found, creates a new `User` + `ExternalUser` mapping
-3. Request runs as that user (chat history scoped to them)
-
-### Fields
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `provider` | No | Service name (defaults to `"aitutor"`) |
-| `id` | Yes | User's ID in external system |
-| `email` | No | User's email (used for new account creation, falls back to `{id}@{provider}.local`) |
+All requests to `/api/chat` authenticate via session cookie. The legacy `x-api-key` / Better Auth API-key plugin and `proxyUser` proxy-delegation have been removed (#158). Extensions (AI Tutor, Question Maker) that previously used `proxyUser` now authenticate their users via shared session cookie forwarding (`getEduAiCookieForRequest`).
