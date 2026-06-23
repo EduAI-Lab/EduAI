@@ -49,13 +49,3 @@ export function formatExpirationLabel(expiresAt: Date | string | null | undefine
   if (daysLeft !== null && daysLeft <= 14) return `Expires in ${daysLeft} days (${date})`;
   return `Expires ${date}`;
 }
-
-export function parseReminderDayWindows(raw?: string): number[] {
-  const fallback = [14, 7, 1];
-  if (!raw?.trim()) return fallback;
-  const parsed = raw
-    .split(",")
-    .map((part) => Number.parseInt(part.trim(), 10))
-    .filter((value) => Number.isFinite(value) && value > 0);
-  return parsed.length > 0 ? [...new Set(parsed)].sort((a, b) => b - a) : fallback;
-}

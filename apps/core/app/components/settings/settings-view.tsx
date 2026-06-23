@@ -224,7 +224,6 @@ export function SettingsView({ role, studentNumber = null }: SettingsViewProps) 
                 <p className="text-xs text-muted-foreground">
                   Keys are created with prefix{" "}
                   <span className="font-mono">{FIXED_PREFIX}-</span> followed by a random string.
-                  Email reminders are sent at 14, 7, and 1 day(s) before expiration when SMTP is configured.
                 </p>
               </div>
 
