@@ -1,6 +1,7 @@
 /**
  * Normalize model-produced math into markdown that Streamdown/KaTeX can render.
- * Handles common LaTeX delimiter styles and bare `\frac{}{}`-style expressions.
+ * Handles common LaTeX delimiter styles, bare `\frac{}{}` expressions, and
+ * fragmented `$...$` chunks the model emits mid-equation.
  */
 
 const MATH_COMMAND =
@@ -8,6 +9,9 @@ const MATH_COMMAND =
 
 const DISPLAY_DELIM_RE = /\\\[([\s\S]*?)\\\]/g;
 const INLINE_DELIM_RE = /\\\(([\s\S]*?)\\\)/g;
+const DISPLAY_BLOCK_RE = /(\$\$[\s\S]*?\$\$)/g;
+
+const INLINE_MATH_RE = /(?<!\\)\$([^$\n]+?)(?<!\\)\$/g;
 
 function decodeHtmlEntities(text: string): string {
   return text
@@ -60,6 +64,93 @@ function readLatexExpression(text: string, start: number): number {
   return Math.max(i, start + 1);
 }
 
+function repairBrokenDelimiterNesting(text: string): string {
+  let prev = "";
+  let cur = text;
+  while (prev !== cur) {
+    prev = cur;
+    cur = cur
+      .replace(/\$\s*\\left\s*\(\s*\$/g, "$\\left(")
+      .replace(/\$\s*\\right\s*\)\s*\$/g, "\\right)$")
+      .replace(/([+\-=])\s*\$\s*(?=\\)/g, "$1 ")
+      .replace(/\s*\$\s*([+\-=])/g, " $1");
+  }
+  return cur;
+}
+
+function consolidateEquationText(text: string): string {
+  return repairBrokenDelimiterNesting(text)
+    .replace(/(?<!\\)\$/g, "")
+    .replace(/\s+/g, " ")
+    .replace(/\s*([+\-=])\s*/g, " $1 ")
+    .trim();
+}
+
+function countInlineMathSegments(line: string): number {
+  return (line.match(INLINE_MATH_RE) ?? []).length;
+}
+
+function hasBareMathOutsideDelimiters(line: string): boolean {
+  const withoutDelimited = line.replace(INLINE_MATH_RE, "");
+  return /[a-zA-Z]\^|\\frac|\\left|\\sqrt/.test(withoutDelimited) && /=/.test(withoutDelimited);
+}
+
+/** Model splits one equation into `x^2 + $\frac{b}{a}$x = -$\frac{c}{a}$`. */
+function hasFragmentedEquationMath(line: string): boolean {
+  if (/\$\s*\\left\s*\(\s*\$/.test(line)) return true;
+  if (!hasBareMathOutsideDelimiters(line)) return false;
+
+  const segments = countInlineMathSegments(line);
+  return segments >= 1 || MATH_COMMAND.test(line);
+}
+
+function looksLikeEquationTail(text: string): boolean {
+  const t = consolidateEquationText(text);
+  if (!t) return false;
+  return /=/.test(t) && (MATH_COMMAND.test(t) || /[a-zA-Z]\^/.test(t));
+}
+
+function findEquationTailStart(line: string): number {
+  let best = -1;
+  const patterns = [/\bx\^2/g, /\bx\s*=/g, /\\frac/g, /\\left/g];
+
+  for (const pattern of patterns) {
+    let match: RegExpExecArray | null;
+    const re = new RegExp(pattern.source, pattern.flags);
+    while ((match = re.exec(line)) !== null) {
+      if (!isInsideExistingMath(line, match.index)) {
+        best = Math.max(best, match.index);
+      }
+    }
+  }
+
+  return best;
+}
+
+function extractTrailingEquation(line: string): { prefix: string; equation: string } | null {
+  const afterBoldStep = line.match(/:\*\*\s+([\s\S]+)$/)?.[1];
+  if (afterBoldStep && /^(x\^2|x\s*=|\\frac|\\left)/.test(afterBoldStep.trimStart())) {
+    if (looksLikeEquationTail(afterBoldStep)) {
+      const prefix = line.slice(0, line.length - afterBoldStep.length).trimEnd();
+      return { prefix, equation: afterBoldStep.trim() };
+    }
+  }
+
+  const tailStart = findEquationTailStart(line);
+  if (tailStart <= 0) return null;
+
+  const equation = line.slice(tailStart).trim();
+  const prefix = line.slice(0, tailStart).trimEnd();
+  if (!looksLikeEquationTail(equation)) return null;
+  if (!hasFragmentedEquationMath(equation) && !looksLikeDisplayMathLine(equation)) return null;
+
+  return { prefix, equation };
+}
+
+function wrapDisplayMath(equation: string): string {
+  return `$$\n${consolidateEquationText(equation)}\n$$`;
+}
+
 function lineHasMathDelimiters(line: string): boolean {
   const t = line.trim();
   return /(?<!\\)\$\$/.test(t) || /(?<!\\)\$[^$\n]+\$/.test(t);
@@ -68,9 +159,12 @@ function lineHasMathDelimiters(line: string): boolean {
 function looksLikeDisplayMathLine(line: string): boolean {
   const t = line.trim();
   if (!t || t.length > 600) return false;
+  if (/^\$\$/.test(t)) return false;
+
+  if (hasFragmentedEquationMath(t)) return true;
+
   if (lineHasMathDelimiters(t)) return false;
 
-  // Markdown structure — not a bare equation line
   if (/^#{1,6}\s/.test(t)) return false;
   if (/^\*\*[^*]+/.test(t) && !MATH_COMMAND.test(t)) return false;
   if (/^[-*+]\s+\S/.test(t) && !MATH_COMMAND.test(t) && !/[a-zA-Z]\^/.test(t)) return false;
@@ -81,7 +175,6 @@ function looksLikeDisplayMathLine(line: string): boolean {
 
   if (hasLatexCommand && (hasEquation || hasSupSub)) return true;
 
-  // e.g. x^2 + bx = -c (no leading backslash)
   if (hasEquation && hasSupSub && /^[0-9a-zA-Z\s\\^_{}+\-*/().=,\[\]|]+$/.test(t)) {
     return true;
   }
@@ -89,19 +182,52 @@ function looksLikeDisplayMathLine(line: string): boolean {
   return false;
 }
 
+function normalizeFragmentedLine(line: string): string {
+  const trimmed = line.trim();
+  if (!trimmed || /^\$\$/.test(trimmed)) return line;
+
+  if (looksLikeDisplayMathLine(trimmed) && !hasFragmentedEquationMath(trimmed)) {
+    return line;
+  }
+
+  if (!hasFragmentedEquationMath(trimmed)) return line;
+
+  const trailing = extractTrailingEquation(trimmed);
+  if (trailing) {
+    const indent = line.match(/^\s*/)?.[0] ?? "";
+    const prefix = trailing.prefix.trimEnd();
+    const block = wrapDisplayMath(trailing.equation);
+    return prefix ? `${indent}${prefix}\n\n${block}` : `${indent}${block}`;
+  }
+
+  if (looksLikeEquationTail(trimmed)) {
+    const indent = line.match(/^\s*/)?.[0] ?? "";
+    return `${indent}${wrapDisplayMath(trimmed)}`;
+  }
+
+  return line;
+}
+
+function normalizeLineMath(text: string): string {
+  return text
+    .split("\n")
+    .map((line) => normalizeFragmentedLine(line))
+    .join("\n");
+}
+
 function wrapBareDisplayMathLines(text: string): string {
   return text
     .split("\n")
     .map((line) => {
       const trimmed = line.trim();
-      if (!looksLikeDisplayMathLine(trimmed)) return line;
+      if (!trimmed || /^\$\$/.test(trimmed)) return line;
+      if (!looksLikeDisplayMathLine(trimmed) || hasFragmentedEquationMath(trimmed)) return line;
       const indent = line.match(/^\s*/)?.[0] ?? "";
-      return `${indent}$$\n${trimmed}\n$$`;
+      return `${indent}${wrapDisplayMath(trimmed)}`;
     })
     .join("\n");
 }
 
-/** Model sometimes emits `* * S i m p l i f y ... * *` instead of `**Simplify...**`. */
 function repairSpacedBoldMarkers(text: string): string {
   return text.replace(/^\*\s+\*\s+(.+?)\s+\*\s+\*$/gm, (match, inner: string) => {
     const parts = inner.trim().split(/\s+/);
@@ -112,7 +238,7 @@ function repairSpacedBoldMarkers(text: string): string {
   });
 }
 
-function wrapBareLatexExpressions(text: string): string {
+function wrapBareLatexInPlainText(text: string): string {
   let result = "";
   let cursor = 0;
 
@@ -152,6 +278,13 @@ function wrapBareLatexExpressions(text: string): string {
   return result;
 }
 
+function wrapBareLatexExpressions(text: string): string {
+  return text
+    .split(DISPLAY_BLOCK_RE)
+    .map((part) => (part.startsWith("$$") ? part : wrapBareLatexInPlainText(part)))
+    .join("");
+}
+
 /**
  * Convert common LaTeX delimiter styles and bare commands into `$...$` / `$$...$$`.
  */
@@ -167,6 +300,7 @@ export function normalizeMathMarkdown(text: string): string {
   result = repairSpacedBoldMarkers(result);
   result = result.replace(DISPLAY_DELIM_RE, (_, body) => `$$\n${body.trim()}\n$$`);
   result = result.replace(INLINE_DELIM_RE, (_, body) => `$${body.trim()}$`);
+  result = normalizeLineMath(result);
   result = wrapBareDisplayMathLines(result);
   result = wrapBareLatexExpressions(result);
   return result;

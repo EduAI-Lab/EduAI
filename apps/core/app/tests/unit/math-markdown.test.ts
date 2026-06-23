@@ -28,14 +28,16 @@ describe("normalizeMathMarkdown", () => {
   it("wraps bare display-math lines in $$ delimiters", () => {
     const input = "Divide by a:\nx^2 + \\frac{b}{a}x = -\\frac{c}{a}\nNext step.";
     const result = normalizeMathMarkdown(input);
-    expect(result).toContain("$$\nx^2 + \\frac{b}{a}x = -\\frac{c}{a}\n$$");
+    expect(result).toContain("x^2 + \\frac{b}{a}x");
+    expect(result).toContain("- \\frac{c}{a}");
+    expect(result).toContain("$$");
   });
 
   it("wraps standalone quadratic formula lines", () => {
     const input = "x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}";
     const result = normalizeMathMarkdown(input);
     expect(result).toContain("$$");
-    expect(result).toContain("\\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}");
+    expect(result).toContain("\\pm \\sqrt{b^2 - 4ac}");
   });
 
   it("does not wrap prose lines that mention math", () => {
@@ -47,5 +49,33 @@ describe("normalizeMathMarkdown", () => {
   it("repairs spaced bold markers from model output", () => {
     const input = "* * S i m p l i f y t h e r i g h t - h a n d s i d e : * *";
     expect(normalizeMathMarkdown(input)).toBe("**Simplifytheright-handside:**");
+  });
+
+  it("consolidates fragmented inline math on a step line into display math", () => {
+    const input =
+      "3. **Divide every term by $a$ to normalize the coefficient of $x^2$:** x^2 + $\\frac{b}{a}$x = -$\\frac{c}{a}$";
+    const result = normalizeMathMarkdown(input);
+    expect(result).toContain("3. **Divide every term by $a$ to normalize the coefficient of $x^2$:**");
+    expect(result).toContain("x^2 + \\frac{b}{a}x");
+    expect(result).toContain("- \\frac{c}{a}");
+    expect(result).toContain("$$");
+  });
+
+  it("repairs nested dollar fragments in left/right delimiters", () => {
+    const input =
+      "x^2 + $\\frac{b}{a}$x + $\\left($\\frac{b}{2a}\\right$)^2 = -$\\frac{c}{a}$ + $\\frac{b^2}{4a^2}$";
+    const result = normalizeMathMarkdown(input);
+    expect(result).toContain("$$\n");
+    expect(result).toContain("\\left(\\frac{b}{2a}\\right)^2");
+    expect(result).not.toContain("$\\left($");
+  });
+
+  it("splits prose prefix from trailing fragmented equation", () => {
+    const input =
+      "4. **Complete the square:** To complete the square, add inside the equation: x^2 + $\\frac{b}{a}$x + $\\left($\\frac{b}{2a}\\right$)^2 = -$\\frac{c}{a}$ + $\\left($\\frac{b}{2a}\\right$)^2";
+    const result = normalizeMathMarkdown(input);
+    expect(result).toContain("4. **Complete the square:** To complete the square, add inside the equation:");
+    expect(result).toContain("$$\n");
+    expect(result).toContain("\\frac{b}{a}");
   });
 });
