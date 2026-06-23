@@ -195,6 +195,7 @@ Each section should use this format:
 | `chat-tools.test.ts` | Tests `buildChatToolRegistry` — when web tools are OFF only `getInformation` is registered; when ON, `webSearch` and `fetchPage` are added. |
 | `model-tool-capability.test.ts` | Tests `isSmallModelSlug` heuristics (migration backfill) and `allowsSupportsToolsToggle` — toggle shown only for CHAT-type models (including small slugs). |
 | `ModelFormDialog.test.tsx` | Admin model form dialog — title, submit/cancel, Ollama/vLLM model pickers, Supports Tools toggle for CHAT models, and confirmation dialog before enabling tools. |
+| `local-model-sync.test.ts` | Local model sync: discovers Ollama/vLLM models, diffs against DB registry, and upserts model records for admin AI Management. |
 | `web-tool-ui.test.ts` | Tests `isWebChatToolName` and `getChatToolDisplayName` — web-tool labels gated by `X-Web-Tools-Enabled`; course RAG labels always shown. |
 | `AIModelsTable.test.tsx` | Admin AI models table — empty state, column rendering, and edit/delete callbacks. |
 | `canvas-client.test.ts` | `parseAndValidateCanvasUrl` SSRF guard (HTTPS required except local dev hosts), `verifyCanvasCredentials` success/invalid token/Canvas errors/unreachable Canvas, test-mode roster mocks, and `CanvasApiError`. |
