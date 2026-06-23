@@ -5,6 +5,7 @@ import {
   IconCircleCheck,
   IconCircleX,
 } from '@tabler/icons-react'
+import { useState } from 'react'
 import {
   Card,
   CardContent,
@@ -24,6 +25,7 @@ import type { CourseDetail } from '~/hooks/api/use-course-detail'
 import type { CourseTopic } from '~/hooks/api/use-course-topics'
 import type { CourseTA } from '~/hooks/api/use-course-tas'
 import { usePolicies } from '~/hooks/api/use-policies'
+import { MaterialPreviewDialog } from '~/components/courses/material-preview-dialog'
 
 interface Props {
   course: CourseDetail
@@ -77,6 +79,8 @@ export function CourseDetailStudentView({
     (policies['students.canUploadMaterials'] ?? false) && Boolean(onFileSelect)
   // The Materials tab shows when the student may either read or upload.
   const showMaterialsTab = canViewMaterials || canUploadMaterials
+
+  const [previewMaterial, setPreviewMaterial] = useState<CourseMaterial | null>(null)
 
   // Top-right hero badges: enrollment + AI status
   const topRightBadges: string[] = ['Enrolled', ...(course.aiInstructions ? ['AI-enabled'] : [])]
@@ -246,28 +250,50 @@ export function CourseDetailStudentView({
                     </p>
                   </div>
                 </div>
-                {materials.map((m) => (
-                  <div
-                    key={m.id}
-                    className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius-lg)] border border-border bg-card"
-                  >
+                {materials.map((m) => {
+                  const canPreview = m.status === 'READY'
+                  return (
                     <div
-                      className="w-8 h-8 rounded-[7px] flex items-center justify-center flex-shrink-0"
-                      style={{ background: fileTypeColor(m.mimeType) }}
+                      key={m.id}
+                      className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius-lg)] border border-border bg-card"
                     >
-                      <IconFileText size={14} color="white" stroke={2} />
+                      <div
+                        className="w-8 h-8 rounded-[7px] flex items-center justify-center flex-shrink-0"
+                        style={{ background: fileTypeColor(m.mimeType) }}
+                      >
+                        <IconFileText size={14} color="white" stroke={2} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        {canPreview ? (
+                          <button
+                            type="button"
+                            onClick={() => setPreviewMaterial(m)}
+                            className="text-left w-full text-[13px] font-medium text-foreground truncate hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
+                          >
+                            {m.title}
+                          </button>
+                        ) : (
+                          <p className="text-[13px] font-medium text-foreground truncate">{m.title}</p>
+                        )}
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          {formatSize(m.fileSize)} · {new Date(m.createdAt).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <MaterialStatusIcon status={m.status} />
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[13px] font-medium text-foreground truncate">{m.title}</p>
-                      <p className="text-[11px] text-muted-foreground mt-0.5">
-                        {formatSize(m.fileSize)} · {new Date(m.createdAt).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <MaterialStatusIcon status={m.status} />
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
+            <MaterialPreviewDialog
+              courseId={course.id}
+              materialId={previewMaterial?.id ?? null}
+              title={previewMaterial?.title ?? ''}
+              open={previewMaterial !== null}
+              onOpenChange={(open) => {
+                if (!open) setPreviewMaterial(null)
+              }}
+            />
           </PageTabsContent>
         )}
       </PageTabs>
