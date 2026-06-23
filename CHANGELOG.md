@@ -9,7 +9,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
-- [core] feat: Add UBC chatbot disclaimer banner and full terms dialog on `/chat`. (#575, @superbolt08, 2026-06-23) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+- [core] feat: Add UBC chatbot disclaimer banner and full terms dialog on `/chat`. (#575, @superbolt08, 2026-06-23) — [#753](https://github.com/EduAI-Lab/EduAI/pull/753)
 
 ## [Week 7 — June 15–21, 2026]
 
