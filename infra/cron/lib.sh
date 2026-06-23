@@ -1,9 +1,20 @@
 #!/usr/bin/env bash
 # infra/cron/lib.sh
 # Sourced by all EduAI cron scripts. Never executed directly.
-# Expects /etc/eduai/cron.env to exist and be readable by the running user.
+# Production: expects /etc/eduai/cron.env (chmod 600, root:root).
+# Dev: falls back to cron.env.local in the same directory as this file
+#      (copy from cron.env.local.example and fill in local values).
 
-source /etc/eduai/cron.env
+_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f /etc/eduai/cron.env ]]; then
+  source /etc/eduai/cron.env
+elif [[ -f "$_LIB_DIR/cron.env.local" ]]; then
+  source "$_LIB_DIR/cron.env.local"
+else
+  echo "ERROR: No cron.env found. Expected /etc/eduai/cron.env (production) or $_LIB_DIR/cron.env.local (dev)." >&2
+  exit 1
+fi
+unset _LIB_DIR
 export PGPASSWORD="$DB_PASS"
 
 log() {
