@@ -7,7 +7,6 @@ import {
   isLegacyPlaintextStudentId,
   prepareStudentIdStorage,
   readStoredStudentId,
-  rosterSisUserIdMatchFilter,
   studentIdMatchFilter,
 } from "~/lib/canvas/student-id.server";
 
@@ -78,20 +77,10 @@ export async function linkCanvasRoster(
     );
   }
 
-  const stagingCount = await prisma.canvasRosterMember.count({
-    where: {
-      isActive: true,
-      ...rosterSisUserIdMatchFilter(normalized),
-    },
-  });
-
-  if (stagingCount === 0) {
-    auditLinkAttempt(userId, "failure", "no_staging_match");
-    throw new LinkRosterError(
-      "No Canvas enrollments found for this student number. Ask your instructor to sync the course first.",
-      404,
-    );
-  }
+  // We intentionally do NOT require a matching staging row here. A student may
+  // link their number before any instructor has synced Canvas; the number is
+  // saved now and the later sync's linkEnrollmentsFromStagingForCourse matches
+  // them by studentId and enrolls them. See issue #725.
 
   if (
     currentStudentId &&
