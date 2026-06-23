@@ -4,9 +4,9 @@
 # Crontab: 15 3 * * *  (UTC)
 
 set -euo pipefail
-source /opt/eduai/cron/lib.sh
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/lib.sh"
 
-cron_start "backup-rotate"
 log "=== Backup rotation: removing dumps older than $BACKUP_RETAIN_DAYS days ==="
 
 while IFS= read -r -d '' f; do
@@ -14,4 +14,3 @@ while IFS= read -r -d '' f; do
 done < <(find "$BACKUP_DIR" -name '*.sql.gz' -mtime +"$BACKUP_RETAIN_DAYS" -type f -print0 -delete)
 
 log "=== Backup rotation complete ==="
-cron_finish
