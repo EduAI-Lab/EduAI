@@ -1,5 +1,4 @@
 import { betterAuth } from "better-auth";
-import { apiKey } from "better-auth/plugins";
 import { createAuthMiddleware, APIError } from "better-auth/api";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import prisma from "../prisma.server";
@@ -25,11 +24,6 @@ export const auth = betterAuth({
     enabled: true,
     autoSignIn: true,
   },
-  plugins: [
-    apiKey({
-      apiKeyHeaders: ["x-api-key"],
-    }),
-  ],
   hooks: {
     // §6a: single chokepoint for the public-registration toggle. Both public
     // sign-up entry points (the register.tsx action sub-request and a direct

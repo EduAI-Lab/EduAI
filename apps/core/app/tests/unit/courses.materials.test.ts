@@ -4,9 +4,7 @@ vi.mock("~/lib/auth/server", () => ({
   auth: { api: { getSession: vi.fn() } },
 }));
 
-vi.mock("~/lib/auth/guards.server", () => ({
-  enforceAdminIfApiKey: vi.fn().mockResolvedValue({ response: null, session: null }),
-}));
+vi.mock("~/lib/auth/guards.server", () => ({}));
 
 vi.mock("~/lib/auth/course-access.server", () => ({
   resolveCourseAccessWithCourse: vi.fn(),
@@ -44,7 +42,6 @@ vi.mock("~/lib/policy.server", async (importOriginal) => {
 
 import { loader, action } from "~/routes/api/courses.materials.$";
 import { auth } from "~/lib/auth/server";
-import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import prisma from "~/lib/prisma.server";
 import { processUploadedFile } from "~/lib/ai/file-processing";
@@ -125,7 +122,6 @@ function stubUploadArgs() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(enforceAdminIfApiKey).mockResolvedValue({ response: null, session: null });
   mockAccess({ level: "instructor", rank: 2 });
   // Reset to code defaults so per-test overrides don't leak across tests.
   vi.mocked(getPolicy).mockImplementation(async (key) => POLICY_FLAGS[key].default);

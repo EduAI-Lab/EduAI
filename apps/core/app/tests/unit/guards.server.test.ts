@@ -90,8 +90,6 @@ describe("requireServiceKey", () => {
 
 describe("requireInviter", () => {
     const sessionReq = () => new Request("http://localhost/api/invitations");
-    const apiKeyReq = () =>
-        new Request("http://localhost/api/invitations", { headers: { "x-api-key": "k" } });
 
     beforeEach(() => {
         vi.mocked(auth.api.getSession).mockReset();
@@ -143,19 +141,6 @@ describe("requireInviter", () => {
         expect(gate.session).toBeNull();
     });
 
-    it("rejects an x-api-key request from a UNIT_ADMIN (api key is ADMIN-only)", async () => {
-        vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "UNIT_ADMIN" } } as never);
-        const gate = await requireInviter(apiKeyReq(), "invitation.manage");
-        expect(gate.response?.status).toBe(403);
-        expect(gate.session).toBeNull();
-    });
-
-    it("admits an x-api-key request from an ADMIN", async () => {
-        vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "a1", role: "ADMIN" } } as never);
-        const gate = await requireInviter(apiKeyReq(), "invitation.list");
-        expect(gate.response).toBeNull();
-        expect(gate.session?.user.role).toBe("ADMIN");
-    });
 });
 
 describe("validateRedirectUrl", () => {

@@ -10,7 +10,12 @@ vi.mock("~/lib/auth/server", () => ({
 }));
 
 vi.mock("~/lib/auth/guards.server", () => ({
-  enforceAdminIfApiKey: vi.fn().mockResolvedValue({ response: null, session: null }),
+  requireServiceKey: vi.fn().mockResolvedValue(
+    new Response(JSON.stringify({ error: "MISSING_SERVICE_KEY" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    }),
+  ),
 }));
 
 vi.mock("~/lib/auth/course-access.server", () => ({
@@ -26,7 +31,7 @@ vi.mock("~/lib/prisma.server", () => ({
 
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
-import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
+import { requireServiceKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 
 const COURSE = { id: "c1", isPublished: true, department: null };
@@ -54,14 +59,13 @@ function makeArgs(body: object) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(enforceAdminIfApiKey).mockResolvedValue({ response: null, session: null });
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "u1", role: "STUDENT" },
   } as never);
 });
 
 describe("POST /api/chat — §10 course gate (#302)", () => {
-  it("returns 401 when unauthenticated", async () => {
+  it("returns 401 when unauthenticated and no service key", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(null);
     const res = await action(makeArgs({ messages: [], courseId: "c1" }));
     expect(res.status).toBe(401);
@@ -115,12 +119,9 @@ describe("POST /api/chat — §10 course gate (#302)", () => {
     expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
   });
 
-  it("still allows a server-to-server (API-key) caller to omit a course", async () => {
-    // ai-tutor proxy / admin API-key callers persist history without a course.
-    vi.mocked(enforceAdminIfApiKey).mockResolvedValue({
-      response: null,
-      session: { user: { id: "svc", role: "ADMIN" } },
-    } as never);
+  it("still allows a server-to-server (service-key) caller to omit a course", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null);
+    vi.mocked(requireServiceKey).mockResolvedValue(null); // valid service key
     const res = await action(makeArgs({ messages: [] }));
     expect(res.status).toBe(200);
     expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();

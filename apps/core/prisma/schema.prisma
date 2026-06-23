@@ -12,32 +12,31 @@ datasource db {
 }
 
 model User {
-  id                        String                 @id @default(cuid())
-  email                     String                 @unique
-  name                      String
-  image                     String?
-  role                      UserRole
-  studentId                 String?
-  studentIdLookup           String?                @unique
-  isActive                  Boolean                @default(true)
-  createdAt                 DateTime               @default(now())
-  updatedAt                 DateTime               @updatedAt
-  emailVerified             Boolean                @default(false)
-  authorizedUnits           String[]
-  accounts                  Account[]
-  aiInteractions            AIInteraction[]
-  enrollments               Enrollment[]
-  questions                 Question[]
-  sessions                  Session[]
-  providerSettings          UserProviderSettings[]
-  apiKeys                   apikey[]
-  chats                     Chat[]
-  externalUsers             ExternalUser[]
-  preference                UserPreference?
-  bugReports                BugReport[]
-  assistiveEvents           AssistiveEvent[]
-  uploadedMaterials         CourseMaterial[]       @relation("MaterialUploader")
-  createdTopics             CourseTopic[]          @relation("TopicCreator")
+  id                String                 @id @default(cuid())
+  email             String                 @unique
+  name              String
+  image             String?
+  role              UserRole
+  studentId         String?
+  studentIdLookup   String?                @unique
+  isActive          Boolean                @default(true)
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  emailVerified     Boolean                @default(false)
+  authorizedUnits   String[]
+  accounts          Account[]
+  aiInteractions    AIInteraction[]
+  enrollments       Enrollment[]
+  questions         Question[]
+  sessions          Session[]
+  providerSettings  UserProviderSettings[]
+  chats             Chat[]
+  externalUsers     ExternalUser[]
+  preference        UserPreference?
+  bugReports        BugReport[]
+  assistiveEvents   AssistiveEvent[]
+  uploadedMaterials CourseMaterial[]       @relation("MaterialUploader")
+  createdTopics     CourseTopic[]          @relation("TopicCreator")
   canvasIntegration         CanvasIntegration?
   syncedCanvasRosterMembers CanvasRosterMember[]
   invitationsSent           Invitation[]           @relation("InvitationsSent")
@@ -434,33 +433,6 @@ model MaterialEmbedding {
   @@map("material_embeddings")
 }
 
-model apikey {
-  id                  String    @id @default(cuid())
-  name                String?
-  start               String?
-  prefix              String?
-  key                 String
-  userId              String
-  refillInterval      Int?
-  refillAmount        Int?
-  lastRefillAt        DateTime?
-  enabled             Boolean   @default(true)
-  rateLimitEnabled    Boolean   @default(false)
-  rateLimitTimeWindow Int?
-  rateLimitMax        Int?
-  requestCount        Int       @default(0)
-  remaining           Int?
-  lastRequest         DateTime?
-  expiresAt           DateTime?
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
-  permissions         Json?
-  metadata            Json?
-  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@map("apiKey")
-}
 
 model Chat {
   id              String           @id @default(cuid())
