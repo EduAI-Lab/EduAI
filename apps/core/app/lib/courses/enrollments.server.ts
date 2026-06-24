@@ -88,10 +88,22 @@ export async function addEnrollment(
     });
     return { status: "201", enrollment } as const;
   } catch (error: any) {
-    if (error?.code === "P2002") {
-      return { status: "409", error: "ALREADY_ENROLLED" } as const;
+    if (error?.code !== "P2002") throw error;
+    // A row already exists for [courseId, userId]. If it's an inactive
+    // (previously removed) enrollment, reactivate it with the requested role
+    // rather than 409 — a removed TA/student must be re-addable, e.g. after a
+    // TA is removed and then re-enrolled (#685 review).
+    const existing = await prisma.enrollment.findUnique({
+      where: { courseId_userId: { courseId, userId: payload.userId } },
+    });
+    if (existing && !existing.isActive) {
+      const enrollment = await prisma.enrollment.update({
+        where: { id: existing.id },
+        data: { role: payload.role, isActive: true },
+      });
+      return { status: "201", enrollment } as const;
     }
-    throw error;
+    return { status: "409", error: "ALREADY_ENROLLED" } as const;
   }
 }
 

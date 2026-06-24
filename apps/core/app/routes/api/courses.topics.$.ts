@@ -1,7 +1,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
 import { auth } from "~/lib/auth/server";
-import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
+import { requireServiceKey } from "~/lib/auth/guards.server";
 import {
   resolveCourseAccessWithCourse,
   type AccessLevel,
@@ -86,10 +86,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     return topicsGetResponse(courseId, topicId);
   }
 
-  const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
-  if (apiKeyGuard) return apiKeyGuard;
-
-  const session = apiKeySession ?? (await auth.api.getSession(request));
+  const session = await auth.api.getSession(request);
 
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -138,10 +135,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   let session = null;
   let access: AccessLevel | null = null;
   if (!serviceAuth) {
-    const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
-    if (apiKeyGuard) return apiKeyGuard;
-
-    session = apiKeySession ?? (await auth.api.getSession(request));
+    session = await auth.api.getSession(request);
 
     if (!session?.user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -326,7 +320,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
         }
       }
 
-      const result = await deleteCourseTopic(courseId, body);
+      const result = await deleteCourseTopic(courseId, body, session?.user.id ?? null);
 
       if (result.status !== "204") {
         const responseBody =

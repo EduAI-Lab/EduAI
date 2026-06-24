@@ -607,7 +607,7 @@ Please ensure the questions are appropriate for the course level and cover the k
       const response = await axios.get(url, {
         headers: {
           "Content-Type": "application/json",
-          "x-api-key": this.apiKey,
+          "Authorization": `Bearer ${this.apiKey}`,
         },
         timeout: 60000, // 60 second timeout
       });
@@ -676,7 +676,7 @@ Please ensure the questions are appropriate for the course level and cover the k
       const response = await axios.get(url, {
         headers: {
           "Content-Type": "application/json",
-          "x-api-key": this.apiKey,
+          "Authorization": `Bearer ${this.apiKey}`,
         },
         timeout: 60000, // 60 second timeout
       });

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import {
   IconTrash,
+  IconPencil,
   IconPlus,
   IconUsers,
   IconUserCheck,
@@ -24,6 +25,15 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  DialogFooter,
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
 } from "@eduai/ui";
 import {
   PageTabs,
@@ -36,6 +46,7 @@ import { StatusBadge } from "@eduai/ui";
 import { Avatar } from "@eduai/ui";
 import { StatCard } from "@eduai/ui";
 import { Input } from "@eduai/ui";
+import { MultiSelect, Combobox } from "@eduai/ui";
 import { Label } from "@eduai/ui";
 import {
   Select,
@@ -84,7 +95,9 @@ interface Props {
   onAssignInstructor: (instructorId: string) => Promise<void>;
   onAddTA: (userId: string) => Promise<void>;
   onRemoveTA: (userId: string) => Promise<void>;
+  onRefreshMaterials?: () => Promise<void>;
   courseId?: string;
+  currentUserId?: string;
   showCanvasMaterialSync?: boolean;
   onMaterialsRefresh?: () => void;
 }
@@ -170,7 +183,9 @@ export function CourseDetailManagerView({
   onAssignInstructor,
   onAddTA,
   onRemoveTA,
+  onRefreshMaterials,
   courseId,
+  currentUserId,
   showCanvasMaterialSync = false,
   onMaterialsRefresh,
 }: Props) {
@@ -179,10 +194,16 @@ export function CourseDetailManagerView({
   const [staffError, setStaffError] = useState<string | null>(null);
   const [staffSuccess, setStaffSuccess] = useState<string | null>(null);
   const [selectedInstructorId, setSelectedInstructorId] = useState<string>("");
-  const [selectedTAIds, setSelectedTAIds] = useState<Set<string>>(new Set());
+  const [selectedTAIds, setSelectedTAIds] = useState<string[]>([]);
   const [addingTAs, setAddingTAs] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [embeddingOpen, setEmbeddingOpen] = useState(false);
+  const [deleteMaterialId, setDeleteMaterialId] = useState<string | null>(null);
+  const [deletingMaterial, setDeletingMaterial] = useState(false);
+  const [renameMaterialId, setRenameMaterialId] = useState<string | null>(null);
+  const [renameTitle, setRenameTitle] = useState("");
+  const [renamingMaterial, setRenamingMaterial] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
   const [ragTopK, setRagTopK] = useState<string>(course.ragTopK?.toString() ?? "");
   const [ragThreshold, setRagThreshold] = useState<string>(
     course.ragSimilarityThreshold?.toString() ?? "",
@@ -219,6 +240,31 @@ export function CourseDetailManagerView({
   // chat routes exactly.
   const canViewChats = canViewCourseChats(access, policies);
 
+  // Check if current user can delete a material (either manage rank >= 2, or TA own-upload).
+  // canManage covers ADMIN/UNIT_ADMIN/INSTRUCTOR.
+  // TAs can delete only their own uploads (uploadedBy === currentUserId).
+  const canDeleteMaterial = (material: CourseMaterial) => {
+    if (canManage) return true;
+    // TA own-only: check if this is their upload.
+    return (
+      access === 'ta' &&
+      material.uploadedBy !== null &&
+      material.uploadedBy !== undefined &&
+      material.uploadedBy === currentUserId
+    );
+  };
+
+  // Rename mirrors delete: ADMIN/UNIT_ADMIN/INSTRUCTOR any, TA own-upload only.
+  const canRenameMaterial = (material: CourseMaterial) => {
+    if (canManage) return true;
+    return (
+      access === 'ta' &&
+      material.uploadedBy !== null &&
+      material.uploadedBy !== undefined &&
+      material.uploadedBy === currentUserId
+    );
+  };
+
   const availableInstructors = instructors.filter(
     (p) => p.id !== course.instructorId,
   );
@@ -253,11 +299,11 @@ export function CourseDetailManagerView({
   };
 
   const handleAddTAs = async () => {
-    if (selectedTAIds.size === 0) return;
+    if (selectedTAIds.length === 0) return;
     setAddingTAs(true);
     setStaffError(null);
     setStaffSuccess(null);
-    const ids = Array.from(selectedTAIds);
+    const ids = selectedTAIds;
     const failed: string[] = [];
     for (const id of ids) {
       try {
@@ -267,7 +313,7 @@ export function CourseDetailManagerView({
       }
     }
     setAddingTAs(false);
-    setSelectedTAIds(new Set());
+    setSelectedTAIds([]);
     if (failed.length === 0) {
       setStaffSuccess(
         `${ids.length} TA${ids.length > 1 ? "s" : ""} added successfully`,
@@ -277,14 +323,6 @@ export function CourseDetailManagerView({
     }
   };
 
-  const toggleTA = (id: string) => {
-    setSelectedTAIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
 
   const handleRemoveTA = async (userId: string) => {
     setStaffError(null);
@@ -293,6 +331,64 @@ export function CourseDetailManagerView({
       await onRemoveTA(userId);
     } catch (e) {
       setStaffError(e instanceof Error ? e.message : "Failed to remove TA");
+    }
+  };
+
+  const handleDeleteMaterial = async () => {
+    if (!deleteMaterialId || !courseId) return;
+    setDeletingMaterial(true);
+    try {
+      const res = await fetch(
+        `/api/courses/${courseId}/materials/${deleteMaterialId}`,
+        { method: "DELETE" }
+      );
+      if (!res.ok) {
+        const err = await res.text().catch(() => "Failed to delete material");
+        throw new Error(err);
+      }
+      setDeleteMaterialId(null);
+      if (onRefreshMaterials) {
+        await onRefreshMaterials();
+      }
+    } catch (e) {
+      // Error is silent since material deletion happens in the background
+      console.error(e);
+    } finally {
+      setDeletingMaterial(false);
+    }
+  };
+
+  const handleRenameMaterial = async () => {
+    if (!renameMaterialId || !courseId) return;
+    const title = renameTitle.trim();
+    if (!title) {
+      setRenameError("Name is required");
+      return;
+    }
+    setRenamingMaterial(true);
+    setRenameError(null);
+    try {
+      const res = await fetch(
+        `/api/courses/${courseId}/materials/${renameMaterialId}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title }),
+        },
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error ?? "Failed to rename material");
+      }
+      setRenameMaterialId(null);
+      setRenameTitle("");
+      if (onRefreshMaterials) {
+        await onRefreshMaterials();
+      }
+    } catch (e) {
+      setRenameError(e instanceof Error ? e.message : "Failed to rename material");
+    } finally {
+      setRenamingMaterial(false);
     }
   };
 
@@ -375,6 +471,93 @@ export function CourseDetailManagerView({
           </DialogContent>
         </Dialog>
       )}
+
+      {/* A2: Delete material confirmation */}
+      <AlertDialog
+        open={!!deleteMaterialId}
+        onOpenChange={(open) => {
+          if (!open) setDeleteMaterialId(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete material?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes the file and its embeddings from the course. Deletes
+              are not propagated to Canvas, and re-uploading the same file
+              restores it.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deletingMaterial}
+              onClick={handleDeleteMaterial}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deletingMaterial ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Rename material modal */}
+      <Dialog
+        open={!!renameMaterialId}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRenameMaterialId(null);
+            setRenameTitle("");
+            setRenameError(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md rounded-[var(--radius-xl)]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <IconPencil className="h-4 w-4" />
+              Rename material
+            </DialogTitle>
+            <DialogDescription>
+              Change the display name of this course material.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleRenameMaterial();
+            }}
+            className="flex flex-col gap-3"
+          >
+            <Input
+              value={renameTitle}
+              onChange={(e) => setRenameTitle(e.target.value)}
+              placeholder="Material name"
+              maxLength={255}
+              autoFocus
+            />
+            {renameError && (
+              <p className="text-[13px] text-destructive">{renameError}</p>
+            )}
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setRenameMaterialId(null);
+                  setRenameTitle("");
+                  setRenameError(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={renamingMaterial || !renameTitle.trim()}>
+                {renamingMaterial ? "Saving…" : "Save"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* Canvas material sync */}
       {showCanvasMaterialSync && courseId && (
@@ -687,6 +870,31 @@ export function CourseDetailManagerView({
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <MaterialStatusChip status={m.status} />
                     <MaterialStatusIcon status={m.status} />
+                    {canRenameMaterial(m) && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label="Rename material"
+                        onClick={() => {
+                          setRenameMaterialId(m.id);
+                          setRenameTitle(m.title);
+                          setRenameError(null);
+                        }}
+                      >
+                        <IconPencil className="w-4 h-4" />
+                      </Button>
+                    )}
+                    {canDeleteMaterial(m) && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label="Delete material"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => setDeleteMaterialId(m.id)}
+                      >
+                        <IconTrash className="w-4 h-4" />
+                      </Button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -862,21 +1070,19 @@ export function CourseDetailManagerView({
                           one.
                         </p>
                         <div className="flex gap-2">
-                          <Select
-                            value={selectedInstructorId}
-                            onValueChange={setSelectedInstructorId}
-                          >
-                            <SelectTrigger className="flex-1">
-                              <SelectValue placeholder="Select replacement instructor" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {availableInstructors.map((p) => (
-                                <SelectItem key={p.id} value={p.id}>
-                                  {p.name} ({p.email})
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          <Combobox
+                            className="flex-1"
+                            options={availableInstructors.map((p) => ({
+                              value: p.id,
+                              label: p.name,
+                              description: p.email,
+                            }))}
+                            value={selectedInstructorId || null}
+                            onValueChange={(v) => setSelectedInstructorId(v ?? "")}
+                            placeholder="Select replacement instructor"
+                            searchPlaceholder="Search by name or email"
+                            emptyText="No instructors found"
+                          />
                           <Button
                             variant="outline"
                             onClick={handleAssignInstructor}
@@ -900,21 +1106,19 @@ export function CourseDetailManagerView({
                     </p>
                     {availableInstructors.length > 0 ? (
                       <div className="flex gap-2">
-                        <Select
-                          value={selectedInstructorId}
-                          onValueChange={setSelectedInstructorId}
-                        >
-                          <SelectTrigger className="flex-1">
-                            <SelectValue placeholder="Select an instructor to assign" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {availableInstructors.map((p) => (
-                              <SelectItem key={p.id} value={p.id}>
-                                {p.name} ({p.email})
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <Combobox
+                          className="flex-1"
+                          options={availableInstructors.map((p) => ({
+                            value: p.id,
+                            label: p.name,
+                            description: p.email,
+                          }))}
+                          value={selectedInstructorId || null}
+                          onValueChange={(v) => setSelectedInstructorId(v ?? "")}
+                          placeholder="Select an instructor to assign"
+                          searchPlaceholder="Search by name or email"
+                          emptyText="No instructors found"
+                        />
                         <Button
                           onClick={handleAssignInstructor}
                           disabled={!selectedInstructorId}
@@ -969,44 +1173,32 @@ export function CourseDetailManagerView({
                   </div>
                 )}
                 {availableTAs.length > 0 ? (
-                  <div className="flex flex-col gap-2">
-                    <p className="text-xs text-muted-foreground">
-                      Select one or more TAs to add:
-                    </p>
-                    <div className="rounded-md border divide-y max-h-48 overflow-y-auto">
-                      {availableTAs.map((u) => (
-                        <label
-                          key={u.id}
-                          className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-muted/50"
-                        >
-                          <Checkbox
-                            checked={selectedTAIds.has(u.id)}
-                            onCheckedChange={() => toggleTA(u.id)}
-                          />
-                          <div className="flex flex-col min-w-0">
-                            <span className="text-sm font-medium truncate">
-                              {u.name}
-                            </span>
-                            <span className="text-xs text-muted-foreground truncate">
-                              {u.email}
-                            </span>
-                          </div>
-                        </label>
-                      ))}
-                    </div>
+                  <div className="flex flex-col gap-3">
+                    <MultiSelect
+                      options={availableTAs.map((u) => ({
+                        value: u.id,
+                        label: u.name,
+                        description: u.email,
+                      }))}
+                      value={selectedTAIds}
+                      onValueChange={setSelectedTAIds}
+                      placeholder="Search and select TAs to add"
+                      searchPlaceholder="Search by name or email"
+                      emptyText="No TAs found"
+                    />
                     <Button
                       onClick={handleAddTAs}
-                      disabled={selectedTAIds.size === 0 || addingTAs}
+                      disabled={selectedTAIds.length === 0 || addingTAs}
                       className="self-end"
                     >
                       <IconUserPlus className="w-4 h-4 mr-1" />
                       {addingTAs
                         ? "Adding…"
                         : `Add ${
-                            selectedTAIds.size > 0
-                              ? `${selectedTAIds.size} `
+                            selectedTAIds.length > 0
+                              ? `${selectedTAIds.length} `
                               : ""
-                          }TA${selectedTAIds.size !== 1 ? "s" : ""}`}
+                          }TA${selectedTAIds.length !== 1 ? "s" : ""}`}
                     </Button>
                   </div>
                 ) : (
