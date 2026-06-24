@@ -22,7 +22,7 @@ describe("StudentIdOnboardingForm", () => {
   });
 
   it("shows a form error when provided", () => {
-    renderForm({ formError: "This student number is already linked to another account." });
+    renderForm({ formError: "This student number is already linked to another account. Contact an admin if you believe this is an error." });
 
     expect(screen.getByRole("alert")).toHaveTextContent("already linked to another account");
   });
