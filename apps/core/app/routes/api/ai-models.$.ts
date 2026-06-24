@@ -1,6 +1,5 @@
 import prisma from "~/lib/prisma.server";
 import { auth } from "~/lib/auth/server";
-import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { CreateAIModelSchema, UpdateAIModelSchema } from "~/lib/ai/schemas";
 import { fireAndForget, logAuditAction, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
@@ -30,14 +29,10 @@ async function handleRequest(request: Request) {
       }),
     );
 
-  // If an API key is provided, only ADMIN users may proceed
-  const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
-  if (apiKeyGuard) return apiKeyGuard;
-
   switch (request.method) {
     case "GET": {
       // §13 (#303): model config is ADMIN-only — including reads.
-      const session = apiKeySession ?? await auth.api.getSession(request);
+      const session = await auth.api.getSession(request);
       if (!session?.user) {
         return new Response(JSON.stringify({ error: "Unauthorized" }), {
           status: 401,
@@ -65,7 +60,7 @@ async function handleRequest(request: Request) {
     }
 
     case "POST": {
-      const session = apiKeySession ?? await auth.api.getSession(request);
+      const session = await auth.api.getSession(request);
       if (!session?.user || session.user.role !== "ADMIN") {
         logAdminDenied(session?.user ?? null);
         return new Response("Forbidden: Admins only", { status: 403 });
@@ -140,7 +135,7 @@ async function handleRequest(request: Request) {
         return new Response("Missing model ID", { status: 400 });
       }
 
-      const session = apiKeySession ?? await auth.api.getSession(request);
+      const session = await auth.api.getSession(request);
       if (!session?.user || session.user.role !== "ADMIN") {
         logAdminDenied(session?.user ?? null);
         return new Response("Forbidden: Admins only", { status: 403 });
@@ -227,7 +222,7 @@ async function handleRequest(request: Request) {
         return new Response("Missing model ID", { status: 400 });
       }
 
-      const session = apiKeySession ?? await auth.api.getSession(request);
+      const session = await auth.api.getSession(request);
       if (!session?.user || session.user.role !== "ADMIN") {
         logAdminDenied(session?.user ?? null);
         return new Response("Forbidden: Admins only", { status: 403 });

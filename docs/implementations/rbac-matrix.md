@@ -42,7 +42,7 @@
 | `INSTRUCTOR` | Platform-level eligibility to be assigned as an instructor on a course. Course ownership itself is expressed by an `Enrollment` row with `role=INSTRUCTOR` — a course can have multiple instructors. No access outside the courses they are enrolled in as instructor. |
 | `STUDENT` | Base platform access tier. Covers all non-instructor users including grad TAs. Course-level role is determined entirely by `EnrollmentRole`. |
 
-**`TA` is not a meaningful course role at the `UserRole` level.** Although `TA` still exists in the `UserRole` enum, course-level TA access is granted exclusively through `EnrollmentRole=TA`. A grad TA who does not take any courses holds `UserRole=STUDENT` and `EnrollmentRole=TA` in the courses they assist. An undergrad TA can hold `EnrollmentRole=TA` in some courses and `EnrollmentRole=STUDENT` in others simultaneously.
+**`TA` is not a `UserRole`.** `TA` has been removed from the `UserRole` enum (and the legacy `CourseTA` junction table dropped); course-level TA access is granted exclusively through `EnrollmentRole=TA`. Every TA holds `UserRole=STUDENT` and an `Enrollment` with `role=TA` in the courses they assist. An undergrad TA can hold `EnrollmentRole=TA` in some courses and `EnrollmentRole=STUDENT` in others simultaneously. Platform surfaces that branch on TA (e.g. the dashboard) derive it from the presence of an active `EnrollmentRole=TA` row, not the platform role.
 
 ### EnrollmentRole (course-level, per Enrollment row)
 
@@ -274,7 +274,9 @@ Questions are authored in Question Maker and stored canonically in Core. The mat
 | View chat metrics for a course (count, frequency) | ✓ | D | C | — | — |
 
 **Notes:**
-- Only `ADMIN` can read other users' chat content. Instructors and unit admins see aggregate metrics only (e.g. number of sessions, activity frequency) — not message content.
+- **Every chat is course-scoped.** The platform-wide "global" chat (no course context) has been removed; all roles, including `ADMIN`/`UNIT_ADMIN`, pick a course as context. `ADMIN` may pick any course; `UNIT_ADMIN` any course in their authorized units; others a course they are enrolled in. The course selector defaults to the first available course (there is no "no course" option). A user with no available courses sees the chat disabled with an explanatory message.
+- Students are shown an in-app disclaimer that their course chats are viewable by their instructor, unit admin, and platform admins.
+- Course staff (instructor/TA per enrollment, unit admin for in-unit courses, admin) can view course-scoped chat history; only `ADMIN` can read arbitrary users' chat content. Instructors and unit admins otherwise see aggregate metrics only — not message content.
 - A student whose enrollment becomes inactive retains access to their own past chat history (`O`) but cannot start new sessions in that course.
 
 ---

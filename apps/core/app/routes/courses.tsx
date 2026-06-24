@@ -47,7 +47,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 
   // Scope list to enrollment assignments (#499) — never hardcode course ids; read
-  // active Enrollment rows for this user and split by role (§5 list gate).
+  // active Enrollment rows for this user and split by role (§5 list gate). A TA is
+  // an Enrollment with role=TA; STUDENT-platform users may hold both TA and STUDENT
+  // enrollments, so we split by enrollment role.
   const enrollmentRows = await prisma.enrollment.findMany({
     where: { userId: session.user.id, isActive: true },
     select: { courseId: true, role: true },
