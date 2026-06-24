@@ -10,6 +10,18 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ### Added
 
 - [core] feat: RAG ingestion preserves LaTeX equations, converts HTML tables to markdown, and chunks at clinical/slide section boundaries (#90, #91, #93, @superbolt08, 2026-06-23) — [#755](https://github.com/EduAI-Lab/EduAI/pull/755)
+- [core] feat: Admin cron job dashboard — `/admin/cron-jobs` lists all registered cron servers with last run status (RUNNING/SUCCESS/ERROR), schedule, and a manual trigger for infra backup scripts; run history stored in `cron_job_runs`; schedule overrides persist to `cron_job_schedule_overrides`. (#634, #643, @evanbones, 2026-06-23)
+- [core] feat: In-process cron scheduler (`cron-scheduler.server.ts`) starts on server boot and fires infra scripts on their configured schedules; `rescheduleJob` reflects live changes from the admin panel. (#634, @evanbones, 2026-06-23)
+- [core] schema: Add `cron_job_runs` and `cron_job_schedule_overrides` tables. (#634, @evanbones, 2026-06-23)
+- [ai-tutor] feat: Daily reconciliation cron — iterates `CourseOffering` and `Topic` rows with Core links; nullifies `coreOfferingId`/`coreTopicId` on strict Core 404; skips and retries on 5xx/timeout; local rows are never deleted. (#283, @evanbones, 2026-06-23)
+- [question-maker] feat: Daily reconciliation cron — iterates `core_course_id`, `core_topic_id`, and `core_question_id` columns; nullifies on Core 404; skips on 5xx/timeout. (#283, @evanbones, 2026-06-23)
+- [infra] feat: Server backup scripts (`backup-nightly.sh`, `backup-offsite.sh`, `backup-rotate.sh`) — nightly `pg_dump` of all three databases, off-site sync, and local dump rotation; configurable via `cron.env`. (#643, @evanbones @GlowyBlack, 2026-06-23)
+- [core] tests: Unit tests for `db.cron-jobs.server` and `/api/admin/cron-jobs` route (auth guard, trigger/update-schedule/reset-schedule intents, cron validation). (#PR, @evanbones, 2026-06-23)
+- [ai-tutor] tests: Unit and integration tests for the AI Tutor reconciliation cron. (#PR, @evanbones, 2026-06-23)
+- [question-maker] tests: Unit and integration tests for the QM reconciliation cron. (#PR, @evanbones, 2026-06-23)
+- [docs] docs: `docs/CRON_JOBS.md` — describes registered cron jobs, schedules, trigger behavior, and local testing steps. (#634, #283, #643, @evanbones, 2026-06-23)
+- [core] feat: Add UBC chatbot disclaimer banner and full terms dialog on `/chat`. (#575, @superbolt08, 2026-06-23) — [#753](https://github.com/EduAI-Lab/EduAI/pull/753)
+
 ### Fixed
 
 - [ai-tutor] fix: Surface effective `role: TA` on `GET /api/me` when Core reports a TA enrollment — keeps course TAs in the teaching shell after Core drops platform-level `UserRole.TA` (#723, @Ayyhab, 2026-06-24)
