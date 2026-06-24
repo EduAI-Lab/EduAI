@@ -4,6 +4,11 @@ import { prismaAdapter } from "better-auth/adapters/prisma";
 import prisma from "../prisma.server";
 import { getPolicy, logPolicyDenial } from "../policy.server";
 import { INTERNAL_INVITE_SIGNUP_HEADER } from "./auth-handler-request";
+import {
+  extractPolicyPassword,
+  isStrongPassword,
+  PASSWORD_POLICY_MESSAGE,
+} from "./password-policy";
 
 export const authBaseURL =
   process.env.BETTER_AUTH_URL?.trim() ||
@@ -36,6 +41,12 @@ export const auth = betterAuth({
     // imports prisma + the logging facade, neither of which imports this file —
     // no cycle.
     before: createAuthMiddleware(async (ctx) => {
+    // Validate password policy for all password-setting endpoints.
+      const candidatePassword = extractPolicyPassword(ctx.path, ctx.body);
+      if (candidatePassword !== null && !isStrongPassword(candidatePassword)) {
+        throw new APIError("BAD_REQUEST", { message: PASSWORD_POLICY_MESSAGE });
+      }
+
       if (ctx.path !== "/sign-up/email") return;
       if (ctx.headers?.has(INTERNAL_INVITE_SIGNUP_HEADER)) return;
       if (!(await getPolicy("auth.allowPublicRegistration"))) {
