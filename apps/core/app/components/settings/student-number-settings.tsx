@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { IconLoader, IconSchool } from "@tabler/icons-react";
+import { IconLoader, IconLock, IconSchool } from "@tabler/icons-react";
 
 import { linkCanvasRoster } from "~/lib/canvas/client";
 import {
@@ -28,6 +28,11 @@ export function StudentNumberSettings({
 
   const trimmed = studentNumber.trim();
   const unchanged = trimmed === savedStudentNumber.trim();
+  // Once a student number is linked it cannot be self-edited (the backend
+  // rejects reassignment with a 409). Show a locked, read-only view instead of
+  // an editable field so the change is impossible up front rather than silently
+  // reverting on refresh.
+  const isLocked = savedStudentNumber.trim().length > 0;
 
   const handleSave = async () => {
     setSaving(true);
@@ -74,37 +79,62 @@ export function StudentNumberSettings({
           </p>
         )}
 
-        <div className="space-y-2">
-          <Label htmlFor="settings-studentNumber">Student number</Label>
-          <Input
-            id="settings-studentNumber"
-            value={studentNumber}
-            onChange={(e) => setStudentNumber(e.target.value)}
-            type="text"
-            inputMode="numeric"
-            autoComplete="off"
-            placeholder="e.g. 12345678"
-            disabled={saving}
-          />
-          <p className="text-xs text-muted-foreground">
-            Must match your student ID in Canvas. You can link before your instructor
-            syncs; enrollments appear after they sync the course.
-          </p>
-        </div>
+        {isLocked ? (
+          <div className="space-y-2">
+            <Label htmlFor="settings-studentNumber">Student number</Label>
+            <Input
+              id="settings-studentNumber"
+              value={savedStudentNumber}
+              type="text"
+              readOnly
+              disabled
+              aria-readonly="true"
+            />
+            <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+              <IconLock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>
+                Your student number is linked and can only be changed by an
+                administrator. Contact your instructor or an admin if this is
+                incorrect.
+              </span>
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className="space-y-2">
+              <Label htmlFor="settings-studentNumber">Student number</Label>
+              <Input
+                id="settings-studentNumber"
+                value={studentNumber}
+                onChange={(e) => setStudentNumber(e.target.value)}
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="e.g. 12345678"
+                disabled={saving}
+              />
+              <p className="text-xs text-muted-foreground">
+                Must match your student ID in Canvas. You can link before your
+                instructor syncs; enrollments appear after they sync the course.
+                Once saved, only an administrator can change it.
+              </p>
+            </div>
 
-        <Button
-          onClick={() => void handleSave()}
-          disabled={saving || !trimmed || unchanged}
-        >
-          {saving ? (
-            <>
-              <IconLoader className="h-4 w-4 mr-2 animate-spin" />
-              Saving…
-            </>
-          ) : (
-            "Save student number"
-          )}
-        </Button>
+            <Button
+              onClick={() => void handleSave()}
+              disabled={saving || !trimmed || unchanged}
+            >
+              {saving ? (
+                <>
+                  <IconLoader className="h-4 w-4 mr-2 animate-spin" />
+                  Saving…
+                </>
+              ) : (
+                "Save student number"
+              )}
+            </Button>
+          </>
+        )}
       </CardContent>
     </Card>
   );

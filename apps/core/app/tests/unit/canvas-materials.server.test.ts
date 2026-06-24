@@ -98,6 +98,15 @@ describe("discoverCanvasMaterialsForCourse", () => {
     });
   });
 
+  it("excludes soft-deleted materials from the imported lookup", async () => {
+    await discoverCanvasMaterialsForCourse("user-1", "core-course-1");
+    expect(prisma.courseMaterial.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ deletedAt: null }),
+      }),
+    );
+  });
+
   it("marks files already imported", async () => {
     vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([
       {
@@ -121,6 +130,23 @@ describe("syncSelectedCanvasMaterials", () => {
     expect(result.failed).toHaveLength(0);
     expect(processUploadedFile).toHaveBeenCalled();
     expect(processMaterialEmbeddings).toHaveBeenCalledWith("mat-1", "hello", { replace: false });
+  });
+
+  it("skips a soft-deleted material instead of reviving it on re-sync", async () => {
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "mat-deleted",
+      status: "READY",
+      canvasUpdatedAt: new Date("2025-01-09T00:00:00.000Z"),
+      deletedAt: new Date("2025-01-12T00:00:00.000Z"),
+    } as never);
+
+    const result = await syncSelectedCanvasMaterials("user-1", "core-course-1", ["1001"]);
+
+    expect(result.skipped).toBe(1);
+    expect(result.imported).toBe(0);
+    expect(result.updated).toBe(0);
+    expect(prisma.courseMaterial.update).not.toHaveBeenCalled();
+    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
   });
 
   it("reports failure for unknown file ids", async () => {

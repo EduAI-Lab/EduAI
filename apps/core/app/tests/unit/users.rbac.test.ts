@@ -16,12 +16,12 @@ vi.mock("~/lib/auth/guards.server", () => ({
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     user: { findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
+    enrollment: { count: vi.fn() },
   },
 }));
 
 import { action } from "~/routes/api/users.$";
 import { auth } from "~/lib/auth/server";
-import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import prisma from "~/lib/prisma.server";
 
 const ADMIN = { id: "admin-1", role: "ADMIN" };
@@ -44,12 +44,12 @@ function mockUser(user: { id: string; role: string } | null) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(enforceAdminIfApiKey).mockResolvedValue({ response: null, session: null });
   mockUser(ADMIN);
   vi.mocked(prisma.user.update).mockResolvedValue({
     id: "target",
-    _count: { enrollments: 0, courseTAs: 0, taughtCourses: 0, aiInteractions: 0 },
+    _count: { enrollments: 0, taughtCourses: 0, aiInteractions: 0 },
   } as never);
+  vi.mocked(prisma.enrollment.count).mockResolvedValue(0);
 });
 
 describe("PATCH /api/users/:id — self guards (#297)", () => {

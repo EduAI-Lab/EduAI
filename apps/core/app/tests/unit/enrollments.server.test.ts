@@ -13,7 +13,7 @@ const prismaMock = vi.hoisted(() => {
   };
   return {
     user: { findUnique: vi.fn() },
-    enrollment: { create: vi.fn(), findFirst: vi.fn(), findUnique: vi.fn() },
+    enrollment: { create: vi.fn(), findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
     $transaction: vi.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
     __tx: tx,
   };
@@ -57,7 +57,7 @@ describe("addEnrollment", () => {
     });
   });
 
-  it("returns 409 ALREADY_ENROLLED on the unique constraint (§6 — promote via PATCH)", async () => {
+  it("returns 409 ALREADY_ENROLLED when an active enrollment already exists (§6 — promote via PATCH)", async () => {
     prismaMock.user.findUnique.mockResolvedValue({ id: "u1" });
     prismaMock.enrollment.create.mockRejectedValue(
       new Prisma.PrismaClientKnownRequestError("unique", {
@@ -65,6 +65,7 @@ describe("addEnrollment", () => {
         clientVersion: "5.0.0",
       }),
     );
+    prismaMock.enrollment.findUnique.mockResolvedValue({ id: "e1", isActive: true });
     const result = await addEnrollment("c1", { userId: "u1", role: "STUDENT" });
     expect(result).toEqual({ status: "409", error: "ALREADY_ENROLLED" });
   });
@@ -103,6 +104,24 @@ describe("addEnrollment", () => {
       courseId: "c1",
       userId: "u1",
       role: "STUDENT",
+    });
+  });
+
+  it("reactivates an inactive enrollment with the requested role and returns 201 (#685 review)", async () => {
+    prismaMock.user.findUnique.mockResolvedValue({ id: "u1" });
+    prismaMock.enrollment.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError("unique", {
+        code: "P2002",
+        clientVersion: "5.0.0",
+      }),
+    );
+    prismaMock.enrollment.findUnique.mockResolvedValue({ id: "e1", isActive: false });
+    prismaMock.enrollment.update.mockResolvedValue({ id: "e1", role: "TA", isActive: true });
+    const result = await addEnrollment("c1", { userId: "u1", role: "TA" });
+    expect(result.status).toBe("201");
+    expect(prismaMock.enrollment.update).toHaveBeenCalledWith({
+      where: { id: "e1" },
+      data: { role: "TA", isActive: true },
     });
   });
 });

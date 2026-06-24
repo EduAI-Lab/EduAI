@@ -4,10 +4,13 @@ import type { LoaderFunctionArgs } from "react-router";
 import { IconPlus, IconDots, IconCopy, IconMailForward, IconBan } from "@tabler/icons-react";
 
 import { auth } from "~/lib/auth/server";
+import { invitableRolesFor } from "~/lib/invitations/schemas";
+import { UNIT_OPTIONS } from "~/lib/units";
 import {
   Button,
   Badge,
   Input,
+  MultiSelect,
   Label,
   Card,
   CardContent,
@@ -56,7 +59,7 @@ import {
 import { AppSidebar } from "~/components/app-sidebar";
 import { SiteHeader } from "~/components/site-header";
 
-type InviteRole = "ADMIN" | "UNIT_ADMIN" | "INSTRUCTOR";
+type InviteRole = "ADMIN" | "UNIT_ADMIN" | "INSTRUCTOR" | "STUDENT";
 
 type Invitation = {
   id: string;
@@ -75,6 +78,7 @@ type Invitation = {
 };
 
 const ROLE_OPTIONS: { value: InviteRole; label: string }[] = [
+  { value: "STUDENT", label: "Student" },
   { value: "INSTRUCTOR", label: "Professor (Instructor)" },
   { value: "UNIT_ADMIN", label: "Unit Administrator" },
   { value: "ADMIN", label: "Administrator" },
@@ -90,8 +94,11 @@ const ROLE_LABEL: Record<InviteRole | "STUDENT", string> = {
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request);
   if (!session?.user) return redirect("/auth/login");
-  if (session.user.role !== "ADMIN") return redirect("/dashboard");
-  return { user: session.user };
+  if (!["ADMIN", "UNIT_ADMIN"].includes(session.user.role ?? "")) return redirect("/dashboard");
+  return {
+    user: session.user,
+    invitableRoles: invitableRolesFor(session.user.role),
+  };
 }
 
 const formatDate = (s: string) =>
@@ -110,7 +117,7 @@ function StatusBadge({ invite }: { invite: Invitation }) {
 }
 
 export default function InvitationsPage() {
-  const { user } = useLoaderData<typeof loader>();
+  const { user, invitableRoles } = useLoaderData<typeof loader>();
   const [invites, setInvites] = useState<Invitation[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -118,8 +125,8 @@ export default function InvitationsPage() {
   // Invite form
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
-  const [role, setRole] = useState<InviteRole>("INSTRUCTOR");
-  const [unitsText, setUnitsText] = useState("");
+  const [role, setRole] = useState<InviteRole>((invitableRoles[0] as InviteRole) ?? "INSTRUCTOR");
+  const [selectedUnits, setSelectedUnits] = useState<string[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -142,8 +149,8 @@ export default function InvitationsPage() {
   const resetForm = () => {
     setEmail("");
     setName("");
-    setRole("INSTRUCTOR");
-    setUnitsText("");
+    setRole((invitableRoles[0] as InviteRole) ?? "INSTRUCTOR");
+    setSelectedUnits([]);
     setFormError(null);
   };
 
@@ -161,13 +168,9 @@ export default function InvitationsPage() {
     e.preventDefault();
     setSubmitting(true);
     setFormError(null);
-    const units = unitsText
-      .split(",")
-      .map((u) => u.trim().toUpperCase())
-      .filter(Boolean);
     const body: Record<string, unknown> = { email, role };
     if (name.trim()) body.name = name.trim();
-    if (role === "UNIT_ADMIN") body.authorizedUnits = units;
+    if (role === "UNIT_ADMIN") body.authorizedUnits = selectedUnits;
 
     try {
       const res = await fetch("/api/invitations", {
@@ -177,7 +180,7 @@ export default function InvitationsPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setFormError(errorMessage(data?.error, res.status));
+        setFormError(errorMessage(data?.error, res.status, role));
         return;
       }
       setDialogOpen(false);
@@ -417,7 +420,7 @@ export default function InvitationsPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {ROLE_OPTIONS.map((o) => (
+                    {ROLE_OPTIONS.filter((o) => invitableRoles.includes(o.value)).map((o) => (
                       <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
                     ))}
                   </SelectContent>
@@ -426,11 +429,16 @@ export default function InvitationsPage() {
               {role === "UNIT_ADMIN" && (
                 <div className="space-y-2">
                   <Label htmlFor="invite-units">Authorized units</Label>
-                  <Input
-                    id="invite-units"
-                    value={unitsText}
-                    onChange={(e) => setUnitsText(e.target.value)}
-                    placeholder="Comma-separated codes, e.g. COSC, MATH"
+                  <MultiSelect
+                    options={UNIT_OPTIONS.map((dept) => ({
+                      value: dept.code,
+                      label: dept.label,
+                      description: dept.code,
+                    }))}
+                    value={selectedUnits}
+                    onValueChange={setSelectedUnits}
+                    placeholder="Select units"
+                    searchPlaceholder="Search units..."
                   />
                   <p className="text-xs text-muted-foreground">
                     Required for a unit administrator — they manage only these subject units.
@@ -474,12 +482,14 @@ export default function InvitationsPage() {
   );
 }
 
-function errorMessage(code: unknown, status: number): string {
+function errorMessage(code: unknown, status: number, role?: string): string {
   switch (code) {
     case "USER_EXISTS":
       return "A user with that email already exists.";
     case "Invalid input":
-      return "Please check the fields and try again (units are required for a unit admin).";
+      return role === "UNIT_ADMIN"
+        ? "Please check the fields and try again — a unit admin invitation must include at least one unit."
+        : "Please check the fields and try again.";
     case "NOT_PENDING":
       return "This invitation is no longer pending.";
     case "NOT_FOUND":

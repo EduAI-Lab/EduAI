@@ -1,4 +1,5 @@
 import * as React from "react"
+import { useRouteLoaderData } from "react-router"
 import {
   IconBooks,
   IconBrain,
@@ -94,11 +95,15 @@ export function AppSidebar({
   ...props
 }: AppSidebarProps) {
   const { policies } = usePolicies()
+  // Prefer the server-resolved flag from the root loader (authoritative,
+  // default-aware, no paint flash). Fall back to the client policy fetch only
+  // if root data is somehow unavailable.
+  const rootData = useRouteLoaderData("root") as { canInvite?: boolean } | undefined
 
   // Policy-gated nav lives in getNavForUser: a UNIT_ADMIN only sees the
   // Invitations link when `unitAdmins.canInvite` is on (matches the route gate).
   const navItems = getNavForUser(user, {
-    canInvite: Boolean(policies["unitAdmins.canInvite"]),
+    canInvite: rootData?.canInvite ?? Boolean(policies["unitAdmins.canInvite"]),
   })
   const navMain = navMainOverride ?? toNavMainItems(navItems)
   const navSecondary =

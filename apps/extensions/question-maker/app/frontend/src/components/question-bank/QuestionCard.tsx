@@ -6,7 +6,9 @@ import { Button, Card, CardContent, Badge } from '@eduai/ui';
 
 import { Eye, Copy } from 'lucide-react';
 import { PermissionGate } from '@/components/rbac/PermissionGate';
+import { CourseNoAccessAlert } from '@/components/rbac/CourseNoAccessAlert';
 import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
+import { formatCourseAccessLevel } from '@/lib/rbac/course-labels';
 import { QuestionVariantEntry } from '../../types/question';
 
 interface QuestionCardProps {
@@ -17,7 +19,10 @@ interface QuestionCardProps {
 }
 
 export const QuestionCard = ({ entry, questionNumber, onView, onCreateVariant }: QuestionCardProps) => {
-    const { canCreateQuestion } = useQmPermissionsForCourse(entry.courseId ?? null);
+    const { canCreateQuestion, access, accessLoading, hasCourseAccess } = useQmPermissionsForCourse(
+        entry.courseId ?? null,
+    );
+    const canWriteInCourse = hasCourseAccess && !accessLoading;
     const primaryTopicLabel = entry.primaryTopicName ?? `Topic ${entry.primaryTopicId}`;
 
     return (
@@ -46,6 +51,11 @@ export const QuestionCard = ({ entry, questionNumber, onView, onCreateVariant }:
                             ) : (
                                 <Badge variant="default" className="bg-green-100 text-green-800 hover:bg-green-200 border-green-300">
                                     Reviewed
+                                </Badge>
+                            )}
+                            {access === 'ta' && (
+                                <Badge variant="outline" className="text-[10px] font-normal">
+                                    {formatCourseAccessLevel('ta')} · own edits only
                                 </Badge>
                             )}
                         </div>
@@ -89,7 +99,7 @@ export const QuestionCard = ({ entry, questionNumber, onView, onCreateVariant }:
                             <Eye className="h-4 w-4" />
                             <span>View</span>
                         </Button>
-                        <PermissionGate allow={canCreateQuestion}>
+                        <PermissionGate allow={canCreateQuestion && canWriteInCourse}>
                         <Button
                             variant="outline"
                             size="sm"
