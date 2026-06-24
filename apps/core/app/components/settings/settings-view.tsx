@@ -4,6 +4,7 @@ import { useState } from "react";
 import { CanvasIntegrationSettings } from "~/components/canvas/canvas-integration-settings";
 import {
   IconAccessible,
+  IconAlertTriangle,
   IconLink,
   IconUser,
   IconWorld,
@@ -33,9 +34,10 @@ const CANVAS_SETTINGS_ROLES = new Set(["INSTRUCTOR", "ADMIN"]);
 interface SettingsViewProps {
   role?: string;
   studentNumber?: string | null;
+  passwordExpired?: boolean;
 }
 
-export function SettingsView({ role, studentNumber = null }: SettingsViewProps) {
+export function SettingsView({ role, studentNumber = null, passwordExpired = false }: SettingsViewProps) {
   const { policies } = usePolicies();
   const canvasPolicyOk =
     role === "ADMIN" ||
@@ -59,6 +61,21 @@ export function SettingsView({ role, studentNumber = null }: SettingsViewProps) 
               subheading="Manage your account, accessibility preferences, and model provider configuration."
             />
           </div>
+
+          {passwordExpired && (
+            <div className="px-4 lg:px-6">
+              <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                <IconAlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
+                <div className="text-sm">
+                  <p className="font-medium">Your password has expired</p>
+                  <p className="mt-0.5 text-amber-800 dark:text-amber-300">
+                    UBC policy requires passwords to be changed annually. Please
+                    update your password below before continuing.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="px-4 lg:px-6">
             <PageTabs value={activeTab} onValueChange={setActiveTab} className="w-full">

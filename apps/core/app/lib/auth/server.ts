@@ -108,11 +108,16 @@ export const auth = betterAuth({
     }),
   },
   databaseHooks: {
-    // #339: record the new hash in password_history after every credential
-    // account creation or password update. `account.password` is the
-    // already-hashed value written by better-auth; we never see plaintext here.
     account: {
       create: {
+        // #339: stamp passwordChangedAt on the same write as the password so
+        // there's no race between the credential row and the timestamp.
+        before: async (account) => {
+          if (account.providerId === "credential" && account.password) {
+            return { data: { ...account, passwordChangedAt: new Date() } };
+          }
+        },
+        // #339: record the new hash in password_history after the row exists.
         after: async (account) => {
           if (account.providerId === "credential" && account.password) {
             await recordPasswordHistory({
@@ -123,6 +128,11 @@ export const auth = betterAuth({
         },
       },
       update: {
+        before: async (account) => {
+          if (account.password) {
+            return { data: { ...account, passwordChangedAt: new Date() } };
+          }
+        },
         after: async (account) => {
           if (account.providerId === "credential" && account.password) {
             await recordPasswordHistory({
