@@ -9,7 +9,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
-- [core] feat: UBC password policy enforcement — three-phase implementation: (1) strength validation (8-char complex or 16-char passphrase) on all password-setting paths via a Better Auth `before` hook; (2) no-reuse-of-last-10 check using `verify`-based hash comparison against `PasswordHistory` records; (3) annual rotation gate in the `root.tsx` loader that redirects to `/settings?expired=1` on every page load until the password is updated. Settings page reorganised: Account tab (change-password + student number), Providers tab, Canvas tab. (#339, #PR, @GlowyBlack, 2026-06-24)
+- [core] feat: UBC password policy enforcement — three-phase implementation: (1) strength validation (8-char complex or 16-char passphrase) on all password-setting paths via a Better Auth `before` hook; (2) no-reuse-of-last-10 check using `verify`-based hash comparison against `PasswordHistory` records; (3) annual rotation gate in the `root.tsx` loader that redirects to `/settings?expired=1` on every page load until the password is updated. Settings page reorganised: Account tab (change-password + student number), Providers tab, Canvas tab. (#339, #769, @GlowyBlack, 2026-06-24)
 
 ### Fixed
 
