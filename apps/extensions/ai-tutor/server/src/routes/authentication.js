@@ -38,6 +38,7 @@ router.get('/me', async (req, res) => {
   }
 
   const publicUser = toPublicUser(authUser);
+  let effectiveUser = publicUser;
 
   // Core dropped the platform-level UserRole.TA (#664): a course TA is now a
   // STUDENT-platform user with Enrollment(role=TA). AI Tutor's client RBAC still
@@ -48,14 +49,14 @@ router.get('/me', async (req, res) => {
   if (publicUser && publicUser.role === 'STUDENT' && coreCourses != null) {
     try {
       if (await userHasCoreTaEnrollment(cookie, coreCourses)) {
-        publicUser.role = 'TA';
+        effectiveUser = { ...publicUser, role: 'TA' };
       }
     } catch (err) {
       console.error('[eduai] Effective TA role resolution failed on /me', err);
     }
   }
 
-  res.json({ user: publicUser });
+  res.json({ user: effectiveUser });
 });
 
 // Proxy sign-out to Core server-to-server, avoiding browser CORS restrictions.
