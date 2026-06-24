@@ -161,6 +161,43 @@ describe('approved-variant lock (§19)', () => {
     expect(mockUpdateVariant).not.toHaveBeenCalled();
   });
 
+  it('INSTRUCTOR can toggle isAiGenerated on an approved variant → 200', async () => {
+    authAs(INSTRUCTOR, 'INSTRUCTOR');
+    loadVariant({ isDraft: false, createdBy: 'anyone' });
+    mockUpdateVariant.mockResolvedValue({
+      id: 42,
+      isDraft: false,
+      isAiGenerated: true,
+      questionMetadata: { course: COURSE },
+    });
+
+    const res = await request(app)
+      .put('/api/questions/variants/42')
+      .set('Cookie', 'session=v')
+      .send({ isAiGenerated: true });
+
+    expect(res.status).toBe(200);
+    expect(mockUpdateVariant).toHaveBeenCalledWith(
+      '42',
+      expect.objectContaining({ isAiGenerated: true }),
+      COURSE.userId,
+    );
+  });
+
+  it('approved variant rejects mixed AI tag + content edit → 409', async () => {
+    authAs(INSTRUCTOR, 'INSTRUCTOR');
+    loadVariant({ isDraft: false, createdBy: 'anyone' });
+
+    const res = await request(app)
+      .put('/api/questions/variants/42')
+      .set('Cookie', 'session=v')
+      .send({ isAiGenerated: true, questionText: 'sneaky edit' });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('VARIANT_LOCKED');
+    expect(mockUpdateVariant).not.toHaveBeenCalled();
+  });
+
   it('INSTRUCTOR reverting an approved variant (isDraft:true) → 200', async () => {
     authAs(INSTRUCTOR, 'INSTRUCTOR');
     loadVariant({ isDraft: false, createdBy: 'anyone' });

@@ -216,7 +216,8 @@ Each section should use this format:
 | `CanvasDashboardCard.test.tsx` | Dashboard Canvas card: renders for instructors, hidden for students, opens sync dialog on button click. |
 | `student-id-onboarding-form.test.tsx` | Student-ID onboarding form: renders student number field and Continue/Skip actions; shows form-level errors. |
 | `canvas-guards.test.ts` | `canManageCanvasIntegration` (INSTRUCTOR/ADMIN only), `canLinkCanvasRoster` (STUDENT/TA only), and `isCanvasSyncRateLimited`. |
-| `canvas-link-roster.test.ts` | `LinkRosterSchema` validation and `isCanvasLinkRosterRateLimited` under-limit behaviour. || `courses-schemas.test.ts`| Tests that course schemas require non-empty fields, reject fractional years, enforce that topic deletion specifies at least one identifier, and validate per-course RAG overrides (`UpdateCourseRagSettingsSchema`: range bounds, null clears, empty patch). |
+| `canvas-link-roster.test.ts` | `LinkRosterSchema` validation, `isCanvasLinkRosterRateLimited` under-limit behaviour, and `linkCanvasRoster` saving the student number with zero enrollments when no instructor has synced Canvas yet (no staging rows) so a later sync can enroll them (#725). |
+| `courses-schemas.test.ts`| Tests that course schemas require non-empty fields, reject fractional years, enforce that topic deletion specifies at least one identifier, and validate per-course RAG overrides (`UpdateCourseRagSettingsSchema`: range bounds, null clears, empty patch). |
 | `courses.server.test.ts` | `getCourses` (role-scoped via `buildCourseListFilter`), `createCourse` (incl. UNIT_ADMIN department lock, plus INSTRUCTOR self-create gated by the `instructors.canCreateCourses` policy — auto-enrolled when enabled, 403 when disabled), `updateCourse` (rank gating, UNIT_ADMIN can't move a course outside their units), `deleteCourse` soft-delete, `getCourse`, `getCourseTopics`, `getCourseTopic`, `deleteCourseTopic`, and `setPublishState` (service-key path with `requireServiceKey` guard, session path with rank-gating, 404 for missing course, 400 for missing id, and correct `isPublished` toggling for both publish and unpublish); plus the new policy gates (#660) — INSTRUCTOR publish 403 when `instructors.canPublishCourses` is off, INSTRUCTOR/UNIT_ADMIN delete 403 when their respective delete flag is off (ADMIN unaffected), and the field-scoped TA `updateCourse` carve-out (`tas.canSetAiInstructions`: `aiInstructions`-only PATCH succeeds, any other field or the flag off is 403). |
 | `embedding.test.ts` | Tests chunk generation and `resolveMaterialChunks` (empty input, short single chunk, size limit, word overlap, punctuation-free input, round-trip of overlapped upload-path chunks via `SEMANTIC_CHUNK_SEPARATOR`); `generateEmbeddings` never exceeds 100 inputs per cloud `embedMany` call (250-chunk and 101-chunk cases), splits at the default batch size (64) and provider cap boundary (100 + 1), preserves order across batches, and caps `EMBED_MANY_BATCH_SIZE` env overrides at the provider limit (reloads module so import-time env is exercised); plus `getExpectedEmbeddingDimension` and `wantsLocalEmbeddingProvider` for 1024-dim local embed env defaults. |
 | `embedding-config.test.ts` | Tests per-course embedding settings resolution (`resolveEffectiveEmbeddingSettings`), stale-index detection, settings update validation, and env provider aliases for local/cloud overrides. |
@@ -435,6 +436,7 @@ Unit tests for the shared design-system component library (`@eduai/ui`). Run wit
 | `courseAccess.test.js` | `resolveCourseAccess` derives the caller's access level (ADMIN/UNIT_ADMIN/INSTRUCTOR/TA/STUDENT) from course ownership, Core enrollments, and unit-department matching, and the `requireCourseAccess` middleware enforces a minimum rank — 401 unauthenticated, 404 missing course, 403 below the required rank. |
 | `resourceAccessIdGuard.test.js` | The resource-access loaders (`requireVariantAccess`/`requireQuestionAccess`/`requireAssessmentAccess`) reject a non-integer id with 404 before any DB query, so a `NaN` never reaches the INTEGER PK and leaks a 500. |
 | `reconcile.test.js` | Unit tests for the QM daily reconciliation cron: course phase nullifies `coreCourseId` on Core 404, skips on 5xx, leaves intact on 200, continues on per-row error; topic phase nullifies `coreTopicId` on 404, skips topics whose course has no `coreCourseId`, skips on 5xx; variant phase nullifies `coreQuestionId` on 404, skips on 5xx; completes without error on empty tables. |
+| `resourceAccessIdGuard.test.js` | The resource-access loaders (`requireVariantAccess`/`requireQuestionAccess`/`requireAssessmentAccess`) reject a non-integer or non-positive id (e.g. `0`, `abc`) with 404 before any DB query, so invalid ids never reach the INTEGER PK and leak a 500. |
 
 ---
 
@@ -469,7 +471,7 @@ Unit tests for the shared design-system component library (`@eduai/ui`). Run wit
 | `authMeBugReport.test.js` | `GET /api/auth/me` returns `isBugReportAdmin=true` only for ADMIN, with the legacy `BUG_REPORT_ADMIN_EMAILS` allowlist ignored so UNIT_ADMIN/INSTRUCTOR/TA/STUDENT all resolve to false. |
 | `canvasRbac.test.js` | Canvas RBAC: integration save/get/delete are INSTRUCTOR-only own-scoped (TA/STUDENT → 403), and course-mapping reads and assessment export are course-scoped INSTRUCTOR-only (TA → 403). |
 | `questionRbac.test.js` | Question route RBAC: STUDENT blocked from all writes (403), TA may view the whole course bank but edit/delete only their own questions (`createdBy`, else 403), and INSTRUCTOR may create/edit/delete any question in the course. |
-| `variantRbac.test.js` | Variant route RBAC: STUDENT blocked from edits/deletes/creates (403), TA own-only draft edit/delete (`createdBy`, else 403), INSTRUCTOR-only approval and draft-revert (TA → 403/409), approved variants locked against edits (409 `VARIANT_LOCKED`), and `PATCH` testable INSTRUCTOR-gated ahead of payload validation. |
+| `variantRbac.test.js` | Variant route RBAC: STUDENT blocked from edits/deletes/creates (403), TA own-only draft edit/delete (`createdBy`, else 403), INSTRUCTOR-only approval and draft-revert (TA → 403/409), approved variants locked against content edits (409 `VARIANT_LOCKED`) but allow tag-only `isAiGenerated` toggle, and `PATCH` testable INSTRUCTOR-gated ahead of payload validation. |
 | `crossCourseScoping.integration.test.js` | Section/variant/question write services reject a child resource from a different course owned by the same user (cross-course linking, section/variant hijack, and `addQuestionToAssessment`/`removeQuestionFromAssessment`), while same-course writes still succeed. |
 | `questionOrderRbac.test.js` | Question-order routes (`PUT /:id/order`, `DELETE /:id/order/:assessmentId`) are instructor-only (TA → 403, §17) and reject an `assessmentId` from a different course than the question (→ 404). |
 | `approveTopicValidation.test.js` | `POST /api/questions/approve` rejects a question with no/invalid `primaryTopicId` with 400 before reaching the service, and forwards a real CUID topic id unchanged. |
@@ -486,6 +488,13 @@ Unit tests for the shared design-system component library (`@eduai/ui`). Run wit
 | Test file | What it tests |
 |-----------|---------------|
 | `LoginPage.test.tsx` | The login page submits credentials, shows errors, switches to registration, renders loading state, and redirects authenticated users |
+| `questionMetadataEdit.test.ts` | Metadata edit builds variant PUT payload only for draft variants when question text or difficulty changed |
+| `mcqChoiceDisplay.test.ts` | Correct-answer MCQ choice rows and summary use strong success styling classes |
+| `courseDisplay.test.ts` | `dedupeCoursesByCode` collapses duplicate codes and prefers Core-linked rows |
+| `rbac-permissions.test.ts` | QM RBAC permission helpers for platform course access and authoring gates |
+| `rbac-roles.test.ts` | Role badge labels and navigation visibility by QM role |
+| `rbac-nav.test.ts` | Sidebar nav items shown per QM role |
+| `rbac-course-labels.test.ts` | Course nav label formatting for RBAC views |
 
 ---
 
