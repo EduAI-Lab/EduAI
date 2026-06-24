@@ -19,13 +19,8 @@ export async function resolveCourseAccess(
   // INSTRUCTOR who owns the course
   if (user.role === 'INSTRUCTOR' && course.instructorId === user.id) return 'instructor'
 
-  // TA via CourseTA junction table
-  const ta = await prisma.courseTA.findUnique({
-    where: { courseId_userId: { courseId: course.id, userId: user.id } },
-  })
-  if (ta) return 'ta'
-
-  // Resolve role from Enrollment — covers enrollment-based instructors/TAs
+  // Resolve course-level role from Enrollment. A TA is an Enrollment with
+  // role = 'TA' (there is no longer a separate CourseTA table).
   const enrollment = await prisma.enrollment.findFirst({
     where: { courseId: course.id, userId: user.id, isActive: true },
   })

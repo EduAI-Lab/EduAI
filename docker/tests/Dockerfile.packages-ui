@@ -1,0 +1,35 @@
+# @eduai/ui design-system component tests (Vitest + happy-dom)
+# Target:
+#   test — runs the packages/ui unit suite
+#
+# Build context: monorepo root
+#
+# Must build from the repo root because @eduai/ui is a workspace package and
+# its dependencies (React, Radix, etc.) are hoisted into the root node_modules.
+
+# ── Shared: install workspace dependencies ─────────────────────────────────
+FROM node:20-alpine AS deps
+WORKDIR /app
+
+COPY package.json package-lock.json .npmrc ./
+COPY packages/ui/package.json                                 ./packages/ui/
+COPY apps/core/package.json                                   ./apps/core/
+COPY apps/extensions/ai-tutor/package.json                    ./apps/extensions/ai-tutor/
+COPY apps/extensions/ai-tutor/server/package.json             ./apps/extensions/ai-tutor/server/
+COPY apps/extensions/question-maker/package.json              ./apps/extensions/question-maker/
+COPY apps/extensions/question-maker/app/backend/package.json  ./apps/extensions/question-maker/app/backend/
+COPY apps/extensions/question-maker/app/frontend/package.json ./apps/extensions/question-maker/app/frontend/
+
+RUN npm ci --ignore-scripts
+
+# ── Target: test ───────────────────────────────────────────────────────────
+FROM node:20-alpine AS test
+WORKDIR /app
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY packages/ui ./packages/ui/
+
+ENV PATH="/app/node_modules/.bin:${PATH}"
+
+WORKDIR /app/packages/ui
+CMD ["sh", "-c", "vitest run"]

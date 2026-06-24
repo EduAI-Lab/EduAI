@@ -2,6 +2,7 @@ import { PromptSuggestion } from "@eduai/ui";
 
 export interface SuggestedPromptsProps {
   onSelectPrompt: (prompt: string) => void;
+  disabled?: boolean;
 }
 
 interface PromptCard {
@@ -49,14 +50,15 @@ const prompts: PromptCard[] = [
   },
 ];
 
-export function SuggestedPrompts({ onSelectPrompt }: SuggestedPromptsProps) {
+export function SuggestedPrompts({ onSelectPrompt, disabled }: SuggestedPromptsProps) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 w-full max-w-[520px]">
       {prompts.map((item, index) => (
         <PromptSuggestion
           key={index}
-          onClick={() => onSelectPrompt(item.prompt)}
-          className="h-auto p-3.5 text-left border border-border rounded-xl hover:border-primary hover:shadow-sm transition-all"
+          onClick={disabled ? undefined : () => onSelectPrompt(item.prompt)}
+          disabled={disabled}
+          className="h-auto p-3.5 text-left border border-border rounded-xl hover:border-primary hover:shadow-sm transition-all disabled:pointer-events-none disabled:opacity-50"
         >
           <div>
             <p className="text-[10px] font-bold text-secondary uppercase tracking-wide mb-1">

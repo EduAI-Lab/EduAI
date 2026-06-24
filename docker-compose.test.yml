@@ -204,3 +204,12 @@ services:
     depends_on:
       question-maker-test-db:
         condition: service_healthy
+
+  # ── Design-system component suite (packages/ui) ───────────────────────────
+  # No database required; pure Vitest + happy-dom component tests.
+  packages-ui-unit-tests:
+    build:
+      context: .
+      dockerfile: docker/tests/Dockerfile.packages-ui
+      target: test
+    command: ["sh", "-c", "vitest run"]
