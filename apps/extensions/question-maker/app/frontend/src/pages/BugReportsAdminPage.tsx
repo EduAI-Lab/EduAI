@@ -12,6 +12,8 @@ import { canTriageBugReports } from '@/lib/rbac';
 
 const STATUS_OPTIONS = ['unhandled', 'in progress', 'resolved'] as const;
 
+const QM_SOURCE = 'QUESTION_MAKER' as const;
+
 function DetailDialog({
   open,
   onClose,
@@ -74,7 +76,8 @@ export function BugReportsAdminPage() {
 
   const load = useCallback(async () => {
     try {
-      const data = await bugReportApi.list();
+      setLoading(true);
+      const data = await bugReportApi.list({ source: QM_SOURCE });
       setRows(data);
     } catch {
       toast({
@@ -117,7 +120,7 @@ export function BugReportsAdminPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <div className="border-b bg-card px-6 py-4 flex items-center gap-4">
+      <div className="border-b bg-card px-6 py-4 flex flex-wrap items-center gap-4">
         <Button variant="ghost" size="sm" onClick={() => navigate('/home')} className="gap-2">
           <ArrowLeft className="h-4 w-4" />
           Back
@@ -133,7 +136,6 @@ export function BugReportsAdminPage() {
             <thead className="bg-muted/50 border-b">
               <tr>
                 <th className="text-left p-3 font-medium">Status</th>
-                <th className="text-left p-3 font-medium">Source</th>
                 <th className="text-left p-3 font-medium">Description</th>
                 <th className="text-left p-3 font-medium">User</th>
                 <th className="text-left p-3 font-medium">Date</th>
@@ -144,8 +146,8 @@ export function BugReportsAdminPage() {
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="p-8 text-center text-muted-foreground">
-                    No bug reports yet.
+                  <td colSpan={6} className="p-8 text-center text-muted-foreground">
+                    No bug reports.
                   </td>
                 </tr>
               ) : (
@@ -163,11 +165,6 @@ export function BugReportsAdminPage() {
                           </option>
                         ))}
                       </select>
-                    </td>
-                    <td className="p-3 align-top whitespace-nowrap">
-                      <span className="text-xs text-muted-foreground uppercase tracking-wide">
-                        {row.source ?? '—'}
-                      </span>
                     </td>
                     <td className="p-3 align-top max-w-[280px]">
                       <button

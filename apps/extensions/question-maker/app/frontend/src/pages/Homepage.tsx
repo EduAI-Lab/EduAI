@@ -10,12 +10,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { QuestionBank } from '../components/question-bank/QuestionBank';
 import { QmHomeShell } from '../components/home/QmHomeShell';
+import { CourseNoAccessAlert } from '@/components/rbac/CourseNoAccessAlert';
 import { useQmPermissionsForCourse } from '../hooks/useQmPermissions';
 import { AssessmentSection } from '../components/assessments/AssessmentSection';
 import { QuestionDetailView } from '../components/question-detail/QuestionDetailView';
 import { Course, Question, Assessment, QuestionVariantEntry, AssessmentGenerationParams, MCQChoice } from '../types/question';
 import { Topic } from '../types/topic';
-import { useCourses } from '../hooks/useCourses';
+import { useDisplayCourses } from '../hooks/useDisplayCourses';
 import { questionService } from '../services/questionService';
 import { courseService } from '../services/courseService';
 import assessmentService from '../services/assessmentService';
@@ -25,6 +26,7 @@ import { CanvasExportDialog } from '../components/canvas/CanvasExportDialog';
 import { CanvasImportDialog } from '../components/canvas/CanvasImportDialog';
 import { useQmLayout } from '../components/layout/QmLayoutContext';
 import { useGuidedTour } from '../contexts/GuidedTourContext';
+import { dedupeCoursesByCode } from '../utils/courseDisplay';
 import {
     assessmentBlocksToDocxBlob,
     assessmentBlocksToPlainText,
@@ -32,12 +34,14 @@ import {
     slugifyAssessmentBasename
 } from '../utils/assessmentExport';
 
+const TOUR_COURSE_STORAGE_KEY = 'qm:tour-course-id';
+
 export const Homepage = () => {
   const LAST_SELECTED_COURSE_KEY = 'home:last-selected-course';
 
   const location = useLocation();
   const navigate = useNavigate();
-  const { courses, isLoading: isCoursesLoading, fetchCourses } = useCourses();
+  const { courses, displayCourses, isLoading: isCoursesLoading, fetchCourses } = useDisplayCourses();
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
   const [preferredCourseId, setPreferredCourseId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<'questions' | 'assessments'>(() => {
@@ -68,7 +72,7 @@ export const Homepage = () => {
   const [variantToDelete, setVariantToDelete] = useState<QuestionVariantEntry | null>(null);
   const [isDeletingVariant, setIsDeletingVariant] = useState(false);
   const { toast } = useToast();
-  const { startTour, registerOnTourEnd } = useGuidedTour();
+  const { startTour, registerOnTourEnd, registerStepAction, isActive: isTourActive, activeTourId } = useGuidedTour();
   const { setGuidedTourHandler } = useQmLayout();
   const { canCreateQuestion, hasCourseAccess, accessLoading } = useQmPermissionsForCourse(
     selectedCourse?.id ?? null,
@@ -118,8 +122,8 @@ export const Homepage = () => {
   useEffect(() => {
     const state = location.state as { courseId?: number; startGuidedTour?: boolean } | null;
     const courseId = state?.courseId;
-    if (courseId == null || courses.length === 0) return;
-    const match = courses.find((c) => c.id === courseId);
+    if (courseId == null || displayCourses.length === 0) return;
+    const match = displayCourses.find((c) => c.id === courseId);
     if (match) {
       setSelectedCourse(match);
       setPreferredCourseId(courseId);
@@ -128,7 +132,7 @@ export const Homepage = () => {
     }
     // Intentionally not including navigate/location in deps to run only when state.courseId or courses change
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.state, courses]);
+  }, [location.state, displayCourses]);
 
   // URL is authoritative for tab. When URL has a valid tab param, sync state to
   // it. When URL lacks the param (e.g. bare /home), push the current state tab.
@@ -154,7 +158,7 @@ export const Homepage = () => {
 
   // Choose course based on preference when courses list updates
   useEffect(() => {
-    if (courses.length === 0) {
+    if (displayCourses.length === 0) {
       setSelectedCourse(null);
       setQuestions([]);
       return;
@@ -163,7 +167,7 @@ export const Homepage = () => {
     // Highest priority: course we clicked into from course selection page
     const stateCourseId = (location.state as { courseId?: number } | null)?.courseId;
     if (stateCourseId != null) {
-      const match = courses.find((c) => c.id === stateCourseId);
+      const match = displayCourses.find((c) => c.id === stateCourseId);
       if (match) {
         setSelectedCourse(match);
         setPreferredCourseId(stateCourseId);
@@ -172,13 +176,13 @@ export const Homepage = () => {
     }
 
     // If current selection is valid, keep it
-    if (selectedCourse && courses.some((course) => course.id === selectedCourse.id)) {
+    if (selectedCourse && displayCourses.some((course) => course.id === selectedCourse.id)) {
       return;
     }
 
     // Try preferred id from storage
     if (preferredCourseId) {
-      const match = courses.find((course) => course.id === preferredCourseId);
+      const match = displayCourses.find((course) => course.id === preferredCourseId);
       if (match) {
         setSelectedCourse(match);
         return;
@@ -186,8 +190,8 @@ export const Homepage = () => {
     }
 
     // Fallback to first course
-    setSelectedCourse(courses[0]);
-  }, [courses, preferredCourseId, selectedCourse, location.state]);
+    setSelectedCourse(displayCourses[0]);
+  }, [displayCourses, preferredCourseId, selectedCourse, location.state]);
 
   useEffect(() => {
     if (selectedCourse) {
@@ -195,19 +199,30 @@ export const Homepage = () => {
     }
   }, [selectedCourse, loadTopicsForCourse]);
 
-  // When arriving from course selection with "start guided tour", run the tour and return to course selection when done
+  // When arriving from course selection with "start guided tour", continue the tour on this page.
   useEffect(() => {
     const state = location.state as { startGuidedTour?: boolean } | null;
     if (!state?.startGuidedTour || !selectedCourse) return;
     const path = location.pathname + location.search;
-    const timer = setTimeout(() => {
+    const timer = window.setTimeout(() => {
       startTour('main');
       registerOnTourEnd(() => navigate('/courses'));
       navigate(path, { replace: true, state: {} });
-    }, 300);
-    return () => clearTimeout(timer);
+    }, 350);
+    return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state, selectedCourse]);
+
+  // Tour: switch to assessments tab when step 5 runs (sidebar link or direct navigation fallback).
+  useEffect(() => {
+    if (!isTourActive || activeTourId !== 'main') return;
+
+    const unregister = registerStepAction('assessment-tab', () => {
+      navigate('/home?tab=assessments', { replace: true, state: location.state ?? {} });
+    });
+
+    return unregister;
+  }, [isTourActive, activeTourId, registerStepAction, navigate, location.state]);
 
   const fetchAssessments = useCallback(async () => {
     try {
@@ -223,12 +238,17 @@ export const Homepage = () => {
     }
   }, []);
 
-  /** When starting the tour from homepage, go to course-select page first; step 1 Next will return here to this course on questions tab. */
+  /** When starting the tour from homepage, go to course-select page first; step 1 Next returns here on questions tab. */
   const handleGuidedTourClick = useCallback(() => {
     if (!selectedCourse?.id) return;
+    try {
+      sessionStorage.setItem(TOUR_COURSE_STORAGE_KEY, String(selectedCourse.id));
+    } catch {
+      // ignore
+    }
     navigate('/courses', {
-      state: { startGuidedTour: true, returnCourseId: selectedCourse.id, returnTab: 'questions' },
-      replace: true
+      state: { startGuidedTour: true, returnCourseId: selectedCourse.id },
+      replace: true,
     });
   }, [navigate, selectedCourse?.id]);
 
@@ -277,8 +297,8 @@ export const Homepage = () => {
 
   const emptyStateMessage = selectedCourse
     ? questionsError || 'No questions found for this course yet. Try adding or uploading questions.'
-    : courses.length === 0
-      ? 'No courses available. Core courses appear after sign-in, or start the guided tour for a sandbox course.'
+    : displayCourses.length === 0
+      ? 'No courses available. Start the guided tour to add courses from the AI service.'
       : 'Select a course to view its questions.';
 
   const filteredAssessments = useMemo(() => {
@@ -295,9 +315,11 @@ export const Homepage = () => {
     updates: {
       isAiGenerated?: boolean;
       isDraft?: boolean;
+      testable?: boolean;
       difficulty?: import('../types/question').QuestionDifficulty;
       choices?: MCQChoice[] | null;
       answer?: string | null;
+      questionText?: string;
     }
   ) => {
     setQuestions((prev) =>
@@ -309,9 +331,11 @@ export const Homepage = () => {
             ...updatedVariants[variantIndex],
             ...(updates.isAiGenerated !== undefined && { isAiGenerated: updates.isAiGenerated }),
             ...(updates.isDraft !== undefined && { isDraft: updates.isDraft }),
+            ...(updates.testable !== undefined && { testable: updates.testable }),
             ...(updates.difficulty !== undefined && { difficulty: updates.difficulty }),
             ...(updates.choices !== undefined && { choices: updates.choices }),
-            ...(updates.answer !== undefined && { answer: updates.answer })
+            ...(updates.answer !== undefined && { answer: updates.answer }),
+            ...(updates.questionText !== undefined && { questionText: updates.questionText })
           };
           return { ...question, variants: updatedVariants };
         }
@@ -827,41 +851,37 @@ export const Homepage = () => {
     [filteredAssessments, toast]
   );
 
+  const coursePickerOptions = useMemo(
+    () => dedupeCoursesByCode(displayCourses),
+    [displayCourses],
+  );
+
   return (
     <QmHomeShell>
       {selectedCourse && !accessLoading && !hasCourseAccess && (
-        <div
-          role="alert"
-          className="rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-        >
-          You do not have access to this course. Choose a course from the list or return to{' '}
-          <button type="button" className="underline" onClick={() => navigate('/courses')}>
-            course selection
-          </button>
-          .
-        </div>
+        <CourseNoAccessAlert onGoToCourses={() => navigate('/courses')} />
       )}
       <div className="flex flex-wrap items-center gap-4">
         <Select
           value={selectedCourse?.id?.toString() || ''}
           onValueChange={(value) => {
-            const course = courses.find((c) => c.id.toString() === value);
+            const course = coursePickerOptions.find((c) => c.id.toString() === value);
             if (course) setSelectedCourse(course);
           }}
-          disabled={isCoursesLoading || courses.length === 0}
+          disabled={isCoursesLoading || coursePickerOptions.length === 0}
         >
-          <SelectTrigger className="w-80 min-w-80" data-tour-id="course-select">
+          <SelectTrigger className="w-80 min-w-80">
             <SelectValue
               placeholder={isCoursesLoading ? 'Loading courses...' : 'Select Course'}
             />
           </SelectTrigger>
           <SelectContent>
-            {courses.length === 0 ? (
+            {coursePickerOptions.length === 0 ? (
               <SelectItem value="__no_courses" disabled>
                 {isCoursesLoading ? 'Loading...' : 'No courses available'}
               </SelectItem>
             ) : (
-              courses.map((course) => (
+              coursePickerOptions.map((course) => (
                 <SelectItem key={course.id} value={course.id.toString()}>
                   {course.code || '—'} - {course.name}
                 </SelectItem>
@@ -882,8 +902,8 @@ export const Homepage = () => {
             isLoading={isQuestionsLoading}
             courseName={selectedCourse?.name}
             emptyMessage={emptyStateMessage}
-            disableAdd={!selectedCourse || !canCreateQuestion}
-            disableUpload={!selectedCourse || !canCreateQuestion}
+            disableAdd={!selectedCourse || !canCreateQuestion || accessLoading || !hasCourseAccess}
+            disableUpload={!selectedCourse || !canCreateQuestion || accessLoading || !hasCourseAccess}
             onOpenProfile={() => startTour('main')}
           />
         ) : (
