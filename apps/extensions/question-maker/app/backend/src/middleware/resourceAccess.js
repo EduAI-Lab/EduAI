@@ -21,7 +21,7 @@ import { resolveAccessForCourse, minRank } from './courseAccess.js';
  */
 function parseResourceId(raw) {
   const parsed = Number(raw);
-  return Number.isInteger(parsed) ? parsed : null;
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 function makeGuard({ min, attachAs, loader }) {

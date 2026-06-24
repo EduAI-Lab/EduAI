@@ -61,6 +61,45 @@ export interface CanvasImportResult {
 }
 
 export const canvasService = {
+  /** True when local dev should prefer Canvas test mode (set VITE_CANVAS_TEST_MODE=true). */
+  prefersTestMode(): boolean {
+    return import.meta.env.VITE_CANVAS_TEST_MODE === 'true';
+  },
+
+  /** Connect with optional fallback to test mode when live credentials fail. */
+  async connectCanvasWithFallback(
+    canvasUrl: string,
+    apiKey: string,
+    options: { preferTestMode?: boolean } = {},
+  ): Promise<{ integration: CanvasIntegration; usedTestMode: boolean }> {
+    const preferTestMode = options.preferTestMode ?? this.prefersTestMode();
+    if (preferTestMode) {
+      const integration = await this.connectCanvas(
+        canvasUrl || 'https://canvas.test',
+        apiKey || 'test-key',
+        true,
+      );
+      return { integration, usedTestMode: true };
+    }
+
+    try {
+      const integration = await this.connectCanvas(canvasUrl, apiKey, false);
+      return { integration, usedTestMode: false };
+    } catch (error) {
+      const allowTestFallback = this.prefersTestMode() || import.meta.env.DEV;
+      if (!allowTestFallback) {
+        throw error;
+      }
+      console.warn('Canvas live connect failed; retrying in test mode', error);
+      const integration = await this.connectCanvas(
+        canvasUrl || 'https://canvas.test',
+        apiKey || 'test-key',
+        true,
+      );
+      return { integration, usedTestMode: true };
+    }
+  },
+
   /** Fetches the current user's Canvas integration status (or null). */
   async getIntegration(): Promise<CanvasIntegration | null> {
     try {
