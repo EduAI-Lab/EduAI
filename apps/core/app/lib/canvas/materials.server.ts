@@ -129,6 +129,9 @@ export async function discoverCanvasMaterialsForCourse(
       courseId,
       externalSource: CANVAS_EXTERNAL_SOURCE,
       externalId: { not: null },
+      // Soft-deleted rows are EduAI-side removals — never resurface them as
+      // "imported"; they should read back as available to (re-)import.
+      deletedAt: null,
     },
     select: { id: true, externalId: true, canvasUpdatedAt: true },
   });
@@ -184,8 +187,14 @@ async function importSingleCanvasFile(
       externalSource: CANVAS_EXTERNAL_SOURCE,
       externalId: canvasFileId,
     },
-    select: { id: true, status: true, canvasUpdatedAt: true },
+    select: { id: true, status: true, canvasUpdatedAt: true, deletedAt: true },
   });
+
+  // Soft-delete is a one-way EduAI-side removal; Canvas re-sync must not revive
+  // it. Leave the row deleted and report it as skipped.
+  if (existing?.deletedAt) {
+    return "skipped";
+  }
 
   const canvasUpdatedAt = new Date(file.updated_at);
   if (

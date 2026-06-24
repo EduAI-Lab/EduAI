@@ -1,39 +1,23 @@
 import prisma from "~/lib/prisma.server";
 import { AddTASchema, RemoveTASchema, type AddTAInput, type RemoveTAInput } from "./schemas";
 
-/** Platform roles that may receive a course-level TA enrollment (§6). */
-const TA_ASSIGNABLE_PLATFORM_ROLES = new Set(["STUDENT", "TA"]);
+// A TA is a course-level role, modelled as an Enrollment with role = "TA".
+// There is no longer a separate CourseTA table or platform-level UserRole.TA.
+
+function shapeTA(enrollment: {
+  id: string;
+  user: { id: string; name: string; email: string };
+}) {
+  return { id: enrollment.id, user: enrollment.user };
+}
 
 export async function getCourseTA(courseId: string) {
-  const [courseTAs, enrollmentTAs] = await Promise.all([
-    prisma.courseTA.findMany({
-      where: { courseId },
-      include: {
-        user: { select: { id: true, name: true, email: true } },
-      },
-      orderBy: { createdAt: "asc" },
-    }),
-    prisma.enrollment.findMany({
-      where: { courseId, role: "TA", isActive: true },
-      include: {
-        user: { select: { id: true, name: true, email: true } },
-      },
-      orderBy: { enrolledAt: "asc" },
-    }),
-  ]);
-
-  const seen = new Set(courseTAs.map((ta) => ta.userId));
-  const fromEnrollments = enrollmentTAs
-    .filter((e) => !seen.has(e.userId))
-    .map((e) => ({
-      id: e.id,
-      courseId,
-      userId: e.userId,
-      createdAt: e.enrolledAt,
-      user: e.user,
-    }));
-
-  return [...courseTAs, ...fromEnrollments];
+  const enrollments = await prisma.enrollment.findMany({
+    where: { courseId, role: "TA", isActive: true },
+    include: { user: { select: { id: true, name: true, email: true } } },
+    orderBy: { enrolledAt: "asc" },
+  });
+  return enrollments.map(shapeTA);
 }
 
 export async function addCourseTA(courseId: string, payload: AddTAInput) {
@@ -44,36 +28,41 @@ export async function addCourseTA(courseId: string, payload: AddTAInput) {
 
   const user = await prisma.user.findUnique({
     where: { id: parsed.data.userId },
-    select: { role: true },
+    select: { id: true, role: true },
   });
 
   if (!user) return { error: "User not found" } as const;
-  if (!TA_ASSIGNABLE_PLATFORM_ROLES.has(user.role)) {
-    return { error: "User must be a student or TA to assign as course TA" } as const;
+
+  // A TA is a STUDENT platform user with an EnrollmentRole.TA enrollment.
+  // Promoting an INSTRUCTOR/ADMIN/UNIT_ADMIN to a course TA is not a valid op.
+  if (user.role !== "STUDENT") {
+    return { error: "Only STUDENT users can be added as a course TA" } as const;
   }
 
-  try {
-    const ta = await prisma.$transaction(async (tx) => {
-      const created = await tx.courseTA.upsert({
-        where: {
-          courseId_userId: { courseId, userId: parsed.data.userId },
-        },
-        create: { courseId, userId: parsed.data.userId },
-        update: {},
-        include: { user: { select: { id: true, name: true, email: true } } },
-      });
-      await tx.enrollment.upsert({
-        where: { courseId_userId: { courseId, userId: parsed.data.userId } },
-        create: { courseId, userId: parsed.data.userId, role: "TA", isActive: true },
-        update: { role: "TA", isActive: true },
-      });
-      return created;
-    });
-    return { ta } as const;
-  } catch (error: any) {
-    if (error?.code === "P2002") return { error: "User is already a TA for this course" } as const;
-    throw error;
+  const existing = await prisma.enrollment.findUnique({
+    where: { courseId_userId: { courseId, userId: parsed.data.userId } },
+    select: { role: true, isActive: true },
+  });
+  if (existing?.role === "TA" && existing.isActive) {
+    return { error: "User is already a TA for this course" } as const;
   }
+  // Never silently overwrite an existing INSTRUCTOR enrollment with a TA role —
+  // the upsert's `update` branch would otherwise demote a course instructor.
+  // (A plain STUDENT enrollment may still be promoted to TA.)
+  if (existing?.role === "INSTRUCTOR") {
+    return {
+      error: "User is an instructor for this course and cannot be made a TA",
+    } as const;
+  }
+
+  const enrollment = await prisma.enrollment.upsert({
+    where: { courseId_userId: { courseId, userId: parsed.data.userId } },
+    create: { courseId, userId: parsed.data.userId, role: "TA", isActive: true },
+    update: { role: "TA", isActive: true },
+    include: { user: { select: { id: true, name: true, email: true } } },
+  });
+
+  return { ta: shapeTA(enrollment) } as const;
 }
 
 export async function removeCourseTA(courseId: string, payload: RemoveTAInput) {
@@ -82,51 +71,23 @@ export async function removeCourseTA(courseId: string, payload: RemoveTAInput) {
     return { error: "Invalid input", details: parsed.error.flatten() } as const;
   }
 
-  const result = await prisma.$transaction(async (tx) => {
-    const existing = await tx.courseTA.findFirst({
-      where: { courseId, userId: parsed.data.userId },
-      select: { id: true, user: { select: { name: true } } },
-    });
-    const deleted = await tx.courseTA.deleteMany({
-      where: { courseId, userId: parsed.data.userId },
-    });
+  // A TA is an Enrollment with role = "TA"; there is no CourseTA table.
+  // Capture the enrollment before deactivation so the audit log can record the
+  // enrollment id and the TA's name (both unavailable once the row is inactive).
+  const existing = await prisma.enrollment.findFirst({
+    where: { courseId, userId: parsed.data.userId, role: "TA", isActive: true },
+    select: { id: true, user: { select: { name: true } } },
+  });
+  if (!existing) return { error: "TA not found for this course" } as const;
 
-    if (deleted.count > 0) {
-      await tx.enrollment.updateMany({
-        where: { courseId, userId: parsed.data.userId, role: "TA" },
-        data: { isActive: false },
-      });
-      return { count: deleted.count, ta: existing };
-    }
-
-    const enrollment = await tx.enrollment.findUnique({
-      where: { courseId_userId: { courseId, userId: parsed.data.userId } },
-      select: {
-        id: true,
-        role: true,
-        isActive: true,
-        user: { select: { name: true } },
-      },
-    });
-
-    if (enrollment?.role === "TA" && enrollment.isActive) {
-      await tx.enrollment.update({
-        where: { courseId_userId: { courseId, userId: parsed.data.userId } },
-        data: { isActive: false },
-      });
-      return {
-        count: 1,
-        ta: { id: enrollment.id, user: { name: enrollment.user.name } },
-      };
-    }
-
-    return { count: 0, ta: existing };
+  await prisma.enrollment.updateMany({
+    where: { courseId, userId: parsed.data.userId, role: "TA", isActive: true },
+    data: { isActive: false },
   });
 
-  if (result.count === 0) return { error: "TA not found for this course" } as const;
   return {
     success: true,
-    taId: result.ta?.id ?? null,
-    taName: result.ta?.user?.name ?? null,
+    taId: existing.id,
+    taName: existing.user?.name ?? null,
   } as const;
 }

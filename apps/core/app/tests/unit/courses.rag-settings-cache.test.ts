@@ -23,7 +23,7 @@ const prismaMock = vi.hoisted(() => ({
 
 vi.mock("~/lib/prisma.server", () => ({ default: prismaMock }));
 vi.mock("~/lib/auth/server", () => ({ auth: { api: { getSession: vi.fn() } } }));
-vi.mock("~/lib/auth/guards.server", () => ({ enforceAdminIfApiKey: vi.fn() }));
+vi.mock("~/lib/auth/guards.server", () => ({}));
 
 // ---------------------------------------------------------------------------
 // Helpers

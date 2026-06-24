@@ -57,6 +57,17 @@ export function canDeleteMaterial(
   return false
 }
 
+// Rename mirrors delete: TA can rename only their own uploads; instructor/admin/unit any
+export function canRenameMaterial(
+  access: CourseAccess,
+  userId: string,
+  uploadedBy: string,
+): boolean {
+  if (access === 'admin' || access === 'unit' || access === 'instructor') return true
+  if (access === 'ta') return userId === uploadedBy
+  return false
+}
+
 // §8 Course Topics
 export function canViewTopics(access: CourseAccess, isPublished: boolean): boolean {
   if (!access) return false
