@@ -11,6 +11,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib.sh"
 
+trap 'cron_fail "Script exited unexpectedly"' ERR
+[[ -z "${CORE_CRON_RUN_ID:-}" ]] && cron_start "backup-offsite"
+
 DATE=$(date -u '+%Y%m%d')
 pattern="*_${DATE}.sql.gz"
 log "=== Off-site sync for $DATE ==="
@@ -34,3 +37,5 @@ else
 fi
 
 log "=== Off-site sync complete for $DATE ==="
+
+[[ -z "${CORE_CRON_RUN_ID:-}" ]] && cron_finish

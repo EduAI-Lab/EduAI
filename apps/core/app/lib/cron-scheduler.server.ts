@@ -55,7 +55,11 @@ export function ensureCronSchedulerRunning(): void {
       const overrideMap = new Map(overrides.map((o) => [o.jobName, o.schedule]));
       for (const job of KNOWN_CRON_JOBS) {
         if (!job.script) continue; // external extension jobs — skip
-        scheduleOne(job.name, overrideMap.get(job.name) ?? job.schedule, job.script);
+        try {
+          scheduleOne(job.name, overrideMap.get(job.name) ?? job.schedule, job.script);
+        } catch (err) {
+          console.error(`[cron] Failed to schedule ${job.name}:`, err);
+        }
       }
       console.log("[cron] In-process scheduler started");
     })

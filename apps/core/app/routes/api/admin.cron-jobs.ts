@@ -1,5 +1,6 @@
 import { data } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
+import cron from "node-cron";
 
 import { auth } from "~/lib/auth/server";
 import {
@@ -80,7 +81,7 @@ export async function action({ request }: ActionFunctionArgs) {
     if (!known) {
       return data({ error: `Unknown job: ${jobName}` }, { status: 400 });
     }
-    if (!/^[\d,\-*/]+ [\d,\-*/]+ [\d,\-*/]+ [\d,\-*/]+ [\d,\-*/]+$/.test(schedule.trim())) {
+    if (!cron.validate(schedule.trim())) {
       return data({ error: "Invalid cron expression" }, { status: 400 });
     }
     await updateCronSchedule(jobName, schedule.trim(), scheduleLabel.trim());

@@ -7,6 +7,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib.sh"
 
+trap 'cron_fail "Script exited unexpectedly"' ERR
+[[ -z "${CORE_CRON_RUN_ID:-}" ]] && cron_start "backup-nightly"
+
 DATE=$(date -u '+%Y%m%d')
 mkdir -p "$BACKUP_DIR"
 
@@ -41,3 +44,5 @@ backup_db eduai-core     "$DB_PORT_CORE"  eduai           eduai-db
 backup_db ai-tutor       "$DB_PORT_TUTOR" ai-tutor        eduai-ai-tutor-db
 backup_db question-maker "$DB_PORT_QM"    question-maker  eduai-question-maker-db "${DB_PASS_QM:-$PGPASSWORD}"
 log "=== All nightly backups complete for $DATE ==="
+
+[[ -z "${CORE_CRON_RUN_ID:-}" ]] && cron_finish
