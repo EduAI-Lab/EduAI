@@ -15,6 +15,7 @@ import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { getPolicy } from "~/lib/policy.server";
 import { getExpiredPasswordRedirect } from "~/lib/auth/password-expiry.server";
+import { ensureCronSchedulerRunning } from "~/lib/cron-scheduler.server";
 import { AssistiveUiProvider } from "~/components/assistive/assistive-ui-provider";
 import { ThemeProvider } from "~/components/theme-provider";
 import { Toaster } from "@eduai/ui";
@@ -52,6 +53,7 @@ const GUEST_ROOT_PREFERENCES = {
  * Guests always get defaults, guaranteeing baseline UI on public pages.
  */
 export async function loader({ request }: LoaderFunctionArgs) {
+  ensureCronSchedulerRunning();
   const session = await auth.api.getSession(request);
   if (!session?.user) {
     return GUEST_ROOT_PREFERENCES;
