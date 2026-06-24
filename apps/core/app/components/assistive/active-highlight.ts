@@ -7,7 +7,7 @@ export const CHAT_MESSAGE_INACTIVE_CLASS = "chat-message--inactive";
 /** Subtle anchor on the chat composer when assistive highlighting is on. */
 export const ASSISTIVE_INPUT_ANCHOR_CLASS = "assistive-input-anchor";
 
-/** Course/model selectors hidden in focus mode. */
+/** Reserved for optional focus-mode chrome hiding (composer toolbar stays visible). */
 export const ASSISTIVE_FOCUS_CHROME_CLASS = "assistive-focus-chrome";
 
 /** Chat surface scope for stronger `:focus-visible` rings. */

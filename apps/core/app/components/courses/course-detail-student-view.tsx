@@ -5,7 +5,7 @@ import {
   IconCircleCheck,
   IconCircleX,
 } from '@tabler/icons-react'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import {
   Card,
   CardContent,
@@ -16,6 +16,7 @@ import {
   CourseHeroCard,
   StatusBadge,
   Avatar,
+  courseThemeVars,
 } from '@eduai/ui'
 import {
   CourseMaterialsUpload,
@@ -26,6 +27,13 @@ import type { CourseTopic } from '~/hooks/api/use-course-topics'
 import type { CourseTA } from '~/hooks/api/use-course-tas'
 import { usePolicies } from '~/hooks/api/use-policies'
 import { MaterialPreviewDialog } from '~/components/courses/material-preview-dialog'
+import { CourseCardCustomizePopover } from '~/components/courses/course-card-customize-popover'
+import { ScrollReveal } from '~/components/motion/scroll-reveal'
+import { useCourseCardPreferences } from '~/hooks/use-course-card-preferences'
+import {
+  getCourseDisplayName,
+  resolveCourseAccentColor,
+} from '~/lib/courses/course-card-preferences'
 
 interface Props {
   course: CourseDetail
@@ -36,6 +44,14 @@ interface Props {
   materialsError?: string | null
   materialsSuccess?: string | null
   onFileSelect?: (file: File) => void
+}
+
+function ThemedPanel({ children }: { children: ReactNode }) {
+  return (
+    <Card className="border-[var(--course-border)] bg-[var(--course-surface)] border-l-[3px] border-l-[var(--course-accent)] shadow-sm">
+      {children}
+    </Card>
+  )
 }
 
 function MaterialStatusIcon({ status }: { status: CourseMaterial['status'] }) {
@@ -81,12 +97,16 @@ export function CourseDetailStudentView({
   const showMaterialsTab = canViewMaterials || canUploadMaterials
 
   const [previewMaterial, setPreviewMaterial] = useState<CourseMaterial | null>(null)
+  const { getCoursePreference, setCoursePreference } = useCourseCardPreferences()
+  const cardPreference = getCoursePreference(course.id)
+  const accentColor = resolveCourseAccentColor(course.id, cardPreference)
+  const displayName = getCourseDisplayName(course.name, cardPreference)
 
   // Top-right hero badges: enrollment + AI status
   const topRightBadges: string[] = ['Enrolled', ...(course.aiInstructions ? ['AI-enabled'] : [])]
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6" style={courseThemeVars(accentColor)}>
       <PageTabs defaultValue="overview">
         <PageTabsList>
           <PageTabsTrigger value="overview">Overview</PageTabsTrigger>
@@ -97,19 +117,31 @@ export function CourseDetailStudentView({
         {/* ── Overview ── */}
         <PageTabsContent value="overview" forceMount className="data-[state=inactive]:hidden flex-1 outline-none">
           {/* B2: Topics folded into hero; badges moved to top-right */}
+          <ScrollReveal index={0}>
           <CourseHeroCard
             code={course.code}
             term={course.term}
             year={course.year}
-            name={course.name}
+            name={displayName}
             description={course.description}
+            accentColor={accentColor}
             topRightBadges={topRightBadges}
             topics={topics.map((t) => t.name)}
+            headerAction={
+              <CourseCardCustomizePopover
+                courseName={course.name}
+                courseCode={course.code}
+                preference={cardPreference}
+                onApply={(update) => setCoursePreference(course.id, update)}
+              />
+            }
           />
+          </ScrollReveal>
 
           {/* B3: Enriched info card — always show; B1: no empty gaps */}
           <div className="grid gap-4 mb-4 grid-cols-1 sm:grid-cols-2">
-            <Card>
+            <ScrollReveal index={1}>
+            <ThemedPanel>
               <CardContent className="pt-5 pb-5 flex flex-col gap-4">
                 <p className="text-[13px] font-semibold text-foreground">Course information</p>
                 <div className="grid grid-cols-2 gap-x-6 gap-y-3">
@@ -141,11 +173,13 @@ export function CourseDetailStudentView({
                   </div>
                 </div>
               </CardContent>
-            </Card>
+            </ThemedPanel>
+            </ScrollReveal>
 
             {/* Instructor + TAs — visible to students so they know their teaching team */}
             {course.instructor ? (
-              <Card>
+              <ScrollReveal index={2}>
+              <ThemedPanel>
                 <CardContent className="pt-5 pb-5 flex flex-col gap-4">
                   <p className="text-sm font-semibold text-foreground">Instructor</p>
                   <div className="flex items-center gap-3">
@@ -177,9 +211,11 @@ export function CourseDetailStudentView({
                     )}
                   </div>
                 </CardContent>
-              </Card>
+              </ThemedPanel>
+              </ScrollReveal>
             ) : (
-              <Card>
+              <ScrollReveal index={2}>
+              <ThemedPanel>
                 <CardContent className="pt-5 pb-5 flex flex-0 flex-col gap-2">
                   <p className="text-sm font-semibold text-foreground">Instructor</p>
                   <p className="text-xs text-muted-foreground">No professor assigned</p>
@@ -203,7 +239,8 @@ export function CourseDetailStudentView({
                     </div>
                   )}
                 </CardContent>
-              </Card>
+              </ThemedPanel>
+              </ScrollReveal>
             )}
           </div>
 

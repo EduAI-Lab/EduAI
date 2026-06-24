@@ -26,6 +26,7 @@ import { Input } from "@eduai/ui";
 import { Label } from "@eduai/ui";
 import { PageTabs, PageTabsList, PageTabsTrigger, PageTabsContent } from "@eduai/ui";
 import { PageHeading } from "@eduai/ui";
+import { ScrollReveal } from "~/components/motion/scroll-reveal";
 import { useApiKeys } from "~/hooks/use-api-keys";
 import { usePolicies } from "~/hooks/api/use-policies";
 
@@ -97,23 +98,30 @@ export function SettingsView({ role, studentNumber = null, passwordExpired = fal
               </PageTabsList>
 
               <PageTabsContent value="account" className="space-y-6">
-                <ChangePasswordSettings />
-                {showStudentNumberSettings && (
-                  <StudentNumberSettings initialStudentNumber={studentNumber} />
-                )}
+                <ScrollReveal index={0} parallax={false}>
+                  <ChangePasswordSettings />
+                  {showStudentNumberSettings && (
+                    <StudentNumberSettings initialStudentNumber={studentNumber} />
+                  )}
+                </ScrollReveal>
               </PageTabsContent>
 
               <PageTabsContent value="accessibility">
-                <AccessibilitySettingsTab />
+                <ScrollReveal index={0} parallax={false}>
+                  <AccessibilitySettingsTab />
+                </ScrollReveal>
               </PageTabsContent>
 
               {showCanvasSettings && (
                 <PageTabsContent value="canvas">
-                  <CanvasIntegrationSettings />
+                  <ScrollReveal index={0} parallax={false}>
+                    <CanvasIntegrationSettings />
+                  </ScrollReveal>
                 </PageTabsContent>
               )}
 
               <PageTabsContent value="providers" className="space-y-6">
+                <ScrollReveal index={0} parallax={false}>
                 <Card>
                   <CardHeader>
                     <CardTitle>Model Providers</CardTitle>
@@ -222,11 +230,13 @@ export function SettingsView({ role, studentNumber = null, passwordExpired = fal
                     </div>
                   </CardContent>
                 </Card>
+                </ScrollReveal>
               </PageTabsContent>
             </PageTabs>
           </div>
 
           <div className="px-4 lg:px-6">
+            <ScrollReveal index={1} parallax={false}>
             <Card>
               <CardHeader>
                 <CardTitle>Account</CardTitle>
@@ -240,6 +250,7 @@ export function SettingsView({ role, studentNumber = null, passwordExpired = fal
                 </Form>
               </CardContent>
             </Card>
+            </ScrollReveal>
           </div>
         </div>
       </div>
