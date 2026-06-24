@@ -1,8 +1,10 @@
 import express from 'express';
 import { toPublicUser } from '../utils/mappers.js';
+import { listEduAiCourses } from '../services/eduaiClient.js';
 import {
   importEnrolledCoursesFromCore,
   importTaughtCoursesFromCore,
+  userHasCoreTaEnrollment,
 } from '../services/importTaughtCoursesService.js';
 
 const router = express.Router();
@@ -11,19 +13,50 @@ router.get('/me', async (req, res) => {
   const authUser = req.user;
   if (!authUser) return res.status(401).json({ error: 'Authentication required' });
 
+  const cookie = req.headers.cookie ?? '';
+  let coreCourses;
+
   try {
-    await importTaughtCoursesFromCore(authUser, req.headers.cookie ?? '');
+    coreCourses = await listEduAiCourses({ cookie });
+  } catch (err) {
+    console.error('[eduai] Core course list failed on /me', err);
+    coreCourses = null;
+  }
+
+  const sharedOptions = coreCourses != null ? { coreCourses } : {};
+
+  try {
+    await importTaughtCoursesFromCore(authUser, cookie, sharedOptions);
   } catch (err) {
     console.error('[eduai] Auto-import taught courses failed on login', err);
   }
 
   try {
-    await importEnrolledCoursesFromCore(authUser, req.headers.cookie ?? '');
+    await importEnrolledCoursesFromCore(authUser, cookie, sharedOptions);
   } catch (err) {
     console.error('[eduai] Student enrollment mirror failed on login', err);
   }
 
-  res.json({ user: toPublicUser(authUser) });
+  const publicUser = toPublicUser(authUser);
+  let effectiveUser = publicUser;
+
+  // Core dropped the platform-level UserRole.TA (#664): a course TA is now a
+  // STUDENT-platform user with Enrollment(role=TA). AI Tutor's client RBAC still
+  // routes/gates its *view* off a single role string, so surface an effective TA
+  // role here when Core reports a TA enrollment — otherwise course TAs land in the
+  // student shell after the Core migration deploys. Per-course server authorization
+  // already keys off enrollment.role and is unaffected.
+  if (publicUser && publicUser.role === 'STUDENT' && coreCourses != null) {
+    try {
+      if (await userHasCoreTaEnrollment(cookie, coreCourses)) {
+        effectiveUser = { ...publicUser, role: 'TA' };
+      }
+    } catch (err) {
+      console.error('[eduai] Effective TA role resolution failed on /me', err);
+    }
+  }
+
+  res.json({ user: effectiveUser });
 });
 
 // Proxy sign-out to Core server-to-server, avoiding browser CORS restrictions.
