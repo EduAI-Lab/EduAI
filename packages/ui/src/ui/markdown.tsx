@@ -3,7 +3,7 @@ import { marked } from "marked"
 import { memo, useId, useMemo, lazy, Suspense } from "react"
 import type { Components } from "react-markdown"
 import { CodeBlock, CodeBlockCode } from "./code-block"
-import { streamdownPlugins } from "~/lib/ai/streamdown-config"
+import { streamdownPlugins } from "../lib/streamdown-config"
 
 // Lazy load Streamdown to avoid SSR issues with KaTeX CSS
 const Streamdown = lazy(() => import('streamdown').then(module => ({ default: module.Streamdown })))
