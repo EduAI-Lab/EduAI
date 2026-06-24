@@ -16,7 +16,7 @@ type GuidedTourContextValue = {
   /** Register a callback to run when the tour ends (Done or Skip). Returns unregister function. */
   registerOnTourEnd: (callback: () => void) => () => void;
   /** Register a callback to run when Next is clicked on a specific step (e.g. navigate). Overrides default click behavior. Returns unregister function. */
-  registerStepAction: (stepId: string, callback: () => void) => () => void;
+  registerStepAction: (stepId: string, callback: () => void | Promise<void>) => () => void;
   isActive: boolean;
   activeTourId: TourId | null;
 };
@@ -30,8 +30,29 @@ type HighlightPosition = {
   height: number;
 } | null;
 
-const getTarget = (step: TourStep | undefined) =>
-  step ? (document.querySelector(`[data-tour-id="${step.id}"]`) as HTMLElement | null) : null;
+const getStepTargetId = (step: TourStep | undefined) => step?.targetId ?? step?.id;
+
+const getTarget = (step: TourStep | undefined) => {
+  const targetId = getStepTargetId(step);
+  return targetId ? (document.querySelector(`[data-tour-id="${targetId}"]`) as HTMLElement | null) : null;
+};
+
+const waitForTarget = (step: TourStep | undefined, timeoutMs = 2500): Promise<void> =>
+  new Promise((resolve) => {
+    if (!step) {
+      resolve();
+      return;
+    }
+    const deadline = Date.now() + timeoutMs;
+    const tick = () => {
+      if (getTarget(step) || Date.now() >= deadline) {
+        resolve();
+        return;
+      }
+      window.setTimeout(tick, 50);
+    };
+    tick();
+  });
 
 const PADDING = 24;
 const TOOLTIP_WIDTH = 320;
@@ -251,28 +272,28 @@ export const GuidedTourProvider = ({ children }: { children: ReactNode }) => {
   const [state, setState] = useState<TourState>({ steps: [], currentIndex: 0, isActive: false });
   const [activeTourId, setActiveTourId] = useState<TourId | null>(null);
   const onTourEndRef = useRef<(() => void) | null>(null);
-  const stepActionOverridesRef = useRef<Map<string, () => void>>(new Map());
+  const stepActionOverridesRef = useRef<Map<string, () => void | Promise<void>>>(new Map());
+  const advancingRef = useRef(false);
 
-  const registerStepAction = useCallback((stepId: string, callback: () => void) => {
+  const registerStepAction = useCallback((stepId: string, callback: () => void | Promise<void>) => {
     stepActionOverridesRef.current.set(stepId, callback);
     return () => {
       stepActionOverridesRef.current.delete(stepId);
     };
   }, []);
 
-  const runStepAction = useCallback((step: TourStep | undefined) => {
+  const runStepAction = useCallback(async (step: TourStep | undefined) => {
     if (!step) return;
 
     const override = stepActionOverridesRef.current.get(step.id);
     if (override) {
-      override();
+      await override();
       return;
     }
 
     // Default: some steps trigger a click to move the user forward (navigate, switch tab, or open builder).
     if (step.id === 'course-select' || step.id === 'assessment-tab' || step.id === 'builder-add-section-button') {
-      const target = getTarget(step);
-      target?.click();
+      getTarget(step)?.click();
     }
   }, []);
 
@@ -340,8 +361,20 @@ export const GuidedTourProvider = ({ children }: { children: ReactNode }) => {
           index={state.currentIndex}
           total={state.steps.length}
           onNext={() => {
-            runStepAction(step);
-            setTimeout(() => advanceTo(state.currentIndex + 1), 100);
+            if (advancingRef.current) return;
+            advancingRef.current = true;
+            void (async () => {
+              try {
+                await runStepAction(step);
+                const delay = step.advanceDelayMs ?? 150;
+                await new Promise((r) => window.setTimeout(r, delay));
+                const nextStep = state.steps[state.currentIndex + 1];
+                await waitForTarget(nextStep, nextStep?.waitForTargetMs ?? 2500);
+                advanceTo(state.currentIndex + 1);
+              } finally {
+                advancingRef.current = false;
+              }
+            })();
           }}
           onPrev={() => advanceTo(Math.max(0, state.currentIndex - 1))}
           onClose={stopTour}

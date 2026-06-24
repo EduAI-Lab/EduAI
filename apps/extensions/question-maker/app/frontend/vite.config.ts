@@ -8,24 +8,29 @@ import tsconfigPaths from 'vite-tsconfig-paths'
 
 const frontendDir = path.dirname(fileURLToPath(import.meta.url))
 const extensionRoot = path.resolve(frontendDir, '../..')
+const monorepoRoot = path.resolve(frontendDir, '../../../..')
 
 export default defineConfig({
   plugins: [tailwindcss(), react(), tsconfigPaths()],
   resolve: {
     alias: {
       '@': path.resolve(frontendDir, './src'),
-      '@eduai/ui': path.resolve(frontendDir, '../../../../../packages/ui/src/index.ts'),
     },
     dedupe: ['react', 'react-dom'],
   },
   envDir: extensionRoot,
   envPrefix: 'VITE_',
+  server: {
+    port: 5173,
+    host: '0.0.0.0',
+    fs: {
+      allow: [monorepoRoot],
+    },
+  },
   test: {
-      clearMocks: true,
-      environment: 'jsdom',
-      setupFiles: ['./src/tests/vitest.setup.ts'],
-      include: ['src/tests/unit/**/*.test.ts', 'src/tests/unit/**/*.test.tsx'],
-      exclude: ['src/tests/integration/**'],
-      passWithNoTests: true,
+    clearMocks: true,
+    environment: 'jsdom',
+    setupFiles: ['./src/tests/vitest.setup.ts'],
+    passWithNoTests: true,
   },
 })
