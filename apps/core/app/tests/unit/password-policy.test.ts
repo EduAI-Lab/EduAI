@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   extractPolicyPassword,
   isStrongPassword,
+  SKIP_REUSE_PATHS,
+  TOKEN_RESET_PATHS,
 } from "~/lib/auth/password-policy";
 
 describe("isStrongPassword", () => {
@@ -55,5 +57,26 @@ describe("extractPolicyPassword", () => {
     expect(extractPolicyPassword("/sign-up/email", {})).toBeNull();
     expect(extractPolicyPassword("/sign-up/email", { password: 123 })).toBeNull();
     expect(extractPolicyPassword("/sign-up/email", null)).toBeNull();
+  });
+});
+
+describe("SKIP_REUSE_PATHS", () => {
+  it("includes sign-up (no prior history to check)", () => {
+    expect(SKIP_REUSE_PATHS.has("/sign-up/email")).toBe(true);
+  });
+
+  it("does not include change-password or reset-password", () => {
+    expect(SKIP_REUSE_PATHS.has("/change-password")).toBe(false);
+    expect(SKIP_REUSE_PATHS.has("/reset-password")).toBe(false);
+  });
+});
+
+describe("TOKEN_RESET_PATHS", () => {
+  it("includes reset-password (resolves userId from token, not session)", () => {
+    expect(TOKEN_RESET_PATHS.has("/reset-password")).toBe(true);
+  });
+
+  it("does not include change-password (that uses a session)", () => {
+    expect(TOKEN_RESET_PATHS.has("/change-password")).toBe(false);
   });
 });

@@ -8,7 +8,13 @@ import {
   extractPolicyPassword,
   isStrongPassword,
   PASSWORD_POLICY_MESSAGE,
+  SKIP_REUSE_PATHS,
+  TOKEN_RESET_PATHS,
 } from "./password-policy";
+import {
+  isPasswordReused,
+  recordPasswordHistory,
+} from "./password-history.server";
 
 export const authBaseURL =
   process.env.BETTER_AUTH_URL?.trim() ||
@@ -41,10 +47,50 @@ export const auth = betterAuth({
     // imports prisma + the logging facade, neither of which imports this file —
     // no cycle.
     before: createAuthMiddleware(async (ctx) => {
-    // Validate password policy for all password-setting endpoints.
+      // #339: enforce strength policy + no-reuse-of-last-10 on every
+      // password-setting path. Runs before Zod schemas (which only guard the
+      // app's own forms) so the raw /api/auth/* entry point is also covered.
       const candidatePassword = extractPolicyPassword(ctx.path, ctx.body);
-      if (candidatePassword !== null && !isStrongPassword(candidatePassword)) {
-        throw new APIError("BAD_REQUEST", { message: PASSWORD_POLICY_MESSAGE });
+      if (candidatePassword !== null) {
+        if (!isStrongPassword(candidatePassword)) {
+          throw new APIError("BAD_REQUEST", { message: PASSWORD_POLICY_MESSAGE });
+        }
+
+        if (!SKIP_REUSE_PATHS.has(ctx.path)) {
+          // Resolve the userId: token-based reset reads it from the Verification
+          // table; all other paths (change, set) have an active session.
+          let userId: string | null = null;
+          if (TOKEN_RESET_PATHS.has(ctx.path)) {
+            const token = (ctx.body as Record<string, unknown>)?.token;
+            if (typeof token === "string") {
+              const verificationId = `reset-password:${token}`;
+              const verification = await prisma.verification.findUnique({
+                where: { id: verificationId },
+                select: { value: true, expiresAt: true },
+              });
+              if (verification && verification.expiresAt > new Date()) {
+                userId = verification.value;
+              }
+            }
+          } else {
+            const session = await ctx.context.getSession(ctx);
+            userId = session?.user?.id ?? null;
+          }
+
+          if (userId) {
+            const reused = await isPasswordReused({
+              userId,
+              candidate: candidatePassword,
+              verify: ctx.context.password.verify,
+            });
+            if (reused) {
+              throw new APIError("BAD_REQUEST", {
+                message:
+                  "This password was used recently. Please choose a password you have not used in the last 10.",
+              });
+            }
+          }
+        }
       }
 
       if (ctx.path !== "/sign-up/email") return;
@@ -60,6 +106,33 @@ export const auth = betterAuth({
         });
       }
     }),
+  },
+  databaseHooks: {
+    // #339: record the new hash in password_history after every credential
+    // account creation or password update. `account.password` is the
+    // already-hashed value written by better-auth; we never see plaintext here.
+    account: {
+      create: {
+        after: async (account) => {
+          if (account.providerId === "credential" && account.password) {
+            await recordPasswordHistory({
+              userId: account.userId,
+              passwordHash: account.password,
+            });
+          }
+        },
+      },
+      update: {
+        after: async (account) => {
+          if (account.providerId === "credential" && account.password) {
+            await recordPasswordHistory({
+              userId: account.userId,
+              passwordHash: account.password,
+            });
+          }
+        },
+      },
+    },
   },
   user: {
     additionalFields: {

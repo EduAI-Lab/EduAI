@@ -50,6 +50,19 @@ const PASSWORD_SETTING_PATHS: Record<string, "password" | "newPassword"> = {
 };
 
 /**
+ * Paths where a userId can be resolved from a reset token rather than a
+ * session. The token lives in the body and maps to a Verification row whose
+ * `value` is the userId.
+ */
+export const TOKEN_RESET_PATHS = new Set(["/reset-password"]);
+
+/**
+ * Paths where reuse history should NOT be checked (first-time password set —
+ * no prior history exists to compare against).
+ */
+export const SKIP_REUSE_PATHS = new Set(["/sign-up/email"]);
+
+/**
  * Returns the policy-checkable password string for an auth path, or null when
  * the path does not set a password or the field is missing/non-string.
  */
