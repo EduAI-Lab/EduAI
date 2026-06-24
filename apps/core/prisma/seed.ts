@@ -1097,6 +1097,11 @@ async function seedCourses() {
         update: { role: 'TA', isActive: true },
         create: { courseId: course.id, userId: taId, role: 'TA', isActive: true },
       });
+      await prisma.courseTA.upsert({
+        where: { courseId_userId: { courseId: course.id, userId: taId } },
+        update: {},
+        create: { courseId: course.id, userId: taId },
+      });
     }
 
     for (const studentId of course.studentIds) {
