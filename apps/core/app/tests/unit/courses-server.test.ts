@@ -39,10 +39,23 @@ describe("getAccessibleCourseCodes", () => {
     const codes = await getAccessibleCourseCodes({ id: "u1", role: "STUDENT" });
 
     expect(codes).toEqual(["COSC 121"]);
+    // Scoping is delegated to buildCourseListFilter, which applies the publish
+    // gate per ENROLLMENT role: teaching enrollments (INSTRUCTOR/TA) see the
+    // course regardless of publish state; a STUDENT enrollment only when published.
     expect(db.course.findMany).toHaveBeenCalledWith({
       where: {
         deletedAt: null,
-        enrollments: { some: { userId: "u1", isActive: true } },
+        OR: [
+          {
+            enrollments: {
+              some: { userId: "u1", isActive: true, role: { in: ["INSTRUCTOR", "TA"] } },
+            },
+          },
+          {
+            isPublished: true,
+            enrollments: { some: { userId: "u1", isActive: true, role: "STUDENT" } },
+          },
+        ],
       },
       select: { code: true },
     });
@@ -54,7 +67,9 @@ describe("getAccessibleCourseCodes", () => {
     await getAccessibleCourseCodes({ id: "u2", role: null });
 
     const whereArg = db.course.findMany.mock.calls[0][0].where;
-    expect(whereArg).toHaveProperty("enrollments");
+    // Non-admins are scoped via an enrollment OR-filter, never the bare
+    // global filter that would expose every course.
+    expect(whereArg).toHaveProperty("OR");
     expect(whereArg).not.toEqual({ deletedAt: null });
   });
 });

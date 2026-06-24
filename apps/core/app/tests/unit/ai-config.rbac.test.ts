@@ -11,9 +11,7 @@ vi.mock("~/lib/auth/server", () => ({
   auth: { api: { getSession: vi.fn() } },
 }));
 
-vi.mock("~/lib/auth/guards.server", () => ({
-  enforceAdminIfApiKey: vi.fn().mockResolvedValue({ response: null, session: null }),
-}));
+vi.mock("~/lib/auth/guards.server", () => ({}));
 
 vi.mock("~/lib/prisma.server", () => ({
   default: {
@@ -26,7 +24,6 @@ import { loader as providersLoader } from "~/routes/api/ai-providers.$";
 import { loader as modelsLoader } from "~/routes/api/ai-models.$";
 import { loader as ollamaLoader } from "~/routes/api/ollama-models";
 import { auth } from "~/lib/auth/server";
-import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import prisma from "~/lib/prisma.server";
 
 function makeArgs(path: string) {
@@ -45,7 +42,6 @@ function mockUser(role: string | null) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(enforceAdminIfApiKey).mockResolvedValue({ response: null, session: null });
   vi.mocked(prisma.aIProvider.findMany).mockResolvedValue([]);
   vi.mocked(prisma.aIModel.findMany).mockResolvedValue([]);
 });

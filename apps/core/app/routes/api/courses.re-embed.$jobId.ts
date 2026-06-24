@@ -1,6 +1,5 @@
 import type { LoaderFunctionArgs } from "react-router";
 import { auth } from "~/lib/auth/server";
-import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { getCourseIfCanManageMaterials } from "~/lib/courses/access.server";
 import { formatApiError, jsonResponse } from "~/lib/api/json-response.server";
 import {
@@ -9,10 +8,7 @@ import {
 } from "~/lib/ai/re-embed-job.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
-  if (apiKeyGuard) return apiKeyGuard;
-
-  const session = apiKeySession ?? (await auth.api.getSession(request));
+  const session = await auth.api.getSession(request);
   if (!session?.user) {
     return jsonResponse({ error: "Unauthorized" }, 401);
   }

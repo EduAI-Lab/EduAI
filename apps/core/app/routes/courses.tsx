@@ -46,22 +46,18 @@ export async function loader({ request }: LoaderFunctionArgs) {
     })
   }
 
-  // Scope list to assignments so detail loader access matches visible cards (§5 list gate)
+  // Scope list to assignments so detail loader access matches visible cards (§5
+  // list gate). A TA is an Enrollment with role=TA; STUDENT-platform users may
+  // hold both TA and STUDENT enrollments, so we split by enrollment role.
   let taCourseIds: string[] = []
   let enrolledCourseIds: string[] = []
-  if (session.user.role === 'TA') {
-    const rows = await prisma.courseTA.findMany({
-      where: { userId: session.user.id },
-      select: { courseId: true },
-    })
-    taCourseIds = rows.map((r) => r.courseId)
-  }
   if (session.user.role === 'STUDENT') {
     const rows = await prisma.enrollment.findMany({
       where: { userId: session.user.id, isActive: true },
-      select: { courseId: true },
+      select: { courseId: true, role: true },
     })
-    enrolledCourseIds = rows.map((r) => r.courseId)
+    taCourseIds = rows.filter((r) => r.role === 'TA').map((r) => r.courseId)
+    enrolledCourseIds = rows.filter((r) => r.role === 'STUDENT').map((r) => r.courseId)
   }
 
   return { user: session.user, authorizedUnits, taCourseIds, enrolledCourseIds, instructors }
@@ -76,7 +72,8 @@ export default function CoursesPage() {
   const isAdmin = user.role === 'ADMIN'
   const isUnitAdmin = user.role === 'UNIT_ADMIN'
   const isInstructor = user.role === 'INSTRUCTOR'
-  const isTA = user.role === 'TA'
+  // A TA is a STUDENT-platform user holding one or more TA enrollments.
+  const isTA = taCourseIds.length > 0
 
   const handlePublishToggle = async (id: string, publish: boolean) => {
     await updateCourse(id, { isPublished: publish })
