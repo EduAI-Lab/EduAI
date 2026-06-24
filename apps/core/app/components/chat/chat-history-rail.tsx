@@ -37,7 +37,7 @@ export function ChatHistoryRail({
           </button>
         </div>
         <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hover scroll-smooth overscroll-contain px-1">
-          <ChatHistoryList {...listProps} />
+          <ChatHistoryList {...listProps} onNewChat={onNewChat} />
         </div>
       </div>
     </aside>
