@@ -11,6 +11,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 - [ai-tutor] feat: Add `GET /courses/:courseId/feedback` endpoint — returns all `ActivityFeedback` rows for activities in a course; access-gated to ADMIN (global), UNIT_ADMIN (department-scoped), INSTRUCTOR (enrolled), and TA (enrolled); supports `activityId`, `studentId`, `take` (max 200, default 50), and `skip` query params. (#554, @evanbones, 2026-06-24)
 - [ai-tutor] feat: Extend `PATCH /courses/:courseId`, `PATCH /courses/:courseId/publish`, and `PATCH /courses/:courseId/unpublish` to accept ADMIN and UNIT_ADMIN (department-scoped) in addition to INSTRUCTOR — aligns course mutation routes with rbac-matrix.md §5. (#553, @evanbones, 2026-06-24)
+- [core] feat: Add UBC chatbot disclaimer banner and full terms dialog on `/chat`. (#575, @superbolt08, 2026-06-23) — [#753](https://github.com/EduAI-Lab/EduAI/pull/753)
 
 ### Fixed
 
