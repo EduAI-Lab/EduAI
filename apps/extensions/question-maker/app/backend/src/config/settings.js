@@ -46,6 +46,7 @@ export const config = {
   groqApiKey: process.env.GROQ_API_KEY || '',
   openaiApiKey: process.env.OPENAI_API_KEY || '',
   deepseekApiKey: process.env.DEEPSEEK_API_KEY || '',
+  googleGenerativeAiApiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY || '',
   
   // EduAI API Configuration
   eduaiApiUrl: process.env.EDUAI_API_URL || 'https://eduai.ok.ubc.ca',
