@@ -1,7 +1,7 @@
-import { UserRole, type Prisma } from "@prisma/client";
+import { UserRole } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 import { auth } from "~/lib/auth/server";
-import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
+import { requireServiceKey } from "~/lib/auth/guards.server";
 import {
   buildCourseListFilter,
   getAuthorizedUnits,
@@ -60,7 +60,7 @@ export function invalidateCourseRagSettingsCache(courseId: string): void {
  * Auth:
  *   - Service key (Authorization: Bearer EDUAI_API_KEY): unrestricted — used by AI Tutor
  *     to list importable courses without requiring an admin session.
- *   - x-api-key / user session: scoped to the caller (§5): ADMIN all;
+ *   - User session: scoped to the caller (§5): ADMIN all;
  *     UNIT_ADMIN authorized units; INSTRUCTOR/TA enrolled; STUDENT enrolled + published.
  */
 export async function getCourses(request: Request) {
@@ -75,11 +75,7 @@ export async function getCourses(request: Request) {
     });
   }
 
-  // x-api-key / session path (admin UI and direct API access)
-  const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
-  if (apiKeyGuard) return apiKeyGuard;
-
-  const session = apiKeySession ?? (await auth.api.getSession(request));
+  const session = await auth.api.getSession(request);
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -119,10 +115,7 @@ export async function getCourses(request: Request) {
  * flag is enabled; they are auto-enrolled as the course instructor.
  */
 export async function createCourse(request: Request) {
-  const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
-  if (apiKeyGuard) return apiKeyGuard;
-
-  const session = apiKeySession ?? (await auth.api.getSession(request));
+  const session = await auth.api.getSession(request);
   const role = session?.user?.role ?? "";
   // Base create rights (ADMIN / UNIT_ADMIN) come from the shared RBAC helper so
   // this can't drift from the rest of course management; an INSTRUCTOR may
@@ -275,10 +268,7 @@ export async function createCourse(request: Request) {
  * INSTRUCTOR(C) per §5 (rank >= 2).
  */
 export async function updateCourse(request: Request, courseId: string) {
-  const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
-  if (apiKeyGuard) return apiKeyGuard;
-
-  const session = apiKeySession ?? (await auth.api.getSession(request));
+  const session = await auth.api.getSession(request);
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -402,10 +392,7 @@ export async function updateCourse(request: Request, courseId: string) {
  * UNIT_ADMIN(D), INSTRUCTOR(C) per §5.
  */
 export async function deleteCourse(request: Request, courseId: string) {
-  const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
-  if (apiKeyGuard) return apiKeyGuard;
-
-  const session = apiKeySession ?? (await auth.api.getSession(request));
+  const session = await auth.api.getSession(request);
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -494,10 +481,7 @@ export async function setPublishState(request: Request, courseId: string, publis
   }
 
   // User session path (admin UI / direct API access)
-  const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
-  if (apiKeyGuard) return apiKeyGuard;
-
-  const session = apiKeySession ?? (await auth.api.getSession(request));
+  const session = await auth.api.getSession(request);
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -560,17 +544,12 @@ export async function getCourse(courseId: string) {
 export async function getAccessibleCourseCodes(user: {
   id: string;
   role: UserRole | string | null | undefined;
+  authorizedUnits?: string[] | null;
 }): Promise<string[]> {
-  const where: Prisma.CourseWhereInput =
-    user.role === UserRole.ADMIN
-      ? { deletedAt: null }
-      : {
-          deletedAt: null,
-          // Instructor, TA, and student access all flow through Enrollment.role
-          // after the RBAC refactor (#293) — any active enrollment grants access.
-          enrollments: { some: { userId: user.id, isActive: true } },
-        };
-
+  // Reuse the same scoping as GET /api/courses so UNIT_ADMINs (whose access is
+  // unit-based, not enrollment-based) don't lose a saved lastCourseCode on chat
+  // restore. Covers admin, unit, instructor, TA, and student access uniformly.
+  const where = await buildCourseListFilter(user);
   const courses = await prisma.course.findMany({
     where,
     select: { code: true },
@@ -714,6 +693,7 @@ export async function updateCourseTopic(
 export async function deleteCourseTopic(
   courseId: string,
   payload: DeleteCourseTopicInput,
+  deletedBy?: string | null,
 ) {
   const parsed = DeleteCourseTopicSchema.safeParse(payload);
 
@@ -745,7 +725,7 @@ export async function deleteCourseTopic(
 
   await prisma.courseTopic.update({
     where: { id: target.id },
-    data: { deletedAt: new Date() },
+    data: { deletedAt: new Date(), deletedBy: deletedBy || null },
   });
 
   return { status: "204", topic: target } as const;

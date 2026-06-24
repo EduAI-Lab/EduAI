@@ -40,7 +40,7 @@
 
 ## Auth
 
-> **Updated after the auth-unification work.** Earlier drafts of this doc described user calls arriving as `Authorization: Bearer <user-oauth-token>` validated as a session. That is **not** how it works: Core's Better Auth has only the `apiKey` (x-api-key) plugin — **no `bearer` plugin** — so `auth.api.getSession()` reads **session cookies only**, never an `Authorization` header. There is no `getEduAiAccessTokenForUser`; the helper is `getEduAiCookieForRequest`.
+> **Updated after the auth-unification work.** Core's Better Auth has **no `bearer` or `apiKey` plugin** — `auth.api.getSession()` reads **session cookies only**, never an `Authorization` or `x-api-key` header. The legacy `x-api-key` backend API key plugin has been removed (#158). There is no `getEduAiAccessTokenForUser`; the helper is `getEduAiCookieForRequest`.
 
 ### User auth — session cookie forwarding (existing)
 
@@ -66,7 +66,7 @@ Standard RFC 6750 Bearer. Both extensions read `EDUAI_API_KEY` from env. Used fo
 3. Return `401 { "error": "MISSING_SERVICE_KEY" }` if the header is absent / not `Bearer`
 4. Return `403 { "error": "INVALID_SERVICE_KEY" }` if the token does not match (or `EDUAI_API_KEY` is unset)
 
-> **`enforceAdminIfApiKey` is unchanged.** It reads `x-api-key` and requires an ADMIN session — a session-escalation guard, not a service-key validator. `requireServiceKey` is separate. The `x-api-key` header is not used for service-to-service auth.
+> **`enforceAdminIfApiKey` has been removed** (#158). The legacy `x-api-key` plugin is gone. `requireServiceKey` is the only non-cookie auth path: it validates `Authorization: Bearer <EDUAI_API_KEY>` for server-to-server calls. All user-facing routes authenticate via session cookie only.
 
 ### RBAC scope (per #275 / #292)
 

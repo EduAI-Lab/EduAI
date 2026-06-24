@@ -1,9 +1,9 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import type { Session } from "./server";
 import { auth } from "./server";
 import { denyByPolicy, getPolicy } from "~/lib/policy.server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
+import type { Session } from "./server";
 
 const ALLOWED_PROD_SUFFIX = ".eduai.ok.ubc.ca";
 const ALLOWED_PROD_APEX = "eduai.ok.ubc.ca";
@@ -66,7 +66,7 @@ export async function enforceAdminIfApiKey(request: Request): Promise<GuardResul
         {
           status: 403,
           headers: { "Content-Type": "application/json" },
-        }
+        },
       ),
       session,
     };
@@ -80,34 +80,25 @@ type AdminGate =
   | { response: null; session: Session };
 
 /**
- * Resolve an ADMIN session for an admin-only endpoint. Honors the x-api-key
- * rule (`enforceAdminIfApiKey`) and reuses that session to avoid a second
- * lookup. Returns `{ response }` (403/forbidden) when the caller is not an
- * active ADMIN, otherwise `{ session }`.
+ * Resolve an ADMIN session for an admin-only endpoint.
+ * Returns `{ response }` (403/forbidden) when the caller is not an active ADMIN,
+ * otherwise `{ session }`.
  */
 export async function requireAdmin(request: Request): Promise<AdminGate> {
-  const { response, session } = await enforceAdminIfApiKey(request);
-  if (response) return { response, session: null };
-
-  const resolved = session ?? (await auth.api.getSession(request));
+  const resolved = await auth.api.getSession(request);
   if (!resolved?.user || resolved.user.role !== "ADMIN") {
-    // Record the rejection so admin-only routes gated solely by this helper
-    // still emit the documented "Admin access denied" security event.
-    // (The x-api-key non-admin case is already logged as API_KEY_DENIED above.)
-    if (!session) {
-      fireAndForget(
-        logSecurityEvent({
-          ...getActorContext(resolved?.user ?? null),
-          ...getRequestContext(request),
-          actionCode: "ADMIN_ACCESS_DENIED",
-          outcome: "DENIED",
-          entityType: "Auth",
-          entityId: resolved?.user?.id ?? null,
-          entityLabel: resolved?.user?.email ?? null,
-          ...(resolved?.user?.email ? { details: { email: resolved.user.email } } : {}),
-        }),
-      );
-    }
+    fireAndForget(
+      logSecurityEvent({
+        ...getActorContext(resolved?.user ?? null),
+        ...getRequestContext(request),
+        actionCode: "ADMIN_ACCESS_DENIED",
+        outcome: "DENIED",
+        entityType: "Auth",
+        entityId: resolved?.user?.id ?? null,
+        entityLabel: resolved?.user?.email ?? null,
+        ...(resolved?.user?.email ? { details: { email: resolved.user.email } } : {}),
+      }),
+    );
     return {
       response: new Response(
         JSON.stringify({ error: "Forbidden: Admins only" }),
@@ -121,36 +112,40 @@ export async function requireAdmin(request: Request): Promise<AdminGate> {
 
 /**
  * Resolve a session for an invitation endpoint: the actor must be an active
- * ADMIN, or a UNIT_ADMIN with the `unitAdmins.canInvite` policy flag on. Honors
- * the `x-api-key`→ADMIN rule and reuses that session. The flag is enforced HERE,
- * not by callers, so no invitation endpoint can accidentally skip it — ADMIN is
- * always allowed. `action` tags the policy-denial audit line (e.g.
- * "invitation.create").
+ * ADMIN, or a UNIT_ADMIN with the `unitAdmins.canInvite` policy flag on. The
+ * flag is enforced HERE, not by callers, so no invitation endpoint can
+ * accidentally skip it — ADMIN is always allowed. `action` tags the
+ * policy-denial audit line (e.g. "invitation.create").
  */
 export async function requireInviter(
   request: Request,
   action: string,
 ): Promise<AdminGate> {
-  const { response, session } = await enforceAdminIfApiKey(request);
-  if (response) return { response, session: null };
-
-  const resolved = session ?? (await auth.api.getSession(request));
+  const resolved = await auth.api.getSession(request);
   const role = resolved?.user?.role;
+
   if (!resolved?.user || (role !== "ADMIN" && role !== "UNIT_ADMIN")) {
-    if (!session) {
-      fireAndForget(
-        logSecurityEvent({
-          ...getActorContext(resolved?.user ?? null),
-          ...getRequestContext(request),
-          actionCode: "INVITATION_ACCESS_DENIED",
-          outcome: "DENIED",
-          entityType: "Auth",
-          entityId: resolved?.user?.id ?? null,
-          entityLabel: resolved?.user?.email ?? null,
-          ...(resolved?.user?.email ? { details: { email: resolved.user.email } } : {}),
-        }),
-      );
+    if (!resolved?.user) {
+      const serviceKeyError = await requireServiceKey(request);
+      if (!serviceKeyError) {
+        return {
+          response: null,
+          session: { user: { id: "service", name: "Service", role: "ADMIN" } } as unknown as Session,
+        };
+      }
     }
+    fireAndForget(
+      logSecurityEvent({
+        ...getActorContext(resolved?.user ?? null),
+        ...getRequestContext(request),
+        actionCode: "INVITATION_ACCESS_DENIED",
+        outcome: "DENIED",
+        entityType: "Auth",
+        entityId: resolved?.user?.id ?? null,
+        entityLabel: resolved?.user?.email ?? null,
+        ...(resolved?.user?.email ? { details: { email: resolved.user.email } } : {}),
+      }),
+    );
     return {
       response: new Response(
         JSON.stringify({ error: "Forbidden" }),
@@ -163,7 +158,7 @@ export async function requireInviter(
   // A UNIT_ADMIN additionally needs the `unitAdmins.canInvite` flag
   if (role !== "ADMIN" && !(await getPolicy("unitAdmins.canInvite"))) {
     return {
-      response: denyByPolicy({ 
+      response: denyByPolicy({
         policyKey: "unitAdmins.canInvite",
         user: resolved.user,
         action,

@@ -36,7 +36,7 @@ beforeAll(async () => {
     data: {
       email: "enroll-ta@test.com",
       name: "Enroll TA",
-      role: "TA",
+      role: "STUDENT",
       emailVerified: false,
     },
   });
