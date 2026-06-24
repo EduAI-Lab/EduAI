@@ -212,7 +212,7 @@ export function triggerCronJobAsync(jobName: string, script: string, runId: stri
   const scriptDir = resolveScriptDir();
 
   const child = spawn("bash", [`./${script}`], {
-    env: { ...process.env },
+    env: { ...process.env, CORE_CRON_RUN_ID: runId },
     cwd: scriptDir,
     timeout: 10 * 60 * 1000,
   });
