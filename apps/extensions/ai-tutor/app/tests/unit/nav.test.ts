@@ -33,7 +33,7 @@ describe('getNavForUser', () => {
     expect(nav).toContainEqual({
       key: 'admin-bug-reports',
       title: 'Bug Reports',
-      href: '/admin?tab=bugReports',
+      href: '/admin',
     });
   });
 
