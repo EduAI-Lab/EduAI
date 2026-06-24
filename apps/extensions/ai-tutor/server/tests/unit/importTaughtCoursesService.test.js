@@ -52,6 +52,7 @@ const {
   importEnrolledCoursesFromCore,
   importTaughtCoursesFromCore,
   userHasCoreTaEnrollment,
+  coreCoursesIncludeTaEnrollment,
 } = await import('../../src/services/importTaughtCoursesService.js');
 
 describe('importTaughtCoursesFromCore (AI Tutor)', () => {
@@ -250,6 +251,24 @@ describe('importEnrolledCoursesFromCore (AI Tutor)', () => {
         courseOfferingId: { in: [30] },
       },
     });
+  });
+});
+
+describe('coreCoursesIncludeTaEnrollment (AI Tutor)', () => {
+  it('returns false for null', () => {
+    expect(coreCoursesIncludeTaEnrollment(null)).toBe(false);
+  });
+
+  it('returns false for undefined', () => {
+    expect(coreCoursesIncludeTaEnrollment(undefined)).toBe(false);
+  });
+
+  it('returns false for empty array', () => {
+    expect(coreCoursesIncludeTaEnrollment([])).toBe(false);
+  });
+
+  it('handles null entries in array', () => {
+    expect(coreCoursesIncludeTaEnrollment([null, { callerEnrollmentRole: 'TA' }])).toBe(true);
   });
 });
 
