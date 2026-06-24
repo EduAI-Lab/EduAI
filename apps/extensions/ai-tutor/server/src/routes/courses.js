@@ -32,6 +32,7 @@ import { cloneCourseContent, cloneLessonsFromOffering } from '../services/course
 import { calculateCourseProgress } from '../services/progressCalculation.js';
 import { findEduAiCourseById, listEduAiCourses, setCoreCoursePublishState } from '../services/eduaiClient.js';
 import { mapEduAiServiceKeyError } from '../services/eduaiServiceKeyErrors.js';
+import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
 import { syncCourseEnrollments } from '../services/enrollmentSync.js';
 import {
   importEnrolledCoursesFromCore,
