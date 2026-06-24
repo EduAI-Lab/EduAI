@@ -206,18 +206,23 @@ export async function importExternalCourseForUser(instructor, externalCourse) {
  * Mirrors Core course catalog into local offerings. Core is the source of truth —
  * imports new taught courses and refreshes topics + enrollments for existing links.
  * Idempotent — safe to call on every /api/me and GET /courses request.
+ *
+ * Pass `options.coreCourses` when the caller already fetched Core's course list
+ * (e.g. `/api/me` shares one list across import + TA role resolution).
  */
-export async function importTaughtCoursesFromCore(instructor, cookie) {
+export async function importTaughtCoursesFromCore(instructor, cookie, options = {}) {
   if (!AUTO_IMPORT_ROLES.has(instructor.role)) {
     return { imported: 0, skipped: 0 };
   }
 
-  let coreCourses;
-  try {
-    coreCourses = await listEduAiCourses({ cookie });
-  } catch (err) {
-    console.error('[eduai] Auto-import skipped: could not list Core courses', err);
-    return { imported: 0, skipped: 0, error: err.message };
+  let coreCourses = options.coreCourses;
+  if (coreCourses === undefined) {
+    try {
+      coreCourses = await listEduAiCourses({ cookie });
+    } catch (err) {
+      console.error('[eduai] Auto-import skipped: could not list Core courses', err);
+      return { imported: 0, skipped: 0, error: err.message };
+    }
   }
 
   if (!Array.isArray(coreCourses) || coreCourses.length === 0) {
@@ -316,18 +321,22 @@ export async function importTaughtCoursesFromCore(instructor, cookie) {
  * Mirrors Core student enrollments into local CourseEnrollment rows. Core is the
  * source of truth — creates offerings when missing and prunes stale EDUAI links.
  * Idempotent — safe to call on every /api/me and GET /courses request.
+ *
+ * Pass `options.coreCourses` when the caller already fetched Core's course list.
  */
-export async function importEnrolledCoursesFromCore(student, cookie) {
+export async function importEnrolledCoursesFromCore(student, cookie, options = {}) {
   if (!AUTO_ENROLL_ROLES.has(student.role)) {
     return { enrolled: 0, skipped: 0, removed: 0 };
   }
 
-  let coreCourses;
-  try {
-    coreCourses = await listEduAiCourses({ cookie });
-  } catch (err) {
-    console.error('[eduai] Student enrollment mirror skipped: could not list Core courses', err);
-    return { enrolled: 0, skipped: 0, removed: 0, error: err.message };
+  let coreCourses = options.coreCourses;
+  if (coreCourses === undefined) {
+    try {
+      coreCourses = await listEduAiCourses({ cookie });
+    } catch (err) {
+      console.error('[eduai] Student enrollment mirror skipped: could not list Core courses', err);
+      return { enrolled: 0, skipped: 0, removed: 0, error: err.message };
+    }
   }
 
   if (!Array.isArray(coreCourses)) {
@@ -412,6 +421,11 @@ export async function importEnrolledCoursesFromCore(student, cookie) {
   return { enrolled, skipped, removed };
 }
 
+export function coreCoursesIncludeTaEnrollment(coreCourses) {
+  if (!Array.isArray(coreCourses)) return false;
+  return coreCourses.some((course) => course?.callerEnrollmentRole === 'TA');
+}
+
 /**
  * True when Core reports the caller holds a TA enrollment in any course.
  *
@@ -422,9 +436,11 @@ export async function importEnrolledCoursesFromCore(student, cookie) {
  * uses this to surface an effective TA role. Core's per-course
  * `callerEnrollmentRole` is the source of truth — the local mirror flattens
  * student-side enrollments to STUDENT and cannot be trusted for this.
+ *
+ * Pass `coreCourses` when the caller already fetched Core's course list.
  */
-export async function userHasCoreTaEnrollment(cookie) {
-  const coreCourses = await listEduAiCourses({ cookie });
-  if (!Array.isArray(coreCourses)) return false;
-  return coreCourses.some((course) => course?.callerEnrollmentRole === 'TA');
+export async function userHasCoreTaEnrollment(cookie, coreCourses) {
+  const courses =
+    coreCourses !== undefined ? coreCourses : await listEduAiCourses({ cookie });
+  return coreCoursesIncludeTaEnrollment(courses);
 }
