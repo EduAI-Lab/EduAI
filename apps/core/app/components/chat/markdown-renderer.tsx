@@ -1,4 +1,5 @@
 import { lazy, Suspense } from 'react';
+import { streamdownPlugins } from '../../../../../packages/ui/src/lib/streamdown-config';
 import { READING_SURFACE_CLASS } from '~/components/assistive/reading-surface';
 import { cn } from '~/lib/utils';
 
@@ -8,9 +9,10 @@ const Streamdown = lazy(() => import('streamdown').then(module => ({ default: mo
 export interface MarkdownRendererProps {
   content: string;
   className?: string;
+  isAnimating?: boolean;
 }
 
-export function MarkdownRenderer({ content, className }: MarkdownRendererProps) {
+export function MarkdownRenderer({ content, className, isAnimating }: MarkdownRendererProps) {
   return (
     <div className={cn(
       "prose prose-sm max-w-none dark:prose-invert",
@@ -26,6 +28,8 @@ export function MarkdownRenderer({ content, className }: MarkdownRendererProps) 
           parseIncompleteMarkdown={true}
           className="streamdown-content"
           shikiTheme={["github-light", "github-dark"]}
+          plugins={streamdownPlugins}
+          isAnimating={isAnimating}
         >
           {content}
         </Streamdown>
