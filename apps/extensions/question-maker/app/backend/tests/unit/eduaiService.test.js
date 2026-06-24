@@ -88,7 +88,8 @@ describe('chat', () => {
     const [url, payload, opts] = axios.post.mock.calls[0];
     expect(url).toBe('http://eduai.test/api/chat');
     expect(payload.courseCode).toBe('CS 101');
-    expect(opts.headers['Authorization']).toBe('Bearer test-key-123456');
+    expect(opts.headers['x-api-key']).toBe('test-key-123456');
+    expect(opts.headers['Authorization']).toBeUndefined();
     expect(opts.timeout).toBe(60000);
   });
 
