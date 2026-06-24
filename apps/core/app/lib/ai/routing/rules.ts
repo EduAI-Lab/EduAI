@@ -1,0 +1,297 @@
+/**
+
+ * Phase 1 routing rules — pure predicates and ordering (no DB, no I/O).
+
+ *
+
+ * Given a **`Phase1RouterContext`** (prompt text, attachments flag, optional RAG stats),
+
+ * **`matchPhase1Rules`** returns the first matching rule and a **`PickSpec`** telling **`tiers.ts`** how to choose a model.
+
+ *
+
+ * Rule order: images → short factual → strong RAG → long RAG → default.
+
+ * External web search is out of scope — no tool/web-lookup routing rule.
+
+ */
+
+
+
+import type { PickSpec } from "./tiers";
+
+
+
+export type Phase1RouterContext = {
+
+  prompt: string;
+
+  imagesPresent: boolean;
+
+  courseId: string | null;
+
+  /** Top-1 cosine similarity from pgvector retrieval (same scale as `findRelevantContent`). */
+
+  ragTopSimilarity?: number | null;
+
+  /** Number of chunks returned / used for this turn’s RAG context. */
+
+  ragChunkCount?: number | null;
+
+  /** Rough token estimate for merged RAG context (e.g. chars/4); used for “long context” rule. */
+
+  ragContextTokenEstimate?: number | null;
+
+  /** True when chat intent decided course-material RAG should run (see `needsCourseRag`). */
+
+  courseRagNeeded?: boolean;
+
+};
+
+
+
+export type Phase1RuleMatch = {
+
+  /** Stable id for telemetry / training (e.g. `rule3_short_factual`). */
+
+  rule: string;
+
+  pick: PickSpec;
+
+};
+
+
+
+const SHORT_FACTUAL_PREFIXES = [
+  "what is",
+  "define",
+  "who is",
+  "when did",
+  "who won",
+  "what was",
+  "where was",
+  "when was",
+] as const;
+
+function routingRagStrongSimilarity(): number {
+  const raw = process.env.ROUTING_RAG_STRONG_SIM;
+  if (raw === undefined || raw === "") return 0.8;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 && n < 1 ? n : 0.8;
+}
+
+function routingRagTier1Similarity(): number {
+  const raw = process.env.ROUTING_RAG_TIER1_SIM;
+  if (raw === undefined || raw === "") return 0.55;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 && n < 1 ? n : 0.55;
+}
+
+/** Default Auto tier when no escalation rule matches. `1` = prefer 7B (sustainability default). */
+export function routingDefaultTier(): 1 | 2 {
+  const raw = process.env.ROUTING_DEFAULT_TIER?.trim();
+  if (raw === "2") return 2;
+  return 1;
+}
+
+function defaultTierPick(): PickSpec {
+  const tier = routingDefaultTier();
+  return {
+    kind: "exactTier",
+    tier,
+    tieBreak: tier === 1 ? "energy" : "carbon",
+  };
+}
+
+
+
+function normalizeWhitespace(text: string): string {
+
+  return text.trim().replace(/\s+/g, " ");
+
+}
+
+
+
+/** Rule 3: short factual (< 120 chars) opening phrase. */
+
+export function isShortFactualPrompt(prompt: string, lower: string): boolean {
+
+  if (prompt.length >= 120) {
+
+    return false;
+
+  }
+
+  return SHORT_FACTUAL_PREFIXES.some((prefix) => lower.startsWith(prefix));
+
+}
+
+
+
+/**
+
+ * Phase 1 rule stack. First match wins.
+
+ *
+
+ * 1. Images → tier ≥ 2, `supportsImages`
+
+ * 2. Short factual → Tier 1
+
+ * 3. Course RAG (material hits + `courseRagNeeded`) → Tier 1
+
+ * 4. Strong RAG (top-1 similarity ≥ strong threshold, any hit count) → Tier 1
+
+ * 5. Moderate RAG (course + top-1 ≥ tier-1 threshold) → Tier 1
+
+ * 6. Long RAG (≥ 4 chunks && estimated context > 2k tokens) → default tier (usually 1)
+
+ * 7. Default → default tier (usually 1 / 7B on vLLM)
+
+ */
+
+export function matchPhase1Rules(ctx: Phase1RouterContext): Phase1RuleMatch {
+
+  const prompt = normalizeWhitespace(ctx.prompt);
+
+  const lower = prompt.toLowerCase();
+
+
+
+  if (ctx.imagesPresent) {
+
+    return {
+
+      rule: "rule1_images_tier_ge_2",
+
+      pick: {
+
+        kind: "minTier",
+
+        minTier: 2,
+
+        requireImages: true,
+
+        tieBreak: "energy",
+
+      },
+
+    };
+
+  }
+
+
+
+  if (isShortFactualPrompt(prompt, lower)) {
+
+    return {
+
+      rule: "rule3_short_factual_tier_1",
+
+      pick: { kind: "exactTier", tier: 1, tieBreak: "energy" },
+
+    };
+
+  }
+
+
+
+  const top1 = ctx.ragTopSimilarity;
+
+  const chunks = ctx.ragChunkCount;
+
+  if (ctx.courseId && ctx.courseRagNeeded) {
+    return {
+      rule: "rule3b_course_rag_tier_1",
+      pick: { kind: "exactTier", tier: 1, tieBreak: "energy" },
+    };
+  }
+
+  if (
+
+    top1 != null &&
+
+    chunks != null &&
+
+    chunks >= 1 &&
+
+    top1 >= routingRagStrongSimilarity()
+
+  ) {
+
+    return {
+
+      rule: "rule4_strong_rag_tier_1",
+
+      pick: { kind: "exactTier", tier: 1, tieBreak: "energy" },
+
+    };
+
+  }
+
+  if (
+
+    ctx.courseId &&
+
+    top1 != null &&
+
+    chunks != null &&
+
+    chunks >= 1 &&
+
+    top1 >= routingRagTier1Similarity()
+
+  ) {
+
+    return {
+
+      rule: "rule4b_moderate_rag_tier_1",
+
+      pick: { kind: "exactTier", tier: 1, tieBreak: "energy" },
+
+    };
+
+  }
+
+  const ctxTok = ctx.ragContextTokenEstimate;
+
+  if (
+
+    chunks != null &&
+
+    ctxTok != null &&
+
+    chunks >= 4 &&
+
+    ctxTok > 2000
+
+  ) {
+
+    const tier = routingDefaultTier();
+
+    return {
+
+      rule: tier === 1 ? "rule5_long_rag_tier_1_energy" : "rule5_long_rag_tier_2_carbon",
+
+      pick: defaultTierPick(),
+
+    };
+
+  }
+
+
+
+  const tier = routingDefaultTier();
+
+  return {
+
+    rule: tier === 1 ? "rule6_default_tier_1_energy" : "rule6_default_tier_2_carbon",
+
+    pick: defaultTierPick(),
+
+  };
+
+}
+
+
