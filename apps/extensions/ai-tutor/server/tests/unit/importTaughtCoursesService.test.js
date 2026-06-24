@@ -268,6 +268,13 @@ describe('userHasCoreTaEnrollment (AI Tutor)', () => {
     expect(listEduAiCourses).toHaveBeenCalledWith({ cookie: 'session=abc' });
   });
 
+  it('uses a pre-fetched course list without calling Core again', async () => {
+    const prefetched = [{ id: 'core-2', callerEnrollmentRole: 'TA' }];
+
+    await expect(userHasCoreTaEnrollment('session=abc', prefetched)).resolves.toBe(true);
+    expect(listEduAiCourses).not.toHaveBeenCalled();
+  });
+
   it('returns false when the caller is only a student or instructor', async () => {
     listEduAiCourses.mockResolvedValue([
       { id: 'core-1', callerEnrollmentRole: 'STUDENT' },
