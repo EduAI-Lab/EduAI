@@ -10,6 +10,11 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ### Added
 
 - [core] feat: Configurable API key expiration in Settings (30d–1y or never) with status labels on the key list. Email reminders deferred to #747. (#46, @superbolt08, 2026-06-23) — [#754](https://github.com/EduAI-Lab/EduAI/pull/754)
+### Fixed
+
+- [ai-tutor] fix: Surface effective `role: TA` on `GET /api/me` when Core reports a TA enrollment — keeps course TAs in the teaching shell after Core drops platform-level `UserRole.TA` (#723, @Ayyhab, 2026-06-24)
+- [core] fix: Unblock student-ID onboarding before any Canvas sync — `linkCanvasRoster` no longer 404s when no instructor has synced the course; it saves the student number (still rejecting duplicates) and links zero enrollments, and the later sync's `linkEnrollmentsFromStagingForCourse` enrolls the student by `studentId` once staging rows exist. (#732, @GlowyBlack, 2026-06-22)
+
 
 ## [Week 7 — June 15–21, 2026]
 
@@ -88,6 +93,13 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] tests: Update `canvas.integration.test.ts` reassignment case to use a unique student number (avoids `studentIdLookup` collision with seeded data). (#578, @GlowyBlack, 2026-06-15)
 - [ai-tutor] feat: RBAC UI for all five role views (#616) — add `app/lib/rbac/` permission helpers, `PermissionGate`, `AtRoleBanner`, and `useAtPermissions`; gate instructor shell for TA read-only; add `CreateCourseDialog`, course tabs (content/enrollments/submissions/analytics), `CourseEnrollmentsPanel` with TA role assignment, admin EduAI enrollment sync; extend `api.ts` with analytics/enrollment endpoints; document endpoint audit in `docs/rbac-endpoints-ai-tutor.md` (#614). Closes #614, #616, #617 (AiTutor). ([#619](https://github.com/EduAI-Lab/EduAI/pull/619), @Ayyhab, 2026-06-14)
 - [core] fix: Stop frontend from retransmitting the full conversation history on every chat request by sending only the newest user message and associated metadata. (#487, @YibingW, 2026-06-15)
+- [question-maker] fix: Question metadata edit saves question text and avoids VARIANT_LOCKED error on reviewed variants when only synopsis/topic/type change. (#676, @GlowyBlack, 2026-06-20)
+- [question-maker] ui: Stronger correct-answer highlight in question detail view (success tokens, visible in dark mode). (#676, @GlowyBlack, 2026-06-20)
+- [question-maker] fix: Dedupe duplicate course rows for ADMIN on course selection (frontend `dedupeCoursesByCode` + backend admin list). (#676, @GlowyBlack, 2026-06-20)
+- [question-maker] fix: Student/TA access denied no longer crashes (Router wraps access gate); allow AI tag toggle on reviewed variants. (#676, @GlowyBlack, 2026-06-20)
+- [question-maker] ui: Question detail modal uses single scroll area; theme toggle beside bug report; explicit API key save with confirmation. (#676, @GlowyBlack, 2026-06-20)
+- [question-maker] security: Restrict Vite env exposure to `VITE_` prefix; gate Canvas test-mode fallback to dev; surface AI model fetch errors instead of silent fallbacks (backend + frontend). (#676, @GlowyBlack, 2026-06-20)
+- [question-maker] fix: Apply explicit API key save + toast in Upload dialog; treat id `0` as not-found in resource/course access guards (fixes `coreWiring.integration.test.js`). (#676, @GlowyBlack, 2026-06-20)
 - [core] fix: Restore course Enrollments tab — re-wire `useCourseEnrollments` to `GET /api/courses/:id/enrollments` after merge conflict reverted the hook to an empty stub; API returns enrollment `id` and decrypted `studentNumber`. ([#684], @GlowyBlack, 2026-06-18)
 - [core] fix: Dev startup seed — targeted `db:seed:student-ids` backfill for seed students instead of full re-seed when `studentId` is missing (avoids `studentIdLookup` unique constraint collisions). (#684, @GlowyBlack, 2026-06-18)
 - [core] fix: `POST /api/bug-reports` — extension sources (`AI_TUTOR`, `QUESTION_MAKER`) require service key again; session auth remains for `CORE` only. (#684, @GlowyBlack, 2026-06-18)

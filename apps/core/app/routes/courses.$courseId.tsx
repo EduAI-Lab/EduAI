@@ -76,10 +76,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   // to an owning INSTRUCTOR when `instructors.canManageEnrollments` is on
   // (mirrors the TA endpoint gate). Load each user list only when usable.
   const canManageStaff = access === 'admin' || access === 'unit'
+  const canManageStudentEnrollments =
+    access === 'admin' || access === 'unit' || access === 'instructor'
   const canManageTAs =
     canManageStaff ||
     (access === 'instructor' && (await getPolicy('instructors.canManageEnrollments')))
-  const [instructors, taUsers] = await Promise.all([
+
+  const needsStudentUsers = canManageStudentEnrollments || canManageTAs
+  const [instructors, studentUsers] = await Promise.all([
     canManageStaff
       ? prisma.user.findMany({
           where: { role: 'INSTRUCTOR', isActive: true },
@@ -87,7 +91,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
           orderBy: { name: 'asc' },
         })
       : Promise.resolve([]),
-    canManageTAs
+    needsStudentUsers
       ? prisma.user.findMany({
           // TA candidates are STUDENT-platform users; assigning one creates an
           // Enrollment(role=TA). There is no platform-level TA role anymore.
@@ -122,15 +126,23 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     user,
     access,
     instructors,
-    taUsers,
+    studentUsers,
   }
 }
 
 export default function CourseDetailPage() {
-  const { course, user, access, instructors, taUsers } = useLoaderData<typeof loader>()
+  const { course, user, access, instructors, studentUsers } =
+    useLoaderData<typeof loader>()
   const revalidator = useRevalidator()
   const { topics, createTopic, deleteTopic } = useCourseTopics(course.id)
-  const { enrollments, loading: enrollmentsLoading, error: enrollmentsError } = useCourseEnrollments(course.id)
+  const {
+    enrollments,
+    loading: enrollmentsLoading,
+    error: enrollmentsError,
+    enroll,
+    removeEnrollment,
+    refetch: refetchEnrollments,
+  } = useCourseEnrollments(course.id)
   const { materials, uploadMaterial, refetch: refetchMaterials } = useCourseMaterials(course.id)
   const { tas, addTA, removeTA } = useCourseTAs(course.id)
   const { getValidApiKeys } = useApiKeys()
@@ -149,7 +161,22 @@ export default function CourseDetailPage() {
       throw new Error(body.error ?? 'Failed to assign instructor')
     }
     revalidator.revalidate()
-  }, [course.id, revalidator])
+    await refetchEnrollments()
+  }, [course.id, revalidator, refetchEnrollments])
+
+  const handleEnrollStudent = useCallback(
+    async (userId: string) => {
+      await enroll(userId, 'STUDENT')
+    },
+    [enroll],
+  )
+
+  const handleRemoveEnrollment = useCallback(
+    async (enrollmentId: string) => {
+      await removeEnrollment(enrollmentId)
+    },
+    [removeEnrollment],
+  )
 
   const handleUpdateAiInstructions = useCallback(async (aiInstructions: string) => {
     const res = await fetch(`/api/courses/${course.id}`, {
@@ -231,7 +258,9 @@ export default function CourseDetailPage() {
                 materials={uploadMaterials}
                 tas={tas}
                 instructors={instructors}
-                taUsers={taUsers}
+                studentUsers={studentUsers}
+                onEnrollStudent={handleEnrollStudent}
+                onRemoveEnrollment={handleRemoveEnrollment}
                 isUploading={isUploading}
                 materialsError={materialsError}
                 materialsSuccess={materialsSuccess}

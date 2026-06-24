@@ -6,17 +6,24 @@ import { ReactNode, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import {
     Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@eduai/ui';
-import { Button, Badge, Label, Textarea } from '@eduai/ui';
+import { Button, Badge, Label, Textarea, Switch } from '@eduai/ui';
 import { useToast } from '@/components/ui/use-toast';
 import { PermissionGate } from '@/components/rbac/PermissionGate';
 import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
-import { X, Copy, Trash2, ArrowLeft, Sparkles, FileEdit, Pencil } from 'lucide-react';
+import { getAiTutorInstructorUrl } from '@/lib/coreUrl';
+import { X, Copy, Trash2, ArrowLeft, Sparkles, FileEdit, Pencil, ExternalLink } from 'lucide-react';
 import { QuestionVariantEntry, MCQChoice, QuestionType, QuestionDifficulty } from '../../types/question';
 import { Topic } from '../../types/topic';
 import { MCQChoicesField } from '../questions/MCQChoicesField';
 import { questionService } from '../../services/questionService';
 import { courseService } from '../../services/courseService';
 import { assessmentService } from '../../services/assessmentService';
+import { buildVariantMetadataUpdates } from '../../utils/questionMetadataEdit';
+import {
+    getMcqChoiceRowClasses,
+    getMcqChoiceLetterClasses,
+    CORRECT_ANSWER_SUMMARY_CLASSES,
+} from '../../utils/mcqChoiceDisplay';
 
 const QUESTION_TYPES: QuestionType[] = ['MCQ', 'SA', 'LA'];
 const QUESTION_TYPE_LABELS: Record<QuestionType, string> = {
@@ -75,9 +82,11 @@ interface QuestionDetailViewProps {
         updates: {
             isAiGenerated?: boolean;
             isDraft?: boolean;
+            testable?: boolean;
             difficulty?: QuestionDifficulty;
             choices?: MCQChoice[] | null;
             answer?: string | null;
+            questionText?: string;
         }
     ) => void;
     onUpdateQuestionMetadata?: (
@@ -105,16 +114,20 @@ export const QuestionDetailView = ({
     const [viewMode, setViewMode] = useState<'detail' | 'variants'>('detail');
     const [isToggling, setIsToggling] = useState(false);
     const [isTogglingDraft, setIsTogglingDraft] = useState(false);
+    const [isTestable, setIsTestable] = useState(entry.variant.testable ?? false);
+    const [isTogglingTestable, setIsTogglingTestable] = useState(false);
     const [editingChoices, setEditingChoices] = useState(false);
     const [editChoices, setEditChoices] = useState<MCQChoice[]>([]);
     const [editAnswer, setEditAnswer] = useState('');
     const [editingMetadata, setEditingMetadata] = useState(false);
     const [editDescription, setEditDescription] = useState('');
+    const [editQuestionText, setEditQuestionText] = useState('');
     const [editPrimaryTopicId, setEditPrimaryTopicId] = useState<string>('');
     const [editType, setEditType] = useState<QuestionType>('MCQ');
     const [editDifficulty, setEditDifficulty] = useState<QuestionDifficulty>('medium');
     const [topics, setTopics] = useState<Topic[]>([]);
     const [topicsLoading, setTopicsLoading] = useState(false);
+    const [coreCourseId, setCoreCourseId] = useState<string | null>(null);
     const [savingMetadata, setSavingMetadata] = useState(false);
     const { toast } = useToast();
     const {
@@ -123,10 +136,35 @@ export const QuestionDetailView = ({
         canEditResource,
         canDeleteResource,
     } = useQmPermissionsForCourse(entry.courseId ?? null);
-    const owner = { createdBy: entry.variant.createdBy ?? null };
+    const { variant } = entry;
+    const owner = { createdBy: variant.createdBy ?? null };
     const isApproved = entry.isDraft === false;
+    const coreQuestionId = variant.coreQuestionId ?? null;
     const canEditDraft = canEditResource(owner) && !isApproved;
     const canEditMetadata = canEditResource(owner);
+
+    useEffect(() => {
+        setIsTestable(entry.variant.testable ?? false);
+    }, [entry.variant.id, entry.variant.testable]);
+
+    useEffect(() => {
+        if (!entry.courseId) {
+            setCoreCourseId(null);
+            return;
+        }
+        let cancelled = false;
+        courseService
+            .getCourse(entry.courseId)
+            .then((course) => {
+                if (!cancelled) setCoreCourseId(course.coreCourseId ?? null);
+            })
+            .catch(() => {
+                if (!cancelled) setCoreCourseId(null);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [entry.courseId]);
 
     useEffect(() => {
         if (!entry.courseId) return;
@@ -148,12 +186,12 @@ export const QuestionDetailView = ({
     useEffect(() => {
         if (editingMetadata) {
             setEditDescription(entry.questionDescription ?? '');
+            setEditQuestionText(variant.questionText ?? '');
             setEditPrimaryTopicId(entry.primaryTopicId != null ? String(entry.primaryTopicId) : '');
             setEditType(entry.questionType);
             setEditDifficulty((entry.variant.difficulty as QuestionDifficulty) ?? 'medium');
         }
-    }, [editingMetadata, entry.questionDescription, entry.primaryTopicId, entry.questionType, entry.variant.difficulty]);
-    const { variant } = entry;
+    }, [editingMetadata, entry.questionDescription, entry.primaryTopicId, entry.questionType, entry.variant.difficulty, entry.variant.questionText]);
     const primaryTopicLabel = entry.primaryTopicName ?? `Topic ${entry.primaryTopicId}`;
     const secondaryTopicsDisplay =
         entry.secondaryTopicNames && entry.secondaryTopicNames.length > 0
@@ -288,6 +326,56 @@ export const QuestionDetailView = ({
         }
     };
 
+    const handleToggleTestable = async (next: boolean) => {
+        if (!coreQuestionId) {
+            toast({
+                variant: 'destructive',
+                title: 'Not synced to Core',
+                description:
+                    'Mark the variant as reviewed and ensure the course is linked to Core before enabling AI Tutor preview.',
+            });
+            return;
+        }
+
+        try {
+            setIsTogglingTestable(true);
+            const result = await questionService.setVariantTestable(entry.variant.id, next);
+            setIsTestable(result.testable);
+            const updatedEntry: QuestionVariantEntry = {
+                ...entry,
+                variant: { ...entry.variant, testable: result.testable },
+            };
+            onSelectVariant(updatedEntry);
+            onUpdateVariant?.(entry.variant.id, { testable: result.testable });
+            toast({
+                title: result.testable ? 'Available in AI Tutor' : 'Removed from AI Tutor',
+                description: result.testable
+                    ? 'Students may encounter this question in AI Tutor tutoring sessions for this course.'
+                    : 'This question is no longer marked testable on Core.',
+            });
+        } catch (error: unknown) {
+            const message =
+                error instanceof Error
+                    ? error.message
+                    : 'Could not update testable status.';
+            toast({
+                variant: 'destructive',
+                title: 'Failed to update AI Tutor visibility',
+                description: message,
+            });
+        } finally {
+            setIsTogglingTestable(false);
+        }
+    };
+
+    const handleOpenAiTutor = () => {
+        window.open(
+            getAiTutorInstructorUrl({ coreCourseId }),
+            '_blank',
+            'noopener,noreferrer',
+        );
+    };
+
     useEffect(() => {
         setViewMode('detail');
     }, [entry.variant.id]);
@@ -306,9 +394,10 @@ export const QuestionDetailView = ({
                     <X className="h-4 w-4" />
                 </Button>
 
-                <div className="px-6 pt-10 pr-14">
+                <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                <div className="flex-1 overflow-y-auto px-6 pt-10 pb-6">
                     {viewMode === 'variants' ? (
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between pr-10">
                             <div>
                                 <h2 className="text-xl font-semibold text-foreground">All variants for this question</h2>
                                 <p className="mt-1 text-sm text-muted-foreground">
@@ -326,13 +415,19 @@ export const QuestionDetailView = ({
                             </Button>
                         </div>
                     ) : (
-                        <div className={`text-foreground font-semibold ${questionTextClass} max-h-40 overflow-y-auto`}>
-                            {questionTextDisplay}
-                        </div>
+                        <section className="pr-10 border-b border-border pb-6 mb-6">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                                Question text
+                            </p>
+                            <div className={`text-foreground font-semibold ${questionTextClass}`}>
+                                {questionTextDisplay}
+                            </div>
+                            <p className="mt-2 text-xs text-muted-foreground">
+                                Scroll down for synopsis, choices, and metadata.
+                            </p>
+                        </section>
                     )}
-                </div>
 
-                <div className="flex-1 overflow-y-auto px-6 py-6">
                     {viewMode === 'variants' ? (
                         <div className="space-y-6">
                             <div className="rounded-lg border border-border bg-muted p-5 shadow-sm">
@@ -425,6 +520,23 @@ export const QuestionDetailView = ({
                             {editingMetadata ? (
                                 <div className="mt-3 space-y-4 rounded-lg border border-border bg-muted p-4">
                                     <div className="space-y-2">
+                                        <Label htmlFor="detail-question-text">Question text</Label>
+                                        <Textarea
+                                            id="detail-question-text"
+                                            value={editQuestionText}
+                                            onChange={(e) => setEditQuestionText(e.target.value)}
+                                            placeholder="The question students see"
+                                            rows={3}
+                                            className="resize-none"
+                                            disabled={isApproved}
+                                        />
+                                        {isApproved && (
+                                            <p className="text-xs text-muted-foreground">
+                                                Revert to draft to edit question text or difficulty.
+                                            </p>
+                                        )}
+                                    </div>
+                                    <div className="space-y-2">
                                         <Label htmlFor="detail-description">Question synopsis</Label>
                                         <Textarea
                                             id="detail-description"
@@ -472,7 +584,11 @@ export const QuestionDetailView = ({
                                         </div>
                                         <div className="space-y-2">
                                             <Label>Difficulty</Label>
-                                            <Select value={editDifficulty} onValueChange={(v) => setEditDifficulty(v as QuestionDifficulty)}>
+                                            <Select
+                                                value={editDifficulty}
+                                                onValueChange={(v) => setEditDifficulty(v as QuestionDifficulty)}
+                                                disabled={isApproved}
+                                            >
                                                 <SelectTrigger>
                                                     <SelectValue />
                                                 </SelectTrigger>
@@ -500,9 +616,16 @@ export const QuestionDetailView = ({
                                                         type: editType,
                                                         courseId: entry.courseId
                                                     });
-                                                    await questionService.updateVariant(entry.variant.id, {
-                                                        difficulty: editDifficulty
+                                                    const variantUpdates = buildVariantMetadataUpdates({
+                                                        isDraft: !isApproved,
+                                                        currentQuestionText: variant.questionText ?? '',
+                                                        editQuestionText,
+                                                        currentDifficulty: (variant.difficulty as QuestionDifficulty) ?? 'medium',
+                                                        editDifficulty,
                                                     });
+                                                    if (Object.keys(variantUpdates).length > 0) {
+                                                        await questionService.updateVariant(entry.variant.id, variantUpdates);
+                                                    }
                                                     const primaryTopicName = topics.find((t) => t.id === editPrimaryTopicId)?.name;
                                                     onUpdateQuestionMetadata?.(entry.questionId, {
                                                         description: editDescription || null,
@@ -510,9 +633,16 @@ export const QuestionDetailView = ({
                                                         type: editType,
                                                         primaryTopicName
                                                     });
-                                                    onUpdateVariant?.(entry.variant.id, { difficulty: editDifficulty });
+                                                    if (Object.keys(variantUpdates).length > 0) {
+                                                        onUpdateVariant?.(entry.variant.id, variantUpdates);
+                                                    }
                                                     setEditingMetadata(false);
-                                                    toast({ title: 'Metadata saved', description: 'Question metadata and difficulty updated.' });
+                                                    toast({
+                                                        title: 'Metadata saved',
+                                                        description: Object.keys(variantUpdates).length > 0
+                                                            ? 'Question metadata and variant fields updated.'
+                                                            : 'Question metadata updated.'
+                                                    });
                                                 } catch (err: unknown) {
                                                     toast({
                                                         variant: 'destructive',
@@ -682,23 +812,18 @@ export const QuestionDetailView = ({
                                 </div>
                                 <div className="mt-3 space-y-2">
                                     {variant.choices.map((choice, index) => {
-                                        const isCorrect = variant.answer && choice.letter === variant.answer.trim().toUpperCase();
+                                        const isCorrect = Boolean(
+                                            variant.answer &&
+                                                choice.letter === variant.answer.trim().toUpperCase()
+                                        );
                                         return (
                                             <div
                                                 key={index}
-                                                className={`rounded-lg border p-4 shadow-sm ${
-                                                    isCorrect
-                                                        ? 'border-success-500/40 bg-success-100'
-                                                        : 'border-border bg-muted'
-                                                }`}
+                                                className={`rounded-lg border p-4 shadow-sm ${getMcqChoiceRowClasses(isCorrect)}`}
                                             >
                                                 <div className="flex items-start gap-3">
                                                     <span
-                                                        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
-                                                            isCorrect
-                                                                ? 'bg-success-500 text-white'
-                                                                : 'bg-muted text-foreground'
-                                                        }`}
+                                                        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${getMcqChoiceLetterClasses(isCorrect)}`}
                                                     >
                                                         {choice.letter}
                                                     </span>
@@ -706,9 +831,9 @@ export const QuestionDetailView = ({
                                                         {choice.text}
                                                     </p>
                                                     {isCorrect && (
-                                                        <span className="text-xs font-semibold text-success-700">
+                                                        <Badge variant="success" size="sm">
                                                             Correct
-                                                        </span>
+                                                        </Badge>
                                                     )}
                                                 </div>
                                             </div>
@@ -747,7 +872,7 @@ export const QuestionDetailView = ({
                                 <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                                     {entry.questionType === 'MCQ' ? 'Correct Answer' : 'Answer'}
                                 </h3>
-                                <div className="mt-3 rounded-lg border border-success-500/30 bg-success-100/60 p-5 shadow-sm">
+                                <div className={`mt-3 rounded-lg border p-5 shadow-sm ${CORRECT_ANSWER_SUMMARY_CLASSES}`}>
                                     <p className="text-sm font-medium text-foreground leading-relaxed whitespace-pre-line">
                                         {entry.questionType === 'MCQ' && variant.choices && variant.choices.length > 0
                                             ? (() => {
@@ -763,11 +888,56 @@ export const QuestionDetailView = ({
                         )}
                     </div>
                     )}
+
+                    {isApproved && (
+                        <PermissionGate allow={canApproveVariant}>
+                            <section className="rounded-lg border border-border bg-muted/40 px-4 py-4 space-y-3">
+                                <div className="flex items-start justify-between gap-4">
+                                    <div className="space-y-1">
+                                        <h3 className="text-sm font-semibold text-foreground">AI Tutor preview</h3>
+                                        <p className="text-xs text-muted-foreground">
+                                            Testable questions are injected into AI Tutor teach/guide sessions for this course.
+                                            Draft or unpublished variants are never exposed to students.
+                                        </p>
+                                    </div>
+                                    {isTestable && (
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            className="shrink-0 gap-1.5"
+                                            onClick={handleOpenAiTutor}
+                                        >
+                                            <ExternalLink className="h-3.5 w-3.5" />
+                                            Open AI Tutor
+                                        </Button>
+                                    )}
+                                </div>
+                                {!coreQuestionId ? (
+                                    <p className="text-xs text-amber-700 dark:text-amber-400">
+                                        This variant is not synced to Core yet. Link the course to Core and approve the variant first.
+                                    </p>
+                                ) : (
+                                    <div className="flex items-center gap-3">
+                                        <Switch
+                                            id={`testable-${entry.variant.id}`}
+                                            checked={isTestable}
+                                            disabled={isTogglingTestable}
+                                            onCheckedChange={(checked) => void handleToggleTestable(checked)}
+                                        />
+                                        <Label htmlFor={`testable-${entry.variant.id}`} className="text-sm font-normal">
+                                            {isTestable ? 'Testable in AI Tutor' : 'Not testable in AI Tutor'}
+                                        </Label>
+                                    </div>
+                                )}
+                            </section>
+                        </PermissionGate>
+                    )}
                 </div>
 
                 <div className="flex items-center justify-between border-t bg-muted px-6 py-4">
                     <div className="flex items-center gap-2">
-                        <PermissionGate allow={canEditDraft}>
+                        <PermissionGate allow={canEditMetadata}>
                         <Button
                             variant="outline"
                             size="sm"
@@ -812,6 +982,7 @@ export const QuestionDetailView = ({
                         </Button>
                         </PermissionGate>
                     </div>
+                </div>
                 </div>
             </div>
         </div>

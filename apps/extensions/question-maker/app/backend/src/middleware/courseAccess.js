@@ -121,7 +121,7 @@ export async function resolveAccessForCourse(reqUser, course, { cookie } = {}) {
  */
 export async function resolveCourseAccessWithCourse(reqUser, qmCourseId, opts = {}) {
   const parsedId = Number(qmCourseId);
-  if (!Number.isInteger(parsedId)) return { course: null, access: null };
+  if (!Number.isInteger(parsedId) || parsedId <= 0) return { course: null, access: null };
 
   const course = await Course.findOne({ where: { id: parsedId } });
   if (!course) return { course: null, access: null };
