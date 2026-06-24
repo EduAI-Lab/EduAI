@@ -3,13 +3,15 @@
 **Goal:** Run **two vLLM containers** (one per GPU) but expose **one HTTP port** (`8001`) to dev/EduAI so IT only opens a single firewall rule.
 
 ```text
-dev (s378) ──HTTP :8001──► cmps01 eduai-vllm-proxy (LiteLLM)
-                                ├──► 127.0.0.1:18001  eduai-vllm      (GPU 0, 7B)
-                                └──► 127.0.0.1:18002  eduai-vllm-t3   (GPU 1, 32B AWQ)
+dev (s378) ──HTTP :8001──► cmps01 eduai-edge-proxy (nginx)
+                                ├── /v1/*     → LiteLLM 127.0.0.1:18091
+                                │                 ├──► 127.0.0.1:18001  eduai-vllm      (GPU 0, 7B)
+                                │                 └──► 127.0.0.1:18002  eduai-vllm-t3   (GPU 1, 32B AWQ)
+                                └── /energy/* → energy-meter 127.0.0.1:9100
 Ollama :11434 — unchanged
 ```
 
-EduAI uses **`VLLM_BASE_URL=http://cmps01.ok.ubc.ca:8001`** only. Chat picks the model via id (`vllm:qwen2.5-7b-instruct`, `vllm:qwen2.5-32b-instruct`).
+EduAI uses **`VLLM_BASE_URL=http://cmps01.ok.ubc.ca:8001`** only. Research energy uses **`ENERGY_SIDECAR_URL=http://cmps01.ok.ubc.ca:8001/energy`** (same firewall port).
 
 ---
 
@@ -19,11 +21,23 @@ EduAI uses **`VLLM_BASE_URL=http://cmps01.ok.ubc.ca:8001`** only. Chat picks the
 | --- | --- | --- | --- |
 | **`eduai-vllm`** | `127.0.0.1:18001→8000` | `qwen2.5-7b-instruct` | GPU 0, Qwen 7B Instruct |
 | **`eduai-vllm-t3`** | `127.0.0.1:18002→8000` | `qwen2.5-32b-instruct` | GPU 1, 32B AWQ + tool-call flags |
-| **`eduai-vllm-proxy`** | host `:8001` (LiteLLM) | routes both ids | `network_mode: host` — see below |
+| **`eduai-vllm-proxy`** | `127.0.0.1:18091` (LiteLLM) | routes both ids | internal only |
+| **`eduai-edge-proxy`** | host `:8001` (nginx) | `/v1/*` → LiteLLM, `/energy/*` → sidecar | public |
 
-Backends are **localhost only**; **LiteLLM** is the only public listener on **`8001`**.
+Backends are **localhost only**; **nginx** is the only public listener on **`8001`**.
 
-**Why `network_mode: host` on the proxy?** Backends bind `127.0.0.1:18001/18002`. A bridge-networked LiteLLM container cannot reach those ports (and `host.docker.internal` on Linux does not map to loopback). Host networking lets LiteLLM use `http://127.0.0.1:18001/v1` in config.
+**Why `network_mode: host`?** Backends bind `127.0.0.1:18001/18002`. Bridge-networked containers cannot reach those ports on Linux. Host networking lets LiteLLM and nginx use loopback backends.
+
+### Energy sidecar (research Joules)
+
+Deploy `tools/energy-meter` on cmps01 (`~/eduai-energy-meter/deploy-cmps01.sh`), then:
+
+```bash
+cd ~/cmps01   # or path to infra/cmps01
+./deploy-edge-proxy.sh
+```
+
+s378: `ENERGY_SIDECAR_URL=http://cmps01.ok.ubc.ca:8001/energy` — no separate firewall port for 9100.
 
 ---
 
