@@ -32,6 +32,7 @@ import { cloneCourseContent, cloneLessonsFromOffering } from '../services/course
 import { calculateCourseProgress } from '../services/progressCalculation.js';
 import { findEduAiCourseById, listEduAiCourses, setCoreCoursePublishState } from '../services/eduaiClient.js';
 import { mapEduAiServiceKeyError } from '../services/eduaiServiceKeyErrors.js';
+import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
 import { syncCourseEnrollments } from '../services/enrollmentSync.js';
 import {
   importEnrolledCoursesFromCore,
@@ -43,6 +44,14 @@ const router = express.Router();
 
 function isSupportedCourseRole(role) {
   return role === 'INSTRUCTOR' || role === 'STUDENT' || role === 'TA' || role === 'UNIT_ADMIN';
+}
+
+async function userHasTaEnrollment(userId) {
+  const row = await prisma.courseEnrollment.findFirst({
+    where: { userId, role: 'TA' },
+    select: { id: true },
+  });
+  return row != null;
 }
 
 function respondEduAiUpstreamError(res, error, fallbackMessage) {
@@ -150,7 +159,7 @@ router.get('/courses', async (req, res) => {
         orderBy: { createdAt: 'desc' },
       });
       res.json(courses.map(mapCourseOffering));
-    } else if (authUser.role === 'TA') {
+    } else if (authUser.role === 'TA' || (authUser.role === 'STUDENT' && await userHasTaEnrollment(authUser.id))) {
       // TAs see all TA-enrolled courses regardless of publish state (no progress),
       // plus published student-enrolled courses (with progress).
       const allEnrollments = await prisma.courseEnrollment.findMany({

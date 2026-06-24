@@ -28,7 +28,7 @@ export function getNavForUser(user: AtUser | null | undefined): AtNavItem[] {
   if (canAccessAdminConsole(user)) {
     // User management and enrollments are owned by EduAI Core (synced from Canvas
     // as source of truth); AI Tutor no longer exposes them. Bug report triage stays.
-    items.push({ key: 'admin-bug-reports', title: 'Bug Reports', href: '/admin?tab=bugReports' });
+    items.push({ key: 'admin-bug-reports', title: 'Bug Reports', href: '/admin' });
   }
 
   return items;
