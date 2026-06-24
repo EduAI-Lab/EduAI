@@ -2,8 +2,6 @@
  * Normalize model-produced math into markdown that Streamdown/KaTeX can render.
  */
 
-import { debugMathMarkdown } from "./math-markdown-debug";
-
 const MATH_COMMAND =
   /\\(?:frac|sqrt|sum|int|prod|lim|sin|cos|tan|log|ln|alpha|beta|gamma|delta|theta|pi|infty|cdot|times|div|pm|mp|leq|geq|neq|approx|left|right|text|vec|hat|bar|overline|underline|binom|displaystyle|quad|qquad|mathrm|mathbf|operatorname)\b/;
 
@@ -287,25 +285,19 @@ export function normalizeMathMarkdown(text: string): string {
     return repairSpacedBoldMarkers(text);
   }
 
-  debugMathMarkdown("input", { before: text });
-
   let result = decodeHtmlEntities(text);
   result = repairSpacedBoldMarkers(result);
-  debugMathMarkdown("after-repair-bold", { after: result });
 
   result = mergeUnbalancedDollarLines(result);
-  debugMathMarkdown("after-merge-dollars", { after: result });
 
   result = result.replace(DISPLAY_DELIM_RE, (_, body) => `$$${body.trim()}$$`);
   result = result.replace(INLINE_DELIM_RE, (_, body) => `$${body.trim()}$`);
-  debugMathMarkdown("after-delimiter-convert", { after: result });
 
   result = processOutsideDisplayBlocks(result, (plain) => {
     let section = normalizeLineMath(plain);
     section = wrapBareDisplayMathLines(section);
     return section;
   });
-  debugMathMarkdown("output", { after: result });
 
   return result;
 }

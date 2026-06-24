@@ -4,7 +4,6 @@ import { memo, useId, useMemo, lazy, Suspense } from "react"
 import type { Components } from "react-markdown"
 import { CodeBlock, CodeBlockCode } from "./code-block"
 import { streamdownPlugins } from "./streamdown-config"
-import { debugStreamdownMarkdown, isMathMarkdownDebugEnabled } from "../utils/math-markdown-debug"
 
 // Lazy load Streamdown to avoid SSR issues with KaTeX CSS
 const Streamdown = lazy(() => import('streamdown').then(module => ({ default: module.Streamdown })))
@@ -65,16 +64,7 @@ function MarkdownComponent({
 }: MarkdownProps) {
   const generatedId = useId()
   const blockId = id ?? generatedId
-  const blocks = useMemo(() => {
-    const parsed = parseMarkdownIntoBlocks(children);
-    if (isMathMarkdownDebugEnabled()) {
-      debugStreamdownMarkdown("parse-blocks", {
-        content: children,
-        blockCount: parsed.length,
-      });
-    }
-    return parsed;
-  }, [children])
+  const blocks = useMemo(() => parseMarkdownIntoBlocks(children), [children])
 
   return (
     <div className={className}>
