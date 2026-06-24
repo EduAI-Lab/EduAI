@@ -36,7 +36,7 @@ beforeAll(async () => {
     data: {
       email: "enroll-ta@test.com",
       name: "Enroll TA",
-      role: "TA",
+      role: "STUDENT",
       emailVerified: false,
     },
   });
@@ -299,6 +299,7 @@ describe("enrollment management lifecycle (#305)", () => {
       form.set("term", "Fall");
       form.set("year", "2026");
       form.set("startDate", "2026-09-01");
+      form.set("department", "COSC");
       form.set("instructorUserIds", instructorA.id);
       const created = await createCourse(
         new Request("http://localhost/api/courses", { method: "POST", body: form }),

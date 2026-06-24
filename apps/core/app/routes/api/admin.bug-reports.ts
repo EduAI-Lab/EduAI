@@ -11,7 +11,6 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
 import { auth } from "~/lib/auth/server";
-import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import {
   isBugReportSource,
   isBugReportStatus,
@@ -43,10 +42,7 @@ async function requireAdmin(request: Request) {
       }),
     );
 
-  const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
-  if (apiKeyGuard) return { response: apiKeyGuard, session: null };
-
-  const session = apiKeySession ?? (await auth.api.getSession(request));
+  const session = await auth.api.getSession(request);
   if (!session?.user) {
     logAdminDenied(null);
     return { response: json(401, { error: "Unauthorized" }), session: null };

@@ -3,7 +3,9 @@ import { redirect } from "react-router";
 import prisma from "~/lib/prisma.server";
 import { readStoredStudentId } from "~/lib/canvas/student-id.server";
 
-export const STUDENT_ID_ONBOARDING_ROLES = new Set(["STUDENT", "TA"]);
+// Course TAs are STUDENT platform users (no UserRole.TA after the unify
+// migration), so STUDENT alone covers everyone who needs a student number.
+export const STUDENT_ID_ONBOARDING_ROLES = new Set(["STUDENT"]);
 export const STUDENT_ID_ONBOARDING_SKIP_COOKIE = "eduai_student_id_onboarding_skipped";
 const SKIP_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 
