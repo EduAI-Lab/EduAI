@@ -38,12 +38,12 @@ describe('listCoursesForUser', () => {
 
   it('returns all courses for ADMIN', async () => {
     mockFindAll.mockResolvedValue([
-      { toJSON: () => ({ id: 1, name: 'A', coreCourseId: 'core-1' }) },
-      { toJSON: () => ({ id: 2, name: 'B', coreCourseId: 'core-2' }) },
+      { toJSON: () => ({ id: 1, name: 'A', code: 'STUDY3', coreCourseId: 'core-1' }) },
+      { toJSON: () => ({ id: 2, name: 'B', code: 'STUDY3', coreCourseId: 'core-1' }) },
     ]);
 
     const rows = await listCoursesForUser({ id: 'admin-1', role: 'ADMIN' });
-    expect(rows).toHaveLength(2);
+    expect(rows).toHaveLength(1);
     expect(rows[0].accessLevel).toBe('admin');
     expect(rows[0].department).toBe('COSC');
     expect(mockResolveAccess).not.toHaveBeenCalled();

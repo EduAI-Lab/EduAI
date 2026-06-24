@@ -4,10 +4,12 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useCourses } from './useCourses';
+import { useAuth } from '../contexts/AuthContext';
 import { eduaiService } from '../services/eduaiService';
 import { filterCoursesForCourseSelection, enrichCoursesWithCoreMetadata } from '../utils/courseDisplay';
 
 export function useDisplayCourses() {
+  const { user } = useAuth();
   const { courses, isLoading: isCoursesLoading, fetchCourses } = useCourses();
   const [coreCoursesLoaded, setCoreCoursesLoaded] = useState(false);
   const [coreCourses, setCoreCourses] = useState<Awaited<ReturnType<typeof eduaiService.listCourses>>>([]);
@@ -41,8 +43,11 @@ export function useDisplayCourses() {
   }, []);
 
   const { courses: filteredCourses, showMockLabel } = useMemo(
-    () => filterCoursesForCourseSelection(courses, coreCourses),
-    [courses, coreCourses]
+    () =>
+      filterCoursesForCourseSelection(courses, coreCourses, {
+        bypassCoreEnrollmentFilter: user?.role === 'ADMIN',
+      }),
+    [courses, coreCourses, user?.role]
   );
 
   const displayCourses = useMemo(

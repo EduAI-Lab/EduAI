@@ -188,9 +188,18 @@ export const CanvasImportDialog = ({
 
     setIsConnecting(true);
     try {
-      const result = await canvasService.connectCanvas(canvasUrl, apiKey, false);
+      const { integration: result, usedTestMode } = await canvasService.connectCanvasWithFallback(
+        canvasUrl,
+        apiKey,
+      );
       setIntegration(result);
       setShowConnectForm(false);
+      if (usedTestMode) {
+        toast({
+          title: 'Canvas test mode',
+          description: 'Using mock Canvas data because live credentials were unavailable.',
+        });
+      }
       await loadCanvasCourses();
     } catch (error: any) {
       toast({
