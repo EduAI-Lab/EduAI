@@ -16,6 +16,7 @@
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
     "db:seed:if-empty": "tsx prisma/seed-if-empty.ts",
+    "db:sync-ai-providers": "tsx prisma/sync-ai-providers.ts",
     "db:seed:student-ids": "tsx prisma/seed-backfill-student-ids.ts",
     "db:reset": "prisma migrate reset",
     "auth:migrate": "npx @better-auth/cli migrate",
@@ -23,6 +24,9 @@
     "eval:adhd": "tsx scripts/eval-adhd-assist.mjs",
     "bench:chat": "node ./scripts/chat-latency-bench.mjs",
     "vllm:smoke": "node ./scripts/vllm-smoke.mjs",
+    "research:embed-knn-exemplars": "tsx ./scripts/research/embed-knn-exemplars.ts",
+    "research:eval-knn": "tsx ./scripts/research/evaluate-knn-router.ts",
+    "research:eval-llm": "tsx ./scripts/research/evaluate-llm-router.ts",
     "test:embedding": "tsx scripts/test-embedding.ts",
     "re-embed:course": "tsx scripts/re-embed-course.ts"
   },
