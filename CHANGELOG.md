@@ -7,6 +7,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## [Week 8 — June 22–28, 2026]
 
+### Added
+
+- [core] feat: Add UBC chatbot disclaimer banner and full terms dialog on `/chat`. (#575, @superbolt08, 2026-06-23) — [#753](https://github.com/EduAI-Lab/EduAI/pull/753)
+
 ### Fixed
 
 - [ai-tutor] fix: Surface effective `role: TA` on `GET /api/me` when Core reports a TA enrollment — keeps course TAs in the teaching shell after Core drops platform-level `UserRole.TA` (#723, @Ayyhab, 2026-06-24)
