@@ -281,13 +281,11 @@ export async function auditAndMaybeRewrite(args: {
   const trimmed = (args.draft ?? "").trim();
   const profileReq = getProfileRequirements(profile);
 
-  const beforeMetrics = profile
-    ? withProfileStructuralPass(
-        computeAdhdResponseMetrics(trimmed, { wordCap }),
-        profile,
-        trimmed,
-      )
-    : withStructuralPass(computeAdhdResponseMetrics(trimmed, { wordCap }));
+  const beforeMetrics = withProfileStructuralPass(
+    computeAdhdResponseMetrics(trimmed, { wordCap }),
+    profile,
+    trimmed,
+  );
 
   if (!trimmed) {
     return emptyOversightAuditResult();
@@ -341,7 +339,7 @@ export async function auditAndMaybeRewrite(args: {
       rewritten: true,
       method: "deterministic",
       beforeMetrics,
-      afterMetrics: afterMetrics,
+      afterMetrics,
       oversightDurationMs: 0,
       oversightUsage: null,
     };
