@@ -9,6 +9,7 @@ import {
 import { Button, Card, CardContent, CardHeader, CardTitle, Badge, ScrollArea } from '@eduai/ui';
 import { Tooltip } from '@/components/ui/tooltip';
 import { PermissionGate } from '@/components/rbac/PermissionGate';
+import { CourseNoAccessAlert } from '@/components/rbac/CourseNoAccessAlert';
 import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
 import {
     Plus,
@@ -163,8 +164,9 @@ export const AssessmentSection = ({
     onImportFromCanvas
 }: AssessmentSectionProps) => {
     const navigate = useNavigate();
-    const { canManageAssessment, canExportAssessment, canUseVariantWorkflow } =
+    const { canManageAssessment, canExportAssessment, canUseVariantWorkflow, accessLoading, hasCourseAccess } =
         useQmPermissionsForCourse(selectedCourseId ?? null);
+    const canWriteInCourse = hasCourseAccess && !accessLoading;
     const [expandedAssessment, setExpandedAssessment] = useState<number | null>(null);
     const [isGenerateModalOpen, setIsGenerateModalOpen] = useState(false);
     const [pendingGenerateAction, setPendingGenerateAction] = useState<'create' | null>(null);
@@ -240,13 +242,16 @@ export const AssessmentSection = ({
 
     return (
         <div className="space-y-6">
+            {selectedCourseId && !accessLoading && !hasCourseAccess && (
+                <CourseNoAccessAlert onGoToCourses={() => navigate('/courses')} />
+            )}
             <div className="flex justify-between items-center">
                 <div>
                     <h2 className="text-2xl font-bold text-foreground">Assessments</h2>
                     <p className="text-sm text-muted-foreground">{headerDescription}</p>
                     {loadError && <p className="text-sm text-red-600 mt-1">{loadError}</p>}
                 </div>
-                <PermissionGate allow={canManageAssessment}>
+                <PermissionGate allow={canManageAssessment && canWriteInCourse}>
                 <div className="flex gap-2">
                     {onImportFromCanvas && (
                         <Tooltip content="Import an assessment from your Canvas course" side="bottom">
@@ -294,7 +299,7 @@ export const AssessmentSection = ({
                 </div>
             ) : (
                 <div className="space-y-4" data-tour-id="assessment-list">
-                    {assessments.map((assessment) => {
+                    {assessments.map((assessment, assessmentIndex) => {
                         const assessmentQuestions = buildQuestionEntries(assessment);
                         const totalQuestionCount = countTotalQuestions(assessment);
                         const blueprint = assessment.blueprintConfig;
@@ -336,14 +341,14 @@ export const AssessmentSection = ({
                                                         })
                                                     }
                                                     className="flex items-center space-x-1"
-                                                    data-tour-id="assessment-view-btn"
+                                                    data-tour-id={assessmentIndex === 0 ? 'assessment-view-btn' : undefined}
                                                 >
                                                     <Layers3 className="h-4 w-4" />
                                                     <span>Open</span>
                                                 </Button>
                                             </Tooltip>
 
-                                            <PermissionGate allow={canUseVariantWorkflow}>
+                                            <PermissionGate allow={canUseVariantWorkflow && canWriteInCourse}>
                                             <Tooltip
                                                 content="Open assessment variant workflow with this exam as the baseline"
                                                 side="bottom"
@@ -364,7 +369,7 @@ export const AssessmentSection = ({
                                             </Tooltip>
                                             </PermissionGate>
 
-                                            <PermissionGate allow={canExportAssessment}>
+                                            <PermissionGate allow={canExportAssessment && canWriteInCourse}>
                                             {hasAnyExportHandler && (
                                                 <Tooltip
                                                     content="Export to Canvas, Word, or plain text"
@@ -384,7 +389,7 @@ export const AssessmentSection = ({
                                             )}
                                             </PermissionGate>
 
-                                            <PermissionGate allow={canManageAssessment}>
+                                            <PermissionGate allow={canManageAssessment && canWriteInCourse}>
                                             {onDeleteAssessment && (
                                                 <Button
                                                     variant="ghost"
@@ -483,7 +488,7 @@ export const AssessmentSection = ({
             {!isLoading && !hasAssessments && (
                 <div className="text-center py-8">
                     <p className="text-muted-foreground mb-4">No assessments created yet.</p>
-                    <PermissionGate allow={canManageAssessment}>
+                    <PermissionGate allow={canManageAssessment && canWriteInCourse}>
                     <Button
                         onClick={handleOpenCreateModal}
                         className="flex items-center space-x-2 mx-auto"
