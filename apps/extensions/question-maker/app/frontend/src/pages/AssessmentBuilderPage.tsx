@@ -14,6 +14,7 @@ import { Topic } from '../types/topic';
 import { AssessmentBuilder } from '../components/assessments/AssessmentBuilder';
 import { QmHomeShell } from '../components/home/QmHomeShell';
 import { PermissionGate } from '@/components/rbac/PermissionGate';
+import { CourseNoAccessAlert } from '@/components/rbac/CourseNoAccessAlert';
 import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
 import { AddQuestionDialog } from '../components/questions/AddQuestionDialog';
 import { CanvasExportDialog } from '../components/canvas/CanvasExportDialog';
@@ -33,9 +34,8 @@ const AssessmentBuilderPage = () => {
     const assessmentId = Number(id);
     const { toast } = useToast();
     const [assessment, setAssessment] = useState<Assessment | null>(null);
-    const { canManageAssessment, canExportAssessment } = useQmPermissionsForCourse(
-        assessment?.courseId ?? null,
-    );
+    const { canManageAssessment, canExportAssessment, hasCourseAccess, accessLoading } =
+        useQmPermissionsForCourse(assessment?.courseId ?? null);
     const readOnly = !canManageAssessment;
     const [topics, setTopics] = useState<Topic[]>([]);
     const [questions, setQuestions] = useState<Question[]>([]);
@@ -474,6 +474,9 @@ const AssessmentBuilderPage = () => {
         <>
             <QmHomeShell>
             <div className="space-y-6">
+                    {assessment.courseId && !accessLoading && !hasCourseAccess && (
+                        <CourseNoAccessAlert onGoToCourses={() => navigate('/courses')} />
+                    )}
                     <div className="flex flex-wrap items-center justify-between gap-3">
                         <Button
                             type="button"

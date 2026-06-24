@@ -7,7 +7,8 @@ export function AccessDeniedView() {
       <CardHeader>
         <CardTitle>Access restricted</CardTitle>
         <CardDescription>
-          Question Maker is available to instructors and administrators.
+          Question Maker is available to instructors and administrators. Students and teaching
+          assistants should use EduAI Core or AI Tutor instead.
         </CardDescription>
       </CardHeader>
       <CardContent>
