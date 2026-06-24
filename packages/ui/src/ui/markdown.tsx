@@ -2,7 +2,7 @@ import { cn } from "../utils"
 import { marked } from "marked"
 import { memo, useId, useMemo, lazy, Suspense } from "react"
 import type { Components } from "react-markdown"
-import { CodeBlock, CodeBlockCode } from "./code-block"
+import { streamdownPlugins } from "../lib/streamdown-config"
 
 // Lazy load Streamdown to avoid SSR issues with KaTeX CSS
 const Streamdown = lazy(() => import('streamdown').then(module => ({ default: module.Streamdown })))
@@ -12,6 +12,8 @@ export type MarkdownProps = {
   id?: string
   className?: string
   components?: Partial<Components>
+  /** When true, defers code-block copy/download until streaming finishes. */
+  isAnimating?: boolean
 }
 
 function parseMarkdownIntoBlocks(markdown: string): string[] {
@@ -19,23 +21,21 @@ function parseMarkdownIntoBlocks(markdown: string): string[] {
   return tokens.map((token) => token.raw)
 }
 
-function extractLanguage(className?: string): string {
-  if (!className) return "plaintext"
-  const match = className.match(/language-(\w+)/)
-  return match ? match[1] : "plaintext"
-}
-
 const MemoizedMarkdownBlock = memo(
   function MarkdownBlock({
     content,
+    isAnimating,
   }: {
     content: string
+    isAnimating?: boolean
   }) {
     return (
       <Suspense fallback={<div className="animate-pulse">{content}</div>}>
         <Streamdown
           parseIncompleteMarkdown={true}
           shikiTheme={["github-light", "github-dark"]}
+          plugins={streamdownPlugins}
+          isAnimating={isAnimating}
           className="streamdown-content"
         >
           {content}
@@ -44,7 +44,10 @@ const MemoizedMarkdownBlock = memo(
     )
   },
   function propsAreEqual(prevProps, nextProps) {
-    return prevProps.content === nextProps.content
+    return (
+      prevProps.content === nextProps.content &&
+      prevProps.isAnimating === nextProps.isAnimating
+    )
   }
 )
 
@@ -54,6 +57,7 @@ function MarkdownComponent({
   children,
   id,
   className,
+  isAnimating,
 }: MarkdownProps) {
   const generatedId = useId()
   const blockId = id ?? generatedId
@@ -65,6 +69,7 @@ function MarkdownComponent({
         <MemoizedMarkdownBlock
           key={`${blockId}-block-${index}`}
           content={block}
+          isAnimating={isAnimating}
         />
       ))}
     </div>
