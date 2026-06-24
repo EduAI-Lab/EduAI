@@ -32,13 +32,10 @@
   outline-offset: 3px;
 }
 
+/* Collapse the nav rail only — keep the header trigger and composer toolbar visible
+   so users can exit focus mode or navigate away. */
 [data-assistive][data-assistive-focus-mode] [data-sidebar="sidebar"],
-[data-assistive][data-assistive-focus-mode] [data-sidebar="trigger"],
 [data-assistive][data-assistive-focus-mode] [data-slot="sidebar-gap"],
 [data-assistive][data-assistive-focus-mode] [data-slot="sidebar-container"] {
   display: none !important;
-}
-
-[data-assistive][data-assistive-focus-mode] .assistive-focus-chrome {
-  display: none;
 }

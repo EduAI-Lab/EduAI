@@ -1,72 +1,77 @@
-import { PromptSuggestion } from "@eduai/ui";
+import { useCallback, useState } from "react";
+
+import { PressSurface } from "~/components/motion/press-surface";
+import { useMotionReducedPreference } from "~/components/assistive/ui-preferences-provider";
 
 export interface SuggestedPromptsProps {
   onSelectPrompt: (prompt: string) => void;
   disabled?: boolean;
 }
 
-interface PromptCard {
-  category: string;
-  title: string;
-  prompt: string;
-}
+const LAUNCH_MS = 280;
 
-const prompts: PromptCard[] = [
+const STARTERS: { label: string; prompt: string }[] = [
   {
-    category: "Study",
-    title: "Build a study plan",
+    label: "Explain a concept",
     prompt:
-      "Help me create a personalized study plan for my upcoming exam, including key topics to review and a day-by-day schedule.",
+      "Explain a challenging concept from my course in simple terms with one real-world example.",
   },
   {
-    category: "Concepts",
-    title: "Explain a concept",
+    label: "Build a study plan",
     prompt:
-      "Explain a challenging concept from my course in simple terms with real-world examples and analogies.",
+      "Help me create a short study plan for my upcoming exam with the most important topics first.",
   },
   {
-    category: "Practice",
-    title: "Generate practice problems",
+    label: "Practice problems",
     prompt:
-      "Create practice problems for the topics I'm studying so I can test my understanding and prepare for assessments.",
+      "Create a few practice problems for what I'm studying so I can check my understanding.",
   },
   {
-    category: "Writing",
-    title: "Review my essay",
+    label: "Summarize readings",
     prompt:
-      "Review my essay for clarity, structure, argument strength, and suggest specific improvements.",
-  },
-  {
-    category: "Code",
-    title: "Debug my code",
-    prompt:
-      "Help me debug this code, explain what's going wrong, and suggest a clean fix with an explanation.",
-  },
-  {
-    category: "Research",
-    title: "Summarize key points",
-    prompt:
-      "Summarize the key points from this week's lecture or reading material in a clear, concise format.",
+      "Summarize the key points from this week's material in a short, scannable list.",
   },
 ];
 
 export function SuggestedPrompts({ onSelectPrompt, disabled }: SuggestedPromptsProps) {
+  const motionReduced = useMotionReducedPreference();
+  const [launchingLabel, setLaunchingLabel] = useState<string | null>(null);
+
+  const handleSelect = useCallback(
+    (item: (typeof STARTERS)[number]) => {
+      if (disabled || launchingLabel) return;
+
+      if (motionReduced) {
+        onSelectPrompt(item.prompt);
+        return;
+      }
+
+      setLaunchingLabel(item.label);
+      window.setTimeout(() => {
+        onSelectPrompt(item.prompt);
+        setLaunchingLabel(null);
+      }, LAUNCH_MS);
+    },
+    [disabled, launchingLabel, motionReduced, onSelectPrompt],
+  );
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 w-full max-w-[520px]">
-      {prompts.map((item, index) => (
-        <PromptSuggestion
-          key={index}
-          onClick={disabled ? undefined : () => onSelectPrompt(item.prompt)}
-          disabled={disabled}
-          className="h-auto p-3.5 text-left border border-border rounded-xl hover:border-primary hover:shadow-sm transition-all disabled:pointer-events-none disabled:opacity-50"
+    <div
+      className="mt-8 flex w-full max-w-2xl flex-wrap items-center justify-center gap-2"
+      role="group"
+      aria-label="Suggested prompts"
+    >
+      {STARTERS.map((item) => (
+        <PressSurface
+          key={item.label}
+          disabled={disabled || launchingLabel !== null}
+          launching={launchingLabel === item.label}
+          dimmed={launchingLabel !== null && launchingLabel !== item.label}
+          onClick={() => handleSelect(item)}
+          className="rounded-full border border-border/60 bg-muted/35 px-4 py-2 text-sm text-foreground/85 hover:border-border hover:bg-muted/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-45"
         >
-          <div>
-            <p className="text-[10px] font-bold text-secondary uppercase tracking-wide mb-1">
-              {item.category}
-            </p>
-            <p className="text-sm text-foreground leading-snug">{item.title}</p>
-          </div>
-        </PromptSuggestion>
+          {item.label}
+        </PressSurface>
       ))}
     </div>
   );

@@ -1,11 +1,15 @@
-export const COURSE_COLORS = [
-  "var(--color-course-1)",
-  "var(--color-course-2)",
-  "var(--color-course-3)",
-  "var(--color-course-4)",
-  "var(--color-course-5)",
-  "var(--color-course-6)",
-]
+import type * as React from "react"
+
+import {
+  courseHeroBackgroundStyle,
+  DEFAULT_COURSE_PALETTE,
+  paletteColorAtIndex,
+  type CourseAccentColor,
+} from "./course-theme"
+
+export const COURSE_COLORS = DEFAULT_COURSE_PALETTE.map(
+  (_, index) => `var(--color-course-${index + 1})`,
+)
 
 export interface CourseColorBarProps {
   index: number
@@ -17,25 +21,42 @@ export function CourseColorBar({ index }: CourseColorBarProps) {
   )
 }
 
+export function courseHeroGradientStyle(color: CourseAccentColor): React.CSSProperties {
+  return courseHeroBackgroundStyle(color)
+}
+
 export interface CourseCardHeroProps {
   index: number
   code: string
+  /** Resolved accent colour (always pass from `resolvePaletteAccent`). */
+  accentColor?: CourseAccentColor
   className?: string
+  /** Optional top-right slot (e.g. student customize menu). */
+  action?: React.ReactNode
 }
 
-/** Visual header band for course cards (#696) — deterministic colour from index. */
-export function CourseCardHero({ index, code, className }: CourseCardHeroProps) {
-  const color = COURSE_COLORS[index % COURSE_COLORS.length]
+/** Visual header band for course cards — colour ties to course detail hero. */
+export function CourseCardHero({
+  index,
+  code,
+  accentColor,
+  className,
+  action,
+}: CourseCardHeroProps) {
+  const resolved = accentColor ?? paletteColorAtIndex(index)
   return (
     <div
       data-testid="course-card-hero"
       className={className}
       style={{
         height: 56,
-        background: `linear-gradient(145deg, ${color} 0%, color-mix(in oklch, ${color} 55%, black) 100%)`,
+        ...courseHeroBackgroundStyle(resolved),
       }}
     >
-      <div className="flex h-full items-end px-4 pb-2.5">
+      {action && (
+        <div className="absolute top-1 right-1 z-20 pointer-events-auto">{action}</div>
+      )}
+      <div className="relative flex h-full items-end px-4 pb-2.5">
         <span className="text-sm font-bold tracking-tight text-white drop-shadow-sm">{code}</span>
       </div>
     </div>

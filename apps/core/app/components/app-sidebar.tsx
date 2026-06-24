@@ -124,7 +124,7 @@ export function AppSidebar({
     <Sidebar variant={variant} collapsible="offcanvas" {...props}>
       <SidebarHeader className="p-2">
         <div className="flex items-center gap-1">
-          <SidebarMenu className="flex-1 min-w-0">
+          <SidebarMenu className="min-w-0 flex-1">
             <SidebarMenuItem>
               <SidebarMenuButton
                 asChild
@@ -133,7 +133,7 @@ export function AppSidebar({
                 <a href="/dashboard" className="flex items-center gap-[9px]">
                   {/* Globe logo — same as login/signup page */}
                   <div
-                    className="flex items-center justify-center shrink-0"
+                    className="flex shrink-0 items-center justify-center"
                     style={{
                       width: 28,
                       height: 28,
@@ -153,7 +153,7 @@ export function AppSidebar({
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
-          <SidebarTrigger className="hidden shrink-0 md:inline-flex text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground" />
+          <SidebarTrigger className="hidden shrink-0 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground md:inline-flex" />
         </div>
       </SidebarHeader>
       <SidebarContent>

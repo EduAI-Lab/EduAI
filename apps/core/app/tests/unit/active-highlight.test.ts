@@ -60,11 +60,12 @@ describe("assistive-active-highlight.css", () => {
     expect(css).toContain("box-shadow:");
   });
 
-  it("hides sidebar and focus chrome in focus mode", () => {
+  it("collapses sidebar rail in focus mode while keeping header trigger available", () => {
     expect(css).toContain("[data-assistive-focus-mode]");
     expect(css).toContain(`[data-sidebar="sidebar"]`);
     expect(css).toContain(`[data-slot="sidebar-gap"]`);
-    expect(css).toContain(`.${ASSISTIVE_FOCUS_CHROME_CLASS}`);
+    expect(css).not.toContain(`[data-sidebar="trigger"]`);
+    expect(css).not.toContain(`.${ASSISTIVE_FOCUS_CHROME_CLASS}`);
   });
 
   it("exports hook classes referenced by components", () => {

@@ -1,8 +1,16 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router'
 import { IconBook } from '@tabler/icons-react'
-import { Card, CardContent, CourseCard, PageHeading, ToggleGroup, ToggleGroupItem } from '@eduai/ui'
+import { Card, CardContent, CourseCard, PageHeading, SegmentedControl } from '@eduai/ui'
 import type { Course } from '~/hooks/api/use-courses'
+import { CourseCardCustomizePopover } from '~/components/courses/course-card-customize-popover'
+import { CourseCardScrollItem } from '~/components/courses/course-card-scroll-item'
+import { ScrollReveal } from '~/components/motion/scroll-reveal'
+import { useCourseCardPreferences } from '~/hooks/use-course-card-preferences'
+import {
+  getCourseDisplayName,
+  resolveCourseAccentColor,
+} from '~/lib/courses/course-card-preferences'
 import {
   filterCoursesByTermBucket,
   type TermBucket,
@@ -20,6 +28,7 @@ const TERM_FILTER_OPTIONS: { value: TermBucket; label: string }[] = [
 
 export function CoursesStudentView({ courses }: Props) {
   const [termFilter, setTermFilter] = useState<TermBucket>('all')
+  const { getCoursePreference, setCoursePreference } = useCourseCardPreferences()
 
   // Route already filters to enrolled + published; keep gate for tests/direct usage
   const visible = courses.filter((c) => c.isPublished)
@@ -33,21 +42,14 @@ export function CoursesStudentView({ courses }: Props) {
       <PageHeading heading="My Courses" subheading="Your enrolled courses" />
 
       {visible.length > 0 && (
-        <ToggleGroup
-          type="single"
-          value={termFilter}
-          onValueChange={(value) => {
-            if (value) setTermFilter(value as TermBucket)
-          }}
-          aria-label="Filter courses by term"
-          className="justify-start"
-        >
-          {TERM_FILTER_OPTIONS.map((option) => (
-            <ToggleGroupItem key={option.value} value={option.value} aria-label={option.label}>
-              {option.label}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
+        <ScrollReveal index={0} parallax={false}>
+          <SegmentedControl
+            value={termFilter}
+            onValueChange={(value) => setTermFilter(value as TermBucket)}
+            options={TERM_FILTER_OPTIONS}
+            ariaLabel="Filter courses by term"
+          />
+        </ScrollReveal>
       )}
 
       {visible.length === 0 ? (
@@ -66,23 +68,39 @@ export function CoursesStudentView({ courses }: Props) {
         </Card>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((course) => (
-            <CourseCard
-              key={course.id}
-              id={course.id}
-              code={course.code}
-              name={course.name}
-              description={course.description}
-              term={course.term}
-              year={course.year}
-              isPublished={course.isPublished}
-              department={course.department}
-              extraBadges={["Enrolled"]}
-              colorIndex={visible.findIndex((c) => c.id === course.id)}
-              href={`/courses/${course.id}`}
-              LinkComponent={Link}
-            />
-          ))}
+          {filtered.map((course, index) => {
+            const preference = getCoursePreference(course.id)
+            const accentColor = resolveCourseAccentColor(course.id, preference)
+            const displayName = getCourseDisplayName(course.name, preference)
+
+            return (
+              <CourseCardScrollItem key={course.id} index={index}>
+                <CourseCard
+                  id={course.id}
+                  code={course.code}
+                  name={course.name}
+                  displayName={displayName}
+                  description={course.description}
+                  term={course.term}
+                  year={course.year}
+                  isPublished={course.isPublished}
+                  department={course.department}
+                  extraBadges={["Enrolled"]}
+                  accentColor={accentColor}
+                  heroAction={
+                    <CourseCardCustomizePopover
+                      courseName={course.name}
+                      courseCode={course.code}
+                      preference={preference}
+                      onApply={(update) => setCoursePreference(course.id, update)}
+                    />
+                  }
+                  href={`/courses/${course.id}`}
+                  LinkComponent={Link}
+                />
+              </CourseCardScrollItem>
+            )
+          })}
         </div>
       )}
     </div>
