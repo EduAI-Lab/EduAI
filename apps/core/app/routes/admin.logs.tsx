@@ -336,7 +336,7 @@ export default function AdminLogsRoute() {
         } as React.CSSProperties
       }
     >
-      <AppSidebar variant="inset" user={data.user} />
+      <AppSidebar user={data.user} />
       <SidebarInset>
         <SiteHeader
           breadcrumbs={

@@ -31,7 +31,7 @@ This document explains **what runs inside this repo (Core)** versus **what lives
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Core (owned)**             | The EduAI application in *this repository*: the web UI, all `/api/`* routes, PostgreSQL data, auth, RAG (chunking + vectors + search), chat persistence. You deploy and operate it. |
 | **Hosted / external**        | Services you call over the network but do *not* ship as part of this repo: Google AI, OpenAI, Ollama, vLLM (optional on cmps01), optional Firecrawl, etc. They hold the actual language/embedding models.      |
-| **Extensions (integrators)** | Other products (e.g. a campus "tutor" app) that **call EduAI's HTTP API** with an admin API key and optional `proxyUser`. They are clients of Core, not code inside Core.           |
+| **Extensions (integrators)** | Other products (e.g. a campus "tutor" app) that **call EduAI's HTTP API** via the service key (`EDUAI_API_KEY`) or shared session cookies. They are clients of Core, not code inside Core. |
 
 
 ```mermaid
@@ -220,19 +220,9 @@ flowchart TD
 
 Main file: `app/routes/api/chat.ts`. For branch-level detail (hybrid vs tools, `modelSupportsTools`, keyword gating).
 
-### 5.4 Extension calling Core (`proxyUser`)
+### 5.4 Extension calling Core
 
-```mermaid
-sequenceDiagram
-  participant Ext as External app admin key
-  participant API as POST /api/chat
-  participant DB as PostgreSQL
-
-  Ext->>API: x-api-key + proxyUser provider/id/email
-  API->>DB: Find ExternalUser or create User + ExternalUser
-  API->>DB: Chat under that User id
-  API->>Ext: Stream / JSON response
-```
+Extensions call Core via the shared session cookie (OAuth) or the `Authorization: Bearer <EDUAI_API_KEY>` service key.
 
 
 
@@ -307,7 +297,7 @@ app/
   routes/                → Pages + api handlers (*.tsx / *.ts)
   components/            → UI (dashboard, chat, admin tables, …)
   lib/
-    auth/                → Better Auth server + guards (e.g. enforceAdminIfApiKey)
+    auth/                → Better Auth server + guards (requireAdmin, requireServiceKey)
     ai/
       providers.ts       → Registry + PROVIDER_CONFIGS + model id parsing
       embedding.ts       → Chunks, embed/embedMany, pgvector search (env keys only)

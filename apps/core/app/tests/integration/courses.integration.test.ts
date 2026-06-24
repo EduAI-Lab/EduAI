@@ -259,6 +259,7 @@ describe("POST /api/courses", () => {
       term: "Fall",
       year: 2025,
       startDate: "2025-09-01",
+      department: "COSC",
       instructorUserIds: adminId,
     }));
     expect(res.status).toBe(422);
@@ -275,6 +276,7 @@ describe("POST /api/courses", () => {
       term: "Winter",
       year: 2026,
       startDate: "2026-01-01",
+      department: "COSC",
       instructorUserIds: instructorId,
     }));
 
@@ -318,7 +320,7 @@ describe("POST /api/courses", () => {
         year: 2026,
         startDate: "2026-09-01",
         department: "COSC",
-        instructorUserIds: instructorId,
+        instructorUserIds: professorId,
       }));
       expect(res.status).toBe(403);
       expect(await res.json()).toEqual({ error: "DEPARTMENT_NOT_AUTHORIZED" });
@@ -339,7 +341,7 @@ describe("POST /api/courses", () => {
         year: 2026,
         startDate: "2026-09-01",
         department: "COSC",
-        instructorUserIds: instructorId,
+        instructorUserIds: professorId,
       }));
       expect(res.status).toBe(201);
       const body = await res.json();

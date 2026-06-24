@@ -7,9 +7,10 @@ export interface ChatWelcomeProps {
     description?: string;
   };
   onSelectPrompt: (prompt: string) => void;
+  disabled?: boolean;
 }
 
-export function ChatWelcome({ selectedModelInfo, onSelectPrompt }: ChatWelcomeProps) {
+export function ChatWelcome({ selectedModelInfo, onSelectPrompt, disabled }: ChatWelcomeProps) {
   return (
     <div className="flex flex-col items-center justify-center min-h-[360px] text-center px-4 py-8">
       <div
@@ -38,7 +39,7 @@ export function ChatWelcome({ selectedModelInfo, onSelectPrompt }: ChatWelcomePr
         </p>
       )}
 
-      <SuggestedPrompts onSelectPrompt={onSelectPrompt} />
+      <SuggestedPrompts onSelectPrompt={onSelectPrompt} disabled={disabled} />
     </div>
   );
 }

@@ -99,7 +99,7 @@ export type User = {
   email: string;
   name: string;
   image?: string;
-  role: "ADMIN" | "UNIT_ADMIN" | "INSTRUCTOR" | "TA" | "STUDENT";
+  role: "ADMIN" | "UNIT_ADMIN" | "INSTRUCTOR" | "STUDENT";
   isActive: boolean;
   emailVerified: boolean;
   authorizedUnits: string[];
@@ -164,14 +164,14 @@ function RowActions({
   row,
   currentUserId,
   onEdit,
-  onDelete,
+  onRequestDelete,
   onToggleActive,
   onViewChatHistory,
 }: {
   row: Row<User>;
   currentUserId: string;
   onEdit: (user: User) => void;
-  onDelete: (id: string) => void;
+  onRequestDelete: (user: User) => void;
   onToggleActive: (user: User) => void;
   onViewChatHistory?: (user: User) => void;
 }) {
@@ -179,7 +179,10 @@ function RowActions({
   const isCurrentUser = user.id === currentUserId;
 
   return (
-    <DropdownMenu>
+    // modal={false} so Radix does not lock `body { pointer-events: none }` while
+    // the menu is open. Without it, opening the table-level AlertDialog as this
+    // menu closes leaves the body pointer-events lock stuck → page unclickable.
+    <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
         <Button
           size="sm"
@@ -214,7 +217,7 @@ function RowActions({
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
-          onClick={() => onDelete(user.id)}
+          onClick={() => onRequestDelete(user)}
           disabled={isCurrentUser}
           className="text-destructive focus:text-destructive"
         >
@@ -236,6 +239,7 @@ export function UsersTable({
   onCreateUser
 }: UsersTableProps) {
   const id = useId();
+  const [userToDelete, setUserToDelete] = useState<User | null>(null);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [pagination, setPagination] = useState<PaginationState>({
@@ -363,7 +367,7 @@ export function UsersTable({
             row={row}
             currentUserId={currentUserId}
             onEdit={onEdit}
-            onDelete={onDelete}
+            onRequestDelete={setUserToDelete}
             onToggleActive={onToggleActive}
             onViewChatHistory={onViewChatHistory}
           />
@@ -909,6 +913,33 @@ export function UsersTable({
           </Pagination>
         </div>
       </div>
+
+      {/* Single-user delete dialog — rendered outside the row DropdownMenu so
+          Radix focus management doesn't conflict with the menu's portal. */}
+      <AlertDialog open={!!userToDelete} onOpenChange={(open) => { if (!open) setUserToDelete(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete{" "}
+              {userToDelete?.name || userToDelete?.email} and all their data.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (userToDelete) {
+                  onDelete(userToDelete.id);
+                  setUserToDelete(null);
+                }
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

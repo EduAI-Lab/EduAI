@@ -116,12 +116,11 @@ describe("POST /api/invitations", () => {
     expect(createInvitation).toHaveBeenCalled();
   });
 
-  it("ADMIN may NOT invite a STUDENT (403 FORBIDDEN_ROLE)", async () => {
+  it("ADMIN may invite a STUDENT (201 — superset of lower roles)", async () => {
     asInviter("ADMIN", "a1");
     const res = await action(postReq({ email: "s@test.local", role: "STUDENT" }));
-    expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ error: "FORBIDDEN_ROLE" });
-    expect(createInvitation).not.toHaveBeenCalled();
+    expect(res.status).toBe(201);
+    expect(createInvitation).toHaveBeenCalled();
   });
 
   it("UNIT_ADMIN may invite an INSTRUCTOR", async () => {
