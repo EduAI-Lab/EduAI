@@ -17,3 +17,10 @@ export {
   canViewAssessment,
 } from './permissions';
 export { getFooterNavForUser, getNavForUser, getRoleViewLabel } from './nav';
+export {
+  formatCourseAccessLevel,
+  formatCourseRelationship,
+  getCourseRelationship,
+  shouldShowAccessBadge,
+  shouldShowRelationshipBadge,
+} from './course-labels';

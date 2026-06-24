@@ -12,6 +12,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { getFooterNavForUser, getNavForUser, type QmNavItem, type QmNavItemKey } from '@/lib/rbac';
+import { QmSidebarUser } from '@/components/layout/QmSidebarUser';
 
 const NAV_ICONS: Record<
   QmNavItemKey,
@@ -105,6 +106,7 @@ function NavButton({
       style={linkStyle}
       onClick={onNavigate}
       aria-current={isActive ? 'page' : undefined}
+      data-tour-id={item.key === 'assessments' ? 'assessment-tab' : undefined}
       {...hoverHandlers}
     >
       {linkBody}
@@ -162,7 +164,7 @@ export function QmSidebar({ className, onNavigate }: QmSidebarProps) {
         ))}
       </nav>
 
-      <div className="mt-auto border-t border-sidebar-border px-3 py-4">
+      <div className="mt-auto space-y-1 border-t border-sidebar-border px-3 py-4">
         {footerNav.map((item) => (
           <NavButton
             key={item.key}
@@ -172,6 +174,7 @@ export function QmSidebar({ className, onNavigate }: QmSidebarProps) {
             onNavigate={onNavigate}
           />
         ))}
+        <QmSidebarUser />
       </div>
     </aside>
   );
