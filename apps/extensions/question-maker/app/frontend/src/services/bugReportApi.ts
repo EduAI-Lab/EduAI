@@ -67,10 +67,12 @@ export const bugReportApi = {
     return res.data.data;
   },
 
-  async list(): Promise<BugReportRow[]> {
-    const res = await api.get('/api/admin/bug-reports', {
-      params: { source: 'QUESTION_MAKER', limit: 100 },
-    });
+  async list(options?: { source?: string; limit?: number }): Promise<BugReportRow[]> {
+    const params: Record<string, string | number> = { limit: options?.limit ?? 100 };
+    if (options?.source) {
+      params.source = options.source;
+    }
+    const res = await api.get('/api/admin/bug-reports', { params });
     const payload = res.data.data;
     const reports = Array.isArray(payload?.reports) ? payload.reports : [];
     return reports.map((row: Record<string, unknown>) => mapCoreReport(row));

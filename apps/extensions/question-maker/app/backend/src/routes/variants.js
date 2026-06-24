@@ -117,11 +117,22 @@ router.put(
       const access = req.courseAccess;
       const isInstructorPlus = access.rank >= LEVELS.instructor.rank;
 
-      // §19 approved-variant lock: once approved, the only permitted PATCH is a
-      // revert to draft by an instructor-and-up; everything else is 409.
+      // §19 approved-variant lock: once approved, content edits are blocked except
+      // reverting to draft (instructor+) or toggling the AI-generated tag.
       if (current.isDraft === false) {
         const reverting = isDraft === true && isInstructorPlus;
-        if (!reverting) {
+        const aiTagOnly =
+          isAiGenerated !== undefined &&
+          isDraftRaw === undefined &&
+          questionText === undefined &&
+          difficulty === undefined &&
+          reasoningLevel === undefined &&
+          assessmentId === undefined &&
+          secondaryTopicsId === undefined &&
+          answer === undefined &&
+          choices === undefined &&
+          referenceId === undefined;
+        if (!reverting && !aiTagOnly) {
           return res.status(409).json({ success: false, error: 'VARIANT_LOCKED' });
         }
       } else {

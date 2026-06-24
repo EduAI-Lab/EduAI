@@ -139,9 +139,9 @@ export function AssessmentQuestionPicker({
                     </p>
                 </DialogHeader>
 
-                <div className="flex flex-1 min-h-0">
+                <div className="flex flex-1 min-h-0 overflow-hidden">
                     {/* Left: Filters */}
-                    <div className="w-[280px] border-r border-border shrink-0 flex flex-col">
+                    <div className="w-[280px] border-r border-border shrink-0 flex flex-col min-h-0 overflow-hidden">
                         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
                             <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                                 Filters
@@ -159,7 +159,7 @@ export function AssessmentQuestionPicker({
                             )}
                         </div>
 
-                        <ScrollArea className="flex-1">
+                        <ScrollArea className="flex-1 min-h-0">
                             <div className="flex flex-col gap-5 p-4">
                                 {/* Question type */}
                                 <div className="flex flex-col gap-2">
@@ -310,7 +310,7 @@ export function AssessmentQuestionPicker({
                                 {selected.size === filteredQuestions.length ? 'Clear selection' : 'Select all'}
                             </Button>
                         </div>
-                        <ScrollArea className="flex-1">
+                        <ScrollArea className="flex-1 min-h-0">
                             <div className="flex flex-col divide-y divide-border">
                                 {filteredQuestions.map((entry) => {
                                     const checked = selected.has(entry.variant.id);
