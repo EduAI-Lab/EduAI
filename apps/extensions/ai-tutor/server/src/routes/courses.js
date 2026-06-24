@@ -47,11 +47,10 @@ function isSupportedCourseRole(role) {
 }
 
 async function userHasTaEnrollment(userId) {
-  const row = await prisma.courseEnrollment.findFirst({
+  const count = await prisma.courseEnrollment.count({
     where: { userId, role: 'TA' },
-    select: { id: true },
   });
-  return row != null;
+  return count > 0;
 }
 
 function respondEduAiUpstreamError(res, error, fallbackMessage) {
