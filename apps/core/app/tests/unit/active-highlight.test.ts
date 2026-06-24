@@ -6,7 +6,7 @@ import {
   CHAT_MESSAGE_ACTIVE_CLASS,
   CHAT_MESSAGE_INACTIVE_CLASS,
   ASSISTIVE_INPUT_ANCHOR_CLASS,
-  ASSISTIVE_FOCUS_CHROME_CLASS,
+  CHAT_HISTORY_RAIL_CLASS,
   resolveMessageHighlightRole,
   findLastAssistantIndex,
 } from "~/components/assistive/active-highlight";
@@ -60,12 +60,12 @@ describe("assistive-active-highlight.css", () => {
     expect(css).toContain("box-shadow:");
   });
 
-  it("collapses sidebar rail in focus mode while keeping header trigger available", () => {
+  it("collapses sidebar and chat history rail in focus mode while keeping header trigger available", () => {
     expect(css).toContain("[data-assistive-focus-mode]");
     expect(css).toContain(`[data-sidebar="sidebar"]`);
     expect(css).toContain(`[data-slot="sidebar-gap"]`);
+    expect(css).toContain(`.${CHAT_HISTORY_RAIL_CLASS}`);
     expect(css).not.toContain(`[data-sidebar="trigger"]`);
-    expect(css).not.toContain(`.${ASSISTIVE_FOCUS_CHROME_CLASS}`);
   });
 
   it("exports hook classes referenced by components", () => {
