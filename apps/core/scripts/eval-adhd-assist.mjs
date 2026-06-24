@@ -32,7 +32,7 @@ import {
   isProfileStructuralPass,
   isStructuralCompliancePass,
 } from "../app/lib/ai/adhd-metrics.ts";
-import { resolveAdhdTurnProfile } from "../app/lib/ai/adhd-turn-profile.ts";
+import { resolveAdhdTurnProfile, getProfileRequirements } from "../app/lib/ai/adhd-turn-profile.ts";
 import {
   ALL_CONDITIONS,
   CONDITIONS,
@@ -273,12 +273,7 @@ function evaluateContextualPass(turnRef, metrics, assistantText, { adhdAssist, p
       userText,
       priorAssistantText,
     });
-    const wordCap =
-      responseProfile === "full_tutoring"
-        ? 250
-        : responseProfile === "greeting"
-          ? 80
-          : 120;
+    const wordCap = getProfileRequirements(responseProfile).wordCap;
     const profileMetrics = computeAdhdResponseMetrics(assistantText, { wordCap });
     return {
       expectedShape: shape.label,
@@ -417,7 +412,7 @@ async function runScenarioMode({ config, scenarioId, mode }) {
         contextualPass,
         responseProfile,
       });
-      process.stdout.write(
+      process.stderr.write(
         `[${scenarioId}.t${i + 1} mode=${mode}] struct=${structuralPass ? "Y" : "N"} ctx=${contextualPass === null ? "-" : contextualPass ? "Y" : "N"} profile=${responseProfile ?? "-"} ${lastAssistantText.length} chars in ${elapsed} ms\n`,
       );
       priorAssistantText = lastAssistantText;

@@ -33,7 +33,7 @@ const CONFIRMATION_PATTERN =
   /^(yes|yeah|yep|yup|got it|ok|okay|sure|right|correct|understood|makes sense|i see|gotcha|sounds good|perfect|great)\b/i;
 
 const META_PATTERN =
-  /\b(what can you do|how does this (work|chat|tutor)|what are you|who are you|what do you do)\b/i;
+  /^(what can you do|how does this (work|chat|tutor)|what are you|who are you|what do you do)\b/i;
 
 /** Off-topic or multi-topic injection when a tutor turn already exists. */
 const REDIRECT_PATTERN =
@@ -59,7 +59,7 @@ function hasPriorAssistant(priorAssistantText?: string): boolean {
 
 /**
  * Rules-first turn classifier (Approach A). Runs before generation when ADHD Assist is on.
- * Priority: greeting → confirmation → redirect → meta → substantive Q/continuation → brief → full.
+ * Priority: confirmation → redirect → substantive Q/continuation → greeting → meta → brief → full.
  */
 export function resolveAdhdTurnProfile(args: {
   userText?: string;
@@ -71,10 +71,6 @@ export function resolveAdhdTurnProfile(args: {
 
   if (!trimmed) {
     return "full_tutoring";
-  }
-
-  if (ADHD_GREETING_PATTERN.test(trimmed)) {
-    return "greeting";
   }
 
   if (
@@ -89,16 +85,20 @@ export function resolveAdhdTurnProfile(args: {
     return "redirect";
   }
 
-  if (META_PATTERN.test(trimmed)) {
-    return "meta";
-  }
-
   if (SUBSTANTIVE_QUESTION_PATTERN.test(trimmed)) {
     return "full_tutoring";
   }
 
   if (hasPriorAssistant(prior) && SUBSTANTIVE_CONTINUATION_PATTERN.test(trimmed)) {
     return "full_tutoring";
+  }
+
+  if (ADHD_GREETING_PATTERN.test(trimmed)) {
+    return "greeting";
+  }
+
+  if (META_PATTERN.test(trimmed)) {
+    return "meta";
   }
 
   if (wordCount <= ADHD_CLARIFICATION_USER_WORD_THRESHOLD) {
