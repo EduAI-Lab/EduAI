@@ -4,6 +4,7 @@ import { useState } from "react";
 import { CanvasIntegrationSettings } from "~/components/canvas/canvas-integration-settings";
 import {
   IconAccessible,
+  IconLink,
   IconUser,
   IconWorld,
 } from "@tabler/icons-react";
@@ -71,6 +72,11 @@ export function SettingsView({ role, studentNumber = null }: SettingsViewProps) 
                 <PageTabsTrigger value="providers">
                   <IconWorld className="h-4 w-4" /> Providers
                 </PageTabsTrigger>
+                {showCanvasSettings && (
+                  <PageTabsTrigger value="canvas">
+                    <IconLink className="h-4 w-4" /> Canvas
+                  </PageTabsTrigger>
+                )}
               </PageTabsList>
 
               <PageTabsContent value="account" className="space-y-6">
@@ -84,8 +90,13 @@ export function SettingsView({ role, studentNumber = null }: SettingsViewProps) 
                 <AccessibilitySettingsTab />
               </PageTabsContent>
 
+              {showCanvasSettings && (
+                <PageTabsContent value="canvas">
+                  <CanvasIntegrationSettings />
+                </PageTabsContent>
+              )}
+
               <PageTabsContent value="providers" className="space-y-6">
-                {showCanvasSettings && <CanvasIntegrationSettings />}
                 <Card>
                   <CardHeader>
                     <CardTitle>Model Providers</CardTitle>
