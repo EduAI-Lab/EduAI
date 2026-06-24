@@ -45,6 +45,14 @@ function isSupportedCourseRole(role) {
   return role === 'INSTRUCTOR' || role === 'STUDENT' || role === 'TA' || role === 'UNIT_ADMIN';
 }
 
+async function userHasTaEnrollment(userId) {
+  const row = await prisma.courseEnrollment.findFirst({
+    where: { userId, role: 'TA' },
+    select: { id: true },
+  });
+  return row != null;
+}
+
 function respondEduAiUpstreamError(res, error, fallbackMessage) {
   const mapped = mapEduAiServiceKeyError(error);
   if (mapped) {
@@ -150,7 +158,7 @@ router.get('/courses', async (req, res) => {
         orderBy: { createdAt: 'desc' },
       });
       res.json(courses.map(mapCourseOffering));
-    } else if (authUser.role === 'TA') {
+    } else if (authUser.role === 'TA' || (authUser.role === 'STUDENT' && await userHasTaEnrollment(authUser.id))) {
       // TAs see all TA-enrolled courses regardless of publish state (no progress),
       // plus published student-enrolled courses (with progress).
       const allEnrollments = await prisma.courseEnrollment.findMany({
