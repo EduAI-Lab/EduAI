@@ -7,6 +7,11 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## [Week 8 — June 22–28, 2026]
 
+### Added
+
+- [ai-tutor] feat: Add `GET /courses/:courseId/feedback` endpoint — returns all `ActivityFeedback` rows for activities in a course; access-gated to ADMIN (global), UNIT_ADMIN (department-scoped), INSTRUCTOR (enrolled), and TA (enrolled); supports `activityId`, `studentId`, `take` (max 200, default 50), and `skip` query params. (#554, @evanbones, 2026-06-24)
+- [ai-tutor] feat: Extend `PATCH /courses/:courseId`, `PATCH /courses/:courseId/publish`, and `PATCH /courses/:courseId/unpublish` to accept ADMIN and UNIT_ADMIN (department-scoped) in addition to INSTRUCTOR — aligns course mutation routes with rbac-matrix.md §5. (#553, @evanbones, 2026-06-24)
+
 ### Fixed
 
 - [ai-tutor] fix: Surface effective `role: TA` on `GET /api/me` when Core reports a TA enrollment — keeps course TAs in the teaching shell after Core drops platform-level `UserRole.TA` (#723, @Ayyhab, 2026-06-24)
