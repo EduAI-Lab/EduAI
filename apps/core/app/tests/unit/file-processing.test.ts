@@ -425,4 +425,15 @@ describe("enrichExtractedDocumentContent", () => {
     const chunks = enforceMaxChunkLength(applySemanticChunking(content, 500), 500);
     expect(chunks.some((chunk) => chunk.includes("$$\\frac{a}{b}$$"))).toBe(true);
   });
+
+  it("does not hang on intro text followed by a long display equation", () => {
+    const intro = "Short intro paragraph about math.\n\n";
+    const longEq = `$$\\frac{a}{${"x".repeat(3000)}}$$`;
+    const content = `${intro}${longEq}\n\n${"word ".repeat(100)}`;
+    const started = Date.now();
+    const chunks = applySemanticChunking(content, 500);
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(chunks.length).toBeGreaterThan(0);
+    expect(chunks.some((chunk) => chunk.includes("$$"))).toBe(true);
+  });
 });
