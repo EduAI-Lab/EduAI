@@ -48,14 +48,6 @@ import { StatCard } from "@eduai/ui";
 import { Input } from "@eduai/ui";
 import { MultiSelect, Combobox } from "@eduai/ui";
 import { Label } from "@eduai/ui";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@eduai/ui";
-import { Checkbox } from "@eduai/ui";
 import { CourseMaterialsUpload } from "~/components/course-materials-upload";
 import { CourseEmbeddingSettings } from "~/components/course-embedding-settings";
 import { CourseChatsTab } from "~/components/courses/course-chats-panel";
@@ -65,7 +57,7 @@ import type { CourseDetail } from "~/hooks/api/use-course-detail";
 import type { CourseTopic } from "~/hooks/api/use-course-topics";
 import type { CourseEnrollment } from "~/hooks/api/use-course-enrollments";
 import type { CourseTA } from "~/hooks/api/use-course-tas";
-import { canManageTopics, canManageInstructors, canViewCourseChats } from "~/lib/rbac";
+import { canManageTopics, canManageInstructors, canManageStudents, canViewCourseChats } from "~/lib/rbac";
 import type { CourseAccess } from "~/lib/rbac";
 import { usePolicies } from "~/hooks/api/use-policies";
 
@@ -85,7 +77,7 @@ interface Props {
   materials: CourseMaterial[];
   tas: CourseTA[];
   instructors: StaffUser[];
-  taUsers: StaffUser[];
+  studentUsers: StaffUser[];
   isUploading?: boolean;
   materialsError?: string | null;
   materialsSuccess?: string | null;
@@ -95,6 +87,8 @@ interface Props {
   onAssignInstructor: (instructorId: string) => Promise<void>;
   onAddTA: (userId: string) => Promise<void>;
   onRemoveTA: (userId: string) => Promise<void>;
+  onEnrollStudent: (userId: string) => Promise<void>;
+  onRemoveEnrollment: (enrollmentId: string) => Promise<void>;
   onRefreshMaterials?: () => Promise<void>;
   courseId?: string;
   currentUserId?: string;
@@ -173,7 +167,7 @@ export function CourseDetailManagerView({
   materials,
   tas,
   instructors,
-  taUsers,
+  studentUsers,
   isUploading = false,
   materialsError = null,
   materialsSuccess = null,
@@ -183,6 +177,8 @@ export function CourseDetailManagerView({
   onAssignInstructor,
   onAddTA,
   onRemoveTA,
+  onEnrollStudent,
+  onRemoveEnrollment,
   onRefreshMaterials,
   courseId,
   currentUserId,
@@ -210,6 +206,11 @@ export function CourseDetailManagerView({
   );
   const [ragSaving, setRagSaving] = useState(false);
   const [ragSaveMsg, setRagSaveMsg] = useState<string | null>(null);
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
+  const [enrollingStudent, setEnrollingStudent] = useState(false);
+  const [enrollmentActionError, setEnrollmentActionError] = useState<string | null>(null);
+  const [enrollmentActionSuccess, setEnrollmentActionSuccess] = useState<string | null>(null);
+  const [removingEnrollmentId, setRemovingEnrollmentId] = useState<string | null>(null);
 
   // Close upload modal when success arrives (not on file select — upload may fail)
   const prevSuccessRef = useRef(materialsSuccess);
@@ -233,7 +234,13 @@ export function CourseDetailManagerView({
     (!policiesLoading &&
       access === "instructor" &&
       (policies["instructors.canManageEnrollments"] ?? true));
+  const canManageStudentEnrollments = canManageStudents(access);
   const canManageRagSettings = access === "admin" || access === "instructor";
+
+  const activeEnrollments = enrollments.filter((e) => e.isActive);
+  const studentEnrollments = activeEnrollments.filter((e) => e.role === "STUDENT");
+  const enrolledStudentIds = new Set(studentEnrollments.map((e) => e.userId));
+  const availableStudents = studentUsers.filter((u) => !enrolledStudentIds.has(u.id));
 
   // §5d: the Chat history tab is visible only to roles whose course-chat-
   // visibility flag is on. Uses the shared gate so the UI mirrors the backend
@@ -268,7 +275,7 @@ export function CourseDetailManagerView({
   const availableInstructors = instructors.filter(
     (p) => p.id !== course.instructorId,
   );
-  const availableTAs = taUsers.filter(
+  const availableTAs = studentUsers.filter(
     (u) => !tas.some((ta) => ta.userId === u.id),
   );
 
@@ -334,6 +341,49 @@ export function CourseDetailManagerView({
     }
   };
 
+  const handleEnrollStudents = async () => {
+    if (selectedStudentIds.length === 0) return;
+    setEnrollingStudent(true);
+    setEnrollmentActionError(null);
+    setEnrollmentActionSuccess(null);
+    const ids = [...selectedStudentIds];
+    const failed: string[] = [];
+    for (const id of ids) {
+      try {
+        await onEnrollStudent(id);
+      } catch {
+        failed.push(id);
+      }
+    }
+    setEnrollingStudent(false);
+    setSelectedStudentIds([]);
+    if (failed.length === 0) {
+      setEnrollmentActionSuccess(
+        `${ids.length} student${ids.length > 1 ? "s" : ""} enrolled successfully`,
+      );
+    } else {
+      setEnrollmentActionError(
+        `${failed.length} of ${ids.length} students failed to enroll`,
+      );
+    }
+  };
+
+  const handleRemoveEnrollment = async (enrollmentId: string) => {
+    setEnrollmentActionError(null);
+    setEnrollmentActionSuccess(null);
+    setRemovingEnrollmentId(enrollmentId);
+    try {
+      await onRemoveEnrollment(enrollmentId);
+      setEnrollmentActionSuccess("Student removed from course");
+    } catch (e) {
+      setEnrollmentActionError(
+        e instanceof Error ? e.message : "Failed to remove enrollment",
+      );
+    } finally {
+      setRemovingEnrollmentId(null);
+    }
+  };
+
   const handleDeleteMaterial = async () => {
     if (!deleteMaterialId || !courseId) return;
     setDeletingMaterial(true);
@@ -351,7 +401,6 @@ export function CourseDetailManagerView({
         await onRefreshMaterials();
       }
     } catch (e) {
-      // Error is silent since material deletion happens in the background
       console.error(e);
     } finally {
       setDeletingMaterial(false);
@@ -425,7 +474,7 @@ export function CourseDetailManagerView({
     ...(course.isActive ? ["Active"] : [])
   ];
   const readyMaterials = materials.filter((m) => m.status === "READY").length;
-  const studentCount = enrollments.filter((e) => e.role === "STUDENT").length;
+  const studentCount = studentEnrollments.length;
 
   return (
     <div className="flex flex-col gap-6">
@@ -959,13 +1008,25 @@ export function CourseDetailManagerView({
           forceMount
           className="data-[state=inactive]:hidden flex-1 outline-none"
         >
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-6">
             <CardHeader className="px-0 pt-0">
               <CardTitle className="text-base flex items-center gap-2">
                 <IconUsers className="w-4 h-4" />
                 Enrolled users
               </CardTitle>
+              <CardDescription>
+                Manage student enrollments here. Instructor and TA assignments
+                are on the Staff tab.
+              </CardDescription>
             </CardHeader>
+
+            {enrollmentActionError && (
+              <p className="text-sm text-destructive">{enrollmentActionError}</p>
+            )}
+            {enrollmentActionSuccess && (
+              <p className="text-sm text-green-600">{enrollmentActionSuccess}</p>
+            )}
+
             {enrollmentsLoading ? (
               <Card>
                 <CardContent className="flex items-center justify-center py-8 text-muted-foreground">
@@ -978,46 +1039,87 @@ export function CourseDetailManagerView({
                   {enrollmentsError}
                 </CardContent>
               </Card>
-            ) : enrollments.length === 0 ? (
-              <Card>
-                <CardContent className="flex items-center justify-center py-8 text-muted-foreground">
-                  No enrollments yet.
-                </CardContent>
-              </Card>
             ) : (
-              <div className="grid gap-2">
-                {enrollments.map((e) => (
-                  <Card key={e.id}>
-                    <CardContent className="flex items-center justify-between py-3">
-                      <div>
-                        <span className="text-sm font-medium">
-                          {e.userName}
-                        </span>
-                        <span className="text-xs text-muted-foreground ml-2">
-                          {e.userEmail}
-                        </span>
-                        {e.studentNumber && (
-                          <span className="block text-xs text-muted-foreground mt-1">
-                            Student number: {e.studentNumber}
-                          </span>
-                        )}
+              <>
+                <div className="flex flex-col gap-3">
+                  <p className="text-sm font-medium">Students</p>
+                  {studentEnrollments.length === 0 ? (
+                    <Card>
+                      <CardContent className="flex items-center justify-center py-6 text-muted-foreground text-sm">
+                        No students enrolled yet.
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <div className="grid gap-2">
+                      {studentEnrollments.map((e) => (
+                        <Card key={e.id}>
+                          <CardContent className="flex items-center justify-between py-3">
+                            <div>
+                              <span className="text-sm font-medium">{e.userName}</span>
+                              <span className="text-xs text-muted-foreground ml-2">
+                                {e.userEmail}
+                              </span>
+                              {e.studentNumber && (
+                                <span className="block text-xs text-muted-foreground mt-1">
+                                  Student #{e.studentNumber}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Badge variant="secondary">Student</Badge>
+                              {canManageStudentEnrollments && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  aria-label="Remove student"
+                                  className="text-destructive hover:text-destructive"
+                                  disabled={removingEnrollmentId === e.id}
+                                  onClick={() => void handleRemoveEnrollment(e.id)}
+                                >
+                                  <IconTrash className="w-4 h-4" />
+                                </Button>
+                              )}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+
+                  {canManageStudentEnrollments && availableStudents.length > 0 && (
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                      <div className="flex-1 space-y-2">
+                        <Label htmlFor="enroll-student">Add students</Label>
+                        <MultiSelect
+                          options={availableStudents.map((u) => ({
+                            value: u.id,
+                            label: u.name,
+                            description: u.email,
+                          }))}
+                          value={selectedStudentIds}
+                          onValueChange={setSelectedStudentIds}
+                          placeholder="Search and select students to enroll"
+                          searchPlaceholder="Search by name or email…"
+                          emptyText="No matching students."
+                        />
                       </div>
-                      <div className="flex items-center gap-2">
-                        {!e.isActive && (
-                          <Badge variant="outline">Inactive</Badge>
-                        )}
-                        <Badge
-                          variant={
-                            e.role === "INSTRUCTOR" ? "default" : "secondary"
-                          }
-                        >
-                          {e.role}
-                        </Badge>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
+                      <Button
+                        onClick={() => void handleEnrollStudents()}
+                        disabled={selectedStudentIds.length === 0 || enrollingStudent}
+                      >
+                        <IconUserPlus className="w-4 h-4 mr-1" />
+                        {enrollingStudent
+                          ? "Enrolling…"
+                          : `Enroll${
+                              selectedStudentIds.length > 0
+                                ? ` ${selectedStudentIds.length}`
+                                : ""
+                            } student${selectedStudentIds.length !== 1 ? "s" : ""}`}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </>
             )}
           </div>
         </PageTabsContent>
