@@ -183,7 +183,7 @@ router.get('/courses/:courseId/topics', async (req, res) => {
 /** GET /api/eduai/test-api-key – validates that the configured EduAI credentials work. */
 router.get('/test-api-key', async (req, res) => {
   try {
-    const result = await eduaiService.testApiKey();
+    const result = await eduaiService.testApiKey({ cookie: req.headers.cookie ?? '' });
 
     if (result.success) {
       res.json({
@@ -210,13 +210,21 @@ router.get('/test-api-key', async (req, res) => {
 /** GET /api/eduai/ai-models – returns the available AI model identifiers from EduAI. */
 router.get('/ai-models', async (req, res) => {
   try {
-    const models = await eduaiService.listAIModels();
-    res.json(models);
+    const models = await eduaiService.listAIModels({ cookie: req.headers.cookie ?? '' });
+    if (Array.isArray(models) && models.length > 0) {
+      return res.json(models);
+    }
+    console.warn('EduAI model list empty — check Core session or EDUAI_API_KEY');
+    return res.status(503).json({
+      error: 'AI models unavailable',
+      details: 'Could not load models from EduAI Core. Check your session or server configuration.',
+    });
   } catch (error) {
     console.error('EduAI list models error:', error);
-    res.status(500).json({
+    const status = error.status === 401 || error.status === 403 ? error.status : 503;
+    return res.status(status).json({
       error: 'Failed to retrieve AI models from EduAI',
-      details: error.message
+      details: error.message,
     });
   }
 });

@@ -1,9 +1,11 @@
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { hashPassword } from 'better-auth/crypto';
 import { clearStudentIdStorage, prepareStudentIdStorage } from '../app/lib/canvas/student-id.server';
 import { UNITS } from '../app/lib/units';
 
-const prisma = new PrismaClient();
+export const prisma = new PrismaClient();
 
 /**
  * Deterministic IDs for cross-app linking. AI Tutor's `coreOfferingId` /
@@ -931,12 +933,29 @@ async function seedAIProvidersAndModels() {
 
 }
 
-async function seedUsers() {
+async function releaseStudentIdClaim(
+  studentNumber: string,
+  keepUserId: string,
+  lookup: string,
+) {
+  await prisma.user.updateMany({
+    where: {
+      OR: [
+        { studentIdLookup: lookup },
+        { studentId: studentNumber, studentIdLookup: null },
+      ],
+      NOT: { id: keepUserId },
+    },
+    data: clearStudentIdStorage(),
+  });
+}
+
+export async function seedUsers() {
   type SeededUser = {
     id: string;
     email: string;
     name: string;
-    role: 'ADMIN' | 'INSTRUCTOR' | 'TA' | 'STUDENT' | 'UNIT_ADMIN';
+    role: 'ADMIN' | 'INSTRUCTOR' | 'STUDENT' | 'UNIT_ADMIN';
     authorizedUnits?: string[];
     studentNumber?: string;
   };
@@ -951,8 +970,10 @@ async function seedUsers() {
     { id: u.instructorMath, email: 'instructor.math@eduai.local', name: 'Dr. Emmy Noether', role: 'INSTRUCTOR' },
     { id: u.instructorSci, email: 'instructor.sci@eduai.local', name: 'Dr. Marie Curie', role: 'INSTRUCTOR' },
     { id: u.instructorHum, email: 'instructor.hum@eduai.local', name: 'Dr. Hannah Arendt', role: 'INSTRUCTOR' },
-    { id: u.taCS, email: 'ta.cs@eduai.local', name: 'Sam Carter', role: 'TA' },
-    { id: u.taMath, email: 'ta.math@eduai.local', name: 'Riley Chen', role: 'TA' },
+    // TAs are STUDENT-platform users; their TA status is the Enrollment(role=TA)
+    // created from course.taIds below.
+    { id: u.taCS, email: 'ta.cs@eduai.local', name: 'Sam Carter', role: 'STUDENT' },
+    { id: u.taMath, email: 'ta.math@eduai.local', name: 'Riley Chen', role: 'STUDENT' },
     { id: u.student1, email: 'student1@eduai.local', name: 'Alex Patel', role: 'STUDENT', studentNumber: sn.student1 },
     { id: u.student2, email: 'student2@eduai.local', name: 'Brooke Kim', role: 'STUDENT', studentNumber: sn.student2 },
     { id: u.student3, email: 'student3@eduai.local', name: 'Cameron Lee', role: 'STUDENT', studentNumber: sn.student3 },
@@ -964,6 +985,14 @@ async function seedUsers() {
     const studentIdFields = user.studentNumber
       ? prepareStudentIdStorage(user.studentNumber)
       : clearStudentIdStorage();
+
+    if (user.studentNumber && studentIdFields.studentIdLookup) {
+      await releaseStudentIdClaim(
+        user.studentNumber,
+        user.id,
+        studentIdFields.studentIdLookup,
+      );
+    }
 
     await prisma.user.upsert({
       where: { id: user.id },
@@ -1067,6 +1096,11 @@ async function seedCourses() {
         where: { courseId_userId: { courseId: course.id, userId: taId } },
         update: { role: 'TA', isActive: true },
         create: { courseId: course.id, userId: taId, role: 'TA', isActive: true },
+      });
+      await prisma.courseTA.upsert({
+        where: { courseId_userId: { courseId: course.id, userId: taId } },
+        update: {},
+        create: { courseId: course.id, userId: taId },
       });
     }
 
@@ -1485,12 +1519,18 @@ async function main() {
   console.log(`Cross-app links exported via SEED_IDS in apps/core/prisma/seed.ts`);
 }
 
-main()
-  .then(async () => {
-    await prisma.$disconnect();
-  })
-  .catch(async (e) => {
-    console.error('Seed failed:', e);
-    await prisma.$disconnect();
-    process.exit(1);
-  });
+const isMainModule =
+  process.argv[1] != null &&
+  path.resolve(fileURLToPath(import.meta.url)) === path.resolve(process.argv[1]);
+
+if (isMainModule) {
+  main()
+    .then(async () => {
+      await prisma.$disconnect();
+    })
+    .catch(async (e) => {
+      console.error('Seed failed:', e);
+      await prisma.$disconnect();
+      process.exit(1);
+    });
+}

@@ -58,6 +58,24 @@ describe("resolveAdhdTurnProfile", () => {
     ).toBe("full_tutoring");
   });
 
+  it("does not classify tutoring turns that open with thanks as greeting", () => {
+    expect(
+      resolveAdhdTurnProfile({
+        userText: "Thanks, explain step 2 in more detail",
+        priorAssistantText: PRIOR_TUTOR,
+      }),
+    ).toBe("full_tutoring");
+  });
+
+  it("does not classify step tutoring as meta", () => {
+    expect(
+      resolveAdhdTurnProfile({
+        userText: "explain what you do in step 2",
+        priorAssistantText: PRIOR_TUTOR,
+      }),
+    ).toBe("full_tutoring");
+  });
+
   it("classifies short non-affirmation turns as brief clarification", () => {
     expect(resolveAdhdTurnProfile({ userText: "ok" })).toBe("brief_clarification");
   });

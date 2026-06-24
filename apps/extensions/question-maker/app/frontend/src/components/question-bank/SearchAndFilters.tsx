@@ -4,7 +4,7 @@
  */
 import { Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Card, CardContent, CardHeader, CardTitle, Button, Checkbox } from '@eduai/ui';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { ChevronDown, X } from 'lucide-react';
 import { QuestionType, QuestionDifficulty, ReasoningLevel } from '../../types/question';
 
@@ -35,6 +35,7 @@ interface MultiSelectProps {
 const MultiSelect = ({ placeholder, options, selected, onChange, displayValue }: MultiSelectProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const [menuStyle, setMenuStyle] = useState<CSSProperties>({});
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -46,6 +47,27 @@ const MultiSelect = ({ placeholder, options, selected, onChange, displayValue }:
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    if (!isOpen || !containerRef.current) return;
+    const updatePosition = () => {
+      const rect = containerRef.current!.getBoundingClientRect();
+      setMenuStyle({
+        position: 'fixed',
+        top: rect.bottom + 4,
+        left: rect.left,
+        width: rect.width,
+        zIndex: 10050,
+      });
+    };
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [isOpen]);
 
   const toggleOption = (option: string) => {
     onChange(
@@ -70,7 +92,10 @@ const MultiSelect = ({ placeholder, options, selected, onChange, displayValue }:
         <ChevronDown className="h-4 w-4 opacity-50" />
       </button>
       {isOpen && (
-        <div className="absolute z-20 mt-1 w-full rounded-md border bg-popover shadow-md">
+        <div
+          className="rounded-md border bg-popover shadow-md"
+          style={menuStyle}
+        >
           <div className="max-h-56 overflow-y-auto p-1">
             {options.map((option) => (
               <label
@@ -128,7 +153,7 @@ export const SearchAndFilters = ({
   };
 
   return (
-    <Card>
+    <Card className="overflow-visible">
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className="text-lg">Search & Filters</CardTitle>
@@ -140,7 +165,7 @@ export const SearchAndFilters = ({
           )}
         </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="overflow-visible">
         <div className="flex flex-wrap gap-3 items-end">
           {/* Search Input - takes less space */}
           <div className="flex-1 min-w-[200px]">

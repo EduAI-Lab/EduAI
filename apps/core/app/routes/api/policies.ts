@@ -2,7 +2,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { z } from "zod";
 
 import { auth } from "~/lib/auth/server";
-import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
+import { requireAdmin, requireServiceKey } from "~/lib/auth/guards.server";
 import { jsonResponse as json } from "~/lib/api/json-response.server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
@@ -61,12 +61,8 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ error: "Method not allowed" }, 405);
   }
 
-  const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
-  if (apiKeyGuard) return apiKeyGuard;
-
-  const session = apiKeySession ?? (await auth.api.getSession(request));
-  if (!session?.user) return json({ error: "Unauthorized" }, 401);
-  if (session.user.role !== "ADMIN") return json({ error: "Forbidden" }, 403);
+  const { response: adminGuard, session } = await requireAdmin(request);
+  if (adminGuard) return adminGuard;
 
   const body = await request.json().catch(() => null);
   const parsed = UpdatePolicySchema.safeParse(body);

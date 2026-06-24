@@ -76,10 +76,10 @@ beforeEach(() => vi.clearAllMocks());
 // ---------------------------------------------------------------------------
 
 describe("POST /api/bug-reports — service key auth", () => {
-  it("returns 401 MISSING_SERVICE_KEY when Authorization header is absent", async () => {
+  it("returns 401 Unauthorized when Authorization header is absent (falls through to session auth)", async () => {
     const res = await action(makeActionArgs({ source: "AI_TUTOR", userId: aiTutorUserId, description: "test" }));
     expect(res.status).toBe(401);
-    expect(await res.json()).toEqual({ error: "MISSING_SERVICE_KEY" });
+    expect(await res.json()).toEqual({ error: "Unauthorized" });
   });
 
   it("returns 403 INVALID_SERVICE_KEY for a wrong Bearer token", async () => {
@@ -121,6 +121,12 @@ describe("POST /api/bug-reports — validation", () => {
     const body = await res.json();
     expect(body.error).toBe("VALIDATION_ERROR");
     expect(body.fields.source).toBeDefined();
+  });
+
+  it("returns 422 (not 500) when the JSON body is literal null", async () => {
+    const res = await action(makeActionArgs(null, `Bearer ${VALID_SERVICE_KEY}`));
+    expect(res.status).toBe(422);
+    expect((await res.json()).error).toBe("VALIDATION_ERROR");
   });
 
   it("returns 422 USER_NOT_FOUND when userId does not exist in Core", async () => {

@@ -23,9 +23,9 @@ export function canManageCanvasIntegration(role: string | null | undefined): boo
   return role === UserRole.INSTRUCTOR || role === UserRole.ADMIN;
 }
 
-/** Student-number linker: students and TAs only. */
+/** Student-number linker: students only (TAs are STUDENT-platform users). */
 export function canLinkCanvasRoster(role: string | null | undefined): boolean {
-  return role === UserRole.STUDENT || role === UserRole.TA;
+  return role === UserRole.STUDENT;
 }
 
 export function isCanvasSyncRateLimited(userId: string): boolean {
