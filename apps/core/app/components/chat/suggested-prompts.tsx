@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { PressSurface } from "~/components/motion/press-surface";
 import { useMotionReducedPreference } from "~/components/assistive/ui-preferences-provider";
@@ -36,6 +36,15 @@ const STARTERS: { label: string; prompt: string }[] = [
 export function SuggestedPrompts({ onSelectPrompt, disabled }: SuggestedPromptsProps) {
   const motionReduced = useMotionReducedPreference();
   const [launchingLabel, setLaunchingLabel] = useState<string | null>(null);
+  const launchTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (launchTimeoutRef.current !== null) {
+        window.clearTimeout(launchTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handleSelect = useCallback(
     (item: (typeof STARTERS)[number]) => {
@@ -46,8 +55,13 @@ export function SuggestedPrompts({ onSelectPrompt, disabled }: SuggestedPromptsP
         return;
       }
 
+      if (launchTimeoutRef.current !== null) {
+        window.clearTimeout(launchTimeoutRef.current);
+      }
+
       setLaunchingLabel(item.label);
-      window.setTimeout(() => {
+      launchTimeoutRef.current = window.setTimeout(() => {
+        launchTimeoutRef.current = null;
         onSelectPrompt(item.prompt);
         setLaunchingLabel(null);
       }, LAUNCH_MS);

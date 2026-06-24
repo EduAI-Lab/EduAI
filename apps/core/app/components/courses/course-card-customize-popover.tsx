@@ -12,6 +12,7 @@ import {
 } from "@eduai/ui";
 
 import {
+  MAX_COURSE_NICKNAME_LENGTH,
   normalizeCourseCardColor,
   type CourseCardPreference,
 } from "~/lib/courses/course-card-preferences";
@@ -124,6 +125,7 @@ export function CourseCardCustomizePopover({
               id="course-nickname"
               value={draftNickname}
               placeholder={courseName}
+              maxLength={MAX_COURSE_NICKNAME_LENGTH}
               onChange={(event) => setDraftNickname(event.target.value)}
             />
           </div>
