@@ -33,6 +33,8 @@ const mapVariant = (variant: any): QuestionVariant => ({
   referenceId: variant.referenceId ?? variant.reference_id ?? null,
   isAiGenerated: variant.isAiGenerated ?? variant.is_ai_generated ?? false,
   isDraft: variant.isDraft ?? variant.is_draft ?? false,
+  coreQuestionId: variant.coreQuestionId ?? variant.core_question_id ?? null,
+  testable: variant.testable ?? undefined,
   createdAt: variant.createdAt ?? variant.created_at,
   updatedAt: variant.updatedAt ?? variant.updated_at,
   assessment: variant.assessment
@@ -144,6 +146,17 @@ export const questionService = {
   /** Deletes a variant by ID. */
   async deleteVariant(variantId: number): Promise<void> {
     await api.delete(`/api/questions/variants/${variantId}`);
+  },
+
+  /** Toggles Core testable flag for a variant pushed to Core (AI Tutor integration). */
+  async setVariantTestable(
+    variantId: number,
+    testable: boolean,
+  ): Promise<{ id: string; testable: boolean }> {
+    const response = await api.patch(`/api/questions/variants/${variantId}/testable`, {
+      testable,
+    });
+    return response.data.data;
   },
 
   /** Calls legacy AI generate endpoint to produce draft question metadata. */

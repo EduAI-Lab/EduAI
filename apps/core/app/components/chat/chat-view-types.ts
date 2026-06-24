@@ -26,10 +26,7 @@ export type ChatViewSharedProps = {
   input: string;
   isLoading: boolean;
   adhdAssist: boolean;
-  assistive: boolean;
-  onAssistiveChange: (value: boolean) => void;
-  focusMode: boolean;
-  onFocusModeChange: (value: boolean) => void;
+  onAssistChange: (value: boolean) => void;
   systemPrompt: string | null;
   onSystemPromptSave: (prompt: string | null) => Promise<void>;
   webToolsEnabled: boolean;
