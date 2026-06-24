@@ -1,10 +1,12 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import {
   COURSE_CARD_PREFERENCES_KEY,
+  MAX_COURSE_NICKNAME_LENGTH,
   getCourseDisplayName,
   getCourseHeroColor,
   mergeCourseCardPreference,
   normalizeCourseCardColor,
+  normalizeCourseNickname,
   readCourseCardPreferences,
   resolveCourseAccentColor,
   writeCourseCardPreferences,
@@ -53,5 +55,15 @@ describe("course-card-preferences", () => {
   it("uses the shared storage key", () => {
     writeCourseCardPreferences({ c1: { color: "oklch(0.56 0.18 145)" } });
     expect(localStorage.getItem(COURSE_CARD_PREFERENCES_KEY)).toContain("oklch");
+  });
+
+  it("caps nicknames at MAX_COURSE_NICKNAME_LENGTH", () => {
+    const long = "a".repeat(MAX_COURSE_NICKNAME_LENGTH + 20);
+    expect(normalizeCourseNickname(long)).toHaveLength(MAX_COURSE_NICKNAME_LENGTH);
+    const next = mergeCourseCardPreference({}, "c1", { nickname: long });
+    expect(next.c1?.nickname).toHaveLength(MAX_COURSE_NICKNAME_LENGTH);
+    expect(getCourseDisplayName("Official", { nickname: long })).toHaveLength(
+      MAX_COURSE_NICKNAME_LENGTH,
+    );
   });
 });

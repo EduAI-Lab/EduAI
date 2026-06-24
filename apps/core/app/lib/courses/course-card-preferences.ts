@@ -12,6 +12,15 @@ export type CourseCardPreferencesMap = Record<string, CourseCardPreference>;
 
 export const COURSE_CARD_PREFERENCES_KEY = "eduai:course-card-display";
 
+/** Max nickname length — keeps card layout stable and caps localStorage payloads. */
+export const MAX_COURSE_NICKNAME_LENGTH = 40;
+
+export function normalizeCourseNickname(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  return trimmed.slice(0, MAX_COURSE_NICKNAME_LENGTH);
+}
+
 function isHexColor(value: string): boolean {
   return /^#[0-9A-Fa-f]{6}$/.test(value.trim());
 }
@@ -63,7 +72,9 @@ export function getCourseDisplayName(
   officialName: string,
   preference?: CourseCardPreference,
 ): string {
-  const nickname = preference?.nickname?.trim();
+  const nickname = preference?.nickname
+    ? normalizeCourseNickname(preference.nickname)
+    : "";
   return nickname || officialName;
 }
 
@@ -93,8 +104,10 @@ export function mergeCourseCardPreference(
   }
 
   const merged: CourseCardPreference = { ...next[courseId], ...update };
-  if (merged.nickname !== undefined && !merged.nickname.trim()) {
-    delete merged.nickname;
+  if (merged.nickname !== undefined) {
+    const normalized = normalizeCourseNickname(merged.nickname);
+    if (normalized) merged.nickname = normalized;
+    else delete merged.nickname;
   }
   if (merged.color !== undefined) {
     const normalized = normalizeCourseCardColor(merged.color);
