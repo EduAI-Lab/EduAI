@@ -82,6 +82,8 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
     providers.vllm = createOpenAI({
       apiKey,
       baseURL,
+      // Required for streamText usage on OpenAI-compatible backends (vLLM/LiteLLM).
+      compatibility: "strict",
     });
   }
 

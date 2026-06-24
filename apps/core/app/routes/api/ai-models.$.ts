@@ -112,8 +112,19 @@ async function handleRequest(request: Request) {
         });
       } catch (error: any) {
         if (error.code === 'P2002') {
+          const existing = await prisma.aIModel.findFirst({
+            where: {
+              providerId: result.data.providerId,
+              modelId: result.data.modelId,
+            },
+            include: { provider: true },
+          });
           return new Response(
-            JSON.stringify({ error: "Model ID must be unique per provider" }),
+            JSON.stringify({
+              error: "Model already registered for this provider",
+              hint: "Run npm run db:sync-ai-providers on the server, or edit the existing row in Admin → Models.",
+              existing,
+            }),
             { status: 409, headers: { "Content-Type": "application/json" } }
           );
         }
