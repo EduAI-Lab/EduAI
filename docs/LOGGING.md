@@ -66,7 +66,6 @@ Writes are **fire-and-forget**: a failed log write never blocks or fails the use
 | Logout | A user ended their session. |
 | Admin access denied | A non-admin was blocked from an admin-only resource. |
 | Canvas access denied | A user was blocked from a Canvas-gated resource. |
-| API key denied | A request with an invalid or unauthorized `x-api-key` was rejected. |
 | Service key missing | A service-to-service request arrived without the required key. |
 | Service key invalid | A service-to-service request presented an invalid key. |
 | Rate limit exceeded | A client tripped a rate limit (abuse signal). |

@@ -66,7 +66,6 @@ export async function handleUsersApiRequest(request: Request) {
           _count: {
             select: {
               enrollments: true,
-              courseTAs: true,
               taughtCourses: true,
               aiInteractions: true,
             },
@@ -75,11 +74,18 @@ export async function handleUsersApiRequest(request: Request) {
         orderBy: { createdAt: "desc" },
       });
 
+      const taCounts = await prisma.enrollment.groupBy({
+        by: ["userId"],
+        where: { role: "TA", isActive: true, userId: { in: users.map((u) => u.id) } },
+        _count: { _all: true },
+      });
+      const taCountByUser = new Map(taCounts.map((t) => [t.userId, t._count._all]));
+
       const mapped = users.map(({ _count, ...u }) => ({
         ...u,
         _count: {
           enrolledCourses: _count.enrollments,
-          assistedCourses: _count.courseTAs,
+          assistedCourses: taCountByUser.get(u.id) ?? 0,
           taughtCourses: _count.taughtCourses,
           aiInteractions: _count.aiInteractions,
         },
@@ -124,7 +130,6 @@ export async function handleUsersApiRequest(request: Request) {
             _count: {
               select: {
                 enrollments: true,
-                courseTAs: true,
                 taughtCourses: true,
                 aiInteractions: true,
               },
@@ -136,7 +141,7 @@ export async function handleUsersApiRequest(request: Request) {
           ...created,
           _count: {
             enrolledCourses: _count.enrollments,
-            assistedCourses: _count.courseTAs,
+            assistedCourses: 0,
             taughtCourses: _count.taughtCourses,
             aiInteractions: _count.aiInteractions,
           },
@@ -253,7 +258,6 @@ export async function handleUsersApiRequest(request: Request) {
             _count: {
               select: {
                 enrollments: true,
-                courseTAs: true,
                 taughtCourses: true,
                 aiInteractions: true,
               },
@@ -265,12 +269,16 @@ export async function handleUsersApiRequest(request: Request) {
           await applyStudentIdAndResolveEnrollments(userId, studentIdInput);
         }
 
+        const assistedCourses = await prisma.enrollment.count({
+          where: { userId, role: "TA", isActive: true },
+        });
+
         const user = {
           ...updated,
           studentId: readStoredStudentId(updated.studentId),
           _count: {
             enrolledCourses: _count.enrollments,
-            assistedCourses: _count.courseTAs,
+            assistedCourses,
             taughtCourses: _count.taughtCourses,
             aiInteractions: _count.aiInteractions,
           },

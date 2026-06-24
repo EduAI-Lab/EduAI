@@ -26,7 +26,7 @@ Course hooks (`use-course*`) are owned by Person A — see their PR description.
 | Hook | Owner | Live? | Notes |
 |------|-------|-------|-------|
 | `useCourses` | A | Yes | Chat course picker imports this — do not duplicate |
-| `useCourseEnrollments` | A | Stub | #305 |
+| `useCourseEnrollments` | A | **Yes** | `GET/POST /api/courses/:id/enrollments`, `PATCH/DELETE .../:enrollmentId` (#305, #551) |
 | `useCourseMaterials` | A | Yes | DELETE stub #300 |
 | `useCourseTopics` | A | Yes | PATCH stub #299 |
 

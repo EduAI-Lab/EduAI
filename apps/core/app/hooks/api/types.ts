@@ -8,7 +8,7 @@ export type PlatformUser = {
   email: string;
   name: string;
   image?: string;
-  role: "ADMIN" | "UNIT_ADMIN" | "INSTRUCTOR" | "TA" | "STUDENT";
+  role: "ADMIN" | "UNIT_ADMIN" | "INSTRUCTOR" | "STUDENT";
   isActive: boolean;
   emailVerified: boolean;
   authorizedUnits: string[];

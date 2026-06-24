@@ -27,11 +27,11 @@ import {
 import { resolveAdhdResponseWordCap } from "~/lib/ai/adhd-metrics";
 import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
 import { findRelevantContent } from "~/lib/ai/embedding";
-import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import {
   resolveCourseAccessWithCourse,
   type AccessLevel,
 } from "~/lib/auth/course-access.server";
+import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { auth } from "~/lib/auth/server";
 import type { ActionFunctionArgs } from "react-router";
 import {
@@ -345,7 +345,15 @@ export async function action({ request }: ActionFunctionArgs) {
     const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
     if (apiKeyGuard) return apiKeyGuard;
 
-    const session = apiKeySession ?? (await auth.api.getSession(request));
+    let session = apiKeySession ?? (await auth.api.getSession(request));
+    let isServiceKeyCaller = false;
+    if (!session?.user) {
+      const serviceKeyError = await requireServiceKey(request);
+      if (serviceKeyError) return serviceKeyError;
+      isServiceKeyCaller = true;
+      session = { user: { id: "service", name: "Service", role: "ADMIN" } } as unknown as typeof session;
+    }
+
     if (!session?.user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
@@ -444,49 +452,9 @@ export async function action({ request }: ActionFunctionArgs) {
         console.error("Failed to resolve course by code", e);
       }
     }
-    const effectiveCourseId = resolvedCourseId || courseId || null;
-    let effectiveCourseCode = courseCode ?? null;
-    if (!effectiveCourseCode && effectiveCourseId) {
-      try {
-        const course = await prisma.course.findUnique({
-          where: { id: effectiveCourseId },
-          select: { code: true },
-        });
-        effectiveCourseCode = course?.code ?? null;
-      } catch (e) {
-        console.error("Failed to resolve course code by id", e);
-      }
-    }
-
-    // §10 (#302): course-scoped chats require course access for the acting
-    // user. Students need an active enrollment AND a published course; an
-    // inactive enrollment blocks new chats but never own-history reads
-    // (GET /api/chats/:chatId is ownership-scoped and unaffected).
-    // Chats without a course context (general assistant) are not gated.
-    // Hoisted so the web-tools gate (below) can read the caller's course access
-    // level — null for general (non-course) chats.
-    let courseAccess: AccessLevel | null = null;
-    if (effectiveCourseId) {
-      const { course, access } = await resolveCourseAccessWithCourse(
-        actingUser,
-        effectiveCourseId,
-      );
-      if (!course) {
-        return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
-          status: 404,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      if (!access || (access.level === "student" && !course.isPublished)) {
-        return new Response(JSON.stringify({ error: "Forbidden" }), {
-          status: 403,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      courseAccess = access;
-    }
-
-    // Handle chat lookup and system prompt persistence
+    // Load the owned chat up front so a follow-up turn that sends a `chatId`
+    // but no `courseId`/`courseCode` can inherit the course from the persisted
+    // chat row, instead of failing COURSE_REQUIRED below (#685 review).
     let chat = null;
     if (chatId) {
       chat = await prisma.chat.findFirst({
@@ -518,6 +486,71 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     }
 
+    // A persisted chat is pinned to its course. If a follow-up turn explicitly
+    // names a *different* course, reject — silently switching would split the
+    // chat's RAG context and message history across courses (#685 review).
+    const requestedCourseId = resolvedCourseId || courseId || null;
+    if (chat?.courseId && requestedCourseId && requestedCourseId !== chat.courseId) {
+      return new Response(JSON.stringify({ error: "COURSE_MISMATCH" }), {
+        status: 409,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const effectiveCourseId = resolvedCourseId || courseId || chat?.courseId || null;
+
+    // #657: the global "general assistant" chat was removed — every interactive
+    // chat is now course-scoped. Server-to-server callers (admin API key /
+    // ai-tutor proxy) and platform admins in admin chatMode may still omit a course.
+    const isApiKeyCaller = isServiceKeyCaller;
+    if (!effectiveCourseId && !isApiKeyCaller && chatMode !== "admin") {
+      return new Response(JSON.stringify({ error: "COURSE_REQUIRED" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    let effectiveCourseCode = courseCode ?? null;
+    if (!effectiveCourseCode && effectiveCourseId) {
+      try {
+        const course = await prisma.course.findUnique({
+          where: { id: effectiveCourseId },
+          select: { code: true },
+        });
+        effectiveCourseCode = course?.code ?? null;
+      } catch (e) {
+        console.error("Failed to resolve course code by id", e);
+      }
+    }
+
+    // §10 (#302): course-scoped chats require course access for the acting
+    // user. Students need an active enrollment AND a published course; an
+    // inactive enrollment blocks new chats but never own-history reads
+    // (GET /api/chats/:chatId is ownership-scoped and unaffected).
+    // Hoisted so the web-tools gate (below) can read the caller's course access
+    // level — null for general (non-course) chats.
+    let courseAccess: AccessLevel | null = null;
+    if (effectiveCourseId) {
+      const { course, access } = await resolveCourseAccessWithCourse(
+        actingUser,
+        effectiveCourseId,
+      );
+      if (!course) {
+        return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (!access || (access.level === "student" && !course.isPublished)) {
+        return new Response(JSON.stringify({ error: "Forbidden" }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      courseAccess = access;
+    }
+
+    // Persist any system-prompt change onto the chat loaded above.
     if (hasSystemPromptField) {
       if (chat) {
         if (chat.systemPrompt !== trimmedSystemPrompt) {

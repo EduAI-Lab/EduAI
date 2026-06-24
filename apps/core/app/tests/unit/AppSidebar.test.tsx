@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router";
+import { createMemoryRouter, RouterProvider } from "react-router";
 
 import { AppSidebar } from "~/components/app-sidebar";
 import { SidebarProvider } from "@eduai/ui";
@@ -40,13 +40,20 @@ function renderSidebar(role: string) {
     updatedAt: new Date(),
   } as User;
 
-  return render(
-    <MemoryRouter>
-      <SidebarProvider>
-        <AppSidebar user={user} />
-      </SidebarProvider>
-    </MemoryRouter>,
-  );
+  // A data router (not plain MemoryRouter) so AppSidebar's useRouteLoaderData
+  // call resolves. No "root" route is defined, so it returns undefined and the
+  // component falls back to the mocked usePolicies for the canInvite flag.
+  const router = createMemoryRouter([
+    {
+      path: "/",
+      element: (
+        <SidebarProvider>
+          <AppSidebar user={user} />
+        </SidebarProvider>
+      ),
+    },
+  ]);
+  return render(<RouterProvider router={router} />);
 }
 
 describe("AppSidebar — rendering", () => {

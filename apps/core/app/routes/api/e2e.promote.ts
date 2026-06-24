@@ -5,11 +5,13 @@
  * so the endpoint is completely invisible in production environments that omit
  * the variable. Never import or call this from application code.
  */
-import type { UserRole } from "@prisma/client";
 import type { ActionFunctionArgs } from "react-router";
+import { UserRole } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 
-const VALID_ROLES = new Set(['ADMIN', 'UNIT_ADMIN', 'INSTRUCTOR', 'TA', 'STUDENT']);
+// TA is a course-level Enrollment role, not a platform UserRole — tests needing
+// a TA should seed an Enrollment(role=TA) instead of promoting a platform role.
+const VALID_ROLES = new Set<string>(Object.values(UserRole));
 
 export async function action({ request }: ActionFunctionArgs) {
   if (process.env.NODE_ENV !== 'test') {
