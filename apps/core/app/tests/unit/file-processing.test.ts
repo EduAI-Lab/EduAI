@@ -400,4 +400,29 @@ describe("enrichExtractedDocumentContent", () => {
     const chunks = applySemanticChunking(content, 500);
     expect(chunks.some((chunk) => chunk.includes("$$\\frac{a}{b}$$"))).toBe(true);
   });
+
+  it("keeps display equations intact in later chunks after section splits", () => {
+    const equation = "$$\\frac{a}{b}$$";
+    const sectionA = "word ".repeat(200);
+    const sectionB = "term ".repeat(200);
+    const content = `Chapter 1\n\n${sectionA}\n\nChapter 2\n\n${sectionB}\n\n${equation}\n\n${sectionB}`;
+    const chunks = applySemanticChunking(content, 500);
+    expect(chunks.some((chunk) => chunk.includes("$$\\frac{a}{b}$$"))).toBe(true);
+  });
+
+  it("keeps display equations intact through markdown chunking", () => {
+    const equation = "$$\\frac{a}{b}$$";
+    const filler = "word ".repeat(200);
+    const content = `# Section A\n\n${filler}\n\n${equation}\n\n${filler}`;
+    const chunks = applySemanticChunking(content, 500);
+    expect(chunks.some((chunk) => chunk.includes("$$\\frac{a}{b}$$"))).toBe(true);
+  });
+
+  it("does not split equations when enforceMaxChunkLength trims oversized chunks", () => {
+    const equation = "$$\\frac{a}{b}$$";
+    const filler = "word ".repeat(300);
+    const content = `${filler}\n\n${equation}\n\n${filler}`;
+    const chunks = enforceMaxChunkLength(applySemanticChunking(content, 500), 500);
+    expect(chunks.some((chunk) => chunk.includes("$$\\frac{a}{b}$$"))).toBe(true);
+  });
 });
