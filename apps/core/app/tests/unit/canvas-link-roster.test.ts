@@ -68,8 +68,6 @@ describe("linkCanvasRoster without an existing roster sync", () => {
     } as never);
     // No other account already owns this number.
     vi.mocked(prisma.user.findFirst).mockResolvedValue(null as never);
-    // No instructor has synced Canvas, so there are no staging rows.
-    vi.mocked(prisma.canvasRosterMember.count).mockResolvedValue(0 as never);
     vi.mocked(prisma.user.update).mockResolvedValue({} as never);
     // 2) resolveCanvasEnrollmentsForUser re-reads the now-saved user.
     vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
@@ -89,5 +87,8 @@ describe("linkCanvasRoster without an existing roster sync", () => {
       }),
     );
     expect(prisma.enrollment.upsert).not.toHaveBeenCalled();
+    // linkCanvasRoster no longer gates on a matching staging row, so it must
+    // not probe the staging table to decide whether to save the number.
+    expect(prisma.canvasRosterMember.count).not.toHaveBeenCalled();
   });
 });

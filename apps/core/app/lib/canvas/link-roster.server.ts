@@ -38,7 +38,10 @@ function auditLinkAttempt(userId: string, outcome: "success" | "failure", detail
 }
 
 /**
- * Sets the user's studentId and links active Canvas staging rows to enrollments.
+ * Saves the user's studentId unconditionally (staging rows are optional — a
+ * student may link before any instructor has synced Canvas) and then resolves
+ * whatever staging rows happen to exist at that moment into enrollments. Rows
+ * synced later are linked by the sync's own staging→enrollment matching.
  */
 export async function linkCanvasRoster(
   userId: string,
@@ -72,7 +75,7 @@ export async function linkCanvasRoster(
   if (takenByOther) {
     auditLinkAttempt(userId, "failure", "student_id_taken");
     throw new LinkRosterError(
-      "This student number is already linked to another account.",
+      "This student number is already linked to another account. Contact an admin if you believe this is an error.",
       409,
     );
   }
