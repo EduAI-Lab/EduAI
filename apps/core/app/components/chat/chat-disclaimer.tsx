@@ -36,7 +36,7 @@ export function ChatDisclaimer() {
             <Button
               type="button"
               variant="link"
-              className="h-auto p-0 text-[13px] font-medium text-primary align-baseline"
+              className="h-auto p-0 text-[13px] font-medium text-accent align-baseline hover:text-accent"
               onClick={() => setOpen(true)}
             >
               View full terms
