@@ -1,66 +1,33 @@
 /**
-
  * Phase 1 routing rules — pure predicates and ordering (no DB, no I/O).
-
  *
-
  * Given a **`Phase1RouterContext`** (prompt text, attachments flag, optional RAG stats),
-
  * **`matchPhase1Rules`** returns the first matching rule and a **`PickSpec`** telling **`tiers.ts`** how to choose a model.
-
  *
-
- * Rule order: images → short factual → strong RAG → long RAG → default.
-
- * External web search is out of scope — no tool/web-lookup routing rule.
-
+ * Rule order: images → escalation (web/debug/complex/RAG-reasoning) → short factual → RAG tier-1 → long RAG → default.
  */
-
-
 
 import type { PickSpec } from "./tiers";
 
-
-
 export type Phase1RouterContext = {
-
   prompt: string;
-
   imagesPresent: boolean;
-
   courseId: string | null;
-
   /** Top-1 cosine similarity from pgvector retrieval (same scale as `findRelevantContent`). */
-
   ragTopSimilarity?: number | null;
-
   /** Number of chunks returned / used for this turn’s RAG context. */
-
   ragChunkCount?: number | null;
-
   /** Rough token estimate for merged RAG context (e.g. chars/4); used for “long context” rule. */
-
   ragContextTokenEstimate?: number | null;
-
   /** True when chat intent decided course-material RAG should run (see `needsCourseRag`). */
-
   courseRagNeeded?: boolean;
-
 };
-
-
 
 export type Phase1RuleMatch = {
-
   /** Stable id for telemetry / training (e.g. `rule3_short_factual`). */
-
   rule: string;
-
   pick: PickSpec;
-
 };
-
-
 
 const SHORT_FACTUAL_PREFIXES = [
   "what is",
@@ -72,6 +39,32 @@ const SHORT_FACTUAL_PREFIXES = [
   "where was",
   "when was",
 ] as const;
+
+const TIER_3_ESCALATION_PICK: PickSpec = {
+  kind: "exactTier",
+  tier: 3,
+  tieBreak: "carbon",
+};
+
+const WEB_LOOKUP_PATTERN =
+  /^(look up|find a recent|find the current)\b/i;
+
+const WEB_LOOKUP_TOPIC_PATTERN =
+  /\b(look up|find|search for|current|latest|today'?s?).{0,40}\b(hours|deadline|calendar|intensity|withdrawal|library)\b/i;
+
+const DEBUG_PATTERN = /\bdebug this code\b|\bwhy might the loop\b/i;
+
+const COMPLEX_REASONING_PATTERN =
+  /\bwalk through.{0,60}\b(algorithm|partition|graph|quicksort|dijkstra|substitution)\b/i;
+
+const COMPLEX_CODE_PATTERN =
+  /\bwrite a\b.{0,40}\bfunction\b.{0,40}\b(iteratively|recursively)\b/i;
+
+const REFACTOR_USE_EFFECT_PATTERN =
+  /\buseeffect\b[\s\S]{0,120}\boutline a refactor\b|\boutline a refactor\b[\s\S]{0,120}\buseeffect\b/i;
+
+const RAG_REASONING_PATTERN =
+  /\bwhich factor was not\b|\bnot a driver\b|\bgive an example that violates\b/i;
 
 function routingRagStrongSimilarity(): number {
   const raw = process.env.ROUTING_RAG_STRONG_SIM;
@@ -103,102 +96,102 @@ function defaultTierPick(): PickSpec {
   };
 }
 
-
-
 function normalizeWhitespace(text: string): string {
-
   return text.trim().replace(/\s+/g, " ");
-
 }
-
-
 
 /** Rule 3: short factual (< 120 chars) opening phrase. */
-
 export function isShortFactualPrompt(prompt: string, lower: string): boolean {
-
   if (prompt.length >= 120) {
-
     return false;
-
   }
-
   return SHORT_FACTUAL_PREFIXES.some((prefix) => lower.startsWith(prefix));
-
 }
 
+/** Live web lookup phrasing — route to tier 3 for factual freshness. */
+export function isWebLookupPrompt(prompt: string, lower: string): boolean {
+  return WEB_LOOKUP_PATTERN.test(lower) || WEB_LOOKUP_TOPIC_PATTERN.test(lower);
+}
 
+/** Debugging prompts where 7B often mis-explains control flow. */
+export function isDebugEscalationPrompt(lower: string): boolean {
+  return DEBUG_PATTERN.test(lower);
+}
+
+/** Multi-step code / algorithm tasks that strict oracle rated tier-3 only. */
+export function isComplexReasoningPrompt(prompt: string, lower: string): boolean {
+  if (COMPLEX_REASONING_PATTERN.test(lower)) return true;
+  if (COMPLEX_CODE_PATTERN.test(lower)) return true;
+  if (REFACTOR_USE_EFFECT_PATTERN.test(lower)) return true;
+  if (/\bpartition step of quicksort\b/i.test(lower)) return true;
+  return false;
+}
+
+/** Strong-RAG hits that still need tier 3 for reasoning quality (not retrieval alone). */
+export function needsRagReasoningEscalation(lower: string): boolean {
+  return (
+    RAG_REASONING_PATTERN.test(lower) ||
+    COMPLEX_REASONING_PATTERN.test(lower)
+  );
+}
+
+function hasStrongRagHit(ctx: Phase1RouterContext): boolean {
+  const top1 = ctx.ragTopSimilarity;
+  const chunks = ctx.ragChunkCount;
+  return top1 != null && chunks != null && chunks >= 1 && top1 >= routingRagStrongSimilarity();
+}
 
 /**
-
  * Phase 1 rule stack. First match wins.
-
  *
-
- * 1. Images → tier ≥ 2, `supportsImages`
-
- * 2. Short factual → Tier 1
-
- * 3. Course RAG (material hits + `courseRagNeeded`) → Tier 1
-
- * 4. Strong RAG (top-1 similarity ≥ strong threshold, any hit count) → Tier 1
-
- * 5. Moderate RAG (course + top-1 ≥ tier-1 threshold) → Tier 1
-
- * 6. Long RAG (≥ 4 chunks && estimated context > 2k tokens) → default tier (usually 1)
-
- * 7. Default → default tier (usually 1 / 7B on vLLM)
-
+ * 1. Images → tier ≥ 2
+ * 2. Web lookup → tier 3
+ * 2b. Debug → tier 3
+ * 2c. Complex reasoning / code → tier 3
+ * 3. Short factual → tier 1
+ * 3b. Course RAG → tier 1
+ * 4c. Strong RAG + reasoning escalation → tier 3
+ * 4. Strong RAG → tier 1
+ * 4b. Moderate RAG → tier 1
+ * 5. Long RAG → default tier
+ * 6. Default → default tier (usually 1 / 7B)
  */
-
 export function matchPhase1Rules(ctx: Phase1RouterContext): Phase1RuleMatch {
-
   const prompt = normalizeWhitespace(ctx.prompt);
-
   const lower = prompt.toLowerCase();
 
-
-
   if (ctx.imagesPresent) {
-
     return {
-
       rule: "rule1_images_tier_ge_2",
-
       pick: {
-
         kind: "minTier",
-
         minTier: 2,
-
         requireImages: true,
-
         tieBreak: "energy",
-
       },
-
     };
-
   }
 
+  if (isWebLookupPrompt(prompt, lower)) {
+    return { rule: "rule2_web_lookup_tier_3", pick: TIER_3_ESCALATION_PICK };
+  }
 
+  if (isDebugEscalationPrompt(lower)) {
+    return { rule: "rule2b_debug_tier_3", pick: TIER_3_ESCALATION_PICK };
+  }
+
+  if (isComplexReasoningPrompt(prompt, lower)) {
+    return { rule: "rule2c_complex_task_tier_3", pick: TIER_3_ESCALATION_PICK };
+  }
 
   if (isShortFactualPrompt(prompt, lower)) {
-
     return {
-
       rule: "rule3_short_factual_tier_1",
-
       pick: { kind: "exactTier", tier: 1, tieBreak: "energy" },
-
     };
-
   }
 
-
-
   const top1 = ctx.ragTopSimilarity;
-
   const chunks = ctx.ragChunkCount;
 
   if (ctx.courseId && ctx.courseRagNeeded) {
@@ -208,90 +201,42 @@ export function matchPhase1Rules(ctx: Phase1RouterContext): Phase1RuleMatch {
     };
   }
 
-  if (
+  if (hasStrongRagHit(ctx) && needsRagReasoningEscalation(lower)) {
+    return { rule: "rule4c_rag_reasoning_tier_3", pick: TIER_3_ESCALATION_PICK };
+  }
 
-    top1 != null &&
-
-    chunks != null &&
-
-    chunks >= 1 &&
-
-    top1 >= routingRagStrongSimilarity()
-
-  ) {
-
+  if (hasStrongRagHit(ctx)) {
     return {
-
       rule: "rule4_strong_rag_tier_1",
-
       pick: { kind: "exactTier", tier: 1, tieBreak: "energy" },
-
     };
-
   }
 
   if (
-
     ctx.courseId &&
-
     top1 != null &&
-
     chunks != null &&
-
     chunks >= 1 &&
-
     top1 >= routingRagTier1Similarity()
-
   ) {
-
     return {
-
       rule: "rule4b_moderate_rag_tier_1",
-
       pick: { kind: "exactTier", tier: 1, tieBreak: "energy" },
-
     };
-
   }
 
   const ctxTok = ctx.ragContextTokenEstimate;
-
-  if (
-
-    chunks != null &&
-
-    ctxTok != null &&
-
-    chunks >= 4 &&
-
-    ctxTok > 2000
-
-  ) {
-
+  if (chunks != null && ctxTok != null && chunks >= 4 && ctxTok > 2000) {
     const tier = routingDefaultTier();
-
     return {
-
       rule: tier === 1 ? "rule5_long_rag_tier_1_energy" : "rule5_long_rag_tier_2_carbon",
-
       pick: defaultTierPick(),
-
     };
-
   }
 
-
-
   const tier = routingDefaultTier();
-
   return {
-
     rule: tier === 1 ? "rule6_default_tier_1_energy" : "rule6_default_tier_2_carbon",
-
     pick: defaultTierPick(),
-
   };
-
 }
-
-

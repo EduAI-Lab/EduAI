@@ -11,6 +11,11 @@ fi
 
 # shellcheck disable=SC1091
 set -a && source .env && set +a
+if [[ -f .env.research ]]; then
+  # shellcheck disable=SC1091
+  set -a && source .env.research && set +a
+fi
+export EDUAI_API_KEY="${RESEARCH_RUN_X_API_KEY:-${EDUAI_API_KEY:-}}"
 
 if [[ -z "${EDUAI_API_KEY:-}" ]]; then
   echo '{"error":"EDUAI_API_KEY not set"}'
