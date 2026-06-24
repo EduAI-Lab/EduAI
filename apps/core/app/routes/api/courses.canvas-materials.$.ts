@@ -1,6 +1,5 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { auth } from "~/lib/auth/server";
-import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import {
   resolveCourseAccessWithCourse,
   type AccessLevel,
@@ -33,10 +32,7 @@ async function resolveInstructorCanvasMaterialsAccess(
   | { response: Response; user?: never }
   | { response?: never; user: Session["user"]; access: AccessLevel }
 > {
-  const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
-  if (apiKeyGuard) return { response: apiKeyGuard };
-
-  const session = apiKeySession ?? (await auth.api.getSession(request));
+  const session = await auth.api.getSession(request);
   if (!session?.user) {
     return { response: json(401, { success: false, error: "Unauthorized" }) };
   }

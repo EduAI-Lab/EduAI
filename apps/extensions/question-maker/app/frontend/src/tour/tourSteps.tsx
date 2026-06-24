@@ -24,25 +24,32 @@ export const tourSteps: TourConfig = {
       id: 'question-list',
       title: 'Review your questions',
       content: 'View existing question variants from your question bank.',
-      placement: 'top'
+      placement: 'top',
+      waitForTargetMs: 4000
     },
     {
       id: 'assessment-tab',
       title: 'Switch to assessments',
-      content: 'Use this tab switcher to switch between Questions and Assessments.',
-      placement: 'bottom'
+      content: 'Open Assessments in the sidebar to manage exams for this course.',
+      placement: 'bottom',
+      targetId: 'assessment-tab',
+      advanceDelayMs: 250,
+      waitForTargetMs: 2000
     },
     {
       id: 'add-assessment-btn',
       title: 'Create assessment',
       content: 'Create an assessment in this course.',
-      placement: 'bottom'
+      placement: 'bottom',
+      waitForTargetMs: 2000
     },
     {
       id: 'assessment-view-btn',
       title: 'Edit assessment',
       content: 'Edit assessments and export.',
-      placement: 'bottom'
+      placement: 'bottom',
+      targetId: 'assessment-view-btn',
+      waitForTargetMs: 2000
     }
   ],
   assessmentBuilder: [

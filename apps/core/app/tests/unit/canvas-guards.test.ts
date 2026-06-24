@@ -18,14 +18,14 @@ describe("canManageCanvasIntegration", () => {
 });
 
 describe("canLinkCanvasRoster", () => {
-  it("allows students and TAs", () => {
+  it("allows students (platform role only; TAs checked via enrollment role)", () => {
     expect(canLinkCanvasRoster("STUDENT")).toBe(true);
-    expect(canLinkCanvasRoster("TA")).toBe(true);
   });
 
-  it("denies instructors and admins", () => {
+  it("denies instructors, admins, and unit admins", () => {
     expect(canLinkCanvasRoster("INSTRUCTOR")).toBe(false);
     expect(canLinkCanvasRoster("ADMIN")).toBe(false);
+    expect(canLinkCanvasRoster("UNIT_ADMIN")).toBe(false);
   });
 });
 

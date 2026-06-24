@@ -96,21 +96,11 @@ FIRECRAWL_API_KEY="" # Required for Firecrawl web search tool. If not set, web s
 
 ### Programmatic Access
 
-API key usage is restricted to admins. Create API keys through the web interface under Settings > API Keys. Requests that include `x-api-key` require the authenticated user to have role `ADMIN` across `/api/*`. Non-admin users should access features via the web UI with their session cookies.
+Core API routes authenticate via **session cookie** (user-context calls) or **`Authorization: Bearer <EDUAI_API_KEY>`** service key (server-to-server calls). The legacy `x-api-key` Better Auth API-key plugin has been removed (#158). Extensions should use `getEduAiCookieForRequest` for user-context calls and the `EDUAI_API_KEY` service key for server-to-server calls such as course and topic management.
 
 ## API Documentation
 
-Note on authentication: Using `x-api-key` is restricted to ADMIN users across all `/api/*` endpoints. Non-admin users should access functionality via the web UI with their session cookies. Any request that includes `x-api-key` from a non-admin user returns 403.
-
-### Testing Admin-Only x-api-key
-
-- Admin key, expect success (200/201/… depending on route):
-  - `curl -i -X GET "https://eduai.ok.ubc.ca/api/ai-providers" -H "x-api-key: ADMIN_API_KEY"`
-- Non-admin key, expect 403 Forbidden:
-  - `curl -i -X GET "https://eduai.ok.ubc.ca/api/ai-providers" -H "x-api-key: STUDENT_API_KEY"`
-- Chat via curl (admin only with key):
-  - `curl -i -X POST "https://eduai.ok.ubc.ca/api/chat" -H "Content-Type: application/json" -H "x-api-key: ADMIN_API_KEY" -d '{"messages":[{"role":"user","content":"hello"}],"model":"google:gemini-2.5-flash","apiKeys":{"google":{"apiKey":"YOUR_GOOGLE_API_KEY","isEnabled":true}},"streaming":false}'`
-- Chat via UI (students): use browser at `/chat`; no `x-api-key` sent; should work as before.
+Note on authentication: User-facing routes require a valid session cookie. Server-to-server calls from extensions use `Authorization: Bearer <EDUAI_API_KEY>`. See `apps/core/app/lib/auth/guards.server.ts` (`requireServiceKey`) for the service-key implementation.
 
 ### Chat Endpoint
 
@@ -122,7 +112,7 @@ Send chat messages with course context for grounded responses.
 
 **Headers**:
 - `Content-Type: application/json`
-- `x-api-key: YOUR_API_KEY` (admin only; requests with this header require an ADMIN user)
+- `Cookie: YOUR_SESSION_COOKIE` (auth via session cookie)
 
 **Body Parameters**:
 - `messages` (array): Chat message history
@@ -130,7 +120,6 @@ Send chat messages with course context for grounded responses.
 - `apiKeys` (object): Provider-specific API keys
 - `courseCode` (string): Target course identifier
 - `streaming` (boolean): Enable response streaming
-- `proxyUser` (object, optional): Only for admin `x-api-key` calls. Allows services like Aitutor to act on behalf of a user; see [Proxy Delegation (`proxyUser`)](#proxy-delegation-proxyuser).
 
 #### Examples
 
@@ -138,8 +127,8 @@ Send chat messages with course context for grounded responses.
 ```powershell
 curl -X POST "https://eduai.ok.ubc.ca/api/chat" `
   -H "Content-Type: application/json" `
-  -H "x-api-key: YOUR_API_KEY" `
-  -d '{
+  -H "Cookie: YOUR_SESSION_COOKIE" `
+  -d ‘{
     "messages": [
       {
         "role": "user",
@@ -155,15 +144,15 @@ curl -X POST "https://eduai.ok.ubc.ca/api/chat" `
     },
     "courseCode": "DATA 301",
     "streaming": false
-  }'
+  }’
 ```
 
 ##### Linux/macOS (Bash)
 ```bash
 curl -X POST "https://eduai.ok.ubc.ca/api/chat" \
   -H "Content-Type: application/json" \
-  -H "x-api-key: YOUR_API_KEY" \
-  -d '{
+  -H "Cookie: YOUR_SESSION_COOKIE" \
+  -d ‘{
     "messages": [
       {
         "role": "user",
@@ -179,15 +168,15 @@ curl -X POST "https://eduai.ok.ubc.ca/api/chat" \
     },
     "courseCode": "DATA 301",
     "streaming": false
-  }'
+  }’
 ```
 
 ##### Ollama Example (Linux/macOS)
 ```bash
 curl -X POST "https://eduai.ok.ubc.ca/api/chat" \
   -H "Content-Type: application/json" \
-  -H "x-api-key: YOUR_API_KEY" \
-  -d '{
+  -H "Cookie: YOUR_SESSION_COOKIE" \
+  -d ‘{
     "messages": [
       {
         "role": "user",
@@ -202,24 +191,8 @@ curl -X POST "https://eduai.ok.ubc.ca/api/chat" \
     },
     "courseCode": "DATA 301",
     "streaming": true
-  }'
+  }’
 ```
-
-#### Proxy Delegation (`proxyUser`)
-
-Third-party services (e.g., Aitutor) that call `/api/chat` with an admin `x-api-key` can add a `proxyUser` block:
-
-```json
-{
-  "proxyUser": {
-    "provider": "aitutor",
-    "id": "aitutor-user-123",
-    "email": "student123@example.com"
-  }
-}
-```
-
-EduAI auto-provisions (or reuses) an internal `User` keyed by `(provider, id)` and stores all chat history under that account. The provided email is treated as metadata for the `ExternalUser` record; the canonical EduAI login email remains whatever was set when the user was created.
 
 #### Chat History & Message Persistence
 
@@ -227,10 +200,6 @@ EduAI auto-provisions (or reuses) an internal `User` keyed by `(provider, id)` a
 - **Chat IDs**: The `chatId` is strictly server-generated (CUID). Clients should not attempt to generate their own chat IDs.
 - **Message IDs**: Clients **SHOULD** generate a UUID v4 for every message (`message.id`) before sending it. This enables optimistic UI updates and allows the server to deduplicate retries safely.
 - If a client references a `chatId` that no longer exists for that user, the API returns `410 Gone` with `{ "chatDeleted": true }`. Callers should drop the stale ID and start a new chat.
-
-#### ExternalUser Email Semantics
-
-`ExternalUser.email` captures the upstream provider’s latest email for diagnostics, but `User.email` remains the primary login/contact field inside EduAI. We do **not** overwrite the user’s canonical email automatically when proxy requests send new values; update the `User` record directly if you need to promote an alias.
 
 ### AI Models Endpoint
 
@@ -242,7 +211,7 @@ Retrieve the catalog of configured AI models.
 
 **Headers**:
 - `Content-Type: application/json`
-- `x-api-key: YOUR_API_KEY`
+- `Authorization: Bearer <EDUAI_API_KEY>` (service key; admin session cookie also accepted)
 
 #### Response
 
@@ -254,14 +223,14 @@ Returns an array of AI model objects, each including its associated provider met
 ```powershell
 curl -X GET "https://eduai.ok.ubc.ca/api/ai-models" `
   -H "Content-Type: application/json" `
-  -H "x-api-key: YOUR_API_KEY"
+  -H "Authorization: Bearer YOUR_EDUAI_API_KEY"
 ```
 
 ##### Get AI Models (Linux/macOS)
 ```bash
 curl -X GET "https://eduai.ok.ubc.ca/api/ai-models" \
   -H "Content-Type: application/json" \
-  -H "x-api-key: YOUR_API_KEY"
+  -H "Authorization: Bearer YOUR_EDUAI_API_KEY"
 ```
 
 ### Course Topics Endpoint
@@ -277,7 +246,7 @@ Manage topics for a specific course. Admin role required for creating and deleti
 
 **Headers**:
 - `Content-Type: application/json`
-- `x-api-key: YOUR_API_KEY`
+- `Authorization: Bearer <EDUAI_API_KEY>` (service key)
 
 **URL Parameters**:
 - `courseId` (string): Course identifier
@@ -296,21 +265,21 @@ Manage topics for a specific course. Admin role required for creating and deleti
 ```powershell
 curl -X GET "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" `
   -H "Content-Type: application/json" `
-  -H "x-api-key: YOUR_API_KEY"
+  -H "Authorization: Bearer YOUR_EDUAI_API_KEY"
 ```
 
 ##### Get Course Topics (Linux/macOS)
 ```bash
 curl -X GET "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" \
   -H "Content-Type: application/json" \
-  -H "x-api-key: YOUR_API_KEY"
+  -H "Authorization: Bearer YOUR_EDUAI_API_KEY"
 ```
 
 ##### Create Course Topic (Windows - PowerShell)
 ```powershell
 curl -X POST "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" `
   -H "Content-Type: application/json" `
-  -H "x-api-key: YOUR_API_KEY" `
+  -H "Authorization: Bearer YOUR_EDUAI_API_KEY" `
   -d '{
     "name": "Introduction to Machine Learning"
   }'
@@ -320,7 +289,7 @@ curl -X POST "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" `
 ```bash
 curl -X POST "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" \
   -H "Content-Type: application/json" \
-  -H "x-api-key: YOUR_API_KEY" \
+  -H "Authorization: Bearer YOUR_EDUAI_API_KEY" \
   -d '{
     "name": "Introduction to Machine Learning"
   }'
@@ -330,7 +299,7 @@ curl -X POST "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" \
 ```powershell
 curl -X DELETE "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" `
   -H "Content-Type: application/json" `
-  -H "x-api-key: YOUR_API_KEY" `
+  -H "Authorization: Bearer YOUR_EDUAI_API_KEY" `
   -d '{
     "topicId": "TOPIC_ID"
   }'
@@ -340,7 +309,7 @@ curl -X DELETE "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" `
 ```bash
 curl -X DELETE "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" \
   -H "Content-Type: application/json" \
-  -H "x-api-key: YOUR_API_KEY" \
+  -H "Authorization: Bearer YOUR_EDUAI_API_KEY" \
   -d '{
     "topicId": "TOPIC_ID"
   }'
