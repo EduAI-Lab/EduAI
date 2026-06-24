@@ -3,8 +3,6 @@ import { auth } from "~/lib/auth/server";
 import { resolveChatReadAccess, getChatMessages } from "~/lib/chat-history/server";
 import { reviveStoredMessage } from "~/lib/chat/revive-message.server";
 
-export { messageToText, reviveStoredMessage } from "~/lib/chat/revive-message.server";
-
 /**
  * GET /api/chats/:chatId/messages — full ordered transcript for restore /
  * read-only viewing. Gated by the same visibility contract as the metadata
