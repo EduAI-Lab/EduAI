@@ -93,44 +93,32 @@ export interface EduAITopicOption {
     name: string;
 }
 
-export interface EduAITopicOption {
-    id: string;
-    name: string;
-}
-
-const MOCK_COURSE_OPTIONS: EduAICourseOption[] = [
+/** Shown when Core course list is unreachable (offline / auth). */
+const FALLBACK_COURSE_OPTIONS: EduAICourseOption[] = [
     {
-        id: 'COSC211',
+        id: 'fallback-cosc211',
         code: 'COSC 211',
         name: 'Machine Architecture',
-        description: 'Computer organization, performance, and instruction set design.'
+        description: 'Offline fallback — link courses from your profile when Core is available.',
     },
     {
-        id: 'COSC121',
+        id: 'fallback-cosc121',
         code: 'COSC 121',
         name: 'Computer Programming II',
-        description: 'Intermediate programming with data structures and software design.'
-    }
+        description: 'Offline fallback — link courses from your profile when Core is available.',
+    },
 ];
 
-// Mock topics mapped by course code (without spaces)
-const MOCK_COURSE_TOPICS_BY_CODE: Record<string, EduAITopicOption[]> = {
-    'COSC211': [
-        { id: 'cosc211-1', name: 'Instruction Set Architectures' },
-        { id: 'cosc211-2', name: 'Pipeline Design' },
-        { id: 'cosc211-3', name: 'Cache Coherence Strategies' },
-        { id: 'cosc211-4', name: 'Memory Hierarchy' },
-        { id: 'cosc211-5', name: 'Parallel Execution Models' },
-        { id: 'cosc211-6', name: 'Performance Benchmarking' }
+/** Legacy mock topics — only used when Core topic fetch fails. */
+const FALLBACK_TOPICS_BY_CODE: Record<string, EduAITopicOption[]> = {
+    COSC211: [
+        { id: 'fallback-1', name: 'Instruction Set Architectures' },
+        { id: 'fallback-2', name: 'Pipeline Design' },
     ],
-    'COSC121': [
-        { id: 'cosc121-1', name: 'Object-Oriented Design' },
-        { id: 'cosc121-2', name: 'Data Structures Fundamentals' },
-        { id: 'cosc121-3', name: 'Algorithm Analysis' },
-        { id: 'cosc121-4', name: 'Testing and Debugging' },
-        { id: 'cosc121-5', name: 'File I/O and Persistence' },
-        { id: 'cosc121-6', name: 'Recursion Patterns' }
-    ]
+    COSC121: [
+        { id: 'fallback-1', name: 'Object-Oriented Design' },
+        { id: 'fallback-2', name: 'Data Structures Fundamentals' },
+    ],
 };
 
 export interface EduAITestResponse {
@@ -177,15 +165,19 @@ class EduAIService {
             const response = await api.get('/api/eduai/ai-models');
             const models = response.data;
 
-            // Transform API response to our format
+            if (!Array.isArray(models) || models.length === 0) {
+                console.warn('AI model list empty — check Core session or EDUAI_API_KEY');
+                return [];
+            }
+
             return models
-                .filter((model: any) => model.isActive)
+                .filter((model: any) => model.isActive !== false)
                 .map((model: any) => ({
-                    id: `${model.provider.name}:${model.modelId}`,
-                    label: model.name,
-                    provider: model.provider.name,
+                    id: `${model.provider?.name ?? model.provider}:${model.modelId}`,
+                    label: model.name ?? model.modelId,
+                    provider: model.provider?.name ?? String(model.provider ?? 'unknown'),
                     description: model.description,
-                    isDefault: model.modelId === 'gpt-oss:120b' // Default to ollama model
+                    isDefault: model.modelId === 'gpt-oss:120b' || model.modelId === 'gemini-2.5-flash',
                 }));
         } catch (error) {
             console.error('Failed to fetch AI models from the AI service:', error);
@@ -217,36 +209,43 @@ class EduAIService {
             return [];
         } catch (error) {
             console.error('Failed to fetch courses from the AI service:', error);
-            throw error;
+            return import.meta.env.DEV ? FALLBACK_COURSE_OPTIONS : [];
         }
     }
 
-    /**
-     * Mock: Return topic list for a course.
-     * Topics are looked up by course code (e.g., "COSC 211" -> "COSC211")
-     * courseIdOrCode can be either the AI service course UUID or the course code
-     * Replace with live API call when endpoint is available.
-     */
-    async listCourseTopics(courseIdOrCode: string, courseCode?: string): Promise<EduAITopicOption[]> {
-        // For now, skip the live endpoint since it doesn't work yet
-        // Use mock topics based on course code
+    private fallbackTopicsForCode(courseIdOrCode: string, courseCode?: string): EduAITopicOption[] {
+        if (!import.meta.env.DEV) {
+            return [];
+        }
         const codeToMatch = courseCode || courseIdOrCode;
         const normalizedCode = codeToMatch.replace(/\s+/g, '').toUpperCase();
+        return FALLBACK_TOPICS_BY_CODE[normalizedCode] ?? [];
+    }
 
-        // Try exact match first (e.g., "COSC211")
-        if (MOCK_COURSE_TOPICS_BY_CODE[normalizedCode]) {
-            return MOCK_COURSE_TOPICS_BY_CODE[normalizedCode];
+    /**
+     * Fetch topics for a course — tries Core API first, then code-based fallback.
+     */
+    async listCourseTopics(courseIdOrCode: string, courseCode?: string): Promise<EduAITopicOption[]> {
+        const looksLikeCoreId = courseIdOrCode.length > 12 && !courseIdOrCode.includes(' ');
+        if (looksLikeCoreId) {
+            const coreTopics = await this.listCoreCourseTopics(courseIdOrCode);
+            if (coreTopics.length > 0) return coreTopics;
         }
 
-        // Try with space variations (e.g., "COSC 211" -> "COSC211")
-        for (const [code, topics] of Object.entries(MOCK_COURSE_TOPICS_BY_CODE)) {
-            const normalizedMockCode = code.replace(/\s+/g, '');
-            if (normalizedCode === normalizedMockCode) {
-                return topics;
+        try {
+            const response = await api.get(`/api/eduai/courses/${encodeURIComponent(courseIdOrCode)}/topics`);
+            const topics = response.data?.data?.topics ?? [];
+            if (Array.isArray(topics) && topics.length > 0) {
+                return topics.map((topic: { id: string; name: string }) => ({
+                    id: topic.id,
+                    name: topic.name,
+                }));
             }
+        } catch (error) {
+            console.warn('Live topic fetch failed, using fallback topics if available:', error);
         }
 
-        return [];
+        return this.fallbackTopicsForCode(courseIdOrCode, courseCode);
     }
 
     /**
@@ -265,7 +264,7 @@ class EduAIService {
             }));
         } catch (error) {
             console.error('Failed to fetch Core course topics:', error);
-            return [];
+            return this.fallbackTopicsForCode(coreCourseId);
         }
     }
 
