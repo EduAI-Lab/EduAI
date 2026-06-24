@@ -39,3 +39,8 @@
 [data-assistive][data-assistive-focus-mode] [data-slot="sidebar-container"] {
   display: none !important;
 }
+
+/* Focus mode: hide past-conversation list so the thread stays the only focal surface. */
+[data-assistive][data-assistive-focus-mode] .chat-history-rail {
+  display: none !important;
+}
