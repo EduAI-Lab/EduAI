@@ -304,6 +304,46 @@ export async function patchCoreEnrollmentRole(externalCourseId, enrollmentId, ro
 }
 
 /**
+ * Fetches a single Core course by id using the service key.
+ * Returns the course object on 200, null on 404 (soft-deleted or missing).
+ * Throws on 5xx or network error so the caller can skip and retry next run.
+ */
+export async function fetchCoreCourseSafe(coreOfferingId) {
+  const serviceKey = process.env.EDUAI_API_KEY;
+  if (!serviceKey) {
+    throw new Error('EDUAI_API_KEY not configured');
+  }
+  try {
+    return await requestEduAi(`/courses/${coreOfferingId}`, {
+      headers: { Authorization: `Bearer ${serviceKey}` },
+    });
+  } catch (err) {
+    if (err.status === 404) return null;
+    throw err;
+  }
+}
+
+/**
+ * Fetches a single Core topic by id using the service key.
+ * Returns the topic object on 200, null on 404 (soft-deleted or missing).
+ * Throws on 5xx or network error so the caller can skip and retry next run.
+ */
+export async function fetchCoreTopicSafe(coreOfferingId, coreTopicId) {
+  const serviceKey = process.env.EDUAI_API_KEY;
+  if (!serviceKey) {
+    throw new Error('EDUAI_API_KEY not configured');
+  }
+  try {
+    return await requestEduAi(`/courses/${coreOfferingId}/topics/${coreTopicId}`, {
+      headers: { Authorization: `Bearer ${serviceKey}` },
+    });
+  } catch (err) {
+    if (err.status === 404) return null;
+    throw err;
+  }
+}
+
+/**
  * Fetch testable questions for a Core course offering using the service key.
  * Returns the `questions` array from Core's paginated response.
  * Throws an Error with `status` set on HTTP failure.
