@@ -80,18 +80,58 @@ function isInsideEquationSpan(index: number, spans: Array<{ start: number; end: 
   return spans.some((span) => index > span.start && index < span.end);
 }
 
-function findSafeSplitIndex(text: string, preferredIndex: number, spans: Array<{ start: number; end: number }>): number {
+function findSafeSplitIndex(
+  text: string,
+  preferredIndex: number,
+  spans: Array<{ start: number; end: number }>,
+  minIndex = 0,
+): number {
   if (!isInsideEquationSpan(preferredIndex, spans)) {
     return preferredIndex;
   }
 
-  for (let i = preferredIndex; i > 0; i--) {
+  for (let i = preferredIndex; i > minIndex; i--) {
     if (!isInsideEquationSpan(i, spans)) {
       return i;
     }
   }
 
+  // Prefer keeping the equation intact even if the piece exceeds maxChunkSize.
+  for (const span of spans) {
+    if (preferredIndex > span.start && preferredIndex < span.end) {
+      return span.end;
+    }
+  }
+
   return preferredIndex;
+}
+
+/** Split oversized text without breaking inline/display LaTeX delimiters. */
+function splitTextRespectingEquations(text: string, maxChunkSize: number): string[] {
+  const trimmed = text.trim();
+  if (!trimmed) return [];
+  if (trimmed.length <= maxChunkSize) return [trimmed];
+
+  const equationSpans = findEquationSpans(trimmed);
+  const pieces: string[] = [];
+  let start = 0;
+
+  while (start < trimmed.length) {
+    let end = Math.min(start + maxChunkSize, trimmed.length);
+    if (end < trimmed.length && equationSpans.length > 0) {
+      end = findSafeSplitIndex(trimmed, end, equationSpans, start);
+    }
+
+    if (end <= start) {
+      end = Math.min(start + maxChunkSize, trimmed.length);
+    }
+
+    const piece = trimmed.slice(start, end).trim();
+    if (piece.length > 0) pieces.push(piece);
+    start = end;
+  }
+
+  return pieces;
 }
 
 function stripInlineHtml(html: string): string {
@@ -294,12 +334,7 @@ export function enforceMaxChunkLength(chunks: string[], maxChunkSize: number): s
       continue;
     }
 
-    let start = 0;
-    while (start < chunk.length) {
-      const piece = chunk.slice(start, start + maxChunkSize).trim();
-      if (piece.length > 0) result.push(piece);
-      start += maxChunkSize;
-    }
+    result.push(...splitTextRespectingEquations(chunk, maxChunkSize));
   }
 
   return result;
@@ -696,7 +731,11 @@ function applyMarkdownSemanticChunking(content: string, maxChunkSize: number): s
     chunks.push(addContextHeaders(currentChunk.trim(), currentHeaders));
   }
 
-  return chunks.filter(chunk => chunk.trim().length > 0);
+  return chunks
+    .filter((chunk) => chunk.trim().length > 0)
+    .flatMap((chunk) =>
+      chunk.length > maxChunkSize ? splitTextRespectingEquations(chunk, maxChunkSize) : [chunk],
+    );
 }
 
 /**
@@ -714,7 +753,6 @@ function applyStandardChunking(content: string, maxChunkSize: number): string[] 
 }
 
 function chunkSectionByParagraphs(section: string, maxChunkSize: number): string[] {
-  const equationSpans = findEquationSpans(section);
   const paragraphs = section.split(/\n\s*\n/).filter((p) => p.trim().length > 0);
   const chunks: string[] = [];
   let currentChunk = '';
@@ -746,30 +784,9 @@ function chunkSectionByParagraphs(section: string, maxChunkSize: number): string
     chunks.push(currentChunk.trim());
   }
 
-  if (equationSpans.length === 0) {
-    return chunks;
-  }
-
-  const safeChunks: string[] = [];
-  for (const chunk of chunks) {
-    if (chunk.length <= maxChunkSize) {
-      safeChunks.push(chunk);
-      continue;
-    }
-
-    let start = 0;
-    while (start < chunk.length) {
-      let end = Math.min(start + maxChunkSize, chunk.length);
-      if (end < chunk.length) {
-        end = findSafeSplitIndex(chunk, end, equationSpans);
-      }
-      const piece = chunk.slice(start, end).trim();
-      if (piece.length > 0) safeChunks.push(piece);
-      start = end;
-    }
-  }
-
-  return safeChunks;
+  return chunks.flatMap((chunk) =>
+    chunk.length > maxChunkSize ? splitTextRespectingEquations(chunk, maxChunkSize) : [chunk],
+  );
 }
 
 /**
