@@ -15,7 +15,7 @@ import {
   SidebarMenuItem,
 } from '@eduai/ui';
 
-import type { User } from '~/lib/types';
+import type { AuthUser } from '~/hooks/useLocalUser';
 import { getEduAiAppUrl } from '~/lib/extension-urls';
 import { getNavForUser } from '~/lib/rbac/nav';
 import type { AtNavItemKey } from '~/lib/rbac/types';
@@ -31,7 +31,7 @@ const NAV_ICONS: Record<AtNavItemKey, Icon> = {
   analytics: IconBooks,
 };
 
-function toNavMainItems(user: User): AiTutorNavMainItem[] {
+function toNavMainItems(user: AuthUser): AiTutorNavMainItem[] {
   return getNavForUser(user).map((item) => ({
     title: item.title,
     url: item.href,
@@ -40,7 +40,7 @@ function toNavMainItems(user: User): AiTutorNavMainItem[] {
 }
 
 type AiTutorSidebarProps = React.ComponentProps<typeof Sidebar> & {
-  user: User;
+  user: AuthUser;
 };
 
 export function AiTutorSidebar({ user, ...props }: AiTutorSidebarProps) {
