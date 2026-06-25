@@ -12,6 +12,7 @@ import {
 import { Textarea } from "@eduai/ui";
 import { Label } from "@eduai/ui";
 import { IconMessage } from "@tabler/icons-react";
+import { SYSTEM_PROMPT_MAX_CHARS_DEFAULT } from "~/lib/ai/prompt-safety";
 
 export interface SystemPromptSettingsProps {
   systemPrompt?: string | null;
@@ -27,7 +28,12 @@ export function SystemPromptSettings({ systemPrompt, onSave }: SystemPromptSetti
   }, [systemPrompt]);
 
   const handleSave = () => {
-    onSave(prompt.trim() || null);
+    const trimmed = prompt.trim();
+    const capped =
+      trimmed.length > SYSTEM_PROMPT_MAX_CHARS_DEFAULT
+        ? trimmed.slice(0, SYSTEM_PROMPT_MAX_CHARS_DEFAULT)
+        : trimmed;
+    onSave(capped || null);
     setOpen(false);
   };
 
@@ -64,10 +70,13 @@ export function SystemPromptSettings({ systemPrompt, onSave }: SystemPromptSetti
               placeholder="Enter a custom system prompt (leave empty to use default)..."
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
+              maxLength={SYSTEM_PROMPT_MAX_CHARS_DEFAULT}
               className="min-h-[200px] font-mono text-sm"
             />
             <p className="text-xs text-muted-foreground">
-              The system prompt guides the AI's behavior and responses. Leave empty to use the default prompt.
+              The system prompt guides the AI&apos;s behavior and responses. Leave empty to use the
+              default prompt. Max {SYSTEM_PROMPT_MAX_CHARS_DEFAULT.toLocaleString()} characters (
+              {prompt.length.toLocaleString()} used).
             </p>
           </div>
         </div>

@@ -26,11 +26,11 @@ export function getNavForUser(user: AtUser | null | undefined): AtNavItem[] {
   }
 
   if (canAccessAdminConsole(user)) {
-    items.push({
-      key: 'admin',
-      title: 'Admin',
-      href: '/admin',
-    });
+    items.push(
+      { key: 'admin-users', title: 'User Management', href: '/admin?tab=users' },
+      { key: 'admin-enrollments', title: 'Enrollments', href: '/admin?tab=enrollments' },
+      { key: 'admin-bug-reports', title: 'Bug Reports', href: '/admin?tab=bugReports' },
+    );
   }
 
   return items;

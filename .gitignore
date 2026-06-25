@@ -11,7 +11,7 @@
 CLAUDE.md
 
 # please put any notes, to-dos or personal documents you have over here instead of adding new folders to the .gitignore
-misc/
+.misc/
 
 # OS
 .DS_Store
@@ -38,6 +38,10 @@ node_modules/
 # Logs
 apps/core/logs/
 *.log
+
+# Local cron backup dry-run artifacts (see docs/implementations/server-backup-cron-local-testing.md)
+.local-backup-test/
+infra/cron/cron.env.local
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

@@ -13,12 +13,15 @@ import "./app.css";
 
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
+import { getPolicy } from "~/lib/policy.server";
+import { ensureCronSchedulerRunning } from "~/lib/cron-scheduler.server";
 import { AssistiveUiProvider } from "~/components/assistive/assistive-ui-provider";
 import { ThemeProvider } from "~/components/theme-provider";
 import { Toaster } from "@eduai/ui";
 import { UiPreferencesProvider } from "~/components/assistive/ui-preferences-provider";
 import { DEFAULT_ACCOUNT_PREFERENCES } from "~/lib/user-preferences";
 import { isUiDensity, isUiTheme } from "~/lib/ui-preferences";
+import { ThemeSyncInitializer } from "~/components/theme-sync-initializer";
 
 export const links: Route.LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -38,6 +41,10 @@ const GUEST_ROOT_PREFERENCES = {
   motionReduced: false,
   density: DEFAULT_ACCOUNT_PREFERENCES.density,
   theme: DEFAULT_ACCOUNT_PREFERENCES.theme,
+  // Whether the signed-in user may issue invitations (UNIT_ADMIN gated by the
+  // `unitAdmins.canInvite` policy). Resolved server-side and read by the sidebar
+  // so the Invitations link doesn't depend on a client-side policy fetch.
+  canInvite: false,
 } as const;
 
 /**
@@ -45,6 +52,7 @@ const GUEST_ROOT_PREFERENCES = {
  * Guests always get defaults, guaranteeing baseline UI on public pages.
  */
 export async function loader({ request }: LoaderFunctionArgs) {
+  ensureCronSchedulerRunning();
   const session = await auth.api.getSession(request);
   if (!session?.user) {
     return GUEST_ROOT_PREFERENCES;
@@ -60,11 +68,19 @@ export async function loader({ request }: LoaderFunctionArgs) {
     },
   });
 
+  // ADMIN always sees its admin nav (incl. Invitations); only a UNIT_ADMIN's
+  // link is policy-gated, so only that role needs the extra lookup.
+  const canInvite =
+    session.user.role === "UNIT_ADMIN"
+      ? await getPolicy("unitAdmins.canInvite")
+      : false;
+
   return {
     assistive: row?.assistDefault ?? false,
     motionReduced: row?.motionReduced ?? false,
     density: isUiDensity(row?.density) ? row.density : DEFAULT_ACCOUNT_PREFERENCES.density,
     theme: isUiTheme(row?.theme) ? row.theme : DEFAULT_ACCOUNT_PREFERENCES.theme,
+    canInvite,
   };
 }
 
@@ -102,6 +118,7 @@ export default function App({ loaderData }: Route.ComponentProps) {
       initialDensity={loaderData?.density ?? DEFAULT_ACCOUNT_PREFERENCES.density}
     >
       <AssistiveUiProvider initialAssistive={loaderData?.assistive ?? false}>
+        <ThemeSyncInitializer />
         <Outlet />
       </AssistiveUiProvider>
     </UiPreferencesProvider>

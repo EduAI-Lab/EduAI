@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   createInvitationSchema,
   acceptInvitationSchema,
+  invitableRolesFor,
 } from "~/lib/invitations/schemas";
 
 describe("createInvitationSchema", () => {
@@ -31,7 +32,7 @@ describe("createInvitationSchema", () => {
     expect(r.success).toBe(true);
   });
 
-  it("accepts a STUDENT invite without units", () => {
+  it("accepts a STUDENT invite without units (unit-admin flow)", () => {
     const r = createInvitationSchema.safeParse({
       email: "s@test.local",
       role: "STUDENT",
@@ -39,7 +40,7 @@ describe("createInvitationSchema", () => {
     expect(r.success).toBe(true);
   });
 
-  it("rejects TA (a course-enrollment role, not platform-invitable)", () => {
+  it("rejects TA (not platform-invitable)", () => {
     expect(
       createInvitationSchema.safeParse({ email: "ta@test.local", role: "TA" }).success,
     ).toBe(false);
@@ -85,6 +86,23 @@ describe("createInvitationSchema", () => {
         authorizedUnits: ["NOTAUNIT"],
       }).success,
     ).toBe(false);
+  });
+});
+
+describe("invitableRolesFor", () => {
+  it("lets an ADMIN invite every invitable role incl. students (superset of lower roles)", () => {
+    const roles = invitableRolesFor("ADMIN");
+    expect([...roles]).toEqual(["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "STUDENT"]);
+  });
+
+  it("lets a UNIT_ADMIN invite instructors and students only", () => {
+    expect([...invitableRolesFor("UNIT_ADMIN")]).toEqual(["INSTRUCTOR", "STUDENT"]);
+  });
+
+  it("lets any other role invite no one", () => {
+    expect(invitableRolesFor("INSTRUCTOR")).toEqual([]);
+    expect(invitableRolesFor("STUDENT")).toEqual([]);
+    expect(invitableRolesFor(null)).toEqual([]);
   });
 });
 

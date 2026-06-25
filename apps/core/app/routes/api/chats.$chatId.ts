@@ -1,13 +1,8 @@
 import { auth } from "~/lib/auth/server";
+import { resolveChatReadAccess } from "~/lib/chat-history/server";
 import prisma from "~/lib/prisma.server";
-import { canAccessChat } from "~/lib/chat-history/server";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
-/**
- * GET /api/chats/:chatId — chat metadata. Readable by the owner and by anyone
- * with course-staff/admin visibility (see lib/chat-history). `canEdit` is true
- * only for the owner; read-only viewers use it to suppress the composer.
- */
 export async function loader({ request, params }: LoaderFunctionArgs) {
   try {
     const session = await auth.api.getSession(request);
@@ -26,38 +21,47 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       });
     }
 
-    const { chat, canEdit } = await canAccessChat(
+    // §5c oversight gate, shared with /api/chats/:id/messages so the two routes
+    // can never drift. Returns null for a missing chat OR an unauthorized viewer.
+    const access = await resolveChatReadAccess(
       { id: session.user.id, role: session.user.role },
       chatId,
     );
 
-    if (!chat) {
+    if (!access) {
+      // No existence leak — same 404 a non-owner gets for a missing chat.
       return new Response(JSON.stringify({ error: "Chat not found" }), {
         status: 404,
         headers: { "Content-Type": "application/json" },
       });
     }
 
-    return new Response(
-      JSON.stringify({
-        id: chat.id,
-        systemPrompt: chat.systemPrompt,
-        title: chat.title,
-        adhdAssist: chat.adhdAssist,
-        courseId: chat.courseId,
-        courseCode: chat.course?.code ?? null,
-        courseName: chat.course?.name ?? null,
-        ownerId: chat.userId,
-        ownerName: chat.user.name,
-        canEdit,
-        createdAt: chat.createdAt,
-        updatedAt: chat.updatedAt,
-      }),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      },
-    );
+    const { chat, isOwner } = access;
+
+    // Message bodies are only needed by the oversight viewer (a non-owner staff
+    // read). The owner's session-resume path (useChatSession) reads metadata
+    // only, so don't pull the full transcript on that hot path.
+    const messages = isOwner
+      ? undefined
+      : await prisma.chatMessage.findMany({
+          where: { chatId: chat.id },
+          select: { messageId: true, role: true, content: true, position: true },
+          orderBy: { position: "asc" },
+        });
+
+    const meta = {
+      id: chat.id,
+      title: chat.title,
+      systemPrompt: chat.systemPrompt,
+      adhdAssist: chat.adhdAssist,
+      createdAt: chat.createdAt,
+      updatedAt: chat.updatedAt,
+    };
+    const chatView = messages ? { ...meta, messages } : meta;
+    return new Response(JSON.stringify(chatView), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
   } catch (error) {
     console.error("Chat API error:", error);
     return new Response(JSON.stringify({ error: "Internal server error" }), {

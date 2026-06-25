@@ -108,7 +108,9 @@ describe("materials upload → list → delete cycle (#300)", () => {
       context: {} as never,
     });
     expect(deleted.status).toBe(204);
-    expect(await prisma.courseMaterial.findUnique({ where: { id: materialId } })).toBeNull();
+    const deletedMaterial = await prisma.courseMaterial.findUnique({ where: { id: materialId } });
+    expect(deletedMaterial).not.toBeNull();
+    expect(deletedMaterial?.deletedAt).not.toBeNull();
   });
 
   it("STUDENT upload is rejected with 403 (#300)", async () => {
@@ -175,5 +177,116 @@ describe("materials upload → list → delete cycle (#300)", () => {
       context: {} as never,
     });
     expect(ok.status).toBe(204);
+  });
+});
+
+function renameArgs(
+  user: { id: string; role: string },
+  materialId: string,
+  title: unknown,
+) {
+  mockSession(user);
+  return {
+    request: new Request(
+      `http://localhost/api/courses/${courseId}/materials/${materialId}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      },
+    ),
+    params: { courseId, materialId },
+    context: {} as never,
+  };
+}
+
+describe("materials rename (PATCH)", () => {
+  it("INSTRUCTOR renames a material end-to-end and persists the new title", async () => {
+    const { processUploadedFile } = await import("~/lib/ai/file-processing");
+    vi.mocked(processUploadedFile).mockResolvedValueOnce({
+      title: "rename-me.txt",
+      mimeType: "text/plain",
+      fileSize: 10,
+      checksum: "rename-instructor-checksum",
+      content: "content",
+    } as never);
+    const uploaded = await action(uploadArgs(instructor));
+    expect(uploaded.status).toBe(200);
+    const { materialId } = await uploaded.json();
+
+    const res = await action(renameArgs(instructor, materialId, "  Renamed Notes  "));
+    expect(res.status).toBe(200);
+
+    const row = await prisma.courseMaterial.findUnique({ where: { id: materialId } });
+    expect(row?.title).toBe("Renamed Notes");
+  });
+
+  it("rejects a blank title with 400", async () => {
+    const { processUploadedFile } = await import("~/lib/ai/file-processing");
+    vi.mocked(processUploadedFile).mockResolvedValueOnce({
+      title: "keep.txt",
+      mimeType: "text/plain",
+      fileSize: 10,
+      checksum: "rename-blank-checksum",
+      content: "content",
+    } as never);
+    const uploaded = await action(uploadArgs(instructor));
+    const { materialId } = await uploaded.json();
+
+    const res = await action(renameArgs(instructor, materialId, "   "));
+    expect(res.status).toBe(400);
+    const row = await prisma.courseMaterial.findUnique({ where: { id: materialId } });
+    expect(row?.title).toBe("keep.txt");
+  });
+
+  it("STUDENT rename is rejected with 403", async () => {
+    const { processUploadedFile } = await import("~/lib/ai/file-processing");
+    vi.mocked(processUploadedFile).mockResolvedValueOnce({
+      title: "student-blocked.txt",
+      mimeType: "text/plain",
+      fileSize: 10,
+      checksum: "rename-student-checksum",
+      content: "content",
+    } as never);
+    const uploaded = await action(uploadArgs(instructor));
+    const { materialId } = await uploaded.json();
+
+    const res = await action(renameArgs(student, materialId, "Hacked"));
+    expect(res.status).toBe(403);
+    const row = await prisma.courseMaterial.findUnique({ where: { id: materialId } });
+    expect(row?.title).toBe("student-blocked.txt");
+  });
+
+  it("TA renames own upload but not the instructor's (§7 own-only)", async () => {
+    const { processUploadedFile } = await import("~/lib/ai/file-processing");
+    vi.mocked(processUploadedFile).mockResolvedValueOnce({
+      title: "ta-rename.txt",
+      mimeType: "text/plain",
+      fileSize: 10,
+      checksum: "rename-ta-own-checksum",
+      content: "content",
+    } as never);
+    const taUploaded = await action(uploadArgs(ta));
+    const { materialId: taMaterialId } = await taUploaded.json();
+
+    vi.mocked(processUploadedFile).mockResolvedValueOnce({
+      title: "prof-rename.txt",
+      mimeType: "text/plain",
+      fileSize: 10,
+      checksum: "rename-prof-checksum",
+      content: "content",
+    } as never);
+    const profUploaded = await action(uploadArgs(instructor));
+    const { materialId: profMaterialId } = await profUploaded.json();
+
+    // TA cannot rename the instructor's material
+    const denied = await action(renameArgs(ta, profMaterialId, "TA was here"));
+    expect(denied.status).toBe(403);
+
+    // TA renames their own
+    const ok = await action(renameArgs(ta, taMaterialId, "TA Renamed"));
+    expect(ok.status).toBe(200);
+    const row = await prisma.courseMaterial.findUnique({ where: { id: taMaterialId } });
+    expect(row?.title).toBe("TA Renamed");
   });
 });

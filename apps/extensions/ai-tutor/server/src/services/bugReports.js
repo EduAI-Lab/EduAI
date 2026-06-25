@@ -21,7 +21,12 @@
  */
 
 import { prisma } from '../config/database.js';
-import { postCoreBugReport } from './eduaiClient.js';
+import {
+  listCoreAdminBugReports,
+  patchCoreAdminBugReportStatus,
+  postCoreBugReport,
+} from './eduaiClient.js';
+import { mapCoreAdminBugReportRow, UI_TO_CORE_BUG_STATUS } from '../utils/bugReportMappers.js';
 
 export const BUG_REPORT_STATUSES = ['unhandled', 'in progress', 'resolved'];
 const BUG_REPORT_STATUS_SET = new Set(BUG_REPORT_STATUSES);
@@ -296,14 +301,16 @@ export async function createBugReport(user, payload) {
 }
 
 /**
- * Load the full bug-report list for the admin review console.
- *
- * Why: Admin triage needs the related course/module/lesson/activity labels in
- * one query so the UI can sort and inspect reports without N+1 follow-up calls.
+ * Load AI Tutor-scoped bug reports from Core admin triage API (#648).
  */
-export async function listAdminBugReports() {
-  // BugReport model lives in Core post-auth-migration; no local records exist.
-  return [];
+export async function listAdminBugReports(cookie) {
+  const payload = await listCoreAdminBugReports(cookie, {
+    source: 'AI_TUTOR',
+    limit: 100,
+    offset: 0,
+  });
+  const reports = Array.isArray(payload?.reports) ? payload.reports : [];
+  return reports.map(mapCoreAdminBugReportRow);
 }
 
 /**
@@ -329,13 +336,25 @@ export function validateBugReportStatus(status) {
  * helper preserves the same include shape as listing to let the UI refresh from
  * the PATCH response directly.
  */
-export async function updateBugReportStatus(bugReportId, nextStatus) {
+export async function updateBugReportStatus(bugReportId, nextStatus, cookie) {
   if (typeof bugReportId !== 'string' || bugReportId.trim().length === 0) {
     throw new BugReportError(400, 'Invalid bug report id');
   }
 
   validateBugReportStatus(nextStatus);
 
-  // BugReport model lives in Core post-auth-migration; no local records to update.
-  throw new BugReportError(404, 'Bug report not found');
+  const coreStatus = UI_TO_CORE_BUG_STATUS[nextStatus];
+  if (!coreStatus) {
+    throw new BugReportError(400, `status must be one of: ${BUG_REPORT_STATUSES.join(', ')}`);
+  }
+
+  const updated = await patchCoreAdminBugReportStatus(cookie, bugReportId, coreStatus);
+  if (!updated?.id) {
+    throw new BugReportError(404, 'Bug report not found');
+  }
+
+  return {
+    id: updated.id,
+    status: mapCoreAdminBugReportRow({ ...updated, description: '' }).status,
+  };
 }

@@ -10,9 +10,13 @@ import {
   canUploadMaterial,
   canViewMaterial,
   canDeleteMaterial,
+  canRenameMaterial,
   canViewTopics,
   canManageTopics,
   isStudentAccess,
+  courseChatViewPolicyKey,
+  manageEnrollmentsPolicyKey,
+  resolvePolicyGate,
 } from '~/lib/rbac/permissions'
 import type { CourseAccess, RbacUser } from '~/lib/rbac/types'
 
@@ -28,7 +32,7 @@ describe('canCreateCourse', () => {
     ['ADMIN', true],
     ['UNIT_ADMIN', true],
     ['INSTRUCTOR', false],
-    ['TA', false],
+    // No platform TA role — a course TA is a STUDENT-platform user (covered below).
     ['STUDENT', false],
   ] as const)('role=%s → %s', (role, expected) => {
     expect(canCreateCourse(makeUser(role))).toBe(expected)
@@ -168,6 +172,23 @@ describe('canDeleteMaterial', () => {
   })
 })
 
+describe('canRenameMaterial', () => {
+  const ownerId = 'user-1'
+  const otherId = 'user-2'
+
+  it.each([
+    ['admin', ownerId, otherId, true],
+    ['unit', ownerId, otherId, true],
+    ['instructor', ownerId, otherId, true],
+    ['ta', ownerId, ownerId, true],    // own material
+    ['ta', ownerId, otherId, false],   // other's material
+    ['student', ownerId, ownerId, false],
+    [null, ownerId, ownerId, false],
+  ] as [CourseAccess, string, string, boolean][])('access=%s own=%s → %s', (access, userId, uploadedBy, expected) => {
+    expect(canRenameMaterial(access, userId, uploadedBy)).toBe(expected)
+  })
+})
+
 // §8 Course Topics
 describe('canViewTopics — published course', () => {
   it.each(ALL_ACCESS)('access=%s → correct (published)', (access) => {
@@ -216,5 +237,34 @@ describe('isStudentAccess', () => {
     [null, false],
   ] as [CourseAccess, boolean][])('access=%s → %s', (access, expected) => {
     expect(isStudentAccess(access)).toBe(expected)
+  })
+})
+
+// §6 Enrollment & TA management gate
+describe('manageEnrollmentsPolicyKey', () => {
+  it.each([
+    ['admin', 'always'],
+    ['unit', 'always'],
+    ['instructor', 'instructors.canManageEnrollments'],
+    ['ta', 'never'],
+    ['student', 'never'],
+    [null, 'never'],
+  ] as [CourseAccess, string][])('access=%s → %s', (access, expected) => {
+    expect(manageEnrollmentsPolicyKey(access)).toBe(expected)
+  })
+})
+
+// Central capability → gate resolver (single source of truth for routes/UI)
+describe('resolvePolicyGate', () => {
+  it('delegates viewChats to courseChatViewPolicyKey for every access level', () => {
+    for (const access of ALL_ACCESS) {
+      expect(resolvePolicyGate(access, 'viewChats')).toBe(courseChatViewPolicyKey(access))
+    }
+  })
+
+  it('delegates manageEnrollments to manageEnrollmentsPolicyKey for every access level', () => {
+    for (const access of ALL_ACCESS) {
+      expect(resolvePolicyGate(access, 'manageEnrollments')).toBe(manageEnrollmentsPolicyKey(access))
+    }
   })
 })
