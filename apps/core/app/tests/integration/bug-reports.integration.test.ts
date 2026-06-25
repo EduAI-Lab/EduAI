@@ -232,6 +232,109 @@ describe("POST /api/bug-reports — anonymous reports", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Bug type
+// ---------------------------------------------------------------------------
+
+describe("POST /api/bug-reports — bugType", () => {
+  it("persists bugType when provided and surfaces it in the admin list", async () => {
+    const { loader: adminLoader } = await import("~/routes/api/admin.bug-reports");
+    const { auth } = await import("~/lib/auth/server");
+
+    const admin = await prisma.user.create({
+      data: {
+        email: "bug-type-admin@bug-test.com",
+        name: "Bug Type Admin",
+        role: "ADMIN",
+        emailVerified: false,
+      },
+    });
+
+    try {
+      const res = await action(
+        makeActionArgs(
+          {
+            source: "AI_TUTOR",
+            userId: aiTutorUserId,
+            description: "Bug type round-trip: feature not working on submit.",
+            bugType: "FEATURE_NOT_WORKING",
+          },
+          `Bearer ${VALID_SERVICE_KEY}`,
+        ),
+      );
+      expect(res.status).toBe(201);
+
+      const row = await prisma.bugReport.findFirst({
+        where: { userId: aiTutorUserId, description: "Bug type round-trip: feature not working on submit." },
+      });
+      expect(row).not.toBeNull();
+      expect(row!.bugType).toBe("FEATURE_NOT_WORKING");
+
+      vi.mocked(auth.api.getSession).mockResolvedValue({
+        user: { id: admin.id, role: "ADMIN" },
+      } as never);
+      const listed = await adminLoader({
+        request: new Request("http://localhost/api/admin/bug-reports?source=AI_TUTOR"),
+        params: {},
+        context: {} as never,
+      });
+      const body = await listed.json();
+      const report = body.reports.find(
+        (r: { description: string }) =>
+          r.description === "Bug type round-trip: feature not working on submit.",
+      );
+      expect(report).toBeDefined();
+      expect(report.bugType).toBe("FEATURE_NOT_WORKING");
+    } finally {
+      await prisma.bugReport.deleteMany({
+        where: { description: "Bug type round-trip: feature not working on submit." },
+      });
+      await prisma.user.delete({ where: { id: admin.id } });
+    }
+  });
+
+  it("accepts a null bugType and stores null", async () => {
+    const res = await action(
+      makeActionArgs(
+        {
+          source: "AI_TUTOR",
+          userId: aiTutorUserId,
+          description: "Bug type null round-trip test — no type selected.",
+          bugType: null,
+        },
+        `Bearer ${VALID_SERVICE_KEY}`,
+      ),
+    );
+    expect(res.status).toBe(201);
+
+    const row = await prisma.bugReport.findFirst({
+      where: { userId: aiTutorUserId, description: "Bug type null round-trip test — no type selected." },
+    });
+    expect(row).not.toBeNull();
+    expect(row!.bugType).toBeNull();
+
+    await prisma.bugReport.delete({ where: { id: row!.id } });
+  });
+
+  it("returns 422 VALIDATION_ERROR for an unrecognized bugType", async () => {
+    const res = await action(
+      makeActionArgs(
+        {
+          source: "AI_TUTOR",
+          userId: aiTutorUserId,
+          description: "Should fail due to bad bug type.",
+          bugType: "NOT_A_REAL_TYPE",
+        },
+        `Bearer ${VALID_SERVICE_KEY}`,
+      ),
+    );
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body.error).toBe("VALIDATION_ERROR");
+    expect(body.fields.bugType).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Optional fields round-trip
 // ---------------------------------------------------------------------------
 
