@@ -337,12 +337,12 @@ function main() {
   lines.push("## Remaining work", "");
   lines.push("- [ ] P0 test v2 — complete sequential test-split triangle");
   lines.push("- [ ] #501 main-baseline on my.eduai — compare RAG pipeline vs latest");
-  lines.push("- [ ] Under-route **rule implementation** — see `findings/UNDER_ROUTE_ANALYSIS.md`; re-run P1 dev after deploy");
+  lines.push("- [ ] Under-route **live re-benchmark** — rules merged (`5f349b19`); re-run P1 dev on s378");
   lines.push("- [ ] s378 smoke — fresh session cookie; verify `auto` / `auto-llm` + non-zero `prompt_tokens` + energy sidecar");
   lines.push("- [ ] Policy-scale energy — P0/P1 with Joules after token fix validated on dev");
   lines.push("- [ ] Advisor review — share `PAPER1_ROUTING_SECTION.md` + status memo");
   lines.push("");
-  lines.push("**Done (2026-06-24):** P3a strict kNN LOO 80.2% (s378); under-route analysis memo; paper section updated; PRs #758–#760 open.");
+  lines.push("**Done (2026-06-24):** P1 under-route rules (`5f349b19`, 10/10 unit tests); Paper 2 outline; advisor packet; kNN LOO 80.2%.");
   lines.push("**Done (2026-06-23):** #501 trim (RAG + energy via :8001 proxy), strict kNN exemplars built, token usage fix (`generateText` + stream `includeUsage`).");
   lines.push("**Done (2026-06-18):** strict relabel, P3b mapping tune, P1/P3a/P3b dev benchmark, 100-student classroom.");
   lines.push("");

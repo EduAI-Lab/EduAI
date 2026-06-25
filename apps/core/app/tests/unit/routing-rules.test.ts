@@ -100,14 +100,14 @@ describe("matchPhase1Rules", () => {
     expect(match.rule).toBe("rule2c_complex_task_tier_3");
   });
 
-  it("rule 4c: strong RAG with reasoning escalation uses tier 3", () => {
+  it("rule 2d: RAG-reasoning phrasing uses tier 3 before strong-RAG tier-1 shortcut", () => {
     const match = matchPhase1Rules({
       ...baseCtx,
       prompt: "Which factor was NOT a driver of Britain's early Industrial Revolution?",
       ragTopSimilarity: 0.88,
       ragChunkCount: 4,
     });
-    expect(match.rule).toBe("rule4c_rag_reasoning_tier_3");
+    expect(match.rule).toBe("rule2d_rag_reasoning_tier_3");
   });
 
   it("generic web-search phrasing without lookup cues stays on default tier 1", () => {
@@ -207,7 +207,7 @@ describe("matchPhase1Rules", () => {
         id: "ts-083",
         prompt: "Which factor was NOT a driver of Britain's early Industrial Revolution?",
         ctx: { ragTopSimilarity: 0.88, ragChunkCount: 4 },
-        expectedRule: "rule4c_rag_reasoning_tier_3",
+        expectedRule: "rule2d_rag_reasoning_tier_3",
       },
       {
         id: "ts-094",
@@ -241,7 +241,7 @@ describe("matchPhase1Rules", () => {
         prompt:
           "Give an example that violates the Liskov substitution principle and show a corrected design.",
         ctx: { ragTopSimilarity: 0.91, ragChunkCount: 3 },
-        expectedRule: "rule4c_rag_reasoning_tier_3",
+        expectedRule: "rule2d_rag_reasoning_tier_3",
       },
     ] as const;
 

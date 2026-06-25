@@ -148,9 +148,10 @@ function hasStrongRagHit(ctx: Phase1RouterContext): boolean {
  * 2. Web lookup → tier 3
  * 2b. Debug → tier 3
  * 2c. Complex reasoning / code → tier 3
+ * 2d. RAG-reasoning phrasing → tier 3 (before RAG tier-1 shortcuts)
  * 3. Short factual → tier 1
  * 3b. Course RAG → tier 1
- * 4c. Strong RAG + reasoning escalation → tier 3
+ * 4c. Strong RAG + reasoning escalation → tier 3 (legacy; rule2d covers pattern-only)
  * 4. Strong RAG → tier 1
  * 4b. Moderate RAG → tier 1
  * 5. Long RAG → default tier
@@ -184,6 +185,10 @@ export function matchPhase1Rules(ctx: Phase1RouterContext): Phase1RuleMatch {
     return { rule: "rule2c_complex_task_tier_3", pick: TIER_3_ESCALATION_PICK };
   }
 
+  if (needsRagReasoningEscalation(lower)) {
+    return { rule: "rule2d_rag_reasoning_tier_3", pick: TIER_3_ESCALATION_PICK };
+  }
+
   if (isShortFactualPrompt(prompt, lower)) {
     return {
       rule: "rule3_short_factual_tier_1",
@@ -199,10 +204,6 @@ export function matchPhase1Rules(ctx: Phase1RouterContext): Phase1RuleMatch {
       rule: "rule3b_course_rag_tier_1",
       pick: { kind: "exactTier", tier: 1, tieBreak: "energy" },
     };
-  }
-
-  if (hasStrongRagHit(ctx) && needsRagReasoningEscalation(lower)) {
-    return { rule: "rule4c_rag_reasoning_tier_3", pick: TIER_3_ESCALATION_PICK };
   }
 
   if (hasStrongRagHit(ctx)) {

@@ -220,6 +220,7 @@ async function main() {
   const outPath = readEnv("RESEARCH_POLICY_OUT") ?? DEFAULT_POLICY_OUT;
   const sleepMs = Math.max(0, Number(readEnv("RESEARCH_RUN_SLEEP_MS", "500")) || 0);
   const runLabel = readEnv("RESEARCH_RUN_LABEL") ?? "policy-v1";
+  const defaultCourseCode = readEnv("RESEARCH_DEFAULT_COURSE_CODE");
   const forceHybridAll = readEnv("RESEARCH_FORCE_HYBRID") === "1";
   const replicateCount = Math.max(
     1,
@@ -305,7 +306,7 @@ async function main() {
               apiKeys,
               model: policy.requested_model,
               prompt: row.prompt,
-              courseCode: row.course_code ?? undefined,
+              courseCode: row.course_code ?? defaultCourseCode ?? undefined,
               forceHybridRag: hybridFlags.forceHybridRag,
               hybridWebTools: hybridFlags.hybridWebTools,
               timeoutMs: resolveResearchTimeoutMs(readEnv, row),
