@@ -4,6 +4,16 @@ import prisma from "~/lib/prisma.server";
 const VALID_SOURCES = ["CORE", "AI_TUTOR", "QUESTION_MAKER"] as const;
 type BugReportSource = (typeof VALID_SOURCES)[number];
 
+const VALID_BUG_TYPES = [
+  "UI_DISPLAY",
+  "FEATURE_NOT_WORKING",
+  "PERFORMANCE",
+  "CONTENT_ERROR",
+  "ACCESS_PERMISSION",
+  "OTHER",
+] as const;
+type BugReportType = (typeof VALID_BUG_TYPES)[number];
+
 export type CreateBugReportResult =
   | { ok: true }
   | { ok: false; status: 422; error: "VALIDATION_ERROR"; fields: Record<string, string> }
@@ -36,6 +46,14 @@ export async function createBugReport(raw: unknown): Promise<CreateBugReportResu
     return validationError({ description: "exceeds 2000 chars" });
   }
 
+  let bugType: BugReportType | null = null;
+  if (p.bugType !== undefined && p.bugType !== null) {
+    if (!VALID_BUG_TYPES.includes(p.bugType as BugReportType)) {
+      return validationError({ bugType: `must be one of: ${VALID_BUG_TYPES.join(", ")}` });
+    }
+    bugType = p.bugType as BugReportType;
+  }
+
   const userId = p.userId.trim();
 
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
@@ -48,6 +66,7 @@ export async function createBugReport(raw: unknown): Promise<CreateBugReportResu
       source: p.source as BugReportSource,
       userId,
       description: p.description,
+      bugType,
       isAnonymous: typeof p.isAnonymous === "boolean" ? p.isAnonymous : false,
       consoleLogs: typeof p.consoleLogs === "string" ? p.consoleLogs : null,
       networkLogs: typeof p.networkLogs === "string" ? p.networkLogs : null,
@@ -114,6 +133,7 @@ export async function listBugReports(params: {
       source: r.source,
       status: r.status,
       description: r.description,
+      bugType: r.bugType ?? null,
       isAnonymous: r.isAnonymous,
       // §11 anonymity masking — display-only constraint.
       userId: r.isAnonymous ? null : r.userId,
@@ -159,6 +179,7 @@ export async function listOwnBugReports(userId: string) {
       source: true,
       status: true,
       description: true,
+      bugType: true,
       isAnonymous: true,
       pageUrl: true,
       createdAt: true,
