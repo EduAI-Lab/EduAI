@@ -126,6 +126,13 @@ INSERT INTO "disciplines" ("id", "code", "name", "createdAt") VALUES
   ('cmnp4am7g002vxfwwryc7sg55', 'WRLD', 'World Literature', '2026-04-07 21:14:32.044')
 ON CONFLICT ("code") DO NOTHING;
 
+-- Null any course.department that is not a known discipline (legacy/free-text
+-- values predating the registry) so the FK below cannot abort `migrate deploy`
+-- validating existing rows. department is nullable.
+UPDATE "courses" SET "department" = NULL
+WHERE "department" IS NOT NULL
+  AND "department" NOT IN (SELECT "code" FROM "disciplines");
+
 -- AddForeignKey: courses.department references disciplines.code. RESTRICT so an
 -- in-use discipline cannot be deleted out from under a course.
 DO $$ BEGIN

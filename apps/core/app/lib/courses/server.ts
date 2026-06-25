@@ -8,7 +8,7 @@ import {
   resolveCourseAccessWithCourse,
 } from "~/lib/auth/course-access.server";
 import { getPolicy, denyByPolicy } from "~/lib/policy.server";
-import { isValidDisciplineCode } from "~/lib/disciplines/server";
+import { assertValidDepartment } from "~/lib/disciplines/guards.server";
 import { canCreateCourse } from "~/lib/rbac/permissions";
 import type { RbacUser } from "~/lib/rbac/types";
 import {
@@ -203,12 +203,8 @@ export async function createCourse(request: Request) {
 
   // §541: department must be a known discipline. The FK enforces this too, but
   // an explicit check returns a clean 400 instead of a raw constraint error.
-  if (!(await isValidDisciplineCode(result.data.department))) {
-    return new Response(JSON.stringify({ error: "UNKNOWN_DEPARTMENT" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" } as const,
-    });
-  }
+  const deptGuard = await assertValidDepartment(result.data.department);
+  if (deptGuard) return deptGuard;
 
   // §5/§19 unit lock: a UNIT_ADMIN can only create courses inside their
   // authorized units — a missing department is never a match.
@@ -368,15 +364,9 @@ export async function updateCourse(request: Request, courseId: string) {
   }
 
   // §541: a department change must target a known discipline (FK-backed).
-  if (
-    "department" in updateData &&
-    updateData.department &&
-    !(await isValidDisciplineCode(updateData.department))
-  ) {
-    return new Response(JSON.stringify({ error: "UNKNOWN_DEPARTMENT" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" } as const,
-    });
+  if ("department" in updateData && updateData.department) {
+    const deptGuard = await assertValidDepartment(updateData.department);
+    if (deptGuard) return deptGuard;
   }
 
   const newInstructorId = (updateData as any).instructorId as string | undefined;

@@ -1,7 +1,7 @@
 import prisma from "~/lib/prisma.server";
 import { auth } from "~/lib/auth/server";
 import { createUserSchema, updateUserSchema } from "~/lib/auth/schemas";
-import { areValidDisciplineCodes } from "~/lib/disciplines/server";
+import { assertValidUnits } from "~/lib/disciplines/guards.server";
 import { applyStudentIdAndResolveEnrollments } from "~/lib/canvas/link-roster.server";
 import { normalizeStudentId } from "~/lib/canvas/enrollment-link.server";
 import {
@@ -130,14 +130,9 @@ async function handleRequest(request: Request) {
 
       // §541: authorizedUnits codes must exist in the Discipline table (array
       // field — no FK backstop, so the check is the only guard).
-      if (
-        result.data.authorizedUnits &&
-        !(await areValidDisciplineCodes(result.data.authorizedUnits))
-      ) {
-        return new Response(JSON.stringify({ error: "UNKNOWN_UNIT" }), {
-          status: 400,
-          headers: { "Content-Type": "application/json" },
-        });
+      if (result.data.authorizedUnits) {
+        const unitGuard = await assertValidUnits(result.data.authorizedUnits);
+        if (unitGuard) return unitGuard;
       }
 
       try {
@@ -256,12 +251,8 @@ async function handleRequest(request: Request) {
       if (result.data.authorizedUnits !== undefined) {
         // §541: every code must exist in the Discipline table. Checked first,
         // since code validity is independent of the target user.
-        if (!(await areValidDisciplineCodes(result.data.authorizedUnits))) {
-          return new Response(JSON.stringify({ error: "UNKNOWN_UNIT" }), {
-            status: 400,
-            headers: { "Content-Type": "application/json" },
-          });
-        }
+        const unitGuard = await assertValidUnits(result.data.authorizedUnits);
+        if (unitGuard) return unitGuard;
         const target = await prisma.user.findUnique({
           where: { id: userId },
           select: { role: true },
