@@ -13,9 +13,26 @@ import {
 } from "@eduai/ui";
 import { Input } from "@eduai/ui";
 import { Label } from "@eduai/ui";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@eduai/ui";
 import { Textarea } from "@eduai/ui";
 import { Switch } from "@eduai/ui";
+import type { BugReportType } from "~/hooks/api/types";
 import { useSubmitBugReport } from "~/hooks/api/use-submit-bug-report";
+
+const BUG_TYPE_OPTIONS: { value: BugReportType; label: string }[] = [
+  { value: "UI_DISPLAY", label: "UI / display issue" },
+  { value: "FEATURE_NOT_WORKING", label: "Feature not working" },
+  { value: "PERFORMANCE", label: "Performance issue" },
+  { value: "CONTENT_ERROR", label: "Content error" },
+  { value: "ACCESS_PERMISSION", label: "Access / permission issue" },
+  { value: "OTHER", label: "Other" },
+];
 
 type BugReportSubmitDialogProps = {
   triggerClassName?: string;
@@ -27,6 +44,7 @@ export function BugReportSubmitDialog({
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [bugType, setBugType] = useState<BugReportType | null>(null);
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const { submitBugReport, isSubmitting, isStubbed } = useSubmitBugReport();
@@ -37,11 +55,12 @@ export function BugReportSubmitDialog({
     const mergedDescription = title.trim()
       ? `${title.trim()}\n\n${description.trim()}`
       : description.trim();
-    const ok = await submitBugReport({ description: mergedDescription, isAnonymous });
+    const ok = await submitBugReport({ description: mergedDescription, bugType, isAnonymous });
     if (ok) {
       setSubmitted(true);
       setTitle("");
       setDescription("");
+      setBugType(null);
       setIsAnonymous(false);
     }
   };
@@ -87,6 +106,24 @@ export function BugReportSubmitDialog({
               />
             </div>
             <div className="space-y-2">
+              <Label htmlFor="bug-type">Bug type</Label>
+              <Select
+                value={bugType ?? ""}
+                onValueChange={(value) => setBugType(value as BugReportType)}
+              >
+                <SelectTrigger id="bug-type">
+                  <SelectValue placeholder="Select a type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {BUG_TYPE_OPTIONS.map(({ value, label }) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
               <Label htmlFor="bug-description">Description</Label>
               <Textarea
                 id="bug-description"
@@ -119,7 +156,7 @@ export function BugReportSubmitDialog({
           {!submitted && (
             <Button
               onClick={handleSubmit}
-              disabled={isSubmitting || !title.trim() || !description.trim()}
+              disabled={isSubmitting || !title.trim() || !description.trim() || !bugType}
             >
               Submit
             </Button>

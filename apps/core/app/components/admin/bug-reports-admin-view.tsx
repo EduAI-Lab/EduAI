@@ -26,7 +26,7 @@ import {
   TableRow,
 } from "@eduai/ui";
 import { IconFilter, IconSearch, IconX } from "@tabler/icons-react";
-import type { BugReport, BugReportStatus, BugReportSource } from "~/hooks/api/types";
+import type { BugReport, BugReportStatus, BugReportSource, BugReportType } from "~/hooks/api/types";
 
 export type BugReportsAdminViewProps = {
   reports: BugReport[];
@@ -44,6 +44,15 @@ const SOURCE_LABELS: Record<BugReportSource, string> = {
   CORE: "Core",
   AI_TUTOR: "AI Tutor",
   QUESTION_MAKER: "Question Maker",
+};
+
+const BUG_TYPE_LABELS: Record<BugReportType, string> = {
+  UI_DISPLAY: "UI / display",
+  FEATURE_NOT_WORKING: "Feature not working",
+  PERFORMANCE: "Performance",
+  CONTENT_ERROR: "Content error",
+  ACCESS_PERMISSION: "Access / permission",
+  OTHER: "Other",
 };
 
 const REPORTER_OPTIONS = [
@@ -261,6 +270,7 @@ export function BugReportsAdminView({
                     <TableHeader>
                       <TableRow>
                         <TableHead>Description</TableHead>
+                        <TableHead>Type</TableHead>
                         <TableHead>Source</TableHead>
                         <TableHead>Reporter</TableHead>
                         <TableHead>Status</TableHead>
@@ -274,6 +284,9 @@ export function BugReportsAdminView({
                             <div className="text-sm line-clamp-3">
                               {report.description}
                             </div>
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground">
+                            {report.bugType ? BUG_TYPE_LABELS[report.bugType] : "—"}
                           </TableCell>
                           <TableCell>
                             <Badge variant="outline">{report.source}</Badge>
