@@ -770,3 +770,32 @@ model LogRetentionPolicy {
 
   @@map("log_retention_policy")
 }
+
+enum CronJobStatus {
+  RUNNING
+  SUCCESS
+  ERROR
+}
+
+model CronJobRun {
+  id         String        @id @default(cuid())
+  jobName    String
+  status     CronJobStatus
+  startedAt  DateTime
+  finishedAt DateTime?
+  message    String?
+  exitCode   Int?
+  createdAt  DateTime      @default(now())
+
+  @@index([jobName, startedAt])
+  @@map("cron_job_runs")
+}
+
+model CronJobScheduleOverride {
+  jobName       String   @id
+  schedule      String
+  scheduleLabel String
+  updatedAt     DateTime @updatedAt
+
+  @@map("cron_job_schedule_overrides")
+}
