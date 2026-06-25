@@ -538,7 +538,7 @@ router.post('/courses/:courseId/import', requireRole(['INSTRUCTOR', 'UNIT_ADMIN'
 /**
  * PATCH /courses/:courseId/publish — flip course to published.
  *
- * Auth: INSTRUCTOR on the course.
+ * Auth: ADMIN (global), UNIT_ADMIN (D-scoped), INSTRUCTOR (C-scoped).
  *
  * Why: intentionally non-cascading. Publishing a course doesn't auto-publish
  * its modules/lessons; the instructor must opt them in individually so a
@@ -581,7 +581,7 @@ router.patch('/courses/:courseId/publish', requireRole(['INSTRUCTOR', 'UNIT_ADMI
 /**
  * PATCH /courses/:courseId/unpublish — flip course unpublished, cascading down.
  *
- * Auth: INSTRUCTOR on the course.
+ * Auth: ADMIN (global), UNIT_ADMIN (D-scoped), INSTRUCTOR (C-scoped).
  * Side effects: in a single transaction sets `isPublished=false` on the
  *   course, all its modules, and all lessons within those modules.
  *
@@ -694,7 +694,12 @@ router.get('/courses/:courseId/feedback', async (req, res) => {
     const where = {
       activity: { lesson: { module: { courseOfferingId: courseId } } },
     };
-    if (activityId) where.activityId = Number(activityId);
+    if (activityId !== undefined) {
+      if (!Number.isFinite(Number(activityId))) {
+        return res.status(400).json({ error: 'activityId must be a number' });
+      }
+      where.activityId = Number(activityId);
+    }
     if (studentId) where.userId = studentId;
 
     const feedback = await prisma.activityFeedback.findMany({
@@ -752,7 +757,12 @@ router.get('/courses/:courseId/submissions', async (req, res) => {
     const where = {
       activity: { lesson: { module: { courseOfferingId: courseId } } },
     };
-    if (activityId) where.activityId = Number(activityId);
+    if (activityId !== undefined) {
+      if (!Number.isFinite(Number(activityId))) {
+        return res.status(400).json({ error: 'activityId must be a number' });
+      }
+      where.activityId = Number(activityId);
+    }
     if (studentId) where.userId = studentId;
 
     const submissions = await prisma.submission.findMany({
