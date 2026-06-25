@@ -33,7 +33,9 @@ const META_SCOPE_PATTERN =
 const CODE_REQUEST_PATTERN =
   /\b(write|implement|create|debug|fix)\b.*\b(code|function|program|script|algorithm)\b|\b(python|javascript|typescript|java|c\+\+)\b.*\b(code|function|implement)\b/i;
 
-/** Hobby/lifestyle topics that are unrelated to typical course chat (#729 v1.1). */
+/** Hobby/lifestyle topics that are unrelated to typical course chat (#729 v1.1).
+ *  Intentionally narrow: only these get a pre-LLM hard refuse. Everything else
+ *  with zero RAG hits defers to Layer A (scope prompt) + the model. */
 const CLEARLY_OFF_TOPIC_PATTERN =
   /\b(bake|baking|cookie|cookies|recipe|recipes|cooking|kitchen|sourdough|meal prep|marathon training)\b/i;
 
