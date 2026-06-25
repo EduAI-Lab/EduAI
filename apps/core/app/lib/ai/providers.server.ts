@@ -115,19 +115,39 @@ export function capMaxOutputTokensForPrompt(params: {
   return Math.min(params.desiredMaxOutput, headroom);
 }
 
+export type ChatModelCapabilities = {
+  supportsTools: boolean;
+  maxTokens: number | null;
+  name: string | null;
+};
+
+/**
+ * Load tool support and output limits for a chat model (server-only — uses Prisma).
+ */
+export async function getChatModelCapabilities(
+  modelIdentifier: string,
+): Promise<ChatModelCapabilities> {
+  try {
+    const model = await resolveActiveChatModel(modelIdentifier);
+    const capabilities: ChatModelCapabilities = {
+      supportsTools: model?.supportsTools ?? false,
+      maxTokens: model?.maxTokens ?? null,
+      name: model?.name ?? null,
+    };
+    console.log(
+      `Model ${modelIdentifier} (${capabilities.name || 'unknown'}) supports tools: ${capabilities.supportsTools}`,
+    );
+    return capabilities;
+  } catch (error) {
+    console.error('Error checking model tool support:', error);
+    return { supportsTools: false, maxTokens: null, name: null };
+  }
+}
+
 /**
  * Check if a model supports tool calling (server-only — uses Prisma).
  */
 export async function modelSupportsTools(modelIdentifier: string): Promise<boolean> {
-  try {
-    const model = await resolveActiveChatModel(modelIdentifier);
-    const supportsTools = model?.supportsTools ?? false;
-    console.log(
-      `Model ${modelIdentifier} (${model?.name || 'unknown'}) supports tools: ${supportsTools}`,
-    );
-    return supportsTools;
-  } catch (error) {
-    console.error('Error checking model tool support:', error);
-    return false;
-  }
+  const capabilities = await getChatModelCapabilities(modelIdentifier);
+  return capabilities.supportsTools;
 }
