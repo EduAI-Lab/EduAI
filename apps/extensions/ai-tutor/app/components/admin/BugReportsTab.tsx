@@ -47,7 +47,7 @@ import {
   SelectValue,
 } from '@eduai/ui';
 import api from '~/lib/api';
-import type { AdminBugReportRow, BugReportStatus } from '~/lib/types';
+import type { AdminBugReportRow, BugReportStatus, BugReportType } from '~/lib/types';
 
 type SortKey = 'status' | 'description' | 'reporter' | 'role' | 'createdAt' | 'context' | 'page';
 type SortDirection = 'asc' | 'desc';
@@ -77,6 +77,15 @@ const STATUS_LABELS: Record<BugReportStatus, string> = {
   unhandled: 'Unhandled',
   'in progress': 'In progress',
   resolved: 'Resolved',
+};
+
+const BUG_TYPE_LABELS: Record<BugReportType, string> = {
+  UI_DISPLAY: 'UI / display',
+  FEATURE_NOT_WORKING: 'Feature not working',
+  PERFORMANCE: 'Performance',
+  CONTENT_ERROR: 'Content error',
+  ACCESS_PERMISSION: 'Access / permission',
+  OTHER: 'Other',
 };
 const CONSOLE_LEVELS = ['all', 'log', 'warn', 'error'] as const;
 const NETWORK_TABS = ['meta', 'request', 'response', 'headers'] as const;
@@ -206,6 +215,7 @@ function buildBugReportCopyText(report: AdminBugReportRow) {
     `Summary`,
     `- Report ID: ${report.id}`,
     `- Status: ${report.status}`,
+    report.bugType ? `- Type: ${BUG_TYPE_LABELS[report.bugType]}` : null,
     `- Created At: ${formatDateTime(report.createdAt)}`,
     report.updatedAt ? `- Updated At: ${formatDateTime(report.updatedAt)}` : null,
     `- Reporter: ${reporterLabel}`,
@@ -684,15 +694,16 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
       ) : null}
 
       <div className="overflow-x-auto rounded-2xl border border-border/70 bg-card/80">
-        <table className="w-full min-w-[1080px] table-fixed border-collapse">
+        <table className="w-full min-w-[1160px] table-fixed border-collapse">
           <colgroup>
             <col className="w-[150px]" />
-            <col className="w-[28%]" />
-            <col className="w-[16%]" />
-            <col className="w-[90px]" />
-            <col className="w-[150px]" />
-            <col className="w-[16%]" />
-            <col className="w-[12%]" />
+            <col className="w-[130px]" />
+            <col className="w-[24%]" />
+            <col className="w-[14%]" />
+            <col className="w-[80px]" />
+            <col className="w-[140px]" />
+            <col className="w-[14%]" />
+            <col className="w-[10%]" />
             <col className="w-[200px]" />
           </colgroup>
           <thead className="border-b border-border/70 bg-muted/30">
@@ -705,6 +716,9 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
                   direction={sortDirection}
                   onToggle={toggleSort}
                 />
+              </th>
+              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Type
               </th>
               <th className="px-3 py-3 text-left">
                 <SortHeader
@@ -768,7 +782,7 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
           <tbody>
             {sortedReports.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-sm text-muted-foreground">
+                <td colSpan={9} className="px-4 py-8 text-center text-sm text-muted-foreground">
                   No bug reports yet.
                 </td>
               </tr>
@@ -782,6 +796,11 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
                       disabled={updatingReportId === report.id}
                       onStatusChange={onStatusChange}
                     />
+                  </td>
+                  <td className="overflow-hidden px-3 py-3 text-xs text-muted-foreground">
+                    <span className="block truncate">
+                      {report.bugType ? BUG_TYPE_LABELS[report.bugType] : '—'}
+                    </span>
                   </td>
                   <td className="overflow-hidden px-3 py-3 text-sm">
                     <button
