@@ -11,13 +11,24 @@ import {
 import {
   capMaxOutputTokensForPrompt,
   estimateTokensFromChars,
-  modelSupportsTools,
+  getChatModelCapabilities,
   resolveActiveChatModel,
   resolveMaxOutputTokens,
   resolveModelContextWindow,
   ESTIMATED_CHARS_PER_TOKEN,
 } from "~/lib/ai/providers.server";
+import { resolveToolMaxOutputTokens } from "~/lib/ai/resolve-tool-max-tokens";
 import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
+import { needsCourseRag } from "~/lib/ai/chat-intent";
+import {
+  buildChatToolRegistry,
+  buildToolCallingSystemPrompt,
+} from "~/lib/ai/chat-tools";
+import {
+  composeSecurityPrompt,
+  filterIncomingClientMessages,
+  sanitizeSystemPrompt,
+} from "~/lib/ai/prompt-safety";
 import {
   auditAndMaybeRewrite,
   buildOverseenAssistantMessagesToPersist,
@@ -40,33 +51,33 @@ import {
   createChatTools,
   parseChatMode,
 } from "~/lib/agent-tools";
-import { buildChatToolRegistry } from "~/lib/ai/chat-tools";
-import { needsCourseRag } from "~/lib/ai/chat-intent";
 import prisma from "~/lib/prisma.server";
 import { chatApiDebug, chatApiReject, chatApiTrace } from "~/lib/chat-api-log";
 import { clientApiKeysBodySchema, toUserProviderSettings } from "~/lib/chat-api-keys.schema";
 import { getPolicy } from "~/lib/policy.server";
 import {
+  shouldInjectCourseRag,
+  shouldPrefetchCourseRag,
+} from "~/lib/ai/course-rag-policy";
+import {
   buildCappedRagContextText,
-  capRagHitsForTool,
+  buildEmptyCourseRagBlock,
+  buildRagSystemBlock,
   capToolResultsInMessages,
   estimateMessageCharsForModel,
   extractMessageText,
+  LATEST_TURN_FOCUS_INSTRUCTION,
   prepareBoundedSessionContext,
   resolveMaxContextMessages,
   HYBRID_RAG_MAX_CHUNKS,
   HYBRID_RAG_MAX_CONTEXT_CHARS,
+  type HybridRagHit,
 } from "~/lib/chat-rag";
 
 const TOOL_MAX_STEPS = Math.min(
   32,
   Math.max(1, Number(process.env.CHAT_TOOL_MAX_STEPS) || 12),
 );
-const TOOL_MAX_TOKENS = Math.min(
-  128_000,
-  Math.max(1024, Number(process.env.CHAT_TOOL_MAX_OUTPUT_TOKENS) || 32_000),
-);
-
 type GenericMessage = Record<string, any>;
 
 type StoredMessageRecord = {
@@ -394,8 +405,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const hasSystemPromptField = Object.prototype.hasOwnProperty.call(body, "systemPrompt");
     let trimmedSystemPrompt: string | null = null;
     if (typeof body.systemPrompt === "string") {
-      const candidate = body.systemPrompt.trim();
-      trimmedSystemPrompt = candidate.length > 0 ? candidate : null;
+      trimmedSystemPrompt = sanitizeSystemPrompt(body.systemPrompt);
     } else if (body.systemPrompt === null) {
       trimmedSystemPrompt = null;
     }
@@ -438,9 +448,11 @@ export async function action({ request }: ActionFunctionArgs) {
       });
     }
 
-    const normalizedIncomingMessages = rawMessages
-      .map((m) => normalizeMessage(m))
-      .filter((m): m is GenericMessage => m !== null);
+    const normalizedIncomingMessages = filterIncomingClientMessages(
+      rawMessages
+        .map((m) => normalizeMessage(m))
+        .filter((m): m is GenericMessage => m !== null),
+    );
 
     // Resolve course code to internal ID when needed
     let resolvedCourseId: string | null = null;
@@ -572,8 +584,6 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     }
 
-    // Backfill course context onto an existing chat that was created before a
-    // course was selected (e.g. user picked the course mid-conversation).
     if (chat && effectiveCourseId && chat.courseId !== effectiveCourseId && !chat.courseId) {
       chat = await prisma.chat.update({
         where: { id: chat.id },
@@ -792,6 +802,20 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
+    // Persist only client-authored turns (user messages). The assistant reply is
+    // owned by `onFinish`/the awaited path below, which stores it once under a
+    // server id. Clients resend their whole `useChat` transcript every turn, and
+    // their assistant copies carry client-generated ids that never match the
+    // server id — persisting those here is what duplicated history on restore.
+    await appendMessages(
+      normalizedIncomingMessages.filter((message) => message.role !== "assistant"),
+    );
+
+    const lastUserMessage = [...trimmedMessages].reverse().find((message) => message.role === "user");
+    const userQuestion = extractMessageText(lastUserMessage);
+    const hasCourse = Boolean(effectiveCourseId);
+    const courseRagNeeded = needsCourseRag(userQuestion, hasCourse);
+
     let aiModel;
     try {
       aiModel = registry.languageModel(model);
@@ -814,29 +838,17 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    // Persist only client-authored turns (user messages). The assistant reply is
-    // owned by `onFinish`/the awaited path below, which stores it once under a
-    // server id. Clients resend their whole `useChat` transcript every turn, and
-    // their assistant copies carry client-generated ids that never match the
-    // server id — persisting those here is what duplicated history on restore.
-    await appendMessages(
-      normalizedIncomingMessages.filter((message) => message.role !== "assistant"),
-    );
-
-    const lastUserMessage = [...trimmedMessages].reverse().find((message) => message.role === "user");
-    const userQuestion = extractMessageText(lastUserMessage);
-    const hasCourse = Boolean(effectiveCourseId);
-    const courseRagNeeded = needsCourseRag(userQuestion, hasCourse);
-
-    // Master switch (chat.webToolsEnabled) gates web tools globally for every
-    // role — when on, web tools are available to all chat users; when off they
-    // are never registered for anyone.
     const webToolsEnabled = await getPolicy("chat.webToolsEnabled");
-    const resolvedSystemPrompt = trimmedSystemPrompt ?? chat.systemPrompt ?? null;
+    const resolvedSystemPrompt =
+      trimmedSystemPrompt ?? sanitizeSystemPrompt(chat.systemPrompt) ?? null;
 
     let streamConfig;
     let supportsTools: boolean;
     let useToolCalling: boolean;
+    let toolMaxTokens: number | undefined;
+    let courseRagHits: HybridRagHit[] = [];
+    let courseRagContextText = "";
+    let courseRagInject = false;
 
     if (chatMode === "admin") {
       const rbacUser = {
@@ -943,68 +955,61 @@ export async function action({ request }: ActionFunctionArgs) {
       });
     } else {
       const tools = buildChatToolRegistry({ effectiveCourseId, webToolsEnabled });
-
-      supportsTools = await modelSupportsTools(model);
+      const modelCapabilities = await getChatModelCapabilities(model);
+      supportsTools = modelCapabilities.supportsTools;
       useToolCalling = supportsTools && !forceHybridRag;
+      toolMaxTokens = resolveToolMaxOutputTokens(modelCapabilities.maxTokens);
 
-    if (!supportsTools) {
-      // MODELS WITHOUT TOOL SUPPORT: Use hybrid RAG approach
-      const lastUserMessage = [...trimmedMessages].reverse().find((message) => message.role === "user");
-      const userQuestion = extractMessageText(lastUserMessage);
-      const messageContentLower = userQuestion.toLowerCase();
-
-      // Check if hybrid RAG should always be used with course
-      // regex method might not be the best method to determine if RAG is needed. Consider using a small LLM or alternatives.
-      const hybridRagAlwaysWithCourse = process.env.CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE === "1";
-      const isRAGQuery =
-        Boolean(effectiveCourseId) &&
-        (hybridRagAlwaysWithCourse ||
-          messageContentLower.includes("course") ||
-          messageContentLower.includes("material") ||
-          messageContentLower.includes("document") ||
-          messageContentLower.includes("chapter") ||
-          messageContentLower.includes("lecture") ||
-          messageContentLower.includes("assignment") ||
-          messageContentLower.includes("explain") ||
-          messageContentLower.includes("what is") ||
-          messageContentLower.includes("summarize") ||
-          messageContentLower.includes("summary") ||
-          messageContentLower.includes("content") ||
-          messageContentLower.includes("about"));
-
-      if (isRAGQuery) {
-        try {
-          const relevantContent = await findRelevantContent(
-            userQuestion || messageContentLower,
-            effectiveCourseId!,
-            HYBRID_RAG_MAX_CHUNKS,
-          );
-          const contextText =
-            relevantContent.length > 0
-              ? buildCappedRagContextText(
-                  relevantContent,
-                  HYBRID_RAG_MAX_CHUNKS,
-                  HYBRID_RAG_MAX_CONTEXT_CHARS,
-                )
-              : "";
-
-          const baseSystemPrompt = resolvedSystemPrompt || `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
+      const defaultCourseSystemPrompt =
+        resolvedSystemPrompt ||
+        `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
 
 IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.
 
-${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ``}
+${LATEST_TURN_FOCUS_INSTRUCTION}
 
-Always be helpful, accurate, and cite the course materials when using them in your response. Use markdown for formatting.`;
+${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ""}
 
-          const systemWithRAG = contextText
-            ? `${baseSystemPrompt}
+Be helpful, conversational, and accurate. Use markdown for formatting.`;
 
-${contextText ? `Here are relevant excerpts from the course materials to help answer the user's question:
+      if (shouldPrefetchCourseRag(hasCourse) && effectiveCourseId) {
+        try {
+          courseRagHits = await findRelevantContent(
+            userQuestion,
+            effectiveCourseId,
+            HYBRID_RAG_MAX_CHUNKS,
+          );
+          courseRagInject = shouldInjectCourseRag({
+            hasCourse,
+            courseRagNeeded,
+            hits: courseRagHits,
+          });
+          if (courseRagInject && courseRagHits.length > 0) {
+            courseRagContextText = buildCappedRagContextText(
+              courseRagHits,
+              HYBRID_RAG_MAX_CHUNKS,
+              HYBRID_RAG_MAX_CONTEXT_CHARS,
+            );
+          }
+        } catch (error) {
+          console.error("Error prefetching course RAG context:", error);
+          courseRagInject = shouldInjectCourseRag({
+            hasCourse,
+            courseRagNeeded,
+            hits: [],
+          });
+        }
+      }
 
-${contextText}
+      if (!useToolCalling) {
+        if (courseRagInject) {
+          const systemWithRAG = courseRagContextText
+            ? `${defaultCourseSystemPrompt}
 
-Based on this information, provide a comprehensive answer to the user's question. If the provided content doesn't fully answer their question, mention what you can answer based on the available materials and suggest what additional information might be helpful.` : "I don't have access to specific course materials for this question, but I can provide general educational assistance."}`
-            : baseSystemPrompt;
+${buildRagSystemBlock(courseRagContextText)}`
+            : `${defaultCourseSystemPrompt}
+
+${buildEmptyCourseRagBlock()}`;
 
           streamConfig = {
             model: aiModel,
@@ -1013,73 +1018,50 @@ Based on this information, provide a comprehensive answer to the user's question
             maxTokens: 8192,
             system: systemWithRAG,
           };
-        } catch (error) {
-          console.error("Error finding relevant content for model without tool support:", error);
-          const defaultSystemPrompt = resolvedSystemPrompt || `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
-
-IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.
-
-${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ""}
-
-Be helpful, conversational, and accurate. Use markdown for formatting.`;
-
+        } else {
           streamConfig = {
             model: aiModel,
             messages: modelMessages,
             temperature: 0.6,
             maxTokens: 8192,
-            system: defaultSystemPrompt,
+            system: defaultCourseSystemPrompt,
           };
         }
       } else {
-        const defaultSystemPrompt = resolvedSystemPrompt || `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
+        const baseSystemPrompt = resolvedSystemPrompt || `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
 
 IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.
 
-${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ""}
+${LATEST_TURN_FOCUS_INSTRUCTION}`;
 
-Be helpful, conversational, and accurate. Use markdown for formatting.`;
+        let toolSystemPrompt = buildToolCallingSystemPrompt({
+          basePrompt: baseSystemPrompt,
+          courseCode: courseCode ?? undefined,
+          webToolsEnabled,
+          hasPreloadedRag: Boolean(courseRagContextText),
+        });
+
+        if (courseRagContextText) {
+          toolSystemPrompt = `${toolSystemPrompt}
+
+${buildRagSystemBlock(courseRagContextText, { toolPath: true })}`;
+        } else if (courseRagInject) {
+          toolSystemPrompt = `${toolSystemPrompt}
+
+${buildEmptyCourseRagBlock()}`;
+        }
 
         streamConfig = {
           model: aiModel,
           messages: modelMessages,
           temperature: 0.6,
-          maxTokens: 8192,
-          system: defaultSystemPrompt,
+          maxTokens: toolMaxTokens,
+          maxSteps: TOOL_MAX_STEPS,
+          tools,
+          toolCallStreaming: streaming,
+          system: toolSystemPrompt,
         };
       }
-    } else {
-      const defaultSystemPrompt = resolvedSystemPrompt || `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
-
-IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.
-
-You have access to two tools:
-- getInformation: searches uploaded course materials (syllabi, lectures, assignments, etc.)
-- webSearch: searches the web for current information, reviews, discussions, news, etc.
-- fetchPage: opens a URL and returns the main page content as markdown for deeper reading. If a page fails to load, try other sources. Try and give a correct response to the user's query even if the page fails to load.
-
-When answering questions:
-1. For course content questions, call getInformation first to retrieve relevant materials.
-2. If the user asks for reviews, opinions, recent updates, or external information (e.g., "what do students say about this course?" or "latest developments"), call webSearch after checking course materials. Prefer queries that include "UBCO" with the course code/name and the instructor name when known.
-3. After webSearch, call fetchPage on promising sources (e.g., RateMyProfessors, Reddit threads, official pages) to read the page content before answering. If the page fails to load, try other sources. Try and give a correct response to the user's query even if the page fails to load.
-4. You may call tools multiple times in sequence if needed to give a complete answer.
-5. Always cite your sources: mention course material titles for RAG results and include URLs for web results.
-
-${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ""}
-
-Be helpful, conversational, and accurate. Use markdown for formatting.`;
-
-      streamConfig = {
-        model: aiModel,
-        messages: modelMessages,
-        temperature: 0.6,
-        maxTokens: TOOL_MAX_TOKENS,
-        maxSteps: TOOL_MAX_STEPS,
-        tools,
-        toolCallStreaming: streaming,
-        system: defaultSystemPrompt,
-      };
-    }
     }
 
     const effectiveAdhdAssist = resolveEffectiveAdhdAssist({
@@ -1087,7 +1069,9 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
       bodyValue: adhdAssist,
       chatValue: chat.adhdAssist,
     });
-    streamConfig.system = composeSystemPrompt(streamConfig.system ?? "", { adhdAssist: effectiveAdhdAssist });
+    streamConfig.system = composeSecurityPrompt(
+      composeSystemPrompt(streamConfig.system ?? "", { adhdAssist: effectiveAdhdAssist }),
+    );
 
     const streamStartedAt = Date.now();
     const needsOversight =
@@ -1143,9 +1127,13 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
       model,
       supportsTools,
       courseRagNeeded,
+      courseRagInject,
+      ragTopSimilarity: courseRagHits[0]?.similarity ?? null,
+      ragChunkCount: courseRagHits.length,
       webToolsEnabled,
       forceHybridRag,
       approach: useToolCalling ? "tool_calling" : "hybrid_rag",
+      toolMaxTokens: useToolCalling ? toolMaxTokens : undefined,
       adhdOversight: needsOversight,
       ...llmPromptSizeHints(streamConfig.system, modelMessages),
     });
@@ -1170,9 +1158,6 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
                 promptTokens: usage?.promptTokens,
                 completionTokens: usage?.completionTokens,
               });
-              // For streaming responses, persist here. Non-streaming path calls
-              // consumeStream() which also triggers onFinish, so we skip here to
-              // avoid saving the assistant message twice with different UUIDs.
               if (!streaming) return;
               const assistantText = text || extractAssistantText(response?.messages);
               if (assistantText) {
@@ -1271,11 +1256,10 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
             "Transfer-Encoding": "chunked",
             Connection: "keep-alive",
           };
-          // Surface the resolved web-tools master state to clients/tests.
-          headers["X-Web-Tools-Enabled"] = webToolsEnabled ? "1" : "0";
           if (chat?.id) {
             headers["X-Chat-Id"] = chat.id;
           }
+          headers["X-Web-Tools-Enabled"] = webToolsEnabled ? "1" : "0";
 
           await persistOverseenAssistantMessages(finalText);
 
@@ -1334,11 +1318,10 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
         "Transfer-Encoding": "chunked",
         Connection: "keep-alive",
       };
-      // Surface the resolved web-tools master state to clients/tests.
-      headers["X-Web-Tools-Enabled"] = webToolsEnabled ? "1" : "0";
       if (chat?.id) {
         headers["X-Chat-Id"] = chat.id;
       }
+      headers["X-Web-Tools-Enabled"] = webToolsEnabled ? "1" : "0";
       return result.toDataStreamResponse({
         headers,
         ...(chatMode === "admin"
@@ -1367,15 +1350,20 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
           result.response,
         ]);
 
-        const assistantText = text || extractAssistantText(response?.messages);
-        if (assistantText) {
-          await appendMessages([
-            {
-              id: randomUUID(),
-              role: "assistant",
-              content: assistantText,
-            },
-          ]);
+        if (response?.messages?.length) {
+          const assistantMessages = response.messages.filter((message) => message.role === "assistant");
+          await appendMessages(assistantMessages);
+        } else {
+          const assistantText = text || extractAssistantText(response?.messages);
+          if (assistantText) {
+            await appendMessages([
+              {
+                id: randomUUID(),
+                role: "assistant",
+                content: assistantText,
+              },
+            ]);
+          }
         }
 
         return new Response(
