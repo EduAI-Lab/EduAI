@@ -334,7 +334,6 @@ Unit tests for the shared design-system component library (`@eduai/ui`). Run wit
 | Test file | What it tests |
 |-----------|---------------|
 | `api.test.ts` | Unauthorized requests redirect to the login page, server errors surface as exceptions, and successful requests return parsed data |
-| `BugReportDialog.test.tsx` | The bug report form rejects descriptions that are too short, blocks submit without a bug type selected (shows "Please select a bug type"), takes a screenshot on open, and submits the full diagnostic payload including `bugType`, anonymous flag, and course context. |
 | `BugReportProvider.test.tsx` | Page location and diagnostic capture tools are available to any component that needs to file a bug report |
 | `BugReportsTab.test.tsx` | Admins can view, update status, and copy bug reports; the copy dossier includes the bug type label; anonymous submissions hide reporter identity in the copied output. |
 | `Nav.test.tsx` | The Report Bug button is visible to students and professors but hidden from admins; EduAI Core cross-nav link and dark-mode toggle render for authenticated users |
