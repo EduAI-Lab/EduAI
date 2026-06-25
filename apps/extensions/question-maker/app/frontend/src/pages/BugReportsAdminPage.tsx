@@ -6,13 +6,22 @@ import { useNavigate } from 'react-router';
 import { ArrowLeft } from 'lucide-react';
 import { Button, Dialog, DialogContent, DialogHeader, DialogTitle } from '@eduai/ui';
 import { useToast } from '@/components/ui/use-toast';
-import { bugReportApi, BugReportRow } from '../services/bugReportApi';
+import { bugReportApi, BugReportRow, BugReportType } from '../services/bugReportApi';
 import { useAuth } from '../contexts/AuthContext';
 import { canTriageBugReports } from '@/lib/rbac';
 
 const STATUS_OPTIONS = ['unhandled', 'in progress', 'resolved'] as const;
 
 const QM_SOURCE = 'QUESTION_MAKER' as const;
+
+const BUG_TYPE_LABELS: Record<BugReportType, string> = {
+  UI_DISPLAY: 'UI / display',
+  FEATURE_NOT_WORKING: 'Feature not working',
+  PERFORMANCE: 'Performance',
+  CONTENT_ERROR: 'Content error',
+  ACCESS_PERMISSION: 'Access / permission',
+  OTHER: 'Other',
+};
 
 function DetailDialog({
   open,
@@ -136,6 +145,7 @@ export function BugReportsAdminPage() {
             <thead className="bg-muted/50 border-b">
               <tr>
                 <th className="text-left p-3 font-medium">Status</th>
+                <th className="text-left p-3 font-medium">Type</th>
                 <th className="text-left p-3 font-medium">Description</th>
                 <th className="text-left p-3 font-medium">User</th>
                 <th className="text-left p-3 font-medium">Date</th>
@@ -146,7 +156,7 @@ export function BugReportsAdminPage() {
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="p-8 text-center text-muted-foreground">
+                  <td colSpan={7} className="p-8 text-center text-muted-foreground">
                     No bug reports.
                   </td>
                 </tr>
@@ -165,6 +175,9 @@ export function BugReportsAdminPage() {
                           </option>
                         ))}
                       </select>
+                    </td>
+                    <td className="p-3 align-top whitespace-nowrap text-xs text-muted-foreground">
+                      {row.bugType ? BUG_TYPE_LABELS[row.bugType] : '—'}
                     </td>
                     <td className="p-3 align-top max-w-[280px]">
                       <button
