@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import { normalizeMathMarkdown } from "~/lib/ai/math-markdown";
 
 describe("normalizeMathMarkdown", () => {
-  it("converts \\( ... \\) to inline math delimiters", () => {
-    expect(normalizeMathMarkdown("Solve \\(x^2 + 1\\) for x.")).toContain("$x^2 + 1$");
+  it("converts \\( ... \\) to double-dollar inline math delimiters", () => {
+    expect(normalizeMathMarkdown("Solve \\(x^2 + 1\\) for x.")).toContain("$$x^2 + 1$$");
   });
 
   it("converts \\[ ... \\] to display math delimiters", () => {
@@ -17,8 +17,16 @@ describe("normalizeMathMarkdown", () => {
     expect(result).toBe("The value is \\frac{1}{2} of the total.");
   });
 
-  it("does not double-wrap existing inline math", () => {
-    expect(normalizeMathMarkdown("Already $x^2$ formatted.")).toBe("Already $x^2$ formatted.");
+  it("converts existing inline $math$ to $$...$$ delimiters", () => {
+    expect(normalizeMathMarkdown("Already $x^2$ formatted.")).toBe(
+      "Already $$x^2$$ formatted.",
+    );
+  });
+
+  it("leaves currency amounts in prose unchanged", () => {
+    const input =
+      "The subscription costs $9.99 per month and the premium plan is $19.";
+    expect(normalizeMathMarkdown(input)).toBe(input);
   });
 
   it("returns plain text unchanged when no math is present", () => {
@@ -55,7 +63,7 @@ describe("normalizeMathMarkdown", () => {
     const input =
       "3. **Divide every term by $a$ to normalize the coefficient of $x^2$:** x^2 + $\\frac{b}{a}$x = -$\\frac{c}{a}$";
     const result = normalizeMathMarkdown(input);
-    expect(result).toContain("3. **Divide every term by $a$ to normalize the coefficient of $x^2$:**");
+    expect(result).toContain("3. **Divide every term by $$a$$ to normalize the coefficient of $$x^2$$:**");
     expect(result).toContain("x^2 + \\frac{b}{a}x");
     expect(result).toContain("- \\frac{c}{a}");
     expect(result).toContain("$$");
@@ -103,8 +111,8 @@ where \\(i\\) is the imaginary unit, satisfying \\(i^2 = -1\\).`;
 
     const result = normalizeMathMarkdown(raw);
     expect(result).toContain("This identity elegantly links");
-    expect(result).toContain("$e$");
-    expect(result).toContain("$i$");
+    expect(result).toContain("$$e$$");
+    expect(result).toContain("$$i$$");
     expect(result).not.toContain("Thisidentity");
     expect(result).not.toContain("$$This identity");
     expect(result).not.toContain("$$where i");

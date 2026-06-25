@@ -13,7 +13,7 @@ export const LazyStreamdown = lazy(() =>
   Promise.all([import("streamdown"), import("@streamdown/math")]).then(
     ([streamdown, mathMod]) => {
       const plugins = {
-        math: mathMod.createMathPlugin({ singleDollarTextMath: true }),
+        math: mathMod.createMathPlugin(),
       };
       const { Streamdown } = streamdown;
       return {

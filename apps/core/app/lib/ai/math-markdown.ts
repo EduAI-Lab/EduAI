@@ -267,6 +267,42 @@ function wrapBareDisplayMathLines(text: string): string {
     .join("\n");
 }
 
+function isCurrencyLikeInlineMath(body: string): boolean {
+  return /^\d+(?:\.\d{1,2})?$/.test(body.trim());
+}
+
+function looksLikeInlineMathBody(body: string): boolean {
+  const trimmed = body.trim();
+  if (!trimmed || isCurrencyLikeInlineMath(trimmed)) return false;
+
+  // Currency / prose accidentally bounded by two dollar signs in one sentence.
+  if (
+    /\b(per|month|year|day|week|costs|plan|price|fee|tax|and|the|for|premium|subscription)\b/i.test(
+      trimmed,
+    )
+  ) {
+    return false;
+  }
+  if (/^\d/.test(trimmed) && /[a-zA-Z]{3,}/.test(trimmed)) return false;
+
+  return (
+    MATH_COMMAND.test(trimmed) ||
+    /[a-zA-Z]\^|[a-zA-Z]_\{/.test(trimmed) ||
+    (/=/.test(trimmed) && /[a-zA-Z\\]/.test(trimmed)) ||
+    /^[a-zA-Z]$/.test(trimmed)
+  );
+}
+
+/** Map intentional `$...$` inline math to `$$...$$` for remark-math without singleDollarTextMath. */
+function convertInlineDollarMathToDoubleDollarDelimiters(text: string): string {
+  return processOutsideDisplayBlocks(text, (plain) =>
+    plain.replace(INLINE_MATH_RE, (match, body: string) => {
+      if (!looksLikeInlineMathBody(body)) return match;
+      return `$$${body.trim()}$$`;
+    }),
+  );
+}
+
 function repairSpacedBoldMarkers(text: string): string {
   return text.replace(/^\*\s+\*\s+(.+?)\s+\*\s+\*$/gm, (match, inner: string) => {
     const parts = inner.trim().split(/\s+/);
@@ -291,7 +327,7 @@ export function normalizeMathMarkdown(text: string): string {
   result = mergeUnbalancedDollarLines(result);
 
   result = result.replace(DISPLAY_DELIM_RE, (_, body) => `$$${body.trim()}$$`);
-  result = result.replace(INLINE_DELIM_RE, (_, body) => `$${body.trim()}$`);
+  result = result.replace(INLINE_DELIM_RE, (_, body) => `$$${body.trim()}$$`);
 
   result = processOutsideDisplayBlocks(result, (plain) => {
     let section = normalizeLineMath(plain);
@@ -299,5 +335,5 @@ export function normalizeMathMarkdown(text: string): string {
     return section;
   });
 
-  return result;
+  return convertInlineDollarMathToDoubleDollarDelimiters(result);
 }
