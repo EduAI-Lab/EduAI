@@ -24,7 +24,9 @@
     "bench:chat": "node ./scripts/chat-latency-bench.mjs",
     "vllm:smoke": "node ./scripts/vllm-smoke.mjs",
     "test:embedding": "tsx scripts/test-embedding.ts",
-    "re-embed:course": "tsx scripts/re-embed-course.ts"
+    "re-embed:course": "tsx scripts/re-embed-course.ts",
+    "eval:rag:seed": "tsx scripts/eval-rag-seed.ts",
+    "eval:rag": "tsx scripts/eval-rag.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^1.2.22",
@@ -84,6 +86,7 @@
     "mammoth": "^1.10.0",
     "marked": "^16.1.2",
     "next-themes": "^0.4.6",
+    "node-cron": "^4.2.1",
     "nodemailer": "^8.0.11",
     "ollama-ai-provider": "^1.2.0",
     "react": "^19.2.3",
