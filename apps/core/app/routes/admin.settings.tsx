@@ -13,6 +13,7 @@ import {
   CardTitle,
   Label,
   Switch,
+  PageHeading,
   Breadcrumb,
   BreadcrumbItem,
   BreadcrumbLink,
@@ -106,7 +107,7 @@ export default function PermissionsPage() {
         } as React.CSSProperties
       }
     >
-      <AppSidebar variant="inset" user={user} />
+      <AppSidebar user={user} />
       <SidebarInset>
         <SiteHeader
           breadcrumbs={
@@ -127,55 +128,63 @@ export default function PermissionsPage() {
             </Breadcrumb>
           }
         />
-        <div className="flex flex-1 flex-col gap-4 p-4 md:p-6">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Permissions</h1>
-            <p className="text-muted-foreground text-sm">
-              Toggle role-based capabilities across the platform. Changes take effect live.
-            </p>
+        <div className="flex flex-1 flex-col">
+          <div className="@container/main flex flex-1 flex-col gap-2">
+            <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+              <div className="px-4 lg:px-6">
+                <PageHeading
+                  heading="Permissions"
+                  subheading="Toggle role-based capabilities across the platform. Changes take effect live."
+                />
+              </div>
+
+              {error ? (
+                <div className="px-4 lg:px-6">
+                  <p className="text-destructive text-sm" role="alert">{error}</p>
+                </div>
+              ) : null}
+
+              <div className="flex flex-col gap-4 px-4 md:gap-6 lg:px-6">
+                {isLoading ? (
+                  <Card>
+                    <CardContent className="pt-6">
+                      <p className="text-muted-foreground text-sm">Loading…</p>
+                    </CardContent>
+                  </Card>
+                ) : groups.length === 0 ? (
+                  <Card>
+                    <CardContent className="pt-6">
+                      <p className="text-muted-foreground text-sm">No configurable policies.</p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  groups.map((group) => (
+                    <Card key={group.id}>
+                      <CardHeader>
+                        <CardTitle>{group.title}</CardTitle>
+                        <CardDescription>{group.description}</CardDescription>
+                      </CardHeader>
+                      <CardContent className="flex flex-col gap-6">
+                        {group.items.map((def) => (
+                          <div key={def.key} className="flex items-start justify-between gap-4">
+                            <div className="space-y-1">
+                              <Label htmlFor={def.key} className="text-base">{def.label}</Label>
+                              <p className="text-muted-foreground text-sm">{def.description}</p>
+                            </div>
+                            <Switch
+                              id={def.key}
+                              checked={policies[def.key] ?? def.default}
+                              onCheckedChange={(value) => setPolicy(def.key, value)}
+                            />
+                          </div>
+                        ))}
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
+              </div>
+            </div>
           </div>
-
-          {error ? (
-            <p className="text-destructive text-sm" role="alert">{error}</p>
-          ) : null}
-
-          {isLoading ? (
-            <Card>
-              <CardContent className="pt-6">
-                <p className="text-muted-foreground text-sm">Loading…</p>
-              </CardContent>
-            </Card>
-          ) : groups.length === 0 ? (
-            <Card>
-              <CardContent className="pt-6">
-                <p className="text-muted-foreground text-sm">No configurable policies.</p>
-              </CardContent>
-            </Card>
-          ) : (
-            groups.map((group) => (
-              <Card key={group.id}>
-                <CardHeader>
-                  <CardTitle>{group.title}</CardTitle>
-                  <CardDescription>{group.description}</CardDescription>
-                </CardHeader>
-                <CardContent className="flex flex-col gap-6">
-                  {group.items.map((def) => (
-                    <div key={def.key} className="flex items-start justify-between gap-4">
-                      <div className="space-y-1">
-                        <Label htmlFor={def.key} className="text-base">{def.label}</Label>
-                        <p className="text-muted-foreground text-sm">{def.description}</p>
-                      </div>
-                      <Switch
-                        id={def.key}
-                        checked={policies[def.key] ?? def.default}
-                        onCheckedChange={(value) => setPolicy(def.key, value)}
-                      />
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            ))
-          )}
         </div>
       </SidebarInset>
     </SidebarProvider>

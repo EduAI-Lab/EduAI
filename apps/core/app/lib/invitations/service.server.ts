@@ -170,8 +170,17 @@ export async function resendInvitation(
 }
 
 /**
- * List invitations, newest first. Pass `invitedById` to scope the list to a
- * single inviter (used so a UNIT_ADMIN only sees the invitations they sent).
+ * Hard cap on how many invitations a single list call returns. The list grows
+ * for the platform's lifetime (PENDING/ACCEPTED/REVOKED all persist), so bound
+ * it to keep the query and payload from growing unboundedly. Newest-first, so
+ * the most actionable rows are always the ones kept.
+ */
+const INVITATIONS_LIST_LIMIT = 500;
+
+/**
+ * List invitations, newest first (capped at `INVITATIONS_LIST_LIMIT`). Pass
+ * `invitedById` to scope the list to a single inviter (used so a UNIT_ADMIN only
+ * sees the invitations they sent).
  */
 export async function listInvitations(
   opts?: { invitedById?: string },
@@ -182,6 +191,7 @@ export async function listInvitations(
   const invitations = await prisma.invitation.findMany({
     where: opts?.invitedById ? { invitedById: opts.invitedById } : undefined,
     orderBy: { createdAt: "desc" },
+    take: INVITATIONS_LIST_LIMIT,
   });
   return invitations.map(toPublic);
 }
@@ -252,6 +262,13 @@ export async function acceptInvitation(
   // Race guard: someone may have registered this email since the invite was sent.
   const existingUser = await prisma.user.findUnique({ where: { email: invite.email } });
   if (existingUser) {
+    // The email now has an account, so this invite can never be accepted via
+    // sign-up. Revoke it (guarded on PENDING for idempotency) so the live link
+    // and its actionable pending row don't linger until natural expiry.
+    await prisma.invitation.updateMany({
+      where: { id: invite.id, status: "PENDING" },
+      data: { status: "REVOKED" },
+    });
     return { ok: false, status: 409, error: "USER_EXISTS" };
   }
 

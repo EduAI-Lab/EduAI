@@ -24,6 +24,11 @@ export default [
   route("/courses/:courseId", "routes/courses.$courseId.tsx"),
   route("/units/:department/chats", "routes/units.$department.chats.tsx"),
   route("/api/courses/:courseId/materials", "routes/api/courses.materials.$.ts"),
+  route(
+    "/api/courses/:courseId/materials/:materialId",
+    "routes/api/courses.materials.$.ts",
+    { id: "routes/api/courses.materials.$:materialId" },
+  ),
   route("/api/courses/:courseId/canvas-materials", "routes/api/courses.canvas-materials.$.ts"),
   route("/api/courses/:courseId/re-embed", "routes/api/courses.re-embed.$.ts"),
   route("/api/courses/:courseId/re-embed/:jobId", "routes/api/courses.re-embed.$jobId.ts"),
@@ -55,6 +60,7 @@ export default [
   route("/admin/settings", "routes/admin.settings.tsx"),
   route("/admin/logs", "routes/admin.logs.tsx"),
   route("/unit-admin/invitations", "routes/unit-admin.invitations.tsx"),
+  route("/admin/cron-jobs", "routes/admin.cron-jobs.tsx"),
   route("/api/ai-providers/*", "routes/api/ai-providers.$.ts"),
   route("/api/ai-models/*", "routes/api/ai-models.$.ts"),
   route("/api/me", "routes/api/me.ts"),
@@ -73,6 +79,7 @@ export default [
     "routes/api/admin.bug-reports.ts",
     { id: "routes/api/admin.bug-reports:id" },
   ),
+  route("/api/admin/cron-jobs", "routes/api/admin.cron-jobs.ts"),
   route("/api/dashboard/stats", "routes/api/dashboard.stats.ts"),
   route("/api/e2e/promote", "routes/api/e2e.promote.ts"),
 ] satisfies RouteConfig;

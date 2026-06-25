@@ -1,5 +1,6 @@
 import type { Message } from "@ai-sdk/react";
 
+import { ChatDisclaimer } from "~/components/chat/chat-disclaimer";
 import { ChatInput } from "~/components/chat/chat-input";
 import { ChatMessage } from "~/components/chat/chat-message";
 import { ChatTypingIndicator } from "~/components/chat/chat-typing-indicator";
@@ -55,6 +56,7 @@ export function ChatConversationLayout({
         <div className="h-full overflow-y-auto scrollbar-hover">
           <div className="px-6 py-6">
             <div className="max-w-[720px] mx-auto space-y-5">
+              <ChatDisclaimer />
               {messages.length === 0 ? (
                 <ChatWelcome
                   selectedModelInfo={selectedModelInfo}

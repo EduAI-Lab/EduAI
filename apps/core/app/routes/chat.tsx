@@ -6,7 +6,6 @@ import { IconHistory, IconPencilPlus } from "@tabler/icons-react";
 
 import { AppSidebar } from "~/components/app-sidebar";
 import { ChatCourseScopedView } from "~/components/chat/chat-course-scoped-view";
-import { ChatGlobalView } from "~/components/chat/chat-global-view";
 import { ChatHistoryPanel } from "~/components/chat/chat-history-panel";
 import { ChatTranscriptViewer } from "~/components/chat/chat-transcript-viewer";
 import type {
@@ -38,11 +37,11 @@ import { useCourses } from "~/hooks/api/use-courses";
 import { useAssistiveReorientation } from "~/hooks/use-assistive-reorientation";
 import { useApiKeys } from "~/hooks/use-api-keys";
 import { auth } from "~/lib/auth/server";
-import { usesGlobalChat } from "~/lib/rbac";
 import prisma from "~/lib/prisma.server";
 import { getUserPreference, saveUserPreference } from "~/lib/user-preferences.server";
 import { getAccessibleCourseCodes } from "~/lib/courses/server";
 import { parsePreferenceUpdates } from "~/lib/user-preferences";
+import { postAssistiveClientEvent } from "~/lib/assistive-events.client";
 
 /**
  * Per-tab marker for the chat the user is actively in. Lives in sessionStorage
@@ -112,11 +111,19 @@ export async function action({ request }: ActionFunctionArgs) {
 export default function Chat() {
   const { chatModels, user, assistDefault, lastCourseCode } = useLoaderData<typeof loader>();
   const { assistive, setAssistive } = useAssistiveUi();
-  const isGlobalChat = usesGlobalChat(user);
   const { courses } = useCourses();
-  const availableCourses: ChatCourseOption[] = isGlobalChat
-    ? []
-    : courses.map((c) => ({ id: c.id, name: c.name, code: c.code }));
+  // Every chat is course-scoped now (global/no-course chat was removed). The
+  // course list is already RBAC-filtered: ADMIN sees all courses, UNIT_ADMIN
+  // sees courses in their authorized units, others see their enrollments.
+  const availableCourses: ChatCourseOption[] = courses.map((c) => ({
+    id: c.id,
+    name: c.name,
+    code: c.code,
+  }));
+
+  const isStudentWithCourseChat = user.role === 'STUDENT';
+  const hasNoCourses = availableCourses.length === 0;
+  const disabledReason = hasNoCourses ? 'no-courses' : undefined;
   const [selectedModel, setSelectedModel] = useState(
     chatModels.length > 0 ? chatModels[0].id : "",
   );
@@ -131,6 +138,7 @@ export default function Chat() {
   const [reorientationEpoch, setReorientationEpoch] = useState(0);
   const [webToolsEnabled, setWebToolsEnabled] = useState(false);
   const wasLoadingRef = useRef(false);
+  const mountTimeRef = useRef(Date.now());
   const { getValidApiKeys } = useApiKeys();
   const prefsFetcher = useFetcher();
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -184,13 +192,9 @@ export default function Chat() {
     epoch: reorientationEpoch,
   });
 
-  useEffect(() => {
-    if (isGlobalChat) setSelectedCourseCode(null);
-  }, [isGlobalChat]);
-
   // Apply ?courseCode= deep-link param once on mount, then strip it from URL.
   useEffect(() => {
-    if (courseParamApplied.current || isGlobalChat) return;
+    if (courseParamApplied.current) return;
     const code = searchParams.get("courseCode");
     if (!code) return;
     courseParamApplied.current = true;
@@ -198,7 +202,17 @@ export default function Chat() {
     const next = new URLSearchParams(searchParams);
     next.delete("courseCode");
     setSearchParams(next, { replace: true });
-  }, [isGlobalChat, searchParams, setSearchParams]);
+  }, [searchParams, setSearchParams]);
+
+  // Default to a course so chat always has context (no "no course" option). Picks
+  // the first available course unless a valid one is already selected.
+  useEffect(() => {
+    if (availableCourses.length === 0) return;
+    const isValid =
+      selectedCourseCode !== null &&
+      availableCourses.some((c) => c.code === selectedCourseCode);
+    if (!isValid) setSelectedCourseCode(availableCourses[0].code);
+  }, [selectedCourseCode, availableCourses]);
 
   useEffect(() => {
     if (!chatId || systemPrompt) {
@@ -214,14 +228,14 @@ export default function Chat() {
         setSystemPrompt(session.systemPrompt);
       }
       setAdhdAssist(Boolean(session.adhdAssist));
-      setAssistive(Boolean(session.adhdAssist));
+      setAssistive(Boolean(session.adhdAssist), { silent: true });
     })();
   }, [chatId, systemPrompt, setAssistive]);
 
   const requestMetadata = {
     model: selectedModel,
     apiKeys: getValidApiKeys(),
-    courseCode: isGlobalChat ? undefined : selectedCourseCode || undefined,
+    courseCode: selectedCourseCode || undefined,
     chatId: chatId || undefined,
     systemPrompt: systemPrompt || undefined,
     adhdAssist,
@@ -254,6 +268,34 @@ export default function Chat() {
         }
       },
     });
+
+  const onSubmit = useCallback(
+    (e: React.FormEvent<HTMLFormElement>) => {
+      if (!chatId) {
+        postAssistiveClientEvent({
+          eventType: "task_initiation",
+          adhdAssist,
+          metrics: {
+            durationMs: Date.now() - mountTimeRef.current,
+            success: true,
+            clientTimestamp: new Date().toISOString(),
+          },
+        });
+      } else {
+        postAssistiveClientEvent({
+          eventType: "re_orientation",
+          chatId,
+          adhdAssist,
+          metrics: {
+            success: true,
+            clientTimestamp: new Date().toISOString(),
+          },
+        });
+      }
+      handleSubmit(e);
+    },
+    [adhdAssist, chatId, handleSubmit],
+  );
 
   useEffect(() => {
     const finishedLoading = wasLoadingRef.current && !isLoading;
@@ -298,13 +340,13 @@ export default function Chat() {
       setSystemPrompt(transcript.chat.systemPrompt ?? null);
       setAdhdAssist(Boolean(transcript.chat.adhdAssist));
       setAssistive(Boolean(transcript.chat.adhdAssist));
-      if (!isGlobalChat && transcript.chat.courseCode) {
+      if (transcript.chat.courseCode) {
         setSelectedCourseCode(transcript.chat.courseCode);
       }
       window.sessionStorage.setItem(ACTIVE_CHAT_KEY, id);
       return true;
     },
-    [setMessages, setAssistive, isGlobalChat],
+    [setMessages, setAssistive],
   );
 
   // Smart auto-restore on mount: an explicit ?chatId deep link wins; otherwise
@@ -358,7 +400,7 @@ export default function Chat() {
           messages: messages.length > 0 ? messages : [],
           model: selectedModel,
           apiKeys: getValidApiKeys(),
-          courseCode: isGlobalChat ? undefined : selectedCourseCode || undefined,
+          courseCode: selectedCourseCode || undefined,
           adhdAssist,
           streaming: false,
         }),
@@ -385,7 +427,7 @@ export default function Chat() {
         preventDefault: () => {},
         currentTarget: {} as HTMLFormElement,
       } as React.FormEvent<HTMLFormElement>;
-      handleSubmit(formEvent);
+      onSubmit(formEvent);
     });
   };
 
@@ -409,9 +451,11 @@ export default function Chat() {
     onSystemPromptSave: handleSystemPromptSave,
     webToolsEnabled,
     onInputChange: handleInputChange,
-    onSubmit: handleSubmit,
+    onSubmit,
     onStop: stop,
     onSelectPrompt: handlePromptSelect,
+    isStudentWithCourseChat,
+    disabledReason,
   };
 
   return (
@@ -439,34 +483,34 @@ export default function Chat() {
               </BreadcrumbList>
             </Breadcrumb>
           }
+          leadingActions={
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleNewChat}
+              aria-label="Start a new chat"
+            >
+              <IconPencilPlus className="h-4 w-4 sm:mr-1.5" />
+              <span className="hidden sm:inline">New chat</span>
+            </Button>
+          }
           actions={
-            <div className="flex items-center gap-1.5">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleNewChat}
-                aria-label="Start a new chat"
-              >
-                <IconPencilPlus className="h-4 w-4 sm:mr-1.5" />
-                <span className="hidden sm:inline">New chat</span>
-              </Button>
-              <TooltipProvider delayDuration={300}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setHistoryOpen((prev) => !prev)}
-                      aria-label="Open chat history"
-                      className="h-8 w-8"
-                    >
-                      <IconHistory className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">Chat history</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </div>
+            <TooltipProvider delayDuration={300}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setHistoryOpen((prev) => !prev)}
+                    aria-label="Open chat history"
+                    className="h-8 w-8"
+                  >
+                    <IconHistory className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Chat history</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           }
         />
         <ChatHistoryPanel
@@ -501,11 +545,7 @@ export default function Chat() {
             </div>
           </SheetContent>
         </Sheet>
-        {isGlobalChat ? (
-          <ChatGlobalView {...sharedViewProps} />
-        ) : (
-          <ChatCourseScopedView {...sharedViewProps} />
-        )}
+        <ChatCourseScopedView {...sharedViewProps} />
       </SidebarInset>
     </SidebarProvider>
   );

@@ -5,11 +5,40 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
 
+## [Week 8 — June 22–28, 2026]
+
+### Added
+
+- [core] feat: Admin cron job dashboard — `/admin/cron-jobs` lists all registered cron servers with last run status (RUNNING/SUCCESS/ERROR), schedule, and a manual trigger for infra backup scripts; run history stored in `cron_job_runs`; schedule overrides persist to `cron_job_schedule_overrides`. (#634, #643, @evanbones, 2026-06-23)
+- [core] feat: In-process cron scheduler (`cron-scheduler.server.ts`) starts on server boot and fires infra scripts on their configured schedules; `rescheduleJob` reflects live changes from the admin panel. (#634, @evanbones, 2026-06-23)
+- [core] schema: Add `cron_job_runs` and `cron_job_schedule_overrides` tables. (#634, @evanbones, 2026-06-23)
+- [ai-tutor] feat: Daily reconciliation cron — iterates `CourseOffering` and `Topic` rows with Core links; nullifies `coreOfferingId`/`coreTopicId` on strict Core 404; skips and retries on 5xx/timeout; local rows are never deleted. (#283, @evanbones, 2026-06-23)
+- [question-maker] feat: Daily reconciliation cron — iterates `core_course_id`, `core_topic_id`, and `core_question_id` columns; nullifies on Core 404; skips on 5xx/timeout. (#283, @evanbones, 2026-06-23)
+- [infra] feat: Server backup scripts (`backup-nightly.sh`, `backup-offsite.sh`, `backup-rotate.sh`) — nightly `pg_dump` of all three databases, off-site sync, and local dump rotation; configurable via `cron.env`. (#643, @evanbones @GlowyBlack, 2026-06-23)
+- [core] tests: Unit tests for `db.cron-jobs.server` and `/api/admin/cron-jobs` route (auth guard, trigger/update-schedule/reset-schedule intents, cron validation). (#PR, @evanbones, 2026-06-23)
+- [ai-tutor] tests: Unit and integration tests for the AI Tutor reconciliation cron. (#PR, @evanbones, 2026-06-23)
+- [question-maker] tests: Unit and integration tests for the QM reconciliation cron. (#PR, @evanbones, 2026-06-23)
+- [docs] docs: `docs/CRON_JOBS.md` — describes registered cron jobs, schedules, trigger behavior, and local testing steps. (#634, #283, #643, @evanbones, 2026-06-23)
+- [core] feat: Add UBC chatbot disclaimer banner and full terms dialog on `/chat`. (#575, @superbolt08, 2026-06-23) — [#753](https://github.com/EduAI-Lab/EduAI/pull/753)
+
+### Fixed
+
+- [ai-tutor] fix: Surface effective `role: TA` on `GET /api/me` when Core reports a TA enrollment — keeps course TAs in the teaching shell after Core drops platform-level `UserRole.TA` (#723, @Ayyhab, 2026-06-24)
+- [core] fix: Unblock student-ID onboarding before any Canvas sync — `linkCanvasRoster` no longer 404s when no instructor has synced the course; it saves the student number (still rejecting duplicates) and links zero enrollments, and the later sync's `linkEnrollmentsFromStagingForCourse` enrolls the student by `studentId` once staging rows exist. (#732, @GlowyBlack, 2026-06-22)
+
+
 ## [Week 7 — June 15–21, 2026]
 
 ### Added
 
 - [core] security: Enforce UBC-only emails (`ubc.ca` and its subdomains) on public registration and admin/unit-admin invitations via a shared `isUbcEmail` gate applied at the signup schema, the Better Auth before-hook, and the invitation schema. (#567, #692, @abdullahmoh21, 2026-06-20)
+- [core] feat: One-way soft-delete for course materials and topics — `DELETE` sets `deletedAt`/`deletedBy` instead of hard-deleting; re-uploading a previously-deleted material restores it; all reads (RAG, API list, dashboard stats) filter `deletedAt IS NULL`; topics gain a `deletedBy` column. EduAI deletions are never propagated to Canvas (prep so AI Tutor / Question Maker can consume deletes like renames). Add a delete action to the materials section of course detail. (#685, @yta3216, 2026-06-19)
+- [core] feat: Course-scoped chat — all users chat within a selected course (a course is selected by default); the global / "no course selected" view is removed, including for admins. Students with no enrolled courses keep the chat visible but disabled with an explicit "no courses" reason threaded through `ChatInput`. Add a student visibility disclaimer banner (chats viewable by prof / unit admin / admin). Move the chatbot to the secondary sidebar (bottom), grouped with the QM / AI Tutor cross-nav links. (#685, @yta3216, 2026-06-19)
+- [core] feat: Searchable staff multiselect — add `Combobox` and `MultiSelect` primitives to `@eduai/ui` and export theme-sync utilities; the staff tab in course overview and the department combobox use the shared primitive. (#685, @yta3216, 2026-06-19)
+- [core] feat: `UNIT_ADMIN` can invite `INSTRUCTOR` and `STUDENT` users (role-gated: `ADMIN` → all, `UNIT_ADMIN` → `INSTRUCTOR`/`STUDENT`); admin invitations route, API, and email template updated for the new role labels. List/revoke/resend are scoped so a `UNIT_ADMIN` only sees and acts on invitations they created. (#685, @yta3216, 2026-06-19)
+- [core] feat: Admin single user-delete confirmation modal with cascade warning (parity with batch delete); bug-reports admin view gains status / source / reporter filters and text search; AI models table shows a Cloud/Local badge (Ollama = local). (#685, @yta3216, 2026-06-19)
+- [core] feat: Theme-sync across all three apps via `BroadcastChannel` — dark mode toggled in one app reflects in the others (`ThemeSyncInitializer` in Core, AI Tutor, Question Maker). (#685, @yta3216, 2026-06-19)
+
 - [core] feat: Let unit admins invite instructors and students — gated by the new `unitAdmins.canInvite` policy flag, with a dedicated `/unit-admin/invitations` page, a policy-gated nav link, and own-only scoping over the shared `/api/invitations` endpoints. (#686, @abdullahmoh21, 2026-06-19)
 - [core] tests: Add unit-admin invitation coverage across the route, schema, and integration suites. (#686, @abdullahmoh21, 2026-06-19)
 - [core] feat: Expand the configurable RBAC policy registry (#660) with instructor/TA/student/unit-admin gates & grants, a `chat.webToolsEnabled` master that folds in the standalone `webToolsEnabled` toggle, an `auth.allowPublicRegistration` signup gate enforced at the Better Auth chokepoint, live frontend control gating via `usePolicies()`, and structured `policy_denied` 403 audit logging. (#660, @abdullahmoh21, 2026-06-18)
@@ -31,6 +60,16 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Changed
 
+- [core] rag: Smart course RAG gate (#484) — prefetch retrieval on every course-scoped turn; inject excerpts when `needsCourseRag`, similarity thresholds, or `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE=1`. Port strict `buildRagSystemBlock` grounding rules from research branch. Tool-path preload uses the same gate; `getInformation` remains supplemental. (#679, #484, @frostbitcactus, 2026-06-19)
+- [core] chat: Latest-turn focus instruction — system prompt tells the model to answer only the most recent user message and not combine unrelated prior topics in one reply. (#679, #484, @frostbitcactus, 2026-06-19)
+- [core] chat: Empty course RAG block — when course-intent queries return no hits, forbid substituting general knowledge for missing materials. (#679, #484, @frostbitcactus, 2026-06-19)
+- [core] chat: Tool-path output token cap — `resolveToolMaxOutputTokens` defaults to 8192 and respects `AIModel.maxTokens` from the DB (fixes vLLM 32B `max_tokens=32000` rejections). Seed vLLM 7B/32B with `maxTokens: 8192`. (#679, #484, @frostbitcactus, 2026-06-20)
+- [core] tests: Add `chat-always-on-rag.route.test.ts` and `resolve-tool-max-tokens.test.ts` — route-level smart RAG gate coverage and tool-path token cap unit tests. (#679, #484, @frostbitcactus, 2026-06-20)
+- [core] perf: Improve RAG retrieval quality for vague and label-based queries — add hybrid BM25+vector search path to `findRelevantContent` behind `RAG_HYBRID_BM25=1`; combines pgvector cosine similarity (70%) with PostgreSQL `ts_rank` full-text BM25 (30%) in a single SQL query; no schema migration required; alpha weight configurable via `RAG_HYBRID_BM25_ALPHA`; pure-vector path unchanged when flag is off. (#432, @frostbitcactus, 2026-06-19)
+- [core] security: Prompt-injection defenses (#86) — immutable `SECURITY_POLICY_BLOCK` prepended via `composeSecurityPrompt`; sanitize and cap custom system prompts (`CHAT_SYSTEM_PROMPT_MAX_CHARS`, default 8192); filter incoming chat POST to user turns only; wrap retrieved RAG excerpts and tool results as untrusted reference content. (#679, #86, @frostbitcactus, 2026-06-20)
+- [core] tests: Add `prompt-safety.test.ts` — security policy composition, system prompt sanitization/cap, client message role filter, and untrusted RAG wrapping. (#679, #86, @frostbitcactus, 2026-06-20)
+- [core] refactor!: Unify the TA role onto `Enrollment(role=TA)` — drop the `CourseTA` junction table and the `TA` platform role; TAs are now `STUDENT`-platform users with a per-course `Enrollment(role=TA)`. Migration removes `course_tas`; all RBAC guards, course-access resolution, dashboard TA detection, and the e2e promote helper read `Enrollment(role=TA)`. (#664, #685, @yta3216, 2026-06-19)
+- [core] ui: Move settings buttons onto the shared `@eduai/ui` library; align the logs screen with other screens. (@yta3216, 2026-06-19)
 - [core] refactor: Create `@eduai/types` shared workspace package — move `UserRole` and `EnrollmentRole` to `packages/types`; Core, AI Tutor, and QM now import from `@eduai/types` instead of maintaining independent copies, eliminating the need for manual sync across apps. (#594, #649, @evanbones, 2026-06-16)
 - [question-maker] refactor: Extract shared `courseCodeUtils.js`, `topicSyncService.js`, and `coreCourseLinkService.js` — dedupe `syncTopicsFromCoreForCourse` / `normalizeCourseCode` from routes and import service; batch topic upserts with two `findAll` queries on the hot `/topics` path. (#578, @GlowyBlack, 2026-06-15)
 - [question-maker] ui: Reuse `normalizeCourseCode` from `courseDisplay.ts` in `ProfileCoursesDialog` and `AddQuestionDialog`. (#578, @GlowyBlack, 2026-06-15)
@@ -47,8 +86,17 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ### Removed
 
 - [core] api: Remove the headless `POST /api/invitations/accept` endpoint — the invitation-accept flow is consolidated onto the `/accept-invitation` page route. (#581, @abdullahmoh21, 2026-06-17)
+- [core] security: Remove legacy `x-api-key` / Better Auth API-key plugin — drop `ApiKey` table and migration, strip `x-api-key` header handling from all Core API routes, remove the Settings UI for creating EduAI backend keys, and update docs/examples. Auth now relies on session cookies and `SERVICE_KEY` for internal calls only. (#678, @evanbones, 2026-06-19)
+- [core] feat!: Remove the global / "no course selected" chat view — chat is always course-scoped. (#53, #657, #685, @yta3216, 2026-06-19)
+- [core] schema: Remove the `CourseTA` junction table and `TA` platform role (superseded by `Enrollment(role=TA)`). (#664, #685, @yta3216, 2026-06-19)
 
 ### Fixed
+
+- [core] fix: Fix crash when changing the theme. (@yta3216, 2026-06-19)
+- [core] fix: Focus mode now hides the sidebar-container element, fixing a visible border gap. (@yta3216, 2026-06-19)
+- [core] fix: Students bypassing onboarding when invited. (@yta3216, 2026-06-19)
+- [core] fix: Students could not see course instructor/TA information. (@yta3216, 2026-06-19)
+- [ci] fix: Add the `@eduai/ui` (`packages/ui`) test suite to the Docker test suite. (@yta3216, 2026-06-19)
 
 - [question-maker] security: Forward session cookie on `GET /api/eduai/courses/:courseId/topics` so Core applies enrollment scope. (#578, @GlowyBlack, 2026-06-15)
 - [question-maker] security: Remove full-catalog service-key fallback from `findScopedCoreCourseByCode` — scoped cookie list only. (#578, @GlowyBlack, 2026-06-15)
@@ -65,6 +113,18 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] tests: Update `canvas.integration.test.ts` reassignment case to use a unique student number (avoids `studentIdLookup` collision with seeded data). (#578, @GlowyBlack, 2026-06-15)
 - [ai-tutor] feat: RBAC UI for all five role views (#616) — add `app/lib/rbac/` permission helpers, `PermissionGate`, `AtRoleBanner`, and `useAtPermissions`; gate instructor shell for TA read-only; add `CreateCourseDialog`, course tabs (content/enrollments/submissions/analytics), `CourseEnrollmentsPanel` with TA role assignment, admin EduAI enrollment sync; extend `api.ts` with analytics/enrollment endpoints; document endpoint audit in `docs/rbac-endpoints-ai-tutor.md` (#614). Closes #614, #616, #617 (AiTutor). ([#619](https://github.com/EduAI-Lab/EduAI/pull/619), @Ayyhab, 2026-06-14)
 - [core] fix: Stop frontend from retransmitting the full conversation history on every chat request by sending only the newest user message and associated metadata. (#487, @YibingW, 2026-06-15)
+- [question-maker] fix: Question metadata edit saves question text and avoids VARIANT_LOCKED error on reviewed variants when only synopsis/topic/type change. (#676, @GlowyBlack, 2026-06-20)
+- [question-maker] ui: Stronger correct-answer highlight in question detail view (success tokens, visible in dark mode). (#676, @GlowyBlack, 2026-06-20)
+- [question-maker] fix: Dedupe duplicate course rows for ADMIN on course selection (frontend `dedupeCoursesByCode` + backend admin list). (#676, @GlowyBlack, 2026-06-20)
+- [question-maker] fix: Student/TA access denied no longer crashes (Router wraps access gate); allow AI tag toggle on reviewed variants. (#676, @GlowyBlack, 2026-06-20)
+- [question-maker] ui: Question detail modal uses single scroll area; theme toggle beside bug report; explicit API key save with confirmation. (#676, @GlowyBlack, 2026-06-20)
+- [question-maker] security: Restrict Vite env exposure to `VITE_` prefix; gate Canvas test-mode fallback to dev; surface AI model fetch errors instead of silent fallbacks (backend + frontend). (#676, @GlowyBlack, 2026-06-20)
+- [question-maker] fix: Apply explicit API key save + toast in Upload dialog; treat id `0` as not-found in resource/course access guards (fixes `coreWiring.integration.test.js`). (#676, @GlowyBlack, 2026-06-20)
+- [core] fix: Restore course Enrollments tab — re-wire `useCourseEnrollments` to `GET /api/courses/:id/enrollments` after merge conflict reverted the hook to an empty stub; API returns enrollment `id` and decrypted `studentNumber`. ([#684], @GlowyBlack, 2026-06-18)
+- [core] fix: Dev startup seed — targeted `db:seed:student-ids` backfill for seed students instead of full re-seed when `studentId` is missing (avoids `studentIdLookup` unique constraint collisions). (#684, @GlowyBlack, 2026-06-18)
+- [core] fix: `POST /api/bug-reports` — extension sources (`AI_TUTOR`, `QUESTION_MAKER`) require service key again; session auth remains for `CORE` only. (#684, @GlowyBlack, 2026-06-18)
+- [core] tests: Align course-create integration tests with required `department` field; session-validate expects `authorizedUnits` in user payload. (#684, @GlowyBlack, 2026-06-18)
+- [ai-tutor] fix: Route TA promotion through Core — `PATCH /admin/courses/:courseId/enrollments/:userId/role` now calls Core's enrollment-role endpoint before updating locally, keeping Core as the authoritative source; remove the band-aid `local.role !== 'TA'` skip from `syncCourseEnrollments` so Core-initiated TA demotions propagate on the next sync. (#674, @evanbones, 2026-06-19)
 
 ---
 ## [Week 6 — June 8–14, 2026]
@@ -125,6 +185,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] tests: Add Canvas UI and onboarding unit tests (`CanvasCourseSyncDialog`, `CanvasDashboardCard`, `student-id-onboarding-form`, `canvas-onboarding`); extend `canvas-enrollment-link` and `canvas-student-id` for encrypted roster matching; integration test harness reuses dev Postgres host/port on Windows (`test-database-url.ts`). (#511, @GlowyBlack, 2026-06-10)
 - [core] ui: Add assistive reading typography gated by `[data-assistive]` — `.reading-surface` on chat messages, markdown, reasoning, and course overview text; 16px base, 1.625 line-height, 65ch measure, increased letter/word and paragraph spacing (no font swap). (#523, #539, @ebabar5, 2026-06-10)
 - [core] tests: Unit tests for `assistive-reading.css` contract and `.reading-surface` class on chat/markdown components. (#523, #539, @ebabar5, 2026-06-10)
+- [core] fix: `report-adhd-metrics.ts` now reports the `task_initiation` / `re_orientation` / `session_completion` behavioural events alongside `response_compliance`, and renders `—` instead of `NaN` for empty cohorts or an under-powered Cohen's d (< 2 samples per side). (#521, #532, @Ayyhab, 2026-06-10)
+- [core] feat: Add account-level Assistive Mode shell — `AssistiveUiProvider` syncs `data-assistive` on `<html>` (SSR + client), `GET`/`PATCH /api/preferences` for `UserPreference.assistDefault`, and the `/chat` assist toggle writes through the provider so the preference persists platform-wide. Settings Accessibility tab deferred to #530 (blocked on #491). (#520, #531, @ebabar5, 2026-06-09)
 - [core] tests: Unit tests for `/api/preferences` and `AssistiveUiProvider`; integration tests for assistive preference round-trip, per-account isolation, and guest 401 on PATCH. (#520, #531, @ebabar5, 2026-06-09)
 - [core] feat: ADHD Assist telemetry (#521, #532) — `AssistiveEvent` Prisma model + migration (`assistive_events`) stores derived compliance metrics only (word count, `topSummary`, `nextLine`, `underCap`, `structuralPass`, model/tokens/duration); never message text (BREB-consistent). Shared `apps/core/app/lib/ai/adhd-metrics.ts` used by chat `onFinish` logging and `eval:adhd`. `POST /api/assistive-events` accepts sanitized client UI events (`mode_toggled`, `expand_click`, `task_initiation`, `re_orientation`, `session_completion`). Research report script at `eduai-summer-2026/reports/scripts/report-adhd-metrics.ts` (Cohen's d OFF vs ON; run from `apps/core`). (#521, #532, @Ayyhab, 2026-06-09)
 - [core] tests: Unit tests for `computeAdhdResponseMetrics` / structural pass heuristics (`adhd-metrics.test.ts`, 4 cases) and assistive event persistence + client metric sanitization (`assistive-events.server.test.ts`, 3 cases). (#521, #532, @Ayyhab, 2026-06-09)
@@ -139,6 +201,16 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] [ai-tutor] api: Move course publish state to Core as source of truth (#477) — new `PATCH /api/courses/:id/publish` and `/unpublish` endpoints on Core (service-key + session auth, rank ≥ 2); AI Tutor write-through calls Core before updating local DB; `coreOfferingId` set at import time and `isPublished` synced from Core; native courses skip the Core call; unpublish cascades to child modules and lessons. (#510, @evanbones, 2026-06-08)
 - [all] tests: Backend E2E Playwright suite (#398) — 8 spec files covering Core, AI Tutor, and Question Maker: auth flows, RBAC enforcement (STUDENT-blocked routes, unauthenticated 401 gates, role-escalation prevention), cross-service session propagation and cascading logout, and two-user data isolation; QM RBAC — question/assessment routes blocked for STUDENT (403), course routes open to all; Core RBAC — admin-only routes, invitation management, bug-report ownership scope; AI Tutor RBAC — course/module mutation gates and admin route gates; fix AI Tutor import-external integration test (500→201) by switching `vi.restoreAllMocks()` to `vi.unstubAllGlobals()` in afterEach to preserve the setup.js console.error spy; fix QM variant ID collision in `coreWiring.integration.test.js` (403→404) by using variant id `0` (PostgreSQL SERIAL sequences start at 1, so 0 can never be auto-generated) and upgrading `truncateTestDatabase()` to reset ALL table sequences (not just `users`) so IDs never accumulate across test files. (#398, @evanbones, 2026-06-14)
 
+- [core] docs: Design prior-question cache ADR — `CachedQuestionAnswer` table shape, pgvector embed store reusing `generateEmbedding()`, ~0.999 similarity threshold (env-configurable), course-scoped privacy model, `onFinish`-based write conditions, re-embed invalidation, and Prisma migration stub; wiring into `chat.ts` gated on #203. (#367, #360, @frostbitcactus, 2026-06-10)
+
+---
+
+## [Week 6 — June 8–12, 2026]
+
+### Added
+
+- [question-maker] api: Enforce the §16–§18 RBAC matrices — session-role gates, per-course access middleware, `createdBy` TA own-only authoring, instructor-only approval/assessments, owner-keyed Canvas mappings, and ADMIN-only bug-report triage. (#518, @abdullahmoh21, 2026-06-08)
+- [question-maker] tests: Add RBAC coverage — `courseAccess` unit tests plus role×route matrix tests across questions, variants, assessments, and Canvas. (#518, @abdullahmoh21, 2026-06-08)
 
 ### Changed
 
@@ -200,6 +272,11 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ---
 
 ## [Week 5 — June 2–6, 2026]
+## [Week 5 — June 1–7, 2026]
+
+- [core] rag: Replace per-chunk sequential INSERT with `createManyAndReturn` + batched transaction on material embed path — chunk creation now costs 1 DB round-trip regardless of document size (down from N); embedding inserts remain individual raw SQL due to the pgvector type but run inside the same transaction. (#364, @frostbitcactus, 2026-06-06)
+- [core] rag: Eliminate double-split on material ingest path — `processMaterialEmbeddings` now detects `SEMANTIC_CHUNK_SEPARATOR` written by `processUploadedFile` and splits on it directly, preserving semantic chunks from `applySemanticChunking`; falls back to `generateChunks` for content that did not pass through the upload path. Previously, every uploaded file was semantically chunked in `file-processing.ts` and then immediately re-split by a naive sentence splitter in `embedding.ts`, destroying section boundaries. Re-upload existing materials to benefit. (#360, @frostbitcactus, 2026-06-06)
+- [core] tests: Add unit tests for `resolveMaterialChunks` — covers separator-preserving split, `generateChunks` fallback, and empty separator-only input. (#360, @frostbitcactus, 2026-06-06)
 
 ### Added
 
@@ -233,9 +310,9 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [monorepo] docs: Add Canvas integration strategy report — CWL-first access, Canvas REST roster sync MVP (course users + profile `primary_email` fallback), Question Maker REST for quizzes; LTI 1.3 documented as deferred until in-Canvas launch is required; local API validation notes and UBC pilot checklist. Added Canvas LTI vs API key technical research — endpoint reference, PowerShell/`curl.exe` testing notes, pros/cons, implementation checklist; links to `docs/implementations/lti-canvas-integration-report.md`. Add Canvas API integration guide — WSL + Canvas LMS `docker_dev_setup.sh`, `docker-compose.override.yml` host port mapping (e.g. `8080:80` to avoid Core on 3000), Question Maker connect/API verification, Docker vs host dev, troubleshooting. (#447, @glowyblack, 2026-06-03)
 - [core] ui: Add presentational skeleton for all 32 EduAI Core domain components — exported `*Props` types, route-owned I/O for materials upload, course selector, API key settings, and Ollama model fetch; 29 Vitest + RTL component tests under `apps/core/app/tests/unit/`. (#437, #438, #385, @ebabar5 @yta3216 @Ayyhab, 2026-06-03)
 - [core] ui: Add empty-state rows to admin AI models and providers tables (`No models found.`, `No providers found.`). (#438, @yta3216, 2026-06-03)
-- [core] api: Build `GET /api/courses/:id/enrollments` — dual-auth endpoint (user OAuth Bearer and service key) that returns all enrollments (active and inactive) for a course; maps Prisma `Enrollment` + `User` join to the contract shape (`studentId`, `studentEmail`, `studentName`, `enrolledAt`, `isActive`, `role`); service key callers skip enrollment authorization; user OAuth callers must be enrolled in the course (else `403`); returns `404 COURSE_NOT_FOUND` for missing/soft-deleted courses. Unblocks AI Tutor's `POST /api/courses/import-external` flow. (#430, @ammaarm128, 2026-05-30)
-- [core] tests: Add 14 unit tests (`courses.enrollments.test.ts`) for `GET /api/courses/:id/enrollments` — covers `400` missing ID, `401` no session, `403` invalid service key, `403` user not enrolled, `404` course not found (both auth paths), `200` via service key and user OAuth (STUDENT + INSTRUCTOR), role mapping for STUDENT/TA/INSTRUCTOR, null `enrolledAt` handling, active + inactive returned together, and empty enrollment list. (#430, @ammaarm128, 2026-05-30)
-- [core] tests: Add integration tests (`courses.enrollments.integration.test.ts`) for `GET /api/courses/:id/enrollments` — seeds users (STUDENT, TA, INSTRUCTOR, outsider) and enrollments against a real test DB; covers `401`, `403` invalid key, `403` not enrolled, `404` nonexistent course, `200` via service key and user OAuth, role mapping, active + inactive returned, and correct field values from seeded data. (#430, @ammaarm128, 2026-05-30)
+- [core] api: Build `GET /api/courses/:id/enrollments` — dual-auth endpoint (user OAuth Bearer and service key) that returns all enrollments (active and inactive) for a course; maps Prisma `Enrollment` + `User` join to the contract shape (`studentId`, `studentEmail`, `studentName`, `enrolledAt`, `isActive`, `role`); service key callers skip enrollment authorization; user OAuth callers must be enrolled in the course (else `403`); returns `404 COURSE_NOT_FOUND` for missing/soft-deleted courses. Unblocks AI Tutor's `POST /api/courses/import-external` flow. (#430, @frostbitcactus, 2026-05-30)
+- [core] tests: Add 14 unit tests (`courses.enrollments.test.ts`) for `GET /api/courses/:id/enrollments` — covers `400` missing ID, `401` no session, `403` invalid service key, `403` user not enrolled, `404` course not found (both auth paths), `200` via service key and user OAuth (STUDENT + INSTRUCTOR), role mapping for STUDENT/TA/INSTRUCTOR, null `enrolledAt` handling, active + inactive returned together, and empty enrollment list. (#430, @frostbitcactus, 2026-05-30)
+- [core] tests: Add integration tests (`courses.enrollments.integration.test.ts`) for `GET /api/courses/:id/enrollments` — seeds users (STUDENT, TA, INSTRUCTOR, outsider) and enrollments against a real test DB; covers `401`, `403` invalid key, `403` not enrolled, `404` nonexistent course, `200` via service key and user OAuth, role mapping, active + inactive returned, and correct field values from seeded data. (#430, @frostbitcactus, 2026-05-30)
 - [core] api: Build the Core questions endpoints — `POST /api/questions` (validated create with idempotency-key dedupe), `GET /api/questions` (list/filter), `GET /api/questions/:id`, and `PATCH /api/questions/:id` (testable toggle); hardens topic resolution and idempotency handling. Closes #280. (#430, @abdullahmoh21, 2026-06-01)
 - [question-maker] api: Wire Question Maker to Core — `PATCH /api/course/:id/link-core` (course linking), `POST /api/course/:id/sync-topics` (topic pull/push), question/variant push to Core on approval, and `PATCH /api/questions/variants/:variantId/testable` toggle, all authenticated with the Core service key; add `coreApiService` and `coreWiringService`. Closes #282. (#430, @abdullahmoh21, 2026-06-01)
 - [ai-tutor] api: Wire enrollment sync and testable-question fetch to Core via the service key — `syncCourseEnrollments` pulls Core enrollments into AI Tutor and `listCourseTestableQuestions` fetches a course's testable questions from Core. (#430, @abdullahmoh21, 2026-06-01)
