@@ -93,7 +93,7 @@ function buildReport() {
   }
   for (const metric of METRICS) {
     const c = combined[metric];
-    c.pct = c.total === 0 ? 0 : (c.covered / c.total) * 100;
+    c.pct = c.total === 0 ? null : (c.covered / c.total) * 100;
   }
 
   const timestamp = process.env.REPORT_TIMESTAMP || new Date().toISOString();
@@ -140,6 +140,11 @@ function buildReport() {
     }
     lines.push(
       `| ${backend.label} | ${fmtCount(total.statements)} | ${fmtCount(total.branches)} | ${fmtCount(total.functions)} | ${fmtCount(total.lines)} |`,
+    );
+  }
+  if (anyData) {
+    lines.push(
+      `| **Combined** | **${fmtCount(combined.statements)}** | **${fmtCount(combined.branches)}** | **${fmtCount(combined.functions)}** | **${fmtCount(combined.lines)}** |`,
     );
   }
   lines.push("");
