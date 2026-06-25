@@ -7,6 +7,7 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import { DEFAULT_LABELS_OUT, DEFAULT_POLICY_OUT } from "./paths.mjs";
+import { rowMatchesPolicy } from "./policy-ids.mjs";
 
 function readEnv(name) {
   const v = process.env[name];
@@ -37,13 +38,13 @@ function main() {
   console.log("labels file:", labelsPath, "rows:", labels.length);
   console.log("");
 
-  for (const pol of ["P0", "P1", "P3a", "P3b"]) {
-    const rows = policies.filter((r) => r.policy === pol && !r.error && r.response);
+  for (const pol of ["P0", "P1", "P2", "P3"]) {
+    const rows = policies.filter((r) => rowMatchesPolicy(r, pol) && !r.error && r.response);
     if (!rows.length) continue;
     const durs = rows.map((r) => r.duration_ms);
     const mean = durs.reduce((a, b) => a + b, 0) / durs.length;
     console.log(`${pol}: n=${rows.length} mean_latency_ms=${Math.round(mean)}`);
-    if (pol === "P1" || pol === "P3a" || pol === "P3b") {
+    if (pol === "P1" || pol === "P2" || pol === "P3") {
       const tiers = { 1: 0, 2: 0, 3: 0, null: 0 };
       for (const r of rows) {
         const t = r.routing_tier ?? null;
@@ -56,9 +57,9 @@ function main() {
   if (labels.length === 0) return;
 
   const labelById = new Map(labels.map((l) => [l.prompt_id, l]));
-  const p1Dev = policies.filter((r) => r.policy === "P1" && r.split === "dev" && !r.error);
-  const p3aDev = policies.filter((r) => r.policy === "P3a" && r.split === "dev" && !r.error);
-  const p3bDev = policies.filter((r) => r.policy === "P3b" && r.split === "dev" && !r.error);
+  const p1Dev = policies.filter((r) => rowMatchesPolicy(r, "P1") && r.split === "dev" && !r.error);
+  const p2Dev = policies.filter((r) => rowMatchesPolicy(r, "P2") && r.split === "dev" && !r.error);
+  const p3Dev = policies.filter((r) => rowMatchesPolicy(r, "P3") && r.split === "dev" && !r.error);
 
   function printOracleGap(label, rows) {
     if (rows.length === 0) {
@@ -88,14 +89,14 @@ function main() {
     console.log("over-routed (energy waste):", overRoute);
   }
 
-  if (p1Dev.length === 0 && p3aDev.length === 0 && p3bDev.length === 0) {
-    console.log("\nNo P1/P3a/P3b dev runs — skip oracle gap.");
+  if (p1Dev.length === 0 && p2Dev.length === 0 && p3Dev.length === 0) {
+    console.log("\nNo P1/P2/P3 dev runs — skip oracle gap.");
     return;
   }
 
   printOracleGap("P1", p1Dev);
-  printOracleGap("P3a", p3aDev);
-  printOracleGap("P3b", p3bDev);
+  printOracleGap("P2", p2Dev);
+  printOracleGap("P3", p3Dev);
 
   const sensitive = labels.filter((l) => l.tier_sensitive).length;
   console.log("\n=== label stats ===");

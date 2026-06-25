@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 /**
- * Offline evaluation: kNN tier predictions vs oracle labels (P3 v0).
+ * Offline evaluation: kNN tier predictions vs oracle labels (P2 hybrid component).
  *
  * Requires embedding API (Ollama local or OPENAI_API_KEY) — same as RAG embed path.
  *
@@ -100,7 +100,7 @@ async function main() {
   let overRoute = 0;
   const confidences: number[] = [];
 
-  console.log("=== kNN router evaluation (P3 v0) ===");
+  console.log("=== kNN router evaluation (P2) ===");
   console.log("labels:", labelsPath);
   console.log("exemplars:", exemplarPath);
   console.log("split:", splitFilter);

@@ -16,10 +16,10 @@ Runnable pipeline for the URA two-tier routing study. **Docs and data live in UR
 
 | Command | Purpose |
 |---------|---------|
-| `npm run research:run-policy` | P0 / P1 / P3b on dev or test |
+| `npm run research:run-policy` | P0 / P1 / P2 / P3 on dev or test |
 | `npm run research:summarize-policy` | Latency + oracle gap for one JSONL |
 | `npm run research:status-report` | Advisor memo → `runs/status/` |
-| `npm run research:p3b-dev-v3` | s378: P3b dev re-run (mapping v3 + energy) |
+| `npm run research:p3-dev-v3` | s378: P3 dev re-run (mapping v3 + energy) |
 | `npm run research:remaining` | s378 batch scripts |
 
 Set `RESEARCH_RUNS_DIR` to `URA/docs/research/data/runs` (see `paths.mjs`).

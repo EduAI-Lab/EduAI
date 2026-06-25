@@ -49,7 +49,7 @@ RESEARCH_POLICY_OUT=/tmp/policy-runs-p1-dev.jsonl node scripts/research/summariz
 echo "=== research status report ==="
 export RESEARCH_RUNS_DIR="$RUNS"
 export RESEARCH_POLICY_P1_DEV=/tmp/policy-runs-p1-dev-v2.jsonl
-export RESEARCH_POLICY_P3B_DEV=/tmp/policy-runs-p3b-dev-v2.jsonl
+export RESEARCH_POLICY_P3_DEV=/tmp/policy-runs-p3-dev-v2.jsonl
 export RESEARCH_STATUS_OUT="$RUNS/research-status-$(date +%Y-%m-%d).md"
 node scripts/research/summarize-research-status.mjs | tee /tmp/research-status-v2.txt
 
@@ -78,10 +78,10 @@ for f in \
   /tmp/policy-runs-p0-dev-summary.txt \
   /tmp/policy-runs-p1-test-v2.jsonl \
   /tmp/policy-runs-p1-test-v2-summary.txt \
-  /tmp/policy-runs-p3b-dev-v2.jsonl \
-  /tmp/policy-runs-p3b-dev-v2-summary.txt \
-  /tmp/policy-runs-p3b-test-v2.jsonl \
-  /tmp/policy-runs-p3b-test-v2-summary.txt \
+  /tmp/policy-runs-p3-dev-v2.jsonl \
+  /tmp/policy-runs-p3-dev-v2-summary.txt \
+  /tmp/policy-runs-p3-test-v2.jsonl \
+  /tmp/policy-runs-p3-test-v2-summary.txt \
   /tmp/llm-classifier-eval.log \
   /tmp/research-status-v2.txt
 do

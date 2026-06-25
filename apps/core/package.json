@@ -46,7 +46,7 @@
     "research:tier-a": "bash ./scripts/research/run-s378-tier-a.sh",
     "research:tier-continue": "bash ./scripts/research/run-s378-tier-continue.sh",
     "research:remaining": "bash ./scripts/research/run-s378-remaining-batches.sh",
-    "research:p3b-dev-v3": "bash ./scripts/research/run-s378-p3b-dev-v3.sh",
+    "research:p3-dev-v3": "bash ./scripts/research/run-s378-p3-dev-v3.sh",
     "research:phase-456": "bash ./scripts/research/run-s378-phase-456.sh",
     "research:verify-energy": "node ./scripts/research/verify-energy-sidecar.mjs",
     "research:offline-analysis": "bash ./scripts/research/run-offline-analysis.sh",

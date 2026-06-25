@@ -341,7 +341,7 @@ export async function resolveRoutedModelHybrid(
 }
 
 /**
- * P3b LLM classifier: dedicated tier-1 router call, then carbon-aware model pick.
+ * P3 LLM classifier: dedicated tier-1 router call, then carbon-aware model pick.
  * Hard rules still win for images (tier ≥ 2).
  */
 export async function resolveRoutedModelLlm(
@@ -408,7 +408,7 @@ function resolveMode(options?: ResolveRouterOptions): RouterMode {
 /**
  * Choose `provider:modelId` for Auto mode.
  * - `model=auto` → `ROUTER_MODE` env (default rules)
- * - `model=auto-llm` → LLM classifier (P3b)
+ * - `model=auto-llm` → LLM classifier (P3)
  */
 export async function resolveRoutedModel(
   prompt: string,

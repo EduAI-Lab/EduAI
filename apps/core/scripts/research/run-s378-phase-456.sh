@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Tasks 4–6 on s378: routing benchmark (P1/P3a/P3b dev), strict re-label, 100-student classroom.
+# Tasks 4–6 on s378: routing benchmark (P1/P2/P3 dev), strict re-label, 100-student classroom.
 #
-# Prereqs: latest apps/core deployed (auto-hybrid, P3b tune, energy sidecar defaults).
+# Prereqs: latest apps/core deployed (auto-hybrid, P3 tune, energy sidecar defaults).
 #
 # Usage (SSH as ssaada08@dev.eduai.ok.ubc.ca):
 #   cd /srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore/apps/core
@@ -38,14 +38,14 @@ node scripts/research/verify-energy-sidecar.mjs || {
   exit 1
 }
 
-# --- Task 4: P1 vs P3a (hybrid) vs P3b on dev (96 prompts) ---
+# --- Task 4: P1 vs P2 (hybrid) vs P3 on dev (96 prompts) ---
 export RESEARCH_POLICY=ROUTING
 export RESEARCH_RUN_SPLIT=dev
 export RESEARCH_RUN_LABEL=routing-dev-v1
 export RESEARCH_POLICY_OUT="$URA_RUNS/policy/policy-runs-routing-dev-v1.jsonl"
 mkdir -p "$(dirname "$RESEARCH_POLICY_OUT")"
 
-echo "=== task 4: routing benchmark (P1/P3a/P3b dev) ==="
+echo "=== task 4: routing benchmark (P1/P2/P3 dev) ==="
 node scripts/research/run-policy-comparison.mjs
 
 RESEARCH_POLICY_OUT="$RESEARCH_POLICY_OUT" \
@@ -69,11 +69,11 @@ RESEARCH_LABEL_OUT="$RESEARCH_LABEL_OUT" node scripts/research/summarize-both-ti
 
 # Re-eval routers against strict labels (offline)
 export RESEARCH_LABEL_IN="$RESEARCH_LABEL_OUT"
-echo "=== eval P3a/P3b vs strict labels ==="
+echo "=== eval P2/P3 vs strict labels ==="
 RESEARCH_RUN_SPLIT=dev npx tsx scripts/research/evaluate-knn-router.ts 2>/dev/null || true
 RESEARCH_RUN_SPLIT=dev npx tsx scripts/research/evaluate-llm-router.ts 2>/dev/null || true
 
-# --- Task 6: 100-student classroom sim (P0, P1, P3b) ---
+# --- Task 6: 100-student classroom sim (P0, P1, P3) ---
 export RESEARCH_CLASSROOM_STUDENTS=100
 export RESEARCH_CLASSROOM_CONCURRENCY="${RESEARCH_CLASSROOM_CONCURRENCY:-10}"
 export RESEARCH_CLASSROOM_SPLIT=test
@@ -91,7 +91,7 @@ run_classroom() {
 
 run_classroom P0
 run_classroom P1
-run_classroom P3b
+run_classroom P3
 
 echo "=== phase 4-6 done $(date -Iseconds) ==="
 echo "ALL_DONE"

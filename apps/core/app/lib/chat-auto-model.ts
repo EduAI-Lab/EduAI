@@ -23,7 +23,7 @@ export const AUTO_CHAT_MODEL: ChatModelOption = {
 export const AUTO_LLM_CHAT_MODEL: ChatModelOption = {
   id: AUTO_LLM_MODEL_ID,
   name: "Auto (LLM)",
-  description: "LLM classifier routing (P3b) — 7B classifies, then tier pick",
+  description: "LLM classifier routing (P3) — 7B classifies, then tier pick",
   provider: "routing",
   supportsTools: true,
   supportsImages: true,

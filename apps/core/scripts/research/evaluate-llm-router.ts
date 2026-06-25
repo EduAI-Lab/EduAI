@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 /**
- * Offline evaluation: LLM classifier tier predictions vs oracle labels (P3b).
+ * Offline evaluation: LLM classifier tier predictions vs oracle labels (P3).
  *
  * Requires vLLM (ROUTING_LLM_CLASSIFIER_MODEL on tier 1).
  *
@@ -59,7 +59,7 @@ async function main() {
   let overRoute = 0;
   let errors = 0;
 
-  console.log("=== LLM classifier evaluation (P3b) ===");
+  console.log("=== LLM classifier evaluation (P3) ===");
   console.log("labels:", labelsPath);
   console.log("split:", splitFilter);
   console.log("rows:", labels.length);

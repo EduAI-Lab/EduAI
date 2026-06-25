@@ -8,7 +8,7 @@
  * Env (inherits RESEARCH_RUN_* from policy scripts):
  *   RESEARCH_CLASSROOM_STUDENTS     default 30
  *   RESEARCH_CLASSROOM_CONCURRENCY  default 5
- *   RESEARCH_CLASSROOM_POLICY       P0 | P1 | P3b (default P1)
+ *   RESEARCH_CLASSROOM_POLICY       P0 | P1 | P3 (default P1)
  *   RESEARCH_CLASSROOM_SPLIT        dev | test (default test)
  *   RESEARCH_CLASSROOM_OUT          JSONL output
  *   RESEARCH_CLASSROOM_SUMMARY      text summary
@@ -27,11 +27,13 @@ import {
   resolveResearchChatFlags,
   resolveResearchTimeoutMs,
 } from "./research-chat-body.mjs";
+import { normalizePolicyKey } from "./policy-ids.mjs";
 
 const POLICIES = {
   P0: { policy: "P0", requested_model: "vllm:qwen2.5-32b-instruct" },
   P1: { policy: "P1", requested_model: "auto" },
-  P3b: { policy: "P3b", requested_model: "auto-llm" },
+  P2: { policy: "P2", requested_model: "auto-hybrid" },
+  P3: { policy: "P3", requested_model: "auto-llm" },
 };
 
 function readEnv(primary, alias) {
@@ -204,7 +206,7 @@ async function main() {
   const apiKeysJson = loadApiKeysJson();
   const xApiKey = readEnv("RESEARCH_RUN_X_API_KEY", "CHAT_BENCH_X_API_KEY");
   const cookie = readEnv("RESEARCH_RUN_COOKIE", "CHAT_BENCH_COOKIE");
-  const policyKey = (readEnv("RESEARCH_CLASSROOM_POLICY") ?? "P1").toUpperCase();
+  const policyKey = normalizePolicyKey(readEnv("RESEARCH_CLASSROOM_POLICY") ?? "P1");
   const splitFilter = (readEnv("RESEARCH_CLASSROOM_SPLIT") ?? "test").toLowerCase();
   const students = Math.max(1, Number(readEnv("RESEARCH_CLASSROOM_STUDENTS", "30")) || 30);
   const concurrency = Math.max(
@@ -228,7 +230,7 @@ async function main() {
     POLICIES[policyKey] ??
     Object.values(POLICIES).find((p) => p.policy.toUpperCase() === policyKey);
   if (!policy) {
-    console.error("RESEARCH_CLASSROOM_POLICY must be P0, P1, or P3b.");
+    console.error("RESEARCH_CLASSROOM_POLICY must be P0, P1, P2, or P3.");
     process.exit(1);
   }
 

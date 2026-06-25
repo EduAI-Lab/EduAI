@@ -10,9 +10,10 @@
  *   RESEARCH_STATUS_OUT     default RUNS_DIR/research-status-YYYY-MM-DD.md
  *   RESEARCH_POLICY_P0_DEV    P0 dev run (default policy-runs-p0-dev.jsonl if exists)
  *   RESEARCH_POLICY_P1_DEV    P1 dev run (default policy-runs-p1-dev-v2.jsonl if exists)
- *   RESEARCH_POLICY_P3B_DEV   P3b dev run (default policy-runs-p3b-dev-v2.jsonl if exists)
+ *   RESEARCH_POLICY_P2_DEV    P2 dev run (hybrid; legacy P3a rows OK)
+ *   RESEARCH_POLICY_P3_DEV    P3 dev run (LLM classifier; legacy P3b rows OK)
  *   RESEARCH_POLICY_P1_TEST   P1 test run (default policy-runs-p1-test-v2.jsonl if exists)
- *   RESEARCH_POLICY_P3B_TEST  P3b test run (default policy-runs-p3b-test-v2.jsonl if exists)
+ *   RESEARCH_POLICY_P3_TEST   P3 test run (default policy-runs-p3-test-v2.jsonl if exists)
  *   RESEARCH_LABEL_OUT      labels (default labels.v1.jsonl)
  */
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
@@ -22,6 +23,7 @@ import {
   RUNS_DIR,
   resolveRunsFile,
 } from "./paths.mjs";
+import { rowMatchesPolicy } from "./policy-ids.mjs";
 
 function readEnv(name) {
   const v = process.env[name];
@@ -61,7 +63,7 @@ function percentile(nums, p) {
 }
 
 function policySummary(rows, pol) {
-  const ok = rows.filter((r) => r.policy === pol && !r.error && r.response);
+  const ok = rows.filter((r) => rowMatchesPolicy(r, pol) && !r.error && r.response);
   if (!ok.length) return null;
   const durs = ok.map((r) => r.duration_ms);
   const out = {
@@ -69,7 +71,7 @@ function policySummary(rows, pol) {
     mean_latency_ms: Math.round(mean(durs)),
     p50_latency_ms: Math.round(percentile(durs, 0.5)),
     p95_latency_ms: Math.round(percentile(durs, 0.95)),
-    errors: rows.filter((r) => r.policy === pol && (r.error || r.http_status >= 400)).length,
+    errors: rows.filter((r) => rowMatchesPolicy(r, pol) && (r.error || r.http_status >= 400)).length,
   };
   const tiers = { 1: 0, 2: 0, 3: 0, null: 0 };
   for (const r of ok) {
@@ -88,7 +90,7 @@ function policySummary(rows, pol) {
 
 function rowsForPolicy(rows, pol) {
   if (!rows?.length) return rows;
-  return rows.some((r) => r.policy) ? rows.filter((r) => r.policy === pol) : rows;
+  return rows.some((r) => r.policy) ? rows.filter((r) => rowMatchesPolicy(r, pol)) : rows;
 }
 
 function summarizeFile(rows, pol) {
@@ -187,14 +189,16 @@ function main() {
     resolveRunsFile("policy-runs-p1-dev.jsonl"),
     "/tmp/policy-runs-p1-dev-v2.jsonl",
   );
-  const p3bDevPath = pickPath(
-    readEnv("RESEARCH_POLICY_P3B_DEV"),
+  const p3DevPath = pickPath(
+    readEnv("RESEARCH_POLICY_P3_DEV") ?? readEnv("RESEARCH_POLICY_P3B_DEV"),
     routingDevPath,
+    resolveRunsFile("policy-runs-p3-dev-v2.jsonl"),
     resolveRunsFile("policy-runs-p3b-dev-v2.jsonl"),
+    "/tmp/policy-runs-p3-dev-v2.jsonl",
     "/tmp/policy-runs-p3b-dev-v2.jsonl",
   );
-  const p3aDevPath = pickPath(
-    readEnv("RESEARCH_POLICY_P3A_DEV"),
+  const p2DevPath = pickPath(
+    readEnv("RESEARCH_POLICY_P2_DEV") ?? readEnv("RESEARCH_POLICY_P3A_DEV"),
     routingDevPath,
   );
   const p1TestPath = pickPath(
@@ -202,19 +206,21 @@ function main() {
     resolveRunsFile("policy-runs-p1-test-v2.jsonl"),
     "/tmp/policy-runs-p1-test-v2.jsonl",
   );
-  const p3bTestPath = pickPath(
-    readEnv("RESEARCH_POLICY_P3B_TEST"),
+  const p3TestPath = pickPath(
+    readEnv("RESEARCH_POLICY_P3_TEST") ?? readEnv("RESEARCH_POLICY_P3B_TEST"),
+    resolveRunsFile("policy-runs-p3-test-v2.jsonl"),
     resolveRunsFile("policy-runs-p3b-test-v2.jsonl"),
+    "/tmp/policy-runs-p3-test-v2.jsonl",
     "/tmp/policy-runs-p3b-test-v2.jsonl",
   );
 
   const labels = loadJsonl(labelsPath);
   const p0Dev = loadJsonl(p0DevPath);
   const p1Dev = loadJsonl(p1DevPath);
-  const p3aDev = p3aDevPath && existsSync(p3aDevPath) ? loadJsonl(p3aDevPath) : null;
-  const p3bDev = loadJsonl(p3bDevPath);
+  const p2Dev = p2DevPath && existsSync(p2DevPath) ? loadJsonl(p2DevPath) : null;
+  const p3Dev = loadJsonl(p3DevPath);
   const p1Test = loadJsonl(p1TestPath);
-  const p3bTest = loadJsonl(p3bTestPath);
+  const p3Test = loadJsonl(p3TestPath);
 
   const lines = [
     "# EduAI URA — Research status",
@@ -230,9 +236,10 @@ function main() {
     `| Labels \`${labelsPath}\` | ${labels ? `${labels.length} rows` : "missing"} |`,
     `| P0 dev \`${p0DevPath}\` | ${p0Dev ? `${p0Dev.length} rows` : "missing"} |`,
     `| P1 dev \`${p1DevPath}\` | ${p1Dev ? `${p1Dev.length} rows` : "missing"} |`,
-    `| P3b dev \`${p3bDevPath}\` | ${p3bDev ? `${p3bDev.length} rows` : "missing"} |`,
+    `| P2 dev \`${p2DevPath}\` | ${p2Dev ? `${p2Dev.length} rows` : "missing"} |`,
+    `| P3 dev \`${p3DevPath}\` | ${p3Dev ? `${p3Dev.length} rows` : "missing"} |`,
     `| P1 test \`${p1TestPath}\` | ${p1Test ? `${p1Test.length} rows` : "missing"} |`,
-    `| P3b test \`${p3bTestPath}\` | ${p3bTest ? `${p3bTest.length} rows` : "missing"} |`,
+    `| P3 test \`${p3TestPath}\` | ${p3Test ? `${p3Test.length} rows` : "missing"} |`,
     "",
   ];
 
@@ -254,18 +261,18 @@ function main() {
 
   const p0s = summarizeFile(p0Dev, "P0");
   const p1s = summarizeFile(p1Dev, "P1");
-  const p3as = p3aDev ? summarizeFile(p3aDev, "P3a") : null;
-  const p3bs = summarizeFile(p3bDev, "P3b");
+  const p2s = p2Dev ? summarizeFile(p2Dev, "P2") : null;
+  const p3s = summarizeFile(p3Dev, "P3");
 
-  if (p0s || p1s || p3as || p3bs) {
+  if (p0s || p1s || p2s || p3s) {
     lines.push("## Dev split — routing policies", "");
     lines.push("| Policy | n | mean (ms) | p50 | p95 | tier 1 | tier 3 | router |");
     lines.push("|--------|---|-----------|-----|-----|--------|--------|--------|");
     for (const [name, s] of [
       ["P0", p0s],
       ["P1", p1s],
-      ["P3a", p3as],
-      ["P3b", p3bs],
+      ["P2", p2s],
+      ["P3", p3s],
     ]) {
       if (!s) continue;
       const rv = s.router_version ? JSON.stringify(s.router_version) : "—";
@@ -278,35 +285,35 @@ function main() {
         `- P1 vs P0 mean latency: ~${pctDelta(p0s.mean_latency_ms, p1s.mean_latency_ms)}% lower`,
       );
     }
-    if (p0s?.mean_latency_ms && p3bs?.mean_latency_ms) {
+    if (p0s?.mean_latency_ms && p3s?.mean_latency_ms) {
       lines.push(
-        `- P3b vs P0 mean latency: ~${pctDelta(p0s.mean_latency_ms, p3bs.mean_latency_ms)}% lower`,
+        `- P3 vs P0 mean latency: ~${pctDelta(p0s.mean_latency_ms, p3s.mean_latency_ms)}% lower`,
       );
     }
-    if (p1s?.mean_latency_ms && p3bs?.mean_latency_ms) {
-      const pct = pctDelta(p3bs.mean_latency_ms, p1s.mean_latency_ms);
-      lines.push(`- P1 vs P3b mean latency: P1 ~${pct}% faster`);
+    if (p1s?.mean_latency_ms && p3s?.mean_latency_ms) {
+      const pct = pctDelta(p3s.mean_latency_ms, p1s.mean_latency_ms);
+      lines.push(`- P1 vs P3 mean latency: P1 ~${pct}% faster`);
     }
     lines.push("");
   }
 
-  if (p1Test?.length || p3bTest?.length) {
-    lines.push("## Test split — P1 vs P3b (no oracle labels)", "");
+  if (p1Test?.length || p3Test?.length) {
+    lines.push("## Test split — P1 vs P3 (no oracle labels)", "");
     const p1t = summarizeFile(p1Test, "P1");
-    const p3bt = summarizeFile(p3bTest, "P3b");
+    const p3t = summarizeFile(p3Test, "P3");
     if (p1t) {
       lines.push(
         `- **P1**: n=${p1t.n}, mean ${p1t.mean_latency_ms} ms, tiers ${JSON.stringify(p1t.routing_tier)}`,
       );
     }
-    if (p3bt) {
+    if (p3t) {
       lines.push(
-        `- **P3b**: n=${p3bt.n}, mean ${p3bt.mean_latency_ms} ms, tiers ${JSON.stringify(p3bt.routing_tier)}`,
+        `- **P3**: n=${p3t.n}, mean ${p3t.mean_latency_ms} ms, tiers ${JSON.stringify(p3t.routing_tier)}`,
       );
     }
-    if (p1t?.mean_latency_ms && p3bt?.mean_latency_ms) {
+    if (p1t?.mean_latency_ms && p3t?.mean_latency_ms) {
       lines.push(
-        `- P1 vs P3b: P1 ~${pctDelta(p3bt.mean_latency_ms, p1t.mean_latency_ms)}% faster on test`,
+        `- P1 vs P3: P1 ~${pctDelta(p3t.mean_latency_ms, p1t.mean_latency_ms)}% faster on test`,
       );
     }
     lines.push("");
@@ -314,8 +321,8 @@ function main() {
 
   for (const gap of [
     oracleGap(p1Dev, labels, "P1", "P1"),
-    p3aDev ? oracleGap(p3aDev, labels, "P3a", "P3a") : null,
-    oracleGap(p3bDev, labels, "P3b", "P3b"),
+    p2Dev ? oracleGap(p2Dev, labels, "P2", "P2") : null,
+    oracleGap(p3Dev, labels, "P3", "P3"),
   ].filter(Boolean)) {
     if (!gap) continue;
     lines.push(`## ${gap.label} vs oracle (dev)`, "");
@@ -344,7 +351,7 @@ function main() {
   lines.push("");
   lines.push("**Done (2026-06-24):** P1 under-route rules (`5f349b19`, 10/10 unit tests); Paper 2 outline; advisor packet; kNN LOO 80.2%.");
   lines.push("**Done (2026-06-23):** #501 trim (RAG + energy via :8001 proxy), strict kNN exemplars built, token usage fix (`generateText` + stream `includeUsage`).");
-  lines.push("**Done (2026-06-18):** strict relabel, P3b mapping tune, P1/P3a/P3b dev benchmark, 100-student classroom.");
+  lines.push("**Done (2026-06-18):** strict relabel, P3 mapping tune, P1/P2/P3 dev benchmark, 100-student classroom.");
   lines.push("");
 
   mkdirSync(dirname(outPath), { recursive: true });

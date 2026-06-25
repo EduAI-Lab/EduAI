@@ -1,5 +1,5 @@
 /**
- * P3b — LLM tier classifier (dedicated router call on tier-1 vLLM).
+ * P3 — LLM tier classifier (dedicated router call on tier-1 vLLM).
  * Used when the client requests `model=auto-llm` or `ROUTER_MODE=llm`.
  */
 import { generateText } from "ai";

@@ -4,11 +4,11 @@
  *
  * P0: always tier 3 (vllm:qwen2.5-32b-instruct)
  * P1: Auto routing (model=auto) — rule-based
- * P3a: Hybrid rules+kNN (model=auto-hybrid)
- * P3b: LLM classifier Auto (model=auto-llm)
+ * P2: Hybrid rules+kNN (model=auto-hybrid)
+ * P3: LLM classifier Auto (model=auto-llm)
  *
  * Env: same as run-both-tier-baseline.mjs plus:
- *   RESEARCH_POLICY          P0 | P1 | P3b | both (default both = P0+P1)
+ *   RESEARCH_POLICY          P0 | P1 | P2 | P3 | both (default both = P0+P1)
  *   RESEARCH_RUN_SPLIT       dev | test | all (default test for step 5)
  *   RESEARCH_POLICY_OUT      default docs/research/data/runs/policy-runs.v1.jsonl
  */
@@ -27,6 +27,7 @@ import {
   resolveResearchChatFlags,
   resolveResearchTimeoutMs,
 } from "./research-chat-body.mjs";
+import { normalizePolicyKey } from "./policy-ids.mjs";
 
 const POLICIES = {
   P0: {
@@ -39,35 +40,36 @@ const POLICIES = {
     requested_model: "auto",
     description: "rule-based-auto",
   },
-  P3a: {
-    policy: "P3a",
+  P2: {
+    policy: "P2",
     requested_model: "auto-hybrid",
     description: "rules+knn-hybrid",
   },
-  P3b: {
-    policy: "P3b",
+  P3: {
+    policy: "P3",
     requested_model: "auto-llm",
     description: "llm-classifier-auto",
   },
 };
 
 function resolvePolicies(policyFilter) {
-  const key = policyFilter.trim();
+  const key = policyFilter.trim().toUpperCase();
   if (key === "BOTH") {
     return [POLICIES.P0, POLICIES.P1];
   }
   if (key === "ALL") {
-    return [POLICIES.P0, POLICIES.P1, POLICIES.P3a, POLICIES.P3b];
+    return [POLICIES.P0, POLICIES.P1, POLICIES.P2, POLICIES.P3];
   }
   if (key === "ROUTING" || key === "COMPARE") {
-    return [POLICIES.P1, POLICIES.P3a, POLICIES.P3b];
+    return [POLICIES.P1, POLICIES.P2, POLICIES.P3];
   }
-  const direct = POLICIES[key];
+  const norm = normalizePolicyKey(policyFilter);
+  const direct = POLICIES[norm];
   if (direct) {
     return [direct];
   }
   const alt = Object.values(POLICIES).find(
-    (p) => p.policy.toUpperCase() === key.toUpperCase(),
+    (p) => p.policy.toUpperCase() === norm.toUpperCase(),
   );
   return alt ? [alt] : [];
 }
@@ -245,7 +247,7 @@ async function main() {
   let policies = resolvePolicies(policyFilter);
 
   if (policies.length === 0) {
-    console.error("RESEARCH_POLICY must be P0, P1, P3b, both, or all.");
+    console.error("RESEARCH_POLICY must be P0, P1, P2, P3, both, routing, or all.");
     process.exit(1);
   }
 
