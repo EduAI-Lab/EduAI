@@ -1,12 +1,9 @@
 import { cn } from "../utils"
 import { marked } from "marked"
-import { memo, useId, useMemo, lazy, Suspense } from "react"
+import { memo, useId, useMemo, Suspense } from "react"
 import type { Components } from "react-markdown"
 import { CodeBlock, CodeBlockCode } from "./code-block"
-import { streamdownPlugins } from "./streamdown-config"
-
-// Lazy load Streamdown to avoid SSR issues with KaTeX CSS
-const Streamdown = lazy(() => import('streamdown').then(module => ({ default: module.Streamdown })))
+import { LazyStreamdown } from "./lazy-streamdown"
 
 export type MarkdownProps = {
   children: string
@@ -39,14 +36,13 @@ const MemoizedMarkdownBlock = memo(
   }) {
     return (
       <Suspense fallback={<div className="animate-pulse">{content}</div>}>
-        <Streamdown
+        <LazyStreamdown
           parseIncompleteMarkdown={true}
-          plugins={streamdownPlugins}
           shikiTheme={["github-light", "github-dark"]}
           className="streamdown-content"
         >
           {content}
-        </Streamdown>
+        </LazyStreamdown>
       </Suspense>
     )
   },
