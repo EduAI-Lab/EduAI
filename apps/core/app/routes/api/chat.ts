@@ -1,5 +1,4 @@
-import type { Prisma, User } from "@prisma/client";
-import { UserRole } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import { randomUUID } from "crypto";
 import { createDataStreamResponse, formatDataStreamPart, streamText } from "ai";
 import {
@@ -30,8 +29,11 @@ import {
 import { resolveAdhdResponseWordCap } from "~/lib/ai/adhd-metrics";
 import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
 import { findRelevantContent } from "~/lib/ai/embedding";
-import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import {
+  resolveCourseAccessWithCourse,
+  type AccessLevel,
+} from "~/lib/auth/course-access.server";
+import { requireServiceKey } from "~/lib/auth/guards.server";
 import { auth } from "~/lib/auth/server";
 import type { ActionFunctionArgs } from "react-router";
 import prisma from "~/lib/prisma.server";
@@ -69,11 +71,6 @@ type StoredMessageRecord = {
   content: Prisma.JsonValue;
 };
 
-type ProxyUserPayload = {
-  provider?: string;
-  id?: string;
-  email?: string;
-};
 
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0;
@@ -182,91 +179,29 @@ function serializeMessage(message: GenericMessage): Prisma.JsonValue {
 }
 
 /**
- * Maps an external `(provider, id)` pair to an EduAI user, creating the user +
- * `ExternalUser` record when needed. The canonical EduAI email stays unchanged;
- * we only update the mapping's email for reference.
+ * Pulls plain text out of AI-SDK `response.messages` (whose `content` is an
+ * array of typed parts) as a fallback for when the `onFinish`/awaited `text`
+ * field is empty. Keeps persisted assistant content as a string so chat history
+ * restore renders real markdown instead of a blank bubble or raw JSON.
  */
-async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
-  const provider = proxyUser.provider?.trim().toLowerCase() || "aitutor";
-  const externalUserId = proxyUser.id?.trim();
-
-  if (!externalUserId) {
-    throw new Error("proxyUser.id is required");
-  }
-
-  let email = proxyUser.email?.trim().toLowerCase();
-  if (!email || !email.includes("@")) {
-    email = `${externalUserId}@${provider}.local`;
-  }
-
-  const existingMapping = await prisma.externalUser.findUnique({
-    where: {
-      provider_externalUserId: {
-        provider,
-        externalUserId,
-      },
-    },
-    include: {
-      user: true,
-    },
-  });
-
-  if (existingMapping?.user) {
-    if (!existingMapping.email && email) {
-      await prisma.externalUser.update({
-        where: { id: existingMapping.id },
-        data: { email },
-      });
+function extractAssistantText(messages: GenericMessage[] | undefined): string {
+  if (!messages?.length) return "";
+  const collectText = (content: unknown): string => {
+    if (typeof content === "string") return content;
+    if (Array.isArray(content)) {
+      return content
+        .filter((p): p is GenericMessage => !!p && typeof p === "object")
+        .filter((p) => p.type === "text" && typeof p.text === "string")
+        .map((p) => p.text as string)
+        .join("\n");
     }
-    return existingMapping.user;
-  }
-
-  let user = await prisma.user.findUnique({ where: { email } });
-
-  if (!user) {
-    user = await prisma.user.create({
-      data: {
-        email,
-        name: email,
-        role: UserRole.STUDENT,
-        isActive: true,
-      },
-    });
-  }
-
-  try {
-    await prisma.externalUser.create({
-      data: {
-        provider,
-        externalUserId,
-        email,
-        userId: user.id,
-      },
-    });
-  } catch (error: unknown) {
-    if (
-      typeof error === "object" &&
-      error !== null &&
-      "code" in error &&
-      (error as { code?: string }).code === "P2002"
-    ) {
-      const mapping = await prisma.externalUser.findUnique({
-        where: {
-          provider_externalUserId: {
-            provider,
-            externalUserId,
-          },
-        },
-        include: { user: true },
-      });
-      if (mapping?.user) {
-        return mapping.user;
-      }
-    }
-    throw error;
-  }
-
-  return user;
+    return "";
+  };
+  return messages
+    .filter((m) => m.role === "assistant")
+    .map((m) => collectText(m.content))
+    .filter((t) => t.length > 0)
+    .join("\n");
 }
 
 /**
@@ -283,16 +218,13 @@ async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
  */
 export async function action({ request }: ActionFunctionArgs) {
   try {
-    const apiKeyHeader = request.headers.get("x-api-key");
-    const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
-    if (apiKeyGuard) return apiKeyGuard;
-
-    const session = apiKeySession ?? (await auth.api.getSession(request));
+    let session = await auth.api.getSession(request);
+    let isServiceKeyCaller = false;
     if (!session?.user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      });
+      const serviceKeyError = await requireServiceKey(request);
+      if (serviceKeyError) return serviceKeyError;
+      isServiceKeyCaller = true;
+      session = { user: { id: "service", name: "Service", role: "ADMIN" } } as unknown as typeof session;
     }
 
     const body = await request.json();
@@ -304,8 +236,6 @@ export async function action({ request }: ActionFunctionArgs) {
     const streaming = body.streaming === undefined ? true : Boolean(body.streaming);
     const forceHybridRag = body.forceHybridRag === true;
     const chatId = typeof body.chatId === "string" ? body.chatId : undefined;
-    const proxyUserPayload =
-      body.proxyUser && typeof body.proxyUser === "object" ? (body.proxyUser as ProxyUserPayload) : null;
 
     const hasAdhdAssistField = Object.prototype.hasOwnProperty.call(body, "adhdAssist");
     const adhdAssist = body.adhdAssist === true;
@@ -318,35 +248,7 @@ export async function action({ request }: ActionFunctionArgs) {
       trimmedSystemPrompt = null;
     }
 
-    let actingUser = session.user;
-    if (proxyUserPayload) {
-      if (!apiKeyHeader) {
-        return new Response(JSON.stringify({ error: "proxyUser requires admin API key access" }), {
-          status: 403,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-
-      try {
-        const proxyUser = await resolveProxyUser(proxyUserPayload);
-        actingUser = {
-          ...actingUser,
-          id: proxyUser.id,
-          email: proxyUser.email,
-          name: proxyUser.name,
-          role: proxyUser.role,
-        };
-      } catch (error) {
-        console.error("Failed to resolve proxy user:", error);
-        return new Response(
-          JSON.stringify({
-            error: "Failed to resolve proxy user",
-            details: error instanceof Error ? error.message : "Unknown error",
-          }),
-          { status: 400, headers: { "Content-Type": "application/json" } },
-        );
-      }
-    }
+    const actingUser = session!.user;
 
     const normalizedIncomingMessages = filterIncomingClientMessages(
       rawMessages
@@ -364,33 +266,9 @@ export async function action({ request }: ActionFunctionArgs) {
         console.error("Failed to resolve course by code", e);
       }
     }
-    const effectiveCourseId = resolvedCourseId || courseId || null;
-
-    // §10 (#302): course-scoped chats require course access for the acting
-    // user. Students need an active enrollment AND a published course; an
-    // inactive enrollment blocks new chats but never own-history reads
-    // (GET /api/chats/:chatId is ownership-scoped and unaffected).
-    // Chats without a course context (general assistant) are not gated.
-    if (effectiveCourseId) {
-      const { course, access } = await resolveCourseAccessWithCourse(
-        actingUser,
-        effectiveCourseId,
-      );
-      if (!course) {
-        return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
-          status: 404,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      if (!access || (access.level === "student" && !course.isPublished)) {
-        return new Response(JSON.stringify({ error: "Forbidden" }), {
-          status: 403,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-    }
-
-    // Handle chat lookup and system prompt persistence
+    // Load the owned chat up front so a follow-up turn that sends a `chatId`
+    // but no `courseId`/`courseCode` can inherit the course from the persisted
+    // chat row, instead of failing COURSE_REQUIRED below (#685 review).
     let chat = null;
     if (chatId) {
       chat = await prisma.chat.findFirst({
@@ -410,6 +288,58 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     }
 
+    // A persisted chat is pinned to its course. If a follow-up turn explicitly
+    // names a *different* course, reject — silently switching would split the
+    // chat's RAG context and message history across courses (#685 review).
+    const requestedCourseId = resolvedCourseId || courseId || null;
+    if (chat?.courseId && requestedCourseId && requestedCourseId !== chat.courseId) {
+      return new Response(JSON.stringify({ error: "COURSE_MISMATCH" }), {
+        status: 409,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const effectiveCourseId = resolvedCourseId || courseId || chat?.courseId || null;
+
+    // #657: the global "general assistant" chat was removed — every interactive
+    // chat is now course-scoped. Server-to-server callers (admin API key /
+    // ai-tutor proxy) may still omit a course; regular sessions may not.
+    const isApiKeyCaller = isServiceKeyCaller;
+    if (!effectiveCourseId && !isApiKeyCaller) {
+      return new Response(JSON.stringify({ error: "COURSE_REQUIRED" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // §10 (#302): course-scoped chats require course access for the acting
+    // user. Students need an active enrollment AND a published course; an
+    // inactive enrollment blocks new chats but never own-history reads
+    // (GET /api/chats/:chatId is ownership-scoped and unaffected).
+    // Hoisted so the web-tools gate (below) can read the caller's course access
+    // level — null for general (non-course) chats.
+    let courseAccess: AccessLevel | null = null;
+    if (effectiveCourseId) {
+      const { course, access } = await resolveCourseAccessWithCourse(
+        actingUser,
+        effectiveCourseId,
+      );
+      if (!course) {
+        return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (!access || (access.level === "student" && !course.isPublished)) {
+        return new Response(JSON.stringify({ error: "Forbidden" }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      courseAccess = access;
+    }
+
+    // Persist any system-prompt change onto the chat loaded above.
     if (hasSystemPromptField) {
       if (chat) {
         if (chat.systemPrompt !== trimmedSystemPrompt) {
@@ -422,11 +352,19 @@ export async function action({ request }: ActionFunctionArgs) {
         chat = await prisma.chat.create({
           data: {
             userId: actingUser.id,
+            courseId: effectiveCourseId,
             systemPrompt: trimmedSystemPrompt,
             adhdAssist,
           },
         });
       }
+    }
+
+    if (chat && effectiveCourseId && chat.courseId !== effectiveCourseId && !chat.courseId) {
+      chat = await prisma.chat.update({
+        where: { id: chat.id },
+        data: { courseId: effectiveCourseId },
+      });
     }
 
     if (hasAdhdAssistField && chat && chat.adhdAssist !== adhdAssist) {
@@ -456,6 +394,7 @@ export async function action({ request }: ActionFunctionArgs) {
       chat = await prisma.chat.create({
         data: {
           userId: actingUser.id,
+          courseId: effectiveCourseId,
           systemPrompt: trimmedSystemPrompt,
           adhdAssist,
         },

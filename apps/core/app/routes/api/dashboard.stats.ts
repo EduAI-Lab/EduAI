@@ -30,7 +30,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       await Promise.all([
         prisma.chat.count(),
         prisma.chat.count({ where: { createdAt: { gte: week } } }),
-        prisma.courseMaterial.count(),
+        prisma.courseMaterial.count({ where: { deletedAt: null } }),
         prisma.enrollment.count({ where: { role: "STUDENT", isActive: true } }),
         prisma.user.count({ where: { role: "INSTRUCTOR" } }),
         prisma.user.count(),
@@ -50,7 +50,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       courseIds.length
         ? prisma.chat.count({ where: { courseId: { in: courseIds }, createdAt: { gte: week } } })
         : Promise.resolve(0),
-      courseIds.length ? prisma.courseMaterial.count({ where: { courseId: { in: courseIds } } }) : Promise.resolve(0),
+      courseIds.length ? prisma.courseMaterial.count({ where: { courseId: { in: courseIds }, deletedAt: null } }) : Promise.resolve(0),
       courseIds.length
         ? prisma.enrollment.count({ where: { courseId: { in: courseIds }, role: "STUDENT", isActive: true } })
         : Promise.resolve(0),
@@ -79,27 +79,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       courseIds.length
         ? prisma.chat.count({ where: { courseId: { in: courseIds }, createdAt: { gte: week } } })
         : Promise.resolve(0),
-      courseIds.length ? prisma.courseMaterial.count({ where: { courseId: { in: courseIds } } }) : Promise.resolve(0),
-      courseIds.length
-        ? prisma.enrollment.count({ where: { courseId: { in: courseIds }, role: "STUDENT", isActive: true } })
-        : Promise.resolve(0),
-    ]);
-
-    stats = { chatCount, chatCountWeek, materialCount, studentCount, instructorCount: 0, totalUsers: 0, activeCourseCount: 0 };
-
-  } else if (role === "TA") {
-    const enrollments = await prisma.enrollment.findMany({
-      where: { userId: user.id, role: "TA", isActive: true },
-      select: { courseId: true },
-    });
-    const courseIds = enrollments.map((e) => e.courseId);
-
-    const [chatCount, chatCountWeek, materialCount, studentCount] = await Promise.all([
-      courseIds.length ? prisma.chat.count({ where: { courseId: { in: courseIds } } }) : Promise.resolve(0),
-      courseIds.length
-        ? prisma.chat.count({ where: { courseId: { in: courseIds }, createdAt: { gte: week } } })
-        : Promise.resolve(0),
-      courseIds.length ? prisma.courseMaterial.count({ where: { courseId: { in: courseIds } } }) : Promise.resolve(0),
+      courseIds.length ? prisma.courseMaterial.count({ where: { courseId: { in: courseIds }, deletedAt: null } }) : Promise.resolve(0),
       courseIds.length
         ? prisma.enrollment.count({ where: { courseId: { in: courseIds }, role: "STUDENT", isActive: true } })
         : Promise.resolve(0),
@@ -108,9 +88,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
     stats = { chatCount, chatCountWeek, materialCount, studentCount, instructorCount: 0, totalUsers: 0, activeCourseCount: 0 };
 
   } else {
-    // STUDENT
+    // STUDENT platform role — covers both students and TAs (a TA is a STUDENT
+    // user with an Enrollment(role=TA)). Scope to all active enrollments so a
+    // TA's assisted courses count too.
     const enrollments = await prisma.enrollment.findMany({
-      where: { userId: user.id, role: "STUDENT", isActive: true },
+      where: { userId: user.id, isActive: true },
       select: { courseId: true },
     });
     const courseIds = enrollments.map((e) => e.courseId);
@@ -119,7 +101,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       prisma.chat.count({ where: { userId: user.id } }),
       prisma.chat.count({ where: { userId: user.id, createdAt: { gte: week } } }),
       courseIds.length
-        ? prisma.courseMaterial.count({ where: { courseId: { in: courseIds }, status: "READY" } })
+        ? prisma.courseMaterial.count({ where: { courseId: { in: courseIds }, status: "READY", deletedAt: null } })
         : Promise.resolve(0),
     ]);
 

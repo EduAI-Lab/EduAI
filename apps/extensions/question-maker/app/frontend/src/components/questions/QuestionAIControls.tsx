@@ -27,6 +27,8 @@ interface QuestionAIControlsProps {
     availableModels: EduAIModelOption[];
     providerApiKey: string;
     onProviderApiKeyChange: (value: string) => void;
+    onSaveProviderApiKey?: () => void;
+    apiKeySaveState?: 'idle' | 'saving' | 'saved' | 'error';
     status: 'loading' | 'ok' | 'error';
     statusMessage?: string;
     onRefreshStatus: () => void;
@@ -44,6 +46,8 @@ export function QuestionAIControls({
     availableModels,
     providerApiKey,
     onProviderApiKeyChange,
+    onSaveProviderApiKey,
+    apiKeySaveState = 'idle',
     status,
     statusMessage,
     onRefreshStatus,
@@ -132,14 +136,29 @@ export function QuestionAIControls({
                             </Button>
                         </div>
                     ) : (
-                        <Input
-                            id="provider-api-key"
-                            type="password"
-                            placeholder={`Enter your ${providerName.toUpperCase()} API key`}
-                            value={providerApiKey}
-                            className="h-9 text-xs"
-                            onChange={(e) => onProviderApiKeyChange(e.target.value)}
-                        />
+                        <div className="flex items-center gap-2">
+                            <Input
+                                id="provider-api-key"
+                                type="password"
+                                placeholder={`Enter your ${providerName.toUpperCase()} API key`}
+                                value={providerApiKey}
+                                className="h-9 text-xs flex-1"
+                                onChange={(e) => onProviderApiKeyChange(e.target.value)}
+                            />
+                            <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                disabled={!providerApiKey.trim() || apiKeySaveState === 'saving'}
+                                onClick={onSaveProviderApiKey}
+                            >
+                                {apiKeySaveState === 'saving'
+                                    ? 'Saving…'
+                                    : apiKeySaveState === 'saved'
+                                        ? 'Saved'
+                                        : 'Save key'}
+                            </Button>
+                        </div>
                     )}
                     <p className="text-[11px] text-muted-foreground">
                         Your API key is stored locally in your browser and never sent to our servers.

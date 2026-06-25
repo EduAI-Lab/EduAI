@@ -60,10 +60,12 @@ const onFileSelect = vi.fn()
 const STAFF_PROPS = {
   tas: [],
   instructors: [],
-  taUsers: [],
+  studentUsers: [],
   onAssignInstructor: NOOP,
   onAddTA: NOOP,
   onRemoveTA: NOOP,
+  onEnrollStudent: NOOP,
+  onRemoveEnrollment: NOOP,
 }
 
 function wrap(ui: React.ReactElement) {
@@ -144,6 +146,94 @@ describe('CourseDetailManagerView', () => {
     // unit access can manage topics
     expect(screen.getByPlaceholderText(/new topic name/i)).toBeInTheDocument()
   })
+
+  it('shows remove control for student enrollments when instructor can manage students', () => {
+    wrap(
+      <CourseDetailManagerView
+        course={COURSE}
+        access="instructor"
+        topics={[]}
+        enrollments={[
+          {
+            id: 'enr-1',
+            courseId: 'c1',
+            userId: 'student-1',
+            userEmail: 'student@test.com',
+            userName: 'Student One',
+            studentNumber: null,
+            role: 'STUDENT',
+            isActive: true,
+            enrolledAt: null,
+          },
+        ]}
+        materials={[]}
+        onFileSelect={onFileSelect}
+        onCreateTopic={NOOP}
+        onDeleteTopic={NOOP}
+        {...STAFF_PROPS}
+      />
+    )
+    expect(screen.getByRole('button', { name: /remove student/i })).toBeInTheDocument()
+  })
+
+  it('shows student number when enrollment includes one', () => {
+    wrap(
+      <CourseDetailManagerView
+        course={COURSE}
+        access="instructor"
+        topics={[]}
+        enrollments={[
+          {
+            id: 'enr-1',
+            courseId: 'c1',
+            userId: 'student-1',
+            userEmail: 'student@test.com',
+            userName: 'Student One',
+            studentNumber: '12345678',
+            role: 'STUDENT',
+            isActive: true,
+            enrolledAt: null,
+          },
+        ]}
+        materials={[]}
+        onFileSelect={onFileSelect}
+        onCreateTopic={NOOP}
+        onDeleteTopic={NOOP}
+        {...STAFF_PROPS}
+      />
+    )
+    expect(screen.getByText(/Student #12345678/)).toBeInTheDocument()
+  })
+
+  it('does not show instructor section on Enrollments tab', () => {
+    wrap(
+      <CourseDetailManagerView
+        course={COURSE}
+        access="instructor"
+        topics={[]}
+        enrollments={[
+          {
+            id: 'enr-inst',
+            courseId: 'c1',
+            userId: 'user-instructor',
+            userEmail: 'inst@test.com',
+            userName: 'Dr. Instructor',
+            studentNumber: null,
+            role: 'INSTRUCTOR',
+            isActive: true,
+            enrolledAt: null,
+          },
+        ]}
+        materials={[]}
+        onFileSelect={onFileSelect}
+        onCreateTopic={NOOP}
+        onDeleteTopic={NOOP}
+        {...STAFF_PROPS}
+      />
+    )
+    expect(screen.queryByText('No instructors enrolled.')).not.toBeInTheDocument()
+    expect(screen.queryByText('Dr. Instructor')).not.toBeInTheDocument()
+  })
 })
 
 // TA view
@@ -154,7 +244,7 @@ const TA_PROPS = {
 }
 
 describe('CourseDetailTaView', () => {
-  it('does NOT show Enrollments tab', () => {
+  it('does NOT show Enrollments tab (§6)', () => {
     wrap(
       <CourseDetailTaView
         course={COURSE}

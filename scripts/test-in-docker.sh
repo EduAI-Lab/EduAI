@@ -19,6 +19,7 @@ UNIT_SUITES=(
   ai-tutor-server-unit-tests
   qm-app-unit-tests
   qm-server-unit-tests
+  packages-ui-unit-tests
 )
 
 INTEGRATION_SUITES=(

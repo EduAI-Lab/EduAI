@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   canApproveVariant,
   canCreateQuestion,
+  canLinkCourse,
   canManageAssessment,
   canTriageBugReports,
+  canViewAssessment,
   resolvePlatformCourseAccess,
 } from '@/lib/rbac';
 
@@ -47,5 +49,18 @@ describe('QM RBAC permissions', () => {
   it('denies authoring when course access is null', () => {
     expect(canCreateQuestion(instructor, null)).toBe(false);
     expect(canManageAssessment(instructor, null)).toBe(false);
+  });
+
+  it('allows TA to view assessments but not manage them', () => {
+    expect(canViewAssessment(instructor, 'ta')).toBe(true);
+    expect(canManageAssessment(instructor, 'ta')).toBe(false);
+    expect(canApproveVariant(instructor, 'ta')).toBe(false);
+  });
+
+  it('allows platform roles to link courses from the course picker', () => {
+    expect(canLinkCourse(admin)).toBe(true);
+    expect(canLinkCourse(unitAdmin)).toBe(true);
+    expect(canLinkCourse(instructor)).toBe(true);
+    expect(canLinkCourse(null)).toBe(false);
   });
 });

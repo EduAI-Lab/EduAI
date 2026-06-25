@@ -30,7 +30,6 @@ model User {
   questions         Question[]
   sessions          Session[]
   providerSettings  UserProviderSettings[]
-  apiKeys           apikey[]
   chats             Chat[]
   externalUsers     ExternalUser[]
   preference        UserPreference?
@@ -40,10 +39,9 @@ model User {
   createdTopics     CourseTopic[]          @relation("TopicCreator")
   canvasIntegration         CanvasIntegration?
   syncedCanvasRosterMembers CanvasRosterMember[]
-  invitationsSent           Invitation[]         @relation("InvitationsSent")
-  invitationAccepted        Invitation[]         @relation("InvitationAccepted")
-  taughtCourses             Course[]             @relation("CourseInstructor")
-  courseTAs                 CourseTA[]
+  invitationsSent           Invitation[]           @relation("InvitationsSent")
+  invitationAccepted        Invitation[]           @relation("InvitationAccepted")
+  taughtCourses             Course[]               @relation("CourseInstructor")
   auditLogs                 AuditLog[]
   systemLogs                SystemLog[]
 
@@ -97,31 +95,31 @@ model Verification {
 }
 
 model Course {
-  id             String           @id @default(cuid())
-  code           String
-  name           String
-  description    String?
-  section        String
-  term           String
-  year           Int
-  isActive       Boolean          @default(true)
-  isPublished    Boolean          @default(false)
-  startDate      DateTime
-  endDate        DateTime?
-  instructorId   String?
-  externalId     String?
-  externalSource String?
-  lastSyncedAt   DateTime?
-  department     String?
-  deletedAt      DateTime?
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
-  aiInstructions         String           @default("")
+  id                     String               @id @default(cuid())
+  code                   String
+  name                   String
+  description            String?
+  section                String
+  term                   String
+  year                   Int
+  isActive               Boolean              @default(true)
+  isPublished            Boolean              @default(false)
+  startDate              DateTime
+  endDate                DateTime?
+  instructorId           String?
+  externalId             String?
+  externalSource         String?
+  lastSyncedAt           DateTime?
+  department             String?
+  deletedAt              DateTime?
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+  aiInstructions         String               @default("")
   /// Per-course RAG chunk limit. Overrides the global HYBRID_RAG_MAX_CHUNKS when set.
   ragTopK                Int?
   /// Per-course cosine-similarity threshold (0–1). Overrides RAG_SIMILARITY_THRESHOLD env when set.
   ragSimilarityThreshold Float?
-  instructor             User?            @relation("CourseInstructor", fields: [instructorId], references: [id])
+  instructor             User?                @relation("CourseInstructor", fields: [instructorId], references: [id])
   /// Per-course override: `local` | `ollama` | `cloud`; null uses server env.
   embeddingProvider      String?
   /// Per-course model id (Ollama or OpenRouter/OpenAI); null uses server default for provider.
@@ -129,15 +127,14 @@ model Course {
   lastEmbeddedAt         DateTime?
   embeddedWithProvider   String?
   embeddedWithModel      String?
-  aiInteractions AIInteraction[]
-  chats          Chat[]           @relation("CourseChats")
-  enrollments    Enrollment[]
-  tas                 CourseTA[]
-  canvasRosterMembers CanvasRosterMember[]
-  materials           CourseMaterial[]
-  reEmbedJobs    CourseReEmbedJob[]
-  topics         CourseTopic[]
-  questions      Question[]
+  aiInteractions         AIInteraction[]
+  chats                  Chat[]               @relation("CourseChats")
+  enrollments            Enrollment[]
+  canvasRosterMembers    CanvasRosterMember[]
+  materials              CourseMaterial[]
+  reEmbedJobs            CourseReEmbedJob[]
+  topics                 CourseTopic[]
+  questions              Question[]
 
   @@unique([code, startDate, section])
   @@index([externalSource, externalId])
@@ -180,18 +177,6 @@ model Enrollment {
   @@index([userId])
   @@index([externalSource, externalId])
   @@map("enrollments")
-}
-
-model CourseTA {
-  id        String   @id @default(cuid())
-  courseId  String
-  userId    String
-  createdAt DateTime @default(now())
-  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([courseId, userId])
-  @@map("course_tas")
 }
 
 model AIInteraction {
@@ -312,28 +297,34 @@ model UserPreference {
 }
 
 model CourseMaterial {
-  id             String          @id @default(cuid())
-  courseId       String
-  title          String
-  mimeType       String
-  fileSize       Int
-  checksum       String
-  rawText        String?
-  status         MaterialStatus  @default(PROCESSING)
-  externalId        String?
-  externalSource    String?
-  canvasUpdatedAt   DateTime?
-  uploadedBy        String?
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
-  processedAt       DateTime?
-  course         Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  uploader       User?           @relation("MaterialUploader", fields: [uploadedBy], references: [id], onDelete: SetNull)
-  chunks         MaterialChunk[]
+  id              String          @id @default(cuid())
+  courseId        String
+  title           String
+  mimeType        String
+  fileSize        Int
+  checksum        String
+  rawText         String?
+  status          MaterialStatus  @default(PROCESSING)
+  externalId      String?
+  externalSource  String?
+  canvasUpdatedAt DateTime?
+  uploadedBy      String?
+  /// Soft-delete marker. Non-null = removed in EduAI; deletes are ONE-WAY (never
+  /// propagated upstream to Canvas). Reads must filter `deletedAt: null`; Canvas
+  /// re-sync skips rows with deletedAt set. Lets extensions detect removals.
+  deletedAt       DateTime?
+  deletedBy       String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  processedAt     DateTime?
+  course          Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  uploader        User?           @relation("MaterialUploader", fields: [uploadedBy], references: [id], onDelete: SetNull)
+  chunks          MaterialChunk[]
 
   @@unique([courseId, checksum])
   @@index([externalSource, externalId])
   @@index([uploadedBy])
+  @@index([courseId, deletedAt])
   @@map("course_materials")
 }
 
@@ -342,7 +333,10 @@ model CourseTopic {
   courseId        String
   name            String
   createdBy       String?
+  /// Soft-delete marker — see CourseMaterial.deletedAt. One-way (EduAI only),
+  /// never propagated to Canvas. Reads filter `deletedAt: null`.
   deletedAt       DateTime?
+  deletedBy       String?
   createdAt       DateTime                 @default(now())
   updatedAt       DateTime                 @updatedAt
   course          Course                   @relation(fields: [courseId], references: [id], onDelete: Cascade)
@@ -352,6 +346,7 @@ model CourseTopic {
 
   @@unique([courseId, name])
   @@index([createdBy])
+  @@index([courseId, deletedAt])
   @@map("course_topics")
 }
 
@@ -438,46 +433,19 @@ model MaterialEmbedding {
   @@map("material_embeddings")
 }
 
-model apikey {
-  id                  String    @id @default(cuid())
-  name                String?
-  start               String?
-  prefix              String?
-  key                 String
-  userId              String
-  refillInterval      Int?
-  refillAmount        Int?
-  lastRefillAt        DateTime?
-  enabled             Boolean   @default(true)
-  rateLimitEnabled    Boolean   @default(false)
-  rateLimitTimeWindow Int?
-  rateLimitMax        Int?
-  requestCount        Int       @default(0)
-  remaining           Int?
-  lastRequest         DateTime?
-  expiresAt           DateTime?
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
-  permissions         Json?
-  metadata            Json?
-  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@map("apiKey")
-}
 
 model Chat {
-  id           String        @id @default(cuid())
-  userId       String
+  id              String           @id @default(cuid())
+  userId          String
   /// Optional course context. Null = general (non-course) assistant chat; course
   /// chats are tagged at creation so instructors/unit-admins can read them (RBAC
   /// policy expansion §5). SetNull on course delete so history survives removal.
-  courseId     String?
-  systemPrompt String?
-  title        String?
-  adhdAssist   Boolean  @default(false)
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  courseId        String?
+  systemPrompt    String?
+  title           String?
+  adhdAssist      Boolean          @default(false)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
   user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   course          Course?          @relation("CourseChats", fields: [courseId], references: [id], onDelete: SetNull)
   messages        ChatMessage[]
@@ -581,7 +549,6 @@ enum UserRole {
   ADMIN
   UNIT_ADMIN
   INSTRUCTOR
-  TA
   STUDENT
 }
 
@@ -802,4 +769,33 @@ model LogRetentionPolicy {
   updatedAt           DateTime @updatedAt
 
   @@map("log_retention_policy")
+}
+
+enum CronJobStatus {
+  RUNNING
+  SUCCESS
+  ERROR
+}
+
+model CronJobRun {
+  id         String        @id @default(cuid())
+  jobName    String
+  status     CronJobStatus
+  startedAt  DateTime
+  finishedAt DateTime?
+  message    String?
+  exitCode   Int?
+  createdAt  DateTime      @default(now())
+
+  @@index([jobName, startedAt])
+  @@map("cron_job_runs")
+}
+
+model CronJobScheduleOverride {
+  jobName       String   @id
+  schedule      String
+  scheduleLabel String
+  updatedAt     DateTime @updatedAt
+
+  @@map("cron_job_schedule_overrides")
 }
