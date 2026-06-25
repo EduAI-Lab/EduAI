@@ -5,11 +5,27 @@ import { useState, useRef, useEffect } from 'react';
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@eduai/ui';
 import { Textarea, Button, Label, Switch } from '@eduai/ui';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@eduai/ui';
 import { useToast } from '@/components/ui/use-toast';
-import { bugReportApi } from '../../services/bugReportApi';
+import { bugReportApi, type BugReportType } from '../../services/bugReportApi';
 
 const MAX_DESC = 2000;
 const MIN_DESC = 10;
+
+const BUG_TYPE_OPTIONS: { value: BugReportType; label: string }[] = [
+  { value: 'UI_DISPLAY', label: 'UI / display issue' },
+  { value: 'FEATURE_NOT_WORKING', label: 'Feature not working' },
+  { value: 'PERFORMANCE', label: 'Performance issue' },
+  { value: 'CONTENT_ERROR', label: 'Content error' },
+  { value: 'ACCESS_PERMISSION', label: 'Access / permission issue' },
+  { value: 'OTHER', label: 'Other' },
+];
 
 interface BugReportDialogProps {
   open: boolean;
@@ -21,8 +37,10 @@ interface BugReportDialogProps {
 export function BugReportDialog({ open, setOpen, getCapturedData, userEmail }: BugReportDialogProps) {
   const [submitting, setSubmitting] = useState(false);
   const [description, setDescription] = useState('');
+  const [bugType, setBugType] = useState<BugReportType | null>(null);
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [descError, setDescError] = useState<string | null>(null);
+  const [typeError, setTypeError] = useState<string | null>(null);
   const { toast } = useToast();
   const capturedRef = useRef({
     consoleLogs: '[]',
@@ -39,17 +57,24 @@ export function BugReportDialog({ open, setOpen, getCapturedData, userEmail }: B
   }, [open, getCapturedData]);
 
   function validate(): boolean {
+    let valid = true;
     const t = description.trim();
     if (t.length < MIN_DESC) {
       setDescError(`Please use at least ${MIN_DESC} characters.`);
-      return false;
-    }
-    if (t.length > MAX_DESC) {
+      valid = false;
+    } else if (t.length > MAX_DESC) {
       setDescError(`Description must be under ${MAX_DESC} characters.`);
-      return false;
+      valid = false;
+    } else {
+      setDescError(null);
     }
-    setDescError(null);
-    return true;
+    if (!bugType) {
+      setTypeError('Please select a bug type.');
+      valid = false;
+    } else {
+      setTypeError(null);
+    }
+    return valid;
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -59,6 +84,7 @@ export function BugReportDialog({ open, setOpen, getCapturedData, userEmail }: B
     try {
       await bugReportApi.submit({
         description: description.trim(),
+        bugType,
         consoleLogs: capturedRef.current.consoleLogs,
         networkLogs: capturedRef.current.networkLogs,
         screenshot: capturedRef.current.screenshot,
@@ -71,6 +97,7 @@ export function BugReportDialog({ open, setOpen, getCapturedData, userEmail }: B
         description: 'Thank you for your feedback.'
       });
       setDescription('');
+      setBugType(null);
       setIsAnonymous(false);
       setOpen(false);
     } catch (err: unknown) {
@@ -94,7 +121,9 @@ export function BugReportDialog({ open, setOpen, getCapturedData, userEmail }: B
       onOpenChange={(isOpen) => {
         if (!isOpen) {
           setDescription('');
+          setBugType(null);
           setDescError(null);
+          setTypeError(null);
           setIsAnonymous(false);
         }
         setOpen(isOpen);
@@ -108,6 +137,29 @@ export function BugReportDialog({ open, setOpen, getCapturedData, userEmail }: B
         </div>
 
         <form onSubmit={onSubmit} className="px-6 pb-6 pt-4 space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="bug-type-qm" className="text-sm font-medium">Bug type</Label>
+            <Select
+              value={bugType ?? ''}
+              onValueChange={(value) => {
+                setBugType(value as BugReportType);
+                setTypeError(null);
+              }}
+            >
+              <SelectTrigger id="bug-type-qm">
+                <SelectValue placeholder="Select a type" />
+              </SelectTrigger>
+              <SelectContent>
+                {BUG_TYPE_OPTIONS.map(({ value, label }) => (
+                  <SelectItem key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {typeError && <p className="text-xs text-destructive">{typeError}</p>}
+          </div>
+
           <div className="space-y-2">
             <Textarea
               placeholder="What happened? What did you expect to happen?"
