@@ -1,18 +1,41 @@
 /**
  * Admin-only list of bug reports with status updates and attachment viewers.
  */
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router';
-import { ArrowLeft } from 'lucide-react';
-import { Button, Dialog, DialogContent, DialogHeader, DialogTitle } from '@eduai/ui';
+import { ArrowLeft, Filter, Search, X } from 'lucide-react';
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@eduai/ui';
 import { useToast } from '@/components/ui/use-toast';
 import { bugReportApi, BugReportRow, BugReportType } from '../services/bugReportApi';
 import { useAuth } from '../contexts/AuthContext';
 import { canTriageBugReports } from '@/lib/rbac';
 
 const STATUS_OPTIONS = ['unhandled', 'in progress', 'resolved'] as const;
+type BugReportStatus = (typeof STATUS_OPTIONS)[number] | 'all';
+type TypeFilter = BugReportType | 'all';
+type ReporterFilter = 'all' | 'named' | 'anonymous';
+type SortKey = 'status' | 'type' | 'description' | 'reporter' | 'createdAt' | 'page';
+type SortDirection = 'asc' | 'desc';
 
 const QM_SOURCE = 'QUESTION_MAKER' as const;
+
+const STATUS_LABELS: Record<string, string> = {
+  unhandled: 'Unhandled',
+  'in progress': 'In progress',
+  resolved: 'Resolved',
+};
 
 const BUG_TYPE_LABELS: Record<BugReportType, string> = {
   UI_DISPLAY: 'UI / display',
@@ -22,6 +45,69 @@ const BUG_TYPE_LABELS: Record<BugReportType, string> = {
   ACCESS_PERMISSION: 'Access / permission',
   OTHER: 'Other',
 };
+
+function getPagePath(pageUrl: string | null | undefined) {
+  if (!pageUrl) return '';
+  try {
+    return new URL(pageUrl).pathname;
+  } catch {
+    return pageUrl;
+  }
+}
+
+function sortRows(rows: BugReportRow[], key: SortKey, direction: SortDirection) {
+  const dir = direction === 'asc' ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    const av =
+      key === 'status' ? a.status
+      : key === 'type' ? (a.bugType ?? '')
+      : key === 'description' ? a.description
+      : key === 'reporter' ? (a.isAnonymous ? '' : (a.user?.email ?? ''))
+      : key === 'page' ? getPagePath(a.pageUrl)
+      : a.createdAt;
+    const bv =
+      key === 'status' ? b.status
+      : key === 'type' ? (b.bugType ?? '')
+      : key === 'description' ? b.description
+      : key === 'reporter' ? (b.isAnonymous ? '' : (b.user?.email ?? ''))
+      : key === 'page' ? getPagePath(b.pageUrl)
+      : b.createdAt;
+
+    if (key === 'createdAt') {
+      const at = new Date(av).getTime();
+      const bt = new Date(bv).getTime();
+      if (at === bt) return 0;
+      return at > bt ? dir : -dir;
+    }
+    return String(av).localeCompare(String(bv)) * dir;
+  });
+}
+
+function SortHeader({
+  title,
+  sortKey,
+  activeSortKey,
+  direction,
+  onToggle,
+}: {
+  title: string;
+  sortKey: SortKey;
+  activeSortKey: SortKey;
+  direction: SortDirection;
+  onToggle: (key: SortKey) => void;
+}) {
+  const isActive = sortKey === activeSortKey;
+  return (
+    <button
+      type="button"
+      className="inline-flex items-center gap-1 font-medium text-left"
+      onClick={() => onToggle(sortKey)}
+    >
+      <span>{title}</span>
+      <span aria-hidden="true">{isActive ? (direction === 'asc' ? '▲' : '▼') : '↕'}</span>
+    </button>
+  );
+}
 
 function DetailDialog({
   open,
@@ -82,6 +168,12 @@ export function BugReportsAdminPage() {
     content: string;
     type: 'logs' | 'screenshot' | 'plain';
   }>({ open: false, title: '', content: '', type: 'logs' });
+  const [statusFilter, setStatusFilter] = useState<BugReportStatus>('all');
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
+  const [reporterFilter, setReporterFilter] = useState<ReporterFilter>('all');
+  const [searchText, setSearchText] = useState('');
+  const [sortKey, setSortKey] = useState<SortKey>('createdAt');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
 
   const load = useCallback(async () => {
     try {
@@ -110,6 +202,37 @@ export function BugReportsAdminPage() {
     void load();
   }, [isLoading, user, navigate, load]);
 
+  const toggleSort = (nextKey: SortKey) => {
+    if (sortKey === nextKey) {
+      setSortDirection((d) => (d === 'asc' ? 'desc' : 'asc'));
+      return;
+    }
+    setSortKey(nextKey);
+    setSortDirection(nextKey === 'createdAt' ? 'desc' : 'asc');
+  };
+
+  const filteredSortedRows = useMemo(() => {
+    const filtered = rows.filter((row) => {
+      if (statusFilter !== 'all' && row.status !== statusFilter) return false;
+      if (typeFilter !== 'all' && row.bugType !== typeFilter) return false;
+      if (reporterFilter === 'named' && row.isAnonymous) return false;
+      if (reporterFilter === 'anonymous' && !row.isAnonymous) return false;
+      if (searchText && !row.description.toLowerCase().includes(searchText.toLowerCase())) return false;
+      return true;
+    });
+    return sortRows(filtered, sortKey, sortDirection);
+  }, [rows, statusFilter, typeFilter, reporterFilter, searchText, sortKey, sortDirection]);
+
+  const hasActiveFilters =
+    statusFilter !== 'all' || typeFilter !== 'all' || reporterFilter !== 'all' || searchText.length > 0;
+
+  const resetFilters = () => {
+    setStatusFilter('all');
+    setTypeFilter('all');
+    setReporterFilter('all');
+    setSearchText('');
+  };
+
   async function handleStatusChange(bugId: string, newStatus: string) {
     try {
       await bugReportApi.updateStatus(bugId, newStatus);
@@ -137,143 +260,236 @@ export function BugReportsAdminPage() {
         <h1 className="text-lg font-semibold">Bug reports</h1>
       </div>
 
-      <div className="p-6 overflow-x-auto">
+      <div className="p-6 space-y-4">
+        {/* Filter bar */}
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <Filter className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm font-medium text-muted-foreground">Filters</span>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4">
+            <Select
+              value={statusFilter}
+              onValueChange={(v) => setStatusFilter(v as BugReportStatus)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All statuses</SelectItem>
+                {STATUS_OPTIONS.map((s) => (
+                  <SelectItem key={s} value={s}>{STATUS_LABELS[s] ?? s}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select
+              value={typeFilter}
+              onValueChange={(v) => setTypeFilter(v as TypeFilter)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All types</SelectItem>
+                {(Object.entries(BUG_TYPE_LABELS) as [BugReportType, string][]).map(([value, label]) => (
+                  <SelectItem key={value} value={value}>{label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select
+              value={reporterFilter}
+              onValueChange={(v) => setReporterFilter(v as ReporterFilter)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Reporter" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All reporters</SelectItem>
+                <SelectItem value="named">Named</SelectItem>
+                <SelectItem value="anonymous">Anonymous</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search description…"
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+          </div>
+
+          {hasActiveFilters && (
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-sm text-muted-foreground">
+                Showing {filteredSortedRows.length} of {rows.length} reports
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={resetFilters}
+                className="text-destructive hover:text-destructive gap-1"
+              >
+                <X className="h-4 w-4" />
+                Clear filters
+              </Button>
+            </div>
+          )}
+        </div>
+
         {loading ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : (
-          <table className="w-full text-sm border rounded-md">
-            <thead className="bg-muted/50 border-b">
-              <tr>
-                <th className="text-left p-3 font-medium">Status</th>
-                <th className="text-left p-3 font-medium">Type</th>
-                <th className="text-left p-3 font-medium">Description</th>
-                <th className="text-left p-3 font-medium">User</th>
-                <th className="text-left p-3 font-medium">Date</th>
-                <th className="text-left p-3 font-medium">Page</th>
-                <th className="text-left p-3 font-medium">Attachments</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.length === 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm border rounded-md">
+              <thead className="bg-muted/50 border-b">
                 <tr>
-                  <td colSpan={7} className="p-8 text-center text-muted-foreground">
-                    No bug reports.
-                  </td>
+                  <th className="text-left p-3">
+                    <SortHeader title="Status" sortKey="status" activeSortKey={sortKey} direction={sortDirection} onToggle={toggleSort} />
+                  </th>
+                  <th className="text-left p-3">
+                    <SortHeader title="Type" sortKey="type" activeSortKey={sortKey} direction={sortDirection} onToggle={toggleSort} />
+                  </th>
+                  <th className="text-left p-3">
+                    <SortHeader title="Description" sortKey="description" activeSortKey={sortKey} direction={sortDirection} onToggle={toggleSort} />
+                  </th>
+                  <th className="text-left p-3">
+                    <SortHeader title="User" sortKey="reporter" activeSortKey={sortKey} direction={sortDirection} onToggle={toggleSort} />
+                  </th>
+                  <th className="text-left p-3">
+                    <SortHeader title="Date" sortKey="createdAt" activeSortKey={sortKey} direction={sortDirection} onToggle={toggleSort} />
+                  </th>
+                  <th className="text-left p-3">
+                    <SortHeader title="Page" sortKey="page" activeSortKey={sortKey} direction={sortDirection} onToggle={toggleSort} />
+                  </th>
+                  <th className="text-left p-3 font-medium">Attachments</th>
                 </tr>
-              ) : (
-                rows.map((row) => (
-                  <tr key={row.id} className="border-t hover:bg-muted/20">
-                    <td className="p-3 align-top">
-                      <select
-                        value={row.status}
-                        onChange={(e) => handleStatusChange(row.id, e.target.value)}
-                        className="text-xs border rounded-md px-2 py-1 bg-background"
-                      >
-                        {STATUS_OPTIONS.map((s) => (
-                          <option key={s} value={s}>
-                            {s}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="p-3 align-top whitespace-nowrap text-xs text-muted-foreground">
-                      {row.bugType ? BUG_TYPE_LABELS[row.bugType] : '—'}
-                    </td>
-                    <td className="p-3 align-top max-w-[280px]">
-                      <button
-                        type="button"
-                        className="truncate text-left w-full hover:text-primary-text"
-                        title={row.description}
-                        onClick={() =>
-                          setDetail({
-                            open: true,
-                            title: 'Description',
-                            content: row.description,
-                            type: 'plain'
-                          })
-                        }
-                      >
-                        {row.description}
-                      </button>
-                    </td>
-                    <td className="p-3 align-top whitespace-nowrap">
-                      {row.isAnonymous ? (
-                        <span className="text-muted-foreground italic">Anonymous</span>
-                      ) : (
-                        row.user?.email
-                      )}
-                    </td>
-                    <td className="p-3 align-top whitespace-nowrap text-muted-foreground">
-                      {new Date(row.createdAt).toLocaleString()}
-                    </td>
-                    <td className="p-3 align-top max-w-[140px] truncate text-xs text-muted-foreground" title={row.pageUrl || ''}>
-                      {row.pageUrl
-                        ? (() => {
-                            try {
-                              return new URL(row.pageUrl).pathname;
-                            } catch {
-                              return row.pageUrl;
-                            }
-                          })()
-                        : '—'}
-                    </td>
-                    <td className="p-3 align-top">
-                      <div className="flex flex-wrap gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 px-2 text-xs"
-                          disabled={!row.consoleLogs}
-                          onClick={() =>
-                            setDetail({
-                              open: true,
-                              title: 'Console logs',
-                              content: row.consoleLogs || '',
-                              type: 'logs'
-                            })
-                          }
-                        >
-                          Console
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 px-2 text-xs"
-                          disabled={!row.networkLogs}
-                          onClick={() =>
-                            setDetail({
-                              open: true,
-                              title: 'Network logs',
-                              content: row.networkLogs || '',
-                              type: 'logs'
-                            })
-                          }
-                        >
-                          Network
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 px-2 text-xs"
-                          disabled={!row.screenshot}
-                          onClick={() =>
-                            setDetail({
-                              open: true,
-                              title: 'Screenshot',
-                              content: row.screenshot || '',
-                              type: 'screenshot'
-                            })
-                          }
-                        >
-                          Screenshot
-                        </Button>
-                      </div>
+              </thead>
+              <tbody>
+                {filteredSortedRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="p-8 text-center text-muted-foreground">
+                      {hasActiveFilters
+                        ? 'No reports match your filters. Try adjusting your search criteria.'
+                        : 'No bug reports.'}
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ) : (
+                  filteredSortedRows.map((row) => (
+                    <tr key={row.id} className="border-t hover:bg-muted/20">
+                      <td className="p-3 align-top">
+                        <Select
+                          value={row.status}
+                          onValueChange={(v) => handleStatusChange(row.id, v)}
+                        >
+                          <SelectTrigger className="h-8 w-[130px] text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {STATUS_OPTIONS.map((s) => (
+                              <SelectItem key={s} value={s}>
+                                {STATUS_LABELS[s] ?? s}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </td>
+                      <td className="p-3 align-top whitespace-nowrap text-xs text-muted-foreground">
+                        {row.bugType ? BUG_TYPE_LABELS[row.bugType] : '—'}
+                      </td>
+                      <td className="p-3 align-top max-w-[280px]">
+                        <button
+                          type="button"
+                          className="line-clamp-3 text-left w-full hover:text-primary"
+                          title={row.description}
+                          onClick={() =>
+                            setDetail({
+                              open: true,
+                              title: 'Description',
+                              content: row.description,
+                              type: 'plain'
+                            })
+                          }
+                        >
+                          {row.description}
+                        </button>
+                      </td>
+                      <td className="p-3 align-top whitespace-nowrap">
+                        {row.isAnonymous ? (
+                          <span className="text-muted-foreground italic">Anonymous</span>
+                        ) : (
+                          row.user?.email
+                        )}
+                      </td>
+                      <td className="p-3 align-top whitespace-nowrap text-muted-foreground">
+                        {new Date(row.createdAt).toLocaleString()}
+                      </td>
+                      <td className="p-3 align-top max-w-[140px] truncate text-xs text-muted-foreground" title={row.pageUrl || ''}>
+                        {getPagePath(row.pageUrl) || '—'}
+                      </td>
+                      <td className="p-3 align-top">
+                        <div className="flex flex-wrap gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs"
+                            disabled={!row.consoleLogs}
+                            onClick={() =>
+                              setDetail({
+                                open: true,
+                                title: 'Console logs',
+                                content: row.consoleLogs || '',
+                                type: 'logs'
+                              })
+                            }
+                          >
+                            Console
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs"
+                            disabled={!row.networkLogs}
+                            onClick={() =>
+                              setDetail({
+                                open: true,
+                                title: 'Network logs',
+                                content: row.networkLogs || '',
+                                type: 'logs'
+                              })
+                            }
+                          >
+                            Network
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs"
+                            disabled={!row.screenshot}
+                            onClick={() =>
+                              setDetail({
+                                open: true,
+                                title: 'Screenshot',
+                                content: row.screenshot || '',
+                                type: 'screenshot'
+                              })
+                            }
+                          >
+                            Screenshot
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 

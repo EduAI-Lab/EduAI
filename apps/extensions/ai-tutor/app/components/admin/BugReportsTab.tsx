@@ -31,7 +31,8 @@
  */
 
 import { useMemo, useState } from 'react';
-import { Button } from '@eduai/ui';
+import { Button, Input } from '@eduai/ui';
+import { IconFilter, IconSearch, IconX } from '@tabler/icons-react';
 import {
   Dialog,
   DialogContent,
@@ -48,6 +49,10 @@ import {
 } from '@eduai/ui';
 import api from '~/lib/api';
 import type { AdminBugReportRow, BugReportStatus, BugReportType } from '~/lib/types';
+
+type StatusFilter = BugReportStatus | 'all';
+type TypeFilter = BugReportType | 'all';
+type ReporterFilter = 'all' | 'named' | 'anonymous';
 
 type SortKey = 'status' | 'description' | 'reporter' | 'role' | 'createdAt' | 'context' | 'page';
 type SortDirection = 'asc' | 'desc';
@@ -617,11 +622,32 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
   const [error, setError] = useState<string | null>(null);
   const [viewerType, setViewerType] = useState<ViewerType>(null);
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
+  const [reporterFilter, setReporterFilter] = useState<ReporterFilter>('all');
+  const [searchText, setSearchText] = useState('');
 
-  const sortedReports = useMemo(
-    () => sortReports(reports, sortKey, sortDirection),
-    [reports, sortDirection, sortKey],
-  );
+  const filteredSortedReports = useMemo(() => {
+    const filtered = reports.filter((report) => {
+      if (statusFilter !== 'all' && report.status !== statusFilter) return false;
+      if (typeFilter !== 'all' && report.bugType !== typeFilter) return false;
+      if (reporterFilter === 'named' && report.isAnonymous) return false;
+      if (reporterFilter === 'anonymous' && !report.isAnonymous) return false;
+      if (searchText && !report.description.toLowerCase().includes(searchText.toLowerCase())) return false;
+      return true;
+    });
+    return sortReports(filtered, sortKey, sortDirection);
+  }, [reports, statusFilter, typeFilter, reporterFilter, searchText, sortKey, sortDirection]);
+
+  const hasActiveFilters =
+    statusFilter !== 'all' || typeFilter !== 'all' || reporterFilter !== 'all' || searchText.length > 0;
+
+  const resetFilters = () => {
+    setStatusFilter('all');
+    setTypeFilter('all');
+    setReporterFilter('all');
+    setSearchText('');
+  };
 
   const selectedReport =
     selectedReportId === null
@@ -692,6 +718,88 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
           {error}
         </div>
       ) : null}
+
+      {/* Filter bar */}
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center gap-2">
+          <IconFilter className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm font-medium text-muted-foreground">Filters</span>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4">
+          <Select
+            value={statusFilter}
+            onValueChange={(v) => setStatusFilter(v as StatusFilter)}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All statuses</SelectItem>
+              {STATUS_OPTIONS.map((s) => (
+                <SelectItem key={s} value={s}>{STATUS_LABELS[s]}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select
+            value={typeFilter}
+            onValueChange={(v) => setTypeFilter(v as TypeFilter)}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All types</SelectItem>
+              {(Object.entries(BUG_TYPE_LABELS) as [BugReportType, string][]).map(([value, label]) => (
+                <SelectItem key={value} value={value}>{label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select
+            value={reporterFilter}
+            onValueChange={(v) => setReporterFilter(v as ReporterFilter)}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Reporter" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All reporters</SelectItem>
+              <SelectItem value="named">Named</SelectItem>
+              <SelectItem value="anonymous">Anonymous</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <div className="relative">
+            <IconSearch className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search description…"
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+        </div>
+
+        {hasActiveFilters && (
+          <div className="flex items-center justify-between pt-1">
+            <span className="text-sm text-muted-foreground">
+              Showing {filteredSortedReports.length} of {reports.length} reports
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={resetFilters}
+              className="text-destructive hover:text-destructive"
+            >
+              <IconX className="h-4 w-4" />
+              Clear filters
+            </Button>
+          </div>
+        )}
+      </div>
 
       <div className="overflow-x-auto rounded-2xl border border-border/70 bg-card/80">
         <table className="w-full min-w-[1160px] table-fixed border-collapse">
@@ -780,14 +888,16 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
             </tr>
           </thead>
           <tbody>
-            {sortedReports.length === 0 ? (
+            {filteredSortedReports.length === 0 ? (
               <tr>
                 <td colSpan={9} className="px-4 py-8 text-center text-sm text-muted-foreground">
-                  No bug reports yet.
+                  {hasActiveFilters
+                    ? 'No reports match your filters. Try adjusting your search criteria.'
+                    : 'No bug reports yet.'}
                 </td>
               </tr>
             ) : (
-              sortedReports.map((report) => (
+              filteredSortedReports.map((report) => (
                 <tr key={report.id} className="border-b border-border/50 align-top last:border-b-0">
                   <td className="px-3 py-3">
                     <StatusSelect
