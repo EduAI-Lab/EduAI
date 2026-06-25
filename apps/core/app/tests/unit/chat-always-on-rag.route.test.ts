@@ -233,9 +233,17 @@ describe("Smart course RAG gate (#484)", () => {
     });
 
     it("does not prefetch when no course is selected", async () => {
+      vi.mocked(prisma.chat.findFirst).mockResolvedValue({
+        id: CHAT_ID,
+        userId: "user-1",
+        courseId: null,
+        adhdAssist: false,
+        systemPrompt: null,
+      } as never);
       mockStream();
       const res = await action(makeRequest(baseBody({ courseId: undefined })));
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: "COURSE_REQUIRED" });
       expect(findRelevantContent).not.toHaveBeenCalled();
     });
   });
