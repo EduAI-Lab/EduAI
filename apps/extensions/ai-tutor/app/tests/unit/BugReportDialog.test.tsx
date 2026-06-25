@@ -60,7 +60,7 @@ describe('BugReportDialog', () => {
     expect(submitBugReportMock).not.toHaveBeenCalled();
   });
 
-  it('captures screenshot on open and submits full payload including anonymous/context', async () => {
+  it('captures screenshot on open and submits full payload including bug type, anonymous flag, and context', async () => {
     submitBugReportMock.mockResolvedValue({ id: 'bug-1' });
     const setOpen = vi.fn();
     render(<BugReportDialog open={true} setOpen={setOpen} />);
@@ -68,6 +68,10 @@ describe('BugReportDialog', () => {
     await waitFor(() => {
       expect(captureScreenshotMock).toHaveBeenCalledTimes(1);
     });
+
+    // Select bug type
+    fireEvent.click(screen.getByTestId('bug-type'));
+    fireEvent.click(await screen.findByRole('option', { name: 'Feature not working' }));
 
     fireEvent.change(screen.getByTestId('bug-description'), {
       target: { value: 'This is a reproducible issue in lesson view.' },
@@ -81,6 +85,7 @@ describe('BugReportDialog', () => {
 
     expect(submitBugReportMock).toHaveBeenCalledWith({
       description: 'This is a reproducible issue in lesson view.',
+      bugType: 'FEATURE_NOT_WORKING',
       isAnonymous: true,
       consoleLogs: '[{"level":"error","message":"boom"}]',
       networkLogs: '[{"method":"GET","url":"/api"}]',
@@ -96,5 +101,17 @@ describe('BugReportDialog', () => {
     });
     expect(setOpen).toHaveBeenCalledWith(false);
     expect(screen.getByTestId('bug-description')).toHaveValue('');
+  });
+
+  it('blocks submit and shows error when no bug type is selected', async () => {
+    render(<BugReportDialog open={true} setOpen={vi.fn()} />);
+
+    fireEvent.change(screen.getByTestId('bug-description'), {
+      target: { value: 'A valid description that is long enough.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Submit report' }));
+
+    expect(await screen.findByText('Please select a bug type')).toBeInTheDocument();
+    expect(submitBugReportMock).not.toHaveBeenCalled();
   });
 });
