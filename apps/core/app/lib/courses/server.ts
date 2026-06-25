@@ -1,12 +1,15 @@
-import { UserRole, type Prisma } from "@prisma/client";
+import { UserRole } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 import { auth } from "~/lib/auth/server";
-import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
+import { requireServiceKey } from "~/lib/auth/guards.server";
 import {
   buildCourseListFilter,
   getAuthorizedUnits,
   resolveCourseAccessWithCourse,
 } from "~/lib/auth/course-access.server";
+import { getPolicy, denyByPolicy } from "~/lib/policy.server";
+import { canCreateCourse } from "~/lib/rbac/permissions";
+import type { RbacUser } from "~/lib/rbac/types";
 import {
   CreateCourseSchema,
   UpdateCourseSchema,
@@ -57,7 +60,7 @@ export function invalidateCourseRagSettingsCache(courseId: string): void {
  * Auth:
  *   - Service key (Authorization: Bearer EDUAI_API_KEY): unrestricted — used by AI Tutor
  *     to list importable courses without requiring an admin session.
- *   - x-api-key / user session: scoped to the caller (§5): ADMIN all;
+ *   - User session: scoped to the caller (§5): ADMIN all;
  *     UNIT_ADMIN authorized units; INSTRUCTOR/TA enrolled; STUDENT enrolled + published.
  */
 export async function getCourses(request: Request) {
@@ -72,11 +75,7 @@ export async function getCourses(request: Request) {
     });
   }
 
-  // x-api-key / session path (admin UI and direct API access)
-  const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
-  if (apiKeyGuard) return apiKeyGuard;
-
-  const session = apiKeySession ?? (await auth.api.getSession(request));
+  const session = await auth.api.getSession(request);
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -109,15 +108,32 @@ export async function getCourses(request: Request) {
 }
 
 /**
- * POST /api/courses — create a course (ADMIN, or UNIT_ADMIN within their
- * authorized units).
+ * POST /api/courses — create a course.
+ *
+ * Authorized for ADMIN and UNIT_ADMIN (within their authorized units). An
+ * INSTRUCTOR may also self-create when the `instructors.canCreateCourses` policy
+ * flag is enabled; they are auto-enrolled as the course instructor.
  */
 export async function createCourse(request: Request) {
-  const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
-  if (apiKeyGuard) return apiKeyGuard;
-
-  const session = apiKeySession ?? (await auth.api.getSession(request));
-  if (!session?.user || !["ADMIN", "UNIT_ADMIN"].includes(session.user.role ?? "")) {
+  const session = await auth.api.getSession(request);
+  const role = session?.user?.role ?? "";
+  // Base create rights (ADMIN / UNIT_ADMIN) come from the shared RBAC helper so
+  // this can't drift from the rest of course management; an INSTRUCTOR may
+  // self-create only when the policy flag is on.
+  const canCreate =
+    (session?.user != null && canCreateCourse(session.user as RbacUser)) ||
+    (role === "INSTRUCTOR" && (await getPolicy("instructors.canCreateCourses")));
+  if (!session?.user || !canCreate) {
+    // §4: log uniformly when an INSTRUCTOR is denied by the policy flag. The
+    // pure-401 (no session) case stays unlogged.
+    if (session?.user && role === "INSTRUCTOR") {
+      return denyByPolicy({
+        request,
+        policyKey: "instructors.canCreateCourses",
+        user: session.user,
+        action: "course.create",
+      });
+    }
     return new Response(JSON.stringify({ error: "Forbidden" }), {
       status: 403,
       headers: { "Content-Type": "application/json" } as const,
@@ -144,6 +160,17 @@ export async function createCourse(request: Request) {
         instructorUserIds.push(rawInstructorUserIds);
       }
     }
+  }
+
+  // A self-creating instructor is always enrolled as the course's SOLE
+  // instructor. We deliberately discard any client-supplied `instructorUserIds`
+  // for this path: an instructor must not be able to assign the course (or its
+  // primary `instructorId`, which is `instructorUserIds[0]`) to other
+  // instructors. ADMIN / UNIT_ADMIN assign instructors explicitly and keep the
+  // supplied list.
+  if (session.user.role === "INSTRUCTOR") {
+    instructorUserIds.length = 0;
+    instructorUserIds.push(session.user.id);
   }
 
   const data = {
@@ -241,10 +268,7 @@ export async function createCourse(request: Request) {
  * INSTRUCTOR(C) per §5 (rank >= 2).
  */
 export async function updateCourse(request: Request, courseId: string) {
-  const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
-  if (apiKeyGuard) return apiKeyGuard;
-
-  const session = apiKeySession ?? (await auth.api.getSession(request));
+  const session = await auth.api.getSession(request);
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -272,6 +296,33 @@ export async function updateCourse(request: Request, courseId: string) {
   if (!course) {
     return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
       status: 404,
+      headers: { "Content-Type": "application/json" } as const,
+    });
+  }
+
+  // TA carve-out (tas.canSetAiInstructions, grant): a TA may PATCH the
+  // `aiInstructions` field ONLY, and only when the flag is on. Any other field
+  // in the payload — or the flag being off — keeps the existing 403, so the
+  // grant cannot be ridden into editing the rest of the course.
+  if (access && access.level === "ta") {
+    const taCanSetAi = await getPolicy("tas.canSetAiInstructions");
+    const keys = Object.keys(result.data);
+    const aiInstructionsOnly = keys.length > 0 && keys.every((key) => key === "aiInstructions");
+    if (!taCanSetAi || !aiInstructionsOnly) {
+      return denyByPolicy({
+        request,
+        policyKey: "tas.canSetAiInstructions",
+        user,
+        action: "course.update",
+        courseId,
+      });
+    }
+    const updated = await prisma.course.update({
+      where: { id: courseId },
+      data: { aiInstructions: result.data.aiInstructions },
+    });
+    return new Response(JSON.stringify(updated), {
+      status: 200,
       headers: { "Content-Type": "application/json" } as const,
     });
   }
@@ -341,10 +392,7 @@ export async function updateCourse(request: Request, courseId: string) {
  * UNIT_ADMIN(D), INSTRUCTOR(C) per §5.
  */
 export async function deleteCourse(request: Request, courseId: string) {
-  const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
-  if (apiKeyGuard) return apiKeyGuard;
-
-  const session = apiKeySession ?? (await auth.api.getSession(request));
+  const session = await auth.api.getSession(request);
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -365,6 +413,30 @@ export async function deleteCourse(request: Request, courseId: string) {
     return new Response(JSON.stringify({ error: "Forbidden" }), {
       status: 403,
       headers: { "Content-Type": "application/json" } as const,
+    });
+  }
+
+  // Policy gate: INSTRUCTOR delete is conditional; ADMIN/UNIT_ADMIN unaffected
+  // by this flag (the service-key/enforceAdminIfApiKey path never reaches here
+  // as an instructor).
+  if (access.level === "instructor" && !(await getPolicy("instructors.canDeleteCourses"))) {
+    return denyByPolicy({
+      request,
+      policyKey: "instructors.canDeleteCourses",
+      user: session.user,
+      action: "course.delete",
+      courseId,
+    });
+  }
+
+  // Policy gate: UNIT_ADMIN delete is conditional; ADMIN is always allowed.
+  if (access.level === "unit" && !(await getPolicy("unitAdmins.canDeleteCourses"))) {
+    return denyByPolicy({
+      request,
+      policyKey: "unitAdmins.canDeleteCourses",
+      user: session.user,
+      action: "course.delete",
+      courseId,
     });
   }
 
@@ -409,10 +481,7 @@ export async function setPublishState(request: Request, courseId: string, publis
   }
 
   // User session path (admin UI / direct API access)
-  const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
-  if (apiKeyGuard) return apiKeyGuard;
-
-  const session = apiKeySession ?? (await auth.api.getSession(request));
+  const session = await auth.api.getSession(request);
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -433,6 +502,18 @@ export async function setPublishState(request: Request, courseId: string, publis
     return new Response(JSON.stringify({ error: "Forbidden" }), {
       status: 403,
       headers: { "Content-Type": "application/json" } as const,
+    });
+  }
+
+  // Policy gate: an INSTRUCTOR may publish only when the flag is on; higher
+  // ranks (ADMIN / UNIT_ADMIN) are always allowed.
+  if (access.level === "instructor" && !(await getPolicy("instructors.canPublishCourses"))) {
+    return denyByPolicy({
+      request,
+      policyKey: "instructors.canPublishCourses",
+      user: session.user,
+      action: "course.publish",
+      courseId,
     });
   }
 
@@ -463,17 +544,12 @@ export async function getCourse(courseId: string) {
 export async function getAccessibleCourseCodes(user: {
   id: string;
   role: UserRole | string | null | undefined;
+  authorizedUnits?: string[] | null;
 }): Promise<string[]> {
-  const where: Prisma.CourseWhereInput =
-    user.role === UserRole.ADMIN
-      ? { deletedAt: null }
-      : {
-          deletedAt: null,
-          // Instructor, TA, and student access all flow through Enrollment.role
-          // after the RBAC refactor (#293) — any active enrollment grants access.
-          enrollments: { some: { userId: user.id, isActive: true } },
-        };
-
+  // Reuse the same scoping as GET /api/courses so UNIT_ADMINs (whose access is
+  // unit-based, not enrollment-based) don't lose a saved lastCourseCode on chat
+  // restore. Covers admin, unit, instructor, TA, and student access uniformly.
+  const where = await buildCourseListFilter(user);
   const courses = await prisma.course.findMany({
     where,
     select: { code: true },
@@ -617,6 +693,7 @@ export async function updateCourseTopic(
 export async function deleteCourseTopic(
   courseId: string,
   payload: DeleteCourseTopicInput,
+  deletedBy?: string | null,
 ) {
   const parsed = DeleteCourseTopicSchema.safeParse(payload);
 
@@ -648,7 +725,7 @@ export async function deleteCourseTopic(
 
   await prisma.courseTopic.update({
     where: { id: target.id },
-    data: { deletedAt: new Date() },
+    data: { deletedAt: new Date(), deletedBy: deletedBy || null },
   });
 
   return { status: "204", topic: target } as const;

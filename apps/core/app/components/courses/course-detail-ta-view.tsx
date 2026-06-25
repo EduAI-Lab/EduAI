@@ -7,15 +7,31 @@ import {
   IconUpload,
   IconSettings,
   IconBook,
+  IconTrash,
+  IconPencil,
+  IconPlus,
 } from '@tabler/icons-react'
 import { Card, CardContent } from '@eduai/ui'
 import { Button } from '@eduai/ui'
+import { Input } from '@eduai/ui'
+import { Textarea } from '@eduai/ui'
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  DialogFooter,
+} from '@eduai/ui'
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction,
 } from '@eduai/ui'
 import { PageTabs, PageTabsList, PageTabsTrigger, PageTabsContent } from '@eduai/ui'
 import { CourseHeroCard } from '@eduai/ui'
@@ -26,6 +42,8 @@ import { CourseEmbeddingSettings } from '~/components/course-embedding-settings'
 import type { CourseMaterial } from '~/components/course-materials-upload'
 import type { CourseDetail } from '~/hooks/api/use-course-detail'
 import type { CourseTopic } from '~/hooks/api/use-course-topics'
+import type { CourseTA } from '~/hooks/api/use-course-tas'
+import { usePolicies } from '~/hooks/api/use-policies'
 
 interface Props {
   course: CourseDetail
@@ -36,6 +54,13 @@ interface Props {
   materialsSuccess?: string | null
   onFileSelect: (file: File) => void
   courseId?: string
+  /** Current viewer's user id — TAs may delete only their OWN uploads (§7). */
+  currentUserId?: string
+  onRefreshMaterials?: () => Promise<void>
+  tas?: CourseTA[]
+  onCreateTopic: (name: string) => Promise<void>
+  onDeleteTopic: (id: string) => Promise<void>
+  onUpdateAiInstructions: (aiInstructions: string) => Promise<void>
 }
 
 function fileTypeColor(mime: string): string {
@@ -83,9 +108,106 @@ export function CourseDetailTaView({
   materialsSuccess = null,
   onFileSelect,
   courseId,
+  currentUserId,
+  onRefreshMaterials,
+  tas = [],
+  onCreateTopic,
+  onDeleteTopic,
+  onUpdateAiInstructions,
 }: Props) {
+  const { policies } = usePolicies()
+  // §2 gate: a TA sees upload/embedding controls only when tas.canManageMaterials
+  // is on (default true). When off, materials are read-only (mirrors backend).
+  const canManageMaterials = policies['tas.canManageMaterials'] ?? true
+  // tas.canSetAiInstructions grant (default off): a TA may edit the AI
+  // instructions field only. When off, the field is read-only (mirrors backend).
+  const canSetAiInstructions = policies['tas.canSetAiInstructions'] ?? false
+  // tas.canManageTopics grant (default off): a TA may create/delete any topic.
+  // When off, topics are read-only (mirrors backend §8).
+  const canManageTopics = policies['tas.canManageTopics'] ?? false
+
   const [uploadOpen, setUploadOpen] = useState(false)
   const [embeddingOpen, setEmbeddingOpen] = useState(false)
+  const [deleteMaterialId, setDeleteMaterialId] = useState<string | null>(null)
+  const [deletingMaterial, setDeletingMaterial] = useState(false)
+  const [renameMaterialId, setRenameMaterialId] = useState<string | null>(null)
+  const [renameTitle, setRenameTitle] = useState('')
+  const [renamingMaterial, setRenamingMaterial] = useState(false)
+  const [renameError, setRenameError] = useState<string | null>(null)
+  const [newTopic, setNewTopic] = useState('')
+  const [aiInstructions, setAiInstructions] = useState(course.aiInstructions ?? '')
+  const [aiSaving, setAiSaving] = useState(false)
+  const [aiSaveMsg, setAiSaveMsg] = useState<string | null>(null)
+
+  const handleRenameMaterial = async () => {
+    if (!renameMaterialId || !courseId) return
+    const title = renameTitle.trim()
+    if (!title) {
+      setRenameError('Name is required')
+      return
+    }
+    setRenamingMaterial(true)
+    setRenameError(null)
+    try {
+      const res = await fetch(
+        `/api/courses/${courseId}/materials/${renameMaterialId}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title }),
+        },
+      )
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err?.error ?? 'Failed to rename material')
+      }
+      setRenameMaterialId(null)
+      setRenameTitle('')
+      if (onRefreshMaterials) await onRefreshMaterials()
+    } catch (e) {
+      setRenameError(e instanceof Error ? e.message : 'Failed to rename material')
+    } finally {
+      setRenamingMaterial(false)
+    }
+  }
+
+  const handleDeleteMaterial = async () => {
+    if (!deleteMaterialId || !courseId) return
+    setDeletingMaterial(true)
+    try {
+      const res = await fetch(
+        `/api/courses/${courseId}/materials/${deleteMaterialId}`,
+        { method: 'DELETE' },
+      )
+      if (!res.ok) throw new Error(await res.text().catch(() => 'Failed to delete material'))
+      setDeleteMaterialId(null)
+      if (onRefreshMaterials) await onRefreshMaterials()
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setDeletingMaterial(false)
+    }
+  }
+
+  const handleTopicCreate = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newTopic.trim()) return
+    await onCreateTopic(newTopic.trim())
+    setNewTopic('')
+  }
+
+  const handleAiSave = async () => {
+    setAiSaving(true)
+    setAiSaveMsg(null)
+    try {
+      await onUpdateAiInstructions(aiInstructions)
+      setAiSaveMsg('Saved.')
+    } catch (err) {
+      setAiSaveMsg(err instanceof Error ? err.message : 'Save failed.')
+    } finally {
+      setAiSaving(false)
+    }
+  }
 
   // Close upload modal when success arrives (not on file select — upload may fail)
   const prevSuccessRef = useRef(materialsSuccess)
@@ -101,29 +223,118 @@ export function CourseDetailTaView({
 
   return (
     <div className="flex flex-col gap-6">
-      {/* A2: Upload modal */}
-      <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
+      {/* Delete material confirmation (TA own uploads only) */}
+      <AlertDialog
+        open={!!deleteMaterialId}
+        onOpenChange={(open) => {
+          if (!open) setDeleteMaterialId(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete material?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently removes the file and its embeddings. This action
+              cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingMaterial}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault()
+                handleDeleteMaterial()
+              }}
+              disabled={deletingMaterial}
+              className="bg-destructive text-white hover:bg-destructive/90"
+            >
+              {deletingMaterial ? 'Deleting…' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Rename material modal (TA own uploads only) */}
+      <Dialog
+        open={!!renameMaterialId}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRenameMaterialId(null)
+            setRenameTitle('')
+            setRenameError(null)
+          }
+        }}
+      >
         <DialogContent className="sm:max-w-md rounded-[var(--radius-xl)]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <IconUpload className="h-4 w-4" />
-              Upload course material
+              <IconPencil className="h-4 w-4" />
+              Rename material
             </DialogTitle>
             <DialogDescription>
-              Upload documents to make them available for AI chat.
+              Change the display name of this course material.
             </DialogDescription>
           </DialogHeader>
-          <CourseMaterialsUpload
-            isUploading={isUploading}
-            error={materialsError}
-            success={materialsSuccess}
-            onFileSelect={onFileSelect}
-          />
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              handleRenameMaterial()
+            }}
+            className="flex flex-col gap-3"
+          >
+            <Input
+              value={renameTitle}
+              onChange={(e) => setRenameTitle(e.target.value)}
+              placeholder="Material name"
+              maxLength={255}
+              autoFocus
+            />
+            {renameError && <p className="text-[13px] text-destructive">{renameError}</p>}
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setRenameMaterialId(null)
+                  setRenameTitle('')
+                  setRenameError(null)
+                }}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={renamingMaterial || !renameTitle.trim()}>
+                {renamingMaterial ? 'Saving…' : 'Save'}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 
+      {/* A2: Upload modal — only mounted when the TA may manage materials */}
+      {canManageMaterials && (
+        <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
+          <DialogContent className="sm:max-w-md rounded-[var(--radius-xl)]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <IconUpload className="h-4 w-4" />
+                Upload course material
+              </DialogTitle>
+              <DialogDescription>
+                Upload documents to make them available for AI chat.
+              </DialogDescription>
+            </DialogHeader>
+            <CourseMaterialsUpload
+              isUploading={isUploading}
+              error={materialsError}
+              success={materialsSuccess}
+              onFileSelect={onFileSelect}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
+
       {/* A2: Embedding settings modal */}
-      {courseId && (
+      {canManageMaterials && courseId && (
         <Dialog open={embeddingOpen} onOpenChange={setEmbeddingOpen}>
           <DialogContent className="sm:max-w-lg rounded-[var(--radius-xl)]">
             <DialogHeader>
@@ -145,6 +356,7 @@ export function CourseDetailTaView({
           <PageTabsTrigger value="overview">Overview</PageTabsTrigger>
           <PageTabsTrigger value="materials">Materials</PageTabsTrigger>
           <PageTabsTrigger value="topics">Topics</PageTabsTrigger>
+          {/* No Enrollments tab for TA — §6 */}
         </PageTabsList>
 
         {/* ── Overview ── */}
@@ -160,8 +372,7 @@ export function CourseDetailTaView({
             topics={topics.map((t) => t.name)}
           />
 
-          {/* B1: Grid collapses if no instructor */}
-          <div className={`grid gap-4 mb-4 ${course.instructor ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
+          <div className="grid gap-4 mb-4 grid-cols-1 sm:grid-cols-2">
             {/* B3: Enriched info card */}
             <Card>
               <CardContent className="pt-5 pb-5 flex flex-col gap-4">
@@ -194,19 +405,42 @@ export function CourseDetailTaView({
                     <p className="text-sm text-foreground">{materials.filter(m => m.status === 'READY').length} of {materials.length}</p>
                   </div>
                 </div>
-                {course.aiInstructions && (
-                  <div className="pt-3 border-t border-border">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">AI instructions</p>
-                    <p className="text-[13px] text-muted-foreground leading-relaxed">{course.aiInstructions}</p>
+                {/* tas.canSetAiInstructions: editable field when granted, else
+                    the redesigned read-only display (mirrors backend). */}
+                {canSetAiInstructions ? (
+                  <div className="pt-3 border-t border-border grid gap-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">AI instructions</p>
+                    <Textarea
+                      value={aiInstructions}
+                      onChange={(e) => setAiInstructions(e.target.value)}
+                      rows={4}
+                      placeholder="Guidance applied to the AI tutor for this course."
+                    />
+                    <div className="flex items-center gap-3">
+                      <Button onClick={handleAiSave} disabled={aiSaving} size="sm" className="self-start">
+                        {aiSaving ? 'Saving…' : 'Save instructions'}
+                      </Button>
+                      {aiSaveMsg && (
+                        <span className="text-sm text-muted-foreground">{aiSaveMsg}</span>
+                      )}
+                    </div>
                   </div>
+                ) : (
+                  course.aiInstructions && (
+                    <div className="pt-3 border-t border-border">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">AI instructions</p>
+                      <p className="text-[13px] text-muted-foreground leading-relaxed">{course.aiInstructions}</p>
+                    </div>
+                  )
                 )}
               </CardContent>
             </Card>
 
-            {course.instructor && (
+            {/* Instructor + TAs — visible to TAs so they know their teaching team */}
+            {course.instructor ? (
               <Card>
                 <CardContent className="pt-5 pb-5 flex flex-col gap-4">
-                  <p className="text-[13px] font-semibold text-foreground">Instructor</p>
+                  <p className="text-sm font-semibold text-foreground">Instructor</p>
                   <div className="flex items-center gap-3">
                     <Avatar name={course.instructor.name} size={40} radius={9} />
                     <div>
@@ -214,6 +448,53 @@ export function CourseDetailTaView({
                       <p className="text-xs text-muted-foreground">{course.instructor.email}</p>
                     </div>
                   </div>
+                  <div>
+                    <p className="text-xs font-semibold tracking-wide text-foreground mb-2">
+                      Teaching assistants
+                    </p>
+                    {tas.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {tas.map((ta) => (
+                          <div key={ta.id} className="flex items-center gap-1.5">
+                            <Avatar name={ta.user.name} size={22} radius={5} />
+                            <span className="text-xs text-foreground">{ta.user.name}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs text-muted-foreground">No TAs assigned</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card>
+                <CardContent className="pt-5 pb-5 flex flex-0 flex-col gap-2">
+                  <p className="text-sm font-semibold text-foreground">Instructor</p>
+                  <p className="text-xs text-muted-foreground">No professor assigned</p>
+                  <p className="text-xs font-semibold tracking-wide text-foreground mt-2 mb-1">
+                    Teaching assistants
+                  </p>
+                  {tas.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {tas.map((ta) => (
+                        <div key={ta.id} className="flex items-center gap-1.5">
+                          <Avatar name={ta.user.name} size={22} radius={5} />
+                          <span className="text-xs text-foreground">{ta.user.name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-muted-foreground">No TAs assigned</span>
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             )}
@@ -221,7 +502,7 @@ export function CourseDetailTaView({
 
         </PageTabsContent>
 
-        {/* ── Materials (TA can upload) — A1+A2 rework ── */}
+        {/* ── Materials (TA may upload when tas.canManageMaterials is on) — A1+A2 rework ── */}
         <PageTabsContent value="materials" forceMount className="data-[state=inactive]:hidden flex-1 outline-none">
           {/* A2: Header row: title left, action buttons right */}
           <div className="flex items-center justify-between mb-4">
@@ -232,22 +513,24 @@ export function CourseDetailTaView({
                 {' · '}{materials.filter(m => m.status === 'READY').length} embedded in AI
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              {courseId && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setEmbeddingOpen(true)}
-                >
-                  <IconSettings className="h-4 w-4 mr-1.5" />
-                  Embedding settings
+            {canManageMaterials && (
+              <div className="flex items-center gap-2">
+                {courseId && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setEmbeddingOpen(true)}
+                  >
+                    <IconSettings className="h-4 w-4 mr-1.5" />
+                    Embedding settings
+                  </Button>
+                )}
+                <Button size="sm" onClick={() => setUploadOpen(true)}>
+                  <IconUpload className="h-4 w-4 mr-1.5" />
+                  Upload material
                 </Button>
-              )}
-              <Button size="sm" onClick={() => setUploadOpen(true)}>
-                <IconUpload className="h-4 w-4 mr-1.5" />
-                Upload material
-              </Button>
-            </div>
+              </div>
+            )}
           </div>
 
           {/* A1: Single materials list (no duplicate) */}
@@ -260,13 +543,21 @@ export function CourseDetailTaView({
                 <IconBook size={26} className="text-muted-foreground" stroke={1.5} />
               </div>
               <p className="text-[15px] font-semibold text-foreground mb-1">No materials yet</p>
-              <p className="text-[13px] text-muted-foreground mb-4">
-                Upload documents to make them available for AI chat.
-              </p>
-              <Button size="sm" onClick={() => setUploadOpen(true)}>
-                <IconUpload className="h-4 w-4 mr-1.5" />
-                Upload material
-              </Button>
+              {canManageMaterials ? (
+                <>
+                  <p className="text-[13px] text-muted-foreground mb-4">
+                    Upload documents to make them available for AI chat.
+                  </p>
+                  <Button size="sm" onClick={() => setUploadOpen(true)}>
+                    <IconUpload className="h-4 w-4 mr-1.5" />
+                    Upload material
+                  </Button>
+                </>
+              ) : (
+                <p className="text-[13px] text-muted-foreground">
+                  Course materials will appear here once they are uploaded.
+                </p>
+              )}
             </div>
           ) : (
             <div className="flex flex-col gap-2">
@@ -290,6 +581,32 @@ export function CourseDetailTaView({
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <MaterialStatusChip status={m.status} />
                     <MaterialStatusIcon status={m.status} />
+                    {/* §7: TA may rename/delete only their own uploads. */}
+                    {!!currentUserId && m.uploadedBy === currentUserId && (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label="Rename material"
+                          onClick={() => {
+                            setRenameMaterialId(m.id)
+                            setRenameTitle(m.title)
+                            setRenameError(null)
+                          }}
+                        >
+                          <IconPencil className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label="Delete material"
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => setDeleteMaterialId(m.id)}
+                        >
+                          <IconTrash className="w-4 h-4" />
+                        </Button>
+                      </>
+                    )}
                   </div>
                 </div>
               ))}
@@ -297,23 +614,51 @@ export function CourseDetailTaView({
           )}
         </PageTabsContent>
 
-        {/* ── Topics (read-only for TA) ── */}
+        {/* ── Topics (§8: add/delete only when tas.canManageTopics is on) ── */}
         <PageTabsContent value="topics" forceMount className="data-[state=inactive]:hidden flex-1 outline-none">
-          {topics.length === 0 ? (
-            <Card>
-              <CardContent className="flex items-center justify-center py-8 text-muted-foreground">
-                No topics yet.
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="grid gap-2">
-              {topics.map((t) => (
-                <Card key={t.id}>
-                  <CardContent className="py-3 text-sm">{t.name}</CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
+          <div className="flex flex-col gap-4">
+            {canManageTopics && (
+              <form onSubmit={handleTopicCreate} className="flex gap-2">
+                <Input
+                  value={newTopic}
+                  onChange={(e) => setNewTopic(e.target.value)}
+                  placeholder="New topic name"
+                />
+                <Button type="submit" disabled={!newTopic.trim()}>
+                  <IconPlus className="w-4 h-4 mr-1" />
+                  Add
+                </Button>
+              </form>
+            )}
+            {topics.length === 0 ? (
+              <Card>
+                <CardContent className="flex items-center justify-center py-8 text-muted-foreground">
+                  No topics yet.
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid gap-2">
+                {topics.map((t) => (
+                  <Card key={t.id}>
+                    <CardContent className="flex items-center justify-between py-3">
+                      <span className="text-sm">{t.name}</span>
+                      {canManageTopics && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label="Delete topic"
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => onDeleteTopic(t.id)}
+                        >
+                          <IconTrash className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
         </PageTabsContent>
       </PageTabs>
     </div>

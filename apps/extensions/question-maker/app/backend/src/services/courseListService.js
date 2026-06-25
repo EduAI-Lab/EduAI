@@ -5,6 +5,7 @@
 import { Course } from '../schema/index.js';
 import { LEVELS, resolveAccessForCourse } from '../middleware/courseAccess.js';
 import { getAllCoursesFromCore } from './coreApiService.js';
+import { dedupeCoursesByCode } from './courseCodeUtils.js';
 
 const MIN_LIST_RANK = LEVELS.instructor.rank;
 
@@ -34,7 +35,8 @@ export async function listCoursesForUser(reqUser, { cookie } = {}) {
   }
 
   if (reqUser.role === 'ADMIN') {
-    return allCourses.map((course) => enrichCourseRow(course, coreById, 'admin'));
+    const enriched = allCourses.map((course) => enrichCourseRow(course, coreById, 'admin'));
+    return dedupeCoursesByCode(enriched);
   }
 
   const visible = [];

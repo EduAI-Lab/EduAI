@@ -52,6 +52,18 @@ const USER = { id: 'cuid-user', role: 'INSTRUCTOR' };
 beforeEach(() => vi.clearAllMocks());
 
 describe('resource loaders reject non-integer ids before querying (#5)', () => {
+  it('variant route: id 0 → 404, no DB query', async () => {
+    const req = { user: USER, params: { variantId: '0' }, headers: {} };
+    const res = mockRes();
+    const next = vi.fn();
+
+    await requireVariantAccess({ min: 'ta' })(req, res, next);
+
+    expect(res.statusCode).toBe(404);
+    expect(mockVariantFindOne).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
   it('variant route: non-numeric variantId → 404, no DB query', async () => {
     const req = { user: USER, params: { variantId: 'abc' }, headers: {} };
     const res = mockRes();

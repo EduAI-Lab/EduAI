@@ -1,22 +1,23 @@
 import type { Prisma } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
-import { getAuthorizedUnits } from "~/lib/auth/course-access.server";
+import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { courseChatViewPolicyKey } from "~/lib/rbac/permissions";
+import { getPolicy } from "~/lib/policy.server";
 
 /**
  * Chat-history access control (#chat-history).
  *
- * Visibility contract — a viewer may READ a chat when ANY of:
- *   - they own it (chat.userId === viewer.id), OR
- *   - the chat is course-scoped and the viewer holds staff access
- *     (EnrollmentRole INSTRUCTOR|TA) to that course, OR
- *   - the viewer is UNIT_ADMIN and the chat's course department is in their
- *     authorized units, OR
- *   - the viewer is ADMIN (sees everything).
+ * This legacy listing path (GET /api/chats, GET /api/chats/:id/messages) is
+ * scoped to OWN chats only, plus ADMIN who sees everything. Staff oversight of
+ * student course chats is a policy-gated, student-owner-scoped capability served
+ * exclusively by the §5c endpoints (/api/courses/:id/chats, /api/units/:dept/chats,
+ * /api/chats/:id) via courseChatViewPolicyKey — it is intentionally NOT granted
+ * here, so an instructor/TA/unit-admin cannot read another user's chats through
+ * this path regardless of any flag.
  *
- * EDIT (append/continue) is owner-only — every other reader is strictly
- * read-only. The visibility filter is composed as a Prisma OR so listing is
- * secure by construction: narrowing by courseId/userId can never widen what a
- * viewer is allowed to see.
+ * EDIT (append/continue) is owner-only. The visibility filter is composed as a
+ * Prisma WHERE so listing is secure by construction: narrowing by courseId/userId
+ * can never widen what a viewer is allowed to see.
  */
 
 export type ChatHistoryViewer = {
@@ -77,76 +78,60 @@ function truncate(text: string | null, max = 120): string | null {
 }
 
 /**
- * Prisma WHERE filter scoping chat listing to what `viewer` may read.
- * ADMIN gets an empty filter (everything); everyone else gets an OR of the
- * visibility branches above.
+ * Prisma WHERE filter scoping chat listing to what `viewer` may read on this
+ * legacy path. ADMIN gets an empty filter (everything); every other viewer is
+ * scoped to their OWN chats. Policy-gated staff oversight of student course
+ * chats is served only by the §5c endpoints and is never widened here.
  */
 export async function buildChatVisibilityFilter(
   viewer: ChatHistoryViewer,
 ): Promise<Prisma.ChatWhereInput> {
+  // ADMIN oversight is unconditional (courseChatViewPolicyKey('admin') ===
+  // 'always'); everyone else sees only the chats they own.
   if (viewer.role === "ADMIN") return {};
-
-  const branches: Prisma.ChatWhereInput[] = [
-    // Own chats — always visible.
-    { userId: viewer.id },
-    // Course-scoped chats where the viewer is staff of the course. Mirror every
-    // path resolveCourseAccess honours so a TA/instructor sees course history
-    // regardless of HOW they were attached: enrollment role, CourseTA junction,
-    // or direct course.instructorId.
-    {
-      course: {
-        enrollments: {
-          some: {
-            userId: viewer.id,
-            isActive: true,
-            role: { in: ["INSTRUCTOR", "TA"] },
-          },
-        },
-      },
-    },
-    { course: { tas: { some: { userId: viewer.id } } } },
-    { course: { instructorId: viewer.id } },
-  ];
-
-  if (viewer.role === "UNIT_ADMIN") {
-    const units = await getAuthorizedUnits(viewer);
-    if (units.length > 0) {
-      branches.push({ course: { department: { in: units } } });
-    }
-  }
-
-  return { OR: branches };
+  return { userId: viewer.id };
 }
 
+export type ChatReadAccess = {
+  chat: {
+    id: string;
+    userId: string;
+    courseId: string | null;
+    systemPrompt: string | null;
+    title: string | null;
+    adhdAssist: boolean;
+    createdAt: Date;
+    updatedAt: Date;
+    course: { id: string; code: string; name: string } | null;
+    user: { id: string; name: string | null; email: string };
+  };
+  isOwner: boolean;
+  canEdit: boolean;
+};
+
 /**
- * Resolve read/edit access for a single chat. Returns `chat: null` when the
- * chat does not exist OR the viewer may not read it (callers should answer 404
- * either way — no existence leak).
+ * Resolve read access to ONE chat under the §5c oversight contract. This is the
+ * single source of truth shared by GET /api/chats/:id (metadata) and
+ * /api/chats/:id/messages (transcript) so the two routes can never drift:
+ *   - the owner and ADMIN may always read;
+ *   - a course-authorized viewer (instructor/TA/unit-admin) may read a course
+ *     chat ONLY when their course-chat-view policy flag is on AND the chat
+ *     owner is an active STUDENT — oversight is student-scoped, so staff must
+ *     not read each other's private course chats.
+ *
+ * NOTE: do NOT gate single-chat reads through `buildChatVisibilityFilter` — that
+ * filter is for listing and grants staff blanket access to every course chat
+ * with no policy-flag check and no student-owner restriction.
+ *
+ * Returns null when the chat is missing OR the viewer may not read it; callers
+ * answer 404 either way so there is no existence leak. EDIT is owner-only.
  */
-export async function canAccessChat(
+export async function resolveChatReadAccess(
   viewer: ChatHistoryViewer,
   chatId: string,
-): Promise<{
-  chat:
-    | {
-        id: string;
-        userId: string;
-        courseId: string | null;
-        systemPrompt: string | null;
-        title: string | null;
-        adhdAssist: boolean;
-        createdAt: Date;
-        updatedAt: Date;
-        course: { id: string; code: string; name: string } | null;
-        user: { id: string; name: string | null; email: string };
-      }
-    | null;
-  canView: boolean;
-  canEdit: boolean;
-}> {
-  const visibility = await buildChatVisibilityFilter(viewer);
+): Promise<ChatReadAccess | null> {
   const chat = await prisma.chat.findFirst({
-    where: { id: chatId, ...visibility },
+    where: { id: chatId },
     select: {
       id: true,
       userId: true,
@@ -161,13 +146,32 @@ export async function canAccessChat(
     },
   });
 
-  if (!chat) return { chat: null, canView: false, canEdit: false };
+  if (!chat) return null;
 
-  return {
-    chat,
-    canView: true,
-    canEdit: chat.userId === viewer.id,
-  };
+  const isOwner = chat.userId === viewer.id;
+  let authorized = isOwner || viewer.role === "ADMIN";
+
+  if (!authorized && chat.courseId) {
+    const { access } = await resolveCourseAccessWithCourse(viewer, chat.courseId);
+    const gate = courseChatViewPolicyKey(access?.level ?? null);
+    const gateOpen = gate === "always" || (gate !== "never" && (await getPolicy(gate)));
+    if (gateOpen) {
+      const ownerIsStudent = await prisma.enrollment.findFirst({
+        where: {
+          courseId: chat.courseId,
+          userId: chat.userId,
+          role: "STUDENT",
+          isActive: true,
+        },
+        select: { id: true },
+      });
+      authorized = ownerIsStudent !== null;
+    }
+  }
+
+  if (!authorized) return null;
+
+  return { chat, isOwner, canEdit: isOwner };
 }
 
 /**

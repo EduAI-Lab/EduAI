@@ -1,19 +1,16 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
 import { auth } from "~/lib/auth/server";
-import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { getCourseTA, addCourseTA, removeCourseTA } from "~/lib/courses/tas.server";
 import prisma from "~/lib/prisma.server";
 import { resolveCourseAccess } from "~/lib/rbac/resolve-course-access.server";
-import { canManageInstructors } from "~/lib/rbac/permissions";
+import { resolvePolicyGate } from "~/lib/rbac/permissions";
+import { getPolicy, denyByPolicy } from "~/lib/policy.server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
-  if (apiKeyGuard) return apiKeyGuard;
-
-  const session = apiKeySession ?? await auth.api.getSession(request);
+  const session = await auth.api.getSession(request);
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -57,7 +54,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   };
   const access = await resolveCourseAccess(rbacUser, course);
 
-  if (!canManageInstructors(access)) {
+  // Reading the TA roster is allowed for anyone with course access (students,
+  // TAs, instructors, admins). Mutations remain gated in `action` below.
+  if (!access) {
     return new Response(JSON.stringify({ error: "Forbidden" }), {
       status: 403,
       headers: { "Content-Type": "application/json" },
@@ -80,10 +79,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     });
   }
 
-  const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
-  if (apiKeyGuard) return apiKeyGuard;
-
-  const session = apiKeySession ?? await auth.api.getSession(request);
+  const session = await auth.api.getSession(request);
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -119,10 +115,24 @@ export async function action({ request, params }: ActionFunctionArgs) {
   };
   const access = await resolveCourseAccess(rbacUser, course);
 
-  if (!canManageInstructors(access)) {
+  // ADMIN / UNIT_ADMIN may always manage TAs. An INSTRUCTOR who owns the course
+  // may also manage TAs when `instructors.canManageEnrollments` is on; the gate
+  // is resolved centrally so this mirrors the enrollments endpoint and can't
+  // drift. Other roles are forbidden.
+  const taGate = resolvePolicyGate(access, "manageEnrollments");
+  if (taGate === "never") {
     return new Response(JSON.stringify({ error: "Forbidden" }), {
       status: 403,
       headers: { "Content-Type": "application/json" },
+    });
+  }
+  if (taGate !== "always" && !(await getPolicy(taGate))) {
+    return denyByPolicy({
+      request,
+      policyKey: taGate,
+      user: session.user,
+      action: "courseTA.manage",
+      courseId,
     });
   }
 
@@ -148,7 +158,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
           entityType: "CourseTA",
           entityId: result.ta.id,
           entityLabel: result.ta.user?.name ?? null,
-          details: { courseId, targetUserId: result.ta.userId },
+          details: { courseId, targetUserId: result.ta.user.id },
         }),
       );
       return new Response(JSON.stringify(result.ta), {

@@ -5,19 +5,35 @@ import {
   IconCircleCheck,
   IconCircleX,
 } from '@tabler/icons-react'
-import { Card, CardContent } from '@eduai/ui'
-import { PageTabs, PageTabsList, PageTabsTrigger, PageTabsContent } from '@eduai/ui'
-import { CourseHeroCard } from '@eduai/ui'
-import { StatusBadge } from '@eduai/ui'
-import { Avatar } from '@eduai/ui'
+import {
+  Card,
+  CardContent,
+  PageTabs,
+  PageTabsList,
+  PageTabsTrigger,
+  PageTabsContent,
+  CourseHeroCard,
+  StatusBadge,
+  Avatar,
+} from '@eduai/ui'
+import {
+  CourseMaterialsUpload,
+  type CourseMaterial,
+} from '~/components/course-materials-upload'
 import type { CourseDetail } from '~/hooks/api/use-course-detail'
-import type { CourseMaterial } from '~/hooks/api/use-course-materials'
 import type { CourseTopic } from '~/hooks/api/use-course-topics'
+import type { CourseTA } from '~/hooks/api/use-course-tas'
+import { usePolicies } from '~/hooks/api/use-policies'
 
 interface Props {
   course: CourseDetail
   materials: CourseMaterial[]
   topics: CourseTopic[]
+  tas?: CourseTA[]
+  isUploading?: boolean
+  materialsError?: string | null
+  materialsSuccess?: string | null
+  onFileSelect?: (file: File) => void
 }
 
 function MaterialStatusIcon({ status }: { status: CourseMaterial['status'] }) {
@@ -40,7 +56,28 @@ function formatSize(bytes: number): string {
   return mb >= 1 ? `${mb.toFixed(1)} MB` : `${(bytes / 1024).toFixed(0)} KB`
 }
 
-export function CourseDetailStudentView({ course, materials, topics }: Props) {
+export function CourseDetailStudentView({
+  course,
+  materials,
+  topics,
+  tas = [],
+  isUploading = false,
+  materialsError = null,
+  materialsSuccess = null,
+  onFileSelect,
+}: Props) {
+  const { policies } = usePolicies()
+  // §2 gate: hide the materials section when students.canViewMaterials is off
+  // (mirrors the loader 403). Default true preserves today's behavior.
+  const canViewMaterials = policies['students.canViewMaterials'] ?? true
+  // §2 grant: a student sees the upload control only when students.canUploadMaterials
+  // is on (default false — mirrors the POST 403). Uploads land on the whole-course
+  // RAG corpus, same as instructor/TA uploads.
+  const canUploadMaterials =
+    (policies['students.canUploadMaterials'] ?? false) && Boolean(onFileSelect)
+  // The Materials tab shows when the student may either read or upload.
+  const showMaterialsTab = canViewMaterials || canUploadMaterials
+
   // Top-right hero badges: enrollment + AI status
   const topRightBadges: string[] = ['Enrolled', ...(course.aiInstructions ? ['AI-enabled'] : [])]
 
@@ -49,7 +86,8 @@ export function CourseDetailStudentView({ course, materials, topics }: Props) {
       <PageTabs defaultValue="overview">
         <PageTabsList>
           <PageTabsTrigger value="overview">Overview</PageTabsTrigger>
-          <PageTabsTrigger value="materials">Materials</PageTabsTrigger>
+          {showMaterialsTab && <PageTabsTrigger value="materials">Materials</PageTabsTrigger>}
+          {/* No Topics management tab, no Enrollments tab for students — §8, §6 */}
         </PageTabsList>
 
         {/* ── Overview ── */}
@@ -66,7 +104,7 @@ export function CourseDetailStudentView({ course, materials, topics }: Props) {
           />
 
           {/* B3: Enriched info card — always show; B1: no empty gaps */}
-          <div className={`grid gap-4 mb-4 ${course.instructor ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
+          <div className="grid gap-4 mb-4 grid-cols-1 sm:grid-cols-2">
             <Card>
               <CardContent className="pt-5 pb-5 flex flex-col gap-4">
                 <p className="text-[13px] font-semibold text-foreground">Course information</p>
@@ -101,11 +139,11 @@ export function CourseDetailStudentView({ course, materials, topics }: Props) {
               </CardContent>
             </Card>
 
-            {/* B4: Instructor card — always rendered when instructor exists */}
-            {course.instructor && (
+            {/* Instructor + TAs — visible to students so they know their teaching team */}
+            {course.instructor ? (
               <Card>
                 <CardContent className="pt-5 pb-5 flex flex-col gap-4">
-                  <p className="text-[13px] font-semibold text-foreground">Instructor</p>
+                  <p className="text-sm font-semibold text-foreground">Instructor</p>
                   <div className="flex items-center gap-3">
                     <Avatar name={course.instructor.name} size={40} radius={9} />
                     <div>
@@ -113,75 +151,125 @@ export function CourseDetailStudentView({ course, materials, topics }: Props) {
                       <p className="text-xs text-muted-foreground">{course.instructor.email}</p>
                     </div>
                   </div>
+                  <div>
+                    <p className="text-xs font-semibold tracking-wide text-foreground mb-2">
+                      Teaching assistants
+                    </p>
+                    {tas.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {tas.map((ta) => (
+                          <div key={ta.id} className="flex items-center gap-1.5">
+                            <Avatar name={ta.user.name} size={22} radius={5} />
+                            <span className="text-xs text-foreground">{ta.user.name}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs text-muted-foreground">No TAs assigned</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card>
+                <CardContent className="pt-5 pb-5 flex flex-0 flex-col gap-2">
+                  <p className="text-sm font-semibold text-foreground">Instructor</p>
+                  <p className="text-xs text-muted-foreground">No professor assigned</p>
+                  <p className="text-xs font-semibold tracking-wide text-foreground mt-2 mb-1">
+                    Teaching assistants
+                  </p>
+                  {tas.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {tas.map((ta) => (
+                        <div key={ta.id} className="flex items-center gap-1.5">
+                          <Avatar name={ta.user.name} size={22} radius={5} />
+                          <span className="text-xs text-foreground">{ta.user.name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-muted-foreground">No TAs assigned</span>
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             )}
           </div>
 
-          {/* About / AI instructions — only shown when data exists (B1: no empty gap) */}
-          {(course.description || course.aiInstructions) && (
-            <div className="flex flex-col gap-4">
-              {course.description && (
-                <Card>
-                  <CardContent className="pt-5 pb-5">
-                    <p className="text-[13px] font-semibold text-foreground mb-2">About this course</p>
-                    <p className="text-sm text-muted-foreground leading-relaxed">{course.description}</p>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-          )}
         </PageTabsContent>
 
-        {/* ── Materials (read-only) ── */}
-        <PageTabsContent value="materials" forceMount className="data-[state=inactive]:hidden flex-1 outline-none">
-          {materials.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <div
-                className="w-14 h-14 rounded-[14px] flex items-center justify-center mb-4"
-                style={{ background: 'var(--muted)' }}
-              >
-                <IconBook size={26} className="text-muted-foreground" stroke={1.5} />
+        {/* ── Materials ── */}
+        {showMaterialsTab && (
+          <PageTabsContent value="materials" forceMount className="data-[state=inactive]:hidden flex-1 outline-none">
+            {/* §2 grant: students.canUploadMaterials surfaces the upload control for
+                an enrolled student; the POST endpoint applies the matching gate. Off
+                by default → read-only list only. The redesigned read-only list below
+                still renders so an uploading student also sees existing materials. */}
+            {canUploadMaterials && (
+              <div className="mb-4">
+                <CourseMaterialsUpload
+                  isUploading={isUploading}
+                  error={materialsError}
+                  success={materialsSuccess}
+                  onFileSelect={onFileSelect!}
+                />
               </div>
-              <p className="text-[15px] font-semibold text-foreground mb-1">No materials yet</p>
-              <p className="text-[13px] text-muted-foreground">
-                Course materials will appear here once your instructor uploads them.
-              </p>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between mb-2">
-                <div>
-                  <p className="text-[16px] font-semibold text-foreground">Course materials</p>
-                  <p className="text-[13px] text-muted-foreground">
-                    {materials.length} file{materials.length !== 1 ? 's' : ''}
-                    {' · '}{materials.filter(m => m.status === 'READY').length} ready
-                  </p>
-                </div>
-              </div>
-              {materials.map((m) => (
+            )}
+            {materials.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 text-center">
                 <div
-                  key={m.id}
-                  className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius-lg)] border border-border bg-card"
+                  className="w-14 h-14 rounded-[14px] flex items-center justify-center mb-4"
+                  style={{ background: 'var(--muted)' }}
                 >
-                  <div
-                    className="w-8 h-8 rounded-[7px] flex items-center justify-center flex-shrink-0"
-                    style={{ background: fileTypeColor(m.mimeType) }}
-                  >
-                    <IconFileText size={14} color="white" stroke={2} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[13px] font-medium text-foreground truncate">{m.title}</p>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">
-                      {formatSize(m.fileSize)} · {new Date(m.createdAt).toLocaleDateString()}
+                  <IconBook size={26} className="text-muted-foreground" stroke={1.5} />
+                </div>
+                <p className="text-[15px] font-semibold text-foreground mb-1">No materials yet</p>
+                <p className="text-[13px] text-muted-foreground">
+                  Course materials will appear here once your instructor uploads them.
+                </p>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <p className="text-[16px] font-semibold text-foreground">Course materials</p>
+                    <p className="text-[13px] text-muted-foreground">
+                      {materials.length} file{materials.length !== 1 ? 's' : ''}
+                      {' · '}{materials.filter(m => m.status === 'READY').length} ready
                     </p>
                   </div>
-                  <MaterialStatusIcon status={m.status} />
                 </div>
-              ))}
-            </div>
-          )}
-        </PageTabsContent>
+                {materials.map((m) => (
+                  <div
+                    key={m.id}
+                    className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius-lg)] border border-border bg-card"
+                  >
+                    <div
+                      className="w-8 h-8 rounded-[7px] flex items-center justify-center flex-shrink-0"
+                      style={{ background: fileTypeColor(m.mimeType) }}
+                    >
+                      <IconFileText size={14} color="white" stroke={2} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[13px] font-medium text-foreground truncate">{m.title}</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        {formatSize(m.fileSize)} · {new Date(m.createdAt).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <MaterialStatusIcon status={m.status} />
+                  </div>
+                ))}
+              </div>
+            )}
+          </PageTabsContent>
+        )}
       </PageTabs>
     </div>
   )

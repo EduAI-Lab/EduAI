@@ -15,7 +15,7 @@ flowchart TB
   end
 
   subgraph entry["action — chat.ts"]
-    A1["Session or admin API-key + optional proxyUser"]
+    A1["Session (cookie)"]
     A2["Validate apiKeys (Zod schema)"]
     A3["Normalize messages; resolve courseCode → courseId"]
     A4["Load/create Chat; persist systemPrompt if sent"]
@@ -35,7 +35,7 @@ flowchart TB
 
   subgraph hybrid["Hybrid path — no tools"]
     H1["Last user text via extractTextFromMessage"]
-    H2{"courseId set AND<br/>isRAGQuery?"}
+    H2{"courseId set?"}
     H2 -->|no| H3["streamText: default system, maxTokens 8192"]
     H2 -->|yes| H4["findRelevantContent (limit 4)"]
     H5["buildCappedRagContextText → system"]
@@ -46,15 +46,18 @@ flowchart TB
   subgraph toolpath["Tool path — streamText + tools"]
     P1["tools: getInformation, webSearch, fetchPage"]
     P2["maxSteps / maxTokens from env; toolCallStreaming"]
-    P3["getInformation → findRelevantContent → capRagHitsForTool"]
-    P4["Multi-step tool loop"]
-    P1 --> P2 --> P3 --> P4
+    P3["courseId set? → preload findRelevantContent → inject system"]
+    P4["getInformation → findRelevantContent → capRagHitsForTool (supplemental)"]
+    P5["Multi-step tool loop"]
+    P1 --> P2 --> P3 --> P4 --> P5
   end
 
   subgraph ragcore["findRelevantContent — embedding.ts"]
     R1["generateEmbedding (cached query embed)"]
     R2["pgvector: material_embeddings → chunks → course_materials"]
-    R3["similarity > threshold, ORDER BY DESC, LIMIT"]
+    R3{"RAG_HYBRID_BM25=1?"}
+    R3 -->|yes| R4["hybrid: vector > threshold, then vector×α + ts_rank×(1−α), ORDER BY score DESC, LIMIT"]
+    R3 -->|no| R5["pure-vector: similarity > threshold, ORDER BY similarity DESC, LIMIT"]
     R1 --> R2 --> R3
   end
 
@@ -82,10 +85,10 @@ flowchart TB
 
 ## Notes
 
-- **Hybrid RAG** runs **`findRelevantContent` once** before `streamText` when a **course** is selected and **`isRAGQuery`** is true (keyword heuristics, or always-on when `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE=1`). Hits are formatted with **`buildCappedRagContextText`** (chunk cap **4**, total char cap **14_000**) and injected into **`system`**.
-- **Tool RAG** runs **`findRelevantContent`** only when the model invokes **`getInformation`**. Results pass through **`capRagHitsForTool`** (same chunk cap **4**, **6000** chars per chunk) before returning as tool output.
+- **Hybrid RAG** prefetches **`findRelevantContent`** on every course-scoped turn. Excerpts inject when **`shouldInjectCourseRag`** passes (`needsCourseRag`, similarity thresholds, or `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE=1`), formatted with **`buildCappedRagContextText`** and **`buildRagSystemBlock`** (chunk cap **4**, char cap **14_000**).
+- **Tool RAG (preload)** shares the same prefetch + inject gate. When injection passes, excerpts use **`buildRagSystemBlock({ toolPath: true })`**. **`getInformation`** remains a supplemental fallback (`capRagHitsForTool`, **6000** chars per chunk).
 - **Query embeddings** use an in-memory cache (`QUERY_EMBED_CACHE_TTL_MS`, `QUERY_EMBED_CACHE_MAX`). **Server** `OPENROUTER_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, or `OPENAI_API_KEY` (first match wins) — independent of the user's chat provider (e.g. Ollama).
-- **Similarity threshold** defaults from **`RAG_SIMILARITY_THRESHOLD`** (default **0.5**) when the caller omits `similarityThreshold`.
+- **Similarity threshold** applies to both retrieval paths: chunks must clear the vector cosine floor before ranking. Defaults from **`RAG_SIMILARITY_THRESHOLD`** (default **0.5**) when the caller omits `similarityThreshold`; per-course `ragSimilarityThreshold` overrides when set.
 - **Ingestion** (`processMaterialEmbeddings`) fills the vector tables; it does not run on each chat request.
 
 ## Code references
@@ -94,6 +97,8 @@ flowchart TB
 | ---- | ---- |
 | Route handler | [`apps/core/app/routes/api/chat.ts`](../../apps/core/app/routes/api/chat.ts) |
 | RAG caps + formatters | [`apps/core/app/lib/chat-rag.ts`](../../apps/core/app/lib/chat-rag.ts) |
+| RAG inject gate | [`apps/core/app/lib/ai/course-rag-policy.ts`](../../apps/core/app/lib/ai/course-rag-policy.ts) |
+| Chat intent | [`apps/core/app/lib/ai/chat-intent.ts`](../../apps/core/app/lib/ai/chat-intent.ts) |
 | Vector search + embed API | [`apps/core/app/lib/ai/embedding.ts`](../../apps/core/app/lib/ai/embedding.ts) |
 | API key body schema | [`apps/core/app/lib/chat-api-keys.schema.ts`](../../apps/core/app/lib/chat-api-keys.schema.ts) |
 | Chat debug logging | [`apps/core/app/lib/chat-api-log.ts`](../../apps/core/app/lib/chat-api-log.ts) |
@@ -115,13 +120,12 @@ The React chat client calls `POST /api/chat` with a JSON body that typically inc
 | `streaming` | Default `true` |
 | `chatId` | Optional; ties to persisted `Chat` (server-generated CUID) |
 | `systemPrompt` | Optional override / persistence (`null` clears stored prompt) |
-| `proxyUser` | Admin API-key only; remaps acting user via `ExternalUser` mapping |
 
 The handler is the `action` in [`chat.ts`](../../apps/core/app/routes/api/chat.ts) (React Router resource route).
 
 ## 2. Before any LLM call
 
-1. **Session** — `auth.api.getSession`, or admin `x-api-key` path with optional `proxyUser` remapping.
+1. **Session** — `auth.api.getSession` (session cookie; no legacy `x-api-key` path).
 2. **Parse body** — `normalizeMessage` ensures `id` and `role`; stamps UUID if missing.
 3. **Course** — `courseCode` → `Course` row by code; `effectiveCourseId = resolved id || courseId`.
 4. **Chat** — load by `chatId` + user (410 if deleted); create/update for `systemPrompt`.
@@ -134,31 +138,28 @@ Debug hooks (`chatApiDebug`) log history merge counts and pre-stream prompt size
 
 ## 3. Two RAG behaviors (split on `supportsTools`)
 
-RAG is **not** one pipeline. It branches on `modelSupportsTools(model)` (from the `AIModel` row in the DB).
+RAG is **not** one pipeline. It branches on `getChatModelCapabilities(model).supportsTools` (from the `AIModel` row in the DB).
 
 ### A. Tool-calling path (`supportsTools === true`)
 
 - `streamText` with **`getInformation`**, **`webSearch`**, **`fetchPage`**
 - **`maxSteps`**: `CHAT_TOOL_MAX_STEPS` (default **12**, capped at 32)
-- **`maxTokens`**: `CHAT_TOOL_MAX_OUTPUT_TOKENS` (default **32000**, capped at 128_000)
+- **`maxTokens`**: `resolveToolMaxOutputTokens(AIModel.maxTokens)` — env cap from `CHAT_TOOL_MAX_OUTPUT_TOKENS` (default **8192**, max 128_000), further clamped to the model's DB `maxTokens` when set (vLLM models seeded at **8192**)
 - `toolCallStreaming` mirrors client `streaming`
-- Course RAG runs **only if the model calls `getInformation`**, which executes `findRelevantContent(question, effectiveCourseId, HYBRID_RAG_MAX_CHUNKS)` then **`capRagHitsForTool`**
-- Retrieved chunks are **tool output**, not pre-injected into `system`
-- System prompt instructs: course questions → `getInformation` first; external/recent → `webSearch` then `fetchPage`
+- When `effectiveCourseId` is set, **`findRelevantContent`** runs **before** `streamText` (prefetch). Excerpts are injected only when **`shouldInjectCourseRag`** is true: `needsCourseRag(message)`, strong/moderate similarity, or `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE=1`.
+- **`getInformation`** remains registered as a supplemental tool — the model may call it if preloaded excerpts are insufficient. Its results pass through **`capRagHitsForTool`** (chunk cap **4**, **6000** chars per chunk).
+- System prompt instructs: use preloaded excerpts first; call `getInformation` only if they are insufficient; external/recent info → `webSearch` then `fetchPage`.
 
 ### B. Hybrid path (`supportsTools === false`)
 
 - No tool loop
 - **`extractTextFromMessage`** on the last user turn (string, parts array, or `{ text }` object)
-- **`isRAGQuery`** = `effectiveCourseId` set **and** (
-  `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE=1` **or** message contains any keyword:
-  `course`, `material`, `document`, `chapter`, `lecture`, `assignment`, `explain`, `what is`, `summarize`, `summary`, `content`, `about`
-  )
-- If true → **`findRelevantContent`** once → **`buildCappedRagContextText`** → appended to **`system`**
-- If false or no course → default system only (**`maxTokens: 8192`**)
+- **`isRAGQuery`** / inject gate = prefetch when course selected; inject when `needsCourseRag(message)` **or** top-1 similarity ≥ moderate threshold **or** `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE=1` (#484 smart gate)
+- If inject passes → **`findRelevantContent`** once → **`buildCappedRagContextText`** → **`buildRagSystemBlock`** → appended to **`system`**
+- If no course → default system only (**`maxTokens: 8192`**)
 - On retrieval error, falls back to default system (no excerpts)
 
-**Summary:** tool path = RAG on demand inside multi-step `streamText`; hybrid path = RAG once up front into `system` when course + gate match.
+**Summary:** both paths prefetch on course-scoped chat; excerpts inject when the smart gate passes. `getInformation` is supplemental on the tool path only.
 
 ### RAG caps (constants in `chat-rag.ts`)
 
@@ -176,10 +177,12 @@ RAG is **not** one pipeline. It branches on `modelSupportsTools(model)` (from th
 Defined in [`embedding.ts`](../../apps/core/app/lib/ai/embedding.ts):
 
 1. **`generateEmbedding(userQuery)`** — `embed()` via OpenRouter `google/gemini-embedding-001` (if `OPENROUTER_API_KEY`), else direct Gemini `gemini-embedding-001`, else OpenAI `text-embedding-3-small`. Normalized query text is cached in-memory (`QUERY_EMBED_CACHE_TTL_MS` default 90s, `QUERY_EMBED_CACHE_MAX` default 300 entries).
-2. **Pgvector SQL** — `material_embeddings` → `material_chunks` → `course_materials`, filtered by `courseId`, similarity `1 - (embedding <=> query)`, threshold from **`RAG_SIMILARITY_THRESHOLD`** when `similarityThreshold` is omitted (default **0.5**), `ORDER BY similarity DESC`, `LIMIT` from caller.
-3. **Returns** `{ content, similarity, materialTitle }[]`.
+2. **Retrieval SQL** — branches on **`RAG_HYBRID_BM25`**:
+   - **Hybrid path** (`RAG_HYBRID_BM25=1`, recommended): pre-filters with the same vector cosine floor as the pure-vector path (`1 − (embedding <=> query) > threshold`), then ranks survivors by combined score: `(1 − (embedding <=> query)) × α + ts_rank(content, query) × (1−α)`, where α = **`RAG_HYBRID_BM25_ALPHA`** (default **0.7**). `ORDER BY score DESC`, `LIMIT`. Improves label queries ("assignment 4") and vague queries ("I'm confused about what prof said") that pure vector search misses, without returning top-k chunks that fail the similarity floor.
+   - **Pure-vector path** (default when flag is off): `1 - (embedding <=> query)`, filtered by threshold from **`RAG_SIMILARITY_THRESHOLD`** (default **0.5**), `ORDER BY similarity DESC`.
+3. **Returns** `{ content, similarity, materialTitle }[]` — same shape for both paths; `similarity` holds the combined score in hybrid mode.
 
-Signature: `findRelevantContent(userQuery, courseId, limit = 6, similarityThreshold?: number)` — omitting `similarityThreshold` reads **`RAG_SIMILARITY_THRESHOLD`** from the environment.
+Signature: `findRelevantContent(userQuery, courseId, limit = 6, similarityThreshold?: number)` — omitting `similarityThreshold` reads **`RAG_SIMILARITY_THRESHOLD`** from the environment. Both hybrid and pure-vector paths apply the effective threshold as a vector cosine pre-filter; hybrid then ranks survivors by combined score.
 
 **Ingestion (offline):** `processMaterialEmbeddings` → `resolveMaterialChunks` (semantic chunks from upload when `SEMANTIC_CHUNK_SEPARATOR` is present, else `generateChunks` at 800 chars / 80 overlap) → `generateEmbeddings` via batched `embedMany` (`EMBED_MANY_BATCH_SIZE` default 64) → batch `MaterialChunk` insert + `material_embeddings` in one transaction. Re-upload materials to pick up improved chunk boundaries for files indexed before this fix.
 
@@ -195,10 +198,14 @@ Resolved system prompt order: request `systemPrompt` → stored `chat.systemProm
 
 | Variable | Default | Effect |
 | -------- | ------- | ------ |
-| `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE` | off | `1` = hybrid RAG on every message when a course is selected (skip keyword gate) |
 | `CHAT_TOOL_MAX_STEPS` | 12 | Tool-path `maxSteps` (1–32) |
-| `CHAT_TOOL_MAX_OUTPUT_TOKENS` | 32000 | Tool-path `maxTokens` (1024–128000) |
-| `RAG_SIMILARITY_THRESHOLD` | 0.5 | Minimum cosine similarity for retrieval hits when caller omits threshold |
+| `CHAT_TOOL_MAX_OUTPUT_TOKENS` | 8192 | Tool-path env cap for `maxTokens` (1024–128000); clamped to `AIModel.maxTokens` when set |
+| `RAG_HYBRID_BM25` | off | `1` = enable hybrid BM25+vector retrieval in `findRelevantContent` (recommended; improves label and vague queries) |
+| `RAG_HYBRID_BM25_ALPHA` | 0.7 | Vector weight in hybrid score (0–1 exclusive); BM25 weight = 1−α. Ignored when hybrid is off. |
+| `RAG_SIMILARITY_THRESHOLD` | 0.5 | Minimum vector cosine similarity for retrieval hits — pre-filter on both pure-vector and hybrid BM25 paths |
+| `CHAT_RAG_INJECT_STRONG_SIM` | 0.8 (or `ROUTING_RAG_STRONG_SIM`) | Inject when top-1 similarity clears bar even if intent skips |
+| `CHAT_RAG_INJECT_MODERATE_SIM` | 0.55 (or `ROUTING_RAG_TIER1_SIM`) | Inject when at least one chunk clears moderate bar |
+| `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE` | off | `1` = inject on every course-scoped message (testing / legacy always-on) |
 | `QUERY_EMBED_CACHE_TTL_MS` | 90000 | Query embedding cache TTL |
 | `QUERY_EMBED_CACHE_MAX` | 300 | Max cached query embeddings |
 | `EMBED_MANY_BATCH_SIZE` | 64 | Ingestion batch size for `embedMany` |
@@ -209,7 +216,8 @@ Resolved system prompt order: request `systemPrompt` → stored `chat.systemProm
 | Situation | Behavior |
 | --------- | -------- |
 | No course selected | Hybrid `isRAGQuery` is false; `getInformation` returns `{ error: "No course selected for RAG search" }` if called |
-| Hybrid retrieval | Keyword-gated unless `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE=1` — not embedding-based intent detection |
+| Hybrid retrieval (inject) | Smart inject gate (`needsCourseRag` + similarity thresholds); prefetch always when course selected. Override: `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE=1` |
+| BM25 hybrid retrieval | `RAG_HYBRID_BM25=1` combines vector + full-text BM25 ranking after the same vector similarity floor as pure-vector search; no schema migration needed (uses built-in PostgreSQL `ts_rank`/`plainto_tsquery`). Recommended for production. |
 | Latency on RAG turns | Cached embed (hit) or one embed API call + one DB query before first token (hybrid), or inside a tool step (tool path) |
 | Credentials | Retrieval embeddings use server Google/OpenAI keys; chat model may be Ollama-only — two credential paths |
 | Auto routing | Not on this branch; client sends `model` as-is. See [`TEAM_ROUTING_LAYER_PLAN.md`](./routing/eduai-summer-2026/TEAM_ROUTING_LAYER_PLAN.md) for planned routing work |

@@ -1,7 +1,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
 import { auth } from "~/lib/auth/server";
-import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
+import { requireServiceKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { getCourse, updateCourse, deleteCourse } from "~/lib/courses/server";
 import { UpdateCourseSchema } from "~/lib/courses/schemas";
@@ -35,10 +35,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
   }
 
-  const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
-  if (apiKeyGuard) return apiKeyGuard;
-
-  const session = apiKeySession ?? (await auth.api.getSession(request));
+  const session = await auth.api.getSession(request);
 
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -82,12 +79,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   const requestContext = getRequestContext(request);
 
-  // Resolve the actor once, honoring the x-api-key admin path (a bare
-  // getSession returns null for api-key callers, which would log the mutation
-  // as ANONYMOUS even though an admin performed it).
-  const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
-  if (apiKeyGuard) return apiKeyGuard;
-  const session = apiKeySession ?? (await auth.api.getSession(request));
+  const session = await auth.api.getSession(request);
 
   switch (request.method) {
     case "PATCH": {

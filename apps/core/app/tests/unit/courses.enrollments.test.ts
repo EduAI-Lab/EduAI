@@ -21,33 +21,47 @@ vi.mock("~/lib/courses/enrollments.server", () => ({
   addEnrollment: vi.fn(),
 }));
 
+// getPolicy resolves to each flag's real code default unless a test overrides it.
+vi.mock("~/lib/policy.server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/policy.server")>();
+  return {
+    ...actual,
+    getPolicy: vi.fn(async (key: keyof typeof actual.POLICY_FLAGS) => actual.POLICY_FLAGS[key].default),
+    logPolicyDenial: vi.fn(),
+  };
+});
+
 import { loader, action } from "~/routes/api/courses.enrollments";
 import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { getCourse } from "~/lib/courses/server";
 import { getCourseEnrollments, addEnrollment } from "~/lib/courses/enrollments.server";
+import { getPolicy, POLICY_FLAGS } from "~/lib/policy.server";
 
 const VALID_KEY = "test-service-key";
 
 const MOCK_ENROLLMENTS = [
   {
+    id: "enr-1",
     userId: "user-1",
-    user: { email: "alice@test.com", name: "Alice" },
+    user: { email: "alice@test.com", name: "Alice", studentId: "12345678" },
     enrolledAt: new Date("2025-09-01T00:00:00.000Z"),
     isActive: true,
     role: "STUDENT",
   },
   {
+    id: "enr-2",
     userId: "user-2",
-    user: { email: "bob@test.com", name: "Bob" },
+    user: { email: "bob@test.com", name: "Bob", studentId: null },
     enrolledAt: new Date("2025-09-02T00:00:00.000Z"),
     isActive: false,
     role: "TA",
   },
   {
+    id: "enr-3",
     userId: "user-3",
-    user: { email: "carol@test.com", name: "Carol" },
+    user: { email: "carol@test.com", name: "Carol", studentId: null },
     enrolledAt: null,
     isActive: true,
     role: "INSTRUCTOR",
@@ -103,6 +117,7 @@ beforeEach(() => {
   vi.mocked(getCourse).mockResolvedValue(MOCK_COURSE as never);
   vi.mocked(getCourseEnrollments).mockResolvedValue(MOCK_ENROLLMENTS as never);
   mockAccess({ level: "instructor", rank: 2 });
+  vi.mocked(getPolicy).mockImplementation(async (key) => POLICY_FLAGS[key].default);
 });
 
 afterEach(() => vi.unstubAllEnvs());
@@ -216,9 +231,11 @@ describe("GET /api/courses/:id/enrollments loader", () => {
       (e: Record<string, unknown>) => e.role === "STUDENT"
     );
     expect(student).toEqual({
+      id: "enr-1",
       studentId: "user-1",
       studentEmail: "alice@test.com",
       studentName: "Alice",
+      studentNumber: "12345678",
       enrolledAt: "2025-09-01T00:00:00.000Z",
       isActive: true,
       role: "STUDENT",
@@ -232,9 +249,11 @@ describe("GET /api/courses/:id/enrollments loader", () => {
       (e: Record<string, unknown>) => e.role === "INSTRUCTOR"
     );
     expect(instructor).toEqual({
+      id: "enr-3",
       studentId: "user-3",
       studentEmail: "carol@test.com",
       studentName: "Carol",
+      studentNumber: null,
       enrolledAt: null,
       isActive: true,
       role: "INSTRUCTOR",
@@ -303,6 +322,22 @@ describe("POST /api/courses/:id/enrollments action (#305)", () => {
     const res = await action(makePost("course-1", { userId: "u9", role: "INSTRUCTOR" }));
     expect(res.status).toBe(403);
     expect(addEnrollment).not.toHaveBeenCalled();
+  });
+
+  it("returns 403 for an INSTRUCTOR when instructors.canManageEnrollments is off", async () => {
+    mockAccess({ level: "instructor", rank: 2 });
+    vi.mocked(getPolicy).mockResolvedValue(false);
+    const res = await action(makePost("course-1", { userId: "u9", role: "STUDENT" }));
+    expect(res.status).toBe(403);
+    expect(getPolicy).toHaveBeenCalledWith("instructors.canManageEnrollments");
+    expect(addEnrollment).not.toHaveBeenCalled();
+  });
+
+  it("ADMIN add is unaffected by instructors.canManageEnrollments (201 even when off)", async () => {
+    mockAccess({ level: "admin", rank: 4 });
+    vi.mocked(getPolicy).mockResolvedValue(false);
+    const res = await action(makePost("course-1", { userId: "u9", role: "STUDENT" }));
+    expect(res.status).toBe(201);
   });
 
   it("lets UNIT_ADMIN add an INSTRUCTOR", async () => {
