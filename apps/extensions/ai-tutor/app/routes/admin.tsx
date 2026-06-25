@@ -238,8 +238,7 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
             <div className="space-y-2">
               <h2 className="text-xl font-bold text-foreground">User Management</h2>
               <p className="text-sm text-muted-foreground max-w-2xl">
-                User roles are now read-only in AI Tutor. Identity and role changes are managed in
-                EduAI and synced on sign-in.
+                User roles are read-only in AI Tutor. Identity and role changes are managed in EduAI and synced on sign-in.
               </p>
             </div>
 

@@ -27,7 +27,7 @@
  *     from the raw appendix when `report.isAnonymous` is true.
  * Related: `server/src/routes/admin.js` (PATCH bug-report endpoint),
  *   `server/src/utils/bugReportMappers.js` (anonymity masking),
- *   `app/components/bug-report/BugReportDialog.tsx` (capture-side counterpart)
+ *   `@eduai/ui BugReportDialog` (capture-side counterpart)
  */
 
 import { useMemo, useState } from 'react';

@@ -6,6 +6,10 @@ export { ThemeProvider, useTheme } from "./theme-provider"
 export { initThemeSync, broadcastThemeChange, closeThemeSync } from "./lib/theme-sync"
 export type { Theme as ThemeType } from "./lib/theme-sync"
 
+// ── Bug report ─────────────────────────────────────────────────────────────
+export { BugReportDialog } from './bug-report-dialog'
+export type { BugReportType, BugReportSubmitData } from './bug-report-dialog'
+
 // ── Domain components ──────────────────────────────────────────────────────
 export { RoleBadge } from "./role-badge"
 export type { RoleBadgeProps } from "./role-badge"
