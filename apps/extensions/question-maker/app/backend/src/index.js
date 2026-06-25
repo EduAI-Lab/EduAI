@@ -5,6 +5,7 @@ import app from './app.js';
 import { connectDatabase, sequelize } from './config/database.js';
 import { config } from './config/settings.js';
 import { logger } from './utils/logger.js';
+import { initScheduler } from './jobs/scheduler.js';
 
 const PORT = config.port;
 
@@ -60,6 +61,8 @@ const startServer = async () => {
         logLevel: config.logLevel,
         nodeEnv: config.nodeEnv,
       }, '🚀 Server running and ready for requests');
+
+      initScheduler();
     });
 
     server.on('error', (error) => {
