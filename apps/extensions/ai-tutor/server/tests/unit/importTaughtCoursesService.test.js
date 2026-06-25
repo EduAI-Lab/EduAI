@@ -51,6 +51,8 @@ const { listEduAiCourses } = await import('../../src/services/eduaiClient.js');
 const {
   importEnrolledCoursesFromCore,
   importTaughtCoursesFromCore,
+  userHasCoreTaEnrollment,
+  coreCoursesIncludeTaEnrollment,
 } = await import('../../src/services/importTaughtCoursesService.js');
 
 describe('importTaughtCoursesFromCore (AI Tutor)', () => {
@@ -249,5 +251,68 @@ describe('importEnrolledCoursesFromCore (AI Tutor)', () => {
         courseOfferingId: { in: [30] },
       },
     });
+  });
+});
+
+describe('coreCoursesIncludeTaEnrollment (AI Tutor)', () => {
+  it('returns false for null', () => {
+    expect(coreCoursesIncludeTaEnrollment(null)).toBe(false);
+  });
+
+  it('returns false for undefined', () => {
+    expect(coreCoursesIncludeTaEnrollment(undefined)).toBe(false);
+  });
+
+  it('returns false for empty array', () => {
+    expect(coreCoursesIncludeTaEnrollment([])).toBe(false);
+  });
+
+  it('handles null entries in array', () => {
+    expect(coreCoursesIncludeTaEnrollment([null, { callerEnrollmentRole: 'TA' }])).toBe(true);
+  });
+});
+
+describe('userHasCoreTaEnrollment (AI Tutor)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns true when Core reports a TA enrollment in any course', async () => {
+    listEduAiCourses.mockResolvedValue([
+      { id: 'core-1', callerEnrollmentRole: 'STUDENT' },
+      { id: 'core-2', callerEnrollmentRole: 'TA' },
+    ]);
+
+    await expect(userHasCoreTaEnrollment('session=abc')).resolves.toBe(true);
+    expect(listEduAiCourses).toHaveBeenCalledWith({ cookie: 'session=abc' });
+  });
+
+  it('uses a pre-fetched course list without calling Core again', async () => {
+    const prefetched = [{ id: 'core-2', callerEnrollmentRole: 'TA' }];
+
+    await expect(userHasCoreTaEnrollment('session=abc', prefetched)).resolves.toBe(true);
+    expect(listEduAiCourses).not.toHaveBeenCalled();
+  });
+
+  it('returns false when the caller is only a student or instructor', async () => {
+    listEduAiCourses.mockResolvedValue([
+      { id: 'core-1', callerEnrollmentRole: 'STUDENT' },
+      { id: 'core-2', callerEnrollmentRole: 'INSTRUCTOR' },
+      { id: 'core-3', callerEnrollmentRole: null },
+    ]);
+
+    await expect(userHasCoreTaEnrollment('session=abc')).resolves.toBe(false);
+  });
+
+  it('returns false when Core returns no courses', async () => {
+    listEduAiCourses.mockResolvedValue([]);
+
+    await expect(userHasCoreTaEnrollment('session=abc')).resolves.toBe(false);
+  });
+
+  it('propagates Core client errors so /me can fall back to the platform role', async () => {
+    listEduAiCourses.mockRejectedValue(new Error('Core unavailable'));
+
+    await expect(userHasCoreTaEnrollment('session=abc')).rejects.toThrow('Core unavailable');
   });
 });

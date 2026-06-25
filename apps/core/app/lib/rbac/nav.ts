@@ -31,6 +31,7 @@ const ADMIN_NAV: NavItem[] = [
   { key: 'admin-invites', title: 'Invitations', url: '/admin/invitations' },
   { key: 'admin-settings', title: 'Permissions', url: '/admin/settings' },
   { key: 'admin-logs', title: 'Logs', url: '/admin/logs' },
+  { key: 'admin-cron', title: 'Cron Jobs', url: '/admin/cron-jobs' },
 ]
 
 const ADMIN_SECONDARY_NAV: NavItem[] = [
