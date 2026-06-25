@@ -7,6 +7,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## [Week 8 — June 22–28, 2026]
 
+### Added
+
+- [ci] ci: Add a Backend Coverage Report workflow — runs unit+integration coverage for the three backends on every push to `development`, aggregates them, and commits a Markdown summary to `eduai-summer-2026/reports/coverage/`. (#773, @abdullahmoh21, 2026-06-25)
+
 ### Fixed
 
 - [core] fix: Unblock student-ID onboarding before any Canvas sync — `linkCanvasRoster` no longer 404s when no instructor has synced the course; it saves the student number (still rejecting duplicates) and links zero enrollments, and the later sync's `linkEnrollmentsFromStagingForCourse` enrolls the student by `studentId` once staging rows exist. (#732, @GlowyBlack, 2026-06-22)

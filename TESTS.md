@@ -55,7 +55,15 @@ Per app, from the app directory:
 
 Generated coverage report directories are gitignored.
 
-The **Question Maker backend** `test:coverage` (`vitest.coverage.config.js`) measures the unit **and** integration suites together over `src/**` (excluding the `src/index.js` bootstrap and operational `scripts/`). The integration suite needs a PostgreSQL test database via `TEST_DATABASE_URL`; without it the integration tests self-skip and only unit coverage is reported. A `globalSetup` syncs the schema once up front so the shared-worker run is deterministic.
+All three backends measure the unit **and** integration suites together in a single pass via a dedicated `vitest.coverage.config.*` (with `json-summary` + `reportOnFailure` so CI always gets a figure):
+
+- **Question Maker backend** — `src/**` (excluding the `src/index.js` bootstrap and operational `scripts/`). The integration suite needs a PostgreSQL test database via `TEST_DATABASE_URL`; without it the integration tests self-skip and only unit coverage is reported. A `globalSetup` syncs the schema once up front so the shared-worker run is deterministic.
+- **AI Tutor server** — `src/**` (excluding `src/index.js`); `globalSetup` runs `prisma migrate deploy` against the `DATABASE_URL` test database.
+- **EduAI (core)** — `app/**`; the unit (happy-dom) and integration (node) suites run as two Vitest `projects` so coverage spans both environments.
+
+### CI coverage report
+
+The **Backend Coverage Report** workflow (`.github/workflows/eduai-summer-2026-coverage-report.yml`) runs on every push to `development` (and manual dispatch). It runs the three backend `test:coverage` scripts against Postgres service containers, aggregates the `coverage-summary.json` outputs via `eduai-summer-2026/scripts/generate-coverage-report.js`, and commits a Markdown summary to `eduai-summer-2026/reports/coverage/coverage-report.md` on the `eduai-summer-2026` branch. Only the report is committed — coverage build artifacts stay gitignored. Scope is backend packages only; frontend suites are excluded.
 
 ## Structure
 
