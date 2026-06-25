@@ -37,6 +37,15 @@ vi.mock("~/lib/auth/guards.server", () => ({
   enforceAdminIfApiKey: vi.fn().mockResolvedValue({ response: null, session: null }),
 }));
 
+// #657: chat is course-scoped. These oversight tests run a course-tagged chat,
+// so the acting student passes the course-access gate.
+vi.mock("~/lib/auth/course-access.server", () => ({
+  resolveCourseAccessWithCourse: vi.fn().mockResolvedValue({
+    course: { id: "c1", isPublished: true },
+    access: { level: "student", rank: 0 },
+  }),
+}));
+
 vi.mock("~/lib/ai/providers.server", () => ({
   getChatModelCapabilities: vi.fn().mockResolvedValue({
     supportsTools: false,
@@ -148,6 +157,7 @@ beforeEach(() => {
   vi.mocked(prisma.chat.findFirst).mockResolvedValue({
     id: CHAT_ID,
     userId: USER_ID,
+    courseId: "c1",
     adhdAssist: true,
     systemPrompt: null,
   } as never);

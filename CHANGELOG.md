@@ -5,9 +5,38 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
 
+## [Week 8 — June 22–28, 2026]
+
+### Added
+
+- [core] feat: Admin cron job dashboard — `/admin/cron-jobs` lists all registered cron servers with last run status (RUNNING/SUCCESS/ERROR), schedule, and a manual trigger for infra backup scripts; run history stored in `cron_job_runs`; schedule overrides persist to `cron_job_schedule_overrides`. (#634, #643, @evanbones, 2026-06-23)
+- [core] feat: In-process cron scheduler (`cron-scheduler.server.ts`) starts on server boot and fires infra scripts on their configured schedules; `rescheduleJob` reflects live changes from the admin panel. (#634, @evanbones, 2026-06-23)
+- [core] schema: Add `cron_job_runs` and `cron_job_schedule_overrides` tables. (#634, @evanbones, 2026-06-23)
+- [ai-tutor] feat: Daily reconciliation cron — iterates `CourseOffering` and `Topic` rows with Core links; nullifies `coreOfferingId`/`coreTopicId` on strict Core 404; skips and retries on 5xx/timeout; local rows are never deleted. (#283, @evanbones, 2026-06-23)
+- [question-maker] feat: Daily reconciliation cron — iterates `core_course_id`, `core_topic_id`, and `core_question_id` columns; nullifies on Core 404; skips on 5xx/timeout. (#283, @evanbones, 2026-06-23)
+- [infra] feat: Server backup scripts (`backup-nightly.sh`, `backup-offsite.sh`, `backup-rotate.sh`) — nightly `pg_dump` of all three databases, off-site sync, and local dump rotation; configurable via `cron.env`. (#643, @evanbones @GlowyBlack, 2026-06-23)
+- [core] tests: Unit tests for `db.cron-jobs.server` and `/api/admin/cron-jobs` route (auth guard, trigger/update-schedule/reset-schedule intents, cron validation). (#PR, @evanbones, 2026-06-23)
+- [ai-tutor] tests: Unit and integration tests for the AI Tutor reconciliation cron. (#PR, @evanbones, 2026-06-23)
+- [question-maker] tests: Unit and integration tests for the QM reconciliation cron. (#PR, @evanbones, 2026-06-23)
+- [docs] docs: `docs/CRON_JOBS.md` — describes registered cron jobs, schedules, trigger behavior, and local testing steps. (#634, #283, #643, @evanbones, 2026-06-23)
+- [core] feat: Add UBC chatbot disclaimer banner and full terms dialog on `/chat`. (#575, @superbolt08, 2026-06-23) — [#753](https://github.com/EduAI-Lab/EduAI/pull/753)
+
+### Fixed
+
+- [ai-tutor] fix: Surface effective `role: TA` on `GET /api/me` when Core reports a TA enrollment — keeps course TAs in the teaching shell after Core drops platform-level `UserRole.TA` (#723, @Ayyhab, 2026-06-24)
+- [core] fix: Unblock student-ID onboarding before any Canvas sync — `linkCanvasRoster` no longer 404s when no instructor has synced the course; it saves the student number (still rejecting duplicates) and links zero enrollments, and the later sync's `linkEnrollmentsFromStagingForCourse` enrolls the student by `studentId` once staging rows exist. (#732, @GlowyBlack, 2026-06-22)
+
+
 ## [Week 7 — June 15–21, 2026]
 
 ### Added
+
+- [core] feat: One-way soft-delete for course materials and topics — `DELETE` sets `deletedAt`/`deletedBy` instead of hard-deleting; re-uploading a previously-deleted material restores it; all reads (RAG, API list, dashboard stats) filter `deletedAt IS NULL`; topics gain a `deletedBy` column. EduAI deletions are never propagated to Canvas (prep so AI Tutor / Question Maker can consume deletes like renames). Add a delete action to the materials section of course detail. (#685, @yta3216, 2026-06-19)
+- [core] feat: Course-scoped chat — all users chat within a selected course (a course is selected by default); the global / "no course selected" view is removed, including for admins. Students with no enrolled courses keep the chat visible but disabled with an explicit "no courses" reason threaded through `ChatInput`. Add a student visibility disclaimer banner (chats viewable by prof / unit admin / admin). Move the chatbot to the secondary sidebar (bottom), grouped with the QM / AI Tutor cross-nav links. (#685, @yta3216, 2026-06-19)
+- [core] feat: Searchable staff multiselect — add `Combobox` and `MultiSelect` primitives to `@eduai/ui` and export theme-sync utilities; the staff tab in course overview and the department combobox use the shared primitive. (#685, @yta3216, 2026-06-19)
+- [core] feat: `UNIT_ADMIN` can invite `INSTRUCTOR` and `STUDENT` users (role-gated: `ADMIN` → all, `UNIT_ADMIN` → `INSTRUCTOR`/`STUDENT`); admin invitations route, API, and email template updated for the new role labels. List/revoke/resend are scoped so a `UNIT_ADMIN` only sees and acts on invitations they created. (#685, @yta3216, 2026-06-19)
+- [core] feat: Admin single user-delete confirmation modal with cascade warning (parity with batch delete); bug-reports admin view gains status / source / reporter filters and text search; AI models table shows a Cloud/Local badge (Ollama = local). (#685, @yta3216, 2026-06-19)
+- [core] feat: Theme-sync across all three apps via `BroadcastChannel` — dark mode toggled in one app reflects in the others (`ThemeSyncInitializer` in Core, AI Tutor, Question Maker). (#685, @yta3216, 2026-06-19)
 
 - [core] feat: Let unit admins invite instructors and students — gated by the new `unitAdmins.canInvite` policy flag, with a dedicated `/unit-admin/invitations` page, a policy-gated nav link, and own-only scoping over the shared `/api/invitations` endpoints. (#686, @abdullahmoh21, 2026-06-19)
 - [core] tests: Add unit-admin invitation coverage across the route, schema, and integration suites. (#686, @abdullahmoh21, 2026-06-19)
@@ -38,6 +67,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] perf: Improve RAG retrieval quality for vague and label-based queries — add hybrid BM25+vector search path to `findRelevantContent` behind `RAG_HYBRID_BM25=1`; combines pgvector cosine similarity (70%) with PostgreSQL `ts_rank` full-text BM25 (30%) in a single SQL query; no schema migration required; alpha weight configurable via `RAG_HYBRID_BM25_ALPHA`; pure-vector path unchanged when flag is off. (#432, @frostbitcactus, 2026-06-19)
 - [core] security: Prompt-injection defenses (#86) — immutable `SECURITY_POLICY_BLOCK` prepended via `composeSecurityPrompt`; sanitize and cap custom system prompts (`CHAT_SYSTEM_PROMPT_MAX_CHARS`, default 8192); filter incoming chat POST to user turns only; wrap retrieved RAG excerpts and tool results as untrusted reference content. (#679, #86, @frostbitcactus, 2026-06-20)
 - [core] tests: Add `prompt-safety.test.ts` — security policy composition, system prompt sanitization/cap, client message role filter, and untrusted RAG wrapping. (#679, #86, @frostbitcactus, 2026-06-20)
+- [core] refactor!: Unify the TA role onto `Enrollment(role=TA)` — drop the `CourseTA` junction table and the `TA` platform role; TAs are now `STUDENT`-platform users with a per-course `Enrollment(role=TA)`. Migration removes `course_tas`; all RBAC guards, course-access resolution, dashboard TA detection, and the e2e promote helper read `Enrollment(role=TA)`. (#664, #685, @yta3216, 2026-06-19)
+- [core] ui: Move settings buttons onto the shared `@eduai/ui` library; align the logs screen with other screens. (@yta3216, 2026-06-19)
 - [core] refactor: Create `@eduai/types` shared workspace package — move `UserRole` and `EnrollmentRole` to `packages/types`; Core, AI Tutor, and QM now import from `@eduai/types` instead of maintaining independent copies, eliminating the need for manual sync across apps. (#594, #649, @evanbones, 2026-06-16)
 - [question-maker] refactor: Extract shared `courseCodeUtils.js`, `topicSyncService.js`, and `coreCourseLinkService.js` — dedupe `syncTopicsFromCoreForCourse` / `normalizeCourseCode` from routes and import service; batch topic upserts with two `findAll` queries on the hot `/topics` path. (#578, @GlowyBlack, 2026-06-15)
 - [question-maker] ui: Reuse `normalizeCourseCode` from `courseDisplay.ts` in `ProfileCoursesDialog` and `AddQuestionDialog`. (#578, @GlowyBlack, 2026-06-15)
@@ -54,8 +85,17 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ### Removed
 
 - [core] api: Remove the headless `POST /api/invitations/accept` endpoint — the invitation-accept flow is consolidated onto the `/accept-invitation` page route. (#581, @abdullahmoh21, 2026-06-17)
+- [core] security: Remove legacy `x-api-key` / Better Auth API-key plugin — drop `ApiKey` table and migration, strip `x-api-key` header handling from all Core API routes, remove the Settings UI for creating EduAI backend keys, and update docs/examples. Auth now relies on session cookies and `SERVICE_KEY` for internal calls only. (#678, @evanbones, 2026-06-19)
+- [core] feat!: Remove the global / "no course selected" chat view — chat is always course-scoped. (#53, #657, #685, @yta3216, 2026-06-19)
+- [core] schema: Remove the `CourseTA` junction table and `TA` platform role (superseded by `Enrollment(role=TA)`). (#664, #685, @yta3216, 2026-06-19)
 
 ### Fixed
+
+- [core] fix: Fix crash when changing the theme. (@yta3216, 2026-06-19)
+- [core] fix: Focus mode now hides the sidebar-container element, fixing a visible border gap. (@yta3216, 2026-06-19)
+- [core] fix: Students bypassing onboarding when invited. (@yta3216, 2026-06-19)
+- [core] fix: Students could not see course instructor/TA information. (@yta3216, 2026-06-19)
+- [ci] fix: Add the `@eduai/ui` (`packages/ui`) test suite to the Docker test suite. (@yta3216, 2026-06-19)
 
 - [question-maker] security: Forward session cookie on `GET /api/eduai/courses/:courseId/topics` so Core applies enrollment scope. (#578, @GlowyBlack, 2026-06-15)
 - [question-maker] security: Remove full-catalog service-key fallback from `findScopedCoreCourseByCode` — scoped cookie list only. (#578, @GlowyBlack, 2026-06-15)
@@ -72,6 +112,13 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] tests: Update `canvas.integration.test.ts` reassignment case to use a unique student number (avoids `studentIdLookup` collision with seeded data). (#578, @GlowyBlack, 2026-06-15)
 - [ai-tutor] feat: RBAC UI for all five role views (#616) — add `app/lib/rbac/` permission helpers, `PermissionGate`, `AtRoleBanner`, and `useAtPermissions`; gate instructor shell for TA read-only; add `CreateCourseDialog`, course tabs (content/enrollments/submissions/analytics), `CourseEnrollmentsPanel` with TA role assignment, admin EduAI enrollment sync; extend `api.ts` with analytics/enrollment endpoints; document endpoint audit in `docs/rbac-endpoints-ai-tutor.md` (#614). Closes #614, #616, #617 (AiTutor). ([#619](https://github.com/EduAI-Lab/EduAI/pull/619), @Ayyhab, 2026-06-14)
 - [core] fix: Stop frontend from retransmitting the full conversation history on every chat request by sending only the newest user message and associated metadata. (#487, @YibingW, 2026-06-15)
+- [question-maker] fix: Question metadata edit saves question text and avoids VARIANT_LOCKED error on reviewed variants when only synopsis/topic/type change. (#676, @GlowyBlack, 2026-06-20)
+- [question-maker] ui: Stronger correct-answer highlight in question detail view (success tokens, visible in dark mode). (#676, @GlowyBlack, 2026-06-20)
+- [question-maker] fix: Dedupe duplicate course rows for ADMIN on course selection (frontend `dedupeCoursesByCode` + backend admin list). (#676, @GlowyBlack, 2026-06-20)
+- [question-maker] fix: Student/TA access denied no longer crashes (Router wraps access gate); allow AI tag toggle on reviewed variants. (#676, @GlowyBlack, 2026-06-20)
+- [question-maker] ui: Question detail modal uses single scroll area; theme toggle beside bug report; explicit API key save with confirmation. (#676, @GlowyBlack, 2026-06-20)
+- [question-maker] security: Restrict Vite env exposure to `VITE_` prefix; gate Canvas test-mode fallback to dev; surface AI model fetch errors instead of silent fallbacks (backend + frontend). (#676, @GlowyBlack, 2026-06-20)
+- [question-maker] fix: Apply explicit API key save + toast in Upload dialog; treat id `0` as not-found in resource/course access guards (fixes `coreWiring.integration.test.js`). (#676, @GlowyBlack, 2026-06-20)
 - [core] fix: Restore course Enrollments tab — re-wire `useCourseEnrollments` to `GET /api/courses/:id/enrollments` after merge conflict reverted the hook to an empty stub; API returns enrollment `id` and decrypted `studentNumber`. ([#684], @GlowyBlack, 2026-06-18)
 - [core] fix: Dev startup seed — targeted `db:seed:student-ids` backfill for seed students instead of full re-seed when `studentId` is missing (avoids `studentIdLookup` unique constraint collisions). (#684, @GlowyBlack, 2026-06-18)
 - [core] fix: `POST /api/bug-reports` — extension sources (`AI_TUTOR`, `QUESTION_MAKER`) require service key again; session auth remains for `CORE` only. (#684, @GlowyBlack, 2026-06-18)

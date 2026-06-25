@@ -15,7 +15,7 @@ flowchart TB
   end
 
   subgraph entry["action — chat.ts"]
-    A1["Session or admin API-key + optional proxyUser"]
+    A1["Session (cookie)"]
     A2["Validate apiKeys (Zod schema)"]
     A3["Normalize messages; resolve courseCode → courseId"]
     A4["Load/create Chat; persist systemPrompt if sent"]
@@ -120,13 +120,12 @@ The React chat client calls `POST /api/chat` with a JSON body that typically inc
 | `streaming` | Default `true` |
 | `chatId` | Optional; ties to persisted `Chat` (server-generated CUID) |
 | `systemPrompt` | Optional override / persistence (`null` clears stored prompt) |
-| `proxyUser` | Admin API-key only; remaps acting user via `ExternalUser` mapping |
 
 The handler is the `action` in [`chat.ts`](../../apps/core/app/routes/api/chat.ts) (React Router resource route).
 
 ## 2. Before any LLM call
 
-1. **Session** — `auth.api.getSession`, or admin `x-api-key` path with optional `proxyUser` remapping.
+1. **Session** — `auth.api.getSession` (session cookie; no legacy `x-api-key` path).
 2. **Parse body** — `normalizeMessage` ensures `id` and `role`; stamps UUID if missing.
 3. **Course** — `courseCode` → `Course` row by code; `effectiveCourseId = resolved id || courseId`.
 4. **Chat** — load by `chatId` + user (410 if deleted); create/update for `systemPrompt`.

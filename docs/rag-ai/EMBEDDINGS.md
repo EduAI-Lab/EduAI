@@ -123,7 +123,6 @@ Single reference for keys and `.env` entries (avoids duplicating the same three 
 | `GOOGLE_GENERATIVE_AI_API_KEY` | `apps/core/.env` | Legacy 3072-dim Gemini path only when `EMBEDDING_DIMENSION=3072` | **Yes** (legacy) |
 | `DATABASE_URL` | `apps/core/.env` | Postgres connection; vectors live here | **No** — not an embed API |
 | User **chat** `apiKeys` in request body | Client / chat UI | Ollama, Gemini, etc. for **conversation** | **No** |
-| Admin `x-api-key` / Better Auth API keys | Settings / API auth | Sister apps, admin | **No** |
 
 Template: [`apps/core/.env.example`](../../apps/core/.env.example).
 
