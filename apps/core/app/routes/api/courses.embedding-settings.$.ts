@@ -1,6 +1,5 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { auth } from "~/lib/auth/server";
-import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { getCourseIfCanManageMaterials } from "~/lib/courses/access.server";
 import prisma from "~/lib/prisma.server";
 import { formatApiError, jsonResponse } from "~/lib/api/json-response.server";
@@ -17,10 +16,7 @@ import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 
 async function requireManageSession(request: Request) {
-  const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
-  if (apiKeyGuard) return { error: apiKeyGuard };
-
-  const session = apiKeySession ?? (await auth.api.getSession(request));
+  const session = await auth.api.getSession(request);
   if (!session?.user) {
     return { error: jsonResponse({ error: "Unauthorized" }, 401) };
   }

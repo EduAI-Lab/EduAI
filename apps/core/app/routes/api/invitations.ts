@@ -3,7 +3,6 @@ import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import { requireInviter } from "~/lib/auth/guards.server";
 import { createInvitationSchema, invitableRolesFor } from "~/lib/invitations/schemas";
 import { createInvitation, listInvitations } from "~/lib/invitations/service.server";
-import { denyByPolicy, getPolicy } from "~/lib/policy.server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 
@@ -19,20 +18,11 @@ function json(data: unknown, status = 200): Response {
  * `unitAdmins.canInvite` is on) sees only the invitations they sent.
  */
 export async function loader({ request }: LoaderFunctionArgs) {
-  const gate = await requireInviter(request);
+  const gate = await requireInviter(request, "invitation.list");
   if (gate.response) return gate.response;
 
   const user = gate.session.user;
   const isAdmin = user.role === "ADMIN";
-  if (!isAdmin && !(await getPolicy("unitAdmins.canInvite"))) {
-    return denyByPolicy({
-      policyKey: "unitAdmins.canInvite",
-      user,
-      action: "invitation.list",
-      request,
-    });
-  }
-
   const invitations = await listInvitations(
     isAdmin ? undefined : { invitedById: user.id },
   );
@@ -49,20 +39,10 @@ export async function action({ request }: ActionFunctionArgs) {
     return new Response("Method not allowed", { status: 405 });
   }
 
-  const gate = await requireInviter(request);
+  const gate = await requireInviter(request, "invitation.create");
   if (gate.response) return gate.response;
 
   const user = gate.session.user;
-  const isAdmin = user.role === "ADMIN";
-  if (!isAdmin && !(await getPolicy("unitAdmins.canInvite"))) {
-    return denyByPolicy({
-      policyKey: "unitAdmins.canInvite",
-      user,
-      action: "invitation.create",
-      request,
-    });
-  }
-
   const requestContext = getRequestContext(request);
 
   const body = await request.json().catch(() => null);

@@ -170,7 +170,7 @@ describe("createUserSchema", () => {
   });
 
   it("accepts every valid role", () => {
-    for (const role of ["ADMIN", "INSTRUCTOR", "TA", "STUDENT"] as const) {
+    for (const role of ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "STUDENT"] as const) {
       expect(
         createUserSchema.safeParse({ name: "Ada", email: "a@b.com", role }).success,
       ).toBe(true);

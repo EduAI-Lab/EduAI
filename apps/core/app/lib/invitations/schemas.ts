@@ -5,20 +5,21 @@ import { isUbcEmail, UBC_EMAIL_MESSAGE } from "~/lib/auth/ubc-email";
 /**
  * Roles an invitation may carry at the schema level — the union across all
  * inviters. TA is excluded (a course TA is a STUDENT user with an
- * EnrollmentRole.TA enrollment, not a platform role). STUDENT is invitable only
- * via the UNIT_ADMIN flow; admins do not invite students (they self-register).
+ * EnrollmentRole.TA enrollment, not a platform role). STUDENT is invitable by
+ * ADMIN and UNIT_ADMIN (students may also self-register).
  * The per-inviter restriction is enforced in the route via `invitableRolesFor`.
  */
 export const INVITABLE_ROLES = ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "STUDENT"] as const;
 export type InvitableRole = (typeof INVITABLE_ROLES)[number];
 
 /**
- * Which roles a given actor may issue invitations for. ADMIN keeps its original
- * set (no STUDENT — students self-register); UNIT_ADMIN may invite instructors
+ * Which roles a given actor may issue invitations for. ADMIN is a strict
+ * superset of every lower role, so it may invite any invitable role (incl.
+ * STUDENT — students can also self-register); UNIT_ADMIN may invite instructors
  * and students only. Any other actor may invite no one.
  */
 export function invitableRolesFor(actorRole: string | null | undefined): readonly InvitableRole[] {
-  if (actorRole === "ADMIN") return ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR"];
+  if (actorRole === "ADMIN") return ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "STUDENT"];
   if (actorRole === "UNIT_ADMIN") return ["INSTRUCTOR", "STUDENT"];
   return [];
 }

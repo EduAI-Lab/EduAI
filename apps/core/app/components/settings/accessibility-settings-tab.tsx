@@ -69,9 +69,12 @@ export function AccessibilitySettingsTab() {
                 aria-label="Assistive Mode"
                 className={settingsSwitchClass}
               />
-              <span className="text-sm text-muted-foreground whitespace-nowrap cursor-pointer">
+              <Label
+                htmlFor="assistive-mode"
+                className="text-sm font-normal text-muted-foreground whitespace-nowrap cursor-pointer"
+              >
                 {assistive ? "On" : "Off"}
-              </span>
+              </Label>
             </div>
           </div>
 
@@ -92,9 +95,12 @@ export function AccessibilitySettingsTab() {
                 aria-label="Reduce motion"
                 className={settingsSwitchClass}
               />
-              <span className="text-sm text-muted-foreground whitespace-nowrap cursor-pointer">
+              <Label
+                htmlFor="reduce-motion"
+                className="text-sm font-normal text-muted-foreground whitespace-nowrap cursor-pointer"
+              >
                 {motionReduced ? "On" : "Off"}
-              </span>
+              </Label>
             </div>
           </div>
 
@@ -110,18 +116,14 @@ export function AccessibilitySettingsTab() {
               onValueChange={(value) => setDensity(value as typeof density)}
               className="grid gap-2 sm:grid-cols-2"
             >
-              <div className={settingsChoiceClass}>
+              <Label htmlFor="density-comfortable" className={settingsChoiceClass}>
                 <RadioGroupItem value="comfortable" id="density-comfortable" />
-                <Label htmlFor="density-comfortable" className="font-normal cursor-pointer">
-                  Comfortable
-                </Label>
-              </div>
-              <div className={settingsChoiceClass}>
+                <span className="font-normal">Comfortable</span>
+              </Label>
+              <Label htmlFor="density-compact" className={settingsChoiceClass}>
                 <RadioGroupItem value="compact" id="density-compact" />
-                <Label htmlFor="density-compact" className="font-normal cursor-pointer">
-                  Compact
-                </Label>
-              </div>
+                <span className="font-normal">Compact</span>
+              </Label>
             </RadioGroup>
           </div>
 
@@ -137,24 +139,18 @@ export function AccessibilitySettingsTab() {
               onValueChange={(value) => setTheme(value as typeof theme)}
               className="grid gap-2 sm:grid-cols-3"
             >
-              <div className={settingsChoiceClass}>
+              <Label htmlFor="theme-system" className={settingsChoiceClass}>
                 <RadioGroupItem value="system" id="theme-system" />
-                <Label htmlFor="theme-system" className="font-normal cursor-pointer">
-                  System
-                </Label>
-              </div>
-              <div className={settingsChoiceClass}>
+                <span className="font-normal">System</span>
+              </Label>
+              <Label htmlFor="theme-light" className={settingsChoiceClass}>
                 <RadioGroupItem value="light" id="theme-light" />
-                <Label htmlFor="theme-light" className="font-normal cursor-pointer">
-                  Light
-                </Label>
-              </div>
-              <div className={settingsChoiceClass}>
+                <span className="font-normal">Light</span>
+              </Label>
+              <Label htmlFor="theme-dark" className={settingsChoiceClass}>
                 <RadioGroupItem value="dark" id="theme-dark" />
-                <Label htmlFor="theme-dark" className="font-normal cursor-pointer">
-                  Dark
-                </Label>
-              </div>
+                <span className="font-normal">Dark</span>
+              </Label>
             </RadioGroup>
           </div>
         </CardContent>

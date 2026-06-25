@@ -99,6 +99,96 @@ export async function postCoreBugReport(userId, payload) {
   return null;
 }
 
+function getCoreBaseUrl() {
+  const raw = process.env.CORE_URL || 'http://localhost:3000';
+  return raw.endsWith('/') ? raw.slice(0, -1) : raw;
+}
+
+/**
+ * GET Core admin bug reports (ADMIN session cookie). Used for AI Tutor-scoped triage (#648).
+ */
+export async function listCoreAdminBugReports(cookie, { source = 'AI_TUTOR', limit = 100, offset = 0 } = {}) {
+  if (!cookie) {
+    const error = new Error('Session cookie is required to list Core bug reports');
+    error.status = 401;
+    throw error;
+  }
+
+  const params = new URLSearchParams({
+    source,
+    limit: String(limit),
+    offset: String(offset),
+  });
+  const url = `${getCoreBaseUrl()}/api/admin/bug-reports?${params}`;
+  const response = await fetch(url, {
+    headers: { cookie },
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    const error = new Error(errorText || `Core bug report list failed with status ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+
+  return response.json();
+}
+
+/**
+ * GET Core platform users (ADMIN session cookie). Identity is owned by Core.
+ */
+export async function listCoreAdminUsers(cookie) {
+  if (!cookie) {
+    const error = new Error('Session cookie is required to list Core users');
+    error.status = 401;
+    throw error;
+  }
+
+  const url = `${getCoreBaseUrl()}/api/users`;
+  const response = await fetch(url, {
+    headers: { cookie },
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    const error = new Error(errorText || `Core user list failed with status ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+
+  return response.json();
+}
+
+/**
+ * PATCH Core admin bug report status (ADMIN session cookie).
+ */
+export async function patchCoreAdminBugReportStatus(cookie, bugReportId, coreStatus) {
+  if (!cookie) {
+    const error = new Error('Session cookie is required to update Core bug reports');
+    error.status = 401;
+    throw error;
+  }
+
+  const url = `${getCoreBaseUrl()}/api/admin/bug-reports/${bugReportId}`;
+  const response = await fetch(url, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie,
+    },
+    body: JSON.stringify({ status: coreStatus }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    const error = new Error(errorText || `Core bug report PATCH failed with status ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+
+  return response.json();
+}
+
  
 /**
  * Propagate a publish/unpublish action to Core for a linked course offering.
@@ -193,6 +283,64 @@ export async function listEduAiModels() {
     throw new Error('Invalid response from EduAI models endpoint');
   }
   return data;
+}
+
+/**
+ * Update an enrollment's role in Core, forwarding the acting user's session cookie.
+ * Core's enrollment-role endpoint requires user session auth (not service key).
+ * Throws an Error with `status` set on HTTP failure.
+ */
+export async function patchCoreEnrollmentRole(externalCourseId, enrollmentId, role, cookie) {
+  if (!cookie) {
+    const error = new Error('Session cookie required to update enrollment role in Core');
+    error.status = 401;
+    throw error;
+  }
+  return requestEduAi(`/courses/${externalCourseId}/enrollments/${enrollmentId}`, {
+    method: 'PATCH',
+    cookie,
+    body: { role },
+  });
+}
+
+/**
+ * Fetches a single Core course by id using the service key.
+ * Returns the course object on 200, null on 404 (soft-deleted or missing).
+ * Throws on 5xx or network error so the caller can skip and retry next run.
+ */
+export async function fetchCoreCourseSafe(coreOfferingId) {
+  const serviceKey = process.env.EDUAI_API_KEY;
+  if (!serviceKey) {
+    throw new Error('EDUAI_API_KEY not configured');
+  }
+  try {
+    return await requestEduAi(`/courses/${coreOfferingId}`, {
+      headers: { Authorization: `Bearer ${serviceKey}` },
+    });
+  } catch (err) {
+    if (err.status === 404) return null;
+    throw err;
+  }
+}
+
+/**
+ * Fetches a single Core topic by id using the service key.
+ * Returns the topic object on 200, null on 404 (soft-deleted or missing).
+ * Throws on 5xx or network error so the caller can skip and retry next run.
+ */
+export async function fetchCoreTopicSafe(coreOfferingId, coreTopicId) {
+  const serviceKey = process.env.EDUAI_API_KEY;
+  if (!serviceKey) {
+    throw new Error('EDUAI_API_KEY not configured');
+  }
+  try {
+    return await requestEduAi(`/courses/${coreOfferingId}/topics/${coreTopicId}`, {
+      headers: { Authorization: `Bearer ${serviceKey}` },
+    });
+  } catch (err) {
+    if (err.status === 404) return null;
+    throw err;
+  }
 }
 
 /**
