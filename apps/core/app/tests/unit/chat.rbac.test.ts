@@ -26,15 +26,26 @@ vi.mock("~/lib/prisma.server", () => ({
   default: {
     chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
     course: { findFirst: vi.fn() },
+    courseTopic: { findMany: vi.fn() },
   },
 }));
+
+import prisma from "~/lib/prisma.server";
 
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 
-const COURSE = { id: "c1", isPublished: true, department: null };
+const COURSE = {
+  id: "c1",
+  code: "COSC 121",
+  name: "Intro Programming",
+  description: null,
+  aiInstructions: null,
+  isPublished: true,
+  department: null,
+};
 
 type Access = { level: string; rank: number } | null;
 
@@ -62,6 +73,7 @@ beforeEach(() => {
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "u1", role: "STUDENT" },
   } as never);
+  vi.mocked(prisma.courseTopic.findMany).mockResolvedValue([] as never);
 });
 
 describe("POST /api/chat — §10 course gate (#302)", () => {

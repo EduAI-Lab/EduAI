@@ -45,9 +45,12 @@ vi.mock("~/lib/prisma.server", () => ({
   },
 }));
 
+import { streamText } from "ai";
 import { action } from "~/routes/api/chat";
+import { getChatToolNames } from "~/lib/ai/chat-tools";
 import { auth } from "~/lib/auth/server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { getChatModelCapabilities } from "~/lib/ai/providers.server";
 import { getPolicy } from "~/lib/policy.server";
 import prisma from "~/lib/prisma.server";
 
@@ -107,6 +110,42 @@ afterEach(() => {
 
 function webHeader(res: Response) {
   return res.headers.get("X-Web-Tools-Enabled");
+}
+
+function mockCourseAccess(role: "INSTRUCTOR" | "STUDENT" = "INSTRUCTOR") {
+  vi.mocked(auth.api.getSession).mockResolvedValue({
+    user: { id: role === "STUDENT" ? "s1" : "u1", role },
+  } as never);
+  vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+    course: {
+      id: "c1",
+      code: "COSC 121",
+      name: "Intro Programming",
+      description: null,
+      aiInstructions: null,
+      isPublished: true,
+    } as never,
+    access: {
+      level: role === "STUDENT" ? "student" : "instructor",
+      rank: role === "STUDENT" ? 0 : 2,
+    } as never,
+  });
+  if (role === "STUDENT") {
+    vi.mocked(prisma.chat.findFirst).mockResolvedValue({
+      id: CHAT_ID, userId: "s1", courseId: "c1", adhdAssist: false, systemPrompt: null,
+    } as never);
+  } else {
+    vi.mocked(prisma.chat.findFirst).mockResolvedValue({
+      id: CHAT_ID, userId: "u1", courseId: "c1", adhdAssist: false, systemPrompt: null,
+    } as never);
+  }
+}
+
+function lastStreamConfig(): { system?: string; tools?: Record<string, unknown> } {
+  return vi.mocked(streamText).mock.calls.at(-1)?.[0] as {
+    system?: string;
+    tools?: Record<string, unknown>;
+  };
 }
 
 describe("chat.webToolsEnabled master switch", () => {
@@ -190,6 +229,128 @@ describe("chat.webToolsEnabled master switch", () => {
     policy({ "chat.webToolsEnabled": true });
     const res = await action(makeArgs(baseBody({ courseId: "c1" })));
     expect(res.status).toBe(200);
+    expect(webHeader(res)).toBe("1");
+  });
+});
+
+describe("web tools tool path with course scope (#729)", () => {
+  beforeEach(() => {
+    vi.mocked(getChatModelCapabilities).mockResolvedValue({
+      supportsTools: true,
+      maxTokens: 8192,
+      name: "Test tool model",
+    });
+    mockCourseAccess("INSTRUCTOR");
+    policy({ "chat.webToolsEnabled": true });
+  });
+
+  it("registers webSearch and course-adjacent guidance for professor-review queries", async () => {
+    const res = await action(
+      makeArgs(
+        baseBody({
+          courseId: "c1",
+          messages: [
+            {
+              id: "u-1",
+              role: "user",
+              content:
+                "What do RateMyProfessors reviews say about the COSC 121 instructor?",
+            },
+          ],
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    expect(streamText).toHaveBeenCalled();
+    expect(getChatToolNames(lastStreamConfig().tools as never)).toEqual([
+      "fetchPage",
+      "getInformation",
+      "webSearch",
+    ]);
+    expect(lastStreamConfig().system).toContain("course-adjacent");
+    expect(lastStreamConfig().system).toContain("COSC 121");
+  });
+
+  it("still hard-refuses clearly off-topic queries before web tools can run", async () => {
+    const res = await action(
+      makeArgs(
+        baseBody({
+          courseId: "c1",
+          messages: [
+            {
+              id: "u-1",
+              role: "user",
+              content: "How do I bake chocolate chip cookies from scratch?",
+            },
+          ],
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    expect(streamText).not.toHaveBeenCalled();
+    expect(webHeader(res)).toBe("1");
+  });
+});
+
+describe("web tools tool path with course scope (#729)", () => {
+  beforeEach(() => {
+    vi.mocked(getChatModelCapabilities).mockResolvedValue({
+      supportsTools: true,
+      maxTokens: 8192,
+      name: "Test tool model",
+    });
+    mockCourseAccess("INSTRUCTOR");
+    policy({ "chat.webToolsEnabled": true });
+  });
+
+  it("registers webSearch and course-adjacent guidance for professor-review queries", async () => {
+    const res = await action(
+      makeArgs(
+        baseBody({
+          courseId: "c1",
+          messages: [
+            {
+              id: "u-1",
+              role: "user",
+              content:
+                "What do RateMyProfessors reviews say about the COSC 121 instructor?",
+            },
+          ],
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    expect(streamText).toHaveBeenCalled();
+    expect(getChatToolNames(lastStreamConfig().tools as never)).toEqual([
+      "fetchPage",
+      "getInformation",
+      "webSearch",
+    ]);
+    expect(lastStreamConfig().system).toContain("course-adjacent");
+    expect(lastStreamConfig().system).toContain("COSC 121");
+  });
+
+  it("still hard-refuses clearly off-topic queries before web tools can run", async () => {
+    const res = await action(
+      makeArgs(
+        baseBody({
+          courseId: "c1",
+          messages: [
+            {
+              id: "u-1",
+              role: "user",
+              content: "How do I bake chocolate chip cookies from scratch?",
+            },
+          ],
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    expect(streamText).not.toHaveBeenCalled();
     expect(webHeader(res)).toBe("1");
   });
 });
