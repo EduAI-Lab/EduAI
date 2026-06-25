@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import api from '~/lib/api';
 import { useBugReport } from './useBugReport';
+import type { BugReportType } from '~/lib/types';
 import {
   Dialog,
   DialogContent,
@@ -12,15 +13,34 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@eduai/ui';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@eduai/ui';
 import { Textarea } from '@eduai/ui';
 import { Switch } from '@eduai/ui';
 import { Button } from '@eduai/ui';
+
+const BUG_TYPE_OPTIONS: { value: BugReportType; label: string }[] = [
+  { value: 'UI_DISPLAY', label: 'UI / display issue' },
+  { value: 'FEATURE_NOT_WORKING', label: 'Feature not working' },
+  { value: 'PERFORMANCE', label: 'Performance issue' },
+  { value: 'CONTENT_ERROR', label: 'Content error' },
+  { value: 'ACCESS_PERMISSION', label: 'Access / permission issue' },
+  { value: 'OTHER', label: 'Other' },
+];
+
+const BUG_TYPES = BUG_TYPE_OPTIONS.map((o) => o.value) as [BugReportType, ...BugReportType[]];
 
 const bugReportSchema = z.object({
   description: z
     .string()
     .min(10, 'Please provide at least 10 characters')
     .max(2000, 'Description must be 2000 characters or fewer'),
+  bugType: z.enum(BUG_TYPES, { required_error: 'Please select a bug type' }),
   isAnonymous: z.boolean(),
 });
 
@@ -40,6 +60,7 @@ export function BugReportDialog({ open, setOpen }: BugReportDialogProps) {
     resolver: zodResolver(bugReportSchema),
     defaultValues: {
       description: '',
+      bugType: undefined,
       isAnonymous: false,
     },
   });
@@ -59,6 +80,7 @@ export function BugReportDialog({ open, setOpen }: BugReportDialogProps) {
       const capturedData = getCapturedData();
       await api.submitBugReport({
         description: values.description,
+        bugType: values.bugType,
         isAnonymous: values.isAnonymous,
         consoleLogs: capturedData.consoleLogs,
         networkLogs: capturedData.networkLogs,
@@ -69,6 +91,7 @@ export function BugReportDialog({ open, setOpen }: BugReportDialogProps) {
       });
       form.reset({
         description: '',
+        bugType: undefined,
         isAnonymous: false,
       });
       setOpen(false);
@@ -86,6 +109,7 @@ export function BugReportDialog({ open, setOpen }: BugReportDialogProps) {
         if (!nextOpen) {
           form.reset({
             description: '',
+            bugType: undefined,
             isAnonymous: false,
           });
           setSubmitError(null);
@@ -103,6 +127,30 @@ export function BugReportDialog({ open, setOpen }: BugReportDialogProps) {
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <label htmlFor="bug-type" className="text-sm font-medium text-foreground">
+              Bug type
+            </label>
+            <Select
+              value={form.watch('bugType') ?? ''}
+              onValueChange={(value) => form.setValue('bugType', value as BugReportType, { shouldValidate: true })}
+            >
+              <SelectTrigger id="bug-type" data-testid="bug-type">
+                <SelectValue placeholder="Select a type" />
+              </SelectTrigger>
+              <SelectContent>
+                {BUG_TYPE_OPTIONS.map(({ value, label }) => (
+                  <SelectItem key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-destructive">
+              {form.formState.errors.bugType?.message ?? ' '}
+            </p>
+          </div>
+
           <div className="space-y-2">
             <label htmlFor="bug-description" className="text-sm font-medium text-foreground">
               Description
