@@ -239,6 +239,10 @@ curl -X POST "https://eduai.ok.ubc.ca/api/chat" \
 - **Message IDs**: Clients **SHOULD** generate a UUID v4 for every message (`message.id`) before sending it. This enables optimistic UI updates and allows the server to deduplicate retries safely.
 - If a client references a `chatId` that no longer exists for that user, the API returns `410 Gone` with `{ "chatDeleted": true }`. Callers should drop the stale ID and start a new chat.
 
+#### Course scope enforcement (#729)
+
+Every course-scoped chat turn injects course metadata (`code`, `name`, `description`, topics, `aiInstructions`) and a strict scope policy into the system prompt. A pre-check (`apps/core/app/lib/ai/course-scope.ts`) hard-refuses **clearly off-topic** questions with zero RAG hits (e.g. baking recipes in a CS course). Related foundational questions without material hits (e.g. prerequisite math) defer to the model under the scope policy. Disable the gate with `CHAT_SCOPE_ZERO_CHUNK_GATE=0`. See [`docs/rag-ai/CHAT_RAG_PIPELINE.md`](../../docs/rag-ai/CHAT_RAG_PIPELINE.md).
+
 ### AI Models Endpoint
 
 Retrieve the catalog of configured AI models.

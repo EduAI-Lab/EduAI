@@ -85,6 +85,7 @@ flowchart TB
 
 ## Notes
 
+- **Course scope gate (#729)** runs after RAG prefetch on every course-scoped turn. **`evaluateCourseScope`** allowlists greetings/meta/coding help; **clearly off-topic** substantive questions with **zero** RAG chunks return a canned refusal without calling the main model. Related questions without material hits (e.g. prerequisite math for a technical course) defer to Layer A + empty-RAG instructions (`soft_scope_llm`). Disable the gate with `CHAT_SCOPE_ZERO_CHUNK_GATE=0`.
 - **Hybrid RAG** prefetches **`findRelevantContent`** on every course-scoped turn. Excerpts inject when **`shouldInjectCourseRag`** passes (`needsCourseRag`, similarity thresholds, or `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE=1`), formatted with **`buildCappedRagContextText`** and **`buildRagSystemBlock`** (chunk cap **4**, char cap **14_000**).
 - **Tool RAG (preload)** shares the same prefetch + inject gate. When injection passes, excerpts use **`buildRagSystemBlock({ toolPath: true })`**. **`getInformation`** remains a supplemental fallback (`capRagHitsForTool`, **6000** chars per chunk).
 - **Query embeddings** use an in-memory cache (`QUERY_EMBED_CACHE_TTL_MS`, `QUERY_EMBED_CACHE_MAX`). **Server** `OPENROUTER_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, or `OPENAI_API_KEY` (first match wins) — independent of the user's chat provider (e.g. Ollama).
@@ -98,6 +99,7 @@ flowchart TB
 | Route handler | [`apps/core/app/routes/api/chat.ts`](../../apps/core/app/routes/api/chat.ts) |
 | RAG caps + formatters | [`apps/core/app/lib/chat-rag.ts`](../../apps/core/app/lib/chat-rag.ts) |
 | RAG inject gate | [`apps/core/app/lib/ai/course-rag-policy.ts`](../../apps/core/app/lib/ai/course-rag-policy.ts) |
+| Course scope gate | [`apps/core/app/lib/ai/course-scope.ts`](../../apps/core/app/lib/ai/course-scope.ts) |
 | Chat intent | [`apps/core/app/lib/ai/chat-intent.ts`](../../apps/core/app/lib/ai/chat-intent.ts) |
 | Vector search + embed API | [`apps/core/app/lib/ai/embedding.ts`](../../apps/core/app/lib/ai/embedding.ts) |
 | API key body schema | [`apps/core/app/lib/chat-api-keys.schema.ts`](../../apps/core/app/lib/chat-api-keys.schema.ts) |
@@ -133,8 +135,9 @@ The handler is the `action` in [`chat.ts`](../../apps/core/app/routes/api/chat.t
 6. **Early exits** — empty merged transcript → JSON with `chatId` only; missing `model` / invalid `apiKeys` → 400.
 7. **Registry** — `createAIProviderRegistry(validatedApiKeys)` → `registry.languageModel(model)`.
 8. **Persist** — `appendMessages(normalizedIncomingMessages)` writes new rows before streaming (`skipDuplicates` on `messageId`).
+9. **Course scope (#729)** — after RAG prefetch, **`evaluateCourseScope`** may short-circuit with a canned refusal (zero chunks + substantive off-topic). Otherwise **`buildCourseScopePromptBlock`** augments the system prompt with course identity and scope policy.
 
-Debug hooks (`chatApiDebug`) log history merge counts and pre-stream prompt size hints (`systemChars`, `messageCount`, `messageTextChars`) without dumping full RAG text.
+Debug hooks (`chatApiDebug`) log history merge counts, `scopeDecision` / `scopeReason`, and pre-stream prompt size hints (`systemChars`, `messageCount`, `messageTextChars`) without dumping full RAG text.
 
 ## 3. Two RAG behaviors (split on `supportsTools`)
 

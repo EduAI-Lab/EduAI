@@ -20,6 +20,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [question-maker] tests: Unit and integration tests for the QM reconciliation cron. (#PR, @evanbones, 2026-06-23)
 - [docs] docs: `docs/CRON_JOBS.md` — describes registered cron jobs, schedules, trigger behavior, and local testing steps. (#634, #283, #643, @evanbones, 2026-06-23)
 - [core] feat: Add UBC chatbot disclaimer banner and full terms dialog on `/chat`. (#575, @superbolt08, 2026-06-23) — [#753](https://github.com/EduAI-Lab/EduAI/pull/753)
+- [core] feat: Enforce course scope in chat (#729) — inject course metadata + scope policy into every system prompt (Layer A); hard-refuse clearly off-topic turns with zero RAG chunks (Layer B v1.1) while allowing related foundational questions via soft LLM scope + course-metadata overlap; greeting/coding allowlists; tighten web-tool guidance to course-adjacent queries. (@ebabar5, 2026-06-24)
 
 ### Fixed
 
