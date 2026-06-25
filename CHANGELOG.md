@@ -11,6 +11,17 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 - [ai-tutor] feat: Mirror Core `TA` enrollments into AI Tutor and surface TA-taught courses — `GET /api/courses` now returns TA-enrolled offerings (unpublished included, no progress) alongside the TA's published student-enrolled courses, so course TAs see their teaching courses in the instructor shell. (#745, @Ayyhab, 2026-06-25)
 - [ai-tutor] tests: Add `nav.test.ts` (every role's nav label is "Courses"; admin nav keeps Bug Reports and excludes user-management/enrollments) and an api-client 403 regression guarding against the login-redirect loop. (#745, @Ayyhab, 2026-06-25)
+- [core] feat: Admin cron job dashboard — `/admin/cron-jobs` lists all registered cron servers with last run status (RUNNING/SUCCESS/ERROR), schedule, and a manual trigger for infra backup scripts; run history stored in `cron_job_runs`; schedule overrides persist to `cron_job_schedule_overrides`. (#634, #643, @evanbones, 2026-06-23)
+- [core] feat: In-process cron scheduler (`cron-scheduler.server.ts`) starts on server boot and fires infra scripts on their configured schedules; `rescheduleJob` reflects live changes from the admin panel. (#634, @evanbones, 2026-06-23)
+- [core] schema: Add `cron_job_runs` and `cron_job_schedule_overrides` tables. (#634, @evanbones, 2026-06-23)
+- [ai-tutor] feat: Daily reconciliation cron — iterates `CourseOffering` and `Topic` rows with Core links; nullifies `coreOfferingId`/`coreTopicId` on strict Core 404; skips and retries on 5xx/timeout; local rows are never deleted. (#283, @evanbones, 2026-06-23)
+- [question-maker] feat: Daily reconciliation cron — iterates `core_course_id`, `core_topic_id`, and `core_question_id` columns; nullifies on Core 404; skips on 5xx/timeout. (#283, @evanbones, 2026-06-23)
+- [infra] feat: Server backup scripts (`backup-nightly.sh`, `backup-offsite.sh`, `backup-rotate.sh`) — nightly `pg_dump` of all three databases, off-site sync, and local dump rotation; configurable via `cron.env`. (#643, @evanbones @GlowyBlack, 2026-06-23)
+- [core] tests: Unit tests for `db.cron-jobs.server` and `/api/admin/cron-jobs` route (auth guard, trigger/update-schedule/reset-schedule intents, cron validation). (#PR, @evanbones, 2026-06-23)
+- [ai-tutor] tests: Unit and integration tests for the AI Tutor reconciliation cron. (#PR, @evanbones, 2026-06-23)
+- [question-maker] tests: Unit and integration tests for the QM reconciliation cron. (#PR, @evanbones, 2026-06-23)
+- [docs] docs: `docs/CRON_JOBS.md` — describes registered cron jobs, schedules, trigger behavior, and local testing steps. (#634, #283, #643, @evanbones, 2026-06-23)
+- [core] feat: Add UBC chatbot disclaimer banner and full terms dialog on `/chat`. (#575, @superbolt08, 2026-06-23) — [#753](https://github.com/EduAI-Lab/EduAI/pull/753)
 
 ### Changed
 
@@ -24,20 +35,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 - [ai-tutor] fix: Stop the infinite redirect loop when an authenticated user opens a forbidden resource (e.g. a `UNIT_ADMIN` deep-linking to `/instructor/lesson/:id` outside their unit) — the API client now only redirects 401s to Core login and surfaces 403s as a thrown error for the route error boundary. (#745, @Ayyhab, 2026-06-25)
 - [ai-tutor] fix: Return the student/TA course list without a 500 — restore the missing `getEduAiCookieForRequest` import and probe TA enrollments with `count()` (CourseEnrollment has a composite key and no `id`) in `GET /api/courses`. (#745, @Ayyhab, 2026-06-25)
-- [core] feat: Admin cron job dashboard — `/admin/cron-jobs` lists all registered cron servers with last run status (RUNNING/SUCCESS/ERROR), schedule, and a manual trigger for infra backup scripts; run history stored in `cron_job_runs`; schedule overrides persist to `cron_job_schedule_overrides`. (#634, #643, @evanbones, 2026-06-23)
-- [core] feat: In-process cron scheduler (`cron-scheduler.server.ts`) starts on server boot and fires infra scripts on their configured schedules; `rescheduleJob` reflects live changes from the admin panel. (#634, @evanbones, 2026-06-23)
-- [core] schema: Add `cron_job_runs` and `cron_job_schedule_overrides` tables. (#634, @evanbones, 2026-06-23)
-- [ai-tutor] feat: Daily reconciliation cron — iterates `CourseOffering` and `Topic` rows with Core links; nullifies `coreOfferingId`/`coreTopicId` on strict Core 404; skips and retries on 5xx/timeout; local rows are never deleted. (#283, @evanbones, 2026-06-23)
-- [question-maker] feat: Daily reconciliation cron — iterates `core_course_id`, `core_topic_id`, and `core_question_id` columns; nullifies on Core 404; skips on 5xx/timeout. (#283, @evanbones, 2026-06-23)
-- [infra] feat: Server backup scripts (`backup-nightly.sh`, `backup-offsite.sh`, `backup-rotate.sh`) — nightly `pg_dump` of all three databases, off-site sync, and local dump rotation; configurable via `cron.env`. (#643, @evanbones @GlowyBlack, 2026-06-23)
-- [core] tests: Unit tests for `db.cron-jobs.server` and `/api/admin/cron-jobs` route (auth guard, trigger/update-schedule/reset-schedule intents, cron validation). (#PR, @evanbones, 2026-06-23)
-- [ai-tutor] tests: Unit and integration tests for the AI Tutor reconciliation cron. (#PR, @evanbones, 2026-06-23)
-- [question-maker] tests: Unit and integration tests for the QM reconciliation cron. (#PR, @evanbones, 2026-06-23)
-- [docs] docs: `docs/CRON_JOBS.md` — describes registered cron jobs, schedules, trigger behavior, and local testing steps. (#634, #283, #643, @evanbones, 2026-06-23)
-- [core] feat: Add UBC chatbot disclaimer banner and full terms dialog on `/chat`. (#575, @superbolt08, 2026-06-23) — [#753](https://github.com/EduAI-Lab/EduAI/pull/753)
-
-### Fixed
-
+- [ai-tutor] fix: Resolve the long-standing typecheck baseline — the student dashboard "Completed" count used a non-existent `Progress.isComplete` (always 0; now derived from `completed`/`total`), and the sidebar footer now carries the user's `email` through `AuthUser` so it renders instead of showing blank. (#745, @Ayyhab, 2026-06-25)
 - [ai-tutor] fix: Surface effective `role: TA` on `GET /api/me` when Core reports a TA enrollment — keeps course TAs in the teaching shell after Core drops platform-level `UserRole.TA` (#723, @Ayyhab, 2026-06-24)
 - [core] fix: Unblock student-ID onboarding before any Canvas sync — `linkCanvasRoster` no longer 404s when no instructor has synced the course; it saves the student number (still rejecting duplicates) and links zero enrollments, and the later sync's `linkEnrollmentsFromStagingForCourse` enrolls the student by `studentId` once staging rows exist. (#732, @GlowyBlack, 2026-06-22)
 
