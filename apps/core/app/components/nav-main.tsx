@@ -7,12 +7,14 @@ import {
   SidebarMenu,
   SidebarMenuItem,
 } from "@eduai/ui"
+import type { CronStatusColor } from "~/hooks/api/use-cron-job-status"
 
 export interface NavMainItem {
   title: string
   url: string
   icon?: Icon
   external?: boolean
+  badge?: CronStatusColor
 }
 
 export interface NavMainProps {
@@ -39,6 +41,15 @@ export function NavMain({ items }: NavMainProps) {
               paddingLeft: "16px",
             } as const
 
+            const badgeBg =
+              item.badge === "green"
+                ? "#22c55e"
+                : item.badge === "orange"
+                  ? "#f97316"
+                  : item.badge === "red"
+                    ? "#ef4444"
+                    : undefined
+
             const linkBody = (
               <>
                 {isActive && (
@@ -55,6 +66,19 @@ export function NavMain({ items }: NavMainProps) {
                 )}
                 {item.icon && <item.icon size={16} strokeWidth={1.75} />}
                 <span className="flex-1">{item.title}</span>
+                {badgeBg && (
+                  <span
+                    aria-label={`Status: ${item.badge}`}
+                    className={item.badge === "orange" ? "animate-pulse" : undefined}
+                    style={{
+                      width: 7,
+                      height: 7,
+                      borderRadius: "50%",
+                      flexShrink: 0,
+                      background: badgeBg,
+                    }}
+                  />
+                )}
               </>
             )
 

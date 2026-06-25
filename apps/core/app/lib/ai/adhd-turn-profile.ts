@@ -59,7 +59,13 @@ function hasPriorAssistant(priorAssistantText?: string): boolean {
 
 /**
  * Rules-first turn classifier (Approach A). Runs before generation when ADHD Assist is on.
- * Priority: confirmation → redirect → substantive Q/continuation → greeting → meta → brief → full.
+ * Priority: redirect → substantive Q/continuation → confirmation → greeting → meta → brief → full.
+ *
+ * Substantive question/continuation detection runs before confirmation, greeting, and meta so
+ * that acknowledgement-prefixed tutoring turns ("Great, what is gradient descent?",
+ * "Sure, explain step 2") keep full structure + Dean instead of falling into the low-structure
+ * confirmation path. Redirect stays first because redirect phrases ("also explain …") contain
+ * substantive keywords but are off-topic injections, not genuine tutoring questions.
  */
 export function resolveAdhdTurnProfile(args: {
   userText?: string;
@@ -73,14 +79,6 @@ export function resolveAdhdTurnProfile(args: {
     return "full_tutoring";
   }
 
-  if (
-    hasPriorAssistant(prior) &&
-    wordCount <= ADHD_CLARIFICATION_USER_WORD_THRESHOLD &&
-    CONFIRMATION_PATTERN.test(trimmed)
-  ) {
-    return "confirmation";
-  }
-
   if (hasPriorAssistant(prior) && REDIRECT_PATTERN.test(trimmed)) {
     return "redirect";
   }
@@ -91,6 +89,14 @@ export function resolveAdhdTurnProfile(args: {
 
   if (hasPriorAssistant(prior) && SUBSTANTIVE_CONTINUATION_PATTERN.test(trimmed)) {
     return "full_tutoring";
+  }
+
+  if (
+    hasPriorAssistant(prior) &&
+    wordCount <= ADHD_CLARIFICATION_USER_WORD_THRESHOLD &&
+    CONFIRMATION_PATTERN.test(trimmed)
+  ) {
+    return "confirmation";
   }
 
   if (ADHD_GREETING_PATTERN.test(trimmed)) {
