@@ -35,9 +35,18 @@ export type BugReportStatus = "UNHANDLED" | "IN_PROGRESS" | "RESOLVED";
 
 export type BugReportSource = "CORE" | "AI_TUTOR" | "QUESTION_MAKER";
 
+export type BugReportType =
+  | "UI_DISPLAY"
+  | "FEATURE_NOT_WORKING"
+  | "PERFORMANCE"
+  | "CONTENT_ERROR"
+  | "ACCESS_PERMISSION"
+  | "OTHER";
+
 export type BugReport = {
   id: string;
   description: string;
+  bugType: BugReportType | null;
   status: BugReportStatus;
   source: BugReportSource;
   isAnonymous: boolean;
@@ -50,5 +59,6 @@ export type BugReport = {
 export type SubmitBugReportInput = {
   /** Merged description to persist (title, if any, should be folded in by the caller). */
   description: string;
+  bugType?: BugReportType | null;
   isAnonymous?: boolean;
 };
