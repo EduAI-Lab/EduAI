@@ -7,6 +7,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## [Week 8 — June 22–28, 2026]
 
+### Added
+
+- [core] feat: DB-backed UBCO disciplines — seed a `Discipline` table from the Workday export (105 units), make `Course.department` a FK into it, validate course/`authorizedUnits` codes server-side, and add `GET /api/disciplines` + `/search`; replaces the hardcoded `units.ts` registry. (#541, @abdullahmoh21, 2026-06-25)
+
 ### Fixed
 
 - [ai-tutor] fix: Surface effective `role: TA` on `GET /api/me` when Core reports a TA enrollment — keeps course TAs in the teaching shell after Core drops platform-level `UserRole.TA` (#723, @Ayyhab, 2026-06-24)

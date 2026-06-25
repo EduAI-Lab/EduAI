@@ -5,7 +5,7 @@ import { IconPlus, IconDots, IconCopy, IconMailForward, IconBan } from "@tabler/
 
 import { auth } from "~/lib/auth/server";
 import { invitableRolesFor } from "~/lib/invitations/schemas";
-import { UNIT_OPTIONS } from "~/lib/units";
+import { useDisciplines } from "~/hooks/api/use-disciplines";
 import {
   Button,
   Badge,
@@ -118,6 +118,7 @@ function StatusBadge({ invite }: { invite: Invitation }) {
 
 export default function InvitationsPage() {
   const { user, invitableRoles } = useLoaderData<typeof loader>();
+  const { options: departmentOptions } = useDisciplines();
   const [invites, setInvites] = useState<Invitation[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -430,7 +431,7 @@ export default function InvitationsPage() {
                 <div className="space-y-2">
                   <Label htmlFor="invite-units">Authorized units</Label>
                   <MultiSelect
-                    options={UNIT_OPTIONS.map((dept) => ({
+                    options={departmentOptions.map((dept) => ({
                       value: dept.code,
                       label: dept.label,
                       description: dept.code,
