@@ -6,15 +6,12 @@ import { auth } from "~/lib/auth/server";
  *
  * Source of truth is the `Discipline` table, seeded from the Workday export
  * (prisma/data/disciplines.csv). This module backs:
- *   - GET /api/disciplines        — full list for the department picker
- *   - GET /api/disciplines/search — typeahead over code + name
+ *   - GET /api/disciplines — full list for the department picker
  *   - course `department` / user `authorizedUnits` validation
  *
  * The validation code set is cached in-memory (disciplines change rarely) so we
  * don't hit the DB on every course create / keystroke.
  */
-
-const SEARCH_LIMIT = 50;
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -72,31 +69,6 @@ export async function listDisciplines(request: Request): Promise<Response> {
   const disciplines = await prisma.discipline.findMany({
     select: { code: true, name: true },
     orderBy: { code: "asc" },
-  });
-  return json({ disciplines });
-}
-
-/**
- * GET /api/disciplines/search?q= — case-insensitive typeahead over code + name.
- * Empty `q` returns the full list (ordered), capped at SEARCH_LIMIT.
- */
-export async function searchDisciplines(request: Request, q: string): Promise<Response> {
-  const session = await auth.api.getSession(request);
-  if (!session?.user) return unauthorized();
-
-  const term = q.trim();
-  const disciplines = await prisma.discipline.findMany({
-    where: term
-      ? {
-          OR: [
-            { code: { contains: term, mode: "insensitive" } },
-            { name: { contains: term, mode: "insensitive" } },
-          ],
-        }
-      : undefined,
-    select: { code: true, name: true },
-    orderBy: { code: "asc" },
-    take: SEARCH_LIMIT,
   });
   return json({ disciplines });
 }

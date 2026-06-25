@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router'
 import { IconPlus, IconBook } from '@tabler/icons-react'
 import {
@@ -38,8 +38,13 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, instructors = [
   const [editingCourse, setEditingCourse] = useState<Course | null>(null)
   const [deletingCourse, setDeletingCourse] = useState<Course | null>(null)
   const { options: departmentOptions, getLabel: getDepartmentLabel, loading: deptLoading } = useDisciplines()
-  // Only show departments that are in the user's authorized units.
-  const authorizedDepts = departmentOptions.filter((d) => authorizedUnits.includes(d.code))
+  // Only show departments that are in the user's authorized units. Memoized so
+  // the array keeps a stable ref across renders (it feeds effect deps below).
+  const authorizedUnitSet = useMemo(() => new Set(authorizedUnits), [authorizedUnits])
+  const authorizedDepts = useMemo(
+    () => departmentOptions.filter((d) => authorizedUnitSet.has(d.code)),
+    [departmentOptions, authorizedUnitSet],
+  )
   const { policies } = usePolicies()
   // §2 gate: hide the delete control when unitAdmins.canDeleteCourses is off
   // (mirrors the deleteCourse 403). Default true preserves today's behavior.

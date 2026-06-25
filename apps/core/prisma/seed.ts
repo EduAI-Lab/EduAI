@@ -1047,16 +1047,40 @@ async function seedPasswords() {
  * Workday export, §541). Idempotent upsert by code. Must run before seedCourses
  * since courses.department is a FK into disciplines.code.
  */
+/**
+ * Split a single CSV line, honouring RFC-4180 double-quoted fields so a name
+ * containing commas (e.g. "Design, Innovation, Creativity, Entrepreneurship")
+ * stays one field with its surrounding quotes stripped.
+ */
+function parseCsvLine(line: string): string[] {
+  const out: string[] = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') { cur += '"'; i++; } // escaped "" inside quotes
+        else inQuotes = false;
+      } else cur += ch;
+    } else if (ch === '"') inQuotes = true;
+    else if (ch === ',') { out.push(cur); cur = ''; }
+    else cur += ch;
+  }
+  out.push(cur);
+  return out;
+}
+
 async function seedDisciplines(): Promise<number> {
   const csvPath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'data', 'disciplines.csv');
   const lines = readFileSync(csvPath, 'utf8').trim().split('\n').slice(1); // drop header
   for (const line of lines) {
-    const parts = line.split(',');
+    const parts = parseCsvLine(line);
     if (parts.length < 4) continue;
     const id = parts[0];
     const code = parts[1];
     const createdAt = parts[parts.length - 1];
-    const name = parts.slice(2, -1).join(','); // tolerate commas in name
+    const name = parts[2]; // quoted comma-bearing names already kept whole
     await prisma.discipline.upsert({
       where: { code },
       update: { name },

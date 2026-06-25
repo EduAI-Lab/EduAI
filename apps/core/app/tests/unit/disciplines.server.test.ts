@@ -15,7 +15,6 @@ vi.mock("~/lib/auth/server", () => ({
 import {
   isValidDisciplineCode,
   areValidDisciplineCodes,
-  searchDisciplines,
   listDisciplines,
   invalidateDisciplineCache,
 } from "~/lib/disciplines/server";
@@ -79,44 +78,5 @@ describe("listDisciplines", () => {
     const res = await listDisciplines(new Request("http://localhost/api/disciplines"));
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ disciplines: ROWS });
-  });
-});
-
-describe("searchDisciplines", () => {
-  it("401s without a session", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue(null as any);
-    const res = await searchDisciplines(
-      new Request("http://localhost/api/disciplines/search?q=comp"),
-      "comp",
-    );
-    expect(res.status).toBe(401);
-  });
-
-  it("queries by code/name when q is provided", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1" } } as any);
-    prismaMock.discipline.findMany.mockResolvedValue([ROWS[0]]);
-    const res = await searchDisciplines(
-      new Request("http://localhost/api/disciplines/search?q=comp"),
-      "comp",
-    );
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ disciplines: [ROWS[0]] });
-    const arg = prismaMock.discipline.findMany.mock.calls.at(-1)?.[0];
-    expect(arg.where.OR).toEqual([
-      { code: { contains: "comp", mode: "insensitive" } },
-      { name: { contains: "comp", mode: "insensitive" } },
-    ]);
-    expect(arg.take).toBe(50);
-  });
-
-  it("returns the unfiltered list when q is blank", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1" } } as any);
-    const res = await searchDisciplines(
-      new Request("http://localhost/api/disciplines/search?q="),
-      "",
-    );
-    expect(res.status).toBe(200);
-    const arg = prismaMock.discipline.findMany.mock.calls.at(-1)?.[0];
-    expect(arg.where).toBeUndefined();
   });
 });
