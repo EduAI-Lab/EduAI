@@ -128,7 +128,7 @@ jobs:
       - name: Generate coverage report
         env:
           COMMIT_SHA: ${{ github.sha }}
-          REPORT_TIMESTAMP: ${{ github.event.head_commit.timestamp || github.run_id }}
+          REPORT_TIMESTAMP: ${{ github.event.head_commit.timestamp || github.run_started_at }}
         run: node eduai-summer-2026/scripts/generate-coverage-report.js
 
       - name: Upload coverage artifacts
