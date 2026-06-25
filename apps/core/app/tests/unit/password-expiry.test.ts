@@ -31,9 +31,15 @@ describe("isPasswordExpired", () => {
   });
 
   it("returns false when changed exactly at the expiry boundary", () => {
-    const boundary = new Date();
-    boundary.setDate(boundary.getDate() - PASSWORD_EXPIRY_DAYS);
-    expect(isPasswordExpired(boundary)).toBe(false);
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-20T12:00:00.000Z"));
+    try {
+      const boundary = new Date();
+      boundary.setDate(boundary.getDate() - PASSWORD_EXPIRY_DAYS);
+      expect(isPasswordExpired(boundary)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("returns true when changed one day past the expiry window", () => {
