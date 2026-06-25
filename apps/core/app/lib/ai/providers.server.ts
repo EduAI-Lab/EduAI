@@ -1,15 +1,23 @@
 import prisma from '../prisma.server';
 import { parseModelIdentifier } from './providers';
 
+export type ChatModelCapabilities = {
+  supportsTools: boolean;
+  maxTokens: number | null;
+  name: string | null;
+};
+
 /**
- * Check if a model supports tool calling (server-only — uses Prisma).
+ * Load tool support and output limits for a chat model (server-only — uses Prisma).
  */
-export async function modelSupportsTools(modelIdentifier: string): Promise<boolean> {
+export async function getChatModelCapabilities(
+  modelIdentifier: string,
+): Promise<ChatModelCapabilities> {
   try {
     const parsed = parseModelIdentifier(modelIdentifier);
     if (!parsed) {
       console.log(`Invalid model identifier: ${modelIdentifier}`);
-      return false;
+      return { supportsTools: false, maxTokens: null, name: null };
     }
 
     const model = await prisma.aIModel.findFirst({
@@ -22,19 +30,32 @@ export async function modelSupportsTools(modelIdentifier: string): Promise<boole
       },
       select: {
         supportsTools: true,
+        maxTokens: true,
         name: true,
         modelId: true,
         type: true,
       },
     });
 
-    const supportsTools = Boolean(model?.supportsTools);
+    const capabilities: ChatModelCapabilities = {
+      supportsTools: Boolean(model?.supportsTools),
+      maxTokens: model?.maxTokens ?? null,
+      name: model?.name ?? null,
+    };
     console.log(
-      `Model ${modelIdentifier} (${model?.name || 'unknown'}) supports tools: ${supportsTools}`,
+      `Model ${modelIdentifier} (${capabilities.name || 'unknown'}) supports tools: ${capabilities.supportsTools}`,
     );
-    return supportsTools;
+    return capabilities;
   } catch (error) {
     console.error('Error checking model tool support:', error);
-    return false;
+    return { supportsTools: false, maxTokens: null, name: null };
   }
+}
+
+/**
+ * Check if a model supports tool calling (server-only — uses Prisma).
+ */
+export async function modelSupportsTools(modelIdentifier: string): Promise<boolean> {
+  const capabilities = await getChatModelCapabilities(modelIdentifier);
+  return capabilities.supportsTools;
 }

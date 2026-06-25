@@ -1,6 +1,9 @@
 import { describe, it, expect, afterEach } from "vitest";
 import {
   buildCappedRagContextText,
+  buildRagAnswerInstructions,
+  buildRagSystemBlock,
+  buildEmptyCourseRagBlock,
   capRagHitsForTool,
   capToolResultsInMessages,
   estimateMessageCharsForModel,
@@ -9,6 +12,9 @@ import {
   resolveSessionCharBudget,
   resolveToolResultMaxChars,
   truncateToMaxChars,
+  RAG_COURSE_GROUNDING_INSTRUCTION,
+  UNTRUSTED_RAG_OPEN,
+  UNTRUSTED_RAG_CLOSE,
   HYBRID_RAG_MAX_CHUNKS,
   HYBRID_RAG_MAX_CONTEXT_CHARS,
   TOOL_RAG_MAX_CHARS_PER_CHUNK,
@@ -19,6 +25,38 @@ import {
 function hit(content: string, title = "Lecture 1"): HybridRagHit {
   return { content, similarity: 0.9, materialTitle: title };
 }
+
+describe("buildRagAnswerInstructions", () => {
+  it("includes general grounding rules without course-specific examples", () => {
+    const text = buildRagAnswerInstructions();
+    expect(text).toContain(RAG_COURSE_GROUNDING_INSTRUCTION);
+    expect(text).toContain("do not support that premise");
+    expect(text).toContain("Cite the **Source** header");
+    expect(text).not.toMatch(/Morocco|FIFA/i);
+  });
+
+  it("adds getInformation hint on tool path", () => {
+    expect(buildRagAnswerInstructions({ toolPath: true })).toContain("getInformation");
+    expect(buildRagAnswerInstructions()).not.toContain("getInformation");
+  });
+});
+
+describe("buildRagSystemBlock", () => {
+  it("wraps context with excerpt header and grounding suffix", () => {
+    const block = buildRagSystemBlock("**Source**: Doc\nFact one.");
+    expect(block).toContain("Here are relevant excerpts");
+    expect(block).toContain("Fact one.");
+    expect(block).toContain("Course grounding rules");
+  });
+});
+
+describe("buildEmptyCourseRagBlock", () => {
+  it("forbids substituting general knowledge when search returns nothing", () => {
+    const block = buildEmptyCourseRagBlock();
+    expect(block).toContain("did not return relevant excerpts");
+    expect(block).toContain("Do not substitute general world knowledge");
+  });
+});
 
 describe("buildCappedRagContextText", () => {
   it("returns empty string for no hits", () => {
@@ -56,8 +94,9 @@ describe("buildCappedRagContextText", () => {
     const headerLen = "**Source**: Lecture 1\n".length;
     const maxChars = headerLen + HYBRID_RAG_MIN_TRUNCATE_CHARS + 10;
     const text = buildCappedRagContextText([hit(longBody)], 1, maxChars);
-    expect(text.endsWith("…")).toBe(true);
-    expect(text.length).toBeLessThanOrEqual(maxChars + 5);
+    expect(text).toContain(UNTRUSTED_RAG_OPEN);
+    expect(text).toContain("…");
+    expect(text.length).toBeGreaterThan(maxChars);
   });
 
   it("omits the chunk when remaining room is at or below HYBRID_RAG_MIN_TRUNCATE_CHARS", () => {
@@ -79,20 +118,24 @@ describe("capRagHitsForTool", () => {
     const hits = Array.from({ length: 10 }, (_, i) => hit(`chunk-${i}`));
     const capped = capRagHitsForTool(hits);
     expect(capped).toHaveLength(HYBRID_RAG_MAX_CHUNKS);
-    expect(capped[0].content).toBe("chunk-0");
-    expect(capped[HYBRID_RAG_MAX_CHUNKS - 1].content).toBe(`chunk-${HYBRID_RAG_MAX_CHUNKS - 1}`);
+    expect(capped[0].content).toContain("chunk-0");
+    expect(capped[HYBRID_RAG_MAX_CHUNKS - 1].content).toContain(
+      `chunk-${HYBRID_RAG_MAX_CHUNKS - 1}`,
+    );
   });
 
   it("truncates content longer than TOOL_RAG_MAX_CHARS_PER_CHUNK", () => {
     const long = "z".repeat(TOOL_RAG_MAX_CHARS_PER_CHUNK + 100);
     const [capped] = capRagHitsForTool([hit(long)]);
-    expect(capped.content.length).toBe(TOOL_RAG_MAX_CHARS_PER_CHUNK + 1);
-    expect(capped.content.endsWith("…")).toBe(true);
+    expect(capped.content).toContain(UNTRUSTED_RAG_OPEN);
+    expect(capped.content).toContain("…");
   });
 
-  it("leaves short content unchanged", () => {
+  it("wraps short content as untrusted reference", () => {
     const [capped] = capRagHitsForTool([hit("short")]);
-    expect(capped.content).toBe("short");
+    expect(capped.content).toContain(UNTRUSTED_RAG_OPEN);
+    expect(capped.content).toContain("short");
+    expect(capped.content).toContain(UNTRUSTED_RAG_CLOSE);
     expect(capped.materialTitle).toBe("Lecture 1");
   });
 });
