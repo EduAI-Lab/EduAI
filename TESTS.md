@@ -281,6 +281,9 @@ Each section should use this format:
 | [`ChatMessage.test.tsx`](apps/core/app/tests/unit/ChatMessage.test.tsx) | Verifies user vs AI message rendering — text content, right-aligned user layout, `U`/`AI` avatar fallbacks, AI copy button, and that both mark their content as a reading surface. |
 | [`revive-stored-message.test.ts`](apps/core/app/tests/unit/revive-stored-message.test.ts) | Verifies `messageToText` / `reviveStoredMessage` recover persisted chat history across storage shapes (plain string, AI-SDK content array, double-serialized message, UIMessage parts) so restored chats render without duplication or loss. |
 | [`canvas-material-sync-dialog.test.tsx`](apps/core/app/tests/unit/canvas-material-sync-dialog.test.tsx) | Verifies the Canvas material sync dialog loads Canvas files on open (pre-checking `not_imported` files), syncs the selected files, and shows failed-sync details after refresh. |
+| [`chat-route.server.test.ts`](apps/core/app/tests/unit/chat-route.server.test.ts) | Verifies `loadChatTranscript` returns null (and skips the message fetch) when the viewer may not read the chat, hydrates a transcript with course code and messages for an authorized owner, and marks oversight (non-owner) reads as non-editable. |
+| [`assistive-display-transform.test.ts`](apps/core/app/tests/unit/assistive-display-transform.test.ts) | Verifies `transformAssistiveDisplayCopy` relabels `**Top summary**` → `**TLDR**` and `**Next?**` → `**Continue**` for display only (case-insensitive) and leaves non-assistive content unchanged. |
+| [`chat-history-utils.test.ts`](apps/core/app/tests/unit/chat-history-utils.test.ts) | Verifies `chatHistoryRowLabel` prefers preview over title for the row label and `relativeChatTime` formats recent timestamps (e.g. "5m ago"). |
 
 ---
 

@@ -20,9 +20,18 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [question-maker] tests: Unit and integration tests for the QM reconciliation cron. (#PR, @evanbones, 2026-06-23)
 - [docs] docs: `docs/CRON_JOBS.md` — describes registered cron jobs, schedules, trigger behavior, and local testing steps. (#634, #283, #643, @evanbones, 2026-06-23)
 - [core] feat: Add UBC chatbot disclaimer banner and full terms dialog on `/chat`. (#575, @superbolt08, 2026-06-23) — [#753](https://github.com/EduAI-Lab/EduAI/pull/753)
+- [core] feat: Chat UX overhaul from ADHD Assist pilot participant feedback — a persistent conversation history rail on `/chat` (New chat lives only in the rail), a dedicated `/chat/:chatId` route whose loader hydrates the transcript from the DB so the route (not sessionStorage) is the source of truth for the open conversation, a course selector and starter chips in the composer, and the sidebar toggle moved into the blue EduAI header. (#695, #700, #708, @Ayyhab, 2026-06-24) — [#751](https://github.com/EduAI-Lab/EduAI/pull/751)
+- [core] feat: Assistive display relabeling — `ChatMessage` rewrites `**Top summary**` → `**TLDR**` and `**Next?**` → `**Continue**` at render time only; stored DB text and Phase 3 oversight metrics keep the original anchors. (#699, @Ayyhab, 2026-06-24) — [#751](https://github.com/EduAI-Lab/EduAI/pull/751)
+- [core] tests: Unit tests for the chat route loader (`loadChatTranscript` access/hydration/non-editable oversight reads), assistive display relabeling, and chat-history row label / relative-time helpers. (#708, @Ayyhab, 2026-06-24) — [#751](https://github.com/EduAI-Lab/EduAI/pull/751)
+
+### Changed
+
+- [core] refactor: Extract a shared chat route module (`app/lib/chat/chat-route.server.ts`) used by both `/chat` and `/chat/:chatId` — base loader (models + preferences), the preference-save action, and DB transcript hydration; split the monolithic `chat.tsx` into `chat-screen.tsx` plus history components (`chat-history-rail`, `chat-history-list`, `chat-history-utils`), shrinking `chat.tsx`, `chat-history-panel`, and the `chats/:chatId/messages` API route accordingly. (#708, @Ayyhab, 2026-06-24) — [#751](https://github.com/EduAI-Lab/EduAI/pull/751)
 
 ### Fixed
 
+- [core] fix: Recover persisted chat history across legacy and corrupted storage shapes — `reviveStoredMessage` / `messageToText` unwrap plain strings, AI-SDK content arrays, UIMessage parts, and double-serialized message blobs so restored chats and read-only transcripts render real markdown instead of `[object Object]`, blank bubbles, or raw JSON. (#708, @Ayyhab, 2026-06-24) — [#751](https://github.com/EduAI-Lab/EduAI/pull/751)
+- [core] fix: Keep the chat Assist and Focus toggles visible with correct contrast in focus mode. (#700, @Ayyhab, 2026-06-24) — [#751](https://github.com/EduAI-Lab/EduAI/pull/751)
 - [ai-tutor] fix: Surface effective `role: TA` on `GET /api/me` when Core reports a TA enrollment — keeps course TAs in the teaching shell after Core drops platform-level `UserRole.TA` (#723, @Ayyhab, 2026-06-24)
 - [core] fix: Unblock student-ID onboarding before any Canvas sync — `linkCanvasRoster` no longer 404s when no instructor has synced the course; it saves the student number (still rejecting duplicates) and links zero enrollments, and the later sync's `linkEnrollmentsFromStagingForCourse` enrolls the student by `studentId` once staging rows exist. (#732, @GlowyBlack, 2026-06-22)
 
