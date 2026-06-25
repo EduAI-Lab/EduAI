@@ -7,8 +7,23 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## [Week 8 — June 22–28, 2026]
 
+### Added
+
+- [ai-tutor] feat: Mirror Core `TA` enrollments into AI Tutor and surface TA-taught courses — `GET /api/courses` now returns TA-enrolled offerings (unpublished included, no progress) alongside the TA's published student-enrolled courses, so course TAs see their teaching courses in the instructor shell. (#745, @Ayyhab, 2026-06-25)
+- [ai-tutor] tests: Add `nav.test.ts` (every role's nav label is "Courses"; admin nav keeps Bug Reports and excludes user-management/enrollments) and an api-client 403 regression guarding against the login-redirect loop. (#745, @Ayyhab, 2026-06-25)
+
+### Changed
+
+- [ai-tutor] frontend: Rename the sidebar, heading, and breadcrumb "My courses"/"Teaching" to "Courses" for every role (student and instructor-shell), and point the admin Bug Reports nav at `/admin` (the old `?tab=bugReports` query param was a no-op). (#745, @Ayyhab, 2026-06-25)
+
+### Removed
+
+- [ai-tutor] feat: Remove the AI Tutor "Import from EduAI" panel, the admin User Management view, and the admin Enrollments tab — user, role, enrollment, and course lifecycle are owned by EduAI Core (Canvas source of truth). Drop the now-dead permission helpers (`canImportFromEduAi`, `canBrowseEduAiCatalog`, `canSyncEnrollmentsFromEduAi`) and API methods (`importEduAiCourse`, `enrollStudentInCourse`, `adminSyncCourseEnrollments`); the per-course instructor roster is intentionally kept. (#745, @Ayyhab, 2026-06-25)
+
 ### Fixed
 
+- [ai-tutor] fix: Stop the infinite redirect loop when an authenticated user opens a forbidden resource (e.g. a `UNIT_ADMIN` deep-linking to `/instructor/lesson/:id` outside their unit) — the API client now only redirects 401s to Core login and surfaces 403s as a thrown error for the route error boundary. (#745, @Ayyhab, 2026-06-25)
+- [ai-tutor] fix: Return the student/TA course list without a 500 — restore the missing `getEduAiCookieForRequest` import and probe TA enrollments with `count()` (CourseEnrollment has a composite key and no `id`) in `GET /api/courses`. (#745, @Ayyhab, 2026-06-25)
 - [core] fix: Unblock student-ID onboarding before any Canvas sync — `linkCanvasRoster` no longer 404s when no instructor has synced the course; it saves the student number (still rejecting duplicates) and links zero enrollments, and the later sync's `linkEnrollmentsFromStagingForCourse` enrolls the student by `studentId` once staging rows exist. (#732, @GlowyBlack, 2026-06-22)
 
 
