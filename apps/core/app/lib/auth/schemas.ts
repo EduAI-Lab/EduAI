@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { UnitSchema } from "~/lib/units";
 
 export const signInSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
@@ -68,9 +67,9 @@ export const updateUserSchema = z.object({
   role: z.enum(["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "STUDENT"]).optional(),
   isActive: z.boolean().optional(),
   emailVerified: z.boolean().optional(),
-  // #297: unit scoping for UNIT_ADMIN targets; values validated against the
-  // canonical subject codes (§19).
-  authorizedUnits: z.array(UnitSchema).optional(),
+  // #297: unit scoping for UNIT_ADMIN targets; code existence is validated
+  // server-side against the Discipline table (§19/§541).
+  authorizedUnits: z.array(z.string()).optional(),
   studentId: z
     .union([
       z.string().min(1).max(32).transform((value) => value.trim()),

@@ -3,6 +3,7 @@ import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import { requireInviter } from "~/lib/auth/guards.server";
 import { createInvitationSchema, invitableRolesFor } from "~/lib/invitations/schemas";
 import { createInvitation, listInvitations } from "~/lib/invitations/service.server";
+import { areValidDisciplineCodes } from "~/lib/disciplines/server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 
@@ -54,6 +55,14 @@ export async function action({ request }: ActionFunctionArgs) {
   // Restrict which roles this actor may issue an invitation for.
   if (!invitableRolesFor(user.role).includes(result.data.role)) {
     return json({ error: "FORBIDDEN_ROLE" }, 403);
+  }
+
+  // §541: authorizedUnits codes must exist in the Discipline table.
+  if (
+    result.data.authorizedUnits &&
+    !(await areValidDisciplineCodes(result.data.authorizedUnits))
+  ) {
+    return json({ error: "UNKNOWN_UNIT" }, 400);
   }
 
   const created = await createInvitation(result.data, {

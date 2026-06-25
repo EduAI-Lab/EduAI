@@ -12,7 +12,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
   Textarea,
 } from '@eduai/ui'
-import { UNIT_OPTIONS, getDepartmentLabel } from '~/lib/units'
+import { useDisciplines } from '~/hooks/api/use-disciplines'
 import { DepartmentCombobox } from '~/components/courses/department-combobox'
 import type { Course, CreateCourseInput, UpdateCourseInput } from '~/hooks/api/use-courses'
 import { usePolicies } from '~/hooks/api/use-policies'
@@ -33,16 +33,13 @@ interface Props {
   onPublishToggle: (id: string, publish: boolean) => Promise<void>
 }
 
-// Only show department options that are both canonical and in the user's authorized units
-function useAuthorizedDepts(authorizedUnits: string[]) {
-  return UNIT_OPTIONS.filter((d) => authorizedUnits.includes(d.code))
-}
-
 export function CoursesUnitAdminView({ courses, authorizedUnits, instructors = [], onCreateCourse, onEditCourse, onDeleteCourse, onPublishToggle }: Props) {
   const [createOpen, setCreateOpen] = useState(false)
   const [editingCourse, setEditingCourse] = useState<Course | null>(null)
   const [deletingCourse, setDeletingCourse] = useState<Course | null>(null)
-  const authorizedDepts = useAuthorizedDepts(authorizedUnits)
+  const { options: departmentOptions, getLabel: getDepartmentLabel, loading: deptLoading } = useDisciplines()
+  // Only show departments that are in the user's authorized units.
+  const authorizedDepts = departmentOptions.filter((d) => authorizedUnits.includes(d.code))
   const { policies } = usePolicies()
   // §2 gate: hide the delete control when unitAdmins.canDeleteCourses is off
   // (mirrors the deleteCourse 403). Default true preserves today's behavior.
@@ -55,6 +52,14 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, instructors = [
   useEffect(() => {
     setEditDept(editingCourse?.department ?? '')
   }, [editingCourse])
+
+  // Default the create-form department to the first authorized unit once the
+  // disciplines list has loaded (the list is fetched async, §541).
+  useEffect(() => {
+    if (!selectedDept && authorizedDepts.length > 0) {
+      setSelectedDept(authorizedDepts[0].code)
+    }
+  }, [authorizedDepts, selectedDept])
 
   // Safety cleanup: if the Radix DropdownMenu→Dialog lifecycle race left
   // pointer-events:none on <body>, clear it once the dialog is fully closed.

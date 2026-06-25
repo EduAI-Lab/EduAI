@@ -1,9 +1,9 @@
 import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { hashPassword } from 'better-auth/crypto';
 import { clearStudentIdStorage, prepareStudentIdStorage } from '../app/lib/canvas/student-id.server';
-import { UNITS } from '../app/lib/units';
 
 export const prisma = new PrismaClient();
 
@@ -1042,6 +1042,30 @@ async function seedPasswords() {
   }
 }
 
+/**
+ * Seed the UBCO discipline registry from prisma/data/disciplines.csv (the
+ * Workday export, §541). Idempotent upsert by code. Must run before seedCourses
+ * since courses.department is a FK into disciplines.code.
+ */
+async function seedDisciplines(): Promise<number> {
+  const csvPath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'data', 'disciplines.csv');
+  const lines = readFileSync(csvPath, 'utf8').trim().split('\n').slice(1); // drop header
+  for (const line of lines) {
+    const parts = line.split(',');
+    if (parts.length < 4) continue;
+    const id = parts[0];
+    const code = parts[1];
+    const createdAt = parts[parts.length - 1];
+    const name = parts.slice(2, -1).join(','); // tolerate commas in name
+    await prisma.discipline.upsert({
+      where: { code },
+      update: { name },
+      create: { id, code, name, createdAt: new Date(createdAt) },
+    });
+  }
+  return lines.length;
+}
+
 async function seedCourses() {
   for (const course of COURSES) {
     await prisma.course.upsert({
@@ -1476,7 +1500,10 @@ async function seedMaterials() {
 }
 
 async function main() {
-  console.log(`Seeding Core (units registry: ${UNITS.length} subjects)...`);
+  console.log('Seeding Core...');
+
+  const disciplineCount = await seedDisciplines();
+  console.log(`  ${disciplineCount} disciplines seeded (Workday units registry)`);
 
   await seedAIProvidersAndModels();
   console.log('  AI providers and models seeded');

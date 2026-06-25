@@ -94,6 +94,20 @@ model Verification {
   @@map("verification")
 }
 
+/// UBCO subject codes ("units" / "disciplines") pulled from Workday. Source of
+/// truth for course `department` validation and the discipline search endpoint.
+/// Seeded from prisma/data/disciplines.csv.
+model Discipline {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  createdAt DateTime @default(now())
+  courses   Course[] @relation("CourseDiscipline")
+
+  @@index([name])
+  @@map("disciplines")
+}
+
 model Course {
   id                     String               @id @default(cuid())
   code                   String
@@ -111,6 +125,7 @@ model Course {
   externalSource         String?
   lastSyncedAt           DateTime?
   department             String?
+  discipline             Discipline?          @relation("CourseDiscipline", fields: [department], references: [code], onDelete: Restrict, onUpdate: Cascade)
   deletedAt              DateTime?
   createdAt              DateTime             @default(now())
   updatedAt              DateTime             @updatedAt
