@@ -34,13 +34,10 @@ vi.mock('@eduai/ui', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@eduai/ui')>();
   return {
     ...actual,
+    BugReportDialog: () => null,
     useTheme: () => ({ resolvedTheme: 'light', setTheme: vi.fn() }),
   };
 });
-
-vi.mock('~/components/bug-report/BugReportDialog', () => ({
-  BugReportDialog: () => null,
-}));
 
 async function renderHeader(path: string, user: AuthUser) {
   const Wrapper = ({ children }: { children: ReactNode }) => (

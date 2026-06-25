@@ -138,7 +138,7 @@ export function BugReportsAdminView({
               heading="Bug reports"
               subheading={
                 <>
-                  Triage platform bug reports (ADMIN only, §11).
+                  Triage platform bug reports.
                 </>
               }
             />

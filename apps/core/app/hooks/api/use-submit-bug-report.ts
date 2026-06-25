@@ -44,6 +44,5 @@ export function useSubmitBugReport() {
     submitBugReport,
     isSubmitting,
     error,
-    isStubbed: false,
   };
 }

@@ -137,7 +137,7 @@ flowchart LR
 
 ### 10) Bug reporting and admin triage
 - UI:
-  - Floating report button and modal from `contexts/BugReportContext.tsx` + `components/bug-report/BugReportDialog.tsx`.
+  - Floating report button and modal from `contexts/BugReportContext.tsx` (uses `BugReportDialog` from `@eduai/ui`).
   - Admin review page `pages/BugReportsAdminPage.tsx`.
 - Backend:
   - `routes/bugReports.js` -> `services/bugReportService.js`.

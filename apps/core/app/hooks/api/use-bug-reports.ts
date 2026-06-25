@@ -78,6 +78,5 @@ export function useBugReports() {
     error,
     refresh,
     updateReportStatus,
-    isStubbed: false,
   };
 }

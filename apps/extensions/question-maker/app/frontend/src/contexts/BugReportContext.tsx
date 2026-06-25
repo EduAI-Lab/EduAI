@@ -1,10 +1,9 @@
-/**
- * Provides bug-report capture and dialog state for the header entry point.
- */
 import React, { createContext, useContext, useState, useMemo, ReactNode } from 'react';
+import { BugReportDialog } from '@eduai/ui';
+import type { BugReportSubmitData } from '@eduai/ui';
 import { useAuth } from './AuthContext';
 import { useBugReportCapture } from '../hooks/useBugReportCapture';
-import { BugReportDialog } from '../components/bug-report/BugReportDialog';
+import { bugReportApi } from '../services/bugReportApi';
 
 type BugReportContextValue = {
   openBugReport: () => void;
@@ -21,11 +20,24 @@ interface BugReportProviderProps {
 }
 
 export function BugReportProvider({ children }: BugReportProviderProps) {
-  const { isAuthenticated, user, isLoading } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
   const [open, setOpen] = useState(false);
 
   const captureEnabled = !isLoading && isAuthenticated;
   const { getCapturedData } = useBugReportCapture(captureEnabled);
+
+  const handleSubmit = async (data: BugReportSubmitData) => {
+    await bugReportApi.submit({
+      description: data.description,
+      bugType: data.bugType,
+      consoleLogs: data.consoleLogs ?? '[]',
+      networkLogs: data.networkLogs ?? '[]',
+      screenshot: data.screenshot ?? null,
+      pageUrl: data.pageUrl ?? window.location.href,
+      userAgent: data.userAgent ?? navigator.userAgent,
+      isAnonymous: data.isAnonymous,
+    });
+  };
 
   const value = useMemo(
     () => ({
@@ -37,12 +49,12 @@ export function BugReportProvider({ children }: BugReportProviderProps) {
   return (
     <BugReportContext.Provider value={value}>
       {children}
-      {captureEnabled && user && (
+      {captureEnabled && (
         <BugReportDialog
           open={open}
-          setOpen={setOpen}
+          onOpenChange={setOpen}
+          onSubmit={handleSubmit}
           getCapturedData={getCapturedData}
-          userEmail={user.email}
         />
       )}
     </BugReportContext.Provider>
