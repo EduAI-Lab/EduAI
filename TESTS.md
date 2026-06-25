@@ -333,7 +333,8 @@ Unit tests for the shared design-system component library (`@eduai/ui`). Run wit
 
 | Test file | What it tests |
 |-----------|---------------|
-| `api.test.ts` | Unauthorized requests redirect to the login page, server errors surface as exceptions, and successful requests return parsed data |
+| `api.test.ts` | Unauthenticated (`401`) requests redirect to the login page; forbidden (`403`) requests throw without redirecting so an already-signed-in user is not bounced into an infinite login loop; server errors surface as exceptions; successful requests return parsed data |
+| `nav.test.ts` | `getNavForUser` labels every role's courses entry "Courses" (student → `/student`, instructor-shell roles → `/instructor`), never emits "My courses"/"Teaching", gives admins only the Bug Reports item (no user-management/enrollments), and returns `[]` for a null user |
 | `BugReportDialog.test.tsx` | The bug report form rejects descriptions that are too short, takes a screenshot on open, and submits diagnostic data including the reporter's anonymous preference |
 | `BugReportProvider.test.tsx` | Page location and diagnostic capture tools are available to any component that needs to file a bug report |
 | `BugReportsTab.test.tsx` | Admins can view, update status, and copy bug reports; anonymous submissions hide reporter identity in the copied output |
