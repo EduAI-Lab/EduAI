@@ -34,7 +34,14 @@ vi.mock("~/lib/auth/guards.server", () => ({
 
 vi.mock("~/lib/auth/course-access.server", () => ({
   resolveCourseAccessWithCourse: vi.fn().mockResolvedValue({
-    course: { id: "course-1", isPublished: true, code: "COSC101" },
+    course: {
+      id: "course-1",
+      code: "COSC101",
+      name: "Test Course",
+      description: null,
+      aiInstructions: null,
+      isPublished: true,
+    },
     access: { level: "student" },
   }),
 }));
@@ -67,6 +74,7 @@ vi.mock("~/lib/prisma.server", () => ({
     chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
     chatMessage: { findMany: vi.fn(), createMany: vi.fn() },
     course: { findFirst: vi.fn() },
+    courseTopic: { findMany: vi.fn() },
     systemConfig: { findUnique: vi.fn() },
   },
 }));
@@ -158,6 +166,10 @@ beforeEach(() => {
   vi.mocked(prisma.chatMessage.findMany).mockResolvedValue([]);
   vi.mocked(prisma.chatMessage.createMany).mockResolvedValue({ count: 1 });
   vi.mocked(prisma.systemConfig.findUnique).mockResolvedValue(null);
+  vi.mocked(prisma.courseTopic.findMany).mockResolvedValue([] as never);
+  vi.mocked(findRelevantContent).mockResolvedValue([
+    { content: "Gradient descent minimizes loss.", similarity: 0.72, materialTitle: "Lecture" },
+  ]);
 });
 
 describe("Smart course RAG gate (#484)", () => {
@@ -219,7 +231,7 @@ describe("Smart course RAG gate (#484)", () => {
       expect(lastStreamConfig().system).toContain("Gradient descent minimizes loss.");
     });
 
-    it("injects empty-material instruction when course-intent query has no hits", async () => {
+    it("allows course-intent queries with no hits via soft scope (#729 v1.1)", async () => {
       vi.mocked(findRelevantContent).mockResolvedValue([]);
       mockStream();
       const res = await action(
@@ -228,8 +240,8 @@ describe("Smart course RAG gate (#484)", () => {
         })),
       );
       expect(res.status).toBe(200);
+      expect(streamText).toHaveBeenCalled();
       expect(lastStreamConfig().system).toContain("did not return relevant excerpts");
-      expect(lastStreamConfig().system).not.toContain("Course grounding rules");
     });
 
     it("does not prefetch when no course is selected", async () => {
@@ -258,7 +270,9 @@ describe("Smart course RAG gate (#484)", () => {
     });
 
     it("caps tool-path maxTokens against model maxTokens", async () => {
-      vi.mocked(findRelevantContent).mockResolvedValue([]);
+      vi.mocked(findRelevantContent).mockResolvedValue([
+        { content: "Notes", similarity: 0.7, materialTitle: "Lecture" },
+      ]);
       mockStream();
       const res = await action(makeRequest(baseBody()));
       expect(res.status).toBe(200);
@@ -268,7 +282,11 @@ describe("Smart course RAG gate (#484)", () => {
     it("preloads only when inject gate passes", async () => {
       vi.mocked(findRelevantContent).mockResolvedValue([]);
       mockStream();
-      const res = await action(makeRequest(baseBody()));
+      const res = await action(
+        makeRequest(baseBody({
+          messages: [{ id: "msg-1", role: "user", content: "hello" }],
+        })),
+      );
       expect(res.status).toBe(200);
       expect(findRelevantContent).toHaveBeenCalled();
       expect(lastStreamConfig().system).not.toContain("Course grounding rules");

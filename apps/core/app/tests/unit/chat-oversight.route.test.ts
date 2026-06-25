@@ -21,6 +21,12 @@ vi.mock("ai", async (importOriginal) => {
   };
 });
 
+vi.mock("~/lib/ai/embedding", () => ({
+  findRelevantContent: vi.fn().mockResolvedValue([
+    { content: "Course material excerpt.", similarity: 0.75, materialTitle: "Lecture" },
+  ]),
+}));
+
 vi.mock("~/lib/ai/adhd-oversight", async (importOriginal) => {
   const actual = await importOriginal<typeof import("~/lib/ai/adhd-oversight")>();
   return {
@@ -41,7 +47,14 @@ vi.mock("~/lib/auth/guards.server", () => ({
 // so the acting student passes the course-access gate.
 vi.mock("~/lib/auth/course-access.server", () => ({
   resolveCourseAccessWithCourse: vi.fn().mockResolvedValue({
-    course: { id: "c1", isPublished: true },
+    course: {
+      id: "c1",
+      code: "COSC 121",
+      name: "Intro",
+      description: null,
+      aiInstructions: null,
+      isPublished: true,
+    },
     access: { level: "student", rank: 0 },
   }),
 }));
@@ -64,6 +77,7 @@ vi.mock("~/lib/prisma.server", () => ({
 	    chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
 	    chatMessage: { findMany: vi.fn(), createMany: vi.fn() },
 	    course: { findFirst: vi.fn() },
+	    courseTopic: { findMany: vi.fn() },
 	    systemConfig: { findUnique: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
 	  },
 	}));
@@ -165,6 +179,7 @@ beforeEach(() => {
 	  vi.mocked(prisma.chatMessage.findMany).mockResolvedValue([]);
 	  vi.mocked(prisma.chatMessage.createMany).mockResolvedValue({ count: 1 });
 	  vi.mocked(prisma.systemConfig.findUnique).mockResolvedValue(null);
+	  vi.mocked(prisma.courseTopic.findMany).mockResolvedValue([] as never);
 	});
 
 afterEach(() => {

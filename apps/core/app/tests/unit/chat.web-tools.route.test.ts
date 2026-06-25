@@ -15,6 +15,10 @@ vi.mock("ai", async (importOriginal) => {
   };
 });
 
+vi.mock("~/lib/ai/embedding", () => ({
+  findRelevantContent: vi.fn().mockResolvedValue([]),
+}));
+
 vi.mock("~/lib/auth/server", () => ({ auth: { api: { getSession: vi.fn() } } }));
 vi.mock("~/lib/auth/course-access.server", () => ({
   resolveCourseAccessWithCourse: vi.fn(),
@@ -37,6 +41,7 @@ vi.mock("~/lib/prisma.server", () => ({
     chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
     chatMessage: { findMany: vi.fn(), createMany: vi.fn() },
     course: { findFirst: vi.fn() },
+    courseTopic: { findMany: vi.fn() },
   },
 }));
 
@@ -92,6 +97,7 @@ beforeEach(() => {
     (async (args: { data?: Record<string, unknown> }) =>
       ({ id: CHAT_ID, userId: "u1", adhdAssist: false, systemPrompt: null, ...(args.data ?? {}) })) as never,
   );
+  vi.mocked(prisma.courseTopic.findMany).mockResolvedValue([] as never);
 });
 
 afterEach(() => {
@@ -108,7 +114,14 @@ describe("chat.webToolsEnabled master switch", () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } } as never);
     // #657: chat is course-scoped — give the instructor a course context.
     vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
-      course: { id: "c1", isPublished: true } as never,
+      course: {
+        id: "c1",
+        code: "COSC 121",
+        name: "Intro",
+        description: null,
+        aiInstructions: null,
+        isPublished: true,
+      } as never,
       access: { level: "instructor", rank: 2 } as never,
     });
     policy({ "chat.webToolsEnabled": false });
@@ -120,7 +133,14 @@ describe("chat.webToolsEnabled master switch", () => {
   it("web tools present for a non-student when the master is on", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } } as never);
     vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
-      course: { id: "c1", isPublished: true } as never,
+      course: {
+        id: "c1",
+        code: "COSC 121",
+        name: "Intro",
+        description: null,
+        aiInstructions: null,
+        isPublished: true,
+      } as never,
       access: { level: "instructor", rank: 2 } as never,
     });
     policy({ "chat.webToolsEnabled": true });
@@ -132,7 +152,14 @@ describe("chat.webToolsEnabled master switch", () => {
   it("web tools absent for a student when the master is off", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "s1", role: "STUDENT" } } as never);
     vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
-      course: { id: "c1", isPublished: true } as never,
+      course: {
+        id: "c1",
+        code: "COSC 121",
+        name: "Intro",
+        description: null,
+        aiInstructions: null,
+        isPublished: true,
+      } as never,
       access: { level: "student", rank: 0 } as never,
     });
     vi.mocked(prisma.chat.findFirst).mockResolvedValue({
@@ -147,7 +174,14 @@ describe("chat.webToolsEnabled master switch", () => {
   it("web tools present for a student when the master is on (students follow the master)", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "s1", role: "STUDENT" } } as never);
     vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
-      course: { id: "c1", isPublished: true } as never,
+      course: {
+        id: "c1",
+        code: "COSC 121",
+        name: "Intro",
+        description: null,
+        aiInstructions: null,
+        isPublished: true,
+      } as never,
       access: { level: "student", rank: 0 } as never,
     });
     vi.mocked(prisma.chat.findFirst).mockResolvedValue({

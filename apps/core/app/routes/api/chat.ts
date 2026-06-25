@@ -45,6 +45,12 @@ import {
   shouldPrefetchCourseRag,
 } from "~/lib/ai/course-rag-policy";
 import {
+  buildCourseScopePromptBlock,
+  buildScopeRefusalMessage,
+  evaluateCourseScope,
+  type CourseScopeContext,
+} from "~/lib/ai/course-scope";
+import {
   buildCappedRagContextText,
   buildEmptyCourseRagBlock,
   buildRagSystemBlock,
@@ -319,6 +325,7 @@ export async function action({ request }: ActionFunctionArgs) {
     // Hoisted so the web-tools gate (below) can read the caller's course access
     // level — null for general (non-course) chats.
     let courseAccess: AccessLevel | null = null;
+    let courseScopeContext: CourseScopeContext | null = null;
     if (effectiveCourseId) {
       const { course, access } = await resolveCourseAccessWithCourse(
         actingUser,
@@ -337,6 +344,19 @@ export async function action({ request }: ActionFunctionArgs) {
         });
       }
       courseAccess = access;
+
+      const topics = await prisma.courseTopic.findMany({
+        where: { courseId: effectiveCourseId, deletedAt: null },
+        select: { name: true },
+        orderBy: { name: "asc" },
+      });
+      courseScopeContext = {
+        code: course.code,
+        name: course.name,
+        description: course.description,
+        aiInstructions: course.aiInstructions,
+        topics: topics.map((topic) => topic.name),
+      };
     }
 
     // Persist any system-prompt change onto the chat loaded above.
@@ -626,6 +646,10 @@ export async function action({ request }: ActionFunctionArgs) {
     const resolvedSystemPrompt =
       trimmedSystemPrompt ?? sanitizeSystemPrompt(chat.systemPrompt) ?? null;
 
+    const courseScopeBlock = courseScopeContext
+      ? buildCourseScopePromptBlock(courseScopeContext)
+      : "";
+
     const defaultCourseSystemPrompt =
       resolvedSystemPrompt ||
       `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
@@ -634,9 +658,7 @@ IMPORTANT: You have access to the full conversation history in the messages arra
 
 ${LATEST_TURN_FOCUS_INSTRUCTION}
 
-${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ""}
-
-Be helpful, conversational, and accurate. Use markdown for formatting.`;
+${courseScopeBlock ? `${courseScopeBlock}\n\n` : courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.\n\n` : ""}Be helpful, conversational, and accurate. Use markdown for formatting.`;
 
     let courseRagHits: HybridRagHit[] = [];
     let courseRagContextText = "";
@@ -669,6 +691,70 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
           hits: [],
         });
       }
+    }
+
+    const scopeEvaluation = evaluateCourseScope({
+      message: userQuestion,
+      hasCourse,
+      hits: courseRagHits,
+      course: courseScopeContext,
+    });
+
+    if (scopeEvaluation.decision === "refuse" && courseScopeContext) {
+      const refusalText = buildScopeRefusalMessage(courseScopeContext);
+      await appendMessages([
+        {
+          id: randomUUID(),
+          role: "assistant",
+          content: refusalText,
+        },
+      ]);
+
+      chatApiDebug("course scope refusal", {
+        scopeDecision: scopeEvaluation.decision,
+        scopeReason: scopeEvaluation.reason,
+        ragChunkCount: courseRagHits.length,
+        ragTopSimilarity: courseRagHits[0]?.similarity ?? null,
+      });
+
+      if (streaming) {
+        const headers: Record<string, string> = {
+          "Content-Encoding": "none",
+          "Transfer-Encoding": "chunked",
+          Connection: "keep-alive",
+          "X-Web-Tools-Enabled": webToolsEnabled ? "1" : "0",
+        };
+        if (chat.id) {
+          headers["X-Chat-Id"] = chat.id;
+        }
+        return createDataStreamResponse({
+          headers,
+          execute: (dataStream) => {
+            dataStream.write(formatDataStreamPart("text", refusalText));
+            dataStream.write(
+              formatDataStreamPart("finish_message", {
+                finishReason: "stop",
+              }),
+            );
+          },
+        });
+      }
+
+      return new Response(
+        JSON.stringify({
+          content: refusalText,
+          model,
+          usage: null,
+          finishReason: "stop",
+          sources: [],
+          courseCode,
+          chatId: chat.id,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
     }
 
     if (!useToolCalling) {
@@ -706,7 +792,7 @@ ${LATEST_TURN_FOCUS_INSTRUCTION}`;
 
       let toolSystemPrompt = buildToolCallingSystemPrompt({
         basePrompt: baseSystemPrompt,
-        courseCode: courseCode ?? undefined,
+        courseScopeBlock: courseScopeBlock || undefined,
         webToolsEnabled,
         hasPreloadedRag: Boolean(courseRagContextText),
       });
@@ -794,6 +880,8 @@ ${buildEmptyCourseRagBlock()}`;
       model,
       courseRagNeeded,
       courseRagInject,
+      scopeDecision: scopeEvaluation.decision,
+      scopeReason: scopeEvaluation.reason,
       ragTopSimilarity: courseRagHits[0]?.similarity ?? null,
       ragChunkCount: courseRagHits.length,
       webToolsEnabled,

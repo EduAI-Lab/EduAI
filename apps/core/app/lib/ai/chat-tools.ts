@@ -57,13 +57,11 @@ export function getChatToolNames(registry: ChatToolRegistry): string[] {
 
 export function buildToolCallingSystemPrompt(options: {
   basePrompt: string;
-  courseCode?: string;
+  courseScopeBlock?: string;
   webToolsEnabled: boolean;
   hasPreloadedRag: boolean;
 }): string {
-  const courseLine = options.courseCode
-    ? `Current course context: ${options.courseCode} (UBCO). Do not ask the user for the course code if it's provided.`
-    : "";
+  const courseBlock = options.courseScopeBlock?.trim() ?? "";
 
   const ragLine = options.hasPreloadedRag
     ? "Course excerpts are already included in this system message. Use getInformation only if those excerpts are insufficient."
@@ -73,7 +71,7 @@ export function buildToolCallingSystemPrompt(options: {
     ? `- webSearch: searches the web for current information, reviews, discussions, news, etc.
 - fetchPage: opens a URL and returns the main page content as markdown for deeper reading.
 
-When the user asks for reviews, opinions, recent updates, or external information, call webSearch after checking course materials. After webSearch, call fetchPage on promising sources before answering.`
+Use webSearch only for course-adjacent queries (syllabus, professor, course logistics, assignment logistics). Do not use web tools for unrelated topics. When the user asks for reviews or external information about this course, call webSearch after checking course materials. After webSearch, call fetchPage on promising sources before answering.`
     : "";
 
   const webCitation = options.webToolsEnabled
@@ -87,9 +85,9 @@ ${webLines ? `\n${webLines}` : ""}
 
 When answering questions:
 1. ${ragLine}
-${options.webToolsEnabled ? "2. Use web tools only when the question clearly needs external or up-to-date information.\n3. You may call tools multiple times in sequence if needed.\n4. Cite course material titles for RAG results.${webCitation}" : "2. You may call getInformation multiple times if needed.\n3. Cite course material titles for RAG results."}
+${options.webToolsEnabled ? "2. Use web tools only for course-adjacent external information.\n3. You may call tools multiple times in sequence if needed.\n4. Cite course material titles for RAG results.${webCitation}" : "2. You may call getInformation multiple times if needed.\n3. Cite course material titles for RAG results."}
 
-${courseLine}
+${courseBlock}
 
 Be helpful, conversational, and accurate. Use markdown for formatting.`.trim();
 }
