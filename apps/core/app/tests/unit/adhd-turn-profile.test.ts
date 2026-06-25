@@ -76,6 +76,36 @@ describe("resolveAdhdTurnProfile", () => {
     ).toBe("full_tutoring");
   });
 
+  it("does not classify acknowledgement-prefixed questions as confirmation", () => {
+    expect(
+      resolveAdhdTurnProfile({
+        userText: "Great, what is gradient descent?",
+        priorAssistantText: PRIOR_TUTOR,
+      }),
+    ).toBe("full_tutoring");
+    expect(
+      resolveAdhdTurnProfile({
+        userText: "Okay, how does photosynthesis work?",
+        priorAssistantText: PRIOR_TUTOR,
+      }),
+    ).toBe("full_tutoring");
+    expect(
+      resolveAdhdTurnProfile({
+        userText: "Sure, explain step 2",
+        priorAssistantText: PRIOR_TUTOR,
+      }),
+    ).toBe("full_tutoring");
+  });
+
+  it("still classifies bare acknowledgements as confirmation", () => {
+    expect(
+      resolveAdhdTurnProfile({ userText: "Great, thanks!", priorAssistantText: PRIOR_TUTOR }),
+    ).toBe("confirmation");
+    expect(
+      resolveAdhdTurnProfile({ userText: "sounds good", priorAssistantText: PRIOR_TUTOR }),
+    ).toBe("confirmation");
+  });
+
   it("classifies short non-affirmation turns as brief clarification", () => {
     expect(resolveAdhdTurnProfile({ userText: "ok" })).toBe("brief_clarification");
   });
