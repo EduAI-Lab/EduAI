@@ -9,7 +9,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
-- [core, ai-tutor, question-maker] feat: Bug report type dropdown — users can now categorize their report as UI/Display, Feature Not Working, Performance, Content Error, Access/Permission, or Other; stored as `BugReportType` enum in Core's DB and surfaced as a column in all three admin triage views. (#503, @evanbones, 2026-06-24)
+- [core, ai-tutor, question-maker] feat: Bug report type dropdown — users can now categorize their report as UI/Display, Feature Not Working, Performance, Content Error, Access/Permission, or Other; stored as `BugReportType` enum in Core's DB and surfaced as a column in all three admin triage views. (#503, @evanbones, 2026-06-24) — [#770](https://github.com/EduAI-Lab/EduAI/pull/770)
 - [core] feat: Add UBC chatbot disclaimer banner and full terms dialog on `/chat`. (#575, @superbolt08, 2026-06-23) — [#753](https://github.com/EduAI-Lab/EduAI/pull/753)
 
 ### Fixed
