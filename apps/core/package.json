@@ -24,7 +24,9 @@
     "bench:chat": "node ./scripts/chat-latency-bench.mjs",
     "vllm:smoke": "node ./scripts/vllm-smoke.mjs",
     "test:embedding": "tsx scripts/test-embedding.ts",
-    "re-embed:course": "tsx scripts/re-embed-course.ts"
+    "re-embed:course": "tsx scripts/re-embed-course.ts",
+    "eval:rag:seed": "tsx scripts/eval-rag-seed.ts",
+    "eval:rag": "tsx scripts/eval-rag.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^1.2.22",
