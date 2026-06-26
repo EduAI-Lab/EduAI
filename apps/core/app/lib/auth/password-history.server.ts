@@ -5,10 +5,8 @@ export const PASSWORD_HISTORY_LIMIT = 10;
 type VerifyFn = (data: { password: string; hash: string }) => Promise<boolean>;
 
 /**
- * Returns true if `candidate` matches any of the user's last
- * PASSWORD_HISTORY_LIMIT stored hashes OR their current credential password.
- * Uses the injected `verify` so the caller controls the hash algorithm
- * (typically `ctx.context.password.verify` from better-auth).
+ * Returns whether a password matches the user's current password or recent
+ * password history.
  */
 export async function isPasswordReused({
   userId,
@@ -49,8 +47,7 @@ export async function isPasswordReused({
 }
 
 /**
- * Appends the new hash to the user's password history and prunes any rows
- * beyond PASSWORD_HISTORY_LIMIT, keeping only the most recent ones.
+ * Stores a password hash and trims password history to the configured limit.
  */
 export async function recordPasswordHistory({
   userId,
@@ -59,17 +56,18 @@ export async function recordPasswordHistory({
   userId: string;
   passwordHash: string;
 }): Promise<void> {
-  await prisma.passwordHistory.create({ data: { userId, passwordHash } });
+  await prisma.$transaction(async (tx) => {
+    await tx.passwordHistory.create({ data: { userId, passwordHash } });
 
-  // Count existing rows; delete oldest if over the limit
-  const rows = await prisma.passwordHistory.findMany({
-    where: { userId },
-    orderBy: { createdAt: "desc" },
-    select: { id: true },
+    const rows = await tx.passwordHistory.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+      select: { id: true },
+    });
+
+    if (rows.length > PASSWORD_HISTORY_LIMIT) {
+      const toDelete = rows.slice(PASSWORD_HISTORY_LIMIT).map((r) => r.id);
+      await tx.passwordHistory.deleteMany({ where: { id: { in: toDelete } } });
+    }
   });
-
-  if (rows.length > PASSWORD_HISTORY_LIMIT) {
-    const toDelete = rows.slice(PASSWORD_HISTORY_LIMIT).map((r) => r.id);
-    await prisma.passwordHistory.deleteMany({ where: { id: { in: toDelete } } });
-  }
 }

@@ -15,10 +15,13 @@ import {
   PASSWORD_EXPIRY_DAYS,
   isPasswordExpired,
   getPasswordChangedAt,
+  getExpiredPasswordRedirect,
+  invalidatePasswordExpiryCache,
 } from "~/lib/auth/password-expiry.server";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  invalidatePasswordExpiryCache();
 });
 
 describe("isPasswordExpired", () => {
@@ -74,5 +77,51 @@ describe("getPasswordChangedAt", () => {
       passwordChangedAt: date,
     } as never);
     expect(await getPasswordChangedAt("user-1")).toEqual(date);
+  });
+});
+
+describe("getExpiredPasswordRedirect", () => {
+  it("returns null when the password is not expired", async () => {
+    vi.mocked(prisma.account.findFirst).mockResolvedValue({
+      passwordChangedAt: new Date(),
+    } as never);
+
+    expect(await getExpiredPasswordRedirect("user-1")).toBeNull();
+    expect(prisma.account.findFirst).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns a redirect when the password is expired", async () => {
+    const old = new Date();
+    old.setFullYear(old.getFullYear() - 2);
+    vi.mocked(prisma.account.findFirst).mockResolvedValue({
+      passwordChangedAt: old,
+    } as never);
+
+    const res = await getExpiredPasswordRedirect("user-1");
+    expect(res?.status).toBe(302);
+    expect(res?.headers.get("Location")).toBe("/settings?expired=1");
+  });
+
+  it("serves cached expiry state without a second DB lookup", async () => {
+    vi.mocked(prisma.account.findFirst).mockResolvedValue({
+      passwordChangedAt: new Date(),
+    } as never);
+
+    await getExpiredPasswordRedirect("user-1");
+    await getExpiredPasswordRedirect("user-1");
+
+    expect(prisma.account.findFirst).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-queries after the cache is invalidated", async () => {
+    vi.mocked(prisma.account.findFirst).mockResolvedValue({
+      passwordChangedAt: new Date(),
+    } as never);
+
+    await getExpiredPasswordRedirect("user-1");
+    invalidatePasswordExpiryCache("user-1");
+    await getExpiredPasswordRedirect("user-1");
+
+    expect(prisma.account.findFirst).toHaveBeenCalledTimes(2);
   });
 });

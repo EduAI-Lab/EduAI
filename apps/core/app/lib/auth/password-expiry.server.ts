@@ -2,11 +2,21 @@ import prisma from "~/lib/prisma.server";
 
 export const PASSWORD_EXPIRY_DAYS = 365;
 
+/** Per-user expiry lookup cache — same short-TTL pattern as `getPolicies()`. */
+const expiryCache = new Map<string, { expired: boolean; expiresAt: number }>();
+const CACHE_TTL_MS = 60_000;
+
+/** Clears cached expiry state (e.g. after a password change). */
+export function invalidatePasswordExpiryCache(userId?: string): void {
+  if (userId) {
+    expiryCache.delete(userId);
+  } else {
+    expiryCache.clear();
+  }
+}
+
 /**
- * Returns true when the password is overdue for a change per the UBC annual
- * rotation policy (#339). Null means the timestamp was never recorded
- * (accounts predating the policy) — those are not considered expired so
- * existing users are not immediately locked out.
+ * Returns whether a password has expired.
  */
 export function isPasswordExpired(passwordChangedAt: Date | null): boolean {
   if (!passwordChangedAt) return false;
@@ -16,9 +26,7 @@ export function isPasswordExpired(passwordChangedAt: Date | null): boolean {
 }
 
 /**
- * Loads the `passwordChangedAt` timestamp from the user's credential account.
- * Returns null if the user has no credential account or if it has never been
- * set (pre-policy accounts).
+ * Returns the password change timestamp for a user's credential account.
  */
 export async function getPasswordChangedAt(userId: string): Promise<Date | null> {
   const account = await prisma.account.findFirst({
@@ -29,16 +37,28 @@ export async function getPasswordChangedAt(userId: string): Promise<Date | null>
 }
 
 /**
- * Returns a redirect Response to `redirectTo` when the user's password has
- * expired, otherwise returns null. Route loaders call this after resolving
- * the session to gate access to the rest of the app.
+ * Returns a redirect response if the user's password has expired.
  */
 export async function getExpiredPasswordRedirect(
   userId: string,
   redirectTo = "/settings?expired=1",
 ): Promise<Response | null> {
+  const now = Date.now();
+  const hit = expiryCache.get(userId);
+  if (hit && now < hit.expiresAt) {
+    return hit.expired
+      ? new Response(null, {
+          status: 302,
+          headers: { Location: redirectTo },
+        })
+      : null;
+  }
+
   const changedAt = await getPasswordChangedAt(userId);
-  if (!isPasswordExpired(changedAt)) return null;
+  const expired = isPasswordExpired(changedAt);
+  expiryCache.set(userId, { expired, expiresAt: now + CACHE_TTL_MS });
+
+  if (!expired) return null;
   return new Response(null, {
     status: 302,
     headers: { Location: redirectTo },
