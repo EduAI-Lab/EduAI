@@ -16,7 +16,7 @@ import {
   CHAT_MESSAGE_INACTIVE_CLASS,
   type MessageHighlightRole,
 } from "~/components/assistive/active-highlight";
-import { isWebChatToolName } from "~/lib/ai/web-tool-ui";
+import { getChatToolDisplayName, isWebChatToolName } from "~/lib/ai/web-tool-ui";
 import { cn } from "~/lib/utils";
 
 export interface ChatMessageProps {
@@ -182,7 +182,14 @@ export function ChatMessage({
               <Tool
                 key={`tool-${toolPart.toolCallId || index}`}
                 toolPart={toolPart}
-                defaultOpen={toolPart.state === "input-streaming"}
+                displayName={getChatToolDisplayName(toolPart.type, webToolsEnabled) ?? toolPart.type}
+                defaultOpen={
+                  toolPart.state === "input-streaming" ||
+                  (toolPart.state === "output-available" &&
+                    (toolPart.output?.mutation === true ||
+                      toolPart.output?.writeSucceeded === false ||
+                      Boolean(toolPart.output?.error)))
+                }
               />
             );
           })}
