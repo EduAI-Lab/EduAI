@@ -30,6 +30,7 @@ import {
   buildOverseenAssistantMessagesToPersist,
   emptyOversightAuditResult,
   isAdhdOversightEnabled,
+  type OversightMethod,
 } from "~/lib/ai/adhd-oversight";
 import { resolveAdhdResponseWordCap, isProfileStructuralPass, computeAdhdResponseMetrics } from "~/lib/ai/adhd-metrics";
 import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
@@ -783,7 +784,7 @@ ${buildEmptyCourseRagBlock()}`;
         promptTokens?: number;
         completionTokens?: number;
         oversightRewritten?: boolean;
-        oversightMethod?: "none" | "deterministic" | "llm" | "llm_failed";
+        oversightMethod?: OversightMethod;
         preStructuralPass?: boolean;
         oversightDurationMs?: number;
         oversightPromptTokens?: number;
