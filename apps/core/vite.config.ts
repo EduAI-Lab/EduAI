@@ -32,9 +32,7 @@ export default defineConfig(({ mode }) => {
       dedupe: ["react", "react-dom", "better-auth"],
     },
     // Force React to be pre-bundled at startup so Vite never discovers it lazily during
-    // a first client-side navigation. Without this, a mid-flight chunk version mismatch
-    // leaves ReactCurrentDispatcher.current null → "Cannot read properties of null
-    // (reading 'useContext')" crash on the login page.
+    // a first client-side navigation.
     optimizeDeps: {
       include: ["react", "react-dom", "react-dom/client"],
     },
