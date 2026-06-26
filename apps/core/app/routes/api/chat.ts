@@ -326,8 +326,14 @@ export async function action({ request }: ActionFunctionArgs) {
       courseAccess = access;
     }
 
+    // Service-key (server-to-server) callers — e.g. the Question Maker proxy —
+    // are stateless and have no real User row, so persisting a Chat would violate
+    // chats_userId_fkey (P2003). Skip all chat/message persistence for them and
+    // run the model against the incoming messages only.
+    const ephemeral = isServiceKeyCaller;
+
     // Persist any system-prompt change onto the chat loaded above.
-    if (hasSystemPromptField) {
+    if (hasSystemPromptField && !ephemeral) {
       if (chat) {
         if (chat.systemPrompt !== trimmedSystemPrompt) {
           chat = await prisma.chat.update({
@@ -349,14 +355,14 @@ export async function action({ request }: ActionFunctionArgs) {
 
     // Backfill course context onto an existing chat that was created before a
     // course was selected (e.g. user picked the course mid-conversation).
-    if (chat && effectiveCourseId && chat.courseId !== effectiveCourseId && !chat.courseId) {
+    if (!ephemeral && chat && effectiveCourseId && chat.courseId !== effectiveCourseId && !chat.courseId) {
       chat = await prisma.chat.update({
         where: { id: chat.id },
         data: { courseId: effectiveCourseId },
       });
     }
 
-    if (hasAdhdAssistField && chat && chat.adhdAssist !== adhdAssist) {
+    if (!ephemeral && hasAdhdAssistField && chat && chat.adhdAssist !== adhdAssist) {
       chat = await prisma.chat.update({
         where: { id: chat.id },
         data: { adhdAssist },
@@ -379,7 +385,7 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    if (!chat && shouldCreateChat) {
+    if (!chat && shouldCreateChat && !ephemeral) {
       chat = await prisma.chat.create({
         data: {
           userId: actingUser.id,
@@ -388,6 +394,18 @@ export async function action({ request }: ActionFunctionArgs) {
           adhdAssist,
         },
       });
+    }
+
+    // Stateless callers get an in-memory chat stub (id: null) so downstream code
+    // can read systemPrompt/adhdAssist without persisting anything.
+    if (ephemeral && !chat) {
+      chat = {
+        id: null,
+        userId: actingUser.id,
+        courseId: effectiveCourseId,
+        systemPrompt: trimmedSystemPrompt,
+        adhdAssist,
+      } as unknown as NonNullable<typeof chat>;
     }
 
     if (process.env.CHAT_API_DEBUG === "1") {
@@ -401,13 +419,17 @@ export async function action({ request }: ActionFunctionArgs) {
       });
     }
 
-    // Fetch only the slice of history we plan to send back to the LLM.
+    // Fetch only the slice of history we plan to send back to the LLM. Stateless
+    // callers have no persisted history (and a null chat id), so skip the query.
     const maxContextMessages = resolveMaxContextMessages();
-    const recentMessageRecords = await prisma.chatMessage.findMany({
-      where: { chatId: chat.id },
-      orderBy: { position: "desc" },
-      take: maxContextMessages,
-    });
+    const recentMessageRecords =
+      ephemeral || !chat.id
+        ? []
+        : await prisma.chatMessage.findMany({
+            where: { chatId: chat.id },
+            orderBy: { position: "desc" },
+            take: maxContextMessages,
+          });
 
     const storedMessages = recentMessageRecords.reverse().map((record) =>
       reviveStoredMessage({
@@ -518,6 +540,8 @@ export async function action({ request }: ActionFunctionArgs) {
 
     const existingMessageIds = new Set(storedMessages.map((message) => message.id).filter(isNonEmptyString));
     const appendMessages = async (messages: GenericMessage[]) => {
+      // Stateless callers never persist messages (no chat row / no real user).
+      if (ephemeral || !chat?.id) return;
       if (!messages.length) return;
 
       const rows: Prisma.ChatMessageCreateManyInput[] = [];
