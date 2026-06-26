@@ -42,6 +42,7 @@ import { getUserPreference, saveUserPreference } from "~/lib/user-preferences.se
 import { getAccessibleCourseCodes } from "~/lib/courses/server";
 import { parsePreferenceUpdates } from "~/lib/user-preferences";
 import { postAssistiveClientEvent } from "~/lib/assistive-events.client";
+import { logChatApiResponse, logChatUseChatError } from "~/lib/chat-client-log";
 
 /**
  * Per-tab marker for the chat the user is actively in. Lives in sessionStorage
@@ -233,6 +234,7 @@ export default function Chat() {
   }, [chatId, systemPrompt, setAssistive]);
 
   const requestMetadata = {
+    chatMode: "learning" as const,
     model: selectedModel,
     apiKeys: getValidApiKeys(),
     courseCode: selectedCourseCode || undefined,
@@ -255,9 +257,11 @@ export default function Chat() {
       // sendExtraMessageFields) so dedup + latest-turn-only both hold.
       experimental_prepareRequestBody: ({ messages, requestBody }) => ({
         ...(requestBody ?? requestMetadata),
+        chatMode: "learning",
         messages: messages.slice(-1),
       }),
       onResponse: async (response) => {
+        await logChatApiResponse(response, "learning-chat");
         const chatIdHeader = response.headers.get("X-Chat-Id");
         if (chatIdHeader && !chatId) {
           setChatId(chatIdHeader);
@@ -267,6 +271,7 @@ export default function Chat() {
           setWebToolsEnabled(webToolsHeader === "1");
         }
       },
+      onError: (error) => logChatUseChatError(error, "learning-chat"),
     });
 
   const onSubmit = useCallback(
@@ -395,6 +400,7 @@ export default function Chat() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          chatMode: "learning",
           chatId: chatId || undefined,
           systemPrompt: prompt,
           messages: messages.length > 0 ? messages : [],

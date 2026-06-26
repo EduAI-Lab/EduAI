@@ -35,11 +35,13 @@ export interface ModelFormDialogProps {
   fetchingOllamaModels?: boolean;
   ollamaError?: string | null;
   onFetchOllamaModels?: () => void;
+  ollamaFetched?: boolean;
   vllmModels?: VllmModel[];
   fetchingVllmModels?: boolean;
   vllmError?: string | null;
   onFetchVllmModels?: () => void;
   vllmFetched?: boolean;
+  syncMessage?: string | null;
 }
 
 export function ModelFormDialog({
@@ -52,11 +54,13 @@ export function ModelFormDialog({
   fetchingOllamaModels = false,
   ollamaError = null,
   onFetchOllamaModels,
+  ollamaFetched = false,
   vllmModels = [],
   fetchingVllmModels = false,
   vllmError = null,
   onFetchVllmModels,
   vllmFetched = false,
+  syncMessage = null,
 }: ModelFormDialogProps) {
   const [formData, setFormData] = useState<{
     modelId: string;
@@ -145,6 +149,20 @@ export function ModelFormDialog({
     fetchingVllmModels,
     vllmModels.length,
     vllmFetched,
+  ]);
+
+  useEffect(() => {
+    if (!open || !isOllamaProvider || !onFetchOllamaModels || ollamaFetched) return;
+    if (fetchingOllamaModels || ollamaModels.length > 0) return;
+    onFetchOllamaModels();
+  }, [
+    open,
+    isOllamaProvider,
+    formData.providerId,
+    onFetchOllamaModels,
+    fetchingOllamaModels,
+    ollamaModels.length,
+    ollamaFetched,
   ]);
 
   const handleOllamaModelSelect = (modelName: string) => {
@@ -257,8 +275,8 @@ export function ModelFormDialog({
 
           {isOllamaProvider && (
             <div className="space-y-4 p-4 border rounded-lg bg-muted/50">
-              <div className="flex items-center justify-between">
-                <Label>Available Ollama Models</Label>
+              <div className="flex items-center justify-between gap-2">
+                <Label>Ollama models</Label>
                 <Button
                   type="button"
                   variant="outline"
@@ -269,13 +287,24 @@ export function ModelFormDialog({
                   {fetchingOllamaModels ? (
                     <>
                       <Loader className="w-4 h-4 mr-2" />
-                      Fetching...
+                      Syncing...
                     </>
                   ) : (
-                    "Fetch Models"
+                    "Sync models"
                   )}
                 </Button>
               </div>
+
+              <p className="text-xs text-muted-foreground">
+                Discovered models are registered automatically in AI Management. Use the dropdown
+                below only if you want to pre-fill this form for a single model.
+              </p>
+
+              {syncMessage && (
+                <Alert>
+                  <AlertDescription>{syncMessage}</AlertDescription>
+                </Alert>
+              )}
 
               {ollamaError && (
                 <Alert variant="destructive">
@@ -311,7 +340,7 @@ export function ModelFormDialog({
           {isVllmProvider && (
             <div className="space-y-4 p-4 border rounded-lg bg-muted/50">
               <div className="flex items-center justify-between gap-2">
-                <Label>Available vLLM Models</Label>
+                <Label>vLLM models</Label>
                 <Button
                   type="button"
                   variant="outline"
@@ -322,18 +351,17 @@ export function ModelFormDialog({
                   {fetchingVllmModels ? (
                     <>
                       <Loader className="w-4 h-4 mr-2" />
-                      Fetching...
+                      Syncing...
                     </>
                   ) : (
-                    "Refresh list"
+                    "Sync models"
                   )}
                 </Button>
               </div>
 
               <p className="text-xs text-muted-foreground">
-                Loaded from server <code className="text-xs">VLLM_BASE_URL</code> (LiteLLM proxy on
-                cmps01, port 8001). If fetch fails, ask ops to check{" "}
-                <code className="text-xs">infra/cmps01</code> — not a URL you enter here.
+                Loaded from server <code className="text-xs">VLLM_BASE_URL</code> and registered
+                automatically. Pick a model below only to pre-fill this form.
               </p>
               {!model && (
                 <Alert>
@@ -346,6 +374,12 @@ export function ModelFormDialog({
                 </Alert>
               )}
 
+              {syncMessage && (
+                <Alert>
+                  <AlertDescription>{syncMessage}</AlertDescription>
+                </Alert>
+              )}
+
               {vllmError && (
                 <Alert variant="destructive">
                   <AlertDescription>{vllmError}</AlertDescription>
@@ -353,7 +387,7 @@ export function ModelFormDialog({
               )}
 
               {fetchingVllmModels && (
-                <p className="text-sm text-muted-foreground">Loading models from vLLM proxy…</p>
+                <p className="text-sm text-muted-foreground">Syncing models from vLLM proxy…</p>
               )}
 
               {vllmFetched && !fetchingVllmModels && !vllmError && vllmModels.length === 0 && (
@@ -377,9 +411,9 @@ export function ModelFormDialog({
                     <SelectValue
                       placeholder={
                         fetchingVllmModels
-                          ? "Loading…"
+                          ? "Syncing…"
                           : vllmModels.length === 0
-                            ? "Refresh list first"
+                            ? "Sync models first"
                             : "Choose a vLLM model"
                       }
                     />

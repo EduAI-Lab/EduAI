@@ -38,66 +38,6 @@ function readBalancedBraces(text: string, openIndex: number): number {
   return text.length - 1;
 }
 
-function readLeftRightGroup(text: string, start: number): number {
-  const openMatch = text.slice(start).match(/^\\left([\(\[\{])/);
-  if (!openMatch) return start;
-  const open = openMatch[1];
-  const close = open === "(" ? ")" : open === "[" ? "]" : "}";
-  let i = start + openMatch[0].length;
-  let depth = 1;
-
-  while (i < text.length && depth > 0) {
-    const rest = text.slice(i);
-    const nestedLeft = rest.match(/^\\left[\(\[\{]/);
-    if (nestedLeft) {
-      depth++;
-      i += nestedLeft[0].length;
-      continue;
-    }
-    const right = rest.match(new RegExp(`^\\\\right\\${close}`));
-    if (right) {
-      depth--;
-      i += right[0].length;
-      continue;
-    }
-    i++;
-  }
-
-  return i;
-}
-
-function readLatexExpression(text: string, start: number): number {
-  let i = start;
-
-  if (/^[a-zA-Z]$/.test(text[i] ?? "") && text.slice(i + 1).startsWith("\\left")) {
-    i += 1;
-    return readLeftRightGroup(text, i);
-  }
-
-  if (text.slice(i).startsWith("\\left")) {
-    return readLeftRightGroup(text, i);
-  }
-
-  while (i < text.length && text[i] === "\\") {
-    const commandMatch = text.slice(i).match(/^\\[a-zA-Z]+/);
-    if (!commandMatch) break;
-    i += commandMatch[0].length;
-    while (text[i] === "{") {
-      i = readBalancedBraces(text, i) + 1;
-    }
-    while (text[i] === "^" || text[i] === "_") {
-      i++;
-      if (text[i] === "{") {
-        i = readBalancedBraces(text, i) + 1;
-      } else if (text[i]) {
-        i++;
-      }
-    }
-  }
-
-  return Math.max(i, start + 1);
-}
-
 function repairBrokenDelimiterNesting(text: string): string {
   let prev = "";
   let cur = text;
@@ -132,19 +72,41 @@ function hasBareMathOutsideDelimiters(line: string): boolean {
   );
 }
 
+function stripInlineMath(line: string): string {
+  return line.replace(INLINE_MATH_RE, " ");
+}
+
+/** Prose sentences that mention variables via `$...$` are not fragmented equations. */
+function looksLikeProseWithInlineMath(line: string): boolean {
+  const outside = stripInlineMath(line);
+  if (/[a-zA-Z]\^[0-9{]/.test(outside) && /=/.test(outside)) return false;
+  if (/\\frac|\\left|\\sqrt/.test(outside)) return false;
+
+  const words = outside.match(/\b[A-Za-z]{3,}\b/g) ?? [];
+  if (words.length < 4) return false;
+
+  return /\b(where|the|and|is|are|this|that|with|from|which|to|of|we|you|it|links|satisfying|number|unit|formula|identity|prove|need|start|derived|function|series|expansions|trigonometric|sine|cosine|constants|fundamental|mathematical|remarkable|states|certainly|remarkable|imaginary|exponential)\b/i.test(
+    outside,
+  );
+}
+
 function hasFragmentedEquationMath(line: string): boolean {
   if (/\$\s*\\left\s*\(\s*\$/.test(line)) return true;
 
   const segments = countInlineMathSegments(line);
-  if (segments >= 2 && (/=/.test(line) || MATH_COMMAND.test(line))) {
+  const outside = stripInlineMath(line);
+
+  if (segments >= 2 && (/=/.test(outside) || MATH_COMMAND.test(outside))) {
+    if (looksLikeProseWithInlineMath(line)) return false;
     return true;
   }
 
   if (!hasBareMathOutsideDelimiters(line)) return false;
-  return segments >= 1 || MATH_COMMAND.test(line);
+  return segments >= 1 || MATH_COMMAND.test(outside);
 }
 
 function looksLikeEquationTail(text: string): boolean {
+  if (looksLikeProseWithInlineMath(text)) return false;
   const t = consolidateEquationText(text);
   if (!t) return false;
   return /=/.test(t) && (MATH_COMMAND.test(t) || /[a-zA-Z]\^/.test(t));
@@ -152,7 +114,7 @@ function looksLikeEquationTail(text: string): boolean {
 
 function findEquationTailStart(line: string): number {
   let best = -1;
-  const patterns = [/\ba\\left/g, /\bx\^2/g, /\bx\s*=/g, /\\frac/g, /\\left/g];
+  const patterns = [/\ba\\left/g, /\bi\^2/g, /\bx\^2/g, /\bx\s*=/g, /\\frac/g, /\\left/g];
 
   for (const pattern of patterns) {
     let match: RegExpExecArray | null;
@@ -177,7 +139,7 @@ function extractTrailingEquation(line: string): { prefix: string; equation: stri
   }
 
   const tailStart = findEquationTailStart(line);
-  if (tailStart <= 0) return null;
+  if (tailStart < 0) return null;
 
   const equation = line.slice(tailStart).trim();
   const prefix = line.slice(0, tailStart).trimEnd();
@@ -188,7 +150,14 @@ function extractTrailingEquation(line: string): { prefix: string; equation: stri
 }
 
 function wrapDisplayMath(equation: string): string {
-  return `$$\n${consolidateEquationText(equation)}\n$$`;
+  return `$$${consolidateEquationText(equation)}$$`;
+}
+
+function processOutsideDisplayBlocks(text: string, transform: (plain: string) => string): string {
+  return text
+    .split(DISPLAY_BLOCK_RE)
+    .map((part) => (part.startsWith("$$") ? part : transform(part)))
+    .join("");
 }
 
 function lineHasMathDelimiters(line: string): boolean {
@@ -200,14 +169,16 @@ function looksLikeDisplayMathLine(line: string): boolean {
   const t = line.trim();
   if (!t || t.length > 800) return false;
   if (/^\$\$/.test(t)) return false;
-  if (hasFragmentedEquationMath(t)) return true;
   if (lineHasMathDelimiters(t)) return false;
+  if (looksLikeProseWithInlineMath(t)) return false;
+  if (hasFragmentedEquationMath(t)) return true;
   if (/^#{1,6}\s/.test(t)) return false;
-  if (/^\*\*[^*]+/.test(t) && !MATH_COMMAND.test(t)) return false;
+  if (/^\*\*[^*]+/.test(t) && !MATH_COMMAND.test(stripInlineMath(t))) return false;
 
-  const hasLatexCommand = MATH_COMMAND.test(t);
-  const hasSupSub = /[a-zA-Z0-9]\^[{0-9a-zA-Z+]|_[{0-9a-zA-Z]/.test(t);
-  const hasEquation = /=/.test(t);
+  const outside = stripInlineMath(t);
+  const hasLatexCommand = MATH_COMMAND.test(outside);
+  const hasSupSub = /[a-zA-Z0-9]\^[{0-9a-zA-Z+]|_[{0-9a-zA-Z]/.test(outside);
+  const hasEquation = /=/.test(outside);
 
   if (hasLatexCommand && (hasEquation || hasSupSub || /\\left/.test(t))) return true;
   if (hasEquation && hasSupSub && /^[0-9a-zA-Z\s\\^_{}+\-*/().=,\[\]|]+$/.test(t)) {
@@ -239,7 +210,6 @@ function mergeUnbalancedDollarLines(text: string): string {
 function isWholeLineEquation(line: string): boolean {
   const t = line.trim();
   if (!t || /^\d+\.\s/.test(t)) return false;
-  // Step heading + prose on same line (keep trailing-equation extraction).
   if (/:\*\*\s/.test(t) || (/\*\*/.test(t) && /[A-Za-z]{4,}/.test(t.replace(/\*\*/g, " ")))) {
     return false;
   }
@@ -268,6 +238,7 @@ function normalizeFragmentedLine(line: string): string {
   if (
     !/\*\*/.test(trimmed) &&
     !/^\d+\.\s/.test(trimmed) &&
+    !looksLikeProseWithInlineMath(trimmed) &&
     (looksLikeEquationTail(trimmed) || (/\\left/.test(trimmed) && MATH_COMMAND.test(trimmed)))
   ) {
     return `${indent}${wrapDisplayMath(trimmed)}`;
@@ -296,45 +267,40 @@ function wrapBareDisplayMathLines(text: string): string {
     .join("\n");
 }
 
-function wrapLeftRightGroupsInPlainText(text: string): string {
-  let result = "";
-  let cursor = 0;
-
-  while (cursor < text.length) {
-    const rest = text.slice(cursor);
-    const match = rest.match(/[a-zA-Z]?\\left[\(\[\{]/);
-    if (!match || match.index === undefined) {
-      result += text.slice(cursor);
-      break;
-    }
-
-    const start = cursor + match.index;
-    result += text.slice(cursor, start);
-
-    if (isInsideExistingMath(text, start)) {
-      result += text.slice(start, start + match[0].length);
-      cursor = start + match[0].length;
-      continue;
-    }
-
-    const end = readLatexExpression(text, start);
-    const expr = text.slice(start, end);
-    if (expr.includes("\\left") && expr.includes("\\right")) {
-      result += wrapDisplayMath(expr);
-    } else {
-      result += expr;
-    }
-    cursor = end;
-  }
-
-  return result;
+function isCurrencyLikeInlineMath(body: string): boolean {
+  return /^\d+(?:\.\d{1,2})?$/.test(body.trim());
 }
 
-function wrapLeftRightGroups(text: string): string {
-  return text
-    .split(DISPLAY_BLOCK_RE)
-    .map((part) => (part.startsWith("$$") ? part : wrapLeftRightGroupsInPlainText(part)))
-    .join("");
+function looksLikeInlineMathBody(body: string): boolean {
+  const trimmed = body.trim();
+  if (!trimmed || isCurrencyLikeInlineMath(trimmed)) return false;
+
+  // Currency / prose accidentally bounded by two dollar signs in one sentence.
+  if (
+    /\b(per|month|year|day|week|costs|plan|price|fee|tax|and|the|for|premium|subscription)\b/i.test(
+      trimmed,
+    )
+  ) {
+    return false;
+  }
+  if (/^\d/.test(trimmed) && /[a-zA-Z]{3,}/.test(trimmed)) return false;
+
+  return (
+    MATH_COMMAND.test(trimmed) ||
+    /[a-zA-Z]\^|[a-zA-Z]_\{/.test(trimmed) ||
+    (/=/.test(trimmed) && /[a-zA-Z\\]/.test(trimmed)) ||
+    /^[a-zA-Z]$/.test(trimmed)
+  );
+}
+
+/** Map intentional `$...$` inline math to `$$...$$` for remark-math without singleDollarTextMath. */
+function convertInlineDollarMathToDoubleDollarDelimiters(text: string): string {
+  return processOutsideDisplayBlocks(text, (plain) =>
+    plain.replace(INLINE_MATH_RE, (match, body: string) => {
+      if (!looksLikeInlineMathBody(body)) return match;
+      return `$$${body.trim()}$$`;
+    }),
+  );
 }
 
 function repairSpacedBoldMarkers(text: string): string {
@@ -347,57 +313,6 @@ function repairSpacedBoldMarkers(text: string): string {
   });
 }
 
-function wrapBareLatexInPlainText(text: string): string {
-  let result = "";
-  let cursor = 0;
-
-  while (cursor < text.length) {
-    const next = text.indexOf("\\", cursor);
-    if (next === -1) {
-      result += text.slice(cursor);
-      break;
-    }
-
-    result += text.slice(cursor, next);
-
-    if (isInsideExistingMath(text, next)) {
-      result += "\\";
-      cursor = next + 1;
-      continue;
-    }
-
-    const tail = text.slice(next);
-    if (!MATH_COMMAND.test(tail) && !tail.startsWith("\\left")) {
-      result += "\\";
-      cursor = next + 1;
-      continue;
-    }
-
-    const coeffStart =
-      next > 0 && /^[a-zA-Z]$/.test(text[next - 1] ?? "") && !isInsideExistingMath(text, next - 1)
-        ? next - 1
-        : next;
-    const end = readLatexExpression(text, coeffStart);
-    const expr = text.slice(coeffStart, end).trim();
-    if (expr.length > 0) {
-      result += `$${expr}$`;
-      cursor = end;
-    } else {
-      result += "\\";
-      cursor = next + 1;
-    }
-  }
-
-  return result;
-}
-
-function wrapBareLatexExpressions(text: string): string {
-  return text
-    .split(DISPLAY_BLOCK_RE)
-    .map((part) => (part.startsWith("$$") ? part : wrapBareLatexInPlainText(part)))
-    .join("");
-}
-
 export function normalizeMathMarkdown(text: string): string {
   if (!text) return text;
 
@@ -408,12 +323,17 @@ export function normalizeMathMarkdown(text: string): string {
 
   let result = decodeHtmlEntities(text);
   result = repairSpacedBoldMarkers(result);
+
   result = mergeUnbalancedDollarLines(result);
-  result = result.replace(DISPLAY_DELIM_RE, (_, body) => `$$\n${body.trim()}\n$$`);
-  result = result.replace(INLINE_DELIM_RE, (_, body) => `$${body.trim()}$`);
-  result = normalizeLineMath(result);
-  result = wrapBareDisplayMathLines(result);
-  result = wrapLeftRightGroups(result);
-  result = wrapBareLatexExpressions(result);
-  return result;
+
+  result = result.replace(DISPLAY_DELIM_RE, (_, body) => `$$${body.trim()}$$`);
+  result = result.replace(INLINE_DELIM_RE, (_, body) => `$$${body.trim()}$$`);
+
+  result = processOutsideDisplayBlocks(result, (plain) => {
+    let section = normalizeLineMath(plain);
+    section = wrapBareDisplayMathLines(section);
+    return section;
+  });
+
+  return convertInlineDollarMathToDoubleDollarDelimiters(result);
 }

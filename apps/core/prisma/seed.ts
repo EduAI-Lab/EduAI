@@ -1004,7 +1004,7 @@ async function seedAIProvidersAndModels() {
   for (const m of vllmModels) {
     await prisma.aIModel.upsert({
       where: { providerId_modelId: { providerId: vllm.id, modelId: m.modelId } },
-      update: { supportsTools: m.supportsTools },
+      update: { maxTokens: m.maxTokens, supportsTools: m.supportsTools },
       create: {
         ...m,
         type: 'CHAT',
@@ -1181,6 +1181,11 @@ async function seedCourses() {
         where: { courseId_userId: { courseId: course.id, userId: taId } },
         update: { role: 'TA', isActive: true },
         create: { courseId: course.id, userId: taId, role: 'TA', isActive: true },
+      });
+      await prisma.courseTA.upsert({
+        where: { courseId_userId: { courseId: course.id, userId: taId } },
+        update: {},
+        create: { courseId: course.id, userId: taId },
       });
     }
 
