@@ -13,6 +13,11 @@ export type MarkdownProps = {
 }
 
 function parseMarkdownIntoBlocks(markdown: string): string[] {
+  // Keep math in one Streamdown pass — marked.lexer splits on headings/lists and can break equations.
+  if (/(?<!\\)\$\$|(?<!\\)\$[^$\n]+\$|\\frac|\\sqrt|[a-zA-Z]\^/.test(markdown)) {
+    return [markdown];
+  }
+
   const tokens = marked.lexer(markdown)
   return tokens.map((token) => token.raw)
 }
