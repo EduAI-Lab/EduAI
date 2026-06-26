@@ -15,10 +15,6 @@ import {
   type RouterMode,
 } from "~/lib/ai/routing/router";
 import {
-  normalizeTokenUsage,
-  persistAiInteractionTelemetry,
-} from "~/lib/ai/routing/telemetry";
-import {
   capMaxOutputTokensForPrompt,
   estimateTokensFromChars,
   getChatModelCapabilities,
