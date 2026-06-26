@@ -62,6 +62,8 @@
     "use-stick-to-bottom": "*",
     "vaul": "*",
     "next-themes": "*",
-    "shiki": "*"
+    "shiki": "*",
+    "streamdown": "*",
+    "@streamdown/math": "*"
   }
 }
