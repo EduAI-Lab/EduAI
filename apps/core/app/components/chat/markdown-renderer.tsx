@@ -1,9 +1,7 @@
-import { lazy, Suspense } from 'react';
+import { Suspense } from 'react';
+import { LazyStreamdown } from '@eduai/ui';
 import { READING_SURFACE_CLASS } from '~/components/assistive/reading-surface';
 import { cn } from '~/lib/utils';
-
-// Lazy load Streamdown to avoid SSR issues with KaTeX CSS
-const Streamdown = lazy(() => import('streamdown').then(module => ({ default: module.Streamdown })));
 
 export interface MarkdownRendererProps {
   content: string;
@@ -22,13 +20,13 @@ export function MarkdownRenderer({ content, className }: MarkdownRendererProps) 
       className,
     )}>
       <Suspense fallback={<div className="animate-pulse">{content}</div>}>
-        <Streamdown
+        <LazyStreamdown
           parseIncompleteMarkdown={true}
           className="streamdown-content"
           shikiTheme={["github-light", "github-dark"]}
         >
           {content}
-        </Streamdown>
+        </LazyStreamdown>
       </Suspense>
     </div>
   );
