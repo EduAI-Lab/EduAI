@@ -199,6 +199,10 @@ Each section should use this format:
 | `chat-rag.test.ts` | Tests `buildCappedRagContextText` and `capRagHitsForTool` chunk/char caps for hybrid and tool RAG paths; untrusted excerpt wrapping (#86). |
 | `prompt-safety.test.ts` | Unit tests for prompt-injection defenses (#86): `composeSecurityPrompt`, `sanitizeSystemPrompt` / max chars, `filterIncomingClientMessages`, and untrusted reference wrapping. |
 | `chat-tools.test.ts` | Tests `buildChatToolRegistry` — when web tools are OFF only `getInformation` is registered; when ON, `webSearch` and `fetchPage` are added. |
+| `create-admin-chat-tools.test.ts` | Admin chat tool registry — write tools return `CONFIRMATION_REQUIRED` when `confirmed: false`, pass through to mutation handlers when `confirmed: true`, and validate user ref (userId or userEmail) before writes. |
+| `agent-tools.admin-context.test.ts` | Admin chat read helpers — `listAdminUsers`, `listAdminCourseEnrollments`, and `listAdminBugReportsForChat` pagination, course scoping, and anonymity masking on bug reports. |
+| `agent-tools.admin-mutations.test.ts` | Admin write mutations — `runConfirmedAdminWriteTool` confirmation gate, user CRUD guards (no self-delete/role change), enrollment create/update/deactivate, and bug-report status updates. |
+| `agent-tools.course-context.test.ts` | Shared course context helpers used by admin and learning chat tools — accessible course list/get and admin course id resolution from code or fallback. |
 | `model-tool-capability.test.ts` | Tests `isSmallModelSlug` heuristics (migration backfill) and `allowsSupportsToolsToggle` — toggle shown only for CHAT-type models (including small slugs). |
 | `ModelFormDialog.test.tsx` | Admin model form dialog — title, submit/cancel, Ollama/vLLM model pickers, Supports Tools toggle for CHAT models, and confirmation dialog before enabling tools. |
 | `web-tool-ui.test.ts` | Tests `isWebChatToolName` and `getChatToolDisplayName` — web-tool labels gated by `X-Web-Tools-Enabled`; course RAG labels always shown. |
