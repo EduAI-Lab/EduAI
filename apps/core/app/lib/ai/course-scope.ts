@@ -1,4 +1,5 @@
 import type { HybridRagHit } from "~/lib/chat-rag";
+import { ragInjectModerateSimilarity } from "~/lib/ai/course-rag-policy";
 
 /** Course fields injected into the chat system prompt (Layer A). */
 export type CourseScopeContext = {
@@ -33,11 +34,62 @@ const META_SCOPE_PATTERN =
 const CODE_REQUEST_PATTERN =
   /\b(write|implement|create|debug|fix)\b.*\b(code|function|program|script|algorithm)\b|\b(python|javascript|typescript|java|c\+\+)\b.*\b(code|function|implement)\b/i;
 
-/** Hobby/lifestyle topics that are unrelated to typical course chat (#729 v1.1).
- *  Intentionally narrow: only these get a pre-LLM hard refuse. Everything else
- *  with zero RAG hits defers to Layer A (scope prompt) + the model. */
-const CLEARLY_OFF_TOPIC_PATTERN =
-  /\b(bake|baking|cookie|cookies|recipe|recipes|cooking|kitchen|sourdough|meal prep|marathon training)\b/i;
+const FOUNDATIONAL_QUESTION_PATTERN =
+  /^(what is|what are|explain|how does|define|describe|tell me about)\b/i;
+
+const NON_FOUNDATIONAL_TOPIC_PATTERN =
+  /\b(world war|super bowl|netflix|capital of|stock market|roman empire|poem about|joke about|dinosaur|celebrity|football|basketball|recipe|bake|baking|cookie|marathon|movie|tv show|invest in)\b/i;
+
+/** Course-logistics signals — bare topic tokens only count with these present. */
+const COURSE_INTENT_KEYWORDS = [
+  "assignment",
+  "chapter",
+  "class",
+  "course",
+  "cosc",
+  "exam",
+  "final",
+  "homework",
+  "instructor",
+  "lab",
+  "lecture",
+  "material",
+  "materials",
+  "midterm",
+  "module",
+  "professor",
+  "project",
+  "quiz",
+  "reading",
+  "syllabus",
+  "textbook",
+  "this course",
+  "tutorial",
+  "week ",
+];
+
+/** Tokens from generic titles/descriptions that must not alone signal overlap. */
+const GENERIC_METADATA_TOKENS = new Set([
+  "basic",
+  "computer",
+  "course",
+  "cs",
+  "faculty",
+  "first",
+  "fundamental",
+  "general",
+  "help",
+  "intro",
+  "introduction",
+  "okanagan",
+  "overview",
+  "programming",
+  "science",
+  "student",
+  "students",
+  "ubco",
+  "year",
+]);
 
 const SCOPE_STOP_WORDS = new Set([
   "about",
@@ -113,9 +165,11 @@ export function isScopeAllowlisted(message: string): boolean {
   return false;
 }
 
-/** Coding help may have zero material hits but is still plausibly in-scope (#729). */
+/** Coding help only when the request is plausibly for this course (#729 v1.2). */
 export function isCodingScopeAllowlisted(message: string): boolean {
-  return CODE_REQUEST_PATTERN.test(message.trim().toLowerCase());
+  const lower = message.trim().toLowerCase();
+  if (!CODE_REQUEST_PATTERN.test(lower)) return false;
+  return hasCourseIntentSignals(message);
 }
 
 /** Substantive turns are candidates for the zero-chunk gate. */
@@ -123,6 +177,19 @@ export function isSubstantiveForScope(message: string): boolean {
   const trimmed = message.trim();
   if (!trimmed || isScopeAllowlisted(trimmed)) return false;
   return trimmed.includes("?") || trimmed.length >= 20;
+}
+
+export function hasCourseIntentSignals(message: string): boolean {
+  const lower = message.toLowerCase();
+  for (const keyword of COURSE_INTENT_KEYWORDS) {
+    if (keyword === "course") {
+      if (/\bof course\b/.test(lower)) continue;
+      if (/\bcourse\b/.test(lower)) return true;
+      continue;
+    }
+    if (lower.includes(keyword)) return true;
+  }
+  return false;
 }
 
 function tokenizeForScope(text: string): Set<string> {
@@ -135,35 +202,69 @@ function tokenizeForScope(text: string): Set<string> {
   );
 }
 
-/** Shared tokens between the user message and course metadata (name, topics, description, etc.). */
+function normalizeCourseCode(code: string): string {
+  return code.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+/** RAG hits must clear the moderate inject bar before they bypass the scope gate. */
+export function hasScopeRelevantRagHits(hits: HybridRagHit[]): boolean {
+  const threshold = ragInjectModerateSimilarity();
+  return hits.some((hit) => (hit.similarity ?? 0) >= threshold);
+}
+
+/**
+ * Strong overlap: course code/name, multi-word topics, or topic tokens with
+ * explicit course-intent signals. Avoids false positives like "year" or bare
+ * topic names in unrelated contexts (#729 v1.2).
+ */
 export function hasCourseMetadataOverlap(
   message: string,
   course: CourseScopeContext,
 ): boolean {
-  const messageTokens = tokenizeForScope(message);
-  const courseTokens = tokenizeForScope(
-    [
-      course.code,
-      course.name,
-      course.description ?? "",
-      course.aiInstructions ?? "",
-      ...(course.topics ?? []),
-    ].join(" "),
-  );
+  const lower = message.toLowerCase();
+  const codeNorm = normalizeCourseCode(course.code);
 
-  for (const token of messageTokens) {
-    if (courseTokens.has(token)) {
-      return true;
-    }
+  if (codeNorm.length >= 4 && lower.includes(codeNorm)) {
+    return true;
   }
 
-  const lower = message.toLowerCase();
-  if (course.name.length >= 4 && lower.includes(course.name.toLowerCase())) {
+  const codeCompact = codeNorm.replace(/\s/g, "");
+  if (codeCompact.length >= 4 && lower.replace(/\s/g, "").includes(codeCompact)) {
+    return true;
+  }
+
+  const courseName = course.name.trim().toLowerCase();
+  if (courseName.length >= 8 && lower.includes(courseName)) {
     return true;
   }
 
   for (const topic of course.topics ?? []) {
-    if (topic.length >= 4 && lower.includes(topic.toLowerCase())) {
+    const normalizedTopic = topic.trim().toLowerCase();
+    if (normalizedTopic.includes(" ") && normalizedTopic.length >= 6 && lower.includes(normalizedTopic)) {
+      return true;
+    }
+  }
+
+  if (!hasCourseIntentSignals(message)) {
+    return false;
+  }
+
+  const messageTokens = tokenizeForScope(message);
+  const topicTokens = tokenizeForScope((course.topics ?? []).join(" "));
+  for (const token of messageTokens) {
+    if (topicTokens.has(token) && !GENERIC_METADATA_TOKENS.has(token)) {
+      return true;
+    }
+  }
+
+  for (const token of tokenizeForScope(course.description ?? "")) {
+    if (!GENERIC_METADATA_TOKENS.has(token) && messageTokens.has(token)) {
+      return true;
+    }
+  }
+
+  for (const token of tokenizeForScope(course.aiInstructions ?? "")) {
+    if (messageTokens.has(token)) {
       return true;
     }
   }
@@ -171,23 +272,38 @@ export function hasCourseMetadataOverlap(
   return false;
 }
 
-/**
- * Hard-refuse only when the message matches obvious off-topic domains and does
- * not overlap course metadata (#729 v1.1 — avoids refusing related foundations
- * like linear algebra in an image-processing course).
- */
-export function isClearlyOffTopic(message: string, course: CourseScopeContext): boolean {
-  if (!CLEARLY_OFF_TOPIC_PATTERN.test(message.toLowerCase())) {
+function isTechnicalCourse(course: CourseScopeContext): boolean {
+  if (/\b(cosc|cmps|cpsc|cs)\s*\d+/i.test(course.code)) {
+    return true;
+  }
+
+  const blob = [course.code, course.name, course.description ?? "", ...(course.topics ?? [])]
+    .join(" ")
+    .toLowerCase();
+  return /\b(programming|computer|processing|vision|algorithm|software|engineering|math|calculus|data|image|filters|convolution)\b/.test(
+    blob,
+  );
+}
+
+/** Prerequisite-style STEM questions for technical courses (#729 v1.1). */
+export function isFoundationalAdjacent(
+  message: string,
+  course: CourseScopeContext,
+): boolean {
+  const trimmed = message.trim();
+  if (!FOUNDATIONAL_QUESTION_PATTERN.test(trimmed)) {
     return false;
   }
-  return !hasCourseMetadataOverlap(message, course);
+  if (NON_FOUNDATIONAL_TOPIC_PATTERN.test(trimmed.toLowerCase())) {
+    return false;
+  }
+  return isTechnicalCourse(course);
 }
 
 /**
- * Layer B pre-check (#729 v1.1): hard-refuse only clearly off-topic substantive
- * turns with zero RAG chunks. Related questions without material hits defer to
- * Layer A (system prompt) + empty-RAG instruction so the model can answer
- * foundational course-adjacent concepts or decline politely.
+ * Layer B pre-check (#729 v1.2): hard-refuse substantive zero-hit off-topic turns.
+ * Allow greetings, course-intent coding help, strong metadata overlap, relevant
+ * RAG hits, and foundational STEM questions for technical courses.
  */
 export function evaluateCourseScope(
   input: EvaluateCourseScopeInput,
@@ -213,24 +329,28 @@ export function evaluateCourseScope(
     return { decision: "allow", reason: "not_substantive" };
   }
 
-  if (input.hits.length > 0) {
+  if (hasScopeRelevantRagHits(input.hits)) {
     return { decision: "allow", reason: "rag_hits_present" };
   }
 
   const course = input.course;
   if (!course) {
-    return { decision: "allow", reason: "soft_scope_llm" };
+    return { decision: "refuse", reason: "zero_hit_off_topic" };
+  }
+
+  if (hasCourseIntentSignals(input.message)) {
+    return { decision: "allow", reason: "course_material_intent" };
   }
 
   if (hasCourseMetadataOverlap(input.message, course)) {
     return { decision: "allow", reason: "course_metadata_overlap" };
   }
 
-  if (isClearlyOffTopic(input.message, course)) {
-    return { decision: "refuse", reason: "clearly_off_topic" };
+  if (isFoundationalAdjacent(input.message, course)) {
+    return { decision: "allow", reason: "foundational_adjacent" };
   }
 
-  return { decision: "allow", reason: "soft_scope_llm" };
+  return { decision: "refuse", reason: "zero_hit_off_topic" };
 }
 
 /** Layer A: course identity + strict scope policy for every course-scoped turn. */

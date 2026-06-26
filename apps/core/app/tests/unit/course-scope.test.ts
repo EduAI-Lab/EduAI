@@ -4,9 +4,11 @@ import {
   buildScopeRefusalMessage,
   evaluateCourseScope,
   hasCourseMetadataOverlap,
-  isClearlyOffTopic,
+  hasCourseIntentSignals,
+  hasScopeRelevantRagHits,
   isCodingScopeAllowlisted,
   isCourseScopeGateEnabled,
+  isFoundationalAdjacent,
   isScopeAllowlisted,
   isSubstantiveForScope,
 } from "~/lib/ai/course-scope";
@@ -63,10 +65,24 @@ describe("isScopeAllowlisted", () => {
 });
 
 describe("hasCourseMetadataOverlap", () => {
-  it("detects overlap with course topics", () => {
-    expect(hasCourseMetadataOverlap("What is convolution used for?", IMAGE_COURSE)).toBe(
-      true,
-    );
+  it("detects overlap with course topics when course intent is present", () => {
+    expect(
+      hasCourseMetadataOverlap("What does the lecture say about convolution?", IMAGE_COURSE),
+    ).toBe(true);
+  });
+
+  it("detects overlap with explicit course code", () => {
+    expect(hasCourseMetadataOverlap("Is COSC 121 hard?", COURSE)).toBe(true);
+  });
+
+  it("returns false for bare topic tokens without course intent", () => {
+    expect(hasCourseMetadataOverlap("Tell me about arrays in music", COURSE)).toBe(false);
+    expect(hasCourseMetadataOverlap("loops in roller coasters", COURSE)).toBe(false);
+  });
+
+  it("returns false for generic description tokens like year/first", () => {
+    expect(hasCourseMetadataOverlap("Who won the super bowl last year?", COURSE)).toBe(false);
+    expect(hasCourseMetadataOverlap("What happened first in history?", COURSE)).toBe(false);
   });
 
   it("returns false when the message shares no course metadata tokens", () => {
@@ -74,27 +90,54 @@ describe("hasCourseMetadataOverlap", () => {
   });
 });
 
-describe("isClearlyOffTopic", () => {
-  it("flags baking questions in a CS course", () => {
-    expect(isClearlyOffTopic("How do I bake chocolate chip cookies?", COURSE)).toBe(
-      true,
-    );
+describe("hasScopeRelevantRagHits", () => {
+  it("ignores weak similarity hits", () => {
+    expect(
+      hasScopeRelevantRagHits([
+        { content: "noise", similarity: 0.4, materialTitle: "Syllabus" },
+      ]),
+    ).toBe(false);
   });
 
-  it("does not flag baking when the course metadata mentions it", () => {
-    const bakingCourse = {
-      ...COURSE,
-      topics: ["cookies"],
-    };
+  it("accepts hits at or above the moderate inject threshold", () => {
     expect(
-      isClearlyOffTopic("How do I bake chocolate chip cookies?", bakingCourse),
-    ).toBe(false);
+      hasScopeRelevantRagHits([
+        { content: "notes", similarity: 0.6, materialTitle: "Lecture" },
+      ]),
+    ).toBe(true);
+  });
+});
+
+describe("isFoundationalAdjacent", () => {
+  it("allows prerequisite STEM questions for technical courses", () => {
+    expect(isFoundationalAdjacent("What is linear algebra?", IMAGE_COURSE)).toBe(true);
+  });
+
+  it("rejects clearly non-academic topics", () => {
+    expect(isFoundationalAdjacent("Tell me about World War 2", IMAGE_COURSE)).toBe(false);
   });
 });
 
 describe("isCodingScopeAllowlisted", () => {
-  it("allows debug-my-code style requests", () => {
-    expect(isCodingScopeAllowlisted("Can you debug my Python function?")).toBe(true);
+  it("allows debug-my-code requests with course context", () => {
+    expect(isCodingScopeAllowlisted("Can you debug my Python function for the lab?")).toBe(
+      true,
+    );
+  });
+
+  it("rejects generic coding requests without course context", () => {
+    expect(
+      isCodingScopeAllowlisted(
+        "Write Python code to sort a list of countries by population",
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("hasCourseIntentSignals", () => {
+  it("detects assignment and lecture wording", () => {
+    expect(hasCourseIntentSignals("What does the syllabus say?")).toBe(true);
+    expect(hasCourseIntentSignals("Tell me about dinosaurs")).toBe(false);
   });
 });
 
@@ -115,18 +158,25 @@ describe("evaluateCourseScope", () => {
     delete process.env.CHAT_SCOPE_ZERO_CHUNK_GATE;
   });
 
-  it("refuses clearly off-topic questions with zero RAG hits", () => {
-    const result = evaluateCourseScope({
-      message: "How do I bake chocolate chip cookies?",
-      hasCourse: true,
-      hits: [],
-      course: COURSE,
-    });
-    expect(result.decision).toBe("refuse");
-    expect(result.reason).toBe("clearly_off_topic");
+  it("refuses off-topic questions with zero RAG hits", () => {
+    for (const message of [
+      "How do I bake chocolate chip cookies?",
+      "Tell me about World War 2",
+      "What is the capital of France?",
+      "How do I invest in stocks?",
+    ]) {
+      const result = evaluateCourseScope({
+        message,
+        hasCourse: true,
+        hits: [],
+        course: COURSE,
+      });
+      expect(result.decision).toBe("refuse");
+      expect(result.reason).toBe("zero_hit_off_topic");
+    }
   });
 
-  it("allows related foundational questions with zero RAG hits (soft scope)", () => {
+  it("allows related foundational questions with zero RAG hits", () => {
     const result = evaluateCourseScope({
       message: "What is linear algebra?",
       hasCourse: true,
@@ -134,10 +184,10 @@ describe("evaluateCourseScope", () => {
       course: IMAGE_COURSE,
     });
     expect(result.decision).toBe("allow");
-    expect(result.reason).toBe("soft_scope_llm");
+    expect(result.reason).toBe("foundational_adjacent");
   });
 
-  it("allows substantive questions when RAG returns hits", () => {
+  it("allows substantive questions when RAG returns strong hits", () => {
     const result = evaluateCourseScope({
       message: "What is gradient descent?",
       hasCourse: true,
@@ -148,7 +198,40 @@ describe("evaluateCourseScope", () => {
     expect(result.reason).toBe("rag_hits_present");
   });
 
-  it("allows zero-hit questions that overlap course metadata", () => {
+  it("refuses off-topic questions even when RAG returns weak hits", () => {
+    const result = evaluateCourseScope({
+      message: "Tell me about World War 2",
+      hasCourse: true,
+      hits: [{ content: "noise", similarity: 0.4, materialTitle: "Syllabus" }],
+      course: COURSE,
+    });
+    expect(result.decision).toBe("refuse");
+    expect(result.reason).toBe("zero_hit_off_topic");
+  });
+
+  it("allows zero-hit questions with course material intent", () => {
+    const result = evaluateCourseScope({
+      message: "What did chapter 3 say about trees?",
+      hasCourse: true,
+      hits: [],
+      course: COURSE,
+    });
+    expect(result.decision).toBe("allow");
+    expect(result.reason).toBe("course_material_intent");
+  });
+
+  it("allows foundational STEM questions for COSC courses with zero hits", () => {
+    const result = evaluateCourseScope({
+      message: "What is gradient descent?",
+      hasCourse: true,
+      hits: [],
+      course: COURSE,
+    });
+    expect(result.decision).toBe("allow");
+    expect(result.reason).toBe("foundational_adjacent");
+  });
+
+  it("allows zero-hit questions that overlap course metadata with intent", () => {
     const result = evaluateCourseScope({
       message: "Explain convolution for this course",
       hasCourse: true,
@@ -156,7 +239,7 @@ describe("evaluateCourseScope", () => {
       course: IMAGE_COURSE,
     });
     expect(result.decision).toBe("allow");
-    expect(result.reason).toBe("course_metadata_overlap");
+    expect(result.reason).toBe("course_material_intent");
   });
 
   it("allowlists greetings without checking hits", () => {
@@ -170,7 +253,7 @@ describe("evaluateCourseScope", () => {
     expect(result.reason).toBe("allowlisted");
   });
 
-  it("allowlists coding requests even with zero hits", () => {
+  it("allowlists coding requests with course context and zero hits", () => {
     const result = evaluateCourseScope({
       message: "Debug my JavaScript function for the lab",
       hasCourse: true,
@@ -179,6 +262,17 @@ describe("evaluateCourseScope", () => {
     });
     expect(result.decision).toBe("allow");
     expect(result.reason).toBe("coding_allowlisted");
+  });
+
+  it("refuses coding requests without course context", () => {
+    const result = evaluateCourseScope({
+      message: "Write Python code to sort countries by population",
+      hasCourse: true,
+      hits: [],
+      course: COURSE,
+    });
+    expect(result.decision).toBe("refuse");
+    expect(result.reason).toBe("zero_hit_off_topic");
   });
 
   it("skips gate when disabled via env", () => {

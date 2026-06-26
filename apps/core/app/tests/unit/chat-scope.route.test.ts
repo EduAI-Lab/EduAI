@@ -198,6 +198,54 @@ describe("POST /api/chat — course scope gate (#729)", () => {
     expect(prisma.chatMessage.createMany).toHaveBeenCalled();
   });
 
+  it("hard-refuses general knowledge questions with zero RAG hits", async () => {
+    vi.mocked(findRelevantContent).mockResolvedValue([]);
+    mockStream();
+
+    const res = await action(
+      makeRequest(
+        baseBody({
+          messages: [
+            {
+              id: "msg-1",
+              role: "user",
+              content: "Tell me about World War 2",
+            },
+          ],
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    expect(streamText).not.toHaveBeenCalled();
+    const body = await res.json();
+    expect(body.content).toContain("unrelated topics");
+  });
+
+  it("hard-refuses off-topic questions even when RAG returns weak hits", async () => {
+    vi.mocked(findRelevantContent).mockResolvedValue([
+      { content: "misc", similarity: 0.42, materialTitle: "Syllabus" },
+    ]);
+    mockStream();
+
+    const res = await action(
+      makeRequest(
+        baseBody({
+          messages: [
+            {
+              id: "msg-1",
+              role: "user",
+              content: "What is the capital of France?",
+            },
+          ],
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    expect(streamText).not.toHaveBeenCalled();
+  });
+
   it("allows greetings with zero RAG hits", async () => {
     vi.mocked(findRelevantContent).mockResolvedValue([]);
     mockStream();

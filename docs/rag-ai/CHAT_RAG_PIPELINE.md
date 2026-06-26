@@ -85,7 +85,7 @@ flowchart TB
 
 ## Notes
 
-- **Course scope gate (#729)** runs after RAG prefetch on every course-scoped turn. **`evaluateCourseScope`** allowlists greetings/meta/coding help; **clearly off-topic** substantive questions with **zero** RAG chunks return a canned refusal without calling the main model. Related questions without material hits (e.g. prerequisite math for a technical course) defer to Layer A + empty-RAG instructions (`soft_scope_llm`). Disable the gate with `CHAT_SCOPE_ZERO_CHUNK_GATE=0`.
+- **Course scope gate (#729 v1.2)** runs after RAG prefetch on every course-scoped learning turn. **`evaluateCourseScope`** allowlists greetings/meta, course-context coding help, strong course-metadata overlap, relevant RAG hits (similarity ≥ moderate inject threshold), and foundational STEM questions for technical courses. Other substantive zero-hit questions **hard-refuse** with a canned message (no main model call). Disable with `CHAT_SCOPE_ZERO_CHUNK_GATE=0`.
 - **Hybrid RAG** prefetches **`findRelevantContent`** on every course-scoped turn. Excerpts inject when **`shouldInjectCourseRag`** passes (`needsCourseRag`, similarity thresholds, or `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE=1`), formatted with **`buildCappedRagContextText`** and **`buildRagSystemBlock`** (chunk cap **4**, char cap **14_000**).
 - **Tool RAG (preload)** shares the same prefetch + inject gate. When injection passes, excerpts use **`buildRagSystemBlock({ toolPath: true })`**. **`getInformation`** remains a supplemental fallback (`capRagHitsForTool`, **6000** chars per chunk).
 - **Query embeddings** use an in-memory cache (`QUERY_EMBED_CACHE_TTL_MS`, `QUERY_EMBED_CACHE_MAX`). **Server** `OPENROUTER_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, or `OPENAI_API_KEY` (first match wins) — independent of the user's chat provider (e.g. Ollama).
@@ -135,7 +135,7 @@ The handler is the `action` in [`chat.ts`](../../apps/core/app/routes/api/chat.t
 6. **Early exits** — empty merged transcript → JSON with `chatId` only; missing `model` / invalid `apiKeys` → 400.
 7. **Registry** — `createAIProviderRegistry(validatedApiKeys)` → `registry.languageModel(model)`.
 8. **Persist** — `appendMessages(normalizedIncomingMessages)` writes new rows before streaming (`skipDuplicates` on `messageId`).
-9. **Course scope (#729)** — after RAG prefetch, **`evaluateCourseScope`** may short-circuit with a canned refusal (zero chunks + substantive off-topic). Otherwise **`buildCourseScopePromptBlock`** augments the system prompt with course identity and scope policy.
+9. **Course scope (#729 v1.2)** — after RAG prefetch, **`evaluateCourseScope`** may short-circuit with a canned refusal (substantive + no relevant RAG hit + not foundational/course-intent). Otherwise **`buildCourseScopePromptBlock`** augments the system prompt with course identity and scope policy.
 
 Debug hooks (`chatApiDebug`) log history merge counts, `scopeDecision` / `scopeReason`, and pre-stream prompt size hints (`systemChars`, `messageCount`, `messageTextChars`) without dumping full RAG text.
 

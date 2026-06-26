@@ -73,7 +73,7 @@ vi.mock("~/lib/prisma.server", () => ({
   default: {
     chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
     chatMessage: { findMany: vi.fn(), createMany: vi.fn() },
-    course: { findFirst: vi.fn() },
+    course: { findFirst: vi.fn(), findUnique: vi.fn() },
     courseTopic: { findMany: vi.fn() },
     systemConfig: { findUnique: vi.fn() },
   },
@@ -167,6 +167,7 @@ beforeEach(() => {
   vi.mocked(prisma.chatMessage.createMany).mockResolvedValue({ count: 1 });
   vi.mocked(prisma.systemConfig.findUnique).mockResolvedValue(null);
   vi.mocked(prisma.courseTopic.findMany).mockResolvedValue([] as never);
+  vi.mocked(prisma.course.findUnique).mockResolvedValue({ code: "COSC101" } as never);
   vi.mocked(findRelevantContent).mockResolvedValue([
     { content: "Gradient descent minimizes loss.", similarity: 0.72, materialTitle: "Lecture" },
   ]);
@@ -231,7 +232,7 @@ describe("Smart course RAG gate (#484)", () => {
       expect(lastStreamConfig().system).toContain("Gradient descent minimizes loss.");
     });
 
-    it("allows course-intent queries with no hits via soft scope (#729 v1.1)", async () => {
+    it("allows course-intent queries with no hits (#729 v1.2)", async () => {
       vi.mocked(findRelevantContent).mockResolvedValue([]);
       mockStream();
       const res = await action(
