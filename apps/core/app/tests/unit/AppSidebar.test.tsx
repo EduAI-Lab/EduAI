@@ -82,6 +82,7 @@ describe("AppSidebar — role-gated nav", () => {
     expect(screen.getByText("User Management")).toBeInTheDocument();
     expect(screen.getByText("AI Management")).toBeInTheDocument();
     expect(screen.getByText("Bug Reports")).toBeInTheDocument();
+    expect(screen.getByText("Admin Chatbot")).toBeInTheDocument();
   });
 
   it("hides admin links for STUDENT", () => {
