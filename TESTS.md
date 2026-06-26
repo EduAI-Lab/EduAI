@@ -55,7 +55,15 @@ Per app, from the app directory:
 
 Generated coverage report directories are gitignored.
 
-The **Question Maker backend** `test:coverage` (`vitest.coverage.config.js`) measures the unit **and** integration suites together over `src/**` (excluding the `src/index.js` bootstrap and operational `scripts/`). The integration suite needs a PostgreSQL test database via `TEST_DATABASE_URL`; without it the integration tests self-skip and only unit coverage is reported. A `globalSetup` syncs the schema once up front so the shared-worker run is deterministic.
+All three backends measure the unit **and** integration suites together in a single pass via a dedicated `vitest.coverage.config.*` (with `json-summary` + `reportOnFailure` so CI always gets a figure):
+
+- **Question Maker backend** — `src/**` (excluding the `src/index.js` bootstrap and operational `scripts/`). The integration suite needs a PostgreSQL test database via `TEST_DATABASE_URL`; without it the integration tests self-skip and only unit coverage is reported. A `globalSetup` syncs the schema once up front so the shared-worker run is deterministic.
+- **AI Tutor server** — `src/**` (excluding `src/index.js`); `globalSetup` runs `prisma migrate deploy` against the `DATABASE_URL` test database.
+- **EduAI (core)** — `app/**`; the unit (happy-dom) and integration (node) suites run as two Vitest `projects` so coverage spans both environments.
+
+### CI coverage report
+
+The **Backend Coverage Report** workflow (`.github/workflows/eduai-summer-2026-coverage-report.yml`) runs on every push to `development` (and manual dispatch). It runs the three backend `test:coverage` scripts against Postgres service containers, aggregates the `coverage-summary.json` outputs via `eduai-summer-2026/scripts/generate-coverage-report.js`, and commits a Markdown summary to `eduai-summer-2026/reports/coverage/coverage-report.md` on the `eduai-summer-2026` branch. Only the report is committed — coverage build artifacts stay gitignored. Scope is backend packages only; frontend suites are excluded.
 
 ## Structure
 
@@ -348,6 +356,9 @@ Unit tests for the shared design-system component library (`@eduai/ui`). Run wit
 | Test file | What it tests |
 |-----------|---------------|
 | `api.test.ts` | Unauthorized requests redirect to the login page, server errors surface as exceptions, and successful requests return parsed data |
+| `api.test.ts` | Unauthenticated (`401`) requests redirect to the login page; forbidden (`403`) requests throw without redirecting so an already-signed-in user is not bounced into an infinite login loop; server errors surface as exceptions; successful requests return parsed data |
+| `nav.test.ts` | `getNavForUser` labels every role's courses entry "Courses" (student → `/student`, instructor-shell roles → `/instructor`), never emits "My courses"/"Teaching", gives admins only the Bug Reports item (no user-management/enrollments), and returns `[]` for a null user |
+| `BugReportDialog.test.tsx` | The bug report form rejects descriptions that are too short, takes a screenshot on open, and submits diagnostic data including the reporter's anonymous preference |
 | `BugReportProvider.test.tsx` | Page location and diagnostic capture tools are available to any component that needs to file a bug report |
 | `BugReportsTab.test.tsx` | Admins can view, update status, and copy bug reports; the copy dossier includes the bug type label; anonymous submissions hide reporter identity in the copied output. |
 | `Nav.test.tsx` | The Report Bug button is visible to students and professors but hidden from admins; EduAI Core cross-nav link and dark-mode toggle render for authenticated users |

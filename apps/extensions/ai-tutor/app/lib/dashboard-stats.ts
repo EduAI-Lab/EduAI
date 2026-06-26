@@ -3,7 +3,10 @@ import type { DashboardStat } from '~/components/dashboard/DashboardStatGrid';
 
 export function buildStudentDashboardStats(courses: Course[]): DashboardStat[] {
   const inProgress = courses.filter(
-    (course) => course.progress && course.progress.completed > 0 && !course.progress.isComplete,
+    (course) =>
+      course.progress &&
+      course.progress.completed > 0 &&
+      course.progress.completed < course.progress.total,
   ).length;
 
   return [
@@ -11,7 +14,12 @@ export function buildStudentDashboardStats(courses: Course[]): DashboardStat[] {
     { label: 'In progress', value: inProgress },
     {
       label: 'Completed',
-      value: courses.filter((course) => course.progress?.isComplete).length,
+      value: courses.filter(
+        (course) =>
+          course.progress &&
+          course.progress.total > 0 &&
+          course.progress.completed >= course.progress.total,
+      ).length,
     },
   ];
 }
