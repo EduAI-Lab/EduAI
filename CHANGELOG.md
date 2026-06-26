@@ -8,7 +8,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ## [Week 8 — June 22–28, 2026]
 
 ### Added
-
+- [core] feat: Streamline admin local model workflow — auto-sync Ollama/vLLM models into AI Management (#180, @superbolt08, 2026-06-23) — [#756](https://github.com/EduAI-Lab/EduAI/pull/756)
 - [core] feat: Admin cron job dashboard — `/admin/cron-jobs` lists all registered cron servers with last run status (RUNNING/SUCCESS/ERROR), schedule, and a manual trigger for infra backup scripts; run history stored in `cron_job_runs`; schedule overrides persist to `cron_job_schedule_overrides`. (#634, #643, @evanbones, 2026-06-23)
 - [core] feat: In-process cron scheduler (`cron-scheduler.server.ts`) starts on server boot and fires infra scripts on their configured schedules; `rescheduleJob` reflects live changes from the admin panel. (#634, @evanbones, 2026-06-23)
 - [core] schema: Add `cron_job_runs` and `cron_job_schedule_overrides` tables. (#634, @evanbones, 2026-06-23)
