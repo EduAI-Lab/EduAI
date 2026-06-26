@@ -10,8 +10,6 @@ vi.mock('~/hooks/useAtPermissions', () => ({
   useAtPermissions: () => ({
     canSubmitBugReport: true,
     canCreateCourse: false,
-    canBrowseEduAiCatalog: false,
-    canImportFromEduAi: false,
     canManageContent: false,
     canPublishContent: false,
     canManageEnrollments: false,
