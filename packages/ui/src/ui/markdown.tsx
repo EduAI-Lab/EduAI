@@ -1,8 +1,6 @@
-import { cn } from "../utils"
 import { marked } from "marked"
 import { memo, useId, useMemo, Suspense } from "react"
 import type { Components } from "react-markdown"
-import { CodeBlock, CodeBlockCode } from "./code-block"
 import { LazyStreamdown } from "./lazy-streamdown"
 
 export type MarkdownProps = {
@@ -10,6 +8,8 @@ export type MarkdownProps = {
   id?: string
   className?: string
   components?: Partial<Components>
+  /** When true, defers code-block copy/download until streaming finishes. */
+  isAnimating?: boolean
 }
 
 function parseMarkdownIntoBlocks(markdown: string): string[] {
@@ -22,23 +22,20 @@ function parseMarkdownIntoBlocks(markdown: string): string[] {
   return tokens.map((token) => token.raw)
 }
 
-function extractLanguage(className?: string): string {
-  if (!className) return "plaintext"
-  const match = className.match(/language-(\w+)/)
-  return match ? match[1] : "plaintext"
-}
-
 const MemoizedMarkdownBlock = memo(
   function MarkdownBlock({
     content,
+    isAnimating,
   }: {
     content: string
+    isAnimating?: boolean
   }) {
     return (
       <Suspense fallback={<div className="animate-pulse">{content}</div>}>
         <LazyStreamdown
           parseIncompleteMarkdown={true}
           shikiTheme={["github-light", "github-dark"]}
+          isAnimating={isAnimating}
           className="streamdown-content"
         >
           {content}
@@ -47,7 +44,10 @@ const MemoizedMarkdownBlock = memo(
     )
   },
   function propsAreEqual(prevProps, nextProps) {
-    return prevProps.content === nextProps.content
+    return (
+      prevProps.content === nextProps.content &&
+      prevProps.isAnimating === nextProps.isAnimating
+    )
   }
 )
 
@@ -57,6 +57,7 @@ function MarkdownComponent({
   children,
   id,
   className,
+  isAnimating,
 }: MarkdownProps) {
   const generatedId = useId()
   const blockId = id ?? generatedId
@@ -68,6 +69,7 @@ function MarkdownComponent({
         <MemoizedMarkdownBlock
           key={`${blockId}-block-${index}`}
           content={block}
+          isAnimating={isAnimating}
         />
       ))}
     </div>
