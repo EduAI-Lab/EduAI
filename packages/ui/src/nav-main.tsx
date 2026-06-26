@@ -13,6 +13,9 @@ export interface NavMainItem {
   url: string
   icon?: Icon
   external?: boolean
+  /** Optional status dot (e.g. cron-job health). Color is app-supplied; kept a
+   * plain union so this shared component stays decoupled from any app hook. */
+  badge?: "green" | "orange" | "red"
 }
 
 export interface NavMainProps {
@@ -44,6 +47,15 @@ export function NavMain({
               paddingLeft: "16px",
             } as const
 
+            const badgeBg =
+              item.badge === "green"
+                ? "#22c55e"
+                : item.badge === "orange"
+                  ? "#f97316"
+                  : item.badge === "red"
+                    ? "#ef4444"
+                    : undefined
+
             const linkBody = (
               <>
                 {isActive && (
@@ -60,6 +72,19 @@ export function NavMain({
                 )}
                 {item.icon && <item.icon size={16} strokeWidth={1.75} />}
                 <span className="flex-1">{item.title}</span>
+                {badgeBg && (
+                  <span
+                    aria-label={`Status: ${item.badge}`}
+                    className={item.badge === "orange" ? "animate-pulse" : undefined}
+                    style={{
+                      width: 7,
+                      height: 7,
+                      borderRadius: "50%",
+                      flexShrink: 0,
+                      background: badgeBg,
+                    }}
+                  />
+                )}
               </>
             )
 

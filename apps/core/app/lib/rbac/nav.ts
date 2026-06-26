@@ -31,6 +31,11 @@ const ADMIN_NAV: NavItem[] = [
   { key: 'admin-invites', title: 'Invitations', url: '/admin/invitations' },
   { key: 'admin-settings', title: 'Permissions', url: '/admin/settings' },
   { key: 'admin-logs', title: 'Logs', url: '/admin/logs' },
+  { key: 'admin-cron', title: 'Cron Jobs', url: '/admin/cron-jobs' },
+]
+
+const ADMIN_SECONDARY_NAV: NavItem[] = [
+  { key: 'admin-chat', title: 'Admin Chatbot', url: '/admin/chat' },
 ]
 
 /**
@@ -76,6 +81,10 @@ export function usesGlobalChat(user: NavUser): boolean {
 export function getNavSecondaryForUser(user: NavUser): NavItem[] {
   const role = user.role ?? 'STUDENT'
   const items: NavItem[] = []
+
+  if (role === 'ADMIN') {
+    items.push(...ADMIN_SECONDARY_NAV)
+  }
 
   if (QM_NAV_ROLES.has(role)) {
     items.push(QM_NAV_ITEM)
