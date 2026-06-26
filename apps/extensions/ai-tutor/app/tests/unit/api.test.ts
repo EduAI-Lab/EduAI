@@ -74,6 +74,24 @@ describe('api methods', () => {
     expect(window.location.href).toMatch(/^http:\/\/localhost:3000\/login\?redirect=/);
   });
 
+  it('403 response throws without redirecting to login (no infinite loop)', async () => {
+    window.location.pathname = '/instructor/lesson/3';
+    window.location.href = 'http://localhost:3001/instructor/lesson/3';
+
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 403,
+      text: () => Promise.resolve('Not authorized for this lesson'),
+    });
+
+    const { api } = await import('~/lib/api');
+
+    await expect(api.lessonById(3)).rejects.toThrow('Not authorized for this lesson');
+    // An authenticated-but-forbidden caller must NOT be bounced to Core login
+    // (doing so would loop straight back to the same 403).
+    expect(window.location.href).toBe('http://localhost:3001/instructor/lesson/3');
+  });
+
   it('500 response throws with error text', async () => {
     mockFetch.mockResolvedValue({
       ok: false,
