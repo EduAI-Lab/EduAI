@@ -315,6 +315,14 @@ const VALID_COURSE_FIELDS = {
   instructorUserIds: "user-1",
 };
 
+function makeJsonPostRequest(body: Record<string, unknown>) {
+  return new Request("http://localhost/api/courses", {
+    method: "POST",
+    body: JSON.stringify(body),
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 describe("createCourse", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -401,12 +409,12 @@ describe("createCourse", () => {
     expect(prismaMock.course.create).not.toHaveBeenCalled();
   });
 
-  it("returns 400 when no department is provided (required field since §19 overhaul)", async () => {
+  it("returns 422 when no department is provided (required field since §19 overhaul)", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "UNIT_ADMIN" } } as any);
     prismaMock.user.findUnique.mockResolvedValue({ authorizedUnits: ["MATH"] });
     const { department: _omit, ...fieldsWithoutDept } = VALID_COURSE_FIELDS;
     const res = await createCourse(makePostRequest(fieldsWithoutDept));
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
   });
 
   it("returns 201 when UNIT_ADMIN creates inside their authorized units (#298)", async () => {
@@ -429,12 +437,12 @@ describe("createCourse", () => {
     expect(res.status).toBe(400);
   });
 
-  it("returns 400 when required fields are missing", async () => {
+  it("returns 422 when required fields are missing", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "ADMIN" } } as any);
     const res = await createCourse(makePostRequest({ name: "Only Name" }));
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
     const body = await res.json();
-    expect(body).toHaveProperty("error", "Invalid input");
+    expect(body).toHaveProperty("error", "VALIDATION_ERROR");
   });
 
   it("returns 422 when instructorUserIds do not map to INSTRUCTOR users", async () => {
@@ -446,7 +454,7 @@ describe("createCourse", () => {
     expect(body).toHaveProperty("error", "INVALID_INSTRUCTOR");
   });
 
-  it("returns 201 and creates course + enrollment on valid input", async () => {
+  it("returns 201 and creates course + enrollment on valid formData input", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "ADMIN" } } as any);
     prismaMock.user.findMany.mockResolvedValue([{ id: "user-1" }]);
     const created = { id: "course-1", name: "Algorithms" };
@@ -459,6 +467,45 @@ describe("createCourse", () => {
     expect(body).toEqual(created);
     expect(prismaMock.enrollment.createMany).toHaveBeenCalledWith({
       data: [{ courseId: "course-1", userId: "user-1", role: "INSTRUCTOR", isActive: true }],
+    });
+  });
+
+  it("returns 201 and creates course from JSON body", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "ADMIN" } } as any);
+    prismaMock.user.findMany.mockResolvedValue([{ id: "user-1" }]);
+    const created = { id: "course-json", name: "Algorithms" };
+    prismaMock.course.create.mockResolvedValue(created);
+    prismaMock.enrollment.createMany.mockResolvedValue({ count: 1 });
+
+    const res = await createCourse(
+      makeJsonPostRequest({
+        name: "Algorithms",
+        code: "COSC 320",
+        section: "001",
+        term: "Fall",
+        year: 2025,
+        startDate: "2025-09-01",
+        department: "COSC",
+        instructorUserIds: ["user-1"],
+      }),
+    );
+    expect(res.status).toBe(201);
+    expect(await res.json()).toEqual(created);
+  });
+
+  it("returns 422 for invalid JSON body", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "ADMIN" } } as any);
+    const res = await createCourse(
+      new Request("http://localhost/api/courses", {
+        method: "POST",
+        body: "{not-json",
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({
+      error: "VALIDATION_ERROR",
+      fields: { body: "invalid JSON" },
     });
   });
 });
@@ -486,10 +533,10 @@ describe("updateCourse", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns 400 on invalid payload", async () => {
+  it("returns 422 on invalid payload", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "ADMIN" } } as any);
     const res = await updateCourse(makePatchRequest({ year: "not-a-number" }), "c1");
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
   });
 
   it("returns 404 when course does not exist or is soft-deleted", async () => {

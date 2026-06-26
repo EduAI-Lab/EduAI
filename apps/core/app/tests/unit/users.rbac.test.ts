@@ -9,7 +9,9 @@ vi.mock("~/lib/auth/server", () => ({
   auth: { api: { getSession: vi.fn() } },
 }));
 
-vi.mock("~/lib/auth/guards.server", () => ({}));
+vi.mock("~/lib/auth/guards.server", () => ({
+  enforceAdminIfApiKey: vi.fn().mockResolvedValue({ response: null, session: null }),
+}));
 
 vi.mock("~/lib/prisma.server", () => ({
   default: {
@@ -54,7 +56,7 @@ beforeEach(() => {
   mockUser(ADMIN);
   vi.mocked(prisma.user.update).mockResolvedValue({
     id: "target",
-    _count: { enrollments: 0, courseTAs: 0, taughtCourses: 0, aiInteractions: 0 },
+    _count: { enrollments: 0, taughtCourses: 0, aiInteractions: 0 },
   } as never);
   vi.mocked(prisma.enrollment.count).mockResolvedValue(0);
 });
@@ -69,7 +71,7 @@ describe("PATCH /api/users/:id — self guards (#297)", () => {
   it("rejects self-role-change with 403", async () => {
     const res = await action(makePatch("admin-1", { role: "STUDENT" }));
     expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ error: "Cannot change your own role" });
+    expect(await res.json()).toEqual({ error: "CANNOT_CHANGE_OWN_ROLE" });
     expect(prisma.user.update).not.toHaveBeenCalled();
   });
 

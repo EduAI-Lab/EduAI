@@ -1,4 +1,5 @@
-import type { Prisma } from "@prisma/client";
+import type { Prisma, User } from "@prisma/client";
+import { UserRole } from "@prisma/client";
 import { randomUUID } from "crypto";
 import { createDataStreamResponse, formatDataStreamPart, streamText } from "ai";
 import {
@@ -7,7 +8,15 @@ import {
   mergeLocalInferenceFromEnv,
   parseModelIdentifier,
 } from "~/lib/ai/providers";
-import { getChatModelCapabilities } from "~/lib/ai/providers.server";
+import {
+  capMaxOutputTokensForPrompt,
+  estimateTokensFromChars,
+  getChatModelCapabilities,
+  resolveActiveChatModel,
+  resolveMaxOutputTokens,
+  resolveModelContextWindow,
+  ESTIMATED_CHARS_PER_TOKEN,
+} from "~/lib/ai/providers.server";
 import { resolveToolMaxOutputTokens } from "~/lib/ai/resolve-tool-max-tokens";
 import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
 import { needsCourseRag } from "~/lib/ai/chat-intent";
@@ -33,11 +42,17 @@ import {
   resolveCourseAccessWithCourse,
   type AccessLevel,
 } from "~/lib/auth/course-access.server";
-import { requireServiceKey } from "~/lib/auth/guards.server";
+import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { auth } from "~/lib/auth/server";
 import type { ActionFunctionArgs } from "react-router";
+import {
+  buildAdminSystemPrompt,
+  chatbotTypeFromMode,
+  createChatTools,
+  parseChatMode,
+} from "~/lib/agent-tools";
 import prisma from "~/lib/prisma.server";
-import { chatApiDebug } from "~/lib/chat-api-log";
+import { chatApiDebug, chatApiReject, chatApiTrace } from "~/lib/chat-api-log";
 import { clientApiKeysBodySchema, toUserProviderSettings } from "~/lib/chat-api-keys.schema";
 import { getPolicy } from "~/lib/policy.server";
 import {
@@ -71,6 +86,11 @@ type StoredMessageRecord = {
   content: Prisma.JsonValue;
 };
 
+type ProxyUserPayload = {
+  provider?: string;
+  id?: string;
+  email?: string;
+};
 
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0;
@@ -205,6 +225,120 @@ function extractAssistantText(messages: GenericMessage[] | undefined): string {
 }
 
 /**
+ * Maps an external `(provider, id)` pair to an EduAI user, creating the user +
+ * `ExternalUser` record when needed. The canonical EduAI email stays unchanged;
+ * we only update the mapping's email for reference.
+ */
+async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
+  const provider = proxyUser.provider?.trim().toLowerCase() || "aitutor";
+  const externalUserId = proxyUser.id?.trim();
+
+  if (!externalUserId) {
+    throw new Error("proxyUser.id is required");
+  }
+
+  let email = proxyUser.email?.trim().toLowerCase();
+  if (!email || !email.includes("@")) {
+    email = `${externalUserId}@${provider}.local`;
+  }
+
+  const existingMapping = await prisma.externalUser.findUnique({
+    where: {
+      provider_externalUserId: {
+        provider,
+        externalUserId,
+      },
+    },
+    include: {
+      user: true,
+    },
+  });
+
+  if (existingMapping?.user) {
+    if (!existingMapping.email && email) {
+      await prisma.externalUser.update({
+        where: { id: existingMapping.id },
+        data: { email },
+      });
+    }
+    return existingMapping.user;
+  }
+
+  let user = await prisma.user.findUnique({ where: { email } });
+
+  if (!user) {
+    user = await prisma.user.create({
+      data: {
+        email,
+        name: email,
+        role: UserRole.STUDENT,
+        isActive: true,
+      },
+    });
+  }
+
+  try {
+    await prisma.externalUser.create({
+      data: {
+        provider,
+        externalUserId,
+        email,
+        userId: user.id,
+      },
+    });
+  } catch (error: unknown) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error as { code?: string }).code === "P2002"
+    ) {
+      const mapping = await prisma.externalUser.findUnique({
+        where: {
+          provider_externalUserId: {
+            provider,
+            externalUserId,
+          },
+        },
+        include: { user: true },
+      });
+      if (mapping?.user) {
+        return mapping.user;
+      }
+    }
+    throw error;
+  }
+
+  return user;
+}
+
+function formatStreamError(error: unknown): string {
+  if (error instanceof Error) {
+    const message = error.message || error.name;
+    if (message.includes("Invalid arguments for tool")) {
+      return `${message} — The model passed invalid tool parameters. Retry or pick a tool-capable model (e.g. vllm:qwen2.5-32b-instruct).`;
+    }
+    return message;
+  }
+  if (typeof error === "string") {
+    return error;
+  }
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return "Unknown stream error";
+  }
+}
+
+function logStreamError(error: unknown, trace: Record<string, unknown>): void {
+  console.error("[chat-api] stream error", {
+    error: formatStreamError(error),
+    trace,
+    raw: error,
+  });
+}
+
+/**
  * POST /api/chat
  *
  * Accepts the latest chat turns, reconstructs server-side history, optionally
@@ -218,13 +352,24 @@ function extractAssistantText(messages: GenericMessage[] | undefined): string {
  */
 export async function action({ request }: ActionFunctionArgs) {
   try {
-    let session = await auth.api.getSession(request);
+    const apiKeyHeader = request.headers.get("x-api-key");
+    const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
+    if (apiKeyGuard) return apiKeyGuard;
+
+    let session = apiKeySession ?? (await auth.api.getSession(request));
     let isServiceKeyCaller = false;
     if (!session?.user) {
       const serviceKeyError = await requireServiceKey(request);
       if (serviceKeyError) return serviceKeyError;
       isServiceKeyCaller = true;
       session = { user: { id: "service", name: "Service", role: "ADMIN" } } as unknown as typeof session;
+    }
+
+    if (!session?.user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
     const body = await request.json();
@@ -236,6 +381,23 @@ export async function action({ request }: ActionFunctionArgs) {
     const streaming = body.streaming === undefined ? true : Boolean(body.streaming);
     const forceHybridRag = body.forceHybridRag === true;
     const chatId = typeof body.chatId === "string" ? body.chatId : undefined;
+    const chatMode = parseChatMode(body.chatMode);
+    const expectedChatbotType = chatbotTypeFromMode(chatMode);
+
+    chatApiTrace("request received", {
+      chatMode,
+      chatbotType: expectedChatbotType,
+      chatId: chatId ?? null,
+      model: model ?? null,
+      courseCode: courseCode ?? null,
+      courseId: courseId ?? null,
+      messageCount: rawMessages.length,
+      streaming,
+      userId: session.user.id,
+      userRole: session.user.role,
+    });
+    const proxyUserPayload =
+      body.proxyUser && typeof body.proxyUser === "object" ? (body.proxyUser as ProxyUserPayload) : null;
 
     const hasAdhdAssistField = Object.prototype.hasOwnProperty.call(body, "adhdAssist");
     const adhdAssist = body.adhdAssist === true;
@@ -248,7 +410,43 @@ export async function action({ request }: ActionFunctionArgs) {
       trimmedSystemPrompt = null;
     }
 
-    const actingUser = session!.user;
+    let actingUser = session.user;
+    if (proxyUserPayload) {
+      if (!apiKeyHeader) {
+        return new Response(JSON.stringify({ error: "proxyUser requires admin API key access" }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      try {
+        const proxyUser = await resolveProxyUser(proxyUserPayload);
+        actingUser = {
+          ...actingUser,
+          id: proxyUser.id,
+          email: proxyUser.email,
+          name: proxyUser.name,
+          role: proxyUser.role,
+        };
+      } catch (error) {
+        console.error("Failed to resolve proxy user:", error);
+        return chatApiReject(
+          400,
+          {
+            error: "Failed to resolve proxy user",
+            details: error instanceof Error ? error.message : "Unknown error",
+          },
+          { chatMode, userId: actingUser.id },
+        );
+      }
+    }
+
+    if (chatMode === "admin" && actingUser.role !== UserRole.ADMIN) {
+      return new Response(JSON.stringify({ error: "Forbidden" }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
 
     const normalizedIncomingMessages = filterIncomingClientMessages(
       rawMessages
@@ -286,6 +484,18 @@ export async function action({ request }: ActionFunctionArgs) {
           },
         );
       }
+      if (chat.chatbotType && chat.chatbotType !== expectedChatbotType) {
+        return new Response(
+          JSON.stringify({
+            error: "Chatbot type mismatch",
+            chatDeleted: true,
+          }),
+          {
+            status: 410,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
     }
 
     // A persisted chat is pinned to its course. If a follow-up turn explicitly
@@ -303,13 +513,26 @@ export async function action({ request }: ActionFunctionArgs) {
 
     // #657: the global "general assistant" chat was removed — every interactive
     // chat is now course-scoped. Server-to-server callers (admin API key /
-    // ai-tutor proxy) may still omit a course; regular sessions may not.
+    // ai-tutor proxy) and platform admins in admin chatMode may still omit a course.
     const isApiKeyCaller = isServiceKeyCaller;
-    if (!effectiveCourseId && !isApiKeyCaller) {
+    if (!effectiveCourseId && !isApiKeyCaller && chatMode !== "admin") {
       return new Response(JSON.stringify({ error: "COURSE_REQUIRED" }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
       });
+    }
+
+    let effectiveCourseCode = courseCode ?? null;
+    if (!effectiveCourseCode && effectiveCourseId) {
+      try {
+        const course = await prisma.course.findUnique({
+          where: { id: effectiveCourseId },
+          select: { code: true },
+        });
+        effectiveCourseCode = course?.code ?? null;
+      } catch (e) {
+        console.error("Failed to resolve course code by id", e);
+      }
     }
 
     // §10 (#302): course-scoped chats require course access for the acting
@@ -352,6 +575,7 @@ export async function action({ request }: ActionFunctionArgs) {
         chat = await prisma.chat.create({
           data: {
             userId: actingUser.id,
+            chatbotType: expectedChatbotType,
             courseId: effectiveCourseId,
             systemPrompt: trimmedSystemPrompt,
             adhdAssist,
@@ -394,6 +618,7 @@ export async function action({ request }: ActionFunctionArgs) {
       chat = await prisma.chat.create({
         data: {
           userId: actingUser.id,
+          chatbotType: expectedChatbotType,
           courseId: effectiveCourseId,
           systemPrompt: trimmedSystemPrompt,
           adhdAssist,
@@ -448,7 +673,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
     // Cap oversized tool results (#260), then digest older turns when the thread
     // exceeds the char budget (#259). Budget accounting counts tool payloads.
-    const modelMessages = prepareBoundedSessionContext(
+    let modelMessages = prepareBoundedSessionContext(
       capToolResultsInMessages(trimmedMessages),
     );
 
@@ -614,21 +839,130 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     const webToolsEnabled = await getPolicy("chat.webToolsEnabled");
-    const tools = buildChatToolRegistry({ effectiveCourseId, webToolsEnabled });
-
-    const modelCapabilities = await getChatModelCapabilities(model);
-    const supportsTools = modelCapabilities.supportsTools;
-    const useToolCalling = supportsTools && !forceHybridRag;
-    const toolMaxTokens = resolveToolMaxOutputTokens(modelCapabilities.maxTokens);
-
-    let streamConfig;
-
     const resolvedSystemPrompt =
       trimmedSystemPrompt ?? sanitizeSystemPrompt(chat.systemPrompt) ?? null;
 
-    const defaultCourseSystemPrompt =
-      resolvedSystemPrompt ||
-      `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
+    let streamConfig;
+    let supportsTools: boolean;
+    let useToolCalling: boolean;
+    let toolMaxTokens: number | undefined;
+    let courseRagHits: HybridRagHit[] = [];
+    let courseRagContextText = "";
+    let courseRagInject = false;
+
+    if (chatMode === "admin") {
+      const rbacUser = {
+        id: actingUser.id,
+        role: actingUser.role,
+      };
+
+      const tools = createChatTools(
+        {
+          user: rbacUser,
+          effectiveCourseId,
+          effectiveCourseCode,
+        },
+        chatMode,
+      );
+
+      const buildDefaultSystemPrompt = () =>
+        buildAdminSystemPrompt({
+          customPrompt: resolvedSystemPrompt,
+        });
+
+      const activeChatModel = await resolveActiveChatModel(model);
+      supportsTools = activeChatModel?.supportsTools ?? false;
+      const contextWindow = resolveModelContextWindow(
+        activeChatModel?.maxTokens,
+        parsedModel.providerId,
+      );
+      const desiredMaxOutput = resolveMaxOutputTokens(
+        activeChatModel?.maxTokens,
+        parsedModel.providerId,
+      );
+
+      const adminSessionBudget =
+        contextWindow <= 32_768
+          ? Math.floor(contextWindow * ESTIMATED_CHARS_PER_TOKEN * 0.42)
+          : undefined;
+
+      modelMessages = prepareBoundedSessionContext(
+        capToolResultsInMessages(trimmedMessages, 3000),
+        adminSessionBudget
+          ? {
+              charBudget: adminSessionBudget,
+              recentCount: 4,
+              digestMaxChars: 3000,
+            }
+          : undefined,
+      );
+
+      chatApiTrace("model capability check", {
+        chatMode,
+        model,
+        supportsTools,
+        contextWindow,
+        desiredMaxOutput,
+        adminSessionBudget: adminSessionBudget ?? null,
+        dbMaxTokens: activeChatModel?.maxTokens ?? null,
+        chatId: chat?.id ?? null,
+      });
+
+      if (!supportsTools) {
+        return chatApiReject(
+          400,
+          {
+            error:
+              "Admin chat requires a model with tool support. Select a tool-capable model in Admin → AI Models.",
+            code: "ADMIN_TOOLS_REQUIRED",
+          },
+          { model, chatId: chat?.id ?? null },
+        );
+      }
+
+      useToolCalling = true;
+
+      streamConfig = {
+        model: aiModel,
+        messages: modelMessages,
+        temperature: 0.2,
+        maxTokens: desiredMaxOutput,
+        maxSteps: TOOL_MAX_STEPS,
+        tools,
+        toolCallStreaming: streaming && parsedModel.providerId !== "vllm",
+        system: buildDefaultSystemPrompt(),
+      };
+
+      const systemChars = typeof streamConfig.system === "string" ? streamConfig.system.length : 0;
+      let messageChars = 0;
+      for (const message of modelMessages) {
+        messageChars += estimateMessageCharsForModel(message);
+      }
+      const estimatedInputTokens = estimateTokensFromChars(systemChars + messageChars);
+      streamConfig.maxTokens = capMaxOutputTokensForPrompt({
+        contextWindow,
+        estimatedInputTokens,
+        desiredMaxOutput,
+      });
+
+      chatApiTrace("max output tokens capped", {
+        contextWindow,
+        estimatedInputTokens,
+        desiredMaxOutput,
+        effectiveMaxTokens: streamConfig.maxTokens,
+        systemChars,
+        messageChars,
+      });
+    } else {
+      const tools = buildChatToolRegistry({ effectiveCourseId, webToolsEnabled });
+      const modelCapabilities = await getChatModelCapabilities(model);
+      supportsTools = modelCapabilities.supportsTools;
+      useToolCalling = supportsTools && !forceHybridRag;
+      toolMaxTokens = resolveToolMaxOutputTokens(modelCapabilities.maxTokens);
+
+      const defaultCourseSystemPrompt =
+        resolvedSystemPrompt ||
+        `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
 
 IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.
 
@@ -636,101 +970,98 @@ ${LATEST_TURN_FOCUS_INSTRUCTION}
 
 ${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ""}
 
-Be helpful, conversational, and accurate. Use markdown for formatting.`;
+Be helpful, conversational, and accurate. Use markdown for formatting. For mathematical expressions, use LaTeX delimiters: inline math with $$...$$ and display math with $$...$$ on its own line.`;
 
-    let courseRagHits: HybridRagHit[] = [];
-    let courseRagContextText = "";
-    let courseRagInject = false;
-
-    if (shouldPrefetchCourseRag(hasCourse) && effectiveCourseId) {
-      try {
-        courseRagHits = await findRelevantContent(
-          userQuestion,
-          effectiveCourseId,
-          HYBRID_RAG_MAX_CHUNKS,
-        );
-        courseRagInject = shouldInjectCourseRag({
-          hasCourse,
-          courseRagNeeded,
-          hits: courseRagHits,
-        });
-        if (courseRagInject && courseRagHits.length > 0) {
-          courseRagContextText = buildCappedRagContextText(
-            courseRagHits,
+      if (shouldPrefetchCourseRag(hasCourse) && effectiveCourseId) {
+        try {
+          courseRagHits = await findRelevantContent(
+            userQuestion,
+            effectiveCourseId,
             HYBRID_RAG_MAX_CHUNKS,
-            HYBRID_RAG_MAX_CONTEXT_CHARS,
           );
+          courseRagInject = shouldInjectCourseRag({
+            hasCourse,
+            courseRagNeeded,
+            hits: courseRagHits,
+          });
+          if (courseRagInject && courseRagHits.length > 0) {
+            courseRagContextText = buildCappedRagContextText(
+              courseRagHits,
+              HYBRID_RAG_MAX_CHUNKS,
+              HYBRID_RAG_MAX_CONTEXT_CHARS,
+            );
+          }
+        } catch (error) {
+          console.error("Error prefetching course RAG context:", error);
+          courseRagInject = shouldInjectCourseRag({
+            hasCourse,
+            courseRagNeeded,
+            hits: [],
+          });
         }
-      } catch (error) {
-        console.error("Error prefetching course RAG context:", error);
-        courseRagInject = shouldInjectCourseRag({
-          hasCourse,
-          courseRagNeeded,
-          hits: [],
-        });
       }
-    }
 
-    if (!useToolCalling) {
-      if (courseRagInject) {
-        const systemWithRAG = courseRagContextText
-          ? `${defaultCourseSystemPrompt}
+      if (!useToolCalling) {
+        if (courseRagInject) {
+          const systemWithRAG = courseRagContextText
+            ? `${defaultCourseSystemPrompt}
 
 ${buildRagSystemBlock(courseRagContextText)}`
-          : `${defaultCourseSystemPrompt}
+            : `${defaultCourseSystemPrompt}
 
 ${buildEmptyCourseRagBlock()}`;
 
-        streamConfig = {
-          model: aiModel,
-          messages: modelMessages,
-          temperature: 0.6,
-          maxTokens: 8192,
-          system: systemWithRAG,
-        };
+          streamConfig = {
+            model: aiModel,
+            messages: modelMessages,
+            temperature: 0.6,
+            maxTokens: 8192,
+            system: systemWithRAG,
+          };
+        } else {
+          streamConfig = {
+            model: aiModel,
+            messages: modelMessages,
+            temperature: 0.6,
+            maxTokens: 8192,
+            system: defaultCourseSystemPrompt,
+          };
+        }
       } else {
-        streamConfig = {
-          model: aiModel,
-          messages: modelMessages,
-          temperature: 0.6,
-          maxTokens: 8192,
-          system: defaultCourseSystemPrompt,
-        };
-      }
-    } else {
-      const baseSystemPrompt = resolvedSystemPrompt || `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
+        const baseSystemPrompt = resolvedSystemPrompt || `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
 
 IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.
 
 ${LATEST_TURN_FOCUS_INSTRUCTION}`;
 
-      let toolSystemPrompt = buildToolCallingSystemPrompt({
-        basePrompt: baseSystemPrompt,
-        courseCode: courseCode ?? undefined,
-        webToolsEnabled,
-        hasPreloadedRag: Boolean(courseRagContextText),
-      });
+        let toolSystemPrompt = buildToolCallingSystemPrompt({
+          basePrompt: baseSystemPrompt,
+          courseCode: courseCode ?? undefined,
+          webToolsEnabled,
+          hasPreloadedRag: Boolean(courseRagContextText),
+        });
 
-      if (courseRagContextText) {
-        toolSystemPrompt = `${toolSystemPrompt}
+        if (courseRagContextText) {
+          toolSystemPrompt = `${toolSystemPrompt}
 
 ${buildRagSystemBlock(courseRagContextText, { toolPath: true })}`;
-      } else if (courseRagInject) {
-        toolSystemPrompt = `${toolSystemPrompt}
+        } else if (courseRagInject) {
+          toolSystemPrompt = `${toolSystemPrompt}
 
 ${buildEmptyCourseRagBlock()}`;
-      }
+        }
 
-      streamConfig = {
-        model: aiModel,
-        messages: modelMessages,
-        temperature: 0.6,
-        maxTokens: toolMaxTokens,
-        maxSteps: TOOL_MAX_STEPS,
-        tools,
-        toolCallStreaming: streaming,
-        system: toolSystemPrompt,
-      };
+        streamConfig = {
+          model: aiModel,
+          messages: modelMessages,
+          temperature: 0.6,
+          maxTokens: toolMaxTokens,
+          maxSteps: TOOL_MAX_STEPS,
+          tools,
+          toolCallStreaming: streaming,
+          system: toolSystemPrompt,
+        };
+      }
     }
 
     const effectiveAdhdAssist = resolveEffectiveAdhdAssist({
@@ -743,7 +1074,8 @@ ${buildEmptyCourseRagBlock()}`;
     );
 
     const streamStartedAt = Date.now();
-    const needsOversight = effectiveAdhdAssist && isAdhdOversightEnabled();
+    const needsOversight =
+      chatMode !== "admin" && effectiveAdhdAssist && isAdhdOversightEnabled();
     const lastUserText = extractMessageText(
       [...trimmedMessages].reverse().find((message) => message.role === "user"),
     );
@@ -791,7 +1123,9 @@ ${buildEmptyCourseRagBlock()}`;
 
     // Log the LLM stream configuration
     chatApiDebug("Starting LLM stream", {
+      chatMode,
       model,
+      supportsTools,
       courseRagNeeded,
       courseRagInject,
       ragTopSimilarity: courseRagHits[0]?.similarity ?? null,
@@ -803,18 +1137,62 @@ ${buildEmptyCourseRagBlock()}`;
       adhdOversight: needsOversight,
       ...llmPromptSizeHints(streamConfig.system, modelMessages),
     });
-    const result = await streamText({
-      ...(streamConfig as Parameters<typeof streamText>[0]),
-      onFinish: needsOversight
-        ? undefined
-        : async ({ text, usage, finishReason }) => {
-            logResponseCompliance(text, {
-              finishReason,
-              promptTokens: usage?.promptTokens,
-              completionTokens: usage?.completionTokens,
-            });
+
+    const streamTrace = {
+      chatMode,
+      model,
+      chatId: chat.id,
+      supportsTools,
+      providerId: parsedModel.providerId,
+    };
+
+    let result;
+    try {
+      result = await streamText({
+        ...(streamConfig as Parameters<typeof streamText>[0]),
+        onFinish: needsOversight
+          ? undefined
+          : async ({ text, usage, finishReason, response }) => {
+              logResponseCompliance(text, {
+                finishReason,
+                promptTokens: usage?.promptTokens,
+                completionTokens: usage?.completionTokens,
+              });
+              if (!streaming) return;
+              const assistantText = text || extractAssistantText(response?.messages);
+              if (assistantText) {
+                await appendMessages([
+                  { id: randomUUID(), role: "assistant", content: assistantText },
+                ]).catch((err) => {
+                  console.error("[chat-api] failed to persist streaming assistant message", err);
+                });
+              }
+            },
+        onError:
+          chatMode === "admin"
+            ? ({ error }) => {
+                logStreamError(error, streamTrace);
+              }
+            : undefined,
+      });
+    } catch (error) {
+      if (chatMode === "admin") {
+        logStreamError(error, streamTrace);
+        const hint =
+          parsedModel.providerId === "vllm"
+            ? " Pick a tool-capable vLLM model registered in Admin → AI Models."
+            : "";
+        return chatApiReject(
+          502,
+          {
+            error: `LLM stream failed: ${formatStreamError(error)}.${hint}`,
+            code: "LLM_STREAM_FAILED",
           },
-    });
+          streamTrace,
+        );
+      }
+      throw error;
+    }
 
     if (needsOversight) {
       let draft = "";
@@ -944,7 +1322,21 @@ ${buildEmptyCourseRagBlock()}`;
         headers["X-Chat-Id"] = chat.id;
       }
       headers["X-Web-Tools-Enabled"] = webToolsEnabled ? "1" : "0";
-      return result.toDataStreamResponse({ headers });
+      return result.toDataStreamResponse({
+        headers,
+        ...(chatMode === "admin"
+          ? {
+              getErrorMessage: (error) => {
+                logStreamError(error, streamTrace);
+                const base = formatStreamError(error);
+                if (parsedModel.providerId === "vllm") {
+                  return `${base} — Check that the selected model supports tools and that max output tokens fit the vLLM context window.`;
+                }
+                return base;
+              },
+            }
+          : {}),
+      });
     } else {
       try {
         await result.consumeStream();

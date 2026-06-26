@@ -2,7 +2,9 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import api from '~/lib/api';
 import type { User } from '~/lib/types';
 
-export type AuthUser = Pick<User, 'id' | 'name' | 'role' | 'authorizedUnits'>;
+export type AuthUser = Pick<User, 'id' | 'name' | 'role' | 'authorizedUnits'> & {
+  email?: string;
+};
 
 type AuthContextValue = {
   user: AuthUser | null;
@@ -42,6 +44,7 @@ export function AuthProvider({ initialUser, children }: AuthProviderProps) {
           setUser({
             id: nextUser.id,
             name: nextUser.name,
+            email: nextUser.email,
             role: nextUser.role,
             authorizedUnits: nextUser.authorizedUnits,
           });
