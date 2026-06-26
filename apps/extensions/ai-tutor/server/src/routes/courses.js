@@ -38,6 +38,7 @@ import {
   importExternalCourseForUser,
   importTaughtCoursesFromCore,
 } from '../services/importTaughtCoursesService.js';
+import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
 
 const router = express.Router();
 
