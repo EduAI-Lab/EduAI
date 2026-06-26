@@ -212,6 +212,7 @@ export function ChatMessage({
           <div className="flex flex-col gap-2 flex-1 max-w-[80%] min-w-0">
             <MessageContent
               markdown={true}
+              isAnimating={isStreaming}
               className="px-4 py-3 bg-card border border-border text-foreground [border-radius:4px_16px_16px_16px]"
             >
               {textContent}
