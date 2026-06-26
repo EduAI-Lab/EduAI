@@ -10,9 +10,10 @@
  *   - Every request sets `credentials: 'include'` so Better Auth session
  *     cookies are attached. Do not switch to a bearer/JWT flow without
  *     updating the entire stack.
- *   - The shared `http()` helper turns ANY 401/403 into a hard redirect to
- *     Core's login page (`VITE_CORE_URL/login?redirect=<current-url>`).
- *     Route guards rely on this behavior.
+ *   - The shared `http()` helper turns a 401 into a hard redirect to Core's
+ *     login page (`VITE_CORE_URL/login?redirect=<current-url>`). Route guards
+ *     rely on this behavior. A 403 is surfaced as a thrown error (NOT a
+ *     redirect) — the caller is already authenticated, so re-login would loop.
  *   - `logout` deliberately bypasses `http()` to avoid the redirect loop
  *     that would otherwise fire on the post-sign-out 401.
  *   - `updateActivity` accepts three legal `options` shapes for caller
@@ -35,7 +36,6 @@ import type {
   BugReportStatus,
   Course,
   EduAiApiKeyStatus,
-  EduAiCourse,
   EnrollmentRole,
   StudentMetricRow,
   SubmissionRow,
@@ -66,7 +66,13 @@ async function http(path: string, init?: RequestInit) {
   });
 
   if (!res.ok) {
-    if (res.status === 401 || res.status === 403) {
+    // 401 = unauthenticated → bounce to Core login so a session can be
+    // established. 403 = authenticated but not authorized for THIS resource;
+    // redirecting to login would just bounce an already-signed-in user
+    // straight back here and loop forever (e.g. a UNIT_ADMIN deep-linking to a
+    // lesson outside their unit). Surface 403 as a normal error instead so the
+    // route's error boundary can render it.
+    if (res.status === 401) {
       const coreUrl = import.meta.env.VITE_CORE_URL || 'http://localhost:3000';
       window.location.href = `${coreUrl}/login?redirect=${encodeURIComponent(window.location.href)}`;
       throw new Error('Authentication required');
@@ -80,7 +86,6 @@ async function http(path: string, init?: RequestInit) {
 export const api = {
   me: () => http('/api/me') as Promise<{ user: User | null }>,
   listCourses: () => http('/api/courses'),
-  listEduAiCourses: () => http('/api/eduai/courses') as Promise<EduAiCourse[]>,
   courseById: (courseId: number) => http(`/api/courses/${courseId}`),
   updateCourse: (
     courseId: number,
@@ -113,11 +118,6 @@ export const api = {
     },
   ) =>
     http(`/api/courses/${courseId}/import`, {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    }),
-  importEduAiCourse: (payload: { externalCourseId: string }) =>
-    http('/api/courses/import-external', {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
@@ -332,11 +332,6 @@ export const api = {
   listAdminCourses: () => http('/api/admin/courses') as Promise<Course[]>,
   getAdminCourseEnrollments: (courseId: number) =>
     http(`/api/admin/courses/${courseId}/enrollments`) as Promise<AdminEnrollmentData>,
-  enrollStudentInCourse: (courseId: number, userId: string) =>
-    http(`/api/admin/courses/${courseId}/enrollments`, {
-      method: 'POST',
-      body: JSON.stringify({ userId }),
-    }) as Promise<{ ok: true }>,
   removeStudentFromCourse: (courseId: number, userId: string) =>
     http(`/api/admin/courses/${courseId}/enrollments/${userId}`, {
       method: 'DELETE',
@@ -346,10 +341,6 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ role }),
     }) as Promise<{ ok: true; role: EnrollmentRole }>,
-  adminSyncCourseEnrollments: (courseId: number) =>
-    http(`/api/admin/courses/${courseId}/sync-enrollments`, {
-      method: 'POST',
-    }) as Promise<{ ok: true }>,
   courseSubmissions: (
     courseId: number,
     params?: { activityId?: number; studentId?: string; take?: number; skip?: number },

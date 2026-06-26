@@ -40,8 +40,8 @@ describe("signUpSchema", () => {
   const valid = {
     name: "Ada",
     email: "ada@ubc.ca",
-    password: "12345678",
-    confirmPassword: "12345678",
+    password: "Abcdef1!",
+    confirmPassword: "Abcdef1!",
   };
 
   it("accepts valid input", () => {
@@ -50,6 +50,19 @@ describe("signUpSchema", () => {
 
   it("rejects a too-short name", () => {
     expect(signUpSchema.safeParse({ ...valid, name: "A" }).success).toBe(false);
+  });
+
+  it("rejects a password that fails the strength policy", () => {
+    const weak = { ...valid, password: "weakpass", confirmPassword: "weakpass" };
+    expect(signUpSchema.safeParse(weak).success).toBe(false);
+  });
+
+  it("accepts a 16-char passphrase", () => {
+    const phrase = "correct horse ba";
+    expect(
+      signUpSchema.safeParse({ ...valid, password: phrase, confirmPassword: phrase })
+        .success,
+    ).toBe(true);
   });
 
   it("rejects mismatched passwords on confirmPassword path", () => {
@@ -98,11 +111,21 @@ describe("resetPasswordSchema", () => {
   it("accepts matching passwords and a token", () => {
     expect(
       resetPasswordSchema.safeParse({
-        password: "12345678",
-        confirmPassword: "12345678",
+        password: "Abcdef1!",
+        confirmPassword: "Abcdef1!",
         token: "tok",
       }).success,
     ).toBe(true);
+  });
+
+  it("rejects a weak password that fails the strength policy", () => {
+    expect(
+      resetPasswordSchema.safeParse({
+        password: "weakpass",
+        confirmPassword: "weakpass",
+        token: "tok",
+      }).success,
+    ).toBe(false);
   });
 });
 
@@ -131,10 +154,20 @@ describe("changePasswordSchema", () => {
     expect(
       changePasswordSchema.safeParse({
         currentPassword: "old",
-        newPassword: "12345678",
-        confirmPassword: "12345678",
+        newPassword: "Abcdef1!",
+        confirmPassword: "Abcdef1!",
       }).success,
     ).toBe(true);
+  });
+
+  it("rejects a newPassword that fails the strength policy", () => {
+    expect(
+      changePasswordSchema.safeParse({
+        currentPassword: "old",
+        newPassword: "weakpass",
+        confirmPassword: "weakpass",
+      }).success,
+    ).toBe(false);
   });
 });
 
