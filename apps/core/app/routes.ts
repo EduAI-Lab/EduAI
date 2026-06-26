@@ -13,6 +13,7 @@ export default [
   route("/dashboard", "routes/dashboard.tsx"),
   route("/onboarding/student-id", "routes/onboarding.student-id.tsx"),
   route("/chat", "routes/chat.tsx"),
+  route("/chat/:chatId", "routes/chat.$chatId.tsx"),
   route("/settings", "routes/settings.tsx"),
   route("/api/canvas/*", "routes/api/canvas.$.ts"),
   route("/api/chat", "routes/api/chat.ts"),

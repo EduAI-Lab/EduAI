@@ -43,11 +43,26 @@ import { getAccessibleCourseCodes } from "~/lib/courses/server";
 import { parsePreferenceUpdates } from "~/lib/user-preferences";
 import { postAssistiveClientEvent } from "~/lib/assistive-events.client";
 
-export async function loader({ request }: LoaderFunctionArgs) {
+export async function loader({ request, params }: LoaderFunctionArgs) {
   const session = await auth.api.getSession(request);
 
   if (!session?.user) {
     return redirect("/auth/login");
+  }
+  const routeChatId = params.chatId;
+
+  if (routeChatId) {
+    const chat = await prisma.chat.findFirst({
+      where: {
+        id: routeChatId,
+        userId: session.user.id,
+      },
+      select: { id: true },
+    });
+
+    if (!chat) {
+      return redirect("/chat");
+    }
   }
 
   const dbModels = await prisma.aIModel.findMany({
