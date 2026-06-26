@@ -4,6 +4,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 
 vi.mock("~/lib/prisma.server", () => ({
   default: {
+    $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma)),
     passwordHistory: {
       findMany: vi.fn(),
       create: vi.fn(),

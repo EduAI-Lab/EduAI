@@ -15,6 +15,7 @@ import {
   isPasswordReused,
   recordPasswordHistory,
 } from "./password-history.server";
+import { invalidatePasswordExpiryCache } from "./password-expiry.server";
 
 export const authBaseURL =
   process.env.BETTER_AUTH_URL?.trim() ||
@@ -141,6 +142,7 @@ export const auth = betterAuth({
         // #339: record the new hash in password_history after the row exists.
         after: async (account) => {
           if (account.providerId === "credential" && account.password) {
+            invalidatePasswordExpiryCache(account.userId);
             await recordPasswordHistory({
               userId: account.userId,
               passwordHash: account.password,
@@ -156,6 +158,7 @@ export const auth = betterAuth({
         },
         after: async (account) => {
           if (account.providerId === "credential" && account.password) {
+            invalidatePasswordExpiryCache(account.userId);
             await recordPasswordHistory({
               userId: account.userId,
               passwordHash: account.password,
