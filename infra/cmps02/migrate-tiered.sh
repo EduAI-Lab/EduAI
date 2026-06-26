@@ -75,3 +75,11 @@ for i in $(seq 1 40); do
 done
 
 curl -s http://127.0.0.1:8001/v1/models -H "Authorization: Bearer vllm-local" | jq -r '.data[].id' | sed 's/^/  /'
+
+echo ""
+echo "Done. Optional energy sidecar:"
+echo "  ~/eduai-energy-meter/deploy-cmps02.sh && ./deploy-edge-proxy.sh"
+echo "Next on s378:"
+echo '  VLLM_BASE_URL="http://cmps02.ok.ubc.ca:8001"'
+echo '  ENERGY_SIDECAR_URL="http://cmps02.ok.ubc.ca:8001/energy"'
+echo '  VLLM_API_KEY="vllm-local"'

@@ -29,6 +29,32 @@ Deploy: **`./migrate.sh`** (tiered 7B + 32B). **`migrate-120b.sh`** is not used 
 
 ---
 
+## Edge proxy (nginx on :8001)
+
+Same pattern as [cmps01](../cmps01/README.md): **one public port** for vLLM + optional energy sidecar (no extra firewall rules).
+
+| Docker name | Host bind | Role |
+| --- | --- | --- |
+| **`eduai-vllm`** | `127.0.0.1:18001` | Qwen 7B backend |
+| **`eduai-vllm-t3`** | `127.0.0.1:18002` | Qwen 32B AWQ backend |
+| **`eduai-vllm-proxy`** | `127.0.0.1:18091` | LiteLLM router (internal) |
+| **`eduai-edge-proxy`** | host `:8001` | nginx — `/v1/*` → LiteLLM, `/energy/*` → `:9100` |
+| **`eduai-energy-meter`** | `127.0.0.1:9100` | NVML Joules sidecar (optional) |
+
+**Why `network_mode: host`?** LiteLLM and nginx must reach vLLM backends on host loopback (`127.0.0.1:18001/18002`).
+
+### Energy sidecar (research Joules)
+
+```bash
+# once on cmps02 — copy tools/energy-meter to ~/eduai-energy-meter
+cd ~/eduai-energy-meter && chmod +x deploy-cmps02.sh && ./deploy-cmps02.sh
+cd ~/cmps02 && ./deploy-edge-proxy.sh
+```
+
+s378: `ENERGY_SIDECAR_URL=http://cmps02.ok.ubc.ca:8001/energy`
+
+---
+
 ## Deploy (recommended)
 
 ```bash
