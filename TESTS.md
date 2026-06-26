@@ -55,7 +55,15 @@ Per app, from the app directory:
 
 Generated coverage report directories are gitignored.
 
-The **Question Maker backend** `test:coverage` (`vitest.coverage.config.js`) measures the unit **and** integration suites together over `src/**` (excluding the `src/index.js` bootstrap and operational `scripts/`). The integration suite needs a PostgreSQL test database via `TEST_DATABASE_URL`; without it the integration tests self-skip and only unit coverage is reported. A `globalSetup` syncs the schema once up front so the shared-worker run is deterministic.
+All three backends measure the unit **and** integration suites together in a single pass via a dedicated `vitest.coverage.config.*` (with `json-summary` + `reportOnFailure` so CI always gets a figure):
+
+- **Question Maker backend** — `src/**` (excluding the `src/index.js` bootstrap and operational `scripts/`). The integration suite needs a PostgreSQL test database via `TEST_DATABASE_URL`; without it the integration tests self-skip and only unit coverage is reported. A `globalSetup` syncs the schema once up front so the shared-worker run is deterministic.
+- **AI Tutor server** — `src/**` (excluding `src/index.js`); `globalSetup` runs `prisma migrate deploy` against the `DATABASE_URL` test database.
+- **EduAI (core)** — `app/**`; the unit (happy-dom) and integration (node) suites run as two Vitest `projects` so coverage spans both environments.
+
+### CI coverage report
+
+The **Backend Coverage Report** workflow (`.github/workflows/eduai-summer-2026-coverage-report.yml`) runs on every push to `development` (and manual dispatch). It runs the three backend `test:coverage` scripts against Postgres service containers, aggregates the `coverage-summary.json` outputs via `eduai-summer-2026/scripts/generate-coverage-report.js`, and commits a Markdown summary to `eduai-summer-2026/reports/coverage/coverage-report.md` on the `eduai-summer-2026` branch. Only the report is committed — coverage build artifacts stay gitignored. Scope is backend packages only; frontend suites are excluded.
 
 ## Structure
 
@@ -124,10 +132,11 @@ Each section should use this format:
 
 **Path:** `tests/e2e/tests/`
 
-> Frontend tests are deferred while the UI is in flux. The suite below covers backend API flows only.
+> Most E2E coverage is API-only. Browser UI tests are added selectively for high-risk regressions (see `core/chat-code-block.spec.ts`).
 
 | Test file | What it tests |
 |-----------|---------------|
+| [`core/chat-code-block.spec.ts`](tests/e2e/tests/core/chat-code-block.spec.ts) | Browser regression for #667: enrolled student on `/chat` receives a mocked streamed assistant reply with a fenced `js` code block; after streaming completes, Streamdown **Copy Code** writes the snippet to the clipboard and **Download file** saves the code. |
 | [`core/registration.spec.ts`](tests/e2e/tests/core/registration.spec.ts) | Core user registration (sign-up rejects duplicate email, short password, invalid email), sign-in success/failure, `GET /api/me` auth gate and profile shape, `PATCH /api/me` name update and role-change rejection, `POST /api/sessions/validate` 200/401/405, and sign-out session invalidation. |
 | [`core/access-control.spec.ts`](tests/e2e/tests/core/access-control.spec.ts) | Unauthenticated requests to all protected Core routes return 401; STUDENT role: can read own profile, gets empty course list (no enrollments), can read and PATCH assistive preferences; STUDENT is blocked (403) from admin-only AI-provider/model lists, course creation, and invitation management; sign-out then re-sign-in restores access; service key validate round-trip. |
 | [`ai-tutor/access.spec.ts`](tests/e2e/tests/ai-tutor/access.spec.ts) | AI Tutor server health (`GET /api/health`); unauthenticated calls to `/api/me` and `/api/courses` return 401; authenticated user (Core session cookie) can call `/api/me` and `/api/courses`; STUDENT blocked from admin routes; `POST /api/logout` proxies sign-out to Core and invalidates the session; idempotent logout with no session. |
@@ -293,7 +302,8 @@ Each section should use this format:
 | [`dashboard-ta-view.test.tsx`](apps/core/app/tests/unit/dashboard-ta-view.test.tsx) | Verifies `DashboardTaView` (TA as `Enrollment(role=TA)`, not a platform role) does not show the Question Maker dashboard card. |
 | [`dashboard-student-view.test.tsx`](apps/core/app/tests/unit/dashboard-student-view.test.tsx) | Verifies `DashboardStudentView` does not show the Question Maker dashboard card and renders student course/chat actions (incl. the no-courses state). |
 | [`ChatTranscriptViewer.test.tsx`](apps/core/app/tests/unit/ChatTranscriptViewer.test.tsx) | Verifies the read-only transcript viewer renders its banner, empty state, loading spinner, and shows a "Continue in chat" link only when `continueChatId` is provided. |
-| [`ChatMessage.test.tsx`](apps/core/app/tests/unit/ChatMessage.test.tsx) | Verifies user vs AI message rendering — text content, right-aligned user layout, `U`/`AI` avatar fallbacks, AI copy button, and that both mark their content as a reading surface. |
+| [`ChatMessage.test.tsx`](apps/core/app/tests/unit/ChatMessage.test.tsx) | Verifies user vs AI message rendering — text content, right-aligned user layout, `U`/`AI` avatar fallbacks, the message-level copy button, `isAnimating={isStreaming}` wiring into `MessageContent`, and reading-surface classes. Does **not** exercise real Streamdown code-block copy/download controls (Streamdown is not loaded in jsdom). |
+| [`MarkdownRenderer.test.tsx`](apps/core/app/tests/unit/MarkdownRenderer.test.tsx) | Verifies the chat markdown wrapper renders the prose/reading-surface shell and resolves lazy Streamdown with a **mock** component. Does **not** test fenced-code toolbar interactivity — see `tests/e2e/tests/core/chat-code-block.spec.ts`. |
 | [`revive-stored-message.test.ts`](apps/core/app/tests/unit/revive-stored-message.test.ts) | Verifies `messageToText` / `reviveStoredMessage` recover persisted chat history across storage shapes (plain string, AI-SDK content array, double-serialized message, UIMessage parts) so restored chats render without duplication or loss. |
 | [`canvas-material-sync-dialog.test.tsx`](apps/core/app/tests/unit/canvas-material-sync-dialog.test.tsx) | Verifies the Canvas material sync dialog loads Canvas files on open (pre-checking `not_imported` files), syncs the selected files, and shows failed-sync details after refresh. |
 
@@ -350,7 +360,8 @@ Unit tests for the shared design-system component library (`@eduai/ui`). Run wit
 
 | Test file | What it tests |
 |-----------|---------------|
-| `api.test.ts` | Unauthorized requests redirect to the login page, server errors surface as exceptions, and successful requests return parsed data |
+| `api.test.ts` | Unauthenticated (`401`) requests redirect to the login page; forbidden (`403`) requests throw without redirecting so an already-signed-in user is not bounced into an infinite login loop; server errors surface as exceptions; successful requests return parsed data |
+| `nav.test.ts` | `getNavForUser` labels every role's courses entry "Courses" (student → `/student`, instructor-shell roles → `/instructor`), never emits "My courses"/"Teaching", gives admins only the Bug Reports item (no user-management/enrollments), and returns `[]` for a null user |
 | `BugReportDialog.test.tsx` | The bug report form rejects descriptions that are too short, takes a screenshot on open, and submits diagnostic data including the reporter's anonymous preference |
 | `BugReportProvider.test.tsx` | Page location and diagnostic capture tools are available to any component that needs to file a bug report |
 | `BugReportsTab.test.tsx` | Admins can view, update status, and copy bug reports; anonymous submissions hide reporter identity in the copied output |
