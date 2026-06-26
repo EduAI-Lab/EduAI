@@ -1,0 +1,12 @@
+# Active LiteLLM config — overwritten by migrate-*.sh.
+# Default checked in: 120B layout. See litellm-config.120b.yaml / .tiered.yaml.
+
+model_list:
+  - model_name: gpt-oss-120b
+    litellm_params:
+      model: openai/gpt-oss-120b
+      api_base: http://127.0.0.1:18001/v1
+      api_key: vllm-local
+
+general_settings:
+  master_key: vllm-local

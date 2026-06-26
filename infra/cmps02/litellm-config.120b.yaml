@@ -1,0 +1,12 @@
+# LiteLLM — gpt-oss-120b only (tensor-parallel across both GPUs).
+# Used by migrate-120b.sh (recommended layout for cmps02).
+
+model_list:
+  - model_name: gpt-oss-120b
+    litellm_params:
+      model: openai/gpt-oss-120b
+      api_base: http://127.0.0.1:18001/v1
+      api_key: vllm-local
+
+general_settings:
+  master_key: vllm-local
