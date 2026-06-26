@@ -335,15 +335,16 @@ export default function Chat() {
   );
 
   useEffect(() => {
-    if (!routeChatId) {
-      setChatId(null);
-      setMessages([]);
-      setSystemPrompt(null);
-      setReadOnlyTranscript(null);
-      return;
-    }
+  if (!routeChatId) {
+    setChatId(null);
+    setMessages([]);
+    setSystemPrompt(null);
+    setReadOnlyTranscript(null);
+    return;
+  }
+
     void restoreChat(routeChatId);
-  }, [routeChatId, restoreChat]);
+  }, [routeChatId, restoreChat, setMessages]);
 
   const handleSelectChat = useCallback(
     (id: string) => {
