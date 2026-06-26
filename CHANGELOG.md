@@ -43,6 +43,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
+- [core] fix: Restore AI chat code-block copy and download buttons — wire `@streamdown/code`, fix Tailwind `@source` paths for hoisted Streamdown chunks, lazy-load the ESM-only plugin on the client so E2E Docker serve starts, and pass `isAnimating={isStreaming}` so controls enable after streaming. (#667, @ebabar5, 2026-06-25) — [#768](https://github.com/EduAI-Lab/EduAI/pull/768)
 - [ai-tutor] fix: Stop the infinite redirect loop when an authenticated user opens a forbidden resource (e.g. a `UNIT_ADMIN` deep-linking to `/instructor/lesson/:id` outside their unit) — the API client now only redirects 401s to Core login and surfaces 403s as a thrown error for the route error boundary. (#745, @Ayyhab, 2026-06-25)
 - [ai-tutor] fix: Return the student/TA course list without a 500 — restore the missing `getEduAiCookieForRequest` import and probe TA enrollments with `count()` (CourseEnrollment has a composite key and no `id`) in `GET /api/courses`. (#745, @Ayyhab, 2026-06-25)
 - [ai-tutor] fix: Resolve the long-standing typecheck baseline — the student dashboard "Completed" count used a non-existent `Progress.isComplete` (always 0; now derived from `completed`/`total`), and the sidebar footer now carries the user's `email` through `AuthUser` so it renders instead of showing blank. (#745, @Ayyhab, 2026-06-25)
