@@ -64,6 +64,7 @@
     "next-themes": "*",
     "shiki": "*",
     "streamdown": "*",
-    "@streamdown/code": "*"
+    "@streamdown/code": "*",
+    "@streamdown/math": "*"
   }
 }

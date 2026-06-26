@@ -47,6 +47,11 @@ vi.mock("~/lib/auth/course-access.server", () => ({
 }));
 
 vi.mock("~/lib/ai/providers.server", () => ({
+  getChatModelCapabilities: vi.fn().mockResolvedValue({
+    supportsTools: false,
+    maxTokens: null,
+    name: null,
+  }),
   modelSupportsTools: vi.fn().mockResolvedValue(false),
 }));
 

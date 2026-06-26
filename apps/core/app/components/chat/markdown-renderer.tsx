@@ -1,5 +1,5 @@
 import { Suspense } from 'react';
-import { LazyStreamdown } from '../../../../../packages/ui/src/ui/lazy-streamdown';
+import { LazyStreamdown } from '@eduai/ui';
 import { READING_SURFACE_CLASS } from '~/components/assistive/reading-surface';
 import { cn } from '~/lib/utils';
 

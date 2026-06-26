@@ -16,7 +16,8 @@ import {
   CHAT_MESSAGE_INACTIVE_CLASS,
   type MessageHighlightRole,
 } from "~/components/assistive/active-highlight";
-import { isWebChatToolName } from "~/lib/ai/web-tool-ui";
+import { normalizeMathMarkdown } from "~/lib/ai/math-markdown";
+import { getChatToolDisplayName, isWebChatToolName } from "~/lib/ai/web-tool-ui";
 import { cn } from "~/lib/utils";
 
 export interface ChatMessageProps {
@@ -134,7 +135,9 @@ export function ChatMessage({
 
   // If no parts, fallback to message content — coerce to string regardless of DB shape
   const rawTextFromParts = textParts.map((part) => (part as any).text as string).join("\n");
-  const textContent = rawTextFromParts || coerceMessageContent(message.content);
+  const rawTextContent = rawTextFromParts || coerceMessageContent(message.content);
+  const textContent = isUser ? rawTextContent : normalizeMathMarkdown(rawTextContent);
+
   const hasTextContent = textContent.length > 0;
 
   const highlightClass =
@@ -182,7 +185,14 @@ export function ChatMessage({
               <Tool
                 key={`tool-${toolPart.toolCallId || index}`}
                 toolPart={toolPart}
-                defaultOpen={toolPart.state === "input-streaming"}
+                displayName={getChatToolDisplayName(toolPart.type, webToolsEnabled) ?? toolPart.type}
+                defaultOpen={
+                  toolPart.state === "input-streaming" ||
+                  (toolPart.state === "output-available" &&
+                    (toolPart.output?.mutation === true ||
+                      toolPart.output?.writeSucceeded === false ||
+                      Boolean(toolPart.output?.error)))
+                }
               />
             );
           })}

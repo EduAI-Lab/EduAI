@@ -5,20 +5,25 @@ type StreamdownProps = ComponentProps<
 >;
 
 /**
- * Streamdown + Shiki code plugin, loaded only on the client.
- * @streamdown/code is ESM-only; a static import breaks react-router-serve in Docker
- * (CommonJS, no apps/core/package.json in the serve image).
+ * Streamdown + Shiki code + KaTeX math plugins, loaded only on the client.
+ * @streamdown/code and @streamdown/math are ESM-only; static imports break
+ * react-router-serve in Docker (CommonJS, no apps/core/package.json in the serve image).
  */
 export const LazyStreamdown = lazy(() =>
-  Promise.all([import("streamdown"), import("@streamdown/code")]).then(
-    ([streamdown, codeMod]) => {
-      const plugins = { code: codeMod.code };
-      const { Streamdown } = streamdown;
-      return {
-        default: (props: StreamdownProps) => (
-          <Streamdown {...props} plugins={plugins} />
-        ),
-      };
-    },
-  ),
+  Promise.all([
+    import("streamdown"),
+    import("@streamdown/code"),
+    import("@streamdown/math"),
+  ]).then(([streamdown, codeMod, mathMod]) => {
+    const plugins = {
+      code: codeMod.code,
+      math: mathMod.createMathPlugin(),
+    };
+    const { Streamdown } = streamdown;
+    return {
+      default: (props: StreamdownProps) => (
+        <Streamdown {...props} plugins={plugins} />
+      ),
+    };
+  }),
 );
