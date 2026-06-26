@@ -31,6 +31,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
+- [core] feat: Allow admins to invite students — STUDENT added to invitable roles with a "Student / TA" dropdown marker noting a TA is a student elevated per-course. (#687, #691, @abdullahmoh21, 2026-06-20)
+- [core] tests: Cover admin student invites — schema accepts STUDENT and rejects TA, and the integration create→accept yields a STUDENT user with no authorized units. (#687, #691, @abdullahmoh21, 2026-06-20)
 - [core] feat: Admin Chatbot at `/admin/chat` — ADMIN-only assistant with AI SDK tools for platform ops (list/get courses, enrollments, users, bug reports; confirmed writes for user CRUD, enrollment changes, and bug triage). Separate `ChatbotType` sessions (`LEARNING` | `ADMIN`), tool-capable model requirement, and token budgeting for vLLM context windows. ([#651](https://github.com/EduAI-Lab/EduAI/pull/651), @superbolt08, 2026-06-16)
 - [core] api: API agent readiness ([#572](https://github.com/EduAI-Lab/EduAI/issues/572)) — shared JSON error envelope (`api-error.server.ts`), JSON body support on course create, enrollment POST idempotency keys, and consistent validation responses. ([#651](https://github.com/EduAI-Lab/EduAI/pull/651), @superbolt08, 2026-06-16)
 - [core] docs: Agent readiness coverage snapshot in `docs/rag-ai/AGENT_READINESS.md` — maps admin/learning chat tools to REST endpoints ([#167](https://github.com/EduAI-Lab/EduAI/issues/167)). ([#651](https://github.com/EduAI-Lab/EduAI/pull/651), @superbolt08, 2026-06-18)
