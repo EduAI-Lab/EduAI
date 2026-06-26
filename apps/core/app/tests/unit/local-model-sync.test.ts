@@ -15,7 +15,6 @@ const existingModel: AIModel = {
   name: "Llama3",
   description: "Existing",
   type: "CHAT",
-  maxTokens: null,
   supportsImages: false,
   supportsTools: true,
   supportsStreaming: true,
