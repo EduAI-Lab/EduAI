@@ -18,6 +18,7 @@
     "docker:dev:db:question-maker": "docker compose -f docker-compose.dev.yml up -d --wait question-maker-db",
     "docker:dev:db:down": "docker compose -f docker-compose.dev.yml down --remove-orphans",
     "docker:dev:db:logs": "docker compose -f docker-compose.dev.yml logs -f",
+    "docker:dev:nuke": "docker compose -f docker-compose.dev.yml down --volumes --remove-orphans",
     "build": "turbo run build",
     "kill:ports": "node scripts/kill-ports.js",
     "predev": "npm run kill:ports && npm run docker:dev:db",
