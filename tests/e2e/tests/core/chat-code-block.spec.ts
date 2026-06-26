@@ -103,9 +103,9 @@ test.describe('Chat code-block toolbar (#667)', () => {
       await page.getByRole('button', { name: 'Send message' }).click();
 
       const copyBtn = page.getByTitle('Copy Code');
-      await expect(copyBtn).toBeVisible({ timeout: 20_000 });
-      await expect(page.getByRole('button', { name: 'Send message' })).toBeEnabled();
-      await expect(copyBtn).toBeEnabled();
+      // Code-block copy/download stay disabled while isAnimating. Do not assert on Send:
+      // useChat clears the input after submit, so Send stays disabled even when idle.
+      await expect(copyBtn).toBeEnabled({ timeout: 20_000 });
 
       await copyBtn.click();
       await expect
