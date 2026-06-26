@@ -41,6 +41,14 @@ import prisma from "~/lib/prisma.server";
 import { getUserPreference, saveUserPreference } from "~/lib/user-preferences.server";
 import { getAccessibleCourseCodes } from "~/lib/courses/server";
 import { parsePreferenceUpdates } from "~/lib/user-preferences";
+import {
+  defaultChatModelId,
+  withAutoChatModel,
+} from "~/lib/chat-auto-model";
+import {
+  routerAutoDefaultEnabled,
+  routingPickerEnabled,
+} from "~/lib/router-env.server";
 import { postAssistiveClientEvent } from "~/lib/assistive-events.client";
 
 /**
@@ -57,6 +65,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return redirect("/auth/login");
   }
 
+  const routerAutoEnabled = routerAutoDefaultEnabled();
+  const showRoutingModels = routingPickerEnabled();
+
   const dbModels = await prisma.aIModel.findMany({
     where: { isActive: true },
     include: {
@@ -68,7 +79,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     ],
   });
 
-  const chatModels: ChatModelOption[] = dbModels.map((model) => ({
+  const registryModels: ChatModelOption[] = dbModels.map((model) => ({
     id: `${model.provider.name}:${model.modelId}`,
     name: model.name,
     description: model.description,
@@ -78,11 +89,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
     supportsTools: model.supportsTools,
   }));
 
+  const chatModels = withAutoChatModel(registryModels, showRoutingModels);
+
   const availableCourseCodes = await getAccessibleCourseCodes(session.user);
   const preferences = await getUserPreference(session.user.id, availableCourseCodes);
 
   return {
     chatModels,
+    routerAutoEnabled,
+    showRoutingModels,
     user: session.user,
     ...preferences,
   };
@@ -109,7 +124,8 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function Chat() {
-  const { chatModels, user, assistDefault, lastCourseCode } = useLoaderData<typeof loader>();
+  const { chatModels, routerAutoEnabled, user, assistDefault, lastCourseCode } =
+    useLoaderData<typeof loader>();
   const { assistive, setAssistive } = useAssistiveUi();
   const { courses } = useCourses();
   // Every chat is course-scoped now (global/no-course chat was removed). The
@@ -124,8 +140,8 @@ export default function Chat() {
   const isStudentWithCourseChat = user.role === 'STUDENT';
   const hasNoCourses = availableCourses.length === 0;
   const disabledReason = hasNoCourses ? 'no-courses' : undefined;
-  const [selectedModel, setSelectedModel] = useState(
-    chatModels.length > 0 ? chatModels[0].id : "",
+  const [selectedModel, setSelectedModel] = useState(() =>
+    defaultChatModelId(chatModels, routerAutoEnabled),
   );
   const [selectedCourseCode, setSelectedCourseCode] = useState<string | null>(
     lastCourseCode ?? null,
