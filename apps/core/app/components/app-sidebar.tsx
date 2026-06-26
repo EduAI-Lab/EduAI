@@ -20,7 +20,7 @@ import {
 import { NavDocuments } from "~/components/nav-documents"
 import type { NavDocumentItem } from "~/components/nav-documents"
 import { NavMain } from "~/components/nav-main"
-import type { NavMainItem } from "~/components/nav-main"
+import type { NavMainItem, NavGroupItem as NavMainGroupItem } from "~/components/nav-main"
 import { NavSecondary } from "~/components/nav-secondary"
 import type { NavSecondaryItem } from "~/components/nav-secondary"
 import { NavUser } from "~/components/nav-user"
@@ -38,6 +38,7 @@ import {
   getNavForUser,
   getNavSecondaryForUser,
   type NavItemKey,
+  type NavGroupItem,
 } from "~/lib/rbac"
 import { usePolicies } from "~/hooks/api/use-policies"
 import { useCronJobStatus } from "~/hooks/api/use-cron-job-status"
@@ -47,6 +48,7 @@ const NAV_ICONS: Record<NavItemKey, Icon> = {
   courses: IconBooks,
   chat: IconRobot,
   "question-maker": IconListCheck,
+  "admin-group": IconShieldLock,
   "admin-users": IconUsers,
   "admin-ai": IconBrain,
   "admin-bugs": IconReport,
@@ -60,13 +62,32 @@ const NAV_ICONS: Record<NavItemKey, Icon> = {
   "ai-tutor": IconMessageChatbot,
 }
 
-function toNavMainItems(items: ReturnType<typeof getNavForUser>): NavMainItem[] {
-  return items.map((item) => ({
-    title: item.title,
-    url: item.url,
-    icon: NAV_ICONS[item.key],
-    external: item.external,
-  }))
+function toNavMainItems(
+  items: ReturnType<typeof getNavForUser>,
+  cronStatusColor?: import("~/hooks/api/use-cron-job-status").CronStatusColor | null,
+): (NavMainItem | NavMainGroupItem)[] {
+  return items.map((item) => {
+    if ("children" in item) {
+      return {
+        title: item.title,
+        icon: NAV_ICONS[item.key],
+        children: item.children.map((child) => ({
+          title: child.title,
+          url: child.url,
+          icon: NAV_ICONS[child.key],
+          external: child.external,
+          badge:
+            child.url === "/admin/cron-jobs" && cronStatusColor ? cronStatusColor : undefined,
+        })),
+      } satisfies NavMainGroupItem
+    }
+    return {
+      title: item.title,
+      url: item.url,
+      icon: NAV_ICONS[item.key],
+      external: item.external,
+    } satisfies NavMainItem
+  })
 }
 
 function toNavSecondaryItems(
@@ -110,11 +131,7 @@ export function AppSidebar({
   const navItems = getNavForUser(user, {
     canInvite: rootData?.canInvite ?? Boolean(policies["unitAdmins.canInvite"]),
   })
-  const autoNav = toNavMainItems(navItems).map((item) =>
-    item.url === "/admin/cron-jobs" && cronStatusColor
-      ? { ...item, badge: cronStatusColor }
-      : item,
-  )
+  const autoNav = toNavMainItems(navItems, cronStatusColor)
   const navMain = navMainOverride ?? autoNav
   const navSecondary =
     navSecondaryOverride ?? toNavSecondaryItems(getNavSecondaryForUser(user))
