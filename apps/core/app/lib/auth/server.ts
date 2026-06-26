@@ -1,5 +1,5 @@
 import { betterAuth } from "better-auth";
-import { createAuthMiddleware, APIError } from "better-auth/api";
+import { createAuthMiddleware, APIError, getSessionFromCtx } from "better-auth/api";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import prisma from "../prisma.server";
 import { getPolicy, logPolicyDenial } from "../policy.server";
@@ -73,11 +73,32 @@ export const auth = betterAuth({
               }
             }
           } else {
-            const session = await ctx.context.getSession(ctx);
+            const session = await getSessionFromCtx(ctx);
             userId = session?.user?.id ?? null;
           }
 
           if (userId) {
+            // For change-password: verify the current password first so that an
+            // incorrect current password takes precedence over the reuse error.
+            if (ctx.path === "/change-password") {
+              const currentPassword = (ctx.body as Record<string, unknown>)?.currentPassword;
+              if (typeof currentPassword === "string") {
+                const credAccount = await prisma.account.findFirst({
+                  where: { userId, providerId: "credential" },
+                  select: { password: true },
+                });
+                if (credAccount?.password) {
+                  const currentValid = await ctx.context.password.verify({
+                    hash: credAccount.password,
+                    password: currentPassword,
+                  });
+                  if (!currentValid) {
+                    return; // wrong current password — let better-auth's handler surface the error
+                  }
+                }
+              }
+            }
+
             const reused = await isPasswordReused({
               userId,
               candidate: candidatePassword,
