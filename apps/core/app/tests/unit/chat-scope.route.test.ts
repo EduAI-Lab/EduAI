@@ -81,6 +81,7 @@ vi.mock("~/lib/prisma.server", () => ({
 import { streamText } from "ai";
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
+import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { findRelevantContent } from "~/lib/ai/embedding";
 import { getChatModelCapabilities } from "~/lib/ai/providers.server";
 import prisma from "~/lib/prisma.server";
@@ -321,4 +322,64 @@ describe("POST /api/chat — course scope gate (#729)", () => {
     expect(res.status).toBe(200);
     expect(streamText).toHaveBeenCalled();
   });
+});
+
+describe("superbolt08 screenshot regression (#729)", () => {
+  const screenshotPrompts = [
+    "i need to know how i can limit social media time",
+    "why is it that walking everyday improves overall health?",
+    "where was world war II held?",
+    "how many people attended world war ii",
+  ];
+
+  beforeEach(() => {
+    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+      course: {
+        id: "course-1",
+        code: "COSC 121",
+        name: "Computer Programming II",
+        description: "Second-year programming course.",
+        aiInstructions: null,
+        isPublished: true,
+      },
+      access: { level: "student" },
+    } as never);
+  });
+
+  it.each(screenshotPrompts)(
+    "returns canned refusal without calling the model: %s",
+    async (content) => {
+      vi.mocked(findRelevantContent).mockResolvedValue([]);
+      mockStream();
+
+      const res = await action(
+        makeRequest(baseBody({ messages: [{ id: "msg-1", role: "user", content }] })),
+      );
+
+      expect(res.status).toBe(200);
+      expect(streamText).not.toHaveBeenCalled();
+      const body = await res.json();
+      expect(body.content).toContain("COSC 121");
+      expect(body.content).toContain("unrelated topics");
+      expect(body.content).not.toContain("Cardiovascular Health");
+      expect(body.content).not.toContain("Europe, Asia");
+    },
+  );
+
+  it.each(screenshotPrompts)(
+    "still refuses when RAG returns moderate hits: %s",
+    async (content) => {
+      vi.mocked(findRelevantContent).mockResolvedValue([
+        { content: "misc", similarity: 0.62, materialTitle: "Syllabus" },
+      ]);
+      mockStream();
+
+      const res = await action(
+        makeRequest(baseBody({ messages: [{ id: "msg-1", role: "user", content }] })),
+      );
+
+      expect(res.status).toBe(200);
+      expect(streamText).not.toHaveBeenCalled();
+    },
+  );
 });

@@ -9,6 +9,7 @@ import {
   isCodingScopeAllowlisted,
   isCourseScopeGateEnabled,
   isFoundationalAdjacent,
+  isOffTopicDomain,
   isScopeAllowlisted,
   isSubstantiveForScope,
 } from "~/lib/ai/course-scope";
@@ -19,6 +20,14 @@ const COURSE = {
   description: "First-year CS.",
   aiInstructions: "Be concise.",
   topics: ["loops", "arrays"],
+};
+
+const COSC121_SCREENSHOT_COURSE = {
+  code: "COSC 121",
+  name: "Computer Programming II",
+  description: "Second-year programming course.",
+  aiInstructions: null,
+  topics: ["loops", "arrays", "functions"],
 };
 
 const IMAGE_COURSE = {
@@ -285,6 +294,51 @@ describe("evaluateCourseScope", () => {
     });
     expect(result.decision).toBe("allow");
     expect(result.reason).toBe("gate_disabled");
+  });
+});
+
+describe("superbolt08 screenshot regression (#729)", () => {
+  const screenshotPrompts = [
+    "i need to know how i can limit social media time",
+    "why is it that walking everyday improves overall health?",
+    "where was world war II held?",
+    "how many people attended world war ii",
+  ];
+
+  beforeEach(() => {
+    delete process.env.CHAT_SCOPE_ZERO_CHUNK_GATE;
+  });
+
+  it("flags screenshot prompts as off-topic domains", () => {
+    for (const message of screenshotPrompts) {
+      expect(isOffTopicDomain(message)).toBe(true);
+    }
+  });
+
+  it("hard-refuses screenshot prompts with zero RAG hits", () => {
+    for (const message of screenshotPrompts) {
+      const result = evaluateCourseScope({
+        message,
+        hasCourse: true,
+        hits: [],
+        course: COSC121_SCREENSHOT_COURSE,
+      });
+      expect(result.decision).toBe("refuse");
+      expect(result.reason).toBe("zero_hit_off_topic");
+    }
+  });
+
+  it("hard-refuses screenshot prompts even when RAG returns moderate hits", () => {
+    for (const message of screenshotPrompts) {
+      const result = evaluateCourseScope({
+        message,
+        hasCourse: true,
+        hits: [{ content: "noise", similarity: 0.62, materialTitle: "Syllabus" }],
+        course: COSC121_SCREENSHOT_COURSE,
+      });
+      expect(result.decision).toBe("refuse");
+      expect(result.reason).toBe("off_topic_despite_rag");
+    }
   });
 });
 

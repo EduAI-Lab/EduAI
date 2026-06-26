@@ -38,7 +38,12 @@ const FOUNDATIONAL_QUESTION_PATTERN =
   /^(what is|what are|explain|how does|define|describe|tell me about)\b/i;
 
 const NON_FOUNDATIONAL_TOPIC_PATTERN =
-  /\b(world war|super bowl|netflix|capital of|stock market|roman empire|poem about|joke about|dinosaur|celebrity|football|basketball|recipe|bake|baking|cookie|marathon|movie|tv show|invest in)\b/i;
+  /\b(world war|wwii|ww2|war ii|social media|walking every|overall health|wellness|physical health|super bowl|netflix|capital of|stock market|roman empire|poem about|joke about|dinosaur|celebrity|football|basketball|recipe|bake|baking|cookie|marathon|movie|tv show|invest in)\b/i;
+
+/** Clearly off-topic domains — used to block RAG-hit bypass and foundational allowance. */
+export function isOffTopicDomain(message: string): boolean {
+  return NON_FOUNDATIONAL_TOPIC_PATTERN.test(message.toLowerCase());
+}
 
 /** Course-logistics signals — bare topic tokens only count with these present. */
 const COURSE_INTENT_KEYWORDS = [
@@ -329,11 +334,19 @@ export function evaluateCourseScope(
     return { decision: "allow", reason: "not_substantive" };
   }
 
+  const course = input.course;
+
   if (hasScopeRelevantRagHits(input.hits)) {
+    if (
+      course &&
+      isOffTopicDomain(input.message) &&
+      !hasCourseMetadataOverlap(input.message, course)
+    ) {
+      return { decision: "refuse", reason: "off_topic_despite_rag" };
+    }
     return { decision: "allow", reason: "rag_hits_present" };
   }
 
-  const course = input.course;
   if (!course) {
     return { decision: "refuse", reason: "zero_hit_off_topic" };
   }

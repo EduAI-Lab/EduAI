@@ -32,7 +32,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [question-maker] tests: Unit and integration tests for the QM reconciliation cron. (#PR, @evanbones, 2026-06-23)
 - [docs] docs: `docs/CRON_JOBS.md` — describes registered cron jobs, schedules, trigger behavior, and local testing steps. (#634, #283, #643, @evanbones, 2026-06-23)
 - [core] feat: Add UBC chatbot disclaimer banner and full terms dialog on `/chat`. (#575, @superbolt08, 2026-06-23) — [#753](https://github.com/EduAI-Lab/EduAI/pull/753)
-- [core] fix: Tighten course scope gate (#729 v1.2) — default hard-refuse for substantive zero-hit off-topic questions; require course-intent for coding allowlist and topic overlap; ignore weak RAG hits for scope bypass; keep foundational STEM allowance for technical courses. (@ebabar5, 2026-06-26)
+- [core] fix: Tighten course scope gate (#729 v1.2) — default hard-refuse for substantive zero-hit off-topic questions; require course-intent for coding allowlist and topic overlap; ignore weak RAG hits for scope bypass; block moderate RAG bypass for clearly off-topic domains (WWII, health/wellness, social media); keep foundational STEM allowance for technical courses. (@ebabar5, 2026-06-26)
 
 ### Changed
 
