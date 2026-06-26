@@ -11,6 +11,8 @@ Ollama :11434 — unchanged
 
 EduAI uses **`VLLM_BASE_URL=http://cmps01.ok.ubc.ca:8001`** only. Chat picks the model via id (`vllm:qwen2.5-7b-instruct`, `vllm:qwen2.5-32b-instruct`).
 
+**Why these models?** [../MODEL_RATIONALE.md](../MODEL_RATIONALE.md) (stakeholder rationale).
+
 ---
 
 ## Current inventory (cmps01, deployed)
