@@ -337,6 +337,13 @@ Unit tests for the shared design-system component library (`@eduai/ui`). Run wit
 | [`page-heading.test.tsx`](packages/ui/src/tests/page-heading.test.tsx) | `PageHeading` renders the heading text and accent bar, and renders an optional subheading including React-node children. |
 | [`page-tabs.test.tsx`](packages/ui/src/tests/page-tabs.test.tsx) | `PageTabs` (List/Trigger/Content) renders the tab structure and default content, reflects active states, and applies custom classes. |
 | [`combobox.test.tsx`](packages/ui/src/tests/combobox.test.tsx) | `Combobox` and `MultiSelect` (searchable single/multi pickers): trigger renders placeholder vs selected label, `MultiSelect` summarises the selected count, and both honour the `disabled` state. |
+| [`nav-user.test.tsx`](packages/ui/src/tests/nav-user.test.tsx) | `NavUser` renders the user name/email/avatar, opens the profile dropdown, renders custom items and a passed logout element, and fires `onLogout`. |
+| [`site-header.test.tsx`](packages/ui/src/tests/site-header.test.tsx) | `SiteHeader` renders the title and breadcrumbs and mounts the `leadingActions` and `actions` slots. |
+| [`theme-toggle.test.tsx`](packages/ui/src/tests/theme-toggle.test.tsx) | `ThemeToggle` renders the sun/moon control and toggles between light and dark through the theme provider. |
+| [`bug-report-dialog.test.tsx`](packages/ui/src/tests/bug-report-dialog.test.tsx) | `BugReportDialog` opens the dialog, gates submit on input, and fires `onSubmit` with the report payload. |
+| [`question-card.test.tsx`](packages/ui/src/tests/question-card.test.tsx) | `QuestionCard` renders type/difficulty/status, shows MCQ choices with the correct answer highlighted, and stretches its body so footers align in compact vs full layouts. |
+| [`question-status-badge.test.tsx`](packages/ui/src/tests/question-status-badge.test.tsx) | `QuestionStatusBadge` and the `questionStatus()` helper map `isDraft` to the Draft/Approved label and the warning/success variant. |
+| [`variant-badge.test.tsx`](packages/ui/src/tests/variant-badge.test.tsx) | `VariantBadge` and the `variantLabel()` helper format a variant's reference id / number into the display label. |
 
 ---
 

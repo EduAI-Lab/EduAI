@@ -9,6 +9,12 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
+- [question-maker] feat: Full course-centric QM redesign — reworked the frontend into a workspace IA (`/dashboard`, `/courses`, `/courses/:id` with Overview/Questions/Assessments/Topics/Canvas tabs, nested assessment routes; course context via URL only), a full-page question composer, a unified question modal, a global question library with a filter toolbar + preview drawer, a reworked assessments surface with inline AI-variant review, a role-aware dashboard, a ⌘K command palette, and an inline course switcher. (#762, #763, @yta3216, 2026-06-26) — [#PR]
+- [core] feat: Extract shared shell, settings, question, and dependency-free analytics-chart components into `@eduai/ui` (AppSidebar/SiteHeader/Nav*/ThemeToggle/BugReportDialog, QuestionCard/QuestionStatusBadge/VariantBadge, settings/{AccessibilitySettings,ProvidersTable,ProviderFormDialog}, charts/*); Core consumes them via thin wrappers, and `MultiSelect` moves onto a Radix popover with a body-pointer-events restore fix for dialogs opened from menus. (#765, @yta3216, 2026-06-26) — [#PR]
+- [question-maker] feat: Backend endpoints supporting the redesign — `GET /api/topics/sync-status/:courseId`, `GET /api/course/:id/enrollments`, and `GET /api/questions/export` (CSV/JSON); all TA+ gated. (#790, @yta3216, 2026-06-26) — [#PR]
+- [question-maker] feat: AI works off the UBC network — `POST /api/eduai/test-api-key` accepts the caller's cloud provider key and reports the live provider, `/api/eduai/ai-models` degrades to a fallback catalog instead of erroring, and the header shows dual UBC-hosted/cloud status indicators. (#790, @yta3216, 2026-06-26) — [#PR]
+- [core] feat: Skip chat persistence for service-key callers in `/api/chat` so the Question Maker AI proxy can run the model without violating `chats_userId_fkey`. (#790, @yta3216, 2026-06-26) — [#PR]
+- [core] tests: Add `@eduai/ui` component tests for the extracted components (NavUser, SiteHeader, ThemeToggle, BugReportDialog, QuestionCard, QuestionStatusBadge, VariantBadge). (#765, @yta3216, 2026-06-26) — [#PR]
 - [ai-tutor] feat: Add `GET /courses/:courseId/feedback` endpoint — returns all `ActivityFeedback` rows for activities in a course; access-gated to ADMIN (global), UNIT_ADMIN (department-scoped), INSTRUCTOR (enrolled), and TA (enrolled); supports `activityId`, `studentId`, `take` (max 200, default 50), and `skip` query params. (#554, @evanbones, 2026-06-24)
 - [ai-tutor] feat: Extend `PATCH /courses/:courseId`, `PATCH /courses/:courseId/publish`, and `PATCH /courses/:courseId/unpublish` to accept ADMIN and UNIT_ADMIN (department-scoped) in addition to INSTRUCTOR — aligns course mutation routes with rbac-matrix.md §5. (#553, @evanbones, 2026-06-24)
 - [core] feat: Streamline admin local model workflow — auto-sync Ollama/vLLM models into AI Management (#180, @superbolt08, 2026-06-23) — [#756](https://github.com/EduAI-Lab/EduAI/pull/756)
@@ -26,6 +32,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
+- [question-maker] fix: Backend hardening — validate `difficulty`/`reasoningLevel` enums, whitelist the role PATCH body, 404 on a missing canvas-import topic, map Sequelize unique/validation/FK errors to 409/400, fix a secondary-topic N+1, and make the Core question push idempotent. (#790, @yta3216, 2026-06-26) — [#PR]
+- [core] fix: Flip the dark-mode `warning`/`success` palettes so status chips are legible on dark backgrounds (matched in Question Maker). (#762, @yta3216, 2026-06-26) — [#PR]
 - [ai-tutor] fix: Surface effective `role: TA` on `GET /api/me` when Core reports a TA enrollment — keeps course TAs in the teaching shell after Core drops platform-level `UserRole.TA` (#723, @Ayyhab, 2026-06-24)
 - [core] fix: Unblock student-ID onboarding before any Canvas sync — `linkCanvasRoster` no longer 404s when no instructor has synced the course; it saves the student number (still rejecting duplicates) and links zero enrollments, and the later sync's `linkEnrollmentsFromStagingForCourse` enrolls the student by `studentId` once staging rows exist. (#732, @GlowyBlack, 2026-06-22)
 
