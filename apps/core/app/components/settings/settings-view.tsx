@@ -72,6 +72,7 @@ export function SettingsView({ role, studentNumber = null }: SettingsViewProps) 
     (policies["instructors.canManageCanvasIntegration"] ?? true);
   const showCanvasSettings = CANVAS_SETTINGS_ROLES.has(role ?? "") && canvasPolicyOk;
   const showStudentNumberSettings = role === "STUDENT";
+  const showApiKeySettings = role === "ADMIN";
   const {
     updateProviderSettings,
     removeProviderSettings,
@@ -98,8 +99,9 @@ export function SettingsView({ role, studentNumber = null }: SettingsViewProps) 
   };
 
   useEffect(() => {
+    if (!showApiKeySettings) return;
     void loadServerKeys();
-  }, []);
+  }, [showApiKeySettings]);
 
   const createServerKey = async () => {
     try {
@@ -160,9 +162,11 @@ export function SettingsView({ role, studentNumber = null }: SettingsViewProps) 
           <PageTabsTrigger value="accessibility">
             <IconAccessible className="h-4 w-4" /> Accessibility
           </PageTabsTrigger>
-          <PageTabsTrigger value="api-keys">
-            <IconKey className="h-4 w-4" /> API Keys
-          </PageTabsTrigger>
+          {showApiKeySettings && (
+            <PageTabsTrigger value="api-keys">
+              <IconKey className="h-4 w-4" /> API Keys
+            </PageTabsTrigger>
+          )}
           <PageTabsTrigger value="providers">
             <IconWorld className="h-4 w-4" /> Providers
           </PageTabsTrigger>
@@ -172,6 +176,7 @@ export function SettingsView({ role, studentNumber = null }: SettingsViewProps) 
           <AccessibilitySettingsTab />
         </PageTabsContent>
 
+        {showApiKeySettings && (
         <PageTabsContent value="api-keys" className="space-y-6">
           {showStudentNumberSettings && (
             <StudentNumberSettings initialStudentNumber={studentNumber} />
@@ -324,6 +329,7 @@ export function SettingsView({ role, studentNumber = null }: SettingsViewProps) 
             </CardContent>
           </Card>
         </PageTabsContent>
+        )}
 
         <PageTabsContent value="providers">
           <Card>

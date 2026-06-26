@@ -22,7 +22,7 @@ import {
   resolveCourseAccessWithCourse,
   type AccessLevel,
 } from "~/lib/auth/course-access.server";
-import { requireServiceKey } from "~/lib/auth/guards.server";
+import { requireServiceKey, enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { auth } from "~/lib/auth/server";
 import type { ActionFunctionArgs } from "react-router";
 import { z } from "zod";
@@ -207,7 +207,10 @@ function extractAssistantText(messages: GenericMessage[] | undefined): string {
  */
 export async function action({ request }: ActionFunctionArgs) {
   try {
-    let session = await auth.api.getSession(request);
+    const apiKeyGate = await enforceAdminIfApiKey(request);
+    if (apiKeyGate.response) return apiKeyGate.response;
+
+    let session = apiKeyGate.session ?? (await auth.api.getSession(request));
     let isServiceKeyCaller = false;
     if (!session?.user) {
       const serviceKeyError = await requireServiceKey(request);
