@@ -9,6 +9,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
+- [ai-tutor] feat: Mirror Core `TA` enrollments into AI Tutor and surface TA-taught courses — `GET /api/courses` now returns TA-enrolled offerings (unpublished included, no progress) alongside the TA's published student-enrolled courses, so course TAs see their teaching courses in the instructor shell. (#745, @Ayyhab, 2026-06-25)
+- [ai-tutor] tests: Add `nav.test.ts` (every role's nav label is "Courses"; admin nav keeps Bug Reports and excludes user-management/enrollments) and an api-client 403 regression guarding against the login-redirect loop. (#745, @Ayyhab, 2026-06-25)
 - [ci] ci: Add a Backend Coverage Report workflow — runs unit+integration coverage for the three backends on every push to `development`, aggregates them, and commits a Markdown summary to `eduai-summer-2026/reports/coverage/`. (#773, @abdullahmoh21, 2026-06-25)
 - [core] feat: RAG ingestion preserves LaTeX equations, converts HTML tables to markdown, and chunks at clinical/slide section boundaries (#90, #91, #93, @superbolt08, 2026-06-23) — [#755](https://github.com/EduAI-Lab/EduAI/pull/755)
 - [core] feat: Human-readable math in chat — normalizeMathMarkdown, Streamdown math plugin, KaTeX CSS, prose-vs-equation guards (#142, @superbolt08, 2026-06-23) — [#757](https://github.com/EduAI-Lab/EduAI/pull/757)
@@ -31,8 +33,19 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [docs] docs: `docs/CRON_JOBS.md` — describes registered cron jobs, schedules, trigger behavior, and local testing steps. (#634, #283, #643, @evanbones, 2026-06-23)
 - [core] feat: Add UBC chatbot disclaimer banner and full terms dialog on `/chat`. (#575, @superbolt08, 2026-06-23) — [#753](https://github.com/EduAI-Lab/EduAI/pull/753)
 
+### Changed
+
+- [ai-tutor] frontend: Rename the sidebar, heading, and breadcrumb "My courses"/"Teaching" to "Courses" for every role (student and instructor-shell), and point the admin Bug Reports nav at `/admin` (the old `?tab=bugReports` query param was a no-op). (#745, @Ayyhab, 2026-06-25)
+
+### Removed
+
+- [ai-tutor] feat: Remove the AI Tutor "Import from EduAI" panel, the admin User Management view, and the admin Enrollments tab — user, role, enrollment, and course lifecycle are owned by EduAI Core (Canvas source of truth). Drop the now-dead permission helpers (`canImportFromEduAi`, `canBrowseEduAiCatalog`, `canSyncEnrollmentsFromEduAi`) and API methods (`importEduAiCourse`, `enrollStudentInCourse`, `adminSyncCourseEnrollments`); the per-course instructor roster is intentionally kept. (#745, @Ayyhab, 2026-06-25)
+
 ### Fixed
 
+- [ai-tutor] fix: Stop the infinite redirect loop when an authenticated user opens a forbidden resource (e.g. a `UNIT_ADMIN` deep-linking to `/instructor/lesson/:id` outside their unit) — the API client now only redirects 401s to Core login and surfaces 403s as a thrown error for the route error boundary. (#745, @Ayyhab, 2026-06-25)
+- [ai-tutor] fix: Return the student/TA course list without a 500 — restore the missing `getEduAiCookieForRequest` import and probe TA enrollments with `count()` (CourseEnrollment has a composite key and no `id`) in `GET /api/courses`. (#745, @Ayyhab, 2026-06-25)
+- [ai-tutor] fix: Resolve the long-standing typecheck baseline — the student dashboard "Completed" count used a non-existent `Progress.isComplete` (always 0; now derived from `completed`/`total`), and the sidebar footer now carries the user's `email` through `AuthUser` so it renders instead of showing blank. (#745, @Ayyhab, 2026-06-25)
 - [ai-tutor] fix: Surface effective `role: TA` on `GET /api/me` when Core reports a TA enrollment — keeps course TAs in the teaching shell after Core drops platform-level `UserRole.TA` (#723, @Ayyhab, 2026-06-24)
 - [core] fix: Unblock student-ID onboarding before any Canvas sync — `linkCanvasRoster` no longer 404s when no instructor has synced the course; it saves the student number (still rejecting duplicates) and links zero enrollments, and the later sync's `linkEnrollmentsFromStagingForCourse` enrolls the student by `studentId` once staging rows exist. (#732, @GlowyBlack, 2026-06-22)
 

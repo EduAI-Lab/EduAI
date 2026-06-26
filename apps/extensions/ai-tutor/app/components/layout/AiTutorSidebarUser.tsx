@@ -15,12 +15,11 @@ import {
   useSidebar,
 } from '@eduai/ui';
 
-import type { User } from '~/lib/types';
-import { useLocalUser } from '~/hooks/useLocalUser';
+import { useLocalUser, type AuthUser } from '~/hooks/useLocalUser';
 import { getEduAiAppUrl } from '~/lib/extension-urls';
 
 type AiTutorSidebarUserProps = {
-  user: User;
+  user: AuthUser;
 };
 
 /**
