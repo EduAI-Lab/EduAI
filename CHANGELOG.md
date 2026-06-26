@@ -9,6 +9,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
+- [core] feat: RAG ingestion preserves LaTeX equations, converts HTML tables to markdown, and chunks at clinical/slide section boundaries (#90, #91, #93, @superbolt08, 2026-06-23) — [#755](https://github.com/EduAI-Lab/EduAI/pull/755)
 - [core] feat: Human-readable math in chat — normalizeMathMarkdown, Streamdown math plugin, KaTeX CSS, prose-vs-equation guards (#142, @superbolt08, 2026-06-23) — [#757](https://github.com/EduAI-Lab/EduAI/pull/757)
 
 ### Fixed
