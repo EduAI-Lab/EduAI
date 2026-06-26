@@ -35,6 +35,24 @@ test.describe('AI Tutor course mutation gates (STUDENT → 403)', () => {
     expect([403, 404]).toContain(res.status());
   });
 
+  test('PATCH /api/courses/:courseId/publish is blocked for STUDENT', async ({ request }) => {
+    await signUp(request, { email: uniqueEmail('at-rbac-publish-course') });
+    const res = await request.patch(`${AI_TUTOR_API_URL}/api/courses/99999/publish`);
+    expect([403, 404]).toContain(res.status());
+  });
+
+  test('PATCH /api/courses/:courseId/unpublish is blocked for STUDENT', async ({ request }) => {
+    await signUp(request, { email: uniqueEmail('at-rbac-unpublish-course') });
+    const res = await request.patch(`${AI_TUTOR_API_URL}/api/courses/99999/unpublish`);
+    expect([403, 404]).toContain(res.status());
+  });
+
+  test('GET /api/courses/:courseId/feedback is blocked for STUDENT', async ({ request }) => {
+    await signUp(request, { email: uniqueEmail('at-rbac-course-feedback') });
+    const res = await request.get(`${AI_TUTOR_API_URL}/api/courses/99999/feedback`);
+    expect([403, 404]).toContain(res.status());
+  });
+
   test('POST /api/courses/import-external is blocked for STUDENT', async ({ request }) => {
     await signUp(request, { email: uniqueEmail('at-rbac-import') });
     const res = await request.post(`${AI_TUTOR_API_URL}/api/courses/import-external`, {
