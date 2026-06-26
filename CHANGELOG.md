@@ -15,6 +15,13 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [question-maker] feat: AI works off the UBC network — `POST /api/eduai/test-api-key` accepts the caller's cloud provider key and reports the live provider, `/api/eduai/ai-models` degrades to a fallback catalog instead of erroring, and the header shows dual UBC-hosted/cloud status indicators. (#790, @yta3216, 2026-06-26) — [#791](https://github.com/EduAI-Lab/EduAI/pull/791)
 - [core] feat: Skip chat persistence for service-key callers in `/api/chat` so the Question Maker AI proxy can run the model without violating `chats_userId_fkey`. (#790, @yta3216, 2026-06-26) — [#791](https://github.com/EduAI-Lab/EduAI/pull/791)
 - [core] tests: Add `@eduai/ui` component tests for the extracted components (NavUser, SiteHeader, ThemeToggle, BugReportDialog, QuestionCard, QuestionStatusBadge, VariantBadge). (#765, @yta3216, 2026-06-26) — [#791](https://github.com/EduAI-Lab/EduAI/pull/791)
+- [ci] ci: Add a Backend Coverage Report workflow — runs unit+integration coverage for the three backends on every push to `development`, aggregates them, and commits a Markdown summary to `eduai-summer-2026/reports/coverage/`. (#773, @abdullahmoh21, 2026-06-25)
+- [core] feat: RAG ingestion preserves LaTeX equations, converts HTML tables to markdown, and chunks at clinical/slide section boundaries (#90, #91, #93, @superbolt08, 2026-06-23) — [#755](https://github.com/EduAI-Lab/EduAI/pull/755)
+- [core] feat: Human-readable math in chat — normalizeMathMarkdown, Streamdown math plugin, KaTeX CSS, prose-vs-equation guards (#142, @superbolt08, 2026-06-23) — [#757](https://github.com/EduAI-Lab/EduAI/pull/757)
+
+### Fixed
+
+- [core] fix: Theme hydration mismatch on html color-scheme (#142, @superbolt08, 2026-06-23)
 - [ai-tutor] feat: Add `GET /courses/:courseId/feedback` endpoint — returns all `ActivityFeedback` rows for activities in a course; access-gated to ADMIN (global), UNIT_ADMIN (department-scoped), INSTRUCTOR (enrolled), and TA (enrolled); supports `activityId`, `studentId`, `take` (max 200, default 50), and `skip` query params. (#554, @evanbones, 2026-06-24)
 - [ai-tutor] feat: Extend `PATCH /courses/:courseId`, `PATCH /courses/:courseId/publish`, and `PATCH /courses/:courseId/unpublish` to accept ADMIN and UNIT_ADMIN (department-scoped) in addition to INSTRUCTOR — aligns course mutation routes with rbac-matrix.md §5. (#553, @evanbones, 2026-06-24)
 - [core] feat: Streamline admin local model workflow — auto-sync Ollama/vLLM models into AI Management (#180, @superbolt08, 2026-06-23) — [#756](https://github.com/EduAI-Lab/EduAI/pull/756)
