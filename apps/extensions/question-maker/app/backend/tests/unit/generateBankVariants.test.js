@@ -6,7 +6,7 @@
  * - the primary variant of each question is promoted to non-draft before generation
  * - MCQ choice-count retry fires when the model returns the wrong count
  * - errors are recorded per-question, not thrown, so other questions still process
- * - isAiGenerated=true and isDraft=false are set on all generated variants
+ * - isAiGenerated=true and isDraft=true are set on all generated variants (drafts pending review)
  * - referenceId is set to the primary variant's id
  */
 import { vi, describe, it, expect, beforeEach } from 'vitest';
@@ -188,7 +188,7 @@ describe('generateBankVariantsForQuestions — per-question orchestration', () =
     expect(mockGenerateQuestions).toHaveBeenCalledTimes(2);
   });
 
-  it('creates a variant with isAiGenerated=true and isDraft=false', async () => {
+  it('creates a variant with isAiGenerated=true and isDraft=true (draft pending review)', async () => {
     const primary = makePrimaryVariant();
     mockMetaFindOne.mockResolvedValueOnce(makeMeta({ variants: [primary] }));
     mockGenerateQuestions.mockResolvedValueOnce(makeGeneratedQuestion());
@@ -196,8 +196,20 @@ describe('generateBankVariantsForQuestions — per-question orchestration', () =
     await generateBankVariantsForQuestions(USER_ID, BASE_PARAMS);
 
     expect(mockVariantCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ isAiGenerated: true, isDraft: false })
+      expect.objectContaining({ isAiGenerated: true, isDraft: true })
     );
+  });
+
+  it('returns full createdVariants payloads for in-place review', async () => {
+    const primary = makePrimaryVariant();
+    mockMetaFindOne.mockResolvedValueOnce(makeMeta({ variants: [primary] }));
+    mockGenerateQuestions.mockResolvedValueOnce(makeGeneratedQuestion());
+
+    const { results } = await generateBankVariantsForQuestions(USER_ID, BASE_PARAMS);
+
+    expect(results[0].createdVariants).toEqual([
+      expect.objectContaining({ id: 200, questionMetadataId: 10, isDraft: true })
+    ]);
   });
 
   it('sets referenceId to the primary variant id on the created variant', async () => {
