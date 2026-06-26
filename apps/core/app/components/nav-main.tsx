@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useEffect, useState } from "react"
 import { Link, useLocation } from "react-router"
 import { type Icon, IconChevronDown } from "@tabler/icons-react"
 
@@ -36,30 +36,30 @@ function isActive(pathname: string, url: string) {
   return pathname === url || pathname.startsWith(url + "/")
 }
 
+function shouldAutoExpandGroup(item: NavGroupItem, pathname: string) {
+  return item.children.some((child) => isActive(pathname, child.url))
+}
+
 export function NavMain({ items }: NavMainProps) {
   const { pathname } = useLocation()
 
-  const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
-    const initial: Record<string, boolean> = {}
-    for (const item of items) {
-      if (isGroup(item)) {
-        initial[item.title] = item.children.some((child) => isActive(pathname, child.url))
-      }
-    }
-    return initial
-  })
+  // Manual expand/collapse overrides. Cleared on navigation so route-based
+  // auto-expand can take over without fighting stale toggle state.
+  const [toggleOverrides, setToggleOverrides] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
-    setExpanded((prev) => {
-      const next = { ...prev }
-      for (const item of items) {
-        if (isGroup(item) && item.children.some((child) => isActive(pathname, child.url))) {
-          next[item.title] = true
-        }
-      }
-      return next
-    })
-  }, [pathname, items])
+    setToggleOverrides({})
+  }, [pathname])
+
+  function isGroupExpanded(item: NavGroupItem) {
+    if (item.title in toggleOverrides) return toggleOverrides[item.title]
+    return shouldAutoExpandGroup(item, pathname)
+  }
+
+  function toggleGroup(item: NavGroupItem) {
+    const nextExpanded = !isGroupExpanded(item)
+    setToggleOverrides((prev) => ({ ...prev, [item.title]: nextExpanded }))
+  }
 
   const linkClassName =
     "relative flex items-center gap-[10px] w-full px-[14px] py-[9px] rounded-[7px] text-[13.5px] outline-none select-none"
@@ -70,14 +70,14 @@ export function NavMain({ items }: NavMainProps) {
         <SidebarMenu>
           {items.map((item) => {
             if (isGroup(item)) {
-              const groupExpanded = expanded[item.title] ?? false
+              const groupExpanded = isGroupExpanded(item)
 
               return (
                 <SidebarMenuItem key={item.title}>
                   <button
-                    onClick={() =>
-                      setExpanded((prev) => ({ ...prev, [item.title]: !prev[item.title] }))
-                    }
+                    type="button"
+                    aria-expanded={groupExpanded}
+                    onClick={() => toggleGroup(item)}
                     className={linkClassName}
                     style={{
                       background: "transparent",
