@@ -41,7 +41,7 @@ import {
   type NavGroupItem,
 } from "~/lib/rbac"
 import { usePolicies } from "~/hooks/api/use-policies"
-import { useCronJobStatus } from "~/hooks/api/use-cron-job-status"
+import { useCronJobStatus, type CronStatusColor } from "~/hooks/api/use-cron-job-status"
 
 const NAV_ICONS: Record<NavItemKey, Icon> = {
   dashboard: IconDashboard,
@@ -64,7 +64,7 @@ const NAV_ICONS: Record<NavItemKey, Icon> = {
 
 function toNavMainItems(
   items: ReturnType<typeof getNavForUser>,
-  cronStatusColor?: import("~/hooks/api/use-cron-job-status").CronStatusColor | null,
+  cronStatusColor?: CronStatusColor | null,
 ): (NavMainItem | NavMainGroupItem)[] {
   return items.map((item) => {
     if ("children" in item) {
@@ -128,10 +128,17 @@ export function AppSidebar({
 
   // Policy-gated nav lives in getNavForUser: a UNIT_ADMIN only sees the
   // Invitations link when `unitAdmins.canInvite` is on (matches the route gate).
-  const navItems = getNavForUser(user, {
-    canInvite: rootData?.canInvite ?? Boolean(policies["unitAdmins.canInvite"]),
-  })
-  const autoNav = toNavMainItems(navItems, cronStatusColor)
+  const navItems = React.useMemo(
+    () =>
+      getNavForUser(user, {
+        canInvite: rootData?.canInvite ?? Boolean(policies["unitAdmins.canInvite"]),
+      }),
+    [user, rootData?.canInvite, policies],
+  )
+  const autoNav = React.useMemo(
+    () => toNavMainItems(navItems, cronStatusColor),
+    [navItems, cronStatusColor],
+  )
   const navMain = navMainOverride ?? autoNav
   const navSecondary =
     navSecondaryOverride ?? toNavSecondaryItems(getNavSecondaryForUser(user))
