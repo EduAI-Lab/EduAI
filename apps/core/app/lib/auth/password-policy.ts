@@ -15,9 +15,7 @@ export const PASSWORD_POLICY_MESSAGE =
   "numbers, and symbols — or a passphrase of at least 16 characters.";
 
 /**
- * True when the password satisfies the UBC policy: either a complex password
- * (>= 8 chars with lower, upper, digit, and a non-alphanumeric symbol) or a
- * passphrase (>= 16 chars, no class requirement).
+ * Returns whether a password satisfies the UBC password policy.
  */
 export function isStrongPassword(password: string): boolean {
   if (password.length >= MIN_PASSPHRASE_LENGTH) {
@@ -37,10 +35,7 @@ export function isStrongPassword(password: string): boolean {
 }
 
 /**
- * Maps a better-auth endpoint path to the request-body field that carries the
- * password being set. The Zod schemas only guard the app's own forms; the raw
- * `/api/auth/*` handler bypasses them, so the auth `before` hook uses this to
- * find and policy-check the password regardless of entry point.
+ * Maps auth paths to the password field in the request body.
  */
 const PASSWORD_SETTING_PATHS: Record<string, "password" | "newPassword"> = {
   "/sign-up/email": "password",
@@ -50,21 +45,17 @@ const PASSWORD_SETTING_PATHS: Record<string, "password" | "newPassword"> = {
 };
 
 /**
- * Paths where a userId can be resolved from a reset token rather than a
- * session. The token lives in the body and maps to a Verification row whose
- * `value` is the userId.
+ * Auth paths that resolve a user via a reset token instead of a session.
  */
 export const TOKEN_RESET_PATHS = new Set(["/reset-password"]);
 
 /**
- * Paths where reuse history should NOT be checked (first-time password set —
- * no prior history exists to compare against).
+ * Auth paths that skip password reuse checks.
  */
 export const SKIP_REUSE_PATHS = new Set(["/sign-up/email"]);
 
 /**
- * Returns the policy-checkable password string for an auth path, or null when
- * the path does not set a password or the field is missing/non-string.
+ * Returns the password from a password-setting auth request, if present.
  */
 export function extractPolicyPassword(path: string, body: unknown): string | null {
   const field = PASSWORD_SETTING_PATHS[path];
