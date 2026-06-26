@@ -47,11 +47,10 @@ function isSupportedCourseRole(role) {
 }
 
 async function userHasTaEnrollment(userId) {
-  const row = await prisma.courseEnrollment.findFirst({
+  const count = await prisma.courseEnrollment.count({
     where: { userId, role: 'TA' },
-    select: { id: true },
   });
-  return row != null;
+  return count > 0;
 }
 
 function respondEduAiUpstreamError(res, error, fallbackMessage) {
@@ -547,7 +546,7 @@ router.post('/courses/:courseId/import', requireRole(['INSTRUCTOR', 'UNIT_ADMIN'
 /**
  * PATCH /courses/:courseId/publish — flip course to published.
  *
- * Auth: INSTRUCTOR on the course.
+ * Auth: ADMIN (global), UNIT_ADMIN (D-scoped), INSTRUCTOR (C-scoped).
  *
  * Why: intentionally non-cascading. Publishing a course doesn't auto-publish
  * its modules/lessons; the instructor must opt them in individually so a
@@ -590,7 +589,7 @@ router.patch('/courses/:courseId/publish', requireRole(['INSTRUCTOR', 'UNIT_ADMI
 /**
  * PATCH /courses/:courseId/unpublish — flip course unpublished, cascading down.
  *
- * Auth: INSTRUCTOR on the course.
+ * Auth: ADMIN (global), UNIT_ADMIN (D-scoped), INSTRUCTOR (C-scoped).
  * Side effects: in a single transaction sets `isPublished=false` on the
  *   course, all its modules, and all lessons within those modules.
  *
@@ -662,6 +661,69 @@ router.patch('/courses/:courseId/unpublish', requireRole(['INSTRUCTOR', 'UNIT_AD
 // ── Course-level analytics (§310) ─────────────────────────────────
 
 /**
+ * GET /courses/:courseId/feedback — all ActivityFeedback in the course.
+ *
+ * Auth: ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C) / TA(C). STUDENT → 403.
+ * Query params: activityId, studentId, take (default 50, max 200), skip (default 0).
+ */
+router.get('/courses/:courseId/feedback', async (req, res) => {
+  const authUser = req.user;
+  if (!authUser) return res.status(401).json({ error: 'Authentication required' });
+  const courseId = Number(req.params.courseId);
+  if (!Number.isFinite(courseId)) return res.status(400).json({ error: 'Invalid course id' });
+
+  try {
+    const course = await prisma.courseOffering.findUnique({
+      where: { id: courseId },
+      include: {
+        instructors: { select: { userId: true } },
+        enrollments: { select: { userId: true, role: true } },
+      },
+    });
+    if (!course) return res.status(404).json({ error: 'Course not found' });
+
+    const hasAdminAccess = isCourseAdmin(authUser, course);
+    const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
+    const isTa = enrollment?.role === 'TA';
+    if (!hasAdminAccess && !isTa) {
+      return res.status(403).json({ error: 'Not authorized for this course' });
+    }
+
+    const { activityId, studentId } = req.query;
+    if (req.query.take !== undefined && !Number.isFinite(Number(req.query.take))) {
+      return res.status(400).json({ error: 'take must be a number' });
+    }
+    if (req.query.skip !== undefined && !Number.isFinite(Number(req.query.skip))) {
+      return res.status(400).json({ error: 'skip must be a number' });
+    }
+    const take = Math.min(Math.max(Number(req.query.take) || 50, 1), 200);
+    const skip = Math.max(Number(req.query.skip) || 0, 0);
+
+    const where = {
+      activity: { lesson: { module: { courseOfferingId: courseId } } },
+    };
+    if (activityId !== undefined) {
+      if (!Number.isFinite(Number(activityId))) {
+        return res.status(400).json({ error: 'activityId must be a number' });
+      }
+      where.activityId = Number(activityId);
+    }
+    if (studentId) where.userId = studentId;
+
+    const feedback = await prisma.activityFeedback.findMany({
+      where,
+      orderBy: [{ activityId: 'asc' }, { userId: 'asc' }, { createdAt: 'asc' }],
+      take,
+      skip,
+    });
+
+    res.json(feedback);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+/**
  * GET /courses/:courseId/submissions — all submissions in the course.
  *
  * Auth: ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C) / TA(C).
@@ -703,7 +765,12 @@ router.get('/courses/:courseId/submissions', async (req, res) => {
     const where = {
       activity: { lesson: { module: { courseOfferingId: courseId } } },
     };
-    if (activityId) where.activityId = Number(activityId);
+    if (activityId !== undefined) {
+      if (!Number.isFinite(Number(activityId))) {
+        return res.status(400).json({ error: 'activityId must be a number' });
+      }
+      where.activityId = Number(activityId);
+    }
     if (studentId) where.userId = studentId;
 
     const submissions = await prisma.submission.findMany({

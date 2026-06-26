@@ -168,6 +168,7 @@ model Enrollment {
   enrolledAt     DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   isActive       Boolean        @default(true)
+  idempotencyKey String?        @unique
   externalId     String?
   externalSource String?
   course         Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
@@ -434,9 +435,15 @@ model MaterialEmbedding {
 }
 
 
+enum ChatbotType {
+  LEARNING
+  ADMIN
+}
+
 model Chat {
   id              String           @id @default(cuid())
   userId          String
+  chatbotType     ChatbotType      @default(LEARNING) @map("chatbot_type")
   /// Optional course context. Null = general (non-course) assistant chat; course
   /// chats are tagged at creation so instructors/unit-admins can read them (RBAC
   /// policy expansion §5). SetNull on course delete so history survives removal.
@@ -769,4 +776,33 @@ model LogRetentionPolicy {
   updatedAt           DateTime @updatedAt
 
   @@map("log_retention_policy")
+}
+
+enum CronJobStatus {
+  RUNNING
+  SUCCESS
+  ERROR
+}
+
+model CronJobRun {
+  id         String        @id @default(cuid())
+  jobName    String
+  status     CronJobStatus
+  startedAt  DateTime
+  finishedAt DateTime?
+  message    String?
+  exitCode   Int?
+  createdAt  DateTime      @default(now())
+
+  @@index([jobName, startedAt])
+  @@map("cron_job_runs")
+}
+
+model CronJobScheduleOverride {
+  jobName       String   @id
+  schedule      String
+  scheduleLabel String
+  updatedAt     DateTime @updatedAt
+
+  @@map("cron_job_schedule_overrides")
 }
