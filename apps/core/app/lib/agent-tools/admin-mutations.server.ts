@@ -1,0 +1,631 @@
+import { Prisma } from "@prisma/client";
+import type { EnrollmentRole } from "@prisma/client";
+import prisma from "~/lib/prisma.server";
+import type { RbacUser } from "~/lib/auth/course-access.server";
+import { createUserSchema, updateUserSchema } from "~/lib/auth/schemas";
+import {
+  addEnrollment,
+  deactivateEnrollment,
+  updateEnrollmentRole,
+} from "~/lib/courses/enrollments.server";
+import {
+  createCourseTopic,
+  deleteCourseTopic,
+  updateCourseTopic,
+} from "~/lib/courses/server";
+import { updateBugReportStatus } from "~/lib/bug-reports/server";
+import {
+  getAccessibleCourse,
+  resolveAdminCourseId,
+  resolveAdminUserId,
+} from "./admin-context.server";
+
+type ToolError = { error: string; fields?: Record<string, string> };
+type MutationResult = Record<string, unknown> | ToolError;
+
+export const ADMIN_WRITE_TOOL_NAMES = new Set([
+  "createUser",
+  "updateUser",
+  "deleteUser",
+  "createCourseEnrollment",
+  "updateCourseEnrollment",
+  "deactivateCourseEnrollment",
+  "updateBugReportStatus",
+  "createCourseTopic",
+  "updateCourseTopic",
+  "deleteCourseTopic",
+]);
+
+export function isAdminWriteToolName(name: string): boolean {
+  return ADMIN_WRITE_TOOL_NAMES.has(name);
+}
+
+function requirePlatformAdmin(user: RbacUser): ToolError | null {
+  if (user.role !== "ADMIN") {
+    return { error: "Forbidden" };
+  }
+  return null;
+}
+
+function mutationPayload(data: Record<string, unknown>) {
+  return {
+    dataSource: "database" as const,
+    mutation: true as const,
+    writeSucceeded: true as const,
+    appliedAt: new Date().toISOString(),
+    ...data,
+  };
+}
+
+function mutationFailure(error: ToolError & Record<string, unknown>) {
+  return {
+    dataSource: "database" as const,
+    mutation: true as const,
+    writeSucceeded: false as const,
+    appliedAt: new Date().toISOString(),
+    ...error,
+  };
+}
+
+export function userRefValidationError(opts: {
+  userId?: string;
+  userEmail?: string;
+}): MutationResult | null {
+  if (opts.userId?.trim() || opts.userEmail?.trim()) {
+    return null;
+  }
+  return mutationFailure({
+    error: "VALIDATION_ERROR",
+    fields: { user: "userId or userEmail required — call listUsers first" },
+  });
+}
+
+/** When the model calls a write tool before the admin confirmed in chat. */
+export function requireWriteConfirmation(confirmed: boolean): MutationResult | null {
+  if (confirmed === true) {
+    return null;
+  }
+  return mutationFailure({
+    error: "CONFIRMATION_REQUIRED",
+    message:
+      "Write not applied — wait for the admin to explicitly confirm in chat, then call this tool again with confirmed: true.",
+  });
+}
+
+/** Audit log + normalize write tool results for the model and UI. */
+export async function runAdminWriteTool(
+  toolName: string,
+  actor: RbacUser,
+  run: () => Promise<MutationResult>,
+): Promise<MutationResult> {
+  const result = await run();
+  const succeeded =
+    "writeSucceeded" in result && result.writeSucceeded === true && !("error" in result && result.error);
+
+  console.info("[admin-chat:write]", {
+    tool: toolName,
+    actorId: actor.id,
+    writeSucceeded: succeeded,
+    error: "error" in result ? result.error : undefined,
+  });
+
+  if ("error" in result && result.error) {
+    return mutationFailure(result as ToolError & Record<string, unknown>);
+  }
+  if (!succeeded) {
+    return mutationFailure({ ...result, error: "WRITE_FAILED" });
+  }
+  return result;
+}
+
+export async function runConfirmedAdminWriteTool(
+  toolName: string,
+  actor: RbacUser,
+  confirmed: boolean,
+  run: () => Promise<MutationResult>,
+): Promise<MutationResult> {
+  const gate = requireWriteConfirmation(confirmed);
+  if (gate) {
+    console.info("[admin-chat:write]", {
+      tool: toolName,
+      actorId: actor.id,
+      writeSucceeded: false,
+      error: "CONFIRMATION_REQUIRED",
+    });
+    return gate;
+  }
+  return runAdminWriteTool(toolName, actor, run);
+}
+
+function mapEnrollmentResult(
+  result: Awaited<
+    ReturnType<typeof addEnrollment | typeof updateEnrollmentRole | typeof deactivateEnrollment>
+  >,
+) {
+  if ("status" in result) {
+    if (result.status === "422" && "error" in result) {
+      return mutationFailure({
+        error: result.error,
+        fields: "fields" in result ? result.fields : undefined,
+      });
+    }
+    if (result.status === "409" && "error" in result) {
+      return mutationFailure({
+        error: result.error,
+        ...("currentInstructorCount" in result
+          ? { currentInstructorCount: result.currentInstructorCount }
+          : {}),
+      });
+    }
+    if (result.status === "404") {
+      return mutationFailure({ error: "NOT_FOUND" });
+    }
+    if (result.status === "201" || result.status === "200") {
+      return mutationPayload({
+        ok: true,
+        enrollment: "enrollment" in result ? result.enrollment : undefined,
+        previousRole: "previousRole" in result ? result.previousRole : undefined,
+      });
+    }
+    if (result.status === "204") {
+      return mutationPayload({
+        ok: true,
+        role: "role" in result ? result.role : undefined,
+      });
+    }
+  }
+  return mutationFailure({ error: "UNKNOWN" });
+}
+
+/** ADMIN — create platform user (same validation as POST /api/users). */
+export async function createAdminUser(
+  actor: RbacUser,
+  input: {
+    name: string;
+    email: string;
+    role: "ADMIN" | "UNIT_ADMIN" | "INSTRUCTOR" | "TA" | "STUDENT";
+    isActive?: boolean;
+  },
+): Promise<MutationResult> {
+  const denied = requirePlatformAdmin(actor);
+  if (denied) return denied;
+
+  const parsed = createUserSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      error: "VALIDATION_ERROR",
+      fields: Object.fromEntries(
+        parsed.error.issues.map((i) => [i.path.join(".") || "body", i.message]),
+      ),
+    };
+  }
+
+  try {
+    const user = await prisma.user.create({
+      data: {
+        ...parsed.data,
+        emailVerified: false,
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        isActive: true,
+        createdAt: true,
+      },
+    });
+    return mutationPayload({ ok: true, user });
+  } catch (error: unknown) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      return { error: "EMAIL_ALREADY_EXISTS" };
+    }
+    throw error;
+  }
+}
+
+/** ADMIN — update platform user (same guards as PATCH /api/users). */
+export async function updateAdminUser(
+  actor: RbacUser,
+  userId: string,
+  input: Record<string, unknown>,
+): Promise<MutationResult> {
+  const denied = requirePlatformAdmin(actor);
+  if (denied) return denied;
+
+  if (userId === actor.id) {
+    if (input.isActive === false) {
+      return { error: "CANNOT_DEACTIVATE_SELF" };
+    }
+    if (input.role !== undefined && input.role !== actor.role) {
+      return { error: "CANNOT_CHANGE_OWN_ROLE" };
+    }
+  }
+
+  const parsed = updateUserSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      error: "VALIDATION_ERROR",
+      fields: Object.fromEntries(
+        parsed.error.issues.map((i) => [i.path.join(".") || "body", i.message]),
+      ),
+    };
+  }
+
+  if (Object.keys(parsed.data).length === 0) {
+    return {
+      error: "VALIDATION_ERROR",
+      fields: { body: "at least one field to update is required" },
+    };
+  }
+
+  if (parsed.data.authorizedUnits !== undefined) {
+    const target = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+    if (!target) {
+      return { error: "USER_NOT_FOUND" };
+    }
+    const effectiveRole = parsed.data.role ?? target.role;
+    if (effectiveRole !== "UNIT_ADMIN") {
+      return { error: "ROLE_MISMATCH" };
+    }
+  }
+
+  try {
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: parsed.data,
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        isActive: true,
+        authorizedUnits: true,
+        updatedAt: true,
+      },
+    });
+    return mutationPayload({ ok: true, user });
+  } catch (error: unknown) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2025"
+    ) {
+      return { error: "USER_NOT_FOUND" };
+    }
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      return { error: "EMAIL_ALREADY_EXISTS" };
+    }
+    throw error;
+  }
+}
+
+/** ADMIN — delete platform user (same guards as DELETE /api/users). */
+export async function deleteAdminUser(actor: RbacUser, userId: string): Promise<MutationResult> {
+  const denied = requirePlatformAdmin(actor);
+  if (denied) return denied;
+
+  if (userId === actor.id) {
+    return { error: "CANNOT_DELETE_SELF" };
+  }
+
+  try {
+    await prisma.user.delete({ where: { id: userId } });
+    return mutationPayload({ ok: true, deletedUserId: userId });
+  } catch (error: unknown) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2025"
+    ) {
+      return { error: "USER_NOT_FOUND" };
+    }
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2003"
+    ) {
+      return { error: "CANNOT_DELETE_USER_WITH_DATA" };
+    }
+    throw error;
+  }
+}
+
+/** ADMIN — enroll a user in a course. */
+export async function createAdminEnrollment(
+  actor: RbacUser,
+  opts: {
+    courseId?: string;
+    courseCode?: string;
+    fallbackCourseId?: string | null;
+    userId?: string;
+    userEmail?: string;
+    role: EnrollmentRole;
+  },
+): Promise<MutationResult> {
+  const denied = requirePlatformAdmin(actor);
+  if (denied) return denied;
+
+  const resolvedUser = await resolveAdminUserId(actor, {
+    userId: opts.userId,
+    userEmail: opts.userEmail,
+  });
+  if ("error" in resolvedUser) {
+    return resolvedUser;
+  }
+
+  const resolved = await resolveAdminCourseId(actor, {
+    courseId: opts.courseId,
+    courseCode: opts.courseCode,
+    fallbackCourseId: opts.fallbackCourseId,
+  });
+  if ("error" in resolved) {
+    return resolved;
+  }
+
+  const gate = await getAccessibleCourse(actor, resolved.courseId);
+  if ("error" in gate) {
+    return gate;
+  }
+
+  const mapped = mapEnrollmentResult(
+    await addEnrollment(resolved.courseId, {
+      userId: resolvedUser.userId,
+      role: opts.role,
+    }),
+  );
+  if ("writeSucceeded" in mapped && mapped.writeSucceeded === false) {
+    return mapped;
+  }
+
+  const verified = await prisma.enrollment.findFirst({
+    where: {
+      courseId: resolved.courseId,
+      userId: resolvedUser.userId,
+      isActive: true,
+    },
+    select: {
+      id: true,
+      role: true,
+      isActive: true,
+      enrolledAt: true,
+      user: { select: { email: true, name: true } },
+    },
+  });
+
+  if (!verified) {
+    return mutationFailure({
+      error: "VERIFY_FAILED",
+      message: "Enrollment not visible in database after write",
+    });
+  }
+
+  return {
+    ...mapped,
+    verifiedEnrollment: verified,
+    resolvedUser,
+  };
+}
+
+/** ADMIN — change enrollment role. */
+export async function updateAdminEnrollmentRole(
+  actor: RbacUser,
+  opts: {
+    courseId?: string;
+    courseCode?: string;
+    fallbackCourseId?: string | null;
+    enrollmentId: string;
+    role: EnrollmentRole;
+  },
+): Promise<MutationResult> {
+  const denied = requirePlatformAdmin(actor);
+  if (denied) return denied;
+
+  const resolved = await resolveAdminCourseId(actor, {
+    courseId: opts.courseId,
+    courseCode: opts.courseCode,
+    fallbackCourseId: opts.fallbackCourseId,
+  });
+  if ("error" in resolved) {
+    return resolved;
+  }
+
+  return mapEnrollmentResult(
+    await updateEnrollmentRole(resolved.courseId, opts.enrollmentId, {
+      role: opts.role,
+    }),
+  );
+}
+
+/** ADMIN — deactivate (soft-delete) an enrollment. */
+export async function deactivateAdminEnrollment(
+  actor: RbacUser,
+  opts: {
+    courseId?: string;
+    courseCode?: string;
+    fallbackCourseId?: string | null;
+    enrollmentId: string;
+  },
+): Promise<MutationResult> {
+  const denied = requirePlatformAdmin(actor);
+  if (denied) return denied;
+
+  const resolved = await resolveAdminCourseId(actor, {
+    courseId: opts.courseId,
+    courseCode: opts.courseCode,
+    fallbackCourseId: opts.fallbackCourseId,
+  });
+  if ("error" in resolved) {
+    return resolved;
+  }
+
+  return mapEnrollmentResult(
+    await deactivateEnrollment(resolved.courseId, opts.enrollmentId),
+  );
+}
+
+/** ADMIN — update bug report triage status. */
+export async function updateAdminBugReportStatus(
+  actor: RbacUser,
+  reportId: string,
+  status: "UNHANDLED" | "IN_PROGRESS" | "RESOLVED",
+): Promise<MutationResult> {
+  const denied = requirePlatformAdmin(actor);
+  if (denied) return denied;
+
+  const updated = await updateBugReportStatus(reportId, status);
+  if (!updated) {
+    return { error: "NOT_FOUND" };
+  }
+  return mutationPayload({ ok: true, report: updated });
+}
+
+function mapTopicCreateResult(
+  result: Awaited<ReturnType<typeof createCourseTopic>>,
+): MutationResult {
+  if (result.status === "201") {
+    return mutationPayload({ ok: true, topic: result.topic });
+  }
+  if (result.status === "404") {
+    return { error: "COURSE_NOT_FOUND" };
+  }
+  if (result.status === "409") {
+    return { error: "TOPIC_ALREADY_EXISTS", existingId: result.existingId };
+  }
+  return mutationFailure({
+    error: "VALIDATION_ERROR",
+    fields: { name: "invalid topic name" },
+  });
+}
+
+function mapTopicUpdateResult(
+  result: Awaited<ReturnType<typeof updateCourseTopic>>,
+): MutationResult {
+  if (result.status === "200") {
+    return mutationPayload({ ok: true, topic: result.topic });
+  }
+  if (result.status === "404") {
+    return { error: "TOPIC_NOT_FOUND" };
+  }
+  if (result.status === "409") {
+    return { error: "TOPIC_ALREADY_EXISTS", existingId: result.existingId };
+  }
+  return mutationFailure({
+    error: "VALIDATION_ERROR",
+    fields: { name: "invalid topic name" },
+  });
+}
+
+function mapTopicDeleteResult(
+  result: Awaited<ReturnType<typeof deleteCourseTopic>>,
+): MutationResult {
+  if (result.status === "204") {
+    return mutationPayload({ ok: true, deleted: true });
+  }
+  if (result.status === "404") {
+    return { error: "TOPIC_NOT_FOUND" };
+  }
+  return mutationFailure({
+    error: "VALIDATION_ERROR",
+    fields: { topic: "topicId or name required" },
+  });
+}
+
+/** ADMIN — create a course topic (same as POST /api/courses/:id/topics). */
+export async function createAdminCourseTopic(
+  actor: RbacUser,
+  opts: {
+    courseId?: string;
+    courseCode?: string;
+    fallbackCourseId?: string | null;
+    name: string;
+  },
+): Promise<MutationResult> {
+  const denied = requirePlatformAdmin(actor);
+  if (denied) return denied;
+
+  const resolved = await resolveAdminCourseId(actor, {
+    courseId: opts.courseId,
+    courseCode: opts.courseCode,
+    fallbackCourseId: opts.fallbackCourseId,
+  });
+  if ("error" in resolved) {
+    return resolved;
+  }
+
+  return mapTopicCreateResult(
+    await createCourseTopic(resolved.courseId, { name: opts.name }, actor.id),
+  );
+}
+
+/** ADMIN — rename a course topic (same as PATCH /api/courses/:id/topics/:topicId). */
+export async function updateAdminCourseTopic(
+  actor: RbacUser,
+  opts: {
+    courseId?: string;
+    courseCode?: string;
+    fallbackCourseId?: string | null;
+    topicId: string;
+    name: string;
+  },
+): Promise<MutationResult> {
+  const denied = requirePlatformAdmin(actor);
+  if (denied) return denied;
+
+  const resolved = await resolveAdminCourseId(actor, {
+    courseId: opts.courseId,
+    courseCode: opts.courseCode,
+    fallbackCourseId: opts.fallbackCourseId,
+  });
+  if ("error" in resolved) {
+    return resolved;
+  }
+
+  return mapTopicUpdateResult(
+    await updateCourseTopic(resolved.courseId, opts.topicId, { name: opts.name }),
+  );
+}
+
+/** ADMIN — soft-delete a course topic (same as DELETE /api/courses/:id/topics). */
+export async function deleteAdminCourseTopic(
+  actor: RbacUser,
+  opts: {
+    courseId?: string;
+    courseCode?: string;
+    fallbackCourseId?: string | null;
+    topicId?: string;
+    name?: string;
+  },
+): Promise<MutationResult> {
+  const denied = requirePlatformAdmin(actor);
+  if (denied) return denied;
+
+  const resolved = await resolveAdminCourseId(actor, {
+    courseId: opts.courseId,
+    courseCode: opts.courseCode,
+    fallbackCourseId: opts.fallbackCourseId,
+  });
+  if ("error" in resolved) {
+    return resolved;
+  }
+
+  if (!opts.topicId?.trim() && !opts.name?.trim()) {
+    return mutationFailure({
+      error: "VALIDATION_ERROR",
+      fields: { topic: "topicId or name required" },
+    });
+  }
+
+  return mapTopicDeleteResult(
+    await deleteCourseTopic(resolved.courseId, {
+      topicId: opts.topicId,
+      name: opts.name,
+    }),
+  );
+}
