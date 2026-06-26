@@ -14,6 +14,7 @@ import "./app.css";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { getPolicy } from "~/lib/policy.server";
+import { ensureCronSchedulerRunning } from "~/lib/cron-scheduler.server";
 import { AssistiveUiProvider } from "~/components/assistive/assistive-ui-provider";
 import { ThemeProvider } from "~/components/theme-provider";
 import { Toaster } from "@eduai/ui";
@@ -51,6 +52,7 @@ const GUEST_ROOT_PREFERENCES = {
  * Guests always get defaults, guaranteeing baseline UI on public pages.
  */
 export async function loader({ request }: LoaderFunctionArgs) {
+  ensureCronSchedulerRunning();
   const session = await auth.api.getSession(request);
   if (!session?.user) {
     return GUEST_ROOT_PREFERENCES;
@@ -84,16 +86,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <Meta />
         <Links />
-        {/* Inline script: set .dark on <html> before first paint to prevent flash */}
+        {/* Inline script: match next-themes class + color-scheme before hydration */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem('theme');if(t==='dark'||(t==='system'||!t)&&window.matchMedia('(prefers-color-scheme: dark)').matches){document.documentElement.classList.add('dark')}}catch(e){}})()`,
+            __html: `(function(){try{var t=localStorage.getItem('theme');var d=t==='dark'||((t==='system'||!t)&&window.matchMedia('(prefers-color-scheme: dark)').matches);var r=document.documentElement;r.classList.add(d?'dark':'light');r.style.colorScheme=d?'dark':'light'}catch(e){}})()`,
           }}
         />
       </head>
