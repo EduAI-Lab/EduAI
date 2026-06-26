@@ -1,6 +1,6 @@
 import { betterAuth } from "better-auth";
 import { apiKey } from "better-auth/plugins";
-import { createAuthMiddleware, APIError } from "better-auth/api";
+import { createAuthMiddleware, APIError, getSessionFromCtx } from "better-auth/api";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import prisma from "../prisma.server";
 import { getPolicy, logPolicyDenial } from "../policy.server";
@@ -13,6 +13,14 @@ export const authBaseURL =
 
 const cookieDomain = process.env.COOKIE_DOMAIN?.trim();
 const useSecureCookies = authBaseURL.startsWith("https://");
+
+const ADMIN_API_KEY_MANAGEMENT_PATHS = new Set([
+  "/api-key/create",
+  "/api-key/delete",
+  "/api-key/list",
+  "/api-key/update",
+  "/api-key/get",
+]);
 
 export const auth = betterAuth({
   baseURL: authBaseURL,
@@ -28,6 +36,9 @@ export const auth = betterAuth({
   plugins: [
     apiKey({
       apiKeyHeaders: ["x-api-key"],
+      // Do not treat x-api-key as a durable user session on /api/* routes.
+      // Admin automation must pass explicit route guards (enforceAdminIfApiKey).
+      disableSessionForAPIKeys: true,
     }),
   ],
   hooks: {
@@ -42,6 +53,15 @@ export const auth = betterAuth({
     // imports prisma + the logging facade, neither of which imports this file —
     // no cycle.
     before: createAuthMiddleware(async (ctx) => {
+      if (ADMIN_API_KEY_MANAGEMENT_PATHS.has(ctx.path)) {
+        const session = await getSessionFromCtx(ctx);
+        if (!session?.user || session.user.role !== "ADMIN") {
+          throw new APIError("FORBIDDEN", {
+            message: "API key management restricted to admin users",
+          });
+        }
+      }
+
       if (ctx.path !== "/sign-up/email") return;
       if (ctx.headers?.has(INTERNAL_INVITE_SIGNUP_HEADER)) return;
       if (!(await getPolicy("auth.allowPublicRegistration"))) {
