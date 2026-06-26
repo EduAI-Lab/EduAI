@@ -996,7 +996,7 @@ ${LATEST_TURN_FOCUS_INSTRUCTION}
 
 ${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ""}
 
-Be helpful, conversational, and accurate. Use markdown for formatting.`;
+Be helpful, conversational, and accurate. Use markdown for formatting. For mathematical expressions, use LaTeX delimiters: inline math with $$...$$ and display math with $$...$$ on its own line.`;
 
       if (shouldPrefetchCourseRag(hasCourse) && effectiveCourseId) {
         try {
