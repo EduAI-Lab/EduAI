@@ -273,6 +273,7 @@ Open decisions to resolve with the team (not blocking Phase 0/1):
 | `[TEAM_PHASE_0_AND_1_GUIDE.md](./TEAM_PHASE_0_AND_1_GUIDE.md)`       | **Start here** — sprint-sized tasks for Phase 0 + rule-based Phase 1 |
 | `[IMPLEMENTATION_PLAN_MVP.md](./IMPLEMENTATION_PLAN_MVP.md)`         | Detailed technical spec (authoritative for field names)              |
 | `[ROUTING_LAYER_PLAN.md](./ROUTING_LAYER_PLAN.md)`                   | Full research + architecture reference                               |
+| `[MULTI_SERVER_ROUTING_PLAN.md](./MULTI_SERVER_ROUTING_PLAN.md)`   | **Multi-server** fleet routing — which GPU host handles the request  |
 | `[../memory.md](../memory.md)`                                       | Agent/project context                                                |
 | GitHub [#197](https://github.com/EduAI-Lab/EduAICore/issues/197)     | Parent issue + sub-issues #182–#192                                  |
 
