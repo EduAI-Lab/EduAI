@@ -174,6 +174,15 @@ describe("POST /api/invitations (create)", () => {
     expect(pending).toBe(1);
     expect(second.invitation.role).toBe("ADMIN");
   });
+
+  it("lets an ADMIN invite a STUDENT", async () => {
+    asAdmin();
+    const email = uniqueEmail();
+    const res = await createAction(createReq({ email, role: "STUDENT" }));
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.invitation.role).toBe("STUDENT");
+  });
 });
 
 describe("GET /api/invitations (list)", () => {
@@ -421,6 +430,32 @@ describe("accept flow", () => {
     const user = await prisma.user.findUnique({ where: { email } });
     expect(user?.role).toBe("UNIT_ADMIN");
     expect(user?.authorizedUnits).toEqual(["COSC"]);
+  });
+
+  it("creates a STUDENT account from an admin invite (no authorized units)", async () => {
+    asAdmin();
+    const email = uniqueEmail();
+    const created = await (await createAction(createReq({ email, role: "STUDENT" }))).json();
+    expect(created.invitation.role).toBe("STUDENT");
+    const token = tokenFromAcceptUrl(created.acceptUrl);
+
+    // Better Auth rate-limits sign-up to 3 per 10s per IP and this file already
+    // signs up that many in-window — jump past the window for this extra one.
+    const realNow = Date.now;
+    const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => realNow() + 11_000);
+    let res: Response;
+    try {
+      res = (await acceptAction(
+        acceptReq({ token, name: "Sam Student", password: "supersecret1", confirmPassword: "supersecret1" }),
+      )) as Response;
+    } finally {
+      nowSpy.mockRestore();
+    }
+    expect(res.status).toBe(302);
+
+    const user = await prisma.user.findUnique({ where: { email } });
+    expect(user?.role).toBe("STUDENT");
+    expect(user?.authorizedUnits).toEqual([]);
   });
 
   it("accepts an invite even when public registration is disabled", async () => {
