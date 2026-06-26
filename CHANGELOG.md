@@ -10,6 +10,15 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ### Added
 
 - [ci] ci: Add a Backend Coverage Report workflow — runs unit+integration coverage for the three backends on every push to `development`, aggregates them, and commits a Markdown summary to `eduai-summer-2026/reports/coverage/`. (#773, @abdullahmoh21, 2026-06-25)
+- [core] feat: RAG ingestion preserves LaTeX equations, converts HTML tables to markdown, and chunks at clinical/slide section boundaries (#90, #91, #93, @superbolt08, 2026-06-23) — [#755](https://github.com/EduAI-Lab/EduAI/pull/755)
+- [core] feat: Human-readable math in chat — normalizeMathMarkdown, Streamdown math plugin, KaTeX CSS, prose-vs-equation guards (#142, @superbolt08, 2026-06-23) — [#757](https://github.com/EduAI-Lab/EduAI/pull/757)
+
+### Fixed
+
+- [core] fix: Theme hydration mismatch on html color-scheme (#142, @superbolt08, 2026-06-23)
+- [ai-tutor] feat: Add `GET /courses/:courseId/feedback` endpoint — returns all `ActivityFeedback` rows for activities in a course; access-gated to ADMIN (global), UNIT_ADMIN (department-scoped), INSTRUCTOR (enrolled), and TA (enrolled); supports `activityId`, `studentId`, `take` (max 200, default 50), and `skip` query params. (#554, @evanbones, 2026-06-24)
+- [ai-tutor] feat: Extend `PATCH /courses/:courseId`, `PATCH /courses/:courseId/publish`, and `PATCH /courses/:courseId/unpublish` to accept ADMIN and UNIT_ADMIN (department-scoped) in addition to INSTRUCTOR — aligns course mutation routes with rbac-matrix.md §5. (#553, @evanbones, 2026-06-24)
+- [core] feat: Streamline admin local model workflow — auto-sync Ollama/vLLM models into AI Management (#180, @superbolt08, 2026-06-23) — [#756](https://github.com/EduAI-Lab/EduAI/pull/756)
 - [core] feat: Admin cron job dashboard — `/admin/cron-jobs` lists all registered cron servers with last run status (RUNNING/SUCCESS/ERROR), schedule, and a manual trigger for infra backup scripts; run history stored in `cron_job_runs`; schedule overrides persist to `cron_job_schedule_overrides`. (#634, #643, @evanbones, 2026-06-23)
 - [core] feat: In-process cron scheduler (`cron-scheduler.server.ts`) starts on server boot and fires infra scripts on their configured schedules; `rescheduleJob` reflects live changes from the admin panel. (#634, @evanbones, 2026-06-23)
 - [core] schema: Add `cron_job_runs` and `cron_job_schedule_overrides` tables. (#634, @evanbones, 2026-06-23)
@@ -32,6 +41,13 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
+- [core] feat: Allow admins to invite students — STUDENT added to invitable roles with a "Student / TA" dropdown marker noting a TA is a student elevated per-course. (#687, #691, @abdullahmoh21, 2026-06-20)
+- [core] tests: Cover admin student invites — schema accepts STUDENT and rejects TA, and the integration create→accept yields a STUDENT user with no authorized units. (#687, #691, @abdullahmoh21, 2026-06-20)
+- [core] feat: Admin Chatbot at `/admin/chat` — ADMIN-only assistant with AI SDK tools for platform ops (list/get courses, enrollments, users, bug reports; confirmed writes for user CRUD, enrollment changes, and bug triage). Separate `ChatbotType` sessions (`LEARNING` | `ADMIN`), tool-capable model requirement, and token budgeting for vLLM context windows. ([#651](https://github.com/EduAI-Lab/EduAI/pull/651), @superbolt08, 2026-06-16)
+- [core] api: API agent readiness ([#572](https://github.com/EduAI-Lab/EduAI/issues/572)) — shared JSON error envelope (`api-error.server.ts`), JSON body support on course create, enrollment POST idempotency keys, and consistent validation responses. ([#651](https://github.com/EduAI-Lab/EduAI/pull/651), @superbolt08, 2026-06-16)
+- [core] docs: Agent readiness coverage snapshot in `docs/rag-ai/AGENT_READINESS.md` — maps admin/learning chat tools to REST endpoints ([#167](https://github.com/EduAI-Lab/EduAI/issues/167)). ([#651](https://github.com/EduAI-Lab/EduAI/pull/651), @superbolt08, 2026-06-18)
+- [ai-tutor] api: Wire admin bug-report triage to Core — `GET/PATCH /admin/bug-reports` forwards the EduAI session cookie to Core instead of a local table. ([#651](https://github.com/EduAI-Lab/EduAI/pull/651), @superbolt08, 2026-06-16)
+- [core] tests: Unit tests for admin chat tools (`create-admin-chat-tools.test.ts`, `agent-tools.admin-context.test.ts`, `agent-tools.admin-mutations.test.ts`, `agent-tools.course-context.test.ts`); HTTP smoke scripts `admin-chat-smoke.mjs` and `admin-chat-tools-smoke.ts`. ([#651](https://github.com/EduAI-Lab/EduAI/pull/651), @superbolt08, 2026-06-16)
 - [core] feat: One-way soft-delete for course materials and topics — `DELETE` sets `deletedAt`/`deletedBy` instead of hard-deleting; re-uploading a previously-deleted material restores it; all reads (RAG, API list, dashboard stats) filter `deletedAt IS NULL`; topics gain a `deletedBy` column. EduAI deletions are never propagated to Canvas (prep so AI Tutor / Question Maker can consume deletes like renames). Add a delete action to the materials section of course detail. (#685, @yta3216, 2026-06-19)
 - [core] feat: Course-scoped chat — all users chat within a selected course (a course is selected by default); the global / "no course selected" view is removed, including for admins. Students with no enrolled courses keep the chat visible but disabled with an explicit "no courses" reason threaded through `ChatInput`. Add a student visibility disclaimer banner (chats viewable by prof / unit admin / admin). Move the chatbot to the secondary sidebar (bottom), grouped with the QM / AI Tutor cross-nav links. (#685, @yta3216, 2026-06-19)
 - [core] feat: Searchable staff multiselect — add `Combobox` and `MultiSelect` primitives to `@eduai/ui` and export theme-sync utilities; the staff tab in course overview and the department combobox use the shared primitive. (#685, @yta3216, 2026-06-19)

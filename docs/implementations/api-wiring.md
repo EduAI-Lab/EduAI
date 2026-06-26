@@ -427,7 +427,7 @@ Per #275, new endpoints ship with **minimum-viable auth**, not the full role mat
 |---|---|
 | AI Tutor: verify `enrollmentSync.js` against new Core endpoint | ✅ Calls enrollments via service key |
 | AI Tutor: bug reports → Core | ✅ Wired (no local table) |
-| AI Tutor: admin triage → Core (blocked on Deferred admin API) | ❌ Not wired (blocked on Deferred) |
+| AI Tutor: admin triage → Core | ✅ Wired (forwards session cookie to Core admin API) |
 | AI Tutor: question consumption in tutoring flow (with pagination) | ✅ Wired (fail-soft, `limit:20`) |
 | QM: course link (`core_course_id`) | ✅ Wired (manual link-core) |
 | QM: topic pull/push (`core_topic_id`) | ✅ Wired (409 → `existingId`) |
@@ -452,4 +452,11 @@ Per #275, new endpoints ship with **minimum-viable auth**, not the full role mat
 ### Deferred
 
 - `POST /api/sessions/validate` — auth consolidation. **Note:** although tracked as a separate workstream, this endpoint is now **built and in use** — it is the linchpin of all user auth (both extensions validate the forwarded cookie through it; see [Auth](#auth)).
-- Core admin bug-report API (`GET /api/admin/bug-reports`, `PATCH /api/admin/bug-reports/:id`) — needed for AI Tutor admin triage proxy; must be specced before Phase 2a admin-triage item can be started
+- Core admin bug-report API (`GET /api/admin/bug-reports`, `PATCH /api/admin/bug-reports/:id`) — ✅ Built; AI Tutor admin triage proxies with forwarded session cookie ([#572](https://github.com/EduAI-Lab/EduAI/issues/572))
+
+### Agent readiness ([#167](https://github.com/EduAI-Lab/EduAI/issues/167))
+
+| Item | Status |
+|---|---|
+| Admin chatbot + tool coverage snapshot | ✅ [`AGENT_READINESS.md`](../rag-ai/AGENT_READINESS.md) |
+| API hygiene — JSON course create, error envelope, enrollment idempotency ([#572](https://github.com/EduAI-Lab/EduAI/issues/572)) | ✅ |
