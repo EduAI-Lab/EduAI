@@ -8,6 +8,9 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ## [Week 8 — June 22–28, 2026]
 
 ### Added
+
+- [ai-tutor] feat: Add `GET /courses/:courseId/feedback` endpoint — returns all `ActivityFeedback` rows for activities in a course; access-gated to ADMIN (global), UNIT_ADMIN (department-scoped), INSTRUCTOR (enrolled), and TA (enrolled); supports `activityId`, `studentId`, `take` (max 200, default 50), and `skip` query params. (#554, @evanbones, 2026-06-24)
+- [ai-tutor] feat: Extend `PATCH /courses/:courseId`, `PATCH /courses/:courseId/publish`, and `PATCH /courses/:courseId/unpublish` to accept ADMIN and UNIT_ADMIN (department-scoped) in addition to INSTRUCTOR — aligns course mutation routes with rbac-matrix.md §5. (#553, @evanbones, 2026-06-24)
 - [core] feat: Streamline admin local model workflow — auto-sync Ollama/vLLM models into AI Management (#180, @superbolt08, 2026-06-23) — [#756](https://github.com/EduAI-Lab/EduAI/pull/756)
 - [core] feat: Admin cron job dashboard — `/admin/cron-jobs` lists all registered cron servers with last run status (RUNNING/SUCCESS/ERROR), schedule, and a manual trigger for infra backup scripts; run history stored in `cron_job_runs`; schedule overrides persist to `cron_job_schedule_overrides`. (#634, #643, @evanbones, 2026-06-23)
 - [core] feat: In-process cron scheduler (`cron-scheduler.server.ts`) starts on server boot and fires infra scripts on their configured schedules; `rescheduleJob` reflects live changes from the admin panel. (#634, @evanbones, 2026-06-23)
