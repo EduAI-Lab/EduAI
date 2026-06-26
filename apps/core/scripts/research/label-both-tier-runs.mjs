@@ -252,7 +252,7 @@ async function callJudgeOpenAI({ baseUrl, apiKey, model, userPrompt }) {
   return parseJudgeJson(content);
 }
 
-async function callJudgeViaEduai({ url, headers, apiKeys, model, userPrompt }) {
+async function callJudgeViaEduai({ url, headers, apiKeys, model, userPrompt, courseCode }) {
   const judgePrompt = `${judgeSystemPrompt()}\n\n${userPrompt}\n\nRespond with JSON only.`;
   const timeoutMs = Math.max(
     30_000,
@@ -268,6 +268,7 @@ async function callJudgeViaEduai({ url, headers, apiKeys, model, userPrompt }) {
       messages: [{ id: randomUUID(), role: "user", content: judgePrompt }],
       streaming: false,
       forceHybridRag: true,
+      ...(courseCode ? { courseCode } : {}),
     }),
     signal: AbortSignal.timeout(timeoutMs),
   });
@@ -306,6 +307,8 @@ async function main() {
   const strictJudge = readEnv("RESEARCH_JUDGE_STRICT") === "1";
   const labelVersion =
     readEnv("RESEARCH_LABEL_VERSION") ?? (strictJudge ? "strict-v1" : "v1");
+
+  const defaultCourseCode = readEnv("RESEARCH_DEFAULT_COURSE_CODE");
 
   let eduaiConfig = null;
   if (viaEduai) {
@@ -403,7 +406,12 @@ async function main() {
 
     try {
       const judge = viaEduai
-        ? await callJudgeViaEduai({ ...eduaiConfig, model: judgeModel, userPrompt })
+        ? await callJudgeViaEduai({
+            ...eduaiConfig,
+            model: judgeModel,
+            userPrompt,
+            courseCode: meta.course_code ?? defaultCourseCode ?? undefined,
+          })
         : await callJudgeOpenAI({
             baseUrl: judgeBaseUrl,
             apiKey: judgeApiKey,

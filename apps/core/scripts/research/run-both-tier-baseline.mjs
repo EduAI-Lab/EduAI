@@ -243,6 +243,8 @@ async function main() {
   if (xApiKey) headers["x-api-key"] = xApiKey;
   if (cookie) headers.Cookie = cookie;
 
+  const defaultCourseCode = readEnv("RESEARCH_DEFAULT_COURSE_CODE");
+
   const runStarted = new Date().toISOString();
   const totalCalls = prompts.length * tierModels.length;
 
@@ -278,7 +280,7 @@ async function main() {
         apiKeys,
         model,
         prompt: row.prompt,
-        courseCode: row.course_code ?? undefined,
+        courseCode: row.course_code ?? defaultCourseCode ?? undefined,
         forceHybridRag: hybridFlags.forceHybridRag,
         hybridWebTools: hybridFlags.hybridWebTools,
         timeoutMs: resolveResearchTimeoutMs(readEnv, row),
@@ -294,7 +296,7 @@ async function main() {
         );
       } else {
         console.log(
-          `  OK ${result.durationMs} ms, ${result.responseText.length} chars (hybrid=${forceHybridRag})`,
+          `  OK ${result.durationMs} ms, ${result.responseText.length} chars (hybrid=${hybridFlags.forceHybridRag})`,
         );
       }
 
