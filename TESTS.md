@@ -369,6 +369,8 @@ Unit tests for the shared design-system component library (`@eduai/ui`). Run wit
 | `rbac-permissions.test.ts` | RBAC permission helpers (`canManageContent`, enrollment/analytics gates) and role routing for all five platform roles |
 | `PermissionGate.test.tsx` | Declarative UI gate hides children when `allow` is false and renders optional fallback |
 | `AtRoleBanner.test.tsx` | Role banners show TA read-only copy and unit-admin authorized units |
+| `dashboard-stats.test.ts` | `buildDashboardStats` dispatches the right stat set per role — STUDENT (enrolled/in-progress/completed derived from `completed`-vs-`total`, not the removed `isComplete`), instructor-shell roles (INSTRUCTOR/UNIT_ADMIN/TA → your courses/published/draft), ADMIN (users/courses/open + total bug reports), and an `undefined` role falling back to the student set |
+| `RoleDashboard.test.tsx` | The shared dashboard shell renders banner, heading, stat grid, heading accessory, and role-specific body, keeps the guided-tour `data-tour` target when `headingTourId` is given, and omits the tour attribute for admin/instructor when it is not |
 
 **E2E (Playwright):** `tests/e2e/ai-tutor-rbac.spec.ts` — login smoke tests for student, instructor, and admin shells (requires Core + AiTutor dev servers).
 
