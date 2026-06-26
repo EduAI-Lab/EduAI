@@ -132,10 +132,11 @@ Each section should use this format:
 
 **Path:** `tests/e2e/tests/`
 
-> Frontend tests are deferred while the UI is in flux. The suite below covers backend API flows only.
+> Most E2E coverage is API-only. Browser UI tests are added selectively for high-risk regressions (see `core/chat-code-block.spec.ts`).
 
 | Test file | What it tests |
 |-----------|---------------|
+| [`core/chat-code-block.spec.ts`](tests/e2e/tests/core/chat-code-block.spec.ts) | Browser regression for #667: enrolled student on `/chat` receives a mocked streamed assistant reply with a fenced `js` code block; after streaming completes, Streamdown **Copy Code** writes the snippet to the clipboard and **Download file** saves the code. |
 | [`core/registration.spec.ts`](tests/e2e/tests/core/registration.spec.ts) | Core user registration (sign-up rejects duplicate email, short password, invalid email), sign-in success/failure, `GET /api/me` auth gate and profile shape, `PATCH /api/me` name update and role-change rejection, `POST /api/sessions/validate` 200/401/405, and sign-out session invalidation. |
 | [`core/access-control.spec.ts`](tests/e2e/tests/core/access-control.spec.ts) | Unauthenticated requests to all protected Core routes return 401; STUDENT role: can read own profile, gets empty course list (no enrollments), can read and PATCH assistive preferences; STUDENT is blocked (403) from admin-only AI-provider/model lists, course creation, and invitation management; sign-out then re-sign-in restores access; service key validate round-trip. |
 | [`ai-tutor/access.spec.ts`](tests/e2e/tests/ai-tutor/access.spec.ts) | AI Tutor server health (`GET /api/health`); unauthenticated calls to `/api/me` and `/api/courses` return 401; authenticated user (Core session cookie) can call `/api/me` and `/api/courses`; STUDENT blocked from admin routes; `POST /api/logout` proxies sign-out to Core and invalidates the session; idempotent logout with no session. |
@@ -298,7 +299,8 @@ Each section should use this format:
 | [`dashboard-ta-view.test.tsx`](apps/core/app/tests/unit/dashboard-ta-view.test.tsx) | Verifies `DashboardTaView` (TA as `Enrollment(role=TA)`, not a platform role) does not show the Question Maker dashboard card. |
 | [`dashboard-student-view.test.tsx`](apps/core/app/tests/unit/dashboard-student-view.test.tsx) | Verifies `DashboardStudentView` does not show the Question Maker dashboard card and renders student course/chat actions (incl. the no-courses state). |
 | [`ChatTranscriptViewer.test.tsx`](apps/core/app/tests/unit/ChatTranscriptViewer.test.tsx) | Verifies the read-only transcript viewer renders its banner, empty state, loading spinner, and shows a "Continue in chat" link only when `continueChatId` is provided. |
-| [`ChatMessage.test.tsx`](apps/core/app/tests/unit/ChatMessage.test.tsx) | Verifies user vs AI message rendering — text content, right-aligned user layout, `U`/`AI` avatar fallbacks, AI copy button, and that both mark their content as a reading surface. |
+| [`ChatMessage.test.tsx`](apps/core/app/tests/unit/ChatMessage.test.tsx) | Verifies user vs AI message rendering — text content, right-aligned user layout, `U`/`AI` avatar fallbacks, the message-level copy button, `isAnimating={isStreaming}` wiring into `MessageContent`, and reading-surface classes. Does **not** exercise real Streamdown code-block copy/download controls (Streamdown is not loaded in jsdom). |
+| [`MarkdownRenderer.test.tsx`](apps/core/app/tests/unit/MarkdownRenderer.test.tsx) | Verifies the chat markdown wrapper renders the prose/reading-surface shell and resolves lazy Streamdown with a **mock** component. Does **not** test fenced-code toolbar interactivity — see `tests/e2e/tests/core/chat-code-block.spec.ts`. |
 | [`revive-stored-message.test.ts`](apps/core/app/tests/unit/revive-stored-message.test.ts) | Verifies `messageToText` / `reviveStoredMessage` recover persisted chat history across storage shapes (plain string, AI-SDK content array, double-serialized message, UIMessage parts) so restored chats render without duplication or loss. |
 | [`canvas-material-sync-dialog.test.tsx`](apps/core/app/tests/unit/canvas-material-sync-dialog.test.tsx) | Verifies the Canvas material sync dialog loads Canvas files on open (pre-checking `not_imported` files), syncs the selected files, and shows failed-sync details after refresh. |
 
