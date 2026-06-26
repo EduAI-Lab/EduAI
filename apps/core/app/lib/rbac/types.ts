@@ -21,6 +21,7 @@ export type NavItemKey =
   | 'courses'
   | 'chat'
   | 'question-maker'
+  | 'admin-group'
   | 'admin-users'
   | 'admin-ai'
   | 'admin-bugs'
@@ -38,6 +39,12 @@ export type NavItem = {
   title: string
   url: string
   external?: boolean
+}
+
+export type NavGroupItem = {
+  key: NavItemKey
+  title: string
+  children: NavItem[]
 }
 
 export type NavUser = {

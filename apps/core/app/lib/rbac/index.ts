@@ -5,6 +5,7 @@ export type {
   RbacUser,
   RbacCourse,
   NavItem,
+  NavGroupItem,
   NavItemKey,
   NavUser,
 } from './types'
