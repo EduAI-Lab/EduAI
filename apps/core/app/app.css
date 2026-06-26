@@ -1,8 +1,13 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "katex/dist/katex.min.css";
 @import "./styles/assistive-reading.css";
 @import "./styles/assistive-active-highlight.css";
-@source "../node_modules/streamdown/dist/index.js";
+@import "./styles/streamdown.css";
+@source "../../../node_modules/streamdown/dist/index.js";
+@source "../../../node_modules/streamdown/dist/*.js";
+@source "../../../node_modules/@streamdown/code/dist/*.js";
+@source "../../../node_modules/@streamdown/math/dist/*.js";
 @source "../../../packages/ui/src";
 
 @custom-variant dark (&:is(.dark *));
