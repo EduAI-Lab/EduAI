@@ -9,6 +9,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
+- [core] feat: Collapsible "Administration" group in sidebar — 7 admin nav items grouped under an accordion, collapsed by default, auto-expands on active child route; add service key Bearer auth to AI models endpoint and AI Tutor client. (#PR, @GlowyBlack, 2026-06-26)
 - [ci] ci: Add a Backend Coverage Report workflow — runs unit+integration coverage for the three backends on every push to `development`, aggregates them, and commits a Markdown summary to `eduai-summer-2026/reports/coverage/`. (#773, @abdullahmoh21, 2026-06-25)
 - [core] feat: RAG ingestion preserves LaTeX equations, converts HTML tables to markdown, and chunks at clinical/slide section boundaries (#90, #91, #93, @superbolt08, 2026-06-23) — [#755](https://github.com/EduAI-Lab/EduAI/pull/755)
 - [core] feat: Human-readable math in chat — normalizeMathMarkdown, Streamdown math plugin, KaTeX CSS, prose-vs-equation guards (#142, @superbolt08, 2026-06-23) — [#757](https://github.com/EduAI-Lab/EduAI/pull/757)
