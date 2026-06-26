@@ -1,90 +1,131 @@
 # cmps02 — vLLM inference host
 
-**Hardware (probed Jun 2026):** 2× NVIDIA RTX 6000 Ada (~48 GB VRAM each, ~96 GB total).
+**Hardware (probed Jun 2026):** 2× NVIDIA RTX 6000 Ada (~48 GB VRAM each).
 
-**Recommended role:** Dedicated **`gpt-oss-120b`** host. Keep **Qwen 7B + 32B** on [cmps01](../cmps01/README.md) for routing tiers.
+**Role:** Second **live-chat** GPU server — same **Qwen 7B + 32B** stack as [cmps01](../cmps01/README.md). EduAI’s multi-server plan spreads student chat across cmps01 and cmps02; heavy models (e.g. **gpt-oss-120b**) belong on **cmps03** or **LTIC B300 (Vancouver)**, not here.
 
 ```text
-dev (s378) ──HTTP :8001──► cmps02 nginx (:8001)
-                                └── /v1/* → LiteLLM :18091 → vLLM :18001
-                                      gpt-oss-120b (tensor-parallel across GPU 0 + 1)
+dev (s378) ──HTTP :8001──► cmps02 eduai-edge-proxy (nginx)
+                                ├── /v1/*     → LiteLLM 127.0.0.1:18091
+                                │                 ├──► 127.0.0.1:18001  eduai-vllm      (GPU 0, Qwen 7B)
+                                │                 └──► 127.0.0.1:18002  eduai-vllm-t3   (GPU 1, Qwen 32B AWQ)
+                                └── /energy/* → energy-meter 127.0.0.1:9100 (optional)
 ```
 
-EduAI: **`VLLM_BASE_URL=http://cmps02.ok.ubc.ca:8001`** · chat model **`vllm:gpt-oss-120b`**.
+EduAI (once multi-server routing lands): **`http://cmps02.ok.ubc.ca:8001`** for chat/tutor traffic. Models: **`vllm:qwen2.5-7b-instruct`**, **`vllm:qwen2.5-32b-instruct`**.
+
+See also: [Multi-server routing plan](../../../docs/plans/MULTI_SERVER_ROUTING_PLAN.md) (parent `docs/` repo).
 
 ---
 
-## Can we run 3 models (7B + 32B + 120B)?
+## Model rationale — why 7B + 32B, and why Qwen
 
-**No — not at the same time on cmps02.**
+### Why a two-model split (not one size fits all)
 
-| Model | Typical VRAM | Fits alone on 1× 48 GB? |
-| --- | --- | --- |
-| Qwen 7B | ~14–16 GB | Yes |
-| Qwen 32B AWQ | ~18–22 GB | Yes |
-| **gpt-oss-120b** (MXFP4) | **~60 GB+ weights** (+ KV cache) | **No** — needs ~80 GB class or **TP=2** across both GPUs |
+EduAI’s **Auto routing** picks the smallest tier that can answer well. On local vLLM we run **two tiers only** — no cloud tier in the middle:
 
-`gpt-oss-120b` with `--tensor-parallel-size 2` **uses both GPUs together**. There is no third GPU left for 7B/32B while 120B is loaded.
+| Tier | Model | GPU | Typical use |
+| --- | --- | --- | --- |
+| **1 — fast / default** | `qwen2.5-7b-instruct` | 0 | Everyday chat, course RAG Q&A, short factual prompts, classifier calls |
+| **3 — escalate** | `qwen2.5-32b-instruct` (AWQ) | 1 | Tool calling, harder reasoning, debugging prompts, image turns, “needs more brain” cases |
 
-| Layout | GPUs used | Models live simultaneously |
-| --- | --- | --- |
-| **Recommended** — `./migrate-120b.sh` | 0+1 (TP=2) | **gpt-oss-120b only** |
-| Tiered — `./migrate-tiered.sh` | 0 → 7B, 1 → 32B | **7B + 32B only** (cmps01 clone) |
-| All three | — | **Not feasible** on 2× 48 GB |
+**Why this split works for scale (100s–1000s of users per day):**
 
-**Split across hosts (best of both worlds):**
+1. **Most traffic should stay on 7B.** Routing rules in `apps/core` default to tier 1; only escalation patterns (tools, complexity, images, etc.) bump to tier 3. That keeps energy and queue time down while preserving quality where it matters.
 
-| Host | Models | EduAI |
-| --- | --- | --- |
-| **cmps01** | `qwen2.5-7b-instruct`, `qwen2.5-32b-instruct` | `VLLM_BASE_URL` for tiered routing (today) |
-| **cmps02** | `gpt-oss-120b` | Second base URL **or** migrate tiered stack here and keep 120B on cmps01 Ollama |
+2. **Concurrency is a 7B problem, not a 120B problem.** On cmps01, vLLM 7B handled **10 parallel short requests at ~320–380 ms** with continuous batching; Ollama on the same host was **~15× slower** under 5-way parallel load ([`docs/rag-ai/VLLM.md`](../../docs/rag-ai/VLLM.md)). Classroom-scale chat needs **many fast slots**, not one huge model that queues everyone.
 
-EduAI currently exposes **one** `VLLM_BASE_URL`. To use both hosts you either:
+3. **One model per GPU, both resident.** Each backend binds to one GPU (`18001` / `18002`). Weights stay in VRAM — no Ollama-style ~9–10 s cold reload between turns. The 32B is **already loaded** when Auto escalates; we pay extra latency only for decode, not for swapping models.
 
-1. **Point dev at cmps02** for 120B experiments (`vllm:gpt-oss-120b`), keep cmps01 for production routing — switch `.env` when needed, or  
-2. **Add a future LiteLLM route** on one host that proxies to the other (not in repo yet).
+4. **Fits the hardware.** ~15 GB (7B) + ~20 GB (32B AWQ) each fit comfortably on 48 GB Ada cards with room for KV cache and concurrent sequences.
 
-Question Maker already uses **`ollama:gpt-oss:120b`** on cmps01 — vLLM on cmps02 is the faster serving path for the same model family.
+5. **120B does not belong on this box.** `gpt-oss-120b` needs ~60 GB+ and tensor-parallel across **both** GPUs, which removes the entire server from the chat pool. Use **LTIC B300** or a future **cmps03** “heavy jobs” host for tier-3+ / Question Maker–class work ([multi-server plan](../../../docs/plans/MULTI_SERVER_ROUTING_PLAN.md)).
 
-> **Ada Lovelace note:** vLLM’s GPT-OSS recipe targets H100/MI300 first; use image **`vllm/vllm-openai:v0.18.0`** and verify with `./probe.sh` + a smoke chat. If the container OOMs, lower `--max-model-len` (e.g. 16384) or `--gpu-memory-utilization` (0.85).
+**What we are not optimizing for on cmps02:** maximum reasoning on every turn. We optimize **throughput + sustainability + good-enough quality**, with **selective** use of 32B.
+
+### Why Qwen 2.5 Instruct specifically
+
+| Reason | Detail |
+| --- | --- |
+| **Already the house stack** | cmps01 runs these exact served names; research routing, benches, and Admin model IDs are built around `qwen2.5-7b-instruct` and `qwen2.5-32b-instruct`. cmps02 is a **clone for capacity**, not a new model experiment. |
+| **vLLM + Hugging Face** | vLLM loads HF weights (`Qwen/Qwen2.5-7B-Instruct`, `Qwen/Qwen2.5-32B-Instruct-AWQ`). Same serving path as cmps01 — LiteLLM on `:8001`, OpenAI-compatible `/v1`. |
+| **Strong instruct tuning** | Qwen 2.5 Instruct is a solid default for tutoring: follows system prompts, handles RAG context, multilingual (relevant at UBC). |
+| **Same family at both tiers** | Escalation from 7B → 32B stays in one model lineage — fewer “personality jumps” than mixing vendors or families per tier. The on-GPU **classifier** also runs on the 7B endpoint (`ROUTING_LLM_CLASSIFIER_MODEL`). |
+| **32B AWQ on one GPU** | AWQ makes 32B fit a 48 GB card with tool-call flags (`--enable-auto-tool-choice`, `--tool-call-parser hermes`) for agent-style chat. |
+| **Open license** | Apache 2.0 — acceptable for on-campus student data without per-token cloud billing. |
+| **Measured on our infra** | Warm 7B direct latency ~57 ms; EduAI full stack median ~211 ms; 10-way parallel without 5xx on cmps01 (Session vLLM-S1, Jun 2026). |
+
+**Alternatives we considered and deferred:**
+
+| Alternative | Why not on cmps02 chat fleet |
+| --- | --- |
+| **gpt-oss-120b** | Wrong economics for live chat; consumes both GPUs; better on B300 / heavy server |
+| **Single 32B only** | Loses concurrency and sustainability default; pays 32B cost on every turn |
+| **Single 7B only** | Cheapest, but weak on tools / hard reasoning without cloud fallback |
+| **Mixing Llama / Mistral on cmps02** | Breaks fleet symmetry with cmps01; harder routing and ops |
 
 ---
 
-## Deploy (120B — recommended)
+## Deploy (recommended)
 
 ```bash
-ssh ssaada08@cmps02.ok.ubc.ca
+ssh YOUR_CWL@cmps02.ok.ubc.ca
 cd ~/cmps02
-chmod +x probe.sh migrate-120b.sh deploy-edge-proxy.sh
+chmod +x probe.sh migrate.sh migrate-tiered.sh deploy-edge-proxy.sh
 ./probe.sh
-./migrate-120b.sh    # 20–60+ min first run
+./migrate.sh          # alias for migrate-tiered.sh — 10–30+ min while weights load
 ```
 
-Verify:
+Verify on cmps02:
 
 ```bash
 curl -s http://127.0.0.1:8001/v1/models -H "Authorization: Bearer vllm-local" | jq '.data[].id'
-# expect: gpt-oss-120b
+# expect: qwen2.5-7b-instruct
+#         qwen2.5-32b-instruct
 ```
 
-**s378** (after IT opens firewall):
+From **s378** (after IT opens firewall):
+
+```bash
+curl -s http://cmps02.ok.ubc.ca:8001/v1/models -H "Authorization: Bearer vllm-local" | jq '.data[].id'
+```
+
+**EduAI** (`apps/core/.env` on s378) — today single URL; later multi-server config:
 
 ```env
 VLLM_BASE_URL="http://cmps02.ok.ubc.ca:8001"
 VLLM_API_KEY="vllm-local"
 ```
 
-Register in **Admin → AI Models → vLLM → Refresh list** → `gpt-oss-120b` → chat as **`vllm:gpt-oss-120b`**.
+```bash
+cd apps/core && npm run vllm:smoke
+```
+
+**Admin → AI Models → vLLM → Refresh list** → register both ids. Chat: `vllm:qwen2.5-7b-instruct` or Auto (routing picks tier).
 
 ---
 
-## Deploy (tiered 7B + 32B — optional)
+## Single-GPU fallback
 
-Only if you are **not** running 120B on this host:
+If only one GPU is available, run 7B only:
 
 ```bash
-./migrate-tiered.sh
+SKIP_32B=1 ./migrate-tiered.sh
 ```
+
+Remove the `qwen2.5-32b-instruct` block from `litellm-config.tiered.yaml` (or use the generated `litellm-config.yaml` after editing), then `docker compose restart`.
+
+---
+
+## Port map
+
+| Port | Use |
+| --- | --- |
+| `18001` | `eduai-vllm` — Qwen 7B |
+| `18002` | `eduai-vllm-t3` — Qwen 32B AWQ |
+| `18091` | LiteLLM (localhost) |
+| `8001` | nginx edge (public) |
+| `9100` | energy-meter (localhost, optional) |
 
 ---
 
@@ -93,10 +134,10 @@ Only if you are **not** running 120B on this host:
 | Script | Purpose |
 | --- | --- |
 | `probe.sh` | GPU / Docker inventory |
-| **`migrate-120b.sh`** | **gpt-oss-120b, TP=2 (default for cmps02)** |
-| `migrate-tiered.sh` | Qwen 7B + 32B AWQ (cmps01 clone) |
-| `migrate.sh` | Symlink-style alias → run `migrate-120b.sh` |
+| **`migrate.sh`** / **`migrate-tiered.sh`** | **Qwen 7B + 32B AWQ (default)** |
+| `migrate-120b.sh` | **Not used on cmps02** — kept for reference; 120B → LTIC B300 / cmps03 |
 | `deploy-edge-proxy.sh` | Restart nginx + LiteLLM edge |
+| `litellm-config.tiered.yaml` | Source config for 7B + 32B |
 
 ---
 
@@ -108,5 +149,7 @@ Only if you are **not** running 120B on this host:
 
 ## Related
 
-- [cmps01](../cmps01/README.md) — tiered 7B/32B routing stack
-- [`docs/rag-ai/VLLM.md`](../../docs/rag-ai/VLLM.md) — EduAI vLLM provider
+- [cmps01](../cmps01/README.md) — primary GPU server (same model stack)
+- [`docs/rag-ai/VLLM.md`](../../docs/rag-ai/VLLM.md) — EduAI vLLM provider, stress tests
+- [`docs/rag-ai/routing/`](../../docs/rag-ai/routing/) — Auto routing rules and tiers
+- [Multi-server routing plan](../../../docs/plans/MULTI_SERVER_ROUTING_PLAN.md)

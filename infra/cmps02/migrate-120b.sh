@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
+# DEPRECATED for cmps02 — gpt-oss-120b belongs on LTIC B300 / cmps03, not chat fleet.
+# Reference only. Use ./migrate-tiered.sh for production cmps02.
+#
 # cmps02 — gpt-oss-120b on BOTH GPUs (tensor parallel), LiteLLM/nginx on :8001
-# Recommended layout for cmps02 (2× RTX 6000 Ada, ~48 GB each).
 #
 # Expect 20–60+ min on first run (HF download + compile).
 

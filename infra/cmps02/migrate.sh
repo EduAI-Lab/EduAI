@@ -1,3 +1,3 @@
 #!/usr/bin/env bash
-# Default cmps02 deploy → gpt-oss-120b (see README.md).
-exec "$(dirname "$0")/migrate-120b.sh" "$@"
+# Default cmps02 deploy → Qwen 7B + 32B tiered stack (see README.md).
+exec "$(dirname "$0")/migrate-tiered.sh" "$@"
