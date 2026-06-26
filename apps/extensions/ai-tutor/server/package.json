@@ -8,7 +8,7 @@
     "test:watch": "vitest",
     "test:unit": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.js",
-    "test:coverage": "vitest run --coverage",
+    "test:coverage": "vitest run --coverage --config vitest.coverage.config.js",
     "start": "npx prisma generate && node src/index.js",
     "dev": "npx prisma migrate deploy && npx prisma generate && npm run seed:if-empty && nodemon src/index.js",
     "seed": "tsx prisma/seed.ts",
@@ -24,6 +24,7 @@
     "cors": "^2.8.5",
     "dotenv": "^17.2.2",
     "express": "^5.1.0",
+    "node-cron": "^4.2.1",
     "zod": "^3.25.76"
   },
   "devDependencies": {
