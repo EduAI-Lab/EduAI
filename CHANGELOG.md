@@ -33,6 +33,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [question-maker] tests: Unit and integration tests for the QM reconciliation cron. (#PR, @evanbones, 2026-06-23)
 - [docs] docs: `docs/CRON_JOBS.md` — describes registered cron jobs, schedules, trigger behavior, and local testing steps. (#634, #283, #643, @evanbones, 2026-06-23)
 - [core] feat: Add UBC chatbot disclaimer banner and full terms dialog on `/chat`. (#575, @superbolt08, 2026-06-23) — [#753](https://github.com/EduAI-Lab/EduAI/pull/753)
+- [core] feat: Context-aware ADHD Assist turn profiles — a rules-based classifier (`resolveAdhdTurnProfile`) runs before generation when Assist is on and scopes Teacher policy, Dean oversight, chat routing, telemetry (`responseProfile` / `profileStructuralPass`), and eval scoring per profile, so structure (Top summary / Next?) and Dean are applied only when the turn needs them (full tutoring / brief clarification) and skipped for greetings, confirmations, meta, and S2.t2 redirect turns. (#712, #713, @Ayyhab, 2026-06-25) — [#714](https://github.com/EduAI-Lab/EduAI/pull/714)
+- [core] tests: Unit tests for `resolveAdhdTurnProfile` / `getProfileRequirements` (`adhd-turn-profile.test.ts`) covering per-profile classification, profile structure/Dean/word-cap requirements, and precedence regressions for acknowledgement-prefixed tutoring turns. (#712, @Ayyhab, 2026-06-25) — [#714](https://github.com/EduAI-Lab/EduAI/pull/714)
 
 ### Changed
 
@@ -44,6 +46,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
+- [core] fix: ADHD turn profile precedence — substantive-question/continuation and redirect detection now run before confirmation, greeting, and meta, so acknowledgement-prefixed tutoring turns ("Great, what is gradient descent?", "Sure, explain step 2") keep full structure + Dean instead of falling into the low-structure confirmation path; bare acknowledgements still classify as confirmation. (#712, @Ayyhab, 2026-06-25) — [#714](https://github.com/EduAI-Lab/EduAI/pull/714)
 - [core] fix: Restore AI chat code-block copy and download buttons — wire `@streamdown/code`, fix Tailwind `@source` paths for hoisted Streamdown chunks, lazy-load the ESM-only plugin on the client so E2E Docker serve starts, and pass `isAnimating={isStreaming}` so controls enable after streaming. (#667, @ebabar5, 2026-06-25) — [#768](https://github.com/EduAI-Lab/EduAI/pull/768)
 - [ai-tutor] fix: Stop the infinite redirect loop when an authenticated user opens a forbidden resource (e.g. a `UNIT_ADMIN` deep-linking to `/instructor/lesson/:id` outside their unit) — the API client now only redirects 401s to Core login and surfaces 403s as a thrown error for the route error boundary. (#745, @Ayyhab, 2026-06-25)
 - [ai-tutor] fix: Return the student/TA course list without a 500 — restore the missing `getEduAiCookieForRequest` import and probe TA enrollments with `count()` (CourseEnrollment has a composite key and no `id`) in `GET /api/courses`. (#745, @Ayyhab, 2026-06-25)
