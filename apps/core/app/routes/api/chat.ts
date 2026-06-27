@@ -15,6 +15,21 @@ import {
   type RouterMode,
 } from "~/lib/ai/routing/router";
 import {
+  coalesceTokenUsage,
+  normalizeTokenUsage,
+  persistAiInteractionTelemetry,
+} from "~/lib/ai/routing/telemetry";
+import {
+  FleetUnavailableError,
+  resolveFleetHost,
+} from "~/lib/ai/routing/fleet/resolve-fleet";
+import { fleetRoutingEnabled } from "~/lib/ai/routing/fleet/registry";
+import {
+  buildFleetRouterFeatures,
+  parseWorkloadFeature,
+} from "~/lib/ai/routing/fleet/types";
+import type { FleetPick } from "~/lib/ai/routing/fleet/types";
+import {
   capMaxOutputTokensForPrompt,
   estimateTokensFromChars,
   getChatModelCapabilities,
@@ -86,6 +101,7 @@ function autoRoutingHeaders(
   routingTier: 1 | 2 | 3 | null,
   wasAuto: boolean,
   routerVersion?: string | null,
+  fleetServerId?: string | null,
 ): Record<string, string> {
   const headers: Record<string, string> = {
     "X-Routed-Model": resolvedModelId,
@@ -95,6 +111,9 @@ function autoRoutingHeaders(
       headers["X-Routing-Tier"] = String(routingTier);
     }
     headers["X-Router-Version"] = routerVersion ?? activeRouterVersion();
+  }
+  if (fleetServerId) {
+    headers["X-Fleet-Server"] = fleetServerId;
   }
   return headers;
 }
@@ -409,6 +428,7 @@ function logStreamError(error: unknown, trace: Record<string, unknown>): void {
  * - Message IDs should be client-generated (UUID v4) for best results.
  */
 export async function action({ request }: ActionFunctionArgs) {
+  const requestStartMs = Date.now();
   try {
     const apiKeyHeader = request.headers.get("x-api-key");
     const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
@@ -476,6 +496,7 @@ export async function action({ request }: ActionFunctionArgs) {
     });
     const proxyUserPayload =
       body.proxyUser && typeof body.proxyUser === "object" ? (body.proxyUser as ProxyUserPayload) : null;
+    const workloadFeature = parseWorkloadFeature(body.routingContext);
 
     const hasAdhdAssistField = Object.prototype.hasOwnProperty.call(body, "adhdAssist");
     const adhdAssist = body.adhdAssist === true;
@@ -875,9 +896,39 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
+    let fleetPick: FleetPick | null = null;
+    if (parsedModel.providerId === "vllm" && fleetRoutingEnabled()) {
+      try {
+        fleetPick = await resolveFleetHost({
+          feature: workloadFeature,
+          resolvedModelId,
+        });
+      } catch (err) {
+        if (err instanceof FleetUnavailableError) {
+          return new Response(
+            JSON.stringify({
+              error: "No healthy vLLM fleet server available",
+              details: err.message,
+            }),
+            {
+              status: 503,
+              headers: { "Content-Type": "application/json" },
+            },
+          );
+        }
+        throw err;
+      }
+    }
+
+    routerContext = {
+      ...(routerContext ?? {}),
+      ...buildFleetRouterFeatures(workloadFeature, fleetPick),
+    };
+
     const validatedApiKeys = mergeLocalInferenceFromEnv(
       toUserProviderSettings(apiKeysParsed.data),
       resolvedModelId,
+      fleetPick?.baseUrl,
     );
 
     if (!validatedApiKeys[parsedModel.providerId]?.isEnabled) {
@@ -1290,6 +1341,34 @@ ${buildEmptyCourseRagBlock()}`;
       providerId: parsedModel.providerId,
     };
 
+    const persistTurnTelemetry = async (params: {
+      responseText: string;
+      usage:
+        | {
+            promptTokens?: number;
+            completionTokens?: number;
+            totalTokens?: number;
+          }
+        | undefined;
+      finishReason: string;
+    }) => {
+      await persistAiInteractionTelemetry({
+        userId: actingUser.id,
+        courseId: effectiveCourseId,
+        resolvedModelId,
+        query: lastUserMessageTextForRouting,
+        responseText: params.responseText,
+        usage: params.usage,
+        finishReason: params.finishReason,
+        durationMs: Date.now() - requestStartMs,
+        wasAuto,
+        routingTier,
+        routerVersion: wasAuto ? resolvedRouterVersion : null,
+        routerFeatures: routerContext,
+        energySidecarBaseUrl: fleetPick?.energySidecarUrl ?? null,
+      });
+    };
+
     let result;
     try {
       result = await streamText({
@@ -1297,6 +1376,18 @@ ${buildEmptyCourseRagBlock()}`;
         onFinish: needsOversight
           ? undefined
           : async ({ text, usage, finishReason, response }) => {
+              const normalizedUsage = normalizeTokenUsage(
+                usage as Record<string, unknown> | undefined,
+              );
+              await persistTurnTelemetry({
+                responseText: text ?? "",
+                usage: {
+                  promptTokens: normalizedUsage.promptTokens ?? undefined,
+                  completionTokens: normalizedUsage.completionTokens ?? undefined,
+                  totalTokens: normalizedUsage.totalTokens ?? undefined,
+                },
+                finishReason: String(finishReason ?? "stop"),
+              });
               logResponseCompliance(text, {
                 finishReason,
                 promptTokens: usage?.promptTokens,
@@ -1375,6 +1466,18 @@ ${buildEmptyCourseRagBlock()}`;
           : emptyOversightAuditResult();
 
         finalText = audited.text || draft;
+        const normalizedOversightUsage = normalizeTokenUsage(
+          usage as Record<string, unknown> | undefined,
+        );
+        await persistTurnTelemetry({
+          responseText: finalText,
+          usage: {
+            promptTokens: normalizedOversightUsage.promptTokens ?? undefined,
+            completionTokens: normalizedOversightUsage.completionTokens ?? undefined,
+            totalTokens: normalizedOversightUsage.totalTokens ?? undefined,
+          },
+          finishReason: String(finishReason ?? "stop"),
+        });
         logResponseCompliance(finalText, {
           finishReason,
           promptTokens: usage?.promptTokens,
@@ -1406,7 +1509,13 @@ ${buildEmptyCourseRagBlock()}`;
           headers["X-Web-Tools-Enabled"] = webToolsEnabled ? "1" : "0";
           Object.assign(
             headers,
-            autoRoutingHeaders(resolvedModelId, routingTier, wasAuto, resolvedRouterVersion),
+            autoRoutingHeaders(
+              resolvedModelId,
+              routingTier,
+              wasAuto,
+              resolvedRouterVersion,
+              fleetPick?.serverId ?? null,
+            ),
           );
 
           await persistOverseenAssistantMessages(finalText);
@@ -1442,7 +1551,10 @@ ${buildEmptyCourseRagBlock()}`;
           }),
           {
             status: 200,
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              ...(fleetPick?.serverId ? { "X-Fleet-Server": fleetPick.serverId } : {}),
+            },
           },
         );
       } catch (error) {
@@ -1472,7 +1584,13 @@ ${buildEmptyCourseRagBlock()}`;
       headers["X-Web-Tools-Enabled"] = webToolsEnabled ? "1" : "0";
       Object.assign(
         headers,
-        autoRoutingHeaders(resolvedModelId, routingTier, wasAuto, resolvedRouterVersion),
+        autoRoutingHeaders(
+          resolvedModelId,
+          routingTier,
+          wasAuto,
+          resolvedRouterVersion,
+          fleetPick?.serverId ?? null,
+        ),
       );
       return result.toDataStreamResponse({
         headers,
@@ -1518,6 +1636,19 @@ ${buildEmptyCourseRagBlock()}`;
           }
         }
 
+        const normalizedUsage = normalizeTokenUsage(
+          usage as Record<string, unknown> | undefined,
+        );
+        await persistTurnTelemetry({
+          responseText: text ?? "",
+          usage: {
+            promptTokens: normalizedUsage.promptTokens ?? undefined,
+            completionTokens: normalizedUsage.completionTokens ?? undefined,
+            totalTokens: normalizedUsage.totalTokens ?? undefined,
+          },
+          finishReason: String(finishReason ?? "stop"),
+        });
+
         return new Response(
           JSON.stringify({
             content: text,
@@ -1532,7 +1663,10 @@ ${buildEmptyCourseRagBlock()}`;
           }),
           {
             status: 200,
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              ...(fleetPick?.serverId ? { "X-Fleet-Server": fleetPick.serverId } : {}),
+            },
           },
         );
       } catch (error) {

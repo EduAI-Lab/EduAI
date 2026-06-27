@@ -100,6 +100,7 @@ async function callEduAI({
     model,
     apiKeys,
     streaming: false,
+    routingContext: { feature: 'tutor' },
     ...(chatId ? { chatId } : {}),
     ...(courseCode ? { courseCode } : {}),
   };
