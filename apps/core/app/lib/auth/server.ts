@@ -1,9 +1,21 @@
 import { betterAuth } from "better-auth";
-import { createAuthMiddleware, APIError } from "better-auth/api";
+import { createAuthMiddleware, APIError, getSessionFromCtx } from "better-auth/api";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import prisma from "../prisma.server";
 import { getPolicy, logPolicyDenial } from "../policy.server";
 import { INTERNAL_INVITE_SIGNUP_HEADER } from "./auth-handler-request";
+import {
+  extractPolicyPassword,
+  isStrongPassword,
+  PASSWORD_POLICY_MESSAGE,
+  SKIP_REUSE_PATHS,
+  TOKEN_RESET_PATHS,
+} from "./password-policy";
+import {
+  isPasswordReused,
+  recordPasswordHistory,
+} from "./password-history.server";
+import { invalidatePasswordExpiryCache } from "./password-expiry.server";
 
 export const authBaseURL =
   process.env.BETTER_AUTH_URL?.trim() ||
@@ -36,6 +48,73 @@ export const auth = betterAuth({
     // imports prisma + the logging facade, neither of which imports this file —
     // no cycle.
     before: createAuthMiddleware(async (ctx) => {
+      // #339: enforce strength policy + no-reuse-of-last-10 on every
+      // password-setting path. Runs before Zod schemas (which only guard the
+      // app's own forms) so the raw /api/auth/* entry point is also covered.
+      const candidatePassword = extractPolicyPassword(ctx.path, ctx.body);
+      if (candidatePassword !== null) {
+        if (!isStrongPassword(candidatePassword)) {
+          throw new APIError("BAD_REQUEST", { message: PASSWORD_POLICY_MESSAGE });
+        }
+
+        if (!SKIP_REUSE_PATHS.has(ctx.path)) {
+          // Resolve the userId: token-based reset reads it from the Verification
+          // table; all other paths (change, set) have an active session.
+          let userId: string | null = null;
+          if (TOKEN_RESET_PATHS.has(ctx.path)) {
+            const token = (ctx.body as Record<string, unknown>)?.token;
+            if (typeof token === "string") {
+              const verificationId = `reset-password:${token}`;
+              const verification = await prisma.verification.findUnique({
+                where: { id: verificationId },
+                select: { value: true, expiresAt: true },
+              });
+              if (verification && verification.expiresAt > new Date()) {
+                userId = verification.value;
+              }
+            }
+          } else {
+            const session = await getSessionFromCtx(ctx);
+            userId = session?.user?.id ?? null;
+          }
+
+          if (userId) {
+            // For change-password: verify the current password first so that an
+            // incorrect current password takes precedence over the reuse error.
+            if (ctx.path === "/change-password") {
+              const currentPassword = (ctx.body as Record<string, unknown>)?.currentPassword;
+              if (typeof currentPassword === "string") {
+                const credAccount = await prisma.account.findFirst({
+                  where: { userId, providerId: "credential" },
+                  select: { password: true },
+                });
+                if (credAccount?.password) {
+                  const currentValid = await ctx.context.password.verify({
+                    hash: credAccount.password,
+                    password: currentPassword,
+                  });
+                  if (!currentValid) {
+                    return; // wrong current password — let better-auth's handler surface the error
+                  }
+                }
+              }
+            }
+
+            const reused = await isPasswordReused({
+              userId,
+              candidate: candidatePassword,
+              verify: ctx.context.password.verify,
+            });
+            if (reused) {
+              throw new APIError("BAD_REQUEST", {
+                message:
+                  "This password was used recently. Please choose a password you have not used in the last 10.",
+              });
+            }
+          }
+        }
+      }
+
       if (ctx.path !== "/sign-up/email") return;
       if (ctx.headers?.has(INTERNAL_INVITE_SIGNUP_HEADER)) return;
       if (!(await getPolicy("auth.allowPublicRegistration"))) {
@@ -49,6 +128,45 @@ export const auth = betterAuth({
         });
       }
     }),
+  },
+  databaseHooks: {
+    account: {
+      create: {
+        // #339: stamp passwordChangedAt on the same write as the password so
+        // there's no race between the credential row and the timestamp.
+        before: async (account) => {
+          if (account.providerId === "credential" && account.password) {
+            return { data: { ...account, passwordChangedAt: new Date() } };
+          }
+        },
+        // #339: record the new hash in password_history after the row exists.
+        after: async (account) => {
+          if (account.providerId === "credential" && account.password) {
+            invalidatePasswordExpiryCache(account.userId);
+            await recordPasswordHistory({
+              userId: account.userId,
+              passwordHash: account.password,
+            });
+          }
+        },
+      },
+      update: {
+        before: async (account) => {
+          if (account.password) {
+            return { data: { ...account, passwordChangedAt: new Date() } };
+          }
+        },
+        after: async (account) => {
+          if (account.providerId === "credential" && account.password) {
+            invalidatePasswordExpiryCache(account.userId);
+            await recordPasswordHistory({
+              userId: account.userId,
+              passwordHash: account.password,
+            });
+          }
+        },
+      },
+    },
   },
   user: {
     additionalFields: {

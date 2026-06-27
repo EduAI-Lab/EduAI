@@ -29,8 +29,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   computeAdhdResponseMetrics,
+  isProfileStructuralPass,
   isStructuralCompliancePass,
 } from "../app/lib/ai/adhd-metrics.ts";
+import { resolveAdhdTurnProfile, getProfileRequirements } from "../app/lib/ai/adhd-turn-profile.ts";
 import {
   ALL_CONDITIONS,
   CONDITIONS,
@@ -259,16 +261,36 @@ function oversightMetaFromEnv() {
   };
 }
 
-/** Qual pass: structure only when the turn expects a full tutoring block. */
-function evaluateContextualPass(turnRef, metrics, assistantText) {
+/** Qual pass: profile-conditional when assist is on; legacy TURN_SHAPE fallback otherwise. */
+function evaluateContextualPass(turnRef, metrics, assistantText, { adhdAssist, priorAssistantText, userText }) {
   const shape = TURN_SHAPE[turnRef];
   if (!shape) {
-    return { expectedShape: "unknown", contextualPass: null };
+    return { expectedShape: "unknown", contextualPass: null, responseProfile: null };
   }
+
+  if (adhdAssist) {
+    const responseProfile = resolveAdhdTurnProfile({
+      userText,
+      priorAssistantText,
+    });
+    const wordCap = getProfileRequirements(responseProfile).wordCap;
+    const profileMetrics = computeAdhdResponseMetrics(assistantText, { wordCap });
+    return {
+      expectedShape: shape.label,
+      contextualPass: isProfileStructuralPass(
+        profileMetrics,
+        responseProfile,
+        assistantText,
+      ),
+      responseProfile,
+    };
+  }
+
   if (shape.expectFullStructure) {
     return {
       expectedShape: shape.label,
       contextualPass: isStructuralCompliancePass(metrics),
+      responseProfile: null,
     };
   }
   const hasRedirectCue = /separate question|one topic|come back|switch now/i.test(
@@ -278,6 +300,7 @@ function evaluateContextualPass(turnRef, metrics, assistantText) {
   return {
     expectedShape: shape.label,
     contextualPass: !overStructured && (hasRedirectCue || !metrics.topSummary),
+    responseProfile: null,
   };
 }
 
@@ -329,6 +352,7 @@ async function runScenarioMode({ config, scenarioId, mode }) {
   const turnResults = [];
   let chatId;
   let lastAssistantText = "";
+  let priorAssistantText = "";
   let lastResponseMeta = null;
   let errorForTurn = null;
 
@@ -357,26 +381,41 @@ async function runScenarioMode({ config, scenarioId, mode }) {
       };
       const metrics = computeMetrics(lastAssistantText);
       const structuralPass = isStructuralCompliancePass(metrics);
-      const { expectedShape, contextualPass } = evaluateContextualPass(
+      const { expectedShape, contextualPass, responseProfile } = evaluateContextualPass(
         turnRef,
         metrics,
         lastAssistantText,
+        { adhdAssist, priorAssistantText, userText },
       );
       turnResults.push({
         scenarioId,
         mode,
         turn: i + 1,
         turnRef,
+        userText,
+        assistantText: lastAssistantText,
         elapsedMs: elapsed,
         metrics,
         structuralPass,
         expectedShape,
         contextualPass,
+        responseProfile,
+        responseMeta: lastResponseMeta,
       });
-      transcript.push({ userText, assistantText: lastAssistantText, turnRef, metrics, structuralPass, expectedShape, contextualPass });
+      transcript.push({
+        userText,
+        assistantText: lastAssistantText,
+        turnRef,
+        metrics,
+        structuralPass,
+        expectedShape,
+        contextualPass,
+        responseProfile,
+      });
       process.stderr.write(
-        `[${scenarioId}.t${i + 1} mode=${mode}] struct=${structuralPass ? "Y" : "N"} ctx=${contextualPass === null ? "-" : contextualPass ? "Y" : "N"} ${lastAssistantText.length} chars in ${elapsed} ms\n`,
+        `[${scenarioId}.t${i + 1} mode=${mode}] struct=${structuralPass ? "Y" : "N"} ctx=${contextualPass === null ? "-" : contextualPass ? "Y" : "N"} profile=${responseProfile ?? "-"} ${lastAssistantText.length} chars in ${elapsed} ms\n`,
       );
+      priorAssistantText = lastAssistantText;
     } catch (err) {
       const elapsed = Date.now() - tStart;
       errorForTurn = err instanceof Error ? err.message : String(err);
