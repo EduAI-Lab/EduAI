@@ -30,13 +30,17 @@ type SidecarStopPayload = {
   source?: EnergyMeasurementSource | string;
 };
 
-function sidecarBaseUrl(): string | null {
-  return SIDECAR_URL ? SIDECAR_URL.replace(/\/$/, "") : null;
+function sidecarBaseUrl(override?: string | null): string | null {
+  const raw = override?.trim() || SIDECAR_URL?.trim();
+  return raw ? raw.replace(/\/$/, "") : null;
 }
 
 /** Start a hardware measurement session on the energy-meter sidecar. */
-export async function startSidecarMeasurement(tag: string): Promise<string | null> {
-  const base = sidecarBaseUrl();
+export async function startSidecarMeasurement(
+  tag: string,
+  options?: { sidecarBaseUrl?: string | null },
+): Promise<string | null> {
+  const base = sidecarBaseUrl(options?.sidecarBaseUrl);
   if (!base) return null;
   const res = await fetch(`${base}/measure-start`, {
     method: "POST",
@@ -52,8 +56,9 @@ export async function startSidecarMeasurement(tag: string): Promise<string | nul
 /** Stop sidecar measurement and return Joules / carbon if available. */
 export async function stopSidecarMeasurement(
   tag: string,
+  options?: { sidecarBaseUrl?: string | null },
 ): Promise<EnergyMeasurementResult | null> {
-  const base = sidecarBaseUrl();
+  const base = sidecarBaseUrl(options?.sidecarBaseUrl);
   if (!base) return null;
   const res = await fetch(`${base}/measure-stop`, {
     method: "POST",
@@ -85,18 +90,22 @@ function mapSidecarSource(
  */
 export async function measureTurnEnergy(
   input: EnergyMeasurementInput,
-  options?: { sidecarTag?: string | null },
+  options?: { sidecarTag?: string | null; sidecarBaseUrl?: string | null },
 ): Promise<EnergyMeasurementResult> {
+  const resolvedSidecarUrl = sidecarBaseUrl(options?.sidecarBaseUrl);
+
   if (options?.sidecarTag) {
-    const measured = await stopSidecarMeasurement(options.sidecarTag);
+    const measured = await stopSidecarMeasurement(options.sidecarTag, {
+      sidecarBaseUrl: resolvedSidecarUrl,
+    });
     if (measured?.energyJoules != null) {
       return measured;
     }
   }
 
-  if (SIDECAR_URL) {
+  if (resolvedSidecarUrl) {
     try {
-      const res = await fetch(`${sidecarBaseUrl()}/measure`, {
+      const res = await fetch(`${resolvedSidecarUrl}/measure`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
