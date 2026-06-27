@@ -10,6 +10,10 @@ import { ChatWelcome } from "~/components/chat/chat-welcome";
 import type { ChatWelcomeProps } from "~/components/chat/chat-welcome";
 import type { ChatViewSharedProps } from "~/components/chat/chat-view-types";
 import {
+  displayNameForRegistryId,
+  isAutoRoutingModelId,
+} from "~/lib/chat-auto-model";
+import {
   ASSISTIVE_CHAT_SURFACE_CLASS,
   resolveMessageHighlightRole,
 } from "~/components/assistive/active-highlight";
@@ -55,6 +59,8 @@ export function ChatConversationLayout({
   WelcomeComponent = ChatWelcome,
   isStudentWithCourseChat,
   disabledReason,
+  routedModelByMessageId = {},
+  streamingRoutedRegistryId = null,
 }: ChatConversationLayoutProps) {
   return (
     <div
@@ -100,11 +106,22 @@ export function ChatConversationLayout({
                     const isLastMessage = index === messages.length - 1;
                     const isStreamingMessage = isLastMessage && isLoading;
 
+                    const routedRegistryId =
+                      message.role === "assistant"
+                        ? (routedModelByMessageId[message.id] ??
+                          (isStreamingMessage ? streamingRoutedRegistryId : null))
+                        : null;
+                    const answeredByLabel =
+                      isAutoRoutingModelId(selectedModel) && routedRegistryId
+                        ? displayNameForRegistryId(routedRegistryId, chatModels)
+                        : undefined;
+
                     return (
                       <ChatMessage
                         key={message.id}
                         message={message as Message}
                         isStreaming={isStreamingMessage}
+                        answeredByLabel={answeredByLabel}
                         highlightRole={resolveMessageHighlightRole(
                           index,
                           messages,
