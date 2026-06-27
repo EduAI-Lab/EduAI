@@ -40,6 +40,7 @@ import AddActivityPanel from '../components/AddActivityPanel';
 import ActivityDetailsCard from '../components/ActivityDetailsCard';
 import EditActivityPanel from '../components/EditActivityPanel';
 import AddCourseTopicsButton from '../components/AddCourseTopicsButton';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import api from '../lib/api';
 import type { Activity, Course, Lesson, ModuleDetail, Topic } from '../lib/types';
 import { CourseTopicsProvider, useCourseTopics } from '../hooks/useCourseTopics';
@@ -147,6 +148,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
   const [editingActivityId, setEditingActivityId] = useState<number | null>(null);
   const [savingActivityId, setSavingActivityId] = useState<number | null>(null);
   const [deletingActivityId, setDeletingActivityId] = useState<number | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
 
   const courseOfferingId = lesson?.courseOfferingId ?? null;
@@ -291,14 +293,6 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
   }, []);
 
   const handleDeleteActivity = async (activityId: number) => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-    const confirmed = window.confirm('Remove this activity? This action cannot be undone.');
-    if (!confirmed) {
-      return;
-    }
-
     setDeletingActivityId(activityId);
     try {
       await api.deleteActivity(activityId);
@@ -308,7 +302,6 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
       }
     } catch (error) {
       console.error('Failed to remove activity', error);
-      alert('Failed to remove activity. Please try again.');
     } finally {
       setDeletingActivityId((current) => (current === activityId ? null : current));
     }
@@ -599,7 +592,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => handleDeleteActivity(activity.id)}
+                                    onClick={() => setPendingDeleteId(activity.id)}
                                     className="px-2.5 py-1 rounded-lg bg-destructive/10 text-destructive text-xs font-medium hover:bg-destructive/20 transition"
                                     disabled={isDeleting}
                                   >
@@ -941,6 +934,21 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
           </div>
         </div>
       </AppShell>
+      <ConfirmDialog
+        open={pendingDeleteId !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDeleteId(null);
+        }}
+        title="Remove activity?"
+        description="This action cannot be undone."
+        confirmLabel="Remove"
+        variant="destructive"
+        onConfirm={() => {
+          if (pendingDeleteId === null) return;
+          void handleDeleteActivity(pendingDeleteId);
+          setPendingDeleteId(null);
+        }}
+      />
       <TopicSyncMappingDialog
         open={showMapping}
         onClose={() => setShowMapping(false)}
