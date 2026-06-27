@@ -70,12 +70,51 @@ describe("matchPhase1Rules", () => {
     expect(match.pick).toEqual({ kind: "exactTier", tier: 1, tieBreak: "energy" });
   });
 
-  it("does not route web-search phrasing to a separate tools rule", () => {
+  it("rule 2: web lookup prompts escalate to tier 3", () => {
+    const match = matchPhase1Rules({
+      ...baseCtx,
+      courseId: null,
+      prompt:
+        "Look up the latest UBCO academic calendar deadline for course withdrawal and summarize it.",
+    });
+    expect(match.rule).toBe("rule2_web_lookup_tier_3");
+    expect(match.pick).toEqual({ kind: "exactTier", tier: 3, tieBreak: "carbon" });
+  });
+
+  it("rule 2b: debug prompts escalate to tier 3", () => {
+    const match = matchPhase1Rules({
+      ...baseCtx,
+      courseId: null,
+      prompt:
+        "Debug this code: `for i in range(10): print(i); i = i + 1` — why might the loop behave unexpectedly?",
+    });
+    expect(match.rule).toBe("rule2b_debug_tier_3");
+  });
+
+  it("rule 2c: complex code tasks escalate to tier 3", () => {
+    const match = matchPhase1Rules({
+      ...baseCtx,
+      courseId: null,
+      prompt: "Write a Python function that returns the nth Fibonacci number iteratively.",
+    });
+    expect(match.rule).toBe("rule2c_complex_task_tier_3");
+  });
+
+  it("rule 2d: RAG-reasoning phrasing uses tier 3 before strong-RAG tier-1 shortcut", () => {
+    const match = matchPhase1Rules({
+      ...baseCtx,
+      prompt: "Which factor was NOT a driver of Britain's early Industrial Revolution?",
+      ragTopSimilarity: 0.88,
+      ragChunkCount: 4,
+    });
+    expect(match.rule).toBe("rule2d_rag_reasoning_tier_3");
+  });
+
+  it("generic web-search phrasing without lookup cues stays on default tier 1", () => {
     const match = matchPhase1Rules({
       ...baseCtx,
       prompt: "Search the web for the latest syllabus updates",
     });
-    expect(match.rule).not.toBe("rule2_tools_tier_ge_2");
     expect(match.rule).toBe("rule6_default_tier_1_energy");
     expect(match.pick).toEqual({ kind: "exactTier", tier: 1, tieBreak: "energy" });
   });
@@ -134,5 +173,97 @@ describe("matchPhase1Rules", () => {
       prompt: "Summarize this chart from the syllabus",
     });
     expect(match.rule).toBe("rule1_images_tier_ge_2");
+  });
+
+  describe("strict-oracle under-route fixes (10 prompts)", () => {
+    const underRoutePrompts = [
+      {
+        id: "ts-028",
+        prompt: "Write a Python function that returns the nth Fibonacci number iteratively.",
+        ctx: { courseId: null },
+        expectedRule: "rule2c_complex_task_tier_3",
+      },
+      {
+        id: "ts-031",
+        prompt:
+          "Look up the latest UBCO academic calendar deadline for course withdrawal and summarize it.",
+        ctx: { courseId: null },
+        expectedRule: "rule2_web_lookup_tier_3",
+      },
+      {
+        id: "ts-037",
+        prompt:
+          "Debug this code: `for i in range(10): print(i); i = i + 1` — why might the loop behave unexpectedly?",
+        ctx: { courseId: null },
+        expectedRule: "rule2b_debug_tier_3",
+      },
+      {
+        id: "ts-044",
+        prompt: "Walk through Dijkstra's algorithm on a small 5-node graph example.",
+        ctx: { ragTopSimilarity: 0.9, ragChunkCount: 4 },
+        expectedRule: "rule2c_complex_task_tier_3",
+      },
+      {
+        id: "ts-083",
+        prompt: "Which factor was NOT a driver of Britain's early Industrial Revolution?",
+        ctx: { ragTopSimilarity: 0.88, ragChunkCount: 4 },
+        expectedRule: "rule2d_rag_reasoning_tier_3",
+      },
+      {
+        id: "ts-094",
+        prompt:
+          "Walk through one partition step of quicksort on [3, 6, 8, 10, 1, 2, 1] using the last element as pivot.",
+        ctx: { courseId: null },
+        expectedRule: "rule2c_complex_task_tier_3",
+      },
+      {
+        id: "ts-101",
+        prompt: "Look up current UBC Okanagan library Friday closing hours and summarize them.",
+        ctx: { courseId: null },
+        expectedRule: "rule2_web_lookup_tier_3",
+      },
+      {
+        id: "ts-102",
+        prompt:
+          "Find a recent reputable estimate of BC electricity grid carbon intensity and state the value with source.",
+        ctx: { courseId: null },
+        expectedRule: "rule2_web_lookup_tier_3",
+      },
+      {
+        id: "ts-113",
+        prompt:
+          "A React component uses eight useEffect hooks with overlapping dependencies—outline a refactor strategy without changing behavior.",
+        ctx: { courseId: null },
+        expectedRule: "rule2c_complex_task_tier_3",
+      },
+      {
+        id: "ts-119",
+        prompt:
+          "Give an example that violates the Liskov substitution principle and show a corrected design.",
+        ctx: { ragTopSimilarity: 0.91, ragChunkCount: 3 },
+        expectedRule: "rule2d_rag_reasoning_tier_3",
+      },
+      {
+        id: "ts-080",
+        prompt: "Name two distinct functions of the endoplasmic reticulum.",
+        ctx: {
+          courseId: "course-biol",
+          courseRagNeeded: true,
+          ragTopSimilarity: 0.88,
+          ragChunkCount: 4,
+        },
+        expectedRule: "rule2e_distinct_enumeration_tier_3",
+      },
+    ] as const;
+
+    it.each(underRoutePrompts)("$id routes to tier 3 via $expectedRule", ({ prompt, ctx, expectedRule }) => {
+      const match = matchPhase1Rules({
+        ...baseCtx,
+        prompt,
+        ...ctx,
+      });
+      expect(match.rule).toBe(expectedRule);
+      expect(match.pick).toMatchObject({ kind: "exactTier", tier: 3 });
+    });
   });
 });
