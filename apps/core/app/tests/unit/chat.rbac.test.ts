@@ -17,6 +17,7 @@ vi.mock("~/lib/auth/guards.server", () => ({
       headers: { "Content-Type": "application/json" },
     }),
   ),
+  enforceAdminIfApiKey: vi.fn().mockResolvedValue({ response: null, session: null }),
 }));
 
 vi.mock("~/lib/auth/course-access.server", () => ({
@@ -126,5 +127,20 @@ describe("POST /api/chat — §10 course gate (#302)", () => {
     const res = await action(makeArgs({ messages: [] }));
     expect(res.status).toBe(200);
     expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/chat — admin chatMode gate", () => {
+  it("returns 403 when non-admin requests admin chatMode", async () => {
+    const res = await action(makeArgs({ messages: [], chatMode: "admin" }));
+    expect(res.status).toBe(403);
+  });
+
+  it("admits ADMIN for admin chatMode without course context", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "a1", role: "ADMIN" },
+    } as never);
+    const res = await action(makeArgs({ messages: [], chatMode: "admin" }));
+    expect(res.status).toBe(200);
   });
 });
