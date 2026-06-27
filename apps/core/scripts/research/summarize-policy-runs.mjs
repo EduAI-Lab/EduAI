@@ -43,7 +43,13 @@ function main() {
     if (!rows.length) continue;
     const durs = rows.map((r) => r.duration_ms);
     const mean = durs.reduce((a, b) => a + b, 0) / durs.length;
-    console.log(`${pol}: n=${rows.length} mean_latency_ms=${Math.round(mean)}`);
+    const energyRows = rows.filter((r) => r.energy_joules != null);
+    const totalJ = energyRows.reduce((s, r) => s + r.energy_joules, 0);
+    const energyNote =
+      energyRows.length > 0
+        ? ` total_energy_j=${Math.round(totalJ * 100) / 100}`
+        : "";
+    console.log(`${pol}: n=${rows.length} mean_latency_ms=${Math.round(mean)}${energyNote}`);
     if (pol === "P1" || pol === "P2" || pol === "P3") {
       const tiers = { 1: 0, 2: 0, 3: 0, null: 0 };
       for (const r of rows) {
@@ -56,14 +62,23 @@ function main() {
 
   if (labels.length === 0) return;
 
+  const oracleSplit = (readEnv("RESEARCH_ORACLE_SPLIT") ?? "dev").toLowerCase();
+  console.log("oracle split:", oracleSplit);
+
   const labelById = new Map(labels.map((l) => [l.prompt_id, l]));
-  const p1Dev = policies.filter((r) => rowMatchesPolicy(r, "P1") && r.split === "dev" && !r.error);
-  const p2Dev = policies.filter((r) => rowMatchesPolicy(r, "P2") && r.split === "dev" && !r.error);
-  const p3Dev = policies.filter((r) => rowMatchesPolicy(r, "P3") && r.split === "dev" && !r.error);
+  const p1Dev = policies.filter(
+    (r) => rowMatchesPolicy(r, "P1") && r.split === oracleSplit && !r.error,
+  );
+  const p2Dev = policies.filter(
+    (r) => rowMatchesPolicy(r, "P2") && r.split === oracleSplit && !r.error,
+  );
+  const p3Dev = policies.filter(
+    (r) => rowMatchesPolicy(r, "P3") && r.split === oracleSplit && !r.error,
+  );
 
   function printOracleGap(label, rows) {
     if (rows.length === 0) {
-      console.log(`\nNo ${label} dev runs — skip oracle gap.`);
+      console.log(`\nNo ${label} ${oracleSplit} runs — skip oracle gap.`);
       return;
     }
     let matched = 0;
@@ -82,7 +97,7 @@ function main() {
       else correct++;
     }
 
-    console.log(`\n=== ${label} vs oracle (dev labels) ===`);
+    console.log(`\n=== ${label} vs strict oracle (${oracleSplit}) ===`);
     console.log("matched prompts:", matched);
     console.log("correct tier:", correct, `(${matched ? ((100 * correct) / matched).toFixed(1) : 0}%)`);
     console.log("under-routed (quality risk):", underRoute);
@@ -90,7 +105,7 @@ function main() {
   }
 
   if (p1Dev.length === 0 && p2Dev.length === 0 && p3Dev.length === 0) {
-    console.log("\nNo P1/P2/P3 dev runs — skip oracle gap.");
+    console.log(`\nNo P1/P2/P3 ${oracleSplit} runs — skip oracle gap.`);
     return;
   }
 
