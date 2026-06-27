@@ -1,11 +1,32 @@
 import { Separator } from "./ui/separator"
-import { SidebarTrigger } from "./ui/sidebar"
+import { SidebarTrigger, useSidebar } from "./ui/sidebar"
 
 export interface SiteHeaderProps {
   title?: string
   actions?: React.ReactNode
   leadingActions?: React.ReactNode
   breadcrumbs?: React.ReactNode
+}
+
+/**
+ * Sidebar toggle shown only when the sidebar is collapsed (desktop) or on mobile.
+ * When the sidebar is expanded it carries its own header trigger, so showing one
+ * here too would be redundant.
+ */
+function HeaderSidebarTrigger() {
+  const { isMobile, state } = useSidebar()
+  if (!isMobile && state === "expanded") {
+    return null
+  }
+  return (
+    <>
+      <SidebarTrigger className="-ml-1" />
+      <Separator
+        orientation="vertical"
+        className="mx-2 data-[orientation=vertical]:h-4"
+      />
+    </>
+  )
 }
 
 export function SiteHeader({
@@ -17,11 +38,7 @@ export function SiteHeader({
   return (
     <header className="sticky top-0 z-20 flex h-[var(--header-height)] shrink-0 items-center border-b bg-background">
       <div className="flex h-full w-full items-center gap-1 px-4 lg:gap-2 lg:px-6">
-        <SidebarTrigger className="-ml-1" />
-        <Separator
-          orientation="vertical"
-          className="mx-2 data-[orientation=vertical]:h-4"
-        />
+        <HeaderSidebarTrigger />
         {breadcrumbs ? (
           <>
             {title ? <h1 className="sr-only">{title}</h1> : null}

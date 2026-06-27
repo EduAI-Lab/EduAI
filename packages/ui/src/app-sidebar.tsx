@@ -7,6 +7,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarTrigger,
 } from "./ui/sidebar"
 import { NavMain, type NavMainItem } from "./nav-main"
 import { NavSecondary, type NavSecondaryItem } from "./nav-secondary"
@@ -39,18 +40,23 @@ export function AppSidebar({
   return (
     <Sidebar collapsible="offcanvas" {...props}>
       <SidebarHeader>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              asChild
-              className="data-[slot=sidebar-menu-button]:!p-1.5"
-            >
-              <LinkComponent to={logoHref} href={logoHref} className="flex items-center gap-[9px]">
-                {logo}
-              </LinkComponent>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+        <div className="flex items-center gap-1">
+          <SidebarMenu className="flex-1 min-w-0">
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                asChild
+                className="data-[slot=sidebar-menu-button]:!p-1.5"
+              >
+                <LinkComponent to={logoHref} href={logoHref} className="flex items-center gap-[9px]">
+                  {logo}
+                </LinkComponent>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+          {/* Collapse toggle, visible while the sidebar is expanded (desktop).
+              When collapsed/mobile the SiteHeader shows the expand trigger instead. */}
+          <SidebarTrigger className="hidden shrink-0 md:inline-flex text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground" />
+        </div>
       </SidebarHeader>
       <SidebarContent>
         <NavMain
