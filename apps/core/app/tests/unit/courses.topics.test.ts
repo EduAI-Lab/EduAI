@@ -95,7 +95,7 @@ function makeLoaderArgs(courseId: string, topicId?: string, authorization?: stri
     request: new Request(`http://localhost${path}`, { method: "GET", headers }),
     params: { courseId, ...(topicId ? { topicId } : {}) },
     context: {} as never,
-  };
+  } as any;
 }
 
 function makeAction(
@@ -116,7 +116,7 @@ function makeAction(
     }),
     params: { courseId: COURSE_ID, ...(opts.topicId ? { topicId: opts.topicId } : {}) },
     context: {} as never,
-  };
+  } as any;
 }
 
 const makePost = (body: unknown, authorization?: string) =>
@@ -145,7 +145,7 @@ describe("courses.topics loader", () => {
       request: new Request("http://localhost/api/courses//topics"),
       params: {},
       context: {} as never,
-    });
+    } as any);
     expect(res.status).toBe(400);
     expect(await res.json()).toMatchObject({ error: "Course ID is required" });
   });
