@@ -35,7 +35,7 @@ function makePatch(userId: string, body: unknown) {
     }),
     params: { "*": userId },
     context: {} as never,
-  };
+  } as any;
 }
 
 function mockUser(user: { id: string; role: string } | null) {

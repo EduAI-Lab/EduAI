@@ -40,7 +40,7 @@ function makeArgs(id?: string, authorization?: string, method = "GET") {
     request: new Request(`http://localhost/api/courses/${id ?? ""}`, { method, headers }),
     params: id !== undefined ? { id } : {},
     context: {} as never,
-  };
+  } as any;
 }
 
 describe("GET /api/courses/:id loader", () => {

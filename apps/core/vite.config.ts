@@ -22,6 +22,13 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [tailwindcss(), reactRouter(), tsconfigPaths()],
+    ssr: {
+      // react-router 7.18 externalises @tabler/icons-react, which resolves via
+      // the alias below to an .mjs file. Node 20 (Docker) cannot require() .mjs
+      // (ERR_REQUIRE_ESM). Bundling it lets Vite transpile ESM→CJS at build
+      // time so there is no runtime .mjs require in the server bundle.
+      noExternal: ["@tabler/icons-react"],
+    },
     resolve: {
       // Pin one copy for core (1.2.8 via root overrides). Do not alias the package root — that
       // breaks subpath exports such as better-auth/client/plugins.

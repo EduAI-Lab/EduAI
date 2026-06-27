@@ -9,7 +9,7 @@ import { deleteAdminUser } from "../app/lib/agent-tools/admin-mutations.server";
 const stamp = Date.now();
 const testEmail = `smoke-admin-${stamp}@eduai.local`;
 
-const toolExec = { toolCallId: "smoke" as const };
+const toolExec = { toolCallId: "smoke" as const, messages: [] as never[] };
 
 async function main() {
   const admin = await prisma.user.findUnique({
