@@ -8,7 +8,8 @@ Canonical analysis memos for the two-tier routing and energy program. Run artifa
 
 | Topic | Document | Date |
 |-------|----------|------|
-| **Held-out test: energy + strict oracle (P0–P3)** | [TEST_SPLIT_ENERGY_RESULTS.md](./TEST_SPLIT_ENERGY_RESULTS.md) | 2026-06-26 |
+| **Dev split: P0 vs P1 energy (Paper 2 table)** | [DEV_SPLIT_ENERGY_RESULTS.md](./DEV_SPLIT_ENERGY_RESULTS.md) | 2026-06-27 |
+| **Held-out test: energy + strict oracle (P0–P3); post–rule2e + 2× replicate** | [TEST_SPLIT_ENERGY_RESULTS.md](./TEST_SPLIT_ENERGY_RESULTS.md) | 2026-06-26 / 2026-06-27 |
 
 ---
 
