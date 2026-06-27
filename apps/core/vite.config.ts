@@ -31,11 +31,21 @@ export default defineConfig(({ mode }) => {
       // Monorepo hoisting can give Radix/shadcn a second React copy → "useState of null" after HMR.
       dedupe: ["react", "react-dom", "better-auth"],
     },
+    // Pre-bundle streamdown + CJS deps (style-to-js) so lazy markdown loads as ESM.
+    optimizeDeps: {
+      include: ["streamdown", "@streamdown/math", "style-to-js"],
+    },
+    ssr: {
+      noExternal: ["streamdown"],
+    },
     server: {
       port: 3000,
       // Apache reverse proxy sends Host: dev.eduai.ok.ubc.ca; Vite 6+ rejects unknown hosts by default.
       host: true,
       allowedHosts: ["dev.eduai.ok.ubc.ca", "localhost", "127.0.0.1"],
+      headers: {
+        "Cache-Control": "no-store",
+      },
       fs: {
         allow: [monorepoRoot],
       },
