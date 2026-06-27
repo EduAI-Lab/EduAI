@@ -11,6 +11,7 @@ const AUTO_IMPORT_ROLES = new Set(['INSTRUCTOR']);
 const AUTO_ENROLL_ROLES = new Set(['STUDENT', 'TA']);
 const TEACHING_ENROLLMENT_ROLES = new Set(['INSTRUCTOR', 'TA']);
 const STUDENT_ENROLLMENT_ROLE = 'STUDENT';
+const TA_ENROLLMENT_ROLE = 'TA';
 
 function isTeachingCoreCourse(coreCourse) {
   return TEACHING_ENROLLMENT_ROLES.has(coreCourse?.callerEnrollmentRole);
@@ -18,6 +19,10 @@ function isTeachingCoreCourse(coreCourse) {
 
 function isStudentCoreCourse(coreCourse) {
   return (coreCourse?.callerEnrollmentRole ?? STUDENT_ENROLLMENT_ROLE) === STUDENT_ENROLLMENT_ROLE;
+}
+
+function isTaCoreCourse(coreCourse) {
+  return coreCourse?.callerEnrollmentRole === TA_ENROLLMENT_ROLE;
 }
 
 /** Ensures a Core-linked local offering exists and publish state matches Core. */
@@ -346,9 +351,36 @@ export async function importEnrolledCoursesFromCore(student, cookie, options = {
   const studentCourses = coreCourses.filter(
     (course) => course?.id && typeof course.id === 'string' && isStudentCoreCourse(course),
   );
+  const taCourses = coreCourses.filter(
+    (course) => course?.id && typeof course.id === 'string' && isTaCoreCourse(course),
+  );
 
   let enrolled = 0;
   let skipped = 0;
+
+  for (const coreCourse of taCourses) {
+    try {
+      const offering = await ensureOfferingFromCore(coreCourse);
+      await prisma.courseEnrollment.upsert({
+        where: {
+          courseOfferingId_userId: {
+            courseOfferingId: offering.id,
+            userId: student.id,
+          },
+        },
+        update: { role: TA_ENROLLMENT_ROLE },
+        create: {
+          courseOfferingId: offering.id,
+          userId: student.id,
+          role: TA_ENROLLMENT_ROLE,
+        },
+      });
+      enrolled++;
+    } catch (err) {
+      console.error('[eduai] TA enrollment mirror failed for Core course', coreCourse.id, err);
+      skipped++;
+    }
+  }
 
   for (const coreCourse of studentCourses) {
     try {
