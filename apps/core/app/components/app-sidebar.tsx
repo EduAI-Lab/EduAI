@@ -32,6 +32,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarTrigger,
 } from "@eduai/ui"
 import type { User } from "~/lib/auth/types"
 import {
@@ -121,36 +122,39 @@ export function AppSidebar({
 
   return (
     <Sidebar variant={variant} collapsible="offcanvas" {...props}>
-      <SidebarHeader>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              asChild
-              className="data-[slot=sidebar-menu-button]:!p-1.5"
-            >
-              <a href="/dashboard" className="flex items-center gap-[9px]">
-                {/* Globe logo — same as login/signup page */}
-                <div
-                  className="flex items-center justify-center shrink-0"
-                  style={{
-                    width: 28,
-                    height: 28,
-                    borderRadius: 7,
-                    background: "var(--primary)",
-                  }}
-                >
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.75" strokeLinecap="round">
-                    <circle cx="12" cy="12" r="9"/>
-                    <path d="M12 3a9 9 0 0 1 0 18"/>
-                    <path d="M3 12h18"/>
-                    <path d="M12 3c2 2 3.5 5.5 3.5 9s-1.5 7-3.5 9"/>
-                  </svg>
-                </div>
-                <span className="text-base font-bold" style={{ letterSpacing: "-0.01em" }}>EduAI</span>
-              </a>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+      <SidebarHeader className="p-2">
+        <div className="flex items-center gap-1">
+          <SidebarMenu className="flex-1 min-w-0">
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                asChild
+                className="data-[slot=sidebar-menu-button]:!p-1.5"
+              >
+                <a href="/dashboard" className="flex items-center gap-[9px]">
+                  {/* Globe logo — same as login/signup page */}
+                  <div
+                    className="flex items-center justify-center shrink-0"
+                    style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: 7,
+                      background: "var(--primary)",
+                    }}
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.75" strokeLinecap="round">
+                      <circle cx="12" cy="12" r="9"/>
+                      <path d="M12 3a9 9 0 0 1 0 18"/>
+                      <path d="M3 12h18"/>
+                      <path d="M12 3c2 2 3.5 5.5 3.5 9s-1.5 7-3.5 9"/>
+                    </svg>
+                  </div>
+                  <span className="text-base font-bold" style={{ letterSpacing: "-0.01em" }}>EduAI</span>
+                </a>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+          <SidebarTrigger className="hidden shrink-0 md:inline-flex text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground" />
+        </div>
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={navMain} />
