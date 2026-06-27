@@ -1044,6 +1044,7 @@ export async function action({ request }: ActionFunctionArgs) {
     let courseRagHits: HybridRagHit[] = [];
     let courseRagContextText = "";
     let courseRagInject = false;
+    let effectiveForceHybridRag = forceHybridRag;
 
     if (chatMode === "admin") {
       const rbacUser = {
@@ -1152,7 +1153,10 @@ export async function action({ request }: ActionFunctionArgs) {
       const tools = buildChatToolRegistry({ effectiveCourseId, webToolsEnabled });
       const modelCapabilities = await getChatModelCapabilities(model);
       supportsTools = modelCapabilities.supportsTools;
-      useToolCalling = supportsTools && !forceHybridRag;
+      effectiveForceHybridRag =
+        forceHybridRag ||
+        (parsedModel.providerId === "vllm" && process.env.VLLM_CHAT_TOOLS !== "1");
+      useToolCalling = supportsTools && !effectiveForceHybridRag;
       toolMaxTokens = resolveToolMaxOutputTokens(modelCapabilities.maxTokens);
 
       const defaultCourseSystemPrompt =
@@ -1326,7 +1330,7 @@ ${buildEmptyCourseRagBlock()}`;
       ragTopSimilarity: courseRagHits[0]?.similarity ?? null,
       ragChunkCount: courseRagHits.length,
       webToolsEnabled,
-      forceHybridRag,
+      forceHybridRag: effectiveForceHybridRag,
       approach: useToolCalling ? "tool_calling" : "hybrid_rag",
       toolMaxTokens: useToolCalling ? toolMaxTokens : undefined,
       adhdOversight: needsOversight,
