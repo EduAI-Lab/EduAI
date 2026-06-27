@@ -51,6 +51,7 @@ const NAV_ICONS: Record<NavItemKey, Icon> = {
   "admin-users": IconUsers,
   "admin-ai": IconBrain,
   "admin-bugs": IconReport,
+  "admin-chat": IconRobot,
   "admin-invites": IconMail,
   "admin-settings": IconShieldLock,
   "admin-logs": IconFileText,

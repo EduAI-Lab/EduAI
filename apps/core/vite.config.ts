@@ -31,6 +31,11 @@ export default defineConfig(({ mode }) => {
       // Monorepo hoisting can give Radix/shadcn a second React copy → "useState of null" after HMR.
       dedupe: ["react", "react-dom", "better-auth"],
     },
+    // Force React to be pre-bundled at startup so Vite never discovers it lazily during
+    // a first client-side navigation.
+    optimizeDeps: {
+      include: ["react", "react-dom", "react-dom/client"],
+    },
     server: {
       port: 3000,
       // Apache reverse proxy sends Host: dev.eduai.ok.ubc.ca; Vite 6+ rejects unknown hosts by default.

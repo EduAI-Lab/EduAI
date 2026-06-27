@@ -2,12 +2,13 @@
 #
 # Build context: monorepo root
 
-FROM mcr.microsoft.com/playwright:v1.50.1-jammy
+FROM mcr.microsoft.com/playwright:v1.60.0-jammy
 
 WORKDIR /e2e
 
-COPY tests/e2e/package.json ./
-RUN npm install
+# Install from the lockfile so @playwright/test matches the browsers in the base image.
+COPY tests/e2e/package.json tests/e2e/package-lock.json ./
+RUN npm ci
 
 COPY tests/e2e/ ./
 

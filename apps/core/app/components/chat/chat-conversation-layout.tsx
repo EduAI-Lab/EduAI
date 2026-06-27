@@ -1,11 +1,13 @@
 import type { Message } from "@ai-sdk/react";
-import { IconBooksOff } from "@tabler/icons-react";
+import { IconInfoCircle, IconBooksOff } from "@tabler/icons-react";
+import { Alert, AlertDescription } from "@eduai/ui";
 
 import { ChatDisclaimer } from "~/components/chat/chat-disclaimer";
 import { ChatInput } from "~/components/chat/chat-input";
 import { ChatMessage } from "~/components/chat/chat-message";
 import { ChatTypingIndicator } from "~/components/chat/chat-typing-indicator";
 import { ChatWelcome } from "~/components/chat/chat-welcome";
+import type { ChatWelcomeProps } from "~/components/chat/chat-welcome";
 import type { ChatViewSharedProps } from "~/components/chat/chat-view-types";
 import {
   ASSISTIVE_CHAT_SURFACE_CLASS,
@@ -17,6 +19,11 @@ type ChatConversationLayoutProps = ChatViewSharedProps & {
   bannerTitle?: string;
   bannerDescription?: string;
   showCourseSelector: boolean;
+  WelcomeComponent?: React.ComponentType<ChatWelcomeProps>;
+  assistive: boolean;
+  onAssistiveChange: (value: boolean) => void;
+  focusMode: boolean;
+  onFocusModeChange: (value: boolean) => void;
 };
 
 export function ChatConversationLayout({
@@ -45,6 +52,7 @@ export function ChatConversationLayout({
   onSubmit,
   onStop,
   onSelectPrompt,
+  WelcomeComponent = ChatWelcome,
   isStudentWithCourseChat,
   disabledReason,
 }: ChatConversationLayoutProps) {
@@ -56,33 +64,35 @@ export function ChatConversationLayout({
       )}
     >
       <div className="flex-1 flex flex-col min-h-0 relative overflow-hidden">
-        {/* No-courses overlay: covers welcome screen and disables all interaction */}
         {disabledReason === "no-courses" && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-background/85 backdrop-blur-[2px]">
             <IconBooksOff className="h-10 w-10 text-muted-foreground" />
             <p className="text-sm text-muted-foreground text-center max-w-xs leading-relaxed">
-              You're not enrolled in any courses.<br />
-              Chat will become available once you're enrolled.
+              You&apos;re not enrolled in any courses.
+              <br />
+              Chat will become available once you&apos;re enrolled.
             </p>
           </div>
         )}
-        <div className="h-full overflow-y-auto scrollbar-hover scroll-smooth">
-          <div className="px-4 py-4 md:px-6 md:py-6">
+        <div className="h-full overflow-y-auto scrollbar-hover">
+          <div className="px-6 py-6">
             {isStudentWithCourseChat && (
-              <div className="max-w-3xl mx-auto mb-4">
-                <p className="text-xs text-muted-foreground text-center">
-                  Course chats may be viewed by your instructor and platform admins.
-                </p>
+              <div className="max-w-[720px] mx-auto mb-5">
+                <Alert className="border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950">
+                  <IconInfoCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                  <AlertDescription className="text-sm text-amber-900 dark:text-amber-100">
+                    Heads up: your course chats can be viewed by your instructor, unit admin, and platform admins.
+                  </AlertDescription>
+                </Alert>
               </div>
             )}
-            <div className="max-w-3xl mx-auto mb-4">
+            <div className="max-w-[720px] mx-auto space-y-5">
               <ChatDisclaimer />
-            </div>
-            <div className="max-w-3xl mx-auto space-y-1">
               {messages.length === 0 ? (
-                <ChatWelcome
+                <WelcomeComponent
                   selectedModelInfo={selectedModelInfo}
                   onSelectPrompt={onSelectPrompt}
+                  disabled={!!disabledReason}
                 />
               ) : (
                 <>
@@ -135,6 +145,7 @@ export function ChatConversationLayout({
         assistiveHighlight={assistive}
         systemPrompt={systemPrompt}
         onSystemPromptSave={onSystemPromptSave}
+        disabledReason={disabledReason}
       />
     </div>
   );
