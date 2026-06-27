@@ -341,7 +341,7 @@ export async function resolveRoutedModelHybrid(
 }
 
 /**
- * P3b LLM classifier: dedicated tier-1 router call, then carbon-aware model pick.
+ * P3 LLM classifier: dedicated tier-1 router call, then carbon-aware model pick.
  * Hard rules still win for images (tier ≥ 2).
  */
 export async function resolveRoutedModelLlm(
@@ -353,6 +353,24 @@ export async function resolveRoutedModelLlm(
 
   if (phaseCtx.imagesPresent) {
     return finalizePick(match.pick, {
+      routerVersion: ROUTER_VERSION_LLM,
+      rule: match.rule,
+      mode: "llm",
+      knn: null,
+      llm: null,
+      phaseCtx,
+      context,
+      pickSource: "rules",
+    });
+  }
+
+  // Tier-3 escalation rules win over the classifier (same stack as P1).
+  const rulePick = match.pick;
+  if (
+    (rulePick.kind === "exactTier" && rulePick.tier === 3) ||
+    (rulePick.kind === "minTier" && rulePick.minTier === 3)
+  ) {
+    return finalizePick(rulePick, {
       routerVersion: ROUTER_VERSION_LLM,
       rule: match.rule,
       mode: "llm",
@@ -408,7 +426,7 @@ function resolveMode(options?: ResolveRouterOptions): RouterMode {
 /**
  * Choose `provider:modelId` for Auto mode.
  * - `model=auto` → `ROUTER_MODE` env (default rules)
- * - `model=auto-llm` → LLM classifier (P3b)
+ * - `model=auto-llm` → LLM classifier (P3)
  */
 export async function resolveRoutedModel(
   prompt: string,
