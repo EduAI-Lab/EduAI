@@ -62,6 +62,7 @@ describe("Assistive preference round-trip", () => {
     const root = await rootLoader(getArgs("/"));
     expect(root).toEqual({
       assistive: false,
+      canInvite: false,
       motionReduced: false,
       density: "comfortable",
       theme: "system",
@@ -86,6 +87,7 @@ describe("Assistive preference round-trip", () => {
     expect((await res.json()).assistDefault).toBe(true);
     expect(await rootLoader(getArgs("/"))).toEqual({
       assistive: true,
+      canInvite: false,
       motionReduced: false,
       density: "comfortable",
       theme: "system",
@@ -104,6 +106,7 @@ describe("Assistive preference round-trip", () => {
     expect(row?.assistDefault).toBe(false);
     expect(await rootLoader(getArgs("/"))).toEqual({
       assistive: false,
+      canInvite: false,
       motionReduced: false,
       density: "comfortable",
       theme: "system",
@@ -123,6 +126,7 @@ describe("Assistive preference round-trip", () => {
     expect((await res.json()).assistDefault).toBe(false);
     expect(await rootLoader(getArgs("/"))).toEqual({
       assistive: false,
+      canInvite: false,
       motionReduced: false,
       density: "comfortable",
       theme: "system",
@@ -133,6 +137,7 @@ describe("Assistive preference round-trip", () => {
     mockSession(null);
     expect(await rootLoader(getArgs("/"))).toEqual({
       assistive: false,
+      canInvite: false,
       motionReduced: false,
       density: "comfortable",
       theme: "system",
@@ -177,6 +182,7 @@ describe("Assistive preference round-trip", () => {
 
     expect(await rootLoader(getArgs("/"))).toEqual({
       assistive: false,
+      canInvite: false,
       motionReduced: true,
       density: "compact",
       theme: "dark",

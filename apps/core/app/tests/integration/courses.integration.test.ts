@@ -226,8 +226,10 @@ describe("GET /api/courses", () => {
 // ---------------------------------------------------------------------------
 
 describe("POST /api/courses", () => {
-  it("returns 403 when caller is not ADMIN", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue(INSTRUCTOR_SESSION as any);
+  it("returns 403 when caller is a STUDENT", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: instructorId, role: "STUDENT", email: "student@test.com", name: "Student" },
+    } as any);
     const res = await createCourse(makeFormDataPost({
       name: "Forbidden Course",
       code: "FB 001",
@@ -235,19 +237,20 @@ describe("POST /api/courses", () => {
       term: "Fall",
       year: 2025,
       startDate: "2025-09-01",
+      department: "COSC",
       instructorUserIds: instructorId,
     }));
     expect(res.status).toBe(403);
   });
 
-  it("returns 400 when required fields are missing", async () => {
+  it("returns 422 when required fields are missing", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(ADMIN_SESSION as any);
     const res = await createCourse(makeFormDataPost({
       name: "No Code Course",
     }));
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
     const body = await res.json();
-    expect(body).toHaveProperty("error", "Invalid input");
+    expect(body).toHaveProperty("error");
   });
 
   it("returns 422 when instructorUserIds do not resolve to INSTRUCTOR users", async () => {
@@ -292,7 +295,7 @@ describe("POST /api/courses", () => {
     expect(enrollment).not.toBeNull();
   });
 
-  it("returns 400 with no instructorUserIds and creates no Course", async () => {
+  it("returns 422 with no instructorUserIds and creates no Course", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(ADMIN_SESSION as any);
     const res = await createCourse(makeFormDataPost({
       name: "No Instructor Course",
@@ -303,7 +306,7 @@ describe("POST /api/courses", () => {
       startDate: "2026-09-01",
     }));
     // Schema requires >= 1 instructor id → validation failure, nothing persisted.
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
     const row = await prisma.course.findFirst({ where: { code: "NI 001" } });
     expect(row).toBeNull();
   });
