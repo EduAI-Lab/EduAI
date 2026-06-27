@@ -39,12 +39,15 @@ export function getApiKeyExpirationStatus(
   return "active";
 }
 
-export function formatExpirationLabel(expiresAt: Date | string | null | undefined): string {
-  const status = getApiKeyExpirationStatus(expiresAt);
+export function formatExpirationLabel(
+  expiresAt: Date | string | null | undefined,
+  now = Date.now(),
+): string {
+  const status = getApiKeyExpirationStatus(expiresAt, now);
   if (status === "none") return "No expiration";
   const date = new Date(expiresAt as Date | string).toLocaleDateString();
   if (status === "expired") return `Expired ${date}`;
-  const daysLeft = daysUntilExpiration(expiresAt);
+  const daysLeft = daysUntilExpiration(expiresAt, now);
   if (daysLeft === 1) return `Expires tomorrow (${date})`;
   if (daysLeft !== null && daysLeft <= 14) return `Expires in ${daysLeft} days (${date})`;
   return `Expires ${date}`;

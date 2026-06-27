@@ -22,8 +22,9 @@ describe("api-key expiration helpers", () => {
   });
 
   it("formats human-readable expiration labels", () => {
-    expect(formatExpirationLabel("2026-06-28T00:00:00.000Z")).toContain("Expires in");
-    expect(formatExpirationLabel(null)).toBe("No expiration");
+    expect(formatExpirationLabel("2026-06-28T00:00:00.000Z", now)).toContain("Expires in");
+    expect(formatExpirationLabel("2026-06-23T00:00:00.000Z", now)).toContain("Expires tomorrow");
+    expect(formatExpirationLabel(null, now)).toBe("No expiration");
   });
 });
 
