@@ -31,14 +31,14 @@ import { requireClientUser } from '~/lib/client-auth';
 import { AppShell } from '~/components/layout/AppShell';
 import { ShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbs';
 import { RoleDashboard } from '~/components/dashboard/RoleDashboard';
-import { buildDashboardStats } from '~/lib/dashboard-stats';
+import { buildInstructorDashboardStats } from '~/lib/dashboard-stats';
 
 /**
  * Loads the instructor's course list. The backend scopes /courses to the
  * authenticated user's role, so this is the full set the instructor can act on.
  */
 export async function clientLoader(_: Route.ClientLoaderArgs) {
-  await requireClientUser(['INSTRUCTOR', 'UNIT_ADMIN', 'TA']);
+  await requireClientUser(['INSTRUCTOR', 'UNIT_ADMIN', 'TA', 'ADMIN']);
   const courses = (await api.listCourses()) as Course[];
   return { courses };
 }
@@ -59,10 +59,10 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
     courses,
     (state, patch: (items: Course[]) => Course[]) => patch(state),
   );
-  const stats = useMemo(
-    () => buildDashboardStats(user?.role, { courses: oCourses }),
-    [user?.role, oCourses],
-  );
+  // The teaching dashboard always shows course-scoped stats (Your courses /
+  // Published / Draft), including for admins who share this shell — the admin
+  // platform stats (Users / bug reports) live on the /admin Bug Reports page.
+  const stats = useMemo(() => buildInstructorDashboardStats(oCourses), [oCourses]);
 
   // Optimistic publish toggle: addCourseOpt flips the badge instantly via
   // useOptimistic, then the server response confirms or the catch branch
