@@ -21,11 +21,22 @@ describe("tierFromLlmClassification", () => {
     expect(tierFromLlmClassification(base)).toBe(1);
   });
 
-  it("maps medium complexity to tier 1 on local vLLM", () => {
+  it("maps medium complexity to tier 1 on local vLLM for chat task", () => {
     process.env.VLLM_BASE_URL = "http://localhost:8001";
     expect(
       tierFromLlmClassification({ ...base, complexity: "medium" }),
     ).toBe(1);
+  });
+
+  it("maps medium coding task to tier 3 on local vLLM", () => {
+    process.env.VLLM_BASE_URL = "http://localhost:8001";
+    expect(
+      tierFromLlmClassification({
+        ...base,
+        task: "coding",
+        complexity: "medium",
+      }),
+    ).toBe(3);
   });
 
   it("keeps tier 1 when confidence is below threshold on local vLLM", () => {

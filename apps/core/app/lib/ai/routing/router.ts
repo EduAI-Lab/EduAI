@@ -364,6 +364,24 @@ export async function resolveRoutedModelLlm(
     });
   }
 
+  // Tier-3 escalation rules win over the classifier (same stack as P1).
+  const rulePick = match.pick;
+  if (
+    (rulePick.kind === "exactTier" && rulePick.tier === 3) ||
+    (rulePick.kind === "minTier" && rulePick.minTier === 3)
+  ) {
+    return finalizePick(rulePick, {
+      routerVersion: ROUTER_VERSION_LLM,
+      rule: match.rule,
+      mode: "llm",
+      knn: null,
+      llm: null,
+      phaseCtx,
+      context,
+      pickSource: "rules",
+    });
+  }
+
   let classification: LlmRouteClassification;
 
   try {

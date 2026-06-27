@@ -4,9 +4,10 @@
  * Given a **`Phase1RouterContext`** (prompt text, attachments flag, optional RAG stats),
  * **`matchPhase1Rules`** returns the first matching rule and a **`PickSpec`** telling **`tiers.ts`** how to choose a model.
  *
- * Rule order: images → escalation (web/debug/complex/RAG-reasoning) → short factual → RAG tier-1 → long RAG → default.
+ * Rule order: images → escalation (web/debug/complex/RAG-reasoning/enumeration) → short factual → RAG tier-1 → long RAG → default.
+ *
+ * **Frozen 2026-06-27** for Paper 1 held-out evaluation — no further dev-suite rule tuning.
  */
-
 import type { PickSpec } from "./tiers";
 
 export type Phase1RouterContext = {
@@ -65,6 +66,10 @@ const REFACTOR_USE_EFFECT_PATTERN =
 
 const RAG_REASONING_PATTERN =
   /\bwhich factor was not\b|\bnot a driver\b|\bgive an example that violates\b/i;
+
+/** Multi-item enumeration from course RAG (tier-sensitive; e.g. ts-080). */
+const DISTINCT_ENUMERATION_PATTERN =
+  /\b(name|list|give|identify)\b.{0,40}\b(two|2|three|3)\b.{0,40}\bdistinct\b/i;
 
 function routingRagStrongSimilarity(): number {
   const raw = process.env.ROUTING_RAG_STRONG_SIM;
@@ -135,6 +140,11 @@ export function needsRagReasoningEscalation(lower: string): boolean {
   );
 }
 
+/** Course RAG prompts asking for multiple distinct items — 7B often under-lists. */
+export function needsDistinctEnumerationEscalation(lower: string): boolean {
+  return DISTINCT_ENUMERATION_PATTERN.test(lower);
+}
+
 function hasStrongRagHit(ctx: Phase1RouterContext): boolean {
   const top1 = ctx.ragTopSimilarity;
   const chunks = ctx.ragChunkCount;
@@ -149,6 +159,7 @@ function hasStrongRagHit(ctx: Phase1RouterContext): boolean {
  * 2b. Debug → tier 3
  * 2c. Complex reasoning / code → tier 3
  * 2d. RAG-reasoning phrasing → tier 3 (before RAG tier-1 shortcuts)
+ * 2e. Distinct multi-item enumeration → tier 3 (tier-sensitive RAG, e.g. ts-080)
  * 3. Short factual → tier 1
  * 3b. Course RAG → tier 1
  * 4c. Strong RAG + reasoning escalation → tier 3 (legacy; rule2d covers pattern-only)
@@ -187,6 +198,10 @@ export function matchPhase1Rules(ctx: Phase1RouterContext): Phase1RuleMatch {
 
   if (needsRagReasoningEscalation(lower)) {
     return { rule: "rule2d_rag_reasoning_tier_3", pick: TIER_3_ESCALATION_PICK };
+  }
+
+  if (needsDistinctEnumerationEscalation(lower)) {
+    return { rule: "rule2e_distinct_enumeration_tier_3", pick: TIER_3_ESCALATION_PICK };
   }
 
   if (isShortFactualPrompt(prompt, lower)) {

@@ -121,8 +121,11 @@ export function tierFromLlmClassification(
   if (classification.complexity === "low") {
     return 1;
   }
+  if (classification.task === "coding" || classification.task === "analysis") {
+    return 3;
+  }
   if (classification.complexity === "medium") {
-    return 1;
+    return isLocalVllmRouting() ? 1 : 2;
   }
   return 3;
 }

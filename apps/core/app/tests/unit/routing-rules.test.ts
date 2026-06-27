@@ -243,6 +243,17 @@ describe("matchPhase1Rules", () => {
         ctx: { ragTopSimilarity: 0.91, ragChunkCount: 3 },
         expectedRule: "rule2d_rag_reasoning_tier_3",
       },
+      {
+        id: "ts-080",
+        prompt: "Name two distinct functions of the endoplasmic reticulum.",
+        ctx: {
+          courseId: "course-biol",
+          courseRagNeeded: true,
+          ragTopSimilarity: 0.88,
+          ragChunkCount: 4,
+        },
+        expectedRule: "rule2e_distinct_enumeration_tier_3",
+      },
     ] as const;
 
     it.each(underRoutePrompts)("$id routes to tier 3 via $expectedRule", ({ prompt, ctx, expectedRule }) => {
