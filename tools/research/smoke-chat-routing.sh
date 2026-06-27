@@ -23,17 +23,28 @@ if [[ -z "${EDUAI_API_KEY:-}" ]]; then
 fi
 
 API_URL="${SMOKE_API_URL:-http://127.0.0.1:3000/api/chat}"
+DEFAULT_COURSE="${RESEARCH_DEFAULT_COURSE_CODE:-}"
+COURSE_JSON=""
+if [[ -n "$DEFAULT_COURSE" ]]; then
+  COURSE_JSON=", \"courseCode\": \"${DEFAULT_COURSE}\""
+fi
 
 run_chat() {
   local model="$1"
+  local auth_args=()
+  if [[ -n "${RESEARCH_RUN_COOKIE:-}" ]]; then
+    auth_args=(-H "Cookie: ${RESEARCH_RUN_COOKIE}")
+  else
+    auth_args=(-H "Authorization: Bearer ${EDUAI_API_KEY}")
+  fi
   curl -s -D /tmp/smoke-headers.txt -X POST "$API_URL" \
     -H "Content-Type: application/json" \
-    -H "Authorization: Bearer ${EDUAI_API_KEY}" \
+    "${auth_args[@]}" \
     -d "{
       \"messages\": [{\"id\": \"smoke-u1\", \"role\": \"user\", \"content\": \"Reply with exactly: smoke ok\"}],
       \"model\": \"${model}\",
       \"streaming\": false,
-      \"forceHybridRag\": true,
+      \"forceHybridRag\": true${COURSE_JSON},
       \"apiKeys\": {\"vllm\": {\"apiKey\": \"${VLLM_API_KEY:-vllm-local}\", \"isEnabled\": true}}
     }"
 }
