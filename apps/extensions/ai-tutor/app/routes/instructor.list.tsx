@@ -36,6 +36,7 @@
  */
 import { useEffect, useOptimistic, useRef, useState } from 'react';
 import { useParams } from 'react-router';
+import { toast } from 'sonner';
 import AddActivityPanel from '../components/AddActivityPanel';
 import ActivityDetailsCard from '../components/ActivityDetailsCard';
 import EditActivityPanel from '../components/EditActivityPanel';
@@ -302,6 +303,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
       }
     } catch (error) {
       console.error('Failed to remove activity', error);
+      toast.error('Failed to remove activity. Please try again.');
     } finally {
       setDeletingActivityId((current) => (current === activityId ? null : current));
     }

@@ -153,7 +153,7 @@ export function CourseEnrollmentsPanel({
                       size="sm"
                       variant="destructive"
                       disabled={busy}
-                      onClick={() => setPendingRemoveUser({ id: student.id, name: student.name })}
+                      onClick={() => setPendingRemoveUser({ id: student.id, name: student.name || student.id })}
                     >
                       Remove
                     </Button>
