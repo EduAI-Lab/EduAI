@@ -12,7 +12,7 @@ export function getNavForUser(user: AtUser | null | undefined): AtNavItem[] {
   if (user?.role === 'STUDENT') {
     items.push({
       key: 'my-courses',
-      title: 'My courses',
+      title: 'Courses',
       href: '/student',
     });
   }
@@ -20,17 +20,15 @@ export function getNavForUser(user: AtUser | null | undefined): AtNavItem[] {
   if (usesInstructorShell(user)) {
     items.push({
       key: 'teaching',
-      title: 'Teaching',
+      title: 'Courses',
       href: '/instructor',
     });
   }
 
   if (canAccessAdminConsole(user)) {
-    items.push(
-      { key: 'admin-users', title: 'User Management', href: '/admin?tab=users' },
-      { key: 'admin-enrollments', title: 'Enrollments', href: '/admin?tab=enrollments' },
-      { key: 'admin-bug-reports', title: 'Bug Reports', href: '/admin?tab=bugReports' },
-    );
+    // User management and enrollments are owned by EduAI Core (synced from Canvas
+    // as source of truth); AI Tutor no longer exposes them. Bug report triage stays.
+    items.push({ key: 'admin-bug-reports', title: 'Bug Reports', href: '/admin' });
   }
 
   return items;

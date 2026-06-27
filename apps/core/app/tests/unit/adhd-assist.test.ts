@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   ADHD_ASSIST_POLICY_BLOCK,
   composeSystemPrompt,
+  resolveAdhdAssistPolicyBlock,
   resolveEffectiveAdhdAssist,
 } from "~/lib/ai/adhd-assist";
 
@@ -36,6 +37,24 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
   it("returns the policy block when base is whitespace-only and adhdAssist is true", () => {
     const result = composeSystemPrompt("   \n  ", { adhdAssist: true });
     expect(result).toBe(ADHD_ASSIST_POLICY_BLOCK);
+  });
+
+  it("uses greeting policy without Top summary when profile is greeting", () => {
+    const result = composeSystemPrompt(base, { adhdAssist: true, profile: "greeting" });
+    expect(result).toContain("ADHD ASSIST MODE (greeting)");
+    expect(result).toContain('Do NOT use "Top summary"');
+    expect(result).not.toContain("Step ladder");
+  });
+
+  it("uses redirect policy for redirect profile", () => {
+    const result = composeSystemPrompt(base, { adhdAssist: true, profile: "redirect" });
+    expect(result).toContain("ADHD ASSIST MODE (redirect)");
+    expect(result).toContain("one-topic boundary");
+  });
+
+  it("resolveAdhdAssistPolicyBlock returns full block by default", () => {
+    expect(resolveAdhdAssistPolicyBlock()).toBe(ADHD_ASSIST_POLICY_BLOCK);
+    expect(resolveAdhdAssistPolicyBlock("full_tutoring")).toBe(ADHD_ASSIST_POLICY_BLOCK);
   });
 });
 

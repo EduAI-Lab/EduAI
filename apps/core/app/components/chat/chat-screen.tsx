@@ -38,6 +38,7 @@ import { useCourses } from "~/hooks/api/use-courses";
 import { useAssistiveReorientation } from "~/hooks/use-assistive-reorientation";
 import { useApiKeys } from "~/hooks/use-api-keys";
 import { postAssistiveClientEvent } from "~/lib/assistive-events.client";
+import { logChatApiResponse, logChatUseChatError } from "~/lib/chat-client-log";
 import type { ChatBaseData } from "~/lib/chat/chat-route.server";
 
 export interface ChatScreenProps {
@@ -184,6 +185,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   }, [selectedCourseCode, availableCourses]);
 
   const requestMetadata = {
+    chatMode: "learning" as const,
     model: selectedModel,
     apiKeys: getValidApiKeys(),
     courseCode: selectedCourseCode || undefined,
@@ -209,9 +211,11 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
       // sendExtraMessageFields) so dedup + latest-turn-only both hold.
       experimental_prepareRequestBody: ({ messages, requestBody }) => ({
         ...(requestBody ?? requestMetadata),
+        chatMode: "learning",
         messages: messages.slice(-1),
       }),
       onResponse: async (response) => {
+        await logChatApiResponse(response, "learning-chat");
         const chatIdHeader = response.headers.get("X-Chat-Id");
         if (chatIdHeader && !chatId) {
           setChatId(chatIdHeader);
@@ -230,6 +234,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
           navigate(`/chat/${id}`, { replace: true });
         }
       },
+      onError: (error) => logChatUseChatError(error, "learning-chat"),
     });
 
   const onSubmit = useCallback(
@@ -311,6 +316,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          chatMode: "learning",
           chatId: chatId || undefined,
           systemPrompt: prompt,
           messages: messages.length > 0 ? messages : [],

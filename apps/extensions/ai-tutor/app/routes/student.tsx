@@ -26,13 +26,13 @@ export default function StudentHome({ loaderData }: Route.ComponentProps) {
   const stats = useMemo(() => buildStudentDashboardStats(courseList), [courseList]);
 
   return (
-    <AppShell breadcrumbs={<ShellBreadcrumbs items={[{ label: 'My courses' }]} />}>
+    <AppShell breadcrumbs={<ShellBreadcrumbs items={[{ label: 'Courses' }]} />}>
       <div className="space-y-6">
         {user ? <AtRoleBanner role={user.role} variant="student" /> : null}
 
         <div data-tour="student-dashboard-header">
           <PageHeading
-            heading="My courses"
+            heading="Courses"
             subheading="Continue where you left off or explore new learning materials."
           />
         </div>

@@ -25,9 +25,11 @@ export default defineConfig({
     },
     coverage: {
       provider: 'v8',
+      // Emit the summary even when some tests fail, so CI always gets a coverage figure.
+      reportOnFailure: true,
       include: ['src/**/*.js'],
       exclude: ['src/index.js'],
-      reporter: ['text', 'text-summary', 'html'],
+      reporter: ['text', 'text-summary', 'html', 'json-summary'],
     },
   },
 });

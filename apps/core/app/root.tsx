@@ -14,6 +14,7 @@ import "./app.css";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { getPolicy } from "~/lib/policy.server";
+import { getExpiredPasswordRedirect } from "~/lib/auth/password-expiry.server";
 import { ensureCronSchedulerRunning } from "~/lib/cron-scheduler.server";
 import { AssistiveUiProvider } from "~/components/assistive/assistive-ui-provider";
 import { ThemeProvider } from "~/components/theme-provider";
@@ -58,6 +59,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return GUEST_ROOT_PREFERENCES;
   }
 
+  // #339: enforce annual password rotation. Skip the check on /settings and
+  // /auth/* so the user can actually reach the change-password form and log out.
+  const url = new URL(request.url);
+  const isExempt =
+    url.pathname.startsWith("/settings") ||
+    url.pathname.startsWith("/auth/");
+  if (!isExempt) {
+    const expiredRedirect = await getExpiredPasswordRedirect(session.user.id);
+    if (expiredRedirect) return expiredRedirect;
+  }
+
   const row = await prisma.userPreference.findUnique({
     where: { userId: session.user.id },
     select: {
@@ -86,16 +98,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <Meta />
         <Links />
-        {/* Inline script: set .dark on <html> before first paint to prevent flash */}
+        {/* Inline script: match next-themes class + color-scheme before hydration */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem('theme');if(t==='dark'||(t==='system'||!t)&&window.matchMedia('(prefers-color-scheme: dark)').matches){document.documentElement.classList.add('dark')}}catch(e){}})()`,
+            __html: `(function(){try{var t=localStorage.getItem('theme');var d=t==='dark'||((t==='system'||!t)&&window.matchMedia('(prefers-color-scheme: dark)').matches);var r=document.documentElement;r.classList.add(d?'dark':'light');r.style.colorScheme=d?'dark':'light'}catch(e){}})()`,
           }}
         />
       </head>

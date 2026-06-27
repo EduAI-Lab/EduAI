@@ -74,6 +74,28 @@ describe("recordResponseComplianceEvent", () => {
       preStructuralPass: false,
     });
   });
+
+  it("persists responseProfile and profileStructuralPass without message text", async () => {
+    await recordResponseComplianceEvent({
+      userId: "u1",
+      chatId: "c1",
+      adhdAssist: true,
+      assistantText:
+        "That's a separate question from dishwashing. Want to come back to the dish steps first?",
+      extras: {
+        wordCap: 120,
+        responseProfile: "redirect",
+        profileStructuralPass: true,
+      },
+    });
+
+    const metricsJson = db.assistiveEvent.create.mock.calls[0][0].data.metricsJson;
+    expect(metricsJson).toMatchObject({
+      responseProfile: "redirect",
+      profileStructuralPass: true,
+    });
+    expect(JSON.stringify(metricsJson)).not.toContain("dishwashing");
+  });
 });
 
 describe("sanitizeClientMetrics", () => {

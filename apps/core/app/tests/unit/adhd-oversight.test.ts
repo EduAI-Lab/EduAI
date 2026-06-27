@@ -7,7 +7,9 @@ vi.mock("ai", () => ({
 
 import { generateText } from "ai";
 import {
+  ADHD_OVERSIGHT_MIN_REWRITE_MAX_TOKENS,
   ADHD_OVERSIGHT_REWRITE_SYSTEM,
+  ADHD_OVERSIGHT_REWRITE_TOKENS_PER_WORD,
   applyNextLineAnchor,
   auditAndMaybeRewrite,
   buildOverseenAssistantMessagesToPersist,
@@ -16,12 +18,14 @@ import {
   isAdhdOversightEnabled,
   isForwardContinuationOffer,
   isOversightEligibleDraft,
+  resolveOversightRewriteMaxTokens,
   tryDeterministicStructuralFix,
 } from "~/lib/ai/adhd-oversight";
 import {
   ADHD_CLARIFICATION_WORD_CAP,
   ADHD_TUTORING_WORD_CAP,
   computeAdhdResponseMetrics,
+  isProfileStructuralPass,
   isStructuralCompliancePass,
 } from "~/lib/ai/adhd-metrics";
 import {
@@ -202,7 +206,18 @@ describe("tryDeterministicStructuralFix", () => {
     expect(isStructuralCompliancePass(computeAdhdResponseMetrics(fixed!))).toBe(true);
   });
 
-  it("fixes archived S2-on turn 2 redirect turn", () => {
+  it("passes redirect drafts without Top summary when profile is redirect", () => {
+    const fixed = tryDeterministicStructuralFix(S2_ON_T2_ASSISTANT, {
+      profile: "redirect",
+      wordCap: ADHD_CLARIFICATION_WORD_CAP,
+    });
+    expect(fixed).not.toBeNull();
+    expect(fixed!.startsWith("**Top summary**")).toBe(false);
+    const metrics = computeAdhdResponseMetrics(fixed!, { wordCap: ADHD_CLARIFICATION_WORD_CAP });
+    expect(isProfileStructuralPass(metrics, "redirect", fixed!)).toBe(true);
+  });
+
+  it("fixes archived S2-on turn 2 redirect turn (legacy global path)", () => {
     const fixed = tryDeterministicStructuralFix(S2_ON_T2_ASSISTANT);
     expect(fixed).not.toBeNull();
     expect(fixed).toContain("**Next?** Want to come back to the dishwashing steps first");
@@ -257,6 +272,22 @@ describe("buildOverseenAssistantMessagesToPersist", () => {
   });
 });
 
+describe("resolveOversightRewriteMaxTokens", () => {
+  it("scales the cap with the word cap so long rewrites are not truncated (#714)", () => {
+    expect(resolveOversightRewriteMaxTokens(250)).toBe(
+      250 * ADHD_OVERSIGHT_REWRITE_TOKENS_PER_WORD,
+    );
+    expect(resolveOversightRewriteMaxTokens(250)).toBeGreaterThan(
+      ADHD_OVERSIGHT_MIN_REWRITE_MAX_TOKENS,
+    );
+  });
+
+  it("never drops below the floor for small clarification/redirect caps", () => {
+    expect(resolveOversightRewriteMaxTokens(80)).toBe(ADHD_OVERSIGHT_MIN_REWRITE_MAX_TOKENS);
+    expect(resolveOversightRewriteMaxTokens(0)).toBe(ADHD_OVERSIGHT_MIN_REWRITE_MAX_TOKENS);
+  });
+});
+
 describe("auditAndMaybeRewrite", () => {
   beforeEach(() => {
     vi.mocked(generateText).mockReset();
@@ -276,7 +307,36 @@ describe("auditAndMaybeRewrite", () => {
 
 **Next?** More?`;
 
-    const result = await auditAndMaybeRewrite({ draft: compliant, model: mockModel });
+    const result = await auditAndMaybeRewrite({
+      draft: compliant,
+      model: mockModel,
+      profile: "full_tutoring",
+    });
+    expect(result.rewritten).toBe(false);
+    expect(result.method).toBe("none");
+    expect(generateText).not.toHaveBeenCalled();
+  });
+
+  it("skips Dean rewrite for greeting profile", async () => {
+    const greeting = "Hello! How can I help you today?";
+    const result = await auditAndMaybeRewrite({
+      draft: greeting,
+      model: mockModel,
+      profile: "greeting",
+      wordCap: 80,
+    });
+    expect(result.rewritten).toBe(false);
+    expect(result.method).toBe("none");
+    expect(generateText).not.toHaveBeenCalled();
+  });
+
+  it("passes redirect drafts that already meet profile rules", async () => {
+    const result = await auditAndMaybeRewrite({
+      draft: S2_ON_T2_ASSISTANT,
+      model: mockModel,
+      profile: "redirect",
+      wordCap: ADHD_CLARIFICATION_WORD_CAP,
+    });
     expect(result.rewritten).toBe(false);
     expect(result.method).toBe("none");
     expect(generateText).not.toHaveBeenCalled();
@@ -305,9 +365,13 @@ describe("auditAndMaybeRewrite", () => {
     expect(result.oversightDurationMs).toBeGreaterThanOrEqual(0);
     expect(result.oversightUsage?.completionTokens).toBe(20);
     expect(generateText).toHaveBeenCalledOnce();
+    // #714: the output budget must scale with wordCap, not a fixed 1024.
+    expect(vi.mocked(generateText).mock.calls[0][0]).toMatchObject({
+      maxTokens: resolveOversightRewriteMaxTokens(250),
+    });
   });
 
-  it("rejects LLM rewrite that improves structure but exceeds word cap", async () => {
+  it("flags LLM rewrite that improves structure but exceeds word cap as llm_rejected", async () => {
     const longBody = Array(280).fill("word").join(" ");
     vi.mocked(generateText).mockResolvedValue({
       text: `**Top summary**
@@ -321,9 +385,31 @@ ${longBody}`,
 
     const messy = Array(300).fill("word").join(" ");
     const result = await auditAndMaybeRewrite({ draft: messy, model: mockModel, wordCap: 250 });
-    expect(result.method).toBe("none");
+    // #714: the LLM ran but its rewrite was not adopted — distinct from "none".
+    expect(result.method).toBe("llm_rejected");
     expect(result.rewritten).toBe(false);
     expect(result.text).toBe(messy);
+  });
+
+  it("does not silently ship the original when a long-draft rewrite is truncated (#714)", async () => {
+    // Simulate a truncated rewrite of a long draft: the output budget runs out
+    // before the **Next?** anchor lands, so the partial rewrite is still over
+    // the word cap and fails profile validation.
+    const truncated = `**Top summary**
+- Restating the draft ${Array(300).fill("word").join(" ")}`;
+    vi.mocked(generateText).mockResolvedValue({
+      text: truncated,
+      usage: { promptTokens: 600, completionTokens: 1024 },
+    } as never);
+
+    const longDraft = Array(800).fill("word").join(" ");
+    const result = await auditAndMaybeRewrite({ draft: longDraft, model: mockModel, wordCap: 250 });
+    // The original non-compliant draft is still returned, but the method makes
+    // the rejected rewrite observable instead of indistinguishable from "none".
+    expect(result.method).toBe("llm_rejected");
+    expect(result.rewritten).toBe(false);
+    expect(result.text).toBe(longDraft);
+    expect(result.afterMetrics.structuralPass).toBe(false);
   });
 
   it("returns draft when LLM rewrite fails", async () => {
