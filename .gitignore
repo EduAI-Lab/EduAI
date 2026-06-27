@@ -22,6 +22,8 @@ eval-runs/
 
 # Dependencies
 node_modules/
+# also ignore node_modules symlinks (trailing-slash rule above matches dirs only)
+node_modules
 
 # Environment files
 .env
