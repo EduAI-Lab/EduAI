@@ -189,6 +189,7 @@ Individual database commands:
 | `npm run docker:dev:db:question-maker` | Question Maker DB only |
 | `npm run docker:dev:db:down` | Stop and remove Compose services (data volumes are kept) |
 | `npm run docker:dev:db:logs` | Follow database logs |
+| `npm run docker:dev:nuke` | **Full teardown** — stop all services and delete all data volumes (irreversible; use when you need a clean slate) |
 
 `docker compose up --wait` requires Docker Compose v2 with healthcheck support.
 
