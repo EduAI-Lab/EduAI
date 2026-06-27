@@ -22,6 +22,8 @@ import { cn } from "~/lib/utils";
 export interface ChatMessageProps {
   message: Message;
   isStreaming?: boolean;
+  /** Human-readable model name when Auto routing resolved the backend model. */
+  answeredByLabel?: string | null;
   highlightRole?: MessageHighlightRole;
   webToolsEnabled?: boolean;
 }
@@ -61,6 +63,7 @@ export function coerceMessageContent(content: unknown): string {
 export function ChatMessage({
   message,
   isStreaming = false,
+  answeredByLabel,
   highlightRole = null,
   webToolsEnabled = false,
 }: ChatMessageProps) {
@@ -206,6 +209,12 @@ export function ChatMessage({
             >
               {textContent}
             </MessageContent>
+
+            {answeredByLabel ? (
+              <p className="text-xs text-muted-foreground px-1">
+                Answered by {answeredByLabel}
+              </p>
+            ) : null}
 
             <MessageActions className="opacity-0 group-hover:opacity-100 transition-opacity">
               <MessageAction tooltip="Copy message">

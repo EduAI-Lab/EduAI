@@ -153,6 +153,15 @@ export default function Chat() {
   const [focusMode, setFocusMode] = useState(false);
   const [reorientationEpoch, setReorientationEpoch] = useState(0);
   const [webToolsEnabled, setWebToolsEnabled] = useState(false);
+  /** Registry ids from `X-Routed-Model`, keyed by assistant message id after each turn. */
+  const [routedModelByMessageId, setRoutedModelByMessageId] = useState<
+    Record<string, string>
+  >({});
+  /** Latest streamed response registry id (shown on the in-flight assistant bubble). */
+  const [streamingRoutedRegistryId, setStreamingRoutedRegistryId] = useState<
+    string | null
+  >(null);
+  const pendingRoutedRegistryIdRef = useRef<string | null>(null);
   const wasLoadingRef = useRef(false);
   const mountTimeRef = useRef(Date.now());
   const { getValidApiKeys } = useApiKeys();
@@ -274,6 +283,12 @@ export default function Chat() {
         messages: messages.slice(-1),
       }),
       onResponse: async (response) => {
+        const routedHeader = response.headers.get("X-Routed-Model")?.trim();
+        const routed =
+          routedHeader && routedHeader.length > 0 ? routedHeader : null;
+        pendingRoutedRegistryIdRef.current = routed;
+        setStreamingRoutedRegistryId(routed);
+
         const chatIdHeader = response.headers.get("X-Chat-Id");
         if (chatIdHeader && !chatId) {
           setChatId(chatIdHeader);
@@ -282,6 +297,19 @@ export default function Chat() {
         if (webToolsHeader !== null) {
           setWebToolsEnabled(webToolsHeader === "1");
         }
+      },
+      onFinish: (message) => {
+        const routed = pendingRoutedRegistryIdRef.current;
+        if (message.role === "assistant" && routed) {
+          setRoutedModelByMessageId((prev) => ({ ...prev, [message.id]: routed }));
+        }
+        pendingRoutedRegistryIdRef.current = null;
+        setStreamingRoutedRegistryId(null);
+      },
+      onError: (error) => {
+        console.error("[chat] stream error", error);
+        pendingRoutedRegistryIdRef.current = null;
+        setStreamingRoutedRegistryId(null);
       },
     });
 
@@ -354,6 +382,9 @@ export default function Chat() {
       setChatId(id);
       setMessages(transcript.messages as never);
       setSystemPrompt(transcript.chat.systemPrompt ?? null);
+      setRoutedModelByMessageId({});
+      pendingRoutedRegistryIdRef.current = null;
+      setStreamingRoutedRegistryId(null);
       setAdhdAssist(Boolean(transcript.chat.adhdAssist));
       setAssistive(Boolean(transcript.chat.adhdAssist));
       if (transcript.chat.courseCode) {
@@ -398,6 +429,9 @@ export default function Chat() {
     setChatId(null);
     setMessages([]);
     setSystemPrompt(null);
+    setRoutedModelByMessageId({});
+    pendingRoutedRegistryIdRef.current = null;
+    setStreamingRoutedRegistryId(null);
     if (typeof window !== "undefined") {
       window.sessionStorage.removeItem(ACTIVE_CHAT_KEY);
     }
@@ -472,6 +506,8 @@ export default function Chat() {
     onSelectPrompt: handlePromptSelect,
     isStudentWithCourseChat,
     disabledReason,
+    routedModelByMessageId,
+    streamingRoutedRegistryId,
   };
 
   return (
