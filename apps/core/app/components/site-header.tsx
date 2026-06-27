@@ -1,4 +1,5 @@
 import { useLocation } from "react-router"
+import { useEffect, useState } from "react"
 import { useTheme } from "@eduai/ui"
 import { BugReportSubmitDialog } from "~/components/shared/bug-report-submit-dialog";
 import { Separator } from "@eduai/ui"
@@ -26,6 +27,12 @@ export interface SiteHeaderProps {
 export function SiteHeader({ title, actions, leadingActions, breadcrumbs }: SiteHeaderProps) {
   const { pathname } = useLocation()
   const { resolvedTheme, setTheme } = useTheme()
+  const [themeMounted, setThemeMounted] = useState(false)
+
+  useEffect(() => {
+    setThemeMounted(true)
+  }, [])
+
   const resolvedTitle = title
     ?? ROUTE_TITLES[pathname]
     ?? (pathname.startsWith("/courses/") ? "Course Detail" : "EduAI")
@@ -63,10 +70,18 @@ export function SiteHeader({ title, actions, leadingActions, breadcrumbs }: Site
           <button
             type="button"
             onClick={toggleTheme}
-            aria-label={resolvedTheme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            aria-label={
+              !themeMounted
+                ? "Toggle theme"
+                : resolvedTheme === "dark"
+                  ? "Switch to light mode"
+                  : "Switch to dark mode"
+            }
             className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            {resolvedTheme === "dark" ? (
+            {!themeMounted ? (
+              <IconSun size={18} aria-hidden="true" className="opacity-0" />
+            ) : resolvedTheme === "dark" ? (
               <IconSun size={18} aria-hidden="true" />
             ) : (
               <IconMoon size={18} aria-hidden="true" />

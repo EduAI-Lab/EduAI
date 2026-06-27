@@ -31,10 +31,10 @@ export default defineConfig(({ mode }) => {
       // Monorepo hoisting can give Radix/shadcn a second React copy → "useState of null" after HMR.
       dedupe: ["react", "react-dom", "better-auth"],
     },
-    // streamdown lazy-loads shiki "highlighted-body-*" chunks; pre-bundling them in .vite/deps
-    // breaks after cache clears (browser keeps old hash → 404). Serve streamdown from source.
+    // Pre-bundle streamdown + CJS deps (style-to-js) so lazy markdown loads as ESM.
+    // Do NOT exclude streamdown — that serves CJS raw and breaks default exports.
     optimizeDeps: {
-      exclude: ["streamdown"],
+      include: ["streamdown", "@streamdown/math", "style-to-js"],
     },
     ssr: {
       noExternal: ["streamdown"],

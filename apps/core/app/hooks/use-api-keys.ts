@@ -91,9 +91,11 @@ function getSnapshot(): ApiKeysStore {
   return storeState;
 }
 
+const SERVER_SNAPSHOT: ApiKeysStore = { data: {}, isLoading: true };
+
 function getServerSnapshot(): ApiKeysStore {
   // SSR: return a stable empty loading state (no window access).
-  return { data: {}, isLoading: true };
+  return SERVER_SNAPSHOT;
 }
 
 function subscribe(listener: Listener) {
