@@ -31,11 +31,22 @@ export default defineConfig(({ mode }) => {
       // Monorepo hoisting can give Radix/shadcn a second React copy → "useState of null" after HMR.
       dedupe: ["react", "react-dom", "better-auth"],
     },
+    // streamdown lazy-loads shiki "highlighted-body-*" chunks; pre-bundling them in .vite/deps
+    // breaks after cache clears (browser keeps old hash → 404). Serve streamdown from source.
+    optimizeDeps: {
+      exclude: ["streamdown"],
+    },
+    ssr: {
+      noExternal: ["streamdown"],
+    },
     server: {
       port: 3000,
       // Apache reverse proxy sends Host: dev.eduai.ok.ubc.ca; Vite 6+ rejects unknown hosts by default.
       host: true,
       allowedHosts: ["dev.eduai.ok.ubc.ca", "localhost", "127.0.0.1"],
+      headers: {
+        "Cache-Control": "no-store",
+      },
       fs: {
         allow: [monorepoRoot],
       },
