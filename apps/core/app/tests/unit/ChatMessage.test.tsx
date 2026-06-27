@@ -34,14 +34,14 @@ describe("ChatMessage — user message", () => {
     expect(screen.getByText("Hello from user")).toBeInTheDocument();
   });
 
-  it("renders with right-aligned layout", () => {
+  it("renders in a muted bubble (flat transcript layout)", () => {
     const { container } = render(<ChatMessage message={userMessage} />);
-    expect(container.querySelector(".flex.justify-end")).toBeInTheDocument();
+    expect(container.querySelector(".rounded-2xl.bg-muted\\/60")).toBeInTheDocument();
   });
 
-  it("renders a 'U' avatar fallback", () => {
+  it("does not render legacy avatar labels", () => {
     render(<ChatMessage message={userMessage} />);
-    expect(screen.getByText("U")).toBeInTheDocument();
+    expect(screen.queryByText("U")).not.toBeInTheDocument();
   });
 
   it("marks user message text as a reading surface", () => {
@@ -60,9 +60,9 @@ describe("ChatMessage — AI message", () => {
     expect(screen.getByText("Hello from AI")).toBeInTheDocument();
   });
 
-  it("renders an 'AI' avatar fallback", () => {
+  it("does not render legacy avatar labels", () => {
     render(<ChatMessage message={aiMessage} />);
-    expect(screen.getByText("AI")).toBeInTheDocument();
+    expect(screen.queryByText("AI")).not.toBeInTheDocument();
   });
 
   it("renders a copy button", () => {

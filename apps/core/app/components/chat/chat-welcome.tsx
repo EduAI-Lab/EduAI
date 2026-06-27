@@ -1,4 +1,3 @@
-import { IconRobot } from "@tabler/icons-react";
 import { SuggestedPrompts } from "./suggested-prompts";
 
 export interface ChatWelcomeProps {
@@ -10,35 +9,19 @@ export interface ChatWelcomeProps {
   disabled?: boolean;
 }
 
-export function ChatWelcome({ selectedModelInfo, onSelectPrompt, disabled }: ChatWelcomeProps) {
+function greetingForTime(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
+}
+
+export function ChatWelcome({ onSelectPrompt, disabled }: ChatWelcomeProps) {
   return (
-    <div className="flex flex-col items-center justify-center min-h-[360px] text-center px-4 py-8">
-      <div
-        className="flex items-center justify-center mb-5 rounded-2xl"
-        style={{
-          width: 64,
-          height: 64,
-          background: "var(--primary)",
-          borderRadius: 16,
-        }}
-      >
-        <IconRobot className="h-8 w-8 text-primary-foreground" stroke={1.5} />
-      </div>
-
-      <h2 className="text-xl font-bold text-foreground mb-1.5">
-        What would you like to know?
+    <div className="flex flex-col items-center justify-center min-h-[40vh] text-center px-4 py-10">
+      <h2 className="text-2xl font-medium text-foreground mb-8 tracking-tight">
+        {greetingForTime()}. How can I help you today?
       </h2>
-      {selectedModelInfo && (
-        <p className="text-sm text-muted-foreground mb-6">
-          Powered by {selectedModelInfo.name}
-        </p>
-      )}
-      {!selectedModelInfo && (
-        <p className="text-sm text-muted-foreground mb-6 max-w-sm leading-relaxed">
-          Select a course below to ground your questions in specific materials, or ask anything.
-        </p>
-      )}
-
       <SuggestedPrompts onSelectPrompt={onSelectPrompt} disabled={disabled} />
     </div>
   );

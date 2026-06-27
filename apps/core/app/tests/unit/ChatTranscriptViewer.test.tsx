@@ -37,7 +37,7 @@ describe("ChatTranscriptViewer", () => {
     renderViewer({ messages: [], continueChatId: "chat-abc-123" });
     const link = screen.getByText("Continue in chat").closest("a");
     expect(link).toBeInTheDocument();
-    expect(link).toHaveAttribute("href", "/chat?chatId=chat-abc-123");
+    expect(link).toHaveAttribute("href", "/chat/chat-abc-123");
   });
 
   it("shows the loading spinner when isLoading is true", () => {
