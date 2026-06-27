@@ -9,6 +9,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
+- [core] feat: UBC password policy enforcement — three-phase implementation: (1) strength validation (8-char complex or 16-char passphrase) on all password-setting paths via a Better Auth `before` hook; (2) no-reuse-of-last-10 check using `verify`-based hash comparison against `PasswordHistory` records; (3) annual rotation gate in the `root.tsx` loader that redirects to `/settings?expired=1` on every page load until the password is updated. Settings page reorganised: Account tab (change-password + student number), Providers tab, Canvas tab. (#339, #769, @GlowyBlack, 2026-06-24)
 - [ai-tutor] feat: Mirror Core `TA` enrollments into AI Tutor and surface TA-taught courses — `GET /api/courses` now returns TA-enrolled offerings (unpublished included, no progress) alongside the TA's published student-enrolled courses, so course TAs see their teaching courses in the instructor shell. (#745, @Ayyhab, 2026-06-25)
 - [ai-tutor] tests: Add `nav.test.ts` (every role's nav label is "Courses"; admin nav keeps Bug Reports and excludes user-management/enrollments) and an api-client 403 regression guarding against the login-redirect loop. (#745, @Ayyhab, 2026-06-25)
 - [ci] ci: Add a Backend Coverage Report workflow — runs unit+integration coverage for the three backends on every push to `development`, aggregates them, and commits a Markdown summary to `eduai-summer-2026/reports/coverage/`. (#773, @abdullahmoh21, 2026-06-25)
@@ -32,6 +33,20 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [question-maker] tests: Unit and integration tests for the QM reconciliation cron. (#PR, @evanbones, 2026-06-23)
 - [docs] docs: `docs/CRON_JOBS.md` — describes registered cron jobs, schedules, trigger behavior, and local testing steps. (#634, #283, #643, @evanbones, 2026-06-23)
 - [core] feat: Add UBC chatbot disclaimer banner and full terms dialog on `/chat`. (#575, @superbolt08, 2026-06-23) — [#753](https://github.com/EduAI-Lab/EduAI/pull/753)
+- [core] feat: Chat UX overhaul from ADHD Assist pilot participant feedback — a persistent conversation history rail on `/chat` (New chat lives only in the rail), a dedicated `/chat/:chatId` route whose loader hydrates the transcript from the DB so the route (not sessionStorage) is the source of truth for the open conversation, a course selector and starter chips in the composer, and the sidebar toggle moved into the blue EduAI header. (#695, #700, #708, @Ayyhab, 2026-06-24) — [#751](https://github.com/EduAI-Lab/EduAI/pull/751)
+- [core] feat: Assistive display relabeling — `ChatMessage` rewrites `**Top summary**` → `**TLDR**` and `**Next?**` → `**Continue**` at render time only; stored DB text and Phase 3 oversight metrics keep the original anchors. (#699, @Ayyhab, 2026-06-24) — [#751](https://github.com/EduAI-Lab/EduAI/pull/751)
+- [core] tests: Unit tests for the chat route loader (`loadChatTranscript` access/hydration/non-editable oversight reads), assistive display relabeling, and chat-history row label / relative-time helpers. (#708, @Ayyhab, 2026-06-24) — [#751](https://github.com/EduAI-Lab/EduAI/pull/751)
+
+### Changed
+
+- [core] refactor: Extract a shared chat route module (`app/lib/chat/chat-route.server.ts`) used by both `/chat` and `/chat/:chatId` — base loader (models + preferences), the preference-save action, and DB transcript hydration; split the monolithic `chat.tsx` into `chat-screen.tsx` plus history components (`chat-history-rail`, `chat-history-list`, `chat-history-utils`), shrinking `chat.tsx`, `chat-history-panel`, and the `chats/:chatId/messages` API route accordingly. (#708, @Ayyhab, 2026-06-24) — [#751](https://github.com/EduAI-Lab/EduAI/pull/751)
+
+### Fixed
+
+- [core] fix: Recover persisted chat history across legacy and corrupted storage shapes — `reviveStoredMessage` / `messageToText` unwrap plain strings, AI-SDK content arrays, UIMessage parts, and double-serialized message blobs so restored chats and read-only transcripts render real markdown instead of `[object Object]`, blank bubbles, or raw JSON. (#708, @Ayyhab, 2026-06-24) — [#751](https://github.com/EduAI-Lab/EduAI/pull/751)
+- [core] fix: Keep the chat Assist and Focus toggles visible with correct contrast in focus mode. (#700, @Ayyhab, 2026-06-24) — [#751](https://github.com/EduAI-Lab/EduAI/pull/751)
+- [core] feat: Context-aware ADHD Assist turn profiles — a rules-based classifier (`resolveAdhdTurnProfile`) runs before generation when Assist is on and scopes Teacher policy, Dean oversight, chat routing, telemetry (`responseProfile` / `profileStructuralPass`), and eval scoring per profile, so structure (Top summary / Next?) and Dean are applied only when the turn needs them (full tutoring / brief clarification) and skipped for greetings, confirmations, meta, and S2.t2 redirect turns. (#712, #713, @Ayyhab, 2026-06-25) — [#714](https://github.com/EduAI-Lab/EduAI/pull/714)
+- [core] tests: Unit tests for `resolveAdhdTurnProfile` / `getProfileRequirements` (`adhd-turn-profile.test.ts`) covering per-profile classification, profile structure/Dean/word-cap requirements, and precedence regressions for acknowledgement-prefixed tutoring turns. (#712, @Ayyhab, 2026-06-25) — [#714](https://github.com/EduAI-Lab/EduAI/pull/714)
 
 ### Changed
 
@@ -43,6 +58,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
+- [core] fix: ADHD turn profile precedence — substantive-question/continuation and redirect detection now run before confirmation, greeting, and meta, so acknowledgement-prefixed tutoring turns ("Great, what is gradient descent?", "Sure, explain step 2") keep full structure + Dean instead of falling into the low-structure confirmation path; bare acknowledgements still classify as confirmation. (#712, @Ayyhab, 2026-06-25) — [#714](https://github.com/EduAI-Lab/EduAI/pull/714)
 - [core] fix: Restore AI chat code-block copy and download buttons — wire `@streamdown/code`, fix Tailwind `@source` paths for hoisted Streamdown chunks, lazy-load the ESM-only plugin on the client so E2E Docker serve starts, and pass `isAnimating={isStreaming}` so controls enable after streaming. (#667, @ebabar5, 2026-06-25) — [#768](https://github.com/EduAI-Lab/EduAI/pull/768)
 - [ai-tutor] fix: Stop the infinite redirect loop when an authenticated user opens a forbidden resource (e.g. a `UNIT_ADMIN` deep-linking to `/instructor/lesson/:id` outside their unit) — the API client now only redirects 401s to Core login and surfaces 403s as a thrown error for the route error boundary. (#745, @Ayyhab, 2026-06-25)
 - [ai-tutor] fix: Return the student/TA course list without a 500 — restore the missing `getEduAiCookieForRequest` import and probe TA enrollments with `count()` (CourseEnrollment has a composite key and no `id`) in `GET /api/courses`. (#745, @Ayyhab, 2026-06-25)
@@ -52,6 +68,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [infra] fix: Upgrade npm dependencies to resolve security vulnerabilities — `better-auth` → 1.6.22, `vitest` → 4.x, `nodemailer` → 9.x, `drizzle-orm` → 0.45.x; add `@better-auth/core@1.6.22` as a root devDependency to fix a hoisting conflict with `@better-auth/cli`'s exact version pin; upgrade `syncpack` v13→v15 and migrate config to new API. (#804, @evanbones, 2026-06-26)
 - [infra] feat: Add `docker:dev:nuke` script — `docker compose down --volumes --remove-orphans` teardown for the full dev environment including DB volumes. (#804, @evanbones, 2026-06-26)
 - [core] fix: Update integration tests to match current application behavior — `canvas.integration` link-roster no-match returns 200 (number saved for future syncs per #725); `courses.integration` validation now returns 422; `bug-reports.integration` missing auth header returns `MISSING_SERVICE_KEY`; `preferences.integration` root loader now includes `canInvite`. (#804, @evanbones, 2026-06-26)
+- [core] fix: Force React pre-bundle at startup via `optimizeDeps.include` — prevents a Vite chunk-version mismatch on first client-side navigation that left `ReactCurrentDispatcher.current` null, causing "Cannot read properties of null (reading 'useContext')" crash on the login page. (#162, @evanbones, 2026-06-26)
 
 
 ## [Week 7 — June 15–21, 2026]

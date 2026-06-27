@@ -76,7 +76,7 @@ beforeEach(() => vi.clearAllMocks());
 // ---------------------------------------------------------------------------
 
 describe("POST /api/bug-reports — service key auth", () => {
-  it("returns 401 when Authorization header is absent", async () => {
+  it("returns 401 MISSING_SERVICE_KEY when Authorization header is absent", async () => {
     const res = await action(makeActionArgs({ source: "AI_TUTOR", userId: aiTutorUserId, description: "test" }));
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual({ error: "MISSING_SERVICE_KEY" });
