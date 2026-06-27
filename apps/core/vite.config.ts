@@ -24,23 +24,20 @@ export default defineConfig(({ mode }) => {
     plugins: [tailwindcss(), reactRouter(), tsconfigPaths()],
     ssr: {
       // react-router 7.18 externalises ESM-only packages rather than bundling
-      // them. Node 20 (Docker) cannot require() .mjs files (ERR_REQUIRE_ESM),
-      // crashing react-router-serve before it binds to port 3000. Bundling
-      // these packages lets Vite transpile ESM→CJS at build time.
+      // them. Node 24 supports require(esm) natively, so most ESM-only packages
+      // are fine as externals. The two exceptions below are bundled because they
+      // have non-trivial internal resolution that works better when inlined:
       //
       // @tabler/icons-react: aliased to its ESM .mjs file below
-      // better-auth: "type":"module", main:"./dist/index.mjs"
       // @mendable/firecrawl-js: "type":"module", used in AI web tools
-      noExternal: ["@tabler/icons-react", "better-auth", "@mendable/firecrawl-js"],
+      noExternal: ["@tabler/icons-react", "@mendable/firecrawl-js"],
     },
     resolve: {
-      // Pin one copy for core (1.2.8 via root overrides). Do not alias the package root — that
-      // breaks subpath exports such as better-auth/client/plugins.
       alias: {
         "@tabler/icons-react": "@tabler/icons-react/dist/esm/icons/index.mjs",
       },
       // Monorepo hoisting can give Radix/shadcn a second React copy → "useState of null" after HMR.
-      dedupe: ["react", "react-dom", "better-auth"],
+      dedupe: ["react", "react-dom"],
     },
     // Force React to be pre-bundled at startup so Vite never discovers it lazily during
     // a first client-side navigation.
