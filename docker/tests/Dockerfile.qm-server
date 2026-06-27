@@ -7,7 +7,7 @@
 # Build context: monorepo root
 
 # ── Shared: install workspace dependencies ─────────────────────────────────
-FROM node:20-alpine AS deps
+FROM node:24-alpine AS deps
 WORKDIR /app
 
 COPY package.json package-lock.json .npmrc ./
@@ -29,7 +29,7 @@ RUN npm ci --ignore-scripts \
      && npm install --ignore-scripts --no-package-lock --workspaces=false
 
 # ── Target: test ───────────────────────────────────────────────────────────
-FROM node:20-alpine AS test
+FROM node:24-alpine AS test
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
@@ -50,7 +50,7 @@ WORKDIR /app/apps/extensions/question-maker/app/backend
 CMD ["npm", "test"]
 
 # ── Target: serve ──────────────────────────────────────────────────────────
-FROM node:20-alpine AS serve
+FROM node:24-alpine AS serve
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules

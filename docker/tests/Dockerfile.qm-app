@@ -8,7 +8,7 @@
 # "question-maker-backend": "*" as a workspace dependency.
 
 # ── Shared: install workspace dependencies ─────────────────────────────────
-FROM node:20-alpine AS deps
+FROM node:24-alpine AS deps
 WORKDIR /app
 
 COPY package.json package-lock.json .npmrc ./
@@ -23,7 +23,7 @@ COPY apps/extensions/question-maker/app/frontend/package.json ./apps/extensions/
 RUN npm ci --ignore-scripts
 
 # ── Shared test runner base ────────────────────────────────────────────────
-FROM node:20-alpine AS test-base
+FROM node:24-alpine AS test-base
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
@@ -75,7 +75,7 @@ FROM test-base AS test-integration
 CMD ["sh", "-c", "../../node_modules/.bin/vitest run --config vitest.integration.config.ts"]
 
 # ── Build ──────────────────────────────────────────────────────────────────
-FROM node:20-alpine AS build
+FROM node:24-alpine AS build
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
@@ -97,7 +97,7 @@ WORKDIR /app/apps/extensions/question-maker/app/frontend
 RUN npm run build
 
 # ── Target: serve ──────────────────────────────────────────────────────────
-FROM node:20-alpine AS serve
+FROM node:24-alpine AS serve
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
