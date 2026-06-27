@@ -144,13 +144,14 @@ describe('Courses routes', () => {
       expect(res.body).toHaveLength(0);
     });
 
-    it('returns 403 for ADMIN role', async () => {
+    it('ADMIN sees every course offering, including ones they do not own (#781)', async () => {
       const admin = makeAdmin();
       const adminApp = await createApp({ mockUser: admin });
 
       const res = await request(adminApp).get('/api/courses');
 
-      expect(res.status).toBe(403);
+      expect(res.status).toBe(200);
+      expect(res.body.map((c) => c.id)).toContain(seed.course.id);
     });
   });
 
