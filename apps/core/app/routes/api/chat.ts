@@ -967,9 +967,14 @@ export async function action({ request }: ActionFunctionArgs) {
       ...(webToolsEnabled ? { webSearch, fetchPage } : {}),
     };
 
-    // Check if the model supports tool calling (research baseline may force hybrid RAG)
+    // Check if the model supports tool calling (research baseline may force hybrid RAG).
+    // vLLM 32B tool loops hang on dev unless Hermes tool parser is fully wired — default to
+    // hybrid RAG for vllm:* chat (same as research scripts). Opt in with VLLM_CHAT_TOOLS=1.
     const supportsTools = await modelSupportsTools(resolvedModelId);
-    const useToolCalling = supportsTools && !forceHybridRag;
+    const effectiveForceHybridRag =
+      forceHybridRag ||
+      (parsedModel.providerId === "vllm" && process.env.VLLM_CHAT_TOOLS !== "1");
+    const useToolCalling = supportsTools && !effectiveForceHybridRag;
 
     let streamConfig;
     let shouldPrefetchWebTools = false;
@@ -981,7 +986,8 @@ export async function action({ request }: ActionFunctionArgs) {
       const userQuestion = lastUserMessageTextForTelemetry;
 
       shouldPrefetchWebTools =
-        hybridWebTools || (forceHybridRag && inferHybridWebToolMode(userQuestion) !== null);
+        hybridWebTools ||
+        (effectiveForceHybridRag && inferHybridWebToolMode(userQuestion) !== null);
       let hybridWebContextText = "";
       if (shouldPrefetchWebTools) {
         const webToolResult = await buildHybridWebToolContext(userQuestion);
@@ -1202,7 +1208,7 @@ ${buildRagSystemBlock(preloadedRagContext, { toolPath: true })}`;
       routedByAuto: wasAuto,
       approach: useToolCalling ? "tool_calling" : "hybrid_rag",
       adhdOversight: needsOversight,
-      forceHybridRag,
+      forceHybridRag: effectiveForceHybridRag,
       hybridWebTools: shouldPrefetchWebTools ?? false,
       courseRagNeeded,
       ...llmPromptSizeHints(streamConfig.system, modelMessages),
