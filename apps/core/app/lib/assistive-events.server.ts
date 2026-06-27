@@ -2,9 +2,12 @@ import type { Prisma } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 import {
   computeAdhdResponseMetrics,
+  isProfileStructuralPass,
   withStructuralPass,
   type AdhdResponseMetrics,
 } from "~/lib/ai/adhd-metrics";
+import type { AdhdTurnProfile } from "~/lib/ai/adhd-turn-profile";
+import type { OversightMethod } from "~/lib/ai/adhd-oversight";
 
 /** Server-written after each assistant turn. */
 export const ASSISTIVE_EVENT_RESPONSE_COMPLIANCE = "response_compliance" as const;
@@ -54,11 +57,13 @@ export type ResponseComplianceExtras = {
   durationMs?: number;
   wordCap?: number;
   oversightRewritten?: boolean;
-  oversightMethod?: "none" | "deterministic" | "llm" | "llm_failed";
+  oversightMethod?: OversightMethod;
   preStructuralPass?: boolean;
   oversightDurationMs?: number;
   oversightPromptTokens?: number;
   oversightCompletionTokens?: number;
+  responseProfile?: AdhdTurnProfile;
+  profileStructuralPass?: boolean;
 };
 
 export async function recordResponseComplianceEvent(args: {
@@ -73,6 +78,15 @@ export async function recordResponseComplianceEvent(args: {
       wordCap: args.extras?.wordCap,
     }),
   );
+  const profileStructuralPass =
+    args.extras?.profileStructuralPass ??
+    (args.extras?.responseProfile
+      ? isProfileStructuralPass(
+          metrics,
+          args.extras.responseProfile,
+          args.assistantText,
+        )
+      : null);
   const payload: Prisma.InputJsonValue = {
     ...metrics,
     model: args.extras?.model ?? null,
@@ -86,6 +100,8 @@ export async function recordResponseComplianceEvent(args: {
     oversightDurationMs: args.extras?.oversightDurationMs ?? null,
     oversightPromptTokens: args.extras?.oversightPromptTokens ?? null,
     oversightCompletionTokens: args.extras?.oversightCompletionTokens ?? null,
+    responseProfile: args.extras?.responseProfile ?? null,
+    profileStructuralPass,
   };
 
   await recordAssistiveEvent({

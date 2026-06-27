@@ -44,6 +44,7 @@ model User {
   taughtCourses             Course[]               @relation("CourseInstructor")
   auditLogs                 AuditLog[]
   systemLogs                SystemLog[]
+  passwordHistory           PasswordHistory[]
 
   @@map("user")
 }
@@ -74,6 +75,7 @@ model Account {
   refreshTokenExpiresAt DateTime?
   scope                 String?
   password              String?
+  passwordChangedAt     DateTime?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
   user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -776,6 +778,19 @@ model LogRetentionPolicy {
   updatedAt           DateTime @updatedAt
 
   @@map("log_retention_policy")
+}
+
+/// Stores the last 10 password hashes per user for the UBC no-reuse policy (#339).
+/// Hashes are bcrypt/scrypt — never plaintext. Reuse is checked by verify(candidate, hash).
+model PasswordHistory {
+  id           String   @id @default(cuid())
+  userId       String
+  passwordHash String
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("password_history")
 }
 
 enum CronJobStatus {

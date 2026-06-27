@@ -146,6 +146,8 @@ export function AppSidebar({
             icon: <IconSettings size={15} strokeWidth={1.75} />,
             href: "/settings",
           },
+          // TODO: remove Account menu item (note carried over from the old Core
+          // nav-user, which was extracted into @eduai/ui during the QM redesign).
           {
             label: "Account",
             icon: <IconUser size={15} strokeWidth={1.75} />,
