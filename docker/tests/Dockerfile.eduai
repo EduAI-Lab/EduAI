@@ -6,7 +6,7 @@
 # Build context: monorepo root
 
 # ── Shared: install workspace dependencies ─────────────────────────────────
-FROM node:20-alpine AS deps
+FROM node:24-alpine AS deps
 WORKDIR /app
 
 COPY package.json package-lock.json .npmrc ./
@@ -25,7 +25,7 @@ RUN npm ci --ignore-scripts \
      && npm run build -w @eduai/types
 
 # ── Target: test ───────────────────────────────────────────────────────────
-FROM node:20-alpine AS test
+FROM node:24-alpine AS test
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
@@ -48,7 +48,7 @@ WORKDIR /app/apps/core
 CMD ["npx", "vitest", "run"]
 
 # ── Build: compile for production serve ────────────────────────────────────
-FROM node:20-alpine AS build
+FROM node:24-alpine AS build
 WORKDIR /app
 
 COPY --from=deps /app/package.json      ./
@@ -66,7 +66,7 @@ WORKDIR /app/apps/core
 RUN npm run build
 
 # ── Target: serve ──────────────────────────────────────────────────────────
-FROM node:20-alpine AS serve
+FROM node:24-alpine AS serve
 WORKDIR /app
 
 COPY --from=deps /app/node_modules            ./node_modules
