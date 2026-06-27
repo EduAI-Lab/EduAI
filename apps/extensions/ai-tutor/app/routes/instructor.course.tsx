@@ -23,6 +23,7 @@ import { useOptimistic, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { PageHeading } from '@eduai/ui';
 import { PublishStatusButton } from '../components/PublishStatusButton';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import api from '../lib/api';
 import type { Course, Module } from '../lib/types';
 import type { Route } from './+types/instructor.course';
@@ -83,6 +84,11 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
   const [selectedModuleIds, setSelectedModuleIds] = useState<Set<number>>(new Set());
   const [importing, setImporting] = useState(false);
   const [publishingId, setPublishingId] = useState<number | null>(null);
+  const [pendingPublish, setPendingPublish] = useState<{
+    id: number;
+    isPublished: boolean;
+    title: string;
+  } | null>(null);
   const modulesRequestIdRef = useRef(0);
 
   const [oModules, addModuleOpt] = useOptimistic(
@@ -443,7 +449,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                           blockedReason={tooltipMessage}
                           onClick={() => {
                             if (busy || blocked) return;
-                            togglePublish(m.id, m.isPublished);
+                            setPendingPublish({ id: m.id, isPublished: m.isPublished, title: m.title });
                           }}
                         />
                       </div>
@@ -457,6 +463,29 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
           </>
         ) : null}
       </div>
+      <ConfirmDialog
+        open={pendingPublish !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingPublish(null);
+        }}
+        title={
+          pendingPublish?.isPublished
+            ? `Unpublish "${pendingPublish.title}"?`
+            : `Publish "${pendingPublish?.title}"?`
+        }
+        description={
+          pendingPublish?.isPublished
+            ? 'Students will lose access to this content.'
+            : 'Students will be able to see this content.'
+        }
+        confirmLabel={pendingPublish?.isPublished ? 'Unpublish' : 'Publish'}
+        variant={pendingPublish?.isPublished ? 'destructive' : 'default'}
+        onConfirm={() => {
+          if (!pendingPublish) return;
+          void togglePublish(pendingPublish.id, pendingPublish.isPublished);
+          setPendingPublish(null);
+        }}
+      />
     </AppShell>
   );
 }
