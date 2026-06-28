@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 
 import { CanvasFetchDialog } from "~/components/canvas/canvas-fetch-dialog";
-import { listCanvasCourses } from "~/lib/canvas/client";
+import { listCanvasCourses, syncCanvasCourses } from "~/lib/canvas/client";
 
 vi.mock("~/lib/canvas/client", () => ({
   listCanvasCourses: vi.fn(),
+  syncCanvasCourses: vi.fn(),
 }));
 
 const allCourses = [
@@ -46,6 +47,7 @@ describe("CanvasFetchDialog", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(listCanvasCourses).mockResolvedValue(allCourses);
+    vi.mocked(syncCanvasCourses).mockResolvedValue({ synced: [], unsynced: [], errors: [] });
   });
 
   it("shows all Canvas courses — synced and unsynced", async () => {
@@ -54,7 +56,6 @@ describe("CanvasFetchDialog", () => {
     await waitFor(() => {
       expect(screen.getByText("Intro to CS")).toBeInTheDocument();
     });
-
     expect(screen.getByText("Data Structures")).toBeInTheDocument();
   });
 
@@ -62,12 +63,14 @@ describe("CanvasFetchDialog", () => {
     renderDialog();
 
     await waitFor(() => {
-      const link = screen.getByRole("link", { name: /Intro to CS/ });
-      expect(link).toHaveAttribute("href", "/courses/core-1");
+      expect(screen.getByRole("link", { name: /Intro to CS/ })).toHaveAttribute(
+        "href",
+        "/courses/core-1",
+      );
     });
   });
 
-  it("renders unsynced courses as non-clickable disabled rows", async () => {
+  it("renders unsynced courses with checkboxes, not as links", async () => {
     renderDialog();
 
     await waitFor(() => {
@@ -75,7 +78,32 @@ describe("CanvasFetchDialog", () => {
     });
 
     expect(screen.queryByRole("link", { name: /Data Structures/ })).not.toBeInTheDocument();
-    expect(screen.getByText("Not yet fetched into EduAI")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox")).toBeInTheDocument();
+  });
+
+  it("calls syncCanvasCourses with checked unsynced course ids", async () => {
+    renderDialog();
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Data Structures")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByLabelText("Data Structures"));
+    fireEvent.click(screen.getByRole("button", { name: /fetch selected/i }));
+
+    await waitFor(() => {
+      expect(syncCanvasCourses).toHaveBeenCalledWith({ canvasCourseIds: ["102"] });
+    });
+  });
+
+  it("disables the Fetch selected button when no courses are checked", async () => {
+    renderDialog();
+
+    await waitFor(() => {
+      expect(screen.getByText("Data Structures")).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole("button", { name: /fetch selected/i })).toBeDisabled();
   });
 
   it("shows empty state when no Canvas courses exist", async () => {
@@ -86,15 +114,5 @@ describe("CanvasFetchDialog", () => {
     await waitFor(() => {
       expect(screen.getByText(/no canvas courses found/i)).toBeInTheDocument();
     });
-  });
-
-  it("does not render checkboxes", async () => {
-    renderDialog();
-
-    await waitFor(() => {
-      expect(screen.getByText("Intro to CS")).toBeInTheDocument();
-    });
-
-    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   });
 });
