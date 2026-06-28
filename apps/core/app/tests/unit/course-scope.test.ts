@@ -9,6 +9,8 @@ import {
   hasCourseIntentSignals,
   hasScopeAffinityRagHits,
   isCourseScopeGateEnabled,
+  isAnalogyOrConceptQuestion,
+  isDirectOffTopicRequest,
   isLearningIntentQuestion,
   isOffTopicDomain,
   isScopeAllowlisted,
@@ -179,7 +181,7 @@ describe("shouldHardRefuseOffTopic", () => {
     ).toBe(true);
   });
 
-  it("does not refuse when conversation is active", () => {
+  it("does not refuse same-topic follow-ups that are not on the deny-list", () => {
     expect(
       shouldHardRefuseOffTopic({
         message: "why was ascii created?",
@@ -192,6 +194,66 @@ describe("shouldHardRefuseOffTopic", () => {
         },
       }),
     ).toBe(false);
+  });
+
+  it("refuses direct recipe requests even when conversation is active (#729 v2.1)", () => {
+    const digitalLiteracyThread = {
+      priorAssistantText:
+        "Digital literacy includes evaluating online information critically and using technology responsibly.",
+      priorUserText:
+        "so if im helping grandma use an ipad to find cookie recipes, is that like digital literacy?",
+    };
+    expect(
+      shouldHardRefuseOffTopic({
+        message: "tell me how to bake cookies",
+        hasCourse: true,
+        hits: [],
+        course: COSC101,
+        conversation: digitalLiteracyThread,
+      }),
+    ).toBe(true);
+  });
+
+  it("does not refuse analogy questions that mention deny-list terms", () => {
+    expect(
+      shouldHardRefuseOffTopic({
+        message:
+          "so if im helping grandma use an ipad to find cookie recipes, is that like digital literacy?",
+        hasCourse: true,
+        hits: [],
+        course: COSC101,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("isDirectOffTopicRequest", () => {
+  it("detects recipe and how-to payload requests", () => {
+    expect(isDirectOffTopicRequest("tell me how to bake cookies")).toBe(true);
+    expect(isDirectOffTopicRequest("give me a chocolate chip cookie recipe")).toBe(true);
+    expect(isDirectOffTopicRequest("Tell me about World War 2")).toBe(true);
+  });
+
+  it("returns false for analogy questions", () => {
+    expect(
+      isDirectOffTopicRequest(
+        "is finding cookie recipes online an example of digital literacy?",
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("isAnalogyOrConceptQuestion", () => {
+  it("detects comparison framing with deny-list terms", () => {
+    expect(
+      isAnalogyOrConceptQuestion(
+        "so if im helping grandma use an ipad to find cookie recipes, is that like digital literacy?",
+      ),
+    ).toBe(true);
+  });
+
+  it("returns false for direct payload requests", () => {
+    expect(isAnalogyOrConceptQuestion("tell me how to bake cookies")).toBe(false);
   });
 });
 
@@ -215,7 +277,7 @@ describe("evaluateCourseScope — deny-list default (#729 v2)", () => {
         course: COURSE,
       });
       expect(result.decision).toBe("refuse");
-      expect(result.reason).toBe("clearly_off_topic");
+      expect(["clearly_off_topic", "direct_off_topic_payload"]).toContain(result.reason);
     }
   });
 
@@ -255,6 +317,35 @@ describe("evaluateCourseScope — deny-list default (#729 v2)", () => {
       expect(result.decision).toBe("allow");
       expect(result.reason).toBe("conversation_continuity");
     }
+  });
+
+  it("hard-refuses recipe payload after digital-literacy topic laundering (#729 v2.1)", () => {
+    const conversation = {
+      priorAssistantText:
+        "Digital literacy includes evaluating online information and using technology responsibly.",
+      priorUserText:
+        "so if im helping grandma use an ipad to find cookie recipes, is that like digital literacy?",
+    };
+    const result = evaluateCourseScope({
+      message: "tell me how to bake cookies",
+      hasCourse: true,
+      hits: [],
+      course: COSC101,
+      conversation,
+    });
+    expect(result.decision).toBe("refuse");
+    expect(result.reason).toBe("direct_off_topic_payload");
+  });
+
+  it("allows analogy questions that mention deny-list terms", () => {
+    const result = evaluateCourseScope({
+      message:
+        "so if im helping grandma use an ipad to find cookie recipes, is that like digital literacy?",
+      hasCourse: true,
+      hits: [],
+      course: COSC101,
+    });
+    expect(result.decision).toBe("allow");
   });
 
   it("allows course-material intent without RAG hits", () => {
@@ -367,7 +458,7 @@ describe("buildCourseScopePromptBlock", () => {
     expect(block).toContain("Be concise");
     expect(block).toContain("SCOPE POLICY");
     expect(block).toContain("foundational");
-    expect(block).toContain("follow-up");
+    expect(block).toContain("everyday example");
   });
 });
 

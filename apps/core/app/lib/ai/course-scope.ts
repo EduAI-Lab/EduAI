@@ -45,11 +45,45 @@ const NON_FOUNDATIONAL_TOPIC_PATTERN =
 const LEARNING_INTENT_PATTERN =
   /^(what|why|how|who|when|where|which|explain|define|describe|tell me|can you|could you|help me|is there|are there)\b/i;
 
+/** User wants off-topic content delivered (recipe, how-to), not a course-concept discussion. */
+const DIRECT_OFF_TOPIC_PAYLOAD_PATTERN =
+  /\b(tell me how to|tell me about|give me|show me how to|write me|what are the steps|step by step|instructions for|recipe for|how do i bake|how do i make|how to bake|how to make|how can i bake|how can i make)\b/i;
+
+/** Off-topic term used as illustration/comparison for a course concept (#729 v2.1). */
+const ANALOGY_FRAMING_PATTERN =
+  /\b(is (that|this|it)( \w+){0,4} (like|an example|considered|part of|a form of|similar to|related to)|would (that|this|it)( \w+){0,3} (be|count)|does (that|this|it)( \w+){0,3} (count|relate|mean|apply)|could (that|this|it)( \w+){0,3} (be|count)|count as|an example of|in that sense|same as|similar to)\b/i;
+
 const SCOPE_REFUSAL_SNIPPET = "can't help with unrelated topics";
 
 /** Clearly off-topic domains — used for deny-list hard refuse only. */
 export function isOffTopicDomain(message: string): boolean {
   return NON_FOUNDATIONAL_TOPIC_PATTERN.test(message.toLowerCase());
+}
+
+/**
+ * Direct request for off-topic payload (recipe, how-to steps) — not an analogy
+ * question about whether an example illustrates a course concept.
+ */
+export function isDirectOffTopicRequest(message: string): boolean {
+  if (!isOffTopicDomain(message)) return false;
+  return DIRECT_OFF_TOPIC_PAYLOAD_PATTERN.test(message.toLowerCase());
+}
+
+/**
+ * Deny-list term appears in a comparison / "is X like Y?" question — allow Layer A
+ * to answer conceptually without delivering the off-topic payload.
+ */
+export function isAnalogyOrConceptQuestion(message: string): boolean {
+  if (!isOffTopicDomain(message)) return false;
+
+  const trimmed = message.trim();
+  const lower = trimmed.toLowerCase();
+  const isQuestion =
+    trimmed.includes("?") ||
+    /^(is|are|would|could|does|do|should|can|if)\b/i.test(trimmed);
+
+  if (!isQuestion) return false;
+  return ANALOGY_FRAMING_PATTERN.test(lower);
 }
 
 /** Course-logistics signals — course-framing in the question itself. */
@@ -328,8 +362,9 @@ export function buildScopeConversationContext(
 }
 
 /**
- * Hard-refuse only when deny-list matches AND no course-framing signals.
- * RAG noise alone does not override deny-list (screenshot regression).
+ * Hard-refuse when deny-list matches unless course-framed or analogy question.
+ * Conversation continuity does NOT bypass deny-list (#729 v2.1 — topic laundering fix).
+ * Direct payload requests (recipes, how-tos) always refuse mid-thread.
  */
 export function shouldHardRefuseOffTopic(input: EvaluateCourseScopeInput): boolean {
   if (!isOffTopicDomain(input.message)) {
@@ -340,11 +375,11 @@ export function shouldHardRefuseOffTopic(input: EvaluateCourseScopeInput): boole
     return false;
   }
 
-  if (hasConversationCourseContext(input.conversation, input.course)) {
+  if (input.course && hasCourseMetadataOverlap(input.message, input.course)) {
     return false;
   }
 
-  if (input.course && hasCourseMetadataOverlap(input.message, input.course)) {
+  if (isAnalogyOrConceptQuestion(input.message)) {
     return false;
   }
 
@@ -376,7 +411,10 @@ export function evaluateCourseScope(
   }
 
   if (shouldHardRefuseOffTopic(input)) {
-    return { decision: "refuse", reason: "clearly_off_topic" };
+    const reason = isDirectOffTopicRequest(input.message)
+      ? "direct_off_topic_payload"
+      : "clearly_off_topic";
+    return { decision: "refuse", reason };
   }
 
   const course = input.course;
@@ -428,8 +466,9 @@ export function buildCourseScopePromptBlock(course: CourseScopeContext): string 
     "- Prioritize questions related to this course and its subject area.",
     "- Answer foundational and prerequisite concepts when they support course learning, even if not in uploaded materials — note when you are giving general background vs citing course materials.",
     "- Politely decline clearly unrelated questions (e.g. hobbies, recipes, unrelated subjects).",
+    "- When the user asks whether an everyday example illustrates a course concept, explain the concept — do not provide step-by-step off-topic instructions (recipes, hobby how-tos) when asked directly.",
     "- When course materials do not contain an answer, say so clearly — do not invent syllabus-specific facts.",
-    "- In an ongoing conversation, treat follow-up questions as continuing the current topic unless the user clearly switches subject.",
+    "- In an ongoing conversation, treat follow-up questions as continuing the current course topic — not as permission to deliver unrelated content.",
   );
 
   return lines.join("\n");

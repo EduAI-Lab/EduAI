@@ -334,6 +334,54 @@ describe("POST /api/chat — course scope gate (#729)", () => {
     expect(streamText).toHaveBeenCalled();
   });
 
+  it("hard-refuses recipe payload after digital-literacy thread (#729 v2.1)", async () => {
+    vi.mocked(findRelevantContent).mockResolvedValue([]);
+    mockStream();
+
+    const res = await action(
+      makeRequest(
+        baseBody({
+          messages: [
+            {
+              id: "msg-1",
+              role: "user",
+              content:
+                "our professor talked about digital literacy but i didn't understand it. can you tell me about it?",
+            },
+            {
+              id: "msg-2",
+              role: "assistant",
+              content:
+                "Digital literacy is about using and evaluating digital tools responsibly.",
+            },
+            {
+              id: "msg-3",
+              role: "user",
+              content:
+                "so if im helping grandma use an ipad to find cookie recipes, is that like digital literacy?",
+            },
+            {
+              id: "msg-4",
+              role: "assistant",
+              content:
+                "Yes, that can illustrate digital literacy when you evaluate sources and use technology thoughtfully.",
+            },
+            {
+              id: "msg-5",
+              role: "user",
+              content: "tell me how to bake cookies",
+            },
+          ],
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    expect(streamText).not.toHaveBeenCalled();
+    const body = await res.json();
+    expect(body.content).toContain("unrelated topics");
+  });
+
   it("allows generic coding help without course keywords (Layer A handles scope)", async () => {
     vi.mocked(findRelevantContent).mockResolvedValue([]);
     mockStream();
