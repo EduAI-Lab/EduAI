@@ -1,5 +1,5 @@
 import type { HybridRagHit } from "~/lib/chat-rag";
-import { ragInjectModerateSimilarity } from "~/lib/ai/course-rag-policy";
+import { ragScopeAllowSimilarity } from "~/lib/ai/course-rag-policy";
 
 /** Course fields injected into the chat system prompt (Layer A). */
 export type CourseScopeContext = {
@@ -10,6 +10,12 @@ export type CourseScopeContext = {
   topics?: string[];
 };
 
+/** Recent thread context for follow-up continuity (#729 v2). */
+export type CourseScopeConversationContext = {
+  priorAssistantText?: string | null;
+  priorUserText?: string | null;
+};
+
 export type CourseScopeDecision = "allow" | "refuse";
 
 export type EvaluateCourseScopeInput = {
@@ -17,6 +23,7 @@ export type EvaluateCourseScopeInput = {
   hasCourse: boolean;
   hits: HybridRagHit[];
   course?: CourseScopeContext | null;
+  conversation?: CourseScopeConversationContext | null;
   gateEnabled?: boolean;
 };
 
@@ -31,21 +38,21 @@ const GREETING_PATTERN =
 const META_SCOPE_PATTERN =
   /\b(what can you help|how can you help|what do you do|who are you|what are you)\b/i;
 
-const CODE_REQUEST_PATTERN =
-  /\b(write|implement|create|debug|fix)\b.*\b(code|function|program|script|algorithm)\b|\b(python|javascript|typescript|java|c\+\+)\b.*\b(code|function|implement)\b/i;
-
-const FOUNDATIONAL_QUESTION_PATTERN =
-  /^(what is|what are|explain|how does|define|describe|tell me about)\b/i;
-
+/** High-confidence distraction domains — hard-refuse only when these match (#729). */
 const NON_FOUNDATIONAL_TOPIC_PATTERN =
   /\b(world war|wwii|ww2|war ii|social media|walking every|overall health|wellness|physical health|super bowl|netflix|capital of|stock market|roman empire|poem about|joke about|dinosaur|celebrity|football|basketball|recipe|bake|baking|cookie|marathon|movie|tv show|invest in)\b/i;
 
-/** Clearly off-topic domains — used to block RAG-hit bypass and foundational allowance. */
+const LEARNING_INTENT_PATTERN =
+  /^(what|why|how|who|when|where|which|explain|define|describe|tell me|can you|could you|help me|is there|are there)\b/i;
+
+const SCOPE_REFUSAL_SNIPPET = "can't help with unrelated topics";
+
+/** Clearly off-topic domains — used for deny-list hard refuse only. */
 export function isOffTopicDomain(message: string): boolean {
   return NON_FOUNDATIONAL_TOPIC_PATTERN.test(message.toLowerCase());
 }
 
-/** Course-logistics signals — bare topic tokens only count with these present. */
+/** Course-logistics signals — course-framing in the question itself. */
 const COURSE_INTENT_KEYWORDS = [
   "assignment",
   "chapter",
@@ -170,18 +177,18 @@ export function isScopeAllowlisted(message: string): boolean {
   return false;
 }
 
-/** Coding help only when the request is plausibly for this course (#729 v1.2). */
-export function isCodingScopeAllowlisted(message: string): boolean {
-  const lower = message.trim().toLowerCase();
-  if (!CODE_REQUEST_PATTERN.test(lower)) return false;
-  return hasCourseIntentSignals(message);
-}
-
-/** Substantive turns are candidates for the zero-chunk gate. */
+/** Substantive turns are candidates for the scope gate deny-list check. */
 export function isSubstantiveForScope(message: string): boolean {
   const trimmed = message.trim();
   if (!trimmed || isScopeAllowlisted(trimmed)) return false;
   return trimmed.includes("?") || trimmed.length >= 20;
+}
+
+/** Plausible learning question in a course chat (fail-open signal). */
+export function isLearningIntentQuestion(message: string): boolean {
+  const trimmed = message.trim();
+  if (!trimmed) return false;
+  return trimmed.includes("?") || LEARNING_INTENT_PATTERN.test(trimmed);
 }
 
 export function hasCourseIntentSignals(message: string): boolean {
@@ -211,16 +218,19 @@ function normalizeCourseCode(code: string): string {
   return code.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-/** RAG hits must clear the moderate inject bar before they bypass the scope gate. */
-export function hasScopeRelevantRagHits(hits: HybridRagHit[]): boolean {
-  const threshold = ragInjectModerateSimilarity();
+function isScopeRefusalMessage(text: string): boolean {
+  return text.includes(SCOPE_REFUSAL_SNIPPET);
+}
+
+/** Lower bar than RAG inject — weak affinity still means "probably course-related". */
+export function hasScopeAffinityRagHits(hits: HybridRagHit[]): boolean {
+  const threshold = ragScopeAllowSimilarity();
   return hits.some((hit) => (hit.similarity ?? 0) >= threshold);
 }
 
 /**
  * Strong overlap: course code/name, multi-word topics, or topic tokens with
- * explicit course-intent signals. Avoids false positives like "year" or bare
- * topic names in unrelated contexts (#729 v1.2).
+ * explicit course-intent signals.
  */
 export function hasCourseMetadataOverlap(
   message: string,
@@ -277,38 +287,73 @@ export function hasCourseMetadataOverlap(
   return false;
 }
 
-function isTechnicalCourse(course: CourseScopeContext): boolean {
-  if (/\b(cosc|cmps|cpsc|cs)\s*\d+/i.test(course.code)) {
+/**
+ * Active course thread: prior assistant answered substantively, or prior user
+ * turn was course-framed. Enables short follow-ups ("why?", "who created it?").
+ */
+export function hasConversationCourseContext(
+  conversation: CourseScopeConversationContext | null | undefined,
+  course: CourseScopeContext | null | undefined,
+): boolean {
+  if (!conversation) return false;
+
+  const priorAssistant = conversation.priorAssistantText?.trim() ?? "";
+  if (priorAssistant.length >= 30 && !isScopeRefusalMessage(priorAssistant)) {
     return true;
   }
 
-  const blob = [course.code, course.name, course.description ?? "", ...(course.topics ?? [])]
-    .join(" ")
-    .toLowerCase();
-  return /\b(programming|computer|processing|vision|algorithm|software|engineering|math|calculus|data|image|filters|convolution)\b/.test(
-    blob,
-  );
+  const priorUser = conversation.priorUserText?.trim() ?? "";
+  if (!priorUser) return false;
+  if (hasCourseIntentSignals(priorUser)) return true;
+  if (course && hasCourseMetadataOverlap(priorUser, course)) return true;
+
+  return false;
 }
 
-/** Prerequisite-style STEM questions for technical courses (#729 v1.1). */
-export function isFoundationalAdjacent(
-  message: string,
-  course: CourseScopeContext,
-): boolean {
-  const trimmed = message.trim();
-  if (!FOUNDATIONAL_QUESTION_PATTERN.test(trimmed)) {
-    return false;
-  }
-  if (NON_FOUNDATIONAL_TOPIC_PATTERN.test(trimmed.toLowerCase())) {
-    return false;
-  }
-  return isTechnicalCourse(course);
+/** Build conversation context from merged chat history (excludes current user turn for priorUser). */
+export function buildScopeConversationContext(
+  messages: Array<{ role?: unknown }>,
+  extractText: (message?: { role?: unknown }) => string,
+): CourseScopeConversationContext {
+  const thread = messages.filter((m) => m.role === "user" || m.role === "assistant");
+  const users = thread.filter((m) => m.role === "user");
+  const priorUserText =
+    users.length >= 2 ? extractText(users[users.length - 2]) : "";
+
+  const priorAssistantText = extractText(
+    [...thread].reverse().find((m) => m.role === "assistant"),
+  );
+
+  return { priorAssistantText, priorUserText };
 }
 
 /**
- * Layer B pre-check (#729 v1.2): hard-refuse substantive zero-hit off-topic turns.
- * Allow greetings, course-intent coding help, strong metadata overlap, relevant
- * RAG hits, and foundational STEM questions for technical courses.
+ * Hard-refuse only when deny-list matches AND no course-framing signals.
+ * RAG noise alone does not override deny-list (screenshot regression).
+ */
+export function shouldHardRefuseOffTopic(input: EvaluateCourseScopeInput): boolean {
+  if (!isOffTopicDomain(input.message)) {
+    return false;
+  }
+
+  if (hasCourseIntentSignals(input.message)) {
+    return false;
+  }
+
+  if (hasConversationCourseContext(input.conversation, input.course)) {
+    return false;
+  }
+
+  if (input.course && hasCourseMetadataOverlap(input.message, input.course)) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Layer B pre-check (#729 v2): deny-list default — allow unless clearly off-topic.
+ * Grey-area and concept exploration defer to Layer A (system prompt) + the LLM.
  */
 export function evaluateCourseScope(
   input: EvaluateCourseScopeInput,
@@ -326,47 +371,40 @@ export function evaluateCourseScope(
     return { decision: "allow", reason: "allowlisted" };
   }
 
-  if (isCodingScopeAllowlisted(input.message)) {
-    return { decision: "allow", reason: "coding_allowlisted" };
-  }
-
   if (!isSubstantiveForScope(input.message)) {
     return { decision: "allow", reason: "not_substantive" };
   }
 
-  const course = input.course;
-
-  if (hasScopeRelevantRagHits(input.hits)) {
-    if (
-      course &&
-      isOffTopicDomain(input.message) &&
-      !hasCourseMetadataOverlap(input.message, course)
-    ) {
-      return { decision: "refuse", reason: "off_topic_despite_rag" };
-    }
-    return { decision: "allow", reason: "rag_hits_present" };
+  if (shouldHardRefuseOffTopic(input)) {
+    return { decision: "refuse", reason: "clearly_off_topic" };
   }
 
-  if (!course) {
-    return { decision: "refuse", reason: "zero_hit_off_topic" };
+  const course = input.course;
+
+  if (hasConversationCourseContext(input.conversation, course)) {
+    return { decision: "allow", reason: "conversation_continuity" };
   }
 
   if (hasCourseIntentSignals(input.message)) {
     return { decision: "allow", reason: "course_material_intent" };
   }
 
-  if (hasCourseMetadataOverlap(input.message, course)) {
+  if (course && hasCourseMetadataOverlap(input.message, course)) {
     return { decision: "allow", reason: "course_metadata_overlap" };
   }
 
-  if (isFoundationalAdjacent(input.message, course)) {
-    return { decision: "allow", reason: "foundational_adjacent" };
+  if (hasScopeAffinityRagHits(input.hits)) {
+    return { decision: "allow", reason: "scope_rag_affinity" };
   }
 
-  return { decision: "refuse", reason: "zero_hit_off_topic" };
+  if (isLearningIntentQuestion(input.message)) {
+    return { decision: "allow", reason: "learning_intent" };
+  }
+
+  return { decision: "allow", reason: "default_course_chat" };
 }
 
-/** Layer A: course identity + strict scope policy for every course-scoped turn. */
+/** Layer A: course identity + soft scope policy for every course-scoped turn. */
 export function buildCourseScopePromptBlock(course: CourseScopeContext): string {
   const lines: string[] = [
     `You are the EduAI course assistant for ${course.code} — ${course.name}.`,
@@ -386,12 +424,12 @@ export function buildCourseScopePromptBlock(course: CourseScopeContext): string 
 
   lines.push(
     "",
-    "SCOPE POLICY (strict):",
-    "- Only discuss topics related to this course.",
-    "- Politely decline unrelated questions (e.g. hobbies or subjects outside this course).",
-    "- You may explain foundational concepts clearly related to this course's subject even when they are not in the uploaded materials (e.g. prerequisite math for a technical course).",
-    "- Do not substitute general world knowledge when the question is clearly off-topic for this course.",
-    "- When course materials do not contain an answer, say so clearly — do not invent off-topic answers.",
+    "SCOPE POLICY:",
+    "- Prioritize questions related to this course and its subject area.",
+    "- Answer foundational and prerequisite concepts when they support course learning, even if not in uploaded materials — note when you are giving general background vs citing course materials.",
+    "- Politely decline clearly unrelated questions (e.g. hobbies, recipes, unrelated subjects).",
+    "- When course materials do not contain an answer, say so clearly — do not invent syllabus-specific facts.",
+    "- In an ongoing conversation, treat follow-up questions as continuing the current topic unless the user clearly switches subject.",
   );
 
   return lines.join("\n");

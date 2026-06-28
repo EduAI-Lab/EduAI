@@ -16,6 +16,14 @@ export function ragInjectModerateSimilarity(): number {
   return Number.isFinite(n) && n > 0 && n < 1 ? n : 0.55;
 }
 
+/** Low similarity — scope gate affinity only (fail-open; lower than inject bar). */
+export function ragScopeAllowSimilarity(): number {
+  const raw = process.env.CHAT_SCOPE_RAG_ALLOW_SIM;
+  if (raw === undefined || raw === "") return 0.35;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 && n < 1 ? n : 0.35;
+}
+
 export function isHybridRagAlwaysWithCourse(): boolean {
   return process.env.CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE === "1";
 }

@@ -298,10 +298,65 @@ describe("POST /api/chat — course scope gate (#729)", () => {
     expect(res.status).toBe(200);
     expect(streamText).toHaveBeenCalled();
     const config = vi.mocked(streamText).mock.calls.at(-1)?.[0] as { system?: string };
-    expect(config.system).toContain("foundational concepts");
+    expect(config.system).toContain("foundational");
   });
 
-  it("allows coding help with zero RAG hits", async () => {
+  it("allows concept follow-ups when prior assistant turn was course-related", async () => {
+    vi.mocked(findRelevantContent).mockResolvedValue([]);
+    mockStream();
+
+    const res = await action(
+      makeRequest(
+        baseBody({
+          messages: [
+            {
+              id: "msg-1",
+              role: "user",
+              content: "what is chapter 1 about?",
+            },
+            {
+              id: "msg-2",
+              role: "assistant",
+              content:
+                "Chapter 1 covers binary representation and ASCII encoding for text.",
+            },
+            {
+              id: "msg-3",
+              role: "user",
+              content: "why was ascii created?",
+            },
+          ],
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    expect(streamText).toHaveBeenCalled();
+  });
+
+  it("allows generic coding help without course keywords (Layer A handles scope)", async () => {
+    vi.mocked(findRelevantContent).mockResolvedValue([]);
+    mockStream();
+
+    const res = await action(
+      makeRequest(
+        baseBody({
+          messages: [
+            {
+              id: "msg-1",
+              role: "user",
+              content: "Write Python code to sort a list of countries by population",
+            },
+          ],
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    expect(streamText).toHaveBeenCalled();
+  });
+
+  it("allows coding help with zero RAG hits when course-framed", async () => {
     vi.mocked(findRelevantContent).mockResolvedValue([]);
     mockStream();
 

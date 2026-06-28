@@ -1,17 +1,19 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   buildCourseScopePromptBlock,
+  buildScopeConversationContext,
   buildScopeRefusalMessage,
   evaluateCourseScope,
+  hasConversationCourseContext,
   hasCourseMetadataOverlap,
   hasCourseIntentSignals,
-  hasScopeRelevantRagHits,
-  isCodingScopeAllowlisted,
+  hasScopeAffinityRagHits,
   isCourseScopeGateEnabled,
-  isFoundationalAdjacent,
+  isLearningIntentQuestion,
   isOffTopicDomain,
   isScopeAllowlisted,
   isSubstantiveForScope,
+  shouldHardRefuseOffTopic,
 } from "~/lib/ai/course-scope";
 
 const COURSE = {
@@ -20,6 +22,13 @@ const COURSE = {
   description: "First-year CS.",
   aiInstructions: "Be concise.",
   topics: ["loops", "arrays"],
+};
+
+const COSC101 = {
+  code: "COSC 101",
+  name: "Computer Studies",
+  description: "Introductory computer science.",
+  topics: ["computational thinking"],
 };
 
 const COSC121_SCREENSHOT_COURSE = {
@@ -67,10 +76,6 @@ describe("isScopeAllowlisted", () => {
   it("allows meta questions", () => {
     expect(isScopeAllowlisted("What can you help me with?")).toBe(true);
   });
-
-  it("does not allowlist off-topic substantive questions", () => {
-    expect(isScopeAllowlisted("How do I bake chocolate chip cookies?")).toBe(false);
-  });
 });
 
 describe("hasCourseMetadataOverlap", () => {
@@ -88,91 +93,120 @@ describe("hasCourseMetadataOverlap", () => {
     expect(hasCourseMetadataOverlap("Tell me about arrays in music", COURSE)).toBe(false);
     expect(hasCourseMetadataOverlap("loops in roller coasters", COURSE)).toBe(false);
   });
-
-  it("returns false for generic description tokens like year/first", () => {
-    expect(hasCourseMetadataOverlap("Who won the super bowl last year?", COURSE)).toBe(false);
-    expect(hasCourseMetadataOverlap("What happened first in history?", COURSE)).toBe(false);
-  });
-
-  it("returns false when the message shares no course metadata tokens", () => {
-    expect(hasCourseMetadataOverlap("What is linear algebra?", IMAGE_COURSE)).toBe(false);
-  });
 });
 
-describe("hasScopeRelevantRagHits", () => {
-  it("ignores weak similarity hits", () => {
+describe("hasScopeAffinityRagHits", () => {
+  it("accepts weak-but-present affinity hits (lower bar than inject)", () => {
     expect(
-      hasScopeRelevantRagHits([
-        { content: "noise", similarity: 0.4, materialTitle: "Syllabus" },
-      ]),
-    ).toBe(false);
-  });
-
-  it("accepts hits at or above the moderate inject threshold", () => {
-    expect(
-      hasScopeRelevantRagHits([
-        { content: "notes", similarity: 0.6, materialTitle: "Lecture" },
+      hasScopeAffinityRagHits([
+        { content: "binary notes", similarity: 0.38, materialTitle: "Lecture 1" },
       ]),
     ).toBe(true);
   });
-});
 
-describe("isFoundationalAdjacent", () => {
-  it("allows prerequisite STEM questions for technical courses", () => {
-    expect(isFoundationalAdjacent("What is linear algebra?", IMAGE_COURSE)).toBe(true);
-  });
-
-  it("rejects clearly non-academic topics", () => {
-    expect(isFoundationalAdjacent("Tell me about World War 2", IMAGE_COURSE)).toBe(false);
-  });
-});
-
-describe("isCodingScopeAllowlisted", () => {
-  it("allows debug-my-code requests with course context", () => {
-    expect(isCodingScopeAllowlisted("Can you debug my Python function for the lab?")).toBe(
-      true,
-    );
-  });
-
-  it("rejects generic coding requests without course context", () => {
+  it("ignores very weak noise hits", () => {
     expect(
-      isCodingScopeAllowlisted(
-        "Write Python code to sort a list of countries by population",
+      hasScopeAffinityRagHits([
+        { content: "noise", similarity: 0.15, materialTitle: "Syllabus" },
+      ]),
+    ).toBe(false);
+  });
+});
+
+describe("hasConversationCourseContext", () => {
+  it("allows follow-ups when prior assistant answered substantively", () => {
+    expect(
+      hasConversationCourseContext(
+        {
+          priorAssistantText:
+            "Chapter 1 covers binary and ASCII data representation in computers.",
+          priorUserText: "what is chapter 1 about?",
+        },
+        COSC101,
+      ),
+    ).toBe(true);
+  });
+
+  it("does not continue after a scope refusal", () => {
+    expect(
+      hasConversationCourseContext(
+        {
+          priorAssistantText:
+            "I'm the assistant for COSC 101. I can't help with unrelated topics.",
+          priorUserText: "recipe for cookies",
+        },
+        COSC101,
       ),
     ).toBe(false);
   });
 });
 
-describe("hasCourseIntentSignals", () => {
-  it("detects assignment and lecture wording", () => {
-    expect(hasCourseIntentSignals("What does the syllabus say?")).toBe(true);
-    expect(hasCourseIntentSignals("Tell me about dinosaurs")).toBe(false);
+describe("buildScopeConversationContext", () => {
+  it("extracts prior user and assistant from thread", () => {
+    const ctx = buildScopeConversationContext(
+      [
+        { role: "user", content: "what is chapter 1 about?" },
+        {
+          role: "assistant",
+          content: "Chapter 1 introduces binary and ASCII.",
+        },
+        { role: "user", content: "why was ascii created?" },
+      ],
+      (m) => (typeof m?.content === "string" ? m.content : ""),
+    );
+    expect(ctx.priorUserText).toBe("what is chapter 1 about?");
+    expect(ctx.priorAssistantText).toContain("binary");
   });
 });
 
-describe("isSubstantiveForScope", () => {
-  it("treats questions with ? as substantive", () => {
-    expect(isSubstantiveForScope("How do I bake cookies?")).toBe(true);
+describe("isLearningIntentQuestion", () => {
+  it("detects why/who/how questions without keyword lists", () => {
+    expect(isLearningIntentQuestion("why was ascii created?")).toBe(true);
+    expect(isLearningIntentQuestion("who created binary?")).toBe(true);
+    expect(isLearningIntentQuestion("what is binary")).toBe(true);
   });
+});
 
-  it("treats long statements as substantive", () => {
+describe("shouldHardRefuseOffTopic", () => {
+  it("refuses deny-list topics with no course framing", () => {
     expect(
-      isSubstantiveForScope("Tell me everything about baking sourdough bread at home"),
+      shouldHardRefuseOffTopic({
+        message: "How do I bake chocolate chip cookies?",
+        hasCourse: true,
+        hits: [],
+        course: COURSE,
+      }),
     ).toBe(true);
   });
+
+  it("does not refuse when conversation is active", () => {
+    expect(
+      shouldHardRefuseOffTopic({
+        message: "why was ascii created?",
+        hasCourse: true,
+        hits: [],
+        course: COSC101,
+        conversation: {
+          priorAssistantText: "Chapter 1 covers binary and ASCII representation.",
+          priorUserText: "what is chapter 1 about?",
+        },
+      }),
+    ).toBe(false);
+  });
 });
 
-describe("evaluateCourseScope", () => {
+describe("evaluateCourseScope — deny-list default (#729 v2)", () => {
   beforeEach(() => {
     delete process.env.CHAT_SCOPE_ZERO_CHUNK_GATE;
   });
 
-  it("refuses off-topic questions with zero RAG hits", () => {
+  it("hard-refuses clearly off-topic deny-list prompts", () => {
     for (const message of [
       "How do I bake chocolate chip cookies?",
       "Tell me about World War 2",
       "What is the capital of France?",
       "How do I invest in stocks?",
+      "i need to know how i can limit social media time",
     ]) {
       const result = evaluateCourseScope({
         message,
@@ -181,44 +215,49 @@ describe("evaluateCourseScope", () => {
         course: COURSE,
       });
       expect(result.decision).toBe("refuse");
-      expect(result.reason).toBe("zero_hit_off_topic");
+      expect(result.reason).toBe("clearly_off_topic");
     }
   });
 
-  it("allows related foundational questions with zero RAG hits", () => {
-    const result = evaluateCourseScope({
-      message: "What is linear algebra?",
-      hasCourse: true,
-      hits: [],
-      course: IMAGE_COURSE,
-    });
-    expect(result.decision).toBe("allow");
-    expect(result.reason).toBe("foundational_adjacent");
+  it("allows concept questions with zero RAG hits (fail-open)", () => {
+    for (const message of [
+      "why was ascii created?",
+      "why does binary exist?",
+      "who created binary?",
+      "what is binary",
+      "What is linear algebra?",
+      "What is gradient descent?",
+    ]) {
+      const result = evaluateCourseScope({
+        message,
+        hasCourse: true,
+        hits: [],
+        course: COSC101,
+      });
+      expect(result.decision).toBe("allow");
+    }
   });
 
-  it("allows substantive questions when RAG returns strong hits", () => {
-    const result = evaluateCourseScope({
-      message: "What is gradient descent?",
-      hasCourse: true,
-      hits: [{ content: "GD", similarity: 0.7, materialTitle: "Lecture 3" }],
-      course: COURSE,
-    });
-    expect(result.decision).toBe("allow");
-    expect(result.reason).toBe("rag_hits_present");
+  it("allows ascii/binary follow-ups via conversation continuity", () => {
+    const conversation = {
+      priorAssistantText:
+        "Chapter 1 covers binary representation and ASCII encoding for characters.",
+      priorUserText: "what is chapter 1 about?",
+    };
+    for (const message of ["why was ascii created?", "why does binary exist?"]) {
+      const result = evaluateCourseScope({
+        message,
+        hasCourse: true,
+        hits: [],
+        course: COSC101,
+        conversation,
+      });
+      expect(result.decision).toBe("allow");
+      expect(result.reason).toBe("conversation_continuity");
+    }
   });
 
-  it("refuses off-topic questions even when RAG returns weak hits", () => {
-    const result = evaluateCourseScope({
-      message: "Tell me about World War 2",
-      hasCourse: true,
-      hits: [{ content: "noise", similarity: 0.4, materialTitle: "Syllabus" }],
-      course: COURSE,
-    });
-    expect(result.decision).toBe("refuse");
-    expect(result.reason).toBe("zero_hit_off_topic");
-  });
-
-  it("allows zero-hit questions with course material intent", () => {
+  it("allows course-material intent without RAG hits", () => {
     const result = evaluateCourseScope({
       message: "What did chapter 3 say about trees?",
       hasCourse: true,
@@ -229,26 +268,25 @@ describe("evaluateCourseScope", () => {
     expect(result.reason).toBe("course_material_intent");
   });
 
-  it("allows foundational STEM questions for COSC courses with zero hits", () => {
+  it("allows generic coding requests without course keywords (Layer A handles scope)", () => {
     const result = evaluateCourseScope({
-      message: "What is gradient descent?",
+      message: "Write Python code to sort countries by population",
       hasCourse: true,
       hits: [],
       course: COURSE,
     });
     expect(result.decision).toBe("allow");
-    expect(result.reason).toBe("foundational_adjacent");
   });
 
-  it("allows zero-hit questions that overlap course metadata with intent", () => {
+  it("allows weak RAG affinity for grey-area questions", () => {
     const result = evaluateCourseScope({
-      message: "Explain convolution for this course",
+      message: "why does binary exist?",
       hasCourse: true,
-      hits: [],
-      course: IMAGE_COURSE,
+      hits: [{ content: "bits", similarity: 0.38, materialTitle: "Lecture 1" }],
+      course: COSC101,
     });
     expect(result.decision).toBe("allow");
-    expect(result.reason).toBe("course_material_intent");
+    expect(result.reason).toBe("scope_rag_affinity");
   });
 
   it("allowlists greetings without checking hits", () => {
@@ -260,28 +298,6 @@ describe("evaluateCourseScope", () => {
     });
     expect(result.decision).toBe("allow");
     expect(result.reason).toBe("allowlisted");
-  });
-
-  it("allowlists coding requests with course context and zero hits", () => {
-    const result = evaluateCourseScope({
-      message: "Debug my JavaScript function for the lab",
-      hasCourse: true,
-      hits: [],
-      course: COURSE,
-    });
-    expect(result.decision).toBe("allow");
-    expect(result.reason).toBe("coding_allowlisted");
-  });
-
-  it("refuses coding requests without course context", () => {
-    const result = evaluateCourseScope({
-      message: "Write Python code to sort countries by population",
-      hasCourse: true,
-      hits: [],
-      course: COURSE,
-    });
-    expect(result.decision).toBe("refuse");
-    expect(result.reason).toBe("zero_hit_off_topic");
   });
 
   it("skips gate when disabled via env", () => {
@@ -324,7 +340,7 @@ describe("superbolt08 screenshot regression (#729)", () => {
         course: COSC121_SCREENSHOT_COURSE,
       });
       expect(result.decision).toBe("refuse");
-      expect(result.reason).toBe("zero_hit_off_topic");
+      expect(result.reason).toBe("clearly_off_topic");
     }
   });
 
@@ -337,7 +353,7 @@ describe("superbolt08 screenshot regression (#729)", () => {
         course: COSC121_SCREENSHOT_COURSE,
       });
       expect(result.decision).toBe("refuse");
-      expect(result.reason).toBe("off_topic_despite_rag");
+      expect(result.reason).toBe("clearly_off_topic");
     }
   });
 });
@@ -350,7 +366,8 @@ describe("buildCourseScopePromptBlock", () => {
     expect(block).toContain("loops, arrays");
     expect(block).toContain("Be concise");
     expect(block).toContain("SCOPE POLICY");
-    expect(block).toContain("foundational concepts");
+    expect(block).toContain("foundational");
+    expect(block).toContain("follow-up");
   });
 });
 

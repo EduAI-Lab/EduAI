@@ -67,6 +67,7 @@ import {
 } from "~/lib/ai/course-rag-policy";
 import {
   buildCourseScopePromptBlock,
+  buildScopeConversationContext,
   buildScopeRefusalMessage,
   evaluateCourseScope,
   type CourseScopeContext,
@@ -1035,6 +1036,7 @@ ${courseScopeBlock ? `${courseScopeBlock}\n\n` : courseCode ? `Current course co
         hasCourse,
         hits: courseRagHits,
         course: courseScopeContext,
+        conversation: buildScopeConversationContext(trimmedMessages, extractMessageText),
       });
 
       if (scopeEvaluation.decision === "refuse" && courseScopeContext) {
