@@ -75,8 +75,8 @@ describe("register action — UBC email gate (§567)", () => {
   const validFields = {
     name: "Ada Lovelace",
     email: "ada@ubc.ca",
-    password: "supersecret1",
-    confirmPassword: "supersecret1",
+    password: "Supersecret1!",
+    confirmPassword: "Supersecret1!",
   };
 
   it("returns a field error for a non-UBC email without invoking the auth handler", async () => {
