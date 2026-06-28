@@ -109,6 +109,10 @@ export async function persistAiInteractionTelemetry(params: {
   routingTier: 1 | 2 | 3 | null;
   routerVersion: string | null;
   routerFeatures: Record<string, unknown> | null;
+  /** Tagged sidecar session started before inference (PR4 chat wiring). */
+  sidecarTag?: string | null;
+  /** Per-host sidecar base URL (fleet routing); falls back to ENERGY_SIDECAR_URL. */
+  energySidecarBaseUrl?: string | null;
 }): Promise<void> {
   try {
     const parsed = splitRegistryModelId(params.resolvedModelId);
@@ -135,14 +139,20 @@ export async function persistAiInteractionTelemetry(params: {
       estOutputCostUsd = (completionTokens / 1_000_000) * modelRecord.outputPricing;
     }
 
-    const energy = await measureTurnEnergy({
-      registryModelId: params.resolvedModelId,
-      promptTokens,
-      completionTokens,
-      durationMs: params.durationMs,
-      estEnergyJoulesPerToken: modelRecord?.estEnergyJoulesPerToken ?? null,
-      averageCarbonGramsPerToken: modelRecord?.averageCarbonGramsPerToken ?? null,
-    });
+    const energy = await measureTurnEnergy(
+      {
+        registryModelId: params.resolvedModelId,
+        promptTokens,
+        completionTokens,
+        durationMs: params.durationMs,
+        estEnergyJoulesPerToken: modelRecord?.estEnergyJoulesPerToken ?? null,
+        averageCarbonGramsPerToken: modelRecord?.averageCarbonGramsPerToken ?? null,
+      },
+      {
+        sidecarTag: params.sidecarTag,
+        sidecarBaseUrl: params.energySidecarBaseUrl,
+      },
+    );
 
     await prisma.aIInteraction.create({
       data: {
