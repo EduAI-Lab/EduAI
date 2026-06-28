@@ -27,10 +27,7 @@ export function CanvasFetchDialog({ open, onOpenChange }: CanvasFetchDialogProps
     setLoading(true);
     setError(null);
     try {
-      const items = await listCanvasCourses();
-      setCourses(items.filter((c): c is CanvasCoursePickerItem & { coreCourseId: string } =>
-        c.isSynced && c.coreCourseId != null
-      ));
+      setCourses(await listCanvasCourses());
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load Canvas courses");
       setCourses([]);
@@ -51,7 +48,8 @@ export function CanvasFetchDialog({ open, onOpenChange }: CanvasFetchDialogProps
         <DialogHeader>
           <DialogTitle>Fetch from Canvas</DialogTitle>
           <DialogDescription>
-            Courses you have already fetched into EduAI. Click a course to open it.
+            Your Canvas courses. Fetched courses are clickable; others have not been imported into
+            EduAI yet.
           </DialogDescription>
         </DialogHeader>
 
@@ -61,29 +59,40 @@ export function CanvasFetchDialog({ open, onOpenChange }: CanvasFetchDialogProps
             Loading your Canvas courses…
           </div>
         ) : courses.length === 0 ? (
-          <p className="py-6 text-sm text-muted-foreground">
-            No Canvas courses have been fetched into EduAI yet.
-          </p>
+          <p className="py-6 text-sm text-muted-foreground">No Canvas courses found for your account.</p>
         ) : (
           <div className="max-h-80 space-y-3 overflow-y-auto pr-1">
-            {courses.map((course) => (
-              <Link
-                key={course.canvasId}
-                to={`/courses/${course.coreCourseId}`}
-                onClick={() => onOpenChange(false)}
-                className="flex items-start gap-3 rounded-md border p-3 hover:bg-accent transition-colors"
-              >
-                <div className="min-w-0 space-y-1">
-                  <p className="font-medium leading-snug">{course.name}</p>
-                  <p className="text-sm text-muted-foreground">{course.courseCode}</p>
-                  {course.lastSyncedAt && (
-                    <p className="text-xs text-muted-foreground">
-                      Last fetched {new Date(course.lastSyncedAt).toLocaleDateString()}
-                    </p>
-                  )}
+            {courses.map((course) =>
+              course.isSynced && course.coreCourseId != null ? (
+                <Link
+                  key={course.canvasId}
+                  to={`/courses/${course.coreCourseId}`}
+                  onClick={() => onOpenChange(false)}
+                  className="flex items-start gap-3 rounded-md border p-3 hover:bg-accent transition-colors"
+                >
+                  <div className="min-w-0 space-y-1">
+                    <p className="font-medium leading-snug">{course.name}</p>
+                    <p className="text-sm text-muted-foreground">{course.courseCode}</p>
+                    {course.lastSyncedAt && (
+                      <p className="text-xs text-muted-foreground">
+                        Last fetched {new Date(course.lastSyncedAt).toLocaleDateString()}
+                      </p>
+                    )}
+                  </div>
+                </Link>
+              ) : (
+                <div
+                  key={course.canvasId}
+                  className="flex items-start gap-3 rounded-md border p-3 opacity-50"
+                >
+                  <div className="min-w-0 space-y-1">
+                    <p className="font-medium leading-snug">{course.name}</p>
+                    <p className="text-sm text-muted-foreground">{course.courseCode}</p>
+                    <p className="text-xs text-muted-foreground">Not yet fetched into EduAI</p>
+                  </div>
                 </div>
-              </Link>
-            ))}
+              )
+            )}
           </div>
         )}
 

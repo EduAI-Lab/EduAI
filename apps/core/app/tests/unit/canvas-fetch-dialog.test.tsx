@@ -48,17 +48,17 @@ describe("CanvasFetchDialog", () => {
     vi.mocked(listCanvasCourses).mockResolvedValue(allCourses);
   });
 
-  it("shows only already-fetched (isSynced) courses", async () => {
+  it("shows all Canvas courses — synced and unsynced", async () => {
     renderDialog();
 
     await waitFor(() => {
       expect(screen.getByText("Intro to CS")).toBeInTheDocument();
     });
 
-    expect(screen.queryByText("Data Structures")).not.toBeInTheDocument();
+    expect(screen.getByText("Data Structures")).toBeInTheDocument();
   });
 
-  it("links each fetched course to its EduAI course page", async () => {
+  it("renders fetched courses as links to their EduAI course page", async () => {
     renderDialog();
 
     await waitFor(() => {
@@ -67,24 +67,24 @@ describe("CanvasFetchDialog", () => {
     });
   });
 
-  it("shows empty state when no courses are fetched", async () => {
-    vi.mocked(listCanvasCourses).mockResolvedValue([
-      {
-        canvasId: "102",
-        name: "Data Structures",
-        courseCode: "COSC 211",
-        isSynced: false,
-        coreCourseId: null,
-        lastSyncedAt: null,
-      },
-    ]);
+  it("renders unsynced courses as non-clickable disabled rows", async () => {
+    renderDialog();
+
+    await waitFor(() => {
+      expect(screen.getByText("Data Structures")).toBeInTheDocument();
+    });
+
+    expect(screen.queryByRole("link", { name: /Data Structures/ })).not.toBeInTheDocument();
+    expect(screen.getByText("Not yet fetched into EduAI")).toBeInTheDocument();
+  });
+
+  it("shows empty state when no Canvas courses exist", async () => {
+    vi.mocked(listCanvasCourses).mockResolvedValue([]);
 
     renderDialog();
 
     await waitFor(() => {
-      expect(
-        screen.getByText(/no canvas courses have been fetched/i),
-      ).toBeInTheDocument();
+      expect(screen.getByText(/no canvas courses found/i)).toBeInTheDocument();
     });
   });
 
