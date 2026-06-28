@@ -294,6 +294,7 @@ Each section should use this format:
 | [`CourseDetail.test.tsx`](apps/core/app/tests/unit/CourseDetail.test.tsx) | Verifies `CourseDetailManagerView`, `CourseDetailTaView`, and `CourseDetailStudentView` each render the course code and name; manager view shows the Materials tab and upload widget; TA and student views render the overview tab content. |
 | [`CourseMaterialsUpload.test.tsx`](apps/core/app/tests/unit/CourseMaterialsUpload.test.tsx) | Verifies the upload widget renders a file input and supported-formats text; disables the input and shows an uploading message while `isUploading` is true; and displays error or success messages from props. |
 | [`CoursesList.test.tsx`](apps/core/app/tests/unit/CoursesList.test.tsx) | Verifies that all five role-specific course list views (Admin, UnitAdmin, Instructor, TA, Student) render course cards with correct course code and name, and handle empty and mixed published/draft states appropriately. |
+| [`CoursesPage.publish-confirm.test.tsx`](apps/core/app/tests/unit/CoursesPage.publish-confirm.test.tsx) | Verifies that triggering publish or unpublish on a course opens a confirmation dialog without immediately calling the API, that the dialog shows the correct course label and direction-specific copy, that confirming calls `updateCourse` with the right `isPublished` value, and that cancelling does not call the API. |
 | [`NavDocuments.test.tsx`](apps/core/app/tests/unit/NavDocuments.test.tsx) | Verifies the Documents group label renders, each document item name appears, and the group renders without error when the items list is empty. |
 | [`NavSecondary.test.tsx`](apps/core/app/tests/unit/NavSecondary.test.tsx) | Verifies secondary nav items render as links with correct `href` attributes, and the component renders without throwing when the items list is empty. |
 | [`NavUser.test.tsx`](apps/core/app/tests/unit/NavUser.test.tsx) | Verifies the user's name and email render in the nav user component, the role badge displays the correct label for the admin role, and initials appear in the avatar fallback. |
@@ -376,6 +377,7 @@ Unit tests for the shared design-system component library (`@eduai/ui`). Run wit
 | `rbac-permissions.test.ts` | RBAC permission helpers (`canManageContent`, enrollment/analytics gates) and role routing for all five platform roles |
 | `PermissionGate.test.tsx` | Declarative UI gate hides children when `allow` is false and renders optional fallback |
 | `AtRoleBanner.test.tsx` | Role banners show TA read-only copy and unit-admin authorized units |
+| [`ConfirmDialog.test.tsx`](apps/extensions/ai-tutor/app/tests/unit/ConfirmDialog.test.tsx) | Verifies that `ConfirmDialog` renders the title, description, and confirm/cancel buttons; fires `onConfirm` when the confirm button is clicked; is hidden when `open` is false; uses "Confirm" as the default label; and applies the destructive CSS class when `variant="destructive"`. |
 
 **E2E (Playwright):** `tests/e2e/ai-tutor-rbac.spec.ts` — login smoke tests for student, instructor, and admin shells (requires Core + AiTutor dev servers).
 
