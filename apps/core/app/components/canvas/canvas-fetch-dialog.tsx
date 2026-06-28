@@ -28,7 +28,9 @@ export function CanvasFetchDialog({ open, onOpenChange }: CanvasFetchDialogProps
     setError(null);
     try {
       const items = await listCanvasCourses();
-      setCourses(items.filter((c) => c.isSynced));
+      setCourses(items.filter((c): c is CanvasCoursePickerItem & { coreCourseId: string } =>
+        c.isSynced && c.coreCourseId != null
+      ));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load Canvas courses");
       setCourses([]);
