@@ -241,7 +241,7 @@ curl -X POST "https://eduai.ok.ubc.ca/api/chat" \
 
 #### Course scope enforcement (#729)
 
-Every course-scoped chat turn injects course metadata (`code`, `name`, `description`, topics, `aiInstructions`) and a strict scope policy into the system prompt. A pre-check (`apps/core/app/lib/ai/course-scope.ts`) hard-refuses **clearly off-topic** questions with zero RAG hits (e.g. baking recipes in a CS course). Related foundational questions without material hits (e.g. prerequisite math) defer to the model under the scope policy. Disable the gate with `CHAT_SCOPE_ZERO_CHUNK_GATE=0`. See [`docs/rag-ai/CHAT_RAG_PIPELINE.md`](../../docs/rag-ai/CHAT_RAG_PIPELINE.md).
+Every course-scoped chat turn injects course metadata (`code`, `name`, `description`, topics, `aiInstructions`) and a strict scope policy into the system prompt (**Layer A**). A pre-check (`apps/core/app/lib/ai/course-scope.ts`, **Layer B**) uses a **deny-list default**: substantive turns allow unless a high-confidence distraction domain matches (e.g. recipes, WWII, social media) with no course framing, metadata overlap, or analogy framing. Legitimate follow-ups (e.g. ascii/binary after a chapter answer) inherit **conversation continuity**; direct off-topic payloads (recipe steps, how-tos) are refused even mid-thread (#729 v2.1). Grey-area and concept exploration defer to the model under Layer A. Disable Layer B with `CHAT_SCOPE_ZERO_CHUNK_GATE=0`. See [`docs/rag-ai/CHAT_RAG_PIPELINE.md`](../../docs/rag-ai/CHAT_RAG_PIPELINE.md).
 
 ### AI Models Endpoint
 
