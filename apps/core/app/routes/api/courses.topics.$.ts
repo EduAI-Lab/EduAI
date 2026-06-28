@@ -18,7 +18,7 @@ import {
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 
-async function topicsGetResponse(courseId: string, topicId?: string) {
+async function topicsGetResponse(courseId: string, topicId?: string, includeDeleted = false) {
   if (topicId) {
     const topic = await getCourseTopic(courseId, topicId);
     if (!topic) {
@@ -33,7 +33,7 @@ async function topicsGetResponse(courseId: string, topicId?: string) {
     });
   }
 
-  const topics = await getCourseTopics(courseId);
+  const topics = await getCourseTopics(courseId, includeDeleted);
   return new Response(JSON.stringify({ topics }), {
     status: 200,
     headers: { "Content-Type": "application/json" },
@@ -112,7 +112,12 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
   }
 
-  return topicsGetResponse(courseId, topicId);
+  // §19 forensics opt-in (#315): ADMIN-only; no-op for every other caller.
+  const includeDeleted =
+    session.user.role === "ADMIN" &&
+    new URL(request.url).searchParams.get("includeDeleted") === "true";
+
+  return topicsGetResponse(courseId, topicId, includeDeleted);
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {

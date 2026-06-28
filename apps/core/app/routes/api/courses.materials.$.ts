@@ -389,8 +389,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
   }
 
+  // §19 forensics opt-in (#315): ADMIN may pass ?includeDeleted=true to surface
+  // soft-deleted materials. No-op for every non-ADMIN caller.
+  const includeDeleted =
+    user.role === 'ADMIN' &&
+    new URL(request.url).searchParams.get('includeDeleted') === 'true';
+
   const materials = await prisma.courseMaterial.findMany({
-    where: { courseId, deletedAt: null },
+    where: { courseId, ...(includeDeleted ? {} : { deletedAt: null }) },
     include: {
       _count: { select: { chunks: true } },
     },

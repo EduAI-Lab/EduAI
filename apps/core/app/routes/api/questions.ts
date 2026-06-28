@@ -28,6 +28,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // filter. Reads admit ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C) / TA(C);
   // students never read questions directly.
   let access: AccessLevel | null = null;
+  let isAdmin = false;
 
   if (request.headers.get("Authorization")?.startsWith("Bearer ")) {
     const guard = await requireServiceKey(request);
@@ -61,6 +62,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     if (!access || access.rank < 1) {
       return json(403, { error: "Forbidden" });
     }
+    isAdmin = session.user.role === "ADMIN";
   }
 
   const topicId = url.searchParams.get("topicId") ?? undefined;
@@ -69,8 +71,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
     testableParam === "true" ? true : testableParam === "false" ? false : undefined;
   const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "100", 10) || 100, 500);
   const offset = parseInt(url.searchParams.get("offset") ?? "0", 10) || 0;
+  // §19 forensics opt-in (#315): ADMIN-only; no-op for service key / non-ADMIN.
+  const includeDeleted =
+    isAdmin && url.searchParams.get("includeDeleted") === "true";
 
-  const result = await listQuestions({ courseId, topicId, testable, limit, offset });
+  const result = await listQuestions({ courseId, topicId, testable, limit, offset, includeDeleted });
 
   // §19: enforce answer visibility at the serialization layer on every
   // question response path (defensive — student-level access is already 403).

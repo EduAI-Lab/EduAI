@@ -9,6 +9,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
+- [core] feat: Soft-delete transparency audit — ADMIN-only `?includeDeleted=true` forensics opt-in on course/question/material/topic reads, surfacing soft-deleted records that every API response otherwise filters out (§19). (#315, @abdullahmoh21, 2026-06-28)
+- [core,ai-tutor,question-maker] tests: Soft-delete coverage — Core unit/integration assert audited reads exclude soft-deleted fixtures by default and include them only for ADMIN with `?includeDeleted=true`; AI Tutor reconcile and QM topic-sync verify soft-deleted Core records never resurface downstream. (#315, @abdullahmoh21, 2026-06-28)
 - [core] feat: UBC password policy enforcement — three-phase implementation: (1) strength validation (8-char complex or 16-char passphrase) on all password-setting paths via a Better Auth `before` hook; (2) no-reuse-of-last-10 check using `verify`-based hash comparison against `PasswordHistory` records; (3) annual rotation gate in the `root.tsx` loader that redirects to `/settings?expired=1` on every page load until the password is updated. Settings page reorganised: Account tab (change-password + student number), Providers tab, Canvas tab. (#339, #769, @GlowyBlack, 2026-06-24)
 - [ai-tutor] feat: Mirror Core `TA` enrollments into AI Tutor and surface TA-taught courses — `GET /api/courses` now returns TA-enrolled offerings (unpublished included, no progress) alongside the TA's published student-enrolled courses, so course TAs see their teaching courses in the instructor shell. (#745, @Ayyhab, 2026-06-25)
 - [ai-tutor] tests: Add `nav.test.ts` (every role's nav label is "Courses"; admin nav keeps Bug Reports and excludes user-management/enrollments) and an api-client 403 regression guarding against the login-redirect loop. (#745, @Ayyhab, 2026-06-25)
@@ -18,6 +20,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
+- [core] fix: Filter `deletedAt IS NULL` in the hybrid BM25 RAG query so soft-deleted course materials no longer leak into chat retrieval context (§19). (#315, @abdullahmoh21, 2026-06-28)
 - [core] fix: Theme hydration mismatch on html color-scheme (#142, @superbolt08, 2026-06-23)
 - [ai-tutor] feat: Add `GET /courses/:courseId/feedback` endpoint — returns all `ActivityFeedback` rows for activities in a course; access-gated to ADMIN (global), UNIT_ADMIN (department-scoped), INSTRUCTOR (enrolled), and TA (enrolled); supports `activityId`, `studentId`, `take` (max 200, default 50), and `skip` query params. (#554, @evanbones, 2026-06-24)
 - [ai-tutor] feat: Extend `PATCH /courses/:courseId`, `PATCH /courses/:courseId/publish`, and `PATCH /courses/:courseId/unpublish` to accept ADMIN and UNIT_ADMIN (department-scoped) in addition to INSTRUCTOR — aligns course mutation routes with rbac-matrix.md §5. (#553, @evanbones, 2026-06-24)

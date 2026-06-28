@@ -32,7 +32,12 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     return json(401, { error: "Unauthorized" });
   }
 
-  const question = await getQuestionById(params.id!);
+  // §19 forensics opt-in (#315): ADMIN-only; no-op for service key / non-ADMIN.
+  const includeDeleted =
+    session?.user?.role === "ADMIN" &&
+    new URL(request.url).searchParams.get("includeDeleted") === "true";
+
+  const question = await getQuestionById(params.id!, includeDeleted);
   if (!question) {
     return json(404, { error: "QUESTION_NOT_FOUND" });
   }
