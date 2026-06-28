@@ -67,6 +67,8 @@ function toNavMainItems(items: ReturnType<typeof getNavForUser>): NavMainItem[] 
     url: item.url,
     icon: NAV_ICONS[item.key],
     external: item.external,
+    disabled: item.disabled,
+    disabledReason: item.disabledReason,
   }))
 }
 

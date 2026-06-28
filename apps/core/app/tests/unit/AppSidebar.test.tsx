@@ -115,8 +115,12 @@ describe("AppSidebar — role-gated nav", () => {
     expect(link).toHaveAttribute("href", "/unit-admin/invitations");
   });
 
-  it("hides the Invitations link for UNIT_ADMIN when the flag is off", () => {
+  it("shows the Invitations item greyed-out (not a link) for UNIT_ADMIN when the flag is off (#807)", () => {
     renderSidebar("UNIT_ADMIN");
+    // §807: the item stays visible but is no longer a navigable link.
     expect(screen.queryByRole("link", { name: "Invitations" })).not.toBeInTheDocument();
+    const disabled = screen.getByText("Invitations");
+    expect(disabled).toBeInTheDocument();
+    expect(disabled.closest('[aria-disabled="true"]')).not.toBeNull();
   });
 });

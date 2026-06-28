@@ -6,6 +6,10 @@ import {
   SidebarGroupContent,
   SidebarMenu,
   SidebarMenuItem,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
 } from "@eduai/ui"
 import type { CronStatusColor } from "~/hooks/api/use-cron-job-status"
 
@@ -15,6 +19,10 @@ export interface NavMainItem {
   icon?: Icon
   external?: boolean
   badge?: CronStatusColor
+  /** Render greyed-out and non-navigating with a tooltip (admin policy off — #807). */
+  disabled?: boolean
+  /** Tooltip text shown on a disabled item. */
+  disabledReason?: string
 }
 
 export interface NavMainProps {
@@ -81,6 +89,31 @@ export function NavMain({ items }: NavMainProps) {
                 )}
               </>
             )
+
+            if (item.disabled) {
+              return (
+                <SidebarMenuItem key={item.title}>
+                  <TooltipProvider delayDuration={300}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div
+                          aria-disabled
+                          className={`${linkClassName} cursor-not-allowed`}
+                          style={{ ...linkStyle, opacity: 0.45 }}
+                        >
+                          {linkBody}
+                        </div>
+                      </TooltipTrigger>
+                      {item.disabledReason && (
+                        <TooltipContent side="right" className="max-w-[240px]">
+                          <p>{item.disabledReason}</p>
+                        </TooltipContent>
+                      )}
+                    </Tooltip>
+                  </TooltipProvider>
+                </SidebarMenuItem>
+              )
+            }
 
             return (
               <SidebarMenuItem key={item.title}>

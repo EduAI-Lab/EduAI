@@ -39,6 +39,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Changed
 
+- [core] feat: Admin-disabled features now grey out with a "turned off by your administrator" tooltip instead of disappearing, and `/auth/register` shows an invite-only message when public registration is off rather than silently redirecting to login. (#807, @mochi_21, 2026-06-28)
 - [core] refactor: Extract a shared chat route module (`app/lib/chat/chat-route.server.ts`) used by both `/chat` and `/chat/:chatId` — base loader (models + preferences), the preference-save action, and DB transcript hydration; split the monolithic `chat.tsx` into `chat-screen.tsx` plus history components (`chat-history-rail`, `chat-history-list`, `chat-history-utils`), shrinking `chat.tsx`, `chat-history-panel`, and the `chats/:chatId/messages` API route accordingly. (#708, @Ayyhab, 2026-06-24) — [#751](https://github.com/EduAI-Lab/EduAI/pull/751)
 
 ### Fixed
