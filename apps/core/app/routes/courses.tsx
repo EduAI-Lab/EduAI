@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Link, redirect, useLoaderData, useSearchParams } from 'react-router'
 import type { LoaderFunctionArgs } from 'react-router'
 
@@ -13,12 +14,21 @@ import { CoursesTaView } from '~/components/courses/courses-ta-view'
 import { CoursesStudentView } from '~/components/courses/courses-student-view'
 import { useCourses } from '~/hooks/api/use-courses'
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
   Breadcrumb,
   BreadcrumbItem,
   BreadcrumbLink,
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
+  buttonVariants,
 } from '@eduai/ui'
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -76,8 +86,19 @@ export default function CoursesPage() {
   // TA is a course-level enrollment role, not a platform role (#499).
   const isTA = taCourseIds.length > 0
 
+  const [pendingPublish, setPendingPublish] = useState<{
+    id: string
+    publish: boolean
+    label: string
+  } | null>(null)
+
   const handlePublishToggle = async (id: string, publish: boolean) => {
     await updateCourse(id, { isPublished: publish })
+  }
+
+  const handlePublishToggleRequest = async (id: string, publish: boolean) => {
+    const course = courses.find((c) => c.id === id)
+    setPendingPublish({ id, publish, label: `${course?.code ?? ''} — ${course?.name ?? ''}`.trim() })
   }
 
   if (loading) {
@@ -115,7 +136,7 @@ export default function CoursesPage() {
             onCreateCourse={async (data) => { await createCourse(data) }}
             onEditCourse={async (id, data) => { await updateCourse(id, data) }}
             onDeleteCourse={async (id) => { await deleteCourse(id) }}
-            onPublishToggle={handlePublishToggle}
+            onPublishToggle={handlePublishToggleRequest}
           />
         ) : isUnitAdmin ? (
           <CoursesUnitAdminView
@@ -127,7 +148,7 @@ export default function CoursesPage() {
             onCreateCourse={async (data) => { await createCourse(data) }}
             onEditCourse={async (id, data) => { await updateCourse(id, data) }}
             onDeleteCourse={async (id) => { await deleteCourse(id) }}
-            onPublishToggle={handlePublishToggle}
+            onPublishToggle={handlePublishToggleRequest}
           />
         ) : isInstructor ? (
           <CoursesInstructorView
@@ -135,7 +156,7 @@ export default function CoursesPage() {
             onCreateCourse={async (data) => { await createCourse(data) }}
             onEditCourse={async (id, data) => { await updateCourse(id, data) }}
             onDeleteCourse={async (id) => { await deleteCourse(id) }}
-            onPublishToggle={handlePublishToggle}
+            onPublishToggle={handlePublishToggleRequest}
           />
         ) : isTA ? (
           <CoursesTaView
@@ -149,6 +170,38 @@ export default function CoursesPage() {
           />
         )}
       </div>
+      <AlertDialog
+        open={pendingPublish !== null}
+        onOpenChange={(open) => { if (!open) setPendingPublish(null) }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {pendingPublish?.publish
+                ? `Publish "${pendingPublish.label}"?`
+                : `Unpublish "${pendingPublish?.label}"?`}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingPublish?.publish
+                ? 'Students will be able to see this course.'
+                : 'Students will lose access to this course.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className={pendingPublish?.publish ? undefined : buttonVariants({ variant: 'destructive' })}
+              onClick={() => {
+                if (!pendingPublish) return
+                void handlePublishToggle(pendingPublish.id, pendingPublish.publish)
+                setPendingPublish(null)
+              }}
+            >
+              {pendingPublish?.publish ? 'Publish' : 'Unpublish'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Layout>
   )
 }
