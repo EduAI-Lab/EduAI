@@ -1,4 +1,4 @@
-import { Form, useActionData, redirect } from "react-router"
+import { Form, Link, useActionData, useLoaderData, redirect } from "react-router"
 import { useState } from "react"
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router"
 
@@ -25,14 +25,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return redirect("/dashboard");
   }
 
-  // §6b: when public registration is disabled, deep-linking /auth/register must
-  // not show the form. Read the flag server-side (the signup page is
-  // unauthenticated, so usePolicies() is unavailable here).
+  // §6b / issue #807: when public registration is disabled, deep-linking
+  // /auth/register no longer silently redirects to /login (which reads as a
+  // bug). Instead the page renders an explicit "registration is invite-only"
+  // message. Read the flag server-side (the signup page is unauthenticated, so
+  // usePolicies() is unavailable here).
   if (!(await getPolicy("auth.allowPublicRegistration"))) {
-    return redirect("/auth/login");
+    return { registrationDisabled: true };
   }
 
-  return {};
+  return { registrationDisabled: false };
 }
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -97,6 +99,9 @@ export async function action({ request }: ActionFunctionArgs) {
 
 export default function RegisterPage() {
   const [isLoading, setIsLoading] = useState(false);
+  const { registrationDisabled } = useLoaderData() as {
+    registrationDisabled: boolean;
+  };
   const actionData = useActionData() as {
     fieldErrors?: Partial<Record<keyof SignUpInput, string>>;
     formError?: string;
@@ -125,12 +130,31 @@ export default function RegisterPage() {
 
       {/* Card */}
       <div className="w-full max-w-[440px] mx-4 bg-card border rounded-[var(--radius-xl)] p-9 shadow-lg" style={{ boxShadow: "0 4px 24px rgba(0,0,0,0.08)" }}>
-        <Form method="post">
-          {actionData?.formError && (
-            <p className="text-sm text-destructive mb-4 text-center">{actionData.formError}</p>
-          )}
-          <RegisterForm fieldErrors={actionData?.fieldErrors} isLoading={isLoading} />
-        </Form>
+        {registrationDisabled ? (
+          // §807: public registration is off — explain it's invite-only instead
+          // of bouncing the user to /login with no context.
+          <div className="flex flex-col items-center gap-4 text-center">
+            <h1 className="text-lg font-semibold text-foreground">Registration is invite-only</h1>
+            <p className="text-sm text-muted-foreground">
+              New accounts on this platform are created by invitation. Ask your
+              administrator or instructor to send you an invite, then use the link
+              in that email to set up your account.
+            </p>
+            <Link
+              to="/auth/login"
+              className="text-sm text-primary underline underline-offset-4"
+            >
+              Back to sign in
+            </Link>
+          </div>
+        ) : (
+          <Form method="post">
+            {actionData?.formError && (
+              <p className="text-sm text-destructive mb-4 text-center">{actionData.formError}</p>
+            )}
+            <RegisterForm fieldErrors={actionData?.fieldErrors} isLoading={isLoading} />
+          </Form>
+        )}
       </div>
 
       <p className="mt-5 text-xs text-muted-foreground">University of British Columbia · EduAI Platform</p>
