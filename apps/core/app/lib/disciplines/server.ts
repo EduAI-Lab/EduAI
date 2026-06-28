@@ -32,6 +32,13 @@ const CACHE_TTL_MS = Math.min(
 
 let codeCache: { codes: Set<string>; expiresAt: number } | null = null;
 
+// Full list (code + name) cache backing the picker endpoint — separate from
+// codeCache, which stores codes only and so can't serve labels.
+let listCache: {
+  disciplines: { code: string; name: string }[];
+  expiresAt: number;
+} | null = null;
+
 async function getCodeSet(): Promise<Set<string>> {
   if (codeCache && codeCache.expiresAt > Date.now()) return codeCache.codes;
   const rows = await prisma.discipline.findMany({ select: { code: true } });
@@ -40,9 +47,10 @@ async function getCodeSet(): Promise<Set<string>> {
   return codes;
 }
 
-/** Drop the cached code set so the next validation reads fresh data. */
+/** Drop the cached code set + full list so the next read fetches fresh data. */
 export function invalidateDisciplineCache(): void {
   codeCache = null;
+  listCache = null;
 }
 
 /** True when `code` is a known discipline. */
@@ -66,9 +74,14 @@ export async function listDisciplines(request: Request): Promise<Response> {
   const session = await auth.api.getSession(request);
   if (!session?.user) return unauthorized();
 
+  if (listCache && listCache.expiresAt > Date.now()) {
+    return json({ disciplines: listCache.disciplines });
+  }
+
   const disciplines = await prisma.discipline.findMany({
     select: { code: true, name: true },
     orderBy: { code: "asc" },
   });
+  listCache = { disciplines, expiresAt: Date.now() + CACHE_TTL_MS };
   return json({ disciplines });
 }
