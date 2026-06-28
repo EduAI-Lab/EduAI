@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import type { EnrollmentRole } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 
@@ -23,6 +24,7 @@ export async function getCourseEnrollments(courseId: string) {
         select: {
           email: true,
           name: true,
+          studentId: true,
         },
       },
     },
@@ -61,17 +63,24 @@ async function instructorFloorViolation(
   return null;
 }
 
+export type AddEnrollmentPayload = {
+  userId?: unknown;
+  role?: unknown;
+  idempotencyKey?: unknown;
+};
+
 /**
  * POST /api/courses/:id/enrollments — add a user to a course with a role.
- * Promotions of existing rows go through updateEnrollmentRole (the unique
- * [courseId, userId] constraint 409s INSERTs by design, §6).
+ * Optional `idempotencyKey` makes retries safe (same pattern as questions).
  */
-export async function addEnrollment(
-  courseId: string,
-  payload: { userId?: unknown; role?: unknown },
-) {
+export async function addEnrollment(courseId: string, payload: AddEnrollmentPayload) {
+  const idempotencyKey =
+    typeof payload.idempotencyKey === "string" && payload.idempotencyKey.trim().length > 0
+      ? payload.idempotencyKey.trim()
+      : undefined;
+
   if (typeof payload.userId !== "string" || !payload.userId || !isEnrollmentRole(payload.role)) {
-    return { status: "400" } as const;
+    return { status: "422", error: "VALIDATION_ERROR", fields: { body: "userId and role required" } } as const;
   }
 
   const user = await prisma.user.findUnique({
@@ -82,28 +91,60 @@ export async function addEnrollment(
     return { status: "422", error: "USER_NOT_FOUND" } as const;
   }
 
+  if (idempotencyKey) {
+    const existing = await prisma.enrollment.findUnique({
+      where: { idempotencyKey },
+    });
+    if (existing) {
+      return { status: "201", enrollment: existing } as const;
+    }
+  }
+
   try {
     const enrollment = await prisma.enrollment.create({
-      data: { courseId, userId: payload.userId, role: payload.role, isActive: true },
+      data: {
+        courseId,
+        userId: payload.userId,
+        role: payload.role,
+        isActive: true,
+        ...(idempotencyKey ? { idempotencyKey } : {}),
+      },
     });
     return { status: "201", enrollment } as const;
-  } catch (error: any) {
-    if (error?.code !== "P2002") throw error;
-    // A row already exists for [courseId, userId]. If it's an inactive
-    // (previously removed) enrollment, reactivate it with the requested role
-    // rather than 409 — a removed TA/student must be re-addable, e.g. after a
-    // TA is removed and then re-enrolled (#685 review).
-    const existing = await prisma.enrollment.findUnique({
-      where: { courseId_userId: { courseId, userId: payload.userId } },
-    });
-    if (existing && !existing.isActive) {
-      const enrollment = await prisma.enrollment.update({
-        where: { id: existing.id },
-        data: { role: payload.role, isActive: true },
+  } catch (error: unknown) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002" &&
+      idempotencyKey
+    ) {
+      const existing = await prisma.enrollment.findUnique({
+        where: { idempotencyKey },
       });
-      return { status: "201", enrollment } as const;
+      if (existing) {
+        return { status: "201", enrollment: existing } as const;
+      }
     }
-    return { status: "409", error: "ALREADY_ENROLLED" } as const;
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      // A row already exists for [courseId, userId]. If it's an inactive
+      // (previously removed) enrollment, reactivate it with the requested role
+      // rather than 409 — a removed TA/student must be re-addable, e.g. after a
+      // TA is removed and then re-enrolled (#685 review).
+      const existing = await prisma.enrollment.findUnique({
+        where: { courseId_userId: { courseId, userId: payload.userId } },
+      });
+      if (existing && !existing.isActive) {
+        const enrollment = await prisma.enrollment.update({
+          where: { id: existing.id },
+          data: { role: payload.role, isActive: true },
+        });
+        return { status: "201", enrollment } as const;
+      }
+      return { status: "409", error: "ALREADY_ENROLLED" } as const;
+    }
+    throw error;
   }
 }
 
@@ -118,7 +159,7 @@ export async function updateEnrollmentRole(
   payload: { role?: unknown },
 ) {
   if (!isEnrollmentRole(payload.role)) {
-    return { status: "400" } as const;
+    return { status: "422", error: "VALIDATION_ERROR", fields: { role: "invalid role" } } as const;
   }
 
   const role = payload.role;

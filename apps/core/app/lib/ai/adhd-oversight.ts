@@ -59,7 +59,32 @@ export function buildOversightRewriteSystem(profile: AdhdTurnProfile, wordCap: n
   );
 }
 
-export type OversightMethod = "none" | "deterministic" | "llm" | "llm_failed";
+export type OversightMethod =
+  | "none"
+  | "deterministic"
+  | "llm"
+  | "llm_rejected"
+  | "llm_failed";
+
+/**
+ * Output budget for the LLM rewrite. A compliant rewrite is at most `wordCap`
+ * words, but a fixed 1024-token cap truncated rewrites of long drafts — and a
+ * truncated rewrite fails validation, so we silently shipped the original
+ * non-compliant draft (#714). Budget tokens from the word cap with headroom for
+ * markdown anchors (**Top summary**, bullets, ### Step ladder, **Next?**) and
+ * tokenizer variance, with a floor so the smaller clarification/redirect caps
+ * still get adequate room. maxTokens only bounds output, so over-budgeting is
+ * safe: the model stops once the rewrite is done.
+ */
+export const ADHD_OVERSIGHT_REWRITE_TOKENS_PER_WORD = 6;
+export const ADHD_OVERSIGHT_MIN_REWRITE_MAX_TOKENS = 1024;
+
+export function resolveOversightRewriteMaxTokens(wordCap: number): number {
+  const fromWordCap = Math.ceil(
+    Math.max(0, wordCap) * ADHD_OVERSIGHT_REWRITE_TOKENS_PER_WORD,
+  );
+  return Math.max(ADHD_OVERSIGHT_MIN_REWRITE_MAX_TOKENS, fromWordCap);
+}
 
 export type OversightUsage = {
   promptTokens?: number;
@@ -360,7 +385,7 @@ export async function auditAndMaybeRewrite(args: {
     const { text: rewritten, usage } = await generateText({
       model: args.model,
       temperature: 0.2,
-      maxTokens: 1024,
+      maxTokens: resolveOversightRewriteMaxTokens(wordCap),
       system: buildOversightRewriteSystem(profile, wordCap),
       prompt: `DRAFT TO REWRITE:\n\n${trimmed}`,
     });
@@ -388,10 +413,14 @@ export async function auditAndMaybeRewrite(args: {
       ? afterMetrics
       : beforeMetrics;
 
+    // `llm_rejected`: the model ran but its rewrite was not adopted (truncated,
+    // over word cap, or no structural gain). Distinct from "none" — which means
+    // we never needed the LLM — so telemetry can surface drafts shipped
+    // non-compliant despite oversight (#714).
     return {
       text: finalText,
       rewritten: useLlm,
-      method: useLlm ? "llm" : "none",
+      method: useLlm ? "llm" : "llm_rejected",
       beforeMetrics,
       afterMetrics: finalMetrics,
       oversightDurationMs: Date.now() - oversightStartedAt,

@@ -10,6 +10,8 @@ import {
   joinSemanticChunks,
   DEFAULT_SEMANTIC_CHUNK_OVERLAP,
   extractTextFromFile,
+  findEquationSpans,
+  enrichExtractedDocumentContent,
 } from "~/lib/ai/file-processing";
 
 // ---------------------------------------------------------------------------
@@ -213,6 +215,13 @@ describe("isDocumentSectionBoundary", () => {
     expect(isDocumentSectionBoundary("This is a normal paragraph sentence.")).toBe(false);
     expect(isDocumentSectionBoundary("")).toBe(false);
   });
+
+  it("detects SOAP note section markers", () => {
+    expect(isDocumentSectionBoundary("S: Patient reports headache")).toBe(true);
+    expect(isDocumentSectionBoundary("O: BP 120/80")).toBe(true);
+    expect(isDocumentSectionBoundary("ASSESSMENT")).toBe(true);
+    expect(isDocumentSectionBoundary("DISCHARGE SUMMARY")).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -353,5 +362,78 @@ describe("extractTextFromFile", () => {
     const file = makeFile("f.txt", "text/plain", 5);
     const info = await extractTextFromFile(file, "clean");
     expect(info.checksum).toBe(generateChecksum("clean"));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// findEquationSpans / enrichExtractedDocumentContent
+// ---------------------------------------------------------------------------
+
+describe("findEquationSpans", () => {
+  it("finds inline and display LaTeX spans", () => {
+    const content = "Inline $x^2$ and display $$\na+b\n$$ end.";
+    const spans = findEquationSpans(content);
+    expect(spans).toHaveLength(2);
+  });
+});
+
+describe("enrichExtractedDocumentContent", () => {
+  it("converts HTML tables to markdown tables", () => {
+    const html = `<table>
+      <tr><th>Drug</th><th>Dose</th></tr>
+      <tr><td>Ibuprofen</td><td>200 mg</td></tr>
+    </table>`;
+    const result = enrichExtractedDocumentContent(html);
+    expect(result).toContain("| Drug | Dose |");
+    expect(result).toContain("| Ibuprofen | 200 mg |");
+  });
+
+  it("normalizes LaTeX delimiter styles", () => {
+    const result = enrichExtractedDocumentContent("Energy \\(E=mc^2\\) is famous.");
+    expect(result).toContain("$E=mc^2$");
+  });
+
+  it("keeps display equations intact through chunking", () => {
+    const equation = "$$\\frac{a}{b}$$";
+    const filler = "word ".repeat(200);
+    const content = `${filler}\n\n${equation}\n\n${filler}`;
+    const chunks = applySemanticChunking(content, 500);
+    expect(chunks.some((chunk) => chunk.includes("$$\\frac{a}{b}$$"))).toBe(true);
+  });
+
+  it("keeps display equations intact in later chunks after section splits", () => {
+    const equation = "$$\\frac{a}{b}$$";
+    const sectionA = "word ".repeat(200);
+    const sectionB = "term ".repeat(200);
+    const content = `Chapter 1\n\n${sectionA}\n\nChapter 2\n\n${sectionB}\n\n${equation}\n\n${sectionB}`;
+    const chunks = applySemanticChunking(content, 500);
+    expect(chunks.some((chunk) => chunk.includes("$$\\frac{a}{b}$$"))).toBe(true);
+  });
+
+  it("keeps display equations intact through markdown chunking", () => {
+    const equation = "$$\\frac{a}{b}$$";
+    const filler = "word ".repeat(200);
+    const content = `# Section A\n\n${filler}\n\n${equation}\n\n${filler}`;
+    const chunks = applySemanticChunking(content, 500);
+    expect(chunks.some((chunk) => chunk.includes("$$\\frac{a}{b}$$"))).toBe(true);
+  });
+
+  it("does not split equations when enforceMaxChunkLength trims oversized chunks", () => {
+    const equation = "$$\\frac{a}{b}$$";
+    const filler = "word ".repeat(300);
+    const content = `${filler}\n\n${equation}\n\n${filler}`;
+    const chunks = enforceMaxChunkLength(applySemanticChunking(content, 500), 500);
+    expect(chunks.some((chunk) => chunk.includes("$$\\frac{a}{b}$$"))).toBe(true);
+  });
+
+  it("does not hang on intro text followed by a long display equation", () => {
+    const intro = "Short intro paragraph about math.\n\n";
+    const longEq = `$$\\frac{a}{${"x".repeat(3000)}}$$`;
+    const content = `${intro}${longEq}\n\n${"word ".repeat(100)}`;
+    const started = Date.now();
+    const chunks = applySemanticChunking(content, 500);
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(chunks.length).toBeGreaterThan(0);
+    expect(chunks.some((chunk) => chunk.includes("$$"))).toBe(true);
   });
 });
