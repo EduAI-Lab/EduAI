@@ -67,6 +67,56 @@ describe("getCourse", () => {
       where: { id: "c1", deletedAt: null },
     });
   });
+
+  // #315: ADMIN forensics opt-in surfaces a soft-deleted course by id.
+  it("drops the deletedAt filter when includeDeleted is true", async () => {
+    prismaMock.course.findFirst.mockResolvedValue({ id: "c1", name: "Deleted" });
+    await getCourse("c1", true);
+    expect(prismaMock.course.findFirst).toHaveBeenCalledWith({
+      where: { id: "c1" },
+    });
+  });
+});
+
+describe("getCourses — #315 ADMIN includeDeleted", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("drops the deletedAt filter for ADMIN with ?includeDeleted=true", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "admin1", role: "ADMIN" },
+    } as never);
+    prismaMock.course.findMany.mockResolvedValue([]);
+    prismaMock.enrollment.findMany.mockResolvedValue([]);
+
+    await getCourses(new Request("http://localhost/api/courses?includeDeleted=true"));
+
+    expect(prismaMock.course.findMany).toHaveBeenCalledWith({ where: {} });
+  });
+
+  it("keeps deletedAt: null for ADMIN without the flag", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "admin1", role: "ADMIN" },
+    } as never);
+    prismaMock.course.findMany.mockResolvedValue([]);
+    prismaMock.enrollment.findMany.mockResolvedValue([]);
+
+    await getCourses(new Request("http://localhost/api/courses"));
+
+    expect(prismaMock.course.findMany).toHaveBeenCalledWith({ where: { deletedAt: null } });
+  });
+
+  it("ignores the flag for a non-ADMIN caller", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "inst1", role: "INSTRUCTOR" },
+    } as never);
+    prismaMock.course.findMany.mockResolvedValue([]);
+    prismaMock.enrollment.findMany.mockResolvedValue([]);
+
+    await getCourses(new Request("http://localhost/api/courses?includeDeleted=true"));
+
+    const where = prismaMock.course.findMany.mock.calls[0][0].where;
+    expect(where.deletedAt).toBeNull();
+  });
 });
 
 describe("getCourseTopics", () => {
@@ -77,6 +127,16 @@ describe("getCourseTopics", () => {
     await getCourseTopics("c1");
     expect(prismaMock.courseTopic.findMany).toHaveBeenCalledWith({
       where: { courseId: "c1", deletedAt: null },
+      orderBy: { name: "asc" },
+    });
+  });
+
+  // #315: ADMIN forensics opt-in surfaces soft-deleted topics in a live course.
+  it("drops the deletedAt filter when includeDeleted is true", async () => {
+    prismaMock.courseTopic.findMany.mockResolvedValue([]);
+    await getCourseTopics("c1", true);
+    expect(prismaMock.courseTopic.findMany).toHaveBeenCalledWith({
+      where: { courseId: "c1" },
       orderBy: { name: "asc" },
     });
   });

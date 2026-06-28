@@ -157,8 +157,14 @@ export async function getCourses(request: Request) {
     });
   }
 
+  // §19 forensics opt-in (#315): ADMIN may pass ?includeDeleted=true to surface
+  // soft-deleted courses. The flag is a no-op for every non-ADMIN caller.
+  const includeDeleted =
+    session.user.role === "ADMIN" &&
+    new URL(request.url).searchParams.get("includeDeleted") === "true";
+
   const courses = await prisma.course.findMany({
-    where: await buildCourseListFilter(session.user),
+    where: await buildCourseListFilter(session.user, includeDeleted),
   });
 
   const enrollmentRows = await prisma.enrollment.findMany({
@@ -528,9 +534,9 @@ export async function setPublishState(request: Request, courseId: string, publis
   });
 }
 
-export async function getCourse(courseId: string) {
+export async function getCourse(courseId: string, includeDeleted = false) {
   return prisma.course.findFirst({
-    where: { id: courseId, deletedAt: null },
+    where: { id: courseId, ...(includeDeleted ? {} : { deletedAt: null }) },
   });
 }
 
@@ -586,9 +592,9 @@ export async function getCourseRagSettings(
   return value;
 }
 
-export async function getCourseTopics(courseId: string) {
+export async function getCourseTopics(courseId: string, includeDeleted = false) {
   return prisma.courseTopic.findMany({
-    where: { courseId, deletedAt: null },
+    where: { courseId, ...(includeDeleted ? {} : { deletedAt: null }) },
     orderBy: { name: "asc" },
   });
 }

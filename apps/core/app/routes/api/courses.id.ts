@@ -44,6 +44,26 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
   }
 
+  // §19 forensics opt-in (#315): ADMIN may pass ?includeDeleted=true to read a
+  // soft-deleted course. The access resolver below filters `deletedAt: null`
+  // (→ 404), so ADMIN reads bypass it here. No-op for every non-ADMIN caller.
+  if (
+    session.user.role === "ADMIN" &&
+    new URL(request.url).searchParams.get("includeDeleted") === "true"
+  ) {
+    const course = await getCourse(courseId, true);
+    if (!course) {
+      return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return new Response(JSON.stringify(course), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
   // §5: viewing course details requires a course relationship; students
   // additionally require the course to be published.
   const { course, access } = await resolveCourseAccessWithCourse(session.user, courseId);

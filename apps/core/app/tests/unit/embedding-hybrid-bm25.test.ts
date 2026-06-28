@@ -141,6 +141,14 @@ describe("findRelevantContent — hybrid path (RAG_HYBRID_BM25=1)", () => {
     expect(sql).toContain("AND 1 -");
   });
 
+  // #315: soft-deleted materials must never leak into RAG context, including on
+  // the hybrid path (the pure-vector path already filtered this).
+  it('filters soft-deleted materials with cm."deletedAt" IS NULL', async () => {
+    await findRelevantContent(QUERY, COURSE_ID, 4);
+    const sql = capturedSql();
+    expect(sql).toContain('cm."deletedAt" IS NULL');
+  });
+
   it("passes the effective similarity threshold to the hybrid query", async () => {
     await findRelevantContent(QUERY, COURSE_ID, 4, 0.62);
     const params = capturedParams();
