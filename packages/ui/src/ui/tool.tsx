@@ -41,8 +41,17 @@ const Tool = ({ toolPart, displayName, defaultOpen = false, className }: ToolPro
 
   const { state, input, output, toolCallId } = toolPart
 
+  const writeFailed =
+    output &&
+    typeof output === "object" &&
+    ("writeSucceeded" in output
+      ? output.writeSucceeded === false
+      : "error" in output && Boolean((output as { error?: unknown }).error))
+
+  const effectiveState = writeFailed ? "output-error" : state
+
   const getStateIcon = () => {
-    switch (state) {
+    switch (effectiveState) {
       case "input-streaming":
         return <IconLoader2 className="h-4 w-4 animate-spin text-blue-500" />
       case "input-available":
@@ -58,7 +67,7 @@ const Tool = ({ toolPart, displayName, defaultOpen = false, className }: ToolPro
 
   const getStateBadge = () => {
     const baseClasses = "px-2 py-1 rounded-full text-xs font-medium"
-    switch (state) {
+    switch (effectiveState) {
       case "input-streaming":
         return (
           <span
@@ -100,7 +109,7 @@ const Tool = ({ toolPart, displayName, defaultOpen = false, className }: ToolPro
               "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
             )}
           >
-            Error
+            {writeFailed ? "Write failed" : "Error"}
           </span>
         )
       default:
@@ -186,7 +195,7 @@ const Tool = ({ toolPart, displayName, defaultOpen = false, className }: ToolPro
               </div>
             )}
 
-            {state === "output-error" && toolPart.errorText && (
+            {(effectiveState === "output-error" || writeFailed) && toolPart.errorText && (
               <div>
                 <h4 className="mb-2 text-sm font-medium text-red-500">Error</h4>
                 <div className="bg-background rounded border border-red-200 p-2 text-sm dark:border-red-950 dark:bg-red-900/20">

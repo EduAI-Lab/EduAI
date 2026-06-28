@@ -19,6 +19,7 @@ import {
   mockSession,
   cleanupRbac,
 } from "../helpers/rbac";
+import { setPolicy, invalidatePolicyCache } from "~/lib/policy.server";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -226,18 +227,27 @@ describe("GET /api/courses", () => {
 // ---------------------------------------------------------------------------
 
 describe("POST /api/courses", () => {
-  it("returns 403 when caller is not ADMIN", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue(INSTRUCTOR_SESSION as any);
-    const res = await createCourse(makeFormDataPost({
-      name: "Forbidden Course",
-      code: "FB 001",
-      section: "001",
-      term: "Fall",
-      year: 2025,
-      startDate: "2025-09-01",
-      instructorUserIds: instructorId,
-    }));
-    expect(res.status).toBe(403);
+  it("returns 403 when instructor create is denied by policy", async () => {
+    await setPolicy("instructors.canCreateCourses", false, adminId);
+    invalidatePolicyCache();
+    try {
+      vi.mocked(auth.api.getSession).mockResolvedValue(INSTRUCTOR_SESSION as any);
+      const res = await createCourse(makeFormDataPost({
+        name: "Forbidden Course",
+        code: "FB 001",
+        section: "001",
+        term: "Fall",
+        year: 2025,
+        startDate: "2025-09-01",
+        department: "COSC",
+        instructorUserIds: instructorId,
+      }));
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ error: "Forbidden" });
+    } finally {
+      await setPolicy("instructors.canCreateCourses", true, adminId);
+      invalidatePolicyCache();
+    }
   });
 
   it("returns 400 when required fields are missing", async () => {
@@ -320,7 +330,7 @@ describe("POST /api/courses", () => {
         year: 2026,
         startDate: "2026-09-01",
         department: "COSC",
-        instructorUserIds: professorId,
+        instructorUserIds: instructorId,
       }));
       expect(res.status).toBe(403);
       expect(await res.json()).toEqual({ error: "DEPARTMENT_NOT_AUTHORIZED" });
@@ -341,7 +351,7 @@ describe("POST /api/courses", () => {
         year: 2026,
         startDate: "2026-09-01",
         department: "COSC",
-        instructorUserIds: professorId,
+        instructorUserIds: instructorId,
       }));
       expect(res.status).toBe(201);
       const body = await res.json();

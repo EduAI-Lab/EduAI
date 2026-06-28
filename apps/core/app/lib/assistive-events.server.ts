@@ -8,6 +8,7 @@ import {
 } from "~/lib/ai/adhd-metrics";
 import type { AdhdTurnProfile } from "~/lib/ai/adhd-turn-profile";
 import { ADHD_ASSIST_POLICY_VERSION } from "~/lib/ai/adhd-assist";
+import type { OversightMethod } from "~/lib/ai/adhd-oversight";
 
 /** Server-written after each assistant turn. */
 export const ASSISTIVE_EVENT_RESPONSE_COMPLIANCE = "response_compliance" as const;
@@ -57,7 +58,7 @@ export type ResponseComplianceExtras = {
   durationMs?: number;
   wordCap?: number;
   oversightRewritten?: boolean;
-  oversightMethod?: "none" | "deterministic" | "llm" | "llm_failed";
+  oversightMethod?: OversightMethod;
   preStructuralPass?: boolean;
   oversightDurationMs?: number;
   oversightPromptTokens?: number;
