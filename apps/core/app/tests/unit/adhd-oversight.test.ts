@@ -466,7 +466,9 @@ ${longBody}`,
       profile: "full_tutoring",
     });
     expect(result.rewritten).toBe(false);
-    expect(result.method).toBe("none");
+    // The LLM ran but its rewrite was rejected (still urgent), so this is
+    // `llm_rejected`, not `none` — #714 distinguishes the two for telemetry.
+    expect(result.method).toBe("llm_rejected");
     expect(result.text).toBe(urgent);
     expect(generateText).toHaveBeenCalledOnce();
   });
