@@ -196,10 +196,10 @@ describe('CoursesInstructorView', () => {
     expect(screen.getByRole('button', { name: /create course/i })).toBeInTheDocument()
   })
 
-  it('shows an enabled "Create Course" while policies load (no flash to disabled — #807)', () => {
-    // §807: we now grey-out disabled controls instead of hiding them, so during
-    // load we optimistically show the control enabled and only grey it if the
-    // flag resolves off — avoiding an enabled→disabled flicker.
+  it('greys out "Create Course" while policies load (no flash from clickable — #807)', () => {
+    // §807: we grey-out disabled controls instead of hiding them. During load we
+    // report disabled, so a control only ever goes greyed → enabled and never
+    // clickable → disabled (which reads as a bug).
     mockedUsePolicies.mockReturnValue({ policies: {}, isLoading: true } as never)
     wrap(
       <CoursesInstructorView
@@ -212,7 +212,7 @@ describe('CoursesInstructorView', () => {
     )
     const btn = screen.getByRole('button', { name: /create course/i })
     expect(btn).toBeInTheDocument()
-    expect(btn).not.toBeDisabled()
+    expect(btn).toBeDisabled()
   })
 
   it('greys out "Create Course" (not hides it) when instructors.canCreateCourses is off (#807)', () => {
