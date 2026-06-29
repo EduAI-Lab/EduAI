@@ -19,6 +19,7 @@ import {
 import { IconArrowRight, IconGitBranch, IconSparkles, IconBook2 } from '@tabler/icons-react';
 import type { Question } from '@/types/question';
 import { questionTypeLabels } from '@/types/question';
+import { markCorrectChoices } from '@/lib/mcq';
 
 interface QuestionPreviewSheetProps {
   question: Question | null;
@@ -34,11 +35,6 @@ const difficultyVariant: Record<string, 'success' | 'warning' | 'destructive'> =
   hard: 'destructive',
 };
 
-function isCorrectChoice(answer: string | null, letter: string, text: string): boolean {
-  if (answer == null) return false;
-  const a = answer.trim().toLowerCase();
-  return a === letter.trim().toLowerCase() || a === text.trim().toLowerCase();
-}
 
 export function QuestionPreviewSheet({ question, open, onOpenChange }: QuestionPreviewSheetProps) {
   const navigate = useNavigate();
@@ -111,8 +107,8 @@ export function QuestionPreviewSheet({ question, open, onOpenChange }: QuestionP
             <section className="space-y-2">
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Choices</p>
               <ul className="space-y-1.5">
-                {choices.map((choice) => {
-                  const correct = isCorrectChoice(variant?.answer ?? null, choice.letter, choice.text);
+                {markCorrectChoices(variant?.answer ?? null, choices).map((correct, ci) => {
+                  const choice = choices[ci];
                   return (
                     <li
                       key={choice.letter}
