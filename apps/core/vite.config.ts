@@ -23,14 +23,15 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [tailwindcss(), reactRouter(), tsconfigPaths()],
     ssr: {
-      // react-router 7.18 externalises ESM-only packages rather than bundling
-      // them. Node 24 supports require(esm) natively, so most ESM-only packages
-      // are fine as externals. The two exceptions below are bundled because they
-      // have non-trivial internal resolution that works better when inlined:
-      //
-      // @tabler/icons-react: aliased to its ESM .mjs file below
-      // @mendable/firecrawl-js: "type":"module", used in AI web tools
+      // Server bundle is ESM (react-router default). Two packages need bundling:
+      //   @tabler/icons-react — aliased to its .mjs file below; must be bundled
+      //                         to honour the alias during SSR tree-shaking.
+      //   @mendable/firecrawl-js — "type":"module", used in AI web tools.
       noExternal: ["@tabler/icons-react", "@mendable/firecrawl-js"],
+    },
+    define: {
+      __dirname: "import.meta.dirname",
+      __filename: "import.meta.filename",
     },
     resolve: {
       alias: {
