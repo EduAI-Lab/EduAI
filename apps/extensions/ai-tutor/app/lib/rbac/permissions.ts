@@ -57,16 +57,6 @@ export function canCreateCourse(_user: AtUser | null | undefined): boolean {
   return false;
 }
 
-export function canImportFromEduAi(user: AtUser | null | undefined): boolean {
-  if (!user?.role) return false;
-  return user.role === 'ADMIN' || user.role === 'UNIT_ADMIN' || user.role === 'INSTRUCTOR';
-}
-
-/** EduAI catalog endpoint is INSTRUCTOR-only on the backend. */
-export function canBrowseEduAiCatalog(user: AtUser | null | undefined): boolean {
-  return user?.role === 'INSTRUCTOR';
-}
-
 export function canPublishContent(user: AtUser | null | undefined): boolean {
   return canManageContent(user);
 }
@@ -103,10 +93,6 @@ export function canViewCourseStudentMetrics(user: AtUser | null | undefined): bo
 }
 
 export function canAccessAdminConsole(user: AtUser | null | undefined): boolean {
-  return user?.role === 'ADMIN';
-}
-
-export function canSyncEnrollmentsFromEduAi(user: AtUser | null | undefined): boolean {
   return user?.role === 'ADMIN';
 }
 

@@ -65,6 +65,7 @@ export function NavUser({ user }: NavUserProps) {
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             {/* Account / Settings */}
+            {/* TODO: REMOVE ACCOUNT MENU ITEM */}
             <DropdownMenuItem asChild>
               <a href="/settings" className="flex items-center gap-2 cursor-pointer">
                 <IconSettings size={15} strokeWidth={1.75} />

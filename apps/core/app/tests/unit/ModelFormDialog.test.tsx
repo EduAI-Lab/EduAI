@@ -151,7 +151,7 @@ describe("ModelFormDialog — Ollama section", () => {
         onSubmit={vi.fn()}
       />
     );
-    expect(screen.queryByText("Available Ollama Models")).not.toBeInTheDocument();
+    expect(screen.queryByText("Ollama models")).not.toBeInTheDocument();
   });
 
   it("renders the Ollama section when the selected provider is Ollama", () => {
@@ -164,10 +164,10 @@ describe("ModelFormDialog — Ollama section", () => {
         onSubmit={vi.fn()}
       />
     );
-    expect(screen.getByText("Available Ollama Models")).toBeInTheDocument();
+    expect(screen.getByText("Ollama models")).toBeInTheDocument();
   });
 
-  it("renders the Fetch Models button in the Ollama section", () => {
+  it("renders the Sync models button in the Ollama section", () => {
     render(
       <ModelFormDialog
         open={true}
@@ -178,10 +178,10 @@ describe("ModelFormDialog — Ollama section", () => {
         onFetchOllamaModels={vi.fn()}
       />
     );
-    expect(screen.getByRole("button", { name: "Fetch Models" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sync models" })).toBeInTheDocument();
   });
 
-  it("disables Fetch Models while fetching", () => {
+  it("disables Sync models while fetching", () => {
     render(
       <ModelFormDialog
         open={true}
@@ -193,10 +193,10 @@ describe("ModelFormDialog — Ollama section", () => {
         onFetchOllamaModels={vi.fn()}
       />
     );
-    expect(screen.getByRole("button", { name: /fetching/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /syncing/i })).toBeDisabled();
   });
 
-  it("calls onFetchOllamaModels when Fetch Models is clicked", () => {
+  it("calls onFetchOllamaModels when Sync models is clicked", () => {
     const onFetchOllamaModels = vi.fn();
     render(
       <ModelFormDialog
@@ -208,8 +208,26 @@ describe("ModelFormDialog — Ollama section", () => {
         onFetchOllamaModels={onFetchOllamaModels}
       />
     );
-    fireEvent.click(screen.getByRole("button", { name: "Fetch Models" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sync models" }));
     expect(onFetchOllamaModels).toHaveBeenCalled();
+  });
+
+  it("auto-fetches Ollama models when the dialog opens with Ollama selected", async () => {
+    const onFetchOllamaModels = vi.fn();
+    render(
+      <ModelFormDialog
+        open={true}
+        onOpenChange={vi.fn()}
+        model={ollamaModel}
+        providers={[ollamaProvider]}
+        onSubmit={vi.fn()}
+        onFetchOllamaModels={onFetchOllamaModels}
+      />
+    );
+
+    await waitFor(() => {
+      expect(onFetchOllamaModels).toHaveBeenCalled();
+    });
   });
 
   it("renders the Ollama error alert when ollamaError is set", () => {
@@ -242,7 +260,7 @@ describe("ModelFormDialog — vLLM section", () => {
         onSubmit={vi.fn()}
       />
     );
-    expect(screen.queryByText("Available vLLM Models")).not.toBeInTheDocument();
+    expect(screen.queryByText("vLLM models")).not.toBeInTheDocument();
   });
 
   it("renders the vLLM section when the selected provider is vLLM", () => {
@@ -255,10 +273,10 @@ describe("ModelFormDialog — vLLM section", () => {
         onSubmit={vi.fn()}
       />
     );
-    expect(screen.getByText("Available vLLM Models")).toBeInTheDocument();
+    expect(screen.getByText("vLLM models")).toBeInTheDocument();
   });
 
-  it("calls onFetchVllmModels when Refresh list is clicked", () => {
+  it("calls onFetchVllmModels when Sync models is clicked", () => {
     const onFetchVllmModels = vi.fn();
     render(
       <ModelFormDialog
@@ -270,7 +288,7 @@ describe("ModelFormDialog — vLLM section", () => {
         onFetchVllmModels={onFetchVllmModels}
       />
     );
-    fireEvent.click(screen.getByRole("button", { name: /refresh list/i }));
+    fireEvent.click(screen.getByRole("button", { name: /sync models/i }));
     expect(onFetchVllmModels).toHaveBeenCalled();
   });
 

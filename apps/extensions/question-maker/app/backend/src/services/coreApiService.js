@@ -239,6 +239,34 @@ export async function findScopedCoreCourseByCode(courseCode, cookieHeader) {
 }
 
 /**
+ * GET /api/courses/:courseId/topics/:topicId via the service key.
+ * Returns the topic object on 200, null on 404 (soft-deleted or missing).
+ * Throws on 5xx or network error so the caller can skip and retry next run.
+ */
+export async function getTopicByIdFromCore(coreCourseId, coreTopicId) {
+  try {
+    return await fetchFromCore(`/api/courses/${coreCourseId}/topics/${coreTopicId}`);
+  } catch (err) {
+    if (err.status === 404) return null;
+    throw err;
+  }
+}
+
+/**
+ * GET /api/questions/:id via the service key.
+ * Returns the question object on 200, null on 404 (soft-deleted or missing).
+ * Throws on 5xx or network error so the caller can skip and retry next run.
+ */
+export async function getQuestionByIdFromCore(coreQuestionId) {
+  try {
+    return await fetchFromCore(`/api/questions/${coreQuestionId}`);
+  } catch (err) {
+    if (err.status === 404) return null;
+    throw err;
+  }
+}
+
+/**
  * GET /api/me — own-profile read for the calling user. This endpoint is
  * session-only (no service-key path), so the caller's cookie must be forwarded;
  * it is the only source of `authorizedUnits` for a UNIT_ADMIN caller.
