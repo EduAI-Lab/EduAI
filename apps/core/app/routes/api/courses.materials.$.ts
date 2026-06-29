@@ -362,10 +362,39 @@ async function uploadMaterial(
   }
 }
 
+async function materialsListResponse(courseId: string, includeDeleted: boolean) {
+  const materials = await prisma.courseMaterial.findMany({
+    where: { courseId, ...(includeDeleted ? {} : { deletedAt: null }) },
+    include: {
+      _count: { select: { chunks: true } },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  return json(200, {
+    materials: materials.map(({ _count, ...material }) => ({
+      ...material,
+      chunkCount: _count?.chunks ?? 0,
+    })),
+  });
+}
+
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const courseId = params.courseId;
   if (!courseId) {
     return json(400, { error: 'Course ID is required' });
+  }
+
+  // §19 forensics opt-in (#315): ADMIN may pass ?includeDeleted=true to surface
+  // soft-deleted materials — including those in a soft-deleted course. The access
+  // resolver filters `deletedAt: null` (→ 404 on deleted courses), so ADMIN reads
+  // bypass it here, mirroring courses.id.ts. No-op for every non-ADMIN caller.
+  const session = await auth.api.getSession(request);
+  if (
+    session?.user.role === 'ADMIN' &&
+    new URL(request.url).searchParams.get('includeDeleted') === 'true'
+  ) {
+    return materialsListResponse(courseId, true);
   }
 
   const resolved = await resolveMaterialsAccess(request, courseId);
@@ -389,24 +418,5 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
   }
 
-  // §19 forensics opt-in (#315): ADMIN may pass ?includeDeleted=true to surface
-  // soft-deleted materials. No-op for every non-ADMIN caller.
-  const includeDeleted =
-    user.role === 'ADMIN' &&
-    new URL(request.url).searchParams.get('includeDeleted') === 'true';
-
-  const materials = await prisma.courseMaterial.findMany({
-    where: { courseId, ...(includeDeleted ? {} : { deletedAt: null }) },
-    include: {
-      _count: { select: { chunks: true } },
-    },
-    orderBy: { createdAt: 'desc' },
-  });
-
-  return json(200, {
-    materials: materials.map(({ _count, ...material }) => ({
-      ...material,
-      chunkCount: _count?.chunks ?? 0,
-    })),
-  });
+  return materialsListResponse(courseId, false);
 }
