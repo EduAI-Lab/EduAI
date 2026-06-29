@@ -64,7 +64,10 @@ export function CanvasFetchDialog({ open, onOpenChange }: CanvasFetchDialogProps
     setSyncing(true);
     setError(null);
     try {
-      await syncCanvasCourses({ canvasCourseIds: [...selectedIds] });
+      const alreadySyncedIds = courses
+        .filter((c) => c.isSynced && c.coreCourseId != null)
+        .map((c) => c.canvasId);
+      await syncCanvasCourses({ canvasCourseIds: [...alreadySyncedIds, ...selectedIds] });
       await loadCourses();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to fetch Canvas courses");

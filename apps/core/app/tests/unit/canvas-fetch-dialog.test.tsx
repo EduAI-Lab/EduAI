@@ -81,7 +81,7 @@ describe("CanvasFetchDialog", () => {
     expect(screen.getByRole("checkbox")).toBeInTheDocument();
   });
 
-  it("calls syncCanvasCourses with checked unsynced course ids", async () => {
+  it("calls syncCanvasCourses with already-synced ids plus newly checked ids", async () => {
     renderDialog();
 
     await waitFor(() => {
@@ -92,7 +92,8 @@ describe("CanvasFetchDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: /fetch selected/i }));
 
     await waitFor(() => {
-      expect(syncCanvasCourses).toHaveBeenCalledWith({ canvasCourseIds: ["102"] });
+      // "101" (already synced) must be included so the backend delta doesn't unsync it
+      expect(syncCanvasCourses).toHaveBeenCalledWith({ canvasCourseIds: ["101", "102"] });
     });
   });
 
