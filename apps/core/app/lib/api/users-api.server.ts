@@ -45,7 +45,7 @@ export async function handleUsersApiRequest(request: Request) {
 
   switch (request.method) {
     case "GET": {
-      const session = apiKeySession ?? (await auth.api.getSession(request));
+      const session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
       if (!session?.user || session.user.role !== "ADMIN") {
         logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");
@@ -98,7 +98,7 @@ export async function handleUsersApiRequest(request: Request) {
     }
 
     case "POST": {
-      const session = apiKeySession ?? (await auth.api.getSession(request));
+      const session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
       if (!session?.user || session.user.role !== "ADMIN") {
         logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");
@@ -180,7 +180,7 @@ export async function handleUsersApiRequest(request: Request) {
         return apiError(400, "USER_ID_REQUIRED");
       }
 
-      const session = apiKeySession ?? (await auth.api.getSession(request));
+      const session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
       if (!session?.user || session.user.role !== "ADMIN") {
         logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");
@@ -339,7 +339,7 @@ export async function handleUsersApiRequest(request: Request) {
         return apiError(400, "USER_ID_REQUIRED");
       }
 
-      const session = apiKeySession ?? (await auth.api.getSession(request));
+      const session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
       if (!session?.user || session.user.role !== "ADMIN") {
         logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");

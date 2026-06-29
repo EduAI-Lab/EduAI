@@ -36,7 +36,7 @@ async function resolveMaterialsAccess(
   | { response: Response; user?: never; access?: never; isPublished?: never }
   | { response?: never; user: Session['user']; access: AccessLevel; isPublished: boolean }
 > {
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) {
     return { response: json(401, { error: 'Unauthorized' }) };
   }
