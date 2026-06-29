@@ -58,7 +58,7 @@ export function QuestionPreviewSheet({ question, open, onOpenChange }: QuestionP
   const createVariant = () => {
     onOpenChange(false);
     if (variant) {
-      navigate(`/courses/${question.courseId}/questions/new?variantOf=${variant.id}`);
+      navigate(`/courses/${question.courseId}/questions/new?variantOf=${question.id}`);
     } else {
       navigate(`/courses/${question.courseId}/questions/new`);
     }
