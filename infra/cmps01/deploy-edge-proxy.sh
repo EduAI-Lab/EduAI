@@ -13,6 +13,7 @@ if [ -f .env ]; then
 fi
 
 : "${CMPS01_INTERNAL_KEY:?Set CMPS01_INTERNAL_KEY in infra/cmps01/.env (see .env.example)}"
+: "${CMPS01_INTERNAL_ALLOW_IPS:?Set CMPS01_INTERNAL_ALLOW_IPS to s378 only (e.g. 206.87.25.229) — do not add laptops}"
 
 echo "=== render nginx configs ==="
 {
@@ -67,10 +68,12 @@ curl -sf -X POST http://127.0.0.1:8001/energy/measure-stop \
   "${AUTH_HEADER[@]}" \
   -H 'Content-Type: application/json' -d "{\"tag\":\"$TAG\"}"
 echo ""
+
+echo "=== verify internal paths reject missing key ==="
+bash ./verify-edge-security.sh
+
 echo "=== done ==="
-echo "s378 apps/core/.env:"
+echo "s378 apps/core/.env (dev server only — do not copy key to laptops):"
 echo "  ENERGY_SIDECAR_URL=http://cmps01.ok.ubc.ca:8001/energy"
-echo "  CMPS01_INTERNAL_KEY=<same secret as cmps01 .env>"
-echo "research laptop (kNN embed via edge):"
 echo "  OLLAMA_BASE_URL=http://cmps01.ok.ubc.ca:8001/ollama"
-echo "  CMPS01_INTERNAL_KEY=<same secret>"
+echo "  CMPS01_INTERNAL_KEY=<same secret as cmps01 .env>"
