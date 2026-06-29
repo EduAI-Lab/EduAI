@@ -70,14 +70,12 @@ FROM node:24-alpine AS serve
 WORKDIR /app
 
 COPY --from=deps /app/node_modules            ./node_modules
+COPY --from=deps /app/apps/core/package.json  ./apps/core/package.json
 COPY --from=build /app/apps/core/build        ./apps/core/build
 COPY --from=build /app/apps/core/node_modules ./apps/core/node_modules
 COPY --from=build /app/apps/core/prisma       ./apps/core/prisma
 
 ENV PATH="/app/node_modules/.bin:${PATH}"
 
-# Note: package.json is intentionally omitted. apps/core has "type":"module",
-# which makes Node treat the React Router server bundle (CommonJS) as ESM,
-# causing __dirname to be undefined. Without package.json Node defaults to CJS.
 WORKDIR /app/apps/core
 CMD ["sh", "-c", "npx prisma migrate deploy && react-router-serve ./build/server/index.js"]
