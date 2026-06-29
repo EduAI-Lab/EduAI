@@ -68,11 +68,26 @@ export function detectUrgencyTerms(text: string): string[] {
   return matches ? matches.map((m) => m.toLowerCase()) : [];
 }
 
-/** Detect a Sources footer (e.g. "**Sources**", "### Sources", "Sources:"). */
+const SOURCES_MARKER_RE = /^\s*(?:\*\*sources\*?\*?|#{1,6}\s*sources\b|sources:)/i;
+const NEXT_LINE_PARAGRAPH_RE = /^\s*\*\*next\?\*\*/i;
+
+/**
+ * Detect a Sources footer (e.g. "**Sources**", "### Sources", "Sources:").
+ * Anchored to the tail of the reply, not just any matching line: a mid-answer
+ * "Sources:" aside or a "## Sources of X" heading with real content afterward
+ * is not a footer. Scans paragraphs from the end, allowing the template's
+ * trailing "**Next?**" paragraph to sit after the footer.
+ */
 export function hasSourcesFooter(text: string): boolean {
-  return /(^|\n)\s*(?:\*\*sources\*?\*?|#{1,6}\s*sources\b|sources:)/i.test(
-    (text ?? "").trim(),
-  );
+  const trimmed = (text ?? "").trim();
+  if (!trimmed) return false;
+  const paragraphs = trimmed.split(/\n\s*\n/);
+  for (let i = paragraphs.length - 1; i >= 0; i--) {
+    const paragraph = paragraphs[i];
+    if (SOURCES_MARKER_RE.test(paragraph)) return true;
+    if (!NEXT_LINE_PARAGRAPH_RE.test(paragraph)) return false;
+  }
+  return false;
 }
 
 export type AdhdStructuralCompliance = AdhdResponseMetrics & {

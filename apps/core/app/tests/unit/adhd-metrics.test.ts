@@ -116,6 +116,34 @@ describe("hasSourcesFooter", () => {
   it("returns false when no footer is present", () => {
     expect(hasSourcesFooter("just a plain answer with no citations")).toBe(false);
   });
+
+  it("still detects the footer when it precedes the template's Next? line", () => {
+    const text = `**Top summary**
+- Read this quickly before the exam.
+
+**Sources** Lecture 4, slide 12
+
+**Next?** Want the next step?`;
+    expect(hasSourcesFooter(text)).toBe(true);
+  });
+
+  it("does not treat a non-footer 'Sources:' aside as a footer", () => {
+    const text = `Sources: I don't have course materials loaded for this yet.
+
+Let me walk through the concept directly. Recursion is when a function calls itself with a smaller input until it reaches a base case.
+
+**Next?** Want an example?`;
+    expect(hasSourcesFooter(text)).toBe(false);
+  });
+
+  it("does not treat a mid-answer 'Sources' heading as a footer when content follows", () => {
+    const text = `## Sources of bias in datasets
+
+Datasets can be biased through sampling, labeling, or measurement choices.
+
+**Next?** Want an example of each?`;
+    expect(hasSourcesFooter(text)).toBe(false);
+  });
 });
 
 describe("resolveAdhdResponseWordCap", () => {
