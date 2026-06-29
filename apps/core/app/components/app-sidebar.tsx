@@ -40,7 +40,7 @@ import {
   getNavSecondaryForUser,
   type NavItemKey,
 } from "~/lib/rbac"
-import { usePolicies } from "~/hooks/api/use-policies"
+import { usePolicyGate } from "~/components/policy/policy-gate"
 import { useCronJobStatus } from "~/hooks/api/use-cron-job-status"
 
 const NAV_ICONS: Record<NavItemKey, Icon> = {
@@ -100,9 +100,9 @@ export function AppSidebar({
   variant = "sidebar",
   ...props
 }: AppSidebarProps) {
-  const { policies } = usePolicies()
+  const { isEnabled } = usePolicyGate()
   // Prefer the server-resolved flag from the root loader (authoritative,
-  // default-aware, no paint flash). Fall back to the client policy fetch only
+  // default-aware, no paint flash). Fall back to the SSR-seeded policy gate only
   // if root data is somehow unavailable.
   const rootData = useRouteLoaderData("root") as { canInvite?: boolean } | undefined
 
@@ -111,7 +111,7 @@ export function AppSidebar({
   // Policy-gated nav lives in getNavForUser: a UNIT_ADMIN only sees the
   // Invitations link when `unitAdmins.canInvite` is on (matches the route gate).
   const navItems = getNavForUser(user, {
-    canInvite: rootData?.canInvite ?? Boolean(policies["unitAdmins.canInvite"]),
+    canInvite: rootData?.canInvite ?? isEnabled("unitAdmins.canInvite"),
   })
   const autoNav = toNavMainItems(navItems).map((item) =>
     item.url === "/admin/cron-jobs" && cronStatusColor
