@@ -11,7 +11,6 @@ import {
   CommandItem,
   CommandList,
 } from "./command"
-import { Popover, PopoverContent, PopoverTrigger } from "./popover"
 import { cn } from "../utils"
 
 export interface ComboboxOption {
@@ -43,6 +42,7 @@ export function Combobox({
 }: ComboboxProps) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState("")
+  const containerRef = useRef<HTMLDivElement>(null)
 
   const selected = options.find((o) => o.value === value)
 
@@ -64,67 +64,95 @@ export function Combobox({
     setSearch("")
   }
 
+  // Close on outside click / Escape. A plain positioned panel (not a Radix
+  // Popover) is used deliberately: this combobox is rendered inside Radix
+  // Dialogs, which set `pointer-events: none` on the body and swallow mouse
+  // clicks/scroll on portalled popover content — leaving the list keyboard-only.
+  useEffect(() => {
+    if (!open) return
+    const handleMouse = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false)
+        setSearch("")
+      }
+    }
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpen(false)
+        setSearch("")
+      }
+    }
+    document.addEventListener("mousedown", handleMouse)
+    document.addEventListener("keydown", handleKey)
+    return () => {
+      document.removeEventListener("mousedown", handleMouse)
+      document.removeEventListener("keydown", handleKey)
+    }
+  }, [open])
+
   return (
-    <Popover open={open} onOpenChange={setOpen} modal={false}>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          role="combobox"
-          aria-expanded={open}
-          disabled={disabled}
-          className={cn("w-full justify-between font-normal", className)}
-        >
-          {selected ? (
-            <span>{selected.label}</span>
-          ) : (
-            <span className="text-muted-foreground">{placeholder}</span>
-          )}
-          <IconChevronDown className="ml-2 size-4 shrink-0 opacity-50" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent
-        className="w-[--radix-popover-trigger-width] p-0"
-        align="start"
+    <div ref={containerRef} className="relative">
+      <Button
+        type="button"
+        variant="outline"
+        role="combobox"
+        aria-expanded={open}
+        disabled={disabled}
+        className={cn("w-full justify-between font-normal", className)}
+        onClick={() => setOpen((prev) => !prev)}
       >
-        <Command shouldFilter={false}>
-          <CommandInput
-            placeholder={searchPlaceholder}
-            value={search}
-            onValueChange={setSearch}
-            autoFocus
-          />
-          <CommandList>
-            <CommandEmpty>{emptyText}</CommandEmpty>
-            <CommandGroup>
-              {filtered.map((o) => (
-                <CommandItem
-                  key={o.value}
-                  value={o.value}
-                  className="cursor-pointer"
-                  onSelect={() => handleSelect(o.value)}
-                >
-                  <IconCheck
-                    className={cn(
-                      "mr-2 size-4",
-                      value === o.value ? "opacity-100" : "opacity-0"
-                    )}
-                  />
-                  <div className="flex flex-col">
-                    <span>{o.label}</span>
-                    {o.description && (
-                      <span className="text-muted-foreground text-xs">
-                        {o.description}
-                      </span>
-                    )}
-                  </div>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
+        {selected ? (
+          <span>{selected.label}</span>
+        ) : (
+          <span className="text-muted-foreground">{placeholder}</span>
+        )}
+        <IconChevronDown className="ml-2 size-4 shrink-0 opacity-50" />
+      </Button>
+      {open && (
+        <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover shadow-md">
+          <Command shouldFilter={false}>
+            <CommandInput
+              placeholder={searchPlaceholder}
+              value={search}
+              onValueChange={setSearch}
+              autoFocus
+            />
+            <CommandList>
+              <CommandEmpty>{emptyText}</CommandEmpty>
+              <CommandGroup>
+                {filtered.map((o) => (
+                  <CommandItem
+                    key={o.value}
+                    value={o.value}
+                    className="cursor-pointer"
+                    onSelect={() => {}}
+                    onMouseDown={(e) => {
+                      e.preventDefault()
+                      handleSelect(o.value)
+                    }}
+                  >
+                    <IconCheck
+                      className={cn(
+                        "mr-2 size-4",
+                        value === o.value ? "opacity-100" : "opacity-0"
+                      )}
+                    />
+                    <div className="flex flex-col">
+                      <span>{o.label}</span>
+                      {o.description && (
+                        <span className="text-muted-foreground text-xs">
+                          {o.description}
+                        </span>
+                      )}
+                    </div>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </div>
+      )}
+    </div>
   )
 }
 

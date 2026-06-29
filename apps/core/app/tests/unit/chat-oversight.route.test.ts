@@ -132,6 +132,19 @@ function mockStreamResult(args: {
   } as never);
 }
 
+// Prior context is loaded from the DB, not the request body: the route strips
+// client-sent assistant messages, so a prior assistant turn must be seeded via
+// chatMessage.findMany (stored content is the full message envelope).
+function mockPriorAssistant(text: string) {
+  vi.mocked(prisma.chatMessage.findMany).mockResolvedValue([
+    {
+      messageId: "a-prev",
+      role: "assistant",
+      content: { id: "a-prev", role: "assistant", content: text },
+    },
+  ] as never);
+}
+
 function baseBody(overrides: Record<string, unknown> = {}) {
   return {
     messages: [{ id: "user-1", role: "user", content: "Explain tax brackets" }],
@@ -236,5 +249,87 @@ describe("POST /api/chat — ADHD oversight persistence (#533)", () => {
     const body = await res.json();
     expect(body.content).toBe(DRAFT);
     expect(body.content).not.toContain("**Top summary**");
+  });
+});
+
+describe("POST /api/chat — Dean gating by turn profile (#713)", () => {
+  it("skips Dean (auditAndMaybeRewrite) for a greeting turn", async () => {
+    mockStreamResult({ text: DRAFT });
+    mockAuditResult();
+
+    const res = await action(
+      makeArgs(
+        baseBody({
+          streaming: false,
+          messages: [{ id: "u1", role: "user", content: "Hi" }],
+        }),
+      ),
+    );
+    expect(res.status).toBe(200);
+
+    // greeting → runDean false → no oversight, draft passes through untouched.
+    expect(auditAndMaybeRewrite).not.toHaveBeenCalled();
+    const body = await res.json();
+    expect(body.content).toBe(DRAFT);
+  });
+
+  it("skips Dean for a bare confirmation turn after a prior assistant reply", async () => {
+    mockStreamResult({ text: DRAFT });
+    mockAuditResult();
+    mockPriorAssistant("Here are the steps.");
+
+    const res = await action(
+      makeArgs(
+        baseBody({
+          streaming: false,
+          messages: [{ id: "u1", role: "user", content: "Got it" }],
+        }),
+      ),
+    );
+    expect(res.status).toBe(200);
+    expect(auditAndMaybeRewrite).not.toHaveBeenCalled();
+  });
+
+  it("runs Dean with full_tutoring profile for a substantive question", async () => {
+    mockStreamResult({ text: DRAFT });
+    mockAuditResult();
+
+    const res = await action(
+      makeArgs(
+        baseBody({
+          streaming: false,
+          messages: [{ id: "u1", role: "user", content: "What is gradient descent?" }],
+        }),
+      ),
+    );
+    expect(res.status).toBe(200);
+
+    expect(auditAndMaybeRewrite).toHaveBeenCalledTimes(1);
+    expect(auditAndMaybeRewrite).toHaveBeenCalledWith(
+      expect.objectContaining({ profile: "full_tutoring" }),
+    );
+  });
+
+  it("runs Dean with redirect profile for a topic-switch turn after a prior reply", async () => {
+    mockStreamResult({ text: DRAFT });
+    mockAuditResult();
+    mockPriorAssistant("Let's finish the dishwashing steps.");
+
+    const res = await action(
+      makeArgs(
+        baseBody({
+          streaming: false,
+          messages: [
+            { id: "u1", role: "user", content: "Can we switch to talk about tax brackets?" },
+          ],
+        }),
+      ),
+    );
+    expect(res.status).toBe(200);
+
+    expect(auditAndMaybeRewrite).toHaveBeenCalledTimes(1);
+    expect(auditAndMaybeRewrite).toHaveBeenCalledWith(
+      expect.objectContaining({ profile: "redirect" }),
+    );
   });
 });
