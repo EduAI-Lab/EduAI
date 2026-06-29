@@ -20,7 +20,7 @@ vi.mock('~/components/course-materials-upload', () => ({
 
 // Resolve policy values synchronously (loaded, no overrides) so the policy-gated
 // controls apply their code defaults instead of sitting in the loading state —
-// which usePolicyGate treats as "enabled" to avoid an enabled→disabled flash.
+// which usePolicyGate treats as "disabled" so controls only go greyed → enabled.
 vi.mock('~/hooks/api/use-policies', () => ({
   usePolicies: vi.fn(() => ({ policies: {}, isLoading: false })),
 }))

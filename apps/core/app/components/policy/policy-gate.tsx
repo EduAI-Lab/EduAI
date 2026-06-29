@@ -18,14 +18,14 @@ export const DEFAULT_POLICY_DISABLED_MESSAGE = "Turned off by your administrator
 /**
  * Reads policy flag VALUES (available to any authenticated user via
  * `GET /api/policies`) so the UI can mirror backend enforcement. While the
- * values are still loading we report enabled, so controls never flicker from
- * enabled → disabled (and an admin-on flag isn't briefly greyed).
+ * values are still loading we report disabled, so controls only ever go
+ * greyed → enabled, never clickable → disabled (which reads as a bug).
  */
 export function usePolicyGate() {
   const { policies, isLoading } = usePolicies()
   const isEnabled = React.useCallback(
     (key: PolicyKey): boolean => {
-      if (isLoading) return true
+      if (isLoading) return false
       return policies[key] ?? policyDefault(key)
     },
     [policies, isLoading],
