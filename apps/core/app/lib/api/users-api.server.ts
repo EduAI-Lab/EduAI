@@ -2,6 +2,7 @@ import prisma from "~/lib/prisma.server";
 import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { createUserSchema, updateUserSchema } from "~/lib/auth/schemas";
+import { assertValidUnits } from "~/lib/disciplines/guards.server";
 import { apiError, validationErrorFromZod } from "~/lib/api-error.server";
 import { applyStudentIdAndResolveEnrollments } from "~/lib/canvas/link-roster.server";
 import { normalizeStudentId } from "~/lib/canvas/enrollment-link.server";
@@ -111,6 +112,13 @@ export async function handleUsersApiRequest(request: Request) {
         return validationErrorFromZod(result.error);
       }
 
+      // §541: authorizedUnits codes must exist in the Discipline table (array
+      // field — no FK backstop, so the check is the only guard).
+      if (result.data.authorizedUnits) {
+        const unitGuard = await assertValidUnits(result.data.authorizedUnits);
+        if (unitGuard) return unitGuard;
+      }
+
       try {
         const { _count, ...created } = await prisma.user.create({
           data: {
@@ -204,6 +212,10 @@ export async function handleUsersApiRequest(request: Request) {
       }
 
       if (result.data.authorizedUnits !== undefined) {
+        // §541: every code must exist in the Discipline table. Checked first,
+        // since code validity is independent of the target user.
+        const unitGuard = await assertValidUnits(result.data.authorizedUnits);
+        if (unitGuard) return unitGuard;
         const target = await prisma.user.findUnique({
           where: { id: userId },
           select: { role: true },

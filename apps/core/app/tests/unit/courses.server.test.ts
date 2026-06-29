@@ -40,6 +40,16 @@ vi.mock("~/lib/policy.server", () => ({
   ),
 }));
 
+// §541: department validation is now DB-backed. Stub the discipline checks with
+// a fixed known-code set so these tests stay independent of the Discipline table.
+vi.mock("~/lib/disciplines/server", () => {
+  const KNOWN = ["COSC", "MATH", "STAT", "DATA", "PHYS", "BIOL", "HIST", "ENGL", "PHIL", "PSYO"];
+  return {
+    isValidDisciplineCode: vi.fn(async (code: string) => KNOWN.includes(code)),
+    areValidDisciplineCodes: vi.fn(async (codes: string[]) => codes.every((c) => KNOWN.includes(c))),
+  };
+});
+
 import {
   getCourse,
   getCourses,
@@ -479,12 +489,12 @@ describe("createCourse", () => {
     expect(res.status).toBe(201);
   });
 
-  it("returns 422 for an unknown department code (§19 UnitSchema)", async () => {
+  it("returns 400 for an unknown department code (§541 Discipline check)", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "ADMIN" } } as any);
     const res = await createCourse(
       makePostRequest({ ...VALID_COURSE_FIELDS, department: "BASKET" }),
     );
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(400);
   });
 
   it("returns 422 when required fields are missing", async () => {
