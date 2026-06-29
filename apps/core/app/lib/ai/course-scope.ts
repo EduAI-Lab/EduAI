@@ -53,6 +53,14 @@ const DIRECT_OFF_TOPIC_PAYLOAD_PATTERN =
 const ANALOGY_FRAMING_PATTERN =
   /\b(is (that|this|it)( \w+){0,4} (like|an example|considered|part of|a form of|similar to|related to)|would (that|this|it)( \w+){0,3} (be|count)|does (that|this|it)( \w+){0,3} (count|relate|mean|apply)|could (that|this|it)( \w+){0,3} (be|count)|count as|an example of|in that sense|same as|similar to)\b/i;
 
+/** Career / platform coaching — common crescendo pivot off course materials (#729 v2.3). */
+const CAREER_PLATFORM_PATTERN =
+  /\b(linkedin|indeed|glassdoor|job search|job hunt|get (a )?job|get jobs|help me get jobs|network on linkedin|networking on linkedin|resume|cover letter|interview prep|salary negotiation|career advice|job prospects|job opportunities|professional networking)\b/i;
+
+/** Short conceptual follow-ups that inherit the active course thread (#729 v2.3). */
+const ELLIPSIS_FOLLOW_UP_PATTERN =
+  /^(why|who|how does|how do|how is|how are|how can|what about|what is|what are|explain|tell me more|can you explain|could you explain)\b/i;
+
 const SCOPE_REFUSAL_SNIPPET = "can't help with unrelated topics";
 
 /** Clearly off-topic domains — used for deny-list hard refuse only. */
@@ -84,6 +92,49 @@ export function isAnalogyOrConceptQuestion(message: string): boolean {
 
   if (!isQuestion) return false;
   return ANALOGY_FRAMING_PATTERN.test(lower);
+}
+
+/** Job search, LinkedIn, résumé, etc. — off-course unless materials support it. */
+export function isCareerOrPlatformTopic(message: string): boolean {
+  return CAREER_PLATFORM_PATTERN.test(message.toLowerCase());
+}
+
+/**
+ * Ellipsis follow-up on the current course thread ("why was ascii created?") —
+ * not a topic pivot ("how can I network on LinkedIn").
+ */
+export function isEllipsisCourseFollowUp(message: string): boolean {
+  const trimmed = message.trim();
+  if (!trimmed || isCareerOrPlatformTopic(trimmed)) return false;
+
+  if (trimmed.length <= 32 && trimmed.includes("?")) {
+    return ELLIPSIS_FOLLOW_UP_PATTERN.test(trimmed);
+  }
+
+  return ELLIPSIS_FOLLOW_UP_PATTERN.test(trimmed);
+}
+
+/** Current turn is grounded in course metadata, intent, or weak RAG affinity. */
+export function hasCourseMaterialSupport(
+  message: string,
+  course: CourseScopeContext | null | undefined,
+  hits: HybridRagHit[],
+): boolean {
+  if (hasCourseIntentSignals(message)) return true;
+  if (course && hasCourseMetadataOverlap(message, course)) return true;
+  if (hasScopeAffinityRagHits(hits)) return true;
+  return false;
+}
+
+/**
+ * Refuse career/platform pivots without corpus or metadata support (#729 v2.3).
+ * Blocks slow-burn drift (course tips → jobs → LinkedIn).
+ */
+export function shouldRefuseCareerPlatformPivot(
+  input: EvaluateCourseScopeInput,
+): boolean {
+  if (!isCareerOrPlatformTopic(input.message)) return false;
+  return !hasCourseMaterialSupport(input.message, input.course, input.hits);
 }
 
 /** Course-logistics signals — course-framing in the question itself. */
@@ -417,9 +468,16 @@ export function evaluateCourseScope(
     return { decision: "refuse", reason };
   }
 
+  if (shouldRefuseCareerPlatformPivot(input)) {
+    return { decision: "refuse", reason: "off_course_career_platform" };
+  }
+
   const course = input.course;
 
-  if (hasConversationCourseContext(input.conversation, course)) {
+  if (
+    hasConversationCourseContext(input.conversation, course) &&
+    isEllipsisCourseFollowUp(input.message)
+  ) {
     return { decision: "allow", reason: "conversation_continuity" };
   }
 
@@ -466,9 +524,10 @@ export function buildCourseScopePromptBlock(course: CourseScopeContext): string 
     "- Prioritize questions related to this course and its subject area.",
     "- Answer foundational and prerequisite concepts when they support course learning, even if not in uploaded materials — note when you are giving general background vs citing course materials.",
     "- Politely decline clearly unrelated questions (e.g. hobbies, recipes, unrelated subjects).",
+    "- Do not provide job-search, LinkedIn, résumé, interview, or professional-networking coaching unless the course materials explicitly cover careers for this subject.",
     "- When the user asks whether an everyday example illustrates a course concept, explain the concept — do not provide step-by-step off-topic instructions (recipes, hobby how-tos) when asked directly.",
     "- When course materials do not contain an answer, say so clearly — do not invent syllabus-specific facts.",
-    "- In an ongoing conversation, treat follow-up questions as continuing the current course topic — not as permission to deliver unrelated content.",
+    "- In an ongoing conversation, short follow-ups on the current concept may continue the thread — topic pivots (careers, platforms, hobbies) are not in scope.",
   );
 
   return lines.join("\n");

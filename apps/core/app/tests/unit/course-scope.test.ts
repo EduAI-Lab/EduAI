@@ -10,7 +10,9 @@ import {
   hasScopeAffinityRagHits,
   isCourseScopeGateEnabled,
   isAnalogyOrConceptQuestion,
+  isCareerOrPlatformTopic,
   isDirectOffTopicRequest,
+  isEllipsisCourseFollowUp,
   isLearningIntentQuestion,
   isOffTopicDomain,
   isScopeAllowlisted,
@@ -158,6 +160,107 @@ describe("buildScopeConversationContext", () => {
     );
     expect(ctx.priorUserText).toBe("what is chapter 1 about?");
     expect(ctx.priorAssistantText).toContain("binary");
+  });
+});
+
+const COSC101_STUDY = {
+  code: "COSC 101",
+  name: "Computer Studies",
+  description: "Introductory computer science.",
+  topics: ["algorithms", "computational thinking", "data representation", "digital literacy"],
+};
+
+describe("isCareerOrPlatformTopic (#729 v2.3)", () => {
+  it("detects career and LinkedIn pivots", () => {
+    expect(isCareerOrPlatformTopic("can it help me get jobs")).toBe(true);
+    expect(isCareerOrPlatformTopic("how can i network on linkedin")).toBe(true);
+    expect(isCareerOrPlatformTopic("help me write a resume")).toBe(true);
+  });
+
+  it("does not flag CS networking vocabulary", () => {
+    expect(isCareerOrPlatformTopic("what is a computer network protocol?")).toBe(false);
+    expect(isCareerOrPlatformTopic("how does tcp/ip networking work?")).toBe(false);
+  });
+});
+
+describe("isEllipsisCourseFollowUp (#729 v2.3)", () => {
+  it("allows short conceptual follow-ups", () => {
+    expect(isEllipsisCourseFollowUp("why was ascii created?")).toBe(true);
+    expect(isEllipsisCourseFollowUp("who created binary?")).toBe(true);
+    expect(isEllipsisCourseFollowUp("how does binary work?")).toBe(true);
+  });
+
+  it("rejects topic pivots even when phrased as questions", () => {
+    expect(isEllipsisCourseFollowUp("how can i network on linkedin")).toBe(false);
+    expect(isEllipsisCourseFollowUp("can it help me get jobs")).toBe(false);
+  });
+});
+
+describe("crescendo drift regression (#729 v2.3)", () => {
+  const studyThread = {
+    priorAssistantText:
+      "To get better at COSC 101, focus on algorithms, computational thinking, data representation, and digital literacy.",
+    priorUserText: "how can i get better at this course",
+  };
+
+  beforeEach(() => {
+    delete process.env.CHAT_SCOPE_ZERO_CHUNK_GATE;
+  });
+
+  it("allows the initial course-framed study question", () => {
+    const result = evaluateCourseScope({
+      message: "how can i get better at this course",
+      hasCourse: true,
+      hits: [],
+      course: COSC101_STUDY,
+    });
+    expect(result.decision).toBe("allow");
+  });
+
+  it("refuses jobs pivot after a legitimate course thread", () => {
+    const result = evaluateCourseScope({
+      message: "can it help me get jobs",
+      hasCourse: true,
+      hits: [],
+      course: COSC101_STUDY,
+      conversation: studyThread,
+    });
+    expect(result.decision).toBe("refuse");
+    expect(result.reason).toBe("off_course_career_platform");
+  });
+
+  it("refuses LinkedIn networking pivot after a legitimate course thread", () => {
+    const jobsThread = {
+      priorAssistantText:
+        "Mastering computational thinking can enhance your job prospects in tech roles.",
+      priorUserText: "can it help me get jobs",
+    };
+    const result = evaluateCourseScope({
+      message: "how can i network on linkedin",
+      hasCourse: true,
+      hits: [],
+      course: COSC101_STUDY,
+      conversation: jobsThread,
+    });
+    expect(result.decision).toBe("refuse");
+    expect(result.reason).toBe("off_course_career_platform");
+  });
+
+  it("still allows ascii/binary ellipsis follow-ups", () => {
+    const chapterThread = {
+      priorAssistantText:
+        "Chapter 1 covers binary representation and ASCII encoding for characters.",
+      priorUserText: "what is chapter 1 about?",
+    };
+    const result = evaluateCourseScope({
+      message: "why was ascii created?",
+      hasCourse: true,
+      hits: [],
+      course: COSC101_STUDY,
+      conversation: chapterThread,
+    });
+    expect(result.decision).toBe("allow");
+    expect(result.reason).toBe("conversation_continuity");
   });
 });
 
