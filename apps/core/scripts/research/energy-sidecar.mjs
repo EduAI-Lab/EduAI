@@ -20,15 +20,31 @@ export function isEnergyMeasurementEnabled() {
   return Boolean(resolveSidecarUrl());
 }
 
+function sidecarAuthHeaders() {
+  const key = process.env.CMPS01_INTERNAL_KEY?.trim();
+  return key ? { "X-EduAI-Internal-Key": key } : {};
+}
+
+function sidecarFetchInit(init) {
+  return {
+    ...init,
+    headers: {
+      ...sidecarAuthHeaders(),
+      ...init.headers,
+    },
+  };
+}
+
 export async function ensureResearchEnergyReady() {
   if (!isEnergyMeasurementEnabled()) {
     return;
   }
   const base = resolveSidecarUrl();
   try {
-    const res = await fetch(`${base}/health`, {
-      signal: AbortSignal.timeout(8000),
-    });
+    const res = await fetch(
+      `${base}/health`,
+      sidecarFetchInit({ signal: AbortSignal.timeout(8000) }),
+    );
     if (!res.ok) {
       const text = await res.text();
       throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
@@ -65,12 +81,15 @@ export function resolveEnergySettleMs() {
 
 export async function energyMeasureStart(tag) {
   const base = resolveSidecarUrl();
-  const res = await fetch(`${base}/measure-start`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ tag }),
-    signal: AbortSignal.timeout(5000),
-  });
+  const res = await fetch(
+    `${base}/measure-start`,
+    sidecarFetchInit({
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tag }),
+      signal: AbortSignal.timeout(5000),
+    }),
+  );
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`energy measure-start HTTP ${res.status}: ${text.slice(0, 200)}`);
@@ -81,12 +100,15 @@ export async function energyMeasureStart(tag) {
 
 export async function energyMeasureStop(tag) {
   const base = resolveSidecarUrl();
-  const res = await fetch(`${base}/measure-stop`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(tag ? { tag } : {}),
-    signal: AbortSignal.timeout(5000),
-  });
+  const res = await fetch(
+    `${base}/measure-stop`,
+    sidecarFetchInit({
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(tag ? { tag } : {}),
+      signal: AbortSignal.timeout(5000),
+    }),
+  );
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`energy measure-stop HTTP ${res.status}: ${text.slice(0, 200)}`);
