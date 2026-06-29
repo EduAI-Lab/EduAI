@@ -18,13 +18,9 @@ vi.mock('~/components/course-materials-upload', () => ({
   CourseMaterialsUpload: () => <div data-testid="upload-widget">Upload widget</div>,
 }))
 
-// Resolve policy values synchronously (loaded, no overrides) so the policy-gated
-// controls apply their code defaults instead of sitting in the loading state —
-// which usePolicyGate treats as "disabled" so controls only go greyed → enabled.
-vi.mock('~/hooks/api/use-policies', () => ({
-  usePolicies: vi.fn(() => ({ policies: {}, isLoading: false })),
-}))
-
+// No PolicyProvider is rendered, so usePolicyGate falls back to the empty
+// context and every flag resolves to its code default — which is what these
+// assertions expect (e.g. tas.canManageTopics defaults off → greyed).
 
 const COURSE: CourseDetail = {
   id: 'c1',

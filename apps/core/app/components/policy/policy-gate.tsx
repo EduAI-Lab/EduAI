@@ -6,7 +6,6 @@ import {
   TooltipTrigger,
 } from "@eduai/ui"
 
-import { usePolicies } from "~/hooks/api/use-policies"
 import { policyDefault, type PolicyKey } from "~/lib/policy-flags"
 
 export type { PolicyKey } from "~/lib/policy-flags"
@@ -15,22 +14,46 @@ export type { PolicyKey } from "~/lib/policy-flags"
  * full description is ADMIN-only, so we don't leak it to every role. */
 export const DEFAULT_POLICY_DISABLED_MESSAGE = "Turned off by your administrator."
 
+/** A (partial) map of policy flag → value. Partial because guests and tests may
+ * seed only a subset; unseeded keys fall back to their code default. */
+export type PolicyValues = Partial<Record<PolicyKey, boolean>>
+
 /**
- * Reads policy flag VALUES (available to any authenticated user via
- * `GET /api/policies`) so the UI can mirror backend enforcement. While the
- * values are still loading we report disabled, so controls only ever go
- * greyed → enabled, never clickable → disabled (which reads as a bug).
+ * Holds the policy flag values resolved server-side in the root loader and
+ * handed to the client at first paint. Defaulting to `{}` means a component
+ * rendered without a provider (e.g. in isolation) falls back to code defaults.
+ */
+const PolicyContext = React.createContext<PolicyValues>({})
+
+/**
+ * Seeds the policy values for the subtree. Render it once near the root with the
+ * map from the root loader so every gated control mirrors backend enforcement
+ * from the very first render — no client fetch, no enabled↔disabled flicker.
+ */
+export function PolicyProvider({
+  policies,
+  children,
+}: {
+  policies: PolicyValues
+  children: React.ReactNode
+}) {
+  return (
+    <PolicyContext.Provider value={policies}>{children}</PolicyContext.Provider>
+  )
+}
+
+/**
+ * Reads policy flag VALUES so the UI can mirror backend enforcement. Values come
+ * from the SSR-seeded {@link PolicyProvider}, so they're correct at first paint;
+ * any flag not present in the map falls back to its code default.
  */
 export function usePolicyGate() {
-  const { policies, isLoading } = usePolicies()
+  const policies = React.useContext(PolicyContext)
   const isEnabled = React.useCallback(
-    (key: PolicyKey): boolean => {
-      if (isLoading) return false
-      return policies[key] ?? policyDefault(key)
-    },
-    [policies, isLoading],
+    (key: PolicyKey): boolean => policies[key] ?? policyDefault(key),
+    [policies],
   )
-  return { isEnabled, isLoading }
+  return { isEnabled }
 }
 
 interface DisabledTooltipProps {
