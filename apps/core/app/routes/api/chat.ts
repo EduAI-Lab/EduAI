@@ -362,7 +362,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
     if (apiKeyGuard) return apiKeyGuard;
 
-    let session = apiKeySession ?? (await auth.api.getSession(request));
+    let session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
     let isServiceKeyCaller = false;
     if (!session?.user) {
       const serviceKeyError = await requireServiceKey(request);

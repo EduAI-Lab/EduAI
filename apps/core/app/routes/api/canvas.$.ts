@@ -45,7 +45,7 @@ function canvasSubpath(pathname: string): string {
 }
 
 async function handleCanvasRequest(request: Request): Promise<Response> {
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) {
     return json({ success: false, error: "Unauthorized" }, 401);
   }
