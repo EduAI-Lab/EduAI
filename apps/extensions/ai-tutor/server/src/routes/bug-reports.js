@@ -1,11 +1,12 @@
 import express from 'express';
+import { requireRole } from '../middleware/auth.js';
+import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
 import {
   BugReportError,
   createBugReport,
   listAdminBugReports,
   updateBugReportStatus,
 } from '../services/bugReports.js';
-import { requireRole } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -25,7 +26,8 @@ router.post('/bug-reports', async (req, res) => {
 
 router.get('/admin/bug-reports', requireRole('ADMIN'), async (req, res) => {
   try {
-    const rows = await listAdminBugReports(req.headers.cookie ?? '');
+    const cookie = getEduAiCookieForRequest(req);
+    const rows = await listAdminBugReports(cookie);
     res.json(rows);
   } catch (error) {
     const status = typeof error?.status === 'number' ? error.status : 500;
@@ -35,10 +37,11 @@ router.get('/admin/bug-reports', requireRole('ADMIN'), async (req, res) => {
 
 router.patch('/admin/bug-reports/:bugReportId', requireRole('ADMIN'), async (req, res) => {
   try {
+    const cookie = getEduAiCookieForRequest(req);
     const updated = await updateBugReportStatus(
       req.params.bugReportId,
       req.body?.status,
-      req.headers.cookie ?? '',
+      cookie,
     );
     res.json(updated);
   } catch (error) {

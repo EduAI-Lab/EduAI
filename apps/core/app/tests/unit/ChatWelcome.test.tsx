@@ -9,17 +9,19 @@ import { ChatWelcome } from "~/components/chat/chat-welcome";
 describe("ChatWelcome — rendering", () => {
   it("renders the welcome heading", () => {
     render(<ChatWelcome onSelectPrompt={vi.fn()} />);
-    expect(screen.getByRole("heading", { name: /what would you like to know/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /how can i help you today/i }),
+    ).toBeInTheDocument();
   });
 
-  it("shows the model name when selectedModelInfo is provided", () => {
+  it("does not show model name in the welcome header (model shown in composer)", () => {
     render(
       <ChatWelcome
         selectedModelInfo={{ name: "GPT-4o", description: "Flagship model" }}
         onSelectPrompt={vi.fn()}
-      />
+      />,
     );
-    expect(screen.getByText(/powered by gpt-4o/i)).toBeInTheDocument();
+    expect(screen.queryByText(/powered by gpt-4o/i)).not.toBeInTheDocument();
   });
 
   it("does not show 'Powered by' when selectedModelInfo is omitted", () => {
