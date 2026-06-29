@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { UnitSchema } from "~/lib/units";
 import { isUbcEmail, UBC_EMAIL_MESSAGE } from "~/lib/auth/ubc-email";
 
 /**
@@ -31,8 +30,10 @@ export const createInvitationSchema = z
     role: z.enum(INVITABLE_ROLES, {
       required_error: "Please select a role",
     }),
-    // Only meaningful for UNIT_ADMIN; validated by the superRefine below.
-    authorizedUnits: z.array(UnitSchema).optional(),
+    // Only meaningful for UNIT_ADMIN; the superRefine below enforces presence
+    // rules and code existence is validated server-side against the Discipline
+    // table (§541).
+    authorizedUnits: z.array(z.string()).optional(),
   })
   .superRefine((data, ctx) => {
     // §567: UBC-only rule, shared by both the admin and unit-admin invite flows

@@ -75,17 +75,20 @@ describe("createInvitationSchema", () => {
     expect(r.success).toBe(false);
   });
 
-  it("rejects an invalid email and an unknown unit code", () => {
+  it("rejects an invalid email", () => {
     expect(
       createInvitationSchema.safeParse({ email: "nope", role: "ADMIN" }).success,
     ).toBe(false);
+  });
+
+  it("accepts unknown unit codes at the schema level — existence is validated server-side (§541)", () => {
     expect(
       createInvitationSchema.safeParse({
         email: "unit@ubc.ca",
         role: "UNIT_ADMIN",
         authorizedUnits: ["NOTAUNIT"],
       }).success,
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("rejects a well-formed non-UBC email on the email path (#567)", () => {
