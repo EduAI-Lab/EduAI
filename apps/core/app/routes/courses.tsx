@@ -14,21 +14,13 @@ import { CoursesTaView } from '~/components/courses/courses-ta-view'
 import { CoursesStudentView } from '~/components/courses/courses-student-view'
 import { useCourses } from '~/hooks/api/use-courses'
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
   Breadcrumb,
   BreadcrumbItem,
   BreadcrumbLink,
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-  buttonVariants,
+  ConfirmDialog,
 } from '@eduai/ui'
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -170,38 +162,31 @@ export default function CoursesPage() {
           />
         )}
       </div>
-      <AlertDialog
+      <ConfirmDialog
         open={pendingPublish !== null}
         onOpenChange={(open) => { if (!open) setPendingPublish(null) }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {pendingPublish?.publish
-                ? `Publish "${pendingPublish.label}"?`
-                : `Unpublish "${pendingPublish?.label}"?`}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {pendingPublish?.publish
-                ? 'Students will be able to see this course.'
-                : 'Students will lose access to this course.'}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className={pendingPublish?.publish ? undefined : buttonVariants({ variant: 'destructive' })}
-              onClick={() => {
-                if (!pendingPublish) return
-                void handlePublishToggle(pendingPublish.id, pendingPublish.publish)
-                setPendingPublish(null)
-              }}
-            >
-              {pendingPublish?.publish ? 'Publish' : 'Unpublish'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        title={
+          pendingPublish
+            ? pendingPublish.publish
+              ? `Publish "${pendingPublish.label}"?`
+              : `Unpublish "${pendingPublish.label}"?`
+            : ''
+        }
+        description={
+          pendingPublish
+            ? pendingPublish.publish
+              ? 'Students will be able to see this course.'
+              : 'Students will lose access to this course.'
+            : ''
+        }
+        confirmLabel={pendingPublish?.publish ? 'Publish' : 'Unpublish'}
+        variant={pendingPublish?.publish ? 'default' : 'destructive'}
+        onConfirm={() => {
+          if (!pendingPublish) return
+          void handlePublishToggle(pendingPublish.id, pendingPublish.publish)
+          setPendingPublish(null)
+        }}
+      />
     </Layout>
   )
 }

@@ -25,6 +25,8 @@ export { StatusBadge } from "./status-badge"
 export type { StatusBadgeProps } from "./status-badge"
 export { PageTabs, PageTabsList, PageTabsTrigger, PageTabsContent } from "./page-tabs"
 export type { PageTabsProps, PageTabsListProps, PageTabsTriggerProps, PageTabsContentProps } from "./page-tabs"
+export { ConfirmDialog } from "./confirm-dialog"
+export type { ConfirmDialogProps } from "./confirm-dialog"
 
 // ── DS-aligned shadcn primitives ───────────────────────────────────────────
 export { Button, buttonVariants } from "./ui/button"

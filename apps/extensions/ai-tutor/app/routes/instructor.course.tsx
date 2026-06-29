@@ -21,9 +21,8 @@
 import type { FormEvent } from 'react';
 import { useOptimistic, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
-import { PageHeading } from '@eduai/ui';
+import { ConfirmDialog, PageHeading } from '@eduai/ui';
 import { PublishStatusButton } from '../components/PublishStatusButton';
-import { ConfirmDialog } from '../components/ConfirmDialog';
 import api from '../lib/api';
 import type { Course, Module } from '../lib/types';
 import type { Route } from './+types/instructor.course';
@@ -469,14 +468,18 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
           if (!open) setPendingPublish(null);
         }}
         title={
-          pendingPublish?.isPublished
-            ? `Unpublish "${pendingPublish.title}"?`
-            : `Publish "${pendingPublish?.title}"?`
+          pendingPublish
+            ? pendingPublish.isPublished
+              ? `Unpublish "${pendingPublish.title}"?`
+              : `Publish "${pendingPublish.title}"?`
+            : ''
         }
         description={
-          pendingPublish?.isPublished
-            ? 'Students will lose access to this content.'
-            : 'Students will be able to see this content.'
+          pendingPublish
+            ? pendingPublish.isPublished
+              ? 'Students will lose access to this content.'
+              : 'Students will be able to see this content.'
+            : ''
         }
         confirmLabel={pendingPublish?.isPublished ? 'Unpublish' : 'Publish'}
         variant={pendingPublish?.isPublished ? 'destructive' : 'default'}
