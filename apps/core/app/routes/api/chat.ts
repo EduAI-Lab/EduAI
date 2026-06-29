@@ -14,6 +14,7 @@ import {
   resolveRoutedModel,
   type RouterMode,
 } from "~/lib/ai/routing/router";
+import { startSidecarMeasurement } from "~/lib/ai/energy/measurement.server";
 import {
   coalesceTokenUsage,
   normalizeTokenUsage,
@@ -1345,6 +1346,12 @@ ${buildEmptyCourseRagBlock()}`;
       providerId: parsedModel.providerId,
     };
 
+    const energySidecarBaseUrl = fleetPick?.energySidecarUrl ?? null;
+    const sidecarTag = await startSidecarMeasurement(
+      `chat-${chat.id}-${randomUUID()}`,
+      { sidecarBaseUrl: energySidecarBaseUrl },
+    );
+
     const persistTurnTelemetry = async (params: {
       responseText: string;
       usage:
@@ -1369,7 +1376,8 @@ ${buildEmptyCourseRagBlock()}`;
         routingTier,
         routerVersion: wasAuto ? resolvedRouterVersion : null,
         routerFeatures: routerContext,
-        energySidecarBaseUrl: fleetPick?.energySidecarUrl ?? null,
+        sidecarTag,
+        energySidecarBaseUrl,
       });
     };
 
