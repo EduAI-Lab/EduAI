@@ -7,7 +7,7 @@
 
 map $http_x_eduai_internal_key $eduai_internal_key_ok {
     default 0;
-    "changeme-run-deploy-edge-proxy" 1;
+    "${CMPS01_INTERNAL_KEY}" 1;
 }
 
 server {

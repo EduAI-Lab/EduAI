@@ -2,6 +2,7 @@ import { embed, embedMany, type EmbeddingModel } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOllama } from "ollama-ai-provider";
+import { cmps01InternalAuthHeaders } from "~/lib/ai/cmps01-internal-auth.server";
 import prisma from "../prisma.server";
 import { getCourseRagSettings } from "../courses/server";
 import { randomUUID } from "crypto";
@@ -389,7 +390,10 @@ function resolveOllamaBaseUrl(): string {
 }
 
 function createOllamaEmbeddingClient() {
-  return createOllama({ baseURL: resolveOllamaBaseUrl() });
+  return createOllama({
+    baseURL: resolveOllamaBaseUrl(),
+    headers: cmps01InternalAuthHeaders(),
+  });
 }
 
 function createOpenRouterEmbeddingClient() {
