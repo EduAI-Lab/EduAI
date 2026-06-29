@@ -5,6 +5,7 @@ import { IconPlus, IconDots, IconCopy, IconMailForward, IconBan } from "@tabler/
 
 import { auth } from "~/lib/auth/server";
 import { getPolicy } from "~/lib/policy.server";
+import { firstFieldError } from "~/lib/form-errors";
 import {
   Button,
   Badge,
@@ -180,7 +181,7 @@ export default function UnitAdminInvitationsPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setFormError(errorMessage(data?.error, res.status));
+        setFormError(errorMessage(data?.error, res.status, data?.details));
         return;
       }
       setDialogOpen(false);
@@ -477,14 +478,15 @@ export default function UnitAdminInvitationsPage() {
   );
 }
 
-function errorMessage(code: unknown, status: number): string {
+function errorMessage(code: unknown, status: number, details?: unknown): string {
   switch (code) {
     case "USER_EXISTS":
       return "A user with that email already exists.";
     case "FORBIDDEN_ROLE":
       return "You can only invite instructors and students.";
     case "Invalid input":
-      return "Please check the fields and try again.";
+      // Surface the specific field reason (e.g. the UBC-email gate) when present.
+      return firstFieldError(details) ?? "Please check the fields and try again.";
     case "NOT_PENDING":
       return "This invitation is no longer pending.";
     case "NOT_FOUND":
