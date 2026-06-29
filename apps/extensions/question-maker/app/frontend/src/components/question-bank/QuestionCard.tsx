@@ -17,6 +17,7 @@ import type { QuestionCardChoice, QuestionDifficulty as UiDifficulty } from '@ed
 import { IconCopy, IconDots } from '@tabler/icons-react';
 import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
 import { formatCourseAccessLevel } from '@/lib/rbac/course-labels';
+import { markCorrectChoices } from '@/lib/mcq';
 import type { QuestionVariantEntry, QuestionType } from '../../types/question';
 
 interface QuestionCardProps {
@@ -79,14 +80,14 @@ export const QuestionCard = ({
 
   const choices: QuestionCardChoice[] | undefined =
     entry.questionType === 'MCQ' && variant.choices
-      ? variant.choices.map((choice) => ({
-          letter: choice.letter,
-          text: choice.text,
-          correct:
-            variant.answer != null &&
-            (choice.letter.trim().toLowerCase() === variant.answer.trim().toLowerCase() ||
-              choice.text.trim().toLowerCase() === variant.answer.trim().toLowerCase()),
-        }))
+      ? (() => {
+          const correctFlags = markCorrectChoices(variant.answer, variant.choices);
+          return variant.choices.map((choice, i) => ({
+            letter: choice.letter,
+            text: choice.text,
+            correct: correctFlags[i],
+          }));
+        })()
       : undefined;
 
   const canCreateVariant = canCreateQuestion && canWriteInCourse;
