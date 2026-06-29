@@ -20,7 +20,7 @@ import { getActorContext, getRequestContext } from "~/lib/request-context.server
 
 async function topicsGetResponse(courseId: string, topicId?: string, includeDeleted = false) {
   if (topicId) {
-    const topic = await getCourseTopic(courseId, topicId);
+    const topic = await getCourseTopic(courseId, topicId, includeDeleted);
     if (!topic) {
       return new Response(JSON.stringify({ error: "TOPIC_NOT_FOUND" }), {
         status: 404,
@@ -95,6 +95,17 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
   }
 
+  // §19 forensics opt-in (#315): ADMIN may pass ?includeDeleted=true to read
+  // soft-deleted topics — including those in a soft-deleted course. The access
+  // resolver below filters `deletedAt: null` (→ 404 on deleted courses), so
+  // ADMIN reads bypass it here, mirroring courses.id.ts. No-op for non-ADMIN.
+  if (
+    session.user.role === "ADMIN" &&
+    new URL(request.url).searchParams.get("includeDeleted") === "true"
+  ) {
+    return topicsGetResponse(courseId, topicId, true);
+  }
+
   // §8 view tier: any course relationship; students need a published course.
   const { course, access } = await resolveCourseAccessWithCourse(session.user, courseId);
 
@@ -112,12 +123,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
   }
 
-  // §19 forensics opt-in (#315): ADMIN-only; no-op for every other caller.
-  const includeDeleted =
-    session.user.role === "ADMIN" &&
-    new URL(request.url).searchParams.get("includeDeleted") === "true";
-
-  return topicsGetResponse(courseId, topicId, includeDeleted);
+  return topicsGetResponse(courseId, topicId);
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {

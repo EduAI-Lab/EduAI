@@ -599,9 +599,13 @@ export async function getCourseTopics(courseId: string, includeDeleted = false) 
   });
 }
 
-export async function getCourseTopic(courseId: string, topicId: string) {
+export async function getCourseTopic(
+  courseId: string,
+  topicId: string,
+  includeDeleted = false,
+) {
   return prisma.courseTopic.findFirst({
-    where: { id: topicId, courseId, deletedAt: null },
+    where: { id: topicId, courseId, ...(includeDeleted ? {} : { deletedAt: null }) },
   });
 }
 
