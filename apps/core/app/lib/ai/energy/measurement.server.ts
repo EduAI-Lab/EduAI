@@ -1,8 +1,5 @@
 /**
- * Phase 2 — energy measurement abstraction (Step 23 stub).
- *
- * Today: only token-based estimates are implemented (Phase 0/1).
- * Future: sidecar on Ollama host (RAPL / NVML / Ollama metrics) when Q1 deployment is fixed.
+ * Energy measurement for completed chat turns (hardware sidecar or token estimate).
  */
 import type { EnergyMeasurementSource } from "@prisma/client";
 
@@ -83,54 +80,7 @@ function mapSidecarSource(
   return null;
 }
 
-/**
- * Resolve energy/carbon for a completed chat turn.
- * Uses sidecar /measure-stop result when EXPERIMENT_MODE recorded a session tag;
- * otherwise falls back to token estimate.
- */
-export async function measureTurnEnergy(
-  input: EnergyMeasurementInput,
-  options?: { sidecarTag?: string | null; sidecarBaseUrl?: string | null },
-): Promise<EnergyMeasurementResult> {
-  const resolvedSidecarUrl = sidecarBaseUrl(options?.sidecarBaseUrl);
-
-  if (options?.sidecarTag) {
-    const measured = await stopSidecarMeasurement(options.sidecarTag, {
-      sidecarBaseUrl: resolvedSidecarUrl,
-    });
-    if (measured?.energyJoules != null) {
-      return measured;
-    }
-  }
-
-  if (resolvedSidecarUrl) {
-    try {
-      const res = await fetch(`${resolvedSidecarUrl}/measure`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: input.registryModelId,
-          durationMs: input.durationMs,
-          promptTokens: input.promptTokens,
-          completionTokens: input.completionTokens,
-        }),
-        signal: AbortSignal.timeout(3000),
-      });
-      if (res.ok) {
-        const data = (await res.json()) as SidecarStopPayload;
-        if (data.energyJoules != null) {
-          return {
-            energyJoules: data.energyJoules,
-            carbonGramsCO2: data.carbonGramsCO2 ?? null,
-            energySource: mapSidecarSource(data.source),
-          };
-        }
-      }
-    } catch {
-      /* fall through to estimate */
-    }
-  }
-
+function tokenEstimate(input: EnergyMeasurementInput): EnergyMeasurementResult {
   const totalTokens =
     input.promptTokens != null && input.completionTokens != null
       ? input.promptTokens + input.completionTokens
@@ -151,4 +101,26 @@ export async function measureTurnEnergy(
     carbonGramsCO2,
     energySource: energyJoules != null ? "ESTIMATED_FROM_TOKENS" : null,
   };
+}
+
+/**
+ * Resolve energy/carbon for a completed chat turn.
+ * Requires a sidecar session tag for hardware measurement; otherwise uses token estimate.
+ */
+export async function measureTurnEnergy(
+  input: EnergyMeasurementInput,
+  options?: { sidecarTag?: string | null; sidecarBaseUrl?: string | null },
+): Promise<EnergyMeasurementResult> {
+  const resolvedSidecarUrl = sidecarBaseUrl(options?.sidecarBaseUrl);
+
+  if (options?.sidecarTag && resolvedSidecarUrl) {
+    const measured = await stopSidecarMeasurement(options.sidecarTag, {
+      sidecarBaseUrl: resolvedSidecarUrl,
+    });
+    if (measured?.energyJoules != null) {
+      return measured;
+    }
+  }
+
+  return tokenEstimate(input);
 }

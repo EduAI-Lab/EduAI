@@ -109,6 +109,9 @@ export async function persistAiInteractionTelemetry(params: {
   routingTier: 1 | 2 | 3 | null;
   routerVersion: string | null;
   routerFeatures: Record<string, unknown> | null;
+  /** Tagged sidecar session started before inference in /api/chat. */
+  sidecarTag?: string | null;
+  /** Per-host sidecar base URL (fleet routing); falls back to ENERGY_SIDECAR_URL. */
   energySidecarBaseUrl?: string | null;
 }): Promise<void> {
   try {
@@ -145,7 +148,10 @@ export async function persistAiInteractionTelemetry(params: {
         estEnergyJoulesPerToken: modelRecord?.estEnergyJoulesPerToken ?? null,
         averageCarbonGramsPerToken: modelRecord?.averageCarbonGramsPerToken ?? null,
       },
-      { sidecarBaseUrl: params.energySidecarBaseUrl },
+      {
+        sidecarTag: params.sidecarTag,
+        sidecarBaseUrl: params.energySidecarBaseUrl,
+      },
     );
 
     await prisma.aIInteraction.create({
