@@ -22,9 +22,12 @@ export default function StudentHome({ loaderData }: Route.ComponentProps) {
   const navigate = useNavigate();
   const { user } = useLocalUser();
   const courseList = useMemo(() => loaderData.courses ?? [], [loaderData.courses]);
+  // Always the student stat shape here: TA is allowed on this route to preview
+  // the student experience, but courseList is the enrolled/progress list, not
+  // taught courses, so it must not be scored with instructor-shell stats.
   const stats = useMemo(
-    () => buildDashboardStats(user?.role, { courses: courseList }),
-    [user?.role, courseList],
+    () => buildDashboardStats('STUDENT', { courses: courseList }),
+    [courseList],
   );
 
   return (
