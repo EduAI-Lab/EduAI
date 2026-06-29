@@ -1101,9 +1101,11 @@ ${buildEmptyCourseRagBlock()}`;
     );
 
     const streamStartedAt = Date.now();
-    // Set by onStepFinish when any tool (RAG / web) runs this turn; used to
-    // score whether a Sources footer was required (citation compliance).
-    let adhdToolsUsed = false;
+    // True when course material reached the model this turn: either a tool
+    // (RAG / web) ran — set by onStepFinish below — or hybrid/preloaded RAG
+    // context was injected straight into the system prompt with no tool call.
+    // Either path means a Sources footer should be expected (citation compliance).
+    let adhdToolsUsed = Boolean(courseRagContextText);
     const needsOversight =
       chatMode !== "admin" &&
       effectiveAdhdAssist &&
