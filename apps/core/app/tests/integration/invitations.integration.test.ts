@@ -446,7 +446,7 @@ describe("accept flow", () => {
     let res: Response;
     try {
       res = (await acceptAction(
-        acceptReq({ token, name: "Sam Student", password: "supersecret1", confirmPassword: "supersecret1" }),
+        acceptReq({ token, name: "Sam Student", password: INVITE_TEST_PASSWORD, confirmPassword: INVITE_TEST_PASSWORD }),
       )) as Response;
     } finally {
       nowSpy.mockRestore();
@@ -539,7 +539,34 @@ describe("accept flow", () => {
     const token = tokenFromAcceptUrl(created.acceptUrl);
     const body = { token, name: "Pat Prof", password: INVITE_TEST_PASSWORD, confirmPassword: INVITE_TEST_PASSWORD };
 
-    const txSpy = vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("db hiccup"));
+    const originalTransaction = prisma.$transaction.bind(prisma);
+    const txSpy = vi.spyOn(prisma, "$transaction").mockImplementation(async (fn, ...args) => {
+      if (typeof fn !== "function") {
+        return originalTransaction(fn as never, ...args);
+      }
+      // Fail only the promote-step invitation update inside a real transaction so
+      // password-history writes during sign-up still succeed and user.update rolls back.
+      return originalTransaction(async (tx) => {
+        const proxiedTx = new Proxy(tx, {
+          get(target, prop) {
+            if (prop === "invitation") {
+              return new Proxy(target.invitation, {
+                get(invTarget, invProp) {
+                  if (invProp === "update") {
+                    return () => Promise.reject(new Error("db hiccup"));
+                  }
+                  const value = (invTarget as unknown as Record<string, unknown>)[invProp as string];
+                  return typeof value === "function" ? value.bind(invTarget) : value;
+                },
+              });
+            }
+            const value = (target as unknown as Record<string, unknown>)[prop as string];
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+        });
+        return fn(proxiedTx);
+      }, ...args);
+    });
     const failed = (await acceptAction(acceptReq(body))) as any;
     txSpy.mockRestore();
     expect(failed.formError).toBeTruthy(); // surfaced as a form error, not a redirect
