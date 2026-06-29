@@ -16,11 +16,10 @@
  */
 import { useMemo, useOptimistic, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { PageHeading } from '@eduai/ui';
+import { ConfirmDialog, PageHeading } from '@eduai/ui';
 import { AtRoleBanner } from '../components/rbac/AtRoleBanner';
 import { PermissionGate } from '../components/rbac/PermissionGate';
 import { PublishStatusButton } from '../components/PublishStatusButton';
-import { ConfirmDialog } from '../components/ConfirmDialog';
 import { useAtPermissions } from '../hooks/useAtPermissions';
 import { useLocalUser } from '../hooks/useLocalUser';
 import api from '../lib/api';
@@ -234,14 +233,18 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
           if (!open) setPendingPublish(null);
         }}
         title={
-          pendingPublish?.isPublished
-            ? `Unpublish "${pendingPublish.title}"?`
-            : `Publish "${pendingPublish?.title}"?`
+          pendingPublish
+            ? pendingPublish.isPublished
+              ? `Unpublish "${pendingPublish.title}"?`
+              : `Publish "${pendingPublish.title}"?`
+            : ''
         }
         description={
-          pendingPublish?.isPublished
-            ? 'Students will lose access to this content.'
-            : 'Students will be able to see this content.'
+          pendingPublish
+            ? pendingPublish.isPublished
+              ? 'Students will lose access to this content.'
+              : 'Students will be able to see this content.'
+            : ''
         }
         confirmLabel={pendingPublish?.isPublished ? 'Unpublish' : 'Publish'}
         variant={pendingPublish?.isPublished ? 'destructive' : 'default'}

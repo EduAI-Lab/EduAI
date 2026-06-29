@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Badge, Button } from '@eduai/ui';
+import { Badge, Button, ConfirmDialog } from '@eduai/ui';
 import { toast } from 'sonner';
 import api from '~/lib/api';
 import type { AdminEnrollmentData, EnrollmentRole } from '~/lib/types';
 import { PermissionGate } from '~/components/rbac/PermissionGate';
-import { ConfirmDialog } from '~/components/ConfirmDialog';
 
 type CourseEnrollmentsPanelProps = {
   courseId: number;

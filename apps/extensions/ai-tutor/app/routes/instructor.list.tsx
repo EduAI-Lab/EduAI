@@ -41,7 +41,7 @@ import AddActivityPanel from '../components/AddActivityPanel';
 import ActivityDetailsCard from '../components/ActivityDetailsCard';
 import EditActivityPanel from '../components/EditActivityPanel';
 import AddCourseTopicsButton from '../components/AddCourseTopicsButton';
-import { ConfirmDialog } from '../components/ConfirmDialog';
+import { ConfirmDialog } from '@eduai/ui';
 import api from '../lib/api';
 import type { Activity, Course, Lesson, ModuleDetail, Topic } from '../lib/types';
 import { CourseTopicsProvider, useCourseTopics } from '../hooks/useCourseTopics';
