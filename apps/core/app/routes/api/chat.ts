@@ -1031,12 +1031,13 @@ ${courseScopeBlock ? `${courseScopeBlock}\n\n` : courseCode ? `Current course co
         }
       }
 
-      scopeEvaluation = evaluateCourseScope({
+      scopeEvaluation = await evaluateCourseScope({
         message: userQuestion,
         hasCourse,
         hits: courseRagHits,
         course: courseScopeContext,
         conversation: buildScopeConversationContext(trimmedMessages, extractMessageText),
+        classifierModel: aiModel,
       });
 
       if (scopeEvaluation.decision === "refuse" && courseScopeContext) {

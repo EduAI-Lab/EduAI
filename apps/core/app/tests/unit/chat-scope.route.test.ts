@@ -19,6 +19,14 @@ vi.mock("ai", async (importOriginal) => {
   };
 });
 
+vi.mock("~/lib/ai/course-scope-classifier", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/ai/course-scope-classifier")>();
+  return {
+    ...actual,
+    classifyCourseScope: vi.fn(),
+  };
+});
+
 vi.mock("~/lib/ai/embedding", () => ({
   findRelevantContent: vi.fn().mockResolvedValue([]),
 }));
@@ -83,6 +91,7 @@ import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { findRelevantContent } from "~/lib/ai/embedding";
+import { classifyCourseScope } from "~/lib/ai/course-scope-classifier";
 import { getChatModelCapabilities } from "~/lib/ai/providers.server";
 import prisma from "~/lib/prisma.server";
 
@@ -129,10 +138,22 @@ function baseBody(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function mockScopeClassifier(message: string): { inScope: boolean; reason: string } {
+  const offTopic =
+    /cookie|bake|world war|capital of france|social media|walking every|overall health|tell me how to bake/i.test(
+      message,
+    );
+  return { inScope: !offTopic, reason: offTopic ? "classifier_out_of_scope" : "in_scope" };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   delete process.env.CHAT_SCOPE_ZERO_CHUNK_GATE;
   process.env.VLLM_BASE_URL = "http://localhost:8001";
+
+  vi.mocked(classifyCourseScope).mockImplementation(async ({ message }) =>
+    mockScopeClassifier(message),
+  );
 
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "user-1", role: "STUDENT" },
@@ -298,7 +319,7 @@ describe("POST /api/chat — course scope gate (#729)", () => {
     expect(res.status).toBe(200);
     expect(streamText).toHaveBeenCalled();
     const config = vi.mocked(streamText).mock.calls.at(-1)?.[0] as { system?: string };
-    expect(config.system).toContain("foundational");
+    expect(config.system).toContain("prerequisite");
   });
 
   it("allows concept follow-ups when prior assistant turn was course-related", async () => {

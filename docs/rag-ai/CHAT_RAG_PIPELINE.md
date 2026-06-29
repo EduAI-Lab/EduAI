@@ -85,7 +85,7 @@ flowchart TB
 
 ## Notes
 
-- **Course scope gate (#729 v2, v2.1, v2.3)** runs after RAG prefetch on every course-scoped learning turn. **Deny-list default:** substantive turns **allow** unless **`shouldHardRefuseOffTopic`** matches a high-confidence distraction domain (cookies, social media, WWII, etc.) with no course framing or metadata overlap. **v2.1:** conversation continuity does **not** bypass the deny-list — direct payload requests hard-refuse mid-thread; analogy questions defer to **Layer A**. **v2.3:** career/platform pivots (jobs, LinkedIn, résumé) refuse without corpus/metadata support; ellipsis follow-ups only (`why was ASCII created?`) inherit thread continuity — not topic pivots. Grey-area concept exploration defers to **Layer A**. Weak RAG affinity (similarity ≥ **`ragScopeAllowSimilarity`**, default **0.35** via `CHAT_SCOPE_RAG_ALLOW_SIM`) is a fail-open signal. Hard-refuse short-circuits with a canned message (no main model call). Disable with `CHAT_SCOPE_ZERO_CHUNK_GATE=0`.
+- **Course scope gate (#729 v3)** runs after RAG prefetch on every course-scoped learning turn. **Layer A** injects course identity + scope policy into the system prompt. **Layer B** runs a **classifier LLM** (`classifyCourseScope` in `course-scope-classifier.ts`) with course definition, retrieved excerpts, and recent conversation — returns `inScope` before the main model is called. Greetings/meta skip the classifier. No hardcoded off-topic word lists. Disable Layer B with `CHAT_SCOPE_ZERO_CHUNK_GATE=0`; disable classifier only with `CHAT_SCOPE_CLASSIFIER_ENABLED=0`. On classifier errors, defaults **fail-open** (`CHAT_SCOPE_CLASSIFIER_FAIL_OPEN=0` for fail-closed).
 - **Hybrid RAG** prefetches **`findRelevantContent`** on every course-scoped turn. Excerpts inject when **`shouldInjectCourseRag`** passes (`needsCourseRag`, similarity thresholds, or `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE=1`), formatted with **`buildCappedRagContextText`** and **`buildRagSystemBlock`** (chunk cap **4**, char cap **14_000**).
 - **Tool RAG (preload)** shares the same prefetch + inject gate. When injection passes, excerpts use **`buildRagSystemBlock({ toolPath: true })`**. **`getInformation`** remains a supplemental fallback (`capRagHitsForTool`, **6000** chars per chunk).
 - **Query embeddings** use an in-memory cache (`QUERY_EMBED_CACHE_TTL_MS`, `QUERY_EMBED_CACHE_MAX`). **Server** `OPENROUTER_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, or `OPENAI_API_KEY` (first match wins) — independent of the user's chat provider (e.g. Ollama).
@@ -100,6 +100,7 @@ flowchart TB
 | RAG caps + formatters | [`apps/core/app/lib/chat-rag.ts`](../../apps/core/app/lib/chat-rag.ts) |
 | RAG inject gate | [`apps/core/app/lib/ai/course-rag-policy.ts`](../../apps/core/app/lib/ai/course-rag-policy.ts) |
 | Course scope gate | [`apps/core/app/lib/ai/course-scope.ts`](../../apps/core/app/lib/ai/course-scope.ts) |
+| Course scope classifier (Layer B) | [`apps/core/app/lib/ai/course-scope-classifier.ts`](../../apps/core/app/lib/ai/course-scope-classifier.ts) |
 | Chat intent | [`apps/core/app/lib/ai/chat-intent.ts`](../../apps/core/app/lib/ai/chat-intent.ts) |
 | Vector search + embed API | [`apps/core/app/lib/ai/embedding.ts`](../../apps/core/app/lib/ai/embedding.ts) |
 | API key body schema | [`apps/core/app/lib/chat-api-keys.schema.ts`](../../apps/core/app/lib/chat-api-keys.schema.ts) |
@@ -209,8 +210,9 @@ Resolved system prompt order: request `systemPrompt` → stored `chat.systemProm
 | `CHAT_RAG_INJECT_STRONG_SIM` | 0.8 (or `ROUTING_RAG_STRONG_SIM`) | Inject when top-1 similarity clears bar even if intent skips |
 | `CHAT_RAG_INJECT_MODERATE_SIM` | 0.55 (or `ROUTING_RAG_TIER1_SIM`) | Inject when at least one chunk clears moderate bar |
 | `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE` | off | `1` = inject on every course-scoped message (testing / legacy always-on) |
-| `CHAT_SCOPE_ZERO_CHUNK_GATE` | on | `0` / `false` = disable Layer B hard-refuse (Layer A prompt still applies) |
-| `CHAT_SCOPE_RAG_ALLOW_SIM` | 0.35 | Weak RAG affinity threshold for scope fail-open (`hasScopeAffinityRagHits`) |
+| `CHAT_SCOPE_ZERO_CHUNK_GATE` | on | `0` / `false` = disable Layer B classifier gate (Layer A prompt still applies) |
+| `CHAT_SCOPE_CLASSIFIER_ENABLED` | on | `0` / `false` = skip classifier LLM; allow substantive turns through |
+| `CHAT_SCOPE_CLASSIFIER_FAIL_OPEN` | on | `0` / `false` = refuse on classifier parse/LLM errors instead of allowing |
 | `QUERY_EMBED_CACHE_TTL_MS` | 90000 | Query embedding cache TTL |
 | `QUERY_EMBED_CACHE_MAX` | 300 | Max cached query embeddings |
 | `EMBED_MANY_BATCH_SIZE` | 64 | Ingestion batch size for `embedMany` |

@@ -1,5 +1,10 @@
+import type { LanguageModel } from "ai";
 import type { HybridRagHit } from "~/lib/chat-rag";
-import { ragScopeAllowSimilarity } from "~/lib/ai/course-rag-policy";
+import {
+  classifyCourseScope,
+  isScopeClassifierEnabled,
+  type ClassifyCourseScopeResult,
+} from "~/lib/ai/course-scope-classifier";
 
 /** Course fields injected into the chat system prompt (Layer A). */
 export type CourseScopeContext = {
@@ -10,7 +15,7 @@ export type CourseScopeContext = {
   topics?: string[];
 };
 
-/** Recent thread context for follow-up continuity (#729 v2). */
+/** Recent thread context for follow-up continuity (#729). */
 export type CourseScopeConversationContext = {
   priorAssistantText?: string | null;
   priorUserText?: string | null;
@@ -25,6 +30,8 @@ export type EvaluateCourseScopeInput = {
   course?: CourseScopeContext | null;
   conversation?: CourseScopeConversationContext | null;
   gateEnabled?: boolean;
+  /** Model for the scope classifier pass; required when the gate runs on substantive turns. */
+  classifierModel?: LanguageModel | null;
 };
 
 export type EvaluateCourseScopeResult = {
@@ -32,227 +39,31 @@ export type EvaluateCourseScopeResult = {
   reason: string;
 };
 
+export type ScopeClassifierOverride = (
+  input: EvaluateCourseScopeInput & { course: CourseScopeContext },
+) => Promise<ClassifyCourseScopeResult>;
+
+let scopeClassifierOverride: ScopeClassifierOverride | null = null;
+
+/** Test hook — inject a mock classifier without calling the LLM. */
+export function setScopeClassifierOverride(override: ScopeClassifierOverride | null): void {
+  scopeClassifierOverride = override;
+}
+
 const GREETING_PATTERN =
   /^(hi|hello|hey|good morning|good afternoon|good evening|thanks|thank you|ok|okay|bye)\b/i;
 
 const META_SCOPE_PATTERN =
   /\b(what can you help|how can you help|what do you do|who are you|what are you)\b/i;
 
-/** High-confidence distraction domains — hard-refuse only when these match (#729). */
-const NON_FOUNDATIONAL_TOPIC_PATTERN =
-  /\b(world war|wwii|ww2|war ii|social media|walking every|overall health|wellness|physical health|super bowl|netflix|capital of|stock market|roman empire|poem about|joke about|dinosaur|celebrity|football|basketball|recipe|bake|baking|cookie|marathon|movie|tv show|invest in)\b/i;
-
-const LEARNING_INTENT_PATTERN =
-  /^(what|why|how|who|when|where|which|explain|define|describe|tell me|can you|could you|help me|is there|are there)\b/i;
-
-/** User wants off-topic content delivered (recipe, how-to), not a course-concept discussion. */
-const DIRECT_OFF_TOPIC_PAYLOAD_PATTERN =
-  /\b(tell me how to|tell me about|give me|show me how to|write me|what are the steps|step by step|instructions for|recipe for|how do i bake|how do i make|how to bake|how to make|how can i bake|how can i make)\b/i;
-
-/** Off-topic term used as illustration/comparison for a course concept (#729 v2.1). */
-const ANALOGY_FRAMING_PATTERN =
-  /\b(is (that|this|it)( \w+){0,4} (like|an example|considered|part of|a form of|similar to|related to)|would (that|this|it)( \w+){0,3} (be|count)|does (that|this|it)( \w+){0,3} (count|relate|mean|apply)|could (that|this|it)( \w+){0,3} (be|count)|count as|an example of|in that sense|same as|similar to)\b/i;
-
-/** Career / platform coaching — common crescendo pivot off course materials (#729 v2.3). */
-const CAREER_PLATFORM_PATTERN =
-  /\b(linkedin|indeed|glassdoor|job search|job hunt|get (a )?job|get jobs|help me get jobs|network on linkedin|networking on linkedin|resume|cover letter|interview prep|salary negotiation|career advice|job prospects|job opportunities|professional networking)\b/i;
-
-/** Short conceptual follow-ups that inherit the active course thread (#729 v2.3). */
-const ELLIPSIS_FOLLOW_UP_PATTERN =
-  /^(why|who|how does|how do|how is|how are|how can|what about|what is|what are|explain|tell me more|can you explain|could you explain)\b/i;
-
-const SCOPE_REFUSAL_SNIPPET = "can't help with unrelated topics";
-
-/** Clearly off-topic domains — used for deny-list hard refuse only. */
-export function isOffTopicDomain(message: string): boolean {
-  return NON_FOUNDATIONAL_TOPIC_PATTERN.test(message.toLowerCase());
-}
-
-/**
- * Direct request for off-topic payload (recipe, how-to steps) — not an analogy
- * question about whether an example illustrates a course concept.
- */
-export function isDirectOffTopicRequest(message: string): boolean {
-  if (!isOffTopicDomain(message)) return false;
-  return DIRECT_OFF_TOPIC_PAYLOAD_PATTERN.test(message.toLowerCase());
-}
-
-/**
- * Deny-list term appears in a comparison / "is X like Y?" question — allow Layer A
- * to answer conceptually without delivering the off-topic payload.
- */
-export function isAnalogyOrConceptQuestion(message: string): boolean {
-  if (!isOffTopicDomain(message)) return false;
-
-  const trimmed = message.trim();
-  const lower = trimmed.toLowerCase();
-  const isQuestion =
-    trimmed.includes("?") ||
-    /^(is|are|would|could|does|do|should|can|if)\b/i.test(trimmed);
-
-  if (!isQuestion) return false;
-  return ANALOGY_FRAMING_PATTERN.test(lower);
-}
-
-/** Job search, LinkedIn, résumé, etc. — off-course unless materials support it. */
-export function isCareerOrPlatformTopic(message: string): boolean {
-  return CAREER_PLATFORM_PATTERN.test(message.toLowerCase());
-}
-
-/**
- * Ellipsis follow-up on the current course thread ("why was ascii created?") —
- * not a topic pivot ("how can I network on LinkedIn").
- */
-export function isEllipsisCourseFollowUp(message: string): boolean {
-  const trimmed = message.trim();
-  if (!trimmed || isCareerOrPlatformTopic(trimmed)) return false;
-
-  if (trimmed.length <= 32 && trimmed.includes("?")) {
-    return ELLIPSIS_FOLLOW_UP_PATTERN.test(trimmed);
-  }
-
-  return ELLIPSIS_FOLLOW_UP_PATTERN.test(trimmed);
-}
-
-/** Current turn is grounded in course metadata, intent, or weak RAG affinity. */
-export function hasCourseMaterialSupport(
-  message: string,
-  course: CourseScopeContext | null | undefined,
-  hits: HybridRagHit[],
-): boolean {
-  if (hasCourseIntentSignals(message)) return true;
-  if (course && hasCourseMetadataOverlap(message, course)) return true;
-  if (hasScopeAffinityRagHits(hits)) return true;
-  return false;
-}
-
-/**
- * Refuse career/platform pivots without corpus or metadata support (#729 v2.3).
- * Blocks slow-burn drift (course tips → jobs → LinkedIn).
- */
-export function shouldRefuseCareerPlatformPivot(
-  input: EvaluateCourseScopeInput,
-): boolean {
-  if (!isCareerOrPlatformTopic(input.message)) return false;
-  return !hasCourseMaterialSupport(input.message, input.course, input.hits);
-}
-
-/** Course-logistics signals — course-framing in the question itself. */
-const COURSE_INTENT_KEYWORDS = [
-  "assignment",
-  "chapter",
-  "class",
-  "course",
-  "cosc",
-  "exam",
-  "final",
-  "homework",
-  "instructor",
-  "lab",
-  "lecture",
-  "material",
-  "materials",
-  "midterm",
-  "module",
-  "professor",
-  "project",
-  "quiz",
-  "reading",
-  "syllabus",
-  "textbook",
-  "this course",
-  "tutorial",
-  "week ",
-];
-
-/** Tokens from generic titles/descriptions that must not alone signal overlap. */
-const GENERIC_METADATA_TOKENS = new Set([
-  "basic",
-  "computer",
-  "course",
-  "cs",
-  "faculty",
-  "first",
-  "fundamental",
-  "general",
-  "help",
-  "intro",
-  "introduction",
-  "okanagan",
-  "overview",
-  "programming",
-  "science",
-  "student",
-  "students",
-  "ubco",
-  "year",
-]);
-
-const SCOPE_STOP_WORDS = new Set([
-  "about",
-  "after",
-  "also",
-  "and",
-  "are",
-  "ask",
-  "can",
-  "could",
-  "did",
-  "does",
-  "explain",
-  "for",
-  "from",
-  "have",
-  "help",
-  "how",
-  "into",
-  "just",
-  "like",
-  "make",
-  "more",
-  "much",
-  "need",
-  "not",
-  "our",
-  "out",
-  "say",
-  "some",
-  "tell",
-  "than",
-  "that",
-  "the",
-  "their",
-  "them",
-  "then",
-  "there",
-  "these",
-  "they",
-  "this",
-  "those",
-  "use",
-  "using",
-  "want",
-  "what",
-  "when",
-  "where",
-  "which",
-  "who",
-  "why",
-  "will",
-  "with",
-  "would",
-  "you",
-  "your",
-]);
-
-/** Zero-chunk hard gate (#729 Layer B). Set `CHAT_SCOPE_ZERO_CHUNK_GATE=0` to disable. */
+/** Layer B gate. Set `CHAT_SCOPE_ZERO_CHUNK_GATE=0` to disable. */
 export function isCourseScopeGateEnabled(): boolean {
   const raw = process.env.CHAT_SCOPE_ZERO_CHUNK_GATE;
   if (raw === "0" || raw === "false") return false;
   return true;
 }
 
-/** Greetings, thanks, meta questions, and very short turns never hard-refuse. */
+/** Greetings, thanks, meta questions, and very short turns skip the classifier. */
 export function isScopeAllowlisted(message: string): boolean {
   const trimmed = message.trim();
   if (!trimmed) return true;
@@ -262,137 +73,11 @@ export function isScopeAllowlisted(message: string): boolean {
   return false;
 }
 
-/** Substantive turns are candidates for the scope gate deny-list check. */
+/** Substantive turns are sent to the scope classifier. */
 export function isSubstantiveForScope(message: string): boolean {
   const trimmed = message.trim();
   if (!trimmed || isScopeAllowlisted(trimmed)) return false;
   return trimmed.includes("?") || trimmed.length >= 20;
-}
-
-/** Plausible learning question in a course chat (fail-open signal). */
-export function isLearningIntentQuestion(message: string): boolean {
-  const trimmed = message.trim();
-  if (!trimmed) return false;
-  return trimmed.includes("?") || LEARNING_INTENT_PATTERN.test(trimmed);
-}
-
-export function hasCourseIntentSignals(message: string): boolean {
-  const lower = message.toLowerCase();
-  for (const keyword of COURSE_INTENT_KEYWORDS) {
-    if (keyword === "course") {
-      if (/\bof course\b/.test(lower)) continue;
-      if (/\bcourse\b/.test(lower)) return true;
-      continue;
-    }
-    if (lower.includes(keyword)) return true;
-  }
-  return false;
-}
-
-function tokenizeForScope(text: string): Set<string> {
-  return new Set(
-    text
-      .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, " ")
-      .split(/\s+/)
-      .filter((word) => word.length >= 3 && !SCOPE_STOP_WORDS.has(word)),
-  );
-}
-
-function normalizeCourseCode(code: string): string {
-  return code.trim().toLowerCase().replace(/\s+/g, " ");
-}
-
-function isScopeRefusalMessage(text: string): boolean {
-  return text.includes(SCOPE_REFUSAL_SNIPPET);
-}
-
-/** Lower bar than RAG inject — weak affinity still means "probably course-related". */
-export function hasScopeAffinityRagHits(hits: HybridRagHit[]): boolean {
-  const threshold = ragScopeAllowSimilarity();
-  return hits.some((hit) => (hit.similarity ?? 0) >= threshold);
-}
-
-/**
- * Strong overlap: course code/name, multi-word topics, or topic tokens with
- * explicit course-intent signals.
- */
-export function hasCourseMetadataOverlap(
-  message: string,
-  course: CourseScopeContext,
-): boolean {
-  const lower = message.toLowerCase();
-  const codeNorm = normalizeCourseCode(course.code);
-
-  if (codeNorm.length >= 4 && lower.includes(codeNorm)) {
-    return true;
-  }
-
-  const codeCompact = codeNorm.replace(/\s/g, "");
-  if (codeCompact.length >= 4 && lower.replace(/\s/g, "").includes(codeCompact)) {
-    return true;
-  }
-
-  const courseName = course.name.trim().toLowerCase();
-  if (courseName.length >= 8 && lower.includes(courseName)) {
-    return true;
-  }
-
-  for (const topic of course.topics ?? []) {
-    const normalizedTopic = topic.trim().toLowerCase();
-    if (normalizedTopic.includes(" ") && normalizedTopic.length >= 6 && lower.includes(normalizedTopic)) {
-      return true;
-    }
-  }
-
-  if (!hasCourseIntentSignals(message)) {
-    return false;
-  }
-
-  const messageTokens = tokenizeForScope(message);
-  const topicTokens = tokenizeForScope((course.topics ?? []).join(" "));
-  for (const token of messageTokens) {
-    if (topicTokens.has(token) && !GENERIC_METADATA_TOKENS.has(token)) {
-      return true;
-    }
-  }
-
-  for (const token of tokenizeForScope(course.description ?? "")) {
-    if (!GENERIC_METADATA_TOKENS.has(token) && messageTokens.has(token)) {
-      return true;
-    }
-  }
-
-  for (const token of tokenizeForScope(course.aiInstructions ?? "")) {
-    if (messageTokens.has(token)) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-/**
- * Active course thread: prior assistant answered substantively, or prior user
- * turn was course-framed. Enables short follow-ups ("why?", "who created it?").
- */
-export function hasConversationCourseContext(
-  conversation: CourseScopeConversationContext | null | undefined,
-  course: CourseScopeContext | null | undefined,
-): boolean {
-  if (!conversation) return false;
-
-  const priorAssistant = conversation.priorAssistantText?.trim() ?? "";
-  if (priorAssistant.length >= 30 && !isScopeRefusalMessage(priorAssistant)) {
-    return true;
-  }
-
-  const priorUser = conversation.priorUserText?.trim() ?? "";
-  if (!priorUser) return false;
-  if (hasCourseIntentSignals(priorUser)) return true;
-  if (course && hasCourseMetadataOverlap(priorUser, course)) return true;
-
-  return false;
 }
 
 /** Build conversation context from merged chat history (excludes current user turn for priorUser). */
@@ -413,37 +98,12 @@ export function buildScopeConversationContext(
 }
 
 /**
- * Hard-refuse when deny-list matches unless course-framed or analogy question.
- * Conversation continuity does NOT bypass deny-list (#729 v2.1 — topic laundering fix).
- * Direct payload requests (recipes, how-tos) always refuse mid-thread.
+ * Layer B (#729 v3): classifier decides in-scope before the main model runs.
+ * No hardcoded off-topic word lists — scope is defined per course + corpus + thread.
  */
-export function shouldHardRefuseOffTopic(input: EvaluateCourseScopeInput): boolean {
-  if (!isOffTopicDomain(input.message)) {
-    return false;
-  }
-
-  if (hasCourseIntentSignals(input.message)) {
-    return false;
-  }
-
-  if (input.course && hasCourseMetadataOverlap(input.message, input.course)) {
-    return false;
-  }
-
-  if (isAnalogyOrConceptQuestion(input.message)) {
-    return false;
-  }
-
-  return true;
-}
-
-/**
- * Layer B pre-check (#729 v2): deny-list default — allow unless clearly off-topic.
- * Grey-area and concept exploration defer to Layer A (system prompt) + the LLM.
- */
-export function evaluateCourseScope(
+export async function evaluateCourseScope(
   input: EvaluateCourseScopeInput,
-): EvaluateCourseScopeResult {
+): Promise<EvaluateCourseScopeResult> {
   if (!input.hasCourse) {
     return { decision: "allow", reason: "no_course" };
   }
@@ -461,43 +121,34 @@ export function evaluateCourseScope(
     return { decision: "allow", reason: "not_substantive" };
   }
 
-  if (shouldHardRefuseOffTopic(input)) {
-    const reason = isDirectOffTopicRequest(input.message)
-      ? "direct_off_topic_payload"
-      : "clearly_off_topic";
-    return { decision: "refuse", reason };
-  }
-
-  if (shouldRefuseCareerPlatformPivot(input)) {
-    return { decision: "refuse", reason: "off_course_career_platform" };
+  if (!isScopeClassifierEnabled()) {
+    return { decision: "allow", reason: "classifier_disabled" };
   }
 
   const course = input.course;
-
-  if (
-    hasConversationCourseContext(input.conversation, course) &&
-    isEllipsisCourseFollowUp(input.message)
-  ) {
-    return { decision: "allow", reason: "conversation_continuity" };
+  if (!course) {
+    return { decision: "allow", reason: "no_course_context" };
   }
 
-  if (hasCourseIntentSignals(input.message)) {
-    return { decision: "allow", reason: "course_material_intent" };
+  if (!input.classifierModel) {
+    return { decision: "allow", reason: "classifier_model_unavailable" };
   }
 
-  if (course && hasCourseMetadataOverlap(input.message, course)) {
-    return { decision: "allow", reason: "course_metadata_overlap" };
+  const classification = scopeClassifierOverride
+    ? await scopeClassifierOverride({ ...input, course })
+    : await classifyCourseScope({
+        message: input.message,
+        course,
+        hits: input.hits,
+        conversation: input.conversation,
+        classifierModel: input.classifierModel,
+      });
+
+  if (!classification.inScope) {
+    return { decision: "refuse", reason: classification.reason };
   }
 
-  if (hasScopeAffinityRagHits(input.hits)) {
-    return { decision: "allow", reason: "scope_rag_affinity" };
-  }
-
-  if (isLearningIntentQuestion(input.message)) {
-    return { decision: "allow", reason: "learning_intent" };
-  }
-
-  return { decision: "allow", reason: "default_course_chat" };
+  return { decision: "allow", reason: classification.reason };
 }
 
 /** Layer A: course identity + soft scope policy for every course-scoped turn. */
@@ -521,13 +172,10 @@ export function buildCourseScopePromptBlock(course: CourseScopeContext): string 
   lines.push(
     "",
     "SCOPE POLICY:",
-    "- Prioritize questions related to this course and its subject area.",
-    "- Answer foundational and prerequisite concepts when they support course learning, even if not in uploaded materials — note when you are giving general background vs citing course materials.",
-    "- Politely decline clearly unrelated questions (e.g. hobbies, recipes, unrelated subjects).",
-    "- Do not provide job-search, LinkedIn, résumé, interview, or professional-networking coaching unless the course materials explicitly cover careers for this subject.",
-    "- When the user asks whether an everyday example illustrates a course concept, explain the concept — do not provide step-by-step off-topic instructions (recipes, hobby how-tos) when asked directly.",
-    "- When course materials do not contain an answer, say so clearly — do not invent syllabus-specific facts.",
-    "- In an ongoing conversation, short follow-ups on the current concept may continue the thread — topic pivots (careers, platforms, hobbies) are not in scope.",
+    "- Answer questions related to this course, its subject area, and supporting prerequisite concepts.",
+    "- Use uploaded course materials when available; say clearly when you are giving general background.",
+    "- Politely decline unrelated topics — the system may already block clearly off-scope questions before you respond.",
+    "- In an ongoing conversation, continue the current course concept; do not pivot into unrelated life or career coaching.",
   );
 
   return lines.join("\n");

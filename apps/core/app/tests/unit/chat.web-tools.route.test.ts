@@ -15,6 +15,14 @@ vi.mock("ai", async (importOriginal) => {
   };
 });
 
+vi.mock("~/lib/ai/course-scope-classifier", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/ai/course-scope-classifier")>();
+  return {
+    ...actual,
+    classifyCourseScope: vi.fn(),
+  };
+});
+
 vi.mock("~/lib/ai/embedding", () => ({
   findRelevantContent: vi.fn().mockResolvedValue([]),
 }));
@@ -51,6 +59,7 @@ import { getChatToolNames } from "~/lib/ai/chat-tools";
 import { auth } from "~/lib/auth/server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { getChatModelCapabilities } from "~/lib/ai/providers.server";
+import { classifyCourseScope } from "~/lib/ai/course-scope-classifier";
 import { getPolicy } from "~/lib/policy.server";
 import prisma from "~/lib/prisma.server";
 
@@ -88,6 +97,10 @@ function policy(values: Record<string, boolean>) {
 beforeEach(() => {
   vi.clearAllMocks();
   process.env.VLLM_BASE_URL = "http://localhost:8001";
+  vi.mocked(classifyCourseScope).mockImplementation(async ({ message }) => {
+    const offTopic = /cookie|bake/i.test(message);
+    return { inScope: !offTopic, reason: offTopic ? "classifier_out_of_scope" : "in_scope" };
+  });
   vi.mocked(prisma.chatMessage.findMany).mockResolvedValue([] as never);
   vi.mocked(prisma.chatMessage.createMany).mockResolvedValue({ count: 1 } as never);
   // Default: general (non-course) chat owned by the caller.
