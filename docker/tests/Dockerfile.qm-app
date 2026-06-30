@@ -29,8 +29,6 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/apps/extensions/question-maker/node_modules \
      ./apps/extensions/question-maker/node_modules
-COPY --from=deps /app/apps/extensions/question-maker/app/frontend/node_modules \
-     ./apps/extensions/question-maker/app/frontend/node_modules
 
 COPY packages/ui                     ./packages/ui/
 
@@ -57,7 +55,7 @@ COPY apps/extensions/question-maker/app/frontend/index.html \
 COPY apps/extensions/question-maker/app/frontend/package.json \
      ./apps/extensions/question-maker/app/frontend/
 
-ENV PATH="/app/apps/extensions/question-maker/app/frontend/node_modules/.bin:/app/apps/extensions/question-maker/node_modules/.bin:/app/node_modules/.bin:${PATH}"
+ENV PATH="/app/apps/extensions/question-maker/node_modules/.bin:/app/node_modules/.bin:${PATH}"
 
 WORKDIR /app/apps/extensions/question-maker/app/frontend
 
@@ -68,6 +66,7 @@ RUN mkdir -p /app/apps/extensions/question-maker \
 
 # ── Target: test-unit ──────────────────────────────────────────────────────
 FROM test-base AS test-unit
+# vitest resolves from PATH: /app/node_modules/.bin/vitest (v4.1.9 hoisted to root by npm ci)
 CMD ["sh", "-c", "vitest run --config vitest.unit.config.ts"]
 
 # ── Target: test-integration ──────────────────────────────────────────────
@@ -79,8 +78,6 @@ FROM node:24-alpine AS build
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/apps/extensions/question-maker/app/frontend/node_modules \
-     ./apps/extensions/question-maker/app/frontend/node_modules
 
 # @eduai/ui is source-only; the node_modules/@eduai/ui symlink points here
 COPY packages/ui ./packages/ui/
