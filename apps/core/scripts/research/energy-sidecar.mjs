@@ -35,6 +35,8 @@ function sidecarFetchInit(init) {
   };
 }
 
+export { sidecarFetchInit };
+
 export async function ensureResearchEnergyReady() {
   if (!isEnergyMeasurementEnabled()) {
     return;

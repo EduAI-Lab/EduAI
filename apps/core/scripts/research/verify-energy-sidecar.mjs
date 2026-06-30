@@ -2,17 +2,46 @@
 /**
  * Preflight: energy sidecar must return non-null Joules (GPU host, not s378 app server).
  *
+ * Loads `.env` then `.env.research` from apps/core (same pattern as vllm-smoke.mjs).
+ *
  * Usage:
+ *   npm run research:verify-energy
  *   ENERGY_SIDECAR_URL=http://cmps01.ok.ubc.ca:8001/energy node verify-energy-sidecar.mjs
  *
  * Exit 0 = ready for measured research runs. Exit 1 = fix before batching.
  */
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import {
   DEFAULT_ENERGY_SIDECAR_URL,
   energyMeasureStart,
   energyMeasureStop,
   isEnergyMeasurementEnabled,
+  sidecarFetchInit,
 } from "./energy-sidecar.mjs";
+
+function loadEnvFile(filename) {
+  const envPath = resolve(process.cwd(), filename);
+  if (!existsSync(envPath)) return;
+  for (const line of readFileSync(envPath, "utf8").split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq === -1) continue;
+    const key = trimmed.slice(0, eq).trim();
+    let value = trimmed.slice(eq + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    if (!(key in process.env)) process.env[key] = value;
+  }
+}
+
+loadEnvFile(".env");
+loadEnvFile(".env.research");
 
 function resolveSidecarUrl() {
   const url = process.env.ENERGY_SIDECAR_URL?.trim();
@@ -20,7 +49,10 @@ function resolveSidecarUrl() {
 }
 
 async function fetchHealth(base) {
-  const res = await fetch(`${base}/health`, { signal: AbortSignal.timeout(8000) });
+  const res = await fetch(
+    `${base}/health`,
+    sidecarFetchInit({ signal: AbortSignal.timeout(8000) }),
+  );
   const text = await res.text();
   let json = null;
   try {
