@@ -65,6 +65,7 @@ export function enrichCoursesWithCoreMetadata(
 
     return {
       ...course,
+      description: core.description ?? course.description ?? null,
       term: core.term ?? course.term ?? null,
       year: core.year ?? course.year ?? null,
     };
