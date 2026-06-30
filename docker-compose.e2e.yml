@@ -66,10 +66,6 @@ services:
       NODE_ENV: test
       PORT: "3000"
       E2E_SEED_SECRET: e2e-seed-secret
-      # Shared service key for server-to-server calls. AI Tutor reads Core's
-      # policy flags via GET /api/policies with this Bearer token; it must match
-      # the value on e2e-ai-tutor-server below, or the fetch 403s and AI Tutor's
-      # instructor course-creation gate fails closed.
       EDUAI_API_KEY: test-service-key-not-for-production
     ports:
       - "3000:3000"
@@ -95,11 +91,11 @@ services:
       COOKIE_DOMAIN: localhost
       PORT: "4000"
       CORE_URL: http://e2e-eduai-app:3000
+      CORE_PUBLIC_ORIGIN: http://localhost:3000
       EDUAI_DISCOVERY_URL: http://e2e-eduai-app:3000/api/auth/.well-known/openid-configuration
       EDUAI_CLIENT_ID: e2e-client-id
       EDUAI_CLIENT_SECRET: e2e-client-secret
       EDUAI_BASE_URL: http://e2e-eduai-app:3000/api
-      # Must match e2e-eduai-app's EDUAI_API_KEY so the policy fetch is authorized.
       EDUAI_API_KEY: test-service-key-not-for-production
       AI_SUPERVISOR_ENABLED: "false"
     ports:
@@ -147,6 +143,8 @@ services:
       NODE_ENV: production
       PORT: "8000"
       CORE_URL: http://e2e-eduai-app:3000
+      # See e2e-ai-tutor-server's CORE_PUBLIC_ORIGIN comment above.
+      CORE_PUBLIC_ORIGIN: http://localhost:3000
       CORS_ORIGINS: http://localhost:5173
     ports:
       - "8000:8000"
@@ -183,10 +181,6 @@ services:
     build:
       context: .
       dockerfile: docker/tests/Dockerfile.playwright
-    # Host networking lets Playwright reach services via localhost:PORT, which
-    # matches BETTER_AUTH_URL=http://localhost:3000 so session cookies are set
-    # for domain "localhost" and automatically propagated between Core (3000)
-    # and AI Tutor (4000) within the same Playwright request context.
     network_mode: host
     environment:
       CORE_URL: http://localhost:3000
