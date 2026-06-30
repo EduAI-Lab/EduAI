@@ -8,7 +8,7 @@ import { Switch } from "@eduai/ui";
 import { MultiSelect } from "@eduai/ui";
 import { useForm, useWatch } from "react-hook-form";
 import { createUserSchema, updateUserSchema } from "~/lib/auth/schemas";
-import { UNIT_OPTIONS } from "~/lib/units";
+import { useDisciplines } from "~/hooks/api/use-disciplines";
 import type { z } from "zod";
 
 import type { User } from "~/components/admin/users-table";
@@ -45,6 +45,7 @@ export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormD
 
   // Authorized units selection managed separately (not in RHF) to avoid string[] typing complexity
   const [selectedUnits, setSelectedUnits] = useState<string[]>([]);
+  const { options: departmentOptions } = useDisciplines();
 
   const form = useForm<FormData>({
     defaultValues: {
@@ -167,7 +168,7 @@ export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormD
                   Select the departments this administrator can manage.
                 </FormDescription>
                 <MultiSelect
-                  options={UNIT_OPTIONS.map((dept) => ({
+                  options={departmentOptions.map((dept) => ({
                     value: dept.code,
                     label: dept.label,
                     description: dept.code,
