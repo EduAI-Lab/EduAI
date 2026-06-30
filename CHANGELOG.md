@@ -28,6 +28,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
+- [ci] fix: Force the report-branch checkout in the Backend Coverage Report commit step so the tracked `.env.test` files rewritten during setup no longer abort it and fail the job. (@abdullahmoh21, 2026-06-29) — [#821](https://github.com/EduAI-Lab/EduAI/pull/821)
 - [core] fix: Theme hydration mismatch on html color-scheme (#142, @superbolt08, 2026-06-23)
 - [ai-tutor] feat: Add `GET /courses/:courseId/feedback` endpoint — returns all `ActivityFeedback` rows for activities in a course; access-gated to ADMIN (global), UNIT_ADMIN (department-scoped), INSTRUCTOR (enrolled), and TA (enrolled); supports `activityId`, `studentId`, `take` (max 200, default 50), and `skip` query params. (#554, @evanbones, 2026-06-24)
 - [ai-tutor] feat: Extend `PATCH /courses/:courseId`, `PATCH /courses/:courseId/publish`, and `PATCH /courses/:courseId/unpublish` to accept ADMIN and UNIT_ADMIN (department-scoped) in addition to INSTRUCTOR — aligns course mutation routes with rbac-matrix.md §5. (#553, @evanbones, 2026-06-24)
