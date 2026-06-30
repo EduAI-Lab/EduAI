@@ -6,6 +6,7 @@ export default [
   route("/api/health", "routes/api/health.ts"),
   route("/api/auth/*", "routes/api/auth.$.ts"),
   route("/api/courses", "routes/api/courses.$.ts"),
+  route("/api/disciplines", "routes/api/disciplines.ts"),
   route("/login", "routes/login.ts"),
   route("/auth/login", "routes/auth/login.tsx"),
   route("/auth/register", "routes/auth/register.tsx"),
