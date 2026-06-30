@@ -105,7 +105,7 @@ function SyncTopicsButton({
  * having the parent course available.
  */
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
-  await requireClientUser(['INSTRUCTOR', 'UNIT_ADMIN', 'TA']);
+  await requireClientUser(['INSTRUCTOR', 'UNIT_ADMIN', 'TA', 'ADMIN']);
   const lessonId = Number(params.lessonId);
   if (!Number.isFinite(lessonId)) {
     throw new Response('Invalid lesson id', { status: 400 });
