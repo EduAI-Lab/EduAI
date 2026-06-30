@@ -18,8 +18,8 @@ import { startSidecarMeasurement } from "~/lib/ai/energy/measurement.server";
 import {
   coalesceTokenUsage,
   normalizeTokenUsage,
-  persistAiInteractionTelemetry,
 } from "~/lib/ai/routing/telemetry";
+import { persistAiInteractionTelemetry } from "~/lib/ai/routing/telemetry.server";
 import {
   FleetUnavailableError,
   resolveFleetHost,
