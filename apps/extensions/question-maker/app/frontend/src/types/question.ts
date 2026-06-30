@@ -88,6 +88,7 @@ export interface Course {
     id: number;
     name: string;
     code: string | null;
+    description?: string | null;
     userId?: string;
     coreCourseId?: string | null;
     department?: string | null;
