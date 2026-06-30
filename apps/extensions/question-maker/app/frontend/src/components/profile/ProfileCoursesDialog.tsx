@@ -3,20 +3,18 @@
  * Lets users select courses from the AI service, skip ones already added, and persist them via courseService.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router';
 import {
     Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@eduai/ui';
 import { Button, Badge } from '@eduai/ui';
 import { useToast } from '@/components/ui/use-toast';
-import { Loader2, LogOut, Plus } from 'lucide-react';
+import { IconLoader2, IconLogout } from '@tabler/icons-react';
 import { Class } from '../../types/class';
 import { eduaiService, EduAICourseOption, EduAITopicOption } from '../../services/eduaiService';
 import { courseService } from '../../services/courseService';
 import { assessmentService } from '../../services/assessmentService';
 import { useAuth } from '../../contexts/AuthContext';
 import { useEduAIStatus } from '../../hooks/useEduAIStatus';
-import { EduAIStatusBadge } from '../eduai/EduAIStatusBadge';
-import { useGuidedTour } from '../../contexts/GuidedTourContext';
+import { AIServiceIndicators } from '../eduai/AIServiceIndicators';
 import { normalizeCourseCode } from '../../utils/courseDisplay';
 
 interface ProfileCoursesDialogProps {
@@ -41,9 +39,7 @@ export const ProfileCoursesDialog = ({
     const [error, setError] = useState<string | null>(null);
     const { toast } = useToast();
     const { logout, user } = useAuth();
-    const navigate = useNavigate();
     const eduaiStatus = useEduAIStatus();
-    const { startTour } = useGuidedTour();
 
     const existingCourseCodeSet = useMemo(() => {
         const codes = new Set<string>();
@@ -172,74 +168,6 @@ export const ProfileCoursesDialog = ({
         logout();
     };
 
-    const handleCreateTestCourse = async () => {
-        setIsSaving(true);
-        setError(null);
-        try {
-            // Generate a unique test course code (only after confirming no test course exists)
-            const testCourseCode = 'TEST';
-            const testCourseName = 'Test Course';
-            const normalizedTestCourseName = normalizeCourseCode(testCourseName);
-
-            // Check if a test course already exists by checking:
-            // 1. Any course with a code starting with "test-"
-            // 2. Any course with the name "TEST- - Test Course"
-            const hasTestCourse = existingCourses.some((course) => {
-                const courseCode = normalizeCourseCode(course.courseCode || course.code || '');
-                const courseName = normalizeCourseCode(course.name || '');
-                return (
-                    courseCode.startsWith('test-') ||
-                    courseName === normalizedTestCourseName
-                );
-            });
-
-            if (hasTestCourse) {
-                toast({
-                    title: 'Test course already exists',
-                    description: 'You already have a test course. You can use it to create questions and assessments.',
-                    variant: 'default'
-                });
-                setIsSaving(false);
-                return;
-            }
-
-            const createdCourse = await courseService.createCourse({
-                name: testCourseName,
-                courseCode: testCourseCode
-            });
-
-            // Create a default topic so users can immediately start creating questions
-            try {
-                await courseService.createTopic(createdCourse.id, 'General');
-            } catch (topicError) {
-                console.warn('Failed to create default topic for test course', topicError);
-                // Continue even if topic creation fails - users can add topics manually
-            }
-
-            try {
-                await assessmentService.createPracticeExamForCourse(createdCourse.id);
-            } catch (practiceExamError) {
-                console.warn('Failed to create Practice Exam for test course', practiceExamError);
-            }
-
-            if (onCoursesAdded) {
-                await onCoursesAdded();
-            }
-
-            toast({
-                title: 'Test course created',
-                description: 'You can now use this course to create questions and assessments without connecting to the AI service.'
-            });
-
-            onClose();
-        } catch (err) {
-            console.error('Failed to create test course', err);
-            setError('Unable to create test course. Please try again.');
-        } finally {
-            setIsSaving(false);
-        }
-    };
-
     const handleSave = async () => {
         const targetCourseIds = selectedCourseIds.filter((id) => {
             const option = courseOptions.find((item) => item.id === id);
@@ -329,15 +257,15 @@ export const ProfileCoursesDialog = ({
                         <div>
                             <DialogTitle>Add Courses</DialogTitle>
                             <DialogDescription>
-                                Link courses from the AI service or create a test course to get started without connecting to it.
+                                Link courses from the AI service to your question bank.
                             </DialogDescription>
                         </div>
                         <div className="flex items-center gap-2">
-                            <EduAIStatusBadge
+                            <AIServiceIndicators
                                 status={eduaiStatus.status}
                                 message={eduaiStatus.message}
+                                provider={eduaiStatus.provider}
                                 onRefresh={eduaiStatus.refresh}
-                                questionGenerationPhase={eduaiStatus.questionGenerationPhase}
                                 className="z-50"
                             />
                         </div>
@@ -351,51 +279,10 @@ export const ProfileCoursesDialog = ({
                 )}
 
                 <div className="mt-4 space-y-4">
-                    {/* Test Course Option - Always visible */}
-                    <div className="rounded-md border-2 border-dashed border-primary/40 bg-primary/10 p-4">
-                        <div className="flex items-center justify-between">
-                            <div className="flex-1">
-                                <div className="flex items-center gap-2 mb-1">
-                                    <span className="text-sm font-semibold text-foreground">Sandbox Course</span>
-                                    <Badge variant="outline" className="text-xs">No AI service required</Badge>
-                                </div>
-                                <p className="text-xs text-muted-foreground">
-                                    Create a test course to start making questions and assessments without connecting to the AI service.
-                                </p>
-                            </div>
-                            <Button
-                                onClick={handleCreateTestCourse}
-                                disabled={isSaving || isLoading}
-                                variant="default"
-                                className="ml-4"
-                            >
-                                {isSaving ? (
-                                    <>
-                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                        Creating...
-                                    </>
-                                ) : (
-                                    <>
-                                        <Plus className="mr-2 h-4 w-4" />
-                                        Create Test Course
-                                    </>
-                                )}
-                            </Button>
-                        </div>
-                    </div>
-
-                    {/* AI service courses section */}
-                    <div className="space-y-2">
-                        <div className="flex items-center gap-2">
-                            <div className="h-px flex-1 bg-border"></div>
-                            <span className="text-xs text-muted-foreground font-medium">OR LINK FROM AI SERVICE</span>
-                            <div className="h-px flex-1 bg-border"></div>
-                        </div>
-                    </div>
 
                     {isLoading ? (
                         <div className="flex items-center justify-center py-12 text-muted-foreground">
-                            <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                            <IconLoader2 className="mr-2 h-5 w-5 animate-spin" />
                             Loading courses from AI service...
                         </div>
                     ) : (
@@ -479,7 +366,7 @@ export const ProfileCoursesDialog = ({
                                                 >
                                                     {isResyncing ? (
                                                         <>
-                                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                                            <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
                                                             Syncing…
                                                         </>
                                                     ) : (
@@ -509,7 +396,7 @@ export const ProfileCoursesDialog = ({
                         onClick={handleLogout}
                         className="flex items-center gap-2 text-destructive hover:text-destructive"
                     >
-                        <LogOut className="h-4 w-4" />
+                        <IconLogout className="h-4 w-4" />
                         <span>Logout</span>
                     </Button>
                     <div className="flex gap-2">
