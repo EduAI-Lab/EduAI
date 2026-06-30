@@ -21,6 +21,8 @@ EduAI/
 ├── eduai-design-system/             # EduAI design system bundle (tokens, guidelines, Figma UI kit exports)
 ├── infra/
 │   └── cron/                        # Server backup scripts (pg_dump, off-site sync, rotation) + cron.env config
+├── tools/
+│   └── energy-meter/                # GPU/CPU energy sidecar for URA research telemetry (cmps01)
 ├── scripts/                         # Repo-level setup and dev utilities
 ├── docs/                            # System-wide architecture and planning docs
 │   ├── rag-ai/                      # EduAI chat, RAG, latency (#203), routing (#197)
@@ -64,6 +66,7 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 | [`DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Instructions on how to deploy the system (production and development) |
 | [`CANVAS.md`](docs/CANVAS.md) | Local Canvas LMS setup — WSL, Docker, ports, seed script |
 | [`TEAM_PHASE_0_AND_1_GUIDE.md`](docs/rag-ai/routing/eduai-summer-2026/TEAM_PHASE_0_AND_1_GUIDE.md) | Phase 0 model routing and sustainability telemetry (Prisma schema, router, seeds) |
+| [`tools/energy-meter/README.md`](tools/energy-meter/README.md) | GPU/CPU energy sidecar — deploy on cmps01, `ENERGY_SIDECAR_URL` / `CMPS01_INTERNAL_KEY`, verify with `npm run research:verify-energy` |
 
 ## Changelog
 
