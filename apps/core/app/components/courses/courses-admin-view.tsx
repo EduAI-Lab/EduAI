@@ -12,7 +12,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
   Textarea,
 } from '@eduai/ui'
-import { UNIT_OPTIONS, getDepartmentLabel } from '~/lib/units'
+import { useDisciplines } from '~/hooks/api/use-disciplines'
 import { DepartmentCombobox } from '~/components/courses/department-combobox'
 import type { Course, CreateCourseInput, UpdateCourseInput } from '~/hooks/api/use-courses'
 
@@ -39,6 +39,7 @@ export function CoursesAdminView({ courses, instructors = [], onCreateCourse, on
   const [selectedTerm, setSelectedTerm] = useState<string>('Fall')
   const [selectedInstructor, setSelectedInstructor] = useState<string>('')
   const [editDept, setEditDept] = useState<string>('')
+  const { options: departmentOptions, getLabel: getDepartmentLabel, loading: deptLoading } = useDisciplines()
 
   useEffect(() => {
     setEditDept(editingCourse?.department ?? '')
@@ -118,9 +119,10 @@ export function CoursesAdminView({ courses, instructors = [], onCreateCourse, on
               <div className="grid gap-2">
                 <Label htmlFor="create-dept">Department</Label>
                 <DepartmentCombobox
-                  departments={[...UNIT_OPTIONS]}
+                  departments={departmentOptions}
                   value={createDept}
                   onValueChange={setCreateDept}
+                  disabled={deptLoading}
                 />
               </div>
               <div className="grid gap-2">
@@ -274,10 +276,11 @@ export function CoursesAdminView({ courses, instructors = [], onCreateCourse, on
               <div className="grid gap-2">
                 <Label>Department</Label>
                 <DepartmentCombobox
-                  departments={[...UNIT_OPTIONS]}
+                  departments={departmentOptions}
                   value={editDept}
                   onValueChange={setEditDept}
                   placeholder="No department"
+                  disabled={deptLoading}
                 />
               </div>
               <div className="grid gap-2">
