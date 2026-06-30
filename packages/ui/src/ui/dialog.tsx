@@ -2,7 +2,7 @@ import * as React from "react"
 import * as DialogPrimitive from "@radix-ui/react-dialog"
 import { IconX } from "@tabler/icons-react"
 
-import { cn } from "../utils"
+import { cn, useRestoreBodyPointerEvents } from "../utils"
 
 function Dialog({
   ...props
@@ -52,6 +52,7 @@ function DialogContent({
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
 }) {
+  useRestoreBodyPointerEvents()
   return (
     <DialogPortal data-slot="dialog-portal">
       <DialogOverlay />
