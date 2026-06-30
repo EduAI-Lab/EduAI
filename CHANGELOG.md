@@ -7,6 +7,11 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## [Week 9 — June 29–July 5, 2026]
 
+### Added
+
+- [core] feat: GPU energy sidecar and AI interaction telemetry (#731) — deployable `tools/energy-meter` on inference hosts (RAPL CPU + NVML GPU, Docker on cmps01 via nginx `:8001/energy`); `measurement.server.ts` runs tagged sidecar sessions (`measure-start` / `measure-stop`) with `CMPS01_INTERNAL_KEY` auth and falls back to per-token joule/carbon estimates; `persistAiInteractionTelemetry` records split token usage, routing tier, and energy/carbon on `AIInteraction`; research verify/backfill scripts and `ENERGY_SIDECAR_URL` / `CMPS01_INTERNAL_KEY` env docs. (@superbolt08, 2026-06-30) — [#758](https://github.com/EduAI-Lab/EduAI/pull/758)
+- [core] tests: Unit tests for `measureTurnEnergy` (per-host sidecar URL override, tagged `measure-stop`, no legacy `/measure` fallback, token estimate fallback) and routing telemetry token normalization (`normalizeTokenUsage` / `coalesceTokenUsage` OpenAI/vLLM aliases, all-zero stream usage treated as missing). (#731, @superbolt08, 2026-06-30) — [#758](https://github.com/EduAI-Lab/EduAI/pull/758)
+
 ### Fixed
 
 - [ui] hotfix: Add missing imports in `packages/ui/src/ui/combobox.tsx` — `useRef`, `useEffect`, `Popover`, `PopoverTrigger`, and `PopoverContent` were used but not imported, causing `packages-ui-unit-tests` and QM frontend Docker build to fail on CI. (#823)
