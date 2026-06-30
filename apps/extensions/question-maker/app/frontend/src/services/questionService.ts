@@ -11,6 +11,7 @@ import {
   QuestionStats,
   QuestionVariant,
   QuestionDifficulty,
+  ReasoningLevel,
   ExtractedQuestion,
   MCQChoice
 } from '../types/question';
@@ -131,6 +132,7 @@ export const questionService = {
   async updateVariant(variantId: number, payload: {
     questionText?: string;
     difficulty?: QuestionDifficulty;
+    reasoningLevel?: ReasoningLevel;
     assessmentId?: number;
     secondaryTopicsId?: string[];
     answer?: string | null;

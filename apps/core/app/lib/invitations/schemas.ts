@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { UnitSchema } from "~/lib/units";
 
 /**
  * Roles an invitation may carry at the schema level — the union across all
@@ -30,8 +29,10 @@ export const createInvitationSchema = z
     role: z.enum(INVITABLE_ROLES, {
       required_error: "Please select a role",
     }),
-    // Only meaningful for UNIT_ADMIN; validated by the superRefine below.
-    authorizedUnits: z.array(UnitSchema).optional(),
+    // Only meaningful for UNIT_ADMIN; the superRefine below enforces presence
+    // rules and code existence is validated server-side against the Discipline
+    // table (§541).
+    authorizedUnits: z.array(z.string()).optional(),
   })
   .superRefine((data, ctx) => {
     const units = data.authorizedUnits ?? [];
