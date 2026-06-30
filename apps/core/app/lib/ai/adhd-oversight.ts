@@ -1,11 +1,18 @@
 import { randomUUID } from "crypto";
 import { generateText, type LanguageModel } from "ai";
 import {
+  getProfileRequirements,
+  type AdhdTurnProfile,
+} from "~/lib/ai/adhd-turn-profile";
+import {
   ADHD_CLARIFICATION_WORD_CAP,
   ADHD_TUTORING_WORD_CAP,
   computeAdhdResponseMetrics,
+  isProfileStructuralPass,
+  isRedirectTemplatePass,
   isStructuralCompliancePass,
   resolveAdhdResponseWordCap,
+  withProfileStructuralPass,
   withStructuralPass,
   type AdhdStructuralCompliance,
 } from "~/lib/ai/adhd-metrics";
@@ -23,7 +30,59 @@ LENGTH: Hard cap ${ADHD_TUTORING_WORD_CAP} words for tutoring answers; ${ADHD_CL
 No emojis. No filler ("Great question!", "Certainly!").
 Return ONLY the rewritten response.`;
 
-export type OversightMethod = "none" | "deterministic" | "llm" | "llm_failed";
+const ADHD_OVERSIGHT_REDIRECT_REWRITE_SYSTEM = `You are a formatting editor for ADHD Assist Mode redirect responses.
+The learner asked about a second topic while another is in progress.
+
+RULES:
+- Do NOT add a "Top summary" block.
+- Keep a single-topic boundary: acknowledge the new topic and offer to return or switch.
+- End with one clear forward continuation question if missing.
+- Hard cap ${ADHD_CLARIFICATION_WORD_CAP} words.
+- No emojis. No filler.
+Return ONLY the rewritten response.`;
+
+export function buildOversightRewriteSystem(profile: AdhdTurnProfile, wordCap: number): string {
+  if (profile === "redirect") {
+    return ADHD_OVERSIGHT_REDIRECT_REWRITE_SYSTEM;
+  }
+  if (profile === "brief_clarification") {
+    return ADHD_OVERSIGHT_REWRITE_SYSTEM.replace(
+      `Hard cap ${ADHD_TUTORING_WORD_CAP} words for tutoring answers; ${ADHD_CLARIFICATION_WORD_CAP} for brief clarifications.`,
+      `Hard cap ${wordCap} words.`,
+    );
+  }
+  return ADHD_OVERSIGHT_REWRITE_SYSTEM.replace(
+    `Hard cap ${ADHD_TUTORING_WORD_CAP} words for tutoring answers; ${ADHD_CLARIFICATION_WORD_CAP} for brief clarifications.`,
+    `Hard cap ${wordCap} words.`,
+  );
+}
+
+export type OversightMethod =
+  | "none"
+  | "deterministic"
+  | "llm"
+  | "llm_rejected"
+  | "llm_failed";
+
+/**
+ * Output budget for the LLM rewrite. A compliant rewrite is at most `wordCap`
+ * words, but a fixed 1024-token cap truncated rewrites of long drafts — and a
+ * truncated rewrite fails validation, so we silently shipped the original
+ * non-compliant draft (#714). Budget tokens from the word cap with headroom for
+ * markdown anchors (**Top summary**, bullets, ### Step ladder, **Next?**) and
+ * tokenizer variance, with a floor so the smaller clarification/redirect caps
+ * still get adequate room. maxTokens only bounds output, so over-budgeting is
+ * safe: the model stops once the rewrite is done.
+ */
+export const ADHD_OVERSIGHT_REWRITE_TOKENS_PER_WORD = 6;
+export const ADHD_OVERSIGHT_MIN_REWRITE_MAX_TOKENS = 1024;
+
+export function resolveOversightRewriteMaxTokens(wordCap: number): number {
+  const fromWordCap = Math.ceil(
+    Math.max(0, wordCap) * ADHD_OVERSIGHT_REWRITE_TOKENS_PER_WORD,
+  );
+  return Math.max(ADHD_OVERSIGHT_MIN_REWRITE_MAX_TOKENS, fromWordCap);
+}
 
 export type OversightUsage = {
   promptTokens?: number;
@@ -66,14 +125,6 @@ export function emptyOversightAuditResult(): AuditAndMaybeRewriteResult {
     oversightDurationMs: 0,
     oversightUsage: null,
   };
-}
-
-function structuralScore(metrics: AdhdStructuralCompliance): number {
-  return (
-    (metrics.topSummary ? 1 : 0) +
-    (metrics.nextLine ? 1 : 0) +
-    (metrics.underCap ? 1 : 0)
-  );
 }
 
 function lastNonEmptyLine(text: string): string | null {
@@ -164,14 +215,64 @@ export function applyNextLineAnchor(text: string): string | null {
   return `${body}\n\n**Next?** ${candidate}`;
 }
 
+function profileStructuralScore(
+  metrics: AdhdStructuralCompliance,
+  profile: AdhdTurnProfile,
+  text: string,
+): number {
+  let score = metrics.underCap ? 1 : 0;
+  const req = getProfileRequirements(profile);
+  if (req.expectTopSummary) score += metrics.topSummary ? 1 : 0;
+  if (req.expectNextLine) score += metrics.nextLine ? 1 : 0;
+  if (req.expectRedirectTemplate && isRedirectTemplatePass(metrics, text)) score += 2;
+  return score;
+}
+
+function passesProfileStructure(
+  metrics: AdhdStructuralCompliance,
+  profile: AdhdTurnProfile,
+  text: string,
+): boolean {
+  return isProfileStructuralPass(metrics, profile, text);
+}
+
 /** Fast path: fix missing literal anchors without an LLM call. */
 export function tryDeterministicStructuralFix(
   draft: string,
-  options?: { wordCap?: number },
+  options?: { wordCap?: number; profile?: AdhdTurnProfile },
 ): string | null {
   const wordCap = options?.wordCap ?? ADHD_TUTORING_WORD_CAP;
+  const profile = options?.profile;
   const trimmed = (draft ?? "").trim();
   if (!trimmed) return null;
+
+  if (profile) {
+    const before = withProfileStructuralPass(
+      computeAdhdResponseMetrics(trimmed, { wordCap }),
+      profile,
+      trimmed,
+    );
+    if (before.profileStructuralPass) {
+      return trimmed;
+    }
+
+    if (getProfileRequirements(profile).expectRedirectTemplate) {
+      const withNext = applyNextLineAnchor(trimmed);
+      if (withNext) {
+        const after = withProfileStructuralPass(
+          computeAdhdResponseMetrics(withNext, { wordCap }),
+          profile,
+          withNext,
+        );
+        if (after.profileStructuralPass) return withNext;
+      }
+      return null;
+    }
+
+    if (!getProfileRequirements(profile).expectTopSummary) {
+      return null;
+    }
+  }
 
   const before = computeAdhdResponseMetrics(trimmed, { wordCap });
   if (isStructuralCompliancePass(before)) {
@@ -198,15 +299,33 @@ export async function auditAndMaybeRewrite(args: {
   draft: string;
   model: LanguageModel;
   wordCap?: number;
+  profile?: AdhdTurnProfile;
 }): Promise<AuditAndMaybeRewriteResult> {
   const wordCap = args.wordCap ?? ADHD_TUTORING_WORD_CAP;
+  const profile = args.profile ?? "full_tutoring";
   const trimmed = (args.draft ?? "").trim();
-  const beforeMetrics = withStructuralPass(
+  const profileReq = getProfileRequirements(profile);
+
+  const beforeMetrics = withProfileStructuralPass(
     computeAdhdResponseMetrics(trimmed, { wordCap }),
+    profile,
+    trimmed,
   );
 
   if (!trimmed) {
     return emptyOversightAuditResult();
+  }
+
+  if (!profileReq.runDean) {
+    return {
+      text: trimmed,
+      rewritten: false,
+      method: "none",
+      beforeMetrics,
+      afterMetrics: beforeMetrics,
+      oversightDurationMs: 0,
+      oversightUsage: null,
+    };
   }
 
   if (!isOversightEligibleDraft(trimmed)) {
@@ -221,7 +340,7 @@ export async function auditAndMaybeRewrite(args: {
     };
   }
 
-  if (beforeMetrics.structuralPass) {
+  if (passesProfileStructure(beforeMetrics, profile, trimmed)) {
     return {
       text: trimmed,
       rewritten: false,
@@ -233,10 +352,12 @@ export async function auditAndMaybeRewrite(args: {
     };
   }
 
-  const deterministic = tryDeterministicStructuralFix(trimmed, { wordCap });
+  const deterministic = tryDeterministicStructuralFix(trimmed, { wordCap, profile });
   if (deterministic) {
-    const afterMetrics = withStructuralPass(
+    const afterMetrics = withProfileStructuralPass(
       computeAdhdResponseMetrics(deterministic, { wordCap }),
+      profile,
+      deterministic,
     );
     return {
       text: deterministic,
@@ -254,29 +375,38 @@ export async function auditAndMaybeRewrite(args: {
     const { text: rewritten, usage } = await generateText({
       model: args.model,
       temperature: 0.2,
-      maxTokens: 1024,
-      system: ADHD_OVERSIGHT_REWRITE_SYSTEM,
+      maxTokens: resolveOversightRewriteMaxTokens(wordCap),
+      system: buildOversightRewriteSystem(profile, wordCap),
       prompt: `DRAFT TO REWRITE:\n\n${trimmed}`,
     });
 
     const llmText = (rewritten ?? "").trim();
-    const afterMetrics = withStructuralPass(
+    const afterMetrics = withProfileStructuralPass(
       computeAdhdResponseMetrics(llmText, { wordCap }),
+      profile,
+      llmText,
     );
 
     const useLlm =
       llmText.length > 0 &&
       afterMetrics.underCap &&
-      (afterMetrics.structuralPass ||
-        structuralScore(afterMetrics) > structuralScore(beforeMetrics));
+      (afterMetrics.profileStructuralPass ||
+        profileStructuralScore(afterMetrics, profile, llmText) >
+          profileStructuralScore(beforeMetrics, profile, trimmed));
 
     const finalText = useLlm ? llmText : trimmed;
-    const finalMetrics = useLlm ? afterMetrics : beforeMetrics;
+    const finalMetrics = useLlm
+      ? afterMetrics
+      : beforeMetrics;
 
+    // `llm_rejected`: the model ran but its rewrite was not adopted (truncated,
+    // over word cap, or no structural gain). Distinct from "none" — which means
+    // we never needed the LLM — so telemetry can surface drafts shipped
+    // non-compliant despite oversight (#714).
     return {
       text: finalText,
       rewritten: useLlm,
-      method: useLlm ? "llm" : "none",
+      method: useLlm ? "llm" : "llm_rejected",
       beforeMetrics,
       afterMetrics: finalMetrics,
       oversightDurationMs: Date.now() - oversightStartedAt,
