@@ -23,7 +23,7 @@ import {
   SelectValue,
   Textarea,
 } from '@eduai/ui'
-import { UNIT_OPTIONS } from '~/lib/units'
+import { useDisciplines } from '~/hooks/api/use-disciplines'
 import { DepartmentCombobox } from '~/components/courses/department-combobox'
 import type { Course, CreateCourseInput, UpdateCourseInput } from '~/hooks/api/use-courses'
 import { usePolicies } from '~/hooks/api/use-policies'
@@ -42,6 +42,7 @@ export function CoursesInstructorView({ courses, onCreateCourse, onEditCourse, o
   const [deletingCourse, setDeletingCourse] = useState<Course | null>(null)
   const [selectedDept, setSelectedDept] = useState<string>('')
   const [selectedTerm, setSelectedTerm] = useState<string>('Fall')
+  const { options: departmentOptions, loading: deptLoading } = useDisciplines()
 
   const { policies, isLoading: policiesLoading } = usePolicies()
   // Mirror the backend policy gates so the UI never offers an action the server
@@ -121,10 +122,11 @@ export function CoursesInstructorView({ courses, onCreateCourse, onEditCourse, o
                 <div className="grid gap-2">
                   <Label htmlFor="ins-dept">Department</Label>
                   <DepartmentCombobox
-                    departments={UNIT_OPTIONS}
+                    departments={departmentOptions}
                     value={selectedDept}
                     onValueChange={setSelectedDept}
                     placeholder="No department"
+                    disabled={deptLoading}
                   />
                 </div>
                 <div className="grid gap-2">

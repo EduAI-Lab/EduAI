@@ -15,7 +15,6 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@eduai/ui'
-import { getDepartmentLabel } from '~/lib/units'
 import { CourseChatsPanel } from '~/components/courses/course-chats-panel'
 import { useUnitChats } from '~/hooks/api/use-course-chats'
 
@@ -47,11 +46,18 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     }
   }
 
-  return { user: session.user, department }
+  // §541: resolve the human-readable unit label from the Discipline table.
+  const discipline = await prisma.discipline.findUnique({
+    where: { code: department },
+    select: { name: true },
+  })
+  const departmentLabel = discipline?.name ?? department
+
+  return { user: session.user, department, departmentLabel }
 }
 
 export default function UnitChatsPage() {
-  const { user, department } = useLoaderData<typeof loader>()
+  const { user, department, departmentLabel } = useLoaderData<typeof loader>()
   const { chats, loading, error } = useUnitChats(department)
   const codeById = new Map(chats.map((c) => [c.id, c.courseCode]))
 
@@ -74,7 +80,7 @@ export default function UnitChatsPage() {
                 </BreadcrumbItem>
                 <BreadcrumbSeparator />
                 <BreadcrumbItem>
-                  <BreadcrumbPage>{getDepartmentLabel(department)} Chats</BreadcrumbPage>
+                  <BreadcrumbPage>{departmentLabel} Chats</BreadcrumbPage>
                 </BreadcrumbItem>
               </BreadcrumbList>
             </Breadcrumb>
@@ -85,7 +91,7 @@ export default function UnitChatsPage() {
             <div>
               <h1 className="text-3xl font-bold">Unit Chats</h1>
               <p className="text-muted-foreground mt-1">
-                Student chats across courses in {getDepartmentLabel(department)}.
+                Student chats across courses in {departmentLabel}.
               </p>
             </div>
             <CourseChatsPanel

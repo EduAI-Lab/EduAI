@@ -20,6 +20,15 @@ vi.mock("~/lib/prisma.server", () => ({
   },
 }));
 
+// §541: authorizedUnits codes are validated against the Discipline table.
+vi.mock("~/lib/disciplines/server", () => {
+  const KNOWN = ["COSC", "MATH", "STAT", "DATA", "PHYS"];
+  return {
+    areValidDisciplineCodes: vi.fn(async (codes: string[]) => codes.every((c) => KNOWN.includes(c))),
+    isValidDisciplineCode: vi.fn(async (code: string) => KNOWN.includes(code)),
+  };
+});
+
 import { action } from "~/routes/api/users.$";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
@@ -100,9 +109,9 @@ describe("PATCH /api/users/:id — authorizedUnits assignment (#297)", () => {
     );
   });
 
-  it("rejects an invalid subject code with 422 (§19 UnitSchema)", async () => {
+  it("rejects an invalid subject code with 400 (§541 Discipline check)", async () => {
     const res = await action(makePatch("ua-1", { authorizedUnits: ["cosc"] }));
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(400);
     expect(prisma.user.update).not.toHaveBeenCalled();
   });
 
