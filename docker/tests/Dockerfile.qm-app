@@ -29,6 +29,8 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/apps/extensions/question-maker/node_modules \
      ./apps/extensions/question-maker/node_modules
+COPY --from=deps /app/apps/extensions/question-maker/app/frontend/node_modules \
+     ./apps/extensions/question-maker/app/frontend/node_modules
 
 COPY packages/ui                     ./packages/ui/
 
@@ -55,30 +57,30 @@ COPY apps/extensions/question-maker/app/frontend/index.html \
 COPY apps/extensions/question-maker/app/frontend/package.json \
      ./apps/extensions/question-maker/app/frontend/
 
-ENV PATH="/app/apps/extensions/question-maker/node_modules/.bin:/app/node_modules/.bin:${PATH}"
+ENV PATH="/app/apps/extensions/question-maker/app/frontend/node_modules/.bin:/app/apps/extensions/question-maker/node_modules/.bin:/app/node_modules/.bin:${PATH}"
 
 WORKDIR /app/apps/extensions/question-maker/app/frontend
 
 # Create a minimal .env at the project root inside the image so test runners
-# can load DATABASE_URL even if no .env is mounted at runtime. This avoids
-# noisy "Could not load .env file" warnings and ensures the DB URL is present
-# for modules that import config during test setup.
+# can load DATABASE_URL even if no .env is mounted at runtime. 
 RUN mkdir -p /app/apps/extensions/question-maker \
      && printf 'DATABASE_URL=postgresql://postgres:password@question-maker-test-db:5432/question_maker_test\nNODE_ENV=test\n' > /app/apps/extensions/question-maker/.env
 
 # ── Target: test-unit ──────────────────────────────────────────────────────
 FROM test-base AS test-unit
-CMD ["sh", "-c", "../../node_modules/.bin/vitest run --config vitest.unit.config.ts"]
+CMD ["sh", "-c", "vitest run --config vitest.unit.config.ts"]
 
 # ── Target: test-integration ──────────────────────────────────────────────
 FROM test-base AS test-integration
-CMD ["sh", "-c", "../../node_modules/.bin/vitest run --config vitest.integration.config.ts"]
+CMD ["sh", "-c", "vitest run --config vitest.integration.config.ts"]
 
 # ── Build ──────────────────────────────────────────────────────────────────
 FROM node:24-alpine AS build
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/apps/extensions/question-maker/app/frontend/node_modules \
+     ./apps/extensions/question-maker/app/frontend/node_modules
 
 # @eduai/ui is source-only; the node_modules/@eduai/ui symlink points here
 COPY packages/ui ./packages/ui/
