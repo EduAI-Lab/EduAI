@@ -15,6 +15,11 @@ function enrichCourseRow(course, coreById, accessLevel) {
   return {
     ...row,
     department: core?.department ?? null,
+    // Enrich the term/year/description from the Core course row so QM course
+    // cards + detail hero can show real metadata (local rows often lack these).
+    term: core?.term ?? row.term ?? null,
+    year: core?.year ?? row.year ?? null,
+    description: core?.description ?? row.description ?? null,
     accessLevel: accessLevel ?? null,
   };
 }
