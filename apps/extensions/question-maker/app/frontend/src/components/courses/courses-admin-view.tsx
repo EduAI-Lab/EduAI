@@ -1,4 +1,4 @@
-import { QmRoleBanner } from '@/components/rbac/QmRoleBanner';
+import { PageHeading } from '@eduai/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { CoursesGrid, type CoursesGridProps } from './CoursesGrid';
 
@@ -8,14 +8,11 @@ export function CoursesAdminView(props: CoursesAdminViewProps) {
   const { user } = useAuth();
 
   return (
-    <div className="max-w-4xl mx-auto px-6 py-8 space-y-6">
-      <QmRoleBanner variant="admin" />
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">All courses</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Platform-wide access — every linked QM course appears here. Open any course or add a new one.
-        </p>
-      </div>
+    <div className="flex flex-1 flex-col gap-6 px-4 py-4 md:py-6 lg:px-6">
+      <PageHeading
+        heading="Courses"
+        subheading="Platform-wide access — every linked QM course appears here. Open any course to manage its question bank."
+      />
       <CoursesGrid
         {...props}
         showDepartment
