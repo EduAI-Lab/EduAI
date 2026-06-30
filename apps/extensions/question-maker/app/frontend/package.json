@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@eduai/ui": "*",
+    "@eduai/ui": "0.1.0",
     "next-themes": "^0.4.6",
     "question-maker-backend": "*",
     "@radix-ui/react-alert-dialog": "^1.1.14",
