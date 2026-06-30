@@ -36,6 +36,11 @@ jobs:
           node-version: '24'
           cache: 'npm'
 
+      - name: Sanity check combobox.tsx
+        run: |
+          echo "Looking at combobox.tsx right after checkout..."
+          grep -n "Popover" packages/ui/src/ui/combobox.tsx || echo "✅ No Popover found! The file is correct in Git."
+
       - name: Run E2E tests
         run: npm run test:e2e
 
