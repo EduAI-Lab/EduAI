@@ -7,7 +7,7 @@
  * and continues their own chats through the live chat screen instead.
  *
  * When `continueChatId` is provided the viewer renders a "Continue in chat"
- * button that deep-links to /chat?chatId=<id> — only pass this when the
+ * button that deep-links to /chat/<id> — only pass this when the
  * current user is the owner of the chat (canEdit === true).
  */
 import { type Message } from "ai";
@@ -50,7 +50,7 @@ export function ChatTranscriptViewer({
         <div className="ml-auto flex items-center gap-2">
           {continueChatId && (
             <Button asChild size="sm" variant="default" className="h-7 px-3 text-[12px] gap-1.5">
-              <Link to={`/chat?chatId=${continueChatId}`}>
+              <Link to={`/chat/${continueChatId}`}>
                 Continue in chat
                 <IconArrowRight size={13} stroke={2} />
               </Link>
