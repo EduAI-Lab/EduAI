@@ -162,16 +162,19 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           # Stash the (untracked) report, then move onto the report branch with a clean tree.
-          # App coverage/ dirs are gitignored, so the branch switch is clean for tracked files.
+          # The "Configure test environment" step rewrites the tracked apps/*/.env.test files,
+          # so force the branch switch (-f) to discard those throwaway CI edits — otherwise git
+          # aborts with "local changes would be overwritten by checkout". App coverage/ dirs are
+          # gitignored, so nothing else dirties the tree.
           mkdir -p /tmp/coverage-report-commit
           cp "$REPORT_FILE" /tmp/coverage-report-commit/coverage-report.md
           rm -f "$REPORT_FILE"
 
           git fetch origin "$REPORT_BRANCH" 2>/dev/null || true
           if git rev-parse --verify "refs/remotes/origin/${REPORT_BRANCH}" >/dev/null 2>&1; then
-            git checkout -B "$REPORT_BRANCH" "origin/${REPORT_BRANCH}"
+            git checkout -f -B "$REPORT_BRANCH" "origin/${REPORT_BRANCH}"
           else
-            git checkout -b "$REPORT_BRANCH"
+            git checkout -f -b "$REPORT_BRANCH"
           fi
 
           mkdir -p eduai-summer-2026/reports/coverage
