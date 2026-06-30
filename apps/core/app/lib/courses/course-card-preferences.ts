@@ -48,8 +48,17 @@ export function readCourseCardPreferences(): CourseCardPreferencesMap {
     const raw = window.localStorage.getItem(COURSE_CARD_PREFERENCES_KEY);
     if (!raw) return {};
     const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== "object") return {};
-    return parsed as CourseCardPreferencesMap;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const result: CourseCardPreferencesMap = {};
+    for (const [id, entry] of Object.entries(parsed as Record<string, unknown>)) {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+      const fields = entry as Record<string, unknown>;
+      const validated: CourseCardPreference = {};
+      if (typeof fields.nickname === "string") validated.nickname = fields.nickname;
+      if (typeof fields.color === "string") validated.color = fields.color;
+      result[id] = validated;
+    }
+    return result;
   } catch {
     return {};
   }

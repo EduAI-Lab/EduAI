@@ -28,4 +28,28 @@ describe("term-filter", () => {
     expect(courseMatchesTermBucket({ term: "Custom" }, "t1")).toBe(false);
     expect(courseMatchesTermBucket({ term: "Custom" }, "all")).toBe(true);
   });
+
+  it("maps Canvas term codes W1/W2 to T1 and S1/S2 to T2", () => {
+    expect(termBucketFor("W1")).toBe("t1");
+    expect(termBucketFor("W2")).toBe("t1");
+    expect(termBucketFor("S1")).toBe("t2");
+    expect(termBucketFor("S2")).toBe("t2");
+  });
+
+  it("filters Canvas-synced courses by bucket", () => {
+    const courses = [
+      { id: "1", term: "W1" },
+      { id: "2", term: "W2" },
+      { id: "3", term: "S1" },
+      { id: "4", term: "S2" },
+    ];
+    expect(filterCoursesByTermBucket(courses, "t1")).toEqual([
+      { id: "1", term: "W1" },
+      { id: "2", term: "W2" },
+    ]);
+    expect(filterCoursesByTermBucket(courses, "t2")).toEqual([
+      { id: "3", term: "S1" },
+      { id: "4", term: "S2" },
+    ]);
+  });
 });
