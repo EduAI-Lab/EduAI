@@ -2,6 +2,7 @@
  * Energy measurement for completed chat turns (hardware sidecar or token estimate).
  */
 import type { EnergyMeasurementSource } from "@prisma/client";
+import { cmps01InternalAuthHeaders } from "~/lib/ai/cmps01-internal-auth.server";
 
 export type EnergyMeasurementInput = {
   registryModelId: string;
@@ -32,6 +33,18 @@ function sidecarBaseUrl(override?: string | null): string | null {
   return raw ? raw.replace(/\/$/, "") : null;
 }
 
+function sidecarFetchInit(
+  init: RequestInit & { method?: string; body?: string },
+): RequestInit {
+  return {
+    ...init,
+    headers: {
+      ...cmps01InternalAuthHeaders(),
+      ...(init.headers as Record<string, string> | undefined),
+    },
+  };
+}
+
 /** Start a hardware measurement session on the energy-meter sidecar. */
 export async function startSidecarMeasurement(
   tag: string,
@@ -39,12 +52,15 @@ export async function startSidecarMeasurement(
 ): Promise<string | null> {
   const base = sidecarBaseUrl(options?.sidecarBaseUrl);
   if (!base) return null;
-  const res = await fetch(`${base}/measure-start`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ tag }),
-    signal: AbortSignal.timeout(3000),
-  });
+  const res = await fetch(
+    `${base}/measure-start`,
+    sidecarFetchInit({
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tag }),
+      signal: AbortSignal.timeout(3000),
+    }),
+  );
   if (!res.ok) return null;
   const data = (await res.json()) as { tag?: string };
   return data.tag ?? tag;
@@ -57,12 +73,15 @@ export async function stopSidecarMeasurement(
 ): Promise<EnergyMeasurementResult | null> {
   const base = sidecarBaseUrl(options?.sidecarBaseUrl);
   if (!base) return null;
-  const res = await fetch(`${base}/measure-stop`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ tag }),
-    signal: AbortSignal.timeout(3000),
-  });
+  const res = await fetch(
+    `${base}/measure-stop`,
+    sidecarFetchInit({
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tag }),
+      signal: AbortSignal.timeout(3000),
+    }),
+  );
   if (!res.ok) return null;
   const data = (await res.json()) as SidecarStopPayload;
   return {

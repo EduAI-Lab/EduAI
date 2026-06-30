@@ -128,6 +128,7 @@ export function ChatConversationLayout({
                           assistive,
                         )}
                         webToolsEnabled={webToolsEnabled}
+                        assistiveDisplay={adhdAssist}
                       />
                     );
                   })}
