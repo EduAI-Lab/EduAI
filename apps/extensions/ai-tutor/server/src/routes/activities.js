@@ -357,7 +357,8 @@ router.get('/lessons/:lessonId/activities', async (req, res) => {
     const isTa = enrollment?.role === 'TA';
     const isStudent = enrollment?.role === 'STUDENT';
     const unitAdmin = isUnitAdminForCourse(authUser, lesson.module.courseOffering);
-    const hasElevatedAccess = isInstructor || isTa || unitAdmin;
+    const isAdmin = authUser.role === 'ADMIN';
+    const hasElevatedAccess = isAdmin || isInstructor || isTa || unitAdmin;
     const isMember = hasElevatedAccess || isStudent;
 
     if (!isMember) {
@@ -1234,8 +1235,9 @@ router.get('/activities/:activityId/submissions', async (req, res) => {
     const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
     const isTa = enrollment?.role === 'TA';
     const unitAdmin = isUnitAdminForCourse(authUser, course);
+    const isAdmin = authUser.role === 'ADMIN';
 
-    if (!isInstructor && !isTa && !unitAdmin) {
+    if (!isAdmin && !isInstructor && !isTa && !unitAdmin) {
       return res.status(403).json({ error: 'Not authorized for this activity' });
     }
 
@@ -1297,8 +1299,9 @@ router.get('/activities/:activityId/feedback', async (req, res) => {
     const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
     const isTa = enrollment?.role === 'TA';
     const unitAdmin = isUnitAdminForCourse(authUser, course);
+    const isAdmin = authUser.role === 'ADMIN';
 
-    if (!isInstructor && !isTa && !unitAdmin) {
+    if (!isAdmin && !isInstructor && !isTa && !unitAdmin) {
       return res.status(403).json({ error: 'Not authorized for this activity' });
     }
 

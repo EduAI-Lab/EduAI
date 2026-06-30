@@ -23,6 +23,13 @@ function isAllowedAdminPath(path) {
     path === '/ai-models' ||
     path.startsWith('/ai-models/') ||
     path === '/bug-reports' ||
+    // Admins share the instructor Courses dashboard, so they need the course
+    // list itself plus topic endpoints (the lesson builder calls these). Course-
+    // nested resources under /courses/, /modules/, /lessons/, /activities/ are
+    // already covered below.
+    path === '/courses' ||
+    path === '/topics' ||
+    path.startsWith('/topics/') ||
     path.startsWith('/modules/') ||
     path.startsWith('/lessons/') ||
     path.startsWith('/courses/') ||

@@ -25,6 +25,13 @@ export function getNavForUser(user: AtUser | null | undefined): AtNavItem[] {
     });
   }
 
+  if (user?.role === 'ADMIN') {
+    // Admins get the same Courses dashboard as instructors (admin ⊇ instructor)
+    // so every role shares one consistent landing page. Course-list/detail access
+    // is granted server-side via the platform-admin branches in the API.
+    items.push({ key: 'admin-courses', title: 'Courses', href: '/instructor' });
+  }
+
   if (canAccessAdminConsole(user)) {
     // User management and enrollments are owned by EduAI Core (synced from Canvas
     // as source of truth); AI Tutor no longer exposes them. Bug report triage stays.
