@@ -70,5 +70,8 @@
     "react-dom": "^19.2.3",
     "clsx": "^2.1.1",
     "class-variance-authority": "^0.7.1"
+  },
+  "dependencies": {
+    "@prisma/client": "6.19.3"
   }
 }
