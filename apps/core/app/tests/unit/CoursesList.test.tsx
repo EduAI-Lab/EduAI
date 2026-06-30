@@ -18,6 +18,26 @@ vi.mock('~/hooks/api/use-policies', () => ({
 import { usePolicies } from '~/hooks/api/use-policies'
 const mockedUsePolicies = vi.mocked(usePolicies)
 
+// §541: department labels/options now come from the DB-backed useDisciplines
+// hook (previously the static UNIT_OPTIONS). Stub it with a fixed list so the
+// views render labels synchronously in tests.
+vi.mock('~/hooks/api/use-disciplines', () => {
+  const DISCIPLINES = [
+    { code: 'COSC', name: 'Computer Science' },
+    { code: 'MATH', name: 'Mathematics' },
+    { code: 'STAT', name: 'Statistics' },
+  ]
+  return {
+    useDisciplines: () => ({
+      disciplines: DISCIPLINES,
+      options: DISCIPLINES.map((d) => ({ code: d.code, label: d.name })),
+      getLabel: (code: string) => DISCIPLINES.find((d) => d.code === code)?.name ?? code,
+      loading: false,
+      error: null,
+    }),
+  }
+})
+
 const PUBLISHED_COURSE: Course = {
   id: 'c1',
   code: 'COSC 101',

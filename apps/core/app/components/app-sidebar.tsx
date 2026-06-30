@@ -1,5 +1,5 @@
 import * as React from "react"
-import { useRouteLoaderData } from "react-router"
+import { Form, Link, useLocation, useRouteLoaderData } from "react-router"
 import {
   IconBooks,
   IconBrain,
@@ -7,33 +7,23 @@ import {
   IconDashboard,
   IconFileText,
   IconListCheck,
+  IconLogout,
   IconMessageChatbot,
   IconReport,
   IconRobot,
   IconSettings,
   IconShieldLock,
   IconMail,
+  IconUser,
   IconUsers,
   type Icon,
 } from "@tabler/icons-react"
 
-import { NavDocuments } from "~/components/nav-documents"
-import type { NavDocumentItem } from "~/components/nav-documents"
-import { NavMain } from "~/components/nav-main"
-import type { NavMainItem } from "~/components/nav-main"
-import { NavSecondary } from "~/components/nav-secondary"
-import type { NavSecondaryItem } from "~/components/nav-secondary"
-import { NavUser } from "~/components/nav-user"
 import {
+  AppSidebar as SharedAppSidebar,
   Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarTrigger,
 } from "@eduai/ui"
+import type { NavMainItem, NavSecondaryItem } from "@eduai/ui"
 import type { User } from "~/lib/auth/types"
 import {
   getNavForUser,
@@ -85,19 +75,16 @@ export type AppSidebarProps = {
   user: User
   navMain?: NavMainItem[]
   navSecondary?: NavSecondaryItem[]
-  documents?: NavDocumentItem[]
-  showDocuments?: boolean
 } & React.ComponentProps<typeof Sidebar>
 
 export function AppSidebar({
   user,
   navMain: navMainOverride,
   navSecondary: navSecondaryOverride,
-  documents = [],
-  showDocuments = false,
   variant = "sidebar",
   ...props
 }: AppSidebarProps) {
+  const { pathname } = useLocation()
   const { policies } = usePolicies()
   // Prefer the server-resolved flag from the root loader (authoritative,
   // default-aware, no paint flash). Fall back to the client policy fetch only
@@ -120,50 +107,67 @@ export function AppSidebar({
   const navSecondary =
     navSecondaryOverride ?? toNavSecondaryItems(getNavSecondaryForUser(user))
 
+  const logo = (
+    <>
+      {/* Globe logo — same as login/signup page */}
+      <div
+        className="flex items-center justify-center shrink-0"
+        style={{
+          width: 28,
+          height: 28,
+          borderRadius: 7,
+          background: "var(--primary)",
+        }}
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.75" strokeLinecap="round">
+          <circle cx="12" cy="12" r="9"/>
+          <path d="M12 3a9 9 0 0 1 0 18"/>
+          <path d="M3 12h18"/>
+          <path d="M12 3c2 2 3.5 5.5 3.5 9s-1.5 7-3.5 9"/>
+        </svg>
+      </div>
+      <span className="text-base font-bold" style={{ letterSpacing: "-0.01em" }}>EduAI</span>
+    </>
+  )
+
   return (
-    <Sidebar variant={variant} collapsible="offcanvas" {...props}>
-      <SidebarHeader className="p-2">
-        <div className="flex items-center gap-1">
-          <SidebarMenu className="min-w-0 flex-1">
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                asChild
-                className="data-[slot=sidebar-menu-button]:!p-1.5"
-              >
-                <a href="/dashboard" className="flex items-center gap-[9px]">
-                  {/* Globe logo — same as login/signup page */}
-                  <div
-                    className="flex shrink-0 items-center justify-center"
-                    style={{
-                      width: 28,
-                      height: 28,
-                      borderRadius: 7,
-                      background: "var(--primary)",
-                    }}
-                  >
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.75" strokeLinecap="round">
-                      <circle cx="12" cy="12" r="9"/>
-                      <path d="M12 3a9 9 0 0 1 0 18"/>
-                      <path d="M3 12h18"/>
-                      <path d="M12 3c2 2 3.5 5.5 3.5 9s-1.5 7-3.5 9"/>
-                    </svg>
-                  </div>
-                  <span className="text-base font-bold" style={{ letterSpacing: "-0.01em" }}>EduAI</span>
-                </a>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-          <SidebarTrigger className="hidden shrink-0 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground md:inline-flex" />
-        </div>
-      </SidebarHeader>
-      <SidebarContent>
-        <NavMain items={navMain} />
-        {showDocuments && <NavDocuments items={documents} />}
-        <NavSecondary items={navSecondary} className="mt-auto" />
-      </SidebarContent>
-      <SidebarFooter>
-        <NavUser user={user} />
-      </SidebarFooter>
-    </Sidebar>
+    <SharedAppSidebar
+      logo={logo}
+      logoHref="/dashboard"
+      navMain={navMain}
+      navSecondary={navSecondary}
+      currentPath={pathname}
+      LinkComponent={Link}
+      user={user}
+      navUser={{
+        items: [
+          {
+            label: "Settings",
+            icon: <IconSettings size={15} strokeWidth={1.75} />,
+            href: "/settings",
+          },
+          // TODO: remove Account menu item (note carried over from the old Core
+          // nav-user, which was extracted into @eduai/ui during the QM redesign).
+          {
+            label: "Account",
+            icon: <IconUser size={15} strokeWidth={1.75} />,
+            href: "/settings/account",
+          },
+        ],
+        logoutElement: (
+          <Form method="post" action="/auth/logout" replace className="w-full">
+            <button
+              type="submit"
+              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none text-destructive hover:bg-destructive/10 focus:bg-destructive/10"
+            >
+              <IconLogout size={15} strokeWidth={1.75} />
+              Log out
+            </button>
+          </Form>
+        ),
+      }}
+      variant={variant}
+      {...props}
+    />
   )
 }

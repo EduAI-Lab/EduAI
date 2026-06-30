@@ -9,7 +9,7 @@ import { Navigate } from 'react-router';
 import api from '../services/api';
 import eduaiService from '../services/eduaiService';
 import { useAuth } from '../contexts/AuthContext';
-import { EduAIStatusBadge } from '../components/eduai/EduAIStatusBadge';
+import { AIServiceIndicators } from '../components/eduai/AIServiceIndicators';
 import { useEduAIStatus } from '../hooks/useEduAIStatus';
 
 interface ResultState {
@@ -170,11 +170,11 @@ export const ApiTestPage = () => {
               Use the forms below to call the new backend routes directly.
             </p>
           </div>
-          <EduAIStatusBadge
+          <AIServiceIndicators
             status={eduaiStatus.status}
             message={eduaiStatus.message}
+            provider={eduaiStatus.provider}
             onRefresh={eduaiStatus.refresh}
-            questionGenerationPhase={eduaiStatus.questionGenerationPhase}
           />
         </header>
 

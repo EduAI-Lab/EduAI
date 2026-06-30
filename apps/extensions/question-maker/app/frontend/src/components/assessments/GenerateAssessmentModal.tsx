@@ -2,7 +2,21 @@
  * Modal for creating or editing an assessment blueprint (name, type, semester).
  * Returns collected params to parent callbacks.
  */
-import { Button, Card, CardContent, CardFooter, CardHeader, CardTitle, Input, Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@eduai/ui';
+import {
+    Button,
+    Input,
+    Label,
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogFooter,
+} from '@eduai/ui';
 import { Tooltip } from '@/components/ui/tooltip';
 import * as React from 'react';
 import { AssessmentGenerationParams, AssessmentType } from '../../types/question';
@@ -83,38 +97,13 @@ export const GenerateAssessmentModal = ({
 
   const disabledReason = getDisabledReason();
 
-  if (!open) return null;
-
   const handleGenerate = () => {
-    // Provide default values for removed difficulty matrix fields
-    const difficultyDistribution = {
-      easy: 0,
-      medium: 0,
-      hard: 0
-    };
-
-    const reasoningDistribution = {
-      factual: 0,
-      analytical: 0,
-      application: 0
-    };
-
+    const difficultyDistribution = { easy: 0, medium: 0, hard: 0 };
+    const reasoningDistribution = { factual: 0, analytical: 0, application: 0 };
     const reasoningData = {
-      factual: {
-        total: 0,
-        easyBoundary: 0,
-        hardBoundary: 0
-      },
-      analytical: {
-        total: 0,
-        easyBoundary: 0,
-        hardBoundary: 0
-      },
-      application: {
-        total: 0,
-        easyBoundary: 0,
-        hardBoundary: 0
-      }
+      factual: { total: 0, easyBoundary: 0, hardBoundary: 0 },
+      analytical: { total: 0, easyBoundary: 0, hardBoundary: 0 },
+      application: { total: 0, easyBoundary: 0, hardBoundary: 0 },
     };
 
     const payload: AssessmentGenerationParams = {
@@ -140,23 +129,29 @@ export const GenerateAssessmentModal = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <Card className="relative flex w-full max-w-4xl max-h-[90vh] flex-col overflow-hidden">
-        <CardHeader className="border-b">
-          <CardTitle>{isEdit ? 'Edit Assessment Blueprint' : 'Create Assessment Blueprint'}</CardTitle>
-        </CardHeader>
-        <CardContent className="flex-1 space-y-6 overflow-y-auto py-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-2">
-              <Label htmlFor="assessmentName">Assessment name</Label>
-              <Input
-                id="assessmentName"
-                value={assessmentName}
-                onChange={(e) => setAssessmentName(e.target.value)}
-                placeholder="e.g. Midterm 1"
-              />
-            </div>
+    <Dialog open={open} onOpenChange={(isOpen) => { if (!isOpen) onClose(); }}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>
+            {isEdit ? 'Edit assessment details' : 'New assessment'}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-5 py-2">
+          <div className="space-y-2">
+            <Label htmlFor="assessmentName">
+              Assessment name <span className="text-destructive">*</span>
+            </Label>
+            <Input
+              id="assessmentName"
+              value={assessmentName}
+              onChange={(e) => setAssessmentName(e.target.value)}
+              placeholder="e.g. Midterm 1"
+              autoFocus
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="assessmentType">Assessment type</Label>
               <Select value={assessmentType} onValueChange={(value) => setAssessmentType(value as AssessmentType)}>
@@ -172,6 +167,7 @@ export const GenerateAssessmentModal = ({
                 </SelectContent>
               </Select>
             </div>
+
             <div className="space-y-2">
               <Label htmlFor="assessmentSemester">Semester</Label>
               <Select value={assessmentSemester} onValueChange={setAssessmentSemester}>
@@ -188,25 +184,26 @@ export const GenerateAssessmentModal = ({
               </Select>
             </div>
           </div>
-        </CardContent>
-        <CardFooter className="flex justify-end gap-3 border-t bg-muted/40 py-4">
+        </div>
+
+        <DialogFooter className="gap-2">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           {disabledReason ? (
             <Tooltip content={disabledReason} multiline>
               <span className="inline-block">
                 <Button onClick={handleGenerate} disabled={!canGenerate}>
-                  Save Blueprint
+                  {isEdit ? 'Save changes' : 'Create assessment'}
                 </Button>
               </span>
             </Tooltip>
           ) : (
             <Button onClick={handleGenerate} disabled={!canGenerate}>
-              Save Blueprint
+              {isEdit ? 'Save Changes' : 'Create Blueprint'}
             </Button>
           )}
-        </CardFooter>
-      </Card>
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 };
 
