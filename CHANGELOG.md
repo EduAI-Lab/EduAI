@@ -67,6 +67,13 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] fix: Unblock student-ID onboarding before any Canvas sync — `linkCanvasRoster` no longer 404s when no instructor has synced the course; it saves the student number (still rejecting duplicates) and links zero enrollments, and the later sync's `linkEnrollmentsFromStagingForCourse` enrolls the student by `studentId` once staging rows exist. (#732, @GlowyBlack, 2026-06-22)
 - [core] fix: Force React pre-bundle at startup via `optimizeDeps.include` — prevents a Vite chunk-version mismatch on first client-side navigation that left `ReactCurrentDispatcher.current` null, causing "Cannot read properties of null (reading 'useContext')" crash on the login page. (#162, @evanbones, 2026-06-26)
 
+### Added
+
+- [core] feat: Course card UX for ADHD Assist pilot (PR2) — course cards gain per-student colour personalization (Canvas-style hero colour + ⋮ customization popover), a segmented term filter (All / Term 1 / Term 2 mapped from Fall/Winter/Spring/Summer), a material-preview dialog (instructors/TAs can inspect a file before downloading), and scroll/press motion reveals gated by the `Reduce motion` preference. (#696, #697, #698, #701, #708, @Ayyhab, 2026-06-27) — [#752](https://github.com/EduAI-Lab/EduAI/pull/752)
+- [core] feat: Student chat privacy notice — first-visit modal on `/chat` informs students that course chat history can be reviewed by instructors, TAs, and platform admins; acknowledgment stored per-user in `localStorage`; a persistent inline reminder stays visible after dismissal. (#699, #708, @Ayyhab, 2026-06-27) — [#752](https://github.com/EduAI-Lab/EduAI/pull/752)
+- [core] feat: Chat history rail polish — softer visual styling and auto-hide in focus mode so the transcript area stays full-width during focused reading. (#708, @Ayyhab, 2026-06-27) — [#752](https://github.com/EduAI-Lab/EduAI/pull/752)
+- [core] tests: Unit coverage for course-card colour/nickname personalization (`course-card-preferences.test.ts`), term-filter bucketing (`course-term-filter.test.ts`), chat privacy notice localStorage persistence (`chat-privacy-notice.test.ts`), and the privacy-notice dialog UI (`ChatPrivacyNoticeDialog.test.tsx`). (#696, #697, #698, #699, #708, @Ayyhab, 2026-06-27) — [#752](https://github.com/EduAI-Lab/EduAI/pull/752)
+
 
 ## [Week 7 — June 15–21, 2026]
 
