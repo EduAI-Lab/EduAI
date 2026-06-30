@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { IconCheck, IconChevronDown } from "@tabler/icons-react"
 import { Button } from "./button"
 import {
@@ -11,6 +11,11 @@ import {
   CommandItem,
   CommandList,
 } from "./command"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "./popover"
 import { cn } from "../utils"
 
 export interface ComboboxOption {
