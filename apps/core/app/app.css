@@ -215,6 +215,14 @@ body {
   --color-error-500: oklch(0.625 0.240 25);
   --color-error-600: oklch(0.700 0.220 25);
   --color-error-700: oklch(0.875 0.065 25);
+  /* Success palette — flips for dark bg legibility */
+  --color-success-100: oklch(0.230 0.060 145);
+  --color-success-500: oklch(0.554 0.155 145);
+  --color-success-700: oklch(0.875 0.065 145);
+  /* Warning palette — flips for dark bg legibility (previously missing → pale chips) */
+  --color-warning-100: oklch(0.250 0.055 80);
+  --color-warning-500: oklch(0.790 0.165 80);
+  --color-warning-700: oklch(0.880 0.070 85);
   --destructive: var(--color-error-500);
   --destructive-hover: var(--color-error-600);
   --destructive-foreground: oklch(1.000 0 0);
