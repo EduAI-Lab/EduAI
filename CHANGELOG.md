@@ -5,20 +5,23 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
 
+## [Week 9 — June 29–July 5, 2026]
+
+### Fixed
+
+- [ui] hotfix: Add missing imports in `packages/ui/src/ui/combobox.tsx` — `useRef`, `useEffect`, `Popover`, `PopoverTrigger`, and `PopoverContent` were used but not imported, causing `packages-ui-unit-tests` and QM frontend Docker build to fail on CI. (#823)
+
 ## [Week 8 — June 22–28, 2026]
 
 ### Added
 
-<<<<<<< feat/qm-redesign
 - [question-maker] feat: Full course-centric QM redesign — reworked the frontend into a workspace IA (`/dashboard`, `/courses`, `/courses/:id` with Overview/Questions/Assessments/Topics/Canvas tabs, nested assessment routes; course context via URL only), a full-page question composer, a unified question modal, a global question library with a filter toolbar + preview drawer, a reworked assessments surface with inline AI-variant review, a role-aware dashboard, a ⌘K command palette, and an inline course switcher. (#762, #763, @yta3216, 2026-06-26) — [#791](https://github.com/EduAI-Lab/EduAI/pull/791)
 - [core] feat: Extract shared shell, settings, question, and dependency-free analytics-chart components into `@eduai/ui` (AppSidebar/SiteHeader/Nav*/ThemeToggle/BugReportDialog, QuestionCard/QuestionStatusBadge/VariantBadge, settings/{AccessibilitySettings,ProvidersTable,ProviderFormDialog}, charts/*); Core consumes them via thin wrappers, and `MultiSelect` moves onto a Radix popover with a body-pointer-events restore fix for dialogs opened from menus. (#765, @yta3216, 2026-06-26) — [#791](https://github.com/EduAI-Lab/EduAI/pull/791)
 - [question-maker] feat: Backend endpoints supporting the redesign — `GET /api/topics/sync-status/:courseId`, `GET /api/course/:id/enrollments`, and `GET /api/questions/export` (CSV/JSON); all TA+ gated. (#790, @yta3216, 2026-06-26) — [#791](https://github.com/EduAI-Lab/EduAI/pull/791)
 - [question-maker] feat: AI works off the UBC network — `POST /api/eduai/test-api-key` accepts the caller's cloud provider key and reports the live provider, `/api/eduai/ai-models` degrades to a fallback catalog instead of erroring, and the header shows dual UBC-hosted/cloud status indicators. (#790, @yta3216, 2026-06-26) — [#791](https://github.com/EduAI-Lab/EduAI/pull/791)
 - [core] feat: Skip chat persistence for service-key callers in `/api/chat` so the Question Maker AI proxy can run the model without violating `chats_userId_fkey`. (#790, @yta3216, 2026-06-26) — [#791](https://github.com/EduAI-Lab/EduAI/pull/791)
 - [core] tests: Add `@eduai/ui` component tests for the extracted components (NavUser, SiteHeader, ThemeToggle, BugReportDialog, QuestionCard, QuestionStatusBadge, VariantBadge). (#765, @yta3216, 2026-06-26) — [#791](https://github.com/EduAI-Lab/EduAI/pull/791)
-=======
 - [core] feat: DB-backed UBCO disciplines — seed a `Discipline` table from the Workday export (105 units), make `Course.department` a FK into it, validate course/`authorizedUnits` codes server-side, and add `GET /api/disciplines` + `/search`; replaces the hardcoded `units.ts` registry. (#541, @abdullahmoh21, 2026-06-25)
->>>>>>> development
 - [core] feat: UBC password policy enforcement — three-phase implementation: (1) strength validation (8-char complex or 16-char passphrase) on all password-setting paths via a Better Auth `before` hook; (2) no-reuse-of-last-10 check using `verify`-based hash comparison against `PasswordHistory` records; (3) annual rotation gate in the `root.tsx` loader that redirects to `/settings?expired=1` on every page load until the password is updated. Settings page reorganised: Account tab (change-password + student number), Providers tab, Canvas tab. (#339, #769, @GlowyBlack, 2026-06-24)
 - [ai-tutor] feat: Mirror Core `TA` enrollments into AI Tutor and surface TA-taught courses — `GET /api/courses` now returns TA-enrolled offerings (unpublished included, no progress) alongside the TA's published student-enrolled courses, so course TAs see their teaching courses in the instructor shell. (#745, @Ayyhab, 2026-06-25)
 - [ai-tutor] tests: Add `nav.test.ts` (every role's nav label is "Courses"; admin nav keeps Bug Reports and excludes user-management/enrollments) and an api-client 403 regression guarding against the login-redirect loop. (#745, @Ayyhab, 2026-06-25)
