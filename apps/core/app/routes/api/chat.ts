@@ -52,12 +52,18 @@ import {
   sanitizeSystemPrompt,
 } from "~/lib/ai/prompt-safety";
 import {
+  getProfileRequirements,
+  resolveAdhdTurnProfile,
+  type AdhdTurnProfile,
+} from "~/lib/ai/adhd-turn-profile";
+import {
   auditAndMaybeRewrite,
   buildOverseenAssistantMessagesToPersist,
   emptyOversightAuditResult,
   isAdhdOversightEnabled,
+  type OversightMethod,
 } from "~/lib/ai/adhd-oversight";
-import { resolveAdhdResponseWordCap } from "~/lib/ai/adhd-metrics";
+import { resolveAdhdResponseWordCap, isProfileStructuralPass, computeAdhdResponseMetrics } from "~/lib/ai/adhd-metrics";
 import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
 import { findRelevantContent } from "~/lib/ai/embedding";
 import {
@@ -662,8 +668,14 @@ export async function action({ request }: ActionFunctionArgs) {
       courseAccess = access;
     }
 
+    // Service-key (server-to-server) callers — e.g. the Question Maker proxy —
+    // are stateless and have no real User row, so persisting a Chat would violate
+    // chats_userId_fkey (P2003). Skip all chat/message persistence for them and
+    // run the model against the incoming messages only.
+    const ephemeral = isServiceKeyCaller;
+
     // Persist any system-prompt change onto the chat loaded above.
-    if (hasSystemPromptField) {
+    if (hasSystemPromptField && !ephemeral) {
       if (chat) {
         if (chat.systemPrompt !== trimmedSystemPrompt) {
           chat = await prisma.chat.update({
@@ -684,14 +696,16 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     }
 
-    if (chat && effectiveCourseId && chat.courseId !== effectiveCourseId && !chat.courseId) {
+    // Backfill course context onto an existing chat that was created before a
+    // course was selected (e.g. user picked the course mid-conversation).
+    if (!ephemeral && chat && effectiveCourseId && chat.courseId !== effectiveCourseId && !chat.courseId) {
       chat = await prisma.chat.update({
         where: { id: chat.id },
         data: { courseId: effectiveCourseId },
       });
     }
 
-    if (hasAdhdAssistField && chat && chat.adhdAssist !== adhdAssist) {
+    if (!ephemeral && hasAdhdAssistField && chat && chat.adhdAssist !== adhdAssist) {
       chat = await prisma.chat.update({
         where: { id: chat.id },
         data: { adhdAssist },
@@ -714,7 +728,7 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    if (!chat && shouldCreateChat) {
+    if (!chat && shouldCreateChat && !ephemeral) {
       chat = await prisma.chat.create({
         data: {
           userId: actingUser.id,
@@ -724,6 +738,18 @@ export async function action({ request }: ActionFunctionArgs) {
           adhdAssist,
         },
       });
+    }
+
+    // Stateless callers get an in-memory chat stub (id: null) so downstream code
+    // can read systemPrompt/adhdAssist without persisting anything.
+    if (ephemeral && !chat) {
+      chat = {
+        id: null,
+        userId: actingUser.id,
+        courseId: effectiveCourseId,
+        systemPrompt: trimmedSystemPrompt,
+        adhdAssist,
+      } as unknown as NonNullable<typeof chat>;
     }
 
     if (process.env.CHAT_API_DEBUG === "1") {
@@ -737,13 +763,17 @@ export async function action({ request }: ActionFunctionArgs) {
       });
     }
 
-    // Fetch only the slice of history we plan to send back to the LLM.
+    // Fetch only the slice of history we plan to send back to the LLM. Stateless
+    // callers have no persisted history (and a null chat id), so skip the query.
     const maxContextMessages = resolveMaxContextMessages();
-    const recentMessageRecords = await prisma.chatMessage.findMany({
-      where: { chatId: chat.id },
-      orderBy: { position: "desc" },
-      take: maxContextMessages,
-    });
+    const recentMessageRecords =
+      ephemeral || !chat.id
+        ? []
+        : await prisma.chatMessage.findMany({
+            where: { chatId: chat.id },
+            orderBy: { position: "desc" },
+            take: maxContextMessages,
+          });
 
     const storedMessages = recentMessageRecords.reverse().map((record) =>
       reviveStoredMessage({
@@ -952,6 +982,8 @@ export async function action({ request }: ActionFunctionArgs) {
 
     const existingMessageIds = new Set(storedMessages.map((message) => message.id).filter(isNonEmptyString));
     const appendMessages = async (messages: GenericMessage[]) => {
+      // Stateless callers never persist messages (no chat row / no real user).
+      if (ephemeral || !chat?.id) return;
       if (!messages.length) return;
 
       const rows: Prisma.ChatMessageCreateManyInput[] = [];
@@ -1269,17 +1301,39 @@ ${buildEmptyCourseRagBlock()}`;
       bodyValue: adhdAssist,
       chatValue: chat.adhdAssist,
     });
+
+    const lastUserText = extractMessageText(
+      [...trimmedMessages].reverse().find((message) => message.role === "user"),
+    );
+    const priorAssistantText = extractMessageText(
+      [...trimmedMessages].reverse().find((message) => message.role === "assistant"),
+    );
+
+    let adhdProfile: AdhdTurnProfile | undefined;
+    let adhdProfileRequirements:
+      | ReturnType<typeof getProfileRequirements>
+      | undefined;
+
+    if (effectiveAdhdAssist) {
+      adhdProfile = resolveAdhdTurnProfile({ userText: lastUserText, priorAssistantText });
+      adhdProfileRequirements = getProfileRequirements(adhdProfile);
+    }
+
     streamConfig.system = composeSecurityPrompt(
-      composeSystemPrompt(streamConfig.system ?? "", { adhdAssist: effectiveAdhdAssist }),
+      composeSystemPrompt(streamConfig.system ?? "", {
+        adhdAssist: effectiveAdhdAssist,
+        profile: adhdProfile,
+      }),
     );
 
     const streamStartedAt = Date.now();
     const needsOversight =
-      chatMode !== "admin" && effectiveAdhdAssist && isAdhdOversightEnabled();
-    const lastUserText = extractMessageText(
-      [...trimmedMessages].reverse().find((message) => message.role === "user"),
-    );
-    const adhdWordCap = resolveAdhdResponseWordCap(lastUserText);
+      chatMode !== "admin" &&
+      effectiveAdhdAssist &&
+      isAdhdOversightEnabled() &&
+      (adhdProfileRequirements?.runDean ?? true);
+    const adhdWordCap =
+      adhdProfileRequirements?.wordCap ?? resolveAdhdResponseWordCap(lastUserText);
 
     const logResponseCompliance = (
       assistantText: string,
@@ -1288,15 +1342,22 @@ ${buildEmptyCourseRagBlock()}`;
         promptTokens?: number;
         completionTokens?: number;
         oversightRewritten?: boolean;
-        oversightMethod?: "none" | "deterministic" | "llm" | "llm_failed";
+        oversightMethod?: OversightMethod;
         preStructuralPass?: boolean;
         oversightDurationMs?: number;
         oversightPromptTokens?: number;
         oversightCompletionTokens?: number;
+        responseProfile?: AdhdTurnProfile;
+        profileStructuralPass?: boolean;
       },
     ) => {
       const trimmed = assistantText?.trim();
       if (!trimmed) return;
+      const metrics = computeAdhdResponseMetrics(trimmed, { wordCap: adhdWordCap });
+      const profileStructuralPass =
+        adhdProfile != null
+          ? isProfileStructuralPass(metrics, adhdProfile, trimmed)
+          : undefined;
       void recordResponseComplianceEvent({
         userId: actingUser.id,
         chatId: chat.id,
@@ -1315,6 +1376,8 @@ ${buildEmptyCourseRagBlock()}`;
           oversightDurationMs: extras?.oversightDurationMs,
           oversightPromptTokens: extras?.oversightPromptTokens,
           oversightCompletionTokens: extras?.oversightCompletionTokens,
+          responseProfile: adhdProfile,
+          profileStructuralPass,
         },
       }).catch((err) => {
         console.error("[assistive-events] response_compliance log failed", err);
@@ -1474,6 +1537,7 @@ ${buildEmptyCourseRagBlock()}`;
               draft,
               model: aiModel,
               wordCap: adhdWordCap,
+              profile: adhdProfile ?? "full_tutoring",
             })
           : emptyOversightAuditResult();
 

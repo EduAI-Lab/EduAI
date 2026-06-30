@@ -45,8 +45,27 @@ export interface AssembleVariantsResult {
   examCount: number;
 }
 
+export interface GeneratedVariantPreview {
+  id: number;
+  questionMetadataId: number;
+  questionText: string;
+  difficulty: string;
+  reasoningLevel: string | null;
+  answer: string | null;
+  choices: Array<{ letter?: string; text?: string }> | null;
+  isAiGenerated: boolean;
+  isDraft: boolean;
+}
+
 export interface GenerateBankVariantsResult {
-  results: Array<{ questionId: number; promotedVariantId: number; createdVariantIds: number[] }>;
+  results: Array<{
+    questionId: number;
+    questionDescription: string | null;
+    questionType: string | null;
+    promotedVariantId: number;
+    createdVariantIds: number[];
+    createdVariants: GeneratedVariantPreview[];
+  }>;
   errors: Array<{ questionId: number; iteration?: number; error: string }>;
   courseId: number;
 }

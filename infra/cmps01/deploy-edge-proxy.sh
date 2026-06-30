@@ -1,9 +1,35 @@
 #!/usr/bin/env bash
-# Move LiteLLM to :18091, put nginx on public :8001 with /energy → :9100 sidecar.
+# Move LiteLLM to :18091, put nginx on public :8001 with protected /energy and /ollama.
 # Run on cmps01 from this directory. ~30s vLLM blip while LiteLLM restarts.
 set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$DIR"
+
+if [ -f .env ]; then
+  set -a
+  # shellcheck disable=SC1091
+  source .env
+  set +a
+fi
+
+: "${CMPS01_INTERNAL_KEY:?Set CMPS01_INTERNAL_KEY in infra/cmps01/.env (see .env.example)}"
+: "${CMPS01_INTERNAL_ALLOW_IPS:?Set CMPS01_INTERNAL_ALLOW_IPS to s378 only (e.g. 206.87.25.229) — do not add laptops}"
+
+echo "=== render nginx configs ==="
+{
+  echo "allow 127.0.0.1;"
+  echo "allow ::1;"
+  for ip in ${CMPS01_INTERNAL_ALLOW_IPS:-}; do
+    [ -n "$ip" ] || continue
+    echo "allow ${ip};"
+  done
+  echo "deny all;"
+} > internal-allow.conf
+
+export CMPS01_INTERNAL_KEY
+envsubst '${CMPS01_INTERNAL_KEY}' < nginx.conf.template > nginx.conf
+
+AUTH_HEADER=(-H "X-EduAI-Internal-Key: ${CMPS01_INTERNAL_KEY}")
 
 echo "=== ensure energy sidecar on :9100 ==="
 if ! curl -sf http://127.0.0.1:9100/health | grep -q canMeasure; then
@@ -29,16 +55,25 @@ echo "=== verify vLLM via edge ==="
 curl -sf http://127.0.0.1:8001/v1/models -H "Authorization: Bearer vllm-local" | head -c 200
 echo ""
 
-echo "=== verify energy via edge ==="
-curl -sf http://127.0.0.1:8001/energy/health
+echo "=== verify energy via edge (auth required) ==="
+curl -sf "${AUTH_HEADER[@]}" http://127.0.0.1:8001/energy/health
 echo ""
 
 TAG="edge-probe-$(date +%s)"
 curl -sf -X POST http://127.0.0.1:8001/energy/measure-start \
+  "${AUTH_HEADER[@]}" \
   -H 'Content-Type: application/json' -d "{\"tag\":\"$TAG\"}"
 sleep 2
 curl -sf -X POST http://127.0.0.1:8001/energy/measure-stop \
+  "${AUTH_HEADER[@]}" \
   -H 'Content-Type: application/json' -d "{\"tag\":\"$TAG\"}"
 echo ""
-echo "=== done — s378: ENERGY_SIDECAR_URL=http://cmps01.ok.ubc.ca:8001/energy ==="
-echo "=== research laptop: OLLAMA_BASE_URL=http://cmps01.ok.ubc.ca:8001/ollama (kNN embed) ==="
+
+echo "=== verify internal paths reject missing key ==="
+bash ./verify-edge-security.sh
+
+echo "=== done ==="
+echo "s378 apps/core/.env (dev server only — do not copy key to laptops):"
+echo "  ENERGY_SIDECAR_URL=http://cmps01.ok.ubc.ca:8001/energy"
+echo "  OLLAMA_BASE_URL=http://cmps01.ok.ubc.ca:8001/ollama"
+echo "  CMPS01_INTERNAL_KEY=<same secret as cmps01 .env>"

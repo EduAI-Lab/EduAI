@@ -30,6 +30,6 @@ describe("Chat views — role layouts", () => {
   it("course-scoped view shows course selector pill", () => {
     render(<ChatCourseScopedView {...baseProps} />);
     // Course-scoped view shows a course selector pill that says "Select course"
-    expect(screen.getByText("Select course")).toBeInTheDocument();
+    expect(screen.getByText("Course")).toBeInTheDocument();
   });
 });

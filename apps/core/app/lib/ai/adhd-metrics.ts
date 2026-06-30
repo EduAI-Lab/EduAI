@@ -3,6 +3,11 @@
  * Shared by chat onFinish logging, eval harness, and report scripts.
  */
 
+import {
+  getProfileRequirements,
+  type AdhdTurnProfile,
+} from "~/lib/ai/adhd-turn-profile";
+
 export const ADHD_TUTORING_WORD_CAP = 250;
 export const ADHD_CLARIFICATION_WORD_CAP = 120;
 
@@ -69,4 +74,52 @@ export function resolveAdhdResponseWordCap(userText?: string): number {
   return wordCount <= ADHD_CLARIFICATION_USER_WORD_THRESHOLD
     ? ADHD_CLARIFICATION_WORD_CAP
     : ADHD_TUTORING_WORD_CAP;
+}
+
+/** §5 drift redirect: one-topic boundary without Top summary scaffolding. */
+export function isRedirectTemplatePass(
+  metrics: AdhdResponseMetrics,
+  assistantText: string,
+): boolean {
+  if (!metrics.underCap || metrics.topSummary) return false;
+  const trimmed = (assistantText ?? "").trim();
+  const hasRedirectCue = /separate question|one topic|come back|switch now|separate topic/i.test(
+    trimmed,
+  );
+  const hasForwardOffer =
+    trimmed.endsWith("?") &&
+    /want to|would you like|or switch|come back|ready to/i.test(trimmed);
+  return hasRedirectCue || hasForwardOffer;
+}
+
+/** Profile-conditional structural pass (Approach A). */
+export function isProfileStructuralPass(
+  metrics: AdhdResponseMetrics,
+  profile: AdhdTurnProfile,
+  assistantText = "",
+): boolean {
+  const req = getProfileRequirements(profile);
+  if (!metrics.underCap) return false;
+
+  if (req.expectRedirectTemplate) {
+    return isRedirectTemplatePass(metrics, assistantText);
+  }
+
+  if (req.expectTopSummary && !metrics.topSummary) return false;
+  if (req.expectNextLine && !metrics.nextLine) return false;
+
+  return true;
+}
+
+export function withProfileStructuralPass(
+  metrics: AdhdResponseMetrics,
+  profile: AdhdTurnProfile,
+  assistantText = "",
+): AdhdStructuralCompliance & { profileStructuralPass: boolean } {
+  const profileStructuralPass = isProfileStructuralPass(metrics, profile, assistantText);
+  return {
+    ...metrics,
+    structuralPass: profileStructuralPass,
+    profileStructuralPass,
+  };
 }
