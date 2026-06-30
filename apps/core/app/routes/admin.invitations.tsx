@@ -5,7 +5,7 @@ import { IconPlus, IconDots, IconCopy, IconMailForward, IconBan } from "@tabler/
 
 import { auth } from "~/lib/auth/server";
 import { invitableRolesFor } from "~/lib/invitations/schemas";
-import { UNIT_OPTIONS } from "~/lib/units";
+import { useDisciplines } from "~/hooks/api/use-disciplines";
 import {
   Button,
   Badge,
@@ -78,7 +78,7 @@ type Invitation = {
 };
 
 const ROLE_OPTIONS: { value: InviteRole; label: string }[] = [
-  { value: "STUDENT", label: "Student" },
+  { value: "STUDENT", label: "Student / TA" },
   { value: "INSTRUCTOR", label: "Professor (Instructor)" },
   { value: "UNIT_ADMIN", label: "Unit Administrator" },
   { value: "ADMIN", label: "Administrator" },
@@ -118,6 +118,7 @@ function StatusBadge({ invite }: { invite: Invitation }) {
 
 export default function InvitationsPage() {
   const { user, invitableRoles } = useLoaderData<typeof loader>();
+  const { options: departmentOptions } = useDisciplines();
   const [invites, setInvites] = useState<Invitation[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -257,7 +258,7 @@ export default function InvitationsPage() {
                 <div className="flex items-start justify-between gap-4">
                   <PageHeading
                     heading="Invitations"
-                    subheading="Invite administrators, unit admins, and instructors to the platform"
+                    subheading="Invite administrators, unit admins, instructors, and students to the platform"
                   />
                   <Button onClick={() => { resetForm(); setDialogOpen(true); }}>
                     <IconPlus className="-ms-1 opacity-60" size={16} aria-hidden="true" />
@@ -425,12 +426,19 @@ export default function InvitationsPage() {
                     ))}
                   </SelectContent>
                 </Select>
+                {role === "STUDENT" && (
+                  <p className="text-xs text-muted-foreground">
+                    Students can be promoted to TA inside a course — a TA is a
+                    student with extra course access. There is no separate TA
+                    invite.
+                  </p>
+                )}
               </div>
               {role === "UNIT_ADMIN" && (
                 <div className="space-y-2">
                   <Label htmlFor="invite-units">Authorized units</Label>
                   <MultiSelect
-                    options={UNIT_OPTIONS.map((dept) => ({
+                    options={departmentOptions.map((dept) => ({
                       value: dept.code,
                       label: dept.label,
                       description: dept.code,

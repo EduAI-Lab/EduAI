@@ -7,7 +7,7 @@
  * and continues their own chats through the live chat screen instead.
  *
  * When `continueChatId` is provided the viewer renders a "Continue in chat"
- * button that deep-links to /chat?chatId=<id> — only pass this when the
+ * button that deep-links to /chat/<id> — only pass this when the
  * current user is the owner of the chat (canEdit === true).
  */
 import { type Message } from "ai";

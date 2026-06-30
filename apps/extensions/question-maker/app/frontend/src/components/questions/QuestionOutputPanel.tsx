@@ -5,7 +5,7 @@
 import { Label, Textarea, Button } from '@eduai/ui';
 
 import { useState } from 'react';
-import { Copy, Check, RotateCcw } from 'lucide-react';
+import { IconCopy, IconCheck, IconRotate } from '@tabler/icons-react';
 import { MCQChoicesField } from './MCQChoicesField';
 import type { QuestionType, MCQChoice } from '../../types/question';
 
@@ -22,6 +22,8 @@ interface QuestionOutputPanelProps {
     /** Optional: clear question text, choices, answer to defaults */
     onClear?: () => void;
     idPrefix?: string;
+    /** Whether the SA/LA answer is required (composer create) vs optional (variant). */
+    answerRequired?: boolean;
 }
 
 const defaultChoices: MCQChoice[] = [
@@ -42,7 +44,8 @@ export function QuestionOutputPanel({
     disabled = false,
     isStreaming = false,
     onClear,
-    idPrefix = 'aq'
+    idPrefix = 'aq',
+    answerRequired = false
 }: QuestionOutputPanelProps) {
     const [copiedField, setCopiedField] = useState<string | null>(null);
 
@@ -66,33 +69,33 @@ export function QuestionOutputPanel({
                         onClick={onClear}
                         className="gap-1.5 text-xs text-muted-foreground hover:text-foreground"
                     >
-                        <RotateCcw className="h-3 w-3" />
+                        <IconRotate className="h-3 w-3" />
                         Clear
                     </Button>
                 )}
             </div>
 
             <div className="flex flex-col gap-1.5" data-field-id="field-variant-text">
-                <div className="flex items-center justify-between">
+                <div className="flex min-h-6 items-center justify-between">
                     <Label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                         Question text <span className="text-destructive">*</span>
                     </Label>
-                    {variantText.trim() && (
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleCopy(variantText, 'question')}
-                            className="h-6 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
-                        >
-                            {copiedField === 'question' ? (
-                                <Check className="h-3 w-3" />
-                            ) : (
-                                <Copy className="h-3 w-3" />
-                            )}
-                            {copiedField === 'question' ? 'Copied' : 'Copy'}
-                        </Button>
-                    )}
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleCopy(variantText, 'question')}
+                        className={`h-6 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground ${variantText.trim() ? '' : 'pointer-events-none opacity-0'}`}
+                        tabIndex={variantText.trim() ? 0 : -1}
+                        aria-hidden={!variantText.trim()}
+                    >
+                        {copiedField === 'question' ? (
+                            <IconCheck className="h-3 w-3" />
+                        ) : (
+                            <IconCopy className="h-3 w-3" />
+                        )}
+                        {copiedField === 'question' ? 'Copied' : 'Copy'}
+                    </Button>
                 </div>
                 <Textarea
                     id={`${idPrefix}-variant-text`}
@@ -100,10 +103,10 @@ export function QuestionOutputPanel({
                     onChange={(e) => onVariantTextChange(e.target.value)}
                     placeholder={
                         isStreaming
-                            ? 'Generating...'
+                            ? 'Generating…'
                             : questionType === 'MCQ'
-                              ? 'Enter the question text (without choices)'
-                              : 'Enter the full question text'
+                              ? 'e.g. Which of the following best describes the time complexity of binary search? (do not include the A/B/C/D choices here)'
+                              : 'e.g. Explain how a hash table resolves collisions, with one worked example.'
                     }
                     disabled={disabled}
                     className="min-h-24 resize-none"
@@ -119,38 +122,50 @@ export function QuestionOutputPanel({
                         onChoicesChange={onVariantChoicesChange}
                         onAnswerChange={onVariantAnswerChange}
                         idPrefix={idPrefix}
+                        disabled={disabled}
                     />
                 </div>
             )}
 
             {questionType !== 'MCQ' && (
                 <div className="flex flex-col gap-1.5">
-                    <div className="flex items-center justify-between">
+                    <div className="flex min-h-6 items-center justify-between">
                         <Label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                            Answer <span className="text-muted-foreground/60 normal-case">(optional)</span>
+                            Model answer{' '}
+                            {answerRequired ? (
+                                <span className="text-destructive normal-case">*</span>
+                            ) : (
+                                <span className="text-muted-foreground/60 normal-case">(optional)</span>
+                            )}
                         </Label>
-                        {variantAnswer.trim() && (
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleCopy(variantAnswer, 'answer')}
-                                className="h-6 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
-                            >
-                                {copiedField === 'answer' ? (
-                                    <Check className="h-3 w-3" />
-                                ) : (
-                                    <Copy className="h-3 w-3" />
-                                )}
-                                {copiedField === 'answer' ? 'Copied' : 'Copy'}
-                            </Button>
-                        )}
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleCopy(variantAnswer, 'answer')}
+                            className={`h-6 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground ${variantAnswer.trim() ? '' : 'pointer-events-none opacity-0'}`}
+                            tabIndex={variantAnswer.trim() ? 0 : -1}
+                            aria-hidden={!variantAnswer.trim()}
+                        >
+                            {copiedField === 'answer' ? (
+                                <IconCheck className="h-3 w-3" />
+                            ) : (
+                                <IconCopy className="h-3 w-3" />
+                            )}
+                            {copiedField === 'answer' ? 'Copied' : 'Copy'}
+                        </Button>
                     </div>
                     <Textarea
                         id={`${idPrefix}-variant-answer`}
                         value={variantAnswer}
                         onChange={(e) => onVariantAnswerChange(e.target.value)}
-                        placeholder={isStreaming ? 'Generating answer...' : 'Provide an answer or leave blank'}
+                        placeholder={
+                            isStreaming
+                                ? 'Generating answer…'
+                                : questionType === 'SA'
+                                  ? 'e.g. O(log n) — the search space halves each comparison.'
+                                  : 'e.g. A full reference solution graders can mark against. Leave blank for open-ended prompts.'
+                        }
                         disabled={disabled}
                         className="min-h-20 resize-none"
                         rows={3}

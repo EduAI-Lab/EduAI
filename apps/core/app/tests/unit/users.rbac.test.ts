@@ -9,7 +9,9 @@ vi.mock("~/lib/auth/server", () => ({
   auth: { api: { getSession: vi.fn() } },
 }));
 
-vi.mock("~/lib/auth/guards.server", () => ({}));
+vi.mock("~/lib/auth/guards.server", () => ({
+  enforceAdminIfApiKey: vi.fn().mockResolvedValue({ response: null, session: null }),
+}));
 
 vi.mock("~/lib/prisma.server", () => ({
   default: {
@@ -17,6 +19,15 @@ vi.mock("~/lib/prisma.server", () => ({
     enrollment: { count: vi.fn() },
   },
 }));
+
+// §541: authorizedUnits codes are validated against the Discipline table.
+vi.mock("~/lib/disciplines/server", () => {
+  const KNOWN = ["COSC", "MATH", "STAT", "DATA", "PHYS"];
+  return {
+    areValidDisciplineCodes: vi.fn(async (codes: string[]) => codes.every((c) => KNOWN.includes(c))),
+    isValidDisciplineCode: vi.fn(async (code: string) => KNOWN.includes(code)),
+  };
+});
 
 import { action } from "~/routes/api/users.$";
 import { auth } from "~/lib/auth/server";
@@ -45,7 +56,7 @@ beforeEach(() => {
   mockUser(ADMIN);
   vi.mocked(prisma.user.update).mockResolvedValue({
     id: "target",
-    _count: { enrollments: 0, courseTAs: 0, taughtCourses: 0, aiInteractions: 0 },
+    _count: { enrollments: 0, taughtCourses: 0, aiInteractions: 0 },
   } as never);
   vi.mocked(prisma.enrollment.count).mockResolvedValue(0);
 });
@@ -60,7 +71,7 @@ describe("PATCH /api/users/:id — self guards (#297)", () => {
   it("rejects self-role-change with 403", async () => {
     const res = await action(makePatch("admin-1", { role: "STUDENT" }));
     expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ error: "Cannot change your own role" });
+    expect(await res.json()).toEqual({ error: "CANNOT_CHANGE_OWN_ROLE" });
     expect(prisma.user.update).not.toHaveBeenCalled();
   });
 
@@ -98,7 +109,7 @@ describe("PATCH /api/users/:id — authorizedUnits assignment (#297)", () => {
     );
   });
 
-  it("rejects an invalid subject code with 400 (§19 UnitSchema)", async () => {
+  it("rejects an invalid subject code with 400 (§541 Discipline check)", async () => {
     const res = await action(makePatch("ua-1", { authorizedUnits: ["cosc"] }));
     expect(res.status).toBe(400);
     expect(prisma.user.update).not.toHaveBeenCalled();

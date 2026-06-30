@@ -3,7 +3,7 @@
  */
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router';
-import { ArrowLeft } from 'lucide-react';
+import { IconArrowLeft } from '@tabler/icons-react';
 import { Button, Dialog, DialogContent, DialogHeader, DialogTitle } from '@eduai/ui';
 import { useToast } from '@/components/ui/use-toast';
 import { bugReportApi, BugReportRow } from '../services/bugReportApi';
@@ -122,7 +122,7 @@ export function BugReportsAdminPage() {
     <div className="min-h-screen bg-background text-foreground">
       <div className="border-b bg-card px-6 py-4 flex flex-wrap items-center gap-4">
         <Button variant="ghost" size="sm" onClick={() => navigate('/home')} className="gap-2">
-          <ArrowLeft className="h-4 w-4" />
+          <IconArrowLeft className="h-4 w-4" />
           Back
         </Button>
         <h1 className="text-lg font-semibold">Bug reports</h1>
