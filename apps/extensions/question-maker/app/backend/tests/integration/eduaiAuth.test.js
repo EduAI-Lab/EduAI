@@ -37,7 +37,7 @@ describe('GET /api/eduai/* without token', () => {
   });
 
   it('rejects /test-api-key', async () => {
-    const res = await request(app).get('/api/eduai/test-api-key');
+    const res = await request(app).post('/api/eduai/test-api-key');
     expect401(res);
   });
 

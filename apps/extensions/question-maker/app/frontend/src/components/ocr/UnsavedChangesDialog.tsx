@@ -1,6 +1,6 @@
 import { Button } from '@eduai/ui';
 
-import { AlertTriangle } from 'lucide-react';
+import { IconAlertTriangle } from '@tabler/icons-react';
 import {
   AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@eduai/ui';
 interface UnsavedChangesDialogProps {
@@ -28,7 +28,7 @@ export function UnsavedChangesDialog({
         <AlertDialogHeader>
           <div className="flex items-center gap-3">
             <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-amber-500/10">
-              <AlertTriangle className="size-5 text-amber-500" />
+              <IconAlertTriangle className="size-5 text-amber-500" />
             </div>
             <AlertDialogTitle>Unsaved Questions</AlertDialogTitle>
           </div>

@@ -1,7 +1,7 @@
 import { Button, ScrollArea } from '@eduai/ui';
 import { Tooltip } from '@/components/ui/tooltip';
 import { useMemo, useState } from 'react';
-import { History, Trash2, X, ChevronDown, ChevronRight } from 'lucide-react';
+import { IconHistory, IconTrash, IconX, IconChevronDown, IconChevronRight } from '@tabler/icons-react';
 import { cn } from '@/lib/utils';
 import { OCRJobCard } from './OCRJobCard';
 import type { OCRJob } from '../../types/ocr';
@@ -65,7 +65,7 @@ function JobGroup({
         onClick={() => setOpen((o) => !o)}
         className="flex w-full items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors"
       >
-        {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+        {open ? <IconChevronDown className="size-3.5" /> : <IconChevronRight className="size-3.5" />}
         {title}
         <span className="ml-auto text-[10px] font-normal">({jobs.length})</span>
       </button>
@@ -120,7 +120,7 @@ export function OCRHistoryPanel({
         <>
           <div className="flex items-center justify-between border-b px-4 py-3">
             <div className="flex items-center gap-2">
-              <History className="size-4" />
+              <IconHistory className="size-4" />
               <h3 className="text-sm font-medium">Upload History</h3>
               {inProgressCount > 0 && (
                 <span className="flex size-5 items-center justify-center rounded-full bg-primary text-[10px] font-medium text-white">
@@ -129,7 +129,7 @@ export function OCRHistoryPanel({
               )}
             </div>
             <Button variant="ghost" size="icon" onClick={onToggle} aria-label="Close history panel">
-              <X className="size-4" />
+              <IconX className="size-4" />
             </Button>
           </div>
 
@@ -137,7 +137,7 @@ export function OCRHistoryPanel({
             <div className="p-4 space-y-4">
               {!hasJobs ? (
                 <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <History className="size-10 text-muted-foreground/50 mb-3" />
+                  <IconHistory className="size-10 text-muted-foreground/50 mb-3" />
                   <p className="text-sm text-muted-foreground">No recent uploads</p>
                   <p className="text-xs text-muted-foreground/70 mt-1">
                     Your OCR upload history will appear here
@@ -188,7 +188,7 @@ export function OCRHistoryPanel({
                   className="w-full text-muted-foreground hover:text-destructive"
                   onClick={onClearHistory}
                 >
-                  <Trash2 className="size-3.5 mr-1.5" />
+                  <IconTrash className="size-3.5 mr-1.5" />
                   Clear History
                 </Button>
               </Tooltip>
