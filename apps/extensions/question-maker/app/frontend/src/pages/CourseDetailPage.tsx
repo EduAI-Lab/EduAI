@@ -739,7 +739,7 @@ export const CourseDetailPage = () => {
           course.coreCourseId ? 'EduAI Core' : 'Local',
           ...(writesDisabled ? ['Read-only'] : []),
         ]}
-        accentColor={resolvePaletteAccent(course.id)}
+        accentColor={resolvePaletteAccent(String(course.id))}
       />
 
       <PageTabs value={activeTab} onValueChange={(v) => setActiveTab(v as ActiveTab)}>
