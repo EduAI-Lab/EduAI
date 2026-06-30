@@ -26,7 +26,8 @@ import { syncExternalCourseTopics } from '../services/topicSync.js';
 
 const router = express.Router();
 
-async function ensureCourseAccess(courseId, userId) {
+async function ensureCourseAccess(courseId, user) {
+  const userId = user?.id;
   const course = await prisma.courseOffering.findUnique({
     where: { id: courseId },
     include: {
@@ -41,8 +42,10 @@ async function ensureCourseAccess(courseId, userId) {
 
   const isInstructor = course.instructors.some((assignment) => assignment.userId === userId);
   const isStudent = course.enrollments.some((enrollment) => enrollment.userId === userId);
+  // Platform admins can read any course's topics (admin ⊇ instructor).
+  const isAdmin = user?.role === 'ADMIN';
 
-  return { course, authorized: isInstructor || isStudent, isInstructor };
+  return { course, authorized: isAdmin || isInstructor || isStudent, isInstructor };
 }
 
 /**
@@ -63,7 +66,7 @@ router.get('/courses/:courseId/topics', async (req, res) => {
   }
 
   try {
-    const { course, authorized } = await ensureCourseAccess(courseId, req.user.id);
+    const { course, authorized } = await ensureCourseAccess(courseId, req.user);
     if (!course) {
       return res.status(404).json({ error: 'Course not found' });
     }
@@ -106,7 +109,7 @@ router.post('/courses/:courseId/topics', requireRole('INSTRUCTOR'), async (req, 
   }
 
   try {
-    const { course, isInstructor } = await ensureCourseAccess(courseId, instructor.id);
+    const { course, isInstructor } = await ensureCourseAccess(courseId, instructor);
     if (!course) {
       return res.status(404).json({ error: 'Course not found' });
     }

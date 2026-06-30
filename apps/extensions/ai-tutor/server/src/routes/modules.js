@@ -16,7 +16,14 @@ async function getCourseMembership(courseId, authUser) {
   });
 
   if (!course) {
-    return { course: null, isInstructor: false, isTa: false, isStudent: false, isUnitAdmin: false };
+    return {
+      course: null,
+      isInstructor: false,
+      isTa: false,
+      isStudent: false,
+      isUnitAdmin: false,
+      isAdmin: false,
+    };
   }
 
   const isInstructor = course.instructors.some((i) => i.userId === authUser.id);
@@ -27,6 +34,7 @@ async function getCourseMembership(courseId, authUser) {
     isTa: enrollment?.role === 'TA',
     isStudent: enrollment?.role === 'STUDENT',
     isUnitAdmin: isUnitAdminForCourse(authUser, course),
+    isAdmin: authUser.role === 'ADMIN',
   };
 }
 
@@ -41,12 +49,12 @@ router.get('/courses/:courseId/modules', async (req, res) => {
   }
 
   try {
-    const { course, isInstructor, isTa, isStudent, isUnitAdmin } = await getCourseMembership(courseId, authUser);
+    const { course, isInstructor, isTa, isStudent, isUnitAdmin, isAdmin } = await getCourseMembership(courseId, authUser);
     if (!course) {
       return res.status(404).json({ error: 'Course not found' });
     }
 
-    const hasElevatedAccess = isInstructor || isTa || isUnitAdmin;
+    const hasElevatedAccess = isAdmin || isInstructor || isTa || isUnitAdmin;
     const isMember = hasElevatedAccess || isStudent;
 
     if (!isMember) {
@@ -149,7 +157,8 @@ router.get('/modules/:moduleId', async (req, res) => {
     const isTa = enrollment?.role === 'TA';
     const isStudent = enrollment?.role === 'STUDENT';
     const unitAdmin = isUnitAdminForCourse(authUser, module.courseOffering);
-    const hasElevatedAccess = isInstructor || isTa || unitAdmin;
+    const isAdmin = authUser.role === 'ADMIN';
+    const hasElevatedAccess = isAdmin || isInstructor || isTa || unitAdmin;
     const isMember = hasElevatedAccess || isStudent;
 
     if (!isMember) {
