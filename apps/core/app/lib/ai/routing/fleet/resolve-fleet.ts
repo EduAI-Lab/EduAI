@@ -1,7 +1,12 @@
 import { parseModelIdentifier } from "~/lib/ai/provider-types";
 import { getServerHealth, serverHostsModel } from "./health";
-import { fleetRoutingEnabled, getServersForFeature, heavyFleetConfigured } from "./registry";
-import type { FleetPick, WorkloadFeature } from "./types";
+import {
+  fleetRoutingEnabled,
+  getServersForJobType,
+  heavyFleetConfigured,
+} from "./registry";
+import type { FleetPick, JobType, WorkloadFeature } from "./types";
+import { jobTypeFromFeature } from "./types";
 
 export type ResolveFleetInput = {
   feature: WorkloadFeature;
@@ -22,11 +27,11 @@ export function resetFleetRoundRobin(): void {
   roundRobinIndex = 0;
 }
 
-function pickReason(feature: WorkloadFeature): string {
-  if (feature === "question-maker" && heavyFleetConfigured()) {
-    return "heavy-round-robin";
+function pickReason(jobType: JobType): string {
+  if (jobType === "background" && heavyFleetConfigured()) {
+    return "background-round-robin";
   }
-  return "chat-round-robin";
+  return "interactive-round-robin";
 }
 
 /**
@@ -39,7 +44,8 @@ export async function resolveFleetHost(input: ResolveFleetInput): Promise<FleetP
   const parsed = parseModelIdentifier(input.resolvedModelId);
   if (!parsed || parsed.providerId !== "vllm") return null;
 
-  const candidates = getServersForFeature(input.feature);
+  const jobType = jobTypeFromFeature(input.feature);
+  const candidates = getServersForJobType(jobType);
   if (candidates.length === 0) {
     throw new FleetUnavailableError("No fleet servers configured for this workload");
   }
@@ -54,7 +60,7 @@ export async function resolveFleetHost(input: ResolveFleetInput): Promise<FleetP
 
   if (eligible.length === 0) {
     throw new FleetUnavailableError(
-      `No healthy fleet server hosts model "${parsed.modelId}" for feature "${input.feature}"`,
+      `No healthy fleet server hosts model "${parsed.modelId}" for job type "${jobType}"`,
     );
   }
 
@@ -65,6 +71,7 @@ export async function resolveFleetHost(input: ResolveFleetInput): Promise<FleetP
     serverId: server.id,
     baseUrl: server.baseUrl,
     energySidecarUrl: server.energySidecarUrl,
-    reason: pickReason(input.feature),
+    reason: pickReason(jobType),
+    jobType,
   };
 }

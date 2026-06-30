@@ -1,11 +1,13 @@
-/** Multi-server vLLM fleet routing — workload features and pick results. */
+/** Multi-server vLLM fleet routing — job types, workload features, pick results. */
+
+export type JobType = "interactive" | "background";
 
 export type WorkloadFeature = "chat" | "tutor" | "question-maker";
 
 export type FleetServer = {
   id: string;
   baseUrl: string;
-  features: WorkloadFeature[];
+  jobTypes: JobType[];
   models: string[];
   energySidecarUrl: string;
 };
@@ -15,6 +17,7 @@ export type FleetPick = {
   baseUrl: string;
   energySidecarUrl: string;
   reason: string;
+  jobType: JobType;
 };
 
 export type FleetHealthResult = {
@@ -25,6 +28,11 @@ export type FleetHealthResult = {
 };
 
 const WORKLOAD_FEATURES: WorkloadFeature[] = ["chat", "tutor", "question-maker"];
+
+/** Map extension feature tag → server pool job type. */
+export function jobTypeFromFeature(feature: WorkloadFeature): JobType {
+  return feature === "question-maker" ? "background" : "interactive";
+}
 
 export function parseWorkloadFeature(routingContext: unknown): WorkloadFeature {
   if (!routingContext || typeof routingContext !== "object") {
@@ -41,10 +49,15 @@ export function buildFleetRouterFeatures(
   feature: WorkloadFeature,
   fleetPick: FleetPick | null,
 ): Record<string, unknown> {
+  const jobType = jobTypeFromFeature(feature);
   return {
     feature,
+    jobType,
     ...(fleetPick
-      ? { fleetServerId: fleetPick.serverId, fleetReason: fleetPick.reason }
+      ? {
+          fleetServerId: fleetPick.serverId,
+          fleetReason: fleetPick.reason,
+        }
       : {}),
   };
 }

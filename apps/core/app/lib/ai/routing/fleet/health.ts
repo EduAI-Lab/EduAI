@@ -24,9 +24,14 @@ function parseModelIds(payload: unknown): string[] | null {
   return ids.length > 0 ? ids : null;
 }
 
-/** Clear health cache (unit tests). */
+/** Clear all health cache entries (unit tests). */
 export function resetFleetHealthCache(): void {
   healthCache.clear();
+}
+
+/** Drop cached health for one host (Slice 2 — after inference failure). */
+export function invalidateFleetHealthCacheForUrl(baseUrl: string): void {
+  healthCache.delete(baseUrl.replace(/\/$/, ""));
 }
 
 export async function getServerHealth(baseUrl: string): Promise<FleetHealthResult> {

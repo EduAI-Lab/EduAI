@@ -10,7 +10,7 @@ import {
   resetFleetRoundRobin,
   resolveFleetHost,
 } from "~/lib/ai/routing/fleet/resolve-fleet";
-import { parseWorkloadFeature, buildFleetRouterFeatures } from "~/lib/ai/routing/fleet/types";
+import { parseWorkloadFeature, buildFleetRouterFeatures, jobTypeFromFeature } from "~/lib/ai/routing/fleet/types";
 
 describe("parseWorkloadFeature", () => {
   it("defaults to chat when routingContext is missing", () => {
@@ -27,24 +27,40 @@ describe("parseWorkloadFeature", () => {
   });
 });
 
+describe("jobTypeFromFeature", () => {
+  it("maps chat and tutor to interactive", () => {
+    expect(jobTypeFromFeature("chat")).toBe("interactive");
+    expect(jobTypeFromFeature("tutor")).toBe("interactive");
+  });
+
+  it("maps question-maker to background", () => {
+    expect(jobTypeFromFeature("question-maker")).toBe("background");
+  });
+});
+
 describe("buildFleetRouterFeatures", () => {
-  it("includes feature and fleet pick metadata", () => {
+  it("includes feature, jobType, and fleet pick metadata", () => {
     expect(
       buildFleetRouterFeatures("tutor", {
         serverId: "cmps02",
         baseUrl: "http://cmps02.ok.ubc.ca:8001",
         energySidecarUrl: "http://cmps02.ok.ubc.ca:8001/energy",
-        reason: "chat-round-robin",
+        reason: "interactive-round-robin",
+        jobType: "interactive",
       }),
     ).toEqual({
       feature: "tutor",
+      jobType: "interactive",
       fleetServerId: "cmps02",
-      fleetReason: "chat-round-robin",
+      fleetReason: "interactive-round-robin",
     });
   });
 
-  it("includes only feature when fleet pick is null", () => {
-    expect(buildFleetRouterFeatures("chat", null)).toEqual({ feature: "chat" });
+  it("includes feature and jobType when fleet pick is null", () => {
+    expect(buildFleetRouterFeatures("chat", null)).toEqual({
+      feature: "chat",
+      jobType: "interactive",
+    });
   });
 });
 
@@ -171,6 +187,7 @@ describe("resolveFleetHost", () => {
     });
 
     expect(pick?.serverId).toBe("cmps01");
-    expect(pick?.reason).toBe("chat-round-robin");
+    expect(pick?.reason).toBe("interactive-round-robin");
+    expect(pick?.jobType).toBe("background");
   });
 });
