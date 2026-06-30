@@ -49,6 +49,8 @@ export type MessageContentProps = {
   children: React.ReactNode
   markdown?: boolean
   className?: string
+  /** When true, defers code-block copy/download until streaming finishes. */
+  isAnimating?: boolean
 } & React.ComponentProps<typeof Markdown> &
   React.HTMLProps<HTMLDivElement>
 
@@ -56,6 +58,7 @@ const MessageContent = ({
   children,
   markdown = false,
   className,
+  isAnimating,
   ...props
 }: MessageContentProps) => {
   const classNames = cn(
@@ -65,7 +68,7 @@ const MessageContent = ({
   )
 
   return markdown ? (
-    <Markdown className={classNames} {...props}>
+    <Markdown className={classNames} isAnimating={isAnimating} {...props}>
       {children as string}
     </Markdown>
   ) : (

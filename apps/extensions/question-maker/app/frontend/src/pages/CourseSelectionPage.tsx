@@ -2,23 +2,18 @@
  * Course selection page shown after login. User must select a course card to continue to Question Bank / Assessments.
  * Same header as homepage; content shows "Your Courses", "Add new course" card, and available course cards.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useAuth } from '@/contexts/AuthContext';
-import { useQmPermissions } from '@/hooks/useQmPermissions';
 import { useQmLayout } from '../components/layout/QmLayoutContext';
 import { CoursesAdminView } from '@/components/courses/courses-admin-view';
 import { CoursesInstructorView } from '@/components/courses/courses-instructor-view';
 import { CoursesUnitAdminView } from '@/components/courses/courses-unit-admin-view';
 import { useDisplayCourses } from '../hooks/useDisplayCourses';
 import { Course } from '../types/question';
-import { courseService } from '../services/courseService';
 import { useGuidedTour } from '../contexts/GuidedTourContext';
-import { assessmentService } from '../services/assessmentService';
-import { isSandboxCourse, SANDBOX_COURSE_CODE } from '@/utils/courseDisplay';
+import { isSandboxCourse } from '@/utils/courseDisplay';
 
-const TEST_COURSE_CODE = SANDBOX_COURSE_CODE;
-const TEST_COURSE_NAME = 'Sandbox Course';
 const TOUR_COURSE_STORAGE_KEY = 'qm:tour-course-id';
 
 function isTestCourse(course: Course): boolean {
@@ -58,17 +53,15 @@ export const CourseSelectionPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
-  const { canLinkCourse } = useQmPermissions();
-  const { displayCourses, isLoading: isCoursesLoading, fetchCourses } = useDisplayCourses();
+  const { displayCourses, isLoading: isCoursesLoading } = useDisplayCourses();
   const [isStartingTour, setIsStartingTour] = useState(false);
   const [tourHighlightCourseId, setTourHighlightCourseId] = useState<number | null>(null);
   const { setGuidedTourHandler, openProfile } = useQmLayout();
   const { startTour, registerStepAction, isActive: isTourActive } = useGuidedTour();
-  const coursesRef = useRef(displayCourses);
-  coursesRef.current = displayCourses;
 
   const handleSelectCourse = (course: Course) => {
-    navigate('/home', { state: { courseId: course.id }, replace: true });
+    // Push (not replace) so the browser Back button returns to the dashboard.
+    navigate(`/courses/${course.id}?tab=overview`);
   };
 
   const resolveTourCourseId = useCallback((): number | null => {
@@ -88,38 +81,23 @@ export const CourseSelectionPage = () => {
     if (isStartingTour) return;
     setIsStartingTour(true);
     try {
-      let tourCourse = displayCourses.find(isTestCourse);
-      if (!tourCourse) {
-        const created = await courseService.createCourse({
-          name: TEST_COURSE_NAME,
-          courseCode: TEST_COURSE_CODE,
-        });
-        try {
-          await courseService.createTopic(created.id, 'General');
-        } catch {
-          // ignore topic creation failure
-        }
-        try {
-          await assessmentService.createPracticeExamForCourse(created.id);
-        } catch {
-          // ignore practice exam creation failure
-        }
-        await fetchCourses();
-        tourCourse = created;
-      }
-
+      // Course creation is owned by EduAI Core; the tour uses an existing course
+      // (preferring a sandbox if the user has one). With no courses, guide the
+      // user to link one from Core via the profile/link flow.
+      const tourCourse = displayCourses.find(isTestCourse) ?? displayCourses[0];
       if (tourCourse?.id) {
         writeTourCourseId(tourCourse.id);
         setTourHighlightCourseId(tourCourse.id);
+      } else {
+        openProfile();
       }
-
       startTour('main');
     } catch (err) {
       console.error('Failed to start guided tour', err);
     } finally {
       setIsStartingTour(false);
     }
-  }, [displayCourses, fetchCourses, isStartingTour, startTour]);
+  }, [displayCourses, isStartingTour, startTour, openProfile]);
 
   // Auto-start guided tour for new users (just registered and landed on /courses).
   useEffect(() => {
@@ -167,46 +145,15 @@ export const CourseSelectionPage = () => {
       const tourCourseId = resolveTourCourseId();
       if (tourCourseId != null) {
         clearTourCourseId();
-        navigate('/home?tab=questions', {
-          state: { courseId: tourCourseId, startGuidedTour: true },
-          replace: true,
-        });
+        navigate(`/courses/${tourCourseId}?tab=questions`, { replace: true });
         return;
       }
-
-      if (coursesRef.current.length > 0) {
-        openProfile();
-        return;
-      }
-
-      try {
-        const created = await courseService.createCourse({
-          name: TEST_COURSE_NAME,
-          courseCode: TEST_COURSE_CODE,
-        });
-        try {
-          await courseService.createTopic(created.id, 'General');
-        } catch {
-          // ignore
-        }
-        try {
-          await assessmentService.createPracticeExamForCourse(created.id);
-        } catch {
-          // ignore
-        }
-        await fetchCourses();
-        navigate('/home?tab=questions', {
-          state: { courseId: created.id, startGuidedTour: true },
-          replace: true,
-        });
-      } catch (err) {
-        console.error('Failed to ensure course for tour', err);
-        openProfile();
-      }
+      // No course to open — courses come from Core, so open the link flow.
+      openProfile();
     });
 
     return unregister;
-  }, [isTourActive, registerStepAction, navigate, resolveTourCourseId, fetchCourses, openProfile]);
+  }, [isTourActive, registerStepAction, navigate, resolveTourCourseId, openProfile]);
 
   useEffect(() => {
     setGuidedTourHandler(handleGuidedTourClick);
@@ -217,8 +164,6 @@ export const CourseSelectionPage = () => {
     courses: displayCourses,
     isLoading: isCoursesLoading,
     onSelectCourse: handleSelectCourse,
-    onAddCourse: openProfile,
-    showAddCourse: canLinkCourse,
     tourHighlightCourseId,
   };
 

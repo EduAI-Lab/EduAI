@@ -34,6 +34,10 @@ const ADMIN_NAV: NavItem[] = [
   { key: 'admin-cron', title: 'Cron Jobs', url: '/admin/cron-jobs' },
 ]
 
+const ADMIN_SECONDARY_NAV: NavItem[] = [
+  { key: 'admin-chat', title: 'Admin Chatbot', url: '/admin/chat' },
+]
+
 /**
  * Unit-admin invitations link. Surfaced only when the `unitAdmins.canInvite`
  * policy flag is on, passed in via `opts.canInvite` (the flag values live
@@ -77,6 +81,10 @@ export function usesGlobalChat(user: NavUser): boolean {
 export function getNavSecondaryForUser(user: NavUser): NavItem[] {
   const role = user.role ?? 'STUDENT'
   const items: NavItem[] = []
+
+  if (role === 'ADMIN') {
+    items.push(...ADMIN_SECONDARY_NAV)
+  }
 
   if (QM_NAV_ROLES.has(role)) {
     items.push(QM_NAV_ITEM)
