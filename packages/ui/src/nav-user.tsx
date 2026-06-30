@@ -1,6 +1,7 @@
-import { Form } from "react-router"
+import * as React from "react"
 import { IconDotsVertical, IconLogout, IconSettings, IconUser } from "@tabler/icons-react"
-import { RoleBadge, Avatar as EduAvatar } from "@eduai/ui"
+import { Avatar as EduAvatar } from "./avatar"
+import { RoleBadge } from "./role-badge"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -8,20 +9,43 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@eduai/ui"
+} from "./ui/dropdown-menu"
 import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
   useSidebar,
-} from "@eduai/ui"
-import type { User } from "~/lib/auth/types"
+} from "./ui/sidebar"
 
-export interface NavUserProps {
-  user: User
+export interface NavUserItem {
+  label: string
+  icon?: React.ReactNode
+  href?: string
+  onSelect?: () => void
+  destructive?: boolean
 }
 
-export function NavUser({ user }: NavUserProps) {
+export interface NavUserProps {
+  user: { name: string; email: string; image?: string | null; role?: string | null }
+  /** Link component for href items (default "a"). */
+  LinkComponent?: React.ElementType
+  /** Menu items rendered between the header and the logout row. */
+  items?: NavUserItem[]
+  /** Default logout row: renders a destructive button calling onLogout. */
+  onLogout?: () => void
+  /** Overrides the default logout row entirely (e.g. Core passes a react-router <Form>). */
+  logoutElement?: React.ReactNode
+  logoutLabel?: string
+}
+
+export function NavUser({
+  user,
+  LinkComponent = "a",
+  items = [],
+  onLogout,
+  logoutElement,
+  logoutLabel = "Log out",
+}: NavUserProps) {
   const { isMobile } = useSidebar()
 
   return (
@@ -64,33 +88,47 @@ export function NavUser({ user }: NavUserProps) {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            {/* Account / Settings */}
-            {/* TODO: REMOVE ACCOUNT MENU ITEM */}
-            <DropdownMenuItem asChild>
-              <a href="/settings" className="flex items-center gap-2 cursor-pointer">
-                <IconSettings size={15} strokeWidth={1.75} />
-                Settings
-              </a>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <a href="/settings/account" className="flex items-center gap-2 cursor-pointer">
-                <IconUser size={15} strokeWidth={1.75} />
-                Account
-              </a>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            {/* Log out */}
-            <DropdownMenuItem asChild>
-              <Form method="post" action="/auth/logout" replace className="w-full">
+            {/* Custom menu items */}
+            {items.map((item) => (
+              <DropdownMenuItem
+                key={item.label}
+                asChild={!!item.href}
+                onSelect={item.onSelect}
+                className={item.destructive ? "text-destructive" : ""}
+              >
+                {item.href ? (
+                  <LinkComponent
+                    to={item.href}
+                    href={item.href}
+                    className="flex items-center gap-2 cursor-pointer"
+                  >
+                    {item.icon && <span>{item.icon}</span>}
+                    {item.label}
+                  </LinkComponent>
+                ) : (
+                  <div className="flex items-center gap-2 cursor-pointer">
+                    {item.icon && <span>{item.icon}</span>}
+                    {item.label}
+                  </div>
+                )}
+              </DropdownMenuItem>
+            ))}
+            {items.length > 0 && <DropdownMenuSeparator />}
+            {/* Logout row */}
+            {logoutElement ? (
+              <DropdownMenuItem asChild>{logoutElement}</DropdownMenuItem>
+            ) : onLogout ? (
+              <DropdownMenuItem asChild>
                 <button
-                  type="submit"
-                  className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none text-destructive hover:bg-destructive/10 focus:bg-destructive/10"
+                  type="button"
+                  onClick={onLogout}
+                  className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none text-destructive hover:bg-destructive/10 focus:bg-destructive/10 cursor-pointer"
                 >
                   <IconLogout size={15} strokeWidth={1.75} />
-                  Log out
+                  {logoutLabel}
                 </button>
-              </Form>
-            </DropdownMenuItem>
+              </DropdownMenuItem>
+            ) : null}
           </DropdownMenuContent>
         </DropdownMenu>
       </SidebarMenuItem>
