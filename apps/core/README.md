@@ -101,7 +101,11 @@ EMBEDDING_DIMENSION="1024" # Must match pgvector column (LOCAL-EMBEDDINGS)
 OLLAMA_EMBEDDING_MODEL="mxbai-embed-large"
 OLLAMA_BASE_URL="http://localhost:11434/"  # dev server: http://cmps01.ok.ubc.ca:11434
 # VLLM_PORT=8001
-# VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"  # after IT firewall; see docs/rag-ai/VLLM.md
+# VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"  # LiteLLM edge on cmps01; see infra/cmps01/README.md
+# CMPS01_INTERNAL_KEY=""  # required for nginx /energy and /ollama on :8001 (s378 dev server)
+# ROUTER_AUTO_DEFAULT="true"  # show Auto (rules) + Auto (LLM) in model picker when routing is configured
+# ROUTER_MODE=rules|knn|hybrid|llm  # default Auto behaviour (rules); see apps/core/.env.example
+# ROUTING_LLM_CLASSIFIER_MODEL=qwen2.5-7b-instruct
 FIRECRAWL_API_KEY="" # Required for Firecrawl web search tool. If not set, web search is unavailable.
 
 # Canvas instructor API tokens (AES-256-GCM; same format as Question Maker ENCRYPTION_KEY)
@@ -475,6 +479,19 @@ app/tests/
 **Component test coverage:** 29 domain components have dedicated RTL tests (all required components except three optional shadcn demo orphans: `section-cards`, `chart-area-interactive`, `data-table`).
 
 See [`TESTS.md`](../../TESTS.md) at the monorepo root for the full test inventory.
+
+### Routing (Auto model)
+
+Sustainability-aware tier routing lives under `app/lib/ai/routing/`. When `ROUTER_AUTO_DEFAULT=true` or `VLLM_BASE_URL` is set, the chat model picker shows **Auto** (rules) and **Auto (LLM)** entries. Configure modes via `ROUTER_MODE`, carbon policy via `ROUTING_CARBON_MODE`, and offline evaluation via:
+
+```bash
+npm run research:embed-knn-exemplars
+npm run research:eval-knn    # needs RESEARCH_LABEL_IN or docs/research labels
+npm run research:eval-llm    # needs vLLM + ROUTING_LLM_CLASSIFIER_MODEL
+npm run vllm:smoke           # LiteLLM health check against VLLM_BASE_URL
+```
+
+See `docs/rag-ai/routing/eduai-summer-2026/` and `infra/cmps01/README.md` for cmps01 edge proxy setup.
 
 ### Notes
 

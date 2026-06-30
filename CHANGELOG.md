@@ -15,6 +15,15 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ### Fixed
 
 - [ui] hotfix: Add missing imports in `packages/ui/src/ui/combobox.tsx` — `useRef`, `useEffect`, `Popover`, `PopoverTrigger`, and `PopoverContent` were used but not imported, causing `packages-ui-unit-tests` and QM frontend Docker build to fail on CI. (#823)
+### Added
+
+- [core] feat: Hybrid tier routing engine — rules, kNN exemplar voting, optional LLM classifier, carbon-policy tie-break, Auto model picker wiring, and offline eval scripts (`research:eval-knn`, `research:eval-llm`) (#831, @superbolt08, 2026-06-30) — [#759](https://github.com/EduAI-Lab/EduAI/pull/759)
+- [core] tests: Unit coverage for routing rules, kNN vote, LLM classifier JSON/tier mapping, local vLLM remap, carbon policy, and chat Auto picker (#831, @superbolt08, 2026-06-30) — [#759](https://github.com/EduAI-Lab/EduAI/pull/759)
+- [infra] feat: cmps01 nginx edge proxy on `:8001` for LiteLLM, Ollama embeddings, and energy sidecar — IP allowlist plus `X-EduAI-Internal-Key` on internal paths (#831, @superbolt08, 2026-06-30) — [#759](https://github.com/EduAI-Lab/EduAI/pull/759)
+
+### Fixed
+
+- [core] fix: Add missing `scripts/research/paths.mjs` so offline kNN/LLM router eval scripts resolve default label paths (#831, @superbolt08, 2026-06-30) — [#759](https://github.com/EduAI-Lab/EduAI/pull/759)
 
 ## [Week 8 — June 22–28, 2026]
 
