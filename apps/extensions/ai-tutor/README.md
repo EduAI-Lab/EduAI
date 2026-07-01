@@ -133,10 +133,8 @@ Copy `server/.env.example` to `server/.env` and configure:
 | Variable                | Required | Description                                        |
 | ----------------------- | -------- | -------------------------------------------------- |
 | `DATABASE_URL`          | Yes      | PostgreSQL connection string                       |
-| `BETTER_AUTH_SECRET`    | Yes      | Session signing secret                             |
-| `BETTER_AUTH_URL`       | Yes      | Auth endpoint base URL                             |
+| `CORE_URL`              | Yes      | Core base URL — session validation is proxied here, not handled locally |
 | `PORT`                  | No       | API port (default: `4000`)                         |
-| `COOKIE_DOMAIN`         | No       | Cookie domain (default: `localhost`)               |
 | `EDUAI_API_KEY`         | For AI   | EduAI API key                                      |
 | `EDUAI_BASE_URL`        | For AI   | EduAI API base URL                                 |
 | `EDUAI_MODEL`           | For AI   | Model identifier (e.g., `google:gemini-2.5-flash`) |
