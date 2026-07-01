@@ -1,18 +1,10 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, BugReportType } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 
 const VALID_SOURCES = ["CORE", "AI_TUTOR", "QUESTION_MAKER"] as const;
 type BugReportSource = (typeof VALID_SOURCES)[number];
 
-const VALID_BUG_TYPES = [
-  "UI_DISPLAY",
-  "FEATURE_NOT_WORKING",
-  "PERFORMANCE",
-  "CONTENT_ERROR",
-  "ACCESS_PERMISSION",
-  "OTHER",
-] as const;
-type BugReportType = (typeof VALID_BUG_TYPES)[number];
+const VALID_BUG_TYPES = Object.values(BugReportType);
 
 export type CreateBugReportResult =
   | { ok: true }

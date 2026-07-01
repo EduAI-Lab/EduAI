@@ -3,14 +3,20 @@
  */
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router';
-import { IconArrowLeft, IconFilter, IconSearch, IconX } from '@tabler/icons-react';
+import { IconFilter, IconSearch, IconX } from '@tabler/icons-react';
 import {
   Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   Input,
+  PageHeading,
   Select,
   SelectContent,
   SelectItem,
@@ -251,24 +257,23 @@ export function BugReportsAdminPage() {
   if (!canTriageBugReports(qmUser)) return null;
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <div className="border-b bg-card px-6 py-4 flex flex-wrap items-center gap-4">
-        <Button variant="ghost" size="sm" onClick={() => navigate('/home')} className="gap-2">
-          <IconArrowLeft className="h-4 w-4" />
-          Back
-        </Button>
-        <h1 className="text-lg font-semibold">Bug reports</h1>
-      </div>
+    <div className="flex flex-1 flex-col gap-6 px-4 py-4 md:py-6 lg:px-6">
+      <PageHeading heading="Bug reports" subheading="Triage Question Maker bug reports." />
 
-      <div className="p-6 space-y-4">
-        {/* Filter bar */}
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center gap-2">
-            <IconFilter className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-medium text-muted-foreground">Filters</span>
-          </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>All reports</CardTitle>
+          <CardDescription>Filter and update status for incoming reports.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Filter bar */}
+          <div className="flex flex-col gap-3 pb-4">
+            <div className="flex items-center gap-2">
+              <IconFilter className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-medium text-muted-foreground">Filters</span>
+            </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4">
             <Select
               value={statusFilter}
               onValueChange={(v) => setStatusFilter(v as BugReportStatus)}
@@ -491,7 +496,8 @@ export function BugReportsAdminPage() {
             </table>
           </div>
         )}
-      </div>
+        </CardContent>
+      </Card>
 
       <DetailDialog
         open={detail.open}

@@ -42,8 +42,6 @@ export { PageTabs, PageTabsList, PageTabsTrigger, PageTabsContent } from "./page
 export type { PageTabsProps, PageTabsListProps, PageTabsTriggerProps, PageTabsContentProps } from "./page-tabs"
 export { ThemeToggle } from "./theme-toggle"
 export type { ThemeToggleProps } from "./theme-toggle"
-export { BugReportDialog } from "./bug-report-dialog"
-export type { BugReportDialogProps, BugReportPayload } from "./bug-report-dialog"
 export { NavUser } from "./nav-user"
 export type { NavUserProps, NavUserItem } from "./nav-user"
 export { NavMain } from "./nav-main"
