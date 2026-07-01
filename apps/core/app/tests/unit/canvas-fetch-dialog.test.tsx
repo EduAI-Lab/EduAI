@@ -107,6 +107,26 @@ describe("CanvasFetchDialog", () => {
     expect(screen.getByRole("button", { name: /fetch selected/i })).toBeDisabled();
   });
 
+  it("surfaces per-course sync errors instead of failing silently", async () => {
+    vi.mocked(syncCanvasCourses).mockResolvedValue({
+      synced: [],
+      unsynced: [],
+      errors: [{ canvasId: "102", message: "Canvas course 102 not found or not taught by this account" }],
+    });
+    renderDialog();
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Data Structures")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByLabelText("Data Structures"));
+    fireEvent.click(screen.getByRole("button", { name: /fetch selected/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Course 102: Canvas course 102 not found/)).toBeInTheDocument();
+    });
+  });
+
   it("shows empty state when no Canvas courses exist", async () => {
     vi.mocked(listCanvasCourses).mockResolvedValue([]);
 
