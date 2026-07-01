@@ -10,6 +10,10 @@ import {
 } from "@eduai/ui"
 import type { CronStatusColor } from "~/hooks/api/use-cron-job-status"
 
+const SIDEBAR_ACTIVE_BG = "oklch(0.248 0.055 259)"
+const SIDEBAR_HOVER_BG = "oklch(0.218 0.050 259)"
+const SIDEBAR_TEXT_MUTED = "rgba(255,255,255,0.82)"
+
 export interface NavMainItem {
   title: string
   url: string
@@ -81,7 +85,7 @@ export function NavMain({ items }: NavMainProps) {
                     className={linkClassName}
                     style={{
                       background: "transparent",
-                      color: "rgba(255,255,255,0.82)",
+                      color: SIDEBAR_TEXT_MUTED,
                       fontWeight: 400,
                       transition: "background 120ms",
                       paddingLeft: "16px",
@@ -90,7 +94,7 @@ export function NavMain({ items }: NavMainProps) {
                     }}
                     onMouseEnter={(e) => {
                       ;(e.currentTarget as HTMLButtonElement).style.background =
-                        "oklch(0.218 0.050 259)"
+                        SIDEBAR_HOVER_BG
                     }}
                     onMouseLeave={(e) => {
                       ;(e.currentTarget as HTMLButtonElement).style.background = "transparent"
@@ -129,8 +133,8 @@ export function NavMain({ items }: NavMainProps) {
                               aria-current={childActive ? "page" : undefined}
                               className={linkClassName}
                               style={{
-                                background: childActive ? "oklch(0.248 0.055 259)" : "transparent",
-                                color: childActive ? "#fff" : "rgba(255,255,255,0.82)",
+                                background: childActive ? SIDEBAR_ACTIVE_BG : "transparent",
+                                color: childActive ? "#fff" : SIDEBAR_TEXT_MUTED,
                                 fontWeight: childActive ? 500 : 400,
                                 transition: "background 120ms",
                                 paddingLeft: "28px",
@@ -138,7 +142,7 @@ export function NavMain({ items }: NavMainProps) {
                               onMouseEnter={(e) => {
                                 if (!childActive) {
                                   ;(e.currentTarget as HTMLAnchorElement).style.background =
-                                    "oklch(0.218 0.050 259)"
+                                    SIDEBAR_HOVER_BG
                                 }
                               }}
                               onMouseLeave={(e) => {
@@ -189,8 +193,8 @@ export function NavMain({ items }: NavMainProps) {
             const itemActive =
               !item.external && isActive(pathname, item.url)
             const linkStyle = {
-              background: itemActive ? "oklch(0.248 0.055 259)" : "transparent",
-              color: itemActive ? "#fff" : "rgba(255,255,255,0.82)",
+              background: itemActive ? SIDEBAR_ACTIVE_BG : "transparent",
+              color: itemActive ? "#fff" : SIDEBAR_TEXT_MUTED,
               fontWeight: itemActive ? 500 : 400,
               transition: "background 120ms",
               paddingLeft: "16px",
@@ -248,7 +252,7 @@ export function NavMain({ items }: NavMainProps) {
                     onMouseEnter={(e) => {
                       if (!itemActive) {
                         ;(e.currentTarget as HTMLAnchorElement).style.background =
-                          "oklch(0.218 0.050 259)"
+                          SIDEBAR_HOVER_BG
                       }
                     }}
                     onMouseLeave={(e) => {
@@ -268,7 +272,7 @@ export function NavMain({ items }: NavMainProps) {
                     onMouseEnter={(e) => {
                       if (!itemActive) {
                         ;(e.currentTarget as HTMLAnchorElement).style.background =
-                          "oklch(0.218 0.050 259)"
+                          SIDEBAR_HOVER_BG
                       }
                     }}
                     onMouseLeave={(e) => {
