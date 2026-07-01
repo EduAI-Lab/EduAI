@@ -164,14 +164,7 @@ Source of truth: `server/.env.example`.
 |----------|----------|---------|---------|
 | `DATABASE_URL` | Yes | - | PostgreSQL connection string |
 | `PORT` | No | `4000` | Express listen port |
-| `NODE_ENV` | No | - | `production` enables secure cookies |
-| `BETTER_AUTH_SECRET` | Yes | - | Session signing secret |
-| `BETTER_AUTH_URL` | No | `http://localhost:4000/api/auth` | Better Auth base URL |
-| `COOKIE_DOMAIN` | No | `localhost` | Session cookie domain |
-| `EDUAI_DISCOVERY_URL` | Yes | - | EduAI OIDC discovery endpoint |
-| `EDUAI_CLIENT_ID` | Yes | - | OAuth client ID |
-| `EDUAI_CLIENT_SECRET` | Yes | - | OAuth client secret |
-| `EDUAI_USERINFO_URL` | Yes | - | EduAI user info endpoint |
+| `CORE_URL` | Yes | - | Core base URL — session validation is proxied here (`middleware/auth.js`), not handled locally |
 | `EDUAI_BASE_URL` | No | `http://localhost:5174/api` | EduAI API base URL |
 | `EDUAI_API_KEY` | Recommended | - | Default EduAI API key |
 | `EDUAI_MODEL` | No | `google:gemini-2.5-flash` | Default tutor model |

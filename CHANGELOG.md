@@ -14,6 +14,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ### Changed
 
 - [monorepo] docs: `scripts/setup-env.js` now also copies/merges `.env.test.example` → `.env.test` for Core and the AI Tutor server, the same as it already does for the dev `.env` files; backfilled `EDUAI_API_KEY` (and, for AI Tutor server, `EDUAI_BASE_URL`) that had drifted missing from both apps' tracked `.env.test`. Fixed a stale "copy to the repo root" comment and a "Jest" reference in Question Maker's `.env.example` (it's actually read from its own directory via Vitest). (#841, @evanbones, 2026-07-01)
+- [ai-tutor] docs: Remove `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `COOKIE_DOMAIN`, and `AI_SUPERVISOR_ENABLED` from the AI Tutor server's `.env.example`/`.env.test.example`/tracked `.env.test` — confirmed unread anywhere in `server/src`; this server has no local Better Auth instance and proxies session validation to Core. Updated README.md/AGENTS.md/DEPLOYMENT.md tables that still listed them as required. (#841, @evanbones, 2026-07-01)
 
 ### Fixed
 

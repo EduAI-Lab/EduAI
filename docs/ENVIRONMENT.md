@@ -114,14 +114,18 @@ Loaded on top of `.env` for local integration tests only (ignored in Docker CI).
 | `EDUAI_BASE_URL` | required | Core API base for course import/sync |
 | `EDUAI_MODEL` | required | LLM model id, e.g. `google:gemini-2.5-flash` |
 | `POLICY_CACHE_TTL_MS` | optional (default 30000) | TTL for cached Core RBAC policy flags |
-| `AI_SUPERVISOR_ENABLED` | optional (default true) | Two-agent review loop — set `false` to disable |
+
+`BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `COOKIE_DOMAIN`, and `AI_SUPERVISOR_ENABLED` were removed
+per #817 — none are read anywhere in `server/src`. This server has no local Better Auth instance;
+it proxies session validation to Core (`CORE_URL`) via `middleware/auth.js`. The two-agent
+supervisor loop is now controlled by the admin-configured `AI_MODEL_POLICY` row, not an env var.
 
 ## `apps/extensions/ai-tutor/server/.env.test.example`
 
 | Variable | Purpose |
 |---|---|
 | `DATABASE_URL` | Points at `aitutor_test` |
-| `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `COOKIE_DOMAIN`, `PORT` | Same test-fixture values as Core's `.env.test.example` |
+| `PORT` | Same test-fixture value as Core's `.env.test.example` |
 | `EDUAI_API_KEY` | Fixed test value, not a real secret |
 | `EDUAI_BASE_URL` | Test-time Core API base |
 
