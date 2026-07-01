@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Tesseract from 'tesseract.js';
 import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist';
 import pdfWorkerSrc from 'pdfjs-dist/build/pdf.worker?url';
-import { UploadCloud, FileText, Loader2, Trash2, Copy as CopyIcon, RefreshCcw, ChevronDown, ChevronUp, History } from 'lucide-react';
+import { IconUpload, IconFileText, IconLoader2, IconTrash, IconCopy as CopyIcon, IconRefresh, IconChevronDown, IconChevronUp, IconHistory } from '@tabler/icons-react';
 
 import {
     Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@eduai/ui';
@@ -14,7 +14,7 @@ import { Button, Textarea, Input, Label, Select, SelectContent, SelectItem, Sele
 import { Tooltip } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/use-toast';
 import { useEduAIStatus } from '../../hooks/useEduAIStatus';
-import { EduAIStatusBadge } from '../eduai/EduAIStatusBadge';
+import { AIServiceIndicators } from '../eduai/AIServiceIndicators';
 
 import { ExtractedQuestion, MCQChoice, Question, QuestionDifficulty, QuestionType } from '../../types/question';
 import { MCQChoicesField } from '../questions/MCQChoicesField';
@@ -80,7 +80,7 @@ function QuestionFileUploadZone({
             data-tour-id="upload-file"
             className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-muted-foreground/30 bg-muted/30 p-6 text-center transition hover:border-primary hover:bg-muted/50 cursor-pointer"
         >
-            <UploadCloud className="h-10 w-10 text-muted-foreground" />
+            <IconUpload className="h-10 w-10 text-muted-foreground" />
             <div className="space-y-1">
                 <p className="text-sm font-medium">Drop PDF, image, or TXT file here</p>
                 <p className="text-xs text-muted-foreground">We support PDF, PNG, JPG, TXT and other common formats.</p>
@@ -963,7 +963,7 @@ export const QuestionUploadDialog = ({
     return (
         <>
         <Dialog open={open} onOpenChange={(value) => { if (!value) handleCloseAttempt(); }}>
-            <DialogContent className={`max-h-[92vh] overflow-y-auto transition-all duration-200 ${showHistoryPanel ? 'max-w-[95vw] sm:max-w-[1400px]' : 'max-w-6xl sm:max-w-7xl w-[95vw]'}`}>
+            <DialogContent className={`max-h-[90vh] overflow-hidden transition-all duration-200 ${showHistoryPanel ? 'max-w-[95vw] sm:max-w-[1400px]' : 'max-w-6xl sm:max-w-7xl w-[95vw]'}`}>
                 <DialogHeader>
                     <div className="flex items-start justify-between gap-4">
                         <div>
@@ -985,7 +985,7 @@ export const QuestionUploadDialog = ({
                                 onClick={() => setShowHistoryPanel(!showHistoryPanel)}
                                 className="shrink-0"
                             >
-                                <History className="h-4 w-4 mr-1.5" />
+                                <IconHistory className="h-4 w-4 mr-1.5" />
                                 History
                                 {ocrJobs.filter((j) => j.status === 'processing' || j.status === 'pending').length > 0 && (
                                     <span className="ml-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-medium text-white">
@@ -997,10 +997,11 @@ export const QuestionUploadDialog = ({
                     </div>
                 </DialogHeader>
 
-                <div className="flex gap-6 py-2 min-h-[70vh]">
+                <div className="h-[70vh] min-h-0 overflow-y-auto pr-1">
+                <div className="flex flex-col gap-6 py-2 min-h-full md:flex-row">
                     {/* Left: Assessment details — narrow, vertical fields */}
                     {saveTarget === 'bank' ? (
-                        <Card className="flex-shrink-0 w-[280px] border-dashed border-primary/30 bg-primary/10">
+                        <Card className="flex-shrink-0 w-full md:w-[280px] border-dashed border-primary/30 bg-primary/10">
                             <CardHeader className="space-y-1">
                                 <CardTitle className="text-base font-semibold">Question bank only</CardTitle>
                                 <p className="text-xs text-muted-foreground">
@@ -1009,7 +1010,7 @@ export const QuestionUploadDialog = ({
                             </CardHeader>
                         </Card>
                     ) : (
-                        <Card data-tour-id="upload-assessment-meta" className="flex-shrink-0 w-[280px]">
+                        <Card data-tour-id="upload-assessment-meta" className="flex-shrink-0 w-full md:w-[280px]">
                             <CardHeader className="space-y-1">
                                 <CardTitle className="text-base font-semibold">Assessment details</CardTitle>
                                 <p className="text-xs text-muted-foreground">
@@ -1069,9 +1070,9 @@ export const QuestionUploadDialog = ({
                                 >
                                     <span>Upload & model</span>
                                     {uploadSectionCollapsed ? (
-                                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                                        <IconChevronDown className="h-4 w-4 text-muted-foreground" />
                                     ) : (
-                                        <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                                        <IconChevronUp className="h-4 w-4 text-muted-foreground" />
                                     )}
                                 </button>
                                 {!uploadSectionCollapsed && (
@@ -1079,11 +1080,11 @@ export const QuestionUploadDialog = ({
                                         <CardHeader className="space-y-1">
                                             <div className="flex items-center justify-between">
                                                 <CardTitle className="text-base font-semibold">Upload a file</CardTitle>
-                                                <EduAIStatusBadge
+                                                <AIServiceIndicators
                                                     status={eduaiStatus.status}
                                                     message={eduaiStatus.message}
+                                                    provider={eduaiStatus.provider}
                                                     onRefresh={eduaiStatus.refresh}
-                                                    questionGenerationPhase={eduaiStatus.questionGenerationPhase}
                                                     className="z-50"
                                                 />
                                             </div>
@@ -1196,10 +1197,10 @@ export const QuestionUploadDialog = ({
                                             )}
                                             {lastFileName && (
                                                 <div className="flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm">
-                                                    <FileText className="h-4 w-4 text-muted-foreground" />
+                                                    <IconFileText className="h-4 w-4 text-muted-foreground" />
                                                     <span className="truncate">{lastFileName}</span>
                                                     <Button variant="ghost" size="icon" className="ml-auto" onClick={handleReset}>
-                                                        <RefreshCcw className="h-4 w-4" />
+                                                        <IconRefresh className="h-4 w-4" />
                                                         <span className="sr-only">Reset</span>
                                                     </Button>
                                                 </div>
@@ -1245,7 +1246,7 @@ export const QuestionUploadDialog = ({
                                                                 {draft.include ? 'Included' : 'Excluded'}
                                                             </Button>
                                                             <Button variant="ghost" size="icon" onClick={() => removeDraft(draft.id)}>
-                                                                <Trash2 className="h-4 w-4" />
+                                                                <IconTrash className="h-4 w-4" />
                                                                 <span className="sr-only">Remove question</span>
                                                             </Button>
                                                         </div>
@@ -1383,11 +1384,11 @@ export const QuestionUploadDialog = ({
                         <CardHeader className="space-y-1">
                             <div className="flex items-center justify-between">
                                 <CardTitle className="text-base font-semibold">Upload a file</CardTitle>
-                                <EduAIStatusBadge
+                                <AIServiceIndicators
                                     status={eduaiStatus.status}
                                     message={eduaiStatus.message}
+                                    provider={eduaiStatus.provider}
                                     onRefresh={eduaiStatus.refresh}
-                                    questionGenerationPhase={eduaiStatus.questionGenerationPhase}
                                     className="z-50"
                                 />
                             </div>
@@ -1513,10 +1514,10 @@ export const QuestionUploadDialog = ({
                             )}
                             {lastFileName && (
                                 <div className="flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm">
-                                    <FileText className="h-4 w-4 text-muted-foreground" />
+                                    <IconFileText className="h-4 w-4 text-muted-foreground" />
                                     <span className="truncate">{lastFileName}</span>
                                     <Button variant="ghost" size="icon" className="ml-auto" onClick={handleReset}>
-                                        <RefreshCcw className="h-4 w-4" />
+                                        <IconRefresh className="h-4 w-4" />
                                         <span className="sr-only">Reset</span>
                                     </Button>
                                 </div>
@@ -1524,7 +1525,7 @@ export const QuestionUploadDialog = ({
                             {(processingStage === 'ocr' || processingStage === 'extracting' || processingStage === 'saving') && (
                                 <div className="space-y-3">
                                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                        <IconLoader2 className="h-4 w-4 animate-spin" />
                                         <span>
                                             {processingStage === 'ocr' && 'Running OCR...'}
                                             {processingStage === 'extracting' && 'Extracting questions with AI...'}
@@ -1554,8 +1555,9 @@ export const QuestionUploadDialog = ({
                         onClearHistory={() => setShowClearHistoryConfirm(true)}
                     />
                 </div>
+                </div>
 
-                <DialogFooter className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <DialogFooter className="pt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <div className="text-sm text-muted-foreground">
                         {includedDrafts.length} question{includedDrafts.length === 1 ? '' : 's'} ready to save.
                     </div>
@@ -1564,15 +1566,15 @@ export const QuestionUploadDialog = ({
                             content={draftQuestions.length > 0 && processingStage === 'review' ? 'Close will ask you to save or discard your current questions.' : 'Close this dialog.'}
                             side="top"
                         >
-                            <Button variant="outline" onClick={handleCloseAttempt}>
+                            <Button type="button" variant="outline" onClick={handleCloseAttempt}>
                                 Cancel
                             </Button>
                         </Tooltip>
                         {disabledReason ? (
                             <Tooltip content={disabledReason} multiline>
                                 <span className="inline-block">
-                                    <Button onClick={() => void handleSave()} disabled={!canSave} data-tour-id="upload-create">
-                                        {processingStage === 'saving' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                    <Button type="button" variant="default" onClick={() => void handleSave()} disabled={!canSave} data-tour-id="upload-create">
+                                        {processingStage === 'saving' && <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />}
                                         Create Questions
                                     </Button>
                                 </span>
@@ -1588,8 +1590,8 @@ export const QuestionUploadDialog = ({
                                 }
                             >
                                 <span className="inline-block">
-                                    <Button onClick={() => void handleSave()} disabled={!canSave} data-tour-id="upload-create">
-                                        {processingStage === 'saving' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                    <Button type="button" variant="default" onClick={() => void handleSave()} disabled={!canSave} data-tour-id="upload-create">
+                                        {processingStage === 'saving' && <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />}
                                         Create Questions
                                     </Button>
                                 </span>

@@ -1,4 +1,4 @@
-import { Link, useLocation } from "react-router"
+import * as React from "react"
 import { type Icon } from "@tabler/icons-react"
 
 import {
@@ -6,19 +6,22 @@ import {
   SidebarGroupContent,
   SidebarMenu,
   SidebarMenuItem,
+} from "./ui/sidebar"
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "@eduai/ui"
-import type { CronStatusColor } from "~/hooks/api/use-cron-job-status"
+} from "./ui/tooltip"
 
 export interface NavMainItem {
   title: string
   url: string
   icon?: Icon
   external?: boolean
-  badge?: CronStatusColor
+  /** Optional status dot (e.g. cron-job health). Color is app-supplied; kept a
+   * plain union so this shared component stays decoupled from any app hook. */
+  badge?: "green" | "orange" | "red"
   /** Render greyed-out and non-navigating with a tooltip (admin policy off — #807). */
   disabled?: boolean
   /** Tooltip text shown on a disabled item. */
@@ -27,10 +30,15 @@ export interface NavMainItem {
 
 export interface NavMainProps {
   items: NavMainItem[]
+  currentPath: string
+  LinkComponent?: React.ElementType
 }
 
-export function NavMain({ items }: NavMainProps) {
-  const { pathname } = useLocation()
+export function NavMain({
+  items,
+  currentPath,
+  LinkComponent = "a",
+}: NavMainProps) {
   return (
     <SidebarGroup>
       <SidebarGroupContent className="flex flex-col gap-0.5">
@@ -38,7 +46,7 @@ export function NavMain({ items }: NavMainProps) {
           {items.map((item) => {
             const isActive =
               !item.external &&
-              (pathname === item.url || pathname.startsWith(item.url + "/"))
+              (currentPath === item.url || currentPath.startsWith(item.url + "/"))
             const linkClassName =
               "relative flex items-center gap-[10px] w-full px-[14px] py-[9px] rounded-[7px] text-[13.5px] outline-none select-none"
             const linkStyle = {
@@ -139,26 +147,27 @@ export function NavMain({ items }: NavMainProps) {
                     {linkBody}
                   </a>
                 ) : (
-                  <Link
+                  <LinkComponent
                     to={item.url}
+                    href={item.url}
                     aria-current={isActive ? "page" : undefined}
                     className={linkClassName}
                     style={linkStyle}
-                    onMouseEnter={(e) => {
+                    onMouseEnter={(e: React.MouseEvent<HTMLElement>) => {
                       if (!isActive) {
-                        ;(e.currentTarget as HTMLAnchorElement).style.background =
+                        ;(e.currentTarget as HTMLElement).style.background =
                           "oklch(0.218 0.050 259)"
                       }
                     }}
-                    onMouseLeave={(e) => {
+                    onMouseLeave={(e: React.MouseEvent<HTMLElement>) => {
                       if (!isActive) {
-                        ;(e.currentTarget as HTMLAnchorElement).style.background =
+                        ;(e.currentTarget as HTMLElement).style.background =
                           "transparent"
                       }
                     }}
                   >
                     {linkBody}
-                  </Link>
+                  </LinkComponent>
                 )}
               </SidebarMenuItem>
             )
