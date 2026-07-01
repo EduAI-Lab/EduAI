@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, act } from '@testing-library/react'
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
+
+const { mockToastError } = vi.hoisted(() => ({ mockToastError: vi.fn() }))
+vi.mock('sonner', () => ({ toast: { error: mockToastError, success: vi.fn() } }))
 
 // Capture the onPublishToggle prop wired in by CoursesPage so tests can
 // trigger it directly without going through the Radix DropdownMenu.
@@ -83,6 +86,7 @@ describe('CoursesPage — publish/unpublish confirmation', () => {
   beforeEach(() => {
     capturedPublishToggle = null
     mockUpdateCourse.mockClear()
+    mockToastError.mockClear()
   })
 
   it('triggering unpublish opens a confirmation dialog without calling the API', async () => {
@@ -163,5 +167,24 @@ describe('CoursesPage — publish/unpublish confirmation', () => {
     fireEvent.click(screen.getByRole('button', { name: /^publish$/i }))
 
     expect(mockUpdateCourse).toHaveBeenCalledWith('c1', { isPublished: true })
+  })
+
+  it('shows a toast error when updateCourse fails', async () => {
+    mockUpdateCourse.mockRejectedValueOnce(new Error('network error'))
+    wrap()
+
+    await act(async () => {
+      await capturedPublishToggle!('c1', false)
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^unpublish$/i }))
+    })
+
+    await waitFor(() => {
+      expect(mockToastError).toHaveBeenCalledWith(
+        expect.stringMatching(/failed/i),
+      )
+    })
   })
 })

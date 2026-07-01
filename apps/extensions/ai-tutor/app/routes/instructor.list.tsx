@@ -947,6 +947,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
         variant="destructive"
         onConfirm={() => {
           if (pendingDeleteId === null) return;
+          setDeletingActivityId(pendingDeleteId);
           void handleDeleteActivity(pendingDeleteId);
           setPendingDeleteId(null);
         }}
