@@ -65,7 +65,11 @@
   },
   "overrides": {
     "better-auth": "1.6.22",
-    "@better-auth/cli": "1.4.22",
+    "@better-auth/cli": {
+      "better-auth": "1.4.22",
+      "@better-auth/core": "1.4.22",
+      "drizzle-orm": "^0.45.2"
+    },
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "clsx": "^2.1.1",
