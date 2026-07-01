@@ -368,6 +368,7 @@ Unit tests for the shared design-system component library (`@eduai/ui`). Run wit
 | [`course-hero-card.test.tsx`](packages/ui/src/tests/course-hero-card.test.tsx) | `CourseHeroCard` renders course code/term/year/name, descriptions, topics, badges, and handles year-type variations. |
 | [`nav-user.test.tsx`](packages/ui/src/tests/nav-user.test.tsx) | `NavUser` renders the user name/email/avatar, opens the profile dropdown, renders custom items and a passed logout element, and fires `onLogout`. |
 | [`page-heading.test.tsx`](packages/ui/src/tests/page-heading.test.tsx) | `PageHeading` renders the heading text and accent bar, and renders an optional subheading including React-node children. |
+| [`page-loader.test.tsx`](packages/ui/src/tests/page-loader.test.tsx) | `PageLoader` renders the "Loading…" text, fills the viewport and centers its content, and applies a custom className. |
 | [`page-tabs.test.tsx`](packages/ui/src/tests/page-tabs.test.tsx) | `PageTabs` (List/Trigger/Content) renders the tab structure and default content, reflects active states, and applies custom classes. |
 | [`question-card.test.tsx`](packages/ui/src/tests/question-card.test.tsx) | `QuestionCard` renders type/difficulty/status, shows MCQ choices with the correct answer highlighted, and stretches its body so footers align in compact vs full layouts. |
 | [`question-status-badge.test.tsx`](packages/ui/src/tests/question-status-badge.test.tsx) | `QuestionStatusBadge` and the `questionStatus()` helper map `isDraft` to the Draft/Approved label and the warning/success variant. |
@@ -387,7 +388,7 @@ Unit tests for the shared design-system component library (`@eduai/ui`). Run wit
 
 | Test file | What it tests |
 |-----------|---------------|
-| [`api.test.ts`](apps/extensions/ai-tutor/app/tests/unit/api.test.ts) | Unauthenticated (`401`) requests redirect to the login page; forbidden (`403`) requests throw without redirecting so an already-signed-in user is not bounced into an infinite login loop; server errors surface as exceptions; successful requests return parsed data |
+| [`api.test.ts`](apps/extensions/ai-tutor/app/tests/unit/api.test.ts) | Unauthenticated (`401`) requests redirect to the login page; forbidden (`403`) requests throw without redirecting so an already-signed-in user is not bounced into an infinite login loop; a network-level failure (e.g. the API isn't listening yet) throws `ApiNetworkError` without redirecting, distinguishing it from an authenticated rejection; server errors surface as exceptions; successful requests return parsed data |
 | [`AppSiteHeader.test.tsx`](apps/extensions/ai-tutor/app/tests/unit/AppSiteHeader.test.tsx) | Verifies `AppSiteHeader` shows the Report Bug button for STUDENT and INSTRUCTOR, and renders the dark-mode theme toggle. |
 | [`AtRoleBanner.test.tsx`](apps/extensions/ai-tutor/app/tests/unit/AtRoleBanner.test.tsx) | Role banners show TA read-only copy and unit-admin authorized units |
 | [`BugReportDialog.test.tsx`](apps/extensions/ai-tutor/app/tests/unit/BugReportDialog.test.tsx) | The bug report form rejects descriptions that are too short, takes a screenshot on open, and submits diagnostic data including the reporter's anonymous preference |
@@ -402,7 +403,7 @@ Unit tests for the shared design-system component library (`@eduai/ui`). Run wit
 | [`student-chat-history.test.ts`](apps/extensions/ai-tutor/app/tests/unit/student-chat-history.test.ts) | Client-side chat history persistence — store/list/delete sessions per activity and build message previews |
 | [`student.route.test.tsx`](apps/extensions/ai-tutor/app/tests/unit/student.route.test.tsx) | The `/student` route always renders student stats ("Enrolled courses") from `buildDashboardStats`, even for a TA previewing the student experience — guards against the TA's literal role being scored with instructor-shell stats ("Your courses") over the enrolled/progress course list (#746) |
 | [`tour-engine.test.ts`](apps/extensions/ai-tutor/app/tests/unit/tour-engine.test.ts) | Tests the onboarding tour engine: seeds the lesson route when a tour starts on a lesson page (and skips seeding on non-lesson pages), finds the next available step once stored routes exist while skipping route-dependent steps before a route is discovered, computes step metadata for the lesson-help tour, and stores discovered routes from the highlighted element. |
-| [`useLocalUser.test.tsx`](apps/extensions/ai-tutor/app/tests/unit/useLocalUser.test.tsx) | Users can log in, log out, and have their session available across the app; accessing the session outside its provider throws an error |
+| [`useLocalUser.test.tsx`](apps/extensions/ai-tutor/app/tests/unit/useLocalUser.test.tsx) | Users can log in, log out, and have their session available across the app; accessing the session outside its provider throws an error; retries the session check on a transient network failure instead of treating the caller as logged out, but still logs out on a real authentication error |
 
 **E2E (Playwright):** `tests/e2e/ai-tutor-rbac.spec.ts` — login smoke tests for student, instructor, and admin shells (requires Core + AiTutor dev servers).
 
