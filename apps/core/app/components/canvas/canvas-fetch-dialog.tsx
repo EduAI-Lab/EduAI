@@ -17,6 +17,7 @@ import {
   listCanvasCourses,
   syncCanvasCourses,
   type CanvasCoursePickerItem,
+  type SyncCanvasCoursesResult,
 } from "~/lib/canvas/client";
 
 export interface CanvasFetchDialogProps {
@@ -30,10 +31,12 @@ export function CanvasFetchDialog({ open, onOpenChange }: CanvasFetchDialogProps
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [syncErrors, setSyncErrors] = useState<SyncCanvasCoursesResult["errors"]>([]);
 
   const loadCourses = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setSyncErrors([]);
     try {
       setCourses(await listCanvasCourses());
       setSelectedIds(new Set());
@@ -63,12 +66,14 @@ export function CanvasFetchDialog({ open, onOpenChange }: CanvasFetchDialogProps
   const handleFetch = async () => {
     setSyncing(true);
     setError(null);
+    setSyncErrors([]);
     try {
       const alreadySyncedIds = courses
         .filter((c) => c.isSynced && c.coreCourseId != null)
         .map((c) => c.canvasId);
-      await syncCanvasCourses({ canvasCourseIds: [...alreadySyncedIds, ...selectedIds] });
+      const result = await syncCanvasCourses({ canvasCourseIds: [...alreadySyncedIds, ...selectedIds] });
       await loadCourses();
+      setSyncErrors(result.errors);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to fetch Canvas courses");
     } finally {
@@ -137,6 +142,11 @@ export function CanvasFetchDialog({ open, onOpenChange }: CanvasFetchDialogProps
         )}
 
         {error && <p className="text-sm text-destructive">{error}</p>}
+        {syncErrors.map((entry) => (
+          <p key={entry.canvasId} className="text-sm text-destructive">
+            Course {entry.canvasId}: {entry.message}
+          </p>
+        ))}
 
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={syncing}>
