@@ -26,6 +26,7 @@ import TourButton from '../TourButton';
 const NAV_ICONS: Record<AtNavItemKey, Icon> = {
   'my-courses': IconBooks,
   teaching: IconBooks,
+  'admin-courses': IconBooks,
   'admin-bug-reports': IconReport,
   enrollments: IconBooks,
   analytics: IconBooks,
