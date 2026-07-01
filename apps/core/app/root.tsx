@@ -18,7 +18,7 @@ import { getExpiredPasswordRedirect } from "~/lib/auth/password-expiry.server";
 import { ensureCronSchedulerRunning } from "~/lib/cron-scheduler.server";
 import { AssistiveUiProvider } from "~/components/assistive/assistive-ui-provider";
 import { ThemeProvider } from "~/components/theme-provider";
-import { Toaster } from "@eduai/ui";
+import { Toaster, PageLoader } from "@eduai/ui";
 import { UiPreferencesProvider } from "~/components/assistive/ui-preferences-provider";
 import { DEFAULT_ACCOUNT_PREFERENCES } from "~/lib/user-preferences";
 import { isUiDensity, isUiTheme } from "~/lib/ui-preferences";
@@ -94,6 +94,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
     theme: isUiTheme(row?.theme) ? row.theme : DEFAULT_ACCOUNT_PREFERENCES.theme,
     canInvite,
   };
+}
+
+export function HydrateFallback() {
+  return <PageLoader />;
 }
 
 export function Layout({ children }: { children: React.ReactNode }) {
