@@ -1,7 +1,8 @@
 import type { CreateUserInput, UpdateUserInput } from "~/lib/auth/schemas";
 import type { AIModel, AIProvider } from "~/types/ai";
+import type { BugReportType } from "@prisma/client";
 
-export type { CreateUserInput, UpdateUserInput, AIModel, AIProvider };
+export type { CreateUserInput, UpdateUserInput, AIModel, AIProvider, BugReportType };
 
 export type PlatformUser = {
   id: string;
@@ -34,14 +35,6 @@ export type ChatSessionMeta = {
 export type BugReportStatus = "UNHANDLED" | "IN_PROGRESS" | "RESOLVED";
 
 export type BugReportSource = "CORE" | "AI_TUTOR" | "QUESTION_MAKER";
-
-export type BugReportType =
-  | "UI_DISPLAY"
-  | "FEATURE_NOT_WORKING"
-  | "PERFORMANCE"
-  | "CONTENT_ERROR"
-  | "ACCESS_PERMISSION"
-  | "OTHER";
 
 export type BugReport = {
   id: string;
