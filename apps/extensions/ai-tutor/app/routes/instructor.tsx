@@ -12,6 +12,8 @@
  *     the optimistic value to drop on the next render.
  *   - Courses are created and synced from EduAI Core (source of truth); there
  *     is no in-app import — they appear here automatically.
+ *   - Shares the role-scoped RoleDashboard shell with student/admin so all
+ *     three dashboards render the same layout.
  * Related: routes/instructor.course.tsx (drilldown), components/PublishStatusButton
  */
 import { useMemo, useOptimistic, useState } from 'react';
@@ -29,7 +31,7 @@ import type { Route } from './+types/instructor';
 import { requireClientUser } from '~/lib/client-auth';
 import { AppShell } from '~/components/layout/AppShell';
 import { ShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbs';
-import { DashboardStatGrid } from '~/components/dashboard/DashboardStatGrid';
+import { RoleDashboard } from '~/components/dashboard/RoleDashboard';
 import { buildInstructorDashboardStats } from '~/lib/dashboard-stats';
 
 /**
@@ -37,7 +39,7 @@ import { buildInstructorDashboardStats } from '~/lib/dashboard-stats';
  * authenticated user's role, so this is the full set the instructor can act on.
  */
 export async function clientLoader(_: Route.ClientLoaderArgs) {
-  await requireClientUser(['INSTRUCTOR', 'UNIT_ADMIN', 'TA']);
+  await requireClientUser(['INSTRUCTOR', 'UNIT_ADMIN', 'TA', 'ADMIN']);
   const courses = (await api.listCourses()) as Course[];
   return { courses };
 }
@@ -63,6 +65,9 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
     courses,
     (state, patch: (items: Course[]) => Course[]) => patch(state),
   );
+  // The teaching dashboard always shows course-scoped stats (Your courses /
+  // Published / Draft), including for admins who share this shell — the admin
+  // platform stats (Users / bug reports) live on the /admin Bug Reports page.
   const stats = useMemo(() => buildInstructorDashboardStats(oCourses), [oCourses]);
 
   // Optimistic publish toggle: addCourseOpt flips the badge instantly via
@@ -96,16 +101,14 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
 
   return (
     <AppShell breadcrumbs={<ShellBreadcrumbs items={[{ label: 'Courses' }]} />}>
-      <div className="space-y-8">
-        {user ? (
-          <AtRoleBanner role={user.role} authorizedUnits={user.authorizedUnits} />
-        ) : null}
-
-        <PageHeading heading="Courses" subheading="Manage courses and publish content." />
-
-        <DashboardStatGrid stats={stats} />
-
-        {/* Course list */}
+      <RoleDashboard
+        banner={
+          user ? <AtRoleBanner role={user.role} authorizedUnits={user.authorizedUnits} /> : null
+        }
+        heading="Courses"
+        subheading="Manage courses and publish content."
+        stats={stats}
+      >
         {oCourses.length === 0 ? (
           <div className="animate-fade-up delay-150">
             <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-12 text-center max-w-lg mx-auto">
@@ -226,7 +229,7 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
             ))}
           </div>
         )}
-      </div>
+      </RoleDashboard>
       <ConfirmDialog
         open={pendingPublish !== null}
         onOpenChange={(open) => {
