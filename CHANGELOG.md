@@ -10,7 +10,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ### Fixed
 
 - [ui] hotfix: Add missing imports in `packages/ui/src/ui/combobox.tsx` — `useRef`, `useEffect`, `Popover`, `PopoverTrigger`, and `PopoverContent` were used but not imported, causing `packages-ui-unit-tests` and QM frontend Docker build to fail on CI. (#823)
-- [infra] fix: Remove `legacy-peer-deps=true` from the root, AI Tutor, and AI Tutor server `.npmrc` files — installing against the existing `package-lock.json` resolves cleanly under npm's default strict peer-dependency mode (the `@better-auth/cli`/`@better-auth/telemetry` conflict only surfaces on a from-scratch resolution, e.g. a dry run with no lockfile). All 11 Docker test suites pass unchanged. (#172, @evanbones, 2026-07-01)
+- [infra] fix: Remove `legacy-peer-deps=true` from the root, AI Tutor, and AI Tutor server `.npmrc` files — installing against the existing `package-lock.json` resolves cleanly under npm's default strict peer-dependency mode (the `@better-auth/cli`/`@better-auth/telemetry` conflict only surfaces on a from-scratch resolution, e.g. a dry run with no lockfile). All 11 Docker test suites pass unchanged. (#804, @evanbones, 2026-07-01) — closes #172
 
 ## [Week 8 — June 22–28, 2026]
 
