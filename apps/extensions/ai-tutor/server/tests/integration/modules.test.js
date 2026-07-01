@@ -157,6 +157,31 @@ describe('Modules routes', () => {
 
       expect(res.status).toBe(403);
     });
+
+    it('ADMIN (not enrolled/assigned) sees all modules including unpublished (#781)', async () => {
+      const unpublishedModule = await prisma.module.create({
+        data: {
+          title: 'Unpublished Module',
+          description: 'Draft',
+          position: 1,
+          isPublished: false,
+          courseOfferingId: seed.course.id,
+        },
+      });
+
+      const admin = makeAdmin();
+      const adminApp = await createApp({ mockUser: admin });
+
+      const res = await request(adminApp).get(`/api/courses/${seed.course.id}/modules`);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(2);
+      const ids = res.body.map((m) => m.id);
+      expect(ids).toContain(seed.module.id);
+      expect(ids).toContain(unpublishedModule.id);
+      // Admins have no progress object (elevated access, not student)
+      expect(res.body[0].progress).toBeUndefined();
+    });
   });
 
   // ── GET /api/modules/:id ──────────────────────────────────────────
@@ -190,6 +215,17 @@ describe('Modules routes', () => {
       const res = await request(studentApp).get(`/api/modules/${seed.module.id}`);
 
       expect(res.status).toBe(403);
+    });
+
+    it('ADMIN (not enrolled/assigned) sees unpublished module (#781)', async () => {
+      await prisma.module.update({ where: { id: seed.module.id }, data: { isPublished: false } });
+      const admin = makeAdmin();
+      const adminApp = await createApp({ mockUser: admin });
+
+      const res = await request(adminApp).get(`/api/modules/${seed.module.id}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.isPublished).toBe(false);
     });
   });
 

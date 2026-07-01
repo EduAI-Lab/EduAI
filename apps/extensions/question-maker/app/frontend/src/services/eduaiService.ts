@@ -3,6 +3,7 @@
  * Passes through provider API keys as needed and returns typed results.
  */
 import api from './api';
+import { apiKeyStorage } from './apiKeyStorage';
 
 export interface EduAIMessage {
     role: 'user' | 'assistant' | 'system';
@@ -126,6 +127,8 @@ export interface EduAITestResponse {
     message?: string;
     error?: string;
     configured: boolean;
+    /** Which provider path was validated: 'google' (cloud) or 'ollama' (UBC-hosted). */
+    provider?: 'google' | 'ollama';
 }
 
 class EduAIService {
@@ -141,11 +144,26 @@ class EduAIService {
         return response.data;
     }
 
-    /** Tests configured AI service credentials by calling the backend validation endpoint. */
+    /**
+     * Tests AI connectivity. Sends the caller's browser-stored provider keys (e.g.
+     * Google) so the backend can validate the cloud provider — which works with the
+     * user's own key even when the UBC-hosted provider is offline.
+     */
     async testApiKey(): Promise<EduAITestResponse> {
+        // Build the apiKeys payload the backend expects from any locally-stored keys.
+        let apiKeys: Record<string, any> = {};
         try {
-            const response = await api.get('/api/eduai/test-api-key');
-            return response.data;
+            const stored = await apiKeyStorage.getAllApiKeys();
+            apiKeys = Object.fromEntries(
+                Object.entries(stored).map(([provider, apiKey]) => [provider, { apiKey, isEnabled: true }])
+            );
+        } catch {
+            // Ignore key-storage failures — fall back to server-side keys only.
+        }
+
+        try {
+            const response = await api.post('/api/eduai/test-api-key', { apiKeys });
+            return { ...response.data, configured: response.data.configured ?? true };
         } catch (err: any) {
             if (err.response?.status === 400 && err.response?.data) {
                 return {
