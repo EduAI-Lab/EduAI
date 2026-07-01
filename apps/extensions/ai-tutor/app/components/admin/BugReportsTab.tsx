@@ -458,7 +458,7 @@ function ConsoleViewer({ report }: { report: AdminBugReportRow }) {
                   </span>
                   <span className="text-xs text-muted-foreground">{entry.timestamp ?? '-'}</span>
                 </div>
-                <p className="mt-2 whitespace-pre-wrap break-words text-foreground">
+                <p className="mt-2 whitespace-pre-wrap wrap-break-word text-foreground">
                   {entry.message ?? ''}
                 </p>
                 {hasStack ? (
@@ -476,7 +476,7 @@ function ConsoleViewer({ report }: { report: AdminBugReportRow }) {
                       {expanded ? 'Hide stack trace' : 'Show stack trace'}
                     </button>
                     {expanded ? (
-                      <pre className="overflow-auto rounded-md border border-border bg-black/5 p-3 text-xs whitespace-pre-wrap break-words">
+                      <pre className="overflow-auto rounded-md border border-border bg-black/5 p-3 text-xs whitespace-pre-wrap wrap-break-word">
                         {entry.stack}
                       </pre>
                     ) : null}
@@ -566,13 +566,13 @@ function NetworkViewer({ report }: { report: AdminBugReportRow }) {
             </div>
           </div>
         ) : tab === 'request' ? (
-          <pre className="whitespace-pre-wrap break-words text-xs">
+          <pre className="whitespace-pre-wrap wrap-break-word text-xs">
             {typeof requestBody === 'string'
               ? requestBody
               : JSON.stringify(requestBody ?? {}, null, 2)}
           </pre>
         ) : tab === 'response' ? (
-          <pre className="whitespace-pre-wrap break-words text-xs">
+          <pre className="whitespace-pre-wrap wrap-break-word text-xs">
             {typeof responseBody === 'string'
               ? responseBody
               : JSON.stringify(responseBody ?? {}, null, 2)}
@@ -581,13 +581,13 @@ function NetworkViewer({ report }: { report: AdminBugReportRow }) {
           <div className="space-y-4 text-xs">
             <div>
               <p className="mb-2 text-sm font-medium">Request headers</p>
-              <pre className="whitespace-pre-wrap break-words">
+              <pre className="whitespace-pre-wrap wrap-break-word">
                 {JSON.stringify(requestHeaders ?? {}, null, 2)}
               </pre>
             </div>
             <div>
               <p className="mb-2 text-sm font-medium">Response headers</p>
-              <pre className="whitespace-pre-wrap break-words">
+              <pre className="whitespace-pre-wrap wrap-break-word">
                 {JSON.stringify(responseHeaders ?? {}, null, 2)}
               </pre>
             </div>
@@ -723,7 +723,7 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
       <CardHeader>
         <CardTitle>Bug reports</CardTitle>
         <CardDescription>
-          Review AI Tutor bug reports (submitted from this platform).
+          Review AI Tutor bug reports.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -925,7 +925,7 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
                   <TableCell className="overflow-hidden whitespace-normal px-3 py-3 text-sm">
                     <button
                       type="button"
-                      className="line-clamp-3 w-full break-words text-left text-foreground hover:text-primary"
+                      className="line-clamp-3 w-full wrap-break-word text-left text-foreground hover:text-primary"
                       title={report.description}
                       onClick={() => openViewer('description', report.id)}
                     >
@@ -948,7 +948,7 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
                     <span className="block truncate">{formatDateTime(report.createdAt)}</span>
                   </TableCell>
                   <TableCell className="overflow-hidden whitespace-normal px-3 py-3 text-sm text-muted-foreground">
-                    <span className="line-clamp-2 break-words" title={getContextLabel(report)}>
+                    <span className="line-clamp-2 wrap-break-word" title={getContextLabel(report)}>
                       {getContextLabel(report)}
                     </span>
                   </TableCell>
