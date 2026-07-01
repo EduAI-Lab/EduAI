@@ -37,8 +37,15 @@ describe('Auth routes', () => {
       adminApp = await createApp({ mockUser: admin });
     });
 
-    it('blocks admin from non-admin endpoints (GET /api/courses)', async () => {
+    it('allows admin to list courses for the shared dashboard (#781)', async () => {
       const res = await request(adminApp).get('/api/courses');
+
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.body)).toBe(true);
+    });
+
+    it('still blocks admin from non-allowlisted endpoints (GET /api/eduai/courses)', async () => {
+      const res = await request(adminApp).get('/api/eduai/courses');
 
       expect(res.status).toBe(403);
       expect(res.body.error).toMatch(/admin/i);
