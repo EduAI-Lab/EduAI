@@ -11,6 +11,8 @@
  *     loader still reads user/course counts purely to populate the stat grid.
  *   - `?tab=settings` is preserved as a redirect to /settings; any other
  *     `?tab=` value is ignored (the console now has a single view).
+ *   - Shares the role-scoped RoleDashboard shell with student/instructor so all
+ *     three dashboards render the same layout.
  * Related: `docs/ARCHITECTURE.md`, `server/src/routes/admin.js`, `app/lib/api.ts`
  */
 
@@ -26,11 +28,10 @@ import type {
 } from '~/lib/types';
 import type { Route } from './+types/admin';
 import { requireClientUser } from '~/lib/client-auth';
-import { PageHeading } from '@eduai/ui';
 import { AppShell } from '~/components/layout/AppShell';
 import { ShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbs';
-import { DashboardStatGrid } from '~/components/dashboard/DashboardStatGrid';
-import { buildAdminDashboardStats } from '~/lib/dashboard-stats';
+import { RoleDashboard } from '~/components/dashboard/RoleDashboard';
+import { buildDashboardStats } from '~/lib/dashboard-stats';
 import { getApiKeySourceTag, loadAdminSettingsData } from '~/lib/admin-settings';
 
 type AdminLoaderData = {
@@ -73,7 +74,12 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
   const [searchParams] = useSearchParams();
 
   const adminStats = useMemo(
-    () => buildAdminDashboardStats(loaderData.users, loaderData.courses, loaderData.bugReports),
+    () =>
+      buildDashboardStats('ADMIN', {
+        users: loaderData.users,
+        courses: loaderData.courses,
+        bugReports: loaderData.bugReports,
+      }),
     [loaderData.users, loaderData.courses, loaderData.bugReports],
   );
 
@@ -85,19 +91,14 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
 
   return (
     <AppShell breadcrumbs={<ShellBreadcrumbs items={[{ label: 'Admin' }]} />}>
-      <div className="space-y-8">
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-          <PageHeading
-            heading="Admin console"
-            subheading="Review platform stats and triage bug reports."
-          />
-          <div className={sourceTag.className}>{sourceTag.label}</div>
-        </div>
-
-        <DashboardStatGrid stats={adminStats} />
-
+      <RoleDashboard
+        heading="Admin console"
+        subheading="Review platform stats and triage bug reports."
+        headingAccessory={<div className={sourceTag.className}>{sourceTag.label}</div>}
+        stats={adminStats}
+      >
         <BugReportsTab initialReports={loaderData.bugReports} />
-      </div>
+      </RoleDashboard>
     </AppShell>
   );
 }
