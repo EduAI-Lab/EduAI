@@ -446,7 +446,7 @@ describe("accept flow", () => {
     let res: Response;
     try {
       res = (await acceptAction(
-        acceptReq({ token, name: "Sam Student", password: "supersecret1", confirmPassword: "supersecret1" }),
+        acceptReq({ token, name: "Sam Student", password: INVITE_TEST_PASSWORD, confirmPassword: INVITE_TEST_PASSWORD }),
       )) as Response;
     } finally {
       nowSpy.mockRestore();
@@ -539,7 +539,16 @@ describe("accept flow", () => {
     const token = tokenFromAcceptUrl(created.acceptUrl);
     const body = { token, name: "Pat Prof", password: INVITE_TEST_PASSWORD, confirmPassword: INVITE_TEST_PASSWORD };
 
-    const txSpy = vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("db hiccup"));
+    // Better Auth sign-up also uses prisma.$transaction — only fail the promote step.
+    const origTransaction = prisma.$transaction.bind(prisma);
+    let transactionCalls = 0;
+    const txSpy = vi.spyOn(prisma, "$transaction").mockImplementation(async (arg, ...rest) => {
+      transactionCalls += 1;
+      if (transactionCalls === 1) {
+        return origTransaction(arg as never, ...(rest as never[]));
+      }
+      throw new Error("db hiccup");
+    });
     const failed = (await acceptAction(acceptReq(body))) as any;
     txSpy.mockRestore();
     expect(failed.formError).toBeTruthy(); // surfaced as a form error, not a redirect
