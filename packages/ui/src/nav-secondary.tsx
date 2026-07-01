@@ -1,5 +1,4 @@
 import * as React from "react"
-import { Link, useLocation } from "react-router"
 import { type Icon } from "@tabler/icons-react"
 
 import {
@@ -7,7 +6,7 @@ import {
   SidebarGroupContent,
   SidebarMenu,
   SidebarMenuItem,
-} from "@eduai/ui"
+} from "./ui/sidebar"
 
 export interface NavSecondaryItem {
   title: string
@@ -16,22 +15,29 @@ export interface NavSecondaryItem {
   external?: boolean
 }
 
-export type NavSecondaryProps = {
+export interface NavSecondaryProps
+  extends React.ComponentPropsWithoutRef<typeof SidebarGroup> {
   items: NavSecondaryItem[]
-} & React.ComponentPropsWithoutRef<typeof SidebarGroup>
+  currentPath: string
+  LinkComponent?: React.ElementType
+}
 
 export function NavSecondary({
   items,
+  currentPath,
+  LinkComponent = "a",
   ...props
 }: NavSecondaryProps) {
-  const { pathname } = useLocation()
   return (
     <SidebarGroup {...props}>
       <SidebarGroupContent>
         <SidebarMenu>
           {items.map((item) => {
-            const isActive = !item.external && (pathname === item.url || pathname.startsWith(item.url + "/"))
-            const linkClassName = "relative flex items-center gap-[10px] w-full px-[14px] py-[9px] rounded-[7px] text-[13.5px] outline-none select-none"
+            const isActive =
+              !item.external &&
+              (currentPath === item.url || currentPath.startsWith(item.url + "/"))
+            const linkClassName =
+              "relative flex items-center gap-[10px] w-full px-[14px] py-[9px] rounded-[7px] text-[13.5px] outline-none select-none"
             const linkStyle = {
               background: isActive ? "oklch(0.248 0.055 259)" : "transparent",
               color: isActive ? "#fff" : "rgba(255,255,255,0.82)",
@@ -45,7 +51,12 @@ export function NavSecondary({
                   <span
                     aria-hidden
                     className="absolute left-0 rounded-[0_2px_2px_0] pointer-events-none"
-                    style={{ top: "8px", bottom: "8px", width: "3px", background: "var(--gold)" }}
+                    style={{
+                      top: "8px",
+                      bottom: "8px",
+                      width: "3px",
+                      background: "var(--gold)",
+                    }}
                   />
                 )}
                 <item.icon size={16} strokeWidth={1.75} />
@@ -62,36 +73,41 @@ export function NavSecondary({
                     rel="noopener noreferrer"
                     onMouseEnter={(e) => {
                       if (!isActive) {
-                        ;(e.currentTarget as HTMLAnchorElement).style.background = "oklch(0.218 0.050 259)"
+                        ;(e.currentTarget as HTMLAnchorElement).style.background =
+                          "oklch(0.218 0.050 259)"
                       }
                     }}
                     onMouseLeave={(e) => {
                       if (!isActive) {
-                        ;(e.currentTarget as HTMLAnchorElement).style.background = "transparent"
+                        ;(e.currentTarget as HTMLAnchorElement).style.background =
+                          "transparent"
                       }
                     }}
                   >
                     {linkBody}
                   </a>
                 ) : (
-                  <Link
+                  <LinkComponent
                     to={item.url}
+                    href={item.url}
                     aria-current={isActive ? "page" : undefined}
                     className={linkClassName}
                     style={linkStyle}
-                    onMouseEnter={(e) => {
+                    onMouseEnter={(e: React.MouseEvent<HTMLElement>) => {
                       if (!isActive) {
-                        ;(e.currentTarget as HTMLAnchorElement).style.background = "oklch(0.218 0.050 259)"
+                        ;(e.currentTarget as HTMLElement).style.background =
+                          "oklch(0.218 0.050 259)"
                       }
                     }}
-                    onMouseLeave={(e) => {
+                    onMouseLeave={(e: React.MouseEvent<HTMLElement>) => {
                       if (!isActive) {
-                        ;(e.currentTarget as HTMLAnchorElement).style.background = "transparent"
+                        ;(e.currentTarget as HTMLElement).style.background =
+                          "transparent"
                       }
                     }}
                   >
                     {linkBody}
-                  </Link>
+                  </LinkComponent>
                 )}
               </SidebarMenuItem>
             )
