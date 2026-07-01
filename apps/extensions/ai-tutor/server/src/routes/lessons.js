@@ -39,7 +39,8 @@ router.get('/modules/:moduleId/lessons', async (req, res) => {
     const isTa = enrollment?.role === 'TA';
     const isStudent = enrollment?.role === 'STUDENT';
     const unitAdmin = isUnitAdminForCourse(authUser, module.courseOffering);
-    const hasElevatedAccess = isInstructor || isTa || unitAdmin;
+    const isAdmin = authUser.role === 'ADMIN';
+    const hasElevatedAccess = isAdmin || isInstructor || isTa || unitAdmin;
     const isMember = hasElevatedAccess || isStudent;
 
     if (!isMember) {
@@ -150,7 +151,8 @@ router.get('/lessons/:lessonId', async (req, res) => {
     const isTa = enrollment?.role === 'TA';
     const isStudent = enrollment?.role === 'STUDENT';
     const unitAdmin = isUnitAdminForCourse(authUser, lesson.module.courseOffering);
-    const hasElevatedAccess = isInstructor || isTa || unitAdmin;
+    const isAdmin = authUser.role === 'ADMIN';
+    const hasElevatedAccess = isAdmin || isInstructor || isTa || unitAdmin;
     const isMember = hasElevatedAccess || isStudent;
 
     if (!isMember) {
