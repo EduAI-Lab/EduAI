@@ -1,4 +1,4 @@
-import { Link, useLocation } from "react-router"
+import * as React from "react"
 import { type Icon } from "@tabler/icons-react"
 
 import {
@@ -6,31 +6,36 @@ import {
   SidebarGroupContent,
   SidebarMenu,
   SidebarMenuItem,
-} from "@eduai/ui"
-import type { CronStatusColor } from "~/hooks/api/use-cron-job-status"
+} from "./ui/sidebar"
 
-export interface NavMainItem {
+export interface NavSecondaryItem {
   title: string
   url: string
-  icon?: Icon
+  icon: Icon
   external?: boolean
-  badge?: CronStatusColor
 }
 
-export interface NavMainProps {
-  items: NavMainItem[]
+export interface NavSecondaryProps
+  extends React.ComponentPropsWithoutRef<typeof SidebarGroup> {
+  items: NavSecondaryItem[]
+  currentPath: string
+  LinkComponent?: React.ElementType
 }
 
-export function NavMain({ items }: NavMainProps) {
-  const { pathname } = useLocation()
+export function NavSecondary({
+  items,
+  currentPath,
+  LinkComponent = "a",
+  ...props
+}: NavSecondaryProps) {
   return (
-    <SidebarGroup>
-      <SidebarGroupContent className="flex flex-col gap-0.5">
+    <SidebarGroup {...props}>
+      <SidebarGroupContent>
         <SidebarMenu>
           {items.map((item) => {
             const isActive =
               !item.external &&
-              (pathname === item.url || pathname.startsWith(item.url + "/"))
+              (currentPath === item.url || currentPath.startsWith(item.url + "/"))
             const linkClassName =
               "relative flex items-center gap-[10px] w-full px-[14px] py-[9px] rounded-[7px] text-[13.5px] outline-none select-none"
             const linkStyle = {
@@ -40,16 +45,6 @@ export function NavMain({ items }: NavMainProps) {
               transition: "background 120ms",
               paddingLeft: "16px",
             } as const
-
-            const badgeBg =
-              item.badge === "green"
-                ? "#22c55e"
-                : item.badge === "orange"
-                  ? "#f97316"
-                  : item.badge === "red"
-                    ? "#ef4444"
-                    : undefined
-
             const linkBody = (
               <>
                 {isActive && (
@@ -64,24 +59,10 @@ export function NavMain({ items }: NavMainProps) {
                     }}
                   />
                 )}
-                {item.icon && <item.icon size={16} strokeWidth={1.75} />}
+                <item.icon size={16} strokeWidth={1.75} />
                 <span className="flex-1">{item.title}</span>
-                {badgeBg && (
-                  <span
-                    aria-label={`Status: ${item.badge}`}
-                    className={item.badge === "orange" ? "animate-pulse" : undefined}
-                    style={{
-                      width: 7,
-                      height: 7,
-                      borderRadius: "50%",
-                      flexShrink: 0,
-                      background: badgeBg,
-                    }}
-                  />
-                )}
               </>
             )
-
             return (
               <SidebarMenuItem key={item.title}>
                 {item.external ? (
@@ -106,26 +87,27 @@ export function NavMain({ items }: NavMainProps) {
                     {linkBody}
                   </a>
                 ) : (
-                  <Link
+                  <LinkComponent
                     to={item.url}
+                    href={item.url}
                     aria-current={isActive ? "page" : undefined}
                     className={linkClassName}
                     style={linkStyle}
-                    onMouseEnter={(e) => {
+                    onMouseEnter={(e: React.MouseEvent<HTMLElement>) => {
                       if (!isActive) {
-                        ;(e.currentTarget as HTMLAnchorElement).style.background =
+                        ;(e.currentTarget as HTMLElement).style.background =
                           "oklch(0.218 0.050 259)"
                       }
                     }}
-                    onMouseLeave={(e) => {
+                    onMouseLeave={(e: React.MouseEvent<HTMLElement>) => {
                       if (!isActive) {
-                        ;(e.currentTarget as HTMLAnchorElement).style.background =
+                        ;(e.currentTarget as HTMLElement).style.background =
                           "transparent"
                       }
                     }}
                   >
                     {linkBody}
-                  </Link>
+                  </LinkComponent>
                 )}
               </SidebarMenuItem>
             )
