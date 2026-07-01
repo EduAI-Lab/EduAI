@@ -34,6 +34,13 @@ import { useMemo, useState } from 'react';
 import { Button, Input } from '@eduai/ui';
 import { IconFilter, IconSearch, IconX } from '@tabler/icons-react';
 import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@eduai/ui';
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -46,6 +53,14 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+} from '@eduai/ui';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from '@eduai/ui';
 import api from '~/lib/api';
 import type { AdminBugReportRow, BugReportStatus, BugReportType } from '~/lib/types';
@@ -372,7 +387,7 @@ function SortHeader({
   return (
     <button
       type="button"
-      className="inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+      className="inline-flex items-center gap-1 font-medium"
       onClick={() => onToggle(sortKey)}
     >
       <span>{title}</span>
@@ -704,15 +719,14 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
   };
 
   return (
-    <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6 sm:p-8 space-y-6 animate-fade-up delay-150">
-      <div className="space-y-2">
-        <h2 className="text-xl font-bold text-foreground">Bug Reports</h2>
-        <p className="text-sm text-muted-foreground max-w-3xl">
-          Review AI Tutor bug reports only (submitted from this platform). QM and Core reports
-          are triaged in their respective admin surfaces.
-        </p>
-      </div>
-
+    <Card className="animate-fade-up delay-150">
+      <CardHeader>
+        <CardTitle>Bug reports</CardTitle>
+        <CardDescription>
+          Review AI Tutor bug reports (submitted from this platform).
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
       {error ? (
         <div className="rounded-xl border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {error}
@@ -720,7 +734,7 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
       ) : null}
 
       {/* Filter bar */}
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-3 pb-4">
         <div className="flex items-center gap-2">
           <IconFilter className="h-4 w-4 text-muted-foreground" />
           <span className="text-sm font-medium text-muted-foreground">Filters</span>
@@ -802,7 +816,7 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
       </div>
 
       <div className="overflow-x-auto rounded-2xl border border-border/70 bg-card/80">
-        <table className="w-full min-w-[1160px] table-fixed border-collapse">
+        <Table className="min-w-[1160px] table-fixed border-collapse">
           <colgroup>
             <col className="w-[150px]" />
             <col className="w-[130px]" />
@@ -814,9 +828,9 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
             <col className="w-[10%]" />
             <col className="w-[200px]" />
           </colgroup>
-          <thead className="border-b border-border/70 bg-muted/30">
-            <tr>
-              <th className="px-3 py-3 text-left">
+          <TableHeader className="bg-muted/30">
+            <TableRow>
+              <TableHead>
                 <SortHeader
                   title="Status"
                   sortKey="status"
@@ -824,11 +838,9 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
                   direction={sortDirection}
                   onToggle={toggleSort}
                 />
-              </th>
-              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Type
-              </th>
-              <th className="px-3 py-3 text-left">
+              </TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead>
                 <SortHeader
                   title="Description"
                   sortKey="description"
@@ -836,8 +848,8 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
                   direction={sortDirection}
                   onToggle={toggleSort}
                 />
-              </th>
-              <th className="px-3 py-3 text-left">
+              </TableHead>
+              <TableHead>
                 <SortHeader
                   title="Reporter"
                   sortKey="reporter"
@@ -845,8 +857,8 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
                   direction={sortDirection}
                   onToggle={toggleSort}
                 />
-              </th>
-              <th className="px-3 py-3 text-left">
+              </TableHead>
+              <TableHead>
                 <SortHeader
                   title="Role"
                   sortKey="role"
@@ -854,8 +866,8 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
                   direction={sortDirection}
                   onToggle={toggleSort}
                 />
-              </th>
-              <th className="px-3 py-3 text-left">
+              </TableHead>
+              <TableHead>
                 <SortHeader
                   title="Date"
                   sortKey="createdAt"
@@ -863,8 +875,8 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
                   direction={sortDirection}
                   onToggle={toggleSort}
                 />
-              </th>
-              <th className="px-3 py-3 text-left">
+              </TableHead>
+              <TableHead>
                 <SortHeader
                   title="Context"
                   sortKey="context"
@@ -872,8 +884,8 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
                   direction={sortDirection}
                   onToggle={toggleSort}
                 />
-              </th>
-              <th className="px-3 py-3 text-left">
+              </TableHead>
+              <TableHead>
                 <SortHeader
                   title="Page"
                   sortKey="page"
@@ -881,38 +893,36 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
                   direction={sortDirection}
                   onToggle={toggleSort}
                 />
-              </th>
-              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Attachments
-              </th>
-            </tr>
-          </thead>
-          <tbody>
+              </TableHead>
+              <TableHead>Attachments</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {filteredSortedReports.length === 0 ? (
-              <tr>
-                <td colSpan={9} className="px-4 py-8 text-center text-sm text-muted-foreground">
+              <TableRow>
+                <TableCell colSpan={9} className="whitespace-normal px-4 py-8 text-center text-sm text-muted-foreground">
                   {hasActiveFilters
                     ? 'No reports match your filters. Try adjusting your search criteria.'
                     : 'No bug reports yet.'}
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ) : (
               filteredSortedReports.map((report) => (
-                <tr key={report.id} className="border-b border-border/50 align-top last:border-b-0">
-                  <td className="px-3 py-3">
+                <TableRow key={report.id} className="align-top">
+                  <TableCell className="px-3 py-3">
                     <StatusSelect
                       reportId={report.id}
                       status={report.status}
                       disabled={updatingReportId === report.id}
                       onStatusChange={onStatusChange}
                     />
-                  </td>
-                  <td className="overflow-hidden px-3 py-3 text-xs text-muted-foreground">
+                  </TableCell>
+                  <TableCell className="overflow-hidden px-3 py-3 text-xs text-muted-foreground">
                     <span className="block truncate">
                       {report.bugType ? BUG_TYPE_LABELS[report.bugType] : '—'}
                     </span>
-                  </td>
-                  <td className="overflow-hidden px-3 py-3 text-sm">
+                  </TableCell>
+                  <TableCell className="overflow-hidden whitespace-normal px-3 py-3 text-sm">
                     <button
                       type="button"
                       className="line-clamp-3 w-full break-words text-left text-foreground hover:text-primary"
@@ -921,8 +931,8 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
                     >
                       {report.description}
                     </button>
-                  </td>
-                  <td className="overflow-hidden px-3 py-3 text-sm text-foreground">
+                  </TableCell>
+                  <TableCell className="overflow-hidden px-3 py-3 text-sm text-foreground">
                     {report.isAnonymous ? (
                       <span className="italic text-muted-foreground">Anonymous</span>
                     ) : (
@@ -930,24 +940,24 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
                         {getReporterLabel(report)}
                       </span>
                     )}
-                  </td>
-                  <td className="overflow-hidden px-3 py-3 text-sm text-muted-foreground">
+                  </TableCell>
+                  <TableCell className="overflow-hidden px-3 py-3 text-sm text-muted-foreground">
                     <span className="block truncate">{getReporterRole(report) ?? '-'}</span>
-                  </td>
-                  <td className="overflow-hidden px-3 py-3 text-sm text-muted-foreground">
+                  </TableCell>
+                  <TableCell className="overflow-hidden px-3 py-3 text-sm text-muted-foreground">
                     <span className="block truncate">{formatDateTime(report.createdAt)}</span>
-                  </td>
-                  <td className="overflow-hidden px-3 py-3 text-sm text-muted-foreground">
+                  </TableCell>
+                  <TableCell className="overflow-hidden whitespace-normal px-3 py-3 text-sm text-muted-foreground">
                     <span className="line-clamp-2 break-words" title={getContextLabel(report)}>
                       {getContextLabel(report)}
                     </span>
-                  </td>
-                  <td className="overflow-hidden px-3 py-3 text-sm text-muted-foreground">
+                  </TableCell>
+                  <TableCell className="overflow-hidden px-3 py-3 text-sm text-muted-foreground">
                     <span className="block truncate" title={report.pageUrl ?? ''}>
                       {getPathLabel(report.pageUrl)}
                     </span>
-                  </td>
-                  <td className="px-3 py-3">
+                  </TableCell>
+                  <TableCell className="whitespace-normal px-3 py-3">
                     <div className="flex flex-wrap gap-2">
                       <Button
                         type="button"
@@ -985,13 +995,14 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
                         Screenshot
                       </Button>
                     </div>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))
             )}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
+      </CardContent>
 
       <Dialog
         open={viewerType !== null}
@@ -1029,6 +1040,6 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
           )}
         </DialogContent>
       </Dialog>
-    </div>
+    </Card>
   );
 }
