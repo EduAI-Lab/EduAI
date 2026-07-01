@@ -39,4 +39,8 @@ describe("isUbcEmail (#567)", () => {
       expect(isUbcEmail(email)).toBe(false);
     }
   });
+
+  it("rejects emails with multiple @ signs", () => {
+    expect(isUbcEmail("a@evil.com@student.ubc.ca")).toBe(false);
+  });
 });

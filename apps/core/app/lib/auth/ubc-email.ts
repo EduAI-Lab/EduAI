@@ -12,8 +12,9 @@ export const UBC_EMAIL_MESSAGE =
 export function isUbcEmail(email: string | null | undefined): boolean {
   if (!email) return false;
   const normalized = email.trim().toLowerCase();
-  const at = normalized.lastIndexOf("@");
+  const at = normalized.indexOf("@");
   if (at < 0) return false;
   const domain = normalized.slice(at + 1);
+  if (domain.includes("@")) return false; // malformed — multiple @ signs
   return domain === "ubc.ca" || domain.endsWith(".ubc.ca");
 }
