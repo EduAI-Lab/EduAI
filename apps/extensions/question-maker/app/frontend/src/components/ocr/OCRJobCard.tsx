@@ -1,14 +1,14 @@
 import { Badge, Button } from '@eduai/ui';
 import { Tooltip } from '@/components/ui/tooltip';
 import {
-  FileText,
-  CheckCircle2,
-  XCircle,
-  Loader2,
-  Clock,
-  Trash2,
-  AlertCircle,
-} from 'lucide-react';
+  IconFileText,
+  IconCircleCheck,
+  IconCircleX,
+  IconLoader2,
+  IconClock,
+  IconTrash,
+  IconAlertCircle,
+} from '@tabler/icons-react';
 import { cn } from '@/lib/utils';
 import type { OCRJob, OCRJobStatus } from '../../types/ocr';
 
@@ -36,38 +36,38 @@ const statusConfig: Record<
   OCRJobStatus,
   {
     label: string;
-    icon: typeof CheckCircle2;
+    icon: typeof IconCircleCheck;
     className: string;
     badgeVariant: 'default' | 'secondary' | 'destructive' | 'outline';
   }
 > = {
   pending: {
     label: 'Pending',
-    icon: Clock,
+    icon: IconClock,
     className: 'text-amber-500',
     badgeVariant: 'outline',
   },
   processing: {
     label: 'Processing',
-    icon: Loader2,
+    icon: IconLoader2,
     className: 'text-secondary animate-spin',
     badgeVariant: 'secondary',
   },
   success: {
     label: 'Complete',
-    icon: CheckCircle2,
+    icon: IconCircleCheck,
     className: 'text-emerald-500',
     badgeVariant: 'default',
   },
   error: {
     label: 'Failed',
-    icon: XCircle,
+    icon: IconCircleX,
     className: 'text-destructive',
     badgeVariant: 'destructive',
   },
   discarded: {
     label: 'Discarded',
-    icon: AlertCircle,
+    icon: IconAlertCircle,
     className: 'text-muted-foreground',
     badgeVariant: 'outline',
   },
@@ -118,7 +118,7 @@ export function OCRJobCard({
       )}
     >
       <div className="flex items-start gap-2">
-        <FileText className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+        <IconFileText className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
         <div className="flex-1 min-w-0">
           {job.fileName.length > 24 ? (
             <Tooltip content={job.fileName} side="top">
@@ -138,7 +138,7 @@ export function OCRJobCard({
           onClick={handleRemove}
           aria-label={`Remove ${job.fileName} from history`}
         >
-          <Trash2 className="size-3.5" />
+          <IconTrash className="size-3.5" />
         </Button>
       </div>
 
