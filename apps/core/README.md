@@ -239,6 +239,7 @@ curl -X POST "https://eduai.ok.ubc.ca/api/chat" \
 - **Chat IDs**: The `chatId` is strictly server-generated (CUID). Clients should not attempt to generate their own chat IDs.
 - **Message IDs**: Clients **SHOULD** generate a UUID v4 for every message (`message.id`) before sending it. This enables optimistic UI updates and allows the server to deduplicate retries safely.
 - If a client references a `chatId` that no longer exists for that user, the API returns `410 Gone` with `{ "chatDeleted": true }`. Callers should drop the stale ID and start a new chat.
+- **Route-based resume**: Saved chats are opened through `/chat/:chatId`. The route is the source of truth for the active conversation, so refreshing or directly visiting a saved-chat URL restores that chat instead of relying on browser `sessionStorage`.
 
 ### AI Models Endpoint
 
