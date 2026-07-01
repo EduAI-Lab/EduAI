@@ -41,23 +41,37 @@ class EduAIService {
     return Boolean(this.apiKey?.trim());
   }
 
-  /** Builds auth headers for Core /api/chat — session cookie (local dev) or x-api-key. */
+  /**
+   * Builds auth headers for Core /api/chat. The service key is the primary
+   * credential for server-to-server proxying — Core's requireServiceKey guard
+   * expects `Authorization: Bearer <EDUAI_API_KEY>` (NOT x-api-key, which Core's
+   * chat route ignores → MISSING_SERVICE_KEY/401). Falls back to a forwarded
+   * session cookie only when no service key is configured.
+   */
   buildChatAuthHeaders(cookie) {
+    if (this.apiKey) {
+      return { Authorization: `Bearer ${this.apiKey}` };
+    }
     const trimmedCookie = typeof cookie === "string" ? cookie.trim() : "";
     if (trimmedCookie) {
       return { cookie: trimmedCookie };
     }
-    if (this.apiKey) {
-      return { "x-api-key": this.apiKey };
-    }
     return null;
   }
 
-  /** Picks a lightweight model for connectivity checks (Google when configured, else Ollama). */
-  getConnectivityTestParams() {
-    const googleKey = config.googleGenerativeAiApiKey?.trim();
+  /**
+   * Picks a lightweight model for connectivity checks. Prefers a cloud (Google)
+   * provider whenever a key is available — from the client (browser-stored key)
+   * or the server config — so the badge reflects cloud availability even when the
+   * UBC-hosted (Ollama) provider is offline. Falls back to Ollama only when no
+   * cloud key exists at all.
+   */
+  getConnectivityTestParams(clientApiKeys = {}) {
+    const clientGoogleKey = clientApiKeys?.google?.apiKey?.trim?.();
+    const googleKey = clientGoogleKey || config.googleGenerativeAiApiKey?.trim();
     if (googleKey) {
       return {
+        provider: "google",
         model: "google:gemini-2.5-flash",
         apiKeys: {
           google: { apiKey: googleKey, isEnabled: true },
@@ -65,6 +79,7 @@ class EduAIService {
       };
     }
     return {
+      provider: "ollama",
       model: "ollama:gpt-oss:120b",
       apiKeys: { ollama: { isEnabled: true } },
     };
@@ -767,8 +782,14 @@ Please ensure the questions are appropriate for the course level and cover the k
     );
   }
 
-  /** Issues a lightweight chat call to validate Core AI connectivity. */
-  async testApiKey({ cookie } = {}) {
+  /**
+   * Issues a lightweight chat call to validate Core AI connectivity.
+   * `apiKeys` carries any browser-stored provider keys (e.g. the user's Google
+   * key) so the check can validate the cloud provider rather than always testing
+   * the (possibly offline) UBC-hosted provider. `provider` is echoed back so the
+   * UI can tell the user which path is live.
+   */
+  async testApiKey({ cookie, apiKeys: clientApiKeys = {} } = {}) {
     if (!this.isConfigured()) {
       return {
         success: false,
@@ -783,8 +804,8 @@ Please ensure the questions are appropriate for the course level and cover the k
       };
     }
 
+    const { provider, model, apiKeys } = this.getConnectivityTestParams(clientApiKeys);
     try {
-      const { model, apiKeys } = this.getConnectivityTestParams();
       const response = await this.chat({
         messages: [{ role: "user", content: "test" }],
         model,
@@ -797,6 +818,7 @@ Please ensure the questions are appropriate for the course level and cover the k
       return {
         success: true,
         message: "API key is valid",
+        provider,
         response: response,
       };
     } catch (error) {
@@ -829,6 +851,7 @@ Please ensure the questions are appropriate for the course level and cover the k
       } else {
         return {
           success: false,
+          provider,
           error: `API key test failed: ${error.message}`,
           statusCode: error.response?.status,
         };

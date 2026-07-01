@@ -1,7 +1,14 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
-import { makeProfessor, makeStudent, truncateAll, seedMinimalCourse, prisma } from '../helpers.js';
+import {
+  makeProfessor,
+  makeAdmin,
+  makeStudent,
+  truncateAll,
+  seedMinimalCourse,
+  prisma,
+} from '../helpers.js';
 
 describe('Topics routes', () => {
   let prof;
@@ -42,6 +49,17 @@ describe('Topics routes', () => {
       const res = await request(outsiderApp).get(`/api/courses/${seed.course.id}/topics`);
 
       expect(res.status).toBe(403);
+    });
+
+    it('ADMIN (not enrolled/assigned) sees topics for any course (#781)', async () => {
+      const admin = makeAdmin();
+      const adminApp = await createApp({ mockUser: admin });
+
+      const res = await request(adminApp).get(`/api/courses/${seed.course.id}/topics`);
+
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.body)).toBe(true);
+      expect(res.body[0]).toMatchObject({ id: seed.topic.id, name: 'Test Topic' });
     });
   });
 
