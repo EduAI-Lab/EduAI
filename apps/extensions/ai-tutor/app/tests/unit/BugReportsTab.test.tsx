@@ -113,7 +113,7 @@ describe('BugReportsTab', () => {
   it('renders bug report rows and anonymous reporter label', () => {
     render(<BugReportsTab initialReports={[baseReport, anonymousReport]} />);
 
-    expect(screen.getByText('Bug Reports')).toBeInTheDocument();
+    expect(screen.getByText('Bug reports')).toBeInTheDocument();
     expect(screen.getByText(baseReport.description)).toBeInTheDocument();
     expect(screen.getByText(anonymousReport.description)).toBeInTheDocument();
     expect(screen.getByText('Anonymous')).toBeInTheDocument();
