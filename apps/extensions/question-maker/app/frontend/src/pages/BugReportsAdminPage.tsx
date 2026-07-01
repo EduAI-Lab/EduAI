@@ -3,7 +3,7 @@
  */
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router';
-import { ArrowLeft, Filter, Search, X } from 'lucide-react';
+import { IconArrowLeft, IconFilter, IconSearch, IconX } from '@tabler/icons-react';
 import {
   Button,
   Dialog,
@@ -254,7 +254,7 @@ export function BugReportsAdminPage() {
     <div className="min-h-screen bg-background text-foreground">
       <div className="border-b bg-card px-6 py-4 flex flex-wrap items-center gap-4">
         <Button variant="ghost" size="sm" onClick={() => navigate('/home')} className="gap-2">
-          <ArrowLeft className="h-4 w-4" />
+          <IconArrowLeft className="h-4 w-4" />
           Back
         </Button>
         <h1 className="text-lg font-semibold">Bug reports</h1>
@@ -264,7 +264,7 @@ export function BugReportsAdminPage() {
         {/* Filter bar */}
         <div className="flex flex-col gap-3">
           <div className="flex items-center gap-2">
-            <Filter className="h-4 w-4 text-muted-foreground" />
+            <IconFilter className="h-4 w-4 text-muted-foreground" />
             <span className="text-sm font-medium text-muted-foreground">Filters</span>
           </div>
 
@@ -314,7 +314,7 @@ export function BugReportsAdminPage() {
             </Select>
 
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <IconSearch className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="Search description…"
                 value={searchText}
@@ -335,7 +335,7 @@ export function BugReportsAdminPage() {
                 onClick={resetFilters}
                 className="text-destructive hover:text-destructive gap-1"
               >
-                <X className="h-4 w-4" />
+                <IconX className="h-4 w-4" />
                 Clear filters
               </Button>
             </div>

@@ -95,7 +95,7 @@ export function AppSiteHeader({ breadcrumbs, actions }: AppSiteHeaderProps) {
                 className="shrink-0"
               >
                 <IconBug className="mr-1 h-4 w-4" aria-hidden="true" />
-                {capturingScreenshot ? 'Preparing…' : 'Report bug'}
+                {capturingScreenshot ? 'Preparing…' : 'Report a bug'}
               </Button>
             ) : null}
           </div>

@@ -31,7 +31,7 @@ export function BugReportSubmitDialog({ triggerClassName }: BugReportSubmitDialo
         onClick={() => setOpen(true)}
       >
         <IconBug className="h-4 w-4 mr-1" />
-        Report bug
+        Report a bug
       </Button>
       <BugReportDialog open={open} onOpenChange={setOpen} onSubmit={handleSubmit} />
     </>
