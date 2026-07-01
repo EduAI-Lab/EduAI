@@ -14,6 +14,7 @@ import {
 import {
   pushTopicToCore,
   isCoreCourseInScopedList,
+  getCourseEnrollmentsFromCore,
 } from '../services/coreApiService.js';
 import { listCoursesForUser } from '../services/courseListService.js';
 import { ensureCoreCourseLink } from '../services/coreCourseLinkService.js';
@@ -279,6 +280,43 @@ router.get(
     next(error);
   }
 });
+
+/**
+ * GET /api/course/:id/enrollments – lists users enrolled in the course by
+ * proxying Core's enrollment data (§5 view roster: TA access or above). Returns
+ * only active enrollments, mapped to the QM-facing shape.
+ */
+router.get(
+  '/:id/enrollments',
+  authenticateToken,
+  requireCourseAccess({ min: 'ta', getCourseId: courseIdFromParam }),
+  async (req, res, next) => {
+    try {
+      const course = req.qmCourse;
+
+      if (!course.coreCourseId) {
+        // Not linked to Core: no enrollment roster exists yet.
+        return res.json({ success: true, data: [] });
+      }
+
+      const data = await getCourseEnrollmentsFromCore(course.coreCourseId, {
+        cookie: req.headers.cookie,
+      });
+      const enrollments = (data?.enrollments ?? [])
+        .filter((e) => e.isActive)
+        .map((e) => ({
+          userId: e.studentId,
+          name: e.studentName,
+          email: e.studentEmail,
+          role: e.role,
+        }));
+
+      res.json({ success: true, data: enrollments });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 /** POST /api/course/:id/topics – adds a topic (§8 create topic: instructor access or above). */
 router.post(
