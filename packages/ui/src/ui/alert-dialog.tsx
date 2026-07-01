@@ -3,7 +3,7 @@
 import * as React from "react"
 import * as AlertDialogPrimitive from "@radix-ui/react-alert-dialog"
 
-import { cn } from "../utils"
+import { cn, useRestoreBodyPointerEvents } from "../utils"
 import { buttonVariants } from "./button"
 
 function AlertDialog({
@@ -48,6 +48,7 @@ function AlertDialogContent({
   className,
   ...props
 }: React.ComponentProps<typeof AlertDialogPrimitive.Content>) {
+  useRestoreBodyPointerEvents()
   return (
     <AlertDialogPortal>
       <AlertDialogOverlay />

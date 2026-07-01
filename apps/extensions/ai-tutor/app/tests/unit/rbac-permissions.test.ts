@@ -57,6 +57,8 @@ describe('role routing', () => {
     expect(routeFromRouting('INSTRUCTOR')).toBe('/instructor');
     expect(routeFromRouting('TA')).toBe('/instructor');
     expect(routeFromRouting('UNIT_ADMIN')).toBe('/instructor');
-    expect(routeFromRouting('ADMIN')).toBe('/admin');
+    // Admins land on the shared Courses dashboard (#781); Bug Reports stays a
+    // separate nav item at /admin.
+    expect(routeFromRouting('ADMIN')).toBe('/instructor');
   });
 });
