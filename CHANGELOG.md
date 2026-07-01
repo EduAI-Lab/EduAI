@@ -5,6 +5,12 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
 
+## [Week 9 — June 29–July 5, 2026]
+
+### Fixed
+
+- [ui] hotfix: Add missing imports in `packages/ui/src/ui/combobox.tsx` — `useRef`, `useEffect`, `Popover`, `PopoverTrigger`, and `PopoverContent` were used but not imported, causing `packages-ui-unit-tests` and QM frontend Docker build to fail on CI. (#823)
+
 ## [Week 8 — June 22–28, 2026]
 
 ### Added
@@ -19,6 +25,22 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] feat: UBC password policy enforcement — three-phase implementation: (1) strength validation (8-char complex or 16-char passphrase) on all password-setting paths via a Better Auth `before` hook; (2) no-reuse-of-last-10 check using `verify`-based hash comparison against `PasswordHistory` records; (3) annual rotation gate in the `root.tsx` loader that redirects to `/settings?expired=1` on every page load until the password is updated. Settings page reorganised: Account tab (change-password + student number), Providers tab, Canvas tab. (#339, #769, @GlowyBlack, 2026-06-24)
 - [core] feat: RAG ingestion preserves LaTeX equations, converts HTML tables to markdown, and chunks at clinical/slide section boundaries (#90, #91, #93, @superbolt08, 2026-06-23) — [#755](https://github.com/EduAI-Lab/EduAI/pull/755)
 - [core] feat: Human-readable math in chat — normalizeMathMarkdown, Streamdown math plugin, KaTeX CSS, prose-vs-equation guards (#142, @superbolt08, 2026-06-23) — [#757](https://github.com/EduAI-Lab/EduAI/pull/757)
+- [ai-tutor] feat: Mirror Core `TA` enrollments into AI Tutor and surface TA-taught courses — `GET /api/courses` now returns TA-enrolled offerings (unpublished included, no progress) alongside the TA's published student-enrolled courses, so course TAs see their teaching courses in the instructor shell. (#745, @Ayyhab, 2026-06-25)
+- [ai-tutor] tests: Add `nav.test.ts` (every role's nav label is "Courses"; admin nav keeps Bug Reports and excludes user-management/enrollments) and an api-client 403 regression guarding against the login-redirect loop. (#745, @Ayyhab, 2026-06-25)
+- [ai-tutor] feat: Converge the student/instructor/admin dashboards onto one shared `RoleDashboard` shell (role banner + heading/accessory + stat grid + role-specific body) and a single `buildDashboardStats(role, data)` dispatcher that returns role-scoped stat sets; thin per-role route loaders are kept since data sources differ by role, and the guided-tour target is preserved via `headingTourId`. (#736, @Ayyhab, 2026-06-26) — [#746](https://github.com/EduAI-Lab/EduAI/pull/746)
+- [ai-tutor] tests: Add `dashboard-stats.test.ts` (dispatcher returns the correct stat set per role plus the undefined-role student fallback) and `RoleDashboard.test.tsx` (shell renders banner/heading/stats/accessory/body and conditionally emits the tour `data-tour` target). (#736, @Ayyhab, 2026-06-26) — [#746](https://github.com/EduAI-Lab/EduAI/pull/746)
+- [ai-tutor] feat: Give ADMIN the shared Courses dashboard with full course access — `/instructor` now admits ADMIN, `routeForRole('ADMIN')` points at `/instructor`, and the sidebar gains the Courses nav item; on the backend, the `courses`, `modules`, `lessons`, `topics`, and `activities` routes treat ADMIN as elevated access so an admin can read any course's content (including unpublished modules/lessons) regardless of enrollment or instructor assignment. (#781, @Ayyhab, 2026-06-26) — [#746](https://github.com/EduAI-Lab/EduAI/pull/746)
+- [ai-tutor] tests: Add ADMIN regression coverage for the #781 full-course-access bypass — `activities.test.js`, `modules.test.js`, `lessons.test.js`, and `topics.test.js` each gain a test proving an ADMIN who is neither enrolled in nor assigned to a course still gets back the course's submissions/modules/lessons/topics, including unpublished content, alongside the existing `nav.test.ts`/`rbac-permissions.test.ts` coverage for the new nav item and `/instructor` routing. (#781, @Ayyhab, 2026-06-29) — [#746](https://github.com/EduAI-Lab/EduAI/pull/746)
+- [ci] ci: Add a Backend Coverage Report workflow — runs unit+integration coverage for the three backends on every push to `development`, aggregates them, and commits a Markdown summary to `eduai-summer-2026/reports/coverage/`. (#773, @abdullahmoh21, 2026-06-25)
+- [core] feat: RAG ingestion preserves LaTeX equations, converts HTML tables to markdown, and chunks at clinical/slide section boundaries (#90, #91, #93, @superbolt08, 2026-06-23) — [#755](https://github.com/EduAI-Lab/EduAI/pull/755)
+- [core] feat: Human-readable math in chat — normalizeMathMarkdown, Streamdown math plugin, KaTeX CSS, prose-vs-equation guards (#142, @superbolt08, 2026-06-23) — [#757](https://github.com/EduAI-Lab/EduAI/pull/757)
+
+### Fixed
+
+- [ci] fix: Force the report-branch checkout in the Backend Coverage Report commit step so the tracked `.env.test` files rewritten during setup no longer abort it and fail the job. (@abdullahmoh21, 2026-06-29) — [#821](https://github.com/EduAI-Lab/EduAI/pull/821)
+- [core] fix: Theme hydration mismatch on html color-scheme (#142, @superbolt08, 2026-06-23)
+- [ai-tutor] feat: Add `GET /courses/:courseId/feedback` endpoint — returns all `ActivityFeedback` rows for activities in a course; access-gated to ADMIN (global), UNIT_ADMIN (department-scoped), INSTRUCTOR (enrolled), and TA (enrolled); supports `activityId`, `studentId`, `take` (max 200, default 50), and `skip` query params. (#554, @evanbones, 2026-06-24)
+- [ai-tutor] feat: Extend `PATCH /courses/:courseId`, `PATCH /courses/:courseId/publish`, and `PATCH /courses/:courseId/unpublish` to accept ADMIN and UNIT_ADMIN (department-scoped) in addition to INSTRUCTOR — aligns course mutation routes with rbac-matrix.md §5. (#553, @evanbones, 2026-06-24)
 - [core] feat: Streamline admin local model workflow — auto-sync Ollama/vLLM models into AI Management (#180, @superbolt08, 2026-06-23) — [#756](https://github.com/EduAI-Lab/EduAI/pull/756)
 - [core] feat: Add UBC chatbot disclaimer banner and full terms dialog on `/chat`. (#575, @superbolt08, 2026-06-23) — [#753](https://github.com/EduAI-Lab/EduAI/pull/753)
 - [core] feat: Chat UX overhaul from ADHD Assist pilot participant feedback — a persistent conversation history rail on `/chat` (New chat lives only in the rail), a dedicated `/chat/:chatId` route whose loader hydrates the transcript from the DB so the route (not sessionStorage) is the source of truth for the open conversation, a course selector and starter chips in the composer, and the sidebar toggle moved into the blue EduAI header. (#695, #700, #708, @Ayyhab, 2026-06-24) — [#751](https://github.com/EduAI-Lab/EduAI/pull/751)
@@ -67,6 +89,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [ai-tutor] fix: Return the student/TA course list without a 500 — restore the missing `getEduAiCookieForRequest` import and probe TA enrollments with `count()` (CourseEnrollment has a composite key and no `id`) in `GET /api/courses`. (#745, @Ayyhab, 2026-06-25)
 - [ai-tutor] fix: Resolve the long-standing typecheck baseline — the student dashboard "Completed" count used a non-existent `Progress.isComplete` (always 0; now derived from `completed`/`total`), and the sidebar footer now carries the user's `email` through `AuthUser` so it renders instead of showing blank. (#745, @Ayyhab, 2026-06-25)
 - [ai-tutor] fix: Surface effective `role: TA` on `GET /api/me` when Core reports a TA enrollment — keeps course TAs in the teaching shell after Core drops platform-level `UserRole.TA` (#723, @Ayyhab, 2026-06-24)
+- [core] fix: Unblock student-ID onboarding before any Canvas sync — `linkCanvasRoster` no longer 404s when no instructor has synced the course; it saves the student number (still rejecting duplicates) and links zero enrollments, and the later sync's `linkEnrollmentsFromStagingForCourse` enrolls the student by `studentId` once staging rows exist. (#732, @GlowyBlack, 2026-06-22)
+- [core] fix: Use `/chat/:chatId` as the source of truth for resuming chats, removing `ACTIVE_CHAT_KEY`/`sessionStorage` active-chat restoration. Saved chats now open, refresh, and continue through the route while preserving `lastCourseCode` preference behavior. (#775, @YibingW, 2026-06-26)
+- [ai-tutor] fix: Stop `/student` from scoring a TA's preview with instructor-shell stats — the route passed the viewer's literal role into `buildDashboardStats`, so a TA previewing the student experience got "Your courses/Published/Draft" computed over the enrolled/progress course list instead of "Enrolled courses/In progress/Completed"; the route now always passes the literal `'STUDENT'` role, matching the existing `admin.tsx` pattern. (#746, @Ayyhab, 2026-06-29)
+- [core] fix: Force React pre-bundle at startup via `optimizeDeps.include` — prevents a Vite chunk-version mismatch on first client-side navigation that left `ReactCurrentDispatcher.current` null, causing "Cannot read properties of null (reading 'useContext')" crash on the login page. (#162, @evanbones, 2026-06-26)
 
 
 ## [Week 7 — June 15–21, 2026]
