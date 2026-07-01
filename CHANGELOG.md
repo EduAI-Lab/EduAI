@@ -9,11 +9,11 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
-- [monorepo] docs: Add `docs/ENVIRONMENT.md` — consolidated reference for every `.env.example` file in the repo (Core, AI Tutor server, Question Maker, root, `infra/cron`), what loads each one, and dev/test/prod scope per variable. (#817, @evanbones, 2026-07-01)
+- [monorepo] docs: Add `docs/ENVIRONMENT.md` — consolidated reference for every `.env.example` file in the repo (Core, AI Tutor server, Question Maker, root, `infra/cron`), what loads each one, and dev/test/prod scope per variable. (#841, @evanbones, 2026-07-01) — closes #817
 
 ### Changed
 
-- [monorepo] docs: `scripts/setup-env.js` now also copies/merges `.env.test.example` → `.env.test` for Core and the AI Tutor server, the same as it already does for the dev `.env` files; backfilled `EDUAI_API_KEY` (and, for AI Tutor server, `EDUAI_BASE_URL`) that had drifted missing from both apps' tracked `.env.test`. Fixed a stale "copy to the repo root" comment and a "Jest" reference in Question Maker's `.env.example` (it's actually read from its own directory via Vitest). (#817, @evanbones, 2026-07-01)
+- [monorepo] docs: `scripts/setup-env.js` now also copies/merges `.env.test.example` → `.env.test` for Core and the AI Tutor server, the same as it already does for the dev `.env` files; backfilled `EDUAI_API_KEY` (and, for AI Tutor server, `EDUAI_BASE_URL`) that had drifted missing from both apps' tracked `.env.test`. Fixed a stale "copy to the repo root" comment and a "Jest" reference in Question Maker's `.env.example` (it's actually read from its own directory via Vitest). (#841, @evanbones, 2026-07-01)
 
 ### Fixed
 
