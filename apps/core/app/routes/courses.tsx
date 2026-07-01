@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link, redirect, useLoaderData, useSearchParams } from 'react-router'
+import { toast } from 'sonner'
 import type { LoaderFunctionArgs } from 'react-router'
 
 import { auth } from '~/lib/auth/server'
@@ -85,12 +86,17 @@ export default function CoursesPage() {
   } | null>(null)
 
   const handlePublishToggle = async (id: string, publish: boolean) => {
-    await updateCourse(id, { isPublished: publish })
+    try {
+      await updateCourse(id, { isPublished: publish })
+    } catch {
+      toast.error('Failed to update course. Please try again.')
+    }
   }
 
-  const handlePublishToggleRequest = async (id: string, publish: boolean) => {
+  const handlePublishToggleRequest = (id: string, publish: boolean) => {
     const course = courses.find((c) => c.id === id)
     setPendingPublish({ id, publish, label: `${course?.code ?? ''} — ${course?.name ?? ''}`.trim() })
+    return Promise.resolve()
   }
 
   if (loading) {

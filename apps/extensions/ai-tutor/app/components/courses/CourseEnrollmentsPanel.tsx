@@ -174,6 +174,7 @@ export function CourseEnrollmentsPanel({
         variant="destructive"
         onConfirm={() => {
           if (!pendingRemoveUser) return;
+          setUpdatingUserId(pendingRemoveUser.id);
           void removeStudent(pendingRemoveUser.id);
           setPendingRemoveUser(null);
         }}
