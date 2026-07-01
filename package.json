@@ -68,7 +68,8 @@
     "@better-auth/cli": {
       "better-auth": "1.4.22",
       "@better-auth/core": "1.4.22",
-      "drizzle-orm": "^0.45.2"
+      "drizzle-orm": "^0.45.2",
+      "@mrleebo/prisma-ast": "^0.16.0"
     },
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
