@@ -1,5 +1,4 @@
-# Multi-stage build
-FROM node:18-alpine AS builder
+FROM node:24-alpine AS builder
 
 # Set working directory
 WORKDIR /app

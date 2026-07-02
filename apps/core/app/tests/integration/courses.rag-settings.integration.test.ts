@@ -46,7 +46,7 @@ function getArgs(id: string) {
     request: new Request(`http://localhost/api/courses/${id}/rag-settings`),
     params: { id },
     context: {} as never,
-  };
+  } as any;
 }
 
 function patchArgs(id: string, body: unknown, user: { id: string; role: string }) {
@@ -59,7 +59,7 @@ function patchArgs(id: string, body: unknown, user: { id: string; role: string }
     }),
     params: { id },
     context: {} as never,
-  };
+  } as any;
 }
 
 describe("GET /api/courses/:id/rag-settings", () => {
@@ -96,7 +96,7 @@ describe("PATCH /api/courses/:id/rag-settings", () => {
       }),
       params: { id: courseId },
       context: {} as never,
-    });
+    } as any);
     expect(res.status).toBe(401);
   });
 
