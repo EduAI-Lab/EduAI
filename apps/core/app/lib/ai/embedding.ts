@@ -118,7 +118,10 @@ async function fetchOllamaEmbeddings(
 ): Promise<number[][]> {
   const res = await fetch(ollamaEmbedEndpoint(), {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...cmps01InternalAuthHeaders(),
+    },
     body: JSON.stringify({
       model: modelId,
       input: values.length === 1 ? values[0] : values,
