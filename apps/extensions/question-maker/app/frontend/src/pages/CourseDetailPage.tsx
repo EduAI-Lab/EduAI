@@ -25,6 +25,7 @@ import {
   Button,
   Alert,
   AlertDescription,
+  resolvePaletteAccent,
 } from '@eduai/ui';
 import { useCourseFromRoute } from '../hooks/useCourseFromRoute';
 import { useQmPermissionsForCourse } from '../hooks/useQmPermissions';
@@ -738,6 +739,7 @@ export const CourseDetailPage = () => {
           course.coreCourseId ? 'EduAI Core' : 'Local',
           ...(writesDisabled ? ['Read-only'] : []),
         ]}
+        accentColor={resolvePaletteAccent(String(course.id))}
       />
 
       <PageTabs value={activeTab} onValueChange={(v) => setActiveTab(v as ActiveTab)}>
