@@ -42,6 +42,27 @@ export function numToRouterTier(n: number): RouterTier | null {
   return null;
 }
 
+async function loadCloudImageTierRows(): Promise<TierModelRow[]> {
+  const rows = await prisma.aIModel.findMany({
+    where: {
+      isActive: true,
+      supportsImages: true,
+      provider: { name: { in: ["google", "openai"] } },
+    },
+    include: { provider: { select: { name: true } } },
+  });
+
+  return rows.map((r) => ({
+    registryId: `${r.provider.name}:${r.modelId}`,
+    tier: 2,
+    routerTier: "TIER_2" as RouterTier,
+    estEnergyJoulesPerToken: r.estEnergyJoulesPerToken,
+    averageCarbonGramsPerToken: r.averageCarbonGramsPerToken,
+    supportsImages: true,
+    supportsTools: r.supportsTools,
+  }));
+}
+
 async function loadTierRows(options?: { localVllmOnly?: boolean }): Promise<TierModelRow[]> {
   const rows = await prisma.aIModel.findMany({
     where: { isActive: true, routerTier: { not: null } },
@@ -126,7 +147,7 @@ export async function pickModelForSpec(spec: PickSpec): Promise<TierModelRow | n
   const needsCloudImages =
     isLocalVllmRouting() && spec.kind === "minTier" && spec.requireImages;
   const rows = needsCloudImages
-    ? await loadTierRows({ localVllmOnly: false })
+    ? await loadCloudImageTierRows()
     : await getCachedTierModels();
   return pickFromCandidates(rows, spec);
 }
