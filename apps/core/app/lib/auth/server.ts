@@ -1,5 +1,5 @@
 import { betterAuth } from "better-auth";
-import { apiKey } from "better-auth/plugins";
+import { apiKey } from "@better-auth/api-key";
 import { createAuthMiddleware, APIError, getSessionFromCtx } from "better-auth/api";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import prisma from "../prisma.server";
