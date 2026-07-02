@@ -17,6 +17,8 @@ Runnable pipeline for the URA two-tier routing study. **Docs and data live in UR
 | Command | Purpose |
 |---------|---------|
 | `npm run research:run-policy` | P0 / P1 / P2 / P3 on dev or test |
+| `npm run research:run-adequacy` | Model ladder runs (14B / 72B) — direct vLLM or EduAI |
+| `npm run research:build-matrix` | Per-prompt CSV → `data/analysis/prompt-routing-matrix.csv` |
 | `npm run research:summarize-policy` | Latency + oracle gap for one JSONL |
 | `npm run research:status-report` | Advisor memo → `runs/status/` |
 | `npm run research:p3-dev-v3` | s378: P3 dev re-run (mapping v3 + energy) |

@@ -27,6 +27,8 @@
     "research:validate-suite": "node ./scripts/research/validate-task-suite.mjs",
     "research:assign-splits": "node ./scripts/research/assign-splits.mjs",
     "research:run-both-tier": "node ./scripts/research/run-both-tier-baseline.mjs",
+    "research:run-adequacy": "node ./scripts/research/run-model-adequacy.mjs",
+    "research:build-matrix": "node ./scripts/research/build-prompt-routing-matrix.mjs",
     "research:summarize-both-tier": "node ./scripts/research/summarize-both-tier-runs.mjs",
     "research:label-both-tier": "node ./scripts/research/label-both-tier-runs.mjs",
     "research:summarize-labels": "node ./scripts/research/summarize-both-tier-labels.mjs",
