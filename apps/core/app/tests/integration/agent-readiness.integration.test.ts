@@ -11,6 +11,7 @@ vi.mock("~/lib/email/mailer.server", () => ({
 
 vi.mock("~/lib/auth/server", () => ({
   auth: { api: { getSession: vi.fn() } },
+  authBaseURL: "http://localhost:5173",
 }));
 
 import prisma from "~/lib/prisma.server";
@@ -47,7 +48,7 @@ describe("agent-readiness integration (#672)", () => {
     expect(CORE_API_ENDPOINTS.length).toBeGreaterThanOrEqual(80);
     const summary = readinessSummary();
     expect(summary.ready).toBeGreaterThan(0);
-    expect(summary.partial).toBeGreaterThan(0);
+    expect(summary.partial).toBe(0);
     expect(summary.excluded).toBeGreaterThan(0);
     for (const entry of CORE_API_ENDPOINTS) {
       expect(entry.readiness).toMatch(/^(ready|partial|excluded)$/);
@@ -91,8 +92,8 @@ describe("agent-readiness integration (#672)", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email,
+          name: "Invite Test",
           role: "INSTRUCTOR",
-          authorizedUnits: ["COSC"],
         }),
       }),
       params: {},
