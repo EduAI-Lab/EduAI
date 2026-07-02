@@ -19,6 +19,17 @@ import {
   resolveAdminCourseId,
   resolveAdminUserId,
 } from "./admin-context.server";
+import {
+  connectCanvasForUser,
+  disconnectCanvasForUser,
+  linkCanvasRosterForUser,
+  syncCanvasForUser,
+} from "./admin-canvas.server";
+import {
+  createAdminInvitation,
+  resendAdminInvitation,
+  revokeAdminInvitation,
+} from "./admin-invitations.server";
 
 type ToolError = { error: string; fields?: Record<string, string> };
 type MutationResult = Record<string, unknown> | ToolError;
@@ -34,6 +45,13 @@ export const ADMIN_WRITE_TOOL_NAMES = new Set([
   "createCourseTopic",
   "updateCourseTopic",
   "deleteCourseTopic",
+  "createInvitation",
+  "revokeInvitation",
+  "resendInvitation",
+  "connectCanvas",
+  "syncCanvasCourses",
+  "disconnectCanvas",
+  "linkCanvasRoster",
 ]);
 
 export function isAdminWriteToolName(name: string): boolean {
@@ -628,4 +646,127 @@ export async function deleteAdminCourseTopic(
       name: opts.name,
     }),
   );
+}
+
+function mapToolError(result: { error: string; fields?: Record<string, string> }): MutationResult {
+  return mutationFailure(result);
+}
+
+/** ADMIN — create invitation and send email (POST /api/invitations). */
+export async function createAdminInvitationMutation(
+  actor: RbacUser,
+  input: {
+    email: string;
+    name?: string;
+    role: "ADMIN" | "UNIT_ADMIN" | "INSTRUCTOR" | "STUDENT";
+    authorizedUnits?: string[];
+  },
+): Promise<MutationResult> {
+  const result = await createAdminInvitation(actor, input);
+  if ("error" in result) {
+    return mapToolError(result);
+  }
+  return mutationPayload(result);
+}
+
+/** ADMIN — revoke a pending invitation (DELETE /api/invitations/:id). */
+export async function revokeAdminInvitationMutation(
+  actor: RbacUser,
+  invitationId: string,
+): Promise<MutationResult> {
+  const result = await revokeAdminInvitation(actor, invitationId);
+  if ("error" in result) {
+    return mapToolError(result);
+  }
+  return mutationPayload(result);
+}
+
+/** ADMIN — resend invitation email (POST /api/invitations/:id). */
+export async function resendAdminInvitationMutation(
+  actor: RbacUser,
+  invitationId: string,
+): Promise<MutationResult> {
+  const result = await resendAdminInvitation(actor, invitationId);
+  if ("error" in result) {
+    return mapToolError(result);
+  }
+  return mutationPayload(result);
+}
+
+/** ADMIN — connect Canvas for self or an instructor (POST /api/canvas/connect). */
+export async function connectAdminCanvas(
+  actor: RbacUser,
+  input: {
+    instructorUserId?: string;
+    instructorEmail?: string;
+    canvasUrl: string;
+    apiKey?: string;
+    isTestMode?: boolean;
+  },
+): Promise<MutationResult> {
+  const denied = requirePlatformAdmin(actor);
+  if (denied) return denied;
+
+  const result = await connectCanvasForUser(actor, input);
+  if ("error" in result) {
+    return mapToolError(result);
+  }
+  return mutationPayload(result);
+}
+
+/** ADMIN — sync Canvas courses (POST /api/canvas/sync). */
+export async function syncAdminCanvasCourses(
+  actor: RbacUser,
+  input: {
+    instructorUserId?: string;
+    instructorEmail?: string;
+    canvasCourseIds: string[];
+  },
+): Promise<MutationResult> {
+  const denied = requirePlatformAdmin(actor);
+  if (denied) return denied;
+
+  const result = await syncCanvasForUser(actor, input);
+  if ("error" in result) {
+    return mapToolError(result);
+  }
+  return mutationPayload(result);
+}
+
+/** ADMIN — disconnect Canvas (DELETE /api/canvas/disconnect). */
+export async function disconnectAdminCanvas(
+  actor: RbacUser,
+  input: { instructorUserId?: string; instructorEmail?: string },
+): Promise<MutationResult> {
+  const denied = requirePlatformAdmin(actor);
+  if (denied) return denied;
+
+  const result = await disconnectCanvasForUser(actor, input);
+  if ("error" in result) {
+    return mapToolError(result);
+  }
+  return mutationPayload(result);
+}
+
+/** ADMIN — link Canvas roster for a student/TA (POST /api/canvas/link-roster). */
+export async function linkAdminCanvasRoster(
+  actor: RbacUser,
+  input: { userId?: string; userEmail?: string; studentNumber: string },
+): Promise<MutationResult> {
+  const denied = requirePlatformAdmin(actor);
+  if (denied) return denied;
+
+  const userRefError = userRefValidationError({
+    userId: input.userId,
+    userEmail: input.userEmail,
+  });
+  if (userRefError) {
+    return userRefError;
+  }
+
+  const result = await linkCanvasRosterForUser(actor, input);
+  if ("error" in result) {
+    return mapToolError(result);
+  }
+  return mutationPayload(result);
 }
