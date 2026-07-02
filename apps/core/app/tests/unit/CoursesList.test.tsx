@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { CoursesAdminView } from '~/components/courses/courses-admin-view'
 import { CoursesUnitAdminView } from '~/components/courses/courses-unit-admin-view'
@@ -292,10 +292,9 @@ describe('CoursesInstructorView', () => {
         onPublishToggle={NOOP}
       />
     )
-    // The label is only in the DOM once the create dialog is open, but the
-    // Radix Dialog trigger renders the label in a hidden DialogContent by
-    // default in this component; assert directly that "Department" text is
-    // gone from the rendered create-form markup.
+    // The label is only in the DOM once the create dialog is open.
+    fireEvent.click(screen.getByRole('button', { name: /create course/i }))
+    expect(screen.getByText('Course Code')).toBeInTheDocument()
     expect(screen.queryByText('Department')).not.toBeInTheDocument()
   })
 })
