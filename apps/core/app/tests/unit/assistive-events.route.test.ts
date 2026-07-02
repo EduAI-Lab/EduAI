@@ -36,7 +36,7 @@ function makeArgs(
     request: new Request("http://localhost/api/assistive-events", init),
     params: {},
     context: {} as never,
-  };
+  } as any;
 }
 
 function mockUser(id = "u1") {

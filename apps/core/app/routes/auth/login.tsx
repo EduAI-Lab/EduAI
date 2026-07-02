@@ -15,7 +15,7 @@ import { getActorContext, getRequestContext } from "~/lib/request-context.server
 export async function loader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url);
   const redirectTo = validateRedirectUrl(url.searchParams.get("redirect"));
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
 
   if (session?.user) {
     return redirect(redirectTo);

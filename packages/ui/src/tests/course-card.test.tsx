@@ -233,4 +233,36 @@ describe("CourseCard", () => {
     );
     expect(screen.getByLabelText("CPSC 110 Computation, Programs, and Programming")).toBeInTheDocument();
   });
+
+  it("renders a colour hero header band", () => {
+    render(
+      <CourseCard
+        id="1"
+        code="CPSC 110"
+        name="Test Course"
+        term="Winter"
+        isPublished={true}
+        href="/courses/1"
+      />
+    );
+    expect(screen.getByTestId("course-card-hero")).toBeInTheDocument();
+  });
+
+  it("uses a custom accent colour when provided", () => {
+    const { container } = render(
+      <CourseCard
+        id="1"
+        code="CPSC 110"
+        name="Test Course"
+        displayName="My CS"
+        accentColor="oklch(0.56 0.20 255)"
+        term="Winter"
+        isPublished={true}
+        href="/courses/1"
+      />
+    );
+    expect(screen.getByText("My CS")).toBeInTheDocument();
+    const card = container.firstElementChild as HTMLElement;
+    expect(card.style.getPropertyValue("--course-accent")).toBe("oklch(0.56 0.20 255)");
+  });
 });

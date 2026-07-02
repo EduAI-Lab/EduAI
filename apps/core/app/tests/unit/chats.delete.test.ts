@@ -21,7 +21,7 @@ function makeArgs(chatId: string | undefined, method = "DELETE") {
     request: new Request(`http://localhost/api/chats/${chatId ?? ""}`, { method }),
     params: chatId ? { chatId } : {},
     context: {} as never,
-  };
+  } as any;
 }
 
 function mockUser(id: string, role = "STUDENT") {
