@@ -10,8 +10,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ### Fixed
 
 - [ui] hotfix: Add missing imports in `packages/ui/src/ui/combobox.tsx` — `useRef`, `useEffect`, `Popover`, `PopoverTrigger`, and `PopoverContent` were used but not imported, causing `packages-ui-unit-tests` and QM frontend Docker build to fail on CI. (#823)
-- [ai-tutor] fix: Retry `/api/me` on a transient network failure during a fresh dev-stack start instead of bouncing an already-authenticated user to Core login — distinguishes a connection-level failure (`ApiNetworkError`) from an authenticated rejection. (#801, @evanbones, 2026-07-01) — #PR
-- [monorepo] fix: Add a shared `PageLoader` component to `@eduai/ui` and use it identically across Core (new `HydrateFallback`), AI Tutor (`HydrateFallback` and the home route), and Question Maker (`QmAppGate`) — the three platforms previously showed different (or no) loading screens during their client-side auth check. (#771, @evanbones, 2026-07-01) — #PR
+- [ai-tutor] fix: Retry `/api/me` on a transient network failure during a fresh dev-stack start instead of bouncing an already-authenticated user to Core login — distinguishes a connection-level failure (`ApiNetworkError`) from an authenticated rejection. (#801, @evanbones, 2026-07-01) — [#843](https://github.com/EduAI-Lab/EduAI/pull/843)
+- [monorepo] fix: Add a shared `PageLoader` component to `@eduai/ui` and use it identically across Core (new `HydrateFallback`), AI Tutor (`HydrateFallback` and the home route), and Question Maker (`QmAppGate`) — the three platforms previously showed different (or no) loading screens during their client-side auth check. (#771, @evanbones, 2026-07-01) — [#843](https://github.com/EduAI-Lab/EduAI/pull/843)
 
 ## [Week 8 — June 22–28, 2026]
 
