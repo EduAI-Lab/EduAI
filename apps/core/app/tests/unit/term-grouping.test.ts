@@ -67,16 +67,16 @@ describe('groupCoursesByDate', () => {
     expect(result.upcoming).toEqual([future])
   })
 
-  it('compares date-only start dates against a real-time `now` on UTC calendar days, not local wall-clock time', () => {
-    // '2025-09-01' parses as 2025-09-01T00:00:00Z. A `now` of
-    // 2025-08-31T20:00:00-07:00 is 2025-09-01T03:00:00Z: the same UTC
-    // calendar day as the start date, so the course should already be
-    // "current" (day-level equality), not "upcoming". Under a naive
-    // instant-based (non-UTC-day-normalized) comparison this `now` instant
-    // is still before the start instant, which would incorrectly classify
-    // the course as upcoming.
+  it('treats the afternoon of a date-only end date as still current, not previous, on UTC calendar days', () => {
+    // '2025-12-15' parses as 2025-12-15T00:00:00Z. A `now` of
+    // 2025-12-15T14:00:00Z is later that same UTC calendar day, so the
+    // course should still be "current" (day-level equality with the end
+    // date), not "previous". Under a naive instant-based
+    // (non-UTC-day-normalized) comparison, this `now` instant is already
+    // later than the end-date instant, which would incorrectly classify
+    // the course as previous on its own last calendar day.
     const course = c('a', '2025-09-01', '2025-12-15')
-    const now = new Date('2025-08-31T20:00:00-07:00')
+    const now = new Date('2025-12-15T14:00:00Z')
     const result = groupCoursesByDate([course], now)
     expect(result.current).toEqual([course])
     expect(result.upcoming).toEqual([])
