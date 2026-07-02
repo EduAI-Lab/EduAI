@@ -163,8 +163,8 @@ jobs:
           mkdir -p /tmp/coverage-report-commit
           cp "$REPORT_FILE" /tmp/coverage-report-commit/coverage-report.md
 
-          # Fetch branches needed for merge/push
-          git fetch origin development "$REPORT_BRANCH" 2>/dev/null || true
+          # Fetch the report branch
+          git fetch origin "$REPORT_BRANCH" 2>/dev/null || true
           
           # Checkout the report branch
           if git rev-parse --verify "refs/remotes/origin/${REPORT_BRANCH}" >/dev/null 2>&1; then
@@ -173,31 +173,20 @@ jobs:
             git checkout -f -b "$REPORT_BRANCH"
           fi
 
-          # Merge development so the report branch tracks latest code. On conflict, warn and
-          # continue with a report-only update so the workflow still succeeds.
-          if ! git merge origin/development --no-edit; then
-            echo "::warning::Could not merge origin/development into ${REPORT_BRANCH}; aborting merge and continuing with report-only update."
-            git merge --abort
-          fi
+          # Merge 'development' into the report branch
+          # This ensures the report branch always has the latest code
+          git merge origin/development --no-edit
 
-          # Restore the report and commit when it changed
+          # Restore the report and commit
           mkdir -p eduai-summer-2026/reports/coverage
           cp /tmp/coverage-report-commit/coverage-report.md "$REPORT_FILE"
 
           git add -f "$REPORT_FILE"
-
+          
           if git diff --cached --quiet; then
-            echo "Coverage report unchanged; skipping report commit."
-          else
-            git commit -m "chore: update backend coverage report"
+            echo "Coverage report unchanged; nothing to commit."
+            exit 0
           fi
-
-          # Push when the branch advanced (merge commit and/or new report), even if the report
-          # file itself did not change.
-          if ! git rev-parse --verify "refs/remotes/origin/${REPORT_BRANCH}" >/dev/null 2>&1; then
-            git push -u origin "$REPORT_BRANCH"
-          elif [ "$(git rev-list --count "origin/${REPORT_BRANCH}"..HEAD)" -gt 0 ]; then
-            git push origin "$REPORT_BRANCH"
-          else
-            echo "Report branch already up to date on remote."
-          fi
+          
+          git commit -m "chore: update backend coverage report"
+          git push -u origin "$REPORT_BRANCH"
