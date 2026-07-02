@@ -15,7 +15,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
     // Emit on the success path only; the service owns auth/validation responses.
     if (response.status === 201) {
-      const session = await auth.api.getSession(request);
+      const session = await auth.api.getSession({ headers: request.headers });
       const created = await response
         .clone()
         .json()

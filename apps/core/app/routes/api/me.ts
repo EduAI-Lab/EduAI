@@ -31,7 +31,7 @@ const PROFILE_SELECT = {
 } as const;
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) {
     return json(401, { error: "Unauthorized" });
   }
@@ -53,7 +53,7 @@ export async function action({ request }: ActionFunctionArgs) {
     return json(405, { error: "Method not allowed" });
   }
 
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) {
     return json(401, { error: "Unauthorized" });
   }
