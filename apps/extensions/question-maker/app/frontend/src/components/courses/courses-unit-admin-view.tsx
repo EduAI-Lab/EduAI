@@ -5,8 +5,8 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  PageHeading,
 } from '@eduai/ui';
-import { QmRoleBanner } from '@/components/rbac/QmRoleBanner';
 import { useAuth } from '@/contexts/AuthContext';
 import { CoursesGrid, type CoursesGridProps } from './CoursesGrid';
 
@@ -30,8 +30,7 @@ export function CoursesUnitAdminView({ courses, ...gridProps }: CoursesUnitAdmin
   const unitsLabel = units.length ? units.join(', ') : null;
 
   return (
-    <div className="max-w-4xl mx-auto px-6 py-8 space-y-6">
-      <QmRoleBanner variant="unit-admin" />
+    <div className="flex flex-1 flex-col gap-6 px-4 py-4 md:py-6 lg:px-6">
       {units.length === 0 && (
         <div
           role="alert"
@@ -42,19 +41,19 @@ export function CoursesUnitAdminView({ courses, ...gridProps }: CoursesUnitAdmin
         </div>
       )}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Unit courses</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            {unitsLabel
+        <PageHeading
+          heading="Courses"
+          subheading={
+            unitsLabel
               ? `Courses in ${unitsLabel} that you can author in Question Maker. Cross-unit edits are blocked server-side.`
-              : 'Courses you can author in Question Maker. Cross-unit edits are blocked server-side.'}
-          </p>
-        </div>
+              : 'Courses you can author in Question Maker. Cross-unit edits are blocked server-side.'
+          }
+        />
         {units.length > 1 && (
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm text-muted-foreground whitespace-nowrap">Filter by unit</span>
             <Select value={unitFilter} onValueChange={setUnitFilter}>
-              <SelectTrigger className="w-[160px]">
+              <SelectTrigger className="w-full sm:w-[160px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

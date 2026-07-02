@@ -9,6 +9,7 @@ import {
   resolveCourseAccessWithCourse,
 } from "~/lib/auth/course-access.server";
 import { getPolicy, denyByPolicy } from "~/lib/policy.server";
+import { assertValidDepartment } from "~/lib/disciplines/guards.server";
 import { canCreateCourse } from "~/lib/rbac/permissions";
 import type { RbacUser } from "~/lib/rbac/types";
 import {
@@ -149,7 +150,7 @@ export async function getCourses(request: Request) {
     });
   }
 
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -189,7 +190,7 @@ export async function getCourses(request: Request) {
  * flag is enabled; they are auto-enrolled as the course instructor.
  */
 export async function createCourse(request: Request) {
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   const role = session?.user?.role ?? "";
   const canCreate =
     (session?.user != null && canCreateCourse(session.user as RbacUser)) ||
@@ -215,6 +216,11 @@ export async function createCourse(request: Request) {
   }
 
   const result = { success: true as const, data: parsedBody.data };
+
+  // §541: department must be a known discipline. The FK enforces this too, but
+  // an explicit check returns a clean 400 instead of a raw constraint error.
+  const deptGuard = await assertValidDepartment(result.data.department);
+  if (deptGuard) return deptGuard;
 
   // §5/§19 unit lock: a UNIT_ADMIN can only create courses inside their
   // authorized units — a missing department is never a match.
@@ -275,7 +281,7 @@ export async function createCourse(request: Request) {
  * INSTRUCTOR(C) per §5 (rank >= 2).
  */
 export async function updateCourse(request: Request, courseId: string) {
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -358,6 +364,12 @@ export async function updateCourse(request: Request, courseId: string) {
     }
   }
 
+  // §541: a department change must target a known discipline (FK-backed).
+  if ("department" in updateData && updateData.department) {
+    const deptGuard = await assertValidDepartment(updateData.department);
+    if (deptGuard) return deptGuard;
+  }
+
   const newInstructorId = (updateData as any).instructorId as string | undefined;
   const instructorChanging =
     newInstructorId !== undefined && newInstructorId !== course.instructorId;
@@ -393,7 +405,7 @@ export async function updateCourse(request: Request, courseId: string) {
  * UNIT_ADMIN(D), INSTRUCTOR(C) per §5.
  */
 export async function deleteCourse(request: Request, courseId: string) {
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -482,7 +494,7 @@ export async function setPublishState(request: Request, courseId: string, publis
   }
 
   // User session path (admin UI / direct API access)
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,

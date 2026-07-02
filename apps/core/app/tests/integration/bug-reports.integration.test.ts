@@ -26,7 +26,7 @@ function makeActionArgs(body: unknown, authorization?: string) {
     }),
     params: {} as Record<string, string>,
     context: {} as never,
-  };
+  } as any;
 }
 
 // ---------------------------------------------------------------------------
@@ -76,10 +76,10 @@ beforeEach(() => vi.clearAllMocks());
 // ---------------------------------------------------------------------------
 
 describe("POST /api/bug-reports — service key auth", () => {
-  it("returns 401 Unauthorized when Authorization header is absent (falls through to session auth)", async () => {
+  it("returns 401 MISSING_SERVICE_KEY when Authorization header is absent", async () => {
     const res = await action(makeActionArgs({ source: "AI_TUTOR", userId: aiTutorUserId, description: "test" }));
     expect(res.status).toBe(401);
-    expect(await res.json()).toEqual({ error: "Unauthorized" });
+    expect(await res.json()).toEqual({ error: "MISSING_SERVICE_KEY" });
   });
 
   it("returns 403 INVALID_SERVICE_KEY for a wrong Bearer token", async () => {
@@ -309,7 +309,7 @@ describe("admin bug-reports lifecycle (#304)", () => {
         request: new Request("http://localhost/api/admin/bug-reports?source=AI_TUTOR"),
         params: {},
         context: {} as never,
-      });
+      } as any);
       expect(listed.status).toBe(200);
       const body = await listed.json();
       const report = body.reports.find(
@@ -332,7 +332,7 @@ describe("admin bug-reports lifecycle (#304)", () => {
         }),
         params: { id: report.id },
         context: {} as never,
-      });
+      } as any);
       expect(patched.status).toBe(200);
 
       const row = await prisma.bugReport.findUnique({ where: { id: report.id } });
@@ -379,7 +379,7 @@ describe("admin bug-reports lifecycle (#304)", () => {
         request: new Request("http://localhost/api/admin/bug-reports?source=QUESTION_MAKER"),
         params: {},
         context: {} as never,
-      });
+      } as any);
       const body = await listed.json();
       const report = body.reports.find(
         (r: { description: string }) => r.description === "Anonymous masking test (#304).",
@@ -412,7 +412,7 @@ describe("admin bug-reports lifecycle (#304)", () => {
       request: new Request("http://localhost/api/bug-reports?mine=true"),
       params: {},
       context: {} as never,
-    });
+    } as any);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(Array.isArray(body.reports)).toBe(true);

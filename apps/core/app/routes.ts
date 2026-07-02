@@ -3,8 +3,10 @@ import { type RouteConfig, index, route } from "@react-router/dev/routes";
 export default [
   index("routes/home.tsx"),
   route("/team", "routes/team.tsx"),
+  route("/api/health", "routes/api/health.ts"),
   route("/api/auth/*", "routes/api/auth.$.ts"),
   route("/api/courses", "routes/api/courses.$.ts"),
+  route("/api/disciplines", "routes/api/disciplines.ts"),
   route("/login", "routes/login.ts"),
   route("/auth/login", "routes/auth/login.tsx"),
   route("/auth/register", "routes/auth/register.tsx"),
@@ -13,6 +15,7 @@ export default [
   route("/dashboard", "routes/dashboard.tsx"),
   route("/onboarding/student-id", "routes/onboarding.student-id.tsx"),
   route("/chat", "routes/chat.tsx"),
+  route("/chat/:chatId", "routes/chat.$chatId.tsx"),
   route("/settings", "routes/settings.tsx"),
   route("/api/canvas/*", "routes/api/canvas.$.ts"),
   route("/api/chat", "routes/api/chat.ts"),

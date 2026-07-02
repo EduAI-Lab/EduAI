@@ -40,12 +40,6 @@ router.get('/me', async (req, res) => {
   const publicUser = toPublicUser(authUser);
   let effectiveUser = publicUser;
 
-  // Core dropped the platform-level UserRole.TA (#664): a course TA is now a
-  // STUDENT-platform user with Enrollment(role=TA). AI Tutor's client RBAC still
-  // routes/gates its *view* off a single role string, so surface an effective TA
-  // role here when Core reports a TA enrollment — otherwise course TAs land in the
-  // student shell after the Core migration deploys. Per-course server authorization
-  // already keys off enrollment.role and is unaffected.
   if (publicUser && publicUser.role === 'STUDENT' && coreCourses != null) {
     try {
       if (await userHasCoreTaEnrollment(cookie, coreCourses)) {
@@ -63,13 +57,23 @@ router.get('/me', async (req, res) => {
 // No requireAuth — signing out an invalid session is a no-op, not an error.
 router.post('/logout', async (req, res) => {
   const coreUrl = process.env.CORE_URL || 'http://localhost:3000';
+  const corePublicOrigin = process.env.CORE_PUBLIC_ORIGIN || coreUrl;
   try {
-    await fetch(`${coreUrl}/api/auth/sign-out`, {
+    const coreRes = await fetch(`${coreUrl}/api/auth/sign-out`, {
       method: 'POST',
-      headers: { cookie: req.headers.cookie ?? '' },
+      headers: {
+        cookie: req.headers.cookie ?? '',
+        origin: corePublicOrigin,
+        'content-type': 'application/json',
+      },
+      body: '{}',
     });
-  } catch {
-    // Best-effort — proceed even if Core is unreachable.
+    if (!coreRes.ok) {
+      console.error('[ai-tutor] Core sign-out failed', coreRes.status);
+    }
+  } catch (err) {
+    console.error('[ai-tutor] Core sign-out request failed', err);
+    // Proceed even if Core is unreachable
   }
   res.json({ ok: true });
 });

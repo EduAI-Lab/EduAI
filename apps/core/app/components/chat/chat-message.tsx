@@ -4,7 +4,6 @@ import { IconCopy, IconCheck } from "@tabler/icons-react";
 import { useState } from "react";
 import {
   Message as BasicMessage,
-  MessageAvatar,
   MessageContent,
   MessageActions,
   MessageAction
@@ -18,6 +17,7 @@ import {
 } from "~/components/assistive/active-highlight";
 import { normalizeMathMarkdown } from "~/lib/ai/math-markdown";
 import { getChatToolDisplayName, isWebChatToolName } from "~/lib/ai/web-tool-ui";
+import { transformAssistiveDisplayCopy } from "~/components/chat/assistive-display-transform";
 import { cn } from "~/lib/utils";
 
 export interface ChatMessageProps {
@@ -25,6 +25,8 @@ export interface ChatMessageProps {
   isStreaming?: boolean;
   highlightRole?: MessageHighlightRole;
   webToolsEnabled?: boolean;
+  /** When true, relabel Assistive policy headings at display time only (#699). */
+  assistiveDisplay?: boolean;
 }
 
 /**
@@ -64,6 +66,7 @@ export function ChatMessage({
   isStreaming = false,
   highlightRole = null,
   webToolsEnabled = false,
+  assistiveDisplay = false,
 }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
 
@@ -136,7 +139,12 @@ export function ChatMessage({
   // If no parts, fallback to message content — coerce to string regardless of DB shape
   const rawTextFromParts = textParts.map((part) => (part as any).text as string).join("\n");
   const rawTextContent = rawTextFromParts || coerceMessageContent(message.content);
-  const textContent = isUser ? rawTextContent : normalizeMathMarkdown(rawTextContent);
+  const normalizedContent = isUser ? rawTextContent : normalizeMathMarkdown(rawTextContent);
+  // #699: relabel Assistive policy headings at display time only (non-user).
+  const textContent =
+    assistiveDisplay && !isUser
+      ? transformAssistiveDisplayCopy(normalizedContent)
+      : normalizedContent;
 
   const hasTextContent = textContent.length > 0;
 
@@ -148,24 +156,13 @@ export function ChatMessage({
         : undefined;
 
   if (isUser) {
-    // User message - right aligned, limited width
+    // User message - flat transcript layout: right-aligned muted bubble, no avatar
     return (
       <div className={cn("flex justify-end mb-4", highlightClass)}>
-        <div className="flex items-end gap-3 max-w-[80%] min-w-0">
-          <div
-            className="px-4 py-3 bg-primary text-primary-foreground min-w-0"
-            style={{ borderRadius: "16px 16px 4px 16px" }}
-          >
-            <div className={cn("whitespace-pre-wrap break-words [overflow-wrap:anywhere]", READING_SURFACE_CLASS)}>
-              {textContent}
-            </div>
+        <div className="rounded-2xl bg-muted/60 px-4 py-3 max-w-[80%] min-w-0">
+          <div className={cn("whitespace-pre-wrap break-words [overflow-wrap:anywhere]", READING_SURFACE_CLASS)}>
+            {textContent}
           </div>
-          <MessageAvatar
-            src=""
-            alt="User"
-            fallback="U"
-            className="h-8 w-8"
-          />
         </div>
       </div>
     );
@@ -176,7 +173,7 @@ export function ChatMessage({
     <div className={cn("space-y-4 mb-4", highlightClass)}>
       {/* Tool calls rendered FIRST, before message content */}
       {toolParts.length > 0 && (
-        <div className="space-y-3 ml-12">
+        <div className="space-y-3">
           {toolParts.map((part, index) => {
             const toolPart = convertToolPart(part);
             if (!toolPart) return null;
@@ -202,17 +199,11 @@ export function ChatMessage({
       {/* AI message content rendered AFTER tool calls */}
       {hasTextContent && (
         <BasicMessage className="group">
-          <MessageAvatar
-            src=""
-            alt="EduAI"
-            fallback="AI"
-            className="h-8 w-8"
-          />
-
-          <div className="flex flex-col gap-2 flex-1 max-w-[80%] min-w-0">
+          <div className="flex flex-col gap-2 flex-1 min-w-0">
             <MessageContent
               markdown={true}
-              className="px-4 py-3 bg-card border border-border text-foreground [border-radius:4px_16px_16px_16px]"
+              isAnimating={isStreaming}
+              className="bg-transparent p-0 text-foreground"
             >
               {textContent}
             </MessageContent>

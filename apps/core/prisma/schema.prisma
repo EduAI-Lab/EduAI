@@ -2,8 +2,9 @@ generator client {
   provider      = "prisma-client-js"
   output        = "../node_modules/@prisma/client"
   // "native" auto-detects the local OS; "rhel-openssl-1.1.x" is needed
-  // when running on RHEL 8 hosts (e.g. dev.eduai.ok.ubc.ca / s378).
-  binaryTargets = ["native", "rhel-openssl-1.1.x"]
+  // for RHEL 8 hosts (dev.eduai.ok.ubc.ca / s378); "linux-musl-openssl-3.0.x"
+  // is required for node:*-alpine Docker images (musl libc, OpenSSL 3).
+  binaryTargets = ["native", "rhel-openssl-1.1.x", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
@@ -44,6 +45,7 @@ model User {
   taughtCourses             Course[]               @relation("CourseInstructor")
   auditLogs                 AuditLog[]
   systemLogs                SystemLog[]
+  passwordHistory           PasswordHistory[]
 
   @@map("user")
 }
@@ -74,6 +76,7 @@ model Account {
   refreshTokenExpiresAt DateTime?
   scope                 String?
   password              String?
+  passwordChangedAt     DateTime?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
   user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -94,6 +97,20 @@ model Verification {
   @@map("verification")
 }
 
+/// UBCO subject codes ("units" / "disciplines") pulled from Workday. Source of
+/// truth for course `department` validation and the discipline search endpoint.
+/// Seeded from prisma/data/disciplines.csv.
+model Discipline {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  createdAt DateTime @default(now())
+  courses   Course[] @relation("CourseDiscipline")
+
+  @@index([name])
+  @@map("disciplines")
+}
+
 model Course {
   id                     String               @id @default(cuid())
   code                   String
@@ -111,6 +128,7 @@ model Course {
   externalSource         String?
   lastSyncedAt           DateTime?
   department             String?
+  discipline             Discipline?          @relation("CourseDiscipline", fields: [department], references: [code], onDelete: Restrict, onUpdate: Cascade)
   deletedAt              DateTime?
   createdAt              DateTime             @default(now())
   updatedAt              DateTime             @updatedAt
@@ -776,6 +794,19 @@ model LogRetentionPolicy {
   updatedAt           DateTime @updatedAt
 
   @@map("log_retention_policy")
+}
+
+/// Stores the last 10 password hashes per user for the UBC no-reuse policy (#339).
+/// Hashes are bcrypt/scrypt — never plaintext. Reuse is checked by verify(candidate, hash).
+model PasswordHistory {
+  id           String   @id @default(cuid())
+  userId       String
+  passwordHash String
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("password_history")
 }
 
 enum CronJobStatus {

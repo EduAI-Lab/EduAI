@@ -8,7 +8,7 @@
 # "question-maker-backend": "*" as a workspace dependency.
 
 # ── Shared: install workspace dependencies ─────────────────────────────────
-FROM node:20-alpine AS deps
+FROM node:24-alpine AS deps
 WORKDIR /app
 
 COPY package.json package-lock.json .npmrc ./
@@ -23,7 +23,7 @@ COPY apps/extensions/question-maker/app/frontend/package.json ./apps/extensions/
 RUN npm ci --ignore-scripts
 
 # ── Shared test runner base ────────────────────────────────────────────────
-FROM node:20-alpine AS test-base
+FROM node:24-alpine AS test-base
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
@@ -60,22 +60,21 @@ ENV PATH="/app/apps/extensions/question-maker/node_modules/.bin:/app/node_module
 WORKDIR /app/apps/extensions/question-maker/app/frontend
 
 # Create a minimal .env at the project root inside the image so test runners
-# can load DATABASE_URL even if no .env is mounted at runtime. This avoids
-# noisy "Could not load .env file" warnings and ensures the DB URL is present
-# for modules that import config during test setup.
+# can load DATABASE_URL even if no .env is mounted at runtime. 
 RUN mkdir -p /app/apps/extensions/question-maker \
      && printf 'DATABASE_URL=postgresql://postgres:password@question-maker-test-db:5432/question_maker_test\nNODE_ENV=test\n' > /app/apps/extensions/question-maker/.env
 
 # ── Target: test-unit ──────────────────────────────────────────────────────
 FROM test-base AS test-unit
-CMD ["sh", "-c", "../../node_modules/.bin/vitest run --config vitest.unit.config.ts"]
+# vitest resolves from PATH: /app/node_modules/.bin/vitest (v4.1.9 hoisted to root by npm ci)
+CMD ["sh", "-c", "vitest run --config vitest.unit.config.ts"]
 
 # ── Target: test-integration ──────────────────────────────────────────────
 FROM test-base AS test-integration
-CMD ["sh", "-c", "../../node_modules/.bin/vitest run --config vitest.integration.config.ts"]
+CMD ["sh", "-c", "vitest run --config vitest.integration.config.ts"]
 
 # ── Build ──────────────────────────────────────────────────────────────────
-FROM node:20-alpine AS build
+FROM node:24-alpine AS build
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
@@ -97,7 +96,7 @@ WORKDIR /app/apps/extensions/question-maker/app/frontend
 RUN npm run build
 
 # ── Target: serve ──────────────────────────────────────────────────────────
-FROM node:20-alpine AS serve
+FROM node:24-alpine AS serve
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules

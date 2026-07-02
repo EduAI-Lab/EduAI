@@ -25,6 +25,9 @@ const router = express.Router();
 
 const writeByCourseBody = requireCourseAccess({ min: 'instructor', getCourseId: (req) => req.body.courseId });
 
+/** Body fields the role endpoint is allowed to touch — everything else is rejected (#5). */
+const ROLE_ALLOWED_FIELDS = ['studyRole'];
+
 /** PATCH /api/assessment-variant/assessments/:id/role — set blueprintConfig.studyRole (instructor-only). */
 router.patch(
   '/assessments/:id/role',
@@ -33,16 +36,38 @@ router.patch(
   requireAssessmentAccess({ min: 'instructor' }),
   async (req, res, next) => {
     try {
-      if (!('studyRole' in req.body)) {
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+
+      // Whitelist the writable fields so arbitrary JSON can't be injected into
+      // blueprintConfig (#5). studyRole's enum is validated in the service layer.
+      const unknownKeys = Object.keys(body).filter((k) => !ROLE_ALLOWED_FIELDS.includes(k));
+      if (unknownKeys.length > 0) {
+        return res.status(400).json({
+          success: false,
+          error: `Unsupported field(s): ${unknownKeys.join(', ')}. Allowed: ${ROLE_ALLOWED_FIELDS.join(', ')}`
+        });
+      }
+
+      if (!('studyRole' in body)) {
         return res.status(400).json({
           success: false,
           error: 'studyRole is required (string or null to clear)'
         });
       }
-      const studyRole = req.body.studyRole;
+      const studyRole = body.studyRole;
+      if (studyRole !== null && typeof studyRole !== 'string') {
+        return res.status(400).json({
+          success: false,
+          error: 'studyRole must be a string or null'
+        });
+      }
       const assessment = await setAssessmentStudyRole(Number(req.params.id), req.qmCourse.userId, studyRole);
       res.json({ success: true, data: assessment });
     } catch (error) {
+      // The service enforces the studyRole enum; surface that as a 400 (#5).
+      if (error?.message === 'Invalid studyRole') {
+        return res.status(400).json({ success: false, error: 'Invalid studyRole' });
+      }
       next(error);
     }
   }

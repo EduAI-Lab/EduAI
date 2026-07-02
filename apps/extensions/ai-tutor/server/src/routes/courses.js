@@ -43,7 +43,13 @@ import {
 const router = express.Router();
 
 function isSupportedCourseRole(role) {
-  return role === 'INSTRUCTOR' || role === 'STUDENT' || role === 'TA' || role === 'UNIT_ADMIN';
+  return (
+    role === 'INSTRUCTOR' ||
+    role === 'STUDENT' ||
+    role === 'TA' ||
+    role === 'UNIT_ADMIN' ||
+    role === 'ADMIN'
+  );
 }
 
 async function userHasTaEnrollment(userId) {
@@ -131,7 +137,14 @@ router.get('/courses', async (req, res) => {
       }
     }
 
-    if (authUser.role === 'INSTRUCTOR') {
+    if (authUser.role === 'ADMIN') {
+      // Platform admins see every course offering (no progress) so the shared
+      // Courses dashboard lists all courses they can open and edit.
+      const courses = await prisma.courseOffering.findMany({
+        orderBy: { createdAt: 'desc' },
+      });
+      res.json(courses.map(mapCourseOffering));
+    } else if (authUser.role === 'INSTRUCTOR') {
       try {
         await importTaughtCoursesFromCore(authUser, getEduAiCookieForRequest(req));
       } catch (err) {
@@ -323,10 +336,11 @@ router.get('/courses/:courseId', async (req, res) => {
       return res.status(404).json({ error: 'Course not found' });
     }
 
+    const isAdmin = authUser.role === 'ADMIN';
     const isInstructor = course.instructors.some((i) => i.userId === authUser.id);
     const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
     const unitAdmin = isUnitAdminForCourse(authUser, course);
-    const isMember = isInstructor || enrollment != null || unitAdmin;
+    const isMember = isAdmin || isInstructor || enrollment != null || unitAdmin;
 
     if (!isMember) {
       return res.status(403).json({ error: 'Not authorized for this course' });

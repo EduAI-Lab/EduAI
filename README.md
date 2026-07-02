@@ -121,7 +121,7 @@ After `npm install`, each app gets a `.env` copied from its `.env.example` (only
 
 **Service API key (`EDUAI_API_KEY`)**
 
-AI Tutor and Question Maker make server-to-server calls to Core for several features: bug report submission, enrollment sync, topic sync, question push, and listing importable courses. These calls are authenticated with a shared secret called `EDUAI_API_KEY`.
+AI Tutor and Question Maker make server-to-server calls to Core for several features: bug report submission, enrollment sync, topic sync, question push, listing importable courses, and Question Maker AI chat / question generation (proxied to Core's `/api/chat`). These calls are authenticated with a shared secret called `EDUAI_API_KEY`.
 
 You must set the **same value** in all three services:
 
@@ -137,7 +137,7 @@ Generate a value with:
 openssl rand -hex 32
 ```
 
-Without this key the following features will not work: bug report submission from AI Tutor and Question Maker, AI Tutor course import from Core, AI Tutor enrollment sync, and Question Maker topic/question push to Core.
+Without this key the following features will not work: bug report submission from AI Tutor and Question Maker, AI Tutor course import from Core, AI Tutor enrollment sync, Question Maker topic/question push to Core, and Question Maker AI chat / question generation (proxied to Core).
 
 **Dev server ports**
 
@@ -189,6 +189,7 @@ Individual database commands:
 | `npm run docker:dev:db:question-maker` | Question Maker DB only |
 | `npm run docker:dev:db:down` | Stop and remove Compose services (data volumes are kept) |
 | `npm run docker:dev:db:logs` | Follow database logs |
+| `npm run docker:dev:nuke` | **Full teardown** — stop all services and delete all data volumes (irreversible; use when you need a clean slate) |
 
 `docker compose up --wait` requires Docker Compose v2 with healthcheck support.
 

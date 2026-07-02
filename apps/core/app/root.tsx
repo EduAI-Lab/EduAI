@@ -14,6 +14,7 @@ import "./app.css";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { getPolicy } from "~/lib/policy.server";
+import { getExpiredPasswordRedirect } from "~/lib/auth/password-expiry.server";
 import { ensureCronSchedulerRunning } from "~/lib/cron-scheduler.server";
 import { AssistiveUiProvider } from "~/components/assistive/assistive-ui-provider";
 import { ThemeProvider } from "~/components/theme-provider";
@@ -53,9 +54,20 @@ const GUEST_ROOT_PREFERENCES = {
  */
 export async function loader({ request }: LoaderFunctionArgs) {
   ensureCronSchedulerRunning();
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) {
     return GUEST_ROOT_PREFERENCES;
+  }
+
+  // #339: enforce annual password rotation. Skip the check on /settings and
+  // /auth/* so the user can actually reach the change-password form and log out.
+  const url = new URL(request.url);
+  const isExempt =
+    url.pathname.startsWith("/settings") ||
+    url.pathname.startsWith("/auth/");
+  if (!isExempt) {
+    const expiredRedirect = await getExpiredPasswordRedirect(session.user.id);
+    if (expiredRedirect) return expiredRedirect;
   }
 
   const row = await prisma.userPreference.findUnique({

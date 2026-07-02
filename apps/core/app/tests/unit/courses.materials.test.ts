@@ -72,7 +72,7 @@ function makeArgs(method: string, body?: BodyInit, headers?: Record<string, stri
     request: makeRequest(method, body, headers),
     params: { courseId: COURSE_ID },
     context: {} as never,
-  };
+  } as any;
 }
 
 function makeDeleteArgs(materialId: string) {
@@ -83,7 +83,7 @@ function makeDeleteArgs(materialId: string) {
     ),
     params: { courseId: COURSE_ID, materialId },
     context: {} as never,
-  };
+  } as any;
 }
 
 function makeRenameArgs(materialId: string, body: unknown) {
@@ -98,7 +98,7 @@ function makeRenameArgs(materialId: string, body: unknown) {
     ),
     params: { courseId: COURSE_ID, materialId },
     context: {} as never,
-  };
+  } as any;
 }
 
 function mockSession(role: string, id = "user-1") {
@@ -117,7 +117,7 @@ function stubUploadArgs() {
     headers: new Headers(),
     formData: () => Promise.resolve(mockFormData),
   } as unknown as Request;
-  return { request: stubRequest, params: { courseId: COURSE_ID }, context: {} as never };
+  return { request: stubRequest, params: { courseId: COURSE_ID }, context: {} as never } as any;
 }
 
 beforeEach(() => {
@@ -278,7 +278,7 @@ describe("POST /api/courses/:courseId/materials action", () => {
       }),
       params: { courseId: COURSE_ID },
       context: {} as never,
-    });
+    } as any);
     expect(res.status).toBe(400);
   });
 

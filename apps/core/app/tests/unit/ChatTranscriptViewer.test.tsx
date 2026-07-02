@@ -33,11 +33,11 @@ describe("ChatTranscriptViewer", () => {
     expect(screen.queryByText("Continue in chat")).not.toBeInTheDocument();
   });
 
-  it("renders a 'Continue in chat' link when continueChatId is provided", () => {
+  it("renders a 'Continue in chat' link to the route-based chat URL when continueChatId is provided", () => {
     renderViewer({ messages: [], continueChatId: "chat-abc-123" });
     const link = screen.getByText("Continue in chat").closest("a");
     expect(link).toBeInTheDocument();
-    expect(link).toHaveAttribute("href", "/chat?chatId=chat-abc-123");
+    expect(link).toHaveAttribute("href", "/chat/chat-abc-123");
   });
 
   it("shows the loading spinner when isLoading is true", () => {
