@@ -3,8 +3,9 @@
  */
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { generateEmbedding, generateEmbeddings } from "~/lib/ai/embedding";
+import { generateEmbedding } from "~/lib/ai/embedding";
 import { cosineSimilarity } from "./cosine";
+import { isLocalVllmRouting } from "./local-vllm";
 
 export type KnnExemplar = {
   prompt: string;
@@ -69,32 +70,31 @@ export async function loadCachedKnnExemplars(
   }
   if (!exemplarLoadPromise) {
     exemplarLoadPromise = (async () => {
-      const file = loadExemplarFile(filePath);
-      const trimmed = file.exemplars.map((ex) => ({
-        ...ex,
-        prompt: ex.prompt.trim(),
-      }));
-      const missingIndexes = trimmed
-        .map((ex, i) => (ex.embedding?.length ? -1 : i))
-        .filter((i) => i >= 0);
-      if (missingIndexes.length === 0) {
+      try {
+        const file = loadExemplarFile(filePath);
+        const trimmed = file.exemplars.map((ex) => ({
+          ...ex,
+          prompt: ex.prompt.trim(),
+        }));
+        const missingIndexes = trimmed
+          .map((ex, i) => (ex.embedding?.length ? -1 : i))
+          .filter((i) => i >= 0);
+        if (missingIndexes.length > 0) {
+          throw new Error(
+            `kNN exemplars missing embeddings (${missingIndexes.length}/${trimmed.length}). ` +
+              "Run: npm run research:embed-knn-exemplars",
+          );
+        }
         const cached: CachedExemplar[] = trimmed.map((ex) => ({
           ...ex,
           embedding: ex.embedding!,
         }));
         exemplarCache = cached;
         return cached;
+      } catch (err) {
+        exemplarLoadPromise = null;
+        throw err;
       }
-      const prompts = missingIndexes.map((i) => trimmed[i].prompt);
-      const embedded = await generateEmbeddings(prompts);
-      const cached: CachedExemplar[] = trimmed.map((ex, i) => {
-        const missingIdx = missingIndexes.indexOf(i);
-        const embedding =
-          missingIdx >= 0 ? embedded[missingIdx].embedding : ex.embedding!;
-        return { ...ex, embedding };
-      });
-      exemplarCache = cached;
-      return cached;
     })();
   }
   return exemplarLoadPromise;
@@ -177,7 +177,7 @@ export async function predictTierKnn(
   const { tier, confidence } = voteTierFromNeighbors(ranked);
 
   return {
-    tier: confidence >= minSimilarity ? tier : 2,
+    tier: confidence >= minSimilarity ? tier : isLocalVllmRouting() ? 1 : 2,
     confidence,
     neighbors: ranked,
     exemplarCount: exemplars.length,

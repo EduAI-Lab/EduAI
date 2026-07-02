@@ -213,7 +213,8 @@ Each section should use this format:
 | `resolve-tool-max-tokens.test.ts` | Unit tests for tool-path `maxTokens` resolution — env cap default 8192, `CHAT_TOOL_MAX_OUTPUT_TOKENS` override, and clamping against `AIModel.maxTokens`. |
 | `routing-knn.test.ts` | kNN routing helpers — cosine similarity for exemplar vectors and `voteTierFromNeighbors` majority vote with empty-neighbor tier-2 fallback. |
 | `routing-llm-classifier.test.ts` | LLM classifier routing — maps parsed complexity/task/confidence to tiers (incl. local vLLM medium-chat vs medium-coding), and extracts JSON from bare or prose-wrapped classifier output. |
-| `routing-local-vllm.test.ts` | Local vLLM registry remap — remaps cloud registry IDs to `vllm:*` slugs when `VLLM_BASE_URL` is set and leaves IDs unchanged when cloud routing is allowed. |
+| `routing-local-vllm.test.ts` | Local vLLM registry remap — remaps cloud tier-2 to tier-3 on vLLM stack, preserves `requireImages` picks for cloud multimodal fallback. |
+| `cmps01-internal-auth.test.ts` | cmps01 edge auth — internal key sent only for trusted `OLLAMA_BASE_URL` edge hosts, not arbitrary user URLs. |
 | `routing-rules.test.ts` | Phase 1 rule stack — image/tool/RAG escalation, short-factual tier-1 shortcut, distinct-enumeration tier-3 rule, default tier env parsing, and LLM tier-3 deferral to rule escalations. |
 | `chat-intent.test.ts` | Tests `needsCourseRag` intent routing — greetings, generic knowledge, course keywords, code requests, and borderline escalation when a course is selected. |
 | `chat-rag.test.ts` | Tests `buildCappedRagContextText` and `capRagHitsForTool` chunk/char caps for hybrid and tool RAG paths; untrusted excerpt wrapping (#86). |

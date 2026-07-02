@@ -19,6 +19,23 @@ describe("local-vllm routing", () => {
     ).toEqual({ kind: "exactTier", tier: 3, tieBreak: "carbon" });
   });
 
+  it("preserves requireImages picks for cloud multimodal fallback", () => {
+    process.env = { ...env, VLLM_BASE_URL: "http://cmps01:8001" };
+    expect(
+      normalizePickForLocalVllm({
+        kind: "minTier",
+        minTier: 2,
+        requireImages: true,
+        tieBreak: "energy",
+      }),
+    ).toEqual({
+      kind: "minTier",
+      minTier: 2,
+      requireImages: true,
+      tieBreak: "energy",
+    });
+  });
+
   it("leaves tier-1 picks unchanged", () => {
     process.env = { ...env, VLLM_BASE_URL: "http://cmps01:8001" };
     expect(
