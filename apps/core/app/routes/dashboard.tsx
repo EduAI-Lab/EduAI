@@ -25,7 +25,7 @@ import { usePolicies } from "~/hooks/api/use-policies";
 import type { User } from "~/lib/auth/types";
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
 
   if (!session?.user) {
     return redirect("/auth/login");

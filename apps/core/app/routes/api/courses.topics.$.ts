@@ -86,7 +86,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     return topicsGetResponse(courseId, topicId);
   }
 
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
 
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -135,7 +135,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   let session = null;
   let access: AccessLevel | null = null;
   if (!serviceAuth) {
-    session = await auth.api.getSession(request);
+    session = await auth.api.getSession({ headers: request.headers });
 
     if (!session?.user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {

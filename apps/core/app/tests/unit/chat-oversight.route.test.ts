@@ -95,7 +95,7 @@ function makeArgs(body: object) {
     }),
     params: {},
     context: {} as never,
-  };
+  } as any;
 }
 
 function mockAuditResult(text: string = OVERSEEN) {

@@ -44,7 +44,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       return json(404, { error: "COURSE_NOT_FOUND" });
     }
   } else {
-    const session = await auth.api.getSession(request);
+    const session = await auth.api.getSession({ headers: request.headers });
     if (!session?.user) {
       return json(401, { error: "Unauthorized" });
     }
@@ -88,7 +88,7 @@ export async function action({ request }: ActionFunctionArgs) {
   // POST /api/questions accepts session-cookie auth only (no service-key path).
   // The GET loader above accepts service keys; add a Bearer branch here if a
   // backend service ever needs to create questions without a user session.
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) {
     return json(401, { error: "Unauthorized" });
   }
