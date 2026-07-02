@@ -60,7 +60,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }
 
   // User OAuth path: resolve session from cookies/headers.
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
 
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -126,7 +126,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     });
   }
 
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,

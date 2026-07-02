@@ -74,7 +74,7 @@ function courseArgs(courseId = "c1") {
     request: new Request(`http://localhost/api/courses/${courseId}/chats`),
     params: { courseId },
     context: {} as never,
-  };
+  } as any;
 }
 
 describe("GET /api/courses/:courseId/chats", () => {
@@ -154,7 +154,7 @@ function unitArgs(department = "COSC") {
     request: new Request(`http://localhost/api/units/${department}/chats`),
     params: { department },
     context: {} as never,
-  };
+  } as any;
 }
 
 describe("GET /api/units/:department/chats", () => {
@@ -250,7 +250,7 @@ function detailArgs(chatId = "chat-1") {
     request: new Request(`http://localhost/api/chats/${chatId}`),
     params: { chatId },
     context: {} as never,
-  };
+  } as any;
 }
 
 // Metadata-only row — the loader fetches message bodies separately (and only
@@ -341,7 +341,7 @@ function messagesArgs(chatId = "chat-1") {
     request: new Request(`http://localhost/api/chats/${chatId}/messages`),
     params: { chatId },
     context: {} as never,
-  };
+  } as any;
 }
 
 describe("GET /api/chats/:chatId/messages (transcript oversight gate)", () => {
