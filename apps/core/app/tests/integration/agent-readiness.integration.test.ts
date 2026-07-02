@@ -1,6 +1,6 @@
 /**
  * Automated agent-readiness checks (#672): JSON error envelope, email side-effects,
- * and manifest-driven coverage for admin write tools.
+ * and manifest-driven coverage for all Core APIs.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
@@ -19,8 +19,10 @@ import { sendEmail } from "~/lib/email/mailer.server";
 import { handleUsersApiRequest } from "~/lib/api/users-api.server";
 import { action as createInvitationAction } from "~/routes/api/invitations";
 import {
-  AGENT_READY_ENDPOINTS,
+  CORE_API_ENDPOINTS,
   agentReadyEmailEndpoints,
+  agentReadyEndpoints,
+  readinessSummary,
 } from "~/lib/agent-readiness/manifest";
 import { seedUser } from "../helpers/rbac";
 
@@ -41,11 +43,23 @@ afterAll(async () => {
 });
 
 describe("agent-readiness integration (#672)", () => {
-  it("manifest lists agent-ready endpoints with method and path", () => {
-    expect(AGENT_READY_ENDPOINTS.length).toBeGreaterThanOrEqual(12);
-    for (const entry of AGENT_READY_ENDPOINTS) {
-      expect(entry.method).toMatch(/^(GET|POST|PATCH|DELETE)$/);
+  it("manifest inventories every Core API with readiness status", () => {
+    expect(CORE_API_ENDPOINTS.length).toBeGreaterThanOrEqual(80);
+    const summary = readinessSummary();
+    expect(summary.ready).toBeGreaterThan(0);
+    expect(summary.partial).toBeGreaterThan(0);
+    expect(summary.excluded).toBeGreaterThan(0);
+    for (const entry of CORE_API_ENDPOINTS) {
+      expect(entry.readiness).toMatch(/^(ready|partial|excluded)$/);
       expect(entry.path.startsWith("/api/")).toBe(true);
+    }
+  });
+
+  it("ready endpoints are a strict subset of the full inventory", () => {
+    const readyIds = new Set(agentReadyEndpoints().map((e) => `${e.method} ${e.path}`));
+    for (const id of readyIds) {
+      const found = CORE_API_ENDPOINTS.find((e) => `${e.method} ${e.path}` === id);
+      expect(found?.readiness).toBe("ready");
     }
   });
 
@@ -64,7 +78,7 @@ describe("agent-readiness integration (#672)", () => {
     expect(body).toEqual({ error: "Forbidden" });
   });
 
-  it("email-sending agent route invokes the mailer", async () => {
+  it("email-sending routes invoke the mailer", async () => {
     getSession.mockResolvedValue({
       user: { id: adminId, role: "ADMIN", name: "Agent Ready Admin" },
     } as never);
@@ -87,7 +101,7 @@ describe("agent-readiness integration (#672)", () => {
 
     expect(res.status).toBe(201);
     expect(sendEmailMock).toHaveBeenCalled();
-    const emailEntry = agentReadyEmailEndpoints().find((e) => e.path === "/api/invitations");
-    expect(emailEntry?.sendsEmail).toBe(true);
+    const emailEntries = agentReadyEmailEndpoints();
+    expect(emailEntries.some((e) => e.path === "/api/invitations")).toBe(true);
   });
 });
