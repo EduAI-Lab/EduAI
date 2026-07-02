@@ -12,6 +12,7 @@ import {
   createQuestion,
   listQuestions,
 } from "~/lib/questions/server";
+import { withIdempotency } from "~/lib/idempotency.server";
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -93,28 +94,25 @@ export async function action({ request }: ActionFunctionArgs) {
     return json(401, { error: "Unauthorized" });
   }
 
-  const body = await request.json();
-
-  // §9: create question is course-scoped, TA-and-up via enrollment (an
-  // INSTRUCTOR not enrolled in the course cannot author questions there).
-  // Missing/invalid courseId falls through to createQuestion's 422.
-  if (typeof body?.courseId === "string" && body.courseId) {
-    const { course, access } = await resolveCourseAccessWithCourse(session.user, body.courseId);
-    if (!course) {
-      return json(404, { error: "COURSE_NOT_FOUND" });
+  return withIdempotency({ request, route: "POST /api/questions" }, async (body) => {
+    if (typeof body?.courseId === "string" && body.courseId) {
+      const { course, access } = await resolveCourseAccessWithCourse(session.user, body.courseId);
+      if (!course) {
+        return json(404, { error: "COURSE_NOT_FOUND" });
+      }
+      if (!access || access.rank < 1) {
+        return json(403, { error: "Forbidden" });
+      }
     }
-    if (!access || access.rank < 1) {
-      return json(403, { error: "Forbidden" });
+
+    const result = await createQuestion(body, session.user.id);
+
+    if ("error" in result) {
+      const status =
+        result.error === "COURSE_NOT_FOUND" || result.error === "TOPIC_NOT_FOUND" ? 404 : 422;
+      return json(status, result);
     }
-  }
 
-  const result = await createQuestion(body, session.user.id);
-
-  if ("error" in result) {
-    const status =
-      result.error === "COURSE_NOT_FOUND" || result.error === "TOPIC_NOT_FOUND" ? 404 : 422;
-    return json(status, result);
-  }
-
-  return json(201, result);
+    return json(201, result);
+  });
 }

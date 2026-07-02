@@ -1,10 +1,12 @@
 # Agent readiness — endpoint & tool coverage
 
-**Date:** 2026-06-18  
-**Issues:** [#167](https://github.com/EduAI-Lab/EduAI/issues/167) (agent readiness), [#651](https://github.com/EduAI-Lab/EduAI/pull/651) (admin chatbot)  
-**Related:** [`docs/implementations/api-wiring.md`](../implementations/api-wiring.md) · [`CHAT_RAG_PIPELINE.md`](./CHAT_RAG_PIPELINE.md)
+**Date:** 2026-06-18 (updated 2026-07-02)  
+**Issues:** [#167](https://github.com/EduAI-Lab/EduAI/issues/167) (agent readiness), [#651](https://github.com/EduAI-Lab/EduAI/pull/651) (admin chatbot), [#672](https://github.com/EduAI-Lab/EduAI/issues/672) (automated checks), [#828](https://github.com/EduAI-Lab/EduAI/issues/828) (idempotency)  
+**Related:** [`docs/implementations/api-wiring.md`](./implementations/api-wiring.md) · [`docs/rag-ai/CHAT_RAG_PIPELINE.md`](./rag-ai/CHAT_RAG_PIPELINE.md)
 
 This document summarizes which Core REST endpoints and in-process chat tools are **ready for agents** today — exposed in the **Admin Chatbot** (`chatMode: admin`) or **Learning Chat** (`chatMode: learning`).
+
+The machine-readable source of truth is [`apps/core/app/lib/agent-readiness/manifest.ts`](../apps/core/app/lib/agent-readiness/manifest.ts).
 
 ---
 
@@ -14,12 +16,9 @@ This document summarizes which Core REST endpoints and in-process chat tools are
 | ------- | ----------- | ----- |
 | **Learning chat tools** | 3 tools | RAG + web (course-scoped RAG requires a selected course) |
 | **Admin chat tools** | 27 tools (10 read, 17 write) | Platform-wide; writes require `confirmed: true` after admin approval in chat |
-| **REST — agent-ready (read / ops)** | 12 route families | Courses, enrollments, users, topics, bug triage, model catalog |
-| **REST — not agent-ready** | ~10 route families | Chat passthrough, uploads, Canvas, auth, prefs, infra |
-
-**Coverage (route families with ≥1 agent-ready operation):** ~12 / 22 ≈ **55%** of Core REST surface (see [`api-wiring.md`](../implementations/api-wiring.md)).
-
-**Full API inventory ([#672](https://github.com/EduAI-Lab/EduAI/issues/672)):** `apps/core/app/lib/agent-readiness/manifest.ts` lists **every** Core `/api/*` endpoint with a `readiness` status (`ready` | `partial` | `excluded`), documented gaps, and email/idempotency flags. Unit tests fail if a `routes.ts` pattern is missing from the manifest. Automated behavioral checks cover JSON error envelopes and email side-effects; closing `partial` → `ready` gaps is tracked in the manifest `gaps` field.
+| **REST — manifest `ready`** | 65 / 87 endpoints (~75%) | Full inventory in `manifest.ts`; unit tests enforce coverage |
+| **REST — `partial`** | 0 endpoints | All gaps closed or reclassified |
+| **REST — `excluded`** | 22 endpoints | Auth, streaming chat, uploads, QM, test hooks — by design |
 
 ---
 
@@ -35,7 +34,7 @@ Agents inside EduAI use Vercel AI SDK `tool()` handlers backed by shared `lib/*/
 | `webSearch` | `lib/ai/tools` | User session + model supports tools | Yes |
 | `fetchPage` | `lib/ai/tools` | User session + model supports tools | Yes |
 
-Entry: `POST /api/chat` with `chatMode: "learning"`. See [`CHAT_RAG_PIPELINE.md`](./CHAT_RAG_PIPELINE.md).
+Entry: `POST /api/chat` with `chatMode: "learning"`. See [`CHAT_RAG_PIPELINE.md`](./rag-ai/CHAT_RAG_PIPELINE.md).
 
 ### Admin chat (`create-admin-chat-tools.ts`)
 
@@ -86,6 +85,8 @@ Implementation: `apps/core/app/lib/agent-tools/`.
 
 ## REST endpoints — coverage matrix
 
+See `manifest.ts` for the authoritative per-method list. Highlights:
+
 ### Ready for agents (course + RAG)
 
 | Method | Path | Chat tool | Status |
@@ -103,17 +104,22 @@ Implementation: `apps/core/app/lib/agent-tools/`.
 | ------ | ---- | --------------- | ------ |
 | GET | `/api/courses/:id/enrollments` | `listCourseEnrollments` | Ready |
 | POST | `/api/courses/:id/enrollments` | `createCourseEnrollment` | Ready — idempotency key |
-| PATCH | `/api/courses/:id/enrollments/:id` | `updateCourseEnrollment` | Ready |
-| DELETE | `/api/courses/:id/enrollments/:id` | `deactivateCourseEnrollment` | Ready |
-| GET/PATCH | `/api/admin/bug-reports` | `listBugReports` / `updateBugReportStatus` | Ready — JSON + Zod |
-| GET/POST/PATCH/DELETE | `/api/users` | `listUsers` / `createUser` / `updateUser` / `deleteUser` | Ready — error envelope ([#572](https://github.com/EduAI-Lab/EduAI/issues/572)); `POST` idempotency via centralized layer ([#828](https://github.com/EduAI-Lab/EduAI/issues/828)) |
+| PATCH/DELETE | `/api/courses/:id/enrollments/:id` | `updateCourseEnrollment` / `deactivateCourseEnrollment` | Ready |
+| GET/PATCH | `/api/admin/bug-reports` | `listBugReports` / `updateBugReportStatus` | Ready |
+| GET/POST/PATCH/DELETE | `/api/users` | `listUsers` / `createUser` / `updateUser` / `deleteUser` | Ready — error envelope + idempotency on POST |
 | POST/PATCH/DELETE | `/api/courses/:id/topics` (+ `:topicId`) | `createCourseTopic` / `updateCourseTopic` / `deleteCourseTopic` | Ready |
+| GET/POST/DELETE | `/api/invitations` (+ `:id`) | `listInvitations` / `createInvitation` / `revokeInvitation` / `resendInvitation` | Ready — email on create/resend |
+| GET/POST/DELETE | `/api/canvas/*` | `getCanvasIntegration` / `listCanvasCourses` / `connectCanvas` / `syncCanvasCourses` / `disconnectCanvas` / `linkCanvasRoster` | Ready — `{ success, data, error }` envelope |
 
 ### Partially ready / gaps
 
+Tracked in `manifest.ts` with `readiness: "partial"` and a `gaps` array. Examples:
+
 | Area | Gap | Severity |
 | ---- | --- | -------- |
-| `POST/PATCH /api/courses` | PATCH still formData-only | Medium |
+| `POST/PATCH /api/courses` | PATCH still formData-only; no admin chat tool for create | Medium |
+| `GET/POST/PATCH/DELETE /api/ai-providers` | Admin infra — no chat tools yet | Medium |
+| `POST /api/questions` | Question Maker — entity-column idempotency | Medium |
 | Cookie-path RBAC (#292) | Some routes incomplete for non-ADMIN roles | Medium |
 | RAG search | No standalone HTTP route (by design) | Low — use `findRelevantContent` in-process |
 
@@ -124,13 +130,10 @@ Implementation: `apps/core/app/lib/agent-tools/`.
 | POST | `/api/chat` | Streaming, persistence, apiKeys — use narrow tools instead |
 | GET/DELETE | `/api/chats/:chatId` | Chat UI persistence, not ops |
 | POST | `/api/courses/:courseId/materials` | File upload — search via RAG instead |
-| GET/PATCH | `/api/courses/:id/embedding-settings`, re-embed | Admin infra |
-| GET/POST/PATCH/DELETE | `/api/ai-providers` | Admin infra (models catalog is ready) |
-| * | `/api/canvas/*` | Canvas integration |
 | * | `/api/auth/*` | Better Auth handler |
-| POST | `/api/questions` | Question Maker surface — separate epic |
 | GET/PATCH | `/api/me`, `/api/preferences` | User self-service |
 | POST | `/api/sessions/validate` | Extension auth linchpin |
+| POST | `/api/e2e/promote` | Test-only hook |
 
 ---
 
@@ -143,7 +146,7 @@ Implementation: `apps/core/app/lib/agent-tools/`.
 └─────────────────┘     └──────────────────────┘     └─────────────────────────┘
 ```
 
-**Rule:** New agent capabilities should add handlers under `lib/` and register tools in `create-admin-chat-tools.ts` or `create-learning-chat-tools.ts`. REST routes remain for browsers and extensions.
+**Rule:** New agent capabilities should add handlers under `lib/`, register tools in `create-admin-chat-tools.ts` or `create-learning-chat-tools.ts`, and add an entry to `manifest.ts`. REST routes remain for browsers and extensions.
 
 ---
 
@@ -158,10 +161,21 @@ Implementation: `apps/core/app/lib/agent-tools/`.
 
 ---
 
+## Automated checks (#672)
+
+| Check | Location |
+| ----- | -------- |
+| Full `/api/*` inventory | `apps/core/app/lib/agent-readiness/manifest.ts` |
+| Manifest invariants (coverage, gaps, tool mapping) | `apps/core/app/tests/unit/agent-readiness.manifest.test.ts` |
+| JSON envelope + email side-effects | `apps/core/app/tests/integration/agent-readiness.integration.test.ts` |
+| Idempotency replay (`POST /api/users`) | `apps/core/app/tests/integration/users-idempotency.integration.test.ts` |
+
+---
+
 ## References
 
-- [`docs/implementations/api-wiring.md`](../implementations/api-wiring.md) — REST contracts
-- `apps/core/app/lib/agent-readiness/manifest.ts` — machine-readable agent-ready route list ([#672](https://github.com/EduAI-Lab/EduAI/issues/672))
+- [`docs/implementations/api-wiring.md`](./implementations/api-wiring.md) — REST contracts
+- `apps/core/app/lib/agent-readiness/manifest.ts` — machine-readable route list
 - `apps/core/app/lib/agent-tools/create-admin-chat-tools.ts`
 - `apps/core/app/lib/agent-tools/create-learning-chat-tools.ts`
 - `apps/core/app/routes/api/chat.ts`

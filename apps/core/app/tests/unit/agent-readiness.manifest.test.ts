@@ -156,7 +156,7 @@ describe("agent-readiness manifest (#672)", () => {
     expect(summary.total).toBeGreaterThanOrEqual(ROUTES_TS_API_PATTERNS.length);
     expect(summary.ready + summary.partial + summary.excluded).toBe(summary.total);
     // Track progress — update threshold as more endpoints reach `ready`
-    expect(summary.ready).toBeGreaterThanOrEqual(29);
+    expect(summary.ready).toBeGreaterThanOrEqual(65);
   });
 
   it("marks ready endpoints with documented error envelope", () => {

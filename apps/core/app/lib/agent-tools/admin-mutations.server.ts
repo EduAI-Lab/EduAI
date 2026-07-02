@@ -30,6 +30,29 @@ import {
   resendAdminInvitation,
   revokeAdminInvitation,
 } from "./admin-invitations.server";
+import {
+  addAdminCourseTA,
+  createAdminAiModel,
+  createAdminAiProvider,
+  createAdminCourse,
+  deleteAdminAiModel,
+  deleteAdminAiProvider,
+  deleteAdminCourse,
+  deleteAdminCourseMaterial,
+  removeAdminCourseTA,
+  renameAdminCourseMaterial,
+  setAdminCoursePublished,
+  startAdminCourseReEmbed,
+  syncAdminCanvasMaterials,
+  triggerAdminCronJob,
+  updateAdminAiModel,
+  updateAdminAiProvider,
+  updateAdminCourse,
+  updateAdminCourseEmbeddingSettings,
+  updateAdminCourseRagSettings,
+  updateAdminCronSchedule,
+  updateAdminPolicy,
+} from "./admin-platform.server";
 
 type ToolError = { error: string; fields?: Record<string, string> };
 type MutationResult = Record<string, unknown> | ToolError;
@@ -52,6 +75,27 @@ export const ADMIN_WRITE_TOOL_NAMES = new Set([
   "syncCanvasCourses",
   "disconnectCanvas",
   "linkCanvasRoster",
+  "createCourse",
+  "updateCourse",
+  "deleteCourse",
+  "publishCourse",
+  "unpublishCourse",
+  "updateCourseRagSettings",
+  "renameCourseMaterial",
+  "deleteCourseMaterial",
+  "updateCourseEmbeddingSettings",
+  "startCourseReEmbed",
+  "syncCanvasMaterials",
+  "addCourseTA",
+  "removeCourseTA",
+  "updatePolicy",
+  "createAiProvider",
+  "updateAiProvider",
+  "deleteAiProvider",
+  "createAiModel",
+  "updateAiModel",
+  "deleteAiModel",
+  "triggerCronJob",
 ]);
 
 export function isAdminWriteToolName(name: string): boolean {
@@ -769,4 +813,191 @@ export async function linkAdminCanvasRoster(
     return mapToolError(result);
   }
   return mutationPayload(result);
+}
+
+function wrapPlatformResult(result: Record<string, unknown> | ToolError): MutationResult {
+  if ("error" in result) {
+    return mutationFailure(result as ToolError & Record<string, unknown>);
+  }
+  return mutationPayload(result);
+}
+
+export async function createAdminCourseMutation(
+  actor: RbacUser,
+  input: Record<string, unknown>,
+): Promise<MutationResult> {
+  return wrapPlatformResult(await createAdminCourse(actor, input));
+}
+
+export async function updateAdminCourseMutation(
+  actor: RbacUser,
+  opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null },
+  input: Record<string, unknown>,
+): Promise<MutationResult> {
+  return wrapPlatformResult(await updateAdminCourse(actor, opts, input));
+}
+
+export async function deleteAdminCourseMutation(
+  actor: RbacUser,
+  opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null },
+): Promise<MutationResult> {
+  return wrapPlatformResult(await deleteAdminCourse(actor, opts));
+}
+
+export async function publishAdminCourseMutation(
+  actor: RbacUser,
+  opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null },
+): Promise<MutationResult> {
+  return wrapPlatformResult(await setAdminCoursePublished(actor, opts, true));
+}
+
+export async function unpublishAdminCourseMutation(
+  actor: RbacUser,
+  opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null },
+): Promise<MutationResult> {
+  return wrapPlatformResult(await setAdminCoursePublished(actor, opts, false));
+}
+
+export async function updateAdminCourseRagSettingsMutation(
+  actor: RbacUser,
+  opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null },
+  input: Record<string, unknown>,
+): Promise<MutationResult> {
+  return wrapPlatformResult(await updateAdminCourseRagSettings(actor, opts, input));
+}
+
+export async function renameAdminCourseMaterialMutation(
+  actor: RbacUser,
+  opts: {
+    courseId?: string;
+    courseCode?: string;
+    fallbackCourseId?: string | null;
+    materialId: string;
+    name: string;
+  },
+): Promise<MutationResult> {
+  return wrapPlatformResult(await renameAdminCourseMaterial(actor, opts));
+}
+
+export async function deleteAdminCourseMaterialMutation(
+  actor: RbacUser,
+  opts: {
+    courseId?: string;
+    courseCode?: string;
+    fallbackCourseId?: string | null;
+    materialId: string;
+  },
+): Promise<MutationResult> {
+  return wrapPlatformResult(await deleteAdminCourseMaterial(actor, opts));
+}
+
+export async function updateAdminCourseEmbeddingSettingsMutation(
+  actor: RbacUser,
+  opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null },
+  input: Record<string, unknown>,
+): Promise<MutationResult> {
+  return wrapPlatformResult(await updateAdminCourseEmbeddingSettings(actor, opts, input));
+}
+
+export async function startAdminCourseReEmbedMutation(
+  actor: RbacUser,
+  opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null },
+): Promise<MutationResult> {
+  const denied = requirePlatformAdmin(actor);
+  if (denied) return denied;
+  const result = await startAdminCourseReEmbed(actor, opts);
+  if ("error" in result) return mutationFailure(result as ToolError);
+  return mutationPayload(result);
+}
+
+export async function syncAdminCanvasMaterialsMutation(
+  actor: RbacUser,
+  opts: {
+    courseId?: string;
+    courseCode?: string;
+    fallbackCourseId?: string | null;
+    canvasFileIds: string[];
+  },
+): Promise<MutationResult> {
+  return wrapPlatformResult(await syncAdminCanvasMaterials(actor, opts));
+}
+
+export async function addAdminCourseTAMutation(
+  actor: RbacUser,
+  opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null; userId: string },
+): Promise<MutationResult> {
+  return wrapPlatformResult(await addAdminCourseTA(actor, opts));
+}
+
+export async function removeAdminCourseTAMutation(
+  actor: RbacUser,
+  opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null; userId: string },
+): Promise<MutationResult> {
+  return wrapPlatformResult(await removeAdminCourseTA(actor, opts));
+}
+
+export async function updateAdminPolicyMutation(
+  actor: RbacUser,
+  key: string,
+  value: boolean,
+): Promise<MutationResult> {
+  return wrapPlatformResult(await updateAdminPolicy(actor, key, value));
+}
+
+export async function createAdminAiProviderMutation(
+  actor: RbacUser,
+  input: Record<string, unknown>,
+): Promise<MutationResult> {
+  return wrapPlatformResult(await createAdminAiProvider(actor, input));
+}
+
+export async function updateAdminAiProviderMutation(
+  actor: RbacUser,
+  providerId: string,
+  input: Record<string, unknown>,
+): Promise<MutationResult> {
+  return wrapPlatformResult(await updateAdminAiProvider(actor, providerId, input));
+}
+
+export async function deleteAdminAiProviderMutation(
+  actor: RbacUser,
+  providerId: string,
+): Promise<MutationResult> {
+  return wrapPlatformResult(await deleteAdminAiProvider(actor, providerId));
+}
+
+export async function createAdminAiModelMutation(
+  actor: RbacUser,
+  input: Record<string, unknown>,
+): Promise<MutationResult> {
+  return wrapPlatformResult(await createAdminAiModel(actor, input));
+}
+
+export async function updateAdminAiModelMutation(
+  actor: RbacUser,
+  modelId: string,
+  input: Record<string, unknown>,
+): Promise<MutationResult> {
+  return wrapPlatformResult(await updateAdminAiModel(actor, modelId, input));
+}
+
+export async function deleteAdminAiModelMutation(
+  actor: RbacUser,
+  modelId: string,
+): Promise<MutationResult> {
+  return wrapPlatformResult(await deleteAdminAiModel(actor, modelId));
+}
+
+export async function triggerAdminCronJobMutation(
+  actor: RbacUser,
+  jobName: string,
+): Promise<MutationResult> {
+  return wrapPlatformResult(await triggerAdminCronJob(actor, jobName));
+}
+
+export async function updateAdminCronScheduleMutation(
+  actor: RbacUser,
+  input: { jobName: string; schedule: string; scheduleLabel: string },
+): Promise<MutationResult> {
+  return wrapPlatformResult(await updateAdminCronSchedule(actor, input));
 }

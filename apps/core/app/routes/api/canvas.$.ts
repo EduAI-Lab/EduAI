@@ -47,7 +47,7 @@ function canvasSubpath(pathname: string): string {
 async function handleCanvasRequest(request: Request): Promise<Response> {
   const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) {
-    return json({ success: false, error: "Unauthorized" }, 401);
+    return json({ success: false, error: "UNAUTHORIZED" }, 401);
   }
 
   const subpath = canvasSubpath(new URL(request.url).pathname);
@@ -71,7 +71,7 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
         ...(session.user.email ? { details: { email: session.user.email } } : {}),
       }),
     );
-    return json({ success: false, error: "Forbidden: instructors only" }, 403);
+    return json({ success: false, error: "FORBIDDEN" }, 403);
   }
 
   // Policy gate: an INSTRUCTOR may manage Canvas only when the flag is on;
@@ -87,7 +87,7 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
       user: session.user,
       action: "canvas.manage",
     });
-    return json({ success: false, error: "Forbidden: instructors only" }, 403);
+    return json({ success: false, error: "FORBIDDEN" }, 403);
   }
 
   try {
@@ -111,7 +111,7 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
           return json({ success: true, data: { courses } });
         }
 
-        return json({ success: false, error: "Not found" }, 404);
+        return json({ success: false, error: "NOT_FOUND" }, 404);
       }
 
       case "POST": {
@@ -120,7 +120,7 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
           try {
             body = await request.json();
           } catch {
-            return json({ success: false, error: "Invalid JSON body" }, 400);
+            return json({ success: false, error: "INVALID_JSON" }, 400);
           }
 
           const result = ConnectCanvasSchema.safeParse(body);
@@ -186,7 +186,7 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
           try {
             body = await request.json();
           } catch {
-            return json({ success: false, error: "Invalid JSON body" }, 400);
+            return json({ success: false, error: "INVALID_JSON" }, 400);
           }
 
           const result = SyncCanvasCoursesSchema.safeParse(body);
@@ -207,12 +207,12 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
           return json({ success: true, data: syncResult });
         }
 
-        return json({ success: false, error: "Not found" }, 404);
+        return json({ success: false, error: "NOT_FOUND" }, 404);
       }
 
       case "DELETE": {
         if (subpath !== "disconnect") {
-          return json({ success: false, error: "Not found" }, 404);
+          return json({ success: false, error: "NOT_FOUND" }, 404);
         }
 
         const existingIntegration = await getCanvasIntegrationPublic(userId);
@@ -240,7 +240,7 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
       }
 
       default:
-        return json({ success: false, error: "Method not allowed" }, 405);
+        return json({ success: false, error: "METHOD_NOT_ALLOWED" }, 405);
     }
   } catch (error) {
     if (error instanceof CanvasNotConnectedError) {

@@ -13,7 +13,6 @@ export type CreateQuestionBody = {
   answer?: string;
   testable?: boolean;
   secondaryTopicIds?: string[];
-  idempotencyKey?: string;
 };
 
 /**
@@ -32,7 +31,6 @@ const CreateQuestionSchema = z.object({
   answer: z.string().optional(),
   testable: z.boolean().optional(),
   secondaryTopicIds: z.array(z.string().min(1)).optional(),
-  idempotencyKey: z.string().min(1).optional(),
 });
 
 type CreateQuestionError =
@@ -69,7 +67,6 @@ export async function createQuestion(
     answer,
     testable = false,
     secondaryTopicIds = [],
-    idempotencyKey,
   } = parsed.data;
 
   const course = await prisma.course.findUnique({ where: { id: courseId }, select: { id: true } });
@@ -105,14 +102,6 @@ export async function createQuestion(
     }
   }
 
-  if (idempotencyKey) {
-    const existing = await prisma.question.findUnique({
-      where: { idempotencyKey },
-      select: { id: true },
-    });
-    if (existing) return { id: existing.id };
-  }
-
   try {
     const question = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const created = await tx.question.create({
@@ -127,7 +116,6 @@ export async function createQuestion(
           choices: choices ?? Prisma.JsonNull,
           answer,
           testable,
-          idempotencyKey,
         },
       });
       if (secondaryTopicIds.length > 0) {
@@ -140,21 +128,6 @@ export async function createQuestion(
 
     return { id: question.id };
   } catch (err) {
-    // Idempotency race: a concurrent request with the same idempotencyKey may
-    // have committed between our findUnique check above and this create. The
-    // unique constraint on idempotencyKey throws P2002 — recover by returning
-    // the row the other request wrote rather than surfacing a 500.
-    if (
-      err instanceof Prisma.PrismaClientKnownRequestError &&
-      err.code === "P2002" &&
-      idempotencyKey
-    ) {
-      const existing = await prisma.question.findUnique({
-        where: { idempotencyKey },
-        select: { id: true },
-      });
-      if (existing) return { id: existing.id };
-    }
     throw err;
   }
 }
