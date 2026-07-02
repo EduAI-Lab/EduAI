@@ -38,7 +38,7 @@ function makeArgs(method = "GET", body?: unknown) {
     }),
     params: {},
     context: {} as never,
-  };
+  } as any;
 }
 
 function mockUser(id = "u1", role = "STUDENT") {

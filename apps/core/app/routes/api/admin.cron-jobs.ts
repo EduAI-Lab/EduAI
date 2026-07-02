@@ -15,7 +15,7 @@ import {
 import { rescheduleJob } from "~/lib/cron-scheduler.server";
 
 async function requireAdmin(request: Request) {
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) {
     return null;
   }

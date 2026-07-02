@@ -54,7 +54,7 @@ const GUEST_ROOT_PREFERENCES = {
  */
 export async function loader({ request }: LoaderFunctionArgs) {
   ensureCronSchedulerRunning();
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) {
     return GUEST_ROOT_PREFERENCES;
   }
