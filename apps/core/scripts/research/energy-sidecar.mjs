@@ -8,7 +8,7 @@
 
 export const DEFAULT_ENERGY_SIDECAR_URL = "http://127.0.0.1:9100";
 
-function resolveSidecarUrl() {
+export function resolveSidecarUrl() {
   const url = process.env.ENERGY_SIDECAR_URL?.trim();
   return (url || DEFAULT_ENERGY_SIDECAR_URL).replace(/\/$/, "");
 }

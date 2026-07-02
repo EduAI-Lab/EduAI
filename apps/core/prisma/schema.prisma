@@ -216,6 +216,7 @@ model AIInteraction {
   durationMs       Int?
   promptTokens     Int?
   completionTokens Int?
+  totalTokens      Int?
   estInputCostUsd  Float?
   estOutputCostUsd Float?
   energyJoules     Float?

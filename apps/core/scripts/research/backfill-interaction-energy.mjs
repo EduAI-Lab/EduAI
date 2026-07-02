@@ -8,7 +8,7 @@
  *   2) Pre-exported JSON from psql:
  *        RESEARCH_INTERACTION_EXPORT=interactions.json npm run research:backfill-energy
  *
- * Joins by exact query text match to prompt field in policy/both-tier JSONL.
+ * Joins by userId + exact query text when available, else query text only.
  *
  * Env:
  *   RESEARCH_BACKFILL_IN       policy or both-tier JSONL (required)
@@ -57,11 +57,13 @@ async function loadInteractionsFromDb({ since, until }) {
       orderBy: { createdAt: "asc" },
       select: {
         id: true,
+        userId: true,
         createdAt: true,
         modelUsed: true,
         query: true,
         promptTokens: true,
         completionTokens: true,
+        totalTokens: true,
         energyJoules: true,
         energySource: true,
         carbonGramsCO2: true,
@@ -77,20 +79,24 @@ async function loadInteractionsFromDb({ since, until }) {
 }
 
 function indexInteractions(rows) {
-  /** query text -> list of interactions (FIFO for duplicate prompts) */
+  /** userId::query or ::query -> list of interactions (FIFO for duplicate prompts) */
   const map = new Map();
   for (const row of rows) {
-    const key = (row.query ?? "").trim();
-    if (!key) continue;
+    const query = (row.query ?? "").trim();
+    if (!query) continue;
+    const userId = (row.userId ?? "").trim();
+    const key = userId ? `${userId}::${query}` : `::${query}`;
     if (!map.has(key)) map.set(key, []);
     map.get(key).push(row);
   }
   return map;
 }
 
-function takeMatch(index, promptText) {
-  const key = (promptText ?? "").trim();
-  const list = index.get(key);
+function takeMatch(index, promptText, userId) {
+  const query = (promptText ?? "").trim();
+  const uid = (userId ?? "").trim();
+  const scopedKey = uid ? `${uid}::${query}` : `::${query}`;
+  const list = index.get(scopedKey);
   if (!list || list.length === 0) return null;
   return list.shift();
 }
@@ -99,7 +105,9 @@ function summarize(rows) {
   const matched = rows.filter((r) => r._interaction_match).length;
   const withEnergy = rows.filter((r) => r.energy_joules != null).length;
   const withTokens = rows.filter(
-    (r) => r.prompt_tokens != null && r.completion_tokens != null,
+    (r) =>
+      (r.prompt_tokens != null && r.completion_tokens != null) ||
+      r.total_tokens != null,
   ).length;
   return { total: rows.length, matched, withEnergy, withTokens };
 }
@@ -137,14 +145,17 @@ async function main() {
 
   for (const row of runRows) {
     const promptText = row.prompt ?? row.query ?? "";
-    const match = takeMatch(index, promptText);
+    const userId = row.userId ?? row.user_id ?? null;
+    const match = takeMatch(index, promptText, userId);
     enriched.push({
       ...row,
       _interaction_match: Boolean(match),
       interaction_id: match?.id ?? null,
+      interaction_user_id: match?.userId ?? null,
       interaction_created_at: match?.createdAt ?? null,
       prompt_tokens: match?.promptTokens ?? null,
       completion_tokens: match?.completionTokens ?? null,
+      total_tokens: match?.totalTokens ?? null,
       energy_joules: match?.energyJoules ?? null,
       energy_source: match?.energySource ?? null,
       carbon_grams_co2: match?.carbonGramsCO2 ?? null,

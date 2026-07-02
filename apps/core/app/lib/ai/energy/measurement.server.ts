@@ -8,6 +8,7 @@ export type EnergyMeasurementInput = {
   registryModelId: string;
   promptTokens: number | null;
   completionTokens: number | null;
+  totalTokens?: number | null;
   durationMs: number | null;
   /** Per-token constants from AIModel row */
   estEnergyJoulesPerToken: number | null;
@@ -20,7 +21,7 @@ export type EnergyMeasurementResult = {
   energySource: EnergyMeasurementSource | null;
 };
 
-const SIDECAR_URL = process.env.ENERGY_SIDECAR_URL?.trim();
+const SIDECAR_URL = () => process.env.ENERGY_SIDECAR_URL?.trim();
 
 type SidecarStopPayload = {
   energyJoules?: number;
@@ -29,7 +30,7 @@ type SidecarStopPayload = {
 };
 
 function sidecarBaseUrl(override?: string | null): string | null {
-  const raw = override?.trim() || SIDECAR_URL?.trim();
+  const raw = override?.trim() || SIDECAR_URL()?.trim();
   return raw ? raw.replace(/\/$/, "") : null;
 }
 
@@ -103,7 +104,7 @@ function tokenEstimate(input: EnergyMeasurementInput): EnergyMeasurementResult {
   const totalTokens =
     input.promptTokens != null && input.completionTokens != null
       ? input.promptTokens + input.completionTokens
-      : null;
+      : input.totalTokens ?? null;
 
   const energyJoules =
     input.estEnergyJoulesPerToken != null && totalTokens != null
