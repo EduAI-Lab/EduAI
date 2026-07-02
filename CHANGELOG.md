@@ -20,9 +20,11 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] feat: Hybrid tier routing engine — rules, kNN exemplar voting, optional LLM classifier, carbon-policy tie-break, Auto model picker wiring, and offline eval scripts (`research:eval-knn`, `research:eval-llm`) (#831, @superbolt08, 2026-06-30) — [#759](https://github.com/EduAI-Lab/EduAI/pull/759)
 - [core] tests: Unit coverage for routing rules, kNN vote, LLM classifier JSON/tier mapping, local vLLM remap, carbon policy, and chat Auto picker (#831, @superbolt08, 2026-06-30) — [#759](https://github.com/EduAI-Lab/EduAI/pull/759)
 - [infra] feat: cmps01 nginx edge proxy on `:8001` for LiteLLM, Ollama embeddings, and energy sidecar — IP allowlist plus `X-EduAI-Internal-Key` on internal paths (#831, @superbolt08, 2026-06-30) — [#759](https://github.com/EduAI-Lab/EduAI/pull/759)
+- [core] feat: Wire Auto model routing, tagged sidecar energy sessions, and `persistAiInteractionTelemetry` into `POST /api/chat` while preserving ADHD oversight, course gate, and web-tools policy (#851, @superbolt08, 2026-07-02) — [#760](https://github.com/EduAI-Lab/EduAI/pull/760)
 
 ### Fixed
 
+- [core] fix: Split `telemetry.server.ts` from client-importable routing modules to fix Vite client bundle and unit test failures on PR4 CI (#851, @superbolt08, 2026-07-02) — [#760](https://github.com/EduAI-Lab/EduAI/pull/760)
 - [core] fix: Scope `CMPS01_INTERNAL_KEY` to trusted cmps01 edge URLs only; require pre-embedded kNN exemplars; image turns keep cloud multimodal fallback on vLLM stack; low-confidence kNN defaults to tier 1 (#831, @superbolt08, 2026-07-02) — [#759](https://github.com/EduAI-Lab/EduAI/pull/759)
 - [infra] fix: Gitignore rendered `nginx.conf` / `internal-allow.conf` and reject placeholder internal key in `deploy-edge-proxy.sh` (#831, @superbolt08, 2026-07-02) — [#759](https://github.com/EduAI-Lab/EduAI/pull/759)
 - [core] fix: Add missing `scripts/research/paths.mjs` so offline kNN/LLM router eval scripts resolve default label paths (#831, @superbolt08, 2026-06-30) — [#759](https://github.com/EduAI-Lab/EduAI/pull/759)
