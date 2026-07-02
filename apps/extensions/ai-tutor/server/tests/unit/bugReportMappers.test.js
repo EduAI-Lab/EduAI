@@ -35,4 +35,31 @@ describe('mapCoreAdminBugReportRow', () => {
     expect(row.reporterName).toBe('Anonymous');
     expect(row.reporterEmail).toBeNull();
   });
+
+  it('passes through bugType when present', () => {
+    const row = mapCoreAdminBugReportRow({
+      id: 'br-3',
+      status: 'UNHANDLED',
+      description: 'Feature broken',
+      bugType: 'FEATURE_NOT_WORKING',
+      isAnonymous: false,
+      userId: 'user-1',
+      createdAt: '2026-06-24T00:00:00.000Z',
+    });
+
+    expect(row.bugType).toBe('FEATURE_NOT_WORKING');
+  });
+
+  it('returns null bugType when field is absent', () => {
+    const row = mapCoreAdminBugReportRow({
+      id: 'br-4',
+      status: 'RESOLVED',
+      description: 'Old report without type',
+      isAnonymous: false,
+      userId: 'user-2',
+      createdAt: '2026-06-24T00:00:00.000Z',
+    });
+
+    expect(row.bugType).toBeNull();
+  });
 });

@@ -407,21 +407,22 @@ model QuestionSecondaryTopic {
 }
 
 model BugReport {
-  id          String          @id @default(cuid())
+  id          String           @id @default(cuid())
   source      BugReportSource
   userId      String?
-  isAnonymous Boolean         @default(false)
-  description String          @db.VarChar(2000)
-  status      BugReportStatus @default(UNHANDLED)
+  isAnonymous Boolean          @default(false)
+  description String           @db.VarChar(2000)
+  bugType     BugReportType?
+  status      BugReportStatus  @default(UNHANDLED)
   consoleLogs String?
   networkLogs String?
   screenshot  String?
   pageUrl     String?
   userAgent   String?
   context     Json?
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
-  user        User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  user        User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([status, createdAt])
   @@index([userId])
@@ -645,6 +646,15 @@ enum BugReportStatus {
   UNHANDLED
   IN_PROGRESS
   RESOLVED
+}
+
+enum BugReportType {
+  UI_DISPLAY
+  FEATURE_NOT_WORKING
+  PERFORMANCE
+  CONTENT_ERROR
+  ACCESS_PERMISSION
+  OTHER
 }
 
 enum AIModelType {
