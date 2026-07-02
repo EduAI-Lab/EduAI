@@ -33,7 +33,7 @@ function makeArgs(path: string) {
     request: new Request(`http://localhost${path}`, { method: "GET" }),
     params: {},
     context: {} as never,
-  };
+  } as any;
 }
 
 function mockUser(role: string | null) {

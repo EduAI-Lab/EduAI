@@ -25,7 +25,7 @@ import { useAssistiveUi } from "~/components/assistive/assistive-ui-provider";
 import { logChatApiResponse, logChatUseChatError } from "~/lib/chat-client-log";
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
 
   if (!session?.user) {
     return redirect("/auth/login");
