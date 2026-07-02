@@ -70,4 +70,5 @@ coverage/
 apps/**/package-lock.json
 docs/research/data/runs/
 
-.claude/memory.superpowers/
+.claude/memory
+.superpowers/
