@@ -13,7 +13,9 @@ New-Item -ItemType Directory -Force -Path $adequacyDir, $statusDir | Out-Null
 
 if ($HostFilter -eq "cmps02" -or $HostFilter -eq "all") {
     Write-Host "=== pull cmps02 adequacy runs ==="
-    scp cmps02:~/cmps02/adequacy-72b-hard-v1.jsonl (Join-Path $adequacyDir "adequacy-72b-hard-v1.jsonl")
+    scp cmps02:~/cmps02/adequacy-72b-hard-v1.jsonl (Join-Path $adequacyDir "adequacy-72b-hard-v1.jsonl") 2>$null
+    scp cmps02:~/cmps02/adequacy-14b-easy-v1.jsonl (Join-Path $adequacyDir "adequacy-14b-easy-v1.jsonl") 2>$null
+    scp cmps02:~/cmps02/adequacy-14b-easy.log (Join-Path $adequacyDir "adequacy-14b-easy.log") 2>$null
     scp cmps02:~/cmps02/adequacy-72b-hard.log (Join-Path $adequacyDir "adequacy-72b-hard.log") 2>$null
     scp cmps02:~/cmps02/adequacy-prompts-hard.jsonl (Join-Path $adequacyDir "adequacy-prompts-hard.jsonl") 2>$null
 }

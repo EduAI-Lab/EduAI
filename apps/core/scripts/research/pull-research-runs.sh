@@ -25,6 +25,10 @@ pull_cmps02() {
     "$DATA_DIR/runs/adequacy/adequacy-72b-hard.log" 2>/dev/null || true
   scp cmps02:~/cmps02/adequacy-prompts-hard.jsonl \
     "$DATA_DIR/runs/adequacy/adequacy-prompts-hard.jsonl" 2>/dev/null || true
+  scp cmps02:~/cmps02/adequacy-14b-easy-v1.jsonl \
+    "$DATA_DIR/runs/adequacy/adequacy-14b-easy-v1.jsonl" 2>/dev/null || echo "  (skip adequacy-14b-easy-v1.jsonl — not on host yet)"
+  scp cmps02:~/cmps02/adequacy-14b-easy.log \
+    "$DATA_DIR/runs/adequacy/adequacy-14b-easy.log" 2>/dev/null || true
 }
 
 pull_cmps01() {
