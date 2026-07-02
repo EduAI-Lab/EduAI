@@ -100,6 +100,13 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] fix: ADHD Assist citation telemetry undercounted compliance on hybrid/preloaded RAG turns — `toolsUsed` now also initializes from the RAG-injection state instead of only `onStepFinish`, so a turn where course material reaches the model without a tool call is still checked for a `Sources:` footer. `hasSourcesFooter()` is now anchored to the tail of the reply (scanning paragraphs from the end, allowing the template's trailing `**Next?**` line after it) instead of matching any `Sources:`-shaped line anywhere in the answer. (@Ayyhab, 2026-06-29) — [#722](https://github.com/EduAI-Lab/EduAI/pull/722)
 - [core] tests: Unit tests for urgency-term detection and Sources-footer anchoring (including a non-footer `Sources:` aside and a mid-answer `## Sources of ...` heading that must not count as a footer), plus a route-level regression proving `toolsUsed` telemetry on hybrid-RAG ADHD Assist turns. (@Ayyhab, 2026-06-29) — [#722](https://github.com/EduAI-Lab/EduAI/pull/722)
 
+### Added
+
+- [core] feat: Course card UX for ADHD Assist pilot (PR2) — course cards gain per-student colour personalization (Canvas-style hero colour + ⋮ customization popover), a segmented term filter (All / Term 1 / Term 2 mapped from Fall/Winter/Spring/Summer), a material-preview dialog (instructors/TAs can inspect a file before downloading), and scroll/press motion reveals gated by the `Reduce motion` preference. (#696, #697, #698, #701, #708, @Ayyhab, 2026-06-27) — [#752](https://github.com/EduAI-Lab/EduAI/pull/752)
+- [core] feat: Student chat privacy notice — first-visit modal on `/chat` informs students that course chat history can be reviewed by instructors, TAs, and platform admins; acknowledgment stored per-user in `localStorage`; a persistent inline reminder stays visible after dismissal. (#699, #708, @Ayyhab, 2026-06-27) — [#752](https://github.com/EduAI-Lab/EduAI/pull/752)
+- [core] feat: Chat history rail polish — softer visual styling and auto-hide in focus mode so the transcript area stays full-width during focused reading. (#708, @Ayyhab, 2026-06-27) — [#752](https://github.com/EduAI-Lab/EduAI/pull/752)
+- [core] tests: Unit coverage for course-card colour/nickname personalization (`course-card-preferences.test.ts`), term-filter bucketing (`course-term-filter.test.ts`), chat privacy notice localStorage persistence (`chat-privacy-notice.test.ts`), and the privacy-notice dialog UI (`ChatPrivacyNoticeDialog.test.tsx`). (#696, #697, #698, #699, #708, @Ayyhab, 2026-06-27) — [#752](https://github.com/EduAI-Lab/EduAI/pull/752)
+
 
 ## [Week 7 — June 15–21, 2026]
 
