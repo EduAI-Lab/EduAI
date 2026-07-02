@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
-import { makeProfessor, makeStudent, makeTA, truncateAll, seedMinimalCourse, prisma } from '../helpers.js';
+import { makeProfessor, makeStudent, makeTA, makeAdmin, truncateAll, seedMinimalCourse, prisma } from '../helpers.js';
 
 describe('Activities routes', () => {
   let prof;
@@ -444,6 +444,16 @@ describe('Activities routes', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.length).toBe(1);
+    });
+
+    it('ADMIN (not enrolled/assigned) gets all submissions (#781)', async () => {
+      const admin = makeAdmin();
+      const adminApp = await createApp({ mockUser: admin });
+
+      const res = await request(adminApp).get(`/api/activities/${activity.id}/submissions`);
+
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.body)).toBe(true);
     });
 
     it('student gets 403', async () => {

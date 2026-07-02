@@ -15,7 +15,7 @@ vi.mock("~/lib/canvas/client.server", async (importOriginal) => {
   };
 });
 
-import { resetCanvasRateLimitsForTests } from "~/lib/canvas/guards.server";
+import { resetCanvasRateLimitsForTests, isCanvasSyncRateLimited } from "~/lib/canvas/guards.server";
 import { prepareStudentIdStorage, readStoredStudentId } from "~/lib/canvas/student-id.server";
 import { loader, action } from "~/routes/api/canvas.$";
 import { auth } from "~/lib/auth/server";
@@ -48,7 +48,7 @@ function makeArgs(method: string, subpath: string, body?: unknown) {
     request: new Request(`http://localhost/api/canvas/${subpath}`, init),
     params: {} as Record<string, string>,
     context: {} as never,
-  };
+  } as any;
   return args;
 }
 
@@ -301,7 +301,7 @@ describe("Canvas API — connect / integration / disconnect", () => {
       }),
       params: {},
       context: {} as never,
-    });
+    } as any);
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ success: false, error: "Invalid JSON body" });
   });
@@ -486,7 +486,7 @@ describe("Canvas API — link-roster", { timeout: 15_000 }, () => {
     }
   });
 
-  it("returns 404 when no staged roster matches the student number", async () => {
+  it("links student number even when no staged roster matches yet (#725)", async () => {
     const student = await prisma.user.create({
       data: {
         email: `canvas-no-match-${Date.now()}@test.com`,
@@ -498,7 +498,11 @@ describe("Canvas API — link-roster", { timeout: 15_000 }, () => {
 
     sessionFor(student.id, "STUDENT");
     const res = await call("POST", "link-roster", { studentNumber: "unknown_999" });
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.data.studentId).toBe("unknown_999");
+    expect(body.data.enrollmentsLinked).toBe(0);
 
     await prisma.user.delete({ where: { id: student.id } });
   });
@@ -607,11 +611,14 @@ describe("Canvas API — sync guards", () => {
     await connectTestMode();
     sessionFor(instructorId, "INSTRUCTOR");
 
-    const first = await call("POST", "sync", { canvasCourseIds: ["1"] });
-    expect(first.status).toBe(200);
+    // Prime the in-memory limiter without running a full sync (keeps the test fast).
+    isCanvasSyncRateLimited(instructorId);
 
-    sessionFor(instructorId, "INSTRUCTOR");
-    const second = await call("POST", "sync", { canvasCourseIds: ["1"] });
-    expect(second.status).toBe(429);
+    const res = await call("POST", "sync", { canvasCourseIds: ["1"] });
+    expect(res.status).toBe(429);
+    expect(await res.json()).toMatchObject({
+      success: false,
+      error: expect.stringMatching(/too recently/i),
+    });
   });
 });

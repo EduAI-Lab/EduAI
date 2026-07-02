@@ -1,9 +1,9 @@
 import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { hashPassword } from 'better-auth/crypto';
 import { clearStudentIdStorage, prepareStudentIdStorage } from '../app/lib/canvas/student-id.server';
-import { UNITS } from '../app/lib/units';
 
 export const prisma = new PrismaClient();
 
@@ -1073,6 +1073,54 @@ async function seedPasswords() {
   }
 }
 
+/**
+ * Seed the UBCO discipline registry from prisma/data/disciplines.csv (the
+ * Workday export, §541). Idempotent upsert by code. Must run before seedCourses
+ * since courses.department is a FK into disciplines.code.
+ */
+/**
+ * Split a single CSV line, honouring RFC-4180 double-quoted fields so a name
+ * containing commas (e.g. "Design, Innovation, Creativity, Entrepreneurship")
+ * stays one field with its surrounding quotes stripped.
+ */
+function parseCsvLine(line: string): string[] {
+  const out: string[] = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') { cur += '"'; i++; } // escaped "" inside quotes
+        else inQuotes = false;
+      } else cur += ch;
+    } else if (ch === '"') inQuotes = true;
+    else if (ch === ',') { out.push(cur); cur = ''; }
+    else cur += ch;
+  }
+  out.push(cur);
+  return out;
+}
+
+async function seedDisciplines(): Promise<number> {
+  const csvPath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'data', 'disciplines.csv');
+  const lines = readFileSync(csvPath, 'utf8').trim().split('\n').slice(1); // drop header
+  for (const line of lines) {
+    const parts = parseCsvLine(line);
+    if (parts.length < 4) continue;
+    const id = parts[0];
+    const code = parts[1];
+    const createdAt = parts[parts.length - 1];
+    const name = parts[2]; // quoted comma-bearing names already kept whole
+    await prisma.discipline.upsert({
+      where: { code },
+      update: { name },
+      create: { id, code, name, createdAt: new Date(createdAt) },
+    });
+  }
+  return lines.length;
+}
+
 async function seedCourses() {
   for (const course of COURSES) {
     await prisma.course.upsert({
@@ -1127,11 +1175,6 @@ async function seedCourses() {
         where: { courseId_userId: { courseId: course.id, userId: taId } },
         update: { role: 'TA', isActive: true },
         create: { courseId: course.id, userId: taId, role: 'TA', isActive: true },
-      });
-      await prisma.courseTA.upsert({
-        where: { courseId_userId: { courseId: course.id, userId: taId } },
-        update: {},
-        create: { courseId: course.id, userId: taId },
       });
     }
 
@@ -1507,7 +1550,10 @@ async function seedMaterials() {
 }
 
 async function main() {
-  console.log(`Seeding Core (units registry: ${UNITS.length} subjects)...`);
+  console.log('Seeding Core...');
+
+  const disciplineCount = await seedDisciplines();
+  console.log(`  ${disciplineCount} disciplines seeded (Workday units registry)`);
 
   await seedAIProvidersAndModels();
   console.log('  AI providers and models seeded');

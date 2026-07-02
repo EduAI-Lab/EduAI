@@ -18,7 +18,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     });
   }
 
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -63,7 +63,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const guard = await requireServiceKey(request);
     if (guard) return guard;
   } else {
-    const session = await auth.api.getSession(request);
+    const session = await auth.api.getSession({ headers: request.headers });
     if (!session?.user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,

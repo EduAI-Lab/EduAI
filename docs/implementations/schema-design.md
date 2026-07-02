@@ -290,7 +290,7 @@ A `UNIT_ADMIN` can create and edit courses in any subject they are authorized fo
 
 `authorizedUnits` is stored on `User` (not a separate table) because the scope is per-admin and not shared between admins. This means auth middleware can evaluate the check from `req.user.authorizedUnits` with no additional join.
 
-Valid subject values are defined by a Zod enum (`UnitSchema`) in a shared constants file (`apps/core/app/lib/units.ts`). This is an application-layer enum — not a Postgres enum — so adding or renaming a subject requires only a code change and a data migration, with no DB schema migration.
+Valid subject values live in the `Discipline` table (§541), seeded from the Workday export (`apps/core/prisma/data/disciplines.csv`). Course `department` and `authorizedUnits` codes are validated against it server-side (`apps/core/app/lib/disciplines/server.ts`), and `Course.department` is a foreign key into `Discipline.code`. Adding a subject is a data insert (no schema migration).
 
 Authorization rules for `UNIT_ADMIN`:
 - May create or edit a course only if `course.department` is in `user.authorizedUnits`
@@ -298,7 +298,7 @@ Authorization rules for `UNIT_ADMIN`:
 - May not act on courses whose `course.department` is not in their array, even if that field is null
 - Must specify an instructor (`userId` of a user with role `INSTRUCTOR`) at course creation time; that user is enrolled with `EnrollmentRole.INSTRUCTOR`. The `UNIT_ADMIN` is never auto-enrolled into the course they create.
 
-**Known limitation:** if a subject code is renamed (e.g. `"COSC"` → `"CS"`), all `User.authorizedUnits` arrays and all `Course.department` values containing the old code must be updated in a data migration. Because values are controlled by `UnitSchema` (no free-form user entry), renames are infrequent and the affected rows are easily identified with an array-contains query.
+**Known limitation:** if a subject code is renamed (e.g. `"COSC"` → `"CS"`), the `Discipline.code` row, every `Course.department` (FK, `ON UPDATE CASCADE`), and all `User.authorizedUnits` arrays must be updated together. Because codes come from the `Discipline` table (no free-form user entry), renames are infrequent and the affected rows are easily identified with an array-contains query.
 
 ### `courses` — new columns
 

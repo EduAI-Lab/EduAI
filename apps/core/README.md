@@ -238,6 +238,7 @@ curl -X POST "https://eduai.ok.ubc.ca/api/chat" \
 - **Chat IDs**: The `chatId` is strictly server-generated (CUID). Clients should not attempt to generate their own chat IDs.
 - **Message IDs**: Clients **SHOULD** generate a UUID v4 for every message (`message.id`) before sending it. This enables optimistic UI updates and allows the server to deduplicate retries safely.
 - If a client references a `chatId` that no longer exists for that user, the API returns `410 Gone` with `{ "chatDeleted": true }`. Callers should drop the stale ID and start a new chat.
+- **Route-based resume**: Saved chats are opened through `/chat/:chatId`. The route is the source of truth for the active conversation, so refreshing or directly visiting a saved-chat URL restores that chat instead of relying on browser `sessionStorage`.
 
 ### AI Models Endpoint
 
@@ -369,6 +370,8 @@ When `assistDefault` is `true`, the root layout sets `data-assistive="true"` on 
 **Assistive reading typography:** Elements marked with the `reading-surface` class (chat messages, course overview text, etc.) pick up spacing-only typography under `[data-assistive]` — 16px base, ~1.625 line-height, 65ch max measure, increased paragraph/letter spacing. No font-family swap; OFF state is pixel-identical because the attribute is absent.
 
 **Active highlighting + focus mode (#525):** On `/chat` when `[data-assistive]` is set, the latest assistant message is emphasized (outline + background), older messages are de-emphasized (lower opacity, full opacity on hover/focus), the composer is subtly anchored, `:focus-visible` rings are strengthened, and the input auto-focuses after each assistant turn. **Focus mode** (header toggle, assistive ON only) sets `data-assistive-focus-mode` on `<html>` to hide the sidebar and course/model selectors. Client `re_orientation` events record re-orientation latency via `POST /api/assistive-events`.
+
+**Chat markdown (Streamdown):** Assistant replies render through [Streamdown](https://streamdown.ai) with the `@streamdown/code` plugin for syntax-highlighted fenced blocks and copy/download controls. The plugin is lazy-loaded on the client (`packages/ui/src/ui/lazy-streamdown.tsx`) because it is ESM-only and would crash `react-router-serve` in the E2E Docker image if imported statically. Tailwind must scan hoisted Streamdown chunks — see `@source` entries in `apps/core/app/app.css`.
 
 **Example** (browser session — toggle Assistive Mode on):
 

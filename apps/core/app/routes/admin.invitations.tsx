@@ -5,7 +5,7 @@ import { IconPlus, IconDots, IconCopy, IconMailForward, IconBan } from "@tabler/
 
 import { auth } from "~/lib/auth/server";
 import { invitableRolesFor } from "~/lib/invitations/schemas";
-import { UNIT_OPTIONS } from "~/lib/units";
+import { useDisciplines } from "~/hooks/api/use-disciplines";
 import {
   Button,
   Badge,
@@ -92,7 +92,7 @@ const ROLE_LABEL: Record<InviteRole | "STUDENT", string> = {
 };
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) return redirect("/auth/login");
   if (!["ADMIN", "UNIT_ADMIN"].includes(session.user.role ?? "")) return redirect("/dashboard");
   return {
@@ -118,6 +118,7 @@ function StatusBadge({ invite }: { invite: Invitation }) {
 
 export default function InvitationsPage() {
   const { user, invitableRoles } = useLoaderData<typeof loader>();
+  const { options: departmentOptions } = useDisciplines();
   const [invites, setInvites] = useState<Invitation[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -437,7 +438,7 @@ export default function InvitationsPage() {
                 <div className="space-y-2">
                   <Label htmlFor="invite-units">Authorized units</Label>
                   <MultiSelect
-                    options={UNIT_OPTIONS.map((dept) => ({
+                    options={departmentOptions.map((dept) => ({
                       value: dept.code,
                       label: dept.label,
                       description: dept.code,
