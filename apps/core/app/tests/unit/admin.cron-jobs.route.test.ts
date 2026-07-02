@@ -59,7 +59,7 @@ function makeRequest(path: string, method = "GET", body?: unknown) {
 }
 
 function makeArgs(request: Request) {
-  return { request, params: {}, context: {} as never };
+  return { request, params: {}, context: {} as never } as any;
 }
 
 // react-router v7 `data()` returns { type, data, init } — not a Response.

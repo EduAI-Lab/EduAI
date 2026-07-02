@@ -83,7 +83,7 @@ const ROLE_LABEL: Record<InviteRole, string> = {
 };
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) return redirect("/auth/login");
   if (session.user.role !== "UNIT_ADMIN") return redirect("/dashboard");
   // The whole surface is gated by the policy flag — when off, it doesn't exist.

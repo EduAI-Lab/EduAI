@@ -62,7 +62,7 @@ function asAnon() {
   getSessionSpy.mockResolvedValue(null as never);
 }
 
-const ctx = { context: {} as never };
+const ctx = { context: {} as never } as any;
 function createReq(body: unknown) {
   return {
     request: new Request("http://localhost/api/invitations", {
