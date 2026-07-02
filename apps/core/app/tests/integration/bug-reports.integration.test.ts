@@ -26,7 +26,7 @@ function makeActionArgs(body: unknown, authorization?: string) {
     }),
     params: {} as Record<string, string>,
     context: {} as never,
-  };
+  } as any;
 }
 
 // ---------------------------------------------------------------------------
@@ -309,7 +309,7 @@ describe("admin bug-reports lifecycle (#304)", () => {
         request: new Request("http://localhost/api/admin/bug-reports?source=AI_TUTOR"),
         params: {},
         context: {} as never,
-      });
+      } as any);
       expect(listed.status).toBe(200);
       const body = await listed.json();
       const report = body.reports.find(
@@ -332,7 +332,7 @@ describe("admin bug-reports lifecycle (#304)", () => {
         }),
         params: { id: report.id },
         context: {} as never,
-      });
+      } as any);
       expect(patched.status).toBe(200);
 
       const row = await prisma.bugReport.findUnique({ where: { id: report.id } });
@@ -379,7 +379,7 @@ describe("admin bug-reports lifecycle (#304)", () => {
         request: new Request("http://localhost/api/admin/bug-reports?source=QUESTION_MAKER"),
         params: {},
         context: {} as never,
-      });
+      } as any);
       const body = await listed.json();
       const report = body.reports.find(
         (r: { description: string }) => r.description === "Anonymous masking test (#304).",
@@ -412,7 +412,7 @@ describe("admin bug-reports lifecycle (#304)", () => {
       request: new Request("http://localhost/api/bug-reports?mine=true"),
       params: {},
       context: {} as never,
-    });
+    } as any);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(Array.isArray(body.reports)).toBe(true);

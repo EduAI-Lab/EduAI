@@ -1,8 +1,7 @@
 /**
- * Playwright global setup — waits for Core and AI Tutor to be accepting
- * requests before the workers start. Without this, the first test in each
- * worker can time out when the server is still warming up its DB connection
- * pool after a fresh start.
+ * Playwright global setup — waits for all services to be accepting requests
+ * before the workers start. Mirrors the Docker healthcheck endpoints so the
+ * check is guaranteed to pass once the container is marked healthy.
  */
 import { request } from '@playwright/test';
 import { CORE_URL, AI_TUTOR_API_URL, QM_BACKEND_URL } from './playwright.config';
@@ -34,7 +33,7 @@ async function waitForUrl(url: string): Promise<void> {
 
 export default async function globalSetup() {
   await Promise.all([
-    waitForUrl(`${CORE_URL}/api/me`),
+    waitForUrl(`${CORE_URL}/api/health`),
     waitForUrl(`${AI_TUTOR_API_URL}/api/courses`),
     waitForUrl(`${QM_BACKEND_URL}/api/course`),
   ]);
