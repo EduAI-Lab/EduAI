@@ -27,7 +27,7 @@ import { useDisciplines } from '~/hooks/api/use-disciplines'
 import { DepartmentCombobox } from '~/components/courses/department-combobox'
 import type { Course, CreateCourseInput, UpdateCourseInput } from '~/hooks/api/use-courses'
 import { usePolicies } from '~/hooks/api/use-policies'
-import { groupCoursesByTerm } from '~/lib/courses/term-grouping'
+import { groupCoursesByDate } from '~/lib/courses/term-grouping'
 
 interface Props {
   courses: Course[]
@@ -136,7 +136,7 @@ export function CoursesInstructorView({ courses, onCreateCourse, onEditCourse, o
     setEditingCourse(null)
   }
 
-  const { current, previous } = groupCoursesByTerm(courses)
+  const { previous, current, upcoming } = groupCoursesByDate(courses)
 
   return (
     <div className="flex flex-col gap-4">
@@ -253,6 +253,19 @@ export function CoursesInstructorView({ courses, onCreateCourse, onEditCourse, o
             onEdit={setEditingCourse}
             onDelete={setDeletingCourse}
           />
+          {upcoming.length > 0 && (
+            <div className="flex flex-col gap-3">
+              <h3 className="text-sm font-semibold text-muted-foreground">Upcoming Terms</h3>
+              <InstructorCourseGrid
+                courses={upcoming}
+                canPublish={canPublish}
+                canDelete={canDelete}
+                onPublishToggle={onPublishToggle}
+                onEdit={setEditingCourse}
+                onDelete={setDeletingCourse}
+              />
+            </div>
+          )}
           {previous.length > 0 && (
             <div className="flex flex-col gap-3">
               <h3 className="text-sm font-semibold text-muted-foreground">Previous Terms</h3>

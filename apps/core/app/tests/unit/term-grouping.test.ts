@@ -1,66 +1,74 @@
 import { describe, it, expect } from 'vitest'
-import { groupCoursesByTerm } from '~/lib/courses/term-grouping'
+import { groupCoursesByDate } from '~/lib/courses/term-grouping'
 
-interface C { id: string; term: string; year: number }
+interface C { id: string; startDate: string; endDate: string | null }
 
-const c = (id: string, term: string, year: number): C => ({ id, term, year })
+const c = (id: string, startDate: string, endDate: string | null): C => ({ id, startDate, endDate })
 
-describe('groupCoursesByTerm', () => {
+describe('groupCoursesByDate', () => {
   it('returns empty groups for an empty list', () => {
-    expect(groupCoursesByTerm([], new Date('2025-10-15'))).toEqual({ current: [], previous: [] })
+    expect(groupCoursesByDate([], new Date('2026-07-02'))).toEqual({ previous: [], current: [], upcoming: [] })
   })
 
-  it('puts a Fall course in current when today is in September-December of the same year', () => {
-    const fall = c('a', 'Fall', 2025)
-    const result = groupCoursesByTerm([fall], new Date('2025-10-15'))
-    expect(result.current).toEqual([fall])
+  it('puts a course in current when today is within its start/end range', () => {
+    const course = c('a', '2026-06-01', '2026-08-31')
+    const result = groupCoursesByDate([course], new Date('2026-07-15'))
+    expect(result.current).toEqual([course])
+    expect(result.previous).toEqual([])
+    expect(result.upcoming).toEqual([])
+  })
+
+  it('puts a course in previous when today is after its end date', () => {
+    const course = c('a', '2025-09-01', '2025-12-15')
+    const result = groupCoursesByDate([course], new Date('2026-07-02'))
+    expect(result.previous).toEqual([course])
+    expect(result.current).toEqual([])
+    expect(result.upcoming).toEqual([])
+  })
+
+  it('puts a course in upcoming when today is before its start date', () => {
+    const course = c('a', '2026-09-01', '2026-12-15')
+    const result = groupCoursesByDate([course], new Date('2026-07-02'))
+    expect(result.upcoming).toEqual([course])
+    expect(result.current).toEqual([])
     expect(result.previous).toEqual([])
   })
 
-  it('puts a Fall course in previous when today is a later year', () => {
-    const fall = c('a', 'Fall', 2025)
-    const result = groupCoursesByTerm([fall], new Date('2026-07-02'))
-    expect(result.current).toEqual([])
-    expect(result.previous).toEqual([fall])
+  it('treats a course with no end date as current indefinitely once started', () => {
+    const course = c('a', '2025-01-01', null)
+    const farFuture = groupCoursesByDate([course], new Date('2030-01-01'))
+    expect(farFuture.current).toEqual([course])
+    expect(farFuture.previous).toEqual([])
+    const beforeStart = groupCoursesByDate([course], new Date('2024-06-01'))
+    expect(beforeStart.upcoming).toEqual([course])
   })
 
-  it('treats Winter and Spring as the same current-term bucket (Jan-Apr)', () => {
-    const winter = c('w', 'Winter', 2026)
-    const spring = c('sp', 'Spring', 2026)
-    const result = groupCoursesByTerm([winter, spring], new Date('2026-02-10'))
-    expect(result.current).toEqual([winter, spring])
+  it('treats "today" exactly on the start date as current, not upcoming', () => {
+    const course = c('a', '2026-07-02', '2026-08-01')
+    const result = groupCoursesByDate([course], new Date('2026-07-02'))
+    expect(result.current).toEqual([course])
+    expect(result.upcoming).toEqual([])
+  })
+
+  it('treats "today" exactly on the end date as current, not previous', () => {
+    const course = c('a', '2026-06-01', '2026-07-02')
+    const result = groupCoursesByDate([course], new Date('2026-07-02'))
+    expect(result.current).toEqual([course])
     expect(result.previous).toEqual([])
   })
 
-  it('puts a Summer course in current only during May-August of the matching year', () => {
-    const summer = c('su', 'Summer', 2026)
-    const inRange = groupCoursesByTerm([summer], new Date('2026-06-01'))
-    expect(inRange.current).toEqual([summer])
-    const outOfRange = groupCoursesByTerm([summer], new Date('2026-09-15'))
-    expect(outOfRange.current).toEqual([])
-    expect(outOfRange.previous).toEqual([summer])
-  })
-
-  it('splits a mixed list into current and previous by real date, independent of course order', () => {
-    const currentFall = c('cf', 'Fall', 2026)
-    const oldFall = c('of', 'Fall', 2020)
-    const oldWinter = c('ow', 'Winter', 2026)
-    const result = groupCoursesByTerm([oldFall, currentFall, oldWinter], new Date('2026-10-01'))
-    expect(result.current).toEqual([currentFall])
-    expect(result.previous).toEqual([oldFall, oldWinter])
-  })
-
-  it('treats an unrecognized term as never current', () => {
-    const unknown = c('u', 'Mystery', 2026)
-    const result = groupCoursesByTerm([unknown], new Date('2026-10-01'))
-    expect(result.current).toEqual([])
-    expect(result.previous).toEqual([unknown])
+  it('splits a mixed list into all three buckets independent of order', () => {
+    const past = c('p', '2025-01-01', '2025-04-01')
+    const now_ = c('n', '2026-06-01', '2026-08-01')
+    const future = c('f', '2026-09-01', '2026-12-01')
+    const result = groupCoursesByDate([future, past, now_], new Date('2026-07-02'))
+    expect(result.previous).toEqual([past])
+    expect(result.current).toEqual([now_])
+    expect(result.upcoming).toEqual([future])
   })
 
   it('defaults `now` to the real current date when not provided', () => {
-    // Just confirm the function runs without a `now` argument and returns
-    // both arrays (contents aren't asserted since "today" is not fixed here).
-    const result = groupCoursesByTerm([c('x', 'Fall', 2025)])
-    expect(result.current.length + result.previous.length).toBe(1)
+    const result = groupCoursesByDate([c('x', '2020-01-01', null)])
+    expect(result.previous.length + result.current.length + result.upcoming.length).toBe(1)
   })
 })

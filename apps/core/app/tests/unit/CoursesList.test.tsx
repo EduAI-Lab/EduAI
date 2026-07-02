@@ -48,6 +48,8 @@ const PUBLISHED_COURSE: Course = {
   aiInstructions: '',
   instructorId: 'prof-1',
   department: 'COSC',
+  startDate: '2025-09-01',
+  endDate: '2025-12-15',
   createdAt: '2025-01-01T00:00:00.000Z',
   updatedAt: '2025-01-01T00:00:00.000Z',
 }
@@ -267,7 +269,7 @@ describe('CoursesInstructorView', () => {
   it('groups older-term courses under "Previous Terms"', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2025-10-15'))
-    const oldCourse = { ...PUBLISHED_COURSE, id: 'old1', code: 'COSC 999', year: 2020 }
+    const oldCourse = { ...PUBLISHED_COURSE, id: 'old1', code: 'COSC 999', startDate: '2020-01-01', endDate: '2020-04-15' }
     wrap(
       <CoursesInstructorView
         courses={[PUBLISHED_COURSE, oldCourse]}
@@ -280,6 +282,24 @@ describe('CoursesInstructorView', () => {
     expect(screen.getByText('COSC 101')).toBeInTheDocument()
     expect(screen.getByText(/previous terms/i)).toBeInTheDocument()
     expect(screen.getByText('COSC 999')).toBeInTheDocument()
+  })
+
+  it('groups not-yet-started courses under "Upcoming Terms"', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2025-10-15'))
+    const futureCourse = { ...PUBLISHED_COURSE, id: 'future1', code: 'COSC 555', startDate: '2026-01-01', endDate: '2026-04-15' }
+    wrap(
+      <CoursesInstructorView
+        courses={[PUBLISHED_COURSE, futureCourse]}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />
+    )
+    expect(screen.getByText('COSC 101')).toBeInTheDocument()
+    expect(screen.getByText(/upcoming terms/i)).toBeInTheDocument()
+    expect(screen.getByText('COSC 555')).toBeInTheDocument()
   })
 
   it('labels the department field as "Course Code"', () => {
@@ -375,7 +395,7 @@ describe('CoursesMixedView', () => {
   it('groups older-term courses under "Previous Terms" in the assisting section', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2025-10-15'))
-    const oldTa = { ...TA_COURSE, id: 'ta-old', code: 'COSC 300', year: 2020 }
+    const oldTa = { ...TA_COURSE, id: 'ta-old', code: 'COSC 300', startDate: '2020-01-01', endDate: '2020-04-15' }
     wrap(
       <CoursesMixedView
         courses={[TA_COURSE, oldTa]}
@@ -388,7 +408,23 @@ describe('CoursesMixedView', () => {
     expect(screen.getByText('COSC 300')).toBeInTheDocument()
   })
 
-  it('does not show a "Previous Terms" heading when all courses share one term', () => {
+  it('groups not-yet-started courses under "Upcoming Terms" in the assisting section', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2025-10-15'))
+    const futureTa = { ...TA_COURSE, id: 'ta-future', code: 'COSC 305', startDate: '2026-01-01', endDate: '2026-04-15' }
+    wrap(
+      <CoursesMixedView
+        courses={[TA_COURSE, futureTa]}
+        taCourseIds={['ta1', 'ta-future']}
+        enrolledCourseIds={[]}
+      />
+    )
+    expect(screen.getByText('COSC 301')).toBeInTheDocument()
+    expect(screen.getByText(/upcoming terms/i)).toBeInTheDocument()
+    expect(screen.getByText('COSC 305')).toBeInTheDocument()
+  })
+
+  it('does not show a "Previous Terms" or "Upcoming Terms" heading when all courses are current', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2025-10-15'))
     wrap(
@@ -399,5 +435,6 @@ describe('CoursesMixedView', () => {
       />
     )
     expect(screen.queryByText(/previous terms/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/upcoming terms/i)).not.toBeInTheDocument()
   })
 })

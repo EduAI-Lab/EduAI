@@ -2,7 +2,7 @@ import { Link } from 'react-router'
 import { IconBook } from '@tabler/icons-react'
 import { Card, CardContent, CourseCard, PageHeading } from '@eduai/ui'
 import type { Course } from '~/hooks/api/use-courses'
-import { groupCoursesByTerm } from '~/lib/courses/term-grouping'
+import { groupCoursesByDate } from '~/lib/courses/term-grouping'
 
 interface Props {
   courses: Course[]
@@ -33,11 +33,17 @@ function CourseGrid({ courses }: { courses: Course[] }) {
   )
 }
 
-function TermGroupedGrid({ courses }: { courses: Course[] }) {
-  const { current, previous } = groupCoursesByTerm(courses)
+function DateGroupedGrid({ courses }: { courses: Course[] }) {
+  const { previous, current, upcoming } = groupCoursesByDate(courses)
   return (
     <div className="flex flex-col gap-4">
       <CourseGrid courses={current} />
+      {upcoming.length > 0 && (
+        <div className="flex flex-col gap-3">
+          <h3 className="text-sm font-semibold text-muted-foreground">Upcoming Terms</h3>
+          <CourseGrid courses={upcoming} />
+        </div>
+      )}
       {previous.length > 0 && (
         <div className="flex flex-col gap-3">
           <h3 className="text-sm font-semibold text-muted-foreground">Previous Terms</h3>
@@ -73,13 +79,13 @@ export function CoursesMixedView({ courses, taCourseIds, enrolledCourseIds }: Pr
       {assisting.length > 0 && (
         <div className="flex flex-col gap-4">
           <PageHeading heading="Courses You Are Assisting In" subheading="Courses where you are a TA" />
-          <TermGroupedGrid courses={assisting} />
+          <DateGroupedGrid courses={assisting} />
         </div>
       )}
       {enrolled.length > 0 && (
         <div className="flex flex-col gap-4">
           <PageHeading heading="Courses You Are Enrolled In" subheading="Courses you are taking as a student" />
-          <TermGroupedGrid courses={enrolled} />
+          <DateGroupedGrid courses={enrolled} />
         </div>
       )}
     </div>
