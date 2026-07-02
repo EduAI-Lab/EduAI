@@ -96,8 +96,8 @@ export function ChatHistoryList({
             onClick={() => onSelect(chat.id)}
             aria-current={isActive ? "true" : undefined}
             className={cn(
-              "group flex items-start gap-2 px-3 py-2.5 mx-1 text-left rounded-lg transition-colors duration-150 hover:bg-muted/50",
-              isActive && "bg-muted/70",
+              "group flex items-start gap-2 px-3 py-2.5 mx-1 text-left rounded-lg transition-colors duration-150 hover:bg-muted/40",
+              isActive && "bg-muted/55",
             )}
           >
             <div className="flex-1 min-w-0">
