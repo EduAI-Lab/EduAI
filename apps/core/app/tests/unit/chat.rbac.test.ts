@@ -17,7 +17,6 @@ vi.mock("~/lib/auth/guards.server", () => ({
       headers: { "Content-Type": "application/json" },
     }),
   ),
-  enforceAdminIfApiKey: vi.fn().mockResolvedValue({ response: null, session: null }),
 }));
 
 vi.mock("~/lib/auth/course-access.server", () => ({
@@ -56,7 +55,7 @@ function makeArgs(body: object) {
     }),
     params: {},
     context: {} as never,
-  };
+  } as any;
 }
 
 beforeEach(() => {
