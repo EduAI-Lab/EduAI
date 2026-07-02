@@ -3,15 +3,20 @@ import { fetchCoreCourseSafe, fetchCoreTopicSafe } from '../services/eduaiClient
 
 /**
  * Daily reconciliation job: iterates all CourseOffering and Topic rows that
- * hold a Core reference and nullifies any that return 404 from Core.
+ * hold a Core reference and cleans up any that return 404 from Core.
  *
  * Skips individual rows on 5xx or network errors — they will be retried on
- * the next run. Only a strict 404 triggers nullification.
+ * the next run. Only a strict 404 triggers cleanup.
  */
 export async function runReconciliation() {
   console.log('[reconcile] Starting daily reconciliation');
 
-  // Phase 1 — CourseOffering rows linked to Core
+  // Phase 1 — CourseOffering rows linked to Core. A 404 here means the course
+  // was deleted in Core, so the whole local CourseOffering is cascade-deleted
+  // (modules, lessons, activities, submissions, chat sessions, etc. all carry
+  // `onDelete: Cascade` FKs — see schema.prisma) rather than just unlinked.
+  // This is the safety net for §802's live push: if Core's cascade call to
+  // AI Tutor was missed (server down, network partition), this run catches it.
   const offerings = await prisma.courseOffering.findMany({
     where: { coreOfferingId: { not: null } },
     select: { id: true, coreOfferingId: true },
@@ -21,11 +26,8 @@ export async function runReconciliation() {
     try {
       const result = await fetchCoreCourseSafe(offering.coreOfferingId);
       if (result === null) {
-        await prisma.courseOffering.update({
-          where: { id: offering.id },
-          data: { coreOfferingId: null },
-        });
-        console.log(`[reconcile] Nullified coreOfferingId on CourseOffering ${offering.id} (Core 404)`);
+        await prisma.courseOffering.delete({ where: { id: offering.id } });
+        console.log(`[reconcile] Deleted CourseOffering ${offering.id} (Core 404, cascades to modules/lessons/activities)`);
       }
     } catch (err) {
       console.warn(`[reconcile] Skipping CourseOffering ${offering.id}: ${err.message}`);
