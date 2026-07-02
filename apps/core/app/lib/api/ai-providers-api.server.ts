@@ -26,7 +26,7 @@ export async function handleAiProvidersApiRequest(request: Request) {
 
   switch (request.method) {
     case "GET": {
-      const session = apiKeySession ?? (await auth.api.getSession(request));
+      const session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
       if (!session?.user) {
         return new Response(JSON.stringify({ error: "Unauthorized" }), {
           status: 401,
@@ -59,7 +59,7 @@ export async function handleAiProvidersApiRequest(request: Request) {
     }
 
     case "POST": {
-      const session = apiKeySession ?? (await auth.api.getSession(request));
+      const session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
       if (!session?.user || session.user.role !== "ADMIN") {
         logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");
@@ -109,7 +109,7 @@ export async function handleAiProvidersApiRequest(request: Request) {
         return apiError(400, "PROVIDER_ID_REQUIRED");
       }
 
-      const session = apiKeySession ?? (await auth.api.getSession(request));
+      const session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
       if (!session?.user || session.user.role !== "ADMIN") {
         logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");
@@ -163,7 +163,7 @@ export async function handleAiProvidersApiRequest(request: Request) {
         return apiError(400, "PROVIDER_ID_REQUIRED");
       }
 
-      const session = apiKeySession ?? (await auth.api.getSession(request));
+      const session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
       if (!session?.user || session.user.role !== "ADMIN") {
         logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");

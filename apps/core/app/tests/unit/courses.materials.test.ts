@@ -72,6 +72,17 @@ function makeArgs(method: string, body?: BodyInit, headers?: Record<string, stri
     request: makeRequest(method, body, headers),
     params: { courseId: COURSE_ID },
     context: {} as never,
+  } as any;
+}
+
+function makePreviewArgs(materialId: string) {
+  return {
+    request: new Request(
+      `http://localhost/api/courses/${COURSE_ID}/materials/${materialId}`,
+      { method: "GET" },
+    ),
+    params: { courseId: COURSE_ID, materialId },
+    context: {} as never,
   };
 }
 
@@ -83,7 +94,7 @@ function makeDeleteArgs(materialId: string) {
     ),
     params: { courseId: COURSE_ID, materialId },
     context: {} as never,
-  };
+  } as any;
 }
 
 function makeRenameArgs(materialId: string, body: unknown) {
@@ -98,7 +109,7 @@ function makeRenameArgs(materialId: string, body: unknown) {
     ),
     params: { courseId: COURSE_ID, materialId },
     context: {} as never,
-  };
+  } as any;
 }
 
 function mockSession(role: string, id = "user-1") {
@@ -117,7 +128,7 @@ function stubUploadArgs() {
     headers: new Headers(),
     formData: () => Promise.resolve(mockFormData),
   } as unknown as Request;
-  return { request: stubRequest, params: { courseId: COURSE_ID }, context: {} as never };
+  return { request: stubRequest, params: { courseId: COURSE_ID }, context: {} as never } as any;
 }
 
 beforeEach(() => {
@@ -192,6 +203,60 @@ describe("GET /api/courses/:courseId/materials loader", () => {
     vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([]);
     const res = await loader(makeArgs("GET"));
     expect(res.status).toBe(200);
+  });
+});
+
+describe("GET /api/courses/:courseId/materials/:materialId loader (preview)", () => {
+  it("returns 404 when material not found", async () => {
+    mockSession("STUDENT");
+    mockAccess({ level: "student", rank: 0 });
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
+    const res = await loader(makePreviewArgs("mat-missing"));
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 409 when material is not READY", async () => {
+    mockSession("STUDENT");
+    mockAccess({ level: "student", rank: 0 });
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "mat-1",
+      title: "Slides",
+      mimeType: "application/pdf",
+      fileSize: 100,
+      status: "PROCESSING",
+      createdAt: new Date(),
+      rawText: "hello",
+    } as never);
+    const res = await loader(makePreviewArgs("mat-1"));
+    expect(res.status).toBe(409);
+  });
+
+  it("returns excerpt for READY material", async () => {
+    mockSession("STUDENT");
+    mockAccess({ level: "student", rank: 0 });
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "mat-1",
+      title: "Syllabus",
+      mimeType: "application/pdf",
+      fileSize: 2048,
+      status: "READY",
+      createdAt: new Date(),
+      rawText: "Course overview text",
+    } as never);
+    const res = await loader(makePreviewArgs("mat-1"));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.excerpt).toBe("Course overview text");
+    expect(body.truncated).toBe(false);
+    expect(body.material.title).toBe("Syllabus");
+  });
+
+  it("returns 403 for a student when students.canViewMaterials is off", async () => {
+    mockSession("STUDENT");
+    mockAccess({ level: "student", rank: 0 });
+    vi.mocked(getPolicy).mockResolvedValue(false);
+    const res = await loader(makePreviewArgs("mat-1"));
+    expect(res.status).toBe(403);
   });
 });
 
@@ -278,7 +343,7 @@ describe("POST /api/courses/:courseId/materials action", () => {
       }),
       params: { courseId: COURSE_ID },
       context: {} as never,
-    });
+    } as any);
     expect(res.status).toBe(400);
   });
 

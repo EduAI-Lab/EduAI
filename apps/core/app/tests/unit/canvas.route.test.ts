@@ -60,7 +60,7 @@ function getArgs(role: string) {
     request: new Request("http://localhost/api/canvas/integration"),
     params: {},
     context: {} as never,
-  };
+  } as any;
 }
 
 beforeEach(() => {
