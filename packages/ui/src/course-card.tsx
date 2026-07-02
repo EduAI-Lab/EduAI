@@ -9,7 +9,8 @@ import {
   IconWorldOff,
   IconWorldUpload,
 } from "@tabler/icons-react"
-import { CourseColorBar } from "./course-color-bar"
+import { CourseCardHero } from "./course-color-bar"
+import { courseThemeVars, paletteColorAtIndex, type CourseAccentColor } from "./course-theme"
 import { StatusBadge } from "./status-badge"
 import {
   DropdownMenu,
@@ -52,8 +53,16 @@ export interface CourseCardProps {
   departmentLabel?: string | null
   /** Extra badge labels to show below the meta row (e.g. "Enrolled") */
   extraBadges?: string[]
-  /** Card colour index passed to CourseColorBar */
+  /** Card colour index — used when no accentColor is passed */
   colorIndex?: number
+  /** Resolved accent colour (dashboard + detail should share this). */
+  accentColor?: CourseAccentColor
+  /** @deprecated Use accentColor */
+  heroColor?: CourseAccentColor
+  /** Optional display name override (e.g. student nickname) */
+  displayName?: string
+  /** Optional hero top-right action (e.g. customize menu) */
+  heroAction?: React.ReactNode
   /** The link destination when the card title is clicked */
   href: string
   /**
@@ -69,10 +78,10 @@ export interface CourseCardProps {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-/** A small pill used for department / extra labels */
-function Pill({ children }: { children: React.ReactNode }) {
+/** Accent-tinted pill for course metadata */
+function AccentPill({ children }: { children: React.ReactNode }) {
   return (
-    <span className="inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded-full border border-border text-muted-foreground bg-muted/50 leading-none">
+    <span className="inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded-full leading-none border border-[var(--course-border)] bg-[var(--course-muted)] text-foreground/80">
       {children}
     </span>
   )
@@ -91,11 +100,18 @@ export function CourseCard({
   departmentLabel,
   extraBadges = [],
   colorIndex = 0,
+  accentColor,
+  heroColor,
+  displayName,
+  heroAction,
   href,
   LinkComponent,
   actions,
   className,
 }: CourseCardProps) {
+  const cardTitle = displayName?.trim() || name
+  const resolvedAccent: CourseAccentColor =
+    accentColor ?? heroColor ?? paletteColorAtIndex(colorIndex)
   const hasMenu =
     actions &&
     (actions.showPublish || actions.showEdit || actions.showDelete)
@@ -114,21 +130,31 @@ export function CourseCard({
   return (
     <div
       className={cn(
-        // uniform card sizing: fixed min-height so all cards are consistent
-        "relative flex flex-col overflow-hidden rounded-[var(--radius-xl)] border border-border bg-card",
-        "shadow-[0_1px_3px_rgba(0,0,0,0.06)] transition-shadow duration-150 hover:shadow-[0_6px_20px_rgba(0,0,0,0.10)]",
+        "group/card relative flex flex-col overflow-hidden rounded-[var(--radius-xl)]",
+        "border border-[var(--course-border)] bg-[var(--course-surface)]",
+        "shadow-[0_1px_2px_rgba(0,0,0,0.04)]",
+        "transition-[transform,box-shadow,background-color] duration-200 ease-out",
+        "hover:-translate-y-0.5 hover:shadow-[0_10px_24px_var(--course-glow)] hover:bg-[var(--course-surface-strong)]",
         className,
       )}
-      style={{ minHeight: 192 }}
+      style={{
+        minHeight: 220,
+        ...courseThemeVars(resolvedAccent),
+      }}
     >
-      {/* Colour accent bar */}
-      <CourseColorBar index={colorIndex} />
+      <CourseCardHero
+        index={colorIndex}
+        code={code}
+        accentColor={resolvedAccent}
+        action={heroAction}
+        className="relative"
+      />
 
       {/* Stretched-link overlay — makes the entire card clickable */}
       <TitleEl
         {...titleLinkProps}
         className="absolute inset-0 z-0"
-        aria-label={`${code} ${name}`}
+        aria-label={`${code} ${cardTitle}`}
       />
 
       {/* Card body — pointer-events-none so clicks fall through to the overlay */}
@@ -137,11 +163,8 @@ export function CourseCard({
         <div className="flex items-start gap-2">
           {/* Title text — visually styled but non-interactive (overlay handles nav) */}
           <div className="flex-1 min-w-0">
-            <div className="text-base font-bold leading-tight text-foreground">
-              {code}
-            </div>
-            <div className="mt-0.5 text-[13px] leading-snug text-muted-foreground line-clamp-2">
-              {name}
+            <div className="text-base font-bold leading-tight text-foreground line-clamp-2">
+              {cardTitle}
             </div>
           </div>
 
@@ -242,10 +265,10 @@ export function CourseCard({
           {hasBadges && (
             <div className="flex flex-wrap gap-1">
               {(departmentLabel ?? department) && (
-                <Pill>{departmentLabel ?? department}</Pill>
+                <AccentPill>{departmentLabel ?? department}</AccentPill>
               )}
               {extraBadges.map((label) => (
-                <Pill key={label}>{label}</Pill>
+                <AccentPill key={label}>{label}</AccentPill>
               ))}
             </div>
           )}

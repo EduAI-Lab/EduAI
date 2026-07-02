@@ -20,17 +20,20 @@ export function ChatHistoryRail({
   return (
     <aside
       className={cn(
-        "chat-history-rail assistive-focus-chrome hidden md:flex flex-col flex-shrink-0 h-full min-h-0 w-[260px] lg:w-[280px] border-r border-border bg-background",
+        "chat-history-rail hidden md:flex flex-col flex-shrink-0 h-full min-h-0 w-[240px] lg:w-[260px]",
+        "border-r border-border/35 bg-background/50 backdrop-blur-md",
+        "transition-[background-color,border-color] duration-200",
+        "hover:bg-background/75 hover:border-border/50",
         className,
       )}
       aria-label="Chat history"
     >
       <div className="flex flex-col h-full min-h-0">
-        <div className="flex-shrink-0 px-3 py-3 border-b border-border">
+        <div className="flex-shrink-0 px-3 py-3 border-b border-border/35">
           <button
             type="button"
             onClick={onNewChat}
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-[13px] font-medium text-foreground hover:bg-muted/60 transition-colors"
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-[13px] font-medium text-foreground/90 hover:bg-muted/45 transition-colors"
           >
             <IconPlus className="h-4 w-4" stroke={2} />
             New chat
