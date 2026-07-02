@@ -106,22 +106,10 @@ describe("createQuestion", () => {
     });
   });
 
-  it("returns existing id on idempotency key replay and never opens a transaction", async () => {
-    db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
-    db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, deletedAt: null });
-    db.question.findUnique.mockResolvedValue({ id: QUESTION_ID });
-
-    const result = await createQuestion({ ...baseBody, idempotencyKey: "idem-key-abc" }, CREATOR);
-
-    expect(result).toEqual({ id: QUESTION_ID });
-    expect(db.$transaction).not.toHaveBeenCalled();
-  });
-
   it("writes correct data to question.create inside the transaction", async () => {
     db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
     db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, deletedAt: null });
     db.courseTopic.findMany.mockResolvedValue([{ id: SEC_TOPIC_ID, deletedAt: null }]);
-    db.question.findUnique.mockResolvedValue(null); // idempotency key not already used
     db.$transaction.mockImplementation(async (fn: (tx: typeof db) => unknown) => {
       db.question.create.mockResolvedValue({ id: QUESTION_ID });
       db.questionSecondaryTopic.createMany.mockResolvedValue({ count: 1 });
@@ -129,22 +117,19 @@ describe("createQuestion", () => {
     });
 
     const result = await createQuestion(
-      { ...baseBody, secondaryTopicIds: [SEC_TOPIC_ID], idempotencyKey: "idem-new" },
-      CREATOR
+      { ...baseBody, secondaryTopicIds: [SEC_TOPIC_ID] },
+      CREATOR,
     );
 
     expect(result).toEqual({ id: QUESTION_ID });
     expect(db.$transaction).toHaveBeenCalledOnce();
 
-    // Verify question.create received the right data — including createdBy and idempotencyKey
     const createData = db.question.create.mock.calls[0][0].data;
     expect(createData.createdBy).toBe(CREATOR);
     expect(createData.courseId).toBe(COURSE_ID);
     expect(createData.topicId).toBe(TOPIC_ID);
     expect(createData.content).toBe("What is X?");
-    expect(createData.idempotencyKey).toBe("idem-new");
 
-    // Verify secondary topics are written with the correct question id
     expect(db.questionSecondaryTopic.createMany).toHaveBeenCalledWith({
       data: [{ questionId: QUESTION_ID, topicId: SEC_TOPIC_ID }],
     });
@@ -178,29 +163,6 @@ describe("createQuestion", () => {
       conflictingWithPrimary: [],
     });
     expect(db.$transaction).not.toHaveBeenCalled();
-  });
-
-  it("recovers from an idempotency-key race (P2002) by returning the existing id", async () => {
-    db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
-    db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, deletedAt: null });
-    // First idempotency check finds nothing; a concurrent request commits before
-    // our create, so the transaction throws P2002, then the recovery lookup hits.
-    db.question.findUnique
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({ id: QUESTION_ID });
-    db.$transaction.mockRejectedValue(
-      new Prisma.PrismaClientKnownRequestError("unique", {
-        code: "P2002",
-        clientVersion: "5.0.0",
-      })
-    );
-
-    const result = await createQuestion(
-      { ...baseBody, idempotencyKey: "idem-race" },
-      CREATOR
-    );
-
-    expect(result).toEqual({ id: QUESTION_ID });
   });
 
   it("does NOT call createMany when secondaryTopicIds is empty", async () => {

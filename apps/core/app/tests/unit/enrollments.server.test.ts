@@ -70,43 +70,6 @@ describe("addEnrollment", () => {
     expect(result).toEqual({ status: "409", error: "ALREADY_ENROLLED" });
   });
 
-  it("returns 201 on idempotency key replay without creating again", async () => {
-    const existing = { id: "e-existing", courseId: "c1", userId: "u1", role: "STUDENT" };
-    prismaMock.enrollment.findUnique.mockResolvedValue(existing);
-    const result = await addEnrollment("c1", {
-      userId: "u1",
-      role: "STUDENT",
-      idempotencyKey: "idem-enroll-1",
-    });
-    expect(result).toEqual({ status: "201", enrollment: existing });
-    expect(prismaMock.enrollment.create).not.toHaveBeenCalled();
-  });
-
-  it("recovers from idempotency-key race (P2002) by returning the existing enrollment", async () => {
-    prismaMock.user.findUnique.mockResolvedValue({ id: "u1" });
-    prismaMock.enrollment.findUnique
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({ id: "e-race", courseId: "c1", userId: "u1", role: "STUDENT" });
-    prismaMock.enrollment.create.mockRejectedValue(
-      new Prisma.PrismaClientKnownRequestError("unique", {
-        code: "P2002",
-        clientVersion: "5.0.0",
-      }),
-    );
-    const result = await addEnrollment("c1", {
-      userId: "u1",
-      role: "STUDENT",
-      idempotencyKey: "idem-race",
-    });
-    expect(result.status).toBe("201");
-    expect(result.enrollment).toEqual({
-      id: "e-race",
-      courseId: "c1",
-      userId: "u1",
-      role: "STUDENT",
-    });
-  });
-
   it("reactivates an inactive enrollment with the requested role and returns 201 (#685 review)", async () => {
     prismaMock.user.findUnique.mockResolvedValue({ id: "u1" });
     prismaMock.enrollment.create.mockRejectedValue(

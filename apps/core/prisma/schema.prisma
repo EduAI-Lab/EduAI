@@ -186,7 +186,6 @@ model Enrollment {
   enrolledAt     DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   isActive       Boolean        @default(true)
-  idempotencyKey String?        @unique
   externalId     String?
   externalSource String?
   course         Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
@@ -381,7 +380,6 @@ model Question {
   choices         Json?
   answer          String?
   testable        Boolean                  @default(false)
-  idempotencyKey  String?                  @unique
   deletedAt       DateTime?
   createdAt       DateTime                 @default(now())
   updatedAt       DateTime                 @updatedAt

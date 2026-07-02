@@ -66,19 +66,13 @@ async function instructorFloorViolation(
 export type AddEnrollmentPayload = {
   userId?: unknown;
   role?: unknown;
-  idempotencyKey?: unknown;
 };
 
 /**
  * POST /api/courses/:id/enrollments — add a user to a course with a role.
- * Optional `idempotencyKey` makes retries safe (same pattern as questions).
+ * Idempotency is handled by the route wrapper (#828).
  */
 export async function addEnrollment(courseId: string, payload: AddEnrollmentPayload) {
-  const idempotencyKey =
-    typeof payload.idempotencyKey === "string" && payload.idempotencyKey.trim().length > 0
-      ? payload.idempotencyKey.trim()
-      : undefined;
-
   if (typeof payload.userId !== "string" || !payload.userId || !isEnrollmentRole(payload.role)) {
     return { status: "422", error: "VALIDATION_ERROR", fields: { body: "userId and role required" } } as const;
   }
@@ -91,15 +85,6 @@ export async function addEnrollment(courseId: string, payload: AddEnrollmentPayl
     return { status: "422", error: "USER_NOT_FOUND" } as const;
   }
 
-  if (idempotencyKey) {
-    const existing = await prisma.enrollment.findUnique({
-      where: { idempotencyKey },
-    });
-    if (existing) {
-      return { status: "201", enrollment: existing } as const;
-    }
-  }
-
   try {
     const enrollment = await prisma.enrollment.create({
       data: {
@@ -107,23 +92,10 @@ export async function addEnrollment(courseId: string, payload: AddEnrollmentPayl
         userId: payload.userId,
         role: payload.role,
         isActive: true,
-        ...(idempotencyKey ? { idempotencyKey } : {}),
       },
     });
     return { status: "201", enrollment } as const;
   } catch (error: unknown) {
-    if (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === "P2002" &&
-      idempotencyKey
-    ) {
-      const existing = await prisma.enrollment.findUnique({
-        where: { idempotencyKey },
-      });
-      if (existing) {
-        return { status: "201", enrollment: existing } as const;
-      }
-    }
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === "P2002"

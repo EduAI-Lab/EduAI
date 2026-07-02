@@ -29,6 +29,7 @@ import { readStoredStudentId } from "~/lib/canvas/student-id.server";
 import { addEnrollment, getCourseEnrollments } from "~/lib/courses/enrollments.server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
+import { withIdempotency } from "~/lib/idempotency.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const courseId = params.id;
@@ -143,79 +144,76 @@ export async function action({ request, params }: ActionFunctionArgs) {
     });
   }
 
-  const body = await request.json().catch(() => ({}));
-
-  // Manage tier is rank >= 2; only ADMIN / UNIT_ADMIN (rank >= 3) may grow
-  // the instructor set (§6 — instructors cannot add fellow instructors).
-  const requiredRank = body?.role === "INSTRUCTOR" ? 3 : 2;
-  if (!access || access.rank < requiredRank) {
-    return new Response(JSON.stringify({ error: "Forbidden" }), {
-      status: 403,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
-  // Policy gate (resolved centrally via resolvePolicyGate so the enrollments and
-  // TA routes share one source of truth): an INSTRUCTOR may add/remove students
-  // & TAs only when the flag is on; ADMIN / UNIT_ADMIN are unaffected. The rank
-  // check above already rejects TA/STUDENT, so the gate here is 'always' or the
-  // instructor flag.
-  const enrollmentGate = resolvePolicyGate(access.level, "manageEnrollments");
-  if (
-    enrollmentGate !== "always" &&
-    enrollmentGate !== "never" &&
-    !(await getPolicy(enrollmentGate))
-  ) {
-    return denyByPolicy({
-      request,
-      policyKey: enrollmentGate,
-      user: session.user,
-      action: "enrollment.add",
-      courseId,
-    });
-  }
-
   const requestContext = getRequestContext(request);
-  const result = await addEnrollment(courseId, body ?? {});
 
-  switch (result.status) {
-    case "201":
-      fireAndForget(
-        logAuditAction({
-          ...getActorContext(session?.user ?? null),
-          ...requestContext,
-          actionCode: "ENROLLMENT_ADDED",
-          category: "ENROLLMENT",
-          entityType: "Enrollment",
-          entityId: result.enrollment.id,
-          details: { courseId, role: result.enrollment.role, targetUserId: result.enrollment.userId },
-        }),
-      );
-      return new Response(JSON.stringify(result.enrollment), {
-        status: 201,
-        headers: { "Content-Type": "application/json" },
-      });
-    case "409":
-      return new Response(JSON.stringify({ error: result.error }), {
-        status: 409,
-        headers: { "Content-Type": "application/json" },
-      });
-    case "422":
-      return new Response(
-        JSON.stringify(
-          "fields" in result
-            ? { error: result.error, fields: result.fields }
-            : { error: result.error },
-        ),
-        {
-          status: 422,
+  return withIdempotency(
+    { request, route: "POST /api/courses/:id/enrollments" },
+    async (body) => {
+      const requiredRank = body?.role === "INSTRUCTOR" ? 3 : 2;
+      if (!access || access.rank < requiredRank) {
+        return new Response(JSON.stringify({ error: "Forbidden" }), {
+          status: 403,
           headers: { "Content-Type": "application/json" },
-        },
-      );
-    default:
-      return new Response(JSON.stringify({ error: "VALIDATION_ERROR", fields: { body: "invalid" } }), {
-        status: 422,
-        headers: { "Content-Type": "application/json" },
-      });
-  }
+        });
+      }
+
+      const enrollmentGate = resolvePolicyGate(access.level, "manageEnrollments");
+      if (
+        enrollmentGate !== "always" &&
+        enrollmentGate !== "never" &&
+        !(await getPolicy(enrollmentGate))
+      ) {
+        return denyByPolicy({
+          request,
+          policyKey: enrollmentGate,
+          user: session.user,
+          action: "enrollment.add",
+          courseId,
+        });
+      }
+
+      const result = await addEnrollment(courseId, body ?? {});
+
+      switch (result.status) {
+        case "201":
+          fireAndForget(
+            logAuditAction({
+              ...getActorContext(session?.user ?? null),
+              ...requestContext,
+              actionCode: "ENROLLMENT_ADDED",
+              category: "ENROLLMENT",
+              entityType: "Enrollment",
+              entityId: result.enrollment.id,
+              details: { courseId, role: result.enrollment.role, targetUserId: result.enrollment.userId },
+            }),
+          );
+          return new Response(JSON.stringify(result.enrollment), {
+            status: 201,
+            headers: { "Content-Type": "application/json" },
+          });
+        case "409":
+          return new Response(JSON.stringify({ error: result.error }), {
+            status: 409,
+            headers: { "Content-Type": "application/json" },
+          });
+        case "422":
+          return new Response(
+            JSON.stringify(
+              "fields" in result
+                ? { error: result.error, fields: result.fields }
+                : { error: result.error },
+            ),
+            {
+              status: 422,
+              headers: { "Content-Type": "application/json" },
+            },
+          );
+        default:
+          return new Response(JSON.stringify({ error: "VALIDATION_ERROR", fields: { body: "invalid" } }), {
+            status: 422,
+            headers: { "Content-Type": "application/json" },
+          });
+      }
+    },
+  );
 }

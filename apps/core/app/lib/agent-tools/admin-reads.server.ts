@@ -1,6 +1,21 @@
 import type { RbacUser } from "~/lib/auth/course-access.server";
 import { readCanvasCourses, readCanvasIntegration } from "./admin-canvas.server";
 import { listAdminInvitations as listInvitationsForAdmin } from "./admin-invitations.server";
+import {
+  getAdminCourseEmbeddingSettings,
+  getAdminCourseRagSettings,
+  getAdminCourseReEmbedJob,
+  getAdminCronJobRuns,
+  getAdminDashboardStats,
+  getAdminPolicies,
+  listAdminAiProviders,
+  listAdminCanvasMaterials,
+  listAdminCourseChats,
+  listAdminCourseMaterials,
+  listAdminCourseTAs,
+  listAdminCronJobs,
+  listAdminUnitChats,
+} from "./admin-platform.server";
 
 type ToolError = { error: string; fields?: Record<string, string> };
 
@@ -71,4 +86,82 @@ export async function listAdminCanvasCourses(
     courses: result.courses,
     count: result.courses.length,
   });
+}
+
+export async function readAdminCourseRagSettings(
+  user: RbacUser,
+  opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null },
+) {
+  return getAdminCourseRagSettings(user, opts);
+}
+
+export async function readAdminCourseMaterials(
+  user: RbacUser,
+  opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null },
+) {
+  return listAdminCourseMaterials(user, opts);
+}
+
+export async function readAdminCourseEmbeddingSettings(
+  user: RbacUser,
+  opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null },
+) {
+  return getAdminCourseEmbeddingSettings(user, opts);
+}
+
+export async function readAdminCourseReEmbedJob(
+  user: RbacUser,
+  opts: {
+    courseId?: string;
+    courseCode?: string;
+    fallbackCourseId?: string | null;
+    jobId: string;
+  },
+) {
+  return getAdminCourseReEmbedJob(user, opts);
+}
+
+export async function readAdminCanvasMaterials(
+  user: RbacUser,
+  opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null },
+) {
+  return listAdminCanvasMaterials(user, opts);
+}
+
+export async function readAdminCourseTAs(
+  user: RbacUser,
+  opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null },
+) {
+  return listAdminCourseTAs(user, opts);
+}
+
+export async function readAdminCourseChats(
+  user: RbacUser,
+  opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null; limit?: number },
+) {
+  return listAdminCourseChats(user, opts);
+}
+
+export async function readAdminUnitChats(user: RbacUser, department: string, limit?: number) {
+  return listAdminUnitChats(user, department, limit);
+}
+
+export async function readAdminPolicies(user: RbacUser) {
+  return getAdminPolicies(user);
+}
+
+export async function readAdminAiProviders(user: RbacUser) {
+  return listAdminAiProviders(user);
+}
+
+export async function readAdminCronJobs(user: RbacUser) {
+  return listAdminCronJobs(user);
+}
+
+export async function readAdminCronJobRuns(user: RbacUser, jobName: string) {
+  return getAdminCronJobRuns(user, jobName);
+}
+
+export async function readAdminDashboardStats(user: RbacUser) {
+  return getAdminDashboardStats(user);
 }
