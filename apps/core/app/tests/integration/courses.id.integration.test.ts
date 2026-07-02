@@ -81,7 +81,7 @@ function makeArgs(id: string, authorization?: string) {
     request: new Request(`http://localhost/api/courses/${id}`, { headers }),
     params: { id },
     context: {} as never,
-  };
+  } as any;
 }
 
 describe("GET /api/courses/:id", () => {

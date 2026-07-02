@@ -19,10 +19,8 @@ export default defineConfig({
     setupFiles: ['tests/setup.js'],
     globalSetup: ['tests/globalSetup.js'],
     env: { LOG_LEVEL: process.env.LOG_LEVEL || 'silent' },
+    fileParallelism: false,
     pool: 'forks',
-    poolOptions: {
-      forks: { singleFork: true },
-    },
     coverage: {
       provider: 'v8',
       // Emit the summary even when some tests fail, so CI always gets a coverage figure.

@@ -45,7 +45,7 @@ function getArgs(id: string, user: { id: string; role: string }) {
     request: new Request(`http://localhost/api/courses/${id}/embedding-settings`),
     params: { courseId: id },
     context: {} as never,
-  };
+  } as any;
 }
 
 function patchArgs(id: string, body: unknown, user: { id: string; role: string }) {
@@ -58,7 +58,7 @@ function patchArgs(id: string, body: unknown, user: { id: string; role: string }
     }),
     params: { courseId: id },
     context: {} as never,
-  };
+  } as any;
 }
 
 describe("GET /api/courses/:courseId/embedding-settings", () => {
@@ -67,7 +67,7 @@ describe("GET /api/courses/:courseId/embedding-settings", () => {
       request: new Request(`http://localhost/api/courses/${courseId}/embedding-settings`),
       params: { courseId },
       context: {} as never,
-    });
+    } as any);
     expect(res.status).toBe(401);
   });
 
