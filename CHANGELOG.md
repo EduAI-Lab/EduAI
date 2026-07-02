@@ -7,6 +7,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## [Week 9 — June 29–July 5, 2026]
 
+### Added
+
+- [infra] feat: Add `cleanup-invitations` cron job — hard-deletes `REVOKED` invitations and expired `PENDING` invitations past a 30-day grace period, following the existing infra shell-script pattern (`infra/cron/cleanup-invitations.sh`) registered in `KNOWN_CRON_JOBS` for admin-panel visibility, manual trigger, and schedule editing. (#580, @evanbones, 2026-07-02) — #PR
+
 ### Fixed
 
 - [ui] hotfix: Add missing imports in `packages/ui/src/ui/combobox.tsx` — `useRef`, `useEffect`, `Popover`, `PopoverTrigger`, and `PopoverContent` were used but not imported, causing `packages-ui-unit-tests` and QM frontend Docker build to fail on CI. (#823)
