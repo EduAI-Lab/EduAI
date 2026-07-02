@@ -9,7 +9,6 @@ server/
   src/
     index.js              # Bootstrap: load env, create app, listen on PORT
     app.js                # Express app factory (createApp), middleware + route mounting
-    auth.js               # Better Auth config (EduAI OAuth, Prisma adapter, cookies)
     config/
       database.js         # PrismaClient singleton
       bootstrapAdmins.js  # Hardcoded admin email list
@@ -35,7 +34,7 @@ server/
       courseCloning.js     # Deep-clone courses (modules, lessons, activities, topics)
       progressCalculation.js # Course/module/lesson progress calculation
       eduaiClient.js      # HTTP client for EduAI API
-      eduaiAuth.js        # EduAI OAuth access token retrieval
+      eduaiAuth.js        # Extracts the Core session cookie for forwarding on EduAI API calls
       topicSync.js        # Sync topics from EduAI
       enrollmentSync.js   # Sync enrollments from EduAI (creates users/accounts)
       systemSettings.js   # Key-value settings store (DB-backed)
@@ -62,23 +61,30 @@ server/
 The middleware chain in `app.js` processes requests in this order:
 
 1. **CORS** — Open origin with `credentials: true`.
-2. **Better Auth** — Mounted at `/api/auth/{*any}` (handles its own body parsing).
-3. **JSON parser** — `express.json()` for all subsequent routes.
-4. **Health check** — `GET /api/health` runs `SELECT 1` against the database.
-5. **Session hydration** — `attachSession` resolves Better Auth cookies and hydrates `req.user` from Prisma.
-6. **Auth gate** — `requireAuth` enforced for all `/api/*` except `/api/health` and `/api/auth/*`.
-7. **Admin isolation** — Users with `role === 'ADMIN'` can only access `/api/me`, `/api/admin/*`, and `/api/ai-models/*`.
-8. **Route modules** — All 11 route files mounted at `/api`.
+2. **JSON parser** — `express.json()` for all routes.
+3. **Health check** — `GET /api/health` runs `SELECT 1` against the database.
+4. **Auth gate** — `requireAuth` (`middleware/auth.js`) posts the incoming cookie to Core's
+   `POST /api/sessions/validate` and populates `req.user` from the response; enforced for all
+   `/api/*` except `/api/health` and `POST /api/logout`.
+5. **Admin isolation** — Users with `role === 'ADMIN'` can only access `/api/me`,
+   `/api/admin/*`, and `/api/ai-models/*`; `UNIT_ADMIN` is additionally blocked from
+   `/api/admin/settings/*` and `/api/admin/users*`.
+6. **Route modules** — All 11 route files mounted at `/api`.
 
 ## Authentication
 
-- **Provider**: Better Auth with EduAI OAuth (OIDC + PKCE) via the `genericOAuth` plugin.
-- **Email/password**: Disabled. All authentication goes through EduAI SSO.
-- **Session storage**: Better Auth `Session` table in PostgreSQL, exposed as cookies.
-- **Role source**: Extracted from EduAI's custom claim `https://eduai.app/role`, normalized to enum values.
-- **Cookie config**: Domain from `COOKIE_DOMAIN`, secure in production, `sameSite=lax`.
-- **Trusted origins**: `localhost:5173` (dev) and `aitutor.ok.ubc.ca` (production).
-- **Account linking**: Enabled with `eduai` as a trusted provider.
+- **Provider**: None locally — session validation is proxied to Core via `CORE_URL`
+  (`middleware/auth.js`). There is no local login flow, OAuth client, or session store; this
+  server has no `auth.js` and no Better Auth tables in its Prisma schema.
+- **Session check**: Every `/api/*` request (except `/api/health` and `POST /api/logout`)
+  forwards its `Cookie` header to Core's `POST /api/sessions/validate`; a non-OK response is a
+  401.
+- **Role source**: Whatever `role` Core's validate response reports, normalized to one of
+  `STUDENT`, `INSTRUCTOR`, `TA`, `ADMIN`, `UNIT_ADMIN` (unrecognized values fall back to
+  `STUDENT`).
+- **Logout**: `POST /api/logout` proxies to Core's `/api/auth/sign-out` server-to-server,
+  bypassing browser CORS; it's excluded from the auth gate so signing out an invalid session
+  is a no-op, not a 401.
 
 ## RBAC
 
@@ -180,7 +186,7 @@ Source of truth: `server/.env.example`.
 
 ### Schema
 
-15 domain models + 3 Better Auth tables. Key relationships:
+18 domain models — no Better Auth tables (session validation is delegated to Core). Key relationships:
 
 ```
 CourseOffering ─┬─ Module ─── Lesson ─── Activity ─┬─ Submission
@@ -223,7 +229,7 @@ Seed creates:
 - **Runner**: Vitest 4 with supertest for HTTP assertions
 - **Config**: `server/vitest.config.js` (node environment, forks pool, 15s timeout)
 - **Test DB**: Configured via `.env.test` (database `aitutor_test`, port 4001)
-- **Mock auth**: `createApp({ mockUser })` bypasses Better Auth for testing
+- **Mock auth**: `createApp({ mockUser })` bypasses the Core session-validation call and injects `mockUser` as `req.user` directly
 
 ### Commands
 

@@ -30,9 +30,13 @@ compose file, independent of any `.env.example`. The files below are for local (
 | `infra/cron/cron.env.local.example` | `infra/cron/cron.env.local` (manual, gitignored) | `infra/cron/dry-run-local.sh` only |
 
 The AI Tutor **frontend** app (`apps/extensions/ai-tutor/`, distinct from its `server/`
-sibling) has no `.env` of its own — locally it inherits whatever `apps/core/.env` /
-`apps/extensions/ai-tutor/server/.env` provide, and in CI its only var is
-`AI_TUTOR_SERVER_URL`, set directly in `docker-compose.test.yml`.
+sibling) has no `.env` of its own — it does not inherit from `apps/core/.env` or
+`apps/extensions/ai-tutor/server/.env`. It reads `VITE_API_URL`, `VITE_CORE_URL`,
+`VITE_EDUAI_URL`, and `VITE_AI_TUTOR_URL` from `import.meta.env` (Vite build/dev-server
+time), each with a hardcoded `localhost` fallback in code (`app/lib/api.ts`,
+`app/lib/extension-urls.ts`), so no env file is required for local `npm run dev`. In CI,
+`docker-compose.test.yml` sets `AI_TUTOR_SERVER_URL` (consumed by the integration test
+runner, not by the app itself) and does not set any `VITE_*` var.
 
 ## Test env files
 
