@@ -164,12 +164,12 @@ export function CoursesInstructorView({ courses, onCreateCourse, onEditCourse, o
                   <Input id="ins-name" name="name" placeholder="Introduction to Computer Science" required />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="ins-dept">Department</Label>
+                  <Label htmlFor="ins-dept">Course Subject</Label>
                   <DepartmentCombobox
                     departments={departmentOptions}
                     value={selectedDept}
                     onValueChange={setSelectedDept}
-                    placeholder="No department"
+                    placeholder="No course subject"
                     disabled={deptLoading}
                   />
                 </div>
