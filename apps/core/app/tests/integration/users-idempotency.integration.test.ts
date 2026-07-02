@@ -81,12 +81,12 @@ describe("POST /api/users — centralized idempotency (#828)", () => {
     const key = `idem-mismatch-${randomUUID()}`;
     const email = `idem-mismatch-${randomUUID().slice(0, 8)}@test.local`;
 
-    const first = await postUser({ email, name: "A", role: "STUDENT" }, key);
+    const first = await postUser({ email, name: "Al", role: "STUDENT" }, key);
     expect(first.status).toBe(201);
     createdUserIds.push((await first.clone().json()).id);
 
     const second = await postUser(
-      { email: `other-${email}`, name: "B", role: "STUDENT" },
+      { email: `other-${email}`, name: "Bo", role: "STUDENT" },
       key,
     );
     expect(second.status).toBe(422);
