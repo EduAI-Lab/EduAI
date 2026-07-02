@@ -42,11 +42,13 @@ export function numToRouterTier(n: number): RouterTier | null {
   return null;
 }
 
-async function loadTierRows(): Promise<TierModelRow[]> {
+async function loadTierRows(options?: { localVllmOnly?: boolean }): Promise<TierModelRow[]> {
   const rows = await prisma.aIModel.findMany({
     where: { isActive: true, routerTier: { not: null } },
     include: { provider: { select: { name: true } } },
   });
+
+  const localVllmOnly = options?.localVllmOnly ?? isLocalVllmRouting();
 
   return rows
     .map((r) => ({
@@ -58,7 +60,7 @@ async function loadTierRows(): Promise<TierModelRow[]> {
       supportsImages: r.supportsImages,
       supportsTools: r.supportsTools,
     }))
-    .filter((row) => !isLocalVllmRouting() || isVllmRegistryId(row.registryId));
+    .filter((row) => !localVllmOnly || isVllmRegistryId(row.registryId));
 }
 
 export async function getCachedTierModels(): Promise<TierModelRow[]> {
@@ -121,6 +123,10 @@ export function pickFromCandidates(rows: TierModelRow[], spec: PickSpec): TierMo
 }
 
 export async function pickModelForSpec(spec: PickSpec): Promise<TierModelRow | null> {
-  const rows = await getCachedTierModels();
+  const needsCloudImages =
+    isLocalVllmRouting() && spec.kind === "minTier" && spec.requireImages;
+  const rows = needsCloudImages
+    ? await loadTierRows({ localVllmOnly: false })
+    : await getCachedTierModels();
   return pickFromCandidates(rows, spec);
 }

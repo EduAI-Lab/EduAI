@@ -23,6 +23,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
+- [core] fix: Scope `CMPS01_INTERNAL_KEY` to trusted cmps01 edge URLs only; require pre-embedded kNN exemplars; image turns keep cloud multimodal fallback on vLLM stack; low-confidence kNN defaults to tier 1 (#831, @superbolt08, 2026-07-02) — [#759](https://github.com/EduAI-Lab/EduAI/pull/759)
+- [infra] fix: Gitignore rendered `nginx.conf` / `internal-allow.conf` and reject placeholder internal key in `deploy-edge-proxy.sh` (#831, @superbolt08, 2026-07-02) — [#759](https://github.com/EduAI-Lab/EduAI/pull/759)
 - [core] fix: Add missing `scripts/research/paths.mjs` so offline kNN/LLM router eval scripts resolve default label paths (#831, @superbolt08, 2026-06-30) — [#759](https://github.com/EduAI-Lab/EduAI/pull/759)
 
 ## [Week 8 — June 22–28, 2026]

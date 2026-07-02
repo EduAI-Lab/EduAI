@@ -7,7 +7,7 @@ import { createProviderRegistry } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOllama } from 'ollama-ai-provider';
-import { cmps01InternalAuthHeaders } from '~/lib/ai/cmps01-internal-auth.server';
+import { cmps01InternalAuthHeadersForUrl } from '~/lib/ai/cmps01-internal-auth.server';
 import {
   LOCAL_INFERENCE_PROVIDERS,
   mergeLocalInferenceFromEnv,
@@ -59,7 +59,7 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
 
     providers.ollama = createOllama({
       baseURL,
-      headers: cmps01InternalAuthHeaders(),
+      headers: cmps01InternalAuthHeadersForUrl(baseURL),
     });
   }
 

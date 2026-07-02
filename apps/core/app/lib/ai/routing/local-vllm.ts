@@ -19,17 +19,16 @@ export function normalizePickForLocalVllm(pick: PickSpec): PickSpec {
     return pick;
   }
 
+  if (pick.kind === "minTier" && pick.requireImages) {
+    return pick;
+  }
+
   if (pick.kind === "exactTier" && pick.tier === 2) {
     return { ...pick, tier: 3 };
   }
 
   if (pick.kind === "minTier" && pick.minTier === 2) {
-    return {
-      ...pick,
-      minTier: 3,
-      // vLLM chat models are not flagged supportsImages; route to 32B on image turns.
-      requireImages: false,
-    };
+    return { ...pick, minTier: 3 };
   }
 
   return pick;
