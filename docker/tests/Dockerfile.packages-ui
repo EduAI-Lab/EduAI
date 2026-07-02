@@ -8,7 +8,7 @@
 # its dependencies (React, Radix, etc.) are hoisted into the root node_modules.
 
 # ── Shared: install workspace dependencies ─────────────────────────────────
-FROM node:20-alpine AS deps
+FROM node:24-alpine AS deps
 WORKDIR /app
 
 COPY package.json package-lock.json .npmrc ./
@@ -23,7 +23,7 @@ COPY apps/extensions/question-maker/app/frontend/package.json ./apps/extensions/
 RUN npm ci --ignore-scripts
 
 # ── Target: test ───────────────────────────────────────────────────────────
-FROM node:20-alpine AS test
+FROM node:24-alpine AS test
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
