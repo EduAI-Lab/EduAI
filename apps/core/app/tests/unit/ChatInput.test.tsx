@@ -46,7 +46,7 @@ describe("ChatInput — rendering", () => {
   it("renders the textarea with the correct placeholder", () => {
     render(<ChatInput {...makeProps()} />);
     // No course selected → "Ask anything…"
-    expect(screen.getByPlaceholderText("How can I help you today?")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Ask anything…")).toBeInTheDocument();
   });
 
   it("renders the settings gear button", () => {
