@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { CoursesAdminView } from '~/components/courses/courses-admin-view'
@@ -73,6 +73,13 @@ const NOOP = async () => {}
 function wrap(ui: React.ReactElement) {
   return render(<MemoryRouter>{ui}</MemoryRouter>)
 }
+
+// Some tests below pin the system clock (fake timers) to make term-grouping
+// deterministic. Always restore real timers after each test so a fake clock
+// never leaks into unrelated tests.
+afterEach(() => {
+  vi.useRealTimers()
+})
 
 // CoursesAdminView
 describe('CoursesAdminView', () => {
@@ -258,6 +265,8 @@ describe('CoursesInstructorView', () => {
   })
 
   it('groups older-term courses under "Previous Terms"', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2025-10-15'))
     const oldCourse = { ...PUBLISHED_COURSE, id: 'old1', code: 'COSC 999', year: 2020 }
     wrap(
       <CoursesInstructorView
@@ -365,6 +374,8 @@ describe('CoursesMixedView', () => {
   })
 
   it('groups older-term courses under "Previous Terms" in the assisting section', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2025-10-15'))
     const oldTa = { ...TA_COURSE, id: 'ta-old', code: 'COSC 300', year: 2020 }
     wrap(
       <CoursesMixedView
@@ -379,6 +390,8 @@ describe('CoursesMixedView', () => {
   })
 
   it('does not show a "Previous Terms" heading when all courses share one term', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2025-10-15'))
     wrap(
       <CoursesMixedView
         courses={[TA_COURSE]}
