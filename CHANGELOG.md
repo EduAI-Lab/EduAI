@@ -39,6 +39,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] feat: Human-readable math in chat — normalizeMathMarkdown, Streamdown math plugin, KaTeX CSS, prose-vs-equation guards (#142, @superbolt08, 2026-06-23) — [#757](https://github.com/EduAI-Lab/EduAI/pull/757)
 - [ai-tutor] feat: Add reusable `ConfirmDialog` component and confirmation guards for all destructive/visibility-changing actions — publish/unpublish (courses, modules, lessons) and remove actions (activity delete, student removal) now open a dialog before calling the API; `window.confirm` removed. (#806, @GlowyBlack, 2026-06-27) — [#806](https://github.com/EduAI-Lab/EduAI/pull/806)
 - [core] feat: Add confirmation dialog for course publish/unpublish in the courses list — clicking Publish or Unpublish now opens an `AlertDialog` with direction-specific copy (students gain/lose access) before calling the API. (#806, @GlowyBlack, 2026-06-27) — [#806](https://github.com/EduAI-Lab/EduAI/pull/806)
+- [core] docs: Add [`MULTI_SERVER_ROUTING_PLAN.md`](docs/rag-ai/routing/eduai-summer-2026/MULTI_SERVER_ROUTING_PLAN.md) — team guide for spreading vLLM inference across cmps01–03 (`JobType`: `interactive` / `background`, feature mapping, stale health-cache fallback, fleet router sketch); cross-linked from [`TEAM_ROUTING_LAYER_PLAN.md`](docs/rag-ai/routing/eduai-summer-2026/TEAM_ROUTING_LAYER_PLAN.md). Docs-only. ([#794](https://github.com/EduAI-Lab/EduAI/pull/794), @superbolt08, 2026-06-26)
 
 ### Fixed
 
@@ -98,6 +99,13 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] fix: Use `/chat/:chatId` as the source of truth for resuming chats, removing `ACTIVE_CHAT_KEY`/`sessionStorage` active-chat restoration. Saved chats now open, refresh, and continue through the route while preserving `lastCourseCode` preference behavior. (#775, @YibingW, 2026-06-26)
 - [ai-tutor] fix: Stop `/student` from scoring a TA's preview with instructor-shell stats — the route passed the viewer's literal role into `buildDashboardStats`, so a TA previewing the student experience got "Your courses/Published/Draft" computed over the enrolled/progress course list instead of "Enrolled courses/In progress/Completed"; the route now always passes the literal `'STUDENT'` role, matching the existing `admin.tsx` pattern. (#746, @Ayyhab, 2026-06-29)
 - [core] fix: Force React pre-bundle at startup via `optimizeDeps.include` — prevents a Vite chunk-version mismatch on first client-side navigation that left `ReactCurrentDispatcher.current` null, causing "Cannot read properties of null (reading 'useContext')" crash on the login page. (#162, @evanbones, 2026-06-26)
+
+### Added
+
+- [core] feat: Course card UX for ADHD Assist pilot (PR2) — course cards gain per-student colour personalization (Canvas-style hero colour + ⋮ customization popover), a segmented term filter (All / Term 1 / Term 2 mapped from Fall/Winter/Spring/Summer), a material-preview dialog (instructors/TAs can inspect a file before downloading), and scroll/press motion reveals gated by the `Reduce motion` preference. (#696, #697, #698, #701, #708, @Ayyhab, 2026-06-27) — [#752](https://github.com/EduAI-Lab/EduAI/pull/752)
+- [core] feat: Student chat privacy notice — first-visit modal on `/chat` informs students that course chat history can be reviewed by instructors, TAs, and platform admins; acknowledgment stored per-user in `localStorage`; a persistent inline reminder stays visible after dismissal. (#699, #708, @Ayyhab, 2026-06-27) — [#752](https://github.com/EduAI-Lab/EduAI/pull/752)
+- [core] feat: Chat history rail polish — softer visual styling and auto-hide in focus mode so the transcript area stays full-width during focused reading. (#708, @Ayyhab, 2026-06-27) — [#752](https://github.com/EduAI-Lab/EduAI/pull/752)
+- [core] tests: Unit coverage for course-card colour/nickname personalization (`course-card-preferences.test.ts`), term-filter bucketing (`course-term-filter.test.ts`), chat privacy notice localStorage persistence (`chat-privacy-notice.test.ts`), and the privacy-notice dialog UI (`ChatPrivacyNoticeDialog.test.tsx`). (#696, #697, #698, #699, #708, @Ayyhab, 2026-06-27) — [#752](https://github.com/EduAI-Lab/EduAI/pull/752)
 
 
 ## [Week 7 — June 15–21, 2026]

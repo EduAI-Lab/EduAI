@@ -1,3 +1,6 @@
+import type * as React from "react"
+import { courseHeroBackgroundStyle, courseThemeVars, type CourseAccentColor } from "./course-theme"
+
 export interface CourseHeroCardProps {
   code: string
   term: string
@@ -7,6 +10,10 @@ export interface CourseHeroCardProps {
   badges?: string[]
   topRightBadges?: string[]
   topics?: string[]
+  /** Resolved accent — must match the course card on the dashboard. */
+  accentColor: CourseAccentColor
+  /** Optional top-right slot (customize menu, etc.). */
+  headerAction?: React.ReactNode
   className?: string
 }
 
@@ -19,16 +26,25 @@ export function CourseHeroCard({
   badges = [],
   topRightBadges = [],
   topics = [],
+  accentColor,
+  headerAction,
   className,
 }: CourseHeroCardProps) {
   return (
     <div
-      className={`rounded-[var(--radius-xl)] p-6 text-white mb-4${className ? ` ${className}` : ""}`}
-      style={{ background: "linear-gradient(135deg, oklch(0.192 0.055 259) 0%, oklch(0.42 0.14 232) 100%)" }}
+      className={`relative overflow-hidden rounded-[var(--radius-xl)] p-6 text-white mb-4 shadow-[0_8px_28px_var(--course-glow)]${className ? ` ${className}` : ""}`}
+      style={{
+        ...courseThemeVars(accentColor),
+        ...courseHeroBackgroundStyle(accentColor),
+      }}
     >
+      {headerAction && (
+        <div className="absolute top-3 right-3 z-10 pointer-events-auto">{headerAction}</div>
+      )}
+
       {/* Top row: code/term left, role badges right */}
-      <div className="flex items-start justify-between gap-4 mb-1">
-        <div className="text-[11px] opacity-70 font-semibold uppercase tracking-widest">
+      <div className="flex items-start justify-between gap-4 mb-1 pr-8">
+        <div className="text-[11px] opacity-80 font-semibold uppercase tracking-widest">
           {code} · {term} {year ?? ""}
         </div>
         {topRightBadges.length > 0 && (
@@ -36,8 +52,8 @@ export function CourseHeroCard({
             {topRightBadges.map((label) => (
               <span
                 key={label}
-                className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full"
-                style={{ background: "rgba(255,255,255,0.2)" }}
+                className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full backdrop-blur-sm"
+                style={{ background: "rgba(255,255,255,0.22)", border: "1px solid rgba(255,255,255,0.28)" }}
               >
                 {label}
               </span>
@@ -46,20 +62,19 @@ export function CourseHeroCard({
         )}
       </div>
 
-      <h1 className="text-xl font-bold mb-2 leading-snug">{code}: {name}</h1>
+      <h1 className="text-xl font-bold mb-2 leading-snug tracking-tight">{code}: {name}</h1>
 
       {description && (
-        <p className="text-[13px] opacity-85 leading-relaxed max-w-[560px]">{description}</p>
+        <p className="text-[13px] opacity-90 leading-relaxed max-w-[560px]">{description}</p>
       )}
 
-      {/* Topics chips */}
       {topics.length > 0 && (
-        <div className="flex flex-wrap gap-2 mt-3">
+        <div className="flex flex-wrap gap-2 mt-4">
           {topics.map((t) => (
             <span
               key={t}
-              className="text-[11px] font-medium px-2.5 py-0.5 rounded-full"
-              style={{ background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.25)" }}
+              className="text-[11px] font-medium px-2.5 py-1 rounded-full backdrop-blur-sm"
+              style={{ background: "rgba(255,255,255,0.16)", border: "1px solid rgba(255,255,255,0.28)" }}
             >
               {t}
             </span>
@@ -67,7 +82,6 @@ export function CourseHeroCard({
         </div>
       )}
 
-      {/* Bottom badges (legacy / status badges) */}
       {badges.length > 0 && (
         <div className="flex gap-2 mt-4">
           {badges.map((label) => (
