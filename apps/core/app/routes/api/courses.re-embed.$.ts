@@ -15,7 +15,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     return jsonResponse({ error: "Method not allowed" }, 405);
   }
 
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) {
     return jsonResponse({ error: "Unauthorized" }, 401);
   }

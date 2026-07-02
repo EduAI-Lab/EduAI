@@ -24,7 +24,7 @@ function getArgs() {
     request: new Request("http://localhost/api/me"),
     params: {},
     context: {} as never,
-  };
+  } as any;
 }
 
 function patchArgs(body: unknown) {
@@ -36,7 +36,7 @@ function patchArgs(body: unknown) {
     }),
     params: {},
     context: {} as never,
-  };
+  } as any;
 }
 
 describe("GET/PATCH /api/me round-trip (#297)", () => {
