@@ -12,9 +12,7 @@ export default defineConfig({
     // Silence the pino logger (request logs + EduAI init/warn + intentional
     // failure-path warnings) before any module loads. Override with LOG_LEVEL=info to debug.
     env: { LOG_LEVEL: process.env.LOG_LEVEL || 'silent' },
+    fileParallelism: false,
     pool: 'forks',
-    poolOptions: {
-      forks: { singleFork: true },
-    },
   },
 });

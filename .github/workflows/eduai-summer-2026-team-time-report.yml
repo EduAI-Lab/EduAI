@@ -84,7 +84,7 @@ jobs:
         if: steps.schedule_gate.outputs.should_run == 'true'
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
 
       - name: Resolve report inputs
         if: ${{ steps.schedule_gate.outputs.should_run == 'true' && github.event_name != 'pull_request' }}

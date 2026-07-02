@@ -32,7 +32,7 @@ async function resolveInstructorCanvasMaterialsAccess(
   | { response: Response; user?: never }
   | { response?: never; user: Session["user"]; access: AccessLevel }
 > {
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) {
     return { response: json(401, { success: false, error: "Unauthorized" }) };
   }

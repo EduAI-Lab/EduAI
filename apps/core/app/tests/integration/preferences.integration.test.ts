@@ -28,7 +28,7 @@ function getArgs(path = "/api/preferences") {
     request: new Request(`http://localhost${path}`),
     params: {},
     context: {} as never,
-  };
+  } as any;
 }
 
 function patchArgs(body: unknown) {
@@ -40,7 +40,7 @@ function patchArgs(body: unknown) {
     }),
     params: {},
     context: {} as never,
-  };
+  } as any;
 }
 
 function expectRootLoader(overrides: Record<string, unknown>) {
