@@ -175,8 +175,8 @@ export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormD
                   }))}
                   value={selectedUnits}
                   onValueChange={setSelectedUnits}
-                  placeholder="Select departments"
-                  searchPlaceholder="Search departments..."
+                  placeholder="Select course subjects"
+                  searchPlaceholder="Search course subjects..."
                 />
               </FormItem>
             )}
