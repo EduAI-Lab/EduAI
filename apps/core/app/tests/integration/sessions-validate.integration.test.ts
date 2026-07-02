@@ -34,7 +34,7 @@ function makeArgs(method = "POST", headers?: Record<string, string>) {
     }),
     params: {},
     context: {} as never,
-  };
+  } as any;
 }
 
 describe("POST /api/sessions/validate — contract tests", () => {

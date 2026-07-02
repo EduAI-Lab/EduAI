@@ -21,7 +21,7 @@ import {
 } from '@eduai/ui'
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession(request)
+  const session = await auth.api.getSession({ headers: request.headers })
   if (!session?.user) return redirect('/auth/login')
 
   // Fetch authorizedUnits directly from DB — Better Auth session may not include

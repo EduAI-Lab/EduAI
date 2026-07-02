@@ -57,7 +57,7 @@ const SYSTEM_SOURCE_VALUES = new Set(["ROUTE", "AUTH", "AI", "CANVAS", "MAIL", "
 
 /** Reject non-admins for both loader and action; returns the session user on success. */
 async function requireAdminUser(request: Request) {
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) {
     throw redirect("/auth/login");
   }

@@ -55,7 +55,7 @@ function makeArgs(body: object) {
     }),
     params: {},
     context: {} as never,
-  };
+  } as any;
 }
 
 beforeEach(() => {
