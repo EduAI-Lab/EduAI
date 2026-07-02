@@ -64,6 +64,9 @@ function inferRunsSubdir(filename) {
   ) {
     return ["labels", filename];
   }
+  if (filename.startsWith("adequacy-")) {
+    return ["adequacy", filename];
+  }
   if (filename.startsWith("classroom-")) {
     return ["classroom", filename];
   }

@@ -91,6 +91,44 @@ function indexPolicyRows(files) {
   return byPromptPolicy;
 }
 
+function indexAdequacyRows(files) {
+  /** @type {Map<string, object>} */
+  const byPromptModel = new Map();
+  for (const file of files) {
+    for (const row of loadJsonl(file)) {
+      if (!row.prompt_id || !row.model) continue;
+      const modelKey = String(row.model).toLowerCase();
+      const key = `${row.prompt_id}|${modelKey}`;
+      const prev = byPromptModel.get(key);
+      if (
+        !prev ||
+        String(row.recorded_at ?? "") > String(prev.recorded_at ?? "") ||
+        (row.run_label ?? "") > (prev.run_label ?? "")
+      ) {
+        byPromptModel.set(key, row);
+      }
+    }
+  }
+  return byPromptModel;
+}
+
+function discoverAdequacyFiles() {
+  const adequacyDir = join(RUNS_DIR, "adequacy");
+  if (!existsSync(adequacyDir)) return [];
+  return readdirSync(adequacyDir)
+    .filter((name) => name.startsWith("adequacy-") && name.endsWith(".jsonl"))
+    .map((name) => join(adequacyDir, name))
+    .sort();
+}
+
+function adequacyForPrompt(map, promptId, modelFragment) {
+  for (const [key, row] of map.entries()) {
+    if (!key.startsWith(`${promptId}|`)) continue;
+    if (key.includes(modelFragment)) return row;
+  }
+  return null;
+}
+
 function indexBothTier(rows) {
   const map = new Map();
   for (const row of rows) {
@@ -134,6 +172,9 @@ function main() {
     : latestPolicyFiles();
   const policyByPrompt = indexPolicyRows(policyFiles);
 
+  const adequacyFiles = discoverAdequacyFiles();
+  const adequacyByPrompt = indexAdequacyRows(adequacyFiles);
+
   const columns = [
     "prompt_id",
     "split",
@@ -152,6 +193,11 @@ function main() {
     "tier3_duration_ms",
     "tier1_response_len",
     "tier3_response_len",
+    "duration_14b_ms",
+    "response_len_14b",
+    "duration_72b_ms",
+    "response_len_72b",
+    "adequacy_72b_run_label",
     "p0_routed_model",
     "p0_routing_tier",
     "p0_duration_ms",
@@ -178,6 +224,8 @@ function main() {
     const p0 = policyByPrompt.get(`${p.id}|P0`);
     const p1 = policyByPrompt.get(`${p.id}|P1`);
     const p3 = policyByPrompt.get(`${p.id}|P3`);
+    const row14b = adequacyForPrompt(adequacyByPrompt, p.id, "14b");
+    const row72b = adequacyForPrompt(adequacyByPrompt, p.id, "72b");
 
     const oracleTier = label?.min_adequate_tier ?? null;
     const p1Tier = p1?.routing_tier ?? null;
@@ -209,6 +257,11 @@ function main() {
       tier3_duration_ms: label?.tier3_duration_ms ?? t3?.duration_ms ?? "",
       tier1_response_len: t1?.response?.length ?? "",
       tier3_response_len: t3?.response?.length ?? "",
+      duration_14b_ms: row14b?.duration_ms ?? "",
+      response_len_14b: row14b?.response?.length ?? "",
+      duration_72b_ms: row72b?.duration_ms ?? "",
+      response_len_72b: row72b?.response?.length ?? "",
+      adequacy_72b_run_label: row72b?.run_label ?? "",
       p0_routed_model: p0?.routed_model ?? "",
       p0_routing_tier: p0?.routing_tier ?? "",
       p0_duration_ms: p0?.duration_ms ?? "",
@@ -247,6 +300,10 @@ function main() {
   console.log("both-tier rows indexed:", bothTier.size);
   console.log("policy files:", policyFiles.length);
   for (const f of policyFiles) console.log("  ", f);
+  console.log("adequacy files:", adequacyFiles.length);
+  for (const f of adequacyFiles) console.log("  ", f);
+  const with72b = matrixRows.filter((r) => r.duration_72b_ms !== "").length;
+  console.log("rows with 72B adequacy:", with72b);
   console.log("tier_sensitive:", tierSens);
   console.log("p1≠p3 tier:", disagree);
   console.log("p1 oracle mismatches:", p1Wrong);
