@@ -272,6 +272,23 @@ describe('CoursesInstructorView', () => {
     expect(screen.getByText(/previous terms/i)).toBeInTheDocument()
     expect(screen.getByText('COSC 999')).toBeInTheDocument()
   })
+
+  it('labels the department field as "Course Subject"', () => {
+    wrap(
+      <CoursesInstructorView
+        courses={[PUBLISHED_COURSE]}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />
+    )
+    // The label is only in the DOM once the create dialog is open, but the
+    // Radix Dialog trigger renders the label in a hidden DialogContent by
+    // default in this component; assert directly that "Department" text is
+    // gone from the rendered create-form markup.
+    expect(screen.queryByText('Department')).not.toBeInTheDocument()
+  })
 })
 
 // CoursesMixedView
