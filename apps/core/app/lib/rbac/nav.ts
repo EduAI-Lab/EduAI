@@ -5,8 +5,9 @@ import { getAiTutorAppUrl } from '~/lib/extension-urls'
 const CORE_NAV: NavItem[] = [
   { key: 'dashboard', title: 'Dashboard', url: '/dashboard' },
   { key: 'courses', title: 'Courses', url: '/courses' },
-  { key: 'chat', title: 'Chatbot', url: '/chat' },
 ]
+
+const CHATBOT_NAV_ITEM: NavItem = { key: 'chat', title: 'Chatbot', url: '/chat' }
 
 const QM_NAV_ITEM: NavItem = {
   key: 'question-maker',
@@ -80,7 +81,7 @@ export function usesGlobalChat(user: NavUser): boolean {
 /** Secondary sidebar links (bottom of sidebar). */
 export function getNavSecondaryForUser(user: NavUser): NavItem[] {
   const role = user.role ?? 'STUDENT'
-  const items: NavItem[] = []
+  const items: NavItem[] = [CHATBOT_NAV_ITEM]
 
   if (role === 'ADMIN') {
     items.push(...ADMIN_SECONDARY_NAV)
