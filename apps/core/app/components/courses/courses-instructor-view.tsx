@@ -37,6 +37,47 @@ interface Props {
   onPublishToggle: (id: string, publish: boolean) => Promise<void>
 }
 
+interface InstructorCourseGridProps {
+  courses: Course[]
+  canPublish: boolean
+  canDelete: boolean
+  onPublishToggle: (id: string, publish: boolean) => Promise<void>
+  onEdit: (course: Course) => void
+  onDelete: (course: Course) => void
+}
+
+function InstructorCourseGrid({ courses, canPublish, canDelete, onPublishToggle, onEdit, onDelete }: InstructorCourseGridProps) {
+  return (
+    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      {courses.map((course, index) => (
+        <CourseCard
+          key={course.id}
+          id={course.id}
+          code={course.code}
+          name={course.name}
+          description={course.description}
+          term={course.term}
+          year={course.year}
+          isPublished={course.isPublished}
+          department={course.department}
+          colorIndex={index}
+          href={`/courses/${course.id}`}
+          LinkComponent={Link}
+          actions={{
+            showPublish: canPublish,
+            isPublished: course.isPublished,
+            onPublishToggle: () => onPublishToggle(course.id, !course.isPublished),
+            showEdit: true,
+            onEdit: () => setTimeout(() => onEdit(course), 0),
+            showDelete: canDelete,
+            onDelete: () => setTimeout(() => onDelete(course), 0),
+          }}
+        />
+      ))}
+    </div>
+  )
+}
+
 export function CoursesInstructorView({ courses, onCreateCourse, onEditCourse, onDeleteCourse, onPublishToggle }: Props) {
   const [createOpen, setCreateOpen] = useState(false)
   const [editingCourse, setEditingCourse] = useState<Course | null>(null)
@@ -94,6 +135,8 @@ export function CoursesInstructorView({ courses, onCreateCourse, onEditCourse, o
     })
     setEditingCourse(null)
   }
+
+  const { current, previous } = groupCoursesByTerm(courses)
 
   return (
     <div className="flex flex-col gap-4">
@@ -202,49 +245,27 @@ export function CoursesInstructorView({ courses, onCreateCourse, onEditCourse, o
         </Card>
       ) : (
         <div className="flex flex-col gap-4">
-          {(() => {
-            const { current, previous } = groupCoursesByTerm(courses)
-            const renderGrid = (list: typeof courses) => (
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {list.map((course, index) => (
-                  <CourseCard
-                    key={course.id}
-                    id={course.id}
-                    code={course.code}
-                    name={course.name}
-                    description={course.description}
-                    term={course.term}
-                    year={course.year}
-                    isPublished={course.isPublished}
-                    department={course.department}
-                    colorIndex={index}
-                    href={`/courses/${course.id}`}
-                    LinkComponent={Link}
-                    actions={{
-                      showPublish: canPublish,
-                      isPublished: course.isPublished,
-                      onPublishToggle: () => onPublishToggle(course.id, !course.isPublished),
-                      showEdit: true,
-                      onEdit: () => setTimeout(() => setEditingCourse(course), 0),
-                      showDelete: canDelete,
-                      onDelete: () => setTimeout(() => setDeletingCourse(course), 0),
-                    }}
-                  />
-                ))}
-              </div>
-            )
-            return (
-              <>
-                {renderGrid(current)}
-                {previous.length > 0 && (
-                  <div className="flex flex-col gap-3">
-                    <h3 className="text-sm font-semibold text-muted-foreground">Previous Terms</h3>
-                    {renderGrid(previous)}
-                  </div>
-                )}
-              </>
-            )
-          })()}
+          <InstructorCourseGrid
+            courses={current}
+            canPublish={canPublish}
+            canDelete={canDelete}
+            onPublishToggle={onPublishToggle}
+            onEdit={setEditingCourse}
+            onDelete={setDeletingCourse}
+          />
+          {previous.length > 0 && (
+            <div className="flex flex-col gap-3">
+              <h3 className="text-sm font-semibold text-muted-foreground">Previous Terms</h3>
+              <InstructorCourseGrid
+                courses={previous}
+                canPublish={canPublish}
+                canDelete={canDelete}
+                onPublishToggle={onPublishToggle}
+                onEdit={setEditingCourse}
+                onDelete={setDeletingCourse}
+              />
+            </div>
+          )}
         </div>
       )}
 
