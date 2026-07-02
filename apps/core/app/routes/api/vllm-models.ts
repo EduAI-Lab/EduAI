@@ -30,7 +30,7 @@ function formatVllmFetchError(err: {
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user || session.user.role !== "ADMIN") {
     return new Response("Forbidden: Admins only", { status: 403 });
   }

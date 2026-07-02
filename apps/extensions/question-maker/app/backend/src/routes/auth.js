@@ -32,12 +32,21 @@ router.get('/auth/me', requireAuth, async (req, res, next) => {
 // No requireAuth — signing out an invalid session is a no-op, not an error.
 router.post('/auth/logout', async (req, res) => {
   try {
-    await fetch(`${config.coreUrl}/api/auth/sign-out`, {
+    const coreRes = await fetch(`${config.coreUrl}/api/auth/sign-out`, {
       method: 'POST',
-      headers: { cookie: req.headers.cookie ?? '' },
+      headers: {
+        cookie: req.headers.cookie ?? '',
+        origin: config.corePublicOrigin,
+        'content-type': 'application/json',
+      },
+      body: '{}',
     });
-  } catch {
-    // Best-effort — proceed even if Core is unreachable.
+    if (!coreRes.ok) {
+      console.error('[question-maker] Core sign-out failed', coreRes.status);
+    }
+  } catch (err) {
+    console.error('[question-maker] Core sign-out request failed', err);
+    // Proceed even if Core is unreachable.
   }
   res.json({ ok: true });
 });
