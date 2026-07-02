@@ -17,6 +17,7 @@ vi.mock('~/lib/api', () => ({
 const baseReport: AdminBugReportRow = {
   id: 'bug-1',
   description: 'Student cannot submit answer on activity page',
+  bugType: 'FEATURE_NOT_WORKING',
   status: 'unhandled',
   consoleLogs: JSON.stringify([
     {
@@ -112,7 +113,7 @@ describe('BugReportsTab', () => {
   it('renders bug report rows and anonymous reporter label', () => {
     render(<BugReportsTab initialReports={[baseReport, anonymousReport]} />);
 
-    expect(screen.getByText('Bug Reports')).toBeInTheDocument();
+    expect(screen.getByText('Bug reports')).toBeInTheDocument();
     expect(screen.getByText(baseReport.description)).toBeInTheDocument();
     expect(screen.getByText(anonymousReport.description)).toBeInTheDocument();
     expect(screen.getByText('Anonymous')).toBeInTheDocument();
@@ -185,6 +186,7 @@ describe('BugReportsTab', () => {
       const copiedText = mockClipboardWriteText.mock.calls[0][0] as string;
       expect(copiedText).toContain('Bug Report');
       expect(copiedText).toContain(`- Report ID: ${baseReport.id}`);
+      expect(copiedText).toContain(`- Type: Feature not working`);
       expect(copiedText).toContain(`- Internal User ID: ${baseReport.userId}`);
       expect(copiedText).toContain(`- Page URL: ${baseReport.pageUrl}`);
       expect(copiedText).toContain('Description');
