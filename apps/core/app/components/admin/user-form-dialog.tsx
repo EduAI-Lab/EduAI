@@ -163,9 +163,9 @@ export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormD
 
             {selectedRole === "UNIT_ADMIN" && (
               <FormItem>
-                <FormLabel>Authorized Course Subjects</FormLabel>
+                <FormLabel>Authorized Course Codes</FormLabel>
                 <FormDescription>
-                  Select the course subjects this administrator can manage.
+                  Select the course codes this administrator can manage.
                 </FormDescription>
                 <MultiSelect
                   options={departmentOptions.map((dept) => ({
@@ -175,8 +175,8 @@ export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormD
                   }))}
                   value={selectedUnits}
                   onValueChange={setSelectedUnits}
-                  placeholder="Select course subjects"
-                  searchPlaceholder="Search course subjects..."
+                  placeholder="Select course codes"
+                  searchPlaceholder="Search course codes..."
                 />
               </FormItem>
             )}
