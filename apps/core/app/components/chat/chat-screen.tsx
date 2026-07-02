@@ -8,6 +8,7 @@ import { AppSidebar } from "~/components/app-sidebar";
 import { ChatCourseScopedView } from "~/components/chat/chat-course-scoped-view";
 import { ChatHistoryPanel } from "~/components/chat/chat-history-panel";
 import { ChatHistoryRail } from "~/components/chat/chat-history-rail";
+import { ChatPrivacyNoticeDialog } from "~/components/chat/chat-privacy-notice-dialog";
 import { ChatTranscriptViewer } from "~/components/chat/chat-transcript-viewer";
 import type {
   ChatCourseOption,
@@ -38,6 +39,10 @@ import { useCourses } from "~/hooks/api/use-courses";
 import { useAssistiveReorientation } from "~/hooks/use-assistive-reorientation";
 import { useApiKeys } from "~/hooks/use-api-keys";
 import { postAssistiveClientEvent } from "~/lib/assistive-events.client";
+import {
+  acknowledgeChatPrivacyNotice,
+  hasAcknowledgedChatPrivacyNotice,
+} from "~/lib/chat/chat-privacy-notice";
 import { logChatApiResponse, logChatUseChatError } from "~/lib/chat-client-log";
 import type { ChatBaseData } from "~/lib/chat/chat-route.server";
 
@@ -102,6 +107,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const { getValidApiKeys } = useApiKeys();
   const prefsFetcher = useFetcher();
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [privacyNoticeOpen, setPrivacyNoticeOpen] = useState(false);
   const { chats, isLoading: historyLoading, error: historyError, refresh: refreshHistory } =
     useChatHistory({ scope: "own", limit: 50 });
   const [searchParams, setSearchParams] = useSearchParams();
@@ -134,6 +140,19 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     },
     [persistPreference],
   );
+
+  // Students see a first-visit privacy notice explaining course-chat visibility.
+  useEffect(() => {
+    if (!isStudentWithCourseChat) return;
+    if (!hasAcknowledgedChatPrivacyNotice(user.id)) {
+      setPrivacyNoticeOpen(true);
+    }
+  }, [isStudentWithCourseChat, user.id]);
+
+  const handlePrivacyNoticeAcknowledge = useCallback(() => {
+    acknowledgeChatPrivacyNotice(user.id);
+    setPrivacyNoticeOpen(false);
+  }, [user.id]);
 
   // Mirror the loaded chat's assist setting into the global assistive UI without
   // re-persisting it (silent). Runs once per mounted chat — the /chat/:chatId
@@ -451,6 +470,12 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
             </div>
           </SheetContent>
         </Sheet>
+        {isStudentWithCourseChat && (
+          <ChatPrivacyNoticeDialog
+            open={privacyNoticeOpen}
+            onAcknowledge={handlePrivacyNoticeAcknowledge}
+          />
+        )}
       </SidebarInset>
     </SidebarProvider>
   );

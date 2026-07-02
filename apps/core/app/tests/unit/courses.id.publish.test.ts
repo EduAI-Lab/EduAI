@@ -15,7 +15,7 @@ function makeArgs(id: string | undefined, method = "PATCH") {
     request: new Request(`http://localhost/api/courses/${id ?? ""}/publish`, { method }),
     params: id !== undefined ? { id } : {},
     context: {} as never,
-  };
+  } as any;
 }
 
 describe("PATCH /api/courses/:id/publish route", () => {
