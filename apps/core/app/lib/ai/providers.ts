@@ -48,18 +48,23 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
 
   // Ollama
   if (userSettings.ollama?.isEnabled) {
-    let baseURL = userSettings.ollama?.baseUrl ||
-                  process.env.OLLAMA_BASE_URL ||
-                  'http://localhost:11434';
+    const clientOllamaBaseUrl = userSettings.ollama?.baseUrl?.trim();
+    let baseURL =
+      clientOllamaBaseUrl ||
+      process.env.OLLAMA_BASE_URL ||
+      "http://localhost:11434";
 
     // Ensure the URL ends with /api for Ollama compatibility
-    if (!baseURL.endsWith('/api')) {
-      baseURL = baseURL.replace(/\/$/, '') + '/api';
+    if (!baseURL.endsWith("/api")) {
+      baseURL = baseURL.replace(/\/$/, "") + "/api";
     }
 
     providers.ollama = createOllama({
       baseURL,
-      headers: cmps01InternalAuthHeadersForUrl(baseURL),
+      // Never attach cmps01 internal key for client-supplied base URLs (IP allowlist bypass).
+      headers: clientOllamaBaseUrl
+        ? {}
+        : cmps01InternalAuthHeadersForUrl(baseURL),
     });
   }
 

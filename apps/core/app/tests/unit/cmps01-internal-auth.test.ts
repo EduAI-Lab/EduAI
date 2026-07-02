@@ -40,4 +40,16 @@ describe("cmps01 internal auth", () => {
       cmps01InternalAuthHeaders(),
     );
   });
+
+  it("does not trust VLLM_BASE_URL host for Ollama edge auth", () => {
+    process.env = {
+      ...env,
+      CMPS01_INTERNAL_KEY: "secret",
+      OLLAMA_BASE_URL: undefined,
+      VLLM_BASE_URL: "http://cmps01.ok.ubc.ca:8001",
+    };
+    expect(isTrustedCmps01EdgeUrl("http://cmps01.ok.ubc.ca:8001/ollama/api")).toBe(
+      false,
+    );
+  });
 });

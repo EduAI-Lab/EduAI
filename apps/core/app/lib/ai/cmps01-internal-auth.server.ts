@@ -24,7 +24,6 @@ export function isTrustedCmps01EdgeUrl(baseUrl: string): boolean {
   const trustedBases = [
     process.env.OLLAMA_BASE_URL,
     process.env.ENERGY_SIDECAR_URL,
-    process.env.VLLM_BASE_URL,
   ]
     .map((v) => (v ? normalizeEdgeBaseUrl(v) : null))
     .filter((v): v is string => Boolean(v));
