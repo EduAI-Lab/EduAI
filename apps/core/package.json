@@ -33,7 +33,8 @@
   "dependencies": {
     "@ai-sdk/google": "^1.2.22",
     "@ai-sdk/openai": "^1.3.23",
-    "@better-auth/cli": "1.2.8",
+    "@better-auth/cli": "^1.4.22",
+    "@better-auth/core": "^1.6.22",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/modifiers": "^9.0.0",
     "@dnd-kit/sortable": "^10.0.0",
@@ -43,7 +44,7 @@
     "@hookform/resolvers": "^5.2.2",
     "@mendable/firecrawl-js": "^4.3.8",
     "@opendocsg/pdf2md": "^0.2.1",
-    "@prisma/client": "^6.19.3",
+    "@prisma/client": "npm:prisma-client-611f97ae4eac0586ca71c3e83ac1eb1bf9a71f83f812b665ba9de4d1eb6bc5bc@^6.19.3",
     "@radix-ui/react-accordion": "^1.2.11",
     "@radix-ui/react-alert-dialog": "^1.1.14",
     "@radix-ui/react-aspect-ratio": "^1.1.7",
@@ -77,7 +78,7 @@
     "@tabler/icons-react": "^3.34.0",
     "@tanstack/react-table": "^8.21.3",
     "ai": "^4.3.17",
-    "better-auth": "1.2.8",
+    "better-auth": "^1.6.22",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
@@ -92,7 +93,7 @@
     "marked": "^16.1.2",
     "next-themes": "^0.4.6",
     "node-cron": "^4.2.1",
-    "nodemailer": "^8.0.11",
+    "nodemailer": "^9.0.1",
     "ollama-ai-provider": "^1.2.0",
     "react": "^19.2.3",
     "react-day-picker": "^9.8.0",
@@ -128,6 +129,6 @@
     "tw-animate-css": "^1.4.0",
     "vite": "^6.3.3",
     "vite-tsconfig-paths": "^5.1.4",
-    "vitest": "^4.1.0"
+    "vitest": "^4.1.9"
   }
 }

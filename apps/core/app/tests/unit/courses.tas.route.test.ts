@@ -44,7 +44,7 @@ import { resolveCourseAccess } from "~/lib/rbac/resolve-course-access.server";
 
 function loaderArgs(role: string) {
   vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role } } as never);
-  return { request: new Request("http://localhost/api/courses/c1/tas"), params: { courseId: "c1" }, context: {} as never };
+  return { request: new Request("http://localhost/api/courses/c1/tas"), params: { courseId: "c1" }, context: {} as never } as any;
 }
 
 function postArgs(role: string) {
@@ -56,7 +56,7 @@ function postArgs(role: string) {
     }),
     params: { courseId: "c1" },
     context: {} as never,
-  };
+  } as any;
 }
 
 beforeEach(() => {

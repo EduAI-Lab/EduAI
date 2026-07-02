@@ -94,7 +94,7 @@ function makeArgs(id?: string, authorization?: string) {
     }),
     params: id !== undefined ? { id } : {},
     context: {} as never,
-  };
+  } as any;
 }
 
 function makePost(id: string, body: unknown) {
@@ -106,7 +106,7 @@ function makePost(id: string, body: unknown) {
     }),
     params: { id },
     context: {} as never,
-  };
+  } as any;
 }
 
 beforeEach(() => {

@@ -52,6 +52,7 @@ export function mapCoreAdminBugReportRow(report) {
   return {
     id: report.id,
     description: report.description,
+    bugType: report.bugType ?? null,
     status,
     consoleLogs: report.consoleLogs ?? null,
     networkLogs: report.networkLogs ?? null,
@@ -104,6 +105,7 @@ export function mapAdminBugReportRow(row) {
   return {
     id: row.id,
     description: row.description,
+    bugType: row.bugType ?? null,
     status: row.status,
     consoleLogs: row.consoleLogs ?? null,
     networkLogs: row.networkLogs ?? null,
