@@ -17,6 +17,7 @@ export function useSubmitBugReport() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             description: input.description.trim(),
+            bugType: input.bugType ?? null,
             isAnonymous: input.isAnonymous ?? false,
           }),
         });
@@ -43,6 +44,5 @@ export function useSubmitBugReport() {
     submitBugReport,
     isSubmitting,
     error,
-    isStubbed: false,
   };
 }
