@@ -9,7 +9,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
-- [core] feat: Group course lists into a "current term" and "Previous Terms" using real calendar dates (Winter/Spring: Jan–Apr, Summer: May–Aug, Fall: Sep–Dec) via a new `groupCoursesByTerm` helper, applied to the TA, student, and instructor course views. (#833, @GlowyBlack, 2026-07-02) — [#848](https://github.com/EduAI-Lab/EduAICore/pull/848)
+- [core] feat: Group course lists into "Previous Terms", current, and "Upcoming Terms" using each course's real `startDate`/`endDate` (not the term name) via a new `groupCoursesByDate` helper — before the start date is upcoming, past the end date is previous (or never, if no end date is set), otherwise current — applied to the TA, student, and instructor course views. Compares dates by UTC calendar day so bucketing doesn't shift with server/browser timezone. (#833, @GlowyBlack, 2026-07-02) — [#848](https://github.com/EduAI-Lab/EduAICore/pull/848)
 
 ### Fixed
 
