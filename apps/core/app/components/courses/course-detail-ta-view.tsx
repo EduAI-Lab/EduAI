@@ -35,6 +35,7 @@ import {
 } from '@eduai/ui'
 import { PageTabs, PageTabsList, PageTabsTrigger, PageTabsContent } from '@eduai/ui'
 import { CourseHeroCard } from '@eduai/ui'
+import { resolvePaletteAccent } from '@eduai/ui'
 import { StatusBadge } from '@eduai/ui'
 import { Avatar } from '@eduai/ui'
 import { CourseMaterialsUpload } from '~/components/course-materials-upload'
@@ -368,6 +369,7 @@ export function CourseDetailTaView({
             year={course.year}
             name={course.name}
             description={course.description}
+            accentColor={resolvePaletteAccent(course.id)}
             topRightBadges={topRightBadges}
             topics={topics.map((t) => t.name)}
           />

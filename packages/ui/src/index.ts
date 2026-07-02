@@ -11,6 +11,16 @@ export { RoleBadge } from "./role-badge"
 export type { RoleBadgeProps } from "./role-badge"
 export { CourseColorBar, COURSE_COLORS } from "./course-color-bar"
 export type { CourseColorBarProps } from "./course-color-bar"
+export {
+  COURSE_COLOR_PRESETS,
+  DEFAULT_COURSE_PALETTE,
+  courseThemeVars,
+  courseHeroBackgroundStyle,
+  resolvePaletteAccent,
+  defaultColorIndexForCourse,
+  paletteColorAtIndex,
+} from "./course-theme"
+export type { CourseAccentColor } from "./course-theme"
 export { StatCard } from "./stat-card"
 export type { StatCardProps } from "./stat-card"
 export { Avatar } from "./avatar"
@@ -36,6 +46,8 @@ export { VariantBadge, variantLabel } from "./variant-badge"
 export type { VariantBadgeProps, VariantIdentity } from "./variant-badge"
 export { PageTabs, PageTabsList, PageTabsTrigger, PageTabsContent } from "./page-tabs"
 export type { PageTabsProps, PageTabsListProps, PageTabsTriggerProps, PageTabsContentProps } from "./page-tabs"
+export { SegmentedControl } from "./segmented-control"
+export type { SegmentedControlProps, SegmentedControlOption } from "./segmented-control"
 export { ThemeToggle } from "./theme-toggle"
 export type { ThemeToggleProps } from "./theme-toggle"
 export { BugReportDialog } from "./bug-report-dialog"
