@@ -96,6 +96,11 @@ test.describe('Chat code-block toolbar (#667)', () => {
 
       await page.goto(`${CORE_URL}/chat?courseCode=${encodeURIComponent(courseCode)}`);
 
+      // #708 adds a "Your chat may be reviewed" privacy notice for course chats.
+      // While open it renders the rest of the page aria-hidden, so the composer's
+      // Send button is absent from the accessibility tree until it's dismissed.
+      await page.getByRole('button', { name: 'I understand' }).click();
+
       const input = page.locator('#chat-message-input');
       await expect(input).toBeEnabled({ timeout: 15_000 });
 
