@@ -50,7 +50,7 @@ User / Extension
                  └──► vLLM runs the model on that machine
 ```
 
-Each server exposes **one URL** (`http://cmpsXX.ok.ubc.ca:8001`) via nginx + LiteLLM. See [`infra/cmps01/README.md`](../../../../infra/cmps01/README.md) and [`infra/cmps02/README.md`](../../../../infra/cmps02/README.md).
+Each server exposes **one URL** (`http://cmpsXX.ok.ubc.ca:8001`) via nginx + LiteLLM. See [`infra/cmps01/README.md`](../../../../infra/cmps01/README.md).
 
 **Code-level detail:** [Implementation architecture](#implementation-architecture) below.
 
@@ -214,7 +214,6 @@ Optional response header: `X-Fleet-Server: cmps02`.
 |-----|---------|
 | [TEAM_ROUTING_LAYER_PLAN.md](./TEAM_ROUTING_LAYER_PLAN.md) | Single-server Auto routing (research) |
 | [../../../../infra/cmps01/README.md](../../../../infra/cmps01/README.md) | First GPU server |
-| [../../../../infra/cmps02/README.md](../../../../infra/cmps02/README.md) | Second GPU server |
 | [../../VLLM.md](../../VLLM.md) | vLLM provider and smoke tests |
 
 ---
