@@ -1,0 +1,12 @@
+# LiteLLM — Qwen 72B AWQ only (research / XL tier oracle runs).
+# Used by migrate-research-72b.sh. Restore production with migrate-tiered.sh.
+
+model_list:
+  - model_name: qwen2.5-72b-instruct
+    litellm_params:
+      model: openai/qwen2.5-72b-instruct
+      api_base: http://127.0.0.1:18001/v1
+      api_key: vllm-local
+
+general_settings:
+  master_key: vllm-local

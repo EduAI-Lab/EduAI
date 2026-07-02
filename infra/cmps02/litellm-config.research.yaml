@@ -1,0 +1,19 @@
+# LiteLLM — Qwen 14B + 72B AWQ (research / model adequacy ladder).
+# GPU 0 → 14B (medium tier). GPU 1 → 72B AWQ (XL tier).
+# Used by migrate-research.sh
+
+model_list:
+  - model_name: qwen2.5-14b-instruct
+    litellm_params:
+      model: openai/qwen2.5-14b-instruct
+      api_base: http://127.0.0.1:18001/v1
+      api_key: vllm-local
+
+  - model_name: qwen2.5-72b-instruct
+    litellm_params:
+      model: openai/qwen2.5-72b-instruct
+      api_base: http://127.0.0.1:18002/v1
+      api_key: vllm-local
+
+general_settings:
+  master_key: vllm-local
