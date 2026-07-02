@@ -256,6 +256,22 @@ describe('CoursesInstructorView', () => {
     expect(screen.getByText('COSC 101')).toBeInTheDocument()
     expect(screen.getByText('COSC 201')).toBeInTheDocument()
   })
+
+  it('groups older-term courses under "Previous Terms"', () => {
+    const oldCourse = { ...PUBLISHED_COURSE, id: 'old1', code: 'COSC 999', year: 2020 }
+    wrap(
+      <CoursesInstructorView
+        courses={[PUBLISHED_COURSE, oldCourse]}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />
+    )
+    expect(screen.getByText('COSC 101')).toBeInTheDocument()
+    expect(screen.getByText(/previous terms/i)).toBeInTheDocument()
+    expect(screen.getByText('COSC 999')).toBeInTheDocument()
+  })
 })
 
 // CoursesMixedView
@@ -329,5 +345,30 @@ describe('CoursesMixedView', () => {
   it('shows empty state when the user has neither TA nor enrolled courses', () => {
     wrap(<CoursesMixedView courses={[]} taCourseIds={[]} enrolledCourseIds={[]} />)
     expect(screen.getByText(/no courses/i)).toBeInTheDocument()
+  })
+
+  it('groups older-term courses under "Previous Terms" in the assisting section', () => {
+    const oldTa = { ...TA_COURSE, id: 'ta-old', code: 'COSC 300', year: 2020 }
+    wrap(
+      <CoursesMixedView
+        courses={[TA_COURSE, oldTa]}
+        taCourseIds={['ta1', 'ta-old']}
+        enrolledCourseIds={[]}
+      />
+    )
+    expect(screen.getByText('COSC 301')).toBeInTheDocument()
+    expect(screen.getByText(/previous terms/i)).toBeInTheDocument()
+    expect(screen.getByText('COSC 300')).toBeInTheDocument()
+  })
+
+  it('does not show a "Previous Terms" heading when all courses share one term', () => {
+    wrap(
+      <CoursesMixedView
+        courses={[TA_COURSE]}
+        taCourseIds={['ta1']}
+        enrolledCourseIds={[]}
+      />
+    )
+    expect(screen.queryByText(/previous terms/i)).not.toBeInTheDocument()
   })
 })

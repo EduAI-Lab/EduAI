@@ -2,6 +2,7 @@ import { Link } from 'react-router'
 import { IconBook } from '@tabler/icons-react'
 import { Card, CardContent, CourseCard, PageHeading } from '@eduai/ui'
 import type { Course } from '~/hooks/api/use-courses'
+import { groupCoursesByTerm } from '~/lib/courses/term-grouping'
 
 interface Props {
   courses: Course[]
@@ -32,6 +33,21 @@ function CourseGrid({ courses }: { courses: Course[] }) {
   )
 }
 
+function TermGroupedGrid({ courses }: { courses: Course[] }) {
+  const { current, previous } = groupCoursesByTerm(courses)
+  return (
+    <div className="flex flex-col gap-4">
+      <CourseGrid courses={current} />
+      {previous.length > 0 && (
+        <div className="flex flex-col gap-3">
+          <h3 className="text-sm font-semibold text-muted-foreground">Previous Terms</h3>
+          <CourseGrid courses={previous} />
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function CoursesMixedView({ courses, taCourseIds, enrolledCourseIds }: Props) {
   const assisting = courses.filter((c) => taCourseIds.includes(c.id))
   const enrolled = courses.filter(
@@ -57,13 +73,13 @@ export function CoursesMixedView({ courses, taCourseIds, enrolledCourseIds }: Pr
       {assisting.length > 0 && (
         <div className="flex flex-col gap-4">
           <PageHeading heading="Courses You Are Assisting In" subheading="Courses where you are a TA" />
-          <CourseGrid courses={assisting} />
+          <TermGroupedGrid courses={assisting} />
         </div>
       )}
       {enrolled.length > 0 && (
         <div className="flex flex-col gap-4">
           <PageHeading heading="Courses You Are Enrolled In" subheading="Courses you are taking as a student" />
-          <CourseGrid courses={enrolled} />
+          <TermGroupedGrid courses={enrolled} />
         </div>
       )}
     </div>
