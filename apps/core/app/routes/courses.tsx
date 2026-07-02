@@ -9,8 +9,7 @@ import { SidebarInset, SidebarProvider } from '@eduai/ui'
 import { CoursesAdminView } from '~/components/courses/courses-admin-view'
 import { CoursesUnitAdminView } from '~/components/courses/courses-unit-admin-view'
 import { CoursesInstructorView } from '~/components/courses/courses-instructor-view'
-import { CoursesTaView } from '~/components/courses/courses-ta-view'
-import { CoursesStudentView } from '~/components/courses/courses-student-view'
+import { CoursesMixedView } from '~/components/courses/courses-mixed-view'
 import { useCourses } from '~/hooks/api/use-courses'
 import {
   Breadcrumb,
@@ -73,9 +72,6 @@ export default function CoursesPage() {
   const isAdmin = user.role === 'ADMIN'
   const isUnitAdmin = user.role === 'UNIT_ADMIN'
   const isInstructor = user.role === 'INSTRUCTOR'
-  // TA is a course-level enrollment role, not a platform role (#499).
-  const isTA = taCourseIds.length > 0
-
   const handlePublishToggle = async (id: string, publish: boolean) => {
     await updateCourse(id, { isPublished: publish })
   }
@@ -137,15 +133,11 @@ export default function CoursesPage() {
             onDeleteCourse={async (id) => { await deleteCourse(id) }}
             onPublishToggle={handlePublishToggle}
           />
-        ) : isTA ? (
-          <CoursesTaView
-            courses={courses.filter((c) => taCourseIds.includes(c.id))}
-          />
         ) : (
-          <CoursesStudentView
-            courses={courses.filter(
-              (c) => enrolledCourseIds.includes(c.id) && c.isPublished,
-            )}
+          <CoursesMixedView
+            courses={courses}
+            taCourseIds={taCourseIds}
+            enrolledCourseIds={enrolledCourseIds}
           />
         )}
       </div>

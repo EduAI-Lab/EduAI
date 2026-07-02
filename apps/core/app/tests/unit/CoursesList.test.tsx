@@ -4,8 +4,7 @@ import { MemoryRouter } from 'react-router'
 import { CoursesAdminView } from '~/components/courses/courses-admin-view'
 import { CoursesUnitAdminView } from '~/components/courses/courses-unit-admin-view'
 import { CoursesInstructorView } from '~/components/courses/courses-instructor-view'
-import { CoursesTaView } from '~/components/courses/courses-ta-view'
-import { CoursesStudentView } from '~/components/courses/courses-student-view'
+import { CoursesMixedView } from '~/components/courses/courses-mixed-view'
 import type { Course } from '~/hooks/api/use-courses'
 
 // The instructor view gates Create/Publish/Delete on usePolicies(); the controls
@@ -259,34 +258,76 @@ describe('CoursesInstructorView', () => {
   })
 })
 
-// CoursesTaView
-describe('CoursesTaView', () => {
+// CoursesMixedView
+describe('CoursesMixedView', () => {
+  const TA_COURSE: Course = { ...PUBLISHED_COURSE, id: 'ta1', code: 'COSC 301', name: 'TA Course' }
+  const STUDENT_COURSE: Course = { ...PUBLISHED_COURSE, id: 'stu1', code: 'COSC 401', name: 'Student Course' }
+
   it('does NOT show "Create Course" button', () => {
-    wrap(<CoursesTaView courses={[PUBLISHED_COURSE]} />)
+    wrap(
+      <CoursesMixedView
+        courses={[TA_COURSE]}
+        taCourseIds={['ta1']}
+        enrolledCourseIds={[]}
+      />
+    )
     expect(screen.queryByRole('button', { name: /create course/i })).not.toBeInTheDocument()
   })
 
-  it('shows no action buttons', () => {
-    wrap(<CoursesTaView courses={[PUBLISHED_COURSE]} />)
-    expect(screen.queryAllByRole('button')).toHaveLength(0)
-  })
-})
-
-// CoursesStudentView
-describe('CoursesStudentView', () => {
-  it('does NOT show "Create Course" button', () => {
-    wrap(<CoursesStudentView courses={[PUBLISHED_COURSE]} />)
-    expect(screen.queryByRole('button', { name: /create course/i })).not.toBeInTheDocument()
-  })
-
-  it('hides draft (unpublished) courses', () => {
-    wrap(<CoursesStudentView courses={[PUBLISHED_COURSE, DRAFT_COURSE]} />)
-    expect(screen.getByText('COSC 101')).toBeInTheDocument()
-    expect(screen.queryByText('COSC 201')).not.toBeInTheDocument()
+  it('shows only the "assisting" section when the user has TA courses only', () => {
+    wrap(
+      <CoursesMixedView
+        courses={[TA_COURSE]}
+        taCourseIds={['ta1']}
+        enrolledCourseIds={[]}
+      />
+    )
+    expect(screen.getByText(/assisting/i)).toBeInTheDocument()
+    expect(screen.getByText('COSC 301')).toBeInTheDocument()
+    expect(screen.queryByText(/enrolled/i)).not.toBeInTheDocument()
   })
 
-  it('shows empty state when no published courses', () => {
-    wrap(<CoursesStudentView courses={[DRAFT_COURSE]} />)
-    expect(screen.getByText(/no published courses available/i)).toBeInTheDocument()
+  it('shows only the "enrolled" section when the user has student courses only', () => {
+    wrap(
+      <CoursesMixedView
+        courses={[STUDENT_COURSE]}
+        taCourseIds={[]}
+        enrolledCourseIds={['stu1']}
+      />
+    )
+    expect(screen.getByText(/enrolled/i)).toBeInTheDocument()
+    expect(screen.getByText('COSC 401')).toBeInTheDocument()
+    expect(screen.queryByText(/assisting/i)).not.toBeInTheDocument()
+  })
+
+  it('shows both sections when the user has both TA and student courses', () => {
+    wrap(
+      <CoursesMixedView
+        courses={[TA_COURSE, STUDENT_COURSE]}
+        taCourseIds={['ta1']}
+        enrolledCourseIds={['stu1']}
+      />
+    )
+    expect(screen.getByText(/assisting/i)).toBeInTheDocument()
+    expect(screen.getByText(/enrolled/i)).toBeInTheDocument()
+    expect(screen.getByText('COSC 301')).toBeInTheDocument()
+    expect(screen.getByText('COSC 401')).toBeInTheDocument()
+  })
+
+  it('hides draft (unpublished) courses from the enrolled section', () => {
+    wrap(
+      <CoursesMixedView
+        courses={[STUDENT_COURSE, { ...STUDENT_COURSE, id: 'stu2', code: 'COSC 402', isPublished: false }]}
+        taCourseIds={[]}
+        enrolledCourseIds={['stu1', 'stu2']}
+      />
+    )
+    expect(screen.getByText('COSC 401')).toBeInTheDocument()
+    expect(screen.queryByText('COSC 402')).not.toBeInTheDocument()
+  })
+
+  it('shows empty state when the user has neither TA nor enrolled courses', () => {
+    wrap(<CoursesMixedView courses={[]} taCourseIds={[]} enrolledCourseIds={[]} />)
+    expect(screen.getByText(/no courses/i)).toBeInTheDocument()
   })
 })
