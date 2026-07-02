@@ -14,6 +14,16 @@ const HOST = process.env.ENERGY_METER_HOST ?? "127.0.0.1";
 const PORT = Number(process.env.ENERGY_METER_PORT ?? "9100");
 const GRID = Number(process.env.LOCAL_GRID_GCO2_PER_KWH ?? "12");
 const SAMPLE_MS = Math.max(50, Number(process.env.ENERGY_SAMPLE_MS ?? "1000") || 1000);
+const SESSION_TTL_MS = 5 * 60 * 1000;
+const MAX_GPU_INDEX = 7;
+
+/** @param {unknown} raw */
+function validateGpuIndices(raw) {
+  const values = Array.isArray(raw) ? raw : raw == null ? [] : [raw];
+  return values
+    .map(Number)
+    .filter((n) => Number.isInteger(n) && n >= 0 && n <= MAX_GPU_INDEX);
+}
 
 /** Comma-separated GPU indices, e.g. "0,1". Default: all visible GPUs. */
 function resolveGpuIndices() {
@@ -40,6 +50,17 @@ function resolveGpuIndices() {
 const sessions = new Map();
 /** @type {Record<string, unknown>|null} */
 let lastResult = null;
+
+setInterval(() => {
+  const now = performance.now();
+  for (const [tag, session] of sessions) {
+    if (now - session.t0 > SESSION_TTL_MS) {
+      session.gpu.stop();
+      sessions.delete(tag);
+      console.warn(`reaped stale session: ${tag}`);
+    }
+  }
+}, 30_000).unref();
 
 function probeNvmlAvailable() {
   try {
@@ -124,6 +145,7 @@ class GpuSampler {
 
   stop() {
     if (this.proc) {
+      this.proc.stdout?.removeAllListeners("data");
       this.proc.kill("SIGTERM");
       this.proc = null;
     }
@@ -232,10 +254,14 @@ const server = createServer(async (req, res) => {
     }
     const gpuIndices =
       body.gpuIndex != null
-        ? [Number(body.gpuIndex)]
+        ? validateGpuIndices(body.gpuIndex)
         : body.gpuIndices?.length
-          ? body.gpuIndices.map(Number)
+          ? validateGpuIndices(body.gpuIndices)
           : resolveGpuIndices();
+    if (!gpuIndices.length) {
+      sendJson(res, 400, { error: "invalid or missing gpuIndex/gpuIndices" });
+      return;
+    }
     const gpu = new GpuSampler(gpuIndices);
     gpu.start();
     sessions.set(tag, {

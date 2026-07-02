@@ -13,7 +13,7 @@ services:
     restart: unless-stopped
     network_mode: host
     environment:
-      ENERGY_METER_HOST: "0.0.0.0"
+      ENERGY_METER_HOST: "127.0.0.1"
       ENERGY_METER_PORT: "9100"
       ENERGY_GPU_INDICES: "0,1"
       ENERGY_SAMPLE_MS: "1000"
