@@ -24,6 +24,7 @@
     "eval:adhd": "tsx scripts/eval-adhd-assist.mjs",
     "bench:chat": "node ./scripts/chat-latency-bench.mjs",
     "vllm:smoke": "node ./scripts/vllm-smoke.mjs",
+    "fleet:smoke": "node ./scripts/fleet-smoke.mjs",
     "research:embed-knn-exemplars": "tsx ./scripts/research/embed-knn-exemplars.ts",
     "research:eval-knn": "tsx ./scripts/research/evaluate-knn-router.ts",
     "research:eval-llm": "tsx ./scripts/research/evaluate-llm-router.ts",

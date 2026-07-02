@@ -197,6 +197,69 @@ Optional response header: `X-Fleet-Server: cmps02`.
 
 ---
 
+## Testing fleet routing
+
+Run from **`apps/core`**. Host checks must run on a machine that can reach cmps (e.g. **s378 dev server**), not a typical off-campus laptop.
+
+### 1. Unit tests (no GPUs)
+
+```bash
+npx vitest run app/tests/unit/fleet-routing.test.ts
+```
+
+Covers feature → `JobType`, round-robin, 503 when no healthy host, and provider URL override.
+
+### 2. Pre-flight — health-check every fleet host
+
+```bash
+# After setting VLLM_FLEET_CHAT_URLS in .env:
+npm run fleet:smoke
+
+# Or inline (no .env edit):
+VLLM_FLEET_CHAT_URLS="http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001" npm run fleet:smoke
+```
+
+Pings `GET /v1/models` on each URL in `VLLM_FLEET_CHAT_URLS` (and `VLLM_FLEET_HEAVY_URL` if set). Warns when expected models from `VLLM_FLEET_DEFAULT_MODELS` are missing.
+
+Single-host check (legacy): `npm run vllm:smoke` with `VLLM_BASE_URL` set.
+
+### 3. Enable fleet in `.env` and restart
+
+```env
+VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"
+VLLM_FLEET_CHAT_URLS="http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001"
+VLLM_API_KEY="vllm-local"
+```
+
+Restart the app after env changes — the fleet registry is cached at process start.
+
+Fleet is **on** when `VLLM_FLEET_CHAT_URLS` is non-empty. Routing applies only to **`vllm:*`** models.
+
+### 4. End-to-end — chat and verify pick
+
+Send several chat messages with a vLLM model. Confirm:
+
+| Signal | Where |
+|--------|--------|
+| `X-Fleet-Server: cmps01` (or `cmps02`) | Network tab → `/api/chat` response headers |
+| `fleetServerId`, `fleetReason`, `jobType` | `AIInteraction.routerFeatures` in Postgres |
+
+With two healthy hosts, `X-Fleet-Server` should alternate across requests.
+
+**Question Maker (background pool):** include `"routingContext": { "feature": "question-maker" }` in the chat body; expect `jobType: "background"` when `VLLM_FLEET_HEAVY_URL` is set.
+
+### 5. Negative checks (optional)
+
+| Scenario | Expected |
+|----------|----------|
+| `VLLM_FLEET_CHAT_URLS` unset | No `X-Fleet-Server`; uses `VLLM_BASE_URL` only |
+| All fleet hosts unreachable | **503** `"No healthy vLLM fleet server available"` |
+| Model not on any host | **503** with model name in `details` |
+
+**Not yet tested:** Slice 2 inference retry after a stale health cache — dead mid-window hosts fail at inference time without automatic retry.
+
+---
+
 ## Rollout
 
 | Slice | Status | What |
@@ -219,4 +282,4 @@ Optional response header: `X-Fleet-Server: cmps02`.
 
 ---
 
-*Last updated: 2026-06-26 — JobType (`interactive` / `background`), stale-cache fallback, aligned with `feat/fleet-routing` Slice 1*
+*Last updated: 2026-06-30 — testing section, `npm run fleet:smoke`*
