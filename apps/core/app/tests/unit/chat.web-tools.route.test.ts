@@ -58,7 +58,7 @@ function makeArgs(body: object) {
     }),
     params: {},
     context: {} as never,
-  };
+  } as any;
 }
 
 function baseBody(overrides: Record<string, unknown> = {}) {

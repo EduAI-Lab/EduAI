@@ -29,7 +29,7 @@ function makeArgs(authorization?: string) {
     ),
     params:  { courseId: COURSE_ID },
     context: {} as never,
-  };
+  } as any;
 }
 
 describe("GET /api/courses/:id/topics — requireServiceKey guard (integration)", () => {

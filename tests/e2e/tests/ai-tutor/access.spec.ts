@@ -15,7 +15,7 @@
  */
 import { test, expect } from '@playwright/test';
 import { CORE_URL, AI_TUTOR_API_URL } from '../../playwright.config';
-import { signUp, signOut, uniqueEmail } from '../helpers/auth';
+import { signUp, signOut, uniqueEmail, checkStatus } from '../helpers/auth';
 
 // ---------------------------------------------------------------------------
 // Health / smoke
@@ -113,12 +113,13 @@ test.describe('AI Tutor sign-out', () => {
 
     // Sign out via AI Tutor (it proxies to Core server-to-server)
     const logoutRes = await request.post(`${AI_TUTOR_API_URL}/api/logout`);
-    expect(logoutRes.status()).toBe(200);
+    await checkStatus(logoutRes, 200, 'AI Tutor POST /api/logout');
     expect((await logoutRes.json()).ok).toBe(true);
 
-    // Core session should now be invalid
+    // Core session should now be invalid — include body so CI shows if a
+    // session is still active (e.g. sign-out did not reach Core)
     const afterCore = await request.get(`${CORE_URL}/api/me`);
-    expect(afterCore.status()).toBe(401);
+    await checkStatus(afterCore, 401, 'Core /api/me after AI Tutor logout');
   });
 
   test('sign-out without a session still returns ok (idempotent)', async ({ request }) => {
