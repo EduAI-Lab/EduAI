@@ -19,7 +19,7 @@ This document summarizes which Core REST endpoints and in-process chat tools are
 
 **Coverage (route families with ≥1 agent-ready operation):** ~12 / 22 ≈ **55%** of Core REST surface (see [`api-wiring.md`](../implementations/api-wiring.md)).
 
-**Automated checks ([#672](https://github.com/EduAI-Lab/EduAI/issues/672)):** `apps/core/app/lib/agent-readiness/manifest.ts` is the canonical route list. Unit tests validate manifest invariants (admin write tool ↔ REST mapping, email routes documented). Integration tests verify JSON error envelopes, invitation email delivery (mocked mailer), and centralized idempotency replay on `POST /api/users`.
+**Full API inventory ([#672](https://github.com/EduAI-Lab/EduAI/issues/672)):** `apps/core/app/lib/agent-readiness/manifest.ts` lists **every** Core `/api/*` endpoint with a `readiness` status (`ready` | `partial` | `excluded`), documented gaps, and email/idempotency flags. Unit tests fail if a `routes.ts` pattern is missing from the manifest. Automated behavioral checks cover JSON error envelopes and email side-effects; closing `partial` → `ready` gaps is tracked in the manifest `gaps` field.
 
 ---
 
