@@ -10,7 +10,7 @@ import { reviveStoredMessage } from "~/lib/chat/revive-message.server";
  */
 export async function loader({ request, params }: LoaderFunctionArgs) {
   try {
-    const session = await auth.api.getSession(request);
+    const session = await auth.api.getSession({ headers: request.headers });
     if (!session?.user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
