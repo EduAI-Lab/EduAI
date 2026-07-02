@@ -3,7 +3,7 @@ import type { LoaderFunctionArgs } from "react-router";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   // Check admin authorization
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user || session.user.role !== "ADMIN") {
     return new Response("Forbidden: Admins only", { status: 403 });
   }

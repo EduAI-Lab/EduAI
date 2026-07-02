@@ -18,8 +18,9 @@
     "types": ["node", "vite/client"],
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
-    }
+        "@/*": ["./src/*"],
+        "@eduai/ui": ["../../../../../packages/ui/src/index.ts"]
+      }
   },
   "include": ["src"],
   "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/**/*.test.setup.ts", "src/**/*.test.setup.tsx", "src/archive", "src/data/mockData.ts"],
