@@ -19,6 +19,8 @@ This document summarizes which Core REST endpoints and in-process chat tools are
 
 **Coverage (route families with ≥1 agent-ready operation):** ~12 / 22 ≈ **55%** of Core REST surface (see [`api-wiring.md`](../implementations/api-wiring.md)).
 
+**Automated checks ([#672](https://github.com/EduAI-Lab/EduAI/issues/672)):** `apps/core/app/lib/agent-readiness/manifest.ts` is the canonical route list. Unit tests validate manifest invariants (admin write tool ↔ REST mapping, email routes documented). Integration tests verify JSON error envelopes, invitation email delivery (mocked mailer), and centralized idempotency replay on `POST /api/users`.
+
 ---
 
 ## In-process chat tools (shipped)
@@ -55,7 +57,7 @@ Platform-wide assistant at `/admin/chat` — **ADMIN** session only. Course cont
 
 | Tool | REST equivalent | Idempotency / guards |
 | ---- | --------------- | -------------------- |
-| `createUser` | `POST /api/users` | Standard create |
+| `createUser` | `POST /api/users` | `Idempotency-Key` header (centralized layer, #828) |
 | `updateUser` | `PATCH /api/users/:id` | Self-lockout guards |
 | `deleteUser` | `DELETE /api/users/:id` | Cannot delete self |
 | `createCourseEnrollment` | `POST /api/courses/:id/enrollments` | `idempotencyKey` on REST |
@@ -94,7 +96,7 @@ Implementation: `apps/core/app/lib/agent-tools/`.
 | PATCH | `/api/courses/:id/enrollments/:id` | `updateCourseEnrollment` | Ready |
 | DELETE | `/api/courses/:id/enrollments/:id` | `deactivateCourseEnrollment` | Ready |
 | GET/PATCH | `/api/admin/bug-reports` | `listBugReports` / `updateBugReportStatus` | Ready — JSON + Zod |
-| GET/POST/PATCH/DELETE | `/api/users` | `listUsers` / `createUser` / `updateUser` / `deleteUser` | Ready — error envelope ([#572](https://github.com/EduAI-Lab/EduAI/issues/572)) |
+| GET/POST/PATCH/DELETE | `/api/users` | `listUsers` / `createUser` / `updateUser` / `deleteUser` | Ready — error envelope ([#572](https://github.com/EduAI-Lab/EduAI/issues/572)); `POST` idempotency via centralized layer ([#828](https://github.com/EduAI-Lab/EduAI/issues/828)) |
 | POST/PATCH/DELETE | `/api/courses/:id/topics` (+ `:topicId`) | `createCourseTopic` / `updateCourseTopic` / `deleteCourseTopic` | Ready |
 
 ### Partially ready / gaps
@@ -149,6 +151,7 @@ Implementation: `apps/core/app/lib/agent-tools/`.
 ## References
 
 - [`docs/implementations/api-wiring.md`](../implementations/api-wiring.md) — REST contracts
+- `apps/core/app/lib/agent-readiness/manifest.ts` — machine-readable agent-ready route list ([#672](https://github.com/EduAI-Lab/EduAI/issues/672))
 - `apps/core/app/lib/agent-tools/create-admin-chat-tools.ts`
 - `apps/core/app/lib/agent-tools/create-learning-chat-tools.ts`
 - `apps/core/app/routes/api/chat.ts`

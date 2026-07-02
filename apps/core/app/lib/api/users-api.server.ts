@@ -4,6 +4,7 @@ import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { createUserSchema, updateUserSchema } from "~/lib/auth/schemas";
 import { assertValidUnits } from "~/lib/disciplines/guards.server";
 import { apiError, validationErrorFromZod } from "~/lib/api-error.server";
+import { withIdempotency } from "~/lib/idempotency.server";
 import { applyStudentIdAndResolveEnrollments } from "~/lib/canvas/link-roster.server";
 import { normalizeStudentId } from "~/lib/canvas/enrollment-link.server";
 import {
@@ -105,79 +106,10 @@ export async function handleUsersApiRequest(request: Request) {
         return apiError(403, "Forbidden");
       }
 
-      const body = await request.json();
-      const result = createUserSchema.safeParse(body);
-
-      if (!result.success) {
-        return validationErrorFromZod(result.error);
-      }
-
-      // §541: authorizedUnits codes must exist in the Discipline table (array
-      // field — no FK backstop, so the check is the only guard).
-      if (result.data.authorizedUnits) {
-        const unitGuard = await assertValidUnits(result.data.authorizedUnits);
-        if (unitGuard) return unitGuard;
-      }
-
-      try {
-        const { _count, ...created } = await prisma.user.create({
-          data: {
-            ...result.data,
-            emailVerified: false,
-          },
-          select: {
-            id: true,
-            email: true,
-            name: true,
-            image: true,
-            role: true,
-            isActive: true,
-            emailVerified: true,
-            createdAt: true,
-            updatedAt: true,
-            _count: {
-              select: {
-                enrollments: true,
-                taughtCourses: true,
-                aiInteractions: true,
-              },
-            },
-          },
-        });
-
-        const user = {
-          ...created,
-          _count: {
-            enrolledCourses: _count.enrollments,
-            assistedCourses: 0,
-            taughtCourses: _count.taughtCourses,
-            aiInteractions: _count.aiInteractions,
-          },
-        };
-
-        fireAndForget(
-          logAuditAction({
-            ...getActorContext(session.user),
-            ...requestContext,
-            actionCode: "USER_CREATED",
-            category: "USER",
-            entityType: "User",
-            entityId: created.id,
-            entityLabel: userEntityLabel(created.name, created.email),
-            details: { role: created.role, email: created.email },
-          }),
-        );
-
-        return new Response(JSON.stringify(user), {
-          status: 201,
-          headers: { "Content-Type": "application/json" },
-        });
-      } catch (error: any) {
-        if (error.code === "P2002") {
-          return apiError(409, "EMAIL_ALREADY_EXISTS");
-        }
-        throw error;
-      }
+      return withIdempotency(
+        { request, route: "POST /api/users" },
+        async (body) => createUserFromBody(body, session.user, requestContext),
+      );
     }
 
     case "PATCH": {
@@ -394,5 +326,89 @@ export async function handleUsersApiRequest(request: Request) {
 
     default:
       return apiError(405, "METHOD_NOT_ALLOWED");
+  }
+}
+
+async function createUserFromBody(
+  body: Record<string, unknown> | null,
+  actor: { id: string; name?: string | null; email?: string | null },
+  requestContext: ReturnType<typeof getRequestContext>,
+): Promise<Response> {
+  const result = createUserSchema.safeParse(body);
+
+  if (!result.success) {
+    return validationErrorFromZod(result.error);
+  }
+
+  // §541: authorizedUnits codes must exist in the Discipline table (array
+  // field — no FK backstop, so the check is the only guard).
+  if (result.data.authorizedUnits) {
+    const unitGuard = await assertValidUnits(result.data.authorizedUnits);
+    if (unitGuard) return unitGuard;
+  }
+
+  try {
+    const { _count, ...created } = await prisma.user.create({
+      data: {
+        ...result.data,
+        emailVerified: false,
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        image: true,
+        role: true,
+        isActive: true,
+        emailVerified: true,
+        createdAt: true,
+        updatedAt: true,
+        _count: {
+          select: {
+            enrollments: true,
+            taughtCourses: true,
+            aiInteractions: true,
+          },
+        },
+      },
+    });
+
+    const user = {
+      ...created,
+      _count: {
+        enrolledCourses: _count.enrollments,
+        assistedCourses: 0,
+        taughtCourses: _count.taughtCourses,
+        aiInteractions: _count.aiInteractions,
+      },
+    };
+
+    fireAndForget(
+      logAuditAction({
+        ...getActorContext(actor),
+        ...requestContext,
+        actionCode: "USER_CREATED",
+        category: "USER",
+        entityType: "User",
+        entityId: created.id,
+        entityLabel: userEntityLabel(created.name, created.email),
+        details: { role: created.role, email: created.email },
+      }),
+    );
+
+    return new Response(JSON.stringify(user), {
+      status: 201,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error: unknown) {
+    if (
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      (error as { code: string }).code === "P2002"
+    ) {
+      return apiError(409, "EMAIL_ALREADY_EXISTS");
+    }
+    throw error;
   }
 }

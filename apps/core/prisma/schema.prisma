@@ -847,3 +847,27 @@ model CronJobScheduleOverride {
 
   @@map("cron_job_schedule_overrides")
 }
+
+enum IdempotencyStatus {
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+/// Centralized idempotency store for retry-safe POST creates (#828).
+model IdempotencyRecord {
+  id           String            @id @default(cuid())
+  key          String
+  route        String
+  requestHash  String
+  status       IdempotencyStatus
+  statusCode   Int?
+  responseBody Json?
+  expiresAt    DateTime
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  @@unique([key, route])
+  @@index([expiresAt])
+  @@map("idempotency_records")
+}
