@@ -685,7 +685,7 @@ export function CourseDetailManagerView({
                   {course.department && (
                     <div>
                       <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
-                        Course Subject
+                        Course Code
                       </p>
                       <p className="text-sm text-foreground">
                         {course.department}

@@ -119,7 +119,7 @@ export function CourseDetailStudentView({
                   </div>
                   {course.department && (
                     <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">Course Subject</p>
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">Course Code</p>
                       <p className="text-sm text-foreground">{course.department}</p>
                     </div>
                   )}

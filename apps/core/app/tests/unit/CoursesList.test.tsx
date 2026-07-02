@@ -273,7 +273,7 @@ describe('CoursesInstructorView', () => {
     expect(screen.getByText('COSC 999')).toBeInTheDocument()
   })
 
-  it('labels the department field as "Course Subject"', () => {
+  it('labels the department field as "Course Code"', () => {
     wrap(
       <CoursesInstructorView
         courses={[PUBLISHED_COURSE]}
