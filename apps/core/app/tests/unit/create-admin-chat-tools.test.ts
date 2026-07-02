@@ -88,6 +88,22 @@ describe("createAdminChatTools read execute", () => {
       error: "CONFIRMATION_REQUIRED",
     });
   });
+
+  it("returns CONFIRMATION_REQUIRED for createInvitation when confirmed is false", async () => {
+    const tools = createAdminChatTools(ctx);
+    const result = await tools.createInvitation.execute(
+      {
+        confirmed: false,
+        email: "invite@test.com",
+        role: "INSTRUCTOR",
+      },
+      { toolCallId: "test" },
+    );
+    expect(result).toMatchObject({
+      writeSucceeded: false,
+      error: "CONFIRMATION_REQUIRED",
+    });
+  });
 });
 
 describe("createAdminChatTools write execute", () => {

@@ -13,7 +13,7 @@ This document summarizes which Core REST endpoints and in-process chat tools are
 | Surface | Ready today | Notes |
 | ------- | ----------- | ----- |
 | **Learning chat tools** | 3 tools | RAG + web (course-scoped RAG requires a selected course) |
-| **Admin chat tools** | 17 tools (7 read, 10 write) | Platform-wide; writes require `confirmed: true` after admin approval in chat |
+| **Admin chat tools** | 27 tools (10 read, 17 write) | Platform-wide; writes require `confirmed: true` after admin approval in chat |
 | **REST — agent-ready (read / ops)** | 12 route families | Courses, enrollments, users, topics, bug triage, model catalog |
 | **REST — not agent-ready** | ~10 route families | Chat passthrough, uploads, Canvas, auth, prefs, infra |
 
@@ -41,7 +41,7 @@ Entry: `POST /api/chat` with `chatMode: "learning"`. See [`CHAT_RAG_PIPELINE.md`
 
 Platform-wide assistant at `/admin/chat` — **ADMIN** session only. Course context is passed per tool call (`courseId` or `courseCode`), not via a UI course selector.
 
-#### Read tools (7)
+#### Read tools (10)
 
 | Tool | REST equivalent | Handler |
 | ---- | --------------- | ------- |
@@ -52,8 +52,11 @@ Platform-wide assistant at `/admin/chat` — **ADMIN** session only. Course cont
 | `getCourseTopic` | `GET /api/courses/:id/topics/:topicId` | `getAdminCourseTopic()` |
 | `listUsers` | `GET /api/users` | `listAdminUsers()` |
 | `listBugReports` | `GET /api/admin/bug-reports` | `listAdminBugReportsForChat()` |
+| `listInvitations` | `GET /api/invitations` | `listAdminInvitations()` |
+| `getCanvasIntegration` | `GET /api/canvas/integration` | `getAdminCanvasIntegration()` |
+| `listCanvasCourses` | `GET /api/canvas/courses` | `listAdminCanvasCourses()` |
 
-#### Write tools (10) — require `confirmed: true`
+#### Write tools (17) — require `confirmed: true`
 
 | Tool | REST equivalent | Idempotency / guards |
 | ---- | --------------- | -------------------- |
@@ -67,6 +70,13 @@ Platform-wide assistant at `/admin/chat` — **ADMIN** session only. Course cont
 | `updateCourseTopic` | `PATCH /api/courses/:id/topics/:topicId` | — |
 | `deleteCourseTopic` | `DELETE /api/courses/:id/topics/:topicId` | Soft-delete |
 | `updateBugReportStatus` | `PATCH /api/admin/bug-reports/:id` | — |
+| `createInvitation` | `POST /api/invitations` | Sends accept-link email |
+| `revokeInvitation` | `DELETE /api/invitations/:id` | Pending invites only |
+| `resendInvitation` | `POST /api/invitations/:id` | Rotates token + re-sends email |
+| `connectCanvas` | `POST /api/canvas/connect` | Target instructor optional |
+| `syncCanvasCourses` | `POST /api/canvas/sync` | Canvas course id list |
+| `disconnectCanvas` | `DELETE /api/canvas/disconnect` | — |
+| `linkCanvasRoster` | `POST /api/canvas/link-roster` | Student number link for user |
 
 Write path: `runConfirmedAdminWriteTool()` — first call with `confirmed: false` previews; admin confirms in chat; second call with `confirmed: true` executes.
 

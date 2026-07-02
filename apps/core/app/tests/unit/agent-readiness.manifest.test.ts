@@ -156,13 +156,13 @@ describe("agent-readiness manifest (#672)", () => {
     expect(summary.total).toBeGreaterThanOrEqual(ROUTES_TS_API_PATTERNS.length);
     expect(summary.ready + summary.partial + summary.excluded).toBe(summary.total);
     // Track progress — update threshold as more endpoints reach `ready`
-    expect(summary.ready).toBeGreaterThanOrEqual(19);
+    expect(summary.ready).toBeGreaterThanOrEqual(29);
   });
 
-  it("marks ready endpoints with standard error envelope where applicable", () => {
+  it("marks ready endpoints with documented error envelope", () => {
     for (const e of agentReadyEndpoints()) {
       if (e.errorEnvelope) {
-        expect(["standard", "mixed"]).toContain(e.errorEnvelope);
+        expect(["standard", "mixed", "canvas"]).toContain(e.errorEnvelope);
       }
     }
   });

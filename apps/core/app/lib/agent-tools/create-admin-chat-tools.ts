@@ -13,13 +13,25 @@ import {
   resolveAdminCourseId,
 } from "./admin-context.server";
 import {
+  getAdminCanvasIntegration,
+  listAdminCanvasCourses,
+  listAdminInvitations,
+} from "./admin-reads.server";
+import {
+  connectAdminCanvas,
   createAdminEnrollment,
   createAdminCourseTopic,
+  createAdminInvitationMutation,
   createAdminUser,
   deactivateAdminEnrollment,
   deleteAdminCourseTopic,
   deleteAdminUser,
+  disconnectAdminCanvas,
+  linkAdminCanvasRoster,
+  resendAdminInvitationMutation,
+  revokeAdminInvitationMutation,
   runConfirmedAdminWriteTool,
+  syncAdminCanvasCourses,
   updateAdminBugReportStatus,
   updateAdminCourseTopic,
   updateAdminEnrollmentRole,
@@ -55,6 +67,18 @@ const userRef = {
     .email()
     .optional()
     .describe("Platform user email — use when id is unknown"),
+};
+
+const instructorRef = {
+  instructorUserId: z
+    .string()
+    .optional()
+    .describe("Instructor user id — omit to use the admin's own Canvas integration"),
+  instructorEmail: z
+    .string()
+    .email()
+    .optional()
+    .describe("Instructor email when id is unknown"),
 };
 
 /** Admin assistant tools — platform ops with read + write (ADMIN-only). */
@@ -169,6 +193,31 @@ export function createAdminChatTools(ctx: ChatToolContext) {
       }),
       execute: async ({ status, source, limit }) =>
         listAdminBugReportsForChat(user, { status, source, limit }),
+    }),
+
+    listInvitations: tool({
+      description:
+        "List platform invitations (ADMIN only). Includes pending, accepted, and revoked invites.",
+      parameters: z.object({
+        limit: z.number().int().min(1).max(500).optional(),
+      }),
+      execute: async ({ limit }) => listAdminInvitations(user, limit),
+    }),
+
+    getCanvasIntegration: tool({
+      description:
+        "Get Canvas integration status for the admin or a target instructor. Maps to GET /api/canvas/integration.",
+      parameters: z.object({ ...instructorRef }),
+      execute: async ({ instructorUserId, instructorEmail }) =>
+        getAdminCanvasIntegration(user, { instructorUserId, instructorEmail }),
+    }),
+
+    listCanvasCourses: tool({
+      description:
+        "List Canvas courses with Core sync state for the admin or a target instructor. Maps to GET /api/canvas/courses.",
+      parameters: z.object({ ...instructorRef }),
+      execute: async ({ instructorUserId, instructorEmail }) =>
+        listAdminCanvasCourses(user, { instructorUserId, instructorEmail }),
     }),
 
     createUser: tool({
@@ -376,6 +425,135 @@ export function createAdminChatTools(ctx: ChatToolContext) {
             name,
           }),
         ),
+    }),
+
+    createInvitation: tool({
+      description:
+        "Create a platform invitation and send the accept-link email. Use confirmed=true only after admin confirms.",
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        email: z.string().email(),
+        name: z.string().min(2).optional(),
+        role: z.enum(["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "STUDENT"]),
+        authorizedUnits: z
+          .array(z.string())
+          .optional()
+          .describe("Required when role is UNIT_ADMIN"),
+      }),
+      execute: async ({ confirmed, email, name, role, authorizedUnits }) =>
+        runConfirmedAdminWriteTool("createInvitation", user, confirmed, () =>
+          createAdminInvitationMutation(user, { email, name, role, authorizedUnits }),
+        ),
+    }),
+
+    revokeInvitation: tool({
+      description:
+        "Revoke a pending invitation by id. Use confirmed=true only after admin confirms.",
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        invitationId: z.string().describe("Invitation id (CUID)"),
+      }),
+      execute: async ({ confirmed, invitationId }) =>
+        runConfirmedAdminWriteTool("revokeInvitation", user, confirmed, () =>
+          revokeAdminInvitationMutation(user, invitationId),
+        ),
+    }),
+
+    resendInvitation: tool({
+      description:
+        "Resend a pending invitation email (rotates token). Use confirmed=true only after admin confirms.",
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        invitationId: z.string().describe("Invitation id (CUID)"),
+      }),
+      execute: async ({ confirmed, invitationId }) =>
+        runConfirmedAdminWriteTool("resendInvitation", user, confirmed, () =>
+          resendAdminInvitationMutation(user, invitationId),
+        ),
+    }),
+
+    connectCanvas: tool({
+      description:
+        "Connect Canvas for the admin or a target instructor. Use confirmed=true only after admin confirms.",
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        ...instructorRef,
+        canvasUrl: z.string().url(),
+        apiKey: z.string().optional(),
+        isTestMode: z.boolean().optional(),
+      }),
+      execute: async ({
+        confirmed,
+        instructorUserId,
+        instructorEmail,
+        canvasUrl,
+        apiKey,
+        isTestMode,
+      }) =>
+        runConfirmedAdminWriteTool("connectCanvas", user, confirmed, () =>
+          connectAdminCanvas(user, {
+            instructorUserId,
+            instructorEmail,
+            canvasUrl,
+            apiKey,
+            isTestMode,
+          }),
+        ),
+    }),
+
+    syncCanvasCourses: tool({
+      description:
+        "Sync selected Canvas courses into Core for an instructor. Use confirmed=true only after admin confirms.",
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        ...instructorRef,
+        canvasCourseIds: z.array(z.string()).describe("Canvas course ids to sync"),
+      }),
+      execute: async ({
+        confirmed,
+        instructorUserId,
+        instructorEmail,
+        canvasCourseIds,
+      }) =>
+        runConfirmedAdminWriteTool("syncCanvasCourses", user, confirmed, () =>
+          syncAdminCanvasCourses(user, {
+            instructorUserId,
+            instructorEmail,
+            canvasCourseIds,
+          }),
+        ),
+    }),
+
+    disconnectCanvas: tool({
+      description:
+        "Disconnect Canvas integration for the admin or a target instructor. Use confirmed=true only after admin confirms.",
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        ...instructorRef,
+      }),
+      execute: async ({ confirmed, instructorUserId, instructorEmail }) =>
+        runConfirmedAdminWriteTool("disconnectCanvas", user, confirmed, () =>
+          disconnectAdminCanvas(user, { instructorUserId, instructorEmail }),
+        ),
+    }),
+
+    linkCanvasRoster: tool({
+      description:
+        "Link Canvas enrollments for a student/TA by student number. Use confirmed=true only after admin confirms.",
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        ...userRef,
+        studentNumber: z.string().min(1).describe("Student number / SIS id"),
+      }),
+      execute: async ({ confirmed, userId, userEmail, studentNumber }) => {
+        const userRefError = userRefValidationError({ userId, userEmail });
+        if (userRefError) {
+          return userRefError;
+        }
+        return runConfirmedAdminWriteTool("linkCanvasRoster", user, confirmed, () =>
+          linkAdminCanvasRoster(user, { userId, userEmail, studentNumber }),
+        );
+      },
     }),
   };
 }
