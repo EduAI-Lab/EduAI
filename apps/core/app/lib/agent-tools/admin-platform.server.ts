@@ -67,16 +67,19 @@ function adminPayload<T extends Record<string, unknown>>(data: T) {
   };
 }
 
-async function resolveCourseId(opts: {
-  courseId?: string;
-  courseCode?: string;
-  fallbackCourseId?: string | null;
-}): Promise<string | ToolError> {
-  const resolved = await resolveAdminCourseId(opts);
-  if (!resolved) {
-    return { error: "COURSE_NOT_FOUND" };
+async function resolveCourseId(
+  actor: RbacUser,
+  opts: {
+    courseId?: string;
+    courseCode?: string;
+    fallbackCourseId?: string | null;
+  },
+): Promise<string | ToolError> {
+  const resolved = await resolveAdminCourseId(actor, opts);
+  if ("error" in resolved) {
+    return resolved;
   }
-  return resolved;
+  return resolved.courseId;
 }
 
 // ── Courses ───────────────────────────────────────────────────────────────────
@@ -145,7 +148,7 @@ export async function updateAdminCourse(
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
-  const courseId = await resolveCourseId(opts);
+  const courseId = await resolveCourseId(actor, opts);
   if (typeof courseId !== "string") return courseId;
 
   const parsed = UpdateCourseSchema.safeParse(input);
@@ -172,7 +175,7 @@ export async function deleteAdminCourse(
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
-  const courseId = await resolveCourseId(opts);
+  const courseId = await resolveCourseId(actor, opts);
   if (typeof courseId !== "string") return courseId;
 
   await prisma.course.update({
@@ -190,7 +193,7 @@ export async function setAdminCoursePublished(
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
-  const courseId = await resolveCourseId(opts);
+  const courseId = await resolveCourseId(actor, opts);
   if (typeof courseId !== "string") return courseId;
 
   const course = await prisma.course.update({
@@ -208,7 +211,7 @@ export async function getAdminCourseRagSettings(
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
-  const courseId = await resolveCourseId(opts);
+  const courseId = await resolveCourseId(actor, opts);
   if (typeof courseId !== "string") return courseId;
 
   const settings = await getCourseRagSettings(courseId);
@@ -224,7 +227,7 @@ export async function updateAdminCourseRagSettings(
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
-  const courseId = await resolveCourseId(opts);
+  const courseId = await resolveCourseId(actor, opts);
   if (typeof courseId !== "string") return courseId;
 
   const parsed = UpdateCourseRagSettingsSchema.safeParse(input);
@@ -255,7 +258,7 @@ export async function listAdminCourseMaterials(
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
-  const courseId = await resolveCourseId(opts);
+  const courseId = await resolveCourseId(actor, opts);
   if (typeof courseId !== "string") return courseId;
 
   const materials = await prisma.courseMaterial.findMany({
@@ -286,7 +289,7 @@ export async function renameAdminCourseMaterial(
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
-  const courseId = await resolveCourseId(opts);
+  const courseId = await resolveCourseId(actor, opts);
   if (typeof courseId !== "string") return courseId;
 
   const material = await prisma.courseMaterial.update({
@@ -309,7 +312,7 @@ export async function deleteAdminCourseMaterial(
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
-  const courseId = await resolveCourseId(opts);
+  const courseId = await resolveCourseId(actor, opts);
   if (typeof courseId !== "string") return courseId;
 
   await prisma.courseMaterial.update({
@@ -326,7 +329,7 @@ export async function getAdminCourseEmbeddingSettings(
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
-  const courseId = await resolveCourseId(opts);
+  const courseId = await resolveCourseId(actor, opts);
   if (typeof courseId !== "string") return courseId;
 
   const course = await getCourseIfCanManageMaterials(actor, courseId);
@@ -355,7 +358,7 @@ export async function updateAdminCourseEmbeddingSettings(
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
-  const courseId = await resolveCourseId(opts);
+  const courseId = await resolveCourseId(actor, opts);
   if (typeof courseId !== "string") return courseId;
 
   const course = await getCourseIfCanManageMaterials(actor, courseId);
@@ -392,7 +395,7 @@ export async function startAdminCourseReEmbed(
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
-  const courseId = await resolveCourseId(opts);
+  const courseId = await resolveCourseId(actor, opts);
   if (typeof courseId !== "string") return courseId;
 
   const active = await findActiveReEmbedJob(courseId);
@@ -416,7 +419,7 @@ export async function getAdminCourseReEmbedJob(
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
-  const courseId = await resolveCourseId(opts);
+  const courseId = await resolveCourseId(actor, opts);
   if (typeof courseId !== "string") return courseId;
 
   const job = await getReEmbedJobForCourse(courseId, opts.jobId);
@@ -431,7 +434,7 @@ export async function listAdminCanvasMaterials(
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
-  const courseId = await resolveCourseId(opts);
+  const courseId = await resolveCourseId(actor, opts);
   if (typeof courseId !== "string") return courseId;
 
   const materials = await discoverCanvasMaterialsForCourse(actor.id, courseId);
@@ -450,7 +453,7 @@ export async function syncAdminCanvasMaterials(
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
-  const courseId = await resolveCourseId(opts);
+  const courseId = await resolveCourseId(actor, opts);
   if (typeof courseId !== "string") return courseId;
 
   const result = await syncSelectedCanvasMaterials(actor.id, courseId, opts.canvasFileIds);
@@ -466,7 +469,7 @@ export async function listAdminCourseTAs(
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
-  const courseId = await resolveCourseId(opts);
+  const courseId = await resolveCourseId(actor, opts);
   if (typeof courseId !== "string") return courseId;
 
   const tas = await getCourseTA(courseId);
@@ -480,7 +483,7 @@ export async function addAdminCourseTA(
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
-  const courseId = await resolveCourseId(opts);
+  const courseId = await resolveCourseId(actor, opts);
   if (typeof courseId !== "string") return courseId;
 
   const result = await addCourseTA(courseId, { userId: opts.userId });
@@ -495,7 +498,7 @@ export async function removeAdminCourseTA(
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
-  const courseId = await resolveCourseId(opts);
+  const courseId = await resolveCourseId(actor, opts);
   if (typeof courseId !== "string") return courseId;
 
   const result = await removeCourseTA(courseId, { userId: opts.userId });
@@ -510,7 +513,7 @@ export async function listAdminCourseChats(
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
-  const courseId = await resolveCourseId(opts);
+  const courseId = await resolveCourseId(actor, opts);
   if (typeof courseId !== "string") return courseId;
 
   const limit = Math.min(opts.limit ?? 50, 200);
@@ -784,4 +787,91 @@ export async function getAdminDashboardStats(actor: RbacUser) {
       activeCourseCount,
     },
   });
+}
+
+function resolveVllmBaseUrl(raw: string): string {
+  let base = raw.replace(/\/$/, "");
+  if (!base.endsWith("/v1")) {
+    base = `${base}/v1`;
+  }
+  return base;
+}
+
+/** ADMIN — list models from local Ollama (GET /api/ollama-models). */
+export async function listAdminOllamaModels(actor: RbacUser, baseUrl?: string) {
+  const denied = requirePlatformAdmin(actor);
+  if (denied) return denied;
+
+  const resolvedBase =
+    baseUrl?.trim() || process.env.OLLAMA_BASE_URL || "http://localhost:11434/api";
+  const ollamaUrl = resolvedBase.replace(/\/api$/, "") + "/api/tags";
+
+  try {
+    const response = await fetch(ollamaUrl, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!response.ok) {
+      return { error: `OLLAMA_FETCH_FAILED: ${response.status} ${response.statusText}` };
+    }
+    const data = (await response.json()) as {
+      models?: Array<Record<string, unknown>>;
+    };
+    const models =
+      data.models?.map((model) => ({
+        name: model.name,
+        model: model.model ?? model.name,
+        size: model.size,
+        modified_at: model.modified_at,
+      })) ?? [];
+    return adminPayload({ models, count: models.length, baseUrl: ollamaUrl });
+  } catch (error: unknown) {
+    const err = error as { name?: string; message?: string };
+    const message =
+      err.name === "AbortError"
+        ? "Request timeout — Ollama server did not respond"
+        : err.message || "Failed to connect to Ollama server";
+    return { error: message, baseUrl: ollamaUrl };
+  }
+}
+
+/** ADMIN — list models from vLLM/LiteLLM proxy (GET /api/vllm-models). */
+export async function listAdminVllmModels(actor: RbacUser) {
+  const denied = requirePlatformAdmin(actor);
+  if (denied) return denied;
+
+  const vllmPort = process.env.VLLM_PORT || "8001";
+  const rawBase = process.env.VLLM_BASE_URL || `http://localhost:${vllmPort}`;
+  const baseUrl = resolveVllmBaseUrl(rawBase);
+  const apiKey = process.env.VLLM_API_KEY || "vllm-local";
+
+  try {
+    const modelsUrl = `${baseUrl}/models`;
+    const response = await fetch(modelsUrl, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!response.ok) {
+      return { error: `VLLM_FETCH_FAILED: ${response.status} ${response.statusText}` };
+    }
+    const data = (await response.json()) as {
+      data?: Array<{ id: string; owned_by?: string; created?: number }>;
+    };
+    const models = data.data ?? [];
+    return adminPayload({ models, count: models.length, baseUrl });
+  } catch (error: unknown) {
+    const err = error as { name?: string; code?: string; message?: string };
+    let message = err.message || "Failed to connect to vLLM proxy";
+    if (err.name === "AbortError") {
+      message = "Request timeout — vLLM proxy did not respond within 10s";
+    } else if (err.code === "ECONNREFUSED") {
+      message = "Connection refused — check VLLM_BASE_URL and LiteLLM";
+    }
+    return { error: message, baseUrl };
+  }
 }

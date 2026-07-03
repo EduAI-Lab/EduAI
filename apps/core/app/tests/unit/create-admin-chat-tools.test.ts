@@ -31,6 +31,7 @@ vi.mock("~/lib/agent-tools/admin-mutations.server", async (importOriginal) => {
 });
 
 import { createAdminChatTools } from "~/lib/agent-tools/create-admin-chat-tools";
+import { agentReadyEndpoints } from "~/lib/agent-readiness/manifest";
 import {
   listAdminCourseTopics,
   resolveAdminCourseId,
@@ -50,6 +51,20 @@ const ctx = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+describe("createAdminChatTools manifest coverage", () => {
+  it("exposes every adminChatTool named on a ready endpoint", () => {
+    const tools = createAdminChatTools(ctx);
+    const expected = new Set(
+      agentReadyEndpoints()
+        .map((e) => e.adminChatTool)
+        .filter((name): name is string => Boolean(name)),
+    );
+    for (const name of expected) {
+      expect(tools, `missing tool ${name}`).toHaveProperty(name);
+    }
+  });
 });
 
 describe("createAdminChatTools read execute", () => {
