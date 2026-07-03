@@ -5,14 +5,11 @@ import {
 } from '@tabler/icons-react';
 import type { Icon } from '@tabler/icons-react';
 import {
-  AppLauncher,
+  BrandSwitcher,
   Sidebar,
   SidebarContent,
   SidebarFooter,
   SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
 } from '@eduai/ui';
 
 import type { AuthUser } from '~/hooks/useLocalUser';
@@ -44,43 +41,48 @@ type AiTutorSidebarProps = React.ComponentProps<typeof Sidebar> & {
   user: AuthUser;
 };
 
+const AI_TUTOR_BRAND = (
+  <>
+    <div
+      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md"
+      style={{ background: 'var(--primary)' }}
+    >
+      <svg
+        width="15"
+        height="15"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="white"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        aria-hidden
+      >
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 3a9 9 0 0 1 0 18" />
+        <path d="M3 12h18" />
+      </svg>
+    </div>
+    <div className="flex flex-col leading-none">
+      <span className="text-sm font-bold tracking-tight">AI Tutor</span>
+      <span className="text-[10px] font-medium uppercase tracking-widest text-sidebar-foreground/60">
+        EduAI
+      </span>
+    </div>
+  </>
+);
+
 export function AiTutorSidebar({ user, ...props }: AiTutorSidebarProps) {
   return (
     <Sidebar variant="sidebar" collapsible="offcanvas" {...props}>
       <SidebarHeader>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild className="data-[slot=sidebar-menu-button]:!p-1.5">
-              <Link to="/" className="flex items-center gap-[9px]">
-                <div
-                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md"
-                  style={{ background: 'var(--primary)' }}
-                >
-                  <svg
-                    width="15"
-                    height="15"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="white"
-                    strokeWidth="1.75"
-                    strokeLinecap="round"
-                    aria-hidden
-                  >
-                    <circle cx="12" cy="12" r="9" />
-                    <path d="M12 3a9 9 0 0 1 0 18" />
-                    <path d="M3 12h18" />
-                  </svg>
-                </div>
-                <div className="flex flex-col leading-none">
-                  <span className="text-sm font-bold tracking-tight">AI Tutor</span>
-                  <span className="text-[10px] font-medium uppercase tracking-widest text-sidebar-foreground/60">
-                    EduAI
-                  </span>
-                </div>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+        <BrandSwitcher
+          logo={AI_TUTOR_BRAND}
+          logoHref="/"
+          LinkComponent={Link}
+          apps={getLauncherApps()}
+          currentAppId={CURRENT_APP_ID}
+          role={user.role}
+        />
       </SidebarHeader>
 
       <SidebarContent>
@@ -91,7 +93,6 @@ export function AiTutorSidebar({ user, ...props }: AiTutorSidebarProps) {
       </SidebarContent>
 
       <SidebarFooter>
-        <AppLauncher apps={getLauncherApps()} currentAppId={CURRENT_APP_ID} role={user.role} />
         <AiTutorSidebarUser user={user} />
       </SidebarFooter>
     </Sidebar>

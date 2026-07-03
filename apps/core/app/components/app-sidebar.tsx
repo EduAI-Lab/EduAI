@@ -20,7 +20,6 @@ import {
 } from "@tabler/icons-react"
 
 import {
-  AppLauncher,
   AppSidebar as SharedAppSidebar,
   Sidebar,
 } from "@eduai/ui"
@@ -142,13 +141,11 @@ export function AppSidebar({
       navSecondary={navSecondary}
       currentPath={pathname}
       LinkComponent={Link}
-      footer={
-        <AppLauncher
-          apps={getLauncherApps()}
-          currentAppId={CURRENT_APP_ID}
-          role={user.role}
-        />
-      }
+      launcher={{
+        apps: getLauncherApps(),
+        currentAppId: CURRENT_APP_ID,
+        role: user.role,
+      }}
       user={user}
       navUser={{
         items: [
