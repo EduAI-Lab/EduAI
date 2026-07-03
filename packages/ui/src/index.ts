@@ -6,6 +6,10 @@ export { ThemeProvider, useTheme } from "./theme-provider"
 export { initThemeSync, broadcastThemeChange, closeThemeSync } from "./lib/theme-sync"
 export type { Theme as ThemeType } from "./lib/theme-sync"
 
+// ── Bug report ─────────────────────────────────────────────────────────────
+export { BugReportDialog } from './bug-report-dialog'
+export type { BugReportType, BugReportSubmitData } from './bug-report-dialog'
+
 // ── Domain components ──────────────────────────────────────────────────────
 export { RoleBadge } from "./role-badge"
 export type { RoleBadgeProps } from "./role-badge"
@@ -52,8 +56,6 @@ export { SegmentedControl } from "./segmented-control"
 export type { SegmentedControlProps, SegmentedControlOption } from "./segmented-control"
 export { ThemeToggle } from "./theme-toggle"
 export type { ThemeToggleProps } from "./theme-toggle"
-export { BugReportDialog } from "./bug-report-dialog"
-export type { BugReportDialogProps, BugReportPayload } from "./bug-report-dialog"
 export { NavUser } from "./nav-user"
 export type { NavUserProps, NavUserItem } from "./nav-user"
 export { NavMain } from "./nav-main"
