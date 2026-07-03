@@ -93,3 +93,31 @@ describe("ADHD_ASSIST_POLICY_BLOCK", () => {
     expect(ADHD_ASSIST_POLICY_BLOCK).toContain("=== END ADHD ASSIST MODE ===");
   });
 });
+
+describe("v1.1 response-format rules", () => {
+  it("full tutoring block carries the new generative rules", () => {
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("Start here:");
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("why it matters");
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("Connects to:");
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("DIAGRAMS:");
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("real-world example");
+  });
+
+  it("enforces anti-urgency, no-condescension, and citations in the full block", () => {
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("No urgency or time-pressure");
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("No condescension");
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain('"Sources:" line');
+  });
+
+  it("short profiles (core rules) also enforce anti-urgency and citations", () => {
+    const greeting = composeSystemPrompt("", { adhdAssist: true, profile: "greeting" });
+    expect(greeting).toContain("No urgency or time-pressure");
+    expect(greeting).toContain("No condescension");
+    expect(greeting).toContain('"Sources:" line');
+  });
+
+  it("keeps the Top summary / Next? anchors the oversight layer depends on", () => {
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain('"Top summary"');
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain('"Next?"');
+  });
+});
