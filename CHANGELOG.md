@@ -11,21 +11,21 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 - [core] feat: GPU energy sidecar and AI interaction telemetry (#731) — deployable `tools/energy-meter` on inference hosts (RAPL CPU + NVML GPU, Docker on cmps01 via nginx `:8001/energy`); `measurement.server.ts` runs tagged sidecar sessions (`measure-start` / `measure-stop`) with `CMPS01_INTERNAL_KEY` auth and falls back to per-token joule/carbon estimates; `persistAiInteractionTelemetry` records split token usage, routing tier, and energy/carbon on `AIInteraction`; research verify/backfill scripts and `ENERGY_SIDECAR_URL` / `CMPS01_INTERNAL_KEY` env docs. (@superbolt08, 2026-06-30) — [#758](https://github.com/EduAI-Lab/EduAI/pull/758)
 - [core] tests: Unit tests for `measureTurnEnergy` (per-host sidecar URL override, tagged `measure-stop`, no legacy `/measure` fallback, token estimate fallback) and routing telemetry token normalization (`normalizeTokenUsage` / `coalesceTokenUsage` OpenAI/vLLM aliases, all-zero stream usage treated as missing). (#731, @superbolt08, 2026-06-30) — [#758](https://github.com/EduAI-Lab/EduAI/pull/758)
+- [core] feat: Hybrid tier routing engine — rules, kNN exemplar voting, optional LLM classifier, carbon-policy tie-break, Auto model picker wiring, and offline eval scripts (`research:eval-knn`, `research:eval-llm`) (#831, @superbolt08, 2026-06-30) — [#759](https://github.com/EduAI-Lab/EduAI/pull/759)
+- [core] tests: Unit coverage for routing rules, kNN vote, LLM classifier JSON/tier mapping, local vLLM remap, carbon policy, and chat Auto picker (#831, @superbolt08, 2026-06-30) — [#759](https://github.com/EduAI-Lab/EduAI/pull/759)
+- [infra] feat: cmps01 nginx edge proxy on `:8001` for LiteLLM, Ollama embeddings, and energy sidecar — IP allowlist plus `X-EduAI-Internal-Key` on internal paths (#831, @superbolt08, 2026-06-30) — [#759](https://github.com/EduAI-Lab/EduAI/pull/759)
+- [core] feat: Wire Auto model routing, tagged sidecar energy sessions, and `persistAiInteractionTelemetry` into `POST /api/chat` while preserving ADHD oversight, course gate, and web-tools policy (#851, @superbolt08, 2026-07-03) — [#760](https://github.com/EduAI-Lab/EduAI/pull/760)
+- [core] feat: Multi-server vLLM fleet load balancing — round-robin chat traffic across healthy cmps01–cmps03 hosts with per-server energy sidecar URLs and fleet metadata on `AIInteraction` telemetry (#851, @superbolt08, 2026-07-03) — [#760](https://github.com/EduAI-Lab/EduAI/pull/760)
+- [core] feat: Chat UI auto-routing — Auto model picker respects routing registry settings; assistant messages show which model answered when routing is enabled (#851, @superbolt08, 2026-07-03) — [#760](https://github.com/EduAI-Lab/EduAI/pull/760)
+- [core] tests: Unit coverage for fleet routing (`fleet-routing.test.ts`), hybrid web-tool intent (`hybrid-web-tools.test.ts`), and local inference env merge (`providers-merge.test.ts`) for PR4 chat integration (#851, @superbolt08, 2026-07-03) — [#760](https://github.com/EduAI-Lab/EduAI/pull/760)
 
 ### Fixed
 
 - [ui] hotfix: Add missing imports in `packages/ui/src/ui/combobox.tsx` — `useRef`, `useEffect`, `Popover`, `PopoverTrigger`, and `PopoverContent` were used but not imported, causing `packages-ui-unit-tests` and QM frontend Docker build to fail on CI. (#823)
-### Added
-
-- [core] feat: Hybrid tier routing engine — rules, kNN exemplar voting, optional LLM classifier, carbon-policy tie-break, Auto model picker wiring, and offline eval scripts (`research:eval-knn`, `research:eval-llm`) (#831, @superbolt08, 2026-06-30) — [#759](https://github.com/EduAI-Lab/EduAI/pull/759)
-- [core] tests: Unit coverage for routing rules, kNN vote, LLM classifier JSON/tier mapping, local vLLM remap, carbon policy, and chat Auto picker (#831, @superbolt08, 2026-06-30) — [#759](https://github.com/EduAI-Lab/EduAI/pull/759)
-- [infra] feat: cmps01 nginx edge proxy on `:8001` for LiteLLM, Ollama embeddings, and energy sidecar — IP allowlist plus `X-EduAI-Internal-Key` on internal paths (#831, @superbolt08, 2026-06-30) — [#759](https://github.com/EduAI-Lab/EduAI/pull/759)
-- [core] feat: Wire Auto model routing, tagged sidecar energy sessions, and `persistAiInteractionTelemetry` into `POST /api/chat` while preserving ADHD oversight, course gate, and web-tools policy (#851, @superbolt08, 2026-07-02) — [#760](https://github.com/EduAI-Lab/EduAI/pull/760)
-
-### Fixed
-
-- [core] fix: Split `telemetry.server.ts` from client-importable routing modules to fix Vite client bundle and unit test failures on PR4 CI (#851, @superbolt08, 2026-07-02) — [#760](https://github.com/EduAI-Lab/EduAI/pull/760)
-- [core] fix: Skip `CMPS01_INTERNAL_KEY` for client-supplied Ollama base URLs; load cloud multimodal models for image Auto routing on vLLM stacks; clear stale `supportsImages` on vLLM seed upserts (#851, @superbolt08, 2026-07-02) — [#760](https://github.com/EduAI-Lab/EduAI/pull/760)
+- [core] fix: Split `telemetry.server.ts` from client-importable routing modules to fix Vite client bundle and unit test failures on PR4 CI (#851, @superbolt08, 2026-07-03) — [#760](https://github.com/EduAI-Lab/EduAI/pull/760)
+- [core] fix: Skip `CMPS01_INTERNAL_KEY` for client-supplied Ollama base URLs; load cloud multimodal models for image Auto routing on vLLM stacks; clear stale `supportsImages` on vLLM seed upserts (#851, @superbolt08, 2026-07-03) — [#760](https://github.com/EduAI-Lab/EduAI/pull/760)
+- [core] fix: Default vLLM learning chat to hybrid RAG for 32B model path (#851, @superbolt08, 2026-07-03) — [#760](https://github.com/EduAI-Lab/EduAI/pull/760)
+- [core] fix: Vite/streamdown config split for SSR-safe chat markdown rendering (#851, @superbolt08, 2026-07-03) — [#760](https://github.com/EduAI-Lab/EduAI/pull/760)
 - [core] fix: Scope `CMPS01_INTERNAL_KEY` to trusted cmps01 edge URLs only; require pre-embedded kNN exemplars; image turns keep cloud multimodal fallback on vLLM stack; low-confidence kNN defaults to tier 1 (#831, @superbolt08, 2026-07-02) — [#759](https://github.com/EduAI-Lab/EduAI/pull/759)
 - [infra] fix: Gitignore rendered `nginx.conf` / `internal-allow.conf` and reject placeholder internal key in `deploy-edge-proxy.sh` (#831, @superbolt08, 2026-07-02) — [#759](https://github.com/EduAI-Lab/EduAI/pull/759)
 - [core] fix: Add missing `scripts/research/paths.mjs` so offline kNN/LLM router eval scripts resolve default label paths (#831, @superbolt08, 2026-06-30) — [#759](https://github.com/EduAI-Lab/EduAI/pull/759)
