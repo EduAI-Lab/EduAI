@@ -459,9 +459,11 @@ export async function deleteCourse(request: Request, courseId: string) {
     data: { deletedAt: new Date() },
   });
 
-  // Best-effort cascade to extensions (§802) — never blocks or fails the delete
-  // response; failures are logged and self-heal via each extension's reconcile job.
-  await cascadeDeleteToExtensions(courseId);
+  // Best-effort cascade to extensions (§802) — fire-and-forget so it never blocks
+  // the delete response; failures are logged and self-heal via each extension's
+  // reconcile job. cascadeDeleteToExtensions never throws (each push is wrapped
+  // in try/catch + logSystemError), so there's no unhandled-rejection risk.
+  void cascadeDeleteToExtensions(courseId);
 
   return new Response(null, { status: 204 });
 }
