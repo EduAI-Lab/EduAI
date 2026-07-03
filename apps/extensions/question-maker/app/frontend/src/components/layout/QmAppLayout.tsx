@@ -271,7 +271,7 @@ function QmAppLayoutInner() {
         navSecondary={navSecondary}
         currentPath={pathname}
         LinkComponent={Link}
-        footer={<AppLauncher apps={getLauncherApps()} currentAppId={CURRENT_APP_ID} />}
+        footer={<AppLauncher apps={getLauncherApps()} currentAppId={CURRENT_APP_ID} role={user?.role} />}
         user={user ? { name: user.name ?? user.email, email: user.email, image: user.image, role: user.role } : { name: 'Guest', email: '', role: 'GUEST' }}
         navUser={
           user ? {
@@ -366,7 +366,7 @@ export function QmAccessShell({ children }: { children: ReactNode }) {
           navSecondary={navSecondary}
           currentPath="/"
           LinkComponent={Link}
-          footer={<AppLauncher apps={getLauncherApps()} currentAppId={CURRENT_APP_ID} />}
+          footer={<AppLauncher apps={getLauncherApps()} currentAppId={CURRENT_APP_ID} role={user?.role} />}
           user={user ? { name: user.name ?? user.email, email: user.email, image: user.image, role: user.role } : { name: 'Guest', email: '', role: 'GUEST' }}
           navUser={
             user ? {
