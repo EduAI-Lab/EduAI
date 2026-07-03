@@ -26,7 +26,10 @@ import {
   TableRow,
 } from "@eduai/ui";
 import { IconFilter, IconSearch, IconX } from "@tabler/icons-react";
-import type { BugReport, BugReportStatus, BugReportSource } from "~/hooks/api/types";
+import type { BugReport, BugReportStatus, BugReportSource, BugReportType } from "~/hooks/api/types";
+
+type SortKey = "description" | "type" | "source" | "reporter" | "status" | "createdAt";
+type SortDirection = "asc" | "desc";
 
 export type BugReportsAdminViewProps = {
   reports: BugReport[];
@@ -46,67 +49,121 @@ const SOURCE_LABELS: Record<BugReportSource, string> = {
   QUESTION_MAKER: "Question Maker",
 };
 
+const BUG_TYPE_LABELS: Record<BugReportType, string> = {
+  UI_DISPLAY: "UI / display",
+  FEATURE_NOT_WORKING: "Feature not working",
+  PERFORMANCE: "Performance",
+  CONTENT_ERROR: "Content error",
+  ACCESS_PERMISSION: "Access / permission",
+  OTHER: "Other",
+};
+
 const REPORTER_OPTIONS = [
   { value: "all", label: "All" },
   { value: "named", label: "Named" },
   { value: "anonymous", label: "Anonymous" },
 ];
 
+function sortReports(rows: BugReport[], key: SortKey, direction: SortDirection) {
+  const dir = direction === "asc" ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    const av =
+      key === "description" ? a.description
+      : key === "type" ? (a.bugType ?? "")
+      : key === "source" ? a.source
+      : key === "reporter" ? (a.isAnonymous ? "" : (a.reporterName ?? a.reporterEmail ?? ""))
+      : key === "status" ? a.status
+      : a.createdAt;
+    const bv =
+      key === "description" ? b.description
+      : key === "type" ? (b.bugType ?? "")
+      : key === "source" ? b.source
+      : key === "reporter" ? (b.isAnonymous ? "" : (b.reporterName ?? b.reporterEmail ?? ""))
+      : key === "status" ? b.status
+      : b.createdAt;
+
+    if (key === "createdAt") {
+      const at = new Date(av as string).getTime();
+      const bt = new Date(bv as string).getTime();
+      if (at === bt) return 0;
+      return at > bt ? dir : -dir;
+    }
+    return String(av).localeCompare(String(bv)) * dir;
+  });
+}
+
+function SortHeader({
+  title,
+  sortKey,
+  activeSortKey,
+  direction,
+  onToggle,
+}: {
+  title: string;
+  sortKey: SortKey;
+  activeSortKey: SortKey;
+  direction: SortDirection;
+  onToggle: (key: SortKey) => void;
+}) {
+  const isActive = sortKey === activeSortKey;
+  return (
+    <button
+      type="button"
+      className="inline-flex items-center gap-1 font-medium"
+      onClick={() => onToggle(sortKey)}
+    >
+      <span>{title}</span>
+      <span aria-hidden="true">{isActive ? (direction === "asc" ? "▲" : "▼") : "↕"}</span>
+    </button>
+  );
+}
+
 export function BugReportsAdminView({
   reports,
   isLoading,
   onUpdateStatus,
 }: BugReportsAdminViewProps) {
-  // Filter state
   const [statusFilter, setStatusFilter] = useState<BugReportStatus | "all">("all");
   const [sourceFilter, setSourceFilter] = useState<BugReportSource | "all">("all");
+  const [typeFilter, setTypeFilter] = useState<BugReportType | "all">("all");
   const [reporterFilter, setReporterFilter] = useState<"all" | "named" | "anonymous">("all");
   const [searchText, setSearchText] = useState("");
+  const [sortKey, setSortKey] = useState<SortKey>("createdAt");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
 
-  // Compute filtered reports
+  const toggleSort = (nextKey: SortKey) => {
+    if (sortKey === nextKey) {
+      setSortDirection((d) => (d === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSortKey(nextKey);
+    setSortDirection(nextKey === "createdAt" ? "desc" : "asc");
+  };
+
   const filteredReports = useMemo(() => {
-    return reports.filter((report) => {
-      // Status filter
-      if (statusFilter !== "all" && report.status !== statusFilter) {
-        return false;
-      }
-
-      // Source filter
-      if (sourceFilter !== "all" && report.source !== sourceFilter) {
-        return false;
-      }
-
-      // Reporter filter
-      if (reporterFilter === "named" && report.isAnonymous) {
-        return false;
-      }
-      if (reporterFilter === "anonymous" && !report.isAnonymous) {
-        return false;
-      }
-
-      // Text search (description)
-      if (
-        searchText &&
-        !report.description.toLowerCase().includes(searchText.toLowerCase())
-      ) {
-        return false;
-      }
-
+    const filtered = reports.filter((report) => {
+      if (statusFilter !== "all" && report.status !== statusFilter) return false;
+      if (sourceFilter !== "all" && report.source !== sourceFilter) return false;
+      if (typeFilter !== "all" && report.bugType !== typeFilter) return false;
+      if (reporterFilter === "named" && report.isAnonymous) return false;
+      if (reporterFilter === "anonymous" && !report.isAnonymous) return false;
+      if (searchText && !report.description.toLowerCase().includes(searchText.toLowerCase())) return false;
       return true;
     });
-  }, [reports, statusFilter, sourceFilter, reporterFilter, searchText]);
+    return sortReports(filtered, sortKey, sortDirection);
+  }, [reports, statusFilter, sourceFilter, typeFilter, reporterFilter, searchText, sortKey, sortDirection]);
 
-  // Check if any filter is active
   const hasActiveFilters =
     statusFilter !== "all" ||
     sourceFilter !== "all" ||
+    typeFilter !== "all" ||
     reporterFilter !== "all" ||
     searchText.length > 0;
 
-  // Reset all filters
   const resetFilters = () => {
     setStatusFilter("all");
     setSourceFilter("all");
+    setTypeFilter("all");
     setReporterFilter("all");
     setSearchText("");
   };
@@ -127,11 +184,7 @@ export function BugReportsAdminView({
           <div className="px-4 lg:px-6">
             <PageHeading
               heading="Bug reports"
-              subheading={
-                <>
-                  Triage platform bug reports (ADMIN only, §11).
-                </>
-              }
+              subheading={<>Triage platform bug reports.</>}
             />
           </div>
 
@@ -153,14 +206,10 @@ export function BugReportsAdminView({
                     </span>
                   </div>
 
-                  {/* Filter Controls Grid */}
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:gap-2">
-                    {/* Status Filter */}
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 lg:gap-2">
                     <Select
                       value={statusFilter}
-                      onValueChange={(value) =>
-                        setStatusFilter(value as BugReportStatus | "all")
-                      }
+                      onValueChange={(v) => setStatusFilter(v as BugReportStatus | "all")}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Status" />
@@ -168,19 +217,14 @@ export function BugReportsAdminView({
                       <SelectContent>
                         <SelectItem value="all">All statuses</SelectItem>
                         {Object.entries(STATUS_LABELS).map(([value, label]) => (
-                          <SelectItem key={value} value={value}>
-                            {label}
-                          </SelectItem>
+                          <SelectItem key={value} value={value}>{label}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
 
-                    {/* Source Filter */}
                     <Select
                       value={sourceFilter}
-                      onValueChange={(value) =>
-                        setSourceFilter(value as BugReportSource | "all")
-                      }
+                      onValueChange={(v) => setSourceFilter(v as BugReportSource | "all")}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Source" />
@@ -188,35 +232,40 @@ export function BugReportsAdminView({
                       <SelectContent>
                         <SelectItem value="all">All sources</SelectItem>
                         {Object.entries(SOURCE_LABELS).map(([value, label]) => (
-                          <SelectItem key={value} value={value}>
-                            {label}
-                          </SelectItem>
+                          <SelectItem key={value} value={value}>{label}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
 
-                    {/* Reporter Filter */}
+                    <Select
+                      value={typeFilter}
+                      onValueChange={(v) => setTypeFilter(v as BugReportType | "all")}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All types</SelectItem>
+                        {Object.entries(BUG_TYPE_LABELS).map(([value, label]) => (
+                          <SelectItem key={value} value={value}>{label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+
                     <Select
                       value={reporterFilter}
-                      onValueChange={(value) =>
-                        setReporterFilter(
-                          value as "all" | "named" | "anonymous",
-                        )
-                      }
+                      onValueChange={(v) => setReporterFilter(v as "all" | "named" | "anonymous")}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Reporter" />
                       </SelectTrigger>
                       <SelectContent>
                         {REPORTER_OPTIONS.map(({ value, label }) => (
-                          <SelectItem key={value} value={value}>
-                            {label}
-                          </SelectItem>
+                          <SelectItem key={value} value={value}>{label}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
 
-                    {/* Text Search Input */}
                     <div className="relative">
                       <IconSearch className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                       <Input
@@ -228,7 +277,6 @@ export function BugReportsAdminView({
                     </div>
                   </div>
 
-                  {/* Clear Filters Button */}
                   {hasActiveFilters && (
                     <div className="flex items-center justify-between pt-2">
                       <span className="text-sm text-muted-foreground">
@@ -247,7 +295,6 @@ export function BugReportsAdminView({
                   )}
                 </div>
 
-                {/* Table or Empty State */}
                 {filteredReports.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-12 text-center">
                     <p className="text-sm text-muted-foreground">
@@ -260,50 +307,59 @@ export function BugReportsAdminView({
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Description</TableHead>
-                        <TableHead>Source</TableHead>
-                        <TableHead>Reporter</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Created</TableHead>
+                        <TableHead>
+                          <SortHeader title="Description" sortKey="description" activeSortKey={sortKey} direction={sortDirection} onToggle={toggleSort} />
+                        </TableHead>
+                        <TableHead>
+                          <SortHeader title="Type" sortKey="type" activeSortKey={sortKey} direction={sortDirection} onToggle={toggleSort} />
+                        </TableHead>
+                        <TableHead>
+                          <SortHeader title="Source" sortKey="source" activeSortKey={sortKey} direction={sortDirection} onToggle={toggleSort} />
+                        </TableHead>
+                        <TableHead>
+                          <SortHeader title="Reporter" sortKey="reporter" activeSortKey={sortKey} direction={sortDirection} onToggle={toggleSort} />
+                        </TableHead>
+                        <TableHead>
+                          <SortHeader title="Status" sortKey="status" activeSortKey={sortKey} direction={sortDirection} onToggle={toggleSort} />
+                        </TableHead>
+                        <TableHead>
+                          <SortHeader title="Created" sortKey="createdAt" activeSortKey={sortKey} direction={sortDirection} onToggle={toggleSort} />
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {filteredReports.map((report) => (
                         <TableRow key={report.id}>
-                          <TableCell>
-                            <div className="text-sm line-clamp-3">
+                          <TableCell className="max-w-[280px]">
+                            <div className="text-sm line-clamp-3 whitespace-normal">
                               {report.description}
                             </div>
                           </TableCell>
-                          <TableCell>
-                            <Badge variant="outline">{report.source}</Badge>
+                          <TableCell className="text-sm text-muted-foreground">
+                            {report.bugType ? BUG_TYPE_LABELS[report.bugType] : "—"}
                           </TableCell>
                           <TableCell>
+                            <Badge variant="outline">{SOURCE_LABELS[report.source]}</Badge>
+                          </TableCell>
+                          <TableCell className="text-sm">
                             {report.isAnonymous
-                              ? "Anonymous"
+                              ? <span className="italic text-muted-foreground">Anonymous</span>
                               : report.reporterName || "Unknown"}
                           </TableCell>
                           <TableCell>
                             <Select
                               value={report.status}
                               onValueChange={(value) =>
-                                void onUpdateStatus(
-                                  report.id,
-                                  value as BugReportStatus,
-                                )
+                                void onUpdateStatus(report.id, value as BugReportStatus)
                               }
                             >
                               <SelectTrigger className="w-[140px]">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
-                                {Object.entries(STATUS_LABELS).map(
-                                  ([value, label]) => (
-                                    <SelectItem key={value} value={value}>
-                                      {label}
-                                    </SelectItem>
-                                  ),
-                                )}
+                                {Object.entries(STATUS_LABELS).map(([value, label]) => (
+                                  <SelectItem key={value} value={value}>{label}</SelectItem>
+                                ))}
                               </SelectContent>
                             </Select>
                           </TableCell>

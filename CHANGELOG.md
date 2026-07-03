@@ -20,6 +20,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
+- [core, ai-tutor, question-maker] feat: Bug report type dropdown and unified submit dialog — users can categorize their report as UI/Display, Feature Not Working, Performance, Content Error, Access/Permission, or Other; stored as `BugReportType` enum in Core's DB and surfaced in all three admin triage views. The submit dialog is now the canonical implementation in `@eduai/ui` shared across all three apps; duplicate `BugReportDialog` components in AI Tutor and QM removed; `isStubbed` dead code stripped. (#503, @evanbones, 2026-06-24) — [#770](https://github.com/EduAI-Lab/EduAI/pull/770)
 - [question-maker] feat: Full course-centric QM redesign — reworked the frontend into a workspace IA (`/dashboard`, `/courses`, `/courses/:id` with Overview/Questions/Assessments/Topics/Canvas tabs, nested assessment routes; course context via URL only), a full-page question composer, a unified question modal, a global question library with a filter toolbar + preview drawer, a reworked assessments surface with inline AI-variant review, a role-aware dashboard, a ⌘K command palette, and an inline course switcher. (#762, #763, @yta3216, 2026-06-26) — [#791](https://github.com/EduAI-Lab/EduAI/pull/791)
 - [core] feat: Extract shared shell, settings, question, and dependency-free analytics-chart components into `@eduai/ui` (AppSidebar/SiteHeader/Nav*/ThemeToggle/BugReportDialog, QuestionCard/QuestionStatusBadge/VariantBadge, settings/{AccessibilitySettings,ProvidersTable,ProviderFormDialog}, charts/*); Core consumes them via thin wrappers, and `MultiSelect` moves onto a Radix popover with a body-pointer-events restore fix for dialogs opened from menus. (#765, @yta3216, 2026-06-26) — [#791](https://github.com/EduAI-Lab/EduAI/pull/791)
 - [question-maker] feat: Backend endpoints supporting the redesign — `GET /api/topics/sync-status/:courseId`, `GET /api/course/:id/enrollments`, and `GET /api/questions/export` (CSV/JSON); all TA+ gated. (#790, @yta3216, 2026-06-26) — [#791](https://github.com/EduAI-Lab/EduAI/pull/791)
@@ -63,6 +64,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Changed
 
+- [core] feat: Admin-disabled features now grey out with a "turned off by your administrator" tooltip instead of disappearing, and `/auth/register` shows an invite-only message when public registration is off rather than silently redirecting to login. (#807, @mochi_21, 2026-06-28)
 - [core] refactor: Extract a shared chat route module (`app/lib/chat/chat-route.server.ts`) used by both `/chat` and `/chat/:chatId` — base loader (models + preferences), the preference-save action, and DB transcript hydration; split the monolithic `chat.tsx` into `chat-screen.tsx` plus history components (`chat-history-rail`, `chat-history-list`, `chat-history-utils`), shrinking `chat.tsx`, `chat-history-panel`, and the `chats/:chatId/messages` API route accordingly. (#708, @Ayyhab, 2026-06-24) — [#751](https://github.com/EduAI-Lab/EduAI/pull/751)
 
 ### Fixed

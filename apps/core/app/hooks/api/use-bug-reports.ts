@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { apiFetch } from "~/hooks/api/config";
-import type { BugReport, BugReportStatus } from "~/hooks/api/types";
+import type { BugReport, BugReportStatus, BugReportType } from "~/hooks/api/types";
 
 type AdminBugReportsResponse = {
   reports: Array<{
     id: string;
     description: string;
+    bugType: BugReportType | null;
     status: BugReportStatus;
     source: BugReport["source"];
     isAnonymous: boolean;
@@ -32,6 +33,7 @@ export function useBugReports() {
         data.reports.map((r) => ({
           id: r.id,
           description: r.description,
+          bugType: r.bugType ?? null,
           status: r.status,
           source: r.source,
           isAnonymous: r.isAnonymous,
@@ -76,6 +78,5 @@ export function useBugReports() {
     error,
     refresh,
     updateReportStatus,
-    isStubbed: false,
   };
 }
