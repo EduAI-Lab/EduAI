@@ -7,6 +7,12 @@ import {
   SidebarMenu,
   SidebarMenuItem,
 } from "./ui/sidebar"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "./ui/tooltip"
 
 export interface NavMainItem {
   title: string
@@ -16,6 +22,10 @@ export interface NavMainItem {
   /** Optional status dot (e.g. cron-job health). Color is app-supplied; kept a
    * plain union so this shared component stays decoupled from any app hook. */
   badge?: "green" | "orange" | "red"
+  /** Render greyed-out and non-navigating with a tooltip (admin policy off — #807). */
+  disabled?: boolean
+  /** Tooltip text shown on a disabled item. */
+  disabledReason?: string
 }
 
 export interface NavMainProps {
@@ -87,6 +97,31 @@ export function NavMain({
                 )}
               </>
             )
+
+            if (item.disabled) {
+              return (
+                <SidebarMenuItem key={item.title}>
+                  <TooltipProvider delayDuration={300}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div
+                          aria-disabled
+                          className={`${linkClassName} cursor-not-allowed`}
+                          style={{ ...linkStyle, opacity: 0.45 }}
+                        >
+                          {linkBody}
+                        </div>
+                      </TooltipTrigger>
+                      {item.disabledReason && (
+                        <TooltipContent side="right" className="max-w-[240px]">
+                          <p>{item.disabledReason}</p>
+                        </TooltipContent>
+                      )}
+                    </Tooltip>
+                  </TooltipProvider>
+                </SidebarMenuItem>
+              )
+            }
 
             return (
               <SidebarMenuItem key={item.title}>
