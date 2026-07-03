@@ -40,6 +40,9 @@ COPY apps/core/vite.config.ts    ./apps/core/
 COPY apps/core/react-router.config.ts ./apps/core/
 COPY apps/core/tsconfig.json     ./apps/core/
 COPY apps/core/package.json      ./apps/core/
+# Read by the cleanup-invitations integration test, which verifies the
+# script's own DELETE statement rather than a reimplementation of it.
+COPY infra/cron                  ./infra/cron/
 COPY --from=deps /app/apps/core/node_modules ./apps/core/node_modules
 
 ENV PATH="/app/node_modules/.bin:${PATH}"
