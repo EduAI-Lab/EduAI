@@ -1,15 +1,26 @@
 import prisma from "~/lib/prisma.server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
+import {
+  POLICY_FLAGS,
+  POLICY_KEYS,
+  isPolicyKey,
+  type PolicyKey,
+  type PolicyMap,
+} from "~/lib/policy-flags";
 
 /**
- * @file Configurable RBAC policy flags.
+ * @file Configurable RBAC policy flags (server side).
  *
- * A small, central registry of runtime-toggleable permission flags. Each flag
- * has a code default; an admin can override it, and the override is persisted in
- * the `SystemConfig` key/value table under the `policy.` key prefix. The former
- * standalone `webToolsEnabled` `SystemConfig` row was folded into this registry
- * as `chat.webToolsEnabled` (see the key carry-over migration).
+ * The flag registry itself (keys, defaults, metadata, `PolicyKey` type) lives in
+ * the client-safe `~/lib/policy-flags` module and is re-exported below, so both
+ * server enforcement and client UI can mirror the same source of truth. This file
+ * adds the persistence + caching layer.
+ *
+ * Each flag has a code default; an admin can override it, and the override is
+ * persisted in the `SystemConfig` key/value table under the `policy.` key prefix.
+ * The former standalone `webToolsEnabled` `SystemConfig` row was folded into this
+ * registry as `chat.webToolsEnabled` (see the key carry-over migration).
  *
  * Reads are served through a short-TTL in-memory cache so the hot enforcement
  * paths (e.g. course creation) don't hit the DB on every request; `setPolicy`
@@ -18,134 +29,21 @@ import { getActorContext, getRequestContext } from "~/lib/request-context.server
  *
  * This is the single source of truth consumed by Core itself (in-process via
  * `getPolicy`) and by the extension apps (over HTTP via `GET /api/policies`).
- * Adding a new flag is a single entry in `POLICY_FLAGS`.
  */
+
+// Re-export the registry surface so existing `~/lib/policy.server` importers
+// (and the admin UI) keep working unchanged.
+export {
+  POLICY_FLAGS,
+  POLICY_KEYS,
+  isPolicyKey,
+  getPolicyDefinitions,
+} from "~/lib/policy-flags";
+export type { PolicyKey, PolicyMap } from "~/lib/policy-flags";
 
 const KEY_PREFIX = "policy.";
 
 const CACHE_TTL_MS = 10 * 1000;
-
-/**
- * Registry of policy flags. To add a flag: add one entry here, then read it with
- * `getPolicy(...)` at the enforcement site — the admin UI renders this registry.
- */
-export const POLICY_FLAGS = {
-  "instructors.canCreateCourses": {
-    label: "Instructors can create courses",
-    description:
-      "Allow users with the INSTRUCTOR role to create courses. Applies to Core and AI Tutor.",
-    default: true,
-  },
-  "instructors.canPublishCourses": {
-    label: "Instructors can publish courses",
-    description:
-      "Allow users with the INSTRUCTOR role to publish/unpublish their courses. ADMIN and UNIT_ADMIN are unaffected.",
-    default: true,
-  },
-  "instructors.canManageEnrollments": {
-    label: "Instructors can manage enrollments",
-    description:
-      "Allow users with the INSTRUCTOR role to add/remove students and TAs in their courses. ADMIN and UNIT_ADMIN are unaffected.",
-    default: true,
-  },
-  "instructors.canManageCanvasIntegration": {
-    label: "Instructors can manage Canvas integration",
-    description:
-      "Allow users with the INSTRUCTOR role to connect and sync Canvas. ADMIN is unaffected.",
-    default: true,
-  },
-  "instructors.canDeleteCourses": {
-    label: "Instructors can delete courses",
-    description:
-      "Allow users with the INSTRUCTOR role to soft-delete their courses. ADMIN and UNIT_ADMIN are unaffected.",
-    default: true,
-  },
-  "tas.canManageMaterials": {
-    label: "TAs can manage course materials",
-    description:
-      "Allow users with the TA role to upload course materials, and delete materials they uploaded themselves. Instructors, unit admins, and admins are unaffected.",
-    default: true,
-  },
-  "students.canUploadMaterials": {
-    label: "Students can upload course materials",
-    description:
-      "Allow users with the STUDENT role to upload course materials in courses they are enrolled in.",
-    default: false,
-  },
-  "chat.webToolsEnabled": {
-    label: "Web search tools enabled",
-    description:
-      "Global on/off for web search and fetch tools in chat. When off, web tools are never registered for anyone.",
-    default: false,
-  },
-  "unitAdmins.canDeleteCourses": {
-    label: "Unit admins can delete courses",
-    description:
-      "Allow users with the UNIT_ADMIN role to soft-delete courses in their units. ADMIN is always allowed.",
-    default: true,
-  },
-  "students.canViewMaterials": {
-    label: "Students can view course materials",
-    description:
-      "Allow students to view/list course materials. Layers on top of the publish gate; off means students cannot list materials at all.",
-    default: true,
-  },
-  "tas.canSetAiInstructions": {
-    label: "TAs can edit AI instructions",
-    description:
-      "Allow users with the TA role to edit a course's AI instructions field only (no other course fields).",
-    default: false,
-  },
-  "tas.canManageTopics": {
-    label: "TAs can manage course topics",
-    description:
-      "Allow users with the TA role to create, edit, and delete any topic in their courses (supersedes the own-only carve-out).",
-    default: false,
-  },
-  "instructors.canViewCourseChats": {
-    label: "Instructors can view course chats",
-    description:
-      "Allow users with the INSTRUCTOR role to read student chats in their courses.",
-    default: false,
-  },
-  "unitAdmins.canViewUnitChats": {
-    label: "Unit admins can view unit chats",
-    description:
-      "Allow users with the UNIT_ADMIN role to read student chats across courses in their units.",
-    default: false,
-  },
-  "unitAdmins.canInvite": {
-    label: "Unit admins can invite users",
-    description:
-      "Allow users with the UNIT_ADMIN role to invite instructors and students to the platform. ADMIN is always allowed.",
-    default: false,
-  },
-  "auth.allowPublicRegistration": {
-    label: "Allow public registration",
-    description:
-      "Allow public email/password self-signup (new users default to STUDENT). Off blocks the signup endpoint and hides the signup UI; invitation-based account creation is unaffected.",
-    default: true,
-  },
-} as const;
-
-export type PolicyKey = keyof typeof POLICY_FLAGS;
-export type PolicyMap = Record<PolicyKey, boolean>;
-
-const POLICY_KEYS = Object.keys(POLICY_FLAGS) as PolicyKey[];
-
-export function isPolicyKey(key: string): key is PolicyKey {
-  return Object.prototype.hasOwnProperty.call(POLICY_FLAGS, key);
-}
-
-/** Metadata (label/description/default) for rendering the admin toggles. */
-export function getPolicyDefinitions() {
-  return POLICY_KEYS.map((key) => ({
-    key,
-    label: POLICY_FLAGS[key].label,
-    description: POLICY_FLAGS[key].description,
-    default: POLICY_FLAGS[key].default,
-  }));
-}
 
 let cache: { value: PolicyMap; expiresAt: number } | null = null;
 
