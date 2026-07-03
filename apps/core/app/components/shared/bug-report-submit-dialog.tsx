@@ -1,28 +1,39 @@
-import { BugReportDialog, type BugReportPayload } from "@eduai/ui"
-import { useSubmitBugReport } from "~/hooks/api/use-submit-bug-report"
+import { useState } from "react";
+import { IconBug } from "@tabler/icons-react";
+
+import { Button, BugReportDialog } from "@eduai/ui";
+import type { BugReportSubmitData } from "@eduai/ui";
+import { useSubmitBugReport } from "~/hooks/api/use-submit-bug-report";
 
 type BugReportSubmitDialogProps = {
-  triggerClassName?: string
-}
+  triggerClassName?: string;
+};
 
-export function BugReportSubmitDialog({
-  triggerClassName,
-}: BugReportSubmitDialogProps) {
-  const { submitBugReport, isSubmitting } = useSubmitBugReport()
+export function BugReportSubmitDialog({ triggerClassName }: BugReportSubmitDialogProps) {
+  const [open, setOpen] = useState(false);
+  const { submitBugReport } = useSubmitBugReport();
 
-  const handleSubmit = async (payload: BugReportPayload) => {
-    // Fold the optional title into the description before sending — the DB schema
-    // has no separate title column (removed in #304).
-    const mergedDescription = payload.title.trim()
-      ? `${payload.title.trim()}\n\n${payload.description.trim()}`
-      : payload.description.trim()
-    await submitBugReport({ description: mergedDescription, isAnonymous: payload.isAnonymous })
-  }
+  const handleSubmit = async (data: BugReportSubmitData) => {
+    const ok = await submitBugReport({
+      description: data.description,
+      bugType: data.bugType,
+      isAnonymous: data.isAnonymous,
+    });
+    if (!ok) throw new Error("Failed to submit bug report");
+  };
 
   return (
-    <BugReportDialog
-      onSubmit={handleSubmit}
-      triggerClassName={triggerClassName}
-    />
-  )
+    <>
+      <Button
+        variant="outline"
+        size="sm"
+        className={triggerClassName}
+        onClick={() => setOpen(true)}
+      >
+        <IconBug className="h-4 w-4 mr-1" />
+        Report a bug
+      </Button>
+      <BugReportDialog open={open} onOpenChange={setOpen} onSubmit={handleSubmit} />
+    </>
+  );
 }
