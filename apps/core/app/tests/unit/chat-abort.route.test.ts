@@ -97,7 +97,7 @@ function makeRequest(body: object, signal?: AbortSignal) {
     }),
     params: {},
     context: {} as never,
-  };
+  } as any;
 }
 
 function baseBody(overrides: Record<string, unknown> = {}) {
