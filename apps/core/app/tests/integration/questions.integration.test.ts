@@ -30,7 +30,7 @@ import prisma from "~/lib/prisma.server";
 import { loader as listLoader, action as postAction } from "~/routes/api/questions";
 import { loader as getLoader, action as patchAction } from "~/routes/api/questions.$id";
 
-const mockGetSession = auth.api.getSession as ReturnType<typeof vi.fn>;
+const mockGetSession = auth.api.getSession as any;
 const db = prisma as unknown as {
   course: { findUnique: ReturnType<typeof vi.fn>; findFirst: ReturnType<typeof vi.fn> };
   courseTopic: { findUnique: ReturnType<typeof vi.fn>; findMany: ReturnType<typeof vi.fn> };
@@ -66,7 +66,7 @@ function makeListArgs(
     request: new Request(url.toString(), { method: "GET", headers }),
     params: {},
     context: {} as never,
-  };
+  } as any;
 }
 
 function makePostArgs(body: object, sessionCookie?: string) {
@@ -80,7 +80,7 @@ function makePostArgs(body: object, sessionCookie?: string) {
     }),
     params: {},
     context: {} as never,
-  };
+  } as any;
 }
 
 function makeGetByIdArgs(id: string, authorization?: string, sessionCookie?: string) {
@@ -91,7 +91,7 @@ function makeGetByIdArgs(id: string, authorization?: string, sessionCookie?: str
     request: new Request(`http://localhost/api/questions/${id}`, { method: "GET", headers }),
     params: { id },
     context: {} as never,
-  };
+  } as any;
 }
 
 function makePatchArgs(
@@ -111,7 +111,7 @@ function makePatchArgs(
     }),
     params: { id },
     context: {} as never,
-  };
+  } as any;
 }
 
 const fakeQuestion = {

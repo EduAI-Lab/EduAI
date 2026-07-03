@@ -38,7 +38,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
   }
 
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
 
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -99,7 +99,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   const requestContext = getRequestContext(request);
 
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
 
   switch (request.method) {
     case "PATCH": {

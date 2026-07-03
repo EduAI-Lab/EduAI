@@ -142,6 +142,30 @@ describe('Lessons routes', () => {
 
       expect(res.status).toBe(403);
     });
+
+    it('ADMIN (not enrolled/assigned) sees all lessons including unpublished (#781)', async () => {
+      const unpublishedLesson = await prisma.lesson.create({
+        data: {
+          title: 'Unpublished Lesson',
+          contentMd: 'Draft content',
+          position: 1,
+          isPublished: false,
+          moduleId: seed.module.id,
+        },
+      });
+
+      const admin = makeAdmin();
+      const adminApp = await createApp({ mockUser: admin });
+
+      const res = await request(adminApp).get(`/api/modules/${seed.module.id}/lessons`);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(2);
+      const ids = res.body.map((l) => l.id);
+      expect(ids).toContain(seed.lesson.id);
+      expect(ids).toContain(unpublishedLesson.id);
+      expect(res.body[0].progress).toBeUndefined();
+    });
   });
 
   // ── POST /api/modules/:moduleId/lessons ───────────────────────────
@@ -191,6 +215,17 @@ describe('Lessons routes', () => {
       const res = await request(studentApp).get(`/api/lessons/${seed.lesson.id}`);
 
       expect(res.status).toBe(403);
+    });
+
+    it('ADMIN (not enrolled/assigned) sees unpublished lesson (#781)', async () => {
+      await prisma.lesson.update({ where: { id: seed.lesson.id }, data: { isPublished: false } });
+      const admin = makeAdmin();
+      const adminApp = await createApp({ mockUser: admin });
+
+      const res = await request(adminApp).get(`/api/lessons/${seed.lesson.id}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.isPublished).toBe(false);
     });
   });
 

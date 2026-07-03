@@ -6,11 +6,25 @@ export { ThemeProvider, useTheme } from "./theme-provider"
 export { initThemeSync, broadcastThemeChange, closeThemeSync } from "./lib/theme-sync"
 export type { Theme as ThemeType } from "./lib/theme-sync"
 
+// ── Bug report ─────────────────────────────────────────────────────────────
+export { BugReportDialog } from './bug-report-dialog'
+export type { BugReportType, BugReportSubmitData } from './bug-report-dialog'
+
 // ── Domain components ──────────────────────────────────────────────────────
 export { RoleBadge } from "./role-badge"
 export type { RoleBadgeProps } from "./role-badge"
 export { CourseColorBar, COURSE_COLORS } from "./course-color-bar"
 export type { CourseColorBarProps } from "./course-color-bar"
+export {
+  COURSE_COLOR_PRESETS,
+  DEFAULT_COURSE_PALETTE,
+  courseThemeVars,
+  courseHeroBackgroundStyle,
+  resolvePaletteAccent,
+  defaultColorIndexForCourse,
+  paletteColorAtIndex,
+} from "./course-theme"
+export type { CourseAccentColor } from "./course-theme"
 export { StatCard } from "./stat-card"
 export type { StatCardProps } from "./stat-card"
 export { Avatar } from "./avatar"
@@ -21,10 +35,53 @@ export { CourseHeroCard } from "./course-hero-card"
 export type { CourseHeroCardProps } from "./course-hero-card"
 export { CourseCard } from "./course-card"
 export type { CourseCardProps, CourseCardAction } from "./course-card"
+export { QuestionCard } from "./question-card"
+export type {
+  QuestionCardProps,
+  QuestionCardChoice,
+  QuestionCardStatus,
+  QuestionDifficulty,
+} from "./question-card"
 export { StatusBadge } from "./status-badge"
 export type { StatusBadgeProps } from "./status-badge"
+export { QuestionStatusBadge, questionStatus } from "./question-status-badge"
+export type { QuestionStatusBadgeProps, QuestionStatus, QuestionStatusVariant } from "./question-status-badge"
+export { VariantBadge, variantLabel } from "./variant-badge"
+export type { VariantBadgeProps, VariantIdentity } from "./variant-badge"
 export { PageTabs, PageTabsList, PageTabsTrigger, PageTabsContent } from "./page-tabs"
 export type { PageTabsProps, PageTabsListProps, PageTabsTriggerProps, PageTabsContentProps } from "./page-tabs"
+export { SegmentedControl } from "./segmented-control"
+export type { SegmentedControlProps, SegmentedControlOption } from "./segmented-control"
+export { ThemeToggle } from "./theme-toggle"
+export type { ThemeToggleProps } from "./theme-toggle"
+export { NavUser } from "./nav-user"
+export type { NavUserProps, NavUserItem } from "./nav-user"
+export { NavMain } from "./nav-main"
+export type { NavMainProps, NavMainItem } from "./nav-main"
+export { NavSecondary } from "./nav-secondary"
+export type { NavSecondaryProps, NavSecondaryItem } from "./nav-secondary"
+export { AppSidebar } from "./app-sidebar"
+export type { AppSidebarProps } from "./app-sidebar"
+export { SiteHeader } from "./site-header"
+export type { SiteHeaderProps } from "./site-header"
+export { AccessibilitySettings } from "./settings/accessibility-settings"
+export type { AccessibilitySettingsProps, UiDensity as AccessibilityUiDensity, UiTheme as AccessibilityUiTheme } from "./settings/accessibility-settings"
+export { ProvidersTable } from "./settings/providers-table"
+export type { ProvidersTableProps, AIProviderRow } from "./settings/providers-table"
+export { ProviderFormDialog } from "./settings/provider-form-dialog"
+export type { ProviderFormDialogProps, ProviderFormData, AIProviderRecord } from "./settings/provider-form-dialog"
+
+// ── Analytics charts ───────────────────────────────────────────────────────
+export { DonutChart } from "./charts/donut-chart"
+export type { DonutChartProps, DonutSegment } from "./charts/donut-chart"
+export { MeterBar } from "./charts/meter-bar"
+export type { MeterBarProps } from "./charts/meter-bar"
+export { StackedBar } from "./charts/stacked-bar"
+export type { StackedBarProps, StackedSegment } from "./charts/stacked-bar"
+export { PanelCard } from "./charts/panel-card"
+export type { PanelCardProps } from "./charts/panel-card"
+export { QuestionAnalytics } from "./charts/question-analytics"
+export type { QuestionAnalyticsProps } from "./charts/question-analytics"
 
 // ── DS-aligned shadcn primitives ───────────────────────────────────────────
 export { Button, buttonVariants } from "./ui/button"

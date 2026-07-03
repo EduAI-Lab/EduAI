@@ -66,7 +66,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
 
       - name: Install dependencies
@@ -142,8 +142,6 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      # The report is committed to the dedicated `eduai-summer-2026` branch (same
-      # convention as the team-time report), which reaches development via the usual merge flow.
       - name: Commit report
         if: ${{ vars.COMMIT_REPORTS != 'false' }}
         env:
@@ -161,27 +159,34 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # Stash the (untracked) report, then move onto the report branch with a clean tree.
-          # App coverage/ dirs are gitignored, so the branch switch is clean for tracked files.
+          # Save the report to a temp location
           mkdir -p /tmp/coverage-report-commit
           cp "$REPORT_FILE" /tmp/coverage-report-commit/coverage-report.md
-          rm -f "$REPORT_FILE"
 
+          # Fetch the report branch
           git fetch origin "$REPORT_BRANCH" 2>/dev/null || true
+          
+          # Checkout the report branch
           if git rev-parse --verify "refs/remotes/origin/${REPORT_BRANCH}" >/dev/null 2>&1; then
-            git checkout -B "$REPORT_BRANCH" "origin/${REPORT_BRANCH}"
+            git checkout -f -B "$REPORT_BRANCH" "origin/${REPORT_BRANCH}"
           else
-            git checkout -b "$REPORT_BRANCH"
+            git checkout -f -b "$REPORT_BRANCH"
           fi
 
+          # Merge 'development' into the report branch
+          # This ensures the report branch always has the latest code
+          git merge origin/development --no-edit
+
+          # Restore the report and commit
           mkdir -p eduai-summer-2026/reports/coverage
           cp /tmp/coverage-report-commit/coverage-report.md "$REPORT_FILE"
 
-          # Force-add: the report branch may not yet carry the .gitignore negation for this path.
           git add -f "$REPORT_FILE"
+          
           if git diff --cached --quiet; then
             echo "Coverage report unchanged; nothing to commit."
             exit 0
           fi
+          
           git commit -m "chore: update backend coverage report"
           git push -u origin "$REPORT_BRANCH"

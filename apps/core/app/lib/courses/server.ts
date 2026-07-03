@@ -151,7 +151,7 @@ export async function getCourses(request: Request) {
     });
   }
 
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -195,7 +195,7 @@ export async function getCourses(request: Request) {
  * flag is enabled; they are auto-enrolled as the course instructor.
  */
 export async function createCourse(request: Request) {
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   const role = session?.user?.role ?? "";
   const canCreate =
     (session?.user != null && canCreateCourse(session.user as RbacUser)) ||
@@ -286,7 +286,7 @@ export async function createCourse(request: Request) {
  * INSTRUCTOR(C) per §5 (rank >= 2).
  */
 export async function updateCourse(request: Request, courseId: string) {
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -410,7 +410,7 @@ export async function updateCourse(request: Request, courseId: string) {
  * UNIT_ADMIN(D), INSTRUCTOR(C) per §5.
  */
 export async function deleteCourse(request: Request, courseId: string) {
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -499,7 +499,7 @@ export async function setPublishState(request: Request, courseId: string, publis
   }
 
   // User session path (admin UI / direct API access)
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,

@@ -1,8 +1,9 @@
-import { useLocation } from "react-router"
-import { useTheme } from "@eduai/ui"
+import { useEffect, useState } from "react";
+import { useLocation } from "react-router";
+import { useTheme } from "@eduai/ui";
 import { BugReportSubmitDialog } from "~/components/shared/bug-report-submit-dialog";
-import { Separator, SidebarTrigger, useSidebar } from "@eduai/ui"
-import { IconSun, IconMoon } from "@tabler/icons-react"
+import { Separator, SidebarTrigger, useSidebar } from "@eduai/ui";
+import { IconSun, IconMoon } from "@tabler/icons-react";
 
 const ROUTE_TITLES: Record<string, string> = {
   "/dashboard": "Dashboard",
@@ -13,21 +14,43 @@ const ROUTE_TITLES: Record<string, string> = {
   "/admin/ai-models": "AI Models",
   "/admin/bug-reports": "Bug Reports",
   "/admin/chat": "Admin Chatbot",
-}
+};
 
 export interface SiteHeaderProps {
-  title?: string
-  actions?: React.ReactNode
+  title?: string;
+  actions?: React.ReactNode;
   /** Renders after breadcrumbs on the left (e.g. chat "New chat" on Week 7 #659). */
-  leadingActions?: React.ReactNode
-  breadcrumbs?: React.ReactNode
+  leadingActions?: React.ReactNode;
+  breadcrumbs?: React.ReactNode;
 }
 
-/** Shown only when the app sidebar is collapsed (desktop) or on mobile — not beside page titles when expanded. */
+function useAssistiveFocusModeActive(): boolean {
+  const [active, setActive] = useState(false);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const sync = () =>
+      setActive(root.hasAttribute("data-assistive-focus-mode"));
+    sync();
+
+    const observer = new MutationObserver(sync);
+    observer.observe(root, {
+      attributes: true,
+      attributeFilter: ["data-assistive-focus-mode"],
+    });
+    return () => observer.disconnect();
+  }, []);
+
+  return active;
+}
+
+/** Shown when sidebar is collapsed, on mobile, or focus mode hides the nav rail. */
 function SiteHeaderSidebarTrigger() {
-  const { isMobile, state } = useSidebar()
-  if (!isMobile && state === "expanded") {
-    return null
+  const { isMobile, state } = useSidebar();
+  const focusModeActive = useAssistiveFocusModeActive();
+
+  if (!isMobile && state === "expanded" && !focusModeActive) {
+    return null;
   }
 
   return (
@@ -38,18 +61,24 @@ function SiteHeaderSidebarTrigger() {
         className="mx-2 data-[orientation=vertical]:h-4"
       />
     </>
-  )
+  );
 }
 
-export function SiteHeader({ title, actions, leadingActions, breadcrumbs }: SiteHeaderProps) {
-  const { pathname } = useLocation()
-  const { resolvedTheme, setTheme } = useTheme()
-  const resolvedTitle = title
-    ?? ROUTE_TITLES[pathname]
-    ?? (pathname.startsWith("/courses/") ? "Course Detail" : "EduAI")
+export function SiteHeader({
+  title,
+  actions,
+  leadingActions,
+  breadcrumbs,
+}: SiteHeaderProps) {
+  const { pathname } = useLocation();
+  const { resolvedTheme, setTheme } = useTheme();
+  const resolvedTitle =
+    title ??
+    ROUTE_TITLES[pathname] ??
+    (pathname.startsWith("/courses/") ? "Course Detail" : "EduAI");
 
   function toggleTheme() {
-    setTheme(resolvedTheme === "dark" ? "light" : "dark")
+    setTheme(resolvedTheme === "dark" ? "light" : "dark");
   }
 
   return (
@@ -61,7 +90,10 @@ export function SiteHeader({ title, actions, leadingActions, breadcrumbs }: Site
             <h1 className="sr-only">{resolvedTitle}</h1>
             <div
               className="min-w-0 flex-1 overflow-hidden"
-              style={{ maskImage: "linear-gradient(to right, black calc(100% - 3rem), transparent)" }}
+              style={{
+                maskImage:
+                  "linear-gradient(to right, black calc(100% - 3rem), transparent)",
+              }}
             >
               {breadcrumbs}
             </div>
@@ -70,14 +102,20 @@ export function SiteHeader({ title, actions, leadingActions, breadcrumbs }: Site
           <h1 className="text-sm font-normal text-foreground">{resolvedTitle}</h1>
         )}
         {leadingActions ? (
-          <div className="flex h-full shrink-0 items-center gap-1.5">{leadingActions}</div>
+          <div className="flex h-full shrink-0 items-center gap-1.5">
+            {leadingActions}
+          </div>
         ) : null}
         <div className="ml-auto flex h-full items-center gap-3 sm:gap-4">
           {actions}
           <button
             type="button"
             onClick={toggleTheme}
-            aria-label={resolvedTheme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            aria-label={
+              resolvedTheme === "dark"
+                ? "Switch to light mode"
+                : "Switch to dark mode"
+            }
             className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             {resolvedTheme === "dark" ? (

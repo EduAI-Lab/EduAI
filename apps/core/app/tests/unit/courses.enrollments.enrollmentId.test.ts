@@ -43,7 +43,7 @@ function makeArgs(method: "PATCH" | "DELETE", body?: unknown) {
     }),
     params: { id: "c1", enrollmentId: "e1" },
     context: {} as never,
-  };
+  } as any;
 }
 
 beforeEach(() => {
@@ -184,7 +184,7 @@ describe("DELETE /api/courses/:id/enrollments/:enrollmentId (#305)", () => {
       request: new Request("http://localhost/api/courses/c1/enrollments/e1", { method: "PUT" }),
       params: { id: "c1", enrollmentId: "e1" },
       context: {} as never,
-    });
+    } as any);
     expect(res.status).toBe(405);
   });
 });

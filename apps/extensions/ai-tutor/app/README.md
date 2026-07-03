@@ -42,8 +42,8 @@ app/
       prompt-input.tsx              #   Input with model selector + attachments
     bug-report/                     # Bug reporting system
       BugReportProvider.tsx         #   Context: captures console, network, screenshots
-      BugReportDialog.tsx           #   Report form (react-hook-form + zod)
       useBugReport.ts               #   Context accessor hook
+      # Report form lives in @eduai/ui BugReportDialog
     admin/
       BugReportsTab.tsx             # Admin bug report viewer + triage
     ui/                             # shadcn/ui primitives (14 components)
@@ -75,7 +75,6 @@ app/
     setup.ts                        # jest-dom matchers, ResizeObserver mock
     components/Nav.test.tsx
     components/admin/BugReportsTab.test.tsx
-    components/bug-report/BugReportDialog.test.tsx
     components/bug-report/BugReportProvider.test.tsx
     hooks/useLocalUser.test.tsx
     lib/api.test.ts
