@@ -115,6 +115,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       aiInstructions: course.aiInstructions,
       instructorId: course.instructorId,
       department: course.department,
+      startDate: course.startDate.toISOString(),
+      endDate: course.endDate?.toISOString() ?? null,
       externalSource: course.externalSource,
       externalId: course.externalId,
       createdAt: course.createdAt.toISOString(),
