@@ -42,8 +42,14 @@ export interface LauncherApp {
   roles?: readonly string[]
 }
 
-/** Apps the given role may access (RBAC gate). */
-function visibleFor(apps: LauncherApp[], role?: string | null): LauncherApp[] {
+/**
+ * Apps the given role may access (RBAC gate). Exported so the gate can be
+ * unit-tested directly — the security-critical part of the switcher.
+ */
+export function visibleAppsForRole(
+  apps: LauncherApp[],
+  role?: string | null,
+): LauncherApp[] {
   return apps.filter(
     (app) => !app.roles || (role != null && app.roles.includes(role)),
   )
@@ -180,7 +186,7 @@ export function BrandSwitcher({
   role,
   className,
 }: BrandSwitcherProps) {
-  const accessible = visibleFor(apps, role)
+  const accessible = visibleAppsForRole(apps, role)
 
   return (
     <SidebarMenu className={className}>
