@@ -2,7 +2,6 @@ import { type CSSProperties, type ReactNode } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router';
 import { Outlet } from 'react-router';
 import {
-  AppLauncher,
   AppSidebar,
   SidebarProvider,
   SidebarInset,
@@ -143,7 +142,7 @@ function getNavSecondaryForUser(user: { role: string } | null): NavItem[] {
   // Settings lives in the navUser dropdown (like Core).
   // Bug reports is in the site-header top actions (like Core).
   // Cross-app navigation (EduAI Core + other extensions) lives in the
-  // footer AppLauncher. Secondary nav only has Help.
+  // header BrandSwitcher. Secondary nav only has Help.
   return [
     { key: 'help', title: 'Help', href: '/help' },
   ];
@@ -271,7 +270,7 @@ function QmAppLayoutInner() {
         navSecondary={navSecondary}
         currentPath={pathname}
         LinkComponent={Link}
-        footer={<AppLauncher apps={getLauncherApps()} currentAppId={CURRENT_APP_ID} role={user?.role} />}
+        launcher={{ apps: getLauncherApps(), currentAppId: CURRENT_APP_ID, role: user?.role }}
         user={user ? { name: user.name ?? user.email, email: user.email, image: user.image, role: user.role } : { name: 'Guest', email: '', role: 'GUEST' }}
         navUser={
           user ? {
@@ -366,7 +365,7 @@ export function QmAccessShell({ children }: { children: ReactNode }) {
           navSecondary={navSecondary}
           currentPath="/"
           LinkComponent={Link}
-          footer={<AppLauncher apps={getLauncherApps()} currentAppId={CURRENT_APP_ID} role={user?.role} />}
+          launcher={{ apps: getLauncherApps(), currentAppId: CURRENT_APP_ID, role: user?.role }}
           user={user ? { name: user.name ?? user.email, email: user.email, image: user.image, role: user.role } : { name: 'Guest', email: '', role: 'GUEST' }}
           navUser={
             user ? {
