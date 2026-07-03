@@ -26,8 +26,12 @@ import { Input } from "@eduai/ui";
 import { Label } from "@eduai/ui";
 import { PageTabs, PageTabsList, PageTabsTrigger, PageTabsContent } from "@eduai/ui";
 import { PageHeading } from "@eduai/ui";
+import { ScrollReveal } from "~/components/motion/scroll-reveal";
 import { useApiKeys } from "~/hooks/use-api-keys";
-import { usePolicies } from "~/hooks/api/use-policies";
+import {
+  DisabledTooltip,
+  usePolicyGate,
+} from "~/components/policy/policy-gate";
 
 const CANVAS_SETTINGS_ROLES = new Set(["INSTRUCTOR", "ADMIN"]);
 
@@ -38,11 +42,13 @@ interface SettingsViewProps {
 }
 
 export function SettingsView({ role, studentNumber = null, passwordExpired = false }: SettingsViewProps) {
-  const { policies } = usePolicies();
-  const canvasPolicyOk =
-    role === "ADMIN" ||
-    (policies["instructors.canManageCanvasIntegration"] ?? true);
-  const showCanvasSettings = CANVAS_SETTINGS_ROLES.has(role ?? "") && canvasPolicyOk;
+  const { isEnabled } = usePolicyGate();
+  // §807: instructors keep the Canvas tab visible but greyed when the policy is
+  // off (admins are never gated); other roles don't see the tab at all.
+  const roleHasCanvas = CANVAS_SETTINGS_ROLES.has(role ?? "");
+  const canvasEnabled =
+    role === "ADMIN" || isEnabled("instructors.canManageCanvasIntegration");
+  const showCanvasSettings = roleHasCanvas && canvasEnabled;
   const showStudentNumberSettings = role === "STUDENT";
   const {
     updateProviderSettings,
@@ -89,31 +95,40 @@ export function SettingsView({ role, studentNumber = null, passwordExpired = fal
                 <PageTabsTrigger value="providers">
                   <IconWorld className="h-4 w-4" /> Providers
                 </PageTabsTrigger>
-                {showCanvasSettings && (
-                  <PageTabsTrigger value="canvas">
-                    <IconLink className="h-4 w-4" /> Canvas
-                  </PageTabsTrigger>
+                {roleHasCanvas && (
+                  <DisabledTooltip disabled={!canvasEnabled}>
+                    <PageTabsTrigger value="canvas">
+                      <IconLink className="h-4 w-4" /> Canvas
+                    </PageTabsTrigger>
+                  </DisabledTooltip>
                 )}
               </PageTabsList>
 
               <PageTabsContent value="account" className="space-y-6">
-                <ChangePasswordSettings />
-                {showStudentNumberSettings && (
-                  <StudentNumberSettings initialStudentNumber={studentNumber} />
-                )}
+                <ScrollReveal index={0} parallax={false}>
+                  <ChangePasswordSettings />
+                  {showStudentNumberSettings && (
+                    <StudentNumberSettings initialStudentNumber={studentNumber} />
+                  )}
+                </ScrollReveal>
               </PageTabsContent>
 
               <PageTabsContent value="accessibility">
-                <AccessibilitySettingsTab />
+                <ScrollReveal index={0} parallax={false}>
+                  <AccessibilitySettingsTab />
+                </ScrollReveal>
               </PageTabsContent>
 
               {showCanvasSettings && (
                 <PageTabsContent value="canvas">
-                  <CanvasIntegrationSettings />
+                  <ScrollReveal index={0} parallax={false}>
+                    <CanvasIntegrationSettings />
+                  </ScrollReveal>
                 </PageTabsContent>
               )}
 
               <PageTabsContent value="providers" className="space-y-6">
+                <ScrollReveal index={0} parallax={false}>
                 <Card>
                   <CardHeader>
                     <CardTitle>Model Providers</CardTitle>
@@ -222,11 +237,13 @@ export function SettingsView({ role, studentNumber = null, passwordExpired = fal
                     </div>
                   </CardContent>
                 </Card>
+                </ScrollReveal>
               </PageTabsContent>
             </PageTabs>
           </div>
 
           <div className="px-4 lg:px-6">
+            <ScrollReveal index={1} parallax={false}>
             <Card>
               <CardHeader>
                 <CardTitle>Account</CardTitle>
@@ -240,6 +257,7 @@ export function SettingsView({ role, studentNumber = null, passwordExpired = fal
                 </Form>
               </CardContent>
             </Card>
+            </ScrollReveal>
           </div>
         </div>
       </div>

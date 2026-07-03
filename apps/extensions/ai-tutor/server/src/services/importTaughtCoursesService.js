@@ -37,7 +37,7 @@ async function ensureOfferingFromCore(coreCourse) {
   });
 
   if (existing) {
-    await syncOfferingPublishFromCore(coreCourse);
+    await reconcileOfferingFromCore(coreCourse);
     if (!existing.coreOfferingId) {
       await prisma.courseOffering.update({
         where: { id: existing.id },
@@ -85,10 +85,14 @@ function corePublishState(externalCourse) {
   return typeof externalCourse?.isPublished === 'boolean' ? externalCourse.isPublished : null;
 }
 
-/** Applies Core isPublished to a linked local offering when Core reports an explicit boolean. */
-async function syncOfferingPublishFromCore(externalCourse) {
-  const publish = corePublishState(externalCourse);
-  if (publish === null || !externalCourse?.id) {
+/**
+ * Mirrors a Core course's mutable fields (publish state, title, description) onto
+ * the linked local offering. Core is the source of truth, so a rename or
+ * draft/publish flip upstream propagates down on the next sync. Returns true when
+ * any field actually changed (so callers can count reconciliations).
+ */
+async function reconcileOfferingFromCore(externalCourse) {
+  if (!externalCourse?.id) {
     return false;
   }
 
@@ -101,16 +105,35 @@ async function syncOfferingPublishFromCore(externalCourse) {
     },
   });
 
-  if (!offering || offering.isPublished === publish) {
+  if (!offering) {
     return false;
   }
 
+  const data = {};
+
+  const publish = corePublishState(externalCourse);
+  if (publish !== null && offering.isPublished !== publish) {
+    data.isPublished = publish;
+  }
+
+  const nextTitle = deriveTitle(externalCourse);
+  if (nextTitle && offering.title !== nextTitle) {
+    data.title = nextTitle;
+  }
+
+  const nextDescription = deriveDescription(externalCourse);
+  if (offering.description !== nextDescription) {
+    data.description = nextDescription;
+  }
+
+  if (Object.keys(data).length === 0) {
+    return false;
+  }
+
+  data.externalMetadata = externalCourse;
   await prisma.courseOffering.update({
     where: { id: offering.id },
-    data: {
-      isPublished: publish,
-      externalMetadata: externalCourse,
-    },
+    data,
   });
 
   return true;
@@ -163,7 +186,7 @@ export async function importExternalCourseForUser(instructor, externalCourse) {
         data: { coreOfferingId: externalCourse.id },
       });
     }
-    await syncOfferingPublishFromCore(externalCourse);
+    await reconcileOfferingFromCore(externalCourse);
 
     return { offering: alreadyImported, created: false };
   }
@@ -268,7 +291,7 @@ export async function importTaughtCoursesFromCore(instructor, cookie, options = 
     }
 
     if (importedIds.has(coreCourse.id)) {
-      if (await syncOfferingPublishFromCore(coreCourse)) {
+      if (await reconcileOfferingFromCore(coreCourse)) {
         publishSynced++;
       }
       skipped++;

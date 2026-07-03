@@ -72,7 +72,7 @@ function uploadArgs(user: { id: string; role: string }) {
     headers: new Headers(),
     formData: () => Promise.resolve(form),
   } as unknown as Request;
-  return { request, params: { courseId }, context: {} as never };
+  return { request, params: { courseId }, context: {} as never } as any;
 }
 
 describe("materials upload → list → delete cycle (#300)", () => {
@@ -92,7 +92,7 @@ describe("materials upload → list → delete cycle (#300)", () => {
       request: new Request(`http://localhost/api/courses/${courseId}/materials`),
       params: { courseId },
       context: {} as never,
-    });
+    } as any);
     expect(listed.status).toBe(200);
     const body = await listed.json();
     expect(body.materials.some((m: { id: string }) => m.id === materialId)).toBe(true);
@@ -106,7 +106,7 @@ describe("materials upload → list → delete cycle (#300)", () => {
       ),
       params: { courseId, materialId },
       context: {} as never,
-    });
+    } as any);
     expect(deleted.status).toBe(204);
     const deletedMaterial = await prisma.courseMaterial.findUnique({ where: { id: materialId } });
     expect(deletedMaterial).not.toBeNull();
@@ -124,7 +124,7 @@ describe("materials upload → list → delete cycle (#300)", () => {
       request: new Request(`http://localhost/api/courses/${courseId}/materials`),
       params: { courseId },
       context: {} as never,
-    });
+    } as any);
     expect(res.status).toBe(403);
   });
 
@@ -163,7 +163,7 @@ describe("materials upload → list → delete cycle (#300)", () => {
       ),
       params: { courseId, materialId: profMaterialId },
       context: {} as never,
-    });
+    } as any);
     expect(denied.status).toBe(403);
 
     // TA deletes their own
@@ -175,7 +175,7 @@ describe("materials upload → list → delete cycle (#300)", () => {
       ),
       params: { courseId, materialId: taMaterialId },
       context: {} as never,
-    });
+    } as any);
     expect(ok.status).toBe(204);
   });
 });
@@ -197,7 +197,7 @@ function renameArgs(
     ),
     params: { courseId, materialId },
     context: {} as never,
-  };
+  } as any;
 }
 
 describe("materials rename (PATCH)", () => {

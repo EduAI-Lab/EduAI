@@ -42,7 +42,7 @@ export interface ChatBaseData {
 export async function loadChatBaseData(
   request: LoaderFunctionArgs["request"],
 ): Promise<ChatBaseData> {
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
 
   if (!session?.user) {
     throw redirect("/auth/login");
@@ -123,7 +123,7 @@ export async function loadChatTranscript(
 
 /** Shared preference-save action for both chat routes (POST to the open route). */
 export async function chatPreferencesAction({ request }: ActionFunctionArgs) {
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,

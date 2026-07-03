@@ -90,7 +90,7 @@ function makeRequest(body: object) {
     }),
     params: {},
     context: {} as never,
-  };
+  } as any;
 }
 
 function mockStream() {

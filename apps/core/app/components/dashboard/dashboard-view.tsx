@@ -18,6 +18,7 @@ import {
   DialogDescription,
 } from "@eduai/ui";
 import { ChatTranscriptViewer } from "~/components/chat/chat-transcript-viewer";
+import { ScrollReveal } from "~/components/motion/scroll-reveal";
 import { fetchChatTranscript, type ChatTranscript } from "~/hooks/api/use-chat-history";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -132,7 +133,7 @@ function CourseListPanel({
         <Link
           key={course.id}
           to={`/courses/${course.id}`}
-          className="flex items-center gap-4 px-5 py-[14px] border-b border-border last:border-b-0 hover:bg-muted/40 transition-colors"
+          className="flex items-center gap-4 px-5 py-[14px] border-b border-border last:border-b-0 hover:bg-muted/40 hover:-translate-y-px transition-all duration-200"
         >
           {/* color swatch */}
           <div
@@ -167,7 +168,7 @@ function QuickActionsPanel({ actions }: { actions: DashboardQuickAction[] }) {
         <Link
           key={action.href + action.label}
           to={action.href}
-          className="flex items-start gap-3 p-4 bg-card border border-border rounded-[var(--radius-xl)] shadow-[var(--shadow-2xs)] hover:shadow-md transition-shadow text-left"
+          className="flex items-start gap-3 p-4 bg-card border border-border rounded-[var(--radius-xl)] shadow-[var(--shadow-2xs)] hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 text-left"
         >
           <div
             className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
@@ -326,14 +327,15 @@ export function DashboardView({
     <div className="flex flex-col gap-6 px-4 lg:px-6 pb-8">
       {/* Stat cards */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        {stats.map((s) => (
-          <StatCard
-            key={s.label}
-            label={s.label}
-            value={s.value}
-            trend={s.trend}
-            trendLabel={s.trendLabel}
-          />
+        {stats.map((s, index) => (
+          <ScrollReveal key={s.label} index={index}>
+            <StatCard
+              label={s.label}
+              value={s.value}
+              trend={s.trend}
+              trendLabel={s.trendLabel}
+            />
+          </ScrollReveal>
         ))}
       </div>
 
@@ -341,6 +343,7 @@ export function DashboardView({
       <div className="grid gap-5 lg:grid-cols-[1fr_360px] lg:items-stretch">
 
         {/* Left — courses or quick actions */}
+        <ScrollReveal index={4}>
         <div>
           <div className="flex items-center justify-between mb-3.5">
             <h2 className="text-[15px] font-semibold text-foreground">{panelTitle}</h2>
@@ -363,8 +366,10 @@ export function DashboardView({
             />
           )}
         </div>
+        </ScrollReveal>
 
         {/* Right — recent conversations */}
+        <ScrollReveal index={5}>
         <div className="flex flex-col h-full">
           <div className="flex items-center justify-between mb-3.5">
             <h2 className="text-[15px] font-semibold text-foreground">Recent conversations</h2>
@@ -379,6 +384,7 @@ export function DashboardView({
             <RecentChatsPanel chats={recentChats} loading={recentChatsLoading} />
           </div>
         </div>
+        </ScrollReveal>
       </div>
     </div>
   );
