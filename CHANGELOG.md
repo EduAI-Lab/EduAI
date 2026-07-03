@@ -9,7 +9,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
-- [core] fix: Decouple Focus mode from Assistive mode in chat — Focus mode is now toggleable independently in both the header switch and composer toolbar chip, no longer disabled/greyed-out while Assistive mode is off; removed the forced `focusMode` reset when Assistive mode is turned off. (#PR, closes #838)
+- [core] fix: Decouple Focus mode from Assistive mode in chat — Focus mode is now toggleable independently in both the header switch and composer toolbar chip, no longer disabled/greyed-out while Assistive mode is off; removed the forced `focusMode` reset when Assistive mode is turned off. (#859, closes #838)
 
 - [ui] hotfix: Add missing imports in `packages/ui/src/ui/combobox.tsx` — `useRef`, `useEffect`, `Popover`, `PopoverTrigger`, and `PopoverContent` were used but not imported, causing `packages-ui-unit-tests` and QM frontend Docker build to fail on CI. (#823)
 - [infra] fix: Remove `legacy-peer-deps=true` from the root, AI Tutor, and AI Tutor server `.npmrc` files — installing against the existing `package-lock.json` resolves cleanly under npm's default strict peer-dependency mode (the `@better-auth/cli`/`@better-auth/telemetry` conflict only surfaces on a from-scratch resolution, e.g. a dry run with no lockfile). All 11 Docker test suites pass unchanged. (#804, @evanbones, 2026-07-01) — closes #172
