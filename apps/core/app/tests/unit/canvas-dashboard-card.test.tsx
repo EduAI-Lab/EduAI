@@ -11,10 +11,10 @@ vi.mock("~/lib/canvas/client", () => ({
   syncCanvasCourses: vi.fn(),
 }));
 
-function renderCard() {
+function renderCard(disabled = false) {
   const router = createMemoryRouter(
     [
-      { path: "/", element: <CanvasDashboardCard /> },
+      { path: "/", element: <CanvasDashboardCard disabled={disabled} /> },
       { path: "/settings", element: <div>Settings page</div> },
     ],
     { initialEntries: ["/"] },
@@ -61,5 +61,17 @@ describe("CanvasDashboardCard", () => {
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Sync Canvas courses" })).toBeInTheDocument();
     });
+  });
+
+  it("greys out the card (instead of hiding it) without fetching when the policy is off", async () => {
+    renderCard(true);
+
+    // Card stays visible with a greyed, non-navigating action.
+    const link = await screen.findByRole("link", { name: "Connect Canvas in Settings" });
+    expect(link).toHaveAttribute("href", "/settings");
+
+    // Skips the Canvas API entirely, so no "Forbidden: instructors only" error.
+    expect(getCanvasIntegration).not.toHaveBeenCalled();
+    expect(screen.queryByText(/forbidden/i)).not.toBeInTheDocument();
   });
 });
