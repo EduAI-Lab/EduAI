@@ -36,6 +36,7 @@ COPY packages/ui                 ./packages/ui/
 COPY apps/core/app               ./apps/core/app
 COPY apps/core/prisma            ./apps/core/prisma
 COPY apps/core/vitest.config.ts  ./apps/core/
+COPY apps/core/vitest.integration.config.ts ./apps/core/
 COPY apps/core/vite.config.ts    ./apps/core/
 COPY apps/core/react-router.config.ts ./apps/core/
 COPY apps/core/tsconfig.json     ./apps/core/

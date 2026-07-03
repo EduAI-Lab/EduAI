@@ -109,7 +109,7 @@ services:
     command:
       - sh
       - -c
-      - "npx prisma migrate deploy --schema=prisma/schema.prisma && npx vitest run app/tests/integration --passWithNoTests"
+      - "npx prisma migrate deploy --schema=prisma/schema.prisma && npx vitest run --config vitest.integration.config.ts"
     depends_on:
       eduai-test-db:
         condition: service_healthy
