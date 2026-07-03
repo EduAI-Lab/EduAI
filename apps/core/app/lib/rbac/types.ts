@@ -38,6 +38,11 @@ export type NavItem = {
   title: string
   url: string
   external?: boolean
+  /** Render greyed-out and non-navigating (e.g. an admin policy turned it off);
+   * the link stays visible so users know the feature exists. See issue #807. */
+  disabled?: boolean
+  /** Tooltip explaining why a disabled item is greyed out. */
+  disabledReason?: string
 }
 
 export type NavUser = {
