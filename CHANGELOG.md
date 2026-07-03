@@ -9,7 +9,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
-- [infra] feat: Add `cleanup-invitations` cron job — hard-deletes `REVOKED` invitations and expired `PENDING` invitations past a 30-day grace period, following the existing infra shell-script pattern (`infra/cron/cleanup-invitations.sh`) registered in `KNOWN_CRON_JOBS` for admin-panel visibility, manual trigger, and schedule editing. (#580, @evanbones, 2026-07-02) — #PR
+- [infra] feat: Add `cleanup-invitations` cron job — hard-deletes `REVOKED` invitations and expired `PENDING` invitations past a 30-day grace period, following the existing infra shell-script pattern (`infra/cron/cleanup-invitations.sh`) registered in `KNOWN_CRON_JOBS` for admin-panel visibility, manual trigger, and schedule editing. (#580, @evanbones, 2026-07-02) — [#853](https://github.com/EduAI-Lab/EduAI/pull/853)
 
 ### Fixed
 
