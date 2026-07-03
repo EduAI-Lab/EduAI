@@ -91,7 +91,7 @@ export function AiTutorSidebar({ user, ...props }: AiTutorSidebarProps) {
       </SidebarContent>
 
       <SidebarFooter>
-        <AppLauncher apps={getLauncherApps()} currentAppId={CURRENT_APP_ID} />
+        <AppLauncher apps={getLauncherApps()} currentAppId={CURRENT_APP_ID} role={user.role} />
         <AiTutorSidebarUser user={user} />
       </SidebarFooter>
     </Sidebar>
