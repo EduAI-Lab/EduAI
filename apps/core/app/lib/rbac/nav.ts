@@ -21,14 +21,13 @@ const ADMIN_SECONDARY_NAV: NavItem[] = [
 ]
 
 /**
- * Unit-admin invitations link. Surfaced only when the `unitAdmins.canInvite`
- * policy flag is on, passed in via `opts.canInvite` (the flag values live
- * client-side; the caller resolves them and threads the result here so the
- * gating decision lives in this one function).
+ * Unit-admin invitations link. Always shown to UNIT_ADMINs, but greyed-out and
+ * non-navigating when the `unitAdmins.canInvite` policy flag is off (passed via
+ * `opts.canInvite`) — so a disabled flag reads as "an admin turned this off"
+ * rather than a missing feature (issue #807). The flag values live client-side;
+ * the caller resolves them and threads the result here.
  */
-const UNIT_ADMIN_NAV: NavItem[] = [
-  { key: 'unitadmin-invites', title: 'Invitations', url: '/unit-admin/invitations' },
-]
+const UNIT_ADMIN_INVITES_KEY = 'unitadmin-invites' as const
 
 /** Options that gate policy-dependent nav items. */
 export type NavOptions = {
@@ -46,7 +45,16 @@ export function getNavForUser(user: NavUser, opts: NavOptions = {}): NavItem[] {
   }
 
   if (role === 'UNIT_ADMIN') {
-    return opts.canInvite ? [...nav, ...UNIT_ADMIN_NAV] : [...nav]
+    const invites: NavItem = {
+      key: UNIT_ADMIN_INVITES_KEY,
+      title: 'Invitations',
+      url: '/unit-admin/invitations',
+      disabled: !opts.canInvite,
+      disabledReason: opts.canInvite
+        ? undefined
+        : 'Turned off by your administrator.',
+    }
+    return [...nav, invites]
   }
 
   // INSTRUCTOR, TA, STUDENT — no platform admin section
