@@ -63,10 +63,15 @@ test.describe('Course deletion in Core cascades to QM and AI Tutor', () => {
       const deleteRes = await adminCtx.delete(`${CORE_URL}/api/courses/${coreCourseId}`);
       expect(deleteRes.status()).toBe(204);
 
-      // Core's cascade push is awaited before it responds 204, so both
-      // extensions' mirrors should already be gone — no polling needed.
-      expect((await instrCtx.get(`${QM}/api/course/${qmCourseId}`)).status()).toBe(404);
-      expect((await instrCtx.get(`${AT}/api/courses/${atCourseId}`)).status()).toBe(404);
+      // Core's cascade push is fire-and-forget (it no longer blocks the 204
+      // response — see apps/core/app/lib/courses/server.ts), so the extension
+      // deletes may still be in flight when we get here. Poll until both settle.
+      await expect
+        .poll(async () => (await instrCtx.get(`${QM}/api/course/${qmCourseId}`)).status())
+        .toBe(404);
+      await expect
+        .poll(async () => (await instrCtx.get(`${AT}/api/courses/${atCourseId}`)).status())
+        .toBe(404);
     } finally {
       await adminCtx.dispose();
       await instrCtx.dispose();
