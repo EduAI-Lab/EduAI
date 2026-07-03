@@ -37,7 +37,44 @@ import {
   updateAdminEnrollmentRole,
   updateAdminUser,
   userRefValidationError,
+  createAdminCourseMutation,
+  updateAdminCourseMutation,
+  deleteAdminCourseMutation,
+  publishAdminCourseMutation,
+  unpublishAdminCourseMutation,
+  updateAdminCourseRagSettingsMutation,
+  renameAdminCourseMaterialMutation,
+  deleteAdminCourseMaterialMutation,
+  updateAdminCourseEmbeddingSettingsMutation,
+  startAdminCourseReEmbedMutation,
+  syncAdminCanvasMaterialsMutation,
+  addAdminCourseTAMutation,
+  removeAdminCourseTAMutation,
+  updateAdminPolicyMutation,
+  createAdminAiProviderMutation,
+  updateAdminAiProviderMutation,
+  deleteAdminAiProviderMutation,
+  createAdminAiModelMutation,
+  updateAdminAiModelMutation,
+  deleteAdminAiModelMutation,
+  triggerAdminCronJobMutation,
 } from "./admin-mutations.server";
+import {
+  getAdminCourseRagSettings,
+  getAdminCourseEmbeddingSettings,
+  getAdminCourseReEmbedJob,
+  getAdminDashboardStats,
+  getAdminPolicies,
+  listAdminAiProviders,
+  listAdminCanvasMaterials,
+  listAdminCourseChats,
+  listAdminCourseMaterials,
+  listAdminCourseTAs,
+  listAdminCronJobs,
+  listAdminOllamaModels,
+  listAdminUnitChats,
+  listAdminVllmModels,
+} from "./admin-platform.server";
 
 /** Defaults to false so omitted/invalid values do not crash the tool-call stream. */
 const confirmedWrite = z
@@ -91,6 +128,12 @@ export function createAdminChatTools(ctx: ChatToolContext) {
       courseCode: courseCode ?? effectiveCourseCode ?? undefined,
       fallbackCourseId: effectiveCourseId,
     });
+
+  const courseOpts = (courseId?: string, courseCode?: string) => ({
+    courseId,
+    courseCode,
+    fallbackCourseId: effectiveCourseId,
+  });
 
   return {
     listCourses: tool({
@@ -554,6 +597,456 @@ export function createAdminChatTools(ctx: ChatToolContext) {
           linkAdminCanvasRoster(user, { userId, userEmail, studentNumber }),
         );
       },
+    }),
+
+    createCourse: tool({
+      description:
+        "Create a new course with instructor enrollments. Use confirmed=true only after admin confirms.",
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        name: z.string().min(1),
+        code: z.string().min(1),
+        section: z.string().min(1),
+        term: z.string().min(1),
+        year: z.number().int(),
+        startDate: z.string().describe("ISO date string"),
+        endDate: z.string().optional().describe("ISO date string"),
+        department: z.string().min(1),
+        description: z.string().optional(),
+        isPublished: z.boolean().optional(),
+        aiInstructions: z.string().optional(),
+        instructorUserIds: z.array(z.string()).min(1),
+      }),
+      execute: async ({ confirmed, ...input }) =>
+        runConfirmedAdminWriteTool("createCourse", user, confirmed, () =>
+          createAdminCourseMutation(user, input),
+        ),
+    }),
+
+    updateCourse: tool({
+      description:
+        "Update course metadata. Use confirmed=true only after admin confirms.",
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        ...courseScope,
+        name: z.string().min(1).optional(),
+        code: z.string().min(1).optional(),
+        section: z.string().min(1).optional(),
+        term: z.string().optional(),
+        year: z.number().int().optional(),
+        startDate: z.string().optional().describe("ISO date string"),
+        endDate: z.string().optional().nullable().describe("ISO date string"),
+        department: z.string().min(1).optional().nullable(),
+        description: z.string().optional().nullable(),
+        isPublished: z.boolean().optional(),
+        isActive: z.boolean().optional(),
+        aiInstructions: z.string().optional(),
+        instructorId: z.string().optional(),
+      }),
+      execute: async ({ confirmed, courseId, courseCode, ...input }) =>
+        runConfirmedAdminWriteTool("updateCourse", user, confirmed, () =>
+          updateAdminCourseMutation(user, courseOpts(courseId, courseCode), input),
+        ),
+    }),
+
+    deleteCourse: tool({
+      description: "Soft-delete a course. Use confirmed=true only after admin confirms.",
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        ...courseScope,
+      }),
+      execute: async ({ confirmed, courseId, courseCode }) =>
+        runConfirmedAdminWriteTool("deleteCourse", user, confirmed, () =>
+          deleteAdminCourseMutation(user, courseOpts(courseId, courseCode)),
+        ),
+    }),
+
+    publishCourse: tool({
+      description: "Publish a course. Use confirmed=true only after admin confirms.",
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        ...courseScope,
+      }),
+      execute: async ({ confirmed, courseId, courseCode }) =>
+        runConfirmedAdminWriteTool("publishCourse", user, confirmed, () =>
+          publishAdminCourseMutation(user, courseOpts(courseId, courseCode)),
+        ),
+    }),
+
+    unpublishCourse: tool({
+      description: "Unpublish a course. Use confirmed=true only after admin confirms.",
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        ...courseScope,
+      }),
+      execute: async ({ confirmed, courseId, courseCode }) =>
+        runConfirmedAdminWriteTool("unpublishCourse", user, confirmed, () =>
+          unpublishAdminCourseMutation(user, courseOpts(courseId, courseCode)),
+        ),
+    }),
+
+    getCourseRagSettings: tool({
+      description: "Get RAG retrieval settings for a course.",
+      parameters: z.object({ ...courseScope }),
+      execute: async ({ courseId, courseCode }) =>
+        getAdminCourseRagSettings(user, courseOpts(courseId, courseCode)),
+    }),
+
+    updateCourseRagSettings: tool({
+      description:
+        "Update RAG top-K and similarity threshold for a course. Use confirmed=true only after admin confirms.",
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        ...courseScope,
+        ragTopK: z.number().int().min(1).max(20).nullable().optional(),
+        ragSimilarityThreshold: z.number().gt(0).lt(1).nullable().optional(),
+      }),
+      execute: async ({ confirmed, courseId, courseCode, ...input }) =>
+        runConfirmedAdminWriteTool("updateCourseRagSettings", user, confirmed, () =>
+          updateAdminCourseRagSettingsMutation(user, courseOpts(courseId, courseCode), input),
+        ),
+    }),
+
+    listCourseMaterials: tool({
+      description: "List uploaded course materials (non-deleted).",
+      parameters: z.object({ ...courseScope }),
+      execute: async ({ courseId, courseCode }) =>
+        listAdminCourseMaterials(user, courseOpts(courseId, courseCode)),
+    }),
+
+    renameCourseMaterial: tool({
+      description:
+        "Rename a course material. Use confirmed=true only after admin confirms.",
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        ...courseScope,
+        materialId: z.string().min(1),
+        name: z.string().min(1),
+      }),
+      execute: async ({ confirmed, courseId, courseCode, materialId, name }) =>
+        runConfirmedAdminWriteTool("renameCourseMaterial", user, confirmed, () =>
+          renameAdminCourseMaterialMutation(user, {
+            ...courseOpts(courseId, courseCode),
+            materialId,
+            name,
+          }),
+        ),
+    }),
+
+    deleteCourseMaterial: tool({
+      description:
+        "Soft-delete a course material. Use confirmed=true only after admin confirms.",
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        ...courseScope,
+        materialId: z.string().min(1),
+      }),
+      execute: async ({ confirmed, courseId, courseCode, materialId }) =>
+        runConfirmedAdminWriteTool("deleteCourseMaterial", user, confirmed, () =>
+          deleteAdminCourseMaterialMutation(user, {
+            ...courseOpts(courseId, courseCode),
+            materialId,
+          }),
+        ),
+    }),
+
+    listCanvasMaterials: tool({
+      description: "Discover Canvas-linked materials available to sync for a course.",
+      parameters: z.object({ ...courseScope }),
+      execute: async ({ courseId, courseCode }) =>
+        listAdminCanvasMaterials(user, courseOpts(courseId, courseCode)),
+    }),
+
+    syncCanvasMaterials: tool({
+      description:
+        "Import selected Canvas files as course materials. Use confirmed=true only after admin confirms.",
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        ...courseScope,
+        canvasFileIds: z.array(z.string()).min(1),
+      }),
+      execute: async ({ confirmed, courseId, courseCode, canvasFileIds }) =>
+        runConfirmedAdminWriteTool("syncCanvasMaterials", user, confirmed, () =>
+          syncAdminCanvasMaterialsMutation(user, {
+            ...courseOpts(courseId, courseCode),
+            canvasFileIds,
+          }),
+        ),
+    }),
+
+    getCourseEmbeddingSettings: tool({
+      description: "Get embedding provider/model settings and re-embed staleness for a course.",
+      parameters: z.object({ ...courseScope }),
+      execute: async ({ courseId, courseCode }) =>
+        getAdminCourseEmbeddingSettings(user, courseOpts(courseId, courseCode)),
+    }),
+
+    updateCourseEmbeddingSettings: tool({
+      description:
+        "Update embedding provider/model for a course. Use confirmed=true only after admin confirms.",
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        ...courseScope,
+        embeddingProvider: z.string().optional(),
+        embeddingModel: z.string().optional(),
+      }),
+      execute: async ({ confirmed, courseId, courseCode, ...input }) =>
+        runConfirmedAdminWriteTool("updateCourseEmbeddingSettings", user, confirmed, () =>
+          updateAdminCourseEmbeddingSettingsMutation(user, courseOpts(courseId, courseCode), input),
+        ),
+    }),
+
+    startCourseReEmbed: tool({
+      description:
+        "Start a background re-embed job for course materials. Use confirmed=true only after admin confirms.",
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        ...courseScope,
+      }),
+      execute: async ({ confirmed, courseId, courseCode }) =>
+        runConfirmedAdminWriteTool("startCourseReEmbed", user, confirmed, () =>
+          startAdminCourseReEmbedMutation(user, courseOpts(courseId, courseCode)),
+        ),
+    }),
+
+    getCourseReEmbedJob: tool({
+      description: "Get status of a course re-embed job by job id.",
+      parameters: z.object({
+        ...courseScope,
+        jobId: z.string().min(1),
+      }),
+      execute: async ({ courseId, courseCode, jobId }) =>
+        getAdminCourseReEmbedJob(user, { ...courseOpts(courseId, courseCode), jobId }),
+    }),
+
+    listCourseTAs: tool({
+      description: "List teaching assistants enrolled in a course.",
+      parameters: z.object({ ...courseScope }),
+      execute: async ({ courseId, courseCode }) =>
+        listAdminCourseTAs(user, courseOpts(courseId, courseCode)),
+    }),
+
+    addCourseTA: tool({
+      description:
+        "Add a TA enrollment to a course. Use confirmed=true only after admin confirms.",
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        ...courseScope,
+        userId: z.string().min(1),
+      }),
+      execute: async ({ confirmed, courseId, courseCode, userId }) =>
+        runConfirmedAdminWriteTool("addCourseTA", user, confirmed, () =>
+          addAdminCourseTAMutation(user, { ...courseOpts(courseId, courseCode), userId }),
+        ),
+    }),
+
+    removeCourseTA: tool({
+      description:
+        "Remove a TA from a course. Use confirmed=true only after admin confirms.",
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        ...courseScope,
+        userId: z.string().min(1),
+      }),
+      execute: async ({ confirmed, courseId, courseCode, userId }) =>
+        runConfirmedAdminWriteTool("removeCourseTA", user, confirmed, () =>
+          removeAdminCourseTAMutation(user, { ...courseOpts(courseId, courseCode), userId }),
+        ),
+    }),
+
+    listCourseChats: tool({
+      description: "List recent chats for a course.",
+      parameters: z.object({
+        ...courseScope,
+        limit: z.number().int().min(1).max(200).optional(),
+      }),
+      execute: async ({ courseId, courseCode, limit }) =>
+        listAdminCourseChats(user, { ...courseOpts(courseId, courseCode), limit }),
+    }),
+
+    listUnitChats: tool({
+      description: "List recent chats across all courses in a department (unit).",
+      parameters: z.object({
+        department: z.string().min(1),
+        limit: z.number().int().min(1).max(200).optional(),
+      }),
+      execute: async ({ department, limit }) => listAdminUnitChats(user, department, limit),
+    }),
+
+    getPolicies: tool({
+      description: "Get platform policy flags and definitions.",
+      parameters: z.object({}),
+      execute: async () => getAdminPolicies(user),
+    }),
+
+    updatePolicy: tool({
+      description:
+        "Update a platform policy flag. Use confirmed=true only after admin confirms.",
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        key: z.string().min(1),
+        value: z.boolean(),
+      }),
+      execute: async ({ confirmed, key, value }) =>
+        runConfirmedAdminWriteTool("updatePolicy", user, confirmed, () =>
+          updateAdminPolicyMutation(user, key, value),
+        ),
+    }),
+
+    listAiProviders: tool({
+      description: "List AI providers and their models.",
+      parameters: z.object({}),
+      execute: async () => listAdminAiProviders(user),
+    }),
+
+    createAiProvider: tool({
+      description:
+        "Create an AI provider. Use confirmed=true only after admin confirms.",
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        name: z.string().min(1),
+        displayName: z.string().min(1),
+        description: z.string().min(1),
+        requiresApiKey: z.boolean().optional(),
+        defaultBaseUrl: z.string().url().optional(),
+        envVarName: z.string().optional(),
+        isActive: z.boolean().optional(),
+      }),
+      execute: async ({ confirmed, ...input }) =>
+        runConfirmedAdminWriteTool("createAiProvider", user, confirmed, () =>
+          createAdminAiProviderMutation(user, input),
+        ),
+    }),
+
+    updateAiProvider: tool({
+      description:
+        "Update an AI provider. Use confirmed=true only after admin confirms.",
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        providerId: z.string().min(1),
+        name: z.string().min(1).optional(),
+        displayName: z.string().min(1).optional(),
+        description: z.string().min(1).optional(),
+        requiresApiKey: z.boolean().optional(),
+        defaultBaseUrl: z.string().url().optional(),
+        envVarName: z.string().optional(),
+        isActive: z.boolean().optional(),
+      }),
+      execute: async ({ confirmed, providerId, ...input }) =>
+        runConfirmedAdminWriteTool("updateAiProvider", user, confirmed, () =>
+          updateAdminAiProviderMutation(user, providerId, input),
+        ),
+    }),
+
+    deleteAiProvider: tool({
+      description:
+        "Delete an AI provider. Use confirmed=true only after admin confirms.",
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        providerId: z.string().min(1),
+      }),
+      execute: async ({ confirmed, providerId }) =>
+        runConfirmedAdminWriteTool("deleteAiProvider", user, confirmed, () =>
+          deleteAdminAiProviderMutation(user, providerId),
+        ),
+    }),
+
+    createAiModel: tool({
+      description: "Create an AI model. Use confirmed=true only after admin confirms.",
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        providerId: z.string().min(1),
+        modelId: z.string().min(1),
+        name: z.string().min(1),
+        description: z.string().min(1),
+        type: z.enum(["CHAT", "COMPLETION", "EMBEDDING", "IMAGE", "AUDIO", "VIDEO"]),
+        maxTokens: z.number().int().min(1).optional(),
+        supportsImages: z.boolean().optional(),
+        supportsTools: z.boolean().optional(),
+        supportsStreaming: z.boolean().optional(),
+        inputPricing: z.number().min(0).optional(),
+        outputPricing: z.number().min(0).optional(),
+        isActive: z.boolean().optional(),
+      }),
+      execute: async ({ confirmed, ...input }) =>
+        runConfirmedAdminWriteTool("createAiModel", user, confirmed, () =>
+          createAdminAiModelMutation(user, input),
+        ),
+    }),
+
+    updateAiModel: tool({
+      description: "Update an AI model. Use confirmed=true only after admin confirms.",
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        id: z.string().min(1).describe("Database id of the model row"),
+        modelId: z.string().min(1).optional().describe("Provider model id string"),
+        name: z.string().min(1).optional(),
+        description: z.string().min(1).optional(),
+        type: z.enum(["CHAT", "COMPLETION", "EMBEDDING", "IMAGE", "AUDIO", "VIDEO"]).optional(),
+        maxTokens: z.number().int().min(1).optional(),
+        supportsImages: z.boolean().optional(),
+        supportsTools: z.boolean().optional(),
+        supportsStreaming: z.boolean().optional(),
+        inputPricing: z.number().min(0).optional(),
+        outputPricing: z.number().min(0).optional(),
+        isActive: z.boolean().optional(),
+        providerId: z.string().min(1).optional(),
+      }),
+      execute: async ({ confirmed, id, ...input }) =>
+        runConfirmedAdminWriteTool("updateAiModel", user, confirmed, () =>
+          updateAdminAiModelMutation(user, id, input),
+        ),
+    }),
+
+    deleteAiModel: tool({
+      description: "Delete an AI model. Use confirmed=true only after admin confirms.",
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        id: z.string().min(1).describe("Database id of the model row"),
+      }),
+      execute: async ({ confirmed, id }) =>
+        runConfirmedAdminWriteTool("deleteAiModel", user, confirmed, () =>
+          deleteAdminAiModelMutation(user, id),
+        ),
+    }),
+
+    listOllamaModels: tool({
+      description: "List models from the configured Ollama server.",
+      parameters: z.object({
+        baseUrl: z.string().optional().describe("Override OLLAMA_BASE_URL"),
+      }),
+      execute: async ({ baseUrl }) => listAdminOllamaModels(user, baseUrl),
+    }),
+
+    listVllmModels: tool({
+      description: "List models from the configured vLLM/LiteLLM proxy.",
+      parameters: z.object({}),
+      execute: async () => listAdminVllmModels(user),
+    }),
+
+    listCronJobs: tool({
+      description: "List scheduled cron jobs and recent runs.",
+      parameters: z.object({}),
+      execute: async () => listAdminCronJobs(user),
+    }),
+
+    triggerCronJob: tool({
+      description:
+        "Manually trigger a cron job by name. Use confirmed=true only after admin confirms.",
+      parameters: z.object({
+        confirmed: confirmedWrite,
+        jobName: z.string().min(1),
+      }),
+      execute: async ({ confirmed, jobName }) =>
+        runConfirmedAdminWriteTool("triggerCronJob", user, confirmed, () =>
+          triggerAdminCronJobMutation(user, jobName),
+        ),
+    }),
+
+    getDashboardStats: tool({
+      description: "Get platform dashboard statistics (users, courses, chats, materials).",
+      parameters: z.object({}),
+      execute: async () => getAdminDashboardStats(user),
     }),
   };
 }
