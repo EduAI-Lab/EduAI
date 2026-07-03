@@ -124,9 +124,6 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const handleAssistiveChange = useCallback(
     (checked: boolean) => {
       setAdhdAssist(checked);
-      if (!checked) {
-        setFocusMode(false);
-      }
       // setAssistive already persists via PATCH /api/preferences — no extra submit needed.
       setAssistive(checked);
     },
@@ -166,13 +163,13 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
 
   useEffect(() => {
     const el = document.documentElement;
-    if (assistive && focusMode) {
+    if (focusMode) {
       el.setAttribute("data-assistive-focus-mode", "true");
     } else {
       el.removeAttribute("data-assistive-focus-mode");
     }
     return () => el.removeAttribute("data-assistive-focus-mode");
-  }, [assistive, focusMode]);
+  }, [focusMode]);
 
   useAssistiveReorientation({
     enabled: assistive && reorientationEpoch > 0,
