@@ -28,7 +28,10 @@ import { PageTabs, PageTabsList, PageTabsTrigger, PageTabsContent } from "@eduai
 import { PageHeading } from "@eduai/ui";
 import { ScrollReveal } from "~/components/motion/scroll-reveal";
 import { useApiKeys } from "~/hooks/use-api-keys";
-import { usePolicies } from "~/hooks/api/use-policies";
+import {
+  DisabledTooltip,
+  usePolicyGate,
+} from "~/components/policy/policy-gate";
 
 const CANVAS_SETTINGS_ROLES = new Set(["INSTRUCTOR", "ADMIN"]);
 
@@ -39,11 +42,13 @@ interface SettingsViewProps {
 }
 
 export function SettingsView({ role, studentNumber = null, passwordExpired = false }: SettingsViewProps) {
-  const { policies } = usePolicies();
-  const canvasPolicyOk =
-    role === "ADMIN" ||
-    (policies["instructors.canManageCanvasIntegration"] ?? true);
-  const showCanvasSettings = CANVAS_SETTINGS_ROLES.has(role ?? "") && canvasPolicyOk;
+  const { isEnabled } = usePolicyGate();
+  // §807: instructors keep the Canvas tab visible but greyed when the policy is
+  // off (admins are never gated); other roles don't see the tab at all.
+  const roleHasCanvas = CANVAS_SETTINGS_ROLES.has(role ?? "");
+  const canvasEnabled =
+    role === "ADMIN" || isEnabled("instructors.canManageCanvasIntegration");
+  const showCanvasSettings = roleHasCanvas && canvasEnabled;
   const showStudentNumberSettings = role === "STUDENT";
   const {
     updateProviderSettings,
@@ -90,10 +95,12 @@ export function SettingsView({ role, studentNumber = null, passwordExpired = fal
                 <PageTabsTrigger value="providers">
                   <IconWorld className="h-4 w-4" /> Providers
                 </PageTabsTrigger>
-                {showCanvasSettings && (
-                  <PageTabsTrigger value="canvas">
-                    <IconLink className="h-4 w-4" /> Canvas
-                  </PageTabsTrigger>
+                {roleHasCanvas && (
+                  <DisabledTooltip disabled={!canvasEnabled}>
+                    <PageTabsTrigger value="canvas">
+                      <IconLink className="h-4 w-4" /> Canvas
+                    </PageTabsTrigger>
+                  </DisabledTooltip>
                 )}
               </PageTabsList>
 
