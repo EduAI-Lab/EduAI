@@ -216,8 +216,11 @@ Each section should use this format:
 | `routing-knn.test.ts` | kNN routing helpers — cosine similarity for exemplar vectors and `voteTierFromNeighbors` majority vote with empty-neighbor tier-2 fallback. |
 | `routing-llm-classifier.test.ts` | LLM classifier routing — maps parsed complexity/task/confidence to tiers (incl. local vLLM medium-chat vs medium-coding), and extracts JSON from bare or prose-wrapped classifier output. |
 | `routing-local-vllm.test.ts` | Local vLLM registry remap — remaps cloud tier-2 to tier-3 on vLLM stack, preserves `requireImages` picks for cloud multimodal fallback. |
-| `cmps01-internal-auth.test.ts` | cmps01 edge auth — internal key sent only for trusted `OLLAMA_BASE_URL` edge hosts, not arbitrary user URLs. |
+| `cmps01-internal-auth.test.ts` | cmps01 edge auth — internal key sent only for trusted `OLLAMA_BASE_URL` / `ENERGY_SIDECAR_URL` edge hosts (not `VLLM_BASE_URL` prefix or arbitrary user URLs). |
 | `routing-rules.test.ts` | Phase 1 rule stack — image/tool/RAG escalation, short-factual tier-1 shortcut, distinct-enumeration tier-3 rule, default tier env parsing, and LLM tier-3 deferral to rule escalations. |
+| `fleet-routing.test.ts` | Multi-server fleet routing — workload feature parsing, round-robin host selection, health-cache reset, `FleetUnavailableError` when no healthy hosts, and fleet metadata on router features. |
+| `hybrid-web-tools.test.ts` | Hybrid web-tool intent — `inferHybridWebToolMode` detects `fetchPage` vs `webSearch` prompts and returns null for non-tool factual queries. |
+| `providers-merge.test.ts` | Local inference env merge — `mergeLocalInferenceFromEnv` enables vLLM/Ollama from server env for matching `vllm:*` / `ollama:*` chat models even when client `isEnabled` is false. |
 | `chat-intent.test.ts` | Tests `needsCourseRag` intent routing — greetings, generic knowledge, course keywords, code requests, and borderline escalation when a course is selected. |
 | `chat-rag.test.ts` | Tests `buildCappedRagContextText` and `capRagHitsForTool` chunk/char caps for hybrid and tool RAG paths; untrusted excerpt wrapping (#86). |
 | `prompt-safety.test.ts` | Unit tests for prompt-injection defenses (#86): `composeSecurityPrompt`, `sanitizeSystemPrompt` / max chars, `filterIncomingClientMessages`, and untrusted reference wrapping. |
