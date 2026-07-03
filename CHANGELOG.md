@@ -7,6 +7,11 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## [Week 9 — June 29–July 5, 2026]
 
+### Added
+
+- [core] feat: Chat stop / client abort — `POST /api/chat` forwards the request `AbortSignal` to `streamText` and returns HTTP 499 when the user hits stop, so the LLM stream is cancelled server-side instead of continuing in the background. (#852, #267, @superbolt08, 2026-07-02)
+- [core] tests: `chat-abort.route.test.ts` — verifies abort signal forwarding and 499 response on `AbortError`. (#852, #267, @superbolt08, 2026-07-02)
+
 ### Fixed
 
 - [ui] hotfix: Add missing imports in `packages/ui/src/ui/combobox.tsx` — `useRef`, `useEffect`, `Popover`, `PopoverTrigger`, and `PopoverContent` were used but not imported, causing `packages-ui-unit-tests` and QM frontend Docker build to fail on CI. (#823)
