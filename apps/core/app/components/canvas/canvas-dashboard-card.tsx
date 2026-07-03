@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { IconLoader, IconRefresh } from "@tabler/icons-react";
 
@@ -6,29 +6,50 @@ import { CanvasCourseSyncDialog } from "~/components/canvas/canvas-course-sync-d
 import { Button } from "@eduai/ui";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@eduai/ui";
 import { getCanvasIntegration, type CanvasIntegrationPublic } from "~/lib/canvas/client";
+import { DisabledTooltip } from "~/components/policy/policy-gate";
 
-export function CanvasDashboardCard() {
+interface CanvasDashboardCardProps {
+  /** Render the card greyed-out and non-interactive (e.g. an admin policy turned
+   * Canvas off) instead of hiding it — mirrors the Settings Canvas tab (#807). */
+  disabled?: boolean;
+}
+
+export function CanvasDashboardCard({ disabled = false }: CanvasDashboardCardProps) {
   const [integration, setIntegration] = useState<CanvasIntegrationPublic | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [syncDialogOpen, setSyncDialogOpen] = useState(false);
 
-  const loadIntegration = useCallback(async () => {
+  useEffect(() => {
+    // Policy-off: the Canvas API 403s ("Forbidden: instructors only"). Skip the
+    // fetch so the greyed card doesn't show a spurious error beneath it (#807).
+    // `cancelled` also drops late results from a fetch that started while the
+    // policy value was still loading (policies default to enabled to avoid
+    // flicker), so a stale 403 can't re-appear after the card greys out.
+    let cancelled = false;
+    if (disabled) {
+      setLoading(false);
+      setError(null);
+      return;
+    }
     setLoading(true);
     setError(null);
-    try {
-      const data = await getCanvasIntegration();
-      setIntegration(data);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load Canvas status");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadIntegration();
-  }, [loadIntegration]);
+    void (async () => {
+      try {
+        const data = await getCanvasIntegration();
+        if (!cancelled) setIntegration(data);
+      } catch (e) {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : "Failed to load Canvas status");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [disabled]);
 
   return (
     <>
@@ -52,10 +73,15 @@ export function CanvasDashboardCard() {
                 Connected to <span className="font-mono">{integration.canvasUrl}</span>
                 {integration.isTestMode ? " (test mode)" : ""}.
               </p>
-              <Button type="button" onClick={() => setSyncDialogOpen(true)}>
-                <IconRefresh className="mr-2 h-4 w-4" />
-                Sync to Canvas
-              </Button>
+              <DisabledTooltip disabled={disabled}>
+                <Button
+                  type="button"
+                  onClick={disabled ? undefined : () => setSyncDialogOpen(true)}
+                >
+                  <IconRefresh className="mr-2 h-4 w-4" />
+                  Sync to Canvas
+                </Button>
+              </DisabledTooltip>
             </>
           ) : (
             <>
@@ -63,9 +89,11 @@ export function CanvasDashboardCard() {
                 Canvas is not connected yet. Add your personal access token in Settings before
                 syncing courses.
               </p>
-              <Button asChild variant="outline">
-                <Link to="/settings">Connect Canvas in Settings</Link>
-              </Button>
+              <DisabledTooltip disabled={disabled}>
+                <Button asChild variant="outline">
+                  <Link to="/settings">Connect Canvas in Settings</Link>
+                </Button>
+              </DisabledTooltip>
             </>
           )}
 
