@@ -91,7 +91,6 @@ export default function AdminChatPage() {
   const handleAssistiveChange = useCallback(
     (checked: boolean) => {
       setAdhdAssist(checked);
-      if (!checked) setFocusMode(false);
       setAssistive(checked);
     },
     [setAssistive],
