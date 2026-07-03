@@ -24,6 +24,8 @@ export interface AppSidebarProps
   LinkComponent?: React.ElementType
   user: NavUserProps["user"]
   navUser?: Omit<NavUserProps, "user">
+  /** Extra content rendered in the footer above the user menu (e.g. AppLauncher). */
+  footer?: React.ReactNode
 }
 
 export function AppSidebar({
@@ -35,6 +37,7 @@ export function AppSidebar({
   LinkComponent = "a",
   user,
   navUser,
+  footer,
   ...props
 }: AppSidebarProps) {
   return (
@@ -74,6 +77,7 @@ export function AppSidebar({
         )}
       </SidebarContent>
       <SidebarFooter>
+        {footer}
         <NavUser user={user} LinkComponent={LinkComponent} {...navUser} />
       </SidebarFooter>
     </Sidebar>
