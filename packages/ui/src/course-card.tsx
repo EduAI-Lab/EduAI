@@ -30,6 +30,11 @@ export interface CourseCardAction {
   isPublished?: boolean
   /** Called when publish/unpublish is clicked */
   onPublishToggle?: () => void
+  /** Render the publish item greyed-out and non-clickable (e.g. an admin policy
+   * turned it off) instead of hiding it. `publishDisabledReason` is shown beneath. */
+  publishDisabled?: boolean
+  /** Muted explanation shown under a disabled publish item. */
+  publishDisabledReason?: string
   /** If true, show an "Edit course" item */
   showEdit?: boolean
   /** Called when edit is clicked */
@@ -38,6 +43,10 @@ export interface CourseCardAction {
   showDelete?: boolean
   /** Called when delete is clicked */
   onDelete?: () => void
+  /** Render the delete item greyed-out and non-clickable instead of hiding it. */
+  deleteDisabled?: boolean
+  /** Muted explanation shown under a disabled delete item. */
+  deleteDisabledReason?: string
 }
 
 export interface CourseCardProps {
@@ -191,19 +200,30 @@ export function CourseCard({
                 <DropdownMenuContent align="end" className="min-w-[180px]">
                   {actions.showPublish && (
                     <DropdownMenuItem
-                      onClick={actions.onPublishToggle}
-                      className="gap-2"
+                      onClick={actions.publishDisabled ? undefined : actions.onPublishToggle}
+                      disabled={actions.publishDisabled}
+                      className={cn(
+                        "gap-2",
+                        actions.publishDisabled && actions.publishDisabledReason && "flex-col items-start gap-0.5",
+                      )}
                     >
-                      {actions.isPublished ? (
-                        <>
-                          <IconWorldOff size={15} className="text-muted-foreground" />
-                          Unpublish course
-                        </>
-                      ) : (
-                        <>
-                          <IconWorldUpload size={15} className="text-[oklch(0.418_0.171_257)]" />
-                          Publish course
-                        </>
+                      <span className="flex items-center gap-2">
+                        {actions.isPublished ? (
+                          <>
+                            <IconWorldOff size={15} className="text-muted-foreground" />
+                            Unpublish course
+                          </>
+                        ) : (
+                          <>
+                            <IconWorldUpload size={15} className="text-[oklch(0.418_0.171_257)]" />
+                            Publish course
+                          </>
+                        )}
+                      </span>
+                      {actions.publishDisabled && actions.publishDisabledReason && (
+                        <span className="pl-[23px] text-[11px] text-muted-foreground">
+                          {actions.publishDisabledReason}
+                        </span>
                       )}
                     </DropdownMenuItem>
                   )}
@@ -221,11 +241,23 @@ export function CourseCard({
                   )}
                   {actions.showDelete && (
                     <DropdownMenuItem
-                      onClick={actions.onDelete}
-                      className="gap-2 text-destructive focus:text-destructive"
+                      onClick={actions.deleteDisabled ? undefined : actions.onDelete}
+                      disabled={actions.deleteDisabled}
+                      className={cn(
+                        "gap-2 text-destructive focus:text-destructive",
+                        actions.deleteDisabled && "text-muted-foreground focus:text-muted-foreground",
+                        actions.deleteDisabled && actions.deleteDisabledReason && "flex-col items-start gap-0.5",
+                      )}
                     >
-                      <IconTrash size={15} />
-                      Delete course
+                      <span className="flex items-center gap-2">
+                        <IconTrash size={15} />
+                        Delete course
+                      </span>
+                      {actions.deleteDisabled && actions.deleteDisabledReason && (
+                        <span className="pl-[23px] text-[11px] text-muted-foreground">
+                          {actions.deleteDisabledReason}
+                        </span>
+                      )}
                     </DropdownMenuItem>
                   )}
                 </DropdownMenuContent>
