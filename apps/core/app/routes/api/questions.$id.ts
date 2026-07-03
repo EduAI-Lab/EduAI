@@ -5,6 +5,7 @@ import { requireServiceKey } from "~/lib/auth/guards.server";
 import {
   resolveCourseAccess,
   stripAnswerForStudents,
+  wantsIncludeDeleted,
 } from "~/lib/auth/course-access.server";
 import { getQuestionById, updateQuestionTestable } from "~/lib/questions/server";
 
@@ -33,9 +34,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }
 
   // §19 forensics opt-in (#315): ADMIN-only; no-op for service key / non-ADMIN.
-  const includeDeleted =
-    session?.user?.role === "ADMIN" &&
-    new URL(request.url).searchParams.get("includeDeleted") === "true";
+  const includeDeleted = wantsIncludeDeleted(request, session?.user);
 
   const question = await getQuestionById(params.id!, includeDeleted);
   if (!question) {
@@ -45,6 +44,13 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   // §9: user-OAuth reads admit ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C) / TA(C).
   // Students never read questions directly — 403 at rank 0 or no relationship.
   if (!serviceKey && session?.user) {
+    // §19: an ADMIN forensics read (includeDeleted) bypasses the access
+    // resolver, which filters `deletedAt: null` on the parent course — that
+    // lookup 403s for a soft-deleted course, hiding the very question the flag
+    // just surfaced. includeDeleted is ADMIN-only, so this grants no extra access.
+    if (includeDeleted) {
+      return json(200, question);
+    }
     const access = await resolveCourseAccess(session.user, question.courseId);
     if (!access || access.rank < 1) {
       return json(403, { error: "Forbidden" });
