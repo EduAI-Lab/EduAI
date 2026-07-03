@@ -7,6 +7,11 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## [Week 9 — June 29–July 5, 2026]
 
+### Added
+
+- [core, ai-tutor, question-maker, ui] feat: App switcher in the sidebar header — replaced the single "back to EduAI Core" link in the extension sidebars with a shared `BrandSwitcher` in `@eduai/ui` (a brand home link plus a colorful "waffle" app-grid popover) adopted by Core, AI Tutor, and Question Maker; role-gated so students and TAs never see Question Maker (INSTRUCTOR/ADMIN/UNIT_ADMIN only), matching the Core nav rule. Core's separate Question Maker/AI Tutor nav links are removed since the switcher supersedes them. (#836, @yta3216, 2026-07-02) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+- [core] feat: Per-material student visibility scheduling — instructors can hide a material from students or schedule a future reveal (`visibleToStudents` + `availableAt` on `CourseMaterial`), so all course material can be staged up front and revealed on the term timeline instead of appearing the moment a course is published. Student material lists, single-material previews, and RAG chat retrieval (both the hybrid and pure-vector paths) all exclude hidden/scheduled materials while staff see everything; the manager view gains a per-material visibility dialog and a Hidden/scheduled row chip. Also fixes a pre-existing leak where the hybrid RAG path never filtered soft-deleted materials. (#839, @yta3216, 2026-07-02) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
 ### Fixed
 
 - [ui] hotfix: Add missing imports in `packages/ui/src/ui/combobox.tsx` — `useRef`, `useEffect`, `Popover`, `PopoverTrigger`, and `PopoverContent` were used but not imported, causing `packages-ui-unit-tests` and QM frontend Docker build to fail on CI. (#823)
