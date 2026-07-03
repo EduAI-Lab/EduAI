@@ -1,11 +1,11 @@
 import { Link } from 'react-router';
 import {
   IconBooks,
-  IconExternalLink,
   IconReport,
 } from '@tabler/icons-react';
 import type { Icon } from '@tabler/icons-react';
 import {
+  AppLauncher,
   Sidebar,
   SidebarContent,
   SidebarFooter,
@@ -16,7 +16,7 @@ import {
 } from '@eduai/ui';
 
 import type { AuthUser } from '~/hooks/useLocalUser';
-import { getEduAiAppUrl } from '~/lib/extension-urls';
+import { CURRENT_APP_ID, getLauncherApps } from '~/lib/apps';
 import { getNavForUser } from '~/lib/rbac/nav';
 import type { AtNavItemKey } from '~/lib/rbac/types';
 import { AiTutorNavMain, type AiTutorNavMainItem } from './AiTutorNavMain';
@@ -45,8 +45,6 @@ type AiTutorSidebarProps = React.ComponentProps<typeof Sidebar> & {
 };
 
 export function AiTutorSidebar({ user, ...props }: AiTutorSidebarProps) {
-  const eduAiUrl = getEduAiAppUrl();
-
   return (
     <Sidebar variant="sidebar" collapsible="offcanvas" {...props}>
       <SidebarHeader>
@@ -93,16 +91,7 @@ export function AiTutorSidebar({ user, ...props }: AiTutorSidebarProps) {
       </SidebarContent>
 
       <SidebarFooter>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild tooltip="EduAI Core">
-              <a href={eduAiUrl}>
-                <IconExternalLink className="size-4" />
-                <span>EduAI Core</span>
-              </a>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+        <AppLauncher apps={getLauncherApps()} currentAppId={CURRENT_APP_ID} />
         <AiTutorSidebarUser user={user} />
       </SidebarFooter>
     </Sidebar>
