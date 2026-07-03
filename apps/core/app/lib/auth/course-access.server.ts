@@ -152,6 +152,23 @@ function enrollmentBranches(userId: string): Prisma.CourseWhereInput[] {
 }
 
 /**
+ * §19 forensics opt-in (#315): does this request ask to surface soft-deleted
+ * records, AND is the caller allowed to? ADMIN-only — returns false for every
+ * other role, so it is a no-op for normal traffic. Centralizes the check that
+ * was previously duplicated (with subtly different shapes) across every
+ * course/question read route, giving one place to fix or extend it.
+ */
+export function wantsIncludeDeleted(
+  request: Request,
+  user: { role?: string | null } | null | undefined,
+): boolean {
+  return (
+    user?.role === "ADMIN" &&
+    new URL(request.url).searchParams.get("includeDeleted") === "true"
+  );
+}
+
+/**
  * §19 answer-visibility rule: `Question.answer` is never returned to a caller
  * whose resolved access is `student`. Enforced at the serialization layer —
  * call this on every question response path, regardless of route guards.

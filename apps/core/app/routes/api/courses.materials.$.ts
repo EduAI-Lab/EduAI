@@ -11,6 +11,7 @@ import prisma from '~/lib/prisma.server';
 import { auth } from '~/lib/auth/server';
 import {
   resolveCourseAccessWithCourse,
+  wantsIncludeDeleted,
   type AccessLevel,
 } from '~/lib/auth/course-access.server';
 import { getPolicy, denyByPolicy } from '~/lib/policy.server';
@@ -390,10 +391,17 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   // resolver filters `deletedAt: null` (→ 404 on deleted courses), so ADMIN reads
   // bypass it here, mirroring courses.id.ts. No-op for every non-ADMIN caller.
   const session = await auth.api.getSession(request);
-  if (
-    session?.user.role === 'ADMIN' &&
-    new URL(request.url).searchParams.get('includeDeleted') === 'true'
-  ) {
+  if (wantsIncludeDeleted(request, session?.user)) {
+    // The access resolver (skipped here) is what 404s a nonexistent course, so
+    // check existence explicitly — otherwise an unknown id returns 200 {[]},
+    // indistinguishable from "course exists, no materials". Mirrors courses.id.ts.
+    const course = await prisma.course.findUnique({
+      where: { id: courseId },
+      select: { id: true },
+    });
+    if (!course) {
+      return json(404, { error: 'COURSE_NOT_FOUND' });
+    }
     return materialsListResponse(courseId, true);
   }
 

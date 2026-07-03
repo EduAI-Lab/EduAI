@@ -4,6 +4,7 @@ import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
 import {
   resolveCourseAccessWithCourse,
+  wantsIncludeDeleted,
   type AccessLevel,
 } from "~/lib/auth/course-access.server";
 import prisma from "~/lib/prisma.server";
@@ -99,10 +100,20 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   // soft-deleted topics — including those in a soft-deleted course. The access
   // resolver below filters `deletedAt: null` (→ 404 on deleted courses), so
   // ADMIN reads bypass it here, mirroring courses.id.ts. No-op for non-ADMIN.
-  if (
-    session.user.role === "ADMIN" &&
-    new URL(request.url).searchParams.get("includeDeleted") === "true"
-  ) {
+  if (wantsIncludeDeleted(request, session.user)) {
+    // The access resolver (skipped here) is what 404s a nonexistent course, so
+    // check existence explicitly — otherwise an unknown id returns 200 {topics: []}
+    // instead of 404 COURSE_NOT_FOUND. Mirrors courses.id.ts.
+    const course = await prisma.course.findUnique({
+      where: { id: courseId },
+      select: { id: true },
+    });
+    if (!course) {
+      return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     return topicsGetResponse(courseId, topicId, true);
   }
 

@@ -7,6 +7,7 @@ import {
   buildCourseListFilter,
   getAuthorizedUnits,
   resolveCourseAccessWithCourse,
+  wantsIncludeDeleted,
 } from "~/lib/auth/course-access.server";
 import { getPolicy, denyByPolicy } from "~/lib/policy.server";
 import { assertValidDepartment } from "~/lib/disciplines/guards.server";
@@ -160,9 +161,7 @@ export async function getCourses(request: Request) {
 
   // §19 forensics opt-in (#315): ADMIN may pass ?includeDeleted=true to surface
   // soft-deleted courses. The flag is a no-op for every non-ADMIN caller.
-  const includeDeleted =
-    session.user.role === "ADMIN" &&
-    new URL(request.url).searchParams.get("includeDeleted") === "true";
+  const includeDeleted = wantsIncludeDeleted(request, session.user);
 
   const courses = await prisma.course.findMany({
     where: await buildCourseListFilter(session.user, includeDeleted),

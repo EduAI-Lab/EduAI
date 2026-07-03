@@ -5,6 +5,7 @@ import { requireServiceKey } from "~/lib/auth/guards.server";
 import {
   resolveCourseAccessWithCourse,
   stripAnswerForStudents,
+  wantsIncludeDeleted,
   type AccessLevel,
 } from "~/lib/auth/course-access.server";
 import prisma from "~/lib/prisma.server";
@@ -28,7 +29,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // filter. Reads admit ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C) / TA(C);
   // students never read questions directly.
   let access: AccessLevel | null = null;
-  let isAdmin = false;
+  let includeDeleted = false;
 
   if (request.headers.get("Authorization")?.startsWith("Bearer ")) {
     const guard = await requireServiceKey(request);
@@ -54,15 +55,30 @@ export async function loader({ request }: LoaderFunctionArgs) {
       return json(400, { error: "MISSING_COURSE_ID" });
     }
 
-    const resolved = await resolveCourseAccessWithCourse(session.user, courseId);
-    if (!resolved.course) {
-      return json(404, { error: "COURSE_NOT_FOUND" });
+    // §19 forensics opt-in (#315): ADMIN may pass ?includeDeleted=true to list
+    // soft-deleted questions — including those in a soft-deleted course. The
+    // access resolver below filters `deletedAt: null` (→ 404 for a deleted
+    // course), so an ADMIN read bypasses it here — but still 404s a courseId
+    // that never existed. No-op for every non-ADMIN caller.
+    includeDeleted = wantsIncludeDeleted(request, session.user);
+    if (includeDeleted) {
+      const course = await prisma.course.findUnique({
+        where: { id: courseId },
+        select: { id: true },
+      });
+      if (!course) {
+        return json(404, { error: "COURSE_NOT_FOUND" });
+      }
+    } else {
+      const resolved = await resolveCourseAccessWithCourse(session.user, courseId);
+      if (!resolved.course) {
+        return json(404, { error: "COURSE_NOT_FOUND" });
+      }
+      access = resolved.access;
+      if (!access || access.rank < 1) {
+        return json(403, { error: "Forbidden" });
+      }
     }
-    access = resolved.access;
-    if (!access || access.rank < 1) {
-      return json(403, { error: "Forbidden" });
-    }
-    isAdmin = session.user.role === "ADMIN";
   }
 
   const topicId = url.searchParams.get("topicId") ?? undefined;
@@ -71,9 +87,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
     testableParam === "true" ? true : testableParam === "false" ? false : undefined;
   const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "100", 10) || 100, 500);
   const offset = parseInt(url.searchParams.get("offset") ?? "0", 10) || 0;
-  // §19 forensics opt-in (#315): ADMIN-only; no-op for service key / non-ADMIN.
-  const includeDeleted =
-    isAdmin && url.searchParams.get("includeDeleted") === "true";
 
   const result = await listQuestions({ courseId, topicId, testable, limit, offset, includeDeleted });
 
