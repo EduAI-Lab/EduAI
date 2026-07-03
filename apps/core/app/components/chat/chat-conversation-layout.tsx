@@ -1,6 +1,5 @@
 import type { Message } from "@ai-sdk/react";
-import { IconInfoCircle, IconBooksOff } from "@tabler/icons-react";
-import { Alert, AlertDescription } from "@eduai/ui";
+import { IconBooksOff } from "@tabler/icons-react";
 
 import { ChatDisclaimer } from "~/components/chat/chat-disclaimer";
 import { ChatInput } from "~/components/chat/chat-input";
@@ -74,29 +73,47 @@ export function ChatConversationLayout({
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-background/85 backdrop-blur-[2px]">
             <IconBooksOff className="h-10 w-10 text-muted-foreground" />
             <p className="text-sm text-muted-foreground text-center max-w-xs leading-relaxed">
-              You&apos;re not enrolled in any courses.
+              You're not enrolled in any courses.
               <br />
-              Chat will become available once you&apos;re enrolled.
+              Chat will become available once you're enrolled.
             </p>
           </div>
         )}
-        <div className="h-full overflow-y-auto scrollbar-hover">
-          <div className="px-6 py-6">
+        <div className="h-full overflow-y-auto scrollbar-hover scroll-smooth">
+          <div
+            className={cn(
+              "px-4 md:px-6",
+              messages.length === 0 ? "flex min-h-full flex-col" : "py-4 md:py-6",
+            )}
+          >
             {isStudentWithCourseChat && (
-              <div className="max-w-[720px] mx-auto mb-5">
-                <Alert className="border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950">
-                  <IconInfoCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                  <AlertDescription className="text-sm text-amber-900 dark:text-amber-100">
-                    Heads up: your course chats can be viewed by your instructor, unit admin, and platform admins.
-                  </AlertDescription>
-                </Alert>
+              <div
+                className={cn(
+                  "mx-auto w-full max-w-3xl",
+                  messages.length === 0 ? "pt-4 pb-2" : "mb-4",
+                )}
+              >
+                <p className="text-center text-xs text-muted-foreground">
+                  Instructors, teaching assistants, and platform admins can view this
+                  course chat history.
+                </p>
               </div>
             )}
-            <div className="max-w-[720px] mx-auto space-y-5">
+            <div className="mx-auto w-full max-w-3xl mb-4">
               <ChatDisclaimer />
+            </div>
+            <div
+              className={cn(
+                "mx-auto w-full max-w-3xl",
+                messages.length === 0
+                  ? "flex flex-1 flex-col justify-center pb-6"
+                  : "space-y-1",
+              )}
+            >
               {messages.length === 0 ? (
                 <WelcomeComponent
                   selectedModelInfo={selectedModelInfo}
+                  selectedCourseCode={selectedCourseCode}
                   onSelectPrompt={onSelectPrompt}
                   disabled={!!disabledReason}
                 />

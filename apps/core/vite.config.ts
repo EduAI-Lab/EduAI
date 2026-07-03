@@ -22,14 +22,23 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [tailwindcss(), reactRouter(), tsconfigPaths()],
+    ssr: {
+      // Server bundle is ESM (react-router default). Two packages need bundling:
+      //   @tabler/icons-react — aliased to its .mjs file below; must be bundled
+      //                         to honour the alias during SSR tree-shaking.
+      //   @mendable/firecrawl-js — "type":"module", used in AI web tools.
+      noExternal: ["@tabler/icons-react", "@mendable/firecrawl-js"],
+    },
+    define: {
+      __dirname: "import.meta.dirname",
+      __filename: "import.meta.filename",
+    },
     resolve: {
-      // Pin one copy for core (1.2.8 via root overrides). Do not alias the package root — that
-      // breaks subpath exports such as better-auth/client/plugins.
       alias: {
         "@tabler/icons-react": "@tabler/icons-react/dist/esm/icons/index.mjs",
       },
       // Monorepo hoisting can give Radix/shadcn a second React copy → "useState of null" after HMR.
-      dedupe: ["react", "react-dom", "better-auth"],
+      dedupe: ["react", "react-dom"],
     },
     // Pre-bundle React at startup and streamdown + CJS deps so lazy loads stay ESM.
     optimizeDeps: {

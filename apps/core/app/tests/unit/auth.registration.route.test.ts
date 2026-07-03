@@ -24,7 +24,7 @@ import { auth } from "~/lib/auth/server";
 import { getPolicy } from "~/lib/policy.server";
 
 function args(url = "http://localhost/auth/register") {
-  return { request: new Request(url), params: {}, context: {} as never };
+  return { request: new Request(url), params: {}, context: {} as never } as any;
 }
 
 beforeEach(() => {
@@ -33,19 +33,20 @@ beforeEach(() => {
 });
 
 describe("auth.allowPublicRegistration — route loaders (§6b)", () => {
-  it("register loader redirects to /auth/login when public registration is off", async () => {
+  it("register loader signals the invite-only state when public registration is off (#807)", async () => {
     vi.mocked(getPolicy).mockResolvedValue(false);
     const res = await registerLoader(args());
-    expect(res).toBeInstanceOf(Response);
-    expect((res as Response).status).toBe(302);
-    expect((res as Response).headers.get("Location")).toBe("/auth/login");
+    // §807: no longer a redirect — the page renders an invite-only message.
+    expect(res).not.toBeInstanceOf(Response);
+    expect(res).toMatchObject({ registrationDisabled: true });
     expect(getPolicy).toHaveBeenCalledWith("auth.allowPublicRegistration");
   });
 
-  it("register loader renders the form (no redirect) when registration is on", async () => {
+  it("register loader renders the form when registration is on", async () => {
     vi.mocked(getPolicy).mockResolvedValue(true);
     const res = await registerLoader(args());
-    expect(res).not.toBeInstanceOf(Response); // returns {} → renders the form
+    expect(res).not.toBeInstanceOf(Response);
+    expect(res).toMatchObject({ registrationDisabled: false });
   });
 
   it("login loader passes allowRegistration=false through when off", async () => {

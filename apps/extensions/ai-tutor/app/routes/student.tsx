@@ -1,6 +1,5 @@
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router';
-import { PageHeading } from '@eduai/ui';
 import { ProgressBarFromData } from '../components/ProgressBar';
 import type { Course } from '../lib/types';
 import type { Route } from './+types/student';
@@ -10,8 +9,8 @@ import api from '~/lib/api';
 import { requireClientUser } from '~/lib/client-auth';
 import { AppShell } from '~/components/layout/AppShell';
 import { ShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbs';
-import { DashboardStatGrid } from '~/components/dashboard/DashboardStatGrid';
-import { buildStudentDashboardStats } from '~/lib/dashboard-stats';
+import { RoleDashboard } from '~/components/dashboard/RoleDashboard';
+import { buildDashboardStats } from '~/lib/dashboard-stats';
 
 export async function clientLoader(_: Route.ClientLoaderArgs) {
   await requireClientUser(['STUDENT', 'TA']);
@@ -23,22 +22,23 @@ export default function StudentHome({ loaderData }: Route.ComponentProps) {
   const navigate = useNavigate();
   const { user } = useLocalUser();
   const courseList = useMemo(() => loaderData.courses ?? [], [loaderData.courses]);
-  const stats = useMemo(() => buildStudentDashboardStats(courseList), [courseList]);
+  // Always the student stat shape here: TA is allowed on this route to preview
+  // the student experience, but courseList is the enrolled/progress list, not
+  // taught courses, so it must not be scored with instructor-shell stats.
+  const stats = useMemo(
+    () => buildDashboardStats('STUDENT', { courses: courseList }),
+    [courseList],
+  );
 
   return (
     <AppShell breadcrumbs={<ShellBreadcrumbs items={[{ label: 'Courses' }]} />}>
-      <div className="space-y-6">
-        {user ? <AtRoleBanner role={user.role} variant="student" /> : null}
-
-        <div data-tour="student-dashboard-header">
-          <PageHeading
-            heading="Courses"
-            subheading="Continue where you left off or explore new learning materials."
-          />
-        </div>
-
-        <DashboardStatGrid stats={stats} />
-
+      <RoleDashboard
+        banner={user ? <AtRoleBanner role={user.role} variant="student" /> : null}
+        heading="Courses"
+        subheading="Continue where you left off or explore new learning materials."
+        headingTourId="student-dashboard-header"
+        stats={stats}
+      >
         {courseList.length === 0 ? (
           <div className="mx-auto max-w-lg rounded-lg border bg-card p-12 text-center shadow-sm">
             <h2 className="mb-2 text-xl font-bold text-foreground">No courses yet</h2>
@@ -75,7 +75,7 @@ export default function StudentHome({ loaderData }: Route.ComponentProps) {
             ))}
           </div>
         )}
-      </div>
+      </RoleDashboard>
     </AppShell>
   );
 }

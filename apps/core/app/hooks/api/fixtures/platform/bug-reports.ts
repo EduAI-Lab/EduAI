@@ -5,6 +5,7 @@ export const stubBugReports: BugReport[] = [
   {
     id: "bug-stub-001",
     description: "User reported chatId not persisting in local state.",
+    bugType: "FEATURE_NOT_WORKING",
     status: "UNHANDLED",
     source: "CORE",
     isAnonymous: false,
@@ -16,6 +17,7 @@ export const stubBugReports: BugReport[] = [
   {
     id: "bug-stub-002",
     description: "AI models dropdown sometimes renders with no options.",
+    bugType: "UI_DISPLAY",
     status: "IN_PROGRESS",
     source: "AI_TUTOR",
     isAnonymous: true,
@@ -27,6 +29,7 @@ export const stubBugReports: BugReport[] = [
   {
     id: "bug-stub-003",
     description: "Timeout when exporting more than 500 questions.",
+    bugType: "PERFORMANCE",
     status: "RESOLVED",
     source: "QUESTION_MAKER",
     isAnonymous: false,

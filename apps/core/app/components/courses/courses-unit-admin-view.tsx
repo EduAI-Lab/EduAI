@@ -15,7 +15,10 @@ import {
 import { useDisciplines } from '~/hooks/api/use-disciplines'
 import { DepartmentCombobox } from '~/components/courses/department-combobox'
 import type { Course, CreateCourseInput, UpdateCourseInput } from '~/hooks/api/use-courses'
-import { usePolicies } from '~/hooks/api/use-policies'
+import {
+  usePolicyGate,
+  DEFAULT_POLICY_DISABLED_MESSAGE,
+} from '~/components/policy/policy-gate'
 
 interface Instructor {
   id: string
@@ -45,10 +48,11 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, instructors = [
     () => departmentOptions.filter((d) => authorizedUnitSet.has(d.code)),
     [departmentOptions, authorizedUnitSet],
   )
-  const { policies } = usePolicies()
-  // §2 gate: hide the delete control when unitAdmins.canDeleteCourses is off
-  // (mirrors the deleteCourse 403). Default true preserves today's behavior.
-  const canDelete = policies['unitAdmins.canDeleteCourses'] ?? true
+  const { isEnabled } = usePolicyGate()
+  // §2 / issue #807: keep the delete control visible but greyed-out when
+  // unitAdmins.canDeleteCourses is off (mirrors the deleteCourse 403), so the
+  // disabled state reads as an admin choice rather than a missing feature.
+  const canDelete = isEnabled('unitAdmins.canDeleteCourses')
   const [selectedDept, setSelectedDept] = useState<string>(authorizedDepts[0]?.code ?? '')
   const [selectedTerm, setSelectedTerm] = useState<string>('Fall')
   const [selectedInstructor, setSelectedInstructor] = useState<string>('')
@@ -275,9 +279,11 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, instructors = [
                 onPublishToggle: () => onPublishToggle(course.id, !course.isPublished),
                 showEdit: true,
                 onEdit: () => setTimeout(() => setEditingCourse(course), 0),
-                // §2 gate: delete control only when unitAdmins.canDeleteCourses is on.
-                showDelete: canDelete,
+                // §2 / issue #807: delete stays visible, greyed when the policy is off.
+                showDelete: true,
                 onDelete: () => setTimeout(() => setDeletingCourse(course), 0),
+                deleteDisabled: !canDelete,
+                deleteDisabledReason: DEFAULT_POLICY_DISABLED_MESSAGE,
               }}
             />
           ))}
