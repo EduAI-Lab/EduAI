@@ -58,9 +58,13 @@ import type { CourseDetail } from "~/hooks/api/use-course-detail";
 import type { CourseTopic } from "~/hooks/api/use-course-topics";
 import type { CourseEnrollment } from "~/hooks/api/use-course-enrollments";
 import type { CourseTA } from "~/hooks/api/use-course-tas";
-import { canManageTopics, canManageInstructors, canManageStudents, canViewCourseChats } from "~/lib/rbac";
+import { canManageTopics, canManageInstructors, canManageStudents, courseChatViewPolicyKey, manageEnrollmentsPolicyKey } from "~/lib/rbac";
 import type { CourseAccess } from "~/lib/rbac";
-import { usePolicies } from "~/hooks/api/use-policies";
+import {
+  PolicyTooltip,
+  DisabledTooltip,
+  usePolicyGate,
+} from "~/components/policy/policy-gate";
 
 interface StaffUser {
   id: string;
@@ -222,19 +226,24 @@ export function CourseDetailManagerView({
     prevSuccessRef.current = materialsSuccess;
   }, [materialsSuccess]);
 
-  const { policies, isLoading: policiesLoading } = usePolicies();
-  const canManage = canManageTopics(access, policies["tas.canManageTopics"] ?? false);
+  const { isEnabled } = usePolicyGate();
+  const canManage = canManageTopics(access, isEnabled("tas.canManageTopics"));
   // Reassigning the instructor stays ADMIN/UNIT_ADMIN only; the Staff tab (TA
   // management) also opens to an owning instructor when the enrollment policy is
-  // on. Mirrors the TA endpoint and loader gates. The instructor branch stays
-  // restrictive until policies load so a disabled flag can't briefly flash the
-  // staff controls (admin/unit access is role-based and not gated on the fetch).
+  // on. Mirrors the TA endpoint and loader gates.
   const canAssignInstructor = canManageInstructors(access);
+  // §807: resolve each policy-gated tab to one of show-enabled / show-greyed /
+  // hide. `'always'` → the role qualifies regardless of any flag (admin/unit);
+  // `'never'` → the role can never access it (hide the tab); a PolicyKey → the
+  // role qualifies but the flag decides enabled vs greyed-with-tooltip.
+  const staffGate = manageEnrollmentsPolicyKey(access);
+  const showStaffTab = staffGate !== "never";
   const canManageStaff =
-    canAssignInstructor ||
-    (!policiesLoading &&
-      access === "instructor" &&
-      (policies["instructors.canManageEnrollments"] ?? true));
+    staffGate === "always" || (staffGate !== "never" && isEnabled(staffGate));
+  const chatGate = courseChatViewPolicyKey(access);
+  const showChatTab = chatGate !== "never";
+  const canViewChats =
+    chatGate === "always" || (chatGate !== "never" && isEnabled(chatGate));
   const canManageStudentEnrollments = canManageStudents(access);
   const canManageRagSettings = access === "admin" || access === "instructor";
 
@@ -242,11 +251,6 @@ export function CourseDetailManagerView({
   const studentEnrollments = activeEnrollments.filter((e) => e.role === "STUDENT");
   const enrolledStudentIds = new Set(studentEnrollments.map((e) => e.userId));
   const availableStudents = studentUsers.filter((u) => !enrolledStudentIds.has(u.id));
-
-  // §5d: the Chat history tab is visible only to roles whose course-chat-
-  // visibility flag is on. Uses the shared gate so the UI mirrors the backend
-  // chat routes exactly.
-  const canViewChats = canViewCourseChats(access, policies);
 
   // Check if current user can delete a material (either manage rank >= 2, or TA own-upload).
   // canManage covers ADMIN/UNIT_ADMIN/INSTRUCTOR.
@@ -625,14 +629,20 @@ export function CourseDetailManagerView({
           <PageTabsTrigger value="materials">Materials</PageTabsTrigger>
           <PageTabsTrigger value="topics">Topics</PageTabsTrigger>
           <PageTabsTrigger value="enrollments">Enrollments</PageTabsTrigger>
-          {canManageStaff && (
-            <PageTabsTrigger value="staff">Staff</PageTabsTrigger>
+          {/* §807: a qualifying role keeps the tab visible but greyed when the
+              policy is off; non-qualifying roles don't see it at all. */}
+          {showStaffTab && (
+            <DisabledTooltip disabled={!canManageStaff}>
+              <PageTabsTrigger value="staff">Staff</PageTabsTrigger>
+            </DisabledTooltip>
           )}
           {canManageRagSettings && (
             <PageTabsTrigger value="settings">Settings</PageTabsTrigger>
           )}
-          {canViewChats && (
-            <PageTabsTrigger value="chat-history">Chat history</PageTabsTrigger>
+          {showChatTab && (
+            <DisabledTooltip disabled={!canViewChats}>
+              <PageTabsTrigger value="chat-history">Chat history</PageTabsTrigger>
+            </DisabledTooltip>
           )}
         </PageTabsList>
 
@@ -960,7 +970,9 @@ export function CourseDetailManagerView({
           className="data-[state=inactive]:hidden flex-1 outline-none"
         >
           <div className="flex flex-col gap-4">
-            {canManage && (
+            {/* §807: keep the add-topic form visible, greyed when manage-topics
+                is policy-off (a TA without the grant). */}
+            {canManage ? (
               <form onSubmit={handleTopicCreate} className="flex gap-2">
                 <Input
                   value={newTopic}
@@ -972,6 +984,16 @@ export function CourseDetailManagerView({
                   Add
                 </Button>
               </form>
+            ) : (
+              <PolicyTooltip flag="tas.canManageTopics">
+                <form onSubmit={(e) => e.preventDefault()} className="flex gap-2">
+                  <Input value="" readOnly disabled placeholder="New topic name" />
+                  <Button type="submit" disabled>
+                    <IconPlus className="w-4 h-4 mr-1" />
+                    Add
+                  </Button>
+                </form>
+              </PolicyTooltip>
             )}
             {topics.length === 0 ? (
               <Card>
@@ -985,7 +1007,7 @@ export function CourseDetailManagerView({
                   <Card key={t.id}>
                     <CardContent className="flex items-center justify-between py-3">
                       <span className="text-sm">{t.name}</span>
-                      {canManage && (
+                      {canManage ? (
                         <Button
                           variant="ghost"
                           size="icon"
@@ -995,6 +1017,17 @@ export function CourseDetailManagerView({
                         >
                           <IconTrash className="w-4 h-4" />
                         </Button>
+                      ) : (
+                        <PolicyTooltip flag="tas.canManageTopics">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label="Delete topic"
+                            className="text-destructive hover:text-destructive"
+                          >
+                            <IconTrash className="w-4 h-4" />
+                          </Button>
+                        </PolicyTooltip>
                       )}
                     </CardContent>
                   </Card>
