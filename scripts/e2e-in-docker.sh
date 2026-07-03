@@ -64,12 +64,22 @@ docker compose -f "$COMPOSE_FILE" up -d \
   e2e-qm-app
 
 echo "  Waiting for all services to become healthy..."
+WAIT_EXIT=0
 docker compose -f "$COMPOSE_FILE" up -d --wait \
   e2e-eduai-app \
   e2e-ai-tutor-server \
   e2e-ai-tutor-app \
   e2e-qm-server \
-  e2e-qm-app
+  e2e-qm-app || WAIT_EXIT=$?
+
+if [ "$WAIT_EXIT" -ne 0 ]; then
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "  Service startup failed — container logs:"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  docker compose -f "$COMPOSE_FILE" logs --no-color 2>&1
+  exit "$WAIT_EXIT"
+fi
 
 # ── Run Playwright ────────────────────────────────────────────────────────────
 echo ""

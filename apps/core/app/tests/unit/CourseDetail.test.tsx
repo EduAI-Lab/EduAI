@@ -323,7 +323,7 @@ describe('CourseDetailStudentView', () => {
     expect(screen.getByText('Variables')).toBeInTheDocument()
   })
 
-  it('shows materials read-only with no action buttons', () => {
+  it('shows materials read-only with preview for ready files', () => {
     wrap(
       <CourseDetailStudentView
         course={COURSE}
@@ -331,7 +331,6 @@ describe('CourseDetailStudentView', () => {
         topics={[]}
       />
     )
-    expect(screen.getByText('Lecture 1')).toBeInTheDocument()
-    expect(screen.queryAllByRole('button')).toHaveLength(0)
+    expect(screen.getByRole('button', { name: 'Lecture 1' })).toBeInTheDocument()
   })
 })

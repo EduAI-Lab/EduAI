@@ -5,6 +5,7 @@ import {
   IconCircleCheck,
   IconCircleX,
 } from '@tabler/icons-react'
+import { useState, type ReactNode } from 'react'
 import {
   Card,
   CardContent,
@@ -15,6 +16,7 @@ import {
   CourseHeroCard,
   StatusBadge,
   Avatar,
+  courseThemeVars,
 } from '@eduai/ui'
 import {
   CourseMaterialsUpload,
@@ -28,6 +30,14 @@ import {
   DisabledTooltip,
   usePolicyGate,
 } from '~/components/policy/policy-gate'
+import { MaterialPreviewDialog } from '~/components/courses/material-preview-dialog'
+import { CourseCardCustomizePopover } from '~/components/courses/course-card-customize-popover'
+import { ScrollReveal } from '~/components/motion/scroll-reveal'
+import { useCourseCardPreferences } from '~/hooks/use-course-card-preferences'
+import {
+  getCourseDisplayName,
+  resolveCourseAccentColor,
+} from '~/lib/courses/course-card-preferences'
 
 interface Props {
   course: CourseDetail
@@ -38,6 +48,14 @@ interface Props {
   materialsError?: string | null
   materialsSuccess?: string | null
   onFileSelect?: (file: File) => void
+}
+
+function ThemedPanel({ children }: { children: ReactNode }) {
+  return (
+    <Card className="border-[var(--course-border)] bg-[var(--course-surface)] border-l-[3px] border-l-[var(--course-accent)] shadow-sm">
+      {children}
+    </Card>
+  )
 }
 
 function MaterialStatusIcon({ status }: { status: CourseMaterial['status'] }) {
@@ -82,11 +100,17 @@ export function CourseDetailStudentView({
   // student knows materials exist but an admin restricted them.
   const showMaterialsTab = canViewMaterials || canUploadMaterials
 
+  const [previewMaterial, setPreviewMaterial] = useState<CourseMaterial | null>(null)
+  const { getCoursePreference, setCoursePreference } = useCourseCardPreferences()
+  const cardPreference = getCoursePreference(course.id)
+  const accentColor = resolveCourseAccentColor(course.id, cardPreference)
+  const displayName = getCourseDisplayName(course.name, cardPreference)
+
   // Top-right hero badges: enrollment + AI status
   const topRightBadges: string[] = ['Enrolled', ...(course.aiInstructions ? ['AI-enabled'] : [])]
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6" style={courseThemeVars(accentColor)}>
       <PageTabs defaultValue="overview">
         <PageTabsList>
           <PageTabsTrigger value="overview">Overview</PageTabsTrigger>
@@ -101,19 +125,31 @@ export function CourseDetailStudentView({
         {/* ── Overview ── */}
         <PageTabsContent value="overview" forceMount className="data-[state=inactive]:hidden flex-1 outline-none">
           {/* B2: Topics folded into hero; badges moved to top-right */}
+          <ScrollReveal index={0}>
           <CourseHeroCard
             code={course.code}
             term={course.term}
             year={course.year}
-            name={course.name}
+            name={displayName}
             description={course.description}
+            accentColor={accentColor}
             topRightBadges={topRightBadges}
             topics={topics.map((t) => t.name)}
+            headerAction={
+              <CourseCardCustomizePopover
+                courseName={course.name}
+                courseCode={course.code}
+                preference={cardPreference}
+                onApply={(update) => setCoursePreference(course.id, update)}
+              />
+            }
           />
+          </ScrollReveal>
 
           {/* B3: Enriched info card — always show; B1: no empty gaps */}
           <div className="grid gap-4 mb-4 grid-cols-1 sm:grid-cols-2">
-            <Card>
+            <ScrollReveal index={1}>
+            <ThemedPanel>
               <CardContent className="pt-5 pb-5 flex flex-col gap-4">
                 <p className="text-[13px] font-semibold text-foreground">Course information</p>
                 <div className="grid grid-cols-2 gap-x-6 gap-y-3">
@@ -145,11 +181,13 @@ export function CourseDetailStudentView({
                   </div>
                 </div>
               </CardContent>
-            </Card>
+            </ThemedPanel>
+            </ScrollReveal>
 
             {/* Instructor + TAs — visible to students so they know their teaching team */}
             {course.instructor ? (
-              <Card>
+              <ScrollReveal index={2}>
+              <ThemedPanel>
                 <CardContent className="pt-5 pb-5 flex flex-col gap-4">
                   <p className="text-sm font-semibold text-foreground">Instructor</p>
                   <div className="flex items-center gap-3">
@@ -181,9 +219,11 @@ export function CourseDetailStudentView({
                     )}
                   </div>
                 </CardContent>
-              </Card>
+              </ThemedPanel>
+              </ScrollReveal>
             ) : (
-              <Card>
+              <ScrollReveal index={2}>
+              <ThemedPanel>
                 <CardContent className="pt-5 pb-5 flex flex-0 flex-col gap-2">
                   <p className="text-sm font-semibold text-foreground">Instructor</p>
                   <p className="text-xs text-muted-foreground">No professor assigned</p>
@@ -207,7 +247,8 @@ export function CourseDetailStudentView({
                     </div>
                   )}
                 </CardContent>
-              </Card>
+              </ThemedPanel>
+              </ScrollReveal>
             )}
           </div>
 
@@ -258,28 +299,50 @@ export function CourseDetailStudentView({
                     </p>
                   </div>
                 </div>
-                {materials.map((m) => (
-                  <div
-                    key={m.id}
-                    className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius-lg)] border border-border bg-card"
-                  >
+                {materials.map((m) => {
+                  const canPreview = m.status === 'READY'
+                  return (
                     <div
-                      className="w-8 h-8 rounded-[7px] flex items-center justify-center flex-shrink-0"
-                      style={{ background: fileTypeColor(m.mimeType) }}
+                      key={m.id}
+                      className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius-lg)] border border-border bg-card"
                     >
-                      <IconFileText size={14} color="white" stroke={2} />
+                      <div
+                        className="w-8 h-8 rounded-[7px] flex items-center justify-center flex-shrink-0"
+                        style={{ background: fileTypeColor(m.mimeType) }}
+                      >
+                        <IconFileText size={14} color="white" stroke={2} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        {canPreview ? (
+                          <button
+                            type="button"
+                            onClick={() => setPreviewMaterial(m)}
+                            className="text-left w-full text-[13px] font-medium text-foreground truncate hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
+                          >
+                            {m.title}
+                          </button>
+                        ) : (
+                          <p className="text-[13px] font-medium text-foreground truncate">{m.title}</p>
+                        )}
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          {formatSize(m.fileSize)} · {new Date(m.createdAt).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <MaterialStatusIcon status={m.status} />
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[13px] font-medium text-foreground truncate">{m.title}</p>
-                      <p className="text-[11px] text-muted-foreground mt-0.5">
-                        {formatSize(m.fileSize)} · {new Date(m.createdAt).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <MaterialStatusIcon status={m.status} />
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
+            <MaterialPreviewDialog
+              courseId={course.id}
+              materialId={previewMaterial?.id ?? null}
+              title={previewMaterial?.title ?? ''}
+              open={previewMaterial !== null}
+              onOpenChange={(open) => {
+                if (!open) setPreviewMaterial(null)
+              }}
+            />
           </PageTabsContent>
         )}
       </PageTabs>
