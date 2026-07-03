@@ -24,7 +24,7 @@ import { auth } from "~/lib/auth/server";
 import { getPolicy } from "~/lib/policy.server";
 
 function args(url = "http://localhost/auth/register") {
-  return { request: new Request(url), params: {}, context: {} as never };
+  return { request: new Request(url), params: {}, context: {} as never } as any;
 }
 
 beforeEach(() => {

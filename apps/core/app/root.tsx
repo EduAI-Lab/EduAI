@@ -55,7 +55,7 @@ const GUEST_ROOT_PREFERENCES = {
  */
 export async function loader({ request }: LoaderFunctionArgs) {
   ensureCronSchedulerRunning();
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
 
   // Resolve policy flags server-side (in-memory cached) and hand them to the
   // client so gated controls render in their final enabled/disabled state from

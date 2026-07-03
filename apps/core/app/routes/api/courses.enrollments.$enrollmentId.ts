@@ -42,7 +42,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     return json(400, { error: "COURSE_ID_AND_ENROLLMENT_ID_REQUIRED" });
   }
 
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) {
     return json(401, { error: "Unauthorized" });
   }

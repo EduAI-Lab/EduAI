@@ -98,4 +98,12 @@ export function useUiPreferences(): UiPreferencesContextValue {
   return ctx;
 }
 
+/** Safe for leaf components in tests — falls back to system preference when no provider. */
+export function useMotionReducedPreference(): boolean {
+  const ctx = useContext(UiPreferencesContext);
+  if (ctx) return ctx.motionReduced;
+  if (typeof window === "undefined") return false;
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
 export { DEFAULT_UI_PREFERENCES };

@@ -22,6 +22,8 @@ eval-runs/
 
 # Dependencies
 node_modules/
+# also ignore node_modules symlinks (trailing-slash rule above matches dirs only)
+node_modules
 
 # Environment files
 .env
@@ -30,7 +32,9 @@ node_modules/
 .env.development
 
 # IDE
-.vscode/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
 .idea/
 *.swp
 *.swo

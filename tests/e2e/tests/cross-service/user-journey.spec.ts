@@ -11,7 +11,7 @@
  */
 import { test, expect } from '@playwright/test';
 import { CORE_URL, AI_TUTOR_API_URL, QM_BACKEND_URL } from '../../playwright.config';
-import { signUp, signOut, signIn, uniqueEmail, DEFAULT_PASSWORD } from '../helpers/auth';
+import { signUp, signOut, signIn, uniqueEmail, DEFAULT_PASSWORD, checkStatus } from '../helpers/auth';
 
 // ---------------------------------------------------------------------------
 // Session propagation — one Core sign-in unlocks all three backends
@@ -110,12 +110,15 @@ test.describe('Sign-out cascade via AI Tutor', () => {
     await signUp(request, { email });
 
     // Sign out via AI Tutor
-    await request.post(`${AI_TUTOR_API_URL}/api/logout`);
+    const logoutRes = await request.post(`${AI_TUTOR_API_URL}/api/logout`);
+    await checkStatus(logoutRes, 200, 'AI Tutor POST /api/logout');
 
-    // Core should now reject
-    expect((await request.get(`${CORE_URL}/api/me`)).status()).toBe(401);
+    // Core should now reject — body shown on failure to reveal if session persists
+    const afterCore = await request.get(`${CORE_URL}/api/me`);
+    await checkStatus(afterCore, 401, 'Core /api/me after AI Tutor logout cascade');
     // AI Tutor itself should also reject (Core session gone)
-    expect((await request.get(`${AI_TUTOR_API_URL}/api/me`)).status()).toBe(401);
+    const afterTutor = await request.get(`${AI_TUTOR_API_URL}/api/me`);
+    await checkStatus(afterTutor, 401, 'AI Tutor /api/me after logout cascade');
   });
 });
 
@@ -125,12 +128,15 @@ test.describe('Sign-out cascade via Question Maker', () => {
     await signUp(request, { email });
 
     // Sign out via Question Maker
-    await request.post(`${QM_BACKEND_URL}/api/auth/logout`);
+    const logoutRes = await request.post(`${QM_BACKEND_URL}/api/auth/logout`);
+    await checkStatus(logoutRes, 200, 'QM POST /api/auth/logout');
 
-    // Core should now reject
-    expect((await request.get(`${CORE_URL}/api/me`)).status()).toBe(401);
+    // Core should now reject — body shown on failure to reveal if session persists
+    const afterCore = await request.get(`${CORE_URL}/api/me`);
+    await checkStatus(afterCore, 401, 'Core /api/me after QM logout cascade');
     // QM itself should also reject
-    expect((await request.get(`${QM_BACKEND_URL}/api/auth/me`)).status()).toBe(401);
+    const afterQM = await request.get(`${QM_BACKEND_URL}/api/auth/me`);
+    await checkStatus(afterQM, 401, 'QM /api/auth/me after logout cascade');
   });
 });
 

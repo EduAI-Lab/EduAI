@@ -25,7 +25,7 @@ import { usePolicyGate } from "~/components/policy/policy-gate";
 import type { User } from "~/lib/auth/types";
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
 
   if (!session?.user) {
     return redirect("/auth/login");

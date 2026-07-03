@@ -56,7 +56,7 @@ function makeArgs(path: string, method = "GET", body?: unknown, params: Record<s
     }),
     params,
     context: {} as never,
-  };
+  } as any;
 }
 
 function mockUser(role: string | null, id = "u1") {
