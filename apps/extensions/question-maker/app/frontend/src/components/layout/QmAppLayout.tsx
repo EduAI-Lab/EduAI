@@ -2,6 +2,7 @@ import { type CSSProperties, type ReactNode } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router';
 import { Outlet } from 'react-router';
 import {
+  AppLauncher,
   AppSidebar,
   SidebarProvider,
   SidebarInset,
@@ -22,7 +23,6 @@ import {
   IconLibrary,
   IconSettings,
   IconHelpCircle,
-  IconExternalLink,
   IconSearch,
   IconRoute,
   type Icon,
@@ -38,6 +38,7 @@ import { useBugReport } from '@/contexts/BugReportContext';
 import { Tooltip } from '@/components/ui/tooltip';
 import { CourseSwitcher } from '@/components/layout/CourseSwitcher';
 import { CommandPalette } from '@/components/command/CommandPalette';
+import { CURRENT_APP_ID, getLauncherApps } from '@/lib/apps';
 
 const ROUTE_TITLES: Record<string, string> = {
   '/dashboard': 'Dashboard',
@@ -112,15 +113,13 @@ type NavItemKey =
   | 'dashboard'
   | 'courses'
   | 'library'
-  | 'help'
-  | 'back-to-eduai';
+  | 'help';
 
 const NAV_ICONS: Record<NavItemKey, Icon> = {
   dashboard: IconDashboard,
   courses: IconBooks,
   library: IconLibrary,
   help: IconHelpCircle,
-  'back-to-eduai': IconExternalLink,
 };
 
 interface NavItem {
@@ -143,19 +142,11 @@ function getNavSecondaryForUser(user: { role: string } | null): NavItem[] {
   if (!user) return [];
   // Settings lives in the navUser dropdown (like Core).
   // Bug reports is in the site-header top actions (like Core).
-  // Secondary nav only has Help and Back to EduAI.
-  const items: NavItem[] = [
+  // Cross-app navigation (EduAI Core + other extensions) lives in the
+  // footer AppLauncher. Secondary nav only has Help.
+  return [
     { key: 'help', title: 'Help', href: '/help' },
   ];
-
-  items.push({
-    key: 'back-to-eduai',
-    title: 'Back to EduAI',
-    href: `${import.meta.env.VITE_CORE_URL || 'http://localhost:3000'}`,
-    external: true,
-  });
-
-  return items;
 }
 
 function QmSiteHeader() {
@@ -280,6 +271,7 @@ function QmAppLayoutInner() {
         navSecondary={navSecondary}
         currentPath={pathname}
         LinkComponent={Link}
+        footer={<AppLauncher apps={getLauncherApps()} currentAppId={CURRENT_APP_ID} />}
         user={user ? { name: user.name ?? user.email, email: user.email, image: user.image, role: user.role } : { name: 'Guest', email: '', role: 'GUEST' }}
         navUser={
           user ? {
@@ -374,6 +366,7 @@ export function QmAccessShell({ children }: { children: ReactNode }) {
           navSecondary={navSecondary}
           currentPath="/"
           LinkComponent={Link}
+          footer={<AppLauncher apps={getLauncherApps()} currentAppId={CURRENT_APP_ID} />}
           user={user ? { name: user.name ?? user.email, email: user.email, image: user.image, role: user.role } : { name: 'Guest', email: '', role: 'GUEST' }}
           navUser={
             user ? {
