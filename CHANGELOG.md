@@ -22,6 +22,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
+- [core, ai-tutor, question-maker] feat: Bug report type dropdown and unified submit dialog — users can categorize their report as UI/Display, Feature Not Working, Performance, Content Error, Access/Permission, or Other; stored as `BugReportType` enum in Core's DB and surfaced in all three admin triage views. The submit dialog is now the canonical implementation in `@eduai/ui` shared across all three apps; duplicate `BugReportDialog` components in AI Tutor and QM removed; `isStubbed` dead code stripped. (#503, @evanbones, 2026-06-24) — [#770](https://github.com/EduAI-Lab/EduAI/pull/770)
 - [question-maker] feat: Full course-centric QM redesign — reworked the frontend into a workspace IA (`/dashboard`, `/courses`, `/courses/:id` with Overview/Questions/Assessments/Topics/Canvas tabs, nested assessment routes; course context via URL only), a full-page question composer, a unified question modal, a global question library with a filter toolbar + preview drawer, a reworked assessments surface with inline AI-variant review, a role-aware dashboard, a ⌘K command palette, and an inline course switcher. (#762, #763, @yta3216, 2026-06-26) — [#791](https://github.com/EduAI-Lab/EduAI/pull/791)
 - [core] feat: Extract shared shell, settings, question, and dependency-free analytics-chart components into `@eduai/ui` (AppSidebar/SiteHeader/Nav*/ThemeToggle/BugReportDialog, QuestionCard/QuestionStatusBadge/VariantBadge, settings/{AccessibilitySettings,ProvidersTable,ProviderFormDialog}, charts/*); Core consumes them via thin wrappers, and `MultiSelect` moves onto a Radix popover with a body-pointer-events restore fix for dialogs opened from menus. (#765, @yta3216, 2026-06-26) — [#791](https://github.com/EduAI-Lab/EduAI/pull/791)
 - [question-maker] feat: Backend endpoints supporting the redesign — `GET /api/topics/sync-status/:courseId`, `GET /api/course/:id/enrollments`, and `GET /api/questions/export` (CSV/JSON); all TA+ gated. (#790, @yta3216, 2026-06-26) — [#791](https://github.com/EduAI-Lab/EduAI/pull/791)
@@ -39,6 +40,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [ci] ci: Add a Backend Coverage Report workflow — runs unit+integration coverage for the three backends on every push to `development`, aggregates them, and commits a Markdown summary to `eduai-summer-2026/reports/coverage/`. (#773, @abdullahmoh21, 2026-06-25)
 - [core] feat: RAG ingestion preserves LaTeX equations, converts HTML tables to markdown, and chunks at clinical/slide section boundaries (#90, #91, #93, @superbolt08, 2026-06-23) — [#755](https://github.com/EduAI-Lab/EduAI/pull/755)
 - [core] feat: Human-readable math in chat — normalizeMathMarkdown, Streamdown math plugin, KaTeX CSS, prose-vs-equation guards (#142, @superbolt08, 2026-06-23) — [#757](https://github.com/EduAI-Lab/EduAI/pull/757)
+- [core] docs: Add [`MULTI_SERVER_ROUTING_PLAN.md`](docs/rag-ai/routing/eduai-summer-2026/MULTI_SERVER_ROUTING_PLAN.md) — team guide for spreading vLLM inference across cmps01–03 (`JobType`: `interactive` / `background`, feature mapping, stale health-cache fallback, fleet router sketch); cross-linked from [`TEAM_ROUTING_LAYER_PLAN.md`](docs/rag-ai/routing/eduai-summer-2026/TEAM_ROUTING_LAYER_PLAN.md). Docs-only. ([#794](https://github.com/EduAI-Lab/EduAI/pull/794), @superbolt08, 2026-06-26)
 
 ### Fixed
 
@@ -64,6 +66,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Changed
 
+- [core] feat: Admin-disabled features now grey out with a "turned off by your administrator" tooltip instead of disappearing, and `/auth/register` shows an invite-only message when public registration is off rather than silently redirecting to login. (#807, @mochi_21, 2026-06-28)
 - [core] refactor: Extract a shared chat route module (`app/lib/chat/chat-route.server.ts`) used by both `/chat` and `/chat/:chatId` — base loader (models + preferences), the preference-save action, and DB transcript hydration; split the monolithic `chat.tsx` into `chat-screen.tsx` plus history components (`chat-history-rail`, `chat-history-list`, `chat-history-utils`), shrinking `chat.tsx`, `chat-history-panel`, and the `chats/:chatId/messages` API route accordingly. (#708, @Ayyhab, 2026-06-24) — [#751](https://github.com/EduAI-Lab/EduAI/pull/751)
 
 ### Fixed
@@ -98,6 +101,13 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] fix: Use `/chat/:chatId` as the source of truth for resuming chats, removing `ACTIVE_CHAT_KEY`/`sessionStorage` active-chat restoration. Saved chats now open, refresh, and continue through the route while preserving `lastCourseCode` preference behavior. (#775, @YibingW, 2026-06-26)
 - [ai-tutor] fix: Stop `/student` from scoring a TA's preview with instructor-shell stats — the route passed the viewer's literal role into `buildDashboardStats`, so a TA previewing the student experience got "Your courses/Published/Draft" computed over the enrolled/progress course list instead of "Enrolled courses/In progress/Completed"; the route now always passes the literal `'STUDENT'` role, matching the existing `admin.tsx` pattern. (#746, @Ayyhab, 2026-06-29)
 - [core] fix: Force React pre-bundle at startup via `optimizeDeps.include` — prevents a Vite chunk-version mismatch on first client-side navigation that left `ReactCurrentDispatcher.current` null, causing "Cannot read properties of null (reading 'useContext')" crash on the login page. (#162, @evanbones, 2026-06-26)
+
+### Added
+
+- [core] feat: Course card UX for ADHD Assist pilot (PR2) — course cards gain per-student colour personalization (Canvas-style hero colour + ⋮ customization popover), a segmented term filter (All / Term 1 / Term 2 mapped from Fall/Winter/Spring/Summer), a material-preview dialog (instructors/TAs can inspect a file before downloading), and scroll/press motion reveals gated by the `Reduce motion` preference. (#696, #697, #698, #701, #708, @Ayyhab, 2026-06-27) — [#752](https://github.com/EduAI-Lab/EduAI/pull/752)
+- [core] feat: Student chat privacy notice — first-visit modal on `/chat` informs students that course chat history can be reviewed by instructors, TAs, and platform admins; acknowledgment stored per-user in `localStorage`; a persistent inline reminder stays visible after dismissal. (#699, #708, @Ayyhab, 2026-06-27) — [#752](https://github.com/EduAI-Lab/EduAI/pull/752)
+- [core] feat: Chat history rail polish — softer visual styling and auto-hide in focus mode so the transcript area stays full-width during focused reading. (#708, @Ayyhab, 2026-06-27) — [#752](https://github.com/EduAI-Lab/EduAI/pull/752)
+- [core] tests: Unit coverage for course-card colour/nickname personalization (`course-card-preferences.test.ts`), term-filter bucketing (`course-term-filter.test.ts`), chat privacy notice localStorage persistence (`chat-privacy-notice.test.ts`), and the privacy-notice dialog UI (`ChatPrivacyNoticeDialog.test.tsx`). (#696, #697, #698, #699, #708, @Ayyhab, 2026-06-27) — [#752](https://github.com/EduAI-Lab/EduAI/pull/752)
 
 
 ## [Week 7 — June 15–21, 2026]

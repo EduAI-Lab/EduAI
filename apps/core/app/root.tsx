@@ -13,13 +13,14 @@ import "./app.css";
 
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
-import { getPolicy } from "~/lib/policy.server";
+import { getPolicies } from "~/lib/policy.server";
 import { getExpiredPasswordRedirect } from "~/lib/auth/password-expiry.server";
 import { ensureCronSchedulerRunning } from "~/lib/cron-scheduler.server";
 import { AssistiveUiProvider } from "~/components/assistive/assistive-ui-provider";
 import { ThemeProvider } from "~/components/theme-provider";
 import { Toaster, PageLoader } from "@eduai/ui";
 import { UiPreferencesProvider } from "~/components/assistive/ui-preferences-provider";
+import { PolicyProvider } from "~/components/policy/policy-gate";
 import { DEFAULT_ACCOUNT_PREFERENCES } from "~/lib/user-preferences";
 import { isUiDensity, isUiTheme } from "~/lib/ui-preferences";
 import { ThemeSyncInitializer } from "~/components/theme-sync-initializer";
@@ -55,8 +56,14 @@ const GUEST_ROOT_PREFERENCES = {
 export async function loader({ request }: LoaderFunctionArgs) {
   ensureCronSchedulerRunning();
   const session = await auth.api.getSession({ headers: request.headers });
+
+  // Resolve policy flags server-side (in-memory cached) and hand them to the
+  // client so gated controls render in their final enabled/disabled state from
+  // the first paint — no client fetch, no enabled↔disabled flicker.
+  const policies = await getPolicies();
+
   if (!session?.user) {
-    return GUEST_ROOT_PREFERENCES;
+    return { ...GUEST_ROOT_PREFERENCES, policies };
   }
 
   // #339: enforce annual password rotation. Skip the check on /settings and
@@ -81,10 +88,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
   });
 
   // ADMIN always sees its admin nav (incl. Invitations); only a UNIT_ADMIN's
-  // link is policy-gated, so only that role needs the extra lookup.
+  // link is policy-gated, so derive it from the already-resolved policy map.
   const canInvite =
     session.user.role === "UNIT_ADMIN"
-      ? await getPolicy("unitAdmins.canInvite")
+      ? (policies["unitAdmins.canInvite"] ?? false)
       : false;
 
   return {
@@ -93,6 +100,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     density: isUiDensity(row?.density) ? row.density : DEFAULT_ACCOUNT_PREFERENCES.density,
     theme: isUiTheme(row?.theme) ? row.theme : DEFAULT_ACCOUNT_PREFERENCES.theme,
     canInvite,
+    policies,
   };
 }
 
@@ -134,8 +142,10 @@ export default function App({ loaderData }: Route.ComponentProps) {
       initialDensity={loaderData?.density ?? DEFAULT_ACCOUNT_PREFERENCES.density}
     >
       <AssistiveUiProvider initialAssistive={loaderData?.assistive ?? false}>
-        <ThemeSyncInitializer />
-        <Outlet />
+        <PolicyProvider policies={loaderData?.policies ?? {}}>
+          <ThemeSyncInitializer />
+          <Outlet />
+        </PolicyProvider>
       </AssistiveUiProvider>
     </UiPreferencesProvider>
   );
