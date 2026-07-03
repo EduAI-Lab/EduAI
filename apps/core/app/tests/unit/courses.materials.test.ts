@@ -83,7 +83,7 @@ function makePreviewArgs(materialId: string) {
     ),
     params: { courseId: COURSE_ID, materialId },
     context: {} as never,
-  };
+  } as any;
 }
 
 function makeDeleteArgs(materialId: string) {
@@ -597,7 +597,8 @@ describe("GET materials — student visibility gate (#839)", () => {
     mockAccess({ level: "student", rank: 0 });
     vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([]);
     await loader(makeArgs("GET"));
-    const where = vi.mocked(prisma.courseMaterial.findMany).mock.calls[0][0].where;
+    const where = (vi.mocked(prisma.courseMaterial.findMany).mock.calls[0][0] as any)
+      .where;
     expect(where).toEqual(
       expect.objectContaining({
         courseId: COURSE_ID,
@@ -613,7 +614,8 @@ describe("GET materials — student visibility gate (#839)", () => {
     mockAccess({ level: "instructor", rank: 2 });
     vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([]);
     await loader(makeArgs("GET"));
-    const where = vi.mocked(prisma.courseMaterial.findMany).mock.calls[0][0].where;
+    const where = (vi.mocked(prisma.courseMaterial.findMany).mock.calls[0][0] as any)
+      .where;
     expect(where.visibleToStudents).toBeUndefined();
     expect(where.OR).toBeUndefined();
   });
@@ -652,7 +654,8 @@ describe("GET materials — student visibility gate (#839)", () => {
     mockAccess({ level: "student", rank: 0 });
     vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
     await loader(makePreviewArgs("mat-1"));
-    const where = vi.mocked(prisma.courseMaterial.findFirst).mock.calls[0][0].where;
+    const where = (vi.mocked(prisma.courseMaterial.findFirst).mock.calls[0][0] as any)
+      .where;
     expect(where).toEqual(
       expect.objectContaining({ visibleToStudents: true }),
     );
