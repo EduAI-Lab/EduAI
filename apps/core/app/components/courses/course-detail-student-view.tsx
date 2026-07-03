@@ -25,7 +25,11 @@ import {
 import type { CourseDetail } from '~/hooks/api/use-course-detail'
 import type { CourseTopic } from '~/hooks/api/use-course-topics'
 import type { CourseTA } from '~/hooks/api/use-course-tas'
-import { usePolicies } from '~/hooks/api/use-policies'
+import {
+  PolicyTooltip,
+  DisabledTooltip,
+  usePolicyGate,
+} from '~/components/policy/policy-gate'
 import { MaterialPreviewDialog } from '~/components/courses/material-preview-dialog'
 import { CourseCardCustomizePopover } from '~/components/courses/course-card-customize-popover'
 import { ScrollReveal } from '~/components/motion/scroll-reveal'
@@ -84,16 +88,16 @@ export function CourseDetailStudentView({
   materialsSuccess = null,
   onFileSelect,
 }: Props) {
-  const { policies } = usePolicies()
-  // §2 gate: hide the materials section when students.canViewMaterials is off
-  // (mirrors the loader 403). Default true preserves today's behavior.
-  const canViewMaterials = policies['students.canViewMaterials'] ?? true
+  const { isEnabled } = usePolicyGate()
+  // §2 gate: the materials section mirrors the loader 403 for students.canViewMaterials.
+  const canViewMaterials = isEnabled('students.canViewMaterials')
   // §2 grant: a student sees the upload control only when students.canUploadMaterials
   // is on (default false — mirrors the POST 403). Uploads land on the whole-course
   // RAG corpus, same as instructor/TA uploads.
-  const canUploadMaterials =
-    (policies['students.canUploadMaterials'] ?? false) && Boolean(onFileSelect)
-  // The Materials tab shows when the student may either read or upload.
+  const canUploadMaterials = isEnabled('students.canUploadMaterials') && Boolean(onFileSelect)
+  // The Materials tab content shows when the student may either read or upload;
+  // §807: when neither is allowed the tab stays visible but greyed-out so the
+  // student knows materials exist but an admin restricted them.
   const showMaterialsTab = canViewMaterials || canUploadMaterials
 
   const [previewMaterial, setPreviewMaterial] = useState<CourseMaterial | null>(null)
@@ -110,7 +114,11 @@ export function CourseDetailStudentView({
       <PageTabs defaultValue="overview">
         <PageTabsList>
           <PageTabsTrigger value="overview">Overview</PageTabsTrigger>
-          {showMaterialsTab && <PageTabsTrigger value="materials">Materials</PageTabsTrigger>}
+          {/* §807: keep the Materials tab visible; grey it out when the student
+              may neither view nor upload (the value gate then never selects it). */}
+          <DisabledTooltip disabled={!showMaterialsTab}>
+            <PageTabsTrigger value="materials">Materials</PageTabsTrigger>
+          </DisabledTooltip>
           {/* No Topics management tab, no Enrollments tab for students — §8, §6 */}
         </PageTabsList>
 
@@ -253,14 +261,18 @@ export function CourseDetailStudentView({
                 an enrolled student; the POST endpoint applies the matching gate. Off
                 by default → read-only list only. The redesigned read-only list below
                 still renders so an uploading student also sees existing materials. */}
-            {canUploadMaterials && (
+            {onFileSelect && (
               <div className="mb-4">
-                <CourseMaterialsUpload
-                  isUploading={isUploading}
-                  error={materialsError}
-                  success={materialsSuccess}
-                  onFileSelect={onFileSelect!}
-                />
+                {/* §807: when upload is policy-off, grey the dropzone with a
+                    tooltip instead of removing it. */}
+                <PolicyTooltip flag="students.canUploadMaterials">
+                  <CourseMaterialsUpload
+                    isUploading={isUploading}
+                    error={materialsError}
+                    success={materialsSuccess}
+                    onFileSelect={onFileSelect}
+                  />
+                </PolicyTooltip>
               </div>
             )}
             {materials.length === 0 ? (
