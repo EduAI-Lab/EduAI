@@ -22,14 +22,28 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [tailwindcss(), reactRouter(), tsconfigPaths()],
+    ssr: {
+      // Server bundle is ESM (react-router default). Two packages need bundling:
+      //   @tabler/icons-react — aliased to its .mjs file below; must be bundled
+      //                         to honour the alias during SSR tree-shaking.
+      //   @mendable/firecrawl-js — "type":"module", used in AI web tools.
+      noExternal: ["@tabler/icons-react", "@mendable/firecrawl-js"],
+    },
+    define: {
+      __dirname: "import.meta.dirname",
+      __filename: "import.meta.filename",
+    },
     resolve: {
-      // Pin one copy for core (1.2.8 via root overrides). Do not alias the package root — that
-      // breaks subpath exports such as better-auth/client/plugins.
       alias: {
         "@tabler/icons-react": "@tabler/icons-react/dist/esm/icons/index.mjs",
       },
       // Monorepo hoisting can give Radix/shadcn a second React copy → "useState of null" after HMR.
-      dedupe: ["react", "react-dom", "better-auth"],
+      dedupe: ["react", "react-dom"],
+    },
+    // Force React to be pre-bundled at startup so Vite never discovers it lazily during
+    // a first client-side navigation.
+    optimizeDeps: {
+      include: ["react", "react-dom", "react-dom/client"],
     },
     // Pre-bundle streamdown + CJS deps (style-to-js) so lazy markdown loads as ESM.
     // Do NOT exclude streamdown — that serves CJS raw and breaks default exports.

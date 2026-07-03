@@ -1,108 +1,129 @@
 /**
- * Card rendering a single question/variant summary with actions to view or create variants.
- * Displays metadata badges for type, difficulty, topic, AI status, and draft state.
+ * Renders a single question/variant on the course Questions tab using the shared
+ * @eduai/ui QuestionCard (the canonical question display). Actions (view / create
+ * variant) live in the kebab menu; permissions gate the variant action.
  */
-import { Button, Card, CardContent, Badge } from '@eduai/ui';
+import {
+  QuestionCard as QuestionPreviewCard,
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  questionStatus,
+  variantLabel,
+} from '@eduai/ui';
+import type { QuestionCardChoice, QuestionDifficulty as UiDifficulty } from '@eduai/ui';
 
-import { Eye, Copy } from 'lucide-react';
-import { PermissionGate } from '@/components/rbac/PermissionGate';
+import { IconCopy, IconDots } from '@tabler/icons-react';
 import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
-import { QuestionVariantEntry } from '../../types/question';
+import { formatCourseAccessLevel } from '@/lib/rbac/course-labels';
+import { markCorrectChoices } from '@/lib/mcq';
+import type { QuestionVariantEntry, QuestionType } from '../../types/question';
 
 interface QuestionCardProps {
-    entry: QuestionVariantEntry;
-    questionNumber: number;
-    onView: (entry: QuestionVariantEntry) => void;
-    onCreateVariant: (entry: QuestionVariantEntry) => void;
+  entry: QuestionVariantEntry;
+  questionNumber: number;
+  onView: (entry: QuestionVariantEntry) => void;
+  onCreateVariant: (entry: QuestionVariantEntry) => void;
+  /**
+   * 1-based ordinal of this variant among its question's variants (the primary/base
+   * variant is excluded). Resolved by the caller, which sees the full variant list.
+   * Omitted for the base question.
+   */
+  variantNumber?: number;
+  /** Dense single-column variant for the cross-course Question Bank page. */
+  compact?: boolean;
 }
 
-export const QuestionCard = ({ entry, questionNumber, onView, onCreateVariant }: QuestionCardProps) => {
-    const { canCreateQuestion } = useQmPermissionsForCourse(entry.courseId ?? null);
-    const primaryTopicLabel = entry.primaryTopicName ?? `Topic ${entry.primaryTopicId}`;
+const TYPE_LABELS: Record<QuestionType, string> = {
+  MCQ: 'Multiple Choice',
+  SA: 'Short Answer',
+  LA: 'Long Answer',
+};
 
-    return (
-        <Card className="hover:shadow-md transition-shadow">
-            <CardContent className="px-6 pt-6 pb-6">
-                <div className="flex items-start justify-between gap-6">
-                    <div className="flex-1 min-w-0">
-                        <div className="flex items-center space-x-3 mb-4">
-                            <span className="text-sm font-medium text-muted-foreground">Q{questionNumber}</span>
-                            <Badge variant="secondary" className="uppercase">
-                                {entry.questionType}
-                            </Badge>
-                            <Badge variant="outline" className="capitalize">
-                                {entry.variant.difficulty ?? 'medium'}
-                            </Badge>
-                            <Badge variant="outline">{primaryTopicLabel}</Badge>
-                            {entry.isAiGenerated && (
-                                <Badge variant="default" className="bg-purple-100 text-purple-800 hover:bg-purple-200 border-purple-300">
-                                    AI Generated
-                                </Badge>
-                            )}
-                            {entry.isDraft ? (
-                                <Badge variant="default" className="bg-amber-100 text-amber-800 hover:bg-amber-200 border-amber-300">
-                                    Draft
-                                </Badge>
-                            ) : (
-                                <Badge variant="default" className="bg-green-100 text-green-800 hover:bg-green-200 border-green-300">
-                                    Reviewed
-                                </Badge>
-                            )}
-                        </div>
+const capitalize = (value: string) => value.charAt(0).toUpperCase() + value.slice(1);
 
-                        <div className="mb-3 space-y-2">
-                            <p className="text-foreground line-clamp-2 leading-relaxed">
-                                {entry.variant.questionText}
-                            </p>
-                            {entry.questionType === 'MCQ' && entry.variant.choices && entry.variant.choices.length > 0 && (
-                                <div className="text-xs text-muted-foreground space-y-1">
-                                    {entry.variant.choices.slice(0, 2).map((choice, idx) => (
-                                        <div key={idx} className="flex items-center gap-1.5">
-                                            <span className="font-medium">{choice.letter})</span>
-                                            <span className="line-clamp-1">{choice.text}</span>
-                                        </div>
-                                    ))}
-                                    {entry.variant.choices.length > 2 && (
-                                        <span className="text-muted-foreground">
-                                            +{entry.variant.choices.length - 2} more options
-                                        </span>
-                                    )}
-                                </div>
-                            )}
-                            <p className="text-xs text-muted-foreground line-clamp-1">
-                                {entry.questionDescription}
-                            </p>
-                        </div>
+const formatUpdated = (iso?: string | null) => {
+  if (!iso) return undefined;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return undefined;
+  return `Updated ${date.toLocaleDateString()}`;
+};
 
-                        <p className="text-xs text-muted-foreground">
-                            Created: {new Date(entry.variant.createdAt || entry.variant.updatedAt || new Date().toISOString()).toLocaleDateString()}
-                        </p>
-                    </div>
+export const QuestionCard = ({
+  entry,
+  questionNumber,
+  onView,
+  onCreateVariant,
+  variantNumber,
+  compact = false,
+}: QuestionCardProps) => {
+  const { canCreateQuestion, access, accessLoading, hasCourseAccess } = useQmPermissionsForCourse(
+    entry.courseId ?? null,
+  );
+  const canWriteInCourse = hasCourseAccess && !accessLoading;
+  const { variant } = entry;
 
-                    <div className="flex items-center space-x-2 flex-shrink-0">
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => onView(entry)}
-                            className="flex items-center space-x-1"
-                        >
-                            <Eye className="h-4 w-4" />
-                            <span>View</span>
-                        </Button>
-                        <PermissionGate allow={canCreateQuestion}>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => onCreateVariant(entry)}
-                            className="flex items-center space-x-1"
-                        >
-                            <Copy className="h-4 w-4" />
-                            <span>Variant</span>
-                        </Button>
-                        </PermissionGate>
-                    </div>
-                </div>
-            </CardContent>
-        </Card>
-    );
+  const difficulty = variant.difficulty ?? 'medium';
+  const primaryTopicLabel = entry.primaryTopicName ?? `Topic ${entry.primaryTopicId}`;
+  const isVariant = variant.referenceId != null;
+  // A variant always belongs to the same question as its base (shared questionId), so
+  // showing both the variant's id and the parent's would be redundant. Instead the top
+  // identity reads "Variant N of #Q" (or "Question #Q" for the base) — one id, no repeat.
+  const identity = isVariant
+    ? variantLabel({ referenceId: entry.questionId, variantNumber })
+    : `Question #${entry.questionId}`;
+  const topics = [primaryTopicLabel, ...(entry.secondaryTopicNames ?? [])];
+  if (access === 'ta') topics.push(`${formatCourseAccessLevel('ta')} · own edits only`);
+
+  const isAi = Boolean(entry.isAiGenerated || variant.isAiGenerated);
+
+  const choices: QuestionCardChoice[] | undefined =
+    entry.questionType === 'MCQ' && variant.choices
+      ? (() => {
+          const correctFlags = markCorrectChoices(variant.answer, variant.choices);
+          return variant.choices.map((choice, i) => ({
+            letter: choice.letter,
+            text: choice.text,
+            correct: correctFlags[i],
+          }));
+        })()
+      : undefined;
+
+  const canCreateVariant = canCreateQuestion && canWriteInCourse;
+  const menu = canCreateVariant ? (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label="Question actions"
+        className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <IconDots className="size-[18px]" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onSelect={() => onCreateVariant(entry)}>
+          <IconCopy className="size-4" /> Create variant
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  ) : undefined;
+
+  return (
+    <QuestionPreviewCard
+      onClick={() => onView(entry)}
+      size={compact ? 'compact' : 'default'}
+      className={compact ? 'h-full' : undefined}
+      type={TYPE_LABELS[entry.questionType]}
+      difficulty={capitalize(difficulty)}
+      difficultyLevel={difficulty as UiDifficulty}
+      ai={isAi}
+      identity={identity}
+      status={questionStatus(!!entry.isDraft)}
+      question={variant.questionText}
+      choices={choices}
+      answer={choices ? undefined : variant.answer ?? undefined}
+      topics={topics}
+      updatedLabel={formatUpdated(variant.updatedAt ?? variant.createdAt)}
+      menu={menu}
+    />
+  );
 };

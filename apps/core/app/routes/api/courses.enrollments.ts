@@ -25,8 +25,8 @@ import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { getPolicy, denyByPolicy } from "~/lib/policy.server";
 import { resolvePolicyGate } from "~/lib/rbac/permissions";
 import { getCourse } from "~/lib/courses/server";
-import { addEnrollment, getCourseEnrollments } from "~/lib/courses/enrollments.server";
 import { readStoredStudentId } from "~/lib/canvas/student-id.server";
+import { addEnrollment, getCourseEnrollments } from "~/lib/courses/enrollments.server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 
@@ -60,7 +60,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }
 
   // User OAuth path: resolve session from cookies/headers.
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
 
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -126,7 +126,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     });
   }
 
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -201,13 +201,20 @@ export async function action({ request, params }: ActionFunctionArgs) {
         headers: { "Content-Type": "application/json" },
       });
     case "422":
-      return new Response(JSON.stringify({ error: result.error }), {
-        status: 422,
-        headers: { "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify(
+          "fields" in result
+            ? { error: result.error, fields: result.fields }
+            : { error: result.error },
+        ),
+        {
+          status: 422,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
     default:
-      return new Response(JSON.stringify({ error: "Invalid input" }), {
-        status: 400,
+      return new Response(JSON.stringify({ error: "VALIDATION_ERROR", fields: { body: "invalid" } }), {
+        status: 422,
         headers: { "Content-Type": "application/json" },
       });
   }

@@ -1,4 +1,6 @@
-import { IconRobot } from "@tabler/icons-react";
+import { cn } from "@eduai/ui";
+
+import { ScrollReveal } from "~/components/motion/scroll-reveal";
 import { SuggestedPrompts } from "./suggested-prompts";
 
 export interface ChatWelcomeProps {
@@ -6,40 +8,44 @@ export interface ChatWelcomeProps {
     name: string;
     description?: string;
   };
+  selectedCourseCode?: string | null;
   onSelectPrompt: (prompt: string) => void;
   disabled?: boolean;
 }
 
-export function ChatWelcome({ selectedModelInfo, onSelectPrompt, disabled }: ChatWelcomeProps) {
+export function ChatWelcome({
+  selectedModelInfo,
+  selectedCourseCode,
+  onSelectPrompt,
+  disabled,
+}: ChatWelcomeProps) {
+  const courseHint = selectedCourseCode?.trim();
+
   return (
-    <div className="flex flex-col items-center justify-center min-h-[360px] text-center px-4 py-8">
-      <div
-        className="flex items-center justify-center mb-5 rounded-2xl"
-        style={{
-          width: 64,
-          height: 64,
-          background: "var(--primary)",
-          borderRadius: 16,
-        }}
-      >
-        <IconRobot className="h-8 w-8 text-primary-foreground" stroke={1.5} />
-      </div>
+    <div className="flex w-full flex-col items-center justify-center px-4 py-10 text-center md:py-16">
+      <ScrollReveal index={0} parallax={false}>
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground md:text-[1.75rem]">
+          Where should we begin?
+        </h1>
+      </ScrollReveal>
 
-      <h2 className="text-xl font-bold text-foreground mb-1.5">
-        What would you like to know?
-      </h2>
-      {selectedModelInfo && (
-        <p className="text-sm text-muted-foreground mb-6">
-          Powered by {selectedModelInfo.name}
+      <ScrollReveal index={1} parallax={false}>
+        <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">
+          {courseHint
+            ? `Ask about ${courseHint} — grounded in your course materials.`
+            : "Pick a course below, then type a question or try a starter."}
         </p>
-      )}
-      {!selectedModelInfo && (
-        <p className="text-sm text-muted-foreground mb-6 max-w-sm leading-relaxed">
-          Select a course below to ground your questions in specific materials, or ask anything.
-        </p>
-      )}
 
-      <SuggestedPrompts onSelectPrompt={onSelectPrompt} disabled={disabled} />
+        {selectedModelInfo && (
+          <p className="mt-1.5 text-xs text-muted-foreground/70">
+            {selectedModelInfo.name}
+          </p>
+        )}
+      </ScrollReveal>
+
+      <ScrollReveal index={2} parallax={false} className={cn("flex w-full justify-center")}>
+        <SuggestedPrompts onSelectPrompt={onSelectPrompt} disabled={disabled} />
+      </ScrollReveal>
     </div>
   );
 }

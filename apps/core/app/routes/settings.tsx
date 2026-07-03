@@ -1,5 +1,6 @@
 import { redirect, useLoaderData } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
+import { isPasswordExpired, getPasswordChangedAt } from "~/lib/auth/password-expiry.server";
 
 import { readStoredStudentId } from "~/lib/canvas/student-id.server";
 import { auth } from "~/lib/auth/server";
@@ -10,7 +11,7 @@ import { SiteHeader } from "~/components/site-header";
 import { SidebarInset, SidebarProvider } from "@eduai/ui";
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) {
     return redirect("/auth/login");
   }
@@ -24,11 +25,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
     studentNumber = readStoredStudentId(row?.studentId);
   }
 
-  return { user: session.user, studentNumber };
+  const url = new URL(request.url);
+  const passwordExpired =
+    url.searchParams.get("expired") === "1" ||
+    isPasswordExpired(await getPasswordChangedAt(session.user.id));
+
+  return { user: session.user, studentNumber, passwordExpired };
 }
 
 export default function SettingsPage() {
-  const { user, studentNumber } = useLoaderData<typeof loader>();
+  const { user, studentNumber, passwordExpired } = useLoaderData<typeof loader>();
 
   return (
     <SidebarProvider
@@ -42,7 +48,11 @@ export default function SettingsPage() {
       <AppSidebar user={user} />
       <SidebarInset>
         <SiteHeader />
-        <SettingsView role={user.role ?? undefined} studentNumber={studentNumber} />
+        <SettingsView
+          role={user.role ?? undefined}
+          studentNumber={studentNumber}
+          passwordExpired={passwordExpired}
+        />
       </SidebarInset>
     </SidebarProvider>
   );

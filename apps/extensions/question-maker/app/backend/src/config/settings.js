@@ -6,8 +6,6 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-// Get the project root directory (4 levels up from app/backend/src/config/settings.js)
-// app/backend/src/config -> app/backend/src -> app/backend -> app -> root
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '../../../../');
@@ -26,6 +24,7 @@ export const config = {
   
   // Core integration
   coreUrl: process.env.CORE_URL || 'http://localhost:3000',
+  corePublicOrigin: process.env.CORE_PUBLIC_ORIGIN || process.env.CORE_URL || 'http://localhost:3000',
   extensionUrl: process.env.EXTENSION_URL || 'http://localhost:8000',
 
   // Security
@@ -46,6 +45,7 @@ export const config = {
   groqApiKey: process.env.GROQ_API_KEY || '',
   openaiApiKey: process.env.OPENAI_API_KEY || '',
   deepseekApiKey: process.env.DEEPSEEK_API_KEY || '',
+  googleGenerativeAiApiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY || '',
   
   // EduAI API Configuration
   eduaiApiUrl: process.env.EDUAI_API_URL || 'https://eduai.ok.ubc.ca',

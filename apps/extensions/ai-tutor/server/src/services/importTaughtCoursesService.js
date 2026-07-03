@@ -11,6 +11,7 @@ const AUTO_IMPORT_ROLES = new Set(['INSTRUCTOR']);
 const AUTO_ENROLL_ROLES = new Set(['STUDENT', 'TA']);
 const TEACHING_ENROLLMENT_ROLES = new Set(['INSTRUCTOR', 'TA']);
 const STUDENT_ENROLLMENT_ROLE = 'STUDENT';
+const TA_ENROLLMENT_ROLE = 'TA';
 
 function isTeachingCoreCourse(coreCourse) {
   return TEACHING_ENROLLMENT_ROLES.has(coreCourse?.callerEnrollmentRole);
@@ -18,6 +19,10 @@ function isTeachingCoreCourse(coreCourse) {
 
 function isStudentCoreCourse(coreCourse) {
   return (coreCourse?.callerEnrollmentRole ?? STUDENT_ENROLLMENT_ROLE) === STUDENT_ENROLLMENT_ROLE;
+}
+
+function isTaCoreCourse(coreCourse) {
+  return coreCourse?.callerEnrollmentRole === TA_ENROLLMENT_ROLE;
 }
 
 /** Ensures a Core-linked local offering exists and publish state matches Core. */
@@ -32,7 +37,7 @@ async function ensureOfferingFromCore(coreCourse) {
   });
 
   if (existing) {
-    await syncOfferingPublishFromCore(coreCourse);
+    await reconcileOfferingFromCore(coreCourse);
     if (!existing.coreOfferingId) {
       await prisma.courseOffering.update({
         where: { id: existing.id },
@@ -80,10 +85,14 @@ function corePublishState(externalCourse) {
   return typeof externalCourse?.isPublished === 'boolean' ? externalCourse.isPublished : null;
 }
 
-/** Applies Core isPublished to a linked local offering when Core reports an explicit boolean. */
-async function syncOfferingPublishFromCore(externalCourse) {
-  const publish = corePublishState(externalCourse);
-  if (publish === null || !externalCourse?.id) {
+/**
+ * Mirrors a Core course's mutable fields (publish state, title, description) onto
+ * the linked local offering. Core is the source of truth, so a rename or
+ * draft/publish flip upstream propagates down on the next sync. Returns true when
+ * any field actually changed (so callers can count reconciliations).
+ */
+async function reconcileOfferingFromCore(externalCourse) {
+  if (!externalCourse?.id) {
     return false;
   }
 
@@ -96,16 +105,35 @@ async function syncOfferingPublishFromCore(externalCourse) {
     },
   });
 
-  if (!offering || offering.isPublished === publish) {
+  if (!offering) {
     return false;
   }
 
+  const data = {};
+
+  const publish = corePublishState(externalCourse);
+  if (publish !== null && offering.isPublished !== publish) {
+    data.isPublished = publish;
+  }
+
+  const nextTitle = deriveTitle(externalCourse);
+  if (nextTitle && offering.title !== nextTitle) {
+    data.title = nextTitle;
+  }
+
+  const nextDescription = deriveDescription(externalCourse);
+  if (offering.description !== nextDescription) {
+    data.description = nextDescription;
+  }
+
+  if (Object.keys(data).length === 0) {
+    return false;
+  }
+
+  data.externalMetadata = externalCourse;
   await prisma.courseOffering.update({
     where: { id: offering.id },
-    data: {
-      isPublished: publish,
-      externalMetadata: externalCourse,
-    },
+    data,
   });
 
   return true;
@@ -158,7 +186,7 @@ export async function importExternalCourseForUser(instructor, externalCourse) {
         data: { coreOfferingId: externalCourse.id },
       });
     }
-    await syncOfferingPublishFromCore(externalCourse);
+    await reconcileOfferingFromCore(externalCourse);
 
     return { offering: alreadyImported, created: false };
   }
@@ -206,18 +234,23 @@ export async function importExternalCourseForUser(instructor, externalCourse) {
  * Mirrors Core course catalog into local offerings. Core is the source of truth —
  * imports new taught courses and refreshes topics + enrollments for existing links.
  * Idempotent — safe to call on every /api/me and GET /courses request.
+ *
+ * Pass `options.coreCourses` when the caller already fetched Core's course list
+ * (e.g. `/api/me` shares one list across import + TA role resolution).
  */
-export async function importTaughtCoursesFromCore(instructor, cookie) {
+export async function importTaughtCoursesFromCore(instructor, cookie, options = {}) {
   if (!AUTO_IMPORT_ROLES.has(instructor.role)) {
     return { imported: 0, skipped: 0 };
   }
 
-  let coreCourses;
-  try {
-    coreCourses = await listEduAiCourses({ cookie });
-  } catch (err) {
-    console.error('[eduai] Auto-import skipped: could not list Core courses', err);
-    return { imported: 0, skipped: 0, error: err.message };
+  let coreCourses = options.coreCourses;
+  if (coreCourses === undefined) {
+    try {
+      coreCourses = await listEduAiCourses({ cookie });
+    } catch (err) {
+      console.error('[eduai] Auto-import skipped: could not list Core courses', err);
+      return { imported: 0, skipped: 0, error: err.message };
+    }
   }
 
   if (!Array.isArray(coreCourses) || coreCourses.length === 0) {
@@ -258,7 +291,7 @@ export async function importTaughtCoursesFromCore(instructor, cookie) {
     }
 
     if (importedIds.has(coreCourse.id)) {
-      if (await syncOfferingPublishFromCore(coreCourse)) {
+      if (await reconcileOfferingFromCore(coreCourse)) {
         publishSynced++;
       }
       skipped++;
@@ -316,18 +349,22 @@ export async function importTaughtCoursesFromCore(instructor, cookie) {
  * Mirrors Core student enrollments into local CourseEnrollment rows. Core is the
  * source of truth — creates offerings when missing and prunes stale EDUAI links.
  * Idempotent — safe to call on every /api/me and GET /courses request.
+ *
+ * Pass `options.coreCourses` when the caller already fetched Core's course list.
  */
-export async function importEnrolledCoursesFromCore(student, cookie) {
+export async function importEnrolledCoursesFromCore(student, cookie, options = {}) {
   if (!AUTO_ENROLL_ROLES.has(student.role)) {
     return { enrolled: 0, skipped: 0, removed: 0 };
   }
 
-  let coreCourses;
-  try {
-    coreCourses = await listEduAiCourses({ cookie });
-  } catch (err) {
-    console.error('[eduai] Student enrollment mirror skipped: could not list Core courses', err);
-    return { enrolled: 0, skipped: 0, removed: 0, error: err.message };
+  let coreCourses = options.coreCourses;
+  if (coreCourses === undefined) {
+    try {
+      coreCourses = await listEduAiCourses({ cookie });
+    } catch (err) {
+      console.error('[eduai] Student enrollment mirror skipped: could not list Core courses', err);
+      return { enrolled: 0, skipped: 0, removed: 0, error: err.message };
+    }
   }
 
   if (!Array.isArray(coreCourses)) {
@@ -337,9 +374,36 @@ export async function importEnrolledCoursesFromCore(student, cookie) {
   const studentCourses = coreCourses.filter(
     (course) => course?.id && typeof course.id === 'string' && isStudentCoreCourse(course),
   );
+  const taCourses = coreCourses.filter(
+    (course) => course?.id && typeof course.id === 'string' && isTaCoreCourse(course),
+  );
 
   let enrolled = 0;
   let skipped = 0;
+
+  for (const coreCourse of taCourses) {
+    try {
+      const offering = await ensureOfferingFromCore(coreCourse);
+      await prisma.courseEnrollment.upsert({
+        where: {
+          courseOfferingId_userId: {
+            courseOfferingId: offering.id,
+            userId: student.id,
+          },
+        },
+        update: { role: TA_ENROLLMENT_ROLE },
+        create: {
+          courseOfferingId: offering.id,
+          userId: student.id,
+          role: TA_ENROLLMENT_ROLE,
+        },
+      });
+      enrolled++;
+    } catch (err) {
+      console.error('[eduai] TA enrollment mirror failed for Core course', coreCourse.id, err);
+      skipped++;
+    }
+  }
 
   for (const coreCourse of studentCourses) {
     try {
@@ -410,4 +474,28 @@ export async function importEnrolledCoursesFromCore(student, cookie) {
   }
 
   return { enrolled, skipped, removed };
+}
+
+export function coreCoursesIncludeTaEnrollment(coreCourses) {
+  if (!Array.isArray(coreCourses)) return false;
+  return coreCourses.some((course) => course?.callerEnrollmentRole === 'TA');
+}
+
+/**
+ * True when Core reports the caller holds a TA enrollment in any course.
+ *
+ * Core's TA-on-Enrollment migration (#664) dropped the platform-level
+ * UserRole.TA: a course TA is now a STUDENT-platform user with an
+ * Enrollment(role=TA). AI Tutor's client RBAC still selects its role *view*
+ * (nav, route shell, access level) from a single role string, so `/api/me`
+ * uses this to surface an effective TA role. Core's per-course
+ * `callerEnrollmentRole` is the source of truth — the local mirror flattens
+ * student-side enrollments to STUDENT and cannot be trusted for this.
+ *
+ * Pass `coreCourses` when the caller already fetched Core's course list.
+ */
+export async function userHasCoreTaEnrollment(cookie, coreCourses) {
+  const courses =
+    coreCourses !== undefined ? coreCourses : await listEduAiCourses({ cookie });
+  return coreCoursesIncludeTaEnrollment(courses);
 }

@@ -45,7 +45,7 @@ const MOCK_ENROLLMENTS = [
   {
     id: "enr-1",
     userId: "user-1",
-    user: { email: "alice@test.com", name: "Alice", studentId: null },
+    user: { email: "alice@test.com", name: "Alice", studentId: "12345678" },
     enrolledAt: new Date("2025-09-01T00:00:00.000Z"),
     isActive: true,
     role: "STUDENT",
@@ -94,7 +94,7 @@ function makeArgs(id?: string, authorization?: string) {
     }),
     params: id !== undefined ? { id } : {},
     context: {} as never,
-  };
+  } as any;
 }
 
 function makePost(id: string, body: unknown) {
@@ -106,7 +106,7 @@ function makePost(id: string, body: unknown) {
     }),
     params: { id },
     context: {} as never,
-  };
+  } as any;
 }
 
 beforeEach(() => {
@@ -235,7 +235,7 @@ describe("GET /api/courses/:id/enrollments loader", () => {
       studentId: "user-1",
       studentEmail: "alice@test.com",
       studentName: "Alice",
-      studentNumber: null,
+      studentNumber: "12345678",
       enrolledAt: "2025-09-01T00:00:00.000Z",
       isActive: true,
       role: "STUDENT",

@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Tesseract from 'tesseract.js';
 import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist';
 import pdfWorkerSrc from 'pdfjs-dist/build/pdf.worker?url';
-import { UploadCloud, FileText, Loader2, Trash2, Copy as CopyIcon, RefreshCcw, ChevronDown, ChevronUp, History } from 'lucide-react';
+import { IconUpload, IconFileText, IconLoader2, IconTrash, IconCopy as CopyIcon, IconRefresh, IconChevronDown, IconChevronUp, IconHistory } from '@tabler/icons-react';
 
 import {
     Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@eduai/ui';
@@ -14,7 +14,7 @@ import { Button, Textarea, Input, Label, Select, SelectContent, SelectItem, Sele
 import { Tooltip } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/use-toast';
 import { useEduAIStatus } from '../../hooks/useEduAIStatus';
-import { EduAIStatusBadge } from '../eduai/EduAIStatusBadge';
+import { AIServiceIndicators } from '../eduai/AIServiceIndicators';
 
 import { ExtractedQuestion, MCQChoice, Question, QuestionDifficulty, QuestionType } from '../../types/question';
 import { MCQChoicesField } from '../questions/MCQChoicesField';
@@ -64,6 +64,44 @@ const questionTypeLabels: Record<QuestionType, string> = {
     LA: 'Long Answer'
 };
 const assessmentTypes = ['Assignment', 'Lab', 'Quiz', 'Midterm', 'Final'] as const;
+
+function QuestionFileUploadZone({
+    id,
+    disabled,
+    onFileSelected,
+}: {
+    id: string;
+    disabled?: boolean;
+    onFileSelected: (file: File) => void;
+}) {
+    return (
+        <label
+            htmlFor={id}
+            data-tour-id="upload-file"
+            className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-muted-foreground/30 bg-muted/30 p-6 text-center transition hover:border-primary hover:bg-muted/50 cursor-pointer"
+        >
+            <IconUpload className="h-10 w-10 text-muted-foreground" />
+            <div className="space-y-1">
+                <p className="text-sm font-medium">Drop PDF, image, or TXT file here</p>
+                <p className="text-xs text-muted-foreground">We support PDF, PNG, JPG, TXT and other common formats.</p>
+            </div>
+            <input
+                id={id}
+                type="file"
+                accept=".pdf,image/*,.txt,text/plain"
+                className="hidden"
+                onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) {
+                        onFileSelected(file);
+                    }
+                    event.target.value = '';
+                }}
+                disabled={disabled}
+            />
+        </label>
+    );
+}
 
 /** Callback when background extraction finishes (so the parent can update OCR job status). */
 export type OnExtractionComplete = (
@@ -252,6 +290,7 @@ export const QuestionUploadDialog = ({
     const [availableModels, setAvailableModels] = useState<EduAIModelOption[]>([]);
     const [aiModel, setAiModel] = useState('ollama:gpt-oss:120b');
     const [providerApiKey, setProviderApiKey] = useState('');
+    const [apiKeySaveState, setApiKeySaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
     const [uploadSectionCollapsed, setUploadSectionCollapsed] = useState(true);
     const [showHistoryPanel, setShowHistoryPanel] = useState(false);
     const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
@@ -382,7 +421,29 @@ export const QuestionUploadDialog = ({
         };
 
         void loadApiKey();
+        setApiKeySaveState('idle');
     }, [aiModel]);
+
+    const saveProviderApiKey = useCallback(async () => {
+        const provider = apiKeyStorage.getProviderFromModel(aiModel);
+        if (!provider || !providerApiKey.trim()) return;
+        setApiKeySaveState('saving');
+        try {
+            await apiKeyStorage.setApiKey(provider, providerApiKey.trim());
+            setApiKeySaveState('saved');
+            toast({
+                title: 'API key saved',
+                description: 'Stored locally in your browser for this provider.',
+            });
+        } catch {
+            setApiKeySaveState('error');
+            toast({
+                variant: 'destructive',
+                title: 'Failed to save API key',
+                description: 'Could not store the key locally. Try again.',
+            });
+        }
+    }, [aiModel, providerApiKey, toast]);
 
     const performPdfOcr = useCallback(async (file: File, onProgress: (value: number) => void) => {
         const arrayBuffer = await file.arrayBuffer();
@@ -524,16 +585,6 @@ export const QuestionUploadDialog = ({
             });
         }
     }, [courseId, courseName, handleExtractQuestions, performOcr, toast, onExtractInBackground, onClose, aiModel, addJob, updateJobStatus, assessmentType, assessmentName, assessmentSemester]);
-
-    const handleFileChange = useCallback(
-        (event: React.ChangeEvent<HTMLInputElement>) => {
-            const file = event.target.files?.[0];
-            if (file) {
-                void processFile(file);
-            }
-        },
-        [processFile]
-    );
 
     const updateDraft = useCallback((id: string, updates: Partial<DraftQuestion>) => {
         setDraftQuestions((prev) =>
@@ -912,7 +963,7 @@ export const QuestionUploadDialog = ({
     return (
         <>
         <Dialog open={open} onOpenChange={(value) => { if (!value) handleCloseAttempt(); }}>
-            <DialogContent className={`max-h-[92vh] overflow-y-auto transition-all duration-200 ${showHistoryPanel ? 'max-w-[95vw] sm:max-w-[1400px]' : 'max-w-6xl sm:max-w-7xl w-[95vw]'}`}>
+            <DialogContent className={`max-h-[90vh] overflow-hidden transition-all duration-200 ${showHistoryPanel ? 'max-w-[95vw] sm:max-w-[1400px]' : 'max-w-6xl sm:max-w-7xl w-[95vw]'}`}>
                 <DialogHeader>
                     <div className="flex items-start justify-between gap-4">
                         <div>
@@ -934,7 +985,7 @@ export const QuestionUploadDialog = ({
                                 onClick={() => setShowHistoryPanel(!showHistoryPanel)}
                                 className="shrink-0"
                             >
-                                <History className="h-4 w-4 mr-1.5" />
+                                <IconHistory className="h-4 w-4 mr-1.5" />
                                 History
                                 {ocrJobs.filter((j) => j.status === 'processing' || j.status === 'pending').length > 0 && (
                                     <span className="ml-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-medium text-white">
@@ -946,10 +997,11 @@ export const QuestionUploadDialog = ({
                     </div>
                 </DialogHeader>
 
-                <div className="flex gap-6 py-2 min-h-[70vh]">
+                <div className="h-[70vh] min-h-0 overflow-y-auto pr-1">
+                <div className="flex flex-col gap-6 py-2 min-h-full md:flex-row">
                     {/* Left: Assessment details — narrow, vertical fields */}
                     {saveTarget === 'bank' ? (
-                        <Card className="flex-shrink-0 w-[280px] border-dashed border-primary/30 bg-primary/10">
+                        <Card className="flex-shrink-0 w-full md:w-[280px] border-dashed border-primary/30 bg-primary/10">
                             <CardHeader className="space-y-1">
                                 <CardTitle className="text-base font-semibold">Question bank only</CardTitle>
                                 <p className="text-xs text-muted-foreground">
@@ -958,7 +1010,7 @@ export const QuestionUploadDialog = ({
                             </CardHeader>
                         </Card>
                     ) : (
-                        <Card data-tour-id="upload-assessment-meta" className="flex-shrink-0 w-[280px]">
+                        <Card data-tour-id="upload-assessment-meta" className="flex-shrink-0 w-full md:w-[280px]">
                             <CardHeader className="space-y-1">
                                 <CardTitle className="text-base font-semibold">Assessment details</CardTitle>
                                 <p className="text-xs text-muted-foreground">
@@ -1018,9 +1070,9 @@ export const QuestionUploadDialog = ({
                                 >
                                     <span>Upload & model</span>
                                     {uploadSectionCollapsed ? (
-                                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                                        <IconChevronDown className="h-4 w-4 text-muted-foreground" />
                                     ) : (
-                                        <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                                        <IconChevronUp className="h-4 w-4 text-muted-foreground" />
                                     )}
                                 </button>
                                 {!uploadSectionCollapsed && (
@@ -1028,11 +1080,11 @@ export const QuestionUploadDialog = ({
                                         <CardHeader className="space-y-1">
                                             <div className="flex items-center justify-between">
                                                 <CardTitle className="text-base font-semibold">Upload a file</CardTitle>
-                                                <EduAIStatusBadge
+                                                <AIServiceIndicators
                                                     status={eduaiStatus.status}
                                                     message={eduaiStatus.message}
+                                                    provider={eduaiStatus.provider}
                                                     onRefresh={eduaiStatus.refresh}
-                                                    questionGenerationPhase={eduaiStatus.questionGenerationPhase}
                                                     className="z-50"
                                                 />
                                             </div>
@@ -1111,20 +1163,32 @@ export const QuestionUploadDialog = ({
                                                             </Button>
                                                         </div>
                                                     ) : (
-                                                        <Input
-                                                            id="provider-api-key-expanded"
-                                                            type="password"
-                                                            placeholder={`Enter your ${apiKeyStorage.getProviderFromModel(aiModel)?.toUpperCase()} API key`}
-                                                            value={providerApiKey}
-                                                            onChange={(e) => {
-                                                                const value = e.target.value;
-                                                                setProviderApiKey(value);
-                                                                const provider = apiKeyStorage.getProviderFromModel(aiModel);
-                                                                if (provider && value) {
-                                                                    void apiKeyStorage.setApiKey(provider, value);
-                                                                }
-                                                            }}
-                                                        />
+                                                        <div className="flex gap-2">
+                                                            <Input
+                                                                id="provider-api-key-expanded"
+                                                                type="password"
+                                                                className="flex-1"
+                                                                placeholder={`Enter your ${apiKeyStorage.getProviderFromModel(aiModel)?.toUpperCase()} API key`}
+                                                                value={providerApiKey}
+                                                                onChange={(e) => {
+                                                                    setProviderApiKey(e.target.value);
+                                                                    setApiKeySaveState('idle');
+                                                                }}
+                                                            />
+                                                            <Button
+                                                                type="button"
+                                                                variant="outline"
+                                                                size="sm"
+                                                                disabled={!providerApiKey.trim() || apiKeySaveState === 'saving'}
+                                                                onClick={() => void saveProviderApiKey()}
+                                                            >
+                                                                {apiKeySaveState === 'saving'
+                                                                    ? 'Saving…'
+                                                                    : apiKeySaveState === 'saved'
+                                                                        ? 'Saved'
+                                                                        : 'Save key'}
+                                                            </Button>
+                                                        </div>
                                                     )}
                                                     <p className="text-xs text-muted-foreground">
                                                         Your API key is stored locally in your browser and never sent to our servers.
@@ -1133,14 +1197,23 @@ export const QuestionUploadDialog = ({
                                             )}
                                             {lastFileName && (
                                                 <div className="flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm">
-                                                    <FileText className="h-4 w-4 text-muted-foreground" />
+                                                    <IconFileText className="h-4 w-4 text-muted-foreground" />
                                                     <span className="truncate">{lastFileName}</span>
                                                     <Button variant="ghost" size="icon" className="ml-auto" onClick={handleReset}>
-                                                        <RefreshCcw className="h-4 w-4" />
+                                                        <IconRefresh className="h-4 w-4" />
                                                         <span className="sr-only">Reset</span>
                                                     </Button>
                                                 </div>
                                             )}
+                                            <QuestionFileUploadZone
+                                                id="question-upload-review"
+                                                disabled={
+                                                    processingStage === 'ocr' ||
+                                                    processingStage === 'extracting' ||
+                                                    processingStage === 'saving'
+                                                }
+                                                onFileSelected={(file) => void processFile(file)}
+                                            />
                                         </CardContent>
                                     </Card>
                                 )}
@@ -1173,7 +1246,7 @@ export const QuestionUploadDialog = ({
                                                                 {draft.include ? 'Included' : 'Excluded'}
                                                             </Button>
                                                             <Button variant="ghost" size="icon" onClick={() => removeDraft(draft.id)}>
-                                                                <Trash2 className="h-4 w-4" />
+                                                                <IconTrash className="h-4 w-4" />
                                                                 <span className="sr-only">Remove question</span>
                                                             </Button>
                                                         </div>
@@ -1311,11 +1384,11 @@ export const QuestionUploadDialog = ({
                         <CardHeader className="space-y-1">
                             <div className="flex items-center justify-between">
                                 <CardTitle className="text-base font-semibold">Upload a file</CardTitle>
-                                <EduAIStatusBadge
+                                <AIServiceIndicators
                                     status={eduaiStatus.status}
                                     message={eduaiStatus.message}
+                                    provider={eduaiStatus.provider}
                                     onRefresh={eduaiStatus.refresh}
-                                    questionGenerationPhase={eduaiStatus.questionGenerationPhase}
                                     className="z-50"
                                 />
                             </div>
@@ -1395,20 +1468,32 @@ export const QuestionUploadDialog = ({
                                             </Button>
                                         </div>
                                     ) : (
-                                        <Input
-                                            id="provider-api-key"
-                                            type="password"
-                                            placeholder={`Enter your ${apiKeyStorage.getProviderFromModel(aiModel)?.toUpperCase()} API key`}
-                                            value={providerApiKey}
-                                            onChange={(e) => {
-                                                const value = e.target.value;
-                                                setProviderApiKey(value);
-                                                const provider = apiKeyStorage.getProviderFromModel(aiModel);
-                                                if (provider && value) {
-                                                    void apiKeyStorage.setApiKey(provider, value);
-                                                }
-                                            }}
-                                        />
+                                        <div className="flex gap-2">
+                                            <Input
+                                                id="provider-api-key"
+                                                type="password"
+                                                className="flex-1"
+                                                placeholder={`Enter your ${apiKeyStorage.getProviderFromModel(aiModel)?.toUpperCase()} API key`}
+                                                value={providerApiKey}
+                                                onChange={(e) => {
+                                                    setProviderApiKey(e.target.value);
+                                                    setApiKeySaveState('idle');
+                                                }}
+                                            />
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                disabled={!providerApiKey.trim() || apiKeySaveState === 'saving'}
+                                                onClick={() => void saveProviderApiKey()}
+                                            >
+                                                {apiKeySaveState === 'saving'
+                                                    ? 'Saving…'
+                                                    : apiKeySaveState === 'saved'
+                                                        ? 'Saved'
+                                                        : 'Save key'}
+                                            </Button>
+                                        </div>
                                     )}
                                     <p className="text-xs text-muted-foreground">
                                         Your API key is stored locally in your browser and never sent to our servers.
@@ -1417,32 +1502,22 @@ export const QuestionUploadDialog = ({
                             )}
 
                             {(!lastFileName && draftQuestions.length === 0) && (
-                                <label
-                                    htmlFor="question-upload"
-                                    data-tour-id="upload-file"
-                                    className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-muted-foreground/30 bg-muted/30 p-6 text-center transition hover:border-primary hover:bg-muted/50 cursor-pointer"
-                                >
-                                    <UploadCloud className="h-10 w-10 text-muted-foreground" />
-                                    <div className="space-y-1">
-                                        <p className="text-sm font-medium">Drop PDF, image, or TXT file here</p>
-                                        <p className="text-xs text-muted-foreground">We support PDF, PNG, JPG, TXT and other common formats.</p>
-                                    </div>
-                                    <input
-                                        id="question-upload"
-                                        type="file"
-                                        accept=".pdf,image/*,.txt,text/plain"
-                                        className="hidden"
-                                        onChange={handleFileChange}
-                                        disabled={processingStage === 'ocr' || processingStage === 'extracting' || processingStage === 'saving'}
-                                    />
-                                </label>
+                                <QuestionFileUploadZone
+                                    id="question-upload"
+                                    disabled={
+                                        processingStage === 'ocr' ||
+                                        processingStage === 'extracting' ||
+                                        processingStage === 'saving'
+                                    }
+                                    onFileSelected={(file) => void processFile(file)}
+                                />
                             )}
                             {lastFileName && (
                                 <div className="flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm">
-                                    <FileText className="h-4 w-4 text-muted-foreground" />
+                                    <IconFileText className="h-4 w-4 text-muted-foreground" />
                                     <span className="truncate">{lastFileName}</span>
                                     <Button variant="ghost" size="icon" className="ml-auto" onClick={handleReset}>
-                                        <RefreshCcw className="h-4 w-4" />
+                                        <IconRefresh className="h-4 w-4" />
                                         <span className="sr-only">Reset</span>
                                     </Button>
                                 </div>
@@ -1450,7 +1525,7 @@ export const QuestionUploadDialog = ({
                             {(processingStage === 'ocr' || processingStage === 'extracting' || processingStage === 'saving') && (
                                 <div className="space-y-3">
                                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                        <IconLoader2 className="h-4 w-4 animate-spin" />
                                         <span>
                                             {processingStage === 'ocr' && 'Running OCR...'}
                                             {processingStage === 'extracting' && 'Extracting questions with AI...'}
@@ -1480,8 +1555,9 @@ export const QuestionUploadDialog = ({
                         onClearHistory={() => setShowClearHistoryConfirm(true)}
                     />
                 </div>
+                </div>
 
-                <DialogFooter className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <DialogFooter className="pt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <div className="text-sm text-muted-foreground">
                         {includedDrafts.length} question{includedDrafts.length === 1 ? '' : 's'} ready to save.
                     </div>
@@ -1490,15 +1566,15 @@ export const QuestionUploadDialog = ({
                             content={draftQuestions.length > 0 && processingStage === 'review' ? 'Close will ask you to save or discard your current questions.' : 'Close this dialog.'}
                             side="top"
                         >
-                            <Button variant="outline" onClick={handleCloseAttempt}>
+                            <Button type="button" variant="outline" onClick={handleCloseAttempt}>
                                 Cancel
                             </Button>
                         </Tooltip>
                         {disabledReason ? (
                             <Tooltip content={disabledReason} multiline>
                                 <span className="inline-block">
-                                    <Button onClick={() => void handleSave()} disabled={!canSave} data-tour-id="upload-create">
-                                        {processingStage === 'saving' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                    <Button type="button" variant="default" onClick={() => void handleSave()} disabled={!canSave} data-tour-id="upload-create">
+                                        {processingStage === 'saving' && <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />}
                                         Create Questions
                                     </Button>
                                 </span>
@@ -1514,8 +1590,8 @@ export const QuestionUploadDialog = ({
                                 }
                             >
                                 <span className="inline-block">
-                                    <Button onClick={() => void handleSave()} disabled={!canSave} data-tour-id="upload-create">
-                                        {processingStage === 'saving' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                    <Button type="button" variant="default" onClick={() => void handleSave()} disabled={!canSave} data-tour-id="upload-create">
+                                        {processingStage === 'saving' && <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />}
                                         Create Questions
                                     </Button>
                                 </span>

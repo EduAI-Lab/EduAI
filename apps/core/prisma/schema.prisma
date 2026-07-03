@@ -2,8 +2,9 @@ generator client {
   provider      = "prisma-client-js"
   output        = "../node_modules/@prisma/client"
   // "native" auto-detects the local OS; "rhel-openssl-1.1.x" is needed
-  // when running on RHEL 8 hosts (e.g. dev.eduai.ok.ubc.ca / s378).
-  binaryTargets = ["native", "rhel-openssl-1.1.x"]
+  // for RHEL 8 hosts (dev.eduai.ok.ubc.ca / s378); "linux-musl-openssl-3.0.x"
+  // is required for node:*-alpine Docker images (musl libc, OpenSSL 3).
+  binaryTargets = ["native", "rhel-openssl-1.1.x", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
@@ -44,6 +45,7 @@ model User {
   taughtCourses             Course[]               @relation("CourseInstructor")
   auditLogs                 AuditLog[]
   systemLogs                SystemLog[]
+  passwordHistory           PasswordHistory[]
 
   @@map("user")
 }
@@ -74,6 +76,7 @@ model Account {
   refreshTokenExpiresAt DateTime?
   scope                 String?
   password              String?
+  passwordChangedAt     DateTime?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
   user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -94,6 +97,20 @@ model Verification {
   @@map("verification")
 }
 
+/// UBCO subject codes ("units" / "disciplines") pulled from Workday. Source of
+/// truth for course `department` validation and the discipline search endpoint.
+/// Seeded from prisma/data/disciplines.csv.
+model Discipline {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  createdAt DateTime @default(now())
+  courses   Course[] @relation("CourseDiscipline")
+
+  @@index([name])
+  @@map("disciplines")
+}
+
 model Course {
   id                     String               @id @default(cuid())
   code                   String
@@ -111,6 +128,7 @@ model Course {
   externalSource         String?
   lastSyncedAt           DateTime?
   department             String?
+  discipline             Discipline?          @relation("CourseDiscipline", fields: [department], references: [code], onDelete: Restrict, onUpdate: Cascade)
   deletedAt              DateTime?
   createdAt              DateTime             @default(now())
   updatedAt              DateTime             @updatedAt
@@ -168,6 +186,7 @@ model Enrollment {
   enrolledAt     DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   isActive       Boolean        @default(true)
+  idempotencyKey String?        @unique
   externalId     String?
   externalSource String?
   course         Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
@@ -388,21 +407,22 @@ model QuestionSecondaryTopic {
 }
 
 model BugReport {
-  id          String          @id @default(cuid())
+  id          String           @id @default(cuid())
   source      BugReportSource
   userId      String?
-  isAnonymous Boolean         @default(false)
-  description String          @db.VarChar(2000)
-  status      BugReportStatus @default(UNHANDLED)
+  isAnonymous Boolean          @default(false)
+  description String           @db.VarChar(2000)
+  bugType     BugReportType?
+  status      BugReportStatus  @default(UNHANDLED)
   consoleLogs String?
   networkLogs String?
   screenshot  String?
   pageUrl     String?
   userAgent   String?
   context     Json?
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
-  user        User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  user        User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([status, createdAt])
   @@index([userId])
@@ -434,9 +454,15 @@ model MaterialEmbedding {
 }
 
 
+enum ChatbotType {
+  LEARNING
+  ADMIN
+}
+
 model Chat {
   id              String           @id @default(cuid())
   userId          String
+  chatbotType     ChatbotType      @default(LEARNING) @map("chatbot_type")
   /// Optional course context. Null = general (non-course) assistant chat; course
   /// chats are tagged at creation so instructors/unit-admins can read them (RBAC
   /// policy expansion §5). SetNull on course delete so history survives removal.
@@ -622,6 +648,15 @@ enum BugReportStatus {
   RESOLVED
 }
 
+enum BugReportType {
+  UI_DISPLAY
+  FEATURE_NOT_WORKING
+  PERFORMANCE
+  CONTENT_ERROR
+  ACCESS_PERMISSION
+  OTHER
+}
+
 enum AIModelType {
   CHAT
   COMPLETION
@@ -769,4 +804,46 @@ model LogRetentionPolicy {
   updatedAt           DateTime @updatedAt
 
   @@map("log_retention_policy")
+}
+
+/// Stores the last 10 password hashes per user for the UBC no-reuse policy (#339).
+/// Hashes are bcrypt/scrypt — never plaintext. Reuse is checked by verify(candidate, hash).
+model PasswordHistory {
+  id           String   @id @default(cuid())
+  userId       String
+  passwordHash String
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("password_history")
+}
+
+enum CronJobStatus {
+  RUNNING
+  SUCCESS
+  ERROR
+}
+
+model CronJobRun {
+  id         String        @id @default(cuid())
+  jobName    String
+  status     CronJobStatus
+  startedAt  DateTime
+  finishedAt DateTime?
+  message    String?
+  exitCode   Int?
+  createdAt  DateTime      @default(now())
+
+  @@index([jobName, startedAt])
+  @@map("cron_job_runs")
+}
+
+model CronJobScheduleOverride {
+  jobName       String   @id
+  schedule      String
+  scheduleLabel String
+  updatedAt     DateTime @updatedAt
+
+  @@map("cron_job_schedule_overrides")
 }

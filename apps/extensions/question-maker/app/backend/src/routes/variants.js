@@ -19,7 +19,7 @@ import {
 } from '../services/questionService.js';
 import { Topics } from '../schema/index.js';
 import { patchQuestionTestableOnCore } from '../services/coreApiService.js';
-import { pushVariantToCore } from '../services/coreWiringService.js';
+import { pushVariantToCore, VALID_DIFFICULTIES, VALID_REASONING_LEVELS } from '../services/coreWiringService.js';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
 import { QM_AUTHORIZED } from '../middleware/roles.js';
 import { requireQuestionAccess, requireVariantAccess } from '../middleware/resourceAccess.js';
@@ -34,6 +34,21 @@ function parseIsDraft(raw) {
   if (raw === true || raw === 'true') return true;
   if (raw === false || raw === 'false') return false;
   return undefined;
+}
+
+/**
+ * Validate difficulty/reasoningLevel against their allowed enum values before
+ * persisting or pushing (#6). Returns an error string when a *provided* value is
+ * invalid, or null when both are absent/valid (defaults are applied downstream).
+ */
+function validateVariantEnums({ difficulty, reasoningLevel }) {
+  if (difficulty !== undefined && difficulty !== null && !VALID_DIFFICULTIES.includes(difficulty)) {
+    return `Invalid difficulty. Allowed values: ${VALID_DIFFICULTIES.join(', ')}`;
+  }
+  if (reasoningLevel !== undefined && reasoningLevel !== null && !VALID_REASONING_LEVELS.includes(reasoningLevel)) {
+    return `Invalid reasoningLevel. Allowed values: ${VALID_REASONING_LEVELS.join(', ')}`;
+  }
+  return null;
 }
 
 /** POST /api/questions/:id/variants – creates a variant under the given question after validation. */
@@ -51,6 +66,11 @@ router.post(
           success: false,
           error: 'Question text is required'
         });
+      }
+
+      const enumError = validateVariantEnums({ difficulty, reasoningLevel });
+      if (enumError) {
+        return res.status(400).json({ success: false, error: enumError });
       }
 
       const variant = await createVariant(
@@ -113,15 +133,31 @@ router.put(
       const { questionText, difficulty, reasoningLevel, assessmentId, secondaryTopicsId, answer, choices, referenceId, isAiGenerated, isDraft: isDraftRaw } = req.body;
       const isDraft = parseIsDraft(isDraftRaw);
 
+      const enumError = validateVariantEnums({ difficulty, reasoningLevel });
+      if (enumError) {
+        return res.status(400).json({ success: false, error: enumError });
+      }
+
       const current = req.variant;
       const access = req.courseAccess;
       const isInstructorPlus = access.rank >= LEVELS.instructor.rank;
 
-      // §19 approved-variant lock: once approved, the only permitted PATCH is a
-      // revert to draft by an instructor-and-up; everything else is 409.
+      // §19 approved-variant lock: once approved, content edits are blocked except
+      // reverting to draft (instructor+) or toggling the AI-generated tag.
       if (current.isDraft === false) {
         const reverting = isDraft === true && isInstructorPlus;
-        if (!reverting) {
+        const aiTagOnly =
+          isAiGenerated !== undefined &&
+          isDraftRaw === undefined &&
+          questionText === undefined &&
+          difficulty === undefined &&
+          reasoningLevel === undefined &&
+          assessmentId === undefined &&
+          secondaryTopicsId === undefined &&
+          answer === undefined &&
+          choices === undefined &&
+          referenceId === undefined;
+        if (!reverting && !aiTagOnly) {
           return res.status(409).json({ success: false, error: 'VARIANT_LOCKED' });
         }
       } else {

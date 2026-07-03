@@ -65,6 +65,7 @@ export function enrichCoursesWithCoreMetadata(
 
     return {
       ...course,
+      description: core.description ?? course.description ?? null,
       term: core.term ?? course.term ?? null,
       year: core.year ?? course.year ?? null,
     };
@@ -84,13 +85,41 @@ export function isSandboxCourse(course: Course): boolean {
   );
 }
 
+/** Keep one row per normalized course code; prefer Core-linked, then newest id. */
+export function dedupeCoursesByCode(courses: Course[]): Course[] {
+  const byCode = new Map<string, Course>();
+
+  for (const course of courses) {
+    const key = normalizeCourseCode(course.code) || `id:${course.id}`;
+    const existing = byCode.get(key);
+    if (!existing) {
+      byCode.set(key, course);
+      continue;
+    }
+    const prefer =
+      course.coreCourseId && !existing.coreCourseId
+        ? course
+        : !course.coreCourseId && existing.coreCourseId
+          ? existing
+          : course.id > existing.id
+            ? course
+            : existing;
+    byCode.set(key, prefer);
+  }
+
+  return Array.from(byCode.values()).sort((a, b) =>
+    (a.name ?? '').localeCompare(b.name ?? '', undefined, { sensitivity: 'base' }),
+  );
+}
+
 export function filterCoursesForCourseSelection(
   localCourses: Course[] | undefined,
-  coreCourses: EduAICourseOption[]
+  coreCourses: EduAICourseOption[],
+  options?: { bypassCoreEnrollmentFilter?: boolean }
 ): { courses: Course[]; showMockLabel: boolean } {
-  const local = localCourses ?? [];
-  if (coreCourses.length === 0) {
-    return { courses: local, showMockLabel: true };
+  const local = dedupeCoursesByCode(localCourses ?? []);
+  if (options?.bypassCoreEnrollmentFilter || coreCourses.length === 0) {
+    return { courses: local, showMockLabel: coreCourses.length === 0 };
   }
 
   const coreIds = new Set(coreCourses.map((course) => course.id));
@@ -100,17 +129,18 @@ export function filterCoursesForCourseSelection(
       .filter((code) => code !== '')
   );
 
-  const courses = local.filter((course) => {
-    if (isSandboxCourse(course)) {
-      return true;
-    }
-    if (course.coreCourseId && coreIds.has(course.coreCourseId)) {
-      return true;
-    }
-    const code = normalizeCourseCode(course.code);
-    return code !== '' && coreCodes.has(code);
-  });
+  const courses = dedupeCoursesByCode(
+    local.filter((course) => {
+      if (isSandboxCourse(course)) {
+        return true;
+      }
+      if (course.coreCourseId && coreIds.has(course.coreCourseId)) {
+        return true;
+      }
+      const code = normalizeCourseCode(course.code);
+      return code !== '' && coreCodes.has(code);
+    }),
+  );
 
   return { courses, showMockLabel: false };
 }
-

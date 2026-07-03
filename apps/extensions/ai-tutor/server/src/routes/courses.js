@@ -32,6 +32,7 @@ import { cloneCourseContent, cloneLessonsFromOffering } from '../services/course
 import { calculateCourseProgress } from '../services/progressCalculation.js';
 import { findEduAiCourseById, listEduAiCourses, setCoreCoursePublishState } from '../services/eduaiClient.js';
 import { mapEduAiServiceKeyError } from '../services/eduaiServiceKeyErrors.js';
+import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
 import { syncCourseEnrollments } from '../services/enrollmentSync.js';
 import {
   importEnrolledCoursesFromCore,
@@ -42,7 +43,20 @@ import {
 const router = express.Router();
 
 function isSupportedCourseRole(role) {
-  return role === 'INSTRUCTOR' || role === 'STUDENT' || role === 'TA' || role === 'UNIT_ADMIN';
+  return (
+    role === 'INSTRUCTOR' ||
+    role === 'STUDENT' ||
+    role === 'TA' ||
+    role === 'UNIT_ADMIN' ||
+    role === 'ADMIN'
+  );
+}
+
+async function userHasTaEnrollment(userId) {
+  const count = await prisma.courseEnrollment.count({
+    where: { userId, role: 'TA' },
+  });
+  return count > 0;
 }
 
 function respondEduAiUpstreamError(res, error, fallbackMessage) {
@@ -123,7 +137,14 @@ router.get('/courses', async (req, res) => {
       }
     }
 
-    if (authUser.role === 'INSTRUCTOR') {
+    if (authUser.role === 'ADMIN') {
+      // Platform admins see every course offering (no progress) so the shared
+      // Courses dashboard lists all courses they can open and edit.
+      const courses = await prisma.courseOffering.findMany({
+        orderBy: { createdAt: 'desc' },
+      });
+      res.json(courses.map(mapCourseOffering));
+    } else if (authUser.role === 'INSTRUCTOR') {
       try {
         await importTaughtCoursesFromCore(authUser, getEduAiCookieForRequest(req));
       } catch (err) {
@@ -150,7 +171,7 @@ router.get('/courses', async (req, res) => {
         orderBy: { createdAt: 'desc' },
       });
       res.json(courses.map(mapCourseOffering));
-    } else if (authUser.role === 'TA') {
+    } else if (authUser.role === 'TA' || (authUser.role === 'STUDENT' && await userHasTaEnrollment(authUser.id))) {
       // TAs see all TA-enrolled courses regardless of publish state (no progress),
       // plus published student-enrolled courses (with progress).
       const allEnrollments = await prisma.courseEnrollment.findMany({
@@ -315,10 +336,11 @@ router.get('/courses/:courseId', async (req, res) => {
       return res.status(404).json({ error: 'Course not found' });
     }
 
+    const isAdmin = authUser.role === 'ADMIN';
     const isInstructor = course.instructors.some((i) => i.userId === authUser.id);
     const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
     const unitAdmin = isUnitAdminForCourse(authUser, course);
-    const isMember = isInstructor || enrollment != null || unitAdmin;
+    const isMember = isAdmin || isInstructor || enrollment != null || unitAdmin;
 
     if (!isMember) {
       return res.status(403).json({ error: 'Not authorized for this course' });
@@ -538,7 +560,7 @@ router.post('/courses/:courseId/import', requireRole(['INSTRUCTOR', 'UNIT_ADMIN'
 /**
  * PATCH /courses/:courseId/publish — flip course to published.
  *
- * Auth: INSTRUCTOR on the course.
+ * Auth: ADMIN (global), UNIT_ADMIN (D-scoped), INSTRUCTOR (C-scoped).
  *
  * Why: intentionally non-cascading. Publishing a course doesn't auto-publish
  * its modules/lessons; the instructor must opt them in individually so a
@@ -581,7 +603,7 @@ router.patch('/courses/:courseId/publish', requireRole(['INSTRUCTOR', 'UNIT_ADMI
 /**
  * PATCH /courses/:courseId/unpublish — flip course unpublished, cascading down.
  *
- * Auth: INSTRUCTOR on the course.
+ * Auth: ADMIN (global), UNIT_ADMIN (D-scoped), INSTRUCTOR (C-scoped).
  * Side effects: in a single transaction sets `isPublished=false` on the
  *   course, all its modules, and all lessons within those modules.
  *
@@ -653,6 +675,69 @@ router.patch('/courses/:courseId/unpublish', requireRole(['INSTRUCTOR', 'UNIT_AD
 // ── Course-level analytics (§310) ─────────────────────────────────
 
 /**
+ * GET /courses/:courseId/feedback — all ActivityFeedback in the course.
+ *
+ * Auth: ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C) / TA(C). STUDENT → 403.
+ * Query params: activityId, studentId, take (default 50, max 200), skip (default 0).
+ */
+router.get('/courses/:courseId/feedback', async (req, res) => {
+  const authUser = req.user;
+  if (!authUser) return res.status(401).json({ error: 'Authentication required' });
+  const courseId = Number(req.params.courseId);
+  if (!Number.isFinite(courseId)) return res.status(400).json({ error: 'Invalid course id' });
+
+  try {
+    const course = await prisma.courseOffering.findUnique({
+      where: { id: courseId },
+      include: {
+        instructors: { select: { userId: true } },
+        enrollments: { select: { userId: true, role: true } },
+      },
+    });
+    if (!course) return res.status(404).json({ error: 'Course not found' });
+
+    const hasAdminAccess = isCourseAdmin(authUser, course);
+    const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
+    const isTa = enrollment?.role === 'TA';
+    if (!hasAdminAccess && !isTa) {
+      return res.status(403).json({ error: 'Not authorized for this course' });
+    }
+
+    const { activityId, studentId } = req.query;
+    if (req.query.take !== undefined && !Number.isFinite(Number(req.query.take))) {
+      return res.status(400).json({ error: 'take must be a number' });
+    }
+    if (req.query.skip !== undefined && !Number.isFinite(Number(req.query.skip))) {
+      return res.status(400).json({ error: 'skip must be a number' });
+    }
+    const take = Math.min(Math.max(Number(req.query.take) || 50, 1), 200);
+    const skip = Math.max(Number(req.query.skip) || 0, 0);
+
+    const where = {
+      activity: { lesson: { module: { courseOfferingId: courseId } } },
+    };
+    if (activityId !== undefined) {
+      if (!Number.isFinite(Number(activityId))) {
+        return res.status(400).json({ error: 'activityId must be a number' });
+      }
+      where.activityId = Number(activityId);
+    }
+    if (studentId) where.userId = studentId;
+
+    const feedback = await prisma.activityFeedback.findMany({
+      where,
+      orderBy: [{ activityId: 'asc' }, { userId: 'asc' }, { createdAt: 'asc' }],
+      take,
+      skip,
+    });
+
+    res.json(feedback);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+/**
  * GET /courses/:courseId/submissions — all submissions in the course.
  *
  * Auth: ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C) / TA(C).
@@ -694,7 +779,12 @@ router.get('/courses/:courseId/submissions', async (req, res) => {
     const where = {
       activity: { lesson: { module: { courseOfferingId: courseId } } },
     };
-    if (activityId) where.activityId = Number(activityId);
+    if (activityId !== undefined) {
+      if (!Number.isFinite(Number(activityId))) {
+        return res.status(400).json({ error: 'activityId must be a number' });
+      }
+      where.activityId = Number(activityId);
+    }
     if (studentId) where.userId = studentId;
 
     const submissions = await prisma.submission.findMany({

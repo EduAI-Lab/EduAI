@@ -20,6 +20,11 @@ vi.mock("~/lib/auth/course-access.server", () => ({
   resolveCourseAccessWithCourse: vi.fn(),
 }));
 vi.mock("~/lib/ai/providers.server", () => ({
+  getChatModelCapabilities: vi.fn().mockResolvedValue({
+    supportsTools: false,
+    maxTokens: null,
+    name: null,
+  }),
   modelSupportsTools: vi.fn().mockResolvedValue(false),
 }));
 vi.mock("~/lib/assistive-events.server", () => ({
@@ -53,7 +58,7 @@ function makeArgs(body: object) {
     }),
     params: {},
     context: {} as never,
-  };
+  } as any;
 }
 
 function baseBody(overrides: Record<string, unknown> = {}) {

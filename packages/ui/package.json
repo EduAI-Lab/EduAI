@@ -12,6 +12,7 @@
     "test:watch": "vitest"
   },
   "devDependencies": {
+    "@streamdown/math": "^1.0.2",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
@@ -20,7 +21,7 @@
     "happy-dom": "^20.10.1",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
-    "vitest": "^4.1.0"
+    "vitest": "^4.1.9"
   },
   "peerDependencies": {
     "@radix-ui/react-accordion": "*",
@@ -49,19 +50,22 @@
     "@radix-ui/react-toggle": "*",
     "@radix-ui/react-toggle-group": "*",
     "@radix-ui/react-tooltip": "*",
+    "@streamdown/code": "*",
+    "@streamdown/math": "*",
     "@tabler/icons-react": "*",
     "class-variance-authority": "*",
     "clsx": "*",
     "cmdk": "*",
     "embla-carousel-react": "*",
     "input-otp": "*",
+    "next-themes": "*",
     "react": "*",
     "react-day-picker": "*",
+    "shiki": "*",
     "sonner": "*",
+    "streamdown": "*",
     "tailwind-merge": "*",
     "use-stick-to-bottom": "*",
-    "vaul": "*",
-    "next-themes": "*",
-    "shiki": "*"
+    "vaul": "*"
   }
 }

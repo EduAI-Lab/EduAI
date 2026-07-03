@@ -1,13 +1,15 @@
 import { UserRole } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 import { auth } from "~/lib/auth/server";
-import { requireServiceKey } from "~/lib/auth/guards.server";
+import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
+import { apiError, jsonResponse, validationErrorFromZod } from "~/lib/api-error.server";
 import {
   buildCourseListFilter,
   getAuthorizedUnits,
   resolveCourseAccessWithCourse,
 } from "~/lib/auth/course-access.server";
 import { getPolicy, denyByPolicy } from "~/lib/policy.server";
+import { assertValidDepartment } from "~/lib/disciplines/guards.server";
 import { canCreateCourse } from "~/lib/rbac/permissions";
 import type { RbacUser } from "~/lib/rbac/types";
 import {
@@ -20,6 +22,79 @@ import {
   type UpdateCourseTopicInput,
   type DeleteCourseTopicInput,
 } from "./schemas";
+
+
+async function parseCreateCourseBody(
+  request: Request,
+  opts?: { forceInstructorUserIds?: string[] },
+) {
+  const contentType = request.headers.get("content-type") ?? "";
+
+  if (contentType.includes("application/json")) {
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return { ok: false as const, response: apiError(422, "VALIDATION_ERROR", { body: "invalid JSON" }) };
+    }
+    if (opts?.forceInstructorUserIds?.length && body && typeof body === "object") {
+      body = { ...body, instructorUserIds: opts.forceInstructorUserIds };
+    }
+    const parsed = CreateCourseSchema.safeParse(body);
+    if (!parsed.success) {
+      return { ok: false as const, response: validationErrorFromZod(parsed.error) };
+    }
+    return { ok: true as const, data: parsed.data };
+  }
+
+  const formData = await request.formData();
+  const instructorUserIds = formData
+    .getAll("instructorUserIds")
+    .map((value) => String(value))
+    .filter(Boolean);
+
+  if (instructorUserIds.length === 0) {
+    const rawInstructorUserIds = formData.get("instructorUserIds");
+    if (typeof rawInstructorUserIds === "string" && rawInstructorUserIds) {
+      try {
+        const parsed = JSON.parse(rawInstructorUserIds);
+        if (Array.isArray(parsed)) {
+          instructorUserIds.push(...parsed.map(String).filter(Boolean));
+        } else {
+          instructorUserIds.push(rawInstructorUserIds);
+        }
+      } catch {
+        instructorUserIds.push(rawInstructorUserIds);
+      }
+    }
+  }
+
+  if (opts?.forceInstructorUserIds?.length) {
+    instructorUserIds.length = 0;
+    instructorUserIds.push(...opts.forceInstructorUserIds);
+  }
+
+  const data = {
+    name: formData.get("name"),
+    code: formData.get("code"),
+    section: formData.get("section"),
+    term: formData.get("term"),
+    year: Number(formData.get("year")),
+    startDate: formData.get("startDate"),
+    endDate: formData.get("endDate") || undefined,
+    department: formData.get("department") || undefined,
+    description: formData.get("description") || undefined,
+    isPublished: formData.get("isPublished") ?? undefined,
+    aiInstructions: formData.get("aiInstructions") || "",
+    instructorUserIds,
+  };
+
+  const parsed = CreateCourseSchema.safeParse(data);
+  if (!parsed.success) {
+    return { ok: false as const, response: validationErrorFromZod(parsed.error) };
+  }
+  return { ok: true as const, data: parsed.data };
+}
 
 // ---------------------------------------------------------------------------
 // Per-course RAG settings cache
@@ -75,7 +150,7 @@ export async function getCourses(request: Request) {
     });
   }
 
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -115,17 +190,12 @@ export async function getCourses(request: Request) {
  * flag is enabled; they are auto-enrolled as the course instructor.
  */
 export async function createCourse(request: Request) {
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   const role = session?.user?.role ?? "";
-  // Base create rights (ADMIN / UNIT_ADMIN) come from the shared RBAC helper so
-  // this can't drift from the rest of course management; an INSTRUCTOR may
-  // self-create only when the policy flag is on.
   const canCreate =
     (session?.user != null && canCreateCourse(session.user as RbacUser)) ||
     (role === "INSTRUCTOR" && (await getPolicy("instructors.canCreateCourses")));
   if (!session?.user || !canCreate) {
-    // §4: log uniformly when an INSTRUCTOR is denied by the policy flag. The
-    // pure-401 (no session) case stays unlogged.
     if (session?.user && role === "INSTRUCTOR") {
       return denyByPolicy({
         request,
@@ -134,81 +204,30 @@ export async function createCourse(request: Request) {
         action: "course.create",
       });
     }
-    return new Response(JSON.stringify({ error: "Forbidden" }), {
-      status: 403,
-      headers: { "Content-Type": "application/json" } as const,
-    });
+    return apiError(403, "Forbidden");
   }
 
-  const formData = await request.formData();
-  const instructorUserIds = formData
-    .getAll("instructorUserIds")
-    .map((value) => String(value))
-    .filter(Boolean);
-
-  if (instructorUserIds.length === 0) {
-    const rawInstructorUserIds = formData.get("instructorUserIds");
-    if (typeof rawInstructorUserIds === "string" && rawInstructorUserIds) {
-      try {
-        const parsed = JSON.parse(rawInstructorUserIds);
-        if (Array.isArray(parsed)) {
-          instructorUserIds.push(...parsed.map(String).filter(Boolean));
-        } else {
-          instructorUserIds.push(rawInstructorUserIds);
-        }
-      } catch {
-        instructorUserIds.push(rawInstructorUserIds);
-      }
-    }
+  const parsedBody = await parseCreateCourseBody(
+    request,
+    session.user.role === "INSTRUCTOR" ? { forceInstructorUserIds: [session.user.id] } : undefined,
+  );
+  if (!parsedBody.ok) {
+    return parsedBody.response;
   }
 
-  // A self-creating instructor is always enrolled as the course's SOLE
-  // instructor. We deliberately discard any client-supplied `instructorUserIds`
-  // for this path: an instructor must not be able to assign the course (or its
-  // primary `instructorId`, which is `instructorUserIds[0]`) to other
-  // instructors. ADMIN / UNIT_ADMIN assign instructors explicitly and keep the
-  // supplied list.
-  if (session.user.role === "INSTRUCTOR") {
-    instructorUserIds.length = 0;
-    instructorUserIds.push(session.user.id);
-  }
+  const result = { success: true as const, data: parsedBody.data };
 
-  const data = {
-    name: formData.get("name"),
-    code: formData.get("code"),
-    section: formData.get("section"),
-    term: formData.get("term"),
-    year: Number(formData.get("year")),
-    startDate: formData.get("startDate"),
-    endDate: formData.get("endDate") || undefined,
-    department: formData.get("department") || undefined,
-    description: formData.get("description") || undefined,
-    isPublished: formData.get("isPublished") ?? undefined,
-    aiInstructions: formData.get("aiInstructions") || "",
-    instructorUserIds,
-  };
-
-  const result = CreateCourseSchema.safeParse(data);
-
-  if (!result.success) {
-    return new Response(
-      JSON.stringify({
-        error: "Invalid input",
-        details: result.error.flatten(),
-      }),
-      { status: 400, headers: { "Content-Type": "application/json" } as const, },
-    );
-  }
+  // §541: department must be a known discipline. The FK enforces this too, but
+  // an explicit check returns a clean 400 instead of a raw constraint error.
+  const deptGuard = await assertValidDepartment(result.data.department);
+  if (deptGuard) return deptGuard;
 
   // §5/§19 unit lock: a UNIT_ADMIN can only create courses inside their
   // authorized units — a missing department is never a match.
   if (session.user.role === "UNIT_ADMIN") {
     const units = await getAuthorizedUnits(session.user);
     if (!result.data.department || !units.includes(result.data.department)) {
-      return new Response(JSON.stringify({ error: "DEPARTMENT_NOT_AUTHORIZED" }), {
-        status: 403,
-        headers: { "Content-Type": "application/json" } as const,
-      });
+      return apiError(403, "DEPARTMENT_NOT_AUTHORIZED");
     }
   }
 
@@ -221,10 +240,7 @@ export async function createCourse(request: Request) {
   });
 
   if (instructors.length !== result.data.instructorUserIds.length) {
-    return new Response(JSON.stringify({ error: "INVALID_INSTRUCTOR" }), {
-      status: 422,
-      headers: { "Content-Type": "application/json" } as const,
-    });
+    return apiError(422, "INVALID_INSTRUCTOR");
   }
 
   const course = await prisma.$transaction(async (tx) => {
@@ -249,7 +265,7 @@ export async function createCourse(request: Request) {
       data: result.data.instructorUserIds.map((userId) => ({
         courseId: created.id,
         userId,
-        role: "INSTRUCTOR",
+        role: "INSTRUCTOR" as const,
         isActive: true,
       })),
     });
@@ -257,10 +273,7 @@ export async function createCourse(request: Request) {
     return created;
   });
 
-  return new Response(JSON.stringify(course), {
-    status: 201,
-    headers: { "Content-Type": "application/json" } as const,
-  });
+  return jsonResponse(201, course);
 }
 
 /**
@@ -268,7 +281,7 @@ export async function createCourse(request: Request) {
  * INSTRUCTOR(C) per §5 (rank >= 2).
  */
 export async function updateCourse(request: Request, courseId: string) {
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -282,13 +295,7 @@ export async function updateCourse(request: Request, courseId: string) {
   const result = UpdateCourseSchema.safeParse(body);
 
   if (!result.success) {
-    return new Response(
-      JSON.stringify({
-        error: "Invalid input",
-        details: result.error.flatten(),
-      }),
-      { status: 400, headers: { "Content-Type": "application/json" } as const },
-    );
+    return validationErrorFromZod(result.error);
   }
 
   const { course, access } = await resolveCourseAccessWithCourse(user, courseId);
@@ -357,6 +364,12 @@ export async function updateCourse(request: Request, courseId: string) {
     }
   }
 
+  // §541: a department change must target a known discipline (FK-backed).
+  if ("department" in updateData && updateData.department) {
+    const deptGuard = await assertValidDepartment(updateData.department);
+    if (deptGuard) return deptGuard;
+  }
+
   const newInstructorId = (updateData as any).instructorId as string | undefined;
   const instructorChanging =
     newInstructorId !== undefined && newInstructorId !== course.instructorId;
@@ -392,7 +405,7 @@ export async function updateCourse(request: Request, courseId: string) {
  * UNIT_ADMIN(D), INSTRUCTOR(C) per §5.
  */
 export async function deleteCourse(request: Request, courseId: string) {
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -481,7 +494,7 @@ export async function setPublishState(request: Request, courseId: string, publis
   }
 
   // User session path (admin UI / direct API access)
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,

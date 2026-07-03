@@ -5,6 +5,7 @@
 import { Course } from '../schema/index.js';
 import { LEVELS, resolveAccessForCourse } from '../middleware/courseAccess.js';
 import { getAllCoursesFromCore } from './coreApiService.js';
+import { dedupeCoursesByCode } from './courseCodeUtils.js';
 
 const MIN_LIST_RANK = LEVELS.instructor.rank;
 
@@ -14,6 +15,11 @@ function enrichCourseRow(course, coreById, accessLevel) {
   return {
     ...row,
     department: core?.department ?? null,
+    // Enrich the term/year/description from the Core course row so QM course
+    // cards + detail hero can show real metadata (local rows often lack these).
+    term: core?.term ?? row.term ?? null,
+    year: core?.year ?? row.year ?? null,
+    description: core?.description ?? row.description ?? null,
     accessLevel: accessLevel ?? null,
   };
 }
@@ -34,7 +40,8 @@ export async function listCoursesForUser(reqUser, { cookie } = {}) {
   }
 
   if (reqUser.role === 'ADMIN') {
-    return allCourses.map((course) => enrichCourseRow(course, coreById, 'admin'));
+    const enriched = allCourses.map((course) => enrichCourseRow(course, coreById, 'admin'));
+    return dedupeCoursesByCode(enriched);
   }
 
   const visible = [];

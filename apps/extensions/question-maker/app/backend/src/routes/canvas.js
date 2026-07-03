@@ -25,6 +25,7 @@ import { authenticateToken, requireRole } from '../middleware/auth.js';
 import { CANVAS_ROLES } from '../middleware/roles.js';
 import { requireCourseAccess } from '../middleware/courseAccess.js';
 import { requireAssessmentAccess } from '../middleware/resourceAccess.js';
+import { Topics } from '../schema/index.js';
 
 const router = express.Router();
 
@@ -239,6 +240,19 @@ router.post(
         return res.status(400).json({
           success: false,
           error: 'Primary topic ID is required for importing questions'
+        });
+      }
+
+      // Eagerly confirm the topic exists and belongs to this course before
+      // creating questions — otherwise the FK insert crashes mid-import (#7). A
+      // supplied-but-nonexistent topic is a missing resource, so 404 (#3).
+      const topic = await Topics.findOne({
+        where: { id: primaryTopicId, courseId: req.qmCourse.id }
+      });
+      if (!topic) {
+        return res.status(404).json({
+          success: false,
+          error: 'Primary topic not found in this course'
         });
       }
 

@@ -10,8 +10,6 @@ vi.mock('~/hooks/useAtPermissions', () => ({
   useAtPermissions: () => ({
     canSubmitBugReport: true,
     canCreateCourse: false,
-    canBrowseEduAiCatalog: false,
-    canImportFromEduAi: false,
     canManageContent: false,
     canPublishContent: false,
     canManageEnrollments: false,
@@ -34,13 +32,10 @@ vi.mock('@eduai/ui', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@eduai/ui')>();
   return {
     ...actual,
+    BugReportDialog: () => null,
     useTheme: () => ({ resolvedTheme: 'light', setTheme: vi.fn() }),
   };
 });
-
-vi.mock('~/components/bug-report/BugReportDialog', () => ({
-  BugReportDialog: () => null,
-}));
 
 async function renderHeader(path: string, user: AuthUser) {
   const Wrapper = ({ children }: { children: ReactNode }) => (
@@ -65,13 +60,13 @@ describe('AppSiteHeader', () => {
   it('shows Report Bug for STUDENT', async () => {
     await renderHeader('/student', { id: 'u1', name: 'Student', role: 'STUDENT' });
 
-    expect(screen.getByRole('button', { name: 'Report bug' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Report a bug' })).toBeInTheDocument();
   });
 
   it('shows Report Bug for INSTRUCTOR', async () => {
     await renderHeader('/instructor', { id: 'u2', name: 'Professor', role: 'INSTRUCTOR' });
 
-    expect(screen.getByRole('button', { name: 'Report bug' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Report a bug' })).toBeInTheDocument();
   });
 
   it('shows theme toggle in the header', async () => {

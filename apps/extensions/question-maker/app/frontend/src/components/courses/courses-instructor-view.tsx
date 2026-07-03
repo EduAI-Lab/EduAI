@@ -1,21 +1,22 @@
-import { QmRoleBanner } from '@/components/rbac/QmRoleBanner';
+import { PageHeading } from '@eduai/ui';
+import { useAuth } from '@/contexts/AuthContext';
 import { CoursesGrid, type CoursesGridProps } from './CoursesGrid';
 
-type CoursesInstructorViewProps = Omit<CoursesGridProps, 'emptyHint' | 'showAddCourse'>;
+type CoursesInstructorViewProps = Omit<CoursesGridProps, 'emptyHint' | 'showAddCourse' | 'roleView' | 'currentUserId'>;
 
 export function CoursesInstructorView(props: CoursesInstructorViewProps) {
+  const { user } = useAuth();
+
   return (
-    <div className="max-w-4xl mx-auto px-6 py-8 space-y-6">
-      <QmRoleBanner variant="instructor" />
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">Your courses</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Select a course to manage its question bank and assessments.
-        </p>
-      </div>
+    <div className="flex flex-1 flex-col gap-6 px-4 py-4 md:py-6 lg:px-6">
+      <PageHeading
+        heading="Courses"
+        subheading="Select a course to manage its question bank and assessments. Shared courses are ones you co-teach via enrollment."
+      />
       <CoursesGrid
         {...props}
-        showAddCourse
+        roleView="instructor"
+        currentUserId={user?.id}
         emptyHint="No courses yet. Add a course from your profile to get started."
       />
     </div>

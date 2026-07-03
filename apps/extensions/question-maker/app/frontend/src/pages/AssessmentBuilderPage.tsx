@@ -1,10 +1,41 @@
-import { Button, Badge, Card, CardContent, CardHeader, CardTitle } from '@eduai/ui';
+import {
+    Button,
+    Badge,
+    Card,
+    CardContent,
+    CardHeader,
+    CardTitle,
+    DropdownMenu,
+    DropdownMenuTrigger,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    StackedBar,
+    cn,
+} from '@eduai/ui';
 import { DeleteConfirmationModal } from '@/components/ui/DeleteConfirmationModal';
 import { Tooltip } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/use-toast';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
-import { ArrowLeft, AlertTriangle, Upload, FileText, FileType2 } from 'lucide-react';
+import {
+    IconArrowLeft,
+    IconAlertTriangle,
+    IconUpload,
+    IconFileText,
+    IconFileTypeDocx,
+    IconLoader2,
+    IconPencil,
+    IconTrash,
+    IconSettings,
+    IconSparkles,
+    IconChevronDown,
+    IconShare2,
+    IconClipboardList,
+    IconLayoutList,
+    IconListCheck,
+    IconCircleCheck,
+} from '@tabler/icons-react';
 import assessmentService from '../services/assessmentService';
 import { courseService } from '../services/courseService';
 import { questionService } from '../services/questionService';
@@ -12,13 +43,12 @@ import { Assessment, Question, QuestionVariantEntry } from '../types/question';
 import type { AssessmentGenerationParams } from '../types/question';
 import { Topic } from '../types/topic';
 import { AssessmentBuilder } from '../components/assessments/AssessmentBuilder';
-import { QmHomeShell } from '../components/home/QmHomeShell';
 import { PermissionGate } from '@/components/rbac/PermissionGate';
+import { CourseNoAccessAlert } from '@/components/rbac/CourseNoAccessAlert';
 import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
-import { AddQuestionDialog } from '../components/questions/AddQuestionDialog';
+import { QuestionModal } from '../components/questions/QuestionModal';
 import { CanvasExportDialog } from '../components/canvas/CanvasExportDialog';
 import GenerateAssessmentModal from '../components/assessments/GenerateAssessmentModal';
-import { QuestionDetailView } from '../components/question-detail/QuestionDetailView';
 import { defaultReasoningData } from './assessments/assessmentViewTypes';
 import {
     assessmentBlocksToDocxBlob,
@@ -26,16 +56,79 @@ import {
     collectAssessmentExportBlocks,
     slugifyAssessmentBasename
 } from '../utils/assessmentExport';
+import { difficultySolidVar, normalizeDifficulty } from '../lib/difficulty';
+
+/** Coloured icon tones for the summary stat tiles — keeps the strip from going monotone. */
+const STAT_TONE = {
+    secondary: 'bg-secondary/15 text-secondary',
+    accent: 'bg-accent/15 text-accent',
+    success: 'bg-[var(--color-success-100)] text-[var(--color-success-700)]',
+    warning: 'bg-[var(--color-warning-100)] text-[var(--color-warning-700)]',
+    muted: 'bg-muted text-muted-foreground',
+} as const;
+
+/** A single at-a-glance metric: coloured icon tile + big number + label. */
+function StatTile({
+    icon: Icon,
+    label,
+    value,
+    tone,
+}: {
+    icon: typeof IconListCheck;
+    label: string;
+    value: number;
+    tone: keyof typeof STAT_TONE;
+}) {
+    return (
+        <div className="flex items-center gap-3 rounded-[var(--radius-xl)] border border-border bg-card p-4 shadow-[var(--shadow-2xs)]">
+            <span className={cn('flex size-10 shrink-0 items-center justify-center rounded-lg', STAT_TONE[tone])}>
+                <Icon className="size-5" aria-hidden />
+            </span>
+            <div className="min-w-0">
+                <p className="text-2xl font-semibold leading-none tabular-nums text-foreground">{value}</p>
+                <p className="mt-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+            </div>
+        </div>
+    );
+}
+
+/** Stacked easy/medium/hard bar with a counted legend, driven by the shared StackedBar. */
+function DifficultyMix({ easy, medium, hard }: { easy: number; medium: number; hard: number }) {
+    const total = easy + medium + hard;
+    return (
+        <div className="space-y-3 rounded-[var(--radius-xl)] border border-border bg-card p-4 shadow-[var(--shadow-2xs)]">
+            <div className="flex items-center justify-between">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Difficulty mix</p>
+                <span className="text-xs text-muted-foreground">
+                    {total === 0 ? 'No questions yet' : `${total} ${total === 1 ? 'question' : 'questions'}`}
+                </span>
+            </div>
+            <StackedBar
+                data={[
+                    { label: 'Easy', value: easy, color: difficultySolidVar.easy },
+                    { label: 'Medium', value: medium, color: difficultySolidVar.medium },
+                    { label: 'Hard', value: hard, color: difficultySolidVar.hard },
+                ]}
+            />
+        </div>
+    );
+}
 
 const AssessmentBuilderPage = () => {
-    const { id } = useParams<{ id: string }>();
+    // Route is /courses/:courseId/assessments/:assessmentId — read the actual param
+    // names (the page previously read `id`, which is never present here, so every
+    // assessment opened to an "Invalid assessment ID" error).
+    const { assessmentId: assessmentIdParam, courseId: courseIdParam } = useParams<{
+        assessmentId: string;
+        courseId: string;
+    }>();
     const navigate = useNavigate();
-    const assessmentId = Number(id);
+    const assessmentId = Number(assessmentIdParam);
+    const routeCourseId = Number(courseIdParam);
     const { toast } = useToast();
     const [assessment, setAssessment] = useState<Assessment | null>(null);
-    const { canManageAssessment, canExportAssessment } = useQmPermissionsForCourse(
-        assessment?.courseId ?? null,
-    );
+    const { canManageAssessment, canExportAssessment, canUseVariantWorkflow, hasCourseAccess, accessLoading } =
+        useQmPermissionsForCourse(assessment?.courseId ?? null);
     const readOnly = !canManageAssessment;
     const [topics, setTopics] = useState<Topic[]>([]);
     const [questions, setQuestions] = useState<Question[]>([]);
@@ -53,7 +146,11 @@ const AssessmentBuilderPage = () => {
 
     useEffect(() => {
         const load = async () => {
-            if (Number.isNaN(assessmentId)) return;
+            if (Number.isNaN(assessmentId)) {
+                setIsLoading(false);
+                setError('Invalid assessment ID.');
+                return;
+            }
             try {
                 setIsLoading(true);
                 setError(null);
@@ -136,6 +233,21 @@ const AssessmentBuilderPage = () => {
         );
         return count > 0;
     }, [assessment?.sections]);
+
+    /** At-a-glance counts for the summary strip: sections, questions, draft/reviewed split, difficulty mix. */
+    const assessmentStats = useMemo(() => {
+        const sections = assessment?.sections ?? [];
+        const links = sections.flatMap((s) => s.sectionVariants ?? []);
+        const dist = { easy: 0, medium: 0, hard: 0 };
+        let drafts = 0;
+        links.forEach((link) => {
+            const entry = questionVariantEntries.find((e) => e.variant.id === link.variantId);
+            dist[normalizeDifficulty(entry?.variant.difficulty)] += 1;
+            if (entry && (entry.isDraft ?? entry.variant.isDraft === true)) drafts += 1;
+        });
+        const total = links.length;
+        return { sectionCount: sections.length, total, drafts, reviewed: total - drafts, dist };
+    }, [assessment?.sections, questionVariantEntries]);
 
     const refreshQuestionsAndAssessment = async () => {
         if (!assessment?.course?.id) return;
@@ -296,7 +408,12 @@ const AssessmentBuilderPage = () => {
                 title: 'Assessment deleted',
                 description: `"${assessment.name}" has been removed.`
             });
-            navigate('/home');
+            const backCourseId = assessment.courseId ?? assessment.course?.id ?? routeCourseId;
+            navigate(
+                Number.isFinite(backCourseId) && backCourseId
+                    ? `/courses/${backCourseId}?tab=assessments`
+                    : '/courses',
+            );
         } catch (_err) {
             toast({
                 title: 'Failed to delete assessment',
@@ -434,7 +551,8 @@ const AssessmentBuilderPage = () => {
     if (isLoading) {
         return (
             <div className="min-h-screen bg-background">
-                <div className="mx-auto max-w-6xl px-6 py-8">
+                <div className="mx-auto max-w-6xl px-6 py-16 flex flex-col items-center gap-3">
+                    <IconLoader2 className="h-8 w-8 animate-spin text-primary" />
                     <p className="text-sm text-muted-foreground">Loading assessment builder…</p>
                 </div>
             </div>
@@ -452,15 +570,15 @@ const AssessmentBuilderPage = () => {
                         onClick={() => navigate(-1)}
                         className="gap-1.5 text-muted-foreground hover:text-foreground"
                     >
-                        <ArrowLeft className="h-4 w-4" />
+                        <IconArrowLeft className="h-4 w-4" />
                         Back
                     </Button>
-                    <Card>
+                    <Card className="border-destructive/30">
                         <CardHeader>
-                            <CardTitle className="text-base">Assessment builder</CardTitle>
+                            <CardTitle className="text-base text-destructive">Assessment not found</CardTitle>
                         </CardHeader>
                         <CardContent>
-                            <p className="text-sm text-destructive">
+                            <p className="text-sm text-muted-foreground">
                                 {error ?? 'Assessment not found or failed to load.'}
                             </p>
                         </CardContent>
@@ -470,168 +588,206 @@ const AssessmentBuilderPage = () => {
         );
     }
 
+    const exportBlockedReason = !hasQuestions
+        ? 'No questions in this assessment yet.'
+        : hasDraftQuestions
+            ? 'Review all draft questions before exporting.'
+            : null;
+    const backToAssessments =
+        Number.isFinite(routeCourseId) && routeCourseId
+            ? `/courses/${routeCourseId}?tab=assessments`
+            : assessment.courseId
+                ? `/courses/${assessment.courseId}?tab=assessments`
+                : '/courses';
+
+    const variantCourseId =
+        Number.isFinite(routeCourseId) && routeCourseId ? routeCourseId : assessment.courseId;
+    const variantsHref = variantCourseId
+        ? `/courses/${variantCourseId}/assessments/${assessment.id}/variants`
+        : null;
+    const noQuestions = assessmentStats.total === 0;
+
     return (
         <>
-            <QmHomeShell>
-            <div className="space-y-6">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => navigate(-1)}
-                            className="gap-1.5 text-muted-foreground hover:text-foreground"
-                        >
-                            <ArrowLeft className="h-4 w-4" />
-                            Back
-                        </Button>
-                        <div className="text-sm text-muted-foreground">Assessment Builder</div>
-                    </div>
+            <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-4 md:py-6 lg:px-6">
+                {assessment.courseId && !accessLoading && !hasCourseAccess && (
+                    <CourseNoAccessAlert onGoToCourses={() => navigate('/courses')} />
+                )}
 
-                    <Card className="border border-border">
-                        <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                            <div className="space-y-2">
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <CardTitle className="text-2xl font-semibold text-foreground">
-                                        {assessment.name}
-                                    </CardTitle>
-                                    {hasDraftQuestions && (
-                                        <Badge
-                                            variant="secondary"
-                                            className="flex items-center gap-1 border-amber-300 bg-amber-100 text-amber-800 hover:bg-amber-200"
-                                        >
-                                            <AlertTriangle className="h-3 w-3" />
-                                            Contains Draft questions
-                                        </Badge>
-                                    )}
-                                </div>
-                                <div className="flex flex-wrap gap-2">
-                                    {assessment.type && (
-                                        <Badge variant="outline" className="border-border bg-muted text-foreground">
-                                            {assessment.type}
-                                        </Badge>
-                                    )}
-                                    {assessment.semester && (
-                                        <Badge variant="outline" className="border-border bg-muted text-foreground">
-                                            {assessment.semester}
-                                        </Badge>
-                                    )}
-                                    {assessment.course?.name && (
-                                        <Badge variant="outline" className="border-border bg-muted text-foreground">
-                                            {assessment.course.name}
-                                        </Badge>
-                                    )}
-                                </div>
-                                {assessment.description && (
-                                    <p className="text-sm text-muted-foreground">{assessment.description}</p>
+                <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => navigate(backToAssessments)}
+                    className="-ml-2 gap-1.5 text-muted-foreground hover:text-foreground"
+                >
+                    <IconArrowLeft className="size-4" />
+                    Back to assessments
+                </Button>
+
+                {/* Assessment header */}
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex min-w-0 items-start gap-3.5">
+                        <span className="hidden size-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-secondary to-accent text-white shadow-[var(--shadow-sm)] sm:flex">
+                            <IconClipboardList className="size-6" aria-hidden />
+                        </span>
+                        <div className="min-w-0 space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <h1 className="min-w-0 truncate text-2xl font-semibold text-foreground">{assessment.name}</h1>
+                                {hasDraftQuestions && (
+                                    <Badge className="gap-1 border-transparent bg-warning-100 text-warning-700">
+                                        <IconAlertTriangle className="size-3" />
+                                        Has drafts
+                                    </Badge>
                                 )}
                             </div>
-                            <div className="flex flex-wrap items-center gap-2">
-                                <PermissionGate allow={canManageAssessment}>
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => setIsEditAssessmentOpen(true)}
-                                    className="border-border bg-card text-foreground hover:bg-muted"
-                                >
-                                    Edit Blueprint
-                                </Button>
-                                </PermissionGate>
-                                <PermissionGate allow={canExportAssessment}>
-                                {hasQuestions && !hasDraftQuestions ? (
-                                    <>
-                                        <Button
-                                            type="button"
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={() => setIsCanvasExportOpen(true)}
-                                            className="bg-primary text-primary-foreground hover:bg-primary/90 border-primary"
-                                        >
-                                            <Upload className="mr-2 h-4 w-4" />
-                                            Export to Canvas
-                                        </Button>
-                                        <Button
-                                            type="button"
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={handleExportTxt}
-                                            disabled={isTxtExporting || isWordExporting}
-                                            className="bg-primary text-primary-foreground hover:bg-primary/90 border-primary disabled:opacity-50"
-                                        >
-                                            <FileText className="mr-2 h-4 w-4" />
-                                            {isTxtExporting ? 'Exporting…' : 'Export TXT'}
-                                        </Button>
-                                        <Button
-                                            type="button"
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={() => void handleExportWord()}
-                                            disabled={isTxtExporting || isWordExporting}
-                                            className="bg-primary text-primary-foreground hover:bg-primary/90 border-primary disabled:opacity-50"
-                                        >
-                                            <FileType2 className="mr-2 h-4 w-4" />
-                                            {isWordExporting ? 'Exporting…' : 'Export Word'}
-                                        </Button>
-                                    </>
-                                ) : (
-                                    <Tooltip
-                                        content={
-                                            !hasQuestions
-                                                ? 'No questions in assessment'
-                                                : 'Cannot export: Assessment contains draft questions. Please review all draft questions before exporting.'
-                                        }
-                                        side="bottom"
-                                    >
-                                        <span className="inline-flex gap-2">
-                                            <Button
-                                                type="button"
-                                                variant="outline"
-                                                size="sm"
-                                                disabled
-                                                className="bg-primary text-primary-foreground opacity-50 border-primary"
-                                            >
-                                                <Upload className="mr-2 h-4 w-4" />
-                                                Export to Canvas
-                                            </Button>
-                                            <Button
-                                                type="button"
-                                                variant="outline"
-                                                size="sm"
-                                                disabled
-                                                className="bg-primary text-primary-foreground opacity-50 border-primary"
-                                            >
-                                                <FileText className="mr-2 h-4 w-4" />
-                                                Export TXT
-                                            </Button>
-                                            <Button
-                                                type="button"
-                                                variant="outline"
-                                                size="sm"
-                                                disabled
-                                                className="bg-primary text-primary-foreground opacity-50 border-primary"
-                                            >
-                                                <FileType2 className="mr-2 h-4 w-4" />
-                                                Export Word
+                            <div className="flex flex-wrap gap-1.5">
+                                {assessment.type && (
+                                    <Badge variant="outline" className="capitalize">{assessment.type}</Badge>
+                                )}
+                                {assessment.semester && <Badge variant="outline">{assessment.semester}</Badge>}
+                                {assessment.course?.name && <Badge variant="outline">{assessment.course.name}</Badge>}
+                            </div>
+                            {assessment.description && (
+                                <p className="text-sm text-muted-foreground">{assessment.description}</p>
+                            )}
+                        </div>
+                    </div>
+
+                    {/*
+                     * One consistent rule for the header actions:
+                     *  - Export is the payoff action you reach for once the assessment is built,
+                     *    so it stays a visible primary button (with its format choices in a menu).
+                     *  - Everything that manages the assessment itself (rename/retype, delete) lives
+                     *    together under a single labelled "Manage" menu — no lone kebab, no jargon.
+                     */}
+                    <div className="flex shrink-0 flex-nowrap items-center gap-2">
+                        <PermissionGate allow={canUseVariantWorkflow}>
+                            {variantsHref && (
+                                noQuestions ? (
+                                    <Tooltip content="Add questions before generating variants." side="bottom">
+                                        <span className="inline-flex">
+                                            <Button type="button" variant="outline" disabled className="gap-1.5 opacity-60">
+                                                <IconSparkles className="size-4" />
+                                                Generate variants
                                             </Button>
                                         </span>
                                     </Tooltip>
-                                )}
-                                </PermissionGate>
-                                <PermissionGate allow={canManageAssessment}>
-                                <Button
-                                    type="button"
-                                    variant="destructive"
-                                    size="sm"
-                                    onClick={handleDeleteAssessment}
-                                    disabled={isDeletingAssessment}
-                                >
-                                    {isDeletingAssessment ? 'Deleting…' : 'Delete Assessment'}
-                                </Button>
-                                </PermissionGate>
-                            </div>
-                        </CardHeader>
-                        <CardContent className="pt-4">
+                                ) : (
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        onClick={() => navigate(variantsHref)}
+                                        className="gap-1.5"
+                                    >
+                                        <IconSparkles className="size-4" />
+                                        Generate variants
+                                    </Button>
+                                )
+                            )}
+                        </PermissionGate>
+
+                        <PermissionGate allow={canExportAssessment}>
+                            {exportBlockedReason ? (
+                                <Tooltip content={exportBlockedReason} side="bottom">
+                                    <span className="inline-flex">
+                                        <Button type="button" disabled className="gap-1.5 opacity-60">
+                                            <IconShare2 className="size-4" />
+                                            Export
+                                            <IconChevronDown className="size-3.5" />
+                                        </Button>
+                                    </span>
+                                </Tooltip>
+                            ) : (
+                                <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                        <Button type="button" className="gap-1.5" data-tour-id="export-assessment-btn">
+                                            <IconShare2 className="size-4" />
+                                            Export
+                                            <IconChevronDown className="size-3.5" />
+                                        </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                        <DropdownMenuItem
+                                            data-tour-id="export-canvas-btn"
+                                            onSelect={() => setTimeout(() => setIsCanvasExportOpen(true), 0)}
+                                        >
+                                            <IconUpload className="size-4" /> Send to Canvas
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                            data-tour-id="export-word-btn"
+                                            disabled={isWordExporting}
+                                            onSelect={() => void handleExportWord()}
+                                        >
+                                            <IconFileTypeDocx className="size-4" />
+                                            {isWordExporting ? 'Preparing…' : 'Download as Word (.docx)'}
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                            data-tour-id="export-txt-btn"
+                                            disabled={isTxtExporting}
+                                            onSelect={handleExportTxt}
+                                        >
+                                            <IconFileText className="size-4" />
+                                            {isTxtExporting ? 'Preparing…' : 'Download as text (.txt)'}
+                                        </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                </DropdownMenu>
+                            )}
+                        </PermissionGate>
+
+                        <PermissionGate allow={canManageAssessment}>
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        className="gap-1.5"
+                                        disabled={isDeletingAssessment}
+                                    >
+                                        <IconSettings className="size-4" />
+                                        Manage
+                                        <IconChevronDown className="size-3.5" />
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onSelect={() => setTimeout(() => setIsEditAssessmentOpen(true), 0)}>
+                                        <IconPencil className="size-4" />
+                                        Edit details
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                        className="text-destructive focus:text-destructive"
+                                        onSelect={() => setTimeout(handleDeleteAssessment, 0)}
+                                    >
+                                        <IconTrash className="size-4" />
+                                        {isDeletingAssessment ? 'Deleting…' : 'Delete assessment'}
+                                    </DropdownMenuItem>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        </PermissionGate>
+                    </div>
+                </div>
+
+                {/* Summary — at-a-glance stats + difficulty mix */}
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <StatTile icon={IconLayoutList} label="Sections" value={assessmentStats.sectionCount} tone="secondary" />
+                    <StatTile icon={IconListCheck} label="Questions" value={assessmentStats.total} tone="accent" />
+                    <StatTile icon={IconCircleCheck} label="Reviewed" value={assessmentStats.reviewed} tone="success" />
+                    <StatTile
+                        icon={IconAlertTriangle}
+                        label="Drafts"
+                        value={assessmentStats.drafts}
+                        tone={assessmentStats.drafts > 0 ? 'warning' : 'muted'}
+                    />
+                </div>
+                <DifficultyMix
+                    easy={assessmentStats.dist.easy}
+                    medium={assessmentStats.dist.medium}
+                    hard={assessmentStats.dist.hard}
+                />
+
+                {/* Sections builder */}
+                <div className="rounded-[var(--radius-xl)] border border-border bg-card p-5 shadow-[var(--shadow-2xs)]">
                             <AssessmentBuilder
                     assessment={assessment}
                     questionBank={questionVariantEntries}
@@ -734,28 +890,25 @@ const AssessmentBuilderPage = () => {
                                 onCreateVariant={handleCreateVariant}
                                 readOnly={readOnly}
                             />
-                        </CardContent>
-                    </Card>
+                </div>
             </div>
-            </QmHomeShell>
 
-            {viewEntry && (
-                <QuestionDetailView
-                    entry={viewEntry}
-                    relatedVariants={questionVariantEntries.filter(
-                        (e) => e.questionId === viewEntry.questionId
-                    )}
-                    onClose={() => setViewEntry(null)}
-                    onCreateVariant={handleCreateVariant}
-                    onUpdateVariant={handleUpdateVariant}
-                    onUpdateQuestionMetadata={handleUpdateQuestionMetadata}
-                    onDeleteVariant={handleDeleteVariant}
-                    onSelectVariant={(entry) => setViewEntry(entry)}
-                />
-            )}
+            <QuestionModal
+                mode="view"
+                open={Boolean(viewEntry)}
+                entry={viewEntry}
+                relatedVariants={viewEntry ? questionVariantEntries.filter((e) => e.questionId === viewEntry.questionId) : []}
+                onClose={() => setViewEntry(null)}
+                onCreateVariant={handleCreateVariant}
+                onUpdateVariant={handleUpdateVariant}
+                onUpdateQuestionMetadata={handleUpdateQuestionMetadata}
+                onDeleteVariant={handleDeleteVariant}
+                onSelectVariant={(entry) => setViewEntry(entry)}
+            />
 
             {assessment.course?.id && (
-                <AddQuestionDialog
+                <QuestionModal
+                    mode={presetVariant ? 'variant' : 'create'}
                     open={isAddQuestionOpen}
                     onClose={() => {
                         setIsAddQuestionOpen(false);

@@ -177,6 +177,94 @@ router.get('/stats', authenticateToken, requireRole(QM_AUTHORIZED), async (req, 
   }
 });
 
+/** Escape a value for a CSV cell (RFC 4180: quote and double embedded quotes). */
+function csvCell(value) {
+  if (value === null || value === undefined) return '';
+  const str = String(value);
+  if (/[",\n\r]/.test(str)) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
+/**
+ * GET /api/questions/export?courseId=<id>&format=csv|json – bulk-exports a
+ * course's questions with their variants. Course-access gated (TA access or
+ * above). Reuses getQuestionsByUser (eager-loads course + variants, so no N+1).
+ * Registered before `/:id` so the static `export` segment isn't captured as an id.
+ */
+router.get('/export', authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, next) => {
+  try {
+    const { courseId, classId, format = 'json' } = req.query;
+    const requestedCourseId = courseId ?? classId;
+
+    if (requestedCourseId === undefined || requestedCourseId === '') {
+      return res.status(400).json({ success: false, error: 'courseId is required for export' });
+    }
+
+    const normalizedFormat = String(format).toLowerCase();
+    if (normalizedFormat !== 'csv' && normalizedFormat !== 'json') {
+      return res.status(400).json({ success: false, error: "format must be 'csv' or 'json'" });
+    }
+
+    const { course, access } = await resolveCourseAccessWithCourse(req.user, requestedCourseId, {
+      cookie: req.headers.cookie
+    });
+    if (!course) {
+      return res.status(404).json({ success: false, error: 'Course not found' });
+    }
+    if (!access || access.rank < LEVELS.ta.rank) {
+      return res.status(403).json({ success: false, error: 'Insufficient course access' });
+    }
+
+    // Owner-scope so an enrolled non-owner viewer still exports the full bank.
+    const questions = await getQuestionsByUser(course.userId, {
+      courseId: course.id,
+      limit: 100000,
+      offset: 0
+    });
+
+    if (normalizedFormat === 'json') {
+      return res.json({ success: true, data: questions });
+    }
+
+    // CSV: one row per variant, with question context repeated. Questions with no
+    // variants still emit a row so the export isn't silently lossy.
+    const header = [
+      'questionId', 'questionType', 'questionDescription', 'primaryTopicId',
+      'variantId', 'questionText', 'difficulty', 'reasoningLevel',
+      'answer', 'choices', 'isDraft', 'isAiGenerated'
+    ];
+    const lines = [header.map(csvCell).join(',')];
+
+    for (const q of questions) {
+      const variants = q.variants ?? [];
+      if (variants.length === 0) {
+        lines.push([
+          q.id, q.type, q.description, q.primaryTopicId,
+          '', '', '', '', '', '', '', ''
+        ].map(csvCell).join(','));
+        continue;
+      }
+      for (const v of variants) {
+        lines.push([
+          q.id, q.type, q.description, q.primaryTopicId,
+          v.id, v.questionText, v.difficulty, v.reasoningLevel,
+          v.answer, v.choices != null ? JSON.stringify(v.choices) : '',
+          v.isDraft, v.isAiGenerated
+        ].map(csvCell).join(','));
+      }
+    }
+
+    const csv = lines.join('\r\n');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="questions-course-${course.id}.csv"`);
+    return res.status(200).send(csv);
+  } catch (error) {
+    next(error);
+  }
+});
+
 /** GET /api/questions/:id – fetches a single question after verifying course access. */
 router.get(
   '/:id',
@@ -353,7 +441,13 @@ router.post(
         });
       }
 
-      const questions = await extractQuestionsFromText(text, req.qmCourse.id, model, apiKeys);
+      const questions = await extractQuestionsFromText(
+        text,
+        req.qmCourse.id,
+        model,
+        apiKeys,
+        { cookie: req.headers.cookie ?? '' },
+      );
 
       res.json({
         success: true,

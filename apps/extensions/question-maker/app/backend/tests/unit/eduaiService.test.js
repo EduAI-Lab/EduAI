@@ -58,8 +58,13 @@ describe('isConfigured', () => {
     expect(eduaiService.isConfigured()).toBe(true);
   });
 
-  it('is false when the API key is blank', () => {
+  it('is true when base URL is set even if the API key is blank', () => {
     eduaiService.apiKey = '';
+    expect(eduaiService.isConfigured()).toBe(true);
+  });
+
+  it('is false when the base URL is blank', () => {
+    eduaiService.baseURL = '';
     expect(eduaiService.isConfigured()).toBe(false);
   });
 });
@@ -83,7 +88,9 @@ describe('chat', () => {
     const [url, payload, opts] = axios.post.mock.calls[0];
     expect(url).toBe('http://eduai.test/api/chat');
     expect(payload.courseCode).toBe('CS 101');
+    // Core's requireServiceKey guard expects Authorization: Bearer (not x-api-key).
     expect(opts.headers['Authorization']).toBe('Bearer test-key-123456');
+    expect(opts.headers['x-api-key']).toBeUndefined();
     expect(opts.timeout).toBe(60000);
   });
 

@@ -3,7 +3,6 @@ import {
   IconBooks,
   IconExternalLink,
   IconReport,
-  IconUsers,
 } from '@tabler/icons-react';
 import type { Icon } from '@tabler/icons-react';
 import {
@@ -16,7 +15,7 @@ import {
   SidebarMenuItem,
 } from '@eduai/ui';
 
-import type { User } from '~/lib/types';
+import type { AuthUser } from '~/hooks/useLocalUser';
 import { getEduAiAppUrl } from '~/lib/extension-urls';
 import { getNavForUser } from '~/lib/rbac/nav';
 import type { AtNavItemKey } from '~/lib/rbac/types';
@@ -27,14 +26,13 @@ import TourButton from '../TourButton';
 const NAV_ICONS: Record<AtNavItemKey, Icon> = {
   'my-courses': IconBooks,
   teaching: IconBooks,
-  'admin-users': IconUsers,
-  'admin-enrollments': IconBooks,
+  'admin-courses': IconBooks,
   'admin-bug-reports': IconReport,
   enrollments: IconBooks,
   analytics: IconBooks,
 };
 
-function toNavMainItems(user: User): AiTutorNavMainItem[] {
+function toNavMainItems(user: AuthUser): AiTutorNavMainItem[] {
   return getNavForUser(user).map((item) => ({
     title: item.title,
     url: item.href,
@@ -43,7 +41,7 @@ function toNavMainItems(user: User): AiTutorNavMainItem[] {
 }
 
 type AiTutorSidebarProps = React.ComponentProps<typeof Sidebar> & {
-  user: User;
+  user: AuthUser;
 };
 
 export function AiTutorSidebar({ user, ...props }: AiTutorSidebarProps) {

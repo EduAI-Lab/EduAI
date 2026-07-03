@@ -1,37 +1,29 @@
 import * as React from "react"
-import { useRouteLoaderData } from "react-router"
+import { Form, Link, useLocation, useRouteLoaderData } from "react-router"
 import {
   IconBooks,
   IconBrain,
+  IconClockCog,
   IconDashboard,
   IconFileText,
   IconListCheck,
+  IconLogout,
   IconMessageChatbot,
   IconReport,
   IconRobot,
   IconSettings,
   IconShieldLock,
   IconMail,
+  IconUser,
   IconUsers,
   type Icon,
 } from "@tabler/icons-react"
 
-import { NavDocuments } from "~/components/nav-documents"
-import type { NavDocumentItem } from "~/components/nav-documents"
-import { NavMain } from "~/components/nav-main"
-import type { NavMainItem } from "~/components/nav-main"
-import { NavSecondary } from "~/components/nav-secondary"
-import type { NavSecondaryItem } from "~/components/nav-secondary"
-import { NavUser } from "~/components/nav-user"
 import {
+  AppSidebar as SharedAppSidebar,
   Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
 } from "@eduai/ui"
+import type { NavMainItem, NavSecondaryItem } from "@eduai/ui"
 import type { User } from "~/lib/auth/types"
 import {
   getNavForUser,
@@ -39,6 +31,7 @@ import {
   type NavItemKey,
 } from "~/lib/rbac"
 import { usePolicies } from "~/hooks/api/use-policies"
+import { useCronJobStatus } from "~/hooks/api/use-cron-job-status"
 
 const NAV_ICONS: Record<NavItemKey, Icon> = {
   dashboard: IconDashboard,
@@ -48,10 +41,12 @@ const NAV_ICONS: Record<NavItemKey, Icon> = {
   "admin-users": IconUsers,
   "admin-ai": IconBrain,
   "admin-bugs": IconReport,
+  "admin-chat": IconRobot,
   "admin-invites": IconMail,
   "admin-settings": IconShieldLock,
   "admin-logs": IconFileText,
   "unitadmin-invites": IconMail,
+  "admin-cron": IconClockCog,
   settings: IconSettings,
   "ai-tutor": IconMessageChatbot,
 }
@@ -80,75 +75,99 @@ export type AppSidebarProps = {
   user: User
   navMain?: NavMainItem[]
   navSecondary?: NavSecondaryItem[]
-  documents?: NavDocumentItem[]
-  showDocuments?: boolean
 } & React.ComponentProps<typeof Sidebar>
 
 export function AppSidebar({
   user,
   navMain: navMainOverride,
   navSecondary: navSecondaryOverride,
-  documents = [],
-  showDocuments = false,
   variant = "sidebar",
   ...props
 }: AppSidebarProps) {
+  const { pathname } = useLocation()
   const { policies } = usePolicies()
   // Prefer the server-resolved flag from the root loader (authoritative,
   // default-aware, no paint flash). Fall back to the client policy fetch only
   // if root data is somehow unavailable.
   const rootData = useRouteLoaderData("root") as { canInvite?: boolean } | undefined
 
+  const cronStatusColor = useCronJobStatus(user.role === "ADMIN")
+
   // Policy-gated nav lives in getNavForUser: a UNIT_ADMIN only sees the
   // Invitations link when `unitAdmins.canInvite` is on (matches the route gate).
   const navItems = getNavForUser(user, {
     canInvite: rootData?.canInvite ?? Boolean(policies["unitAdmins.canInvite"]),
   })
-  const navMain = navMainOverride ?? toNavMainItems(navItems)
+  const autoNav = toNavMainItems(navItems).map((item) =>
+    item.url === "/admin/cron-jobs" && cronStatusColor
+      ? { ...item, badge: cronStatusColor }
+      : item,
+  )
+  const navMain = navMainOverride ?? autoNav
   const navSecondary =
     navSecondaryOverride ?? toNavSecondaryItems(getNavSecondaryForUser(user))
 
+  const logo = (
+    <>
+      {/* Globe logo — same as login/signup page */}
+      <div
+        className="flex items-center justify-center shrink-0"
+        style={{
+          width: 28,
+          height: 28,
+          borderRadius: 7,
+          background: "var(--primary)",
+        }}
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.75" strokeLinecap="round">
+          <circle cx="12" cy="12" r="9"/>
+          <path d="M12 3a9 9 0 0 1 0 18"/>
+          <path d="M3 12h18"/>
+          <path d="M12 3c2 2 3.5 5.5 3.5 9s-1.5 7-3.5 9"/>
+        </svg>
+      </div>
+      <span className="text-base font-bold" style={{ letterSpacing: "-0.01em" }}>EduAI</span>
+    </>
+  )
+
   return (
-    <Sidebar variant={variant} collapsible="offcanvas" {...props}>
-      <SidebarHeader>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              asChild
-              className="data-[slot=sidebar-menu-button]:!p-1.5"
+    <SharedAppSidebar
+      logo={logo}
+      logoHref="/dashboard"
+      navMain={navMain}
+      navSecondary={navSecondary}
+      currentPath={pathname}
+      LinkComponent={Link}
+      user={user}
+      navUser={{
+        items: [
+          {
+            label: "Settings",
+            icon: <IconSettings size={15} strokeWidth={1.75} />,
+            href: "/settings",
+          },
+          // TODO: remove Account menu item (note carried over from the old Core
+          // nav-user, which was extracted into @eduai/ui during the QM redesign).
+          {
+            label: "Account",
+            icon: <IconUser size={15} strokeWidth={1.75} />,
+            href: "/settings/account",
+          },
+        ],
+        logoutElement: (
+          <Form method="post" action="/auth/logout" replace className="w-full">
+            <button
+              type="submit"
+              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none text-destructive hover:bg-destructive/10 focus:bg-destructive/10"
             >
-              <a href="/dashboard" className="flex items-center gap-[9px]">
-                {/* Globe logo — same as login/signup page */}
-                <div
-                  className="flex items-center justify-center shrink-0"
-                  style={{
-                    width: 28,
-                    height: 28,
-                    borderRadius: 7,
-                    background: "var(--primary)",
-                  }}
-                >
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.75" strokeLinecap="round">
-                    <circle cx="12" cy="12" r="9"/>
-                    <path d="M12 3a9 9 0 0 1 0 18"/>
-                    <path d="M3 12h18"/>
-                    <path d="M12 3c2 2 3.5 5.5 3.5 9s-1.5 7-3.5 9"/>
-                  </svg>
-                </div>
-                <span className="text-base font-bold" style={{ letterSpacing: "-0.01em" }}>EduAI</span>
-              </a>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarHeader>
-      <SidebarContent>
-        <NavMain items={navMain} />
-        {showDocuments && <NavDocuments items={documents} />}
-        <NavSecondary items={navSecondary} className="mt-auto" />
-      </SidebarContent>
-      <SidebarFooter>
-        <NavUser user={user} />
-      </SidebarFooter>
-    </Sidebar>
+              <IconLogout size={15} strokeWidth={1.75} />
+              Log out
+            </button>
+          </Form>
+        ),
+      }}
+      variant={variant}
+      {...props}
+    />
   )
 }

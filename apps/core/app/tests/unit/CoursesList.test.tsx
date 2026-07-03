@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { CoursesAdminView } from '~/components/courses/courses-admin-view'
 import { CoursesUnitAdminView } from '~/components/courses/courses-unit-admin-view'
@@ -7,6 +7,7 @@ import { CoursesInstructorView } from '~/components/courses/courses-instructor-v
 import { CoursesTaView } from '~/components/courses/courses-ta-view'
 import { CoursesStudentView } from '~/components/courses/courses-student-view'
 import type { Course } from '~/hooks/api/use-courses'
+import { UiPreferencesProvider } from '~/components/assistive/ui-preferences-provider'
 
 // The instructor view gates Create/Publish/Delete on usePolicies(); the controls
 // stay hidden until policies load. Default the hook to the loaded state so the
@@ -16,6 +17,26 @@ vi.mock('~/hooks/api/use-policies', () => ({
 }))
 import { usePolicies } from '~/hooks/api/use-policies'
 const mockedUsePolicies = vi.mocked(usePolicies)
+
+// §541: department labels/options now come from the DB-backed useDisciplines
+// hook (previously the static UNIT_OPTIONS). Stub it with a fixed list so the
+// views render labels synchronously in tests.
+vi.mock('~/hooks/api/use-disciplines', () => {
+  const DISCIPLINES = [
+    { code: 'COSC', name: 'Computer Science' },
+    { code: 'MATH', name: 'Mathematics' },
+    { code: 'STAT', name: 'Statistics' },
+  ]
+  return {
+    useDisciplines: () => ({
+      disciplines: DISCIPLINES,
+      options: DISCIPLINES.map((d) => ({ code: d.code, label: d.name })),
+      getLabel: (code: string) => DISCIPLINES.find((d) => d.code === code)?.name ?? code,
+      loading: false,
+      error: null,
+    }),
+  }
+})
 
 const PUBLISHED_COURSE: Course = {
   id: 'c1',
@@ -49,10 +70,28 @@ const MATH_COURSE: Course = {
   department: 'MATH',
 }
 
+const SPRING_COURSE: Course = {
+  ...PUBLISHED_COURSE,
+  id: 'c4',
+  code: 'COSC 301',
+  name: 'Algorithms',
+  term: 'Spring',
+}
+
 const NOOP = async () => {}
 
 function wrap(ui: React.ReactElement) {
   return render(<MemoryRouter>{ui}</MemoryRouter>)
+}
+
+function wrapStudent(ui: React.ReactElement) {
+  return render(
+    <MemoryRouter>
+      <UiPreferencesProvider initialMotionReduced initialDensity="comfortable">
+        {ui}
+      </UiPreferencesProvider>
+    </MemoryRouter>,
+  )
 }
 
 // CoursesAdminView
@@ -255,18 +294,32 @@ describe('CoursesTaView', () => {
 // CoursesStudentView
 describe('CoursesStudentView', () => {
   it('does NOT show "Create Course" button', () => {
-    wrap(<CoursesStudentView courses={[PUBLISHED_COURSE]} />)
+    wrapStudent(<CoursesStudentView courses={[PUBLISHED_COURSE]} />)
     expect(screen.queryByRole('button', { name: /create course/i })).not.toBeInTheDocument()
   })
 
   it('hides draft (unpublished) courses', () => {
-    wrap(<CoursesStudentView courses={[PUBLISHED_COURSE, DRAFT_COURSE]} />)
+    wrapStudent(<CoursesStudentView courses={[PUBLISHED_COURSE, DRAFT_COURSE]} />)
     expect(screen.getByText('COSC 101')).toBeInTheDocument()
     expect(screen.queryByText('COSC 201')).not.toBeInTheDocument()
   })
 
   it('shows empty state when no published courses', () => {
-    wrap(<CoursesStudentView courses={[DRAFT_COURSE]} />)
+    wrapStudent(<CoursesStudentView courses={[DRAFT_COURSE]} />)
     expect(screen.getByText(/no published courses available/i)).toBeInTheDocument()
+  })
+
+  it('filters courses by term bucket', () => {
+    wrapStudent(<CoursesStudentView courses={[PUBLISHED_COURSE, SPRING_COURSE]} />)
+    expect(screen.getByText('COSC 101')).toBeInTheDocument()
+    expect(screen.getByText('COSC 301')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Term 1' }))
+    expect(screen.getByText('COSC 101')).toBeInTheDocument()
+    expect(screen.queryByText('COSC 301')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Term 2' }))
+    expect(screen.queryByText('COSC 101')).not.toBeInTheDocument()
+    expect(screen.getByText('COSC 301')).toBeInTheDocument()
   })
 })

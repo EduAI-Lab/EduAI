@@ -14,8 +14,7 @@ export type AtRoleView = 'admin' | 'unit-admin' | 'instructor' | 'ta' | 'student
 export type AtNavItemKey =
   | 'teaching'
   | 'my-courses'
-  | 'admin-users'
-  | 'admin-enrollments'
+  | 'admin-courses'
   | 'admin-bug-reports'
   | 'enrollments'
   | 'analytics';

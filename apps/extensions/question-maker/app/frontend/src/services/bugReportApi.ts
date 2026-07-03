@@ -3,9 +3,18 @@
  */
 import api from './api';
 
+export type BugReportType =
+  | 'UI_DISPLAY'
+  | 'FEATURE_NOT_WORKING'
+  | 'PERFORMANCE'
+  | 'CONTENT_ERROR'
+  | 'ACCESS_PERMISSION'
+  | 'OTHER';
+
 export interface BugReportRow {
   id: string;
   description: string;
+  bugType: BugReportType | null;
   status: string;
   source?: string;
   consoleLogs: string | null;
@@ -20,6 +29,7 @@ export interface BugReportRow {
 
 export interface SubmitBugReportPayload {
   description: string;
+  bugType: BugReportType | null;
   consoleLogs: string;
   networkLogs: string;
   screenshot: string | null;
@@ -45,6 +55,7 @@ function mapCoreReport(report: Record<string, unknown>): BugReportRow {
   return {
     id: String(report.id),
     description: String(report.description ?? ''),
+    bugType: (report.bugType as BugReportType | null) ?? null,
     status: CORE_TO_UI_STATUS[status] ?? status.toLowerCase(),
     source: report.source != null ? String(report.source) : undefined,
     consoleLogs: (report.consoleLogs as string | null) ?? null,
@@ -67,10 +78,12 @@ export const bugReportApi = {
     return res.data.data;
   },
 
-  async list(): Promise<BugReportRow[]> {
-    const res = await api.get('/api/admin/bug-reports', {
-      params: { source: 'QUESTION_MAKER', limit: 100 },
-    });
+  async list(options?: { source?: string; limit?: number }): Promise<BugReportRow[]> {
+    const params: Record<string, string | number> = { limit: options?.limit ?? 100 };
+    if (options?.source) {
+      params.source = options.source;
+    }
+    const res = await api.get('/api/admin/bug-reports', { params });
     const payload = res.data.data;
     const reports = Array.isArray(payload?.reports) ? payload.reports : [];
     return reports.map((row: Record<string, unknown>) => mapCoreReport(row));

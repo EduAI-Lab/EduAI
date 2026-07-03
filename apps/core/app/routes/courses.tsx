@@ -22,7 +22,7 @@ import {
 } from '@eduai/ui'
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession(request)
+  const session = await auth.api.getSession({ headers: request.headers })
   if (!session?.user) return redirect('/auth/login')
 
   // Fetch authorizedUnits directly from DB — Better Auth session may not include
@@ -46,19 +46,20 @@ export async function loader({ request }: LoaderFunctionArgs) {
     })
   }
 
-  // Scope list to assignments so detail loader access matches visible cards (§5
-  // list gate). A TA is an Enrollment with role=TA; STUDENT-platform users may
-  // hold both TA and STUDENT enrollments, so we split by enrollment role.
-  let taCourseIds: string[] = []
-  let enrolledCourseIds: string[] = []
-  if (session.user.role === 'STUDENT') {
-    const rows = await prisma.enrollment.findMany({
-      where: { userId: session.user.id, isActive: true },
-      select: { courseId: true, role: true },
-    })
-    taCourseIds = rows.filter((r) => r.role === 'TA').map((r) => r.courseId)
-    enrolledCourseIds = rows.filter((r) => r.role === 'STUDENT').map((r) => r.courseId)
-  }
+  // Scope list to enrollment assignments (#499) — never hardcode course ids; read
+  // active Enrollment rows for this user and split by role (§5 list gate). A TA is
+  // an Enrollment with role=TA; STUDENT-platform users may hold both TA and STUDENT
+  // enrollments, so we split by enrollment role.
+  const enrollmentRows = await prisma.enrollment.findMany({
+    where: { userId: session.user.id, isActive: true },
+    select: { courseId: true, role: true },
+  })
+  const taCourseIds = enrollmentRows
+    .filter((r) => r.role === 'TA')
+    .map((r) => r.courseId)
+  const enrolledCourseIds = enrollmentRows
+    .filter((r) => r.role === 'STUDENT')
+    .map((r) => r.courseId)
 
   return { user: session.user, authorizedUnits, taCourseIds, enrolledCourseIds, instructors }
 }
@@ -72,7 +73,7 @@ export default function CoursesPage() {
   const isAdmin = user.role === 'ADMIN'
   const isUnitAdmin = user.role === 'UNIT_ADMIN'
   const isInstructor = user.role === 'INSTRUCTOR'
-  // A TA is a STUDENT-platform user holding one or more TA enrollments.
+  // TA is a course-level enrollment role, not a platform role (#499).
   const isTA = taCourseIds.length > 0
 
   const handlePublishToggle = async (id: string, publish: boolean) => {
@@ -137,7 +138,9 @@ export default function CoursesPage() {
             onPublishToggle={handlePublishToggle}
           />
         ) : isTA ? (
-          <CoursesTaView courses={courses} />
+          <CoursesTaView
+            courses={courses.filter((c) => taCourseIds.includes(c.id))}
+          />
         ) : (
           <CoursesStudentView
             courses={courses.filter(

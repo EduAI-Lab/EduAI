@@ -1,7 +1,7 @@
 import type { Prisma, User } from "@prisma/client";
 import { UserRole } from "@prisma/client";
 import { randomUUID } from "crypto";
-import { createDataStreamResponse, formatDataStreamPart, generateText, streamText, tool } from "ai";
+import { createDataStreamResponse, formatDataStreamPart, streamText } from "ai";
 import {
   createAIProviderRegistry,
   listEnabledRegistryProviders,
@@ -9,117 +9,81 @@ import {
   parseModelIdentifier,
 } from "~/lib/ai/providers";
 import {
-  activeRouterVersion,
-  parseRouterMode,
-  resolveRoutedModel,
-  type RouterMode,
-} from "~/lib/ai/routing/router";
-import {
-  coalesceTokenUsage,
-  normalizeTokenUsage,
-  persistAiInteractionTelemetry,
-} from "~/lib/ai/routing/telemetry";
-import { modelSupportsTools } from "~/lib/ai/providers.server";
+  capMaxOutputTokensForPrompt,
+  estimateTokensFromChars,
+  getChatModelCapabilities,
+  resolveActiveChatModel,
+  resolveMaxOutputTokens,
+  resolveModelContextWindow,
+  ESTIMATED_CHARS_PER_TOKEN,
+} from "~/lib/ai/providers.server";
+import { resolveToolMaxOutputTokens } from "~/lib/ai/resolve-tool-max-tokens";
 import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
+import { needsCourseRag } from "~/lib/ai/chat-intent";
+import {
+  buildChatToolRegistry,
+  buildToolCallingSystemPrompt,
+} from "~/lib/ai/chat-tools";
+import {
+  composeSecurityPrompt,
+  filterIncomingClientMessages,
+  sanitizeSystemPrompt,
+} from "~/lib/ai/prompt-safety";
+import {
+  getProfileRequirements,
+  resolveAdhdTurnProfile,
+  type AdhdTurnProfile,
+} from "~/lib/ai/adhd-turn-profile";
 import {
   auditAndMaybeRewrite,
   buildOverseenAssistantMessagesToPersist,
   emptyOversightAuditResult,
   isAdhdOversightEnabled,
+  type OversightMethod,
 } from "~/lib/ai/adhd-oversight";
-import { resolveAdhdResponseWordCap } from "~/lib/ai/adhd-metrics";
+import { resolveAdhdResponseWordCap, isProfileStructuralPass, computeAdhdResponseMetrics } from "~/lib/ai/adhd-metrics";
 import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
-import { needsCourseRag } from "~/lib/ai/chat-intent";
 import { findRelevantContent } from "~/lib/ai/embedding";
+import {
+  resolveCourseAccessWithCourse,
+  type AccessLevel,
+} from "~/lib/auth/course-access.server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { auth } from "~/lib/auth/server";
 import type { ActionFunctionArgs } from "react-router";
-import { z } from "zod";
 import {
-  appendHybridWebContext,
-  buildHybridWebToolContext,
-  inferHybridWebToolMode,
-} from "~/lib/ai/hybrid-web-tools";
-import { webSearch, fetchPage } from "~/lib/ai/tools";
+  buildAdminSystemPrompt,
+  chatbotTypeFromMode,
+  createChatTools,
+  parseChatMode,
+} from "~/lib/agent-tools";
 import prisma from "~/lib/prisma.server";
-import { chatApiDebug } from "~/lib/chat-api-log";
+import { chatApiDebug, chatApiReject, chatApiTrace } from "~/lib/chat-api-log";
 import { clientApiKeysBodySchema, toUserProviderSettings } from "~/lib/chat-api-keys.schema";
 import { getPolicy } from "~/lib/policy.server";
 import {
+  shouldInjectCourseRag,
+  shouldPrefetchCourseRag,
+} from "~/lib/ai/course-rag-policy";
+import {
   buildCappedRagContextText,
+  buildEmptyCourseRagBlock,
   buildRagSystemBlock,
-  capRagHitsForTool,
   capToolResultsInMessages,
   estimateMessageCharsForModel,
   extractMessageText,
+  LATEST_TURN_FOCUS_INSTRUCTION,
   prepareBoundedSessionContext,
   resolveMaxContextMessages,
   HYBRID_RAG_MAX_CHUNKS,
   HYBRID_RAG_MAX_CONTEXT_CHARS,
+  type HybridRagHit,
 } from "~/lib/chat-rag";
-import { routerAutoDefaultEnabled } from "~/lib/router-env.server";
-
-function autoRoutingHeaders(
-  resolvedModelId: string,
-  routingTier: 1 | 2 | 3 | null,
-  wasAuto: boolean,
-  routerVersion?: string | null,
-): Record<string, string> {
-  const headers: Record<string, string> = {
-    "X-Routed-Model": resolvedModelId,
-  };
-  if (wasAuto) {
-    if (routingTier != null) {
-      headers["X-Routing-Tier"] = String(routingTier);
-    }
-    headers["X-Router-Version"] = routerVersion ?? activeRouterVersion();
-  }
-  return headers;
-}
-
-/** OpenAI-compatible local backends need explicit stream usage for token telemetry. */
-function usageProviderOptions(providerId: string) {
-  if (providerId === "vllm" || providerId === "ollama") {
-    return {
-      [providerId]: { streamOptions: { includeUsage: true } },
-    } as const;
-  }
-  return undefined;
-}
-
-function resolveAutoRouting(
-  model: string | undefined,
-): { routeWithAuto: boolean; modeOverride?: RouterMode; requestedAuto: string | null } {
-  if (model === undefined || model === "auto") {
-    return { routeWithAuto: true, requestedAuto: model ?? "auto" };
-  }
-  if (model === "auto-llm") {
-    return {
-      routeWithAuto: true,
-      modeOverride: "llm",
-      requestedAuto: "auto-llm",
-    };
-  }
-  if (model === "auto-hybrid") {
-    return {
-      routeWithAuto: true,
-      modeOverride: "hybrid",
-      requestedAuto: "auto-hybrid",
-    };
-  }
-  return { routeWithAuto: false, requestedAuto: null };
-}
 
 const TOOL_MAX_STEPS = Math.min(
   32,
   Math.max(1, Number(process.env.CHAT_TOOL_MAX_STEPS) || 12),
 );
-const TOOL_MAX_TOKENS = Math.min(
-  128_000,
-  Math.max(1024, Number(process.env.CHAT_TOOL_MAX_OUTPUT_TOKENS) || 32_000),
-);
-
 type GenericMessage = Record<string, any>;
 
 type StoredMessageRecord = {
@@ -215,75 +179,7 @@ function mergeMessages(stored: GenericMessage[], incoming: GenericMessage[]): Ge
   return merged;
 }
 
-/**
- * Produces a best-effort string representation of a message. We only need this
- * for lightweight keyword checks when deciding whether to run manual RAG.
- */
-function extractTextFromMessage(message?: GenericMessage): string {
-  if (typeof message?.content === "string") {
-    return message.content;
-  }
-
-  if (Array.isArray(message?.content)) {
-    return message!.content
-      .map((part) => {
-        if (typeof part === "string") return part;
-        if (part && typeof part === "object" && "text" in part && typeof (part as any).text === "string") {
-          return (part as any).text;
-        }
-        return "";
-      })
-      .filter(isNonEmptyString)
-      .join(" ");
-  }
-
-  if (message?.content && typeof message.content === "object" && "text" in (message.content as any)) {
-    const candidate = (message.content as { text?: string }).text;
-    if (typeof candidate === "string") {
-      return candidate;
-    }
-  }
-
-  return message ? JSON.stringify(message.content ?? "") : "";
-}
-
-function userMessageHasImages(message?: GenericMessage): boolean {
-  const content = message?.content;
-  if (!content) {
-    return false;
-  }
-
-  const partLooksLikeImage = (part: unknown): boolean => {
-    if (!part || typeof part !== "object") {
-      return false;
-    }
-    const p = part as Record<string, unknown>;
-    const t = p.type;
-    if (t === "image" || t === "image_url") {
-      return true;
-    }
-    if (t === "file") {
-      const mime = p.mimeType;
-      return typeof mime === "string" && mime.startsWith("image/");
-    }
-    return false;
-  };
-
-  if (Array.isArray(content)) {
-    return content.some(partLooksLikeImage);
-  }
-
-  if (typeof content === "object" && content !== null && "parts" in content) {
-    const parts = (content as { parts?: unknown }).parts;
-    if (Array.isArray(parts)) {
-      return parts.some(partLooksLikeImage);
-    }
-  }
-
-  return false;
-}
-
-/** Cheap metrics for logs ? do not print full `system` / messages (RAG can be huge). */
+/** Cheap metrics for logs — do not print full `system` / messages (RAG can be huge). */
 function llmPromptSizeHints(system: unknown, messages: GenericMessage[]) {
   const systemChars = typeof system === "string" ? system.length : 0;
   let messageTextChars = 0;
@@ -308,17 +204,30 @@ function serializeMessage(message: GenericMessage): Prisma.JsonValue {
   }
 }
 
-function extractAssistantText(messages: unknown): string {
-  if (!Array.isArray(messages)) return "";
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const msg = messages[i];
-    if (!msg || typeof msg !== "object") continue;
-    const role = (msg as { role?: unknown }).role;
-    if (role !== "assistant") continue;
-    const text = extractMessageText(msg as GenericMessage);
-    if (text.trim()) return text;
-  }
-  return "";
+/**
+ * Pulls plain text out of AI-SDK `response.messages` (whose `content` is an
+ * array of typed parts) as a fallback for when the `onFinish`/awaited `text`
+ * field is empty. Keeps persisted assistant content as a string so chat history
+ * restore renders real markdown instead of a blank bubble or raw JSON.
+ */
+function extractAssistantText(messages: GenericMessage[] | undefined): string {
+  if (!messages?.length) return "";
+  const collectText = (content: unknown): string => {
+    if (typeof content === "string") return content;
+    if (Array.isArray(content)) {
+      return content
+        .filter((p): p is GenericMessage => !!p && typeof p === "object")
+        .filter((p) => p.type === "text" && typeof p.text === "string")
+        .map((p) => p.text as string)
+        .join("\n");
+    }
+    return "";
+  };
+  return messages
+    .filter((m) => m.role === "assistant")
+    .map((m) => collectText(m.content))
+    .filter((t) => t.length > 0)
+    .join("\n");
 }
 
 /**
@@ -409,6 +318,32 @@ async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
   return user;
 }
 
+function formatStreamError(error: unknown): string {
+  if (error instanceof Error) {
+    const message = error.message || error.name;
+    if (message.includes("Invalid arguments for tool")) {
+      return `${message} — The model passed invalid tool parameters. Retry or pick a tool-capable model (e.g. vllm:qwen2.5-32b-instruct).`;
+    }
+    return message;
+  }
+  if (typeof error === "string") {
+    return error;
+  }
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return "Unknown stream error";
+  }
+}
+
+function logStreamError(error: unknown, trace: Record<string, unknown>): void {
+  console.error("[chat-api] stream error", {
+    error: formatStreamError(error),
+    trace,
+    raw: error,
+  });
+}
+
 /**
  * POST /api/chat
  *
@@ -424,7 +359,10 @@ async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
 export async function action({ request }: ActionFunctionArgs) {
   try {
     const apiKeyHeader = request.headers.get("x-api-key");
-    let session = await auth.api.getSession(request);
+    const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
+    if (apiKeyGuard) return apiKeyGuard;
+
+    let session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
     let isServiceKeyCaller = false;
     if (!session?.user) {
       const serviceKeyError = await requireServiceKey(request);
@@ -433,36 +371,37 @@ export async function action({ request }: ActionFunctionArgs) {
       session = { user: { id: "service", name: "Service", role: "ADMIN" } } as unknown as typeof session;
     }
 
+    if (!session?.user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     const body = await request.json();
     const rawMessages: unknown[] = Array.isArray(body.messages) ? body.messages : [];
-    let model = typeof body.model === "string" ? body.model.trim() : undefined;
-    if (model === "") {
-      model = undefined;
-    }
-
-    if (!routerAutoDefaultEnabled() && model === undefined) {
-      return new Response(
-        JSON.stringify({
-          error: "Missing model",
-          details:
-            'ROUTER_AUTO_DEFAULT disables implicit Auto; send model "auto", "auto-llm", "auto-hybrid", or a concrete registry id.',
-        }),
-        {
-          status: 400,
-          headers: { "Content-Type": "application/json" },
-        },
-      );
-    }
-
-    const autoRouting = resolveAutoRouting(model);
-    const routeWithAuto = autoRouting.routeWithAuto;
+    const model = typeof body.model === "string" ? body.model : undefined;
     const apiKeys = body.apiKeys as unknown;
     const courseId = typeof body.courseId === "string" ? body.courseId : undefined;
     const courseCode = typeof body.courseCode === "string" ? body.courseCode : undefined;
     const streaming = body.streaming === undefined ? true : Boolean(body.streaming);
     const forceHybridRag = body.forceHybridRag === true;
-    const hybridWebTools = body.hybridWebTools === true;
     const chatId = typeof body.chatId === "string" ? body.chatId : undefined;
+    const chatMode = parseChatMode(body.chatMode);
+    const expectedChatbotType = chatbotTypeFromMode(chatMode);
+
+    chatApiTrace("request received", {
+      chatMode,
+      chatbotType: expectedChatbotType,
+      chatId: chatId ?? null,
+      model: model ?? null,
+      courseCode: courseCode ?? null,
+      courseId: courseId ?? null,
+      messageCount: rawMessages.length,
+      streaming,
+      userId: session.user.id,
+      userRole: session.user.role,
+    });
     const proxyUserPayload =
       body.proxyUser && typeof body.proxyUser === "object" ? (body.proxyUser as ProxyUserPayload) : null;
 
@@ -472,13 +411,12 @@ export async function action({ request }: ActionFunctionArgs) {
     const hasSystemPromptField = Object.prototype.hasOwnProperty.call(body, "systemPrompt");
     let trimmedSystemPrompt: string | null = null;
     if (typeof body.systemPrompt === "string") {
-      const candidate = body.systemPrompt.trim();
-      trimmedSystemPrompt = candidate.length > 0 ? candidate : null;
+      trimmedSystemPrompt = sanitizeSystemPrompt(body.systemPrompt);
     } else if (body.systemPrompt === null) {
       trimmedSystemPrompt = null;
     }
 
-    let actingUser = session!.user;
+    let actingUser = session.user;
     if (proxyUserPayload) {
       if (!apiKeyHeader) {
         return new Response(JSON.stringify({ error: "proxyUser requires admin API key access" }), {
@@ -498,19 +436,29 @@ export async function action({ request }: ActionFunctionArgs) {
         };
       } catch (error) {
         console.error("Failed to resolve proxy user:", error);
-        return new Response(
-          JSON.stringify({
+        return chatApiReject(
+          400,
+          {
             error: "Failed to resolve proxy user",
             details: error instanceof Error ? error.message : "Unknown error",
-          }),
-          { status: 400, headers: { "Content-Type": "application/json" } },
+          },
+          { chatMode, userId: actingUser.id },
         );
       }
     }
 
-    const normalizedIncomingMessages = rawMessages
-      .map((m) => normalizeMessage(m))
-      .filter((m): m is GenericMessage => m !== null);
+    if (chatMode === "admin" && actingUser.role !== UserRole.ADMIN) {
+      return new Response(JSON.stringify({ error: "Forbidden" }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const normalizedIncomingMessages = filterIncomingClientMessages(
+      rawMessages
+        .map((m) => normalizeMessage(m))
+        .filter((m): m is GenericMessage => m !== null),
+    );
 
     // Resolve course code to internal ID when needed
     let resolvedCourseId: string | null = null;
@@ -522,7 +470,6 @@ export async function action({ request }: ActionFunctionArgs) {
         console.error("Failed to resolve course by code", e);
       }
     }
-
     // Load the owned chat up front so a follow-up turn that sends a `chatId`
     // but no `courseId`/`courseCode` can inherit the course from the persisted
     // chat row, instead of failing COURSE_REQUIRED below (#685 review).
@@ -543,8 +490,23 @@ export async function action({ request }: ActionFunctionArgs) {
           },
         );
       }
+      if (chat.chatbotType && chat.chatbotType !== expectedChatbotType) {
+        return new Response(
+          JSON.stringify({
+            error: "Chatbot type mismatch",
+            chatDeleted: true,
+          }),
+          {
+            status: 410,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
     }
 
+    // A persisted chat is pinned to its course. If a follow-up turn explicitly
+    // names a *different* course, reject — silently switching would split the
+    // chat's RAG context and message history across courses (#685 review).
     const requestedCourseId = resolvedCourseId || courseId || null;
     if (chat?.courseId && requestedCourseId && requestedCourseId !== chat.courseId) {
       return new Response(JSON.stringify({ error: "COURSE_MISMATCH" }), {
@@ -555,21 +517,37 @@ export async function action({ request }: ActionFunctionArgs) {
 
     const effectiveCourseId = resolvedCourseId || courseId || chat?.courseId || null;
 
-    // #657: the global "general assistant" chat was removed ? every interactive
-    // chat is now course-scoped. Server-to-server callers may still omit a course;
-    // regular sessions may not.
+    // #657: the global "general assistant" chat was removed — every interactive
+    // chat is now course-scoped. Server-to-server callers (admin API key /
+    // ai-tutor proxy) and platform admins in admin chatMode may still omit a course.
     const isApiKeyCaller = isServiceKeyCaller;
-    if (!effectiveCourseId && !isApiKeyCaller) {
+    if (!effectiveCourseId && !isApiKeyCaller && chatMode !== "admin") {
       return new Response(JSON.stringify({ error: "COURSE_REQUIRED" }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
       });
     }
 
-    // Section 10 (#302): course-scoped chats require course access for the acting
+    let effectiveCourseCode = courseCode ?? null;
+    if (!effectiveCourseCode && effectiveCourseId) {
+      try {
+        const course = await prisma.course.findUnique({
+          where: { id: effectiveCourseId },
+          select: { code: true },
+        });
+        effectiveCourseCode = course?.code ?? null;
+      } catch (e) {
+        console.error("Failed to resolve course code by id", e);
+      }
+    }
+
+    // §10 (#302): course-scoped chats require course access for the acting
     // user. Students need an active enrollment AND a published course; an
     // inactive enrollment blocks new chats but never own-history reads
     // (GET /api/chats/:chatId is ownership-scoped and unaffected).
+    // Hoisted so the web-tools gate (below) can read the caller's course access
+    // level — null for general (non-course) chats.
+    let courseAccess: AccessLevel | null = null;
     if (effectiveCourseId) {
       const { course, access } = await resolveCourseAccessWithCourse(
         actingUser,
@@ -587,10 +565,17 @@ export async function action({ request }: ActionFunctionArgs) {
           headers: { "Content-Type": "application/json" },
         });
       }
+      courseAccess = access;
     }
 
+    // Service-key (server-to-server) callers — e.g. the Question Maker proxy —
+    // are stateless and have no real User row, so persisting a Chat would violate
+    // chats_userId_fkey (P2003). Skip all chat/message persistence for them and
+    // run the model against the incoming messages only.
+    const ephemeral = isServiceKeyCaller;
+
     // Persist any system-prompt change onto the chat loaded above.
-    if (hasSystemPromptField) {
+    if (hasSystemPromptField && !ephemeral) {
       if (chat) {
         if (chat.systemPrompt !== trimmedSystemPrompt) {
           chat = await prisma.chat.update({
@@ -602,6 +587,7 @@ export async function action({ request }: ActionFunctionArgs) {
         chat = await prisma.chat.create({
           data: {
             userId: actingUser.id,
+            chatbotType: expectedChatbotType,
             courseId: effectiveCourseId,
             systemPrompt: trimmedSystemPrompt,
             adhdAssist,
@@ -610,14 +596,16 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     }
 
-    if (chat && effectiveCourseId && chat.courseId !== effectiveCourseId && !chat.courseId) {
+    // Backfill course context onto an existing chat that was created before a
+    // course was selected (e.g. user picked the course mid-conversation).
+    if (!ephemeral && chat && effectiveCourseId && chat.courseId !== effectiveCourseId && !chat.courseId) {
       chat = await prisma.chat.update({
         where: { id: chat.id },
         data: { courseId: effectiveCourseId },
       });
     }
 
-    if (hasAdhdAssistField && chat && chat.adhdAssist !== adhdAssist) {
+    if (!ephemeral && hasAdhdAssistField && chat && chat.adhdAssist !== adhdAssist) {
       chat = await prisma.chat.update({
         where: { id: chat.id },
         data: { adhdAssist },
@@ -640,15 +628,28 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    if (!chat && shouldCreateChat) {
+    if (!chat && shouldCreateChat && !ephemeral) {
       chat = await prisma.chat.create({
         data: {
           userId: actingUser.id,
+          chatbotType: expectedChatbotType,
           courseId: effectiveCourseId,
           systemPrompt: trimmedSystemPrompt,
           adhdAssist,
         },
       });
+    }
+
+    // Stateless callers get an in-memory chat stub (id: null) so downstream code
+    // can read systemPrompt/adhdAssist without persisting anything.
+    if (ephemeral && !chat) {
+      chat = {
+        id: null,
+        userId: actingUser.id,
+        courseId: effectiveCourseId,
+        systemPrompt: trimmedSystemPrompt,
+        adhdAssist,
+      } as unknown as NonNullable<typeof chat>;
     }
 
     if (process.env.CHAT_API_DEBUG === "1") {
@@ -662,13 +663,17 @@ export async function action({ request }: ActionFunctionArgs) {
       });
     }
 
-    // Fetch only the slice of history we plan to send back to the LLM.
+    // Fetch only the slice of history we plan to send back to the LLM. Stateless
+    // callers have no persisted history (and a null chat id), so skip the query.
     const maxContextMessages = resolveMaxContextMessages();
-    const recentMessageRecords = await prisma.chatMessage.findMany({
-      where: { chatId: chat.id },
-      orderBy: { position: "desc" },
-      take: maxContextMessages,
-    });
+    const recentMessageRecords =
+      ephemeral || !chat.id
+        ? []
+        : await prisma.chatMessage.findMany({
+            where: { chatId: chat.id },
+            orderBy: { position: "desc" },
+            take: maxContextMessages,
+          });
 
     const storedMessages = recentMessageRecords.reverse().map((record) =>
       reviveStoredMessage({
@@ -698,7 +703,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
     // Cap oversized tool results (#260), then digest older turns when the thread
     // exceeds the char budget (#259). Budget accounting counts tool payloads.
-    const modelMessages = prepareBoundedSessionContext(
+    let modelMessages = prepareBoundedSessionContext(
       capToolResultsInMessages(trimmedMessages),
     );
 
@@ -716,7 +721,7 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    if ((!routeWithAuto && !model) || (apiKeys !== null && typeof apiKeys !== "object")) {
+    if (!model || typeof apiKeys !== "object" || apiKeys === null) {
       return new Response(
         JSON.stringify({ error: "Missing required fields" }),
         {
@@ -726,11 +731,8 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    const apiKeysInput =
-      apiKeys === null || apiKeys === undefined ? {} : (apiKeys as Record<string, unknown>);
-
     // Validate API keys
-    const apiKeysParsed = clientApiKeysBodySchema.safeParse(apiKeysInput);
+    const apiKeysParsed = clientApiKeysBodySchema.safeParse(apiKeys);
     if (!apiKeysParsed.success) {
       return new Response(
         JSON.stringify({
@@ -743,83 +745,12 @@ export async function action({ request }: ActionFunctionArgs) {
         },
       );
     }
-    const validatedApiKeys = toUserProviderSettings(apiKeysParsed.data);
-
-    const telemetryLastUser = [...trimmedMessages].reverse().find((m) => m.role === "user");
-    const lastUserMessageTextForTelemetry = extractTextFromMessage(telemetryLastUser);
-    const hasAttachments = userMessageHasImages(telemetryLastUser);
-    const hasCourse = Boolean(effectiveCourseId);
-    const courseRagNeeded = needsCourseRag(lastUserMessageTextForTelemetry, hasCourse);
-
-    let ragTopSimilarity: number | null = null;
-    let ragChunkCount: number | null = null;
-    let ragContextTokenEstimate: number | null = null;
-
-    if (routeWithAuto && effectiveCourseId && lastUserMessageTextForTelemetry.trim().length > 0) {
-      try {
-        const ragPrefetch = await findRelevantContent(
-          lastUserMessageTextForTelemetry,
-          effectiveCourseId,
-          HYBRID_RAG_MAX_CHUNKS,
-        );
-        ragChunkCount = ragPrefetch.length;
-        ragTopSimilarity = ragPrefetch[0]?.similarity ?? null;
-        ragContextTokenEstimate = ragPrefetch.reduce(
-          (acc, hit) => acc + Math.ceil(hit.content.length / 4),
-          0,
-        );
-      } catch (err) {
-        chatApiDebug("Router RAG prefetch failed", { err });
-      }
-    }
-
-    let wasAuto = false;
-    let routingTier: 1 | 2 | 3 | null = null;
-    let routerContext: Record<string, unknown> | null = null;
-    let resolvedRouterVersion: string | null = null;
-
-    if (routeWithAuto) {
-      const decision = await resolveRoutedModel(
-        lastUserMessageTextForTelemetry,
-        {
-          courseId: effectiveCourseId,
-          courseCode: courseCode ?? null,
-          imagesPresent: hasAttachments,
-          ragTopSimilarity,
-          ragChunkCount,
-          ragContextTokenEstimate,
-          courseRagNeeded,
-        },
-        autoRouting.modeOverride
-          ? { modeOverride: autoRouting.modeOverride }
-          : undefined,
-      );
-      model = decision.modelId;
-      wasAuto = true;
-      routingTier = decision.tier;
-      routerContext = {
-        ...decision.features,
-        requestedAuto: autoRouting.requestedAuto,
-      };
-      resolvedRouterVersion =
-        typeof decision.features.routerVersion === "string"
-          ? decision.features.routerVersion
-          : activeRouterVersion(autoRouting.modeOverride ?? parseRouterMode(process.env.ROUTER_MODE));
-      chatApiDebug("Auto routing resolved model", {
-        resolvedModelId: decision.modelId,
-        routingTier: decision.tier,
-        rule: decision.features.rule,
-        requestedAuto: autoRouting.requestedAuto,
-      });
-    }
-
-    const resolvedModelId = model!;
-    const parsedModel = parseModelIdentifier(resolvedModelId);
+    const parsedModel = parseModelIdentifier(model);
     if (!parsedModel) {
       return new Response(
         JSON.stringify({
           error:
-            'Invalid model id. Use provider:modelId (e.g. vllm:qwen2.5-7b-instruct). Check Admin ? AI Models.',
+            'Invalid model id. Use provider:modelId (e.g. vllm:qwen2.5-7b-instruct). Check Admin → AI Models.',
         }),
         {
           status: 400,
@@ -828,12 +759,12 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    const validatedApiKeysMerged = mergeLocalInferenceFromEnv(
-      validatedApiKeys,
-      resolvedModelId,
+    const validatedApiKeys = mergeLocalInferenceFromEnv(
+      toUserProviderSettings(apiKeysParsed.data),
+      model,
     );
 
-    if (!validatedApiKeysMerged[parsedModel.providerId]?.isEnabled) {
+    if (!validatedApiKeys[parsedModel.providerId]?.isEnabled) {
       const envHint =
         parsedModel.providerId === "vllm"
           ? "VLLM_BASE_URL"
@@ -843,11 +774,6 @@ export async function action({ request }: ActionFunctionArgs) {
       return new Response(
         JSON.stringify({
           error: `Provider "${parsedModel.providerId}" is not available on this server. Set ${envHint} in apps/core/.env and restart the dev process.`,
-          model: resolvedModelId,
-          hint:
-            parsedModel.providerId === "vllm"
-              ? "Run npm run db:sync-ai-providers and confirm VLLM_BASE_URL is set."
-              : undefined,
         }),
         {
           status: 400,
@@ -858,6 +784,8 @@ export async function action({ request }: ActionFunctionArgs) {
 
     const existingMessageIds = new Set(storedMessages.map((message) => message.id).filter(isNonEmptyString));
     const appendMessages = async (messages: GenericMessage[]) => {
+      // Stateless callers never persist messages (no chat row / no real user).
+      if (ephemeral || !chat?.id) return;
       if (!messages.length) return;
 
       const rows: Prisma.ChatMessageCreateManyInput[] = [];
@@ -889,8 +817,8 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     };
 
-    const registry = createAIProviderRegistry(validatedApiKeysMerged);
-    const enabledProviders = listEnabledRegistryProviders(validatedApiKeysMerged);
+    const registry = createAIProviderRegistry(validatedApiKeys);
+    const enabledProviders = listEnabledRegistryProviders(validatedApiKeys);
 
     if (!enabledProviders.includes(parsedModel.providerId)) {
       const envVar =
@@ -906,9 +834,23 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
+    // Persist only client-authored turns (user messages). The assistant reply is
+    // owned by `onFinish`/the awaited path below, which stores it once under a
+    // server id. Clients resend their whole `useChat` transcript every turn, and
+    // their assistant copies carry client-generated ids that never match the
+    // server id — persisting those here is what duplicated history on restore.
+    await appendMessages(
+      normalizedIncomingMessages.filter((message) => message.role !== "assistant"),
+    );
+
+    const lastUserMessage = [...trimmedMessages].reverse().find((message) => message.role === "user");
+    const userQuestion = extractMessageText(lastUserMessage);
+    const hasCourse = Boolean(effectiveCourseId);
+    const courseRagNeeded = needsCourseRag(userQuestion, hasCourse);
+
     let aiModel;
     try {
-      aiModel = registry.languageModel(resolvedModelId);
+      aiModel = registry.languageModel(model);
     } catch (err: unknown) {
       const available =
         typeof err === "object" &&
@@ -919,7 +861,7 @@ export async function action({ request }: ActionFunctionArgs) {
           : enabledProviders.join(", ");
       return new Response(
         JSON.stringify({
-          error: `Model "${resolvedModelId}" could not be loaded (providers on server: ${available}). For vLLM set VLLM_BASE_URL in .env and deploy the feat/VLLM provider code.`,
+          error: `Model "${model}" could not be loaded (providers on server: ${available}). For vLLM set VLLM_BASE_URL in .env and deploy the feat/VLLM provider code.`,
         }),
         {
           status: 503,
@@ -928,219 +870,230 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    await appendMessages(normalizedIncomingMessages);
-
     const webToolsEnabled = await getPolicy("chat.webToolsEnabled");
-
-    // Define tools for RAG functionality and external web search
-    const tools = {
-      getInformation: tool({
-        description:
-          "Search uploaded course materials to answer questions about course content. Use this FIRST for course-related queries.",
-        parameters: z.object({
-          question: z
-            .string()
-            .describe("The user's question about course content"),
-        }),
-        execute: async ({ question }) => {
-          if (!effectiveCourseId) {
-            return { error: "No course selected for RAG search" };
-          }
-
-          try {
-            const relevantContent = await findRelevantContent(
-              question,
-              effectiveCourseId,
-              HYBRID_RAG_MAX_CHUNKS,
-            );
-            const capped = capRagHitsForTool(relevantContent);
-            return {
-              relevantContent: capped,
-              count: capped.length,
-            };
-          } catch (error) {
-            console.error("Error finding relevant content:", error);
-            return { error: "Failed to search course materials" };
-          }
-        },
-      }),
-      ...(webToolsEnabled ? { webSearch, fetchPage } : {}),
-    };
-
-    // Check if the model supports tool calling (research baseline may force hybrid RAG).
-    // vLLM 32B tool loops hang on dev unless Hermes tool parser is fully wired — default to
-    // hybrid RAG for vllm:* chat (same as research scripts). Opt in with VLLM_CHAT_TOOLS=1.
-    const supportsTools = await modelSupportsTools(resolvedModelId);
-    const effectiveForceHybridRag =
-      forceHybridRag ||
-      (parsedModel.providerId === "vllm" && process.env.VLLM_CHAT_TOOLS !== "1");
-    const useToolCalling = supportsTools && !effectiveForceHybridRag;
+    const resolvedSystemPrompt =
+      trimmedSystemPrompt ?? sanitizeSystemPrompt(chat.systemPrompt) ?? null;
 
     let streamConfig;
-    let shouldPrefetchWebTools = false;
+    let supportsTools: boolean;
+    let useToolCalling: boolean;
+    let toolMaxTokens: number | undefined;
+    let courseRagHits: HybridRagHit[] = [];
+    let courseRagContextText = "";
+    let courseRagInject = false;
 
-    const resolvedSystemPrompt = trimmedSystemPrompt ?? chat.systemPrompt ?? null;
+    if (chatMode === "admin") {
+      const rbacUser = {
+        id: actingUser.id,
+        role: actingUser.role,
+      };
 
-    if (!useToolCalling) {
-      // MODELS WITHOUT TOOL SUPPORT: Use hybrid RAG approach
-      const userQuestion = lastUserMessageTextForTelemetry;
+      const tools = createChatTools(
+        {
+          user: rbacUser,
+          effectiveCourseId,
+          effectiveCourseCode,
+        },
+        chatMode,
+      );
 
-      shouldPrefetchWebTools =
-        hybridWebTools ||
-        (effectiveForceHybridRag && inferHybridWebToolMode(userQuestion) !== null);
-      let hybridWebContextText = "";
-      if (shouldPrefetchWebTools) {
-        const webToolResult = await buildHybridWebToolContext(userQuestion);
-        hybridWebContextText = webToolResult.context;
-        if (webToolResult.error) {
-          chatApiDebug("Hybrid web tool prefetch issue", {
-            mode: webToolResult.mode,
-            error: webToolResult.error,
+      const buildDefaultSystemPrompt = () =>
+        buildAdminSystemPrompt({
+          customPrompt: resolvedSystemPrompt,
+        });
+
+      const activeChatModel = await resolveActiveChatModel(model);
+      supportsTools = activeChatModel?.supportsTools ?? false;
+      const contextWindow = resolveModelContextWindow(
+        activeChatModel?.maxTokens,
+        parsedModel.providerId,
+      );
+      const desiredMaxOutput = resolveMaxOutputTokens(
+        activeChatModel?.maxTokens,
+        parsedModel.providerId,
+      );
+
+      const adminSessionBudget =
+        contextWindow <= 32_768
+          ? Math.floor(contextWindow * ESTIMATED_CHARS_PER_TOKEN * 0.42)
+          : undefined;
+
+      modelMessages = prepareBoundedSessionContext(
+        capToolResultsInMessages(trimmedMessages, 3000),
+        adminSessionBudget
+          ? {
+              charBudget: adminSessionBudget,
+              recentCount: 4,
+              digestMaxChars: 3000,
+            }
+          : undefined,
+      );
+
+      chatApiTrace("model capability check", {
+        chatMode,
+        model,
+        supportsTools,
+        contextWindow,
+        desiredMaxOutput,
+        adminSessionBudget: adminSessionBudget ?? null,
+        dbMaxTokens: activeChatModel?.maxTokens ?? null,
+        chatId: chat?.id ?? null,
+      });
+
+      if (!supportsTools) {
+        return chatApiReject(
+          400,
+          {
+            error:
+              "Admin chat requires a model with tool support. Select a tool-capable model in Admin → AI Models.",
+            code: "ADMIN_TOOLS_REQUIRED",
+          },
+          { model, chatId: chat?.id ?? null },
+        );
+      }
+
+      useToolCalling = true;
+
+      streamConfig = {
+        model: aiModel,
+        messages: modelMessages,
+        temperature: 0.2,
+        maxTokens: desiredMaxOutput,
+        maxSteps: TOOL_MAX_STEPS,
+        tools,
+        toolCallStreaming: streaming && parsedModel.providerId !== "vllm",
+        system: buildDefaultSystemPrompt(),
+      };
+
+      const systemChars = typeof streamConfig.system === "string" ? streamConfig.system.length : 0;
+      let messageChars = 0;
+      for (const message of modelMessages) {
+        messageChars += estimateMessageCharsForModel(message);
+      }
+      const estimatedInputTokens = estimateTokensFromChars(systemChars + messageChars);
+      streamConfig.maxTokens = capMaxOutputTokensForPrompt({
+        contextWindow,
+        estimatedInputTokens,
+        desiredMaxOutput,
+      });
+
+      chatApiTrace("max output tokens capped", {
+        contextWindow,
+        estimatedInputTokens,
+        desiredMaxOutput,
+        effectiveMaxTokens: streamConfig.maxTokens,
+        systemChars,
+        messageChars,
+      });
+    } else {
+      const tools = buildChatToolRegistry({ effectiveCourseId, webToolsEnabled });
+      const modelCapabilities = await getChatModelCapabilities(model);
+      supportsTools = modelCapabilities.supportsTools;
+      useToolCalling = supportsTools && !forceHybridRag;
+      toolMaxTokens = resolveToolMaxOutputTokens(modelCapabilities.maxTokens);
+
+      const defaultCourseSystemPrompt =
+        resolvedSystemPrompt ||
+        `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
+
+IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.
+
+${LATEST_TURN_FOCUS_INSTRUCTION}
+
+${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ""}
+
+Be helpful, conversational, and accurate. Use markdown for formatting. For mathematical expressions, use LaTeX delimiters: inline math with $$...$$ and display math with $$...$$ on its own line.`;
+
+      if (shouldPrefetchCourseRag(hasCourse) && effectiveCourseId) {
+        try {
+          courseRagHits = await findRelevantContent(
+            userQuestion,
+            effectiveCourseId,
+            HYBRID_RAG_MAX_CHUNKS,
+          );
+          courseRagInject = shouldInjectCourseRag({
+            hasCourse,
+            courseRagNeeded,
+            hits: courseRagHits,
+          });
+          if (courseRagInject && courseRagHits.length > 0) {
+            courseRagContextText = buildCappedRagContextText(
+              courseRagHits,
+              HYBRID_RAG_MAX_CHUNKS,
+              HYBRID_RAG_MAX_CONTEXT_CHARS,
+            );
+          }
+        } catch (error) {
+          console.error("Error prefetching course RAG context:", error);
+          courseRagInject = shouldInjectCourseRag({
+            hasCourse,
+            courseRagNeeded,
+            hits: [],
           });
         }
       }
 
-      const hybridRagAlwaysWithCourse = process.env.CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE === "1";
-      const isRAGQuery = hybridRagAlwaysWithCourse ? hasCourse : courseRagNeeded;
+      if (!useToolCalling) {
+        if (courseRagInject) {
+          const systemWithRAG = courseRagContextText
+            ? `${defaultCourseSystemPrompt}
 
-      if (isRAGQuery) {
-        try {
-          const relevantContent = await findRelevantContent(
-            userQuestion,
-            effectiveCourseId!,
-            HYBRID_RAG_MAX_CHUNKS,
-          );
-          const contextText =
-            relevantContent.length > 0
-              ? buildCappedRagContextText(
-                  relevantContent,
-                  HYBRID_RAG_MAX_CHUNKS,
-                  HYBRID_RAG_MAX_CONTEXT_CHARS,
-                )
-              : "";
+${buildRagSystemBlock(courseRagContextText)}`
+            : `${defaultCourseSystemPrompt}
 
-          const baseSystemPrompt = resolvedSystemPrompt || `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
-
-IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.
-
-${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ``}
-
-Always be helpful, accurate, and cite the course materials when using them in your response. Use markdown for formatting.`;
-
-          const systemWithRAG = contextText
-            ? `${baseSystemPrompt}
-
-${buildRagSystemBlock(contextText)}`
-            : `${baseSystemPrompt}
-
-I don't have access to specific course materials for this question, but I can provide general educational assistance.`;
+${buildEmptyCourseRagBlock()}`;
 
           streamConfig = {
             model: aiModel,
             messages: modelMessages,
             temperature: 0.6,
             maxTokens: 8192,
-            system: appendHybridWebContext(systemWithRAG, hybridWebContextText),
+            system: systemWithRAG,
           };
-        } catch (error) {
-          console.error("Error finding relevant content for model without tool support:", error);
-          const defaultSystemPrompt = resolvedSystemPrompt || `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
-
-IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.
-
-${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ""}
-
-Be helpful, conversational, and accurate. Use markdown for formatting.`;
-
+        } else {
           streamConfig = {
             model: aiModel,
             messages: modelMessages,
             temperature: 0.6,
             maxTokens: 8192,
-            system: appendHybridWebContext(defaultSystemPrompt, hybridWebContextText),
+            system: defaultCourseSystemPrompt,
           };
         }
       } else {
-        const defaultSystemPrompt = resolvedSystemPrompt || `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
+        const baseSystemPrompt = resolvedSystemPrompt || `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
 
 IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.
 
-${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ""}
+${LATEST_TURN_FOCUS_INSTRUCTION}`;
 
-Be helpful, conversational, and accurate. Use markdown for formatting.`;
+        let toolSystemPrompt = buildToolCallingSystemPrompt({
+          basePrompt: baseSystemPrompt,
+          courseCode: courseCode ?? undefined,
+          webToolsEnabled,
+          hasPreloadedRag: Boolean(courseRagContextText),
+        });
+
+        if (courseRagContextText) {
+          toolSystemPrompt = `${toolSystemPrompt}
+
+${buildRagSystemBlock(courseRagContextText, { toolPath: true })}`;
+        } else if (courseRagInject) {
+          toolSystemPrompt = `${toolSystemPrompt}
+
+${buildEmptyCourseRagBlock()}`;
+        }
 
         streamConfig = {
           model: aiModel,
           messages: modelMessages,
           temperature: 0.6,
-          maxTokens: 8192,
-          system: appendHybridWebContext(defaultSystemPrompt, hybridWebContextText),
+          maxTokens: toolMaxTokens,
+          maxSteps: TOOL_MAX_STEPS,
+          tools,
+          toolCallStreaming: streaming,
+          system: toolSystemPrompt,
         };
       }
-    } else {
-      const baseSystemPrompt = resolvedSystemPrompt || `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
-
-IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.`;
-
-      let preloadedRagContext = "";
-      if (courseRagNeeded && effectiveCourseId) {
-        try {
-          const relevantContent = await findRelevantContent(
-            lastUserMessageTextForTelemetry,
-            effectiveCourseId,
-            HYBRID_RAG_MAX_CHUNKS,
-          );
-          preloadedRagContext =
-            relevantContent.length > 0
-              ? buildCappedRagContextText(
-                  relevantContent,
-                  HYBRID_RAG_MAX_CHUNKS,
-                  HYBRID_RAG_MAX_CONTEXT_CHARS,
-                )
-              : "";
-        } catch (error) {
-          console.error("Error pre-loading course context for tool path:", error);
-        }
-      }
-
-      const ragToolHint = preloadedRagContext
-        ? "Course excerpts are already included below. Use getInformation only if those excerpts are insufficient."
-        : "For course content questions, call getInformation first to retrieve relevant materials.";
-
-      let defaultSystemPrompt = `${baseSystemPrompt}
-
-You have access to two tools:
-- getInformation: searches uploaded course materials (syllabi, lectures, assignments, etc.)
-- webSearch: searches the web for current information, reviews, discussions, news, etc.
-- fetchPage: opens a URL and returns the main page content as markdown for deeper reading. If a page fails to load, try other sources. Try and give a correct response to the user's query even if the page fails to load.
-
-When answering questions:
-1. ${ragToolHint}
-2. If the user asks for reviews, opinions, recent updates, or external information (e.g., "what do students say about this course?" or "latest developments"), call webSearch after checking course materials. Prefer queries that include "UBCO" with the course code/name and the professor name when known.
-3. After webSearch, call fetchPage on promising sources (e.g., RateMyProfessors, Reddit threads, official pages) to read the page content before answering. If the page fails to load, try other sources. Try and give a correct response to the user's query even if the page fails to load.
-4. You may call tools multiple times in sequence if needed to give a complete answer.
-5. Always cite your sources: mention course material titles for RAG results and include URLs for web results.
-
-${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ""}
-
-Be helpful, conversational, and accurate. Use markdown for formatting.`;
-
-      if (preloadedRagContext) {
-        defaultSystemPrompt = `${defaultSystemPrompt}
-
-${buildRagSystemBlock(preloadedRagContext, { toolPath: true })}`;
-      }
-
-      streamConfig = {
-        model: aiModel,
-        messages: modelMessages,
-        temperature: 0.6,
-        maxTokens: TOOL_MAX_TOKENS,
-        maxSteps: TOOL_MAX_STEPS,
-        tools,
-        toolCallStreaming: streaming,
-        system: defaultSystemPrompt,
-      };
     }
 
     const effectiveAdhdAssist = resolveEffectiveAdhdAssist({
@@ -1148,14 +1101,39 @@ ${buildRagSystemBlock(preloadedRagContext, { toolPath: true })}`;
       bodyValue: adhdAssist,
       chatValue: chat.adhdAssist,
     });
-    streamConfig.system = composeSystemPrompt(streamConfig.system ?? "", { adhdAssist: effectiveAdhdAssist });
 
-    const requestStartMs = Date.now();
-    const needsOversight = effectiveAdhdAssist && isAdhdOversightEnabled();
     const lastUserText = extractMessageText(
       [...trimmedMessages].reverse().find((message) => message.role === "user"),
     );
-    const adhdWordCap = resolveAdhdResponseWordCap(lastUserText);
+    const priorAssistantText = extractMessageText(
+      [...trimmedMessages].reverse().find((message) => message.role === "assistant"),
+    );
+
+    let adhdProfile: AdhdTurnProfile | undefined;
+    let adhdProfileRequirements:
+      | ReturnType<typeof getProfileRequirements>
+      | undefined;
+
+    if (effectiveAdhdAssist) {
+      adhdProfile = resolveAdhdTurnProfile({ userText: lastUserText, priorAssistantText });
+      adhdProfileRequirements = getProfileRequirements(adhdProfile);
+    }
+
+    streamConfig.system = composeSecurityPrompt(
+      composeSystemPrompt(streamConfig.system ?? "", {
+        adhdAssist: effectiveAdhdAssist,
+        profile: adhdProfile,
+      }),
+    );
+
+    const streamStartedAt = Date.now();
+    const needsOversight =
+      chatMode !== "admin" &&
+      effectiveAdhdAssist &&
+      isAdhdOversightEnabled() &&
+      (adhdProfileRequirements?.runDean ?? true);
+    const adhdWordCap =
+      adhdProfileRequirements?.wordCap ?? resolveAdhdResponseWordCap(lastUserText);
 
     const logResponseCompliance = (
       assistantText: string,
@@ -1164,24 +1142,31 @@ ${buildRagSystemBlock(preloadedRagContext, { toolPath: true })}`;
         promptTokens?: number;
         completionTokens?: number;
         oversightRewritten?: boolean;
-        oversightMethod?: "none" | "deterministic" | "llm" | "llm_failed";
+        oversightMethod?: OversightMethod;
         preStructuralPass?: boolean;
         oversightDurationMs?: number;
         oversightPromptTokens?: number;
         oversightCompletionTokens?: number;
+        responseProfile?: AdhdTurnProfile;
+        profileStructuralPass?: boolean;
       },
     ) => {
       const trimmed = assistantText?.trim();
       if (!trimmed) return;
+      const metrics = computeAdhdResponseMetrics(trimmed, { wordCap: adhdWordCap });
+      const profileStructuralPass =
+        adhdProfile != null
+          ? isProfileStructuralPass(metrics, adhdProfile, trimmed)
+          : undefined;
       void recordResponseComplianceEvent({
         userId: actingUser.id,
         chatId: chat.id,
         adhdAssist: effectiveAdhdAssist,
         assistantText: trimmed,
         extras: {
-          model: resolvedModelId,
+          model,
           wordCap: adhdWordCap,
-          durationMs: Date.now() - requestStartMs,
+          durationMs: Date.now() - streamStartedAt,
           finishReason: extras?.finishReason ?? null,
           promptTokens: extras?.promptTokens,
           completionTokens: extras?.completionTokens,
@@ -1191,155 +1176,86 @@ ${buildRagSystemBlock(preloadedRagContext, { toolPath: true })}`;
           oversightDurationMs: extras?.oversightDurationMs,
           oversightPromptTokens: extras?.oversightPromptTokens,
           oversightCompletionTokens: extras?.oversightCompletionTokens,
+          responseProfile: adhdProfile,
+          profileStructuralPass,
         },
       }).catch((err) => {
         console.error("[assistive-events] response_compliance log failed", err);
       });
     };
 
-    const finishMeta: {
-      ready: boolean;
-      usage?: Record<string, unknown>;
-      finishReason: string;
-    } = { ready: false, finishReason: "" };
-
+    // Log the LLM stream configuration
     chatApiDebug("Starting LLM stream", {
-      model: resolvedModelId,
-      routedByAuto: wasAuto,
-      approach: useToolCalling ? "tool_calling" : "hybrid_rag",
-      adhdOversight: needsOversight,
-      forceHybridRag: effectiveForceHybridRag,
-      hybridWebTools: shouldPrefetchWebTools ?? false,
+      chatMode,
+      model,
+      supportsTools,
       courseRagNeeded,
+      courseRagInject,
+      ragTopSimilarity: courseRagHits[0]?.similarity ?? null,
+      ragChunkCount: courseRagHits.length,
+      webToolsEnabled,
+      forceHybridRag,
+      approach: useToolCalling ? "tool_calling" : "hybrid_rag",
+      toolMaxTokens: useToolCalling ? toolMaxTokens : undefined,
+      adhdOversight: needsOversight,
       ...llmPromptSizeHints(streamConfig.system, modelMessages),
     });
 
-    const providerOptions = usageProviderOptions(parsedModel.providerId);
+    const streamTrace = {
+      chatMode,
+      model,
+      chatId: chat.id,
+      supportsTools,
+      providerId: parsedModel.providerId,
+    };
 
-    if (!streaming && !useToolCalling && !needsOversight && !effectiveAdhdAssist) {
-      const genResult = await generateText({
-        model: streamConfig.model,
-        messages: streamConfig.messages as Parameters<typeof generateText>[0]["messages"],
-        system: streamConfig.system,
-        temperature: streamConfig.temperature,
-        maxTokens: streamConfig.maxTokens,
-        ...(providerOptions ? { providerOptions } : {}),
-      });
-
-      const normalizedUsage = normalizeTokenUsage(
-        genResult.usage as Record<string, unknown> | undefined,
-      );
-      const finishReason = String(genResult.finishReason ?? "stop");
-
-      await persistAiInteractionTelemetry({
-        userId: actingUser.id,
-        courseId: effectiveCourseId,
-        resolvedModelId,
-        query: lastUserMessageTextForTelemetry,
-        responseText: genResult.text ?? "",
-        usage: {
-          promptTokens: normalizedUsage.promptTokens ?? undefined,
-          completionTokens: normalizedUsage.completionTokens ?? undefined,
-          totalTokens: normalizedUsage.totalTokens ?? undefined,
-        },
-        finishReason,
-        durationMs: Date.now() - requestStartMs,
-        wasAuto,
-        routingTier,
-        routerVersion: wasAuto ? resolvedRouterVersion : null,
-        routerFeatures: routerContext,
-      });
-
-      if (genResult.text) {
-        logResponseCompliance(genResult.text, {
-          finishReason,
-          promptTokens: normalizedUsage.promptTokens ?? undefined,
-          completionTokens: normalizedUsage.completionTokens ?? undefined,
-        });
-        await appendMessages([
-          {
-            id: randomUUID(),
-            role: "assistant",
-            content: genResult.text,
-          },
-        ]);
-      }
-
-      return new Response(
-        JSON.stringify({
-          content: genResult.text,
-          model: resolvedModelId,
-          routedModel: resolvedModelId,
-          usage: normalizedUsage,
-          finishReason,
-          sources: [],
-          reasoning: undefined,
-          responseId: genResult.response?.id,
-          courseCode,
-          chatId: chat?.id,
-        }),
-        {
-          status: 200,
-          headers: {
-            "Content-Type": "application/json",
-            ...autoRoutingHeaders(
-              resolvedModelId,
-              routingTier,
-              wasAuto,
-              resolvedRouterVersion,
-            ),
-          },
-        },
-      );
-    }
-
-    const result = await streamText({
-      ...(streamConfig as Parameters<typeof streamText>[0]),
-      ...(providerOptions ? { providerOptions } : {}),
-      onFinish: needsOversight
-        ? undefined
-        : async ({ usage, finishReason, text, response }) => {
-            finishMeta.usage = usage as Record<string, unknown> | undefined;
-            finishMeta.finishReason = String(finishReason ?? "");
-            finishMeta.ready = true;
-            const normalizedFinishUsage = coalesceTokenUsage(
-              finishMeta.usage,
-              usage as Record<string, unknown> | undefined,
-            );
-            await persistAiInteractionTelemetry({
-              userId: actingUser.id,
-              courseId: effectiveCourseId,
-              resolvedModelId,
-              query: lastUserMessageTextForTelemetry,
-              responseText: text ?? "",
-              usage: {
-                promptTokens: normalizedFinishUsage.promptTokens ?? undefined,
-                completionTokens: normalizedFinishUsage.completionTokens ?? undefined,
-                totalTokens: normalizedFinishUsage.totalTokens ?? undefined,
-              },
-              finishReason: finishMeta.finishReason,
-              durationMs: Date.now() - requestStartMs,
-              wasAuto,
-              routingTier,
-              routerVersion: wasAuto ? resolvedRouterVersion : null,
-              routerFeatures: routerContext,
-            });
-            const assistantTextForCompliance = text || extractAssistantText(response?.messages);
-            logResponseCompliance(assistantTextForCompliance, {
-              finishReason,
-              promptTokens: normalizedFinishUsage.promptTokens ?? undefined,
-              completionTokens: normalizedFinishUsage.completionTokens ?? undefined,
-            });
-            if (!streaming) return;
-            if (assistantTextForCompliance) {
-              await appendMessages([
-                { id: randomUUID(), role: "assistant", content: assistantTextForCompliance },
-              ]).catch((err) => {
-                console.error("[chat-api] failed to persist streaming assistant message", err);
+    let result;
+    try {
+      result = await streamText({
+        ...(streamConfig as Parameters<typeof streamText>[0]),
+        onFinish: needsOversight
+          ? undefined
+          : async ({ text, usage, finishReason, response }) => {
+              logResponseCompliance(text, {
+                finishReason,
+                promptTokens: usage?.promptTokens,
+                completionTokens: usage?.completionTokens,
               });
-            }
+              if (!streaming) return;
+              const assistantText = text || extractAssistantText(response?.messages);
+              if (assistantText) {
+                await appendMessages([
+                  { id: randomUUID(), role: "assistant", content: assistantText },
+                ]).catch((err) => {
+                  console.error("[chat-api] failed to persist streaming assistant message", err);
+                });
+              }
+            },
+        onError:
+          chatMode === "admin"
+            ? ({ error }) => {
+                logStreamError(error, streamTrace);
+              }
+            : undefined,
+      });
+    } catch (error) {
+      if (chatMode === "admin") {
+        logStreamError(error, streamTrace);
+        const hint =
+          parsedModel.providerId === "vllm"
+            ? " Pick a tool-capable vLLM model registered in Admin → AI Models."
+            : "";
+        return chatApiReject(
+          502,
+          {
+            error: `LLM stream failed: ${formatStreamError(error)}.${hint}`,
+            code: "LLM_STREAM_FAILED",
           },
-    });
+          streamTrace,
+        );
+      }
+      throw error;
+    }
 
     if (needsOversight) {
       let draft = "";
@@ -1374,35 +1290,15 @@ ${buildRagSystemBlock(preloadedRagContext, { toolPath: true })}`;
               draft,
               model: aiModel,
               wordCap: adhdWordCap,
+              profile: adhdProfile ?? "full_tutoring",
             })
           : emptyOversightAuditResult();
 
         finalText = audited.text || draft;
-        const normalizedOversightUsage = normalizeTokenUsage(
-          usage as Record<string, unknown> | undefined,
-        );
-        await persistAiInteractionTelemetry({
-          userId: actingUser.id,
-          courseId: effectiveCourseId,
-          resolvedModelId,
-          query: lastUserMessageTextForTelemetry,
-          responseText: finalText,
-          usage: {
-            promptTokens: normalizedOversightUsage.promptTokens ?? undefined,
-            completionTokens: normalizedOversightUsage.completionTokens ?? undefined,
-            totalTokens: normalizedOversightUsage.totalTokens ?? undefined,
-          },
-          finishReason: String(finishReason ?? "stop"),
-          durationMs: Date.now() - requestStartMs,
-          wasAuto,
-          routingTier,
-          routerVersion: wasAuto ? resolvedRouterVersion : null,
-          routerFeatures: routerContext,
-        });
         logResponseCompliance(finalText, {
           finishReason,
-          promptTokens: normalizedOversightUsage.promptTokens ?? undefined,
-          completionTokens: normalizedOversightUsage.completionTokens ?? undefined,
+          promptTokens: usage?.promptTokens,
+          completionTokens: usage?.completionTokens,
           oversightRewritten: audited.rewritten,
           oversightMethod: audited.method,
           preStructuralPass: audited.beforeMetrics.structuralPass,
@@ -1423,12 +1319,6 @@ ${buildRagSystemBlock(preloadedRagContext, { toolPath: true })}`;
             "Content-Encoding": "none",
             "Transfer-Encoding": "chunked",
             Connection: "keep-alive",
-            ...autoRoutingHeaders(
-              resolvedModelId,
-              routingTier,
-              wasAuto,
-              resolvedRouterVersion,
-            ),
           };
           if (chat?.id) {
             headers["X-Chat-Id"] = chat.id;
@@ -1457,9 +1347,8 @@ ${buildRagSystemBlock(preloadedRagContext, { toolPath: true })}`;
         return new Response(
           JSON.stringify({
             content: finalText,
-            model: resolvedModelId,
-            routedModel: resolvedModelId,
-            usage: normalizedOversightUsage,
+            model,
+            usage,
             finishReason,
             sources: sources || [],
             reasoning,
@@ -1469,15 +1358,7 @@ ${buildRagSystemBlock(preloadedRagContext, { toolPath: true })}`;
           }),
           {
             status: 200,
-            headers: {
-              "Content-Type": "application/json",
-              ...autoRoutingHeaders(
-                resolvedModelId,
-                routingTier,
-                wasAuto,
-                resolvedRouterVersion,
-              ),
-            },
+            headers: { "Content-Type": "application/json" },
           },
         );
       } catch (error) {
@@ -1500,18 +1381,26 @@ ${buildRagSystemBlock(preloadedRagContext, { toolPath: true })}`;
         "Content-Encoding": "none",
         "Transfer-Encoding": "chunked",
         Connection: "keep-alive",
-        ...autoRoutingHeaders(
-          resolvedModelId,
-          routingTier,
-          wasAuto,
-          resolvedRouterVersion,
-        ),
       };
       if (chat?.id) {
         headers["X-Chat-Id"] = chat.id;
       }
       headers["X-Web-Tools-Enabled"] = webToolsEnabled ? "1" : "0";
-      return result.toDataStreamResponse({ headers });
+      return result.toDataStreamResponse({
+        headers,
+        ...(chatMode === "admin"
+          ? {
+              getErrorMessage: (error) => {
+                logStreamError(error, streamTrace);
+                const base = formatStreamError(error);
+                if (parsedModel.providerId === "vllm") {
+                  return `${base} — Check that the selected model supports tools and that max output tokens fit the vLLM context window.`;
+                }
+                return base;
+              },
+            }
+          : {}),
+      });
     } else {
       try {
         await result.consumeStream();
@@ -1541,25 +1430,12 @@ ${buildRagSystemBlock(preloadedRagContext, { toolPath: true })}`;
           }
         }
 
-        const rawResponse = response as
-          | { usage?: Record<string, unknown>; body?: { usage?: Record<string, unknown> } }
-          | undefined;
-        const normalizedUsage = coalesceTokenUsage(
-          finishMeta.usage,
-          usage as Record<string, unknown> | undefined,
-          rawResponse?.usage,
-          rawResponse?.body?.usage,
-        );
-        const resolvedFinishReason =
-          finishMeta.finishReason || String(finishReason ?? "");
-
         return new Response(
           JSON.stringify({
             content: text,
-            model: resolvedModelId,
-            routedModel: resolvedModelId,
-            usage: normalizedUsage,
-            finishReason: resolvedFinishReason,
+            model,
+            usage,
+            finishReason,
             sources: sources || [],
             reasoning,
             responseId: response?.id,
@@ -1568,15 +1444,7 @@ ${buildRagSystemBlock(preloadedRagContext, { toolPath: true })}`;
           }),
           {
             status: 200,
-            headers: {
-              "Content-Type": "application/json",
-              ...autoRoutingHeaders(
-                resolvedModelId,
-                routingTier,
-                wasAuto,
-                resolvedRouterVersion,
-              ),
-            },
+            headers: { "Content-Type": "application/json" },
           },
         );
       } catch (error) {

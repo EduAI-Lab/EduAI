@@ -1,9 +1,9 @@
 import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { hashPassword } from 'better-auth/crypto';
 import { clearStudentIdStorage, prepareStudentIdStorage } from '../app/lib/canvas/student-id.server';
-import { UNITS } from '../app/lib/units';
 
 export const prisma = new PrismaClient();
 
@@ -849,59 +849,6 @@ const COURSES: SeedCourse[] = [
 
 // ---------------------------------------------------------------------------
 
-/** Research routing pool — vLLM tier 1 (7B) + tier 3 (32B) only; no cloud tier in Auto. */
-const ROUTING_TIER_ASSIGNMENTS = [
-  {
-    providerName: 'vllm',
-    modelId: 'qwen2.5-7b-instruct',
-    routerTier: 'TIER_1' as const,
-    estEnergyJoulesPerToken: 0.08,
-    averageCarbonGramsPerToken: 1.78e-6,
-  },
-  {
-    providerName: 'vllm',
-    modelId: 'qwen2.5-32b-instruct',
-    routerTier: 'TIER_3' as const,
-    estEnergyJoulesPerToken: 0.5,
-    averageCarbonGramsPerToken: 1.11e-5,
-  },
-];
-
-async function applyRoutingTierAssignments() {
-  console.log('Applying routing tier and energy constants...');
-
-  for (const row of ROUTING_TIER_ASSIGNMENTS) {
-    const provider = await prisma.aIProvider.findUnique({
-      where: { name: row.providerName },
-    });
-    if (!provider) {
-      console.warn(`   Skip tier row (unknown provider): ${row.providerName}`);
-      continue;
-    }
-
-    const result = await prisma.aIModel.updateMany({
-      where: { providerId: provider.id, modelId: row.modelId },
-      data: {
-        routerTier: row.routerTier,
-        estEnergyJoulesPerToken: row.estEnergyJoulesPerToken,
-        averageCarbonGramsPerToken: row.averageCarbonGramsPerToken,
-      },
-    });
-
-    if (result.count === 0) {
-      console.warn(`   No AIModel row for ${row.providerName}:${row.modelId}`);
-    }
-  }
-
-  const google = await prisma.aIProvider.findUnique({ where: { name: "google" } });
-  if (google) {
-    await prisma.aIModel.updateMany({
-      where: { providerId: google.id, routerTier: { not: null } },
-      data: { routerTier: null },
-    });
-  }
-}
-
 async function seedAIProvidersAndModels() {
   const openai = await prisma.aIProvider.upsert({
     where: { name: 'openai' },
@@ -988,7 +935,7 @@ async function seedAIProvidersAndModels() {
     {
       modelId: 'qwen2.5-7b-instruct',
       name: 'Qwen 2.5 7B (vLLM)',
-      description: 'House chat — tier 1, hybrid RAG',
+      description: 'House chat — hybrid RAG',
       maxTokens: 8192,
       supportsTools: false,
     },
@@ -1004,18 +951,17 @@ async function seedAIProvidersAndModels() {
   for (const m of vllmModels) {
     await prisma.aIModel.upsert({
       where: { providerId_modelId: { providerId: vllm.id, modelId: m.modelId } },
-      update: { supportsTools: m.supportsTools },
+      update: { maxTokens: m.maxTokens, supportsTools: m.supportsTools },
       create: {
         ...m,
         type: 'CHAT',
-        supportsImages: false,
+        supportsImages: true,
         supportsStreaming: true,
         providerId: vllm.id,
       },
     });
   }
 
-  await applyRoutingTierAssignments();
 }
 
 async function releaseStudentIdClaim(
@@ -1125,6 +1071,54 @@ async function seedPasswords() {
       },
     });
   }
+}
+
+/**
+ * Seed the UBCO discipline registry from prisma/data/disciplines.csv (the
+ * Workday export, §541). Idempotent upsert by code. Must run before seedCourses
+ * since courses.department is a FK into disciplines.code.
+ */
+/**
+ * Split a single CSV line, honouring RFC-4180 double-quoted fields so a name
+ * containing commas (e.g. "Design, Innovation, Creativity, Entrepreneurship")
+ * stays one field with its surrounding quotes stripped.
+ */
+function parseCsvLine(line: string): string[] {
+  const out: string[] = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') { cur += '"'; i++; } // escaped "" inside quotes
+        else inQuotes = false;
+      } else cur += ch;
+    } else if (ch === '"') inQuotes = true;
+    else if (ch === ',') { out.push(cur); cur = ''; }
+    else cur += ch;
+  }
+  out.push(cur);
+  return out;
+}
+
+async function seedDisciplines(): Promise<number> {
+  const csvPath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'data', 'disciplines.csv');
+  const lines = readFileSync(csvPath, 'utf8').trim().split('\n').slice(1); // drop header
+  for (const line of lines) {
+    const parts = parseCsvLine(line);
+    if (parts.length < 4) continue;
+    const id = parts[0];
+    const code = parts[1];
+    const createdAt = parts[parts.length - 1];
+    const name = parts[2]; // quoted comma-bearing names already kept whole
+    await prisma.discipline.upsert({
+      where: { code },
+      update: { name },
+      create: { id, code, name, createdAt: new Date(createdAt) },
+    });
+  }
+  return lines.length;
 }
 
 async function seedCourses() {
@@ -1556,7 +1550,10 @@ async function seedMaterials() {
 }
 
 async function main() {
-  console.log(`Seeding Core (units registry: ${UNITS.length} subjects)...`);
+  console.log('Seeding Core...');
+
+  const disciplineCount = await seedDisciplines();
+  console.log(`  ${disciplineCount} disciplines seeded (Workday units registry)`);
 
   await seedAIProvidersAndModels();
   console.log('  AI providers and models seeded');
