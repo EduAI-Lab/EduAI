@@ -39,10 +39,10 @@ export function PageTabsTrigger({ className, ...props }: PageTabsTriggerProps) {
         "hover:text-foreground",
         // active (mouse-down) feedback
         "active:opacity-75",
-        // active tab state
-        "data-[state=active]:font-semibold data-[state=active]:text-secondary data-[state=active]:border-secondary",
-        // active + hover: keep secondary color (prevents hover:text-foreground from winning)
-        "data-[state=active]:hover:text-secondary",
+        // active tab state — uses course accent when set on an ancestor
+        "data-[state=active]:font-semibold data-[state=active]:text-[var(--course-accent,var(--secondary))] data-[state=active]:border-[var(--course-accent,var(--secondary))]",
+        // active + hover: keep accent color
+        "data-[state=active]:hover:text-[var(--course-accent,var(--secondary))]",
         // keyboard focus ring
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:rounded-sm",
         // disabled

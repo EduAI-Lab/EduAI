@@ -25,7 +25,7 @@ import { useUnitChats } from '~/hooks/api/use-course-chats'
  * authorized units, are redirected.
  */
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession(request)
+  const session = await auth.api.getSession({ headers: request.headers })
   if (!session?.user) return redirect('/auth/login')
 
   const department = params.department

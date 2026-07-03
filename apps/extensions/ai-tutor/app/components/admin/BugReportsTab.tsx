@@ -27,11 +27,19 @@
  *     from the raw appendix when `report.isAnonymous` is true.
  * Related: `server/src/routes/admin.js` (PATCH bug-report endpoint),
  *   `server/src/utils/bugReportMappers.js` (anonymity masking),
- *   `app/components/bug-report/BugReportDialog.tsx` (capture-side counterpart)
+ *   `@eduai/ui BugReportDialog` (capture-side counterpart)
  */
 
 import { useMemo, useState } from 'react';
-import { Button } from '@eduai/ui';
+import { Button, Input } from '@eduai/ui';
+import { IconFilter, IconSearch, IconX } from '@tabler/icons-react';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@eduai/ui';
 import {
   Dialog,
   DialogContent,
@@ -46,8 +54,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@eduai/ui';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@eduai/ui';
 import api from '~/lib/api';
-import type { AdminBugReportRow, BugReportStatus } from '~/lib/types';
+import type { AdminBugReportRow, BugReportStatus, BugReportType } from '~/lib/types';
+
+type StatusFilter = BugReportStatus | 'all';
+type TypeFilter = BugReportType | 'all';
+type ReporterFilter = 'all' | 'named' | 'anonymous';
 
 type SortKey = 'status' | 'description' | 'reporter' | 'role' | 'createdAt' | 'context' | 'page';
 type SortDirection = 'asc' | 'desc';
@@ -77,6 +97,15 @@ const STATUS_LABELS: Record<BugReportStatus, string> = {
   unhandled: 'Unhandled',
   'in progress': 'In progress',
   resolved: 'Resolved',
+};
+
+const BUG_TYPE_LABELS: Record<BugReportType, string> = {
+  UI_DISPLAY: 'UI / display',
+  FEATURE_NOT_WORKING: 'Feature not working',
+  PERFORMANCE: 'Performance',
+  CONTENT_ERROR: 'Content error',
+  ACCESS_PERMISSION: 'Access / permission',
+  OTHER: 'Other',
 };
 const CONSOLE_LEVELS = ['all', 'log', 'warn', 'error'] as const;
 const NETWORK_TABS = ['meta', 'request', 'response', 'headers'] as const;
@@ -206,6 +235,7 @@ function buildBugReportCopyText(report: AdminBugReportRow) {
     `Summary`,
     `- Report ID: ${report.id}`,
     `- Status: ${report.status}`,
+    report.bugType ? `- Type: ${BUG_TYPE_LABELS[report.bugType]}` : null,
     `- Created At: ${formatDateTime(report.createdAt)}`,
     report.updatedAt ? `- Updated At: ${formatDateTime(report.updatedAt)}` : null,
     `- Reporter: ${reporterLabel}`,
@@ -357,7 +387,7 @@ function SortHeader({
   return (
     <button
       type="button"
-      className="inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+      className="inline-flex items-center gap-1 font-medium"
       onClick={() => onToggle(sortKey)}
     >
       <span>{title}</span>
@@ -428,7 +458,7 @@ function ConsoleViewer({ report }: { report: AdminBugReportRow }) {
                   </span>
                   <span className="text-xs text-muted-foreground">{entry.timestamp ?? '-'}</span>
                 </div>
-                <p className="mt-2 whitespace-pre-wrap break-words text-foreground">
+                <p className="mt-2 whitespace-pre-wrap wrap-break-word text-foreground">
                   {entry.message ?? ''}
                 </p>
                 {hasStack ? (
@@ -446,7 +476,7 @@ function ConsoleViewer({ report }: { report: AdminBugReportRow }) {
                       {expanded ? 'Hide stack trace' : 'Show stack trace'}
                     </button>
                     {expanded ? (
-                      <pre className="overflow-auto rounded-md border border-border bg-black/5 p-3 text-xs whitespace-pre-wrap break-words">
+                      <pre className="overflow-auto rounded-md border border-border bg-black/5 p-3 text-xs whitespace-pre-wrap wrap-break-word">
                         {entry.stack}
                       </pre>
                     ) : null}
@@ -536,13 +566,13 @@ function NetworkViewer({ report }: { report: AdminBugReportRow }) {
             </div>
           </div>
         ) : tab === 'request' ? (
-          <pre className="whitespace-pre-wrap break-words text-xs">
+          <pre className="whitespace-pre-wrap wrap-break-word text-xs">
             {typeof requestBody === 'string'
               ? requestBody
               : JSON.stringify(requestBody ?? {}, null, 2)}
           </pre>
         ) : tab === 'response' ? (
-          <pre className="whitespace-pre-wrap break-words text-xs">
+          <pre className="whitespace-pre-wrap wrap-break-word text-xs">
             {typeof responseBody === 'string'
               ? responseBody
               : JSON.stringify(responseBody ?? {}, null, 2)}
@@ -551,13 +581,13 @@ function NetworkViewer({ report }: { report: AdminBugReportRow }) {
           <div className="space-y-4 text-xs">
             <div>
               <p className="mb-2 text-sm font-medium">Request headers</p>
-              <pre className="whitespace-pre-wrap break-words">
+              <pre className="whitespace-pre-wrap wrap-break-word">
                 {JSON.stringify(requestHeaders ?? {}, null, 2)}
               </pre>
             </div>
             <div>
               <p className="mb-2 text-sm font-medium">Response headers</p>
-              <pre className="whitespace-pre-wrap break-words">
+              <pre className="whitespace-pre-wrap wrap-break-word">
                 {JSON.stringify(responseHeaders ?? {}, null, 2)}
               </pre>
             </div>
@@ -607,11 +637,32 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
   const [error, setError] = useState<string | null>(null);
   const [viewerType, setViewerType] = useState<ViewerType>(null);
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
+  const [reporterFilter, setReporterFilter] = useState<ReporterFilter>('all');
+  const [searchText, setSearchText] = useState('');
 
-  const sortedReports = useMemo(
-    () => sortReports(reports, sortKey, sortDirection),
-    [reports, sortDirection, sortKey],
-  );
+  const filteredSortedReports = useMemo(() => {
+    const filtered = reports.filter((report) => {
+      if (statusFilter !== 'all' && report.status !== statusFilter) return false;
+      if (typeFilter !== 'all' && report.bugType !== typeFilter) return false;
+      if (reporterFilter === 'named' && report.isAnonymous) return false;
+      if (reporterFilter === 'anonymous' && !report.isAnonymous) return false;
+      if (searchText && !report.description.toLowerCase().includes(searchText.toLowerCase())) return false;
+      return true;
+    });
+    return sortReports(filtered, sortKey, sortDirection);
+  }, [reports, statusFilter, typeFilter, reporterFilter, searchText, sortKey, sortDirection]);
+
+  const hasActiveFilters =
+    statusFilter !== 'all' || typeFilter !== 'all' || reporterFilter !== 'all' || searchText.length > 0;
+
+  const resetFilters = () => {
+    setStatusFilter('all');
+    setTypeFilter('all');
+    setReporterFilter('all');
+    setSearchText('');
+  };
 
   const selectedReport =
     selectedReportId === null
@@ -668,36 +719,118 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
   };
 
   return (
-    <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6 sm:p-8 space-y-6 animate-fade-up delay-150">
-      <div className="space-y-2">
-        <h2 className="text-xl font-bold text-foreground">Bug Reports</h2>
-        <p className="text-sm text-muted-foreground max-w-3xl">
-          Review AI Tutor bug reports only (submitted from this platform). QM and Core reports
-          are triaged in their respective admin surfaces.
-        </p>
-      </div>
-
+    <Card className="animate-fade-up delay-150">
+      <CardHeader>
+        <CardTitle>Bug reports</CardTitle>
+        <CardDescription>
+          Review AI Tutor bug reports.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
       {error ? (
         <div className="rounded-xl border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {error}
         </div>
       ) : null}
 
+      {/* Filter bar */}
+      <div className="flex flex-col gap-3 pb-4">
+        <div className="flex items-center gap-2">
+          <IconFilter className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm font-medium text-muted-foreground">Filters</span>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4">
+          <Select
+            value={statusFilter}
+            onValueChange={(v) => setStatusFilter(v as StatusFilter)}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All statuses</SelectItem>
+              {STATUS_OPTIONS.map((s) => (
+                <SelectItem key={s} value={s}>{STATUS_LABELS[s]}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select
+            value={typeFilter}
+            onValueChange={(v) => setTypeFilter(v as TypeFilter)}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All types</SelectItem>
+              {(Object.entries(BUG_TYPE_LABELS) as [BugReportType, string][]).map(([value, label]) => (
+                <SelectItem key={value} value={value}>{label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select
+            value={reporterFilter}
+            onValueChange={(v) => setReporterFilter(v as ReporterFilter)}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Reporter" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All reporters</SelectItem>
+              <SelectItem value="named">Named</SelectItem>
+              <SelectItem value="anonymous">Anonymous</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <div className="relative">
+            <IconSearch className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search description…"
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+        </div>
+
+        {hasActiveFilters && (
+          <div className="flex items-center justify-between pt-1">
+            <span className="text-sm text-muted-foreground">
+              Showing {filteredSortedReports.length} of {reports.length} reports
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={resetFilters}
+              className="text-destructive hover:text-destructive"
+            >
+              <IconX className="h-4 w-4" />
+              Clear filters
+            </Button>
+          </div>
+        )}
+      </div>
+
       <div className="overflow-x-auto rounded-2xl border border-border/70 bg-card/80">
-        <table className="w-full min-w-[1080px] table-fixed border-collapse">
+        <Table className="min-w-[1160px] table-fixed border-collapse">
           <colgroup>
             <col className="w-[150px]" />
-            <col className="w-[28%]" />
-            <col className="w-[16%]" />
-            <col className="w-[90px]" />
-            <col className="w-[150px]" />
-            <col className="w-[16%]" />
-            <col className="w-[12%]" />
+            <col className="w-[130px]" />
+            <col className="w-[24%]" />
+            <col className="w-[14%]" />
+            <col className="w-[80px]" />
+            <col className="w-[140px]" />
+            <col className="w-[14%]" />
+            <col className="w-[10%]" />
             <col className="w-[200px]" />
           </colgroup>
-          <thead className="border-b border-border/70 bg-muted/30">
-            <tr>
-              <th className="px-3 py-3 text-left">
+          <TableHeader className="bg-muted/30">
+            <TableRow>
+              <TableHead>
                 <SortHeader
                   title="Status"
                   sortKey="status"
@@ -705,8 +838,9 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
                   direction={sortDirection}
                   onToggle={toggleSort}
                 />
-              </th>
-              <th className="px-3 py-3 text-left">
+              </TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead>
                 <SortHeader
                   title="Description"
                   sortKey="description"
@@ -714,8 +848,8 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
                   direction={sortDirection}
                   onToggle={toggleSort}
                 />
-              </th>
-              <th className="px-3 py-3 text-left">
+              </TableHead>
+              <TableHead>
                 <SortHeader
                   title="Reporter"
                   sortKey="reporter"
@@ -723,8 +857,8 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
                   direction={sortDirection}
                   onToggle={toggleSort}
                 />
-              </th>
-              <th className="px-3 py-3 text-left">
+              </TableHead>
+              <TableHead>
                 <SortHeader
                   title="Role"
                   sortKey="role"
@@ -732,8 +866,8 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
                   direction={sortDirection}
                   onToggle={toggleSort}
                 />
-              </th>
-              <th className="px-3 py-3 text-left">
+              </TableHead>
+              <TableHead>
                 <SortHeader
                   title="Date"
                   sortKey="createdAt"
@@ -741,8 +875,8 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
                   direction={sortDirection}
                   onToggle={toggleSort}
                 />
-              </th>
-              <th className="px-3 py-3 text-left">
+              </TableHead>
+              <TableHead>
                 <SortHeader
                   title="Context"
                   sortKey="context"
@@ -750,8 +884,8 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
                   direction={sortDirection}
                   onToggle={toggleSort}
                 />
-              </th>
-              <th className="px-3 py-3 text-left">
+              </TableHead>
+              <TableHead>
                 <SortHeader
                   title="Page"
                   sortKey="page"
@@ -759,41 +893,46 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
                   direction={sortDirection}
                   onToggle={toggleSort}
                 />
-              </th>
-              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Attachments
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {sortedReports.length === 0 ? (
-              <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-sm text-muted-foreground">
-                  No bug reports yet.
-                </td>
-              </tr>
+              </TableHead>
+              <TableHead>Attachments</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filteredSortedReports.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={9} className="whitespace-normal px-4 py-8 text-center text-sm text-muted-foreground">
+                  {hasActiveFilters
+                    ? 'No reports match your filters. Try adjusting your search criteria.'
+                    : 'No bug reports yet.'}
+                </TableCell>
+              </TableRow>
             ) : (
-              sortedReports.map((report) => (
-                <tr key={report.id} className="border-b border-border/50 align-top last:border-b-0">
-                  <td className="px-3 py-3">
+              filteredSortedReports.map((report) => (
+                <TableRow key={report.id} className="align-top">
+                  <TableCell className="px-3 py-3">
                     <StatusSelect
                       reportId={report.id}
                       status={report.status}
                       disabled={updatingReportId === report.id}
                       onStatusChange={onStatusChange}
                     />
-                  </td>
-                  <td className="overflow-hidden px-3 py-3 text-sm">
+                  </TableCell>
+                  <TableCell className="overflow-hidden px-3 py-3 text-xs text-muted-foreground">
+                    <span className="block truncate">
+                      {report.bugType ? BUG_TYPE_LABELS[report.bugType] : '—'}
+                    </span>
+                  </TableCell>
+                  <TableCell className="overflow-hidden whitespace-normal px-3 py-3 text-sm">
                     <button
                       type="button"
-                      className="line-clamp-3 w-full break-words text-left text-foreground hover:text-primary"
+                      className="line-clamp-3 w-full wrap-break-word text-left text-foreground hover:text-primary"
                       title={report.description}
                       onClick={() => openViewer('description', report.id)}
                     >
                       {report.description}
                     </button>
-                  </td>
-                  <td className="overflow-hidden px-3 py-3 text-sm text-foreground">
+                  </TableCell>
+                  <TableCell className="overflow-hidden px-3 py-3 text-sm text-foreground">
                     {report.isAnonymous ? (
                       <span className="italic text-muted-foreground">Anonymous</span>
                     ) : (
@@ -801,24 +940,24 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
                         {getReporterLabel(report)}
                       </span>
                     )}
-                  </td>
-                  <td className="overflow-hidden px-3 py-3 text-sm text-muted-foreground">
+                  </TableCell>
+                  <TableCell className="overflow-hidden px-3 py-3 text-sm text-muted-foreground">
                     <span className="block truncate">{getReporterRole(report) ?? '-'}</span>
-                  </td>
-                  <td className="overflow-hidden px-3 py-3 text-sm text-muted-foreground">
+                  </TableCell>
+                  <TableCell className="overflow-hidden px-3 py-3 text-sm text-muted-foreground">
                     <span className="block truncate">{formatDateTime(report.createdAt)}</span>
-                  </td>
-                  <td className="overflow-hidden px-3 py-3 text-sm text-muted-foreground">
-                    <span className="line-clamp-2 break-words" title={getContextLabel(report)}>
+                  </TableCell>
+                  <TableCell className="overflow-hidden whitespace-normal px-3 py-3 text-sm text-muted-foreground">
+                    <span className="line-clamp-2 wrap-break-word" title={getContextLabel(report)}>
                       {getContextLabel(report)}
                     </span>
-                  </td>
-                  <td className="overflow-hidden px-3 py-3 text-sm text-muted-foreground">
+                  </TableCell>
+                  <TableCell className="overflow-hidden px-3 py-3 text-sm text-muted-foreground">
                     <span className="block truncate" title={report.pageUrl ?? ''}>
                       {getPathLabel(report.pageUrl)}
                     </span>
-                  </td>
-                  <td className="px-3 py-3">
+                  </TableCell>
+                  <TableCell className="whitespace-normal px-3 py-3">
                     <div className="flex flex-wrap gap-2">
                       <Button
                         type="button"
@@ -856,13 +995,14 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
                         Screenshot
                       </Button>
                     </div>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))
             )}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
+      </CardContent>
 
       <Dialog
         open={viewerType !== null}
@@ -900,6 +1040,6 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
           )}
         </DialogContent>
       </Dialog>
-    </div>
+    </Card>
   );
 }

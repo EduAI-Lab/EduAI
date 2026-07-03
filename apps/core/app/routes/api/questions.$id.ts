@@ -21,7 +21,7 @@ async function resolveAuth(request: Request) {
     const guard = await requireServiceKey(request);
     return { guard, serviceKey: !guard, session: null };
   }
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   return { guard: null, serviceKey: false, session };
 }
 
