@@ -168,6 +168,7 @@ export function CommandSearchButton({
   label = "Search",
   className,
 }: CommandSearchButtonProps) {
+  const shortcut = useShortcutLabel()
   const handle = () => {
     if (onOpen) onOpen()
     else if (eventName) window.dispatchEvent(new CustomEvent(eventName))
@@ -185,8 +186,27 @@ export function CommandSearchButton({
       <IconSearch className="size-3.5" />
       <span className="hidden sm:inline">{label}</span>
       <kbd className="ml-1 hidden items-center gap-0.5 rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium sm:inline-flex">
-        ⌘K
+        {shortcut}
       </kbd>
     </button>
   )
+}
+
+/**
+ * The ⌘K / Ctrl K label for the current platform. Defaults to the mac glyph so
+ * the SSR markup and the first client render match (no hydration mismatch), then
+ * corrects to "Ctrl K" on non-Apple platforms after mount.
+ */
+function useShortcutLabel(): string {
+  const [isMac, setIsMac] = React.useState(true)
+  React.useEffect(() => {
+    const p =
+      (typeof navigator !== "undefined" &&
+        ((navigator as { userAgentData?: { platform?: string } }).userAgentData?.platform ||
+          navigator.platform ||
+          navigator.userAgent)) ||
+      ""
+    setIsMac(/Mac|iPhone|iPad|iPod/i.test(p))
+  }, [])
+  return isMac ? "⌘K" : "Ctrl K"
 }
