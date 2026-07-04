@@ -6,7 +6,11 @@
  * the `qm:open-command` window event (dispatched by the header search button).
  */
 import { useNavigate, useLocation } from 'react-router';
-import { CommandPalette as SharedCommandPalette, type CommandPaletteGroup } from '@eduai/ui';
+import {
+  CommandPalette as SharedCommandPalette,
+  buildAppSwitcherGroup,
+  type CommandPaletteGroup,
+} from '@eduai/ui';
 import {
   IconDashboard,
   IconBooks,
@@ -22,6 +26,8 @@ import {
   IconLayoutDashboard,
 } from '@tabler/icons-react';
 import { useDisplayCourses } from '@/hooks/useDisplayCourses';
+import { useAuth } from '@/contexts/AuthContext';
+import { CURRENT_APP_ID, getLauncherApps } from '@/lib/apps';
 
 const iconClass = 'size-4';
 
@@ -29,6 +35,7 @@ export function CommandPalette() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const { displayCourses } = useDisplayCourses();
+  const { user } = useAuth();
 
   const courseMatch = pathname.match(/^\/courses\/(\d+)/);
   const courseId = courseMatch ? Number(courseMatch[1]) : null;
@@ -73,6 +80,11 @@ export function CommandPalette() {
         onSelect: () => navigate(`/courses/${c.id}`),
       })),
     },
+    buildAppSwitcherGroup({
+      apps: getLauncherApps(),
+      currentAppId: CURRENT_APP_ID,
+      role: user?.role,
+    }),
   ];
 
   return <SharedCommandPalette groups={groups} openEventName="qm:open-command" />;
