@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { CoursesAdminView } from '~/components/courses/courses-admin-view'
@@ -6,17 +6,9 @@ import { CoursesUnitAdminView } from '~/components/courses/courses-unit-admin-vi
 import { CoursesInstructorView } from '~/components/courses/courses-instructor-view'
 import { CoursesTaView } from '~/components/courses/courses-ta-view'
 import { CoursesStudentView } from '~/components/courses/courses-student-view'
+import { PolicyProvider, type PolicyValues } from '~/components/policy/policy-gate'
 import type { Course } from '~/hooks/api/use-courses'
 import { UiPreferencesProvider } from '~/components/assistive/ui-preferences-provider'
-
-// The instructor view gates Create/Publish/Delete on usePolicies(); the controls
-// stay hidden until policies load. Default the hook to the loaded state so the
-// policy-default tests assert post-fetch behavior; the loading test overrides it.
-vi.mock('~/hooks/api/use-policies', () => ({
-  usePolicies: vi.fn(() => ({ policies: {}, isLoading: false })),
-}))
-import { usePolicies } from '~/hooks/api/use-policies'
-const mockedUsePolicies = vi.mocked(usePolicies)
 
 // §541: department labels/options now come from the DB-backed useDisciplines
 // hook (previously the static UNIT_OPTIONS). Stub it with a fixed list so the
@@ -80,8 +72,12 @@ const SPRING_COURSE: Course = {
 
 const NOOP = async () => {}
 
-function wrap(ui: React.ReactElement) {
-  return render(<MemoryRouter>{ui}</MemoryRouter>)
+function wrap(ui: React.ReactElement, policies: PolicyValues = {}) {
+  return render(
+    <MemoryRouter>
+      <PolicyProvider policies={policies}>{ui}</PolicyProvider>
+    </MemoryRouter>
+  )
 }
 
 function wrapStudent(ui: React.ReactElement) {
@@ -216,13 +212,10 @@ describe('CoursesUnitAdminView', () => {
 
 // CoursesInstructorView
 describe('CoursesInstructorView', () => {
-  beforeEach(() => {
-    mockedUsePolicies.mockReturnValue({ policies: {}, isLoading: false } as never)
-  })
-
-  it('shows "Create Course" button when policies are loaded and the default is on', () => {
-    // Policies loaded with no overrides → the `?? true` defaults apply, so
-    // create is on.
+  it('shows "Create Course" button when the policy default is on', () => {
+    // No overrides seeded → the `?? true` defaults apply, so create is on. Values
+    // come from the SSR-seeded PolicyProvider, so this is the first-paint state —
+    // there is no loading window and therefore no enabled↔disabled flicker.
     wrap(
       <CoursesInstructorView
         courses={[PUBLISHED_COURSE]}
@@ -235,8 +228,7 @@ describe('CoursesInstructorView', () => {
     expect(screen.getByRole('button', { name: /create course/i })).toBeInTheDocument()
   })
 
-  it('hides "Create Course" until policies load (no permission flash)', () => {
-    mockedUsePolicies.mockReturnValue({ policies: {}, isLoading: true } as never)
+  it('greys out "Create Course" (not hides it) when instructors.canCreateCourses is off (#807)', () => {
     wrap(
       <CoursesInstructorView
         courses={[PUBLISHED_COURSE]}
@@ -244,9 +236,12 @@ describe('CoursesInstructorView', () => {
         onEditCourse={NOOP}
         onDeleteCourse={NOOP}
         onPublishToggle={NOOP}
-      />
+      />,
+      { 'instructors.canCreateCourses': false }
     )
-    expect(screen.queryByRole('button', { name: /create course/i })).not.toBeInTheDocument()
+    const btn = screen.getByRole('button', { name: /create course/i })
+    expect(btn).toBeInTheDocument()
+    expect(btn).toBeDisabled()
   })
 
   it('shows a course actions menu button per course', () => {

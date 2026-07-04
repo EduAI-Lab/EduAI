@@ -71,6 +71,14 @@ export type AdminEnrollmentData = {
 
 export type BugReportStatus = 'unhandled' | 'in progress' | 'resolved';
 
+export type BugReportType =
+  | 'UI_DISPLAY'
+  | 'FEATURE_NOT_WORKING'
+  | 'PERFORMANCE'
+  | 'CONTENT_ERROR'
+  | 'ACCESS_PERMISSION'
+  | 'OTHER';
+
 export type BugReportContext = {
   courseOfferingId?: number | null;
   moduleId?: number | null;
@@ -80,6 +88,7 @@ export type BugReportContext = {
 
 export type BugReportCreatePayload = {
   description: string;
+  bugType: BugReportType | null;
   isAnonymous: boolean;
   consoleLogs: string;
   networkLogs: string;
@@ -92,6 +101,7 @@ export type BugReportCreatePayload = {
 export type AdminBugReportRow = {
   id: string;
   description: string;
+  bugType?: BugReportType | null;
   status: BugReportStatus;
   consoleLogs?: string | null;
   networkLogs?: string | null;
