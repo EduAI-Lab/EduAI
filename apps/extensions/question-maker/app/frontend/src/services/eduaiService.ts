@@ -148,17 +148,26 @@ class EduAIService {
      * Tests AI connectivity. Sends the caller's browser-stored provider keys (e.g.
      * Google) so the backend can validate the cloud provider — which works with the
      * user's own key even when the UBC-hosted provider is offline.
+     *
+     * Pass `overrideApiKeys` to force which path is probed — `{}` forces the
+     * UBC-hosted provider (no cloud key), a populated map forces the cloud
+     * provider. Used to probe cloud and UBC independently for the status chips.
      */
-    async testApiKey(): Promise<EduAITestResponse> {
-        // Build the apiKeys payload the backend expects from any locally-stored keys.
+    async testApiKey(overrideApiKeys?: Record<string, any>): Promise<EduAITestResponse> {
+        // Build the apiKeys payload the backend expects from any locally-stored keys,
+        // unless the caller supplied an explicit override.
         let apiKeys: Record<string, any> = {};
-        try {
-            const stored = await apiKeyStorage.getAllApiKeys();
-            apiKeys = Object.fromEntries(
-                Object.entries(stored).map(([provider, apiKey]) => [provider, { apiKey, isEnabled: true }])
-            );
-        } catch {
-            // Ignore key-storage failures — fall back to server-side keys only.
+        if (overrideApiKeys) {
+            apiKeys = overrideApiKeys;
+        } else {
+            try {
+                const stored = await apiKeyStorage.getAllApiKeys();
+                apiKeys = Object.fromEntries(
+                    Object.entries(stored).map(([provider, apiKey]) => [provider, { apiKey, isEnabled: true }])
+                );
+            } catch {
+                // Ignore key-storage failures — fall back to server-side keys only.
+            }
         }
 
         try {
